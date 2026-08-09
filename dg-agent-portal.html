@@ -1144,6 +1144,251 @@ body{
   body > *:not(#print-card-target) { display: none !important; }
   #print-card-target { display: block !important; }
 }
+/* ══════════════════════════════════════════════
+   AGENT ROSTER — slide-up drawer
+   ══════════════════════════════════════════════ */
+
+#roster-trigger {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  background: #1c1608;
+  color: #c8a850;
+  font-family: 'Special Elite', monospace;
+  font-size: 8px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  padding: 7px 20px 6px;
+  border: 1px solid #c8a850;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  box-shadow: 0 -2px 12px rgba(0,0,0,.3);
+  transition: background 120ms;
+  white-space: nowrap;
+}
+
+#roster-trigger:hover { background: #2a2010; }
+
+#roster-trigger-count {
+  display: inline-block;
+  background: #c8a850;
+  color: #1c1608;
+  font-size: 7px;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 1px 5px;
+  margin-left: 6px;
+  vertical-align: middle;
+  min-width: 14px;
+  text-align: center;
+}
+
+#roster-drawer {
+  position: fixed;
+  bottom: -100%;
+  left: 0;
+  right: 0;
+  z-index: 199;
+  background: #f4eed8;
+  border-top: 2px solid #c8a850;
+  box-shadow: 0 -4px 24px rgba(0,0,0,.35);
+  transition: bottom 280ms cubic-bezier(.32,.72,0,1);
+  max-height: 72vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#roster-drawer.open {
+  bottom: 0;
+}
+
+#roster-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px 8px;
+  border-bottom: 1px solid rgba(160,130,70,.25);
+  flex-shrink: 0;
+  background: #ede5cc;
+}
+
+#roster-drawer-title {
+  font-family: 'Special Elite', monospace;
+  font-size: 9px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: #1c1608;
+}
+
+#roster-drawer-close {
+  font-family: 'Special Elite', monospace;
+  font-size: 9px;
+  letter-spacing: .1em;
+  color: #8a7a5a;
+  cursor: pointer;
+  padding: 4px 8px;
+  background: none;
+  border: none;
+}
+
+#roster-drawer-close:hover { color: #1c1608; }
+
+#roster-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 10px 12px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#roster-list::-webkit-scrollbar { width: 3px; }
+#roster-list::-webkit-scrollbar-track { background: #ede5cc; }
+#roster-list::-webkit-scrollbar-thumb { background: rgba(160,130,70,.4); border-radius: 2px; }
+
+.roster-empty {
+  font-family: 'Courier Prime', monospace;
+  font-size: 11px;
+  color: rgba(160,130,70,.5);
+  font-style: italic;
+  text-align: center;
+  padding: 24px 0;
+}
+
+.roster-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fff8e8;
+  border: 1px solid rgba(160,130,70,.25);
+  border-left: 3px solid #c8a850;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: background 100ms, border-left-color 100ms;
+  position: relative;
+}
+
+.roster-card:hover { background: #fffae8; border-left-color: #1c1608; }
+.roster-card.active-agent { border-left-color: #8b1a1a; background: #fff5f0; }
+
+.roster-card-photo {
+  width: 36px;
+  height: 44px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 1px solid rgba(160,130,70,.3);
+  background: #ede5cc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.roster-card-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.roster-card-photo-placeholder {
+  font-size: 5px;
+  letter-spacing: .1em;
+  color: rgba(160,130,70,.4);
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.roster-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.roster-card-name {
+  font-family: 'Special Elite', monospace;
+  font-size: 13px;
+  color: #1c1608;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.roster-card-code {
+  font-family: 'Courier Prime', monospace;
+  font-size: 9px;
+  letter-spacing: .1em;
+  color: #8a7a5a;
+  margin-top: 1px;
+}
+
+.roster-card-meta {
+  font-family: 'Courier Prime', monospace;
+  font-size: 8px;
+  color: #b8a878;
+  margin-top: 2px;
+}
+
+.roster-card-era {
+  font-family: 'Special Elite', monospace;
+  font-size: 7px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: #fff;
+  background: #8b1a1a;
+  padding: 2px 6px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.roster-card-delete {
+  font-size: 10px;
+  color: rgba(160,130,70,.4);
+  cursor: pointer;
+  padding: 4px;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  line-height: 1;
+}
+
+.roster-card-delete:hover { color: #8b1a1a; }
+
+#roster-drawer-footer {
+  padding: 8px 12px;
+  border-top: 1px solid rgba(160,130,70,.2);
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  background: #ede5cc;
+}
+
+.roster-footer-btn {
+  font-family: 'Special Elite', monospace;
+  font-size: 7px;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  color: #8a7a5a;
+  background: none;
+  border: 1px solid rgba(160,130,70,.3);
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.roster-footer-btn:hover { color: #1c1608; border-color: rgba(160,130,70,.6); }
+
+/* Backdrop */
+#roster-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 198;
+  background: rgba(0,0,0,.3);
+}
+
+#roster-backdrop.open { display: block; }
 </style>
 </head>
 <body>
@@ -1651,6 +1896,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTa
 const LS_KEY = 'dg_last_agent';
 function persistAgent(code, data) {
   try { localStorage.setItem(LS_KEY, JSON.stringify({ code, data })); } catch(e) {}
+  if (typeof rosterAddAgent === 'function') rosterAddAgent(code, data);
 }
 function loadPersistedAgent() {
   try { const r = localStorage.getItem(LS_KEY); return r ? JSON.parse(r) : null; } catch(e) { return null; }
@@ -2402,6 +2648,8 @@ async function handleSubmit() {
   const agentCode = genCode(payload.char_name);
   payload.agent_code = agentCode;
   persistAgent(agentCode, payload);
+  afCode = agentCode;
+  afData = payload;
   renderDossier(payload, agentCode);
   status.className='ok'; status.textContent='Brief received. Stand by for orders.';
   btn.textContent='Submitted';
@@ -4515,6 +4763,271 @@ function rerollAgent() {
   }
 })();
 
+/* ══════════════════════════════════════════════
+   AGENT ROSTER — persistent multi-agent store (this hub's addition).
+   Every agent that gets persist​Agent()'d in this browser -- Cover form
+   submit, Agent File load by code, any era-prompt/photo save -- also
+   joins this roster automatically (see persistAgent() above), so
+   whoever's using this browser (a Handler checking multiple players'
+   agents, a player who's made more than one over time) can see and
+   switch between all of them, not just the single most-recently-active
+   one dg_last_agent tracks.
+   ══════════════════════════════════════════════ */
+
+const ROSTER_KEY = 'dg_agent_roster';
+
+function rosterLoad() {
+  try { return JSON.parse(localStorage.getItem(ROSTER_KEY) || '{}'); } catch(e) { return {}; }
+}
+
+function rosterSave(roster) {
+  try { localStorage.setItem(ROSTER_KEY, JSON.stringify(roster)); } catch(e) {}
+}
+
+function rosterAddAgent(code, data) {
+  if (!code || !data) return;
+  var roster = rosterLoad();
+  // Store only slim fields — no base64 images which can exceed localStorage quota
+  roster[code] = {
+    code: code,
+    char_name: data.char_name || '',
+    codename: data.codename || '',
+    sex: data.sex || '',
+    age_range: data.age_range || '',
+    nationality: data.nationality || '',
+    active_eras: data.active_eras || '',
+    face_plate_url: data.face_plate_url || '',
+    campaign_era: data.campaign_era || '',
+    saved_at: Date.now()
+  };
+  try {
+    rosterSave(roster);
+  } catch(e) {
+    // If quota exceeded, try without face_plate_url
+    roster[code].face_plate_url = '';
+    try { rosterSave(roster); } catch(e2) {}
+  }
+  rosterRender();
+  rosterUpdateCount();
+}
+function rosterRemoveAgent(code) {
+  var roster = rosterLoad();
+  delete roster[code];
+  rosterSave(roster);
+  rosterRender();
+  rosterUpdateCount();
+}
+
+function rosterUpdateCount() {
+  var roster = rosterLoad();
+  var count = Object.keys(roster).length;
+  var el = document.getElementById('roster-trigger-count');
+  if (el) el.textContent = count;
+}
+
+function rosterGetEraLabel(agent) {
+  var era = agent.campaign_era || '';
+  if (!era && agent.active_eras) {
+    try {
+      var eras = JSON.parse(agent.active_eras);
+      if (Array.isArray(eras) && eras.length) era = eras[0];
+    } catch(e) { era = agent.active_eras; }
+  }
+  var labels = {'90s':'1990s','00s':'2000s','10s':'2010s','20s':'2020s'};
+  return labels[era] || era || '';
+}
+
+function rosterRender() {
+  var list = document.getElementById('roster-list');
+  if (!list) return;
+  var roster = rosterLoad();
+  var agents = Object.values(roster).sort(function(a,b) { return (b.saved_at||0) - (a.saved_at||0); });
+
+  if (!agents.length) {
+    list.innerHTML = '<div class="roster-empty">No agents on file.<br>Submit a brief to add an agent.</div>';
+    return;
+  }
+
+  var currentCode = afCode || (loadPersistedAgent() || {}).code || '';
+
+  list.innerHTML = agents.map(function(agent) {
+    var isActive = agent.code === currentCode;
+    var eraLabel = rosterGetEraLabel(agent);
+    var photoHtml = '<div class="roster-card-photo-placeholder">PHOTO</div>';
+    // We'll load photos async after render
+
+    return '<div class="roster-card' + (isActive ? ' active-agent' : '') + '" id="roster-card-' + agent.code + '" data-code="' + agent.code + '" onclick="rosterSelectAgent(this.dataset.code)">'
+      + '<div class="roster-card-photo" id="roster-photo-' + agent.code + '">' + photoHtml + '</div>'
+      + '<div class="roster-card-info">'
+      + '<div class="roster-card-name">' + (agent.char_name || 'Unknown Agent') + '</div>'
+      + '<div class="roster-card-code">' + agent.code + (agent.codename ? ' · ' + agent.codename : '') + '</div>'
+      + '<div class="roster-card-meta">' + [agent.age_range, agent.sex, agent.nationality].filter(Boolean).join(' · ') + '</div>'
+      + '</div>'
+      + (eraLabel ? '<div class="roster-card-era">' + eraLabel + '</div>' : '')
+      + '<button class="roster-card-delete" data-code="' + agent.code + '" onclick="event.stopPropagation();rosterDeleteConfirm(this.dataset.code)" title="Remove">✕</button>'
+      + '</div>';
+  }).join('');
+
+  // Load face plates async
+  agents.forEach(function(agent) {
+    if (agent.face_plate_url) {
+      var photoDiv = document.getElementById('roster-photo-' + agent.code);
+      if (!photoDiv) return;
+      var faceId = extractDriveId(agent.face_plate_url);
+      if (!faceId) return;
+      var cbName = '_rosterFace_' + agent.code.replace(/[^a-zA-Z0-9]/g,'_');
+      window[cbName] = function(json) {
+        delete window[cbName];
+        if (json.status === 'OK' && json.dataUri) {
+          var div = document.getElementById('roster-photo-' + agent.code);
+          if (div) div.innerHTML = '<img src="' + json.dataUri + '">';
+        }
+      };
+      var s = document.createElement('script');
+      s.src = APPS_SCRIPT_URL + '?action=imgdata&id=' + encodeURIComponent(faceId) + '&callback=' + cbName;
+      document.head.appendChild(s);
+    }
+  });
+}
+
+function rosterSelectAgent(code) {
+  var roster = rosterLoad();
+  var agent = roster[code];
+  if (!agent) return;
+
+  rosterClose();
+
+  // If this agent is already loaded in memory, use it directly
+  if (typeof afCode !== 'undefined' && afCode === code && typeof afData !== 'undefined' && afData) {
+    switchTab('agent');
+    setTimeout(function() { renderAgentFile(afData); }, 80);
+    return;
+  }
+
+  // Otherwise load from Sheet via the existing gate mechanism
+  switchTab('agent');
+  var afInput = document.getElementById('af-code-input');
+  if (afInput) {
+    afInput.value = code;
+    setTimeout(function() { loadAgentFile(); }, 80);
+  }
+}
+
+function rosterDeleteConfirm(code) {
+  if (confirm('Remove ' + code + ' from roster?')) {
+    rosterRemoveAgent(code);
+    // Clear persistence if this was the active agent
+    var saved = loadPersistedAgent();
+    if (saved && saved.code === code) clearPersistedAgent();
+  }
+}
+
+function rosterToggle() {
+  var drawer = document.getElementById('roster-drawer');
+  var backdrop = document.getElementById('roster-backdrop');
+  if (drawer.classList.contains('open')) {
+    rosterClose();
+  } else {
+    // Try to add current agent if one is loaded
+    if (typeof afCode !== 'undefined' && afCode && typeof afData !== 'undefined' && afData) {
+      rosterAddAgent(afCode, afData);
+    }
+    rosterRender();
+    drawer.classList.add('open');
+    backdrop.classList.add('open');
+    document.getElementById('roster-trigger').innerHTML = '▼ AGENTS ON FILE <span id="roster-trigger-count">' + Object.keys(rosterLoad()).length + '</span>';
+  }
+}
+
+function rosterClose() {
+  var drawer = document.getElementById('roster-drawer');
+  var backdrop = document.getElementById('roster-backdrop');
+  drawer.classList.remove('open');
+  backdrop.classList.remove('open');
+  var count = Object.keys(rosterLoad()).length;
+  document.getElementById('roster-trigger').innerHTML = '▲ AGENTS ON FILE <span id="roster-trigger-count">' + count + '</span>';
+}
+
+function rosterExport() {
+  var roster = rosterLoad();
+  var blob = new Blob([JSON.stringify(roster, null, 2)], {type: 'application/json'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'dg-agent-roster.json';
+  a.click();
+}
+
+function rosterImportPrompt() {
+  var input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var r = new FileReader();
+    r.onload = function(ev) {
+      try {
+        var imported = JSON.parse(ev.target.result);
+        var roster = rosterLoad();
+        Object.assign(roster, imported);
+        rosterSave(roster);
+        rosterRender();
+        rosterUpdateCount();
+        alert('Imported ' + Object.keys(imported).length + ' agent(s).');
+      } catch(e) {
+        alert('Invalid roster file.');
+      }
+    };
+    r.readAsText(file);
+  };
+  input.click();
+}
+
+function rosterClearAll() {
+  if (confirm('Remove all agents from the local roster? This cannot be undone.')) {
+    localStorage.removeItem(ROSTER_KEY);
+    clearPersistedAgent();
+    rosterRender();
+    rosterUpdateCount();
+  }
+}
+
+/* ── Init on page load ── */
+(function rosterInit() {
+  setTimeout(function() {
+    var saved = loadPersistedAgent();
+    if (saved && saved.code && saved.data) {
+      rosterAddAgent(saved.code, saved.data);
+    }
+    rosterUpdateCount();
+  }, 200);
+})();
+
+
 </script>
+
+<!-- ══ AGENT ROSTER DRAWER ══ -->
+<div id="roster-backdrop" onclick="rosterClose()"></div>
+
+<button id="roster-trigger" onclick="rosterToggle()">
+  ▲ AGENTS ON FILE
+  <span id="roster-trigger-count">0</span>
+</button>
+
+<div id="roster-drawer">
+  <div id="roster-drawer-header">
+    <div id="roster-drawer-title">▲ Delta Green — Agent Roster</div>
+    <button id="roster-drawer-close" onclick="rosterClose()">✕ CLOSE</button>
+  </div>
+  <div id="roster-list">
+    <div class="roster-empty">No agents on file.</div>
+  </div>
+  <div id="roster-drawer-footer">
+    <button class="roster-footer-btn" onclick="rosterExport()">Export Roster</button>
+    <button class="roster-footer-btn" onclick="rosterImportPrompt()">Import</button>
+    <button class="roster-footer-btn" onclick="rosterClearAll()" style="margin-left:auto;color:#8b1a1a;">Clear All</button>
+  </div>
+</div>
+
 </body>
 </html>
