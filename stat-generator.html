@@ -40,11 +40,32 @@
 -->
     <style>
 
+*{box-sizing:border-box;}
+html,body{max-width:100%;overflow-x:hidden;}
+
 .hub-nav{max-width:1400px;margin:0 auto 10px;padding:0 20px;}
 .hub-nav a{font-family:'Courier New',monospace;font-size:12px;letter-spacing:.05em;color:#00b521;text-decoration:none;}
 .hub-nav a:hover{text-decoration:underline;}
 .handoff-container{margin-top:20px;text-align:center;width:100%;}
 
+/* ── DICE ROLLER (this hub's addition, not part of the original tool) ── */
+.dice-section{width:100%;max-width:1400px;margin-top:50px;}
+.dice-quick{display:flex;flex-wrap:wrap;gap:10px;padding-left:20px;margin-bottom:20px;}
+.dice-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding-left:20px;margin-bottom:14px;}
+.dice-row label{color:#00b521;font-weight:bold;}
+.dice-row input[type=number]{
+    width:56px;background:#000;color:#fff;border:2px solid #00b521;border-radius:4px;
+    padding:6px;font-family:'Courier New',monospace;font-weight:bold;text-align:center;
+}
+.dice-log{
+    width:100%;max-width:800px;margin-left:20px;margin-top:20px;padding:10px;
+    background:#000;border:2px solid #00b521;color:#00b521;font-weight:bold;
+    min-height:60px;max-height:220px;overflow-y:auto;
+}
+.dice-log div{padding:2px 0;border-bottom:1px solid #063a10;}
+.dice-log div:last-child{border-bottom:none;}
+
+/* ── Mobile responsiveness (the original tool had none at all) ── */
 /* General body styling for the entire page */
 body {
     font-family: Courier New;
@@ -325,7 +346,25 @@ input[type="checkbox"] + label {
 
 input[type="checkbox"]:checked + label {
     background-color: #00b521;
-    color: white; 
+    color: white;
+}
+
+@media (max-width: 760px) {
+    body{padding:12px;}
+    .page-title{font-size:22px;margin-bottom:20px;}
+    .content{flex-direction:column;align-items:stretch;}
+    .stats-section{width:100%;}
+    .stat-container{flex-wrap:wrap;row-gap:6px;margin-right:0;}
+    .attributes{flex-basis:100%;text-align:left;min-width:0;margin-top:4px;}
+    .attribute-values{text-align:left;min-width:0;margin-left:6px;margin-right:0;}
+    .descriptor{width:auto;min-width:70px;}
+    .text-box{width:100%;height:auto;min-height:180px;margin-left:0;}
+    .bond-categories{margin-left:0;margin-top:20px;width:100%;}
+    .button-container{flex-wrap:wrap;margin-top:30px;}
+    .button-container button{flex:1 1 calc(50% - 10px);}
+    .dice-section{padding:0;}
+    .dice-quick,.dice-row{padding-left:0;}
+    .dice-log{margin-left:0;max-width:100%;}
 }
 
     </style>
@@ -371,6 +410,35 @@ input[type="checkbox"]:checked + label {
     <button type="button" id="bonds-button" onmouseover="showInfo('bonds')" onmouseout="clearInfo()" onclick="generateRandomBond()">BONDS</button>
     <button type="button" id="export-button" onmouseover="showInfo('export')" onmouseout="clearInfo()" onclick="generateCharacterSheet()">EXPORT XLSX</button>
 </div>
+
+<div class="dice-section">
+    <h2>DICE ROLLER:</h2>
+    <div class="dice-quick">
+        <button type="button" onclick="rollDice(1,4)">D4</button>
+        <button type="button" onclick="rollDice(1,6)">D6</button>
+        <button type="button" onclick="rollDice(1,8)">D8</button>
+        <button type="button" onclick="rollDice(1,10)">D10</button>
+        <button type="button" onclick="rollDice(1,12)">D12</button>
+        <button type="button" onclick="rollDice(1,20)">D20</button>
+        <button type="button" id="d100-button" onclick="rollDice(1,100)">D100</button>
+    </div>
+    <div class="dice-row">
+        <label for="dice-count">Roll</label>
+        <input type="number" id="dice-count" value="1" min="1" max="20">
+        <label for="dice-sides">d</label>
+        <input type="number" id="dice-sides" value="6" min="2" max="1000">
+        <label for="dice-mod">+</label>
+        <input type="number" id="dice-mod" value="0">
+        <button type="button" id="custom-roll-button" onclick="rollCustomDice()">ROLL</button>
+    </div>
+    <div class="dice-row">
+        <label for="skill-target">Roll under % (skill check)</label>
+        <input type="number" id="skill-target" value="50" min="1" max="99">
+        <button type="button" id="skill-check-button" onclick="rollSkillCheck()">CHECK</button>
+    </div>
+    <div class="dice-log" id="diceLog"></div>
+</div>
+
 <div class="handoff-container">
     <button type="button" id="send-to-portal" onclick="sendToAgentPortal()">SEND TO AGENT PORTAL &rarr;</button>
     <span id="handoff-status" style="display:block;margin-top:8px;font-family:'Courier New',monospace;font-size:11px;color:#00b521;"></span>
@@ -1046,6 +1114,37 @@ function sendToAgentPortal() {
     status.textContent = 'Could not save locally in this browser.';
   }
   window.open('dg-agent-portal.html', '_blank');
+}
+
+/* ── Dice roller (this hub's addition, not part of the original tool) ── */
+const diceLogEntries = [];
+function logDiceRoll(text) {
+  diceLogEntries.unshift(text);
+  if (diceLogEntries.length > 8) diceLogEntries.pop();
+  document.getElementById('diceLog').innerHTML = diceLogEntries.map(e => `<div>${e}</div>`).join('');
+}
+function rollDice(count, sides) {
+  const rolls = [];
+  for (let i = 0; i < count; i++) rolls.push(Math.floor(Math.random() * sides) + 1);
+  const total = rolls.reduce((a, b) => a + b, 0);
+  logDiceRoll(`${count}d${sides}: [${rolls.join(', ')}] = ${total}`);
+  return total;
+}
+function rollCustomDice() {
+  const count = Math.max(1, Math.min(20, parseInt(document.getElementById('dice-count').value) || 1));
+  const sides = Math.max(2, Math.min(1000, parseInt(document.getElementById('dice-sides').value) || 6));
+  const mod = parseInt(document.getElementById('dice-mod').value) || 0;
+  const rolls = [];
+  for (let i = 0; i < count; i++) rolls.push(Math.floor(Math.random() * sides) + 1);
+  const total = rolls.reduce((a, b) => a + b, 0) + mod;
+  const modStr = mod ? (mod > 0 ? ` +${mod}` : ` ${mod}`) : '';
+  logDiceRoll(`${count}d${sides}${modStr.trim() ? ' ' + modStr.trim() : ''}: [${rolls.join(', ')}]${modStr} = ${total}`);
+}
+function rollSkillCheck() {
+  const target = Math.max(1, Math.min(99, parseInt(document.getElementById('skill-target').value) || 50));
+  const roll = Math.floor(Math.random() * 100) + 1;
+  const result = roll <= target ? 'SUCCESS' : 'FAILURE';
+  logDiceRoll(`d100 vs ${target}%: rolled ${roll} — ${result}`);
 }
 
     </script>

@@ -23,15 +23,22 @@ non-zero if anything fails.
   manual stat adjustment (value/×5/remaining-points all update together),
   random point buy (spends exactly 72 points, every stat 3–18), random dice
   roll (4d6 drop lowest, every stat 3–18), reset, the Bond generator
-  (default category pre-checked, produces text), the XLSX export button's
-  wiring (the `xlsx.full.min.js` CDN library itself is stubbed via
-  `page.add_init_script` — see `XLSX_STUB` — since that CDN is unreachable
-  from this sandbox, same as Google Fonts; the stub verifies *our* code
-  calls it correctly, not that the CDN itself loads), and the "Send to
-  Agent Portal" handoff into a real second page. Also a regression check
-  that the bond-category checkboxes are actually inside the `<form>` — the
-  original site's markup had `<label>`/`<form>` left unclosed, fixed when
-  this was ported in.
+  (default category pre-checked, produces text), the dice roller (quick
+  d100 button, custom NdX+mod arithmetic, roll-under-% skill check
+  clamping and SUCCESS/FAILURE reporting, the log capping at 8 entries),
+  the XLSX export button's wiring (the `xlsx.full.min.js` CDN library
+  itself is stubbed via `page.add_init_script` — see `XLSX_STUB` — since
+  that CDN is unreachable from this sandbox, same as Google Fonts; the
+  stub verifies *our* code calls it correctly, not that the CDN itself
+  loads), and the "Send to Agent Portal" handoff into a real second page.
+  Also a regression check that the bond-category checkboxes are actually
+  inside the `<form>` — the original site's markup had `<label>`/`<form>`
+  left unclosed, fixed when this was ported in.
+- **Mobile layout (`test_mobile_no_overflow`)** — checks `document.
+  documentElement.scrollWidth` stays at or under the viewport width (390px)
+  on all four pages. Added after `stat-generator.html` shipped with zero
+  responsive CSS (inherited from the original it was ported from) and
+  overflowed/overlapped badly on a phone.
 - **dg-agent-portal.html** — tab switching (Cover / Agent File / Cover IDs),
   full profession dropdown, random agent generator per profession, cover
   form submit + dossier render, localStorage persistence, restoring an

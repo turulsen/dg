@@ -9,7 +9,7 @@ Usage:
     python3 -m http.server 8949 &
     python3 test/run_tests.py
 """
-import json, os, sys, time
+import json, os, re, sys, time
 from playwright.sync_api import sync_playwright
 
 BASE = os.environ.get("DG_TEST_BASE", "http://127.0.0.1:8949")
@@ -165,6 +165,38 @@ def test_stat_generator(p):
     record("stat-generator", "export button invokes XLSX.writeFile with expected filename",
            export_filename == "DeltaGreenCharacterSheet.xlsx", str(export_filename))
 
+    # Dice roller
+    page.click("#d100-button")
+    page.wait_for_timeout(80)
+    log_after_quick = page.text_content("#diceLog") or ""
+    record("stat-generator", "quick dice button (D100) logs a roll in range",
+           "1d100:" in log_after_quick and "= " in log_after_quick, log_after_quick[:60])
+
+    page.fill("#dice-count", "2")
+    page.fill("#dice-sides", "6")
+    page.fill("#dice-mod", "3")
+    page.click("#custom-roll-button")
+    page.wait_for_timeout(80)
+    custom_entry = page.eval_on_selector("#diceLog div", "el => el.textContent")
+    # e.g. "2d6 +3: [4, 6] +3 = 13" -- verify the displayed total matches rolls + mod
+    m = re.match(r"2d6 \+3: \[([\d, ]+)\] \+3 = (\d+)", custom_entry or "")
+    rolls_ok = bool(m) and sum(int(x) for x in m.group(1).split(", ")) + 3 == int(m.group(2))
+    record("stat-generator", "custom NdX+mod roll computes correctly", rolls_ok, custom_entry or "")
+
+    page.fill("#skill-target", "100")  # target itself clamps to 99, checked below
+    page.click("#skill-check-button")
+    page.wait_for_timeout(80)
+    skill_entries = page.eval_on_selector_all("#diceLog div", "els => els.map(e=>e.textContent)")
+    m = re.match(r"d100 vs 99%: rolled (\d+) — (SUCCESS|FAILURE)", skill_entries[0])
+    record("stat-generator", "skill check clamps target to 99 and reports SUCCESS/FAILURE correctly",
+           bool(m) and ((int(m.group(1)) <= 99) == (m.group(2) == "SUCCESS")), skill_entries[0])
+
+    for _ in range(10):
+        page.click("#skill-check-button")
+        page.wait_for_timeout(30)
+    log_count = page.eval_on_selector_all("#diceLog div", "els => els.length")
+    record("stat-generator", "dice log caps at 8 entries", log_count == 8, f"{log_count} entries")
+
     # Send to Agent Portal handoff
     with page.context.expect_page() as new_page_info:
         page.click("#send-to-portal")
@@ -182,6 +214,25 @@ def test_stat_generator(p):
 
     page.close()
     return errs
+
+def test_mobile_no_overflow(p):
+    """Regression check: no page should force horizontal scroll on a phone
+    viewport. stat-generator.html had this bug (fixed-width elements from
+    the ported original, which had no responsive CSS at all)."""
+    errs_all = []
+    for path in ["index.html", "stat-generator.html", "dg-agent-portal.html", "dg-id-creator.html"]:
+        page = p.new_page(viewport={"width": 390, "height": 844})
+        page.set_default_timeout(5000)
+        errs = collect_errors(page)
+        mock_routes(page)
+        page.goto(f"{BASE}/{path}", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_timeout(300)
+        scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
+        record("mobile", f"{path} has no horizontal overflow at 390px viewport",
+               scroll_width <= 390, f"scrollWidth={scroll_width}")
+        errs_all.extend(errs)
+        page.close()
+    return errs_all
 
 def test_agent_portal_restore_dossier(p, agent):
     """Regression check: restoring an agent by code on the Cover tab must
@@ -325,6 +376,8 @@ def main():
                 return None
 
         safe(test_stat_generator, browser, area="stat-generator")
+
+        safe(test_mobile_no_overflow, browser, area="mobile")
 
         safe(test_agent_portal_restore_dossier, browser, AGENTS[0], area="agent-portal")
 
