@@ -9,7 +9,7 @@ Player-facing tools for a Delta Green campaign, published as a static site via G
 | Page | Purpose |
 |---|---|
 | `index.html` | Hub landing page — links to everything below |
-| `stat-generator.html` | Random 3d6 or point-buy characteristic generator, with derived Hit Points / Willpower / Sanity / Breaking Point |
+| `stat-generator.html` | Full character sheet generator: a 7-step wizard (identity, characteristics, derived stats, skills, Bonds, equipment, finish) with Quick/Random/Point-Buy creation paths, three selectable visual themes, and a **Play Mode** for running the finished sheet live at the table (HP/WP/SAN trackers, SAN-loss roller, Bond and skill tracking, field notes) |
 | `dg-agent-portal.html` | Character brief, cover identity, and dossier — plus agent file across eras, medical history, and after-action reports (backed by a Google Apps Script + Sheet) |
 | `dg-id-creator.html` | Printable cover-identity card generator |
 
@@ -25,11 +25,11 @@ backends faked out so it never touches real data. See `test/README.md`.
 
 Rough priority order, cheapest/highest-value first:
 
-1. **Unify the character-code system.** `stat-generator.html` currently saves locally and doesn't push into the Agent Portal's Apps Script backend, and the ID Creator's code format is still a different, incompatible scheme — the Portal's field schema (`char_name`, `age_range`, etc.) and code format should be documented once and shared across all three tools so one code loads a character everywhere.
-2. **Skills & weapons.** The current tools cover stats and identity but not skills, equipment, or weapons — a skill sheet (with the standard Delta Green skill list and percentiles) and a simple loadout/inventory tracker would round out character creation.
-3. **Session/dice tools for play.** A percentile roller (roll-under vs. a skill or stat×5), a SAN-loss roller (e.g. `1d4/1d8`), and a Bond tracker (Delta Green's replacement for standard sanity recovery) would make this useful *during* sessions, not just at character creation.
+1. **Unify the character-code system.** `stat-generator.html` currently saves locally (`dg_char_<code>`) and doesn't push into the Agent Portal's Apps Script backend, and the ID Creator's code format is still a different, incompatible scheme — the Portal's field schema (`char_name`, `age_range`, etc.) and code format should be documented once and shared across all three tools so one code loads a character everywhere. This is now the single biggest gap.
+2. ~~Skills & weapons.~~ Done — `stat-generator.html`'s wizard now covers skills (full list, point pools), Bonds, and equipment, plus a Play Mode for running the sheet live.
+3. **A real percentile roller.** Play Mode tracks HP/WP/SAN and has a SAN-loss roller, but there's no roll-under-a-skill roller yet — the most obvious next in-session addition.
 4. **Handout/clue log.** A shared, per-campaign log where the Handler drops handouts (pairs well with a "delta-green-handouts" style PDF workflow) and players can revisit them.
-5. **Multi-agent / campaign view.** Right now each tool is single-agent-at-a-time via a code. A simple "my agents" list (stored locally, or synced via the existing Apps Script) would help players juggling a Trained Agent roster or Friendly-Programs cell.
+5. **Multi-agent / campaign view.** Play Mode now has a local "my characters" chip list (`dg_char_index`), but it's per-browser only — syncing it via the existing Apps Script would let a Handler see the whole cell/roster.
 6. **Offline/PWA support.** Add a manifest + service worker so the hub works at the table without signal — useful since character sheets are exactly the kind of thing you don't want to lose to bad wifi.
 7. **Access control.** The Agent Portal already gates some content behind a character code; if players shouldn't see each other's dossiers, consider per-agent codes tied to real auth rather than security-by-obscurity codes.
 

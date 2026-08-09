@@ -3,190 +3,511 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Delta Green — Stat Generator</title>
+<title>Delta Green — Character Sheet Generator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Source+Sans+3:wght@300;400;600&family=Courier+Prime:ital,wght@0,400;0,700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Source+Sans+3:wght@300;400;600&family=Courier+Prime:ital,wght@0,400;0,700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <style>
-  :root{
-    --ink:#1a1a18; --paper:#e8e2d4; --paper-dark:#d4ccba; --bg:#1c1b16;
-    --red:#8b1a1a; --rule:#b0a890; --dim:#9a9080;
-  }
-  *{box-sizing:border-box;margin:0;padding:0;}
-  body{ background:var(--bg); font-family:'Source Sans 3',sans-serif; font-weight:300; color:var(--ink); min-height:100vh; padding:40px 16px 80px; }
-  .page{ background:var(--paper); max-width:800px; margin:0 auto; padding:48px 40px 56px; box-shadow:0 4px 40px rgba(0,0,0,.6); }
-  .stamp{ font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.25em; color:var(--red); text-transform:uppercase; border:1.5px solid var(--red); display:inline-block; padding:3px 10px; margin-bottom:24px; opacity:.7; transform:rotate(-1.5deg); }
-  h1{ font-family:'Special Elite',monospace; font-size:24px; margin-bottom:6px; }
-  .subtitle{ font-size:13px; color:var(--dim); margin-bottom:28px; line-height:1.6; border-bottom:1px solid var(--rule); padding-bottom:20px; }
+/* ══════════════════════════════════════════════
+   THEMES — three visual skins, switched via
+   [data-theme] on <html>. Same markup, same JS,
+   only the token values change.
+   ══════════════════════════════════════════════ */
+:root, html[data-theme="classified"]{
+  --bg:#1c1b16; --bg2:#14130f; --panel:#e8e2d4; --panel2:#d4ccba;
+  --ink:#1a1a18; --ink-dim:#6a6050; --rule:#b0a890;
+  --on-bg:#e2dac2; --on-bg-dim:#a89868;
+  --accent:#8b1a1a; --accent-ink:#e8e2d4; --good:#1a4a1a; --warn:#93641c;
+  --font-display:'Special Elite',monospace; --font-body:'Source Sans 3',sans-serif; --font-data:'Courier Prime',monospace;
+  --radius:0px; --panel-shadow:0 4px 24px rgba(0,0,0,.5);
+}
+html[data-theme="terminal"]{
+  --bg:#050705; --bg2:#0a0f0a; --panel:#0c130c; --panel2:#101a10;
+  --ink:#8fffb0; --ink-dim:#3f8a55; --rule:#1f4a2a;
+  --on-bg:#8fffb0; --on-bg-dim:#3f8a55;
+  --accent:#3fff7a; --accent-ink:#04120a; --good:#3fff7a; --warn:#ffcf4a;
+  --font-display:'Share Tech Mono',monospace; --font-body:'Share Tech Mono',monospace; --font-data:'Share Tech Mono',monospace;
+  --radius:0px; --panel-shadow:0 0 26px rgba(63,255,122,.08), inset 0 0 60px rgba(63,255,122,.03);
+}
+html[data-theme="redacted"]{
+  --bg:#f2f2ee; --bg2:#ffffff; --panel:#ffffff; --panel2:#e8e8e2;
+  --ink:#0a0a0a; --ink-dim:#6a6a64; --rule:#c4c4bc;
+  --on-bg:#0a0a0a; --on-bg-dim:#5a5a54;
+  --accent:#0a0a0a; --accent-ink:#ffffff; --good:#1a6a3a; --warn:#a05a00;
+  --font-display:'Courier Prime',monospace; --font-body:'Source Sans 3',sans-serif; --font-data:'Courier Prime',monospace;
+  --radius:0px; --panel-shadow:0 1px 0 var(--ink);
+}
 
-  .mode-toggle{ display:flex; gap:0; margin-bottom:28px; border:1.5px solid var(--ink); }
-  .mode-toggle button{
-    flex:1; padding:12px; font-family:'Special Elite',monospace; font-size:11px; letter-spacing:.15em; text-transform:uppercase;
-    background:transparent; border:none; cursor:pointer; color:var(--ink); border-right:1.5px solid var(--ink);
-  }
-  .mode-toggle button:last-child{ border-right:none; }
-  .mode-toggle button.active{ background:var(--ink); color:var(--paper); }
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{background:var(--bg);}
+body{
+  font-family:var(--font-body); font-weight:300; color:var(--ink);
+  min-height:100vh; padding:0 0 90px; transition:background .2s;
+}
+a{color:inherit;}
 
-  .section-label{ font-family:'Special Elite',monospace; font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--red); margin:30px 0 14px; display:flex; align-items:center; gap:12px; }
-  .section-label::after{ content:''; flex:1; height:1px; background:var(--rule); }
+/* Text sitting directly on the page background (outside a .panel) needs
+   --on-bg / --on-bg-dim, not --ink -- --ink is tuned for panel contrast
+   and in the classified theme is nearly the same value as --bg itself. */
 
-  .stat-row{ display:flex; align-items:center; gap:14px; padding:10px 0; border-bottom:1px solid var(--rule); }
-  .stat-row label{ font-family:'Special Elite',monospace; font-size:12px; letter-spacing:.1em; width:110px; flex-shrink:0; }
-  .stat-row input[type=number]{
-    width:64px; text-align:center; font-family:'Courier Prime',monospace; font-size:16px; font-weight:700;
-    background:transparent; border:1px solid var(--rule); padding:6px 4px;
-  }
-  .stat-row .x5{ font-size:11px; color:var(--dim); width:90px; }
-  .stat-row .reroll{
-    margin-left:auto; font-family:'Special Elite',monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase;
-    background:transparent; border:1px solid var(--rule); color:var(--ink); padding:6px 10px; cursor:pointer;
-  }
-  .stat-row .reroll:hover{ border-color:var(--red); color:var(--red); }
+/* ── top nav ── */
+.hub-nav{max-width:960px;margin:0 auto;padding:18px 16px 0;}
+.hub-nav a{font-family:var(--font-display);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--on-bg-dim);text-decoration:none;}
 
-  .pool-bar{ font-family:'Special Elite',monospace; font-size:12px; letter-spacing:.08em; margin-bottom:10px; }
-  .pool-bar.over{ color:var(--red); }
+/* ── app shell ── */
+.shell{max-width:960px;margin:0 auto;padding:18px 16px 0;}
+.app-head{
+  display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;
+  padding-bottom:18px;margin-bottom:22px;border-bottom:2px solid var(--accent);
+}
+.app-head h1{font-family:var(--font-display);font-size:clamp(20px,3.4vw,28px);font-weight:400;letter-spacing:.01em;color:var(--on-bg);}
+.app-head .sub{font-size:12.5px;color:var(--on-bg-dim);margin-top:4px;max-width:52ch;line-height:1.6;}
+.head-controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
 
-  .btn{
-    font-family:'Special Elite',monospace; font-size:12px; letter-spacing:.15em; text-transform:uppercase;
-    background:var(--ink); color:var(--paper); border:none; padding:12px 24px; cursor:pointer; margin-top:8px;
-  }
-  .btn:hover{ background:var(--red); }
-  .btn.ghost{ background:transparent; color:var(--ink); border:1.5px solid var(--ink); }
-  .btn.ghost:hover{ border-color:var(--red); color:var(--red); }
+.mode-switch{display:flex;border:1.5px solid var(--on-bg);}
+.mode-switch button{
+  font-family:var(--font-display);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  background:transparent;color:var(--on-bg);border:none;padding:9px 16px;cursor:pointer;
+  border-right:1.5px solid var(--on-bg);
+}
+.mode-switch button:last-child{border-right:none;}
+.mode-switch button.active{background:var(--on-bg);color:var(--bg2);}
 
-  .field{ margin-bottom:18px; }
-  .field label{ display:block; font-size:12px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; margin-bottom:6px; }
-  .field input[type=text]{ width:100%; background:transparent; border:none; border-bottom:1px solid var(--rule); padding:8px 0; font-size:15px; font-weight:300; outline:none; }
+.theme-select{
+  font-family:var(--font-display);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  background:var(--panel);color:var(--ink);border:1.5px solid var(--rule);padding:8px 10px;cursor:pointer;
+}
 
-  details{ margin-top:20px; }
-  details summary{ font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.15em; text-transform:uppercase; color:var(--dim); cursor:pointer; }
-  .adv-row{ display:flex; gap:16px; margin-top:14px; flex-wrap:wrap; }
-  .adv-row .field{ flex:1; min-width:120px; margin-bottom:0; }
-  .adv-row input[type=number]{ width:100%; background:transparent; border-bottom:1px solid var(--rule); padding:6px 0; font-family:'Courier Prime',monospace; font-size:14px; }
+/* ── panel ── */
+.panel{background:var(--panel);border:1px solid var(--rule);box-shadow:var(--panel-shadow);padding:26px 28px;margin-bottom:18px;}
+.panel-tight{padding:18px 22px;}
 
-  .derived-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:14px; margin-top:6px; }
-  .derived-card{ border:1px solid var(--rule); padding:14px; text-align:center; }
-  .derived-card .val{ font-family:'Courier Prime',monospace; font-size:22px; font-weight:700; color:var(--red); }
-  .derived-card .lbl{ font-family:'Special Elite',monospace; font-size:9px; letter-spacing:.12em; text-transform:uppercase; color:var(--dim); margin-top:4px; }
+/* ── wizard progress ── */
+.wiz-progress{display:flex;gap:4px;margin-bottom:18px;flex-wrap:wrap;}
+.wiz-progress .step{
+  flex:1;min-width:60px;text-align:center;font-family:var(--font-display);font-size:8.5px;letter-spacing:.08em;
+  text-transform:uppercase;padding:8px 4px;background:var(--panel2);color:var(--ink-dim);border-bottom:2px solid var(--rule);cursor:pointer;
+}
+.wiz-progress .step.active{color:var(--accent);border-bottom-color:var(--accent);background:var(--panel);}
+.wiz-progress .step.done{color:var(--good);}
 
-  .sheet-out{
-    width:100%; min-height:220px; margin-top:14px; font-family:'Courier Prime',monospace; font-size:12px;
-    background:rgba(0,0,0,.04); border:1px dashed var(--rule); padding:16px; white-space:pre-wrap; line-height:1.7;
-  }
-  .note{ font-size:12px; color:var(--dim); line-height:1.7; margin-top:10px; }
-  .code-out{ font-family:'Special Elite',monospace; font-size:16px; letter-spacing:.1em; color:var(--red); margin:14px 0; }
+.section-label{
+  display:flex;align-items:center;gap:12px;font-family:var(--font-display);font-size:11px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--accent);margin:22px 0 14px;
+}
+.section-label:first-child{margin-top:0;}
+.section-label::after{content:'';flex:1;height:1px;background:var(--rule);}
+
+p.hint{font-size:12.5px;color:var(--ink-dim);line-height:1.7;margin-bottom:16px;max-width:64ch;}
+
+/* ── form bits ── */
+.field{margin-bottom:16px;}
+.field label{display:block;font-family:var(--font-data);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-dim);margin-bottom:6px;}
+.field input[type=text],.field select,.field textarea{
+  width:100%;background:transparent;border:none;border-bottom:1px solid var(--rule);padding:8px 0;
+  font-family:var(--font-body);font-size:14px;color:var(--ink);outline:none;
+}
+.field select{cursor:pointer;}
+.field textarea{resize:vertical;min-height:64px;line-height:1.6;}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:0 24px;}
+
+/* ── stat rows (create step) ── */
+.stat-row{display:flex;align-items:center;gap:14px;padding:9px 0;border-bottom:1px solid var(--rule);}
+.stat-row label{font-family:var(--font-display);font-size:12px;letter-spacing:.08em;width:56px;flex-shrink:0;}
+.stat-row input[type=number]{width:60px;text-align:center;font-family:var(--font-data);font-size:16px;font-weight:700;background:transparent;border:1px solid var(--rule);color:var(--ink);padding:5px 4px;}
+.stat-row .x5{font-size:11px;color:var(--ink-dim);width:82px;}
+.stat-row .reroll{margin-left:auto;font-family:var(--font-display);font-size:9px;letter-spacing:.1em;text-transform:uppercase;background:transparent;border:1px solid var(--rule);color:var(--ink);padding:6px 10px;cursor:pointer;}
+.stat-row .reroll:hover{border-color:var(--accent);color:var(--accent);}
+.pool-bar{font-family:var(--font-display);font-size:12px;margin-bottom:10px;}
+.pool-bar.over{color:var(--accent);}
+
+.creation-path{display:flex;gap:0;border:1.5px solid var(--ink);margin-bottom:18px;flex-wrap:wrap;}
+.creation-path button{flex:1;min-width:120px;font-family:var(--font-display);font-size:10px;letter-spacing:.1em;text-transform:uppercase;background:transparent;border:none;border-right:1.5px solid var(--ink);padding:10px;cursor:pointer;color:var(--ink);}
+.creation-path button:last-child{border-right:none;}
+.creation-path button.active{background:var(--ink);color:var(--panel);}
+
+.derived-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;}
+.derived-card{border:1px solid var(--rule);padding:12px;text-align:center;}
+.derived-card .val{font-family:var(--font-data);font-size:20px;font-weight:700;color:var(--accent);}
+.derived-card .lbl{font-family:var(--font-display);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-dim);margin-top:3px;}
+
+/* ── skills ── */
+.skill-pool-bar{display:flex;gap:20px;flex-wrap:wrap;margin-bottom:16px;font-family:var(--font-data);font-size:12.5px;}
+.skill-pool-bar strong{color:var(--accent);}
+.skill-pool-bar input[type=number]{width:56px;background:transparent;border-bottom:1px solid var(--rule);color:var(--ink);font-family:var(--font-data);font-size:12.5px;text-align:center;}
+.skill-grid{display:grid;grid-template-columns:1fr;gap:1px;background:var(--rule);border:1px solid var(--rule);max-height:420px;overflow-y:auto;}
+.skill-row{display:grid;grid-template-columns:1fr 60px 34px;align-items:center;gap:10px;background:var(--panel);padding:7px 10px;}
+.skill-row .nm{font-size:12.5px;}
+.skill-row .base{font-size:10px;color:var(--ink-dim);font-family:var(--font-data);}
+.skill-row input[type=number]{width:52px;text-align:center;font-family:var(--font-data);font-size:12.5px;background:transparent;border:1px solid var(--rule);color:var(--ink);padding:3px;}
+
+/* ── bonds ── */
+.bond-row{display:grid;grid-template-columns:1fr 70px 34px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--rule);}
+.bond-row input[type=text]{background:transparent;border:none;border-bottom:1px solid var(--rule);padding:6px 0;font-size:13px;color:var(--ink);font-family:var(--font-body);}
+.bond-row input[type=number]{width:60px;text-align:center;font-family:var(--font-data);font-size:14px;background:transparent;border:1px solid var(--rule);color:var(--ink);padding:5px;}
+.bond-row button{background:transparent;border:none;color:var(--accent);cursor:pointer;font-size:16px;line-height:1;}
+
+/* ── equipment ── */
+.equip-row{display:flex;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid var(--rule);}
+.equip-row .nm{flex:1;font-size:13px;}
+.equip-row .note{flex:1.4;font-size:12px;color:var(--ink-dim);}
+.equip-row button{background:transparent;border:none;color:var(--accent);cursor:pointer;font-size:16px;line-height:1;}
+.add-row{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;}
+.add-row input{flex:1;min-width:120px;background:transparent;border-bottom:1px solid var(--rule);padding:7px 0;font-size:13px;color:var(--ink);font-family:var(--font-body);}
+
+/* ── buttons ── */
+.btn{font-family:var(--font-display);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;background:var(--ink);color:var(--panel);border:none;padding:11px 22px;cursor:pointer;transition:opacity .15s;}
+.btn:hover{opacity:.82;}
+.btn.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--ink);}
+/* .wiz-nav sits directly on the page background, not inside a .panel --
+   needs --on-bg rather than the panel-tuned --ink */
+.wiz-nav .btn.ghost{color:var(--on-bg);border-color:var(--on-bg);}
+.btn.sm{padding:7px 14px;font-size:9.5px;}
+.btn:disabled{opacity:.4;cursor:not-allowed;}
+.wiz-nav{display:flex;justify-content:space-between;margin-top:22px;}
+
+/* ── summary ── */
+.summary-out{width:100%;min-height:260px;font-family:var(--font-data);font-size:11.5px;background:rgba(0,0,0,.04);border:1px dashed var(--rule);padding:16px;white-space:pre-wrap;line-height:1.7;color:var(--ink);}
+.code-out{font-family:var(--font-display);font-size:18px;letter-spacing:.1em;color:var(--accent);margin:14px 0;}
+
+/* ── play mode ── */
+.char-picker{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px;}
+.char-picker input{flex:1;min-width:160px;background:transparent;border-bottom:1px solid var(--rule);padding:8px 0;font-family:var(--font-data);color:var(--ink);}
+.char-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;}
+.char-chip{font-family:var(--font-data);font-size:11px;background:var(--panel2);border:1px solid var(--rule);padding:7px 12px;cursor:pointer;color:var(--ink);}
+.char-chip:hover{border-color:var(--accent);}
+.play-empty{font-size:13px;color:var(--ink-dim);font-style:italic;padding:20px 0;text-align:center;}
+
+.play-hdr{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;align-items:baseline;margin-bottom:6px;}
+.play-hdr h2{font-family:var(--font-display);font-size:20px;font-weight:400;}
+.play-hdr .meta{font-family:var(--font-data);font-size:11px;color:var(--ink-dim);}
+
+.meter-row{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:6px;}
+.meter{border:1px solid var(--rule);padding:12px 16px;flex:1;min-width:150px;}
+.meter .lbl{font-family:var(--font-display);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);margin-bottom:6px;}
+.meter .val-row{display:flex;align-items:center;gap:10px;}
+.meter .val{font-family:var(--font-data);font-size:22px;font-weight:700;color:var(--accent);}
+.meter .of{font-family:var(--font-data);font-size:13px;color:var(--ink-dim);}
+.meter button{width:26px;height:26px;background:var(--ink);color:var(--panel);border:none;cursor:pointer;font-family:var(--font-data);font-size:14px;}
+.meter button:hover{opacity:.8;}
+.meter .bp{font-size:10.5px;color:var(--warn);margin-top:6px;font-family:var(--font-data);}
+
+.san-roll{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;}
+.san-roll select{font-family:var(--font-data);font-size:11px;background:transparent;border:1px solid var(--rule);color:var(--ink);padding:5px;}
+.san-roll .result{font-family:var(--font-data);font-size:11px;color:var(--accent);}
+
+.adapt-row{display:flex;gap:20px;flex-wrap:wrap;margin-top:14px;}
+.adapt{flex:1;min-width:180px;}
+.adapt .lbl{font-family:var(--font-display);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-dim);margin-bottom:6px;}
+.adapt .boxes{display:flex;gap:4px;flex-wrap:wrap;}
+.adapt .box{width:18px;height:18px;border:1.5px solid var(--rule);cursor:pointer;}
+.adapt .box.filled{background:var(--accent);border-color:var(--accent);}
+
+.play-skill-row{display:grid;grid-template-columns:24px 1fr 44px;gap:10px;align-items:center;padding:6px 10px;background:var(--panel);}
+.play-skill-row input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);}
+.play-skill-row .nm{font-size:12px;}
+.play-skill-row .v{font-family:var(--font-data);font-size:13px;font-weight:700;text-align:right;}
+.play-skill-hint{font-size:11px;color:var(--ink-dim);margin:-4px 0 12px;}
+
+.bond-play-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--rule);gap:10px;}
+.bond-play-row .nm{font-size:13px;}
+.bond-play-row .ctrl{display:flex;align-items:center;gap:8px;}
+.bond-play-row .val{font-family:var(--font-data);font-size:15px;font-weight:700;width:24px;text-align:center;}
+.bond-play-row button{width:24px;height:24px;background:var(--ink);color:var(--panel);border:none;cursor:pointer;font-family:var(--font-data);}
+.bond-play-row .break{background:transparent;color:var(--accent);border:1px solid var(--accent);width:auto;padding:0 8px;font-family:var(--font-display);font-size:8px;letter-spacing:.08em;text-transform:uppercase;}
+
+.notes-box{width:100%;min-height:120px;background:transparent;border:1px dashed var(--rule);padding:12px;font-family:var(--font-body);font-size:13px;color:var(--ink);resize:vertical;line-height:1.7;}
+.save-status{font-family:var(--font-data);font-size:10.5px;color:var(--good);margin-top:8px;min-height:14px;}
+
+@media(max-width:640px){
+  .two-col{grid-template-columns:1fr;}
+  .app-head{flex-direction:column;}
+}
 </style>
 </head>
-<body>
-<div style="max-width:800px;margin:0 auto 16px;">
-  <a href="index.html" style="font-family:'Special Elite',monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#c8c0a8;text-decoration:none;">← Agent Hub</a>
-</div>
-<div class="page">
-  <div class="stamp">Character Creation — Delta Green</div>
-  <h1>Agent Stat Generator</h1>
-  <p class="subtitle">Roll randomly or spend a point-buy pool across your six characteristics. Defaults follow the <em>Agent's Handbook</em> — open "House Rules" below if your Handler uses different limits.</p>
+<body data-theme="classified">
 
-  <div class="mode-toggle">
-    <button id="btn-random" class="active" onclick="setMode('random')">Random 3d6</button>
-    <button id="btn-buy" onclick="setMode('buy')">Point Buy</button>
-  </div>
+<div class="hub-nav"><a href="index.html">← Agent Hub</a></div>
 
-  <div id="random-panel">
-    <button class="btn" onclick="rollAll()">Roll All Six</button>
-  </div>
-
-  <div id="buy-panel" style="display:none;">
-    <div class="pool-bar" id="pool-bar">Points remaining: <strong id="pool-remaining">65</strong> / <span id="pool-total">65</span></div>
-  </div>
-
-  <div class="section-label">Characteristics</div>
-  <div id="stat-rows"></div>
-
-  <details>
-    <summary>House Rules / Advanced</summary>
-    <div class="adv-row">
-      <div class="field"><label>Point-buy pool</label><input type="number" id="cfg-pool" value="65" onchange="onConfigChange()"></div>
-      <div class="field"><label>Min per stat</label><input type="number" id="cfg-min" value="3" onchange="onConfigChange()"></div>
-      <div class="field"><label>Max per stat</label><input type="number" id="cfg-max" value="18" onchange="onConfigChange()"></div>
+<div class="shell">
+  <div class="app-head">
+    <div>
+      <h1>Character Sheet Generator</h1>
+      <div class="sub">Build a full Delta Green Agent — characteristics, skills, Bonds, and equipment — then switch to Play Mode to run the sheet live at the table.</div>
     </div>
-  </details>
+    <div class="head-controls">
+      <div class="mode-switch">
+        <button id="btn-mode-create" class="active" onclick="setAppMode('create')">Create</button>
+        <button id="btn-mode-play" onclick="setAppMode('play')">Play</button>
+      </div>
+      <select id="theme-select" class="theme-select" onchange="setTheme(this.value)">
+        <option value="classified">Theme: Classified Paper</option>
+        <option value="terminal">Theme: Field Terminal</option>
+        <option value="redacted">Theme: Redacted</option>
+      </select>
+    </div>
+  </div>
 
-  <div class="section-label">Derived Stats</div>
-  <div class="derived-grid" id="derived-grid"></div>
-  <p class="note">HP = ⌈(STR+CON)/2⌉ &nbsp;·&nbsp; WP = POW &nbsp;·&nbsp; Sanity = POW×5 &nbsp;·&nbsp; Breaking Point = Sanity − POW. Confirm these against your printed Handbook if your table uses a different edition.</p>
+  <!-- ══════════════ CREATE ══════════════ -->
+  <div id="view-create">
+    <div class="wiz-progress" id="wiz-progress"></div>
+    <div class="panel" id="wiz-panel"></div>
+    <div class="wiz-nav">
+      <button class="btn ghost" id="wiz-back" onclick="wizBack()">← Back</button>
+      <button class="btn" id="wiz-next" onclick="wizNext()">Next →</button>
+    </div>
+  </div>
 
-  <div class="section-label">Agent Identity</div>
-  <div class="field"><label>Character name</label><input type="text" id="char-name" placeholder="Full name"></div>
-  <div class="field"><label>Codename <span style="font-weight:300;color:var(--dim);">(optional)</span></label><input type="text" id="char-codename" placeholder="Field codename"></div>
-
-  <button class="btn" onclick="generateSheet()">Generate Character Sheet</button>
-  <button class="btn ghost" onclick="downloadJson()">Download JSON</button>
-
-  <div id="code-out" class="code-out" style="display:none;"></div>
-  <textarea class="sheet-out" id="sheet-out" style="display:none;" readonly></textarea>
-  <p class="note" id="carry-note" style="display:none;">Copy these values into your <a href="dg-agent-portal.html" style="color:var(--red);">Agent Portal</a> brief — the generator saves locally in this browser but doesn't push to your Handler's dossier system yet.</p>
+  <!-- ══════════════ PLAY ══════════════ -->
+  <div id="view-play" style="display:none;">
+    <div class="panel panel-tight">
+      <div class="section-label">Load Agent</div>
+      <div class="char-picker">
+        <input type="text" id="play-code-input" placeholder="Character code, e.g. BRAD-K7X2">
+        <button class="btn sm" onclick="playLoadByCode()">Load</button>
+      </div>
+      <div class="char-list" id="char-list"></div>
+    </div>
+    <div id="play-sheet"></div>
+  </div>
 </div>
 
 <script>
+/* ══════════════════════════════════════════════
+   CONSTANTS
+   ══════════════════════════════════════════════ */
 const STATS = [
-  {key:'str', label:'STR'}, {key:'con', label:'CON'}, {key:'dex', label:'DEX'},
-  {key:'int', label:'INT'}, {key:'pow', label:'POW'}, {key:'cha', label:'CHA'}
+  {key:'str',label:'STR'},{key:'con',label:'CON'},{key:'dex',label:'DEX'},
+  {key:'int',label:'INT'},{key:'pow',label:'POW'},{key:'cha',label:'CHA'}
 ];
-let mode = 'random';
-let values = { str:10, con:10, dex:10, int:10, pow:10, cha:10 };
 
-function cfg(){
-  return {
-    pool: parseInt(document.getElementById('cfg-pool').value)||65,
-    min: parseInt(document.getElementById('cfg-min').value)||3,
-    max: parseInt(document.getElementById('cfg-max').value)||18
-  };
+const PROFESSIONS = [
+  {id:'fed',label:'Federal Agent'},{id:'cop',label:'Police Officer'},{id:'mil',label:'Special Operator'},
+  {id:'soldier',label:'Soldier or Marine'},{id:'doc',label:'Physician'},{id:'medic',label:'Nurse or Paramedic'},
+  {id:'academic',label:'Anthropologist'},{id:'scientist',label:'Scientist'},{id:'spook',label:'Intelligence Officer'},
+  {id:'caseofficer',label:'Intelligence Case Officer'},{id:'criminal',label:'Criminal'},{id:'reporter',label:'Media Specialist'},
+  {id:'lawyer',label:'Lawyer'},{id:'pilot',label:'Pilot or Sailor'},{id:'engineer',label:'Computer Scientist'},
+  {id:'fso',label:'Foreign Service Officer'},{id:'firefighter',label:'Firefighter'},{id:'program',label:'Program Manager'}
+];
+
+/* Base % values are the common Agent's Handbook defaults -- editable per
+   field, and worth checking against your own copy if your table uses a
+   different printing. Dodge is derived (DEX x2) rather than a flat base. */
+const SKILLS = [
+  ['Accounting',10],['Alertness',20],['Anthropology',10],['Archeology',10],['Art',5],['Artillery',1],
+  ['Bureaucracy',10],['Command',10],['Computer Science',5],['Craft',5],['Criminology',10],['Demolitions',1],
+  ['Disguise',10],['Dodge',null],['Drive',20],['Firearms',20],['First Aid',10],['Forensics',1],
+  ['Heavy Machinery',10],['Heavy Weapons',1],['History',10],['HUMINT',10],['Law',5],['Medicine',1],
+  ['Melee Weapons',30],['Military Science',10],['Navigate',10],['Occult',5],['Persuade',20],['Pharmacy',1],
+  ['Psychotherapy',10],['Ride',10],['SIGINT',1],['Search',20],['Stealth',10],['Surgery',1],
+  ['Survival',10],['Swim',20],['Unarmed Combat',40],['Foreign Language',1],['Unnatural',0]
+];
+
+/* Suggested skill bias per profession for Quick creation -- a sensible
+   starting point, not a canonical Handbook table. Fully editable after. */
+const SKILL_BIAS = {
+  fed:['Alertness','Firearms','Law','HUMINT','Bureaucracy'],
+  cop:['Alertness','Firearms','Drive','Persuade','Criminology'],
+  mil:['Firearms','Heavy Weapons','Military Science','Stealth','Survival'],
+  soldier:['Firearms','Military Science','Heavy Machinery','Survival','Command'],
+  doc:['Medicine','Surgery','First Aid','Pharmacy','Psychotherapy'],
+  medic:['First Aid','Medicine','Drive','Alertness','Persuade'],
+  academic:['Anthropology','History','Foreign Language','Archeology','Occult'],
+  scientist:['Computer Science','Craft','Pharmacy','Forensics','History'],
+  spook:['HUMINT','Persuade','Disguise','Alertness','Bureaucracy'],
+  caseofficer:['HUMINT','Persuade','Foreign Language','Bureaucracy','Disguise'],
+  criminal:['Stealth','Melee Weapons','Disguise','Drive','Persuade'],
+  reporter:['Persuade','HUMINT','Bureaucracy','Foreign Language','History'],
+  lawyer:['Law','Bureaucracy','Persuade','Accounting','History'],
+  pilot:['Drive','Navigate','Survival','Swim','Alertness'],
+  engineer:['Computer Science','Craft','Forensics','Bureaucracy','Search'],
+  fso:['Foreign Language','Persuade','Bureaucracy','HUMINT','History'],
+  firefighter:['Drive','First Aid','Heavy Machinery','Survival','Alertness'],
+  program:['Bureaucracy','Command','Accounting','Persuade','Law']
+};
+
+const EQUIPMENT_PRESETS = [
+  'Sidearm (specify)','Backup weapon','Body armor, concealable','First aid kit','Encrypted phone',
+  'Handheld radio','Flashlight','Multitool','Lockpicks','Binoculars','Laptop, encrypted',
+  'Cover ID documents','Cash, unmarked','Evidence kit','Gas mask'
+];
+
+/* ══════════════════════════════════════════════
+   STATE
+   ══════════════════════════════════════════════ */
+let wizStep = 1;
+const WIZ_STEPS = ['Identity','Characteristics','Derived','Skills','Bonds','Equipment','Finish'];
+
+let creationPath = 'random'; // random | buy | quick
+let cfg = { pool:65, min:3, max:18, personalPoints:0, professionalPoints:100 };
+
+let character = {
+  code:null,
+  char_name:'', codename:'', profession:'', employer:'',
+  values:{str:10,con:10,dex:10,int:10,pow:10,cha:10},
+  skills:{},          // name -> value
+  bonds:[],           // {name, score}
+  equipment:[],       // {name, note}
+  notes:'',
+  hp_current:null, wp_current:null, san_current:null,
+  violence_adapt:0, helplessness_adapt:0,
+  created:null, updated:null
+};
+
+function initSkills(){
+  SKILLS.forEach(([name, base]) => {
+    if(!(name in character.skills)){
+      character.skills[name] = name === 'Dodge' ? character.values.dex*2 : (base||0);
+    }
+  });
+}
+initSkills();
+
+/* ══════════════════════════════════════════════
+   THEME
+   ══════════════════════════════════════════════ */
+function setTheme(t){
+  document.documentElement.setAttribute('data-theme', t);
+  document.getElementById('theme-select').value = t;
+  try{ localStorage.setItem('dg_theme', t); }catch(e){}
+}
+(function initTheme(){
+  let t = 'classified';
+  try{ t = localStorage.getItem('dg_theme') || 'classified'; }catch(e){}
+  setTheme(t);
+})();
+
+/* ══════════════════════════════════════════════
+   MODE SWITCH
+   ══════════════════════════════════════════════ */
+function setAppMode(mode){
+  document.getElementById('view-create').style.display = mode==='create' ? 'block' : 'none';
+  document.getElementById('view-play').style.display = mode==='play' ? 'block' : 'none';
+  document.getElementById('btn-mode-create').classList.toggle('active', mode==='create');
+  document.getElementById('btn-mode-play').classList.toggle('active', mode==='play');
+  if(mode==='play') renderCharList();
 }
 
+/* ══════════════════════════════════════════════
+   DICE / HELPERS
+   ══════════════════════════════════════════════ */
 function roll3d6(){ return (1+Math.floor(Math.random()*6))+(1+Math.floor(Math.random()*6))+(1+Math.floor(Math.random()*6)); }
-
-function setMode(m){
-  mode = m;
-  document.getElementById('btn-random').classList.toggle('active', m==='random');
-  document.getElementById('btn-buy').classList.toggle('active', m==='buy');
-  document.getElementById('random-panel').style.display = m==='random' ? 'block' : 'none';
-  document.getElementById('buy-panel').style.display = m==='buy' ? 'block' : 'none';
-  if(m==='buy'){
-    const c = cfg();
-    STATS.forEach(s=>values[s.key]=c.min);
-  }
-  renderRows();
+function rollDie(sides){ return 1+Math.floor(Math.random()*sides); }
+function rnd(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+function genCode(name){
+  const prefix = (name||'AGNT').replace(/[^A-Za-z]/g,'').substring(0,4).toUpperCase() || 'AGNT';
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let s=''; for(let i=0;i<4;i++) s+=chars[Math.floor(Math.random()*chars.length)];
+  return prefix+'-'+s;
+}
+function derived(){
+  const v = character.values;
+  const hp = Math.ceil((v.str+v.con)/2);
+  const wp = v.pow;
+  const san = v.pow*5;
+  const bp = san - v.pow;
+  return {hp,wp,san,bp};
 }
 
-function rollAll(){
-  STATS.forEach(s=>values[s.key]=roll3d6());
-  renderRows();
+/* ══════════════════════════════════════════════
+   WIZARD RENDER
+   ══════════════════════════════════════════════ */
+function renderProgress(){
+  const wrap = document.getElementById('wiz-progress');
+  wrap.innerHTML = WIZ_STEPS.map((s,i)=>{
+    const n = i+1;
+    const cls = n===wizStep ? 'active' : (n<wizStep ? 'done' : '');
+    return `<div class="step ${cls}" onclick="goStep(${n})">${n}. ${s}</div>`;
+  }).join('');
+}
+function goStep(n){ wizStep=n; renderWizard(); }
+
+function renderWizard(){
+  renderProgress();
+  const panel = document.getElementById('wiz-panel');
+  document.getElementById('wiz-back').disabled = wizStep===1;
+  document.getElementById('wiz-next').style.display = wizStep===WIZ_STEPS.length ? 'none' : 'inline-block';
+
+  if(wizStep===1) panel.innerHTML = stepIdentity();
+  else if(wizStep===2) panel.innerHTML = stepCharacteristics();
+  else if(wizStep===3) panel.innerHTML = stepDerived();
+  else if(wizStep===4) panel.innerHTML = stepSkills();
+  else if(wizStep===5) panel.innerHTML = stepBonds();
+  else if(wizStep===6) panel.innerHTML = stepEquipment();
+  else if(wizStep===7) panel.innerHTML = stepFinish();
+
+  wireStepEvents();
 }
 
-function rerollOne(key){
-  values[key]=roll3d6();
-  renderRows();
+function wizNext(){
+  if(wizStep < WIZ_STEPS.length){ wizStep++; renderWizard(); window.scrollTo({top:0,behavior:'smooth'}); }
+}
+function wizBack(){
+  if(wizStep > 1){ wizStep--; renderWizard(); window.scrollTo({top:0,behavior:'smooth'}); }
 }
 
-function onConfigChange(){
-  if(mode==='buy'){ renderRows(); } else { renderDerived(); }
+/* ── Step 1: Identity ── */
+function stepIdentity(){
+  return `
+    <div class="section-label">Agent Identity</div>
+    <div class="two-col">
+      <div class="field"><label>Full name</label><input type="text" id="f-name" value="${esc(character.char_name)}"></div>
+      <div class="field"><label>Codename (optional)</label><input type="text" id="f-codename" value="${esc(character.codename)}"></div>
+    </div>
+    <div class="two-col">
+      <div class="field"><label>Profession</label>
+        <select id="f-profession">
+          <option value="">— Select —</option>
+          ${PROFESSIONS.map(p=>`<option value="${p.id}" ${character.profession===p.id?'selected':''}>${p.label}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field"><label>Employer</label><input type="text" id="f-employer" placeholder="e.g. FBI, ATF, freelance" value="${esc(character.employer)}"></div>
+    </div>
+    <p class="hint">Profession sets the suggested skill bias in Quick creation (Step 2) and is saved on the character record. It doesn't restrict anything — every field here stays editable.</p>
+  `;
 }
 
-function updatePoolBar(){
-  if(mode!=='buy') return;
-  const c = cfg();
-  const spent = STATS.reduce((sum,s)=>sum+values[s.key],0);
-  const remaining = c.pool - spent;
-  document.getElementById('pool-total').textContent = c.pool;
-  document.getElementById('pool-remaining').textContent = remaining;
-  document.getElementById('pool-bar').classList.toggle('over', remaining<0);
+/* ── Step 2: Characteristics ── */
+function stepCharacteristics(){
+  return `
+    <div class="section-label">Characteristics</div>
+    <div class="creation-path">
+      <button class="${creationPath==='quick'?'active':''}" onclick="setPath('quick')">Quick (Archetype)</button>
+      <button class="${creationPath==='random'?'active':''}" onclick="setPath('random')">Random 3d6</button>
+      <button class="${creationPath==='buy'?'active':''}" onclick="setPath('buy')">Point Buy</button>
+    </div>
+    <div id="path-body"></div>
+    <div class="section-label">Result</div>
+    <div id="stat-rows"></div>
+  `;
 }
+function setPath(p){
+  creationPath = p;
+  renderWizard();
+  if(p==='random') rollAllStats();
+  if(p==='quick') quickRoll();
+}
+function pathBodyHTML(){
+  if(creationPath==='random') return `<button class="btn sm" onclick="rollAllStats()">Roll All Six</button>`;
+  if(creationPath==='quick') return `<button class="btn sm" onclick="quickRoll()">Roll &amp; Suggest Skills</button><p class="hint" style="margin-top:10px;">Rolls 3d6 for each stat, then (once you reach the Skills step) pre-allocates points toward skills typical for the chosen profession. Everything stays editable.</p>`;
+  return `<div class="pool-bar" id="pool-bar"></div>`;
+}
+function rollAllStats(){
+  STATS.forEach(s=>character.values[s.key]=roll3d6());
+  syncDodge();
+  renderStatRows();
+}
+function quickRoll(){
+  rollAllStats();
+}
+function syncDodge(){ character.skills['Dodge'] = character.values.dex*2; }
 
-function renderRows(){
-  const c = cfg();
+function renderStatRows(){
   const wrap = document.getElementById('stat-rows');
+  if(!wrap) return;
+  const c = cfg;
   wrap.innerHTML = STATS.map(s=>{
-    const v = values[s.key];
-    const rerollBtn = mode==='random' ? `<button class="reroll" onclick="rerollOne('${s.key}')">Re-roll</button>` : '';
+    const v = character.values[s.key];
+    const rerollBtn = creationPath==='random' || creationPath==='quick' ? `<button class="reroll" onclick="rerollStat('${s.key}')">Re-roll</button>` : '';
     return `<div class="stat-row">
       <label>${s.label}</label>
       <input type="number" min="${c.min}" max="${c.max}" value="${v}" onchange="onStatInput('${s.key}',this.value)">
@@ -194,83 +515,439 @@ function renderRows(){
       ${rerollBtn}
     </div>`;
   }).join('');
-  updatePoolBar();
-  renderDerived();
+  const pb = document.getElementById('pool-bar');
+  if(pb) updatePoolBar();
 }
-
+function rerollStat(key){ character.values[key]=roll3d6(); syncDodge(); renderStatRows(); }
 function onStatInput(key, val){
-  const c = cfg();
-  let n = parseInt(val)||c.min;
-  n = Math.max(c.min, Math.min(c.max, n));
-  values[key]=n;
-  renderRows();
+  let n = parseInt(val)||cfg.min;
+  n = Math.max(cfg.min, Math.min(cfg.max, n));
+  character.values[key]=n;
+  syncDodge();
+  renderStatRows();
+}
+function updatePoolBar(){
+  const spent = STATS.reduce((sum,s)=>sum+character.values[s.key],0);
+  const remaining = cfg.pool - spent;
+  const pb = document.getElementById('pool-bar');
+  pb.className = 'pool-bar' + (remaining<0?' over':'');
+  pb.textContent = `Points remaining: ${remaining} / ${cfg.pool}`;
 }
 
-function renderDerived(){
-  const hp = Math.ceil((values.str+values.con)/2);
-  const wp = values.pow;
-  const san = values.pow*5;
-  const bp = san - values.pow;
-  const cards = [
-    ['Hit Points', hp], ['Willpower', wp], ['Sanity', san], ['Breaking Point', bp]
-  ];
-  document.getElementById('derived-grid').innerHTML = cards.map(([lbl,val])=>
-    `<div class="derived-card"><div class="val">${val}</div><div class="lbl">${lbl}</div></div>`
-  ).join('');
+/* ── Step 3: Derived ── */
+function stepDerived(){
+  const d = derived();
+  return `
+    <div class="section-label">Derived Stats</div>
+    <div class="derived-grid">
+      <div class="derived-card"><div class="val">${d.hp}</div><div class="lbl">Hit Points</div></div>
+      <div class="derived-card"><div class="val">${d.wp}</div><div class="lbl">Willpower</div></div>
+      <div class="derived-card"><div class="val">${d.san}</div><div class="lbl">Sanity</div></div>
+      <div class="derived-card"><div class="val">${d.bp}</div><div class="lbl">Breaking Point</div></div>
+    </div>
+    <p class="hint">HP = ⌈(STR+CON)/2⌉ · WP = POW · Sanity = POW×5 · Breaking Point = Sanity − POW. Confirm against your printed Handbook if your table uses a different edition — these carry forward into Play Mode as your starting current values.</p>
+  `;
 }
 
-function genCode(name){
-  const prefix = (name||'AGNT').replace(/[^A-Za-z]/g,'').substring(0,4).toUpperCase() || 'AGNT';
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let s=''; for(let i=0;i<4;i++) s+=chars[Math.floor(Math.random()*chars.length)];
-  return prefix+'-'+s;
+/* ── Step 4: Skills ── */
+function stepSkills(){
+  syncDodge();
+  return `
+    <div class="section-label">Skills</div>
+    <div class="skill-pool-bar">
+      <span>Personal points (INT×2): <strong>${character.values.int*2}</strong></span>
+      <span>Professional points: <input type="number" id="f-prof-points" value="${cfg.professionalPoints}" onchange="cfg.professionalPoints=parseInt(this.value)||0;renderWizard();"></span>
+      <span>Spent above base: <strong id="skill-spent">${skillPointsSpent()}</strong></span>
+    </div>
+    <p class="hint">Base percentages are common Agent's Handbook defaults — adjust any of them if your printing differs. Professional points default to a placeholder; set it from your profession's write-up. Dodge is derived (DEX×2) and locked.</p>
+    ${creationPath==='quick' && character.profession ? `<button class="btn sm ghost" style="margin-bottom:14px;" onclick="applySkillBias()">Apply ${PROFESSIONS.find(p=>p.id===character.profession)?.label||''} bias</button>` : ''}
+    <div class="skill-grid">
+      ${SKILLS.map(([name,base])=>{
+        const isDodge = name==='Dodge';
+        const val = character.skills[name];
+        const baseDisp = isDodge ? (character.values.dex*2)+' (DEX×2)' : base+'%';
+        return `<div class="skill-row">
+          <span class="nm">${name}</span>
+          <span class="base">${baseDisp}</span>
+          <input type="number" min="0" max="99" value="${val}" ${isDodge?'disabled':''} onchange="onSkillInput('${name}',this.value)">
+        </div>`;
+      }).join('')}
+    </div>
+  `;
+}
+function skillPointsSpent(){
+  return SKILLS.reduce((sum,[name,base])=>{
+    if(name==='Dodge') return sum;
+    const diff = (character.skills[name]||0) - (base||0);
+    return sum + Math.max(0,diff);
+  },0);
+}
+function onSkillInput(name,val){
+  character.skills[name] = Math.max(0, Math.min(99, parseInt(val)||0));
+  renderWizard();
+}
+function applySkillBias(){
+  const bias = SKILL_BIAS[character.profession] || [];
+  const pool = character.values.int*2 + (cfg.professionalPoints||0);
+  const perSkill = Math.floor(pool / Math.max(1,bias.length) / 5) * 5; // round to 5s, rough spread
+  bias.forEach(name=>{
+    const base = (SKILLS.find(s=>s[0]===name)||[,0])[1] || 0;
+    character.skills[name] = Math.min(90, base + Math.max(15, perSkill));
+  });
+  renderWizard();
 }
 
-function generateSheet(){
-  const name = document.getElementById('char-name').value.trim() || 'Unnamed Agent';
-  const codename = document.getElementById('char-codename').value.trim();
-  const code = genCode(name);
-  const hp = Math.ceil((values.str+values.con)/2);
-  const wp = values.pow;
-  const san = values.pow*5;
-  const bp = san - values.pow;
+/* ── Step 5: Bonds ── */
+function stepBonds(){
+  return `
+    <div class="section-label">Bonds</div>
+    <p class="hint">Each Bond starts at a score equal to your CHARISMA (currently ${character.values.cha}). Add the people, places, or causes your Agent is tied to.</p>
+    <div id="bonds-wrap">${bondsRowsHTML()}</div>
+    <div class="add-row">
+      <input type="text" id="new-bond-name" placeholder="e.g. Partner — Dana Whitlock">
+      <button class="btn sm" onclick="addBond()">Add Bond</button>
+    </div>
+  `;
+}
+function bondsRowsHTML(){
+  if(!character.bonds.length) return `<p class="hint">No Bonds yet.</p>`;
+  return character.bonds.map((b,i)=>`
+    <div class="bond-row">
+      <input type="text" value="${esc(b.name)}" onchange="character.bonds[${i}].name=this.value">
+      <input type="number" min="0" max="20" value="${b.score}" onchange="character.bonds[${i}].score=parseInt(this.value)||0">
+      <button onclick="removeBond(${i})" title="Remove">×</button>
+    </div>`).join('');
+}
+function addBond(){
+  const input = document.getElementById('new-bond-name');
+  const name = (input.value||'').trim();
+  if(!name) return;
+  character.bonds.push({name, score:character.values.cha});
+  renderWizard();
+}
+function removeBond(i){ character.bonds.splice(i,1); renderWizard(); }
 
-  const record = { code, name, codename, mode, values: {...values}, derived:{hp,wp,san,bp}, created: new Date().toISOString() };
-  try{ localStorage.setItem('dg_stat_'+code, JSON.stringify(record)); }catch(e){}
+/* ── Step 6: Equipment ── */
+function stepEquipment(){
+  return `
+    <div class="section-label">Equipment &amp; Weapons</div>
+    <p class="hint">Names and notes only — plug in whatever stat block your Handler uses for damage/range. This list travels with the character into Play Mode.</p>
+    <div id="equip-wrap">${equipRowsHTML()}</div>
+    <div class="add-row">
+      <input type="text" id="new-equip-name" placeholder="Item name" list="equip-presets">
+      <datalist id="equip-presets">${EQUIPMENT_PRESETS.map(e=>`<option value="${e}">`).join('')}</datalist>
+      <input type="text" id="new-equip-note" placeholder="Notes (optional)">
+      <button class="btn sm" onclick="addEquip()">Add Item</button>
+    </div>
+  `;
+}
+function equipRowsHTML(){
+  if(!character.equipment.length) return `<p class="hint">No equipment yet.</p>`;
+  return character.equipment.map((e,i)=>`
+    <div class="equip-row">
+      <span class="nm">${esc(e.name)}</span>
+      <span class="note">${esc(e.note||'')}</span>
+      <button onclick="removeEquip(${i})" title="Remove">×</button>
+    </div>`).join('');
+}
+function addEquip(){
+  const n = document.getElementById('new-equip-name');
+  const note = document.getElementById('new-equip-note');
+  const name = (n.value||'').trim();
+  if(!name) return;
+  character.equipment.push({name, note:(note.value||'').trim()});
+  renderWizard();
+}
+function removeEquip(i){ character.equipment.splice(i,1); renderWizard(); }
 
-  document.getElementById('code-out').style.display='block';
-  document.getElementById('code-out').textContent = 'Character Code: '+code;
+/* ── Step 7: Finish ── */
+function stepFinish(){
+  return `
+    <div class="section-label">Finish</div>
+    <div class="two-col">
+      <div class="field"><label>Full name</label><input type="text" id="f-name-final" value="${esc(character.char_name)}"></div>
+      <div class="field"><label>Codename</label><input type="text" id="f-codename-final" value="${esc(character.codename)}"></div>
+    </div>
+    <button class="btn" onclick="finishCharacter()">Save Character</button>
+    <div id="finish-out"></div>
+  `;
+}
+function finishCharacter(){
+  character.char_name = document.getElementById('f-name-final').value.trim() || 'Unnamed Agent';
+  character.codename = document.getElementById('f-codename-final').value.trim();
+  const d = derived();
+  if(!character.code) character.code = genCode(character.char_name);
+  character.hp_current = d.hp;
+  character.wp_current = d.wp;
+  character.san_current = d.san;
+  character.updated = new Date().toISOString();
+  if(!character.created) character.created = character.updated;
+  saveCharacter(character);
 
+  const out = document.getElementById('finish-out');
+  out.innerHTML = `
+    <div class="code-out" id="finish-code">Character Code: ${character.code}</div>
+    <textarea class="summary-out" id="finish-summary" readonly>${buildSummaryText()}</textarea>
+    <div class="wiz-nav" style="margin-top:14px;">
+      <button class="btn ghost sm" onclick="downloadCharacterJson()">Download JSON</button>
+      <button class="btn sm" onclick="setAppMode('play'); playLoadCharacter('${character.code}');">Open in Play Mode →</button>
+    </div>
+  `;
+}
+function buildSummaryText(){
+  const d = derived();
   const lines = [
-    `DELTA GREEN — CHARACTERISTICS`,
-    `Name: ${name}${codename ? '  ("'+codename+'")' : ''}`,
-    `Code: ${code}`,
-    ``,
-    ...STATS.map(s=>`${s.label.padEnd(6)} ${String(values[s.key]).padStart(2)}   (x5: ${values[s.key]*5}%)`),
-    ``,
-    `Hit Points:      ${hp}`,
-    `Willpower:       ${wp}`,
-    `Sanity:          ${san}`,
-    `Breaking Point:  ${bp}`
+    'DELTA GREEN — AGENT RECORD',
+    `Name: ${character.char_name}${character.codename?'  ("'+character.codename+'")':''}`,
+    `Code: ${character.code}`,
+    `Profession: ${(PROFESSIONS.find(p=>p.id===character.profession)||{}).label||'—'}`,
+    `Employer: ${character.employer||'—'}`,
+    '',
+    '-- Characteristics --',
+    ...STATS.map(s=>`${s.label.padEnd(6)} ${String(character.values[s.key]).padStart(2)}   (x5: ${character.values[s.key]*5}%)`),
+    '',
+    `Hit Points: ${d.hp}   Willpower: ${d.wp}   Sanity: ${d.san}   Breaking Point: ${d.bp}`,
+    '',
+    '-- Skills (non-zero above base) --',
+    ...SKILLS.filter(([n,b])=>n!=='Dodge' && character.skills[n]>(b||0)).map(([n])=>`${n}: ${character.skills[n]}%`),
+    `Dodge: ${character.skills['Dodge']}% (DEX×2)`,
+    '',
+    '-- Bonds --',
+    ...(character.bonds.length ? character.bonds.map(b=>`${b.name}: ${b.score}`) : ['(none)']),
+    '',
+    '-- Equipment --',
+    ...(character.equipment.length ? character.equipment.map(e=>`${e.name}${e.note?' — '+e.note:''}`) : ['(none)'])
   ];
-  const out = document.getElementById('sheet-out');
-  out.style.display='block';
-  out.value = lines.join('\n');
-  document.getElementById('carry-note').style.display='block';
-  window._dgLastRecord = record;
+  return lines.join('\n');
 }
-
-function downloadJson(){
-  if(!window._dgLastRecord){ generateSheet(); }
-  const blob = new Blob([JSON.stringify(window._dgLastRecord, null, 2)], {type:'application/json'});
+function downloadCharacterJson(){
+  const blob = new Blob([JSON.stringify(character, null, 2)], {type:'application/json'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = (window._dgLastRecord.code || 'agent')+'.json';
+  a.download = (character.code||'agent')+'.json';
   a.click();
 }
 
-setMode('random');
-rollAll();
+function wireStepEvents(){
+  if(wizStep===1){
+    document.getElementById('f-name').oninput = e=>character.char_name=e.target.value;
+    document.getElementById('f-codename').oninput = e=>character.codename=e.target.value;
+    document.getElementById('f-profession').onchange = e=>character.profession=e.target.value;
+    document.getElementById('f-employer').oninput = e=>character.employer=e.target.value;
+  }
+  if(wizStep===2){
+    document.getElementById('path-body').innerHTML = pathBodyHTML();
+    renderStatRows();
+  }
+}
+
+/* ══════════════════════════════════════════════
+   PERSISTENCE
+   ══════════════════════════════════════════════ */
+function saveCharacter(c){
+  try{
+    localStorage.setItem('dg_char_'+c.code, JSON.stringify(c));
+    const idxRaw = localStorage.getItem('dg_char_index');
+    let idx = idxRaw ? JSON.parse(idxRaw) : [];
+    idx = idx.filter(e=>e.code!==c.code);
+    idx.unshift({code:c.code, name:c.char_name, updated:c.updated});
+    localStorage.setItem('dg_char_index', JSON.stringify(idx.slice(0,30)));
+  }catch(e){}
+}
+function loadCharacterByCode(code){
+  try{
+    const raw = localStorage.getItem('dg_char_'+code.toUpperCase());
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){ return null; }
+}
+
+/* ══════════════════════════════════════════════
+   PLAY MODE
+   ══════════════════════════════════════════════ */
+let playChar = null;
+
+function renderCharList(){
+  const wrap = document.getElementById('char-list');
+  let idx = [];
+  try{ idx = JSON.parse(localStorage.getItem('dg_char_index')||'[]'); }catch(e){}
+  if(!idx.length){ wrap.innerHTML = ''; return; }
+  wrap.innerHTML = idx.map(e=>`<div class="char-chip" onclick="playLoadCharacter('${e.code}')">${esc(e.name)} · ${e.code}</div>`).join('');
+}
+
+function playLoadByCode(){
+  const code = (document.getElementById('play-code-input').value||'').trim().toUpperCase();
+  if(!code) return;
+  playLoadCharacter(code);
+}
+function playLoadCharacter(code){
+  const c = loadCharacterByCode(code);
+  if(!c){
+    document.getElementById('play-sheet').innerHTML = `<p class="play-empty">No saved character found for code ${esc(code)}. Build one in Create mode first.</p>`;
+    return;
+  }
+  playChar = c;
+  renderPlaySheet();
+}
+
+function renderPlaySheet(){
+  const wrap = document.getElementById('play-sheet');
+  if(!playChar){ wrap.innerHTML = `<p class="play-empty">Load a character above to run their sheet live.</p>`; return; }
+  const c = playChar;
+  const maxHp = Math.ceil((c.values.str+c.values.con)/2);
+  const maxWp = c.values.pow;
+  const maxSan = c.values.pow*5;
+  const bp = maxSan - c.values.pow;
+
+  wrap.innerHTML = `
+    <div class="panel">
+      <div class="play-hdr">
+        <h2>${esc(c.char_name)}${c.codename?' <span style="font-size:13px;color:var(--ink-dim);">"'+esc(c.codename)+'"</span>':''}</h2>
+        <div class="meta">${(PROFESSIONS.find(p=>p.id===c.profession)||{}).label||'—'} · CODE ${c.code}</div>
+      </div>
+
+      <div class="meter-row">
+        <div class="meter">
+          <div class="lbl">Hit Points</div>
+          <div class="val-row"><button onclick="adjMeter('hp_current',-1,${maxHp})">−</button><span class="val" id="m-hp">${c.hp_current}</span><span class="of">/ ${maxHp}</span><button onclick="adjMeter('hp_current',1,${maxHp})">+</button></div>
+        </div>
+        <div class="meter">
+          <div class="lbl">Willpower</div>
+          <div class="val-row"><button onclick="adjMeter('wp_current',-1,${maxWp})">−</button><span class="val" id="m-wp">${c.wp_current}</span><span class="of">/ ${maxWp}</span><button onclick="adjMeter('wp_current',1,${maxWp})">+</button></div>
+        </div>
+        <div class="meter">
+          <div class="lbl">Sanity</div>
+          <div class="val-row"><button onclick="adjMeter('san_current',-1,${maxSan})">−</button><span class="val" id="m-san">${c.san_current}</span><span class="of">/ ${maxSan}</span><button onclick="adjMeter('san_current',1,${maxSan})">+</button></div>
+          <div class="bp">Breaking Point: ${bp}${c.san_current<=bp?' — AT OR BELOW':''}</div>
+          <div class="san-roll">
+            <span style="font-family:var(--font-data);font-size:10.5px;">Roll SAN loss:</span>
+            <select id="san-die"><option value="1">1</option><option value="2">1d2</option><option value="3">1d3</option><option value="4">1d4</option><option value="6">1d6</option><option value="8">1d8</option><option value="10">1d10</option></select>
+            <button class="btn sm ghost" onclick="rollSanLoss()">Roll</button>
+            <span class="result" id="san-roll-result"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="adapt-row">
+        <div class="adapt">
+          <div class="lbl">Violence adaptation</div>
+          <div class="boxes" id="adapt-violence">${adaptBoxesHTML('violence_adapt')}</div>
+        </div>
+        <div class="adapt">
+          <div class="lbl">Helplessness adaptation</div>
+          <div class="boxes" id="adapt-helplessness">${adaptBoxesHTML('helplessness_adapt')}</div>
+        </div>
+      </div>
+      <p class="hint" style="margin-top:10px;">Box count/trigger for typed Sanity adaptation varies by printing — this tracks a simple 0–10 count per type; confirm the exact rule with your Handler.</p>
+    </div>
+
+    <div class="panel">
+      <div class="section-label">Skills</div>
+      <p class="play-skill-hint">Check a skill after it's used successfully this session — a simple reminder for end-of-session improvement rolls.</p>
+      <div class="skill-grid">
+        ${SKILLS.map(([name])=>{
+          const val = c.skills[name];
+          const checked = (c.used_skills||[]).includes(name);
+          return `<div class="play-skill-row">
+            <input type="checkbox" ${checked?'checked':''} onchange="toggleUsedSkill('${name}',this.checked)">
+            <span class="nm">${name}</span>
+            <span class="v">${val}%</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="section-label">Bonds</div>
+      ${c.bonds.length ? c.bonds.map((b,i)=>`
+        <div class="bond-play-row">
+          <span class="nm">${esc(b.name)}</span>
+          <div class="ctrl">
+            <button onclick="adjBond(${i},-1)">−</button>
+            <span class="val">${b.score}</span>
+            <button onclick="adjBond(${i},1)">+</button>
+            <button class="break" onclick="breakBond(${i})">Break</button>
+          </div>
+        </div>`).join('') : '<p class="hint">No Bonds on file.</p>'}
+    </div>
+
+    <div class="panel">
+      <div class="section-label">Equipment</div>
+      ${c.equipment.length ? c.equipment.map(e=>`<div class="equip-row"><span class="nm">${esc(e.name)}</span><span class="note">${esc(e.note||'')}</span></div>`).join('') : '<p class="hint">No equipment on file.</p>'}
+    </div>
+
+    <div class="panel">
+      <div class="section-label">Field Notes</div>
+      <textarea class="notes-box" id="field-notes" oninput="onNotesInput(this.value)">${esc(c.notes||'')}</textarea>
+      <div class="save-status" id="play-save-status"></div>
+    </div>
+  `;
+}
+function adaptBoxesHTML(field){
+  const n = playChar[field]||0;
+  let html='';
+  for(let i=0;i<10;i++){
+    html += `<div class="box ${i<n?'filled':''}" onclick="setAdapt('${field}',${i+1})"></div>`;
+  }
+  return html;
+}
+function setAdapt(field, n){
+  playChar[field] = (playChar[field]===n) ? n-1 : n;
+  persistPlayChar();
+  renderPlaySheet();
+}
+function adjMeter(field, delta, max){
+  playChar[field] = Math.max(0, Math.min(max, (playChar[field]||0)+delta));
+  persistPlayChar();
+  document.getElementById('m-'+field.split('_')[0]).textContent = playChar[field];
+}
+function rollSanLoss(){
+  const sides = parseInt(document.getElementById('san-die').value);
+  const roll = sides===1 ? 1 : rollDie(sides);
+  playChar.san_current = Math.max(0, playChar.san_current - roll);
+  persistPlayChar();
+  document.getElementById('san-roll-result').textContent = `−${roll} SAN`;
+  document.getElementById('m-san').textContent = playChar.san_current;
+}
+function toggleUsedSkill(name, checked){
+  playChar.used_skills = playChar.used_skills || [];
+  if(checked && !playChar.used_skills.includes(name)) playChar.used_skills.push(name);
+  if(!checked) playChar.used_skills = playChar.used_skills.filter(n=>n!==name);
+  persistPlayChar();
+}
+function adjBond(i, delta){
+  playChar.bonds[i].score = Math.max(0, Math.min(20, playChar.bonds[i].score+delta));
+  persistPlayChar();
+  renderPlaySheet();
+}
+function breakBond(i){
+  playChar.bonds[i].score = 0;
+  persistPlayChar();
+  renderPlaySheet();
+}
+function onNotesInput(val){
+  playChar.notes = val;
+  persistPlayChar();
+  const st = document.getElementById('play-save-status');
+  st.textContent = 'Saved.';
+  clearTimeout(window._notesTimer);
+  window._notesTimer = setTimeout(()=>{ st.textContent=''; }, 1500);
+}
+function persistPlayChar(){
+  playChar.updated = new Date().toISOString();
+  saveCharacter(playChar);
+}
+
+/* ══════════════════════════════════════════════
+   UTIL
+   ══════════════════════════════════════════════ */
+function esc(s){
+  return (s||'').toString().replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+/* ══════════════════════════════════════════════
+   INIT
+   ══════════════════════════════════════════════ */
+renderWizard();
 </script>
 </body>
 </html>

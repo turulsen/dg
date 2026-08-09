@@ -80,43 +80,138 @@ def fill_cover_form(page, agent, form_selector="#dg-form"):
         page.fill(vibe_sel, agent.get("vibe",""))
 
 def test_stat_generator(p, agent):
+    """Drives the full 7-step wizard end to end, then checks Play Mode."""
     page = p.new_page()
     page.set_default_timeout(5000)
     errs = collect_errors(page)
     page.goto(f"{BASE}/stat-generator.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
-
     record("stat-generator", f"page loads ({agent['char_name']})", len(errs)==0, "; ".join(errs))
 
-    # Random mode
-    page.click("text=Roll All Six")
+    # Step 1: Identity
+    page.fill("#f-name", agent["char_name"])
+    page.fill("#f-codename", agent.get("codename",""))
+    prof_id = agent.get("profession_id","")
+    if prof_id and page.locator(f"#f-profession option[value={prof_id}]").count():
+        page.select_option("#f-profession", prof_id)
+    page.click("#wiz-next")
+    page.wait_for_timeout(100)
+
+    # Step 2: Characteristics -- exercise all three creation paths
+    page.click("[onclick=\"setPath('buy')\"]")
+    page.wait_for_timeout(100)
+    pool_text_before = page.text_content("#pool-bar")
+    first_stat_input = page.locator(".stat-row input[type=number]").first
+    first_stat_input.fill("18")
+    first_stat_input.dispatch_event("change")
+    page.wait_for_timeout(100)
+    pool_text_after = page.text_content("#pool-bar")
+    record("stat-generator", "point-buy pool updates on edit", pool_text_after != pool_text_before,
+           f"{pool_text_before} -> {pool_text_after}")
+
+    page.click("[onclick=\"setPath('random')\"]")
     page.wait_for_timeout(100)
     vals_random = page.eval_on_selector_all(".stat-row input[type=number]", "els => els.map(e=>parseInt(e.value))")
-    ok = all(3 <= v <= 18 for v in vals_random) and len(vals_random) == 6
+    ok = len(vals_random) == 6 and all(3 <= v <= 18 for v in vals_random)
     record("stat-generator", "random roll produces 6 stats in 3-18", ok, str(vals_random))
 
-    # Point buy mode
-    page.click("#btn-buy")
+    page.click("[onclick=\"setPath('quick')\"]")
     page.wait_for_timeout(100)
-    remaining_text = page.text_content("#pool-remaining")
-    record("stat-generator", "point-buy pool shown", remaining_text is not None, remaining_text or "")
-
-    # push a stat to max and check pool math updates
-    first_input = page.locator(".stat-row input[type=number]").first
-    first_input.fill("18")
-    first_input.dispatch_event("change")
+    vals_quick = page.eval_on_selector_all(".stat-row input[type=number]", "els => els.map(e=>parseInt(e.value))")
+    record("stat-generator", "quick path also produces 6 valid stats",
+           len(vals_quick) == 6 and all(3 <= v <= 18 for v in vals_quick), str(vals_quick))
+    page.click("#wiz-next")
     page.wait_for_timeout(100)
-    remaining_after = page.text_content("#pool-remaining")
-    record("stat-generator", "point-buy remaining updates on edit", remaining_after != remaining_text, f"{remaining_text} -> {remaining_after}")
 
-    # Generate sheet + verify code + derived stats present
-    page.fill("#char-name", agent["char_name"])
-    page.click("text=Generate Character Sheet")
+    # Step 3: Derived
+    derived_html = page.inner_html("#wiz-panel")
+    record("stat-generator", "derived step shows HP/WP/Sanity/Breaking Point",
+           all(k in derived_html for k in ["Hit Points","Willpower","Sanity","Breaking Point"]), "")
+    page.click("#wiz-next")
+    page.wait_for_timeout(100)
+
+    # Step 4: Skills -- apply profession bias if available, check pool math
+    if prof_id and page.locator("[onclick=\"applySkillBias()\"]").count():
+        page.click("[onclick=\"applySkillBias()\"]")
+        page.wait_for_timeout(100)
+    spent = page.text_content("#skill-spent")
+    record("stat-generator", "skill points spent counter is numeric", (spent or "").strip().isdigit(), spent or "")
+    dodge_val = page.eval_on_selector("input[disabled]", "el => el.value")
+    dex_val = vals_quick[2]  # STR,CON,DEX,...
+    record("stat-generator", "Dodge stays locked to DEX x2", int(dodge_val) == dex_val*2, f"dodge={dodge_val} dex={dex_val}")
+    page.click("#wiz-next")
+    page.wait_for_timeout(100)
+
+    # Step 5: Bonds
+    page.fill("#new-bond-name", "Handler — Test Contact")
+    page.click("[onclick=\"addBond()\"]")
+    page.wait_for_timeout(100)
+    bond_count = page.eval_on_selector_all(".bond-row", "els => els.length")
+    record("stat-generator", "bond can be added", bond_count == 1, f"{bond_count} bonds")
+    page.click("#wiz-next")
+    page.wait_for_timeout(100)
+
+    # Step 6: Equipment
+    page.fill("#new-equip-name", "Sidearm")
+    page.fill("#new-equip-note", "issued")
+    page.click("[onclick=\"addEquip()\"]")
+    page.wait_for_timeout(100)
+    equip_count = page.eval_on_selector_all(".equip-row", "els => els.length")
+    record("stat-generator", "equipment item can be added", equip_count == 1, f"{equip_count} items")
+    page.click("#wiz-next")
+    page.wait_for_timeout(100)
+
+    # Step 7: Finish
+    page.click("[onclick=\"finishCharacter()\"]")
     page.wait_for_timeout(150)
-    code = page.text_content("#code-out")
-    sheet = page.eval_on_selector("#sheet-out", "el => el.value")
-    ok = bool(code) and agent["char_name"] in sheet and "Hit Points" in sheet
-    record("stat-generator", "sheet generation includes name + derived stats", ok, code or "")
+    code_text = page.text_content("#finish-code")
+    summary = page.eval_on_selector("#finish-summary", "el => el.value")
+    ok = bool(code_text) and agent["char_name"] in summary and "Bonds" in summary and "Equipment" in summary
+    record("stat-generator", "finish produces code + full summary (skills/bonds/equipment)", ok, code_text or "")
+
+    saved_code = page.evaluate("() => character.code")
+
+    # Play Mode (the finish-step button, not the header mode-switch or any
+    # char-list chip -- scope to #finish-out so it's unambiguous even once
+    # earlier test iterations have populated the character list)
+    page.click("#finish-out [onclick*=\"playLoadCharacter\"]")
+    page.wait_for_timeout(200)
+    play_header = page.text_content(".play-hdr h2") or ""
+    record("stat-generator", "Play Mode opens with correct character loaded", agent["char_name"] in play_header, play_header)
+
+    hp_before = page.text_content("#m-hp")
+    page.click(".meter button >> nth=0")
+    page.wait_for_timeout(100)
+    hp_after = page.text_content("#m-hp")
+    record("stat-generator", "Play Mode HP adjuster changes value", hp_before != hp_after, f"{hp_before} -> {hp_after}")
+
+    page.select_option("#san-die", "6")
+    page.click("[onclick=\"rollSanLoss()\"]")
+    page.wait_for_timeout(100)
+    san_result = page.text_content("#san-roll-result")
+    record("stat-generator", "Play Mode SAN roll produces a result", "SAN" in (san_result or ""), san_result or "")
+
+    if page.locator(".bond-play-row").count():
+        bond_val_before = page.text_content(".bond-play-row .val")
+        page.click(".bond-play-row button >> nth=0")
+        page.wait_for_timeout(100)
+        bond_val_after = page.text_content(".bond-play-row .val")
+        record("stat-generator", "Play Mode Bond adjuster changes score", bond_val_before != bond_val_after, f"{bond_val_before} -> {bond_val_after}")
+
+    page.fill("#field-notes", "Session 1: made contact, nothing unnatural yet.")
+    page.wait_for_timeout(200)
+    reloaded = page.evaluate(f"() => {{ try {{ return JSON.parse(localStorage.getItem('dg_char_{saved_code}')).notes; }} catch(e) {{ return null; }} }}")
+    record("stat-generator", "Play Mode field notes persist to localStorage",
+           reloaded == "Session 1: made contact, nothing unnatural yet.", str(reloaded))
+
+    # Theme switching
+    for theme in ["terminal", "redacted", "classified"]:
+        page.select_option("#theme-select", theme)
+        page.wait_for_timeout(80)
+        attr = page.get_attribute("html", "data-theme")
+        record("stat-generator", f"theme switch applies '{theme}'", attr == theme, attr or "")
+    stored_theme = page.evaluate("() => localStorage.getItem('dg_theme')")
+    record("stat-generator", "theme choice persists to localStorage", stored_theme == "classified", str(stored_theme))
 
     page.close()
     return errs

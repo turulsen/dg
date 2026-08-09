@@ -17,8 +17,15 @@ non-zero if anything fails.
 
 ## What it covers
 
-- **stat-generator.html** — random 3d6 rolls stay in range, point-buy pool
-  math updates on edit, sheet generation includes name + derived stats.
+- **stat-generator.html** — the full 7-step wizard end to end (identity →
+  characteristics → derived → skills → Bonds → equipment → finish) for
+  every mock agent, exercising all three creation paths (Quick/Random/Point-
+  Buy), Dodge staying locked to DEX×2, skill-bias application, adding a Bond
+  and an equipment item, and the finished summary containing all of it.
+  Then Play Mode: the right character loads, the HP meter adjusts, the
+  SAN-loss roller produces a result, a Bond score adjusts, field notes
+  persist to `localStorage`, and all three themes apply and the choice
+  persists.
 - **dg-agent-portal.html** — tab switching (Cover / Agent File / Cover IDs),
   full profession dropdown, random agent generator per profession, cover
   form submit + dossier render, localStorage persistence, restoring an
