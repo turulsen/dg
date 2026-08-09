@@ -51,7 +51,15 @@ non-zero if anything fails.
   queries the same Apps Script JSONP endpoint the Agent File tab uses.
   Ported wholesale from the project's `Dev` branch, which had built this
   out fully while this branch's Cover IDs tab was still an iframe wrapping
-  the older, less-developed standalone `dg-id-creator.html`.
+  the older, less-developed standalone `dg-id-creator.html`. Also checks
+  every rendered card (on-screen and in the PRINT/EXPORT popup) carries the
+  "PROP — NOT A GOVERNMENT DOCUMENT" watermark — these are replicas of real
+  federal/municipal credentials, and the watermark exists so a card is
+  still unmistakably a game prop if it ever leaves the table out of
+  context — and regression-tests PRINT/EXPORT specifically against a
+  credential-book layout (e.g. FBI 90s), since those render as plain
+  inline-styled divs with no `.ids-card-wrap` class and used to fail the
+  print gate's class-based check silently.
 - **dg-id-creator.html** — still tested on its own (manual name entry, code
   loader behavior) even though nothing links to it anymore, since the file
   is still in the repo.

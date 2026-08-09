@@ -296,6 +296,27 @@ def test_cover_ids_tab(p):
     if card_rendered:
         record("cover-ids-tab", "rendered card shows the entered cover name",
                "Marcus Reyes" in preview_text, preview_text[:80])
+        record("cover-ids-tab", "rendered card carries the 'not a government document' prop watermark",
+               "NOT A GOVERNMENT DOCUMENT" in preview_text, preview_text[:120])
+
+    # PRINT/EXPORT regression: FBI 90s renders as a plain inline-styled div
+    # with no .ids-card-wrap class (a "credential-book" layout), which used
+    # to fail the print gate's class-based check and silently alert
+    # "Select agency and era first." instead of opening the print window.
+    try:
+        with page.expect_popup(timeout=4000) as popup_info:
+            page.click("button[onclick='idsPrint()']")
+        popup = popup_info.value
+        popup.wait_for_load_state()
+        popup_text = popup.inner_text("body")
+        record("cover-ids-tab", "PRINT/EXPORT opens a print window for a credential-book layout (no .ids-card-wrap class)",
+               True, "")
+        record("cover-ids-tab", "print window also carries the prop watermark",
+               "NOT A GOVERNMENT DOCUMENT" in popup_text, popup_text[:120])
+        popup.close()
+    except Exception as e:
+        record("cover-ids-tab", "PRINT/EXPORT opens a print window for a credential-book layout (no .ids-card-wrap class)",
+               False, str(e))
 
     record("cover-ids-tab", "no JS exceptions", len(errs)==0, "; ".join(errs))
     page.close()

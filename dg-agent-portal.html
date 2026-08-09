@@ -1071,6 +1071,7 @@ body{
 #ids-card-preview {
   width: 100%; max-width: 380px; margin-bottom: 14px;
   filter: drop-shadow(0 4px 16px rgba(0,0,0,.7)) drop-shadow(0 1px 3px rgba(0,0,0,.9));
+  position: relative;
 }
 /* Card preview sizing — single source of truth */
 #ids-card-preview .ids-card-cr80 {
@@ -1932,6 +1933,22 @@ function idsGetOtherTmpl(f) {
   };
 }
 
+// Renders as a fixed overlay on every card, on-screen and in print/export
+// alike -- these are federal/municipal credential replicas, and a card that
+// leaves the table (left in a wallet, photographed, shown as a joke) should
+// still be unmistakably a game prop out of context. All styling is inline
+// so it survives idsPrint()'s separate, minimal print stylesheet unchanged.
+const IDS_WATERMARK_HTML =
+  '<div style="position:absolute;inset:0;pointer-events:none;display:flex;'
+  + 'align-items:center;justify-content:center;z-index:50;overflow:hidden;">'
+  + '<div style="transform:rotate(-18deg);font-family:Arial,Helvetica,sans-serif;'
+  + 'font-weight:800;font-size:9px;letter-spacing:.12em;text-transform:uppercase;'
+  + 'color:rgba(170,20,20,.75);border:1.5px solid rgba(170,20,20,.75);'
+  + 'padding:4px 10px;white-space:nowrap;background:rgba(255,255,255,.6);'
+  + 'text-align:center;line-height:1.5;">'
+  + 'PROP — NOT A GOVERNMENT DOCUMENT<br>TABLETOP GAME PROP · DELTA GREEN'
+  + '</div></div>';
+
 function idsUpdateCard() {
   const f = idsGetFields();
   const preview = document.getElementById('ids-card-preview');
@@ -1949,7 +1966,7 @@ function idsUpdateCard() {
   // OTHER / custom agency
   if (f.agency === 'OTHER') {
     var tmpl = idsGetOtherTmpl(f);
-    preview.innerHTML = idsRenderCard(tmpl, f);
+    preview.innerHTML = idsRenderCard(tmpl, f) + IDS_WATERMARK_HTML;
     if (note) note.textContent = 'CUSTOM · ' + (tmpl.other_layout || 'top-bottom');
     if (meta) meta.innerHTML = '';
     return;
@@ -2000,7 +2017,7 @@ function idsUpdateCard() {
   }
 
   // Render the card
-  preview.innerHTML = idsRenderCard(tmpl, f);
+  preview.innerHTML = idsRenderCard(tmpl, f) + IDS_WATERMARK_HTML;
 
   // Meta info
   if (meta) {
@@ -2281,7 +2298,11 @@ function idsRenderCard(tmpl, f) {
 
 function idsPrint() {
   const preview = document.getElementById('ids-card-preview');
-  if (!preview || !preview.querySelector('.ids-card-wrap, .ids-no-card')) {
+  // Not every rendered layout carries a .ids-card-wrap/.ids-no-card class --
+  // credential-book layouts (FBI/DEA/USPI/SCSO/MEPIC 90s-00s, etc.) render
+  // as plain inline-styled divs -- so gate on the placeholder's absence
+  // instead, which is present for every layout until a card is rendered.
+  if (!preview || preview.querySelector('#ids-card-placeholder')) {
     alert('Select agency and era first.');
     return;
   }
@@ -2309,7 +2330,7 @@ function idsPrint() {
     + '.ids-card-seal{width:16px;height:16px;border-radius:50%;border:1.5px solid currentColor;opacity:.6;flex-shrink:0;}'
     + 'img{display:block;}'
     + '</style></head><body>'
-    + '<div style="width:340px;">' + cardHtml + '</div>'
+    + '<div style="width:340px;position:relative;">' + cardHtml + '</div>'
     + '</body></html>');
   win.document.close();
   setTimeout(() => win.print(), 300);
