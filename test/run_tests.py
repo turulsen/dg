@@ -173,6 +173,118 @@ def test_stat_generator(p):
     page.close()
     return errs
 
+def test_agent_file_export(p):
+    """The "Export to Agent File" bridge (stats/agent-portal-export.js):
+    submits through the exact same APPS_SCRIPT_URL path the Cover form's
+    own Submit Brief uses, with build/outfit derived from STR+CON and
+    profession rather than left for the player to type. Verifies the
+    actual POST payload, not just that a status message appeared --
+    this is exactly where the earlier lowercase/uppercase csStats key
+    bug hid (build silently defaulted regardless of STR)."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+
+    captured = {}
+    def capture(route):
+        if route.request.method == "POST":
+            captured["body"] = route.request.post_data
+        route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", capture)
+
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+
+    page.fill("#cs-name", "Owen Castillo")
+    page.select_option("#cs-profession-select", "federal_agent")
+    page.wait_for_timeout(150)
+    page.fill("#cs-bio-age", "38")
+    page.fill("#cs-bio-sex", "Male")
+
+    str_plus = page.locator("#STR-value").locator("xpath=..").locator("button", has_text="+")
+    for _ in range(13):
+        str_plus.click()
+    con_plus = page.locator("#CON-value").locator("xpath=..").locator("button", has_text="+")
+    for _ in range(10):
+        con_plus.click()
+    page.wait_for_timeout(150)
+
+    page.click("#export-agent-file-btn")
+    page.wait_for_timeout(400)
+
+    status_html = page.inner_html("#agent-file-export-status")
+    record("agent-file-export", "shows the generated code and an Agent Portal link",
+           "OWEN-" in status_html and "dg-agent-portal.html" in status_html, status_html)
+
+    body = json.loads(captured.get("body") or "{}")
+    record("agent-file-export", "submits through the same APPS_SCRIPT_URL as the Cover form",
+           bool(captured.get("body")), "no POST captured" if not captured.get("body") else "")
+    record("agent-file-export", "char_name and agent_code present in payload",
+           body.get("char_name") == "Owen Castillo" and bool(body.get("agent_code")), str(body.get("agent_code")))
+    record("agent-file-export", "age/sex map into the Cover form's expected values",
+           body.get("age_range") == "Late 30s" and body.get("sex") == "Male",
+           f"age_range={body.get('age_range')} sex={body.get('sex')}")
+
+    # STR 16 + CON 13 = 29 -> 'athletic' tier; verify it's not the generic
+    # fallback that shipped when csStats.str (lowercase) silently read undefined
+    athletic_pool = ["athletic", "lean and muscular", "fit and rangy", "well-conditioned",
+                      "physically capable without being ostentatious", "carries themselves with easy physical confidence"]
+    record("agent-file-export", "build reflects STR+CON (athletic tier), not a generic fallback",
+           body.get("build") in athletic_pool, str(body.get("build")))
+    record("agent-file-export", "outfit matches the Federal Agent profession",
+           body.get("jacket") == "dark suit jacket" and body.get("shirt") == "white dress shirt", str(body.get("jacket")))
+    record("agent-file-export", "notes include correct per-stat values (uppercase csStats keys)",
+           "STR 16 CON 13" in (body.get("notes") or ""), (body.get("notes") or "")[:60])
+
+    saved = page.evaluate("() => { try { return JSON.parse(localStorage.getItem('dg_last_agent')); } catch(e) { return null; } }")
+    record("agent-file-export", "also persists locally under dg_last_agent for same-browser Agent Portal auto-restore",
+           bool(saved and saved.get("code") and saved["code"] == body.get("agent_code")), str(saved and saved.get("code")))
+
+    record("agent-file-export", "no JS exceptions", len(errs)==0, "; ".join(errs))
+    page.close()
+    return errs
+
+def test_cover_ids_tab(p):
+    """The Cover IDs tab (formerly a "Coming in Stage 3" stub) now embeds
+    the ID Creator in an iframe and hands off the current agent's name
+    via postMessage when the tab opens."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    mock_routes(page)
+    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+
+    page.fill("#dg-form [name=char_name]", "Dana Whitlock")
+    page.click("#tw-ids")
+    page.wait_for_timeout(800)
+
+    frame = next((f for f in page.frames if "dg-id-creator.html" in f.url), None)
+    record("cover-ids-tab", "Cover IDs tab embeds the ID Creator (no longer the Stage 3 stub)", frame is not None, "")
+    if frame:
+        name_val = frame.eval_on_selector("#card-name", "el => el.value") if frame.locator("#card-name").count() else None
+        record("cover-ids-tab", "postMessage handoff prefills the ID Creator's name field",
+               name_val == "Dana Whitlock", str(name_val))
+
+    record("cover-ids-tab", "no JS exceptions", len(errs)==0, "; ".join(errs))
+    page.close()
+    return errs
+
+def test_hub_two_cards(p):
+    """Regression check for the hub restructuring: the standalone Cover ID
+    Creator card is gone (it's reachable via the Agent Portal's Cover IDs
+    tab instead), leaving Character Creator + Agent Portal."""
+    page = p.new_page()
+    page.set_default_timeout(5000)
+    errs = collect_errors(page)
+    page.goto(f"{BASE}/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    hrefs = page.eval_on_selector_all("a.card", "els => els.map(e=>e.getAttribute('href'))")
+    record("hub", "hub has exactly 2 cards (Character Creator, Agent Portal)",
+           hrefs == ["stats/index.html", "dg-agent-portal.html"], str(hrefs))
+    page.close()
+    return errs
+
 def test_mobile_no_overflow(p):
     """Regression check: no page should force horizontal scroll on a phone
     viewport. stats/index.html is the one exception with an asterisk: it's
@@ -351,6 +463,12 @@ def main():
                 return None
 
         safe(test_stat_generator, browser, area="stats-terminal")
+
+        safe(test_agent_file_export, browser, area="agent-file-export")
+
+        safe(test_cover_ids_tab, browser, area="cover-ids-tab")
+
+        safe(test_hub_two_cards, browser, area="hub")
 
         safe(test_mobile_no_overflow, browser, area="mobile")
 

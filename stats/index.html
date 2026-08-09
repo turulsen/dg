@@ -560,6 +560,12 @@
                                 title="Permanently wipes all saved character data from this browser, including stats, skills, bonds, and session notes. Download your sheet first if you want to keep it.">Clear
                                 Sheet</button>
                         </div>
+                        <div class="section-buttons" id="agent-file-export-bar" style="margin-top:10px;">
+                            <button type="button" id="export-agent-file-btn" onclick="dgAgentPortalExport.run()"
+                                title="Sends your Agent's name and stats to the Agent Portal as a new Agent File. Build and outfit are derived from STR and profession and quietly shape the portrait prompt there -- physical appearance still needs to be filled in on the Cover tab.">
+                                &#8594; Export to Agent File</button>
+                            <span id="agent-file-export-status"></span>
+                        </div>
                     </div>
 
                     <details id="advanced-options-details">
@@ -767,6 +773,7 @@
         <script src="pdf-export.js"></script>
         <script src="sheets-export.js"></script>
         <script src="save-load.js"></script>
+        <script src="agent-portal-export.js"></script>
         <script src="dice-roller.js"></script>
         <script src="equipment-data.js"></script>
         <script src="equipment-picker.js"></script>

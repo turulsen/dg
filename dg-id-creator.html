@@ -928,6 +928,25 @@ function loadFromCode() {
     }
   } catch(e) { status.textContent='Could not read code.'; status.style.color='#8b1a1a'; }
 }
+
+/* ── Handoff from the Agent Portal, when embedded in its Cover IDs tab ──
+   Only prefills what the Agent Portal actually has (name, portrait
+   photo) -- everything else (agency, title, badge, clearance, expiry)
+   is still filled in here same as always. No-op when loaded standalone,
+   since nothing ever posts this message in that case. */
+window.addEventListener('message', function(e) {
+  const agent = e.data && e.data.type === 'dg-agent-handoff' && e.data.agent;
+  if (!agent) return;
+  if (agent.char_name) {
+    const nameInput = document.getElementById('card-name');
+    if (nameInput && !nameInput.value) nameInput.value = agent.char_name;
+  }
+  if (agent.photoDataUrl) {
+    photoDataUrl = agent.photoDataUrl;
+    const p = document.getElementById('photo-preview');
+    if (p) { p.src = photoDataUrl; p.style.display = 'block'; }
+  }
+});
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </body>

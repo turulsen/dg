@@ -43,7 +43,24 @@ non-zero if anything fails.
   agent by code re-renders the dossier in place on the Cover tab (not just
   a silent jump to Agent File), Agent File code-gate loading via the JSONP
   endpoint.
-- **dg-id-creator.html** — manual name entry, code loader behavior.
+- **`test_cover_ids_tab`** — switching to the Cover IDs tab embeds
+  `dg-id-creator.html` in an iframe and the `postMessage` handoff prefills
+  its name/photo from the currently-loaded agent.
+- **dg-id-creator.html** — manual name entry, code loader behavior, plus
+  the `dg-agent-handoff` `postMessage` listener covered above.
+- **`test_agent_file_export`** — `stats/`'s "Export to Agent File" button
+  (`stats/agent-portal-export.js`). Builds a character with above-average
+  STR/CON, exports it, and intercepts the POST payload to check: build text
+  reflects the actual stats (this is a regression test for a bug where
+  `csStats.str`/`.con` were read lowercase against the real uppercase
+  `STR`/`CON` keys, silently defaulting every export to "average build"
+  regardless of the character), outfit fields match the profession, age/sex
+  map into the Portal's enums, the notes field lists profession/stats/
+  skills/bonds/equipment, and the agent is cached to `localStorage`
+  (`dg_last_agent`) in the Portal's own shape.
+- **`test_hub_two_cards`** — `index.html` links to exactly
+  `stats/index.html` and `dg-agent-portal.html`, no more, no standalone ID
+  Creator card.
 
 `dg-id-creator.html`'s visual theme (paper/dossier styling to match the rest
 of the hub) is a CSS-only change with no functional test coverage — verify

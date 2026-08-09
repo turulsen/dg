@@ -6,14 +6,27 @@ Player-facing tools for a Delta Green campaign, published as a static site via G
 
 ## What's here
 
+The hub landing page (`index.html`) links to two tools:
+
 | Page | Purpose |
 |---|---|
-| `index.html` | Hub landing page — links to everything below |
-| `stats/index.html` | Full Delta Green character creator — point-buy or dice-roll stats, 18 professions with contextual skills, bonus skill points, random bio generation, Bonds, equipment loadout, a dice-roller widget, save/share, and printable/Foundry VTT export. **Six visual themes**, including a dedicated "Live Play" mode with a sticky HP/WP/SAN tracker bar for use at the table. Ported wholesale from [pigeon-labs-stack's DELTA-GREEN-STATS](https://pigeon-labs-stack.github.io/DELTA-GREEN-STATS/) — see Attribution below |
-| `dg-agent-portal.html` | Character brief, cover identity, and dossier — plus agent file across eras, medical history, and after-action reports (backed by a Google Apps Script + Sheet) |
-| `dg-id-creator.html` | Printable cover-identity card generator |
+| `stats/index.html` | Full Delta Green character creator — point-buy or dice-roll stats, 18 professions with contextual skills, bonus skill points, random bio generation, Bonds, equipment loadout, a dice-roller widget, save/share, and printable/Foundry VTT export. **Six visual themes**, including a dedicated "Live Play" mode with a sticky HP/WP/SAN tracker bar for use at the table. Ported wholesale from [pigeon-labs-stack's DELTA-GREEN-STATS](https://pigeon-labs-stack.github.io/DELTA-GREEN-STATS/) — see Attribution below. Auto-saves to this browser as you go (so it remembers where you left off), and has an **Export to Agent File** button to hand a finished character off to the Agent Portal — see below |
+| `dg-agent-portal.html` | The place to come back to. Three tabs on one Agent: **Cover** (physical description brief + AI portrait prompt + printable dossier), **Agent File** (load an existing agent by its Character Code across sessions/devices), and **Cover IDs** (a printable cover-identity card, generated in place — this embeds `dg-id-creator.html`, see below). Backed by a Google Apps Script + Sheet |
+
+`dg-id-creator.html` still exists as its own file — the Agent Portal's Cover IDs tab loads it in an iframe and hands it the current agent's name/photo — but it's no longer linked from the hub directly; use it via the Portal.
 
 All pages are static HTML/CSS/JS with no build step. `stats/` is the one exception to "single self-contained file" — it's a direct, unminified copy of pigeon-labs-stack's own multi-file layout (one HTML file, one stylesheet, twelve `.js` files), kept that way deliberately so it stays diffable against upstream.
+
+### Export to Agent File
+
+`stats/`'s "Export to Agent File" button (`stats/agent-portal-export.js`) sends a finished character to the Agent Portal using the **exact same submission path** the Portal's own Cover form uses — same Apps Script endpoint, same field names, same `PREFIX-XXXX` code format. It's not a new backend integration; it's this page filling out that form programmatically. Two fields are derived automatically and sent quietly in the background, since they already feed the Portal's AI portrait-prompt generator:
+
+- **Build** — from STR+CON, reusing the same tiered word pools (`bioData.buildDescriptors`) the Creator's own "Random Bio" feature uses, so an above-average-strength Agent gets a build description to match.
+- **Outfit** (jacket/shirt/trousers/footwear) — a plausible default per profession (`PROFESSION_OUTFIT` in that same file), e.g. a physician gets a lab coat and scrubs, a special operator gets tactical gear.
+
+Everything else about physical appearance is left blank, same as any new agent — the Cover tab in the Portal stays the place to fill in or edit the rest. The exported agent's code is saved to this browser's `localStorage` (`dg_last_agent`) so the Agent Portal picks it up automatically if opened next in the same browser.
+
+This bridges `stats/` → Agent Portal one-way. It does *not* unify the three separate code/save systems described in Roadmap item #1 below — the ID Creator's own code format is still separate.
 
 ## Attribution
 
@@ -26,14 +39,15 @@ Everything else in this repo — the Agent Portal, ID Creator, and hub page — 
 ## QA
 
 There's an automated smoke-test suite in `test/` that exercises all four
-pages, with the Google Apps Script / Anthropic backends faked out so it never
-touches real data. See `test/README.md`.
+pages (including the Cover IDs tab's embedded ID Creator and the Export to
+Agent File flow), with the Google Apps Script / Anthropic backends faked out
+so it never touches real data. See `test/README.md`.
 
 ## Roadmap ideas for a fuller Agent Hub
 
 Rough priority order, cheapest/highest-value first:
 
-1. **Unify the character-code system.** There are now *three* separate identity/save systems that don't talk to each other: the Agent Portal's `PREFIX-XXXX` codes (Apps Script-backed), the ID Creator's `DG-` base64 codes, and `stats/`'s own save/share-link system (localStorage + a TinyURL-shortened link). A code or save from one doesn't load in either of the others. Still the single biggest gap.
+1. **Unify the character-code system.** There are still *three* separate identity/save systems that don't talk to each other: the Agent Portal's `PREFIX-XXXX` codes (Apps Script-backed), the ID Creator's `DG-` base64 codes, and `stats/`'s own save/share-link system (localStorage + a TinyURL-shortened link). The **Export to Agent File** button bridges `stats/` → Agent Portal one-way (using the Portal's own code format), but a code or save still doesn't load back the other direction, and the ID Creator's `DG-` codes remain unreconciled with either. Still the single biggest gap.
 2. ~~Skills & weapons.~~ Done — `stats/` covers skills (full list + specialties), professions, and an equipment/weapon loadout picker.
 3. ~~A real percentile roller.~~ Done — `stats/` has its own dice-roller widget (quick dice, custom rolls, roll-under-% checks) built in.
 4. ~~Live-play HP/SAN tracking.~~ Done, sort of — `stats/`'s "Live Play (Field Notes)" theme has a sticky HP/WP/SAN/BP tracker bar and a full live character sheet. It's independent of the Agent Portal's dossier system, though (see #1).

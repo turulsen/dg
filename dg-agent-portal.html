@@ -1151,10 +1151,8 @@ body{
     </div><!-- panel-agent -->
     <!-- ══ COVER IDs ══ -->
     <div class="tab-panel" id="panel-ids" style="display:none;">
-      <div class="soon">
-        <div class="soon-title">Cover ID Creator</div>
-        <div class="soon-sub">Coming in Stage 3.</div>
-      </div>
+      <iframe id="ids-iframe" src="dg-id-creator.html" title="Cover ID Creator" onload="sendIdsHandoff()"
+        style="width:100%;height:900px;border:1.5px solid var(--rule);background:#0e100b;"></iframe>
     </div>
 
   </div><!-- folder-body -->
@@ -1189,6 +1187,20 @@ function switchTab(tab) {
       panel.style.display = 'none';
     }
   });
+  if (tab === 'ids') sendIdsHandoff();
+}
+
+/* ── Hand the current agent off to the embedded Cover ID Creator ── */
+function sendIdsHandoff() {
+  const frame = document.getElementById('ids-iframe');
+  if (!frame || !frame.contentWindow) return;
+  const nameField = document.getElementById('dg-form')?.elements['char_name'];
+  const data = {
+    char_name: (afData && afData.char_name) || (nameField && nameField.value) || '',
+    photoDataUrl: (afData && afData.ref_image_base64) || photoDataUrl || ''
+  };
+  if (!data.char_name && !data.photoDataUrl) return;
+  frame.contentWindow.postMessage({ type: 'dg-agent-handoff', agent: data }, '*');
 }
 
 /* ── ARCHETYPE INIT ── */
