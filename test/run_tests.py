@@ -245,9 +245,13 @@ def test_agent_file_export(p):
     return errs
 
 def test_cover_ids_tab(p):
-    """The Cover IDs tab (formerly a "Coming in Stage 3" stub) now embeds
-    the ID Creator in an iframe and hands off the current agent's name
-    via postMessage when the tab opens."""
+    """The Cover IDs tab is the "Cover ID Fabricator" -- a native, in-page
+    tablet UI (agency+era picker, live-rendered credential card, PRINT/
+    EXPORT, and an agent-code importer that queries the Apps Script backend
+    the same way the Agent File tab does). Ported wholesale from the
+    project's Dev branch, which had built this out fully while this
+    branch's own Cover IDs tab was still an iframe wrapping the older,
+    less-developed standalone dg-id-creator.html page."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -255,16 +259,43 @@ def test_cover_ids_tab(p):
     page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
 
-    page.fill("#dg-form [name=char_name]", "Dana Whitlock")
     page.click("#tw-ids")
-    page.wait_for_timeout(800)
+    page.wait_for_timeout(300)
 
-    frame = next((f for f in page.frames if "dg-id-creator.html" in f.url), None)
-    record("cover-ids-tab", "Cover IDs tab embeds the ID Creator (no longer the Stage 3 stub)", frame is not None, "")
-    if frame:
-        name_val = frame.eval_on_selector("#card-name", "el => el.value") if frame.locator("#card-name").count() else None
-        record("cover-ids-tab", "postMessage handoff prefills the ID Creator's name field",
-               name_val == "Dana Whitlock", str(name_val))
+    record("cover-ids-tab", "Cover IDs tab renders the native tablet UI (not an iframe)",
+           page.locator("#ids-shell").count() > 0 and page.locator("iframe#ids-iframe").count() == 0, "")
+
+    # placeholder before any agency/era chosen
+    placeholder_visible = page.is_visible("#ids-card-placeholder")
+    record("cover-ids-tab", "card preview shows placeholder before agency+era are set", placeholder_visible, "")
+
+    # agent-code importer (queries the same Apps Script JSONP endpoint as Agent
+    # File) -- do this before manually typing a name, since the importer only
+    # fills fields that are still empty
+    page.fill("#ids-agent-code", "TEST-CODE")
+    page.click("button[onclick='idsImportAgent()']")
+    page.wait_for_timeout(500)
+    imported_name = page.eval_on_selector("#ids-cover-name", "el => el.value")
+    record("cover-ids-tab", "agent-code importer loads a name from the Apps Script backend",
+           imported_name == "Mock Loaded Agent", str(imported_name))
+
+    # fill in a cover identity and confirm a real card renders
+    page.select_option("#ids-agency", "FBI")
+    page.select_option("#ids-era", "90s")
+    page.fill("#ids-cover-name", "Marcus Reyes")
+    page.fill("#ids-cover-title", "Special Agent")
+    page.fill("#ids-cover-id", "MR-4471")
+    page.wait_for_timeout(300)
+    # Rendered cards vary per agency/era (credential-book layouts use plain
+    # inline-styled divs, CR80-style layouts use .ids-card-wrap), so check
+    # by content rather than a single expected class: the placeholder is
+    # gone and the entered name shows up somewhere in the card.
+    preview_text = page.locator("#ids-card-preview").inner_text()
+    card_rendered = "SELECT AGENCY" not in preview_text and page.locator("#ids-card-placeholder").count() == 0
+    record("cover-ids-tab", "selecting agency+era renders a live credential card", card_rendered, preview_text[:80])
+    if card_rendered:
+        record("cover-ids-tab", "rendered card shows the entered cover name",
+               "Marcus Reyes" in preview_text, preview_text[:80])
 
     record("cover-ids-tab", "no JS exceptions", len(errs)==0, "; ".join(errs))
     page.close()
@@ -316,6 +347,24 @@ def test_mobile_no_overflow(p):
     page.wait_for_timeout(400)
     scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
     record("mobile", "stats/index.html has no horizontal overflow at 390px viewport (Mobile theme)",
+           scroll_width <= 390, f"scrollWidth={scroll_width}")
+    errs_all.extend(errs)
+    page.close()
+
+    # The Cover IDs "tablet" is its own dense grid layout (260px sidebar +
+    # card preview), collapsing to a single column under 700px -- worth
+    # checking on its own rather than trusting the Cover tab's check above
+    # to cover it.
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    page.set_default_timeout(5000)
+    errs = collect_errors(page)
+    mock_routes(page)
+    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    page.click("#tw-ids")
+    page.wait_for_timeout(300)
+    scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
+    record("mobile", "dg-agent-portal.html Cover IDs tab has no horizontal overflow at 390px viewport",
            scroll_width <= 390, f"scrollWidth={scroll_width}")
     errs_all.extend(errs)
     page.close()

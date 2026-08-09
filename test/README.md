@@ -43,11 +43,18 @@ non-zero if anything fails.
   agent by code re-renders the dossier in place on the Cover tab (not just
   a silent jump to Agent File), Agent File code-gate loading via the JSONP
   endpoint.
-- **`test_cover_ids_tab`** — switching to the Cover IDs tab embeds
-  `dg-id-creator.html` in an iframe and the `postMessage` handoff prefills
-  its name/photo from the currently-loaded agent.
-- **dg-id-creator.html** — manual name entry, code loader behavior, plus
-  the `dg-agent-handoff` `postMessage` listener covered above.
+- **`test_cover_ids_tab`** — the Cover IDs tab's "Cover ID Fabricator" is
+  native to `dg-agent-portal.html` (not an iframe): switching to the tab
+  renders the tablet UI, the card preview shows a placeholder until an
+  agency + era are picked, choosing one renders a live credential card
+  reflecting the entered cover name, and the agent-code importer ("LOAD")
+  queries the same Apps Script JSONP endpoint the Agent File tab uses.
+  Ported wholesale from the project's `Dev` branch, which had built this
+  out fully while this branch's Cover IDs tab was still an iframe wrapping
+  the older, less-developed standalone `dg-id-creator.html`.
+- **dg-id-creator.html** — still tested on its own (manual name entry, code
+  loader behavior) even though nothing links to it anymore, since the file
+  is still in the repo.
 - **`test_agent_file_export`** — `stats/`'s "Export to Agent File" button
   (`stats/agent-portal-export.js`). Builds a character with above-average
   STR/CON, exports it, and intercepts the POST payload to check: build text
@@ -68,8 +75,9 @@ it visually if you touch that stylesheet again.
 
 ## Known gap this suite documents, doesn't fix
 
-Three separate, incompatible identity/save systems: `dg-id-creator.html`'s
-code loader expects a base64-JSON code prefixed `DG-`; `dg-agent-portal.html`
+Three separate, incompatible identity/save systems: the now-unlinked
+`dg-id-creator.html`'s code loader expects a base64-JSON code prefixed
+`DG-`; `dg-agent-portal.html` (including its Cover IDs tab's Fabricator)
 uses short `PREFIX-XXXX` codes tied to the Apps Script backend; `stats/`'s
 save/share system is its own localStorage + TinyURL-link scheme, unrelated
 to either. Nothing generated on one loads on either of the others. This is
