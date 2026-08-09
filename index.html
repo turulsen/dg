@@ -3,895 +3,119 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Delta Green — Character Portrait Questionnaire</title>
+<title>Delta Green — Agent Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Special+Elite&family=Source+Sans+3:wght@300;400;600&display=swap');
-
-  :root {
-    --ink: #1a1a18;
-    --paper: #e8e2d4;
-    --paper-dark: #d4ccba;
-    --red: #8b1a1a;
-    --red-faint: #8b1a1a18;
-    --rule: #b0a890;
-    --placeholder: #9a9080;
+  :root{
+    --ink:#e8e2d4; --paper:#e8e2d4; --bg:#1c1b16; --bg2:#14130f;
+    --red:#8b1a1a; --red-glow:#8b1a1a40; --rule:#4a4636; --dim:#a89868;
   }
-
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-
-  body {
-    background: #2a2820;
-    font-family: 'Source Sans 3', sans-serif;
-    font-weight: 300;
-    color: var(--ink);
-    min-height: 100vh;
-    padding: 40px 16px 80px;
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:'Source Sans 3',sans-serif; font-weight:300;
+    min-height:100vh; padding:0 0 80px;
   }
-
-  .page {
-    background: var(--paper);
-    max-width: 720px;
-    margin: 0 auto;
-    padding: 56px 56px 64px;
-    box-shadow: 0 4px 40px rgba(0,0,0,0.6), inset 0 0 80px rgba(0,0,0,0.04);
-    position: relative;
+  header{
+    background:var(--bg2); border-bottom:2px solid var(--red);
+    padding:48px 20px 36px; text-align:center;
   }
-
-  .page::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 48px;
-    width: 2px; height: 100%;
-    background: rgba(139,26,26,0.25);
-    pointer-events: none;
+  .stamp{
+    font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.3em;
+    text-transform:uppercase; color:var(--red); border:1.5px solid var(--red);
+    display:inline-block; padding:4px 12px; margin-bottom:20px; opacity:.8;
   }
-
-  .stamp {
-    font-family: 'Special Elite', monospace;
-    font-size: 10px;
-    letter-spacing: 0.25em;
-    color: var(--red);
-    text-transform: uppercase;
-    border: 1.5px solid var(--red);
-    display: inline-block;
-    padding: 3px 10px;
-    margin-bottom: 32px;
-    opacity: 0.7;
-    transform: rotate(-1.5deg);
+  h1{
+    font-family:'Special Elite',monospace; font-size:clamp(26px,5vw,40px);
+    letter-spacing:.02em; margin-bottom:10px;
   }
-
-  h1 {
-    font-family: 'Special Elite', monospace;
-    font-size: 26px;
-    line-height: 1.2;
-    color: var(--ink);
-    margin-bottom: 6px;
-    letter-spacing: 0.02em;
+  header p{
+    color:var(--dim); font-size:14px; max-width:520px; margin:0 auto; line-height:1.7;
   }
-
-  .subtitle {
-    font-size: 13px;
-    color: var(--placeholder);
-    margin-bottom: 40px;
-    line-height: 1.6;
-    border-bottom: 1px solid var(--rule);
-    padding-bottom: 24px;
+  main{max-width:960px; margin:0 auto; padding:48px 20px 0;}
+  .grid{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:20px;
   }
-
-  .section-label {
-    font-family: 'Special Elite', monospace;
-    font-size: 11px;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--red);
-    margin: 36px 0 16px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
+  .card{
+    background:var(--bg2); border:1px solid var(--rule); border-left:3px solid var(--red);
+    padding:26px 24px; text-decoration:none; color:var(--ink);
+    display:flex; flex-direction:column; gap:10px; transition:border-color .2s, transform .15s;
   }
-
-  .section-label::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--rule);
+  .card:hover{ border-color:var(--red); transform:translateY(-2px); }
+  .card .tag{
+    font-family:'Special Elite',monospace; font-size:9px; letter-spacing:.2em;
+    text-transform:uppercase; color:var(--red);
   }
-
-  .field {
-    margin-bottom: 20px;
+  .card h2{
+    font-family:'Special Elite',monospace; font-size:17px; letter-spacing:.01em; line-height:1.3;
   }
-
-  label {
-    display: block;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--ink);
-    margin-bottom: 6px;
+  .card p{ font-size:13px; color:var(--dim); line-height:1.6; }
+  .card .go{
+    font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.15em;
+    text-transform:uppercase; color:var(--ink); margin-top:auto; padding-top:8px;
   }
-
-  label .optional {
-    font-weight: 300;
-    text-transform: none;
-    letter-spacing: 0;
-    color: var(--placeholder);
-    font-size: 11px;
+  section.notes{
+    max-width:720px; margin:64px auto 0; padding:0 20px;
+    font-size:13px; color:var(--dim); line-height:1.8;
   }
-
-  input[type="text"],
-  input[type="number"],
-  textarea,
-  select {
-    width: 100%;
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid var(--rule);
-    padding: 8px 0;
-    font-family: 'Source Sans 3', sans-serif;
-    font-size: 15px;
-    font-weight: 300;
-    color: var(--ink);
-    outline: none;
-    transition: border-color 0.2s;
-    -webkit-appearance: none;
-    border-radius: 0;
+  section.notes h3{
+    font-family:'Special Elite',monospace; font-size:12px; letter-spacing:.2em;
+    text-transform:uppercase; color:var(--red); margin-bottom:12px;
+    border-bottom:1px solid var(--rule); padding-bottom:8px;
   }
-
-  input[type="text"]:focus,
-  input[type="number"]:focus,
-  textarea:focus,
-  select:focus {
-    border-bottom-color: var(--red);
-  }
-
-  input::placeholder,
-  textarea::placeholder {
-    color: var(--placeholder);
-    font-style: italic;
-  }
-
-  textarea {
-    resize: vertical;
-    min-height: 72px;
-    line-height: 1.6;
-  }
-
-  select {
-    cursor: pointer;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239a9080'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 4px center;
-    padding-right: 20px;
-  }
-
-  .two-col {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0 32px;
-  }
-
-  .upload-area {
-    border: 1.5px dashed var(--rule);
-    padding: 24px;
-    text-align: center;
-    cursor: pointer;
-    transition: border-color 0.2s, background 0.2s;
-    margin-top: 4px;
-  }
-
-  .upload-area:hover {
-    border-color: var(--red);
-    background: var(--red-faint);
-  }
-
-  .upload-area input[type="file"] {
-    display: none;
-  }
-
-  .upload-label {
-    font-size: 13px;
-    color: var(--placeholder);
-    cursor: pointer;
-  }
-
-  .upload-label strong {
-    color: var(--red);
-    font-weight: 600;
-  }
-
-  #file-name {
-    font-size: 12px;
-    color: var(--red);
-    margin-top: 8px;
-    font-style: italic;
-  }
-
-  .submit-row {
-    margin-top: 48px;
-    display: flex;
-    align-items: center;
-    gap: 20px;
-  }
-
-  button[type="submit"] {
-    font-family: 'Special Elite', monospace;
-    font-size: 13px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    background: var(--red);
-    color: var(--paper);
-    border: none;
-    padding: 14px 36px;
-    cursor: pointer;
-    transition: opacity 0.2s;
-  }
-
-  button[type="submit"]:hover { opacity: 0.85; }
-  button[type="submit"]:disabled { opacity: 0.4; cursor: not-allowed; }
-
-  #status {
-    font-size: 13px;
-    color: var(--placeholder);
-    font-style: italic;
-  }
-
-  #status.success { color: #2d6a2d; font-style: normal; font-weight: 600; }
-  #status.error { color: var(--red); font-style: normal; }
-
-  .footnote {
-    margin-top: 40px;
-    padding-top: 20px;
-    border-top: 1px solid var(--rule);
-    font-size: 11px;
-    color: var(--placeholder);
-    line-height: 1.7;
-    font-family: 'Special Elite', monospace;
-    letter-spacing: 0.03em;
-  }
-
-  @media (max-width: 600px) {
-    .page { padding: 32px 24px 48px; }
-    .two-col { grid-template-columns: 1fr; gap: 0; }
-    .page::before { left: 20px; }
-  }
+  section.notes ul{ padding-left:18px; }
+  section.notes li{ margin-bottom:6px; }
+  footer{ text-align:center; color:var(--rule); font-size:11px; margin-top:64px; }
 </style>
 </head>
 <body>
-<div style="max-width:720px;margin:0 auto 16px;display:flex;justify-content:flex-end;">
-  <a href="dg-id-creator.html" style="font-family:'Special Elite',monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;background:#1a4a1a;color:#4aaa4a;border:1.5px solid #2a7a2a;padding:10px 20px;text-decoration:none;display:inline-block;">→ Cover ID Creator</a>
-</div>
 
-<div class="page">
+<header>
+  <div class="stamp">Friendly Programs Division — Internal Use</div>
+  <h1>Delta Green Agent Hub</h1>
+  <p>Player-facing tools for the campaign — build a cover identity, roll or point-buy a new Agent, and keep dossiers up to date between sessions.</p>
+</header>
 
-  <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
-    <a href="dg-id-creator.html" style="font-family:'Special Elite',monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;background:transparent;color:#2a5a2a;border:1.5px solid #2a5a2a;padding:9px 18px;text-decoration:none;display:inline-block;transition:all .2s;" onmouseover="this.style.background='#2a5a2a';this.style.color='#e8e2d4';" onmouseout="this.style.background='transparent';this.style.color='#2a5a2a';">→ Cover ID Creator</a>
+<main>
+  <div class="grid">
+    <a class="card" href="stat-generator.html">
+      <span class="tag">New Agent</span>
+      <h2>Stat Generator</h2>
+      <p>Point-buy or random 3d6 characteristics, with Hit Points, Willpower, Sanity and Breaking Point worked out for you.</p>
+      <span class="go">→ Build a character</span>
+    </a>
+    <a class="card" href="portrait-questionnaire.html">
+      <span class="tag">Character Brief</span>
+      <h2>Portrait Questionnaire</h2>
+      <p>Answer a short brief about your Agent's look and background so the Handler can generate a reference portrait.</p>
+      <span class="go">→ Fill out brief</span>
+    </a>
+    <a class="card" href="dg-agent-portal.html">
+      <span class="tag">Dossier</span>
+      <h2>Agent Portal</h2>
+      <p>Your Agent's living file — cover identity, agent record across eras, medical history, and after-action reports.</p>
+      <span class="go">→ Open portal</span>
+    </a>
+    <a class="card" href="dg-id-creator.html">
+      <span class="tag">Cover</span>
+      <h2>Cover ID Creator</h2>
+      <p>Generate a printable cover identity card for your Agent's public-facing job.</p>
+      <span class="go">→ Create ID</span>
+    </a>
   </div>
 
-  <div class="stamp">Classified — Handler Eyes Only</div>
+  <section class="notes">
+    <h3>Notes for Agents</h3>
+    <ul>
+      <li>Start with the <strong>Stat Generator</strong> if you're building a new character, then use your Character Code (e.g. <em>BRAD-K7X2</em>) to load your Agent into the Portal and ID Creator.</li>
+      <li>These tools save locally in your browser. Keep your Character Code somewhere safe if you switch devices.</li>
+      <li>All defaults follow the Delta Green <em>Agent's Handbook</em> — check with your Handler if your table uses house rules.</li>
+    </ul>
+  </section>
+</main>
+
+<footer>Delta Green is a trademark of Arc Dream Publishing. Unofficial fan-made campaign tools.</footer>
 
-  <h1>Delta Green<br>Character Portrait Brief</h1>
-  <p class="subtitle">Your Handler is building visual references for the campaign. Fill this in as completely as you can — the more specific your answers, the more accurate the result. All fields are required unless marked optional.</p>
-
-  <!-- Agent code loader -->
-  <div id="code-loader" style="margin-bottom:32px; padding:16px 20px; border:1.5px solid var(--rule); background:rgba(0,0,0,0.03);">
-    <div style="font-family:'Special Elite',monospace; font-size:10px; letter-spacing:0.2em; text-transform:uppercase; color:var(--red); margin-bottom:10px;">Returning Agent — Load from Asset Code</div>
-    <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
-      <input type="text" id="agent-code-input" placeholder="Paste your agent file code here" style="flex:1; min-width:200px; background:transparent; border:none; border-bottom:1px solid var(--rule); padding:8px 0; font-family:'Source Sans 3',sans-serif; font-size:14px; color:var(--ink); outline:none;">
-      <button type="button" onclick="loadAgentCode()" style="font-family:'Special Elite',monospace; font-size:11px; letter-spacing:0.15em; text-transform:uppercase; background:var(--ink); color:var(--paper); border:none; padding:10px 20px; cursor:pointer;">Restore Agent</button>
-    </div>
-    <div id="code-load-status" style="font-size:12px; color:var(--placeholder); margin-top:8px; font-style:italic;"></div>
-  </div>
-
-  <form id="dg-form" onsubmit="return false;">
-
-    <!-- IDENTITY -->
-    <div class="section-label">Identity</div>
-
-    <div class="two-col">
-      <div class="field">
-        <label>Character name</label>
-        <input type="text" name="char_name" placeholder="Full name" required>
-      </div>
-      <div class="field">
-        <label>Codename <span class="optional">(if any)</span></label>
-        <input type="text" name="codename" placeholder="—">
-      </div>
-    </div>
-
-    <div class="two-col">
-      <div class="field">
-        <label>Age range</label>
-        <select name="age_range" required>
-          <option value="" disabled selected>Select range</option>
-          <option>Early 20s</option>
-          <option>Mid 20s</option>
-          <option>Late 20s</option>
-          <option>Early 30s</option>
-          <option>Mid 30s</option>
-          <option>Late 30s</option>
-          <option>Early 40s</option>
-          <option>Mid 40s</option>
-          <option>Late 40s</option>
-          <option>Early 50s</option>
-          <option>Mid 50s</option>
-          <option>Late 50s</option>
-          <option>60s or older</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Sex</label>
-        <select name="sex" required>
-          <option value="" disabled selected>Select</option>
-          <option>Male</option>
-          <option>Female</option>
-          <option>Other / specify in notes</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="field">
-      <label>Nationality / ethnic background</label>
-      <input type="text" name="nationality" placeholder="e.g. White American, Nigerian-British, Japanese" required>
-    </div>
-
-    <!-- FACE -->
-    <div class="section-label">Face</div>
-
-    <div class="field">
-      <label>Face shape</label>
-      <input type="text" name="face_shape" placeholder="e.g. sharp and angular, round, square jaw, gaunt, soft" required>
-    </div>
-
-    <div class="two-col">
-      <div class="field">
-        <label>Eye color</label>
-        <input type="text" name="eye_color" placeholder="e.g. pale blue, dark brown, gray-green" required>
-      </div>
-      <div class="field">
-        <label>Eye shape</label>
-        <input type="text" name="eye_shape" placeholder="e.g. deep-set, wide, hooded, almond" required>
-      </div>
-    </div>
-
-    <div class="two-col">
-      <div class="field">
-        <label>Nose</label>
-        <input type="text" name="nose" placeholder="e.g. prominent, straight, crooked, flat" required>
-      </div>
-      <div class="field">
-        <label>Lips</label>
-        <input type="text" name="lips" placeholder="e.g. thin, full, downturned, wide" required>
-      </div>
-    </div>
-
-    <div class="field">
-      <label>Skin tone and finish</label>
-      <input type="text" name="skin" placeholder="e.g. pale and weathered, warm brown, deep with oily finish, ruddy" required>
-    </div>
-
-    <div class="field">
-      <label>Facial hair</label>
-      <input type="text" name="facial_hair" placeholder="e.g. clean-shaven, heavy stubble, full beard, handlebar moustache — describe style" required>
-    </div>
-
-    <div class="field">
-      <label>Scars, marks or damage on the face <span class="optional">(optional)</span></label>
-      <input type="text" name="face_scars" placeholder="e.g. thin scar through left eyebrow, burn scarring on jaw">
-    </div>
-
-    <!-- HAIR -->
-    <div class="section-label">Hair</div>
-
-    <div class="field">
-      <label>Color — be specific</label>
-      <input type="text" name="hair_color" placeholder="e.g. dirty blond with gray at temples, jet black, auburn going silver" required>
-    </div>
-
-    <div class="two-col">
-      <div class="field">
-        <label>Length and style</label>
-        <input type="text" name="hair_style" placeholder="e.g. short military cut, shoulder-length worn loose" required>
-      </div>
-      <div class="field">
-        <label>Texture</label>
-        <input type="text" name="hair_texture" placeholder="e.g. straight, wavy, coarse and curly" required>
-      </div>
-    </div>
-
-    <!-- BODY -->
-    <div class="section-label">Body</div>
-
-    <div class="field">
-      <label>Build</label>
-      <input type="text" name="build" placeholder="e.g. lean and wiry, broad-shouldered with a paunch, compact and muscular" required>
-    </div>
-
-    <div class="field">
-      <label>Posture and how they carry themselves</label>
-      <input type="text" name="posture" placeholder="e.g. coiled and watchful, slouched and resigned, upright and stiff" required>
-    </div>
-
-    <div class="field">
-      <label>Body markers <span class="optional">(optional)</span></label>
-      <input type="text" name="body_markers" placeholder="e.g. sleeve tattoos, prosthetic left hand, burn scarring on forearms">
-    </div>
-
-    <!-- OUTFIT -->
-    <div class="section-label">Outfit — typical look</div>
-
-    <div class="two-col">
-      <div class="field">
-        <label>Jacket / outerwear</label>
-        <input type="text" name="jacket" placeholder="e.g. long dark leather jacket, worn military surplus parka" required>
-      </div>
-      <div class="field">
-        <label>Shirt / top</label>
-        <input type="text" name="shirt" placeholder="e.g. black crew-neck t-shirt, white Oxford button-down" required>
-      </div>
-    </div>
-
-    <div class="two-col">
-      <div class="field">
-        <label>Trousers / bottom</label>
-        <input type="text" name="trousers" placeholder="e.g. dark indigo jeans, olive cargo pants" required>
-      </div>
-      <div class="field">
-        <label>Footwear</label>
-        <input type="text" name="footwear" placeholder="e.g. worn western boots, black tactical boots" required>
-      </div>
-    </div>
-
-    <div class="field">
-      <label>Belt, bag or functional accessories <span class="optional">(optional)</span></label>
-      <input type="text" name="accessories" placeholder="e.g. wide western belt with silver buckle, shoulder holster, battered messenger bag">
-    </div>
-
-    <div class="field">
-      <label>Jewelry or personal items always on their person <span class="optional">(optional)</span></label>
-      <input type="text" name="jewelry" placeholder="e.g. large gold cross pendant, plain gold wedding band they never removed, dog tags">
-    </div>
-
-    <!-- VIBE -->
-    <div class="section-label">Vibe</div>
-
-    <div class="field">
-      <label>Default expression — how do they look when doing nothing?</label>
-      <input type="text" name="expression" placeholder="e.g. flat and dead-eyed, tight-jawed and barely tolerating it, quietly amused" required>
-    </div>
-
-    <div class="field">
-      <label>What does this person feel like to be in a room with?</label>
-      <textarea name="vibe" placeholder="One or two sentences. What's the atmosphere they carry?" required></textarea>
-    </div>
-
-    <div class="field">
-      <label>Real person, actor or character they resemble <span class="optional">(optional)</span></label>
-      <input type="text" name="reference_person" placeholder="e.g. early Kris Kristofferson, a younger Nick Nolte, Tommy Lee Jones">
-    </div>
-
-    <div class="field">
-      <label>Any other notes for the Handler <span class="optional">(optional)</span></label>
-      <textarea name="notes" placeholder="Anything that doesn't fit above — backstory details that affect appearance, specific props, unusual features"></textarea>
-    </div>
-
-    <!-- REFERENCE IMAGE -->
-    <div class="section-label">Reference Image <span style="font-family:'Source Sans 3';font-weight:300;text-transform:none;letter-spacing:0;color:var(--placeholder);font-size:11px;">(optional but strongly recommended)</span></div>
-
-    <p style="font-size:13px;color:var(--placeholder);margin-bottom:12px;line-height:1.6;">Upload a photo, screenshot, or drawing that captures the face or overall vibe — even roughly. JPG or PNG, max 5MB. The image will be stored alongside your responses.</p>
-
-    <div class="upload-area" onclick="document.getElementById('ref-image').click()">
-      <input type="file" id="ref-image" name="ref_image" accept="image/jpeg,image/png,image/webp">
-      <label class="upload-label" for="ref-image">
-        <strong>Click to upload</strong> or drag and drop<br>
-        JPG, PNG or WEBP — max 5MB
-      </label>
-      <div id="file-name"></div>
-    </div>
-
-    <div class="submit-row">
-      <button type="submit" id="submit-btn">Submit Brief</button>
-      <span id="status"></span>
-    </div>
-
-  </form>
-
-  <div class="footnote">
-    DELTA GREEN is a game of secret conspiracies and suppressed truths.<br>
-    This form collects character data for Handler use only. Responses are stored securely in a private spreadsheet.
-  </div>
-
-</div>
-
-<!-- Dossier renders here on same page -->
-<div id="dossier-container" style="display:none; max-width:760px; margin:32px auto 0;"></div>
-
-<script>
-  // ── CONFIGURATION ──────────────────────────────────────────────
-  // Paste your Google Apps Script Web App URL here after deployment
-  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
-  // ───────────────────────────────────────────────────────────────
-
-  // File name display
-  document.getElementById('ref-image').addEventListener('change', function() {
-    const fn = document.getElementById('file-name');
-    fn.textContent = this.files[0] ? this.files[0].name : '';
-  });
-
-  // Drag and drop
-  const uploadArea = document.querySelector('.upload-area');
-  uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.style.borderColor = 'var(--red)'; });
-  uploadArea.addEventListener('dragleave', () => { uploadArea.style.borderColor = 'var(--rule)'; });
-  uploadArea.addEventListener('drop', e => {
-    e.preventDefault();
-    uploadArea.style.borderColor = 'var(--rule)';
-    const input = document.getElementById('ref-image');
-    input.files = e.dataTransfer.files;
-    document.getElementById('file-name').textContent = input.files[0]?.name || '';
-  });
-
-  // Form submit
-  document.getElementById('dg-form').addEventListener('submit', async function(e) {
-    e.preventDefault();
-
-    const btn = document.getElementById('submit-btn');
-    const status = document.getElementById('status');
-
-    btn.disabled = true;
-    status.className = '';
-    status.textContent = 'Transmitting…';
-
-    const formData = new FormData(this);
-
-    // Convert image to base64 if present
-    const imageFile = document.getElementById('ref-image').files[0];
-    let imageBase64 = null;
-    if (imageFile) {
-      imageBase64 = await fileToBase64(imageFile);
-      formData.set('ref_image_base64', imageBase64);
-      formData.set('ref_image_name', imageFile.name);
-      formData.delete('ref_image');
-    }
-
-    // Build plain object for JSON
-    const payload = {};
-    formData.forEach((v, k) => { payload[k] = v; });
-    payload.submitted_at = new Date().toISOString();
-
-    // Always open dossier immediately — don't wait for network
-    openDossier(payload, imageBase64);
-
-    // Generate code client-side immediately
-    const agentCode = generateAgentCode(payload.char_name);
-    payload.agent_code = agentCode;
-    openDossier(payload, imageBase64, agentCode);
-
-    // Submit to sheet and get back the short agent code
-    try {
-      const res = await fetch(APPS_SCRIPT_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify(payload)
-      });
-      status.className = 'success';
-      status.textContent = 'Brief received. Stand by for orders.';
-      btn.textContent = 'Submitted';
-    } catch (err) {
-      status.className = 'success';
-      status.textContent = 'Brief received. Stand by for orders.';
-      btn.textContent = 'Submitted';
-      console.error('Sheet sync error:', err);
-    }
-  });
-
-  function generateAgentCode(name) {
-    const prefix = (name||'AGNT').replace(/[^A-Za-z]/g,'').substring(0,4).toUpperCase();
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let suffix = '';
-    for (let i=0; i<4; i++) suffix += chars[Math.floor(Math.random()*chars.length)];
-    return prefix + '-' + suffix;
-  }
-
-  function openDossier(data, imageBase64, agentCode) {
-    agentCode = agentCode || 'See your Handler';
-    const d = data;
-    const caseNum = 'DG-' + Math.floor(Math.random() * 90000 + 10000);
-    const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-
-    const imgHTML = imageBase64
-      ? `<div class="portrait-box"><img src="${imageBase64}" alt="Reference image"></div>`
-      : `<div class="portrait-box empty"><span>NO IMAGE ON FILE</span></div>`;
-
-    const container = document.getElementById('dossier-container');
-    container.style.display = 'block';
-    container.innerHTML = `
-<style>
-  #dossier-container { padding-bottom: 60px; }
-  .dossier {
-    background: #e6dfc8;
-    padding: 48px 52px 56px;
-    box-shadow: 0 6px 48px rgba(0,0,0,0.7);
-    position: relative;
-    font-family: 'Source Sans 3', sans-serif;
-    font-weight: 300;
-    color: #1a1a18;
-  }
-  .dossier::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: repeating-linear-gradient(0deg,transparent,transparent 28px,rgba(0,0,0,0.03) 28px,rgba(0,0,0,0.03) 29px);
-    pointer-events: none;
-  }
-  .d-header { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #1a1a18; padding-bottom:16px; margin-bottom:24px; }
-  .d-agency { font-family:'Special Elite',monospace; font-size:9px; letter-spacing:0.3em; text-transform:uppercase; color:#7a7060; margin-bottom:4px; }
-  .d-title { font-family:'Special Elite',monospace; font-size:22px; line-height:1.1; letter-spacing:0.04em; }
-  .d-meta { text-align:right; font-family:'Special Elite',monospace; font-size:10px; letter-spacing:0.1em; color:#7a7060; line-height:1.8; }
-  .d-stamp-row { display:flex; gap:12px; margin-bottom:28px; flex-wrap:wrap; }
-  .d-stamp { font-family:'Special Elite',monospace; font-size:10px; letter-spacing:0.2em; text-transform:uppercase; border:2px solid #8b1a1a; color:#8b1a1a; padding:3px 10px; opacity:0.75; transform:rotate(-1.5deg); display:inline-block; }
-  .d-stamp.green { border-color:#2a5a2a; color:#2a5a2a; transform:rotate(0.8deg); }
-  .d-top-grid { display:grid; grid-template-columns:180px 1fr; gap:28px; margin-bottom:28px; }
-  .portrait-box { width:180px; height:220px; border:1.5px solid #b0a080; overflow:hidden; background:#d0c8b0; flex-shrink:0; }
-  .portrait-box img { width:100%; height:100%; object-fit:cover; object-position:top center; display:block; }
-  .portrait-box.empty { display:flex; align-items:center; justify-content:center; }
-  .portrait-box.empty span { font-family:'Special Elite',monospace; font-size:9px; letter-spacing:0.15em; color:#b0a080; text-align:center; padding:8px; }
-  .d-field { display:flex; border-bottom:1px solid #b0a080; padding:7px 0; align-items:baseline; gap:12px; }
-  .d-field:last-child { border-bottom:none; }
-  .d-key { font-family:'Special Elite',monospace; font-size:9px; letter-spacing:0.18em; text-transform:uppercase; color:#7a7060; min-width:110px; flex-shrink:0; }
-  .d-val { font-size:13px; font-weight:400; color:#1a1a18; line-height:1.5; flex:1; }
-  .d-val.empty { color:#b0a080; font-style:italic; font-size:12px; }
-  .d-section { margin-bottom:20px; }
-  .d-section-head { font-family:'Special Elite',monospace; font-size:10px; letter-spacing:0.22em; text-transform:uppercase; color:#8b1a1a; border-bottom:1.5px solid #8b1a1a; padding-bottom:5px; margin-bottom:10px; }
-  .d-two-col { display:grid; grid-template-columns:1fr 1fr; gap:0 32px; }
-  .d-vibe { background:rgba(0,0,0,0.04); border-left:3px solid #8b1a1a; padding:12px 16px; margin-top:4px; font-size:13px; line-height:1.7; font-style:italic; }
-  .d-footer { margin-top:36px; padding-top:16px; border-top:2px solid #1a1a18; display:flex; justify-content:space-between; align-items:flex-end; }
-  .d-footer-left { font-family:'Special Elite',monospace; font-size:9px; letter-spacing:0.15em; color:#7a7060; line-height:2; }
-  .d-sig { border-top:1px solid #1a1a18; width:180px; margin-top:32px; padding-top:4px; font-family:'Special Elite',monospace; font-size:9px; letter-spacing:0.1em; color:#7a7060; }
-  .d-print-bar { display:flex; gap:12px; margin-bottom:16px; }
-  .d-print-btn { font-family:'Special Elite',monospace; font-size:12px; letter-spacing:0.15em; text-transform:uppercase; background:#8b1a1a; color:#e6dfc8; border:none; padding:12px 28px; cursor:pointer; }
-  .d-print-btn.sec { background:transparent; color:#e6dfc8; border:1.5px solid #e6dfc8; }
-  .portrait-upload-label { display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:100%; cursor:pointer; gap:8px; }
-  .portrait-upload-label span { font-family:'Special Elite',monospace; font-size:8px; letter-spacing:0.15em; color:#b0a080; text-align:center; padding:0 8px; line-height:1.6; }
-  .portrait-upload-label svg { opacity:0.4; }
-  @media print {
-    body > div:first-child, .page, #dossier-container > style { display:none !important; }
-    .d-print-bar { display:none !important; }
-    #dossier-container { margin:0 !important; max-width:100% !important; }
-    .dossier { box-shadow:none !important; }
-    .portrait-box.empty .portrait-upload-label span:last-child { display:none; }
-  }
-</style>
-
-<div class="d-print-bar">
-  <button class="d-print-btn" onclick="printDossier()">Print / Save as PDF</button>
-  <button class="d-print-btn sec" onclick="document.getElementById('dossier-container').style.display='none'; document.getElementById('dg-form').reset(); document.getElementById('submit-btn').disabled=false; document.getElementById('submit-btn').textContent='Submit Brief'; document.getElementById('status').textContent=''; window.scrollTo(0,0);">Fill Another</button>
-</div>
-
-<div class="dossier" id="the-dossier">
-  <div class="d-header">
-    <div>
-      <div class="d-agency">Delta Green Directorate — Personnel & Asset Registry</div>
-      <div class="d-title">Agent Affiliation<br>Dossier</div>
-    </div>
-    <div class="d-meta">CASE NO. ${agentCode}<br>DATE: ${dateStr}<br>HANDLER EYES ONLY<br>DO NOT DUPLICATE</div>
-  </div>
-
-  <div class="d-stamp-row">
-    <span class="d-stamp">Top Secret</span>
-    <span class="d-stamp">Compartmented</span>
-    <span class="d-stamp green">Asset Enrolled</span>
-  </div>
-
-  <div class="d-top-grid">
-    <div class="portrait-box ${imageBase64 ? '' : 'empty'}" id="dossier-portrait-box">
-      ${imageBase64
-        ? `<img id="dossier-portrait-img" src="${imageBase64}" alt="Reference image">`
-        : `<label class="portrait-upload-label" for="dossier-portrait-upload">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#b0a080" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
-            <span>Tap to add<br>portrait image</span>
-           </label>
-           <input type="file" id="dossier-portrait-upload" accept="image/*" style="display:none">`
-      }
-    </div>
-    <div>
-      <div class="d-field"><span class="d-key">Full Name</span><span class="d-val">${dv(d.char_name)}</span></div>
-      <div class="d-field"><span class="d-key">Codename</span><span class="d-val">${dv(d.codename)}</span></div>
-      <div class="d-field"><span class="d-key">Age Range</span><span class="d-val">${dv(d.age_range)}</span></div>
-      <div class="d-field"><span class="d-key">Sex</span><span class="d-val">${dv(d.sex)}</span></div>
-      <div class="d-field"><span class="d-key">Nationality</span><span class="d-val">${dv(d.nationality)}</span></div>
-      <div class="d-field"><span class="d-key">Expression</span><span class="d-val">${dv(d.expression)}</span></div>
-      <div class="d-field"><span class="d-key">Resembles</span><span class="d-val">${dv(d.reference_person)}</span></div>
-    </div>
-  </div>
-
-  <div class="d-section">
-    <div class="d-section-head">Face</div>
-    <div class="d-two-col">
-      <div class="d-field"><span class="d-key">Shape</span><span class="d-val">${dv(d.face_shape)}</span></div>
-      <div class="d-field"><span class="d-key">Skin</span><span class="d-val">${dv(d.skin)}</span></div>
-      <div class="d-field"><span class="d-key">Eyes</span><span class="d-val">${dv(d.eye_color)} — ${dv(d.eye_shape)}</span></div>
-      <div class="d-field"><span class="d-key">Nose</span><span class="d-val">${dv(d.nose)}</span></div>
-      <div class="d-field"><span class="d-key">Lips</span><span class="d-val">${dv(d.lips)}</span></div>
-      <div class="d-field"><span class="d-key">Facial Hair</span><span class="d-val">${dv(d.facial_hair)}</span></div>
-    </div>
-    ${d.face_scars ? `<div class="d-field"><span class="d-key">Scars / Marks</span><span class="d-val">${d.face_scars}</span></div>` : ''}
-  </div>
-
-  <div class="d-section">
-    <div class="d-section-head">Hair</div>
-    <div class="d-two-col">
-      <div class="d-field"><span class="d-key">Color</span><span class="d-val">${dv(d.hair_color)}</span></div>
-      <div class="d-field"><span class="d-key">Style</span><span class="d-val">${dv(d.hair_style)}</span></div>
-      <div class="d-field"><span class="d-key">Texture</span><span class="d-val">${dv(d.hair_texture)}</span></div>
-    </div>
-  </div>
-
-  <div class="d-section">
-    <div class="d-section-head">Body</div>
-    <div class="d-two-col">
-      <div class="d-field"><span class="d-key">Build</span><span class="d-val">${dv(d.build)}</span></div>
-      <div class="d-field"><span class="d-key">Posture</span><span class="d-val">${dv(d.posture)}</span></div>
-      ${d.body_markers ? `<div class="d-field"><span class="d-key">Markers</span><span class="d-val">${d.body_markers}</span></div>` : ''}
-    </div>
-  </div>
-
-  <div class="d-section">
-    <div class="d-section-head">Outfit</div>
-    <div class="d-two-col">
-      <div class="d-field"><span class="d-key">Jacket</span><span class="d-val">${dv(d.jacket)}</span></div>
-      <div class="d-field"><span class="d-key">Shirt</span><span class="d-val">${dv(d.shirt)}</span></div>
-      <div class="d-field"><span class="d-key">Trousers</span><span class="d-val">${dv(d.trousers)}</span></div>
-      <div class="d-field"><span class="d-key">Footwear</span><span class="d-val">${dv(d.footwear)}</span></div>
-      ${d.accessories ? `<div class="d-field"><span class="d-key">Accessories</span><span class="d-val">${d.accessories}</span></div>` : ''}
-      ${d.jewelry ? `<div class="d-field"><span class="d-key">Jewelry</span><span class="d-val">${d.jewelry}</span></div>` : ''}
-    </div>
-  </div>
-
-  ${d.vibe ? `<div class="d-section"><div class="d-section-head">Psychological Profile</div><div class="d-vibe">${d.vibe}</div></div>` : ''}
-  ${d.notes ? `<div class="d-section"><div class="d-section-head">Handler Notes</div><div class="d-vibe" style="font-style:normal;">${d.notes}</div></div>` : ''}
-
-  <div class="d-footer">
-    <div class="d-footer-left">DELTA GREEN DIRECTORATE<br>PERSONNEL FILE — RESTRICTED<br>CASE ${agentCode} / ${dateStr}</div>
-    <div class="d-sig">Handler Signature</div>
-  </div>
-
-  <div style="margin-top:28px; padding-top:20px; border-top:1.5px solid #b0a080;">
-    <div style="font-family:'Special Elite',monospace; font-size:10px; letter-spacing:0.2em; text-transform:uppercase; color:#8b1a1a; margin-bottom:12px;">Asset File Code</div>
-    <div style="font-size:12px; color:#7a7060; margin-bottom:12px; line-height:1.6;">Save this code to restore your dossier at any time. Paste it into the "Returning Agent" field on the form page.</div>
-    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-      <div id="agent-code-display" style="font-family:'Special Elite',monospace; font-size:15px; letter-spacing:0.12em; color:#1a1a18; background:#d0c8b0; padding:10px 16px; flex:1; min-width:200px; word-break:break-all;">${agentCode}</div>
-      <button onclick="copyAgentCode()" style="font-family:'Special Elite',monospace; font-size:11px; letter-spacing:0.15em; text-transform:uppercase; background:#1a1a18; color:#e6dfc8; border:none; padding:10px 18px; cursor:pointer; white-space:nowrap;" id="copy-code-btn">Copy Code</button>
-    </div>
-  </div>
-</div>`;
-
-    container.scrollIntoView({ behavior: 'smooth' });
-
-    // Portrait upload on dossier
-    const portraitInput = document.getElementById('dossier-portrait-upload');
-    if (portraitInput) {
-      portraitInput.addEventListener('change', function() {
-        if (!this.files[0]) return;
-        const reader = new FileReader();
-        reader.onload = function(e) {
-          const box = document.getElementById('dossier-portrait-box');
-          box.classList.remove('empty');
-          box.innerHTML = `<img id="dossier-portrait-img" src="${e.target.result}" alt="Portrait" style="width:100%;height:100%;object-fit:cover;object-position:top center;display:block;">`;
-        };
-        reader.readAsDataURL(this.files[0]);
-      });
-    }
-  }
-
-  function printDossier() {
-    const dossier = document.getElementById('the-dossier');
-    if (!dossier) return;
-    const win = window.open('', '_blank', 'width=900,height=700');
-    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
-      <style>
-        @import url('https://fonts.googleapis.com/css2?family=Special+Elite&family=Source+Sans+3:ital,wght@0,300;0,400;0,600;1,300&display=swap');
-        @page { size: A4; margin: 14mm 14mm; }
-        body { margin:0; padding:20px; background:white; }
-        ${Array.from(document.querySelectorAll('style')).map(s => s.textContent).join('\n')}
-      </style></head><body>`);
-    win.document.write(dossier.outerHTML);
-    win.document.write('</body></html>');
-    win.document.close();
-    win.onload = () => { win.focus(); win.print(); };
-  }
-
-  function generateCode(data) {
-    const slim = Object.assign({}, data);
-    delete slim.ref_image_base64;
-    delete slim.ref_image_name;
-    delete slim.submitted_at;
-    try {
-      const json = JSON.stringify(slim);
-      const b64 = btoa(unescape(encodeURIComponent(json)));
-      return 'DG-' + b64;
-    } catch(e) {
-      return 'DG-ERROR';
-    }
-  }
-
-  function copyAgentCode() {
-    const code = document.getElementById('agent-code-display');
-    if (!code) return;
-    navigator.clipboard.writeText(code.textContent.trim()).then(() => {
-      const btn = document.getElementById('copy-code-btn');
-      btn.textContent = 'Copied!';
-      setTimeout(() => btn.textContent = 'Copy Code', 2000);
-    });
-  }
-
-  function loadAgentCode() {
-    const input = document.getElementById('agent-code-input');
-    const status = document.getElementById('code-load-status');
-    const code = (input.value || '').trim().toUpperCase();
-    if (!code || code.length < 8) {
-      status.textContent = 'Enter your agent code (e.g. BRAD-K7X2)';
-      status.style.color = '#8b1a1a';
-      return;
-    }
-    status.textContent = 'Retrieving agent file...';
-    status.style.color = '#888';
-
-    // Use script tag injection to bypass Safari cross-origin block
-    window._agentLookupCallback = function(json) {
-      delete window._agentLookupCallback;
-      const old = document.getElementById('_agent_lookup_script');
-      if (old) old.remove();
-
-      if (json.status === 'OK' && json.data) {
-        const data = json.data;
-        // Fill the form silently
-        const form = document.getElementById('dg-form');
-        Object.keys(data).forEach(key => {
-          const el = form.elements[key];
-          if (el) el.value = data[key] || '';
-        });
-        // Render dossier immediately with existing code — no new Sheet entry
-        const existingCode = data.agent_code || code;
-        openDossier(data, null, existingCode);
-        const btn = document.getElementById('submit-btn');
-        btn.textContent = 'Update Brief';
-        btn.disabled = false;
-        status.textContent = 'Agent restored: ' + (data.char_name || code);
-        status.style.color = '#2d6a2d';
-        document.getElementById('dossier-container').scrollIntoView({ behavior: 'smooth' });
-      } else if (json.status === 'NOT_FOUND') {
-        status.textContent = 'Code not found. Check with your Handler.';
-        status.style.color = '#8b1a1a';
-      } else {
-        status.textContent = 'Could not retrieve agent file.';
-        status.style.color = '#8b1a1a';
-      }
-    };
-
-    const script = document.createElement('script');
-    script.id = '_agent_lookup_script';
-    script.src = APPS_SCRIPT_URL + '?code=' + encodeURIComponent(code) + '&callback=_agentLookupCallback';
-    script.onerror = function() {
-      status.textContent = 'Connection error. Try again.';
-      status.style.color = '#8b1a1a';
-    };
-    document.head.appendChild(script);
-  }
-
-  function dv(val) {
-    if (!val || val.trim() === '') return '<span class="empty">not specified</span>';
-    return val;
-  }
-
-  function fileToBase64(file) {
-    return new Promise((resolve, reject) => {
-      const r = new FileReader();
-      r.onload = () => resolve(r.result);
-      r.onerror = reject;
-      r.readAsDataURL(file);
-    });
-  }
-</script>
 </body>
 </html>

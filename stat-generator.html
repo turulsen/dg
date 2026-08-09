@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Delta Green — Stat Generator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Source+Sans+3:wght@300;400;600&family=Courier+Prime:ital,wght@0,400;0,700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#1a1a18; --paper:#e8e2d4; --paper-dark:#d4ccba; --bg:#1c1b16;
+    --red:#8b1a1a; --rule:#b0a890; --dim:#9a9080;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{ background:var(--bg); font-family:'Source Sans 3',sans-serif; font-weight:300; color:var(--ink); min-height:100vh; padding:40px 16px 80px; }
+  .page{ background:var(--paper); max-width:800px; margin:0 auto; padding:48px 40px 56px; box-shadow:0 4px 40px rgba(0,0,0,.6); }
+  .stamp{ font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.25em; color:var(--red); text-transform:uppercase; border:1.5px solid var(--red); display:inline-block; padding:3px 10px; margin-bottom:24px; opacity:.7; transform:rotate(-1.5deg); }
+  h1{ font-family:'Special Elite',monospace; font-size:24px; margin-bottom:6px; }
+  .subtitle{ font-size:13px; color:var(--dim); margin-bottom:28px; line-height:1.6; border-bottom:1px solid var(--rule); padding-bottom:20px; }
+
+  .mode-toggle{ display:flex; gap:0; margin-bottom:28px; border:1.5px solid var(--ink); }
+  .mode-toggle button{
+    flex:1; padding:12px; font-family:'Special Elite',monospace; font-size:11px; letter-spacing:.15em; text-transform:uppercase;
+    background:transparent; border:none; cursor:pointer; color:var(--ink); border-right:1.5px solid var(--ink);
+  }
+  .mode-toggle button:last-child{ border-right:none; }
+  .mode-toggle button.active{ background:var(--ink); color:var(--paper); }
+
+  .section-label{ font-family:'Special Elite',monospace; font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--red); margin:30px 0 14px; display:flex; align-items:center; gap:12px; }
+  .section-label::after{ content:''; flex:1; height:1px; background:var(--rule); }
+
+  .stat-row{ display:flex; align-items:center; gap:14px; padding:10px 0; border-bottom:1px solid var(--rule); }
+  .stat-row label{ font-family:'Special Elite',monospace; font-size:12px; letter-spacing:.1em; width:110px; flex-shrink:0; }
+  .stat-row input[type=number]{
+    width:64px; text-align:center; font-family:'Courier Prime',monospace; font-size:16px; font-weight:700;
+    background:transparent; border:1px solid var(--rule); padding:6px 4px;
+  }
+  .stat-row .x5{ font-size:11px; color:var(--dim); width:90px; }
+  .stat-row .reroll{
+    margin-left:auto; font-family:'Special Elite',monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase;
+    background:transparent; border:1px solid var(--rule); color:var(--ink); padding:6px 10px; cursor:pointer;
+  }
+  .stat-row .reroll:hover{ border-color:var(--red); color:var(--red); }
+
+  .pool-bar{ font-family:'Special Elite',monospace; font-size:12px; letter-spacing:.08em; margin-bottom:10px; }
+  .pool-bar.over{ color:var(--red); }
+
+  .btn{
+    font-family:'Special Elite',monospace; font-size:12px; letter-spacing:.15em; text-transform:uppercase;
+    background:var(--ink); color:var(--paper); border:none; padding:12px 24px; cursor:pointer; margin-top:8px;
+  }
+  .btn:hover{ background:var(--red); }
+  .btn.ghost{ background:transparent; color:var(--ink); border:1.5px solid var(--ink); }
+  .btn.ghost:hover{ border-color:var(--red); color:var(--red); }
+
+  .field{ margin-bottom:18px; }
+  .field label{ display:block; font-size:12px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; margin-bottom:6px; }
+  .field input[type=text]{ width:100%; background:transparent; border:none; border-bottom:1px solid var(--rule); padding:8px 0; font-size:15px; font-weight:300; outline:none; }
+
+  details{ margin-top:20px; }
+  details summary{ font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.15em; text-transform:uppercase; color:var(--dim); cursor:pointer; }
+  .adv-row{ display:flex; gap:16px; margin-top:14px; flex-wrap:wrap; }
+  .adv-row .field{ flex:1; min-width:120px; margin-bottom:0; }
+  .adv-row input[type=number]{ width:100%; background:transparent; border-bottom:1px solid var(--rule); padding:6px 0; font-family:'Courier Prime',monospace; font-size:14px; }
+
+  .derived-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:14px; margin-top:6px; }
+  .derived-card{ border:1px solid var(--rule); padding:14px; text-align:center; }
+  .derived-card .val{ font-family:'Courier Prime',monospace; font-size:22px; font-weight:700; color:var(--red); }
+  .derived-card .lbl{ font-family:'Special Elite',monospace; font-size:9px; letter-spacing:.12em; text-transform:uppercase; color:var(--dim); margin-top:4px; }
+
+  .sheet-out{
+    width:100%; min-height:220px; margin-top:14px; font-family:'Courier Prime',monospace; font-size:12px;
+    background:rgba(0,0,0,.04); border:1px dashed var(--rule); padding:16px; white-space:pre-wrap; line-height:1.7;
+  }
+  .note{ font-size:12px; color:var(--dim); line-height:1.7; margin-top:10px; }
+  .code-out{ font-family:'Special Elite',monospace; font-size:16px; letter-spacing:.1em; color:var(--red); margin:14px 0; }
+</style>
+</head>
+<body>
+<div style="max-width:800px;margin:0 auto 16px;">
+  <a href="index.html" style="font-family:'Special Elite',monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#c8c0a8;text-decoration:none;">← Agent Hub</a>
+</div>
+<div class="page">
+  <div class="stamp">Character Creation — Delta Green</div>
+  <h1>Agent Stat Generator</h1>
+  <p class="subtitle">Roll randomly or spend a point-buy pool across your six characteristics. Defaults follow the <em>Agent's Handbook</em> — open "House Rules" below if your Handler uses different limits.</p>
+
+  <div class="mode-toggle">
+    <button id="btn-random" class="active" onclick="setMode('random')">Random 3d6</button>
+    <button id="btn-buy" onclick="setMode('buy')">Point Buy</button>
+  </div>
+
+  <div id="random-panel">
+    <button class="btn" onclick="rollAll()">Roll All Six</button>
+  </div>
+
+  <div id="buy-panel" style="display:none;">
+    <div class="pool-bar" id="pool-bar">Points remaining: <strong id="pool-remaining">65</strong> / <span id="pool-total">65</span></div>
+  </div>
+
+  <div class="section-label">Characteristics</div>
+  <div id="stat-rows"></div>
+
+  <details>
+    <summary>House Rules / Advanced</summary>
+    <div class="adv-row">
+      <div class="field"><label>Point-buy pool</label><input type="number" id="cfg-pool" value="65" onchange="onConfigChange()"></div>
+      <div class="field"><label>Min per stat</label><input type="number" id="cfg-min" value="3" onchange="onConfigChange()"></div>
+      <div class="field"><label>Max per stat</label><input type="number" id="cfg-max" value="18" onchange="onConfigChange()"></div>
+    </div>
+  </details>
+
+  <div class="section-label">Derived Stats</div>
+  <div class="derived-grid" id="derived-grid"></div>
+  <p class="note">HP = ⌈(STR+CON)/2⌉ &nbsp;·&nbsp; WP = POW &nbsp;·&nbsp; Sanity = POW×5 &nbsp;·&nbsp; Breaking Point = Sanity − POW. Confirm these against your printed Handbook if your table uses a different edition.</p>
+
+  <div class="section-label">Agent Identity</div>
+  <div class="field"><label>Character name</label><input type="text" id="char-name" placeholder="Full name"></div>
+  <div class="field"><label>Codename <span style="font-weight:300;color:var(--dim);">(optional)</span></label><input type="text" id="char-codename" placeholder="Field codename"></div>
+
+  <button class="btn" onclick="generateSheet()">Generate Character Sheet</button>
+  <button class="btn ghost" onclick="downloadJson()">Download JSON</button>
+
+  <div id="code-out" class="code-out" style="display:none;"></div>
+  <textarea class="sheet-out" id="sheet-out" style="display:none;" readonly></textarea>
+  <p class="note" id="carry-note" style="display:none;">Copy these values into your <a href="portrait-questionnaire.html" style="color:var(--red);">Portrait Questionnaire</a> or <a href="dg-agent-portal.html" style="color:var(--red);">Agent Portal</a> brief — the generator saves locally in this browser but doesn't push to your Handler's dossier system yet.</p>
+</div>
+
+<script>
+const STATS = [
+  {key:'str', label:'STR'}, {key:'con', label:'CON'}, {key:'dex', label:'DEX'},
+  {key:'int', label:'INT'}, {key:'pow', label:'POW'}, {key:'cha', label:'CHA'}
+];
+let mode = 'random';
+let values = { str:10, con:10, dex:10, int:10, pow:10, cha:10 };
+
+function cfg(){
+  return {
+    pool: parseInt(document.getElementById('cfg-pool').value)||65,
+    min: parseInt(document.getElementById('cfg-min').value)||3,
+    max: parseInt(document.getElementById('cfg-max').value)||18
+  };
+}
+
+function roll3d6(){ return (1+Math.floor(Math.random()*6))+(1+Math.floor(Math.random()*6))+(1+Math.floor(Math.random()*6)); }
+
+function setMode(m){
+  mode = m;
+  document.getElementById('btn-random').classList.toggle('active', m==='random');
+  document.getElementById('btn-buy').classList.toggle('active', m==='buy');
+  document.getElementById('random-panel').style.display = m==='random' ? 'block' : 'none';
+  document.getElementById('buy-panel').style.display = m==='buy' ? 'block' : 'none';
+  if(m==='buy'){
+    const c = cfg();
+    STATS.forEach(s=>values[s.key]=c.min);
+  }
+  renderRows();
+}
+
+function rollAll(){
+  STATS.forEach(s=>values[s.key]=roll3d6());
+  renderRows();
+}
+
+function rerollOne(key){
+  values[key]=roll3d6();
+  renderRows();
+}
+
+function onConfigChange(){
+  if(mode==='buy'){ renderRows(); } else { renderDerived(); }
+}
+
+function updatePoolBar(){
+  if(mode!=='buy') return;
+  const c = cfg();
+  const spent = STATS.reduce((sum,s)=>sum+values[s.key],0);
+  const remaining = c.pool - spent;
+  document.getElementById('pool-total').textContent = c.pool;
+  document.getElementById('pool-remaining').textContent = remaining;
+  document.getElementById('pool-bar').classList.toggle('over', remaining<0);
+}
+
+function renderRows(){
+  const c = cfg();
+  const wrap = document.getElementById('stat-rows');
+  wrap.innerHTML = STATS.map(s=>{
+    const v = values[s.key];
+    const rerollBtn = mode==='random' ? `<button class="reroll" onclick="rerollOne('${s.key}')">Re-roll</button>` : '';
+    return `<div class="stat-row">
+      <label>${s.label}</label>
+      <input type="number" min="${c.min}" max="${c.max}" value="${v}" onchange="onStatInput('${s.key}',this.value)">
+      <span class="x5">×5 = ${v*5}%</span>
+      ${rerollBtn}
+    </div>`;
+  }).join('');
+  updatePoolBar();
+  renderDerived();
+}
+
+function onStatInput(key, val){
+  const c = cfg();
+  let n = parseInt(val)||c.min;
+  n = Math.max(c.min, Math.min(c.max, n));
+  values[key]=n;
+  renderRows();
+}
+
+function renderDerived(){
+  const hp = Math.ceil((values.str+values.con)/2);
+  const wp = values.pow;
+  const san = values.pow*5;
+  const bp = san - values.pow;
+  const cards = [
+    ['Hit Points', hp], ['Willpower', wp], ['Sanity', san], ['Breaking Point', bp]
+  ];
+  document.getElementById('derived-grid').innerHTML = cards.map(([lbl,val])=>
+    `<div class="derived-card"><div class="val">${val}</div><div class="lbl">${lbl}</div></div>`
+  ).join('');
+}
+
+function genCode(name){
+  const prefix = (name||'AGNT').replace(/[^A-Za-z]/g,'').substring(0,4).toUpperCase() || 'AGNT';
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let s=''; for(let i=0;i<4;i++) s+=chars[Math.floor(Math.random()*chars.length)];
+  return prefix+'-'+s;
+}
+
+function generateSheet(){
+  const name = document.getElementById('char-name').value.trim() || 'Unnamed Agent';
+  const codename = document.getElementById('char-codename').value.trim();
+  const code = genCode(name);
+  const hp = Math.ceil((values.str+values.con)/2);
+  const wp = values.pow;
+  const san = values.pow*5;
+  const bp = san - values.pow;
+
+  const record = { code, name, codename, mode, values: {...values}, derived:{hp,wp,san,bp}, created: new Date().toISOString() };
+  try{ localStorage.setItem('dg_stat_'+code, JSON.stringify(record)); }catch(e){}
+
+  document.getElementById('code-out').style.display='block';
+  document.getElementById('code-out').textContent = 'Character Code: '+code;
+
+  const lines = [
+    `DELTA GREEN — CHARACTERISTICS`,
+    `Name: ${name}${codename ? '  ("'+codename+'")' : ''}`,
+    `Code: ${code}`,
+    ``,
+    ...STATS.map(s=>`${s.label.padEnd(6)} ${String(values[s.key]).padStart(2)}   (x5: ${values[s.key]*5}%)`),
+    ``,
+    `Hit Points:      ${hp}`,
+    `Willpower:       ${wp}`,
+    `Sanity:          ${san}`,
+    `Breaking Point:  ${bp}`
+  ];
+  const out = document.getElementById('sheet-out');
+  out.style.display='block';
+  out.value = lines.join('\n');
+  document.getElementById('carry-note').style.display='block';
+  window._dgLastRecord = record;
+}
+
+function downloadJson(){
+  if(!window._dgLastRecord){ generateSheet(); }
+  const blob = new Blob([JSON.stringify(window._dgLastRecord, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (window._dgLastRecord.code || 'agent')+'.json';
+  a.click();
+}
+
+setMode('random');
+rollAll();
+</script>
+</body>
+</html>
