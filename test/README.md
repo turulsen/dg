@@ -43,13 +43,19 @@ non-zero if anything fails.
   entirely (this hung the test outright before the fix, not just slowed
   it down).
 - **Mobile layout (`test_mobile_no_overflow`)** — checks `document.
-  documentElement.scrollWidth` stays at or under the viewport width (390px).
-  `stats/index.html` is a partial exception: only its dedicated "Mobile"
-  theme is meant to be responsive (the other five — X-Files, Modern, Son of
-  Sam, Field Notes, Live Play — are desktop-oriented by the original
-  design), so it's checked separately with that theme selected rather than
-  folded into the general sweep across `index.html` / `dg-agent-portal.html`
-  / `dg-id-creator.html`.
+  documentElement.scrollWidth` stays at or under the viewport width (390px)
+  across `index.html`, `dg-agent-portal.html`, and `dg-id-creator.html`,
+  plus all six `stats/index.html` themes individually (X-Files, Modern, Son
+  of Sam, Field Notes, Mobile, and Live Play with real content filled in —
+  see the root README's Mobile section for what was actually wrong and how
+  it was fixed). Live Play gets three extra checks since page-level
+  scrollWidth alone doesn't catch everything that was broken there: the
+  full character sheet's own `#lp-sheet` *is* expected to be wider than the
+  viewport (it scrolls horizontally within its own box by design, so this
+  test asserts `scrollWidth > 390` for it, not `<=`), the sticky HP/WP/SAN/
+  BP tracker bar must fit without its own overflow, and the Dice Roller
+  widget (which auto-expands when Live Play is selected) must stay within
+  the viewport rather than the fixed 270px floating panel it used to be.
 - **dg-agent-portal.html** — tab switching (Cover / Agent File / Cover IDs),
   full profession dropdown, random agent generator per profession, cover
   form submit + dossier render, localStorage persistence, restoring an

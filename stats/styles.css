@@ -7606,3 +7606,166 @@ input[type="checkbox"]:checked+label {
     padding: 14px 12px !important;
     min-height: 52px !important;
 }
+
+/* ══════════════════════════════════════════════
+   AGENT HUB ADDITION: mobile overflow fixes for the five non-Mobile
+   themes (X-Files, Modern, Son of Sam, Field Notes, Live Play). Not
+   theme-scoped -- these are all viewport-width-gated, so they change
+   nothing on desktop and apply uniformly regardless of which theme is
+   active, rather than duplicating near-identical fixes five times.
+
+   Root cause of most of the horizontal overflow: browsers give every
+   <fieldset> a UA-stylesheet default of `min-width: min-content`, so a
+   fieldset refuses to shrink below the width of its widest unbreakable
+   content (an equipment/weapon stat line, a long field label, etc.) no
+   matter how well the flex/grid layout *inside* it collapses. The
+   Mobile theme happens to avoid this by luck of its content, not by any
+   explicit fix -- every other theme needs it spelled out.
+   ══════════════════════════════════════════════ */
+@media (max-width: 700px) {
+    fieldset {
+        min-width: 0;
+    }
+
+    /* Equipment picker: search+category row and the catalog/loadout
+       columns all need the same min-width reset as their parent
+       fieldset, or they individually re-trigger the same overflow. */
+    #eq-picker-container,
+    .eq-controls,
+    .eq-panels,
+    .eq-catalog-panel,
+    .eq-loadout-panel,
+    .eq-custom-add-row {
+        min-width: 0;
+    }
+
+    .eq-cat-select {
+        max-width: 100%;
+    }
+
+    /* Long equipment/weapon names and stat lines (e.g. "1D12+2 · 150M ·
+       Unusual") shouldn't be able to force a scrollable list row wider
+       than the list itself once the fieldset above can no longer bail
+       it out by growing. */
+    .eq-scrolllist,
+    .eq-scrolllist * {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    /* Live Play's full character sheet deliberately mirrors a printed
+       DD Form 315-style paper form -- fixed percentage-width table
+       columns, two side-by-side sub-columns (.lp-sp-col-l at 44% / a
+       remaining .lp-sp-col-r) for Stats+Bonds and Derived+Motivations,
+       a 3-column skills grid, etc. Below their design width these
+       don't just truncate gracefully, they visually overlap and cut
+       off mid-word (percentage widths and fixed-layout tables don't
+       degrade the way normal text flow does). Rather than trying to
+       reflow a form that's intentionally shaped like a specific piece
+       of paper, give it back the width it needs and let the whole
+       sheet scroll horizontally as one unit -- like panning around a
+       PDF or a spreadsheet on a phone -- instead of squeezing into
+       390px illegibly. This is the one deliberate exception to "no
+       page should ever need horizontal scroll" here. */
+    #lp-sheet {
+        overflow-x: auto;
+    }
+    #lp-sheet .lp-band > div,
+    #lp-sheet .lp-sp-grid {
+        min-width: 780px;
+    }
+    #lp-sheet .lp-full-table {
+        width: max-content;
+        min-width: 100%;
+    }
+
+    /* Skills grid: fixed 3 columns + an 80px column-gap were never going
+       to fit a phone. Same underlying issue as the fieldset above --
+       .cs-skill-name has white-space:nowrap, so each 1fr track's implicit
+       minimum was that name's full unwrapped width. Drop to 2 columns
+       with a small gap and reset the chain of min-widths so the
+       already-present text-overflow:ellipsis on .cs-skill-name can
+       finally do its job instead of being overridden by it. */
+    #cs-skills {
+        grid-template-columns: repeat(2, 1fr);
+        gap: var(--spacing-xs) 14px;
+        min-width: 0;
+    }
+    .cs-skill-pair,
+    .cs-skill-name {
+        min-width: 0;
+    }
+
+    /* Biography fields: a fixed 160px label column left barely 170px for
+       the input on a 390px screen, and inputs with intrinsic sizing (e.g.
+       a number input's default width) don't shrink to fit that either.
+       Stack label above input instead -- the standard mobile form
+       pattern -- rather than trying to keep both fixed columns. */
+    #cs-biography-fieldset label {
+        grid-template-columns: 1fr;
+        gap: 2px;
+    }
+    #cs-biography-fieldset input[type="text"],
+    #cs-biography-fieldset input[type="number"],
+    #cs-biography-fieldset select {
+        min-width: 0;
+        width: 100%;
+    }
+
+    /* Character Creation Wizard promo: the toggle button's own
+       white-space:nowrap plus flex-shrink:0 held it at its full-text
+       width beside the promo copy. Stack them instead of squeezing both
+       into one row. */
+    .wiz-promo {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    #wiz-toggle-btn {
+        white-space: normal;
+        width: 100%;
+    }
+
+    /* Live Play's sticky HP/WP/SAN/BP tracker bar packs 6 flex items
+       (3 stat trackers with their own -/+ buttons, a bare BP readout, a
+       full "SANITY ROLL" text button, and a dice-icon quick-roll button)
+       into one row -- on a 390px screen that's roughly 65px per item,
+       nowhere near enough for "SANITY ROLL" as text, so it overlapped
+       instead of wrapping. The two roll-shortcut items are convenience
+       duplicates of rolls a player can already make from the Dice Roller
+       widget or by clicking a skill's % in the sheet below, so drop them
+       on narrow screens and let HP/WP/SAN/BP -- the bar's actual stated
+       purpose -- have the room they need to stay legible. */
+    .lp-track-san-check,
+    .lp-track-dice {
+        display: none;
+    }
+    .lp-tracker-item {
+        padding: 5px 4px;
+    }
+    .lp-tracker-btn {
+        width: 20px;
+        height: 20px;
+        font-size: 0.9rem !important;
+    }
+    .lp-tracker-current {
+        font-size: 1.3rem;
+    }
+    .lp-tracker-label {
+        font-size: 0.5rem;
+    }
+
+    /* Dice Roller widget: fixed at 270px wide and bottom:24px/right:24px
+       with no default-collapsed state, it covers roughly the bottom half
+       of a phone screen -- including, when Live Play is active, the
+       skills table underneath it -- for as long as it's open. Anchor it
+       full-width along the bottom instead of floating over content, and
+       shrink its padding/die-button grid to fit without its own overflow. */
+    #dr-panel {
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        width: auto;
+        max-height: 60vh;
+        overflow-y: auto;
+    }
+}

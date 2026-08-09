@@ -482,12 +482,14 @@ def test_hub_latest_agent_panel(p):
 
 def test_mobile_no_overflow(p):
     """Regression check: no page should force horizontal scroll on a phone
-    viewport. stats/index.html is the one exception with an asterisk: it's
-    pigeon-labs-stack's own multi-theme tool, and only its dedicated
-    "Mobile" theme is meant to be responsive -- the other five (X-Files,
-    Modern, Son of Sam, Field Notes, Live Play) are desktop-oriented by the
-    original design, so they're checked separately with that theme
-    selected rather than folded into the general no-overflow sweep."""
+    viewport. stats/index.html originally only had this for its dedicated
+    "Mobile" theme -- the other five (X-Files, Modern, Son of Sam, Field
+    Notes, Live Play) were desktop-oriented by pigeon-labs-stack's original
+    design and genuinely overflowed on a phone. This hub's own addition
+    (a viewport-width-gated CSS block in stats/styles.css, not scoped to
+    any theme) fixes the underlying causes -- <fieldset>'s UA-default
+    min-width: min-content, a few fixed-column grids/tables -- for all
+    five, so they're now checked the same as Mobile rather than excluded."""
     errs_all = []
     for path in ["index.html", "dg-agent-portal.html", "dg-id-creator.html"]:
         page = p.new_page(viewport={"width": 390, "height": 844})
@@ -531,16 +533,67 @@ def test_mobile_no_overflow(p):
     errs_all.extend(errs)
     page.close()
 
+    # All six stats/ themes are expected to be overflow-free at 390px --
+    # the fieldset/grid/table min-width fixes added for this are
+    # theme-agnostic (gated on viewport width, not theme class), covering
+    # X-Files, Modern, Son of Sam, and Field Notes the same as Mobile.
+    # Live Play (field-doc) is checked separately below with actual filled
+    # content, since its full character sheet is the one deliberate
+    # exception (it scrolls horizontally within its own box by design --
+    # see that check for detail).
     page = p.new_page(viewport={"width": 390, "height": 844})
     page.set_default_timeout(5000)
     errs = collect_errors(page)
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
-    page.select_option("#cs-theme-select", "mobile")
+    for theme in ["xfiles", "modern", "son-of-sam", "field-notes", "mobile"]:
+        page.select_option("#cs-theme-select", theme)
+        page.wait_for_timeout(400)
+        scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
+        record("mobile", f"stats/index.html has no horizontal overflow at 390px viewport ({theme} theme)",
+               scroll_width <= 390, f"scrollWidth={scroll_width}")
+    errs_all.extend(errs)
+    page.close()
+
+    # Live Play (field-doc): the full character sheet deliberately keeps
+    # its printed-form width and scrolls horizontally within #lp-sheet
+    # rather than reflowing -- so the *page* must still never overflow,
+    # even with the sheet's own content (many fixed/percentage-width
+    # columns) at its natural size. Also exercises the sticky HP/WP/SAN/BP
+    # tracker bar and the Dice Roller widget, which auto-expands when this
+    # theme is selected -- both were previously overlapping/illegible on a
+    # phone independent of the page-level scrollWidth check.
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(400)
+    page.fill("#cs-name", "Priya Anand")
+    page.select_option("#cs-profession-select", "federal_agent")
+    page.select_option("#cs-theme-select", "field-doc")
+    page.wait_for_timeout(600)
     scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
-    record("mobile", "stats/index.html has no horizontal overflow at 390px viewport (Mobile theme)",
+    record("mobile", "stats/index.html has no horizontal overflow at 390px viewport (Live Play theme, filled)",
            scroll_width <= 390, f"scrollWidth={scroll_width}")
+    lp_scroll_width = page.evaluate("() => document.getElementById('lp-sheet')?.scrollWidth || 0")
+    record("mobile", "Live Play sheet itself is wider than the viewport (scrolls internally by design)",
+           lp_scroll_width > 390, f"lp scrollWidth={lp_scroll_width}")
+    tracker_overflow = page.evaluate("""() => {
+        const bar = document.getElementById('lp-tracker-bar');
+        return bar ? bar.scrollWidth - bar.clientWidth : 0;
+    }""")
+    record("mobile", "sticky HP/WP/SAN/BP tracker bar fits without its own overflow",
+           tracker_overflow <= 2, f"overflow={tracker_overflow}")
+    dr_box = page.evaluate("""() => {
+        const dr = document.getElementById('dr-panel');
+        if (!dr) return null;
+        const r = dr.getBoundingClientRect();
+        return { right: r.right, left: r.left };
+    }""")
+    record("mobile", "auto-expanded Dice Roller widget stays within the viewport width",
+           dr_box is not None and dr_box["right"] <= 390 and dr_box["left"] >= 0, str(dr_box))
     errs_all.extend(errs)
     page.close()
 
