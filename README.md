@@ -16,6 +16,12 @@ Player-facing tools for a Delta Green campaign, published as a static site via G
 
 All pages are plain static HTML/CSS/JS — no build step, no dependencies to install.
 
+## QA
+
+There's an automated smoke-test suite in `test/` that exercises all four
+pages against a set of mock agents, with the Google Apps Script / Anthropic
+backends faked out so it never touches real data. See `test/README.md`.
+
 ## Roadmap ideas for a fuller Agent Hub
 
 Rough priority order, cheapest/highest-value first:
