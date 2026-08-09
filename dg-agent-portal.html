@@ -1491,6 +1491,7 @@ body{
                 </div>
               </div>
               <div class="fg"><label>Nationality / ethnic background</label><input type="text" name="nationality" class="fi" placeholder="e.g. White American, Nigerian-British" required></div>
+              <div class="fg"><label>Profession <span class="opt">(if any)</span></label><input type="text" name="profession" class="fi" placeholder="e.g. Federal Agent, Pilot"></div>
 
               <div class="section-head">Face</div>
               <div class="fg"><label>Face shape</label><input type="text" name="face_shape" class="fi" placeholder="e.g. sharp and angular, round, gaunt" required></div>
@@ -2698,8 +2699,8 @@ function renderDossier(d, agentCode, restored) {
         <div>
           ${dF('Full Name',d.char_name)}${dF('Codename',d.codename)}
           ${dF('Age Range',d.age_range)}${dF('Sex',d.sex)}
-          ${dF('Nationality',d.nationality)}${dF('Expression',d.expression)}
-          ${dF('Resembles',d.reference_person)}
+          ${dF('Nationality',d.nationality)}${dF('Profession',d.profession)}
+          ${dF('Expression',d.expression)}${dF('Resembles',d.reference_person)}
         </div>
       </div>
       <div class="d-sec"><div class="d-sec-head">Face</div><div class="d-two">

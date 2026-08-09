@@ -2508,7 +2508,14 @@ function importFoundryJSONToEditor() {
         alert('Invalid JSON — please check the pasted content and try again.');
         return;
     }
+    applyImportedAgentData(data);
+}
 
+// Shared by every importer that can produce a Foundry-VTT-shaped character
+// object (real Foundry exports, and anything converted into that same shape
+// -- e.g. the Kappa Black TOML importer below) so each format only needs to
+// write its own conversion, not its own copy of ~150 lines of field-mapping.
+function applyImportedAgentData(data) {
     // Pause the MutationObserver so writing to stat spans doesn't re-trigger
     // populateCharacterSheetForm() mid-import and reset skill values to defaults.
     observer.disconnect();
@@ -2685,6 +2692,212 @@ function importFoundryJSONToEditor() {
         const applyBonusReminder = document.getElementById('reminder-apply-bonus');
         if (applyBonusReminder) applyBonusReminder.style.display = 'none';
     }, 0);
+}
+
+/* ══════════════════════════════════════════════
+   KAPPA BLACK (.toml) IMPORT (this hub's addition)
+
+   Kappa Black is a third-party Delta Green character app that exports a
+   flat TOML file. There's no TOML parser already loaded on this page (and
+   adding one would mean a new CDN dependency this sandbox and this app
+   otherwise avoid), so parseSimpleTOML() below is a hand-rolled parser
+   scoped to exactly the subset a Kappa Black export uses: top-level
+   scalars, single-level [section] tables, and [[array]] tables. It is not
+   a general TOML parser -- inline tables, multi-line strings, and nested
+   arrays are all out of scope because Kappa Black's own export never
+   produces them.
+
+   convertKappaBlackToAgentData() then reshapes the parsed TOML into the
+   same object shape a real Foundry VTT export uses, so it can be handed
+   to applyImportedAgentData() above instead of duplicating that ~150 lines
+   of field-mapping a second time.
+   ══════════════════════════════════════════════ */
+
+function parseSimpleTOML(text) {
+    const root = {};
+    let current = root;
+    text.split(/\r?\n/).forEach(rawLine => {
+        const line = rawLine.trim();
+        if (!line || line.startsWith('#')) return;
+
+        const arrayHeader = line.match(/^\[\[([^\]]+)\]\]$/);
+        if (arrayHeader) {
+            const name = arrayHeader[1].trim();
+            if (!Array.isArray(root[name])) root[name] = [];
+            current = {};
+            root[name].push(current);
+            return;
+        }
+        const tableHeader = line.match(/^\[([^\]]+)\]$/);
+        if (tableHeader) {
+            const name = tableHeader[1].trim();
+            current = (root[name] && typeof root[name] === 'object' && !Array.isArray(root[name])) ? root[name] : {};
+            root[name] = current;
+            return;
+        }
+
+        const eq = line.indexOf('=');
+        if (eq === -1) return;
+        const key = line.slice(0, eq).trim();
+        const rawVal = line.slice(eq + 1).trim();
+        current[key] = parseSimpleTOMLValue(rawVal);
+    });
+    return root;
+}
+
+function parseSimpleTOMLValue(raw) {
+    if (raw === 'true') return true;
+    if (raw === 'false') return false;
+    if (raw.startsWith('"') && raw.endsWith('"') && raw.length >= 2) {
+        // TOML basic-string escapes (\", \\, \n, \t, \r, \uXXXX, ...) are a
+        // subset of JSON's, so JSON.parse can decode the string body as-is.
+        try { return JSON.parse(raw); } catch (e) { return raw.slice(1, -1); }
+    }
+    if (raw !== '' && !Number.isNaN(Number(raw))) return Number(raw);
+    return raw;
+}
+
+// Kappa Black section name -> this app's stat code.
+const KAPPABLACK_STAT_SECTIONS = {
+    strength: 'str', constitution: 'con', dexterity: 'dex',
+    intelligence: 'int', power: 'pow', charisma: 'cha'
+};
+
+// A few skill titles Kappa Black spells differently than CONFIG.SKILLS'
+// labels. Everything else matches by a case-insensitive title lookup.
+const KAPPABLACK_SKILL_SYNONYMS = { driving: 'drive' };
+
+function matchKappaBlackSkillKey(title) {
+    if (!title) return null;
+    const target = title.trim().toLowerCase();
+    if (KAPPABLACK_SKILL_SYNONYMS[target]) return KAPPABLACK_SKILL_SYNONYMS[target];
+    const found = (CONFIG.SKILLS || []).find(([, label]) => label.toLowerCase() === target);
+    return found ? found[0] : null;
+}
+
+function convertKappaBlackToAgentData(toml) {
+    const statistics = {};
+    Object.entries(KAPPABLACK_STAT_SECTIONS).forEach(([section, code]) => {
+        const t = toml[section];
+        if (t && typeof t.score !== 'undefined') {
+            statistics[code] = { value: t.score, distinguishing_feature: t.feature || '' };
+        }
+    });
+
+    // Plain skills resolve straight to cs-skill-<key>; skills with a `type`
+    // (Craft, Pilot, Science, Military Science...) are specialty instances
+    // and go through the same typedSkills path a real Foundry export uses.
+    // Any title that doesn't match a known skill or a known specialty group
+    // becomes a labeled "Other" entry instead of silently dropping points.
+    const skills = {};
+    const typedSkills = {};
+    (toml.skills || []).forEach((entry, idx) => {
+        if (!entry.skill) return;
+        const score = entry.score ?? 0;
+        if (entry.type) {
+            typedSkills['kb-' + idx] = { group: entry.skill, label: entry.type, proficiency: score };
+            return;
+        }
+        const key = matchKappaBlackSkillKey(entry.skill);
+        if (key) {
+            skills[key] = { proficiency: score };
+        } else {
+            typedSkills['kb-' + idx] = { group: 'Other', label: entry.skill, proficiency: score };
+        }
+    });
+
+    const items = [];
+    (toml.bonds || []).forEach((b, idx) => {
+        items.push({
+            type: 'bond',
+            name: b.bond || `Bond ${idx + 1}`,
+            system: { relationship: '', description: '', score: b.score ?? 10 }
+        });
+    });
+    (toml.weapons || []).forEach(w => {
+        items.push({
+            type: 'weapon',
+            name: w.weapon || 'Weapon',
+            system: { damage: w.damage || '', skill: w.skill || '', expense: w.expense || '' }
+        });
+    });
+    (toml.motivationsAndDisorders || '').split('\n').map(s => s.trim()).filter(Boolean).forEach(line => {
+        items.push({ type: 'motivation', name: line, system: { description: `<p>${line}</p>` } });
+    });
+    if (toml.gear) {
+        items.push({ type: 'gear', name: "Agent's Gear", system: { description: `<p>${toml.gear}</p>` } });
+    }
+
+    // specialTraining has no direct equivalent field in this app -- fold it
+    // into Personal Details rather than dropping it on the floor.
+    const specialTrainingLines = (toml.specialTraining || [])
+        .filter(st => st.training)
+        .map(st => `Special training: ${st.training}${st.skillOrStat ? ` (${st.skillOrStat.trim()})` : ''}`);
+
+    return {
+        name: toml.name || '',
+        items,
+        system: {
+            statistics,
+            biography: {
+                profession: toml.profession || '',
+                employer: toml.employer || '',
+                nationality: toml.nationality || '',
+                age: toml.age || '',
+                education: toml.education || '',
+                // Kappa Black's TOML export has no sex field (unlike its
+                // Foundry JSON export) -- left blank, same as a blank agent.
+                sex: '',
+                // applyImportedAgentData() reads Personal Details from
+                // sys.biography.notes (a real Foundry export's field for it).
+                notes: specialTrainingLines.join('\n')
+            },
+            physicalDescription: toml.notes || '',
+            physical: { description: '', wounds: '' },
+            health: { max: toml.hp ?? 0, value: toml.hp ?? 0 },
+            wp: { max: toml.wp ?? 0, value: toml.wp ?? 0 },
+            sanity: { value: toml.san ?? 0, currentBreakingPoint: 0, adaptations: {} },
+            skills,
+            typedSkills
+        }
+    };
+}
+
+/**
+ * Reads the pasted Kappa Black .toml text, converts it into the same
+ * object shape a Foundry VTT export uses, and hands it to
+ * applyImportedAgentData() -- see the header comment above for why.
+ */
+function importKappaBlackTOMLToEditor() {
+    const textarea = document.getElementById('kappablack-import-area');
+    if (!textarea || !textarea.value.trim()) {
+        alert('Please paste a Kappa Black character .toml first.');
+        return;
+    }
+    let toml;
+    try {
+        toml = parseSimpleTOML(textarea.value.trim());
+    } catch (e) {
+        alert('Could not parse that as a Kappa Black .toml file — please check the pasted content and try again.');
+        return;
+    }
+    if (!toml.name) {
+        alert('That didn\'t look like a Kappa Black character export (no "name" field found).');
+        return;
+    }
+    applyImportedAgentData(convertKappaBlackToAgentData(toml));
+}
+
+function kappaBlackFileSelected(evt) {
+    const file = evt.target.files && evt.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+        const textarea = document.getElementById('kappablack-import-area');
+        if (textarea) textarea.value = reader.result;
+    };
+    reader.readAsText(file);
+    evt.target.value = '';
 }
 
 // Keep the character sheet form in sync when stats change

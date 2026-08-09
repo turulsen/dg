@@ -1,0 +1,196 @@
+profession = "Pilot"
+san = 60
+notes = "Anywhere from 5,000 to 18,000 people apply for the space program annually. Fewer than 10 are accepted and make it through astronaut training. Even fewer are certified pilots and tapped to operate spacecraft and machinery in space as commanders, pilots, flight engineers, or payload commanders. You are as elite as they come.\n\nChoose one of the following skills:\n» Pilot (Spacecraft) 60%\n» Pilot (Space Suit) 60%\n» Pilot (Remotely Operated Vehicle) 60%\n\nBonus skill points: Add +20% each to any two skills (up to a maximum of 80%)."
+hp = 12
+motivationsAndDisorders = "Fulfilling grandfathers dream \"Whisky in space\"\nHelping humanity through sciences\nSearching for extraterrestrial life\nSearching for intelligent desgin (ID) \n\nDisorder: light schizophrenia - hallucinations of a person that helps in researches"
+nationality = "Scottish"
+name = "Alistair Islay Lagavulin"
+employer = "NASA - Astronaut Corps"
+wp = 12
+age = "37"
+gear = "Extensive collection of tools, including some that have been hardened or modified for use in space. You also have access to launch sites and training facilities.\n\nIncredible whisky collection of about 1000 different sorts. "
+version = "2025-10-16"
+
+[constitution]
+feature = ""
+score = 13
+
+[strength]
+feature = ""
+score = 10
+
+[[bonds]]
+marked = false
+bond = "Spouse"
+score = 10
+
+[[bonds]]
+marked = false
+bond = "2 Deerhounds, Scotch&Rock"
+score = 10
+
+[charisma]
+feature = ""
+score = 10
+
+[intelligence]
+feature = "Bright"
+score = 14
+
+[[skills]]
+score = 10
+skill = "Accounting"
+
+[[skills]]
+score = 60
+skill = "Alertness"
+
+[[skills]]
+score = 50
+skill = "Athletics"
+
+[[skills]]
+score = 30
+skill = "Bureaucracy"
+
+[[skills]]
+type = "Electrician"
+score = 40
+skill = "Craft"
+
+[[skills]]
+score = 10
+skill = "Criminology"
+
+[[skills]]
+score = 10
+skill = "Disguise"
+
+[[skills]]
+score = 30
+skill = "Dodge"
+
+[[skills]]
+score = 20
+skill = "Driving"
+
+[[skills]]
+score = 20
+skill = "Firearms"
+
+[[skills]]
+score = 10
+skill = "First Aid"
+
+[[skills]]
+score = 10
+skill = "Heavy Machinery"
+
+[[skills]]
+score = 40
+skill = "Heavy Weapons"
+
+[[skills]]
+score = 10
+skill = "History"
+
+[[skills]]
+score = 10
+skill = "HUMINT"
+
+[[skills]]
+score = 30
+skill = "Melee Weapons"
+
+[[skills]]
+type = "Air"
+score = 30
+skill = "Military Science"
+
+[[skills]]
+score = 70
+skill = "Navigate"
+
+[[skills]]
+score = 10
+skill = "Occult"
+
+[[skills]]
+score = 20
+skill = "Persuade"
+
+[[skills]]
+type = "Airplane"
+score = 80
+skill = "Pilot"
+
+[[skills]]
+score = 10
+skill = "Psychotherapy"
+
+[[skills]]
+score = 10
+skill = "Ride"
+
+[[skills]]
+type = "Meteorology"
+score = 40
+skill = "Science"
+
+[[skills]]
+score = 20
+skill = "Search"
+
+[[skills]]
+score = 10
+skill = "Stealth"
+
+[[skills]]
+score = 10
+skill = "Survival"
+
+[[skills]]
+score = 40
+skill = "Swim"
+
+[[skills]]
+score = 40
+skill = "Unarmed Combat"
+
+[[skills]]
+type = "Mathematics"
+score = 40
+skill = "Science"
+
+[[skills]]
+type = "Physics"
+score = 40
+skill = "Science"
+
+[[skills]]
+type = "Mechanic"
+score = 40
+skill = "Craft"
+
+[dexterity]
+feature = ""
+score = 13
+
+[[specialTraining]]
+skillOrStat = "DEX "
+training = "Parachuting"
+
+[[specialTraining]]
+skillOrStat = "Swim"
+training = "Scubadiving"
+
+[power]
+feature = ""
+score = 12
+
+[[weapons]]
+weapon = "Unarmed Attack"
+damage = "1D4-1"
+category = "Hand-to-Hand Weapons"
+expense = "None"
+skill = "Unarmed Combat"

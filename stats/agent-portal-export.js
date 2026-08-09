@@ -8,12 +8,12 @@
    code format from genCode()) -- not a new backend integration, just
    this page filling out that same form programmatically.
 
-   Only build (from STR/CON) and outfit (from profession) are derived
-   and sent; everything else about physical appearance is left blank
-   for the Cover tab, same as any new agent. Those two fields already
-   feed the Agent Portal's "Field Portrait Prompt" generator on their
-   own, so this is enough for strength and profession to quietly shape
-   the portrait prompt without adding any new fields or UI there.
+   Name, sex, nationality, and profession carry straight over; build
+   (from STR/CON) and outfit (from profession) are derived. Everything
+   else about physical appearance is left blank for the Cover tab, same
+   as any new agent -- build and outfit already feed the Agent Portal's
+   "Field Portrait Prompt" generator on their own, so this is enough for
+   strength and profession to quietly shape the portrait prompt too.
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
@@ -141,11 +141,13 @@
     }
 
     const outfit = PROFESSION_OUTFIT[state.bio?.profession] || {};
+    const profTitle = (typeof professions !== 'undefined' && professions[state.bio?.profession]?.title) || state.bio?.profession || '';
     const payload = {
       char_name: name,
       age_range: ageToRange(state.bio?.age),
       sex: sexToOption(state.bio?.sex),
       nationality: state.bio?.nationality || '',
+      profession: profTitle,
       build: buildFromStats(state.csStats),
       jacket: outfit.jacket || '',
       shirt: outfit.shirt || '',

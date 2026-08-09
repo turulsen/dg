@@ -703,6 +703,28 @@
                                     </div>
                                 </div>
 
+                                <div class="export-action-group">
+                                    <div class="export-action-group-label">Import from Kappa Black</div>
+                                    <p class="description-text">Paste, or upload, a character exported from the
+                                        <strong>Kappa Black</strong> app as <strong>.toml</strong>. Recovers stats,
+                                        skills (including specialties), biography, bonds, weapons, and gear.
+                                        <strong>Limitation:</strong> Kappa Black's export has no Sex field, so that
+                                        will need manual entry after import.</p>
+                                    <input type="file" id="kappablack-file-input" accept=".toml,text/plain"
+                                        style="display:none" onchange="kappaBlackFileSelected(event)">
+                                    <textarea id="kappablack-import-area" rows="5"
+                                        placeholder="Paste exported Kappa Black character .toml here..."></textarea>
+                                    <div class="section-buttons">
+                                        <button type="button" onclick="document.getElementById('kappablack-file-input').click()"
+                                            title="Choose a Kappa Black .toml export file from disk.">Choose .toml
+                                            File</button>
+                                        <button type="button" id="kappablack-to-editor-button"
+                                            onclick="importKappaBlackTOMLToEditor()"
+                                            title="Loads all stats, skills, bonds, and biography from the pasted Kappa Black .toml back into the web editor for further editing.">Load
+                                            into Editor</button>
+                                    </div>
+                                </div>
+
                                 <div class="export-action-group" id="lp-sheet-io-group">
                                     <div class="export-action-group-label">Live Play Sheet <span
                                             style="font-size:0.7em;font-weight:normal;opacity:0.7;">(Beta)</span></div>

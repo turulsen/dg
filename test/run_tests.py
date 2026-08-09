@@ -398,6 +398,78 @@ def test_foundry_import_profession_and_outfit(p):
     page.close()
     return errs
 
+def test_kappablack_toml_import(p):
+    """Kappa Black is a third-party app that exports a flat .toml file --
+    a format with no existing parser on this page. Rather than write a
+    second full field-mapping pass, importKappaBlackTOMLToEditor()
+    converts the parsed TOML into the same shape a real Foundry VTT
+    export uses and hands it to the shared applyImportedAgentData()
+    (see the Foundry import test above for why the profession-title ->
+    select-key resolution matters). test/fixtures/kappablack-export.toml
+    is the user's real "Alistair Islay Lagavulin" (Pilot) export, byte
+    for byte."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    captured = {}
+    def capture(route):
+        if route.request.method == "POST":
+            captured["body"] = route.request.post_data
+        route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", capture)
+
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+    page.evaluate("document.getElementById('advanced-options-details').open = true")
+    page.wait_for_timeout(200)
+
+    toml_path = os.path.join(HERE, "fixtures", "kappablack-export.toml")
+    toml_text = open(toml_path, encoding="utf-8").read()
+    page.fill("#kappablack-import-area", toml_text)
+    page.click("#kappablack-to-editor-button")
+    page.wait_for_timeout(600)
+
+    name_val = page.eval_on_selector("#cs-name", "el => el.value")
+    record("stats-terminal", "Kappa Black TOML import loads the character name",
+           name_val == "Alistair Islay Lagavulin", f"value={name_val!r}")
+
+    prof_val = page.eval_on_selector("#cs-profession-select", "el => el.value")
+    record("stats-terminal", "Kappa Black TOML import resolves profession title ('Pilot') to its select key ('pilot_sailor')",
+           prof_val == "pilot_sailor", f"value={prof_val!r}")
+
+    con_val = page.eval_on_selector("#cs-CON", "el => el.value")
+    record("stats-terminal", "Kappa Black TOML import recovers stat scores (CON = 13)",
+           str(con_val) == "13", f"value={con_val!r}")
+
+    drive_val = page.eval_on_selector("#cs-skill-drive", "el => el.value")
+    record("stats-terminal", "Kappa Black TOML import maps the 'Driving' title to the 'drive' skill key",
+           str(drive_val) == "20", f"value={drive_val!r}")
+
+    navigate_val = page.eval_on_selector("#cs-skill-navigate", "el => el.value")
+    record("stats-terminal", "Kappa Black TOML import recovers a plain skill score (Navigate = 70)",
+           str(navigate_val) == "70", f"value={navigate_val!r}")
+
+    specialty_count = page.locator(".custom-skill-row").count()
+    record("stats-terminal", "Kappa Black TOML import creates a specialty row for every [[skills]] entry with a type (7)",
+           specialty_count == 7, f"count={specialty_count}")
+
+    bonds_count = page.evaluate("window.bondsOnSheet ? window.bondsOnSheet.length : -1")
+    record("stats-terminal", "Kappa Black TOML import recovers both bonds",
+           bonds_count == 2, f"count={bonds_count}")
+
+    page.click("#export-agent-file-btn")
+    page.wait_for_timeout(500)
+    body = json.loads(captured.get("body") or "{}")
+    record("stats-terminal", "outfit derived from the imported Kappa Black character matches its Pilot profession",
+           body.get("jacket") == "flight/deck jacket" and body.get("footwear") == "deck shoes",
+           f"jacket={body.get('jacket')!r} footwear={body.get('footwear')!r}")
+
+    record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_agent_file_export(p):
     """The "Export to Agent File" bridge (stats/agent-portal-export.js):
     submits through the exact same APPS_SCRIPT_URL path the Cover form's
@@ -458,6 +530,8 @@ def test_agent_file_export(p):
            body.get("build") in athletic_pool, str(body.get("build")))
     record("agent-file-export", "outfit matches the Federal Agent profession",
            body.get("jacket") == "dark suit jacket" and body.get("shirt") == "white dress shirt", str(body.get("jacket")))
+    record("agent-file-export", "profession title carries over into the Cover form's Profession field",
+           body.get("profession") == "Federal Agent", str(body.get("profession")))
     record("agent-file-export", "notes include correct per-stat values (uppercase csStats keys)",
            "STR 16 CON 13" in (body.get("notes") or ""), (body.get("notes") or "")[:60])
 
@@ -1061,6 +1135,8 @@ def main():
         safe(test_stat_generator_sheets_roundtrip, browser, area="stats-terminal")
 
         safe(test_foundry_import_profession_and_outfit, browser, area="stats-terminal")
+
+        safe(test_kappablack_toml_import, browser, area="stats-terminal")
 
         safe(test_agent_file_export, browser, area="agent-file-export")
 

@@ -58,6 +58,46 @@ non-zero if anything fails.
   that never resolves in this sandbox hangs that script's execution
   entirely (this hung the test outright before the fix, not just slowed
   it down).
+- **`test_foundry_import_profession_and_outfit`** — regression test for a
+  real bug from a user's Kappa Black Foundry VTT export: importing a
+  character never actually set the profession `<select>`, so the
+  profession-derived outfit guess in Export to Agent File silently kept
+  whatever profession (or none) was already selected — a "Pilot" character
+  came out in a leftover police officer's patrol uniform. Root cause had
+  two layers: `importFoundryJSONToEditor()` never touched the profession
+  field at all, and even where profession *was* applied (`applyState()`,
+  used by PDF/Sheets imports) it wrote a human-readable title string
+  ("Pilot") to a `<select>` whose option values are lowercase-underscore
+  keys ("pilot_sailor") — a silent no-op everywhere it happened. Fixed via
+  a shared `matchProfessionKey()` helper (`stats/save-load.js`, callable
+  from `scripts.js` too since both are classic `<script>` tags on the same
+  page). This test pre-pollutes the profession select with a *different*
+  profession first, since that's what actually produced a wrong (not
+  merely blank) outfit in the field, then imports `test/fixtures/
+  kappablack-foundry.json` (a trimmed copy of the user's real export) and
+  checks both the resolved profession and the resulting outfit.
+- **`test_kappablack_toml_import`** — Kappa Black's *other* export format,
+  a flat `.toml` file with no existing parser on the page. Rather than
+  duplicate the ~150 lines of field-mapping the Foundry JSON importer
+  already has, `importKappaBlackTOMLToEditor()` (`stats/scripts.js`)
+  converts the parsed TOML into the same object shape a real Foundry
+  export uses and hands it to the shared `applyImportedAgentData()`. Runs
+  against `test/fixtures/kappablack-export.toml` — the user's real
+  "Alistair Islay Lagavulin" (Pilot) export, byte for byte — and checks:
+  name, profession-title resolution (same `matchProfessionKey()` path
+  above), a stat score, a skill whose Kappa Black title doesn't match this
+  app's label ("Driving" → `drive`), a plain skill score, one specialty
+  row per `[[skills]]` entry that has a `type` (7 total: Craft ×2, Pilot,
+  Military Science, Science ×3), both bonds, and — end to end — that
+  Export to Agent File's outfit guess reflects the imported profession.
+- **`test_agent_file_open_character_sheet_btn`** — the "Open Character
+  Sheet" button on the Agent Portal's Agent File tab, added above the era
+  selector. Checks the button is present-but-hidden on the code-gate
+  screen (not merely absent from the DOM — an earlier draft of this test
+  asserted `.count() == 0` there, which passed for the wrong reason, since
+  the button already exists in the DOM at that point with `display:none`
+  on an ancestor; fixed to assert `not page.is_visible(...)` instead),
+  becomes visible once an agent loads, and navigates to `stats/index.html`.
 - **Mobile layout (`test_mobile_no_overflow`)** — checks `document.
   documentElement.scrollWidth` stays at or under the viewport width (390px)
   across `index.html`, `dg-agent-portal.html`, and `dg-id-creator.html`,
@@ -164,6 +204,12 @@ production, served in its place via `page.route` for
 `test_stat_generator_sheets_roundtrip` since that CDN (like unpkg.com for
 pdf-lib) is blocked from this sandbox. Update it if the app's own
 `JSZIP_CDN` version pin ever changes.
+
+`test/fixtures/kappablack-foundry.json` and `test/fixtures/kappablack-
+export.toml` are both derived from real exports a user shared directly (the
+only way to get Kappa Black's actual schema, since kappablack.com and its
+GitHub source were both unreachable from this sandbox) — the `.toml` one is
+byte for byte; the `.json` one is trimmed but structurally representative.
 
 ## Mock agents
 
