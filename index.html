@@ -55,6 +55,34 @@
     font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.15em;
     text-transform:uppercase; color:var(--ink); margin-top:auto; padding-top:8px;
   }
+  .latest-agent{
+    display:flex; align-items:center; gap:18px; flex-wrap:wrap;
+    background:var(--bg2); border:1px solid var(--rule); border-left:3px solid var(--red);
+    padding:20px 24px; margin-bottom:24px; text-decoration:none; color:var(--ink);
+    transition:border-color .2s, transform .15s;
+  }
+  .latest-agent:hover{ border-color:var(--red); transform:translateY(-2px); }
+  .latest-agent-photo{
+    width:56px; height:56px; border-radius:4px; flex-shrink:0; overflow:hidden;
+    background:var(--bg); border:1px solid var(--rule);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Special Elite',monospace; font-size:22px; color:var(--dim);
+  }
+  .latest-agent-photo img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .latest-agent-info{ flex:1 1 200px; min-width:0; }
+  .latest-agent-info .tag{
+    font-family:'Special Elite',monospace; font-size:9px; letter-spacing:.2em;
+    text-transform:uppercase; color:var(--red);
+  }
+  .latest-agent-info h2{
+    font-family:'Special Elite',monospace; font-size:18px; letter-spacing:.01em;
+    margin:4px 0 2px; line-height:1.3; overflow-wrap:anywhere;
+  }
+  .latest-agent-info p{ font-size:12px; color:var(--dim); }
+  .latest-agent .go{
+    font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.15em;
+    text-transform:uppercase; color:var(--ink); white-space:nowrap; margin-left:auto;
+  }
   section.notes{
     max-width:720px; margin:64px auto 0; padding:0 20px;
     font-size:13px; color:var(--dim); line-height:1.8;
@@ -78,6 +106,16 @@
 </header>
 
 <main>
+  <a class="latest-agent" id="latest-agent-panel" href="dg-agent-portal.html#agent" style="display:none;">
+    <div class="latest-agent-photo" id="latest-agent-photo"></div>
+    <div class="latest-agent-info">
+      <span class="tag">Continue Playing</span>
+      <h2 id="latest-agent-name">&mdash;</h2>
+      <p id="latest-agent-meta"></p>
+    </div>
+    <span class="go">&rarr; Open Agent File</span>
+  </a>
+
   <div class="grid">
     <a class="card" href="stats/index.html">
       <span class="tag">New Agent</span>
@@ -96,6 +134,7 @@
   <section class="notes">
     <h3>Notes for Agents</h3>
     <ul>
+      <li>Already have an Agent in this browser? The <strong>Continue Playing</strong> panel above jumps straight back to their Agent File — it only appears once you've exported or submitted at least one Agent here.</li>
       <li>Start with the <strong>Character Creator</strong> if you're building a new Agent — it auto-saves as you go, so it picks back up where you left off in this browser. When ready, use its <em>Export to Agent File</em> button to send your Agent to the Portal.</li>
       <li>The Character Creator's auto-save and the Agent Portal's Character Code (e.g. <em>BRAD-K7X2</em>) are two separate save systems — export from the Creator to the Portal when you want a printable dossier and cover ID, and keep your Character Code somewhere safe if you switch devices.</li>
       <li>All defaults follow the Delta Green <em>Agent's Handbook</em> — check with your Handler if your table uses house rules.</li>
@@ -104,6 +143,49 @@
 </main>
 
 <footer>Delta Green is a trademark of Arc Dream Publishing. Unofficial fan-made campaign tools.</footer>
+
+<script>
+/* "Continue Playing" panel -- shows the most recently exported/loaded
+   agent from this browser (localStorage key dg_last_agent, written by
+   both the Agent Portal's own Cover form and stats/'s Export to Agent
+   File button) with a one-click link straight to the Agent Portal's
+   Agent File tab for it. Hidden entirely if this browser has no saved
+   agent yet, rather than showing an empty/broken preview. */
+(function () {
+  const panel = document.getElementById('latest-agent-panel');
+  if (!panel) return;
+
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem('dg_last_agent') || 'null'); }
+  catch (e) { saved = null; }
+
+  const data = saved && saved.data;
+  const name = data && (data.char_name || '').trim();
+  if (!saved || !saved.code || !name) return;
+
+  document.getElementById('latest-agent-name').textContent = name;
+
+  const metaParts = [saved.code];
+  if (data.codename) metaParts.push('"' + data.codename + '"');
+  if (data.submitted_at) {
+    const d = new Date(data.submitted_at);
+    if (!isNaN(d)) metaParts.push('updated ' + d.toLocaleDateString());
+  }
+  document.getElementById('latest-agent-meta').textContent = metaParts.join(' · ');
+
+  const photoEl = document.getElementById('latest-agent-photo');
+  if (data.ref_image_base64) {
+    const img = document.createElement('img');
+    img.src = data.ref_image_base64;
+    img.alt = '';
+    photoEl.appendChild(img);
+  } else {
+    photoEl.textContent = name.charAt(0).toUpperCase();
+  }
+
+  panel.style.display = 'flex';
+})();
+</script>
 
 </body>
 </html>

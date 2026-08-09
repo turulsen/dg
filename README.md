@@ -6,7 +6,14 @@ Player-facing tools for a Delta Green campaign, published as a static site via G
 
 ## What's here
 
-The hub landing page (`index.html`) links to two tools:
+The hub landing page (`index.html`) links to two tools, plus a **"Continue
+Playing" panel**: if this browser has a saved agent (`localStorage`'s
+`dg_last_agent`, written by both the Agent Portal's Cover form and
+`stats/`'s Export to Agent File / Open Agent File buttons), the hub shows
+that agent's name, code, codename, last-updated date, and photo (if one was
+uploaded) right at the top, linking straight to the Agent Portal's Agent
+File tab for it. It's hidden entirely for a fresh browser with no saved
+agent yet, rather than showing an empty preview.
 
 | Page | Purpose |
 |---|---|

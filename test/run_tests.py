@@ -416,6 +416,70 @@ def test_hub_two_cards(p):
     page.close()
     return errs
 
+def test_hub_latest_agent_panel(p):
+    """The hub's "Continue Playing" panel: shows the most recently saved
+    agent (localStorage dg_last_agent, the same key the Cover form and
+    stats/'s Export to Agent File button both write) with a photo if one
+    was uploaded, and links straight to the Agent Portal's Agent File tab
+    for it. Must stay hidden entirely -- not show an empty/broken preview
+    -- in a fresh browser with no saved agent yet."""
+    errs_all = []
+
+    # No saved agent -> panel must not appear at all
+    page = p.new_page()
+    page.set_default_timeout(5000)
+    errs = collect_errors(page)
+    page.goto(f"{BASE}/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    record("hub", "Continue Playing panel is hidden with no saved agent",
+           not page.is_visible("#latest-agent-panel"), "")
+    errs_all.extend(errs)
+    page.close()
+
+    # Saved agent with a photo -> panel shows a populated preview and links
+    # to the Agent File tab
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.goto(f"{BASE}/index.html", wait_until="domcontentloaded", timeout=15000)
+    tiny_png = ("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1"
+                "HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+    page.evaluate("""(photo) => {
+        localStorage.setItem('dg_last_agent', JSON.stringify({
+            code: 'MARC-9XQ2',
+            data: {
+                char_name: 'Marcus Reyes', codename: 'GRAYWOLF',
+                submitted_at: '2026-08-01T12:00:00Z', ref_image_base64: photo
+            }
+        }));
+    }""", tiny_png)
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_timeout(400)
+
+    record("hub", "Continue Playing panel appears with a saved agent",
+           page.is_visible("#latest-agent-panel"), "")
+    record("hub", "panel shows the saved agent's name",
+           page.inner_text("#latest-agent-name") == "Marcus Reyes", "")
+    meta = page.inner_text("#latest-agent-meta")
+    record("hub", "panel meta line shows code, codename, and updated date",
+           "MARC-9XQ2" in meta and "GRAYWOLF" in meta, meta)
+    record("hub", "panel shows the agent's uploaded photo",
+           page.locator("#latest-agent-photo img").count() == 1, "")
+
+    page.click("#latest-agent-panel")
+    for _ in range(20):
+        if page.url.endswith("dg-agent-portal.html#agent"):
+            break
+        page.wait_for_timeout(300)
+    record("hub", "panel links straight to the Agent Portal's Agent File tab",
+           page.url.endswith("dg-agent-portal.html#agent"), page.url)
+
+    errs_all.extend(errs)
+    page.close()
+    return errs_all
+
 def test_mobile_no_overflow(p):
     """Regression check: no page should force horizontal scroll on a phone
     viewport. stats/index.html is the one exception with an asterisk: it's
@@ -437,6 +501,35 @@ def test_mobile_no_overflow(p):
                scroll_width <= 390, f"scrollWidth={scroll_width}")
         errs_all.extend(errs)
         page.close()
+
+    # index.html's "Continue Playing" panel only appears with a saved agent
+    # in localStorage, so the general no-overflow sweep above (fresh
+    # browser, no agent) never actually exercises it -- check it separately
+    # with an agent seeded, including a photo, since that's the widest the
+    # panel gets.
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    # index.html's own inline <script> sits after its Google Fonts <link>,
+    # same as dg-agent-portal.html -- an unblocked font request that never
+    # resolves in this sandbox hangs that script (and page.reload()) rather
+    # than just slowing it down, so block fonts before the reload below.
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.goto(f"{BASE}/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.evaluate("""() => {
+        localStorage.setItem('dg_last_agent', JSON.stringify({
+            code: 'MARC-9XQ2',
+            data: { char_name: 'Marcus Reyes', codename: 'GRAYWOLF', submitted_at: '2026-08-01T12:00:00Z' }
+        }));
+    }""")
+    page.reload(wait_until="domcontentloaded", timeout=8000)
+    page.wait_for_timeout(300)
+    scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
+    record("mobile", "index.html has no horizontal overflow at 390px viewport (Continue Playing panel shown)",
+           scroll_width <= 390, f"scrollWidth={scroll_width}")
+    errs_all.extend(errs)
+    page.close()
 
     page = p.new_page(viewport={"width": 390, "height": 844})
     page.set_default_timeout(5000)
@@ -620,6 +713,8 @@ def main():
         safe(test_cover_ids_tab, browser, area="cover-ids-tab")
 
         safe(test_hub_two_cards, browser, area="hub")
+
+        safe(test_hub_latest_agent_panel, browser, area="hub")
 
         safe(test_mobile_no_overflow, browser, area="mobile")
 

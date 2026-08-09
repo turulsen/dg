@@ -89,6 +89,18 @@ non-zero if anything fails.
 - **`test_hub_two_cards`** — `index.html` links to exactly
   `stats/index.html` and `dg-agent-portal.html`, no more, no standalone ID
   Creator card.
+- **`test_hub_latest_agent_panel`** — the hub's "Continue Playing" panel.
+  Checks it's hidden entirely (not an empty/broken preview) in a fresh
+  browser with no saved agent, then that a saved agent (`dg_last_agent`,
+  including a photo) produces a populated preview -- name, code, codename,
+  updated date, photo -- that links straight to the Agent Portal's Agent
+  File tab. Needs the same font-blocking `page.route` calls as
+  `test_stat_generator_agent_file_nav` (see above) for the same reason:
+  `index.html`'s own inline `<script>` sits after its Google Fonts
+  `<link>`, so an unblocked font request hangs it, not just slows it down
+  -- this cost a debugging pass here too before the pattern was applied
+  consistently to every test that touches one of these three pages'
+  scripts for the first time.
 
 `dg-id-creator.html`'s visual theme (paper/dossier styling to match the rest
 of the hub) is a CSS-only change with no functional test coverage — verify
