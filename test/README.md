@@ -26,6 +26,13 @@ non-zero if anything fails.
   SAN-loss roller produces a result, a Bond score adjusts, field notes
   persist to `localStorage`, and all three themes apply and the choice
   persists.
+- **External import (`pigeon-export-fixture.json`)** — pastes a fixture
+  shaped like pigeon-labs-stack's DELTA-GREEN-STATS export and checks the
+  reported counts, that characteristics map 1:1, that a known key mismatch
+  (`heavy_machiner` → Heavy Machinery) aliases correctly, that Bonds and
+  weapons/equipment land, and that "Send Identity to Agent Portal" opens a
+  new tab with the Cover form's name and notes prefilled and the handoff
+  key cleared afterward.
 - **dg-agent-portal.html** — tab switching (Cover / Agent File / Cover IDs),
   full profession dropdown, random agent generator per profession, cover
   form submit + dossier render, localStorage persistence, restoring an
@@ -53,3 +60,11 @@ silently patched.
 `mock-agents.json` has five fictional Delta Green agents spanning different
 professions, used to exercise the cover-brief form fields and the random
 agent generator's profession list.
+
+`pigeon-export-fixture.json` is a hand-built fixture shaped like pigeon-labs-
+stack's DELTA-GREEN-STATS export (documented in that project's Foundry VTT
+port, `pigeon-labs-stack/delta-green-agent-wizard-module`, in the comment
+block at the top of `scripts/pdf-export.js` — its `collectState()` shape).
+It's not a real export pulled from that site (this session can't reach
+pigeon-labs-stack.github.io — network policy blocks that host), so it's
+worth spot-checking against a real export if the site's format ever changes.

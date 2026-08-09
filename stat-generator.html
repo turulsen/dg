@@ -98,6 +98,15 @@ a{color:inherit;}
 .section-label::after{content:'';flex:1;height:1px;background:var(--rule);}
 
 p.hint{font-size:12.5px;color:var(--ink-dim);line-height:1.7;margin-bottom:16px;max-width:64ch;}
+p.hint a{color:var(--accent);text-decoration:underline;}
+
+/* ── external import ── */
+.import-panel{margin-bottom:22px;}
+.import-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px;}
+.import-row input[type=file]{font-family:var(--font-body);font-size:12px;color:var(--ink);max-width:100%;}
+.import-or{font-family:var(--font-display);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-dim);}
+.import-text{width:100%;min-height:64px;background:rgba(0,0,0,.03);border:1px dashed var(--rule);padding:10px;font-family:var(--font-data);font-size:11px;color:var(--ink);resize:vertical;margin-bottom:10px;}
+.import-status{font-family:var(--font-data);font-size:11px;}
 
 /* ── form bits ── */
 .field{margin-bottom:16px;}
@@ -249,6 +258,26 @@ p.hint{font-size:12.5px;color:var(--ink-dim);line-height:1.7;margin-bottom:16px;
 
   <!-- ══════════════ CREATE ══════════════ -->
   <div id="view-create">
+    <div class="panel panel-tight import-panel">
+      <div class="section-label" style="margin-top:0;">External Import</div>
+      <p class="hint">
+        Prefer building on <a href="https://pigeon-labs-stack.github.io/DELTA-GREEN-STATS/" target="_blank" rel="noopener">pigeon-labs-stack's DELTA-GREEN-STATS ↗</a>?
+        Build your Agent there, export/download its character JSON, then bring it in below —
+        stats, skills, Bonds, and gear all carry over. That tool doesn't record physical
+        appearance, so you'll still fill that in yourself afterward (in Step 1 here, or on the
+        Agent Portal's Cover tab).
+      </p>
+      <div class="import-row">
+        <input type="file" id="import-file" accept=".json,application/json">
+        <span class="import-or">or paste JSON</span>
+      </div>
+      <textarea id="import-text" class="import-text" placeholder='{"csStats":{"STR":12,...}, "bio":{"name":"..."}, ...}'></textarea>
+      <div class="import-row">
+        <button class="btn sm" onclick="runImport()">Import Character</button>
+        <span class="import-status" id="import-status"></span>
+      </div>
+    </div>
+
     <div class="wiz-progress" id="wiz-progress"></div>
     <div class="panel" id="wiz-panel"></div>
     <div class="wiz-nav">
@@ -330,6 +359,161 @@ const EQUIPMENT_PRESETS = [
   'Handheld radio','Flashlight','Multitool','Lockpicks','Binoculars','Laptop, encrypted',
   'Cover ID documents','Cash, unmarked','Evidence kit','Gas mask'
 ];
+
+/* ══════════════════════════════════════════════
+   EXTERNAL IMPORT — pigeon-labs-stack's DELTA-GREEN-STATS
+   Maps its exported character JSON (documented in its Foundry VTT
+   port's pdf-export.js as the dgSaveLoad.collectState() shape) onto
+   our character record. That tool doesn't capture physical
+   appearance at all -- only identity, stats, skills, Bonds and gear
+   carry over. A few of its skill keys don't line up with our list
+   (typos like "heavy_machiner", or specialty groups like "science"/
+   "pilot"/"art" that aren't flat skills here) -- those are handled
+   below or folded into notes rather than silently dropped.
+   ══════════════════════════════════════════════ */
+const PIGEON_SITE_URL = 'https://pigeon-labs-stack.github.io/DELTA-GREEN-STATS/';
+
+const PIGEON_SKILL_ALIASES = {
+  heavy_machiner: 'Heavy Machinery',
+  humint: 'HUMINT',
+  sigint: 'SIGINT',
+  foreign_language: 'Foreign Language',
+  military_science: 'Military Science',
+  computer_science: 'Computer Science',
+  first_aid: 'First Aid',
+  melee_weapons: 'Melee Weapons',
+  unarmed_combat: 'Unarmed Combat',
+};
+function normalizeSkillKey(s){ return (s||'').toLowerCase().replace(/[^a-z]/g,''); }
+const SKILL_NAME_BY_NORM = {};
+SKILLS.forEach(([name])=>{ SKILL_NAME_BY_NORM[normalizeSkillKey(name)] = name; });
+
+function importPigeonJSON(jsonText){
+  let src;
+  try{ src = JSON.parse(jsonText); }
+  catch(e){ return {ok:false, error:'That doesn\'t look like valid JSON.'}; }
+
+  const bio = src.bio || {};
+  const stats = src.csStats || {};
+  const imported = { skillsMatched:0, skillsSkipped:[], bondsImported:0, equipmentImported:0 };
+
+  if(bio.name) character.char_name = bio.name;
+  if(bio.employer) character.employer = bio.employer;
+
+  // Their profession is a free-text title, not one of our fixed IDs --
+  // try a loose match, otherwise keep the original text visible in notes
+  // rather than silently discard it.
+  let matchedProfession = '';
+  if(bio.profession){
+    const p = bio.profession.toLowerCase();
+    const found = PROFESSIONS.find(pr => p.includes(pr.label.toLowerCase()) || pr.label.toLowerCase().includes(p));
+    if(found) matchedProfession = found.id;
+  }
+  if(matchedProfession) character.profession = matchedProfession;
+
+  const STAT_KEYS = {str:'STR',con:'CON',dex:'DEX',int:'INT',pow:'POW',cha:'CHA'};
+  Object.keys(STAT_KEYS).forEach(k=>{
+    const v = parseInt(stats[STAT_KEYS[k]]);
+    if(!isNaN(v)) character.values[k] = Math.max(1, Math.min(20, v));
+  });
+  syncDodge();
+
+  if(src.skills && typeof src.skills === 'object'){
+    Object.entries(src.skills).forEach(([key, val])=>{
+      const aliasName = PIGEON_SKILL_ALIASES[key];
+      const ourName = aliasName || SKILL_NAME_BY_NORM[normalizeSkillKey(key)];
+      const n = parseInt(val);
+      if(ourName && !isNaN(n)){
+        if(ourName !== 'Dodge') character.skills[ourName] = Math.max(0, Math.min(99, n));
+        imported.skillsMatched++;
+      } else if(!isNaN(n)) {
+        imported.skillsSkipped.push(key);
+      }
+    });
+  }
+
+  if(Array.isArray(src.bonds)){
+    src.bonds.forEach(b=>{
+      const name = b.relationship ? `${b.name} — ${b.relationship}` : (b.name||'');
+      if(!name.trim()) return;
+      character.bonds.push({name: name.trim(), score: parseInt(b.score)||character.values.cha});
+      imported.bondsImported++;
+    });
+  }
+
+  if(Array.isArray(src.equipment)){
+    src.equipment.forEach(item=>{
+      if(!item) return;
+      character.equipment.push({name: String(item), note:''});
+      imported.equipmentImported++;
+    });
+  }
+  if(Array.isArray(src.lpWeapons)){
+    src.lpWeapons.forEach(w=>{
+      if(!w || !w.name) return;
+      const bits = [];
+      if(w.damage) bits.push('dmg '+w.damage);
+      if(w.range) bits.push('range '+w.range);
+      if(w.lethality) bits.push('lethality '+w.lethality);
+      if(w.ammo) bits.push('ammo '+w.ammo);
+      character.equipment.push({name: w.name, note: bits.join(', ')});
+      imported.equipmentImported++;
+    });
+  }
+
+  if(src.sanity){
+    character.violence_adapt = (src.sanity.violence||[]).filter(Boolean).length;
+    character.helplessness_adapt = (src.sanity.helplessness||[]).filter(Boolean).length;
+  }
+
+  const noteParts = [];
+  if(bio.profession && !matchedProfession) noteParts.push(`Profession (from import): ${bio.profession}`);
+  if(bio.physicalDesc) noteParts.push(`Physical description (from import): ${bio.physicalDesc}`);
+  if(bio.motivations) noteParts.push(`Motivations (from import):\n${bio.motivations}`);
+  if(bio.personalDetails) noteParts.push(`Personal details (from import): ${bio.personalDetails}`);
+  if(src.specialtyInstances && src.specialtyInstances.length){
+    noteParts.push('Specialties (from import, no matching skill here): ' +
+      src.specialtyInstances.map(s=>`${s.key} (${s.specialty}) ${s.value}%`).join(', '));
+  }
+  if(imported.skillsSkipped.length){
+    noteParts.push(`Skipped on import (no matching skill here): ${imported.skillsSkipped.join(', ')}`);
+  }
+  if(noteParts.length) character.notes = [character.notes, ...noteParts].filter(Boolean).join('\n\n');
+
+  const d = derived();
+  character.hp_current = (src.derived && src.derived.hp) || d.hp;
+  character.wp_current = (src.derived && src.derived.wp) || d.wp;
+  character.san_current = (src.derived && src.derived.san) || d.san;
+
+  return {ok:true, imported};
+}
+
+function runImport(){
+  const fileInput = document.getElementById('import-file');
+  const textInput = document.getElementById('import-text');
+  const status = document.getElementById('import-status');
+  const finish = (text)=>{
+    const res = importPigeonJSON(text);
+    if(!res.ok){ status.textContent = res.error; status.style.color = 'var(--accent)'; return; }
+    const s = res.imported;
+    status.textContent = `Imported: ${s.skillsMatched} skills, ${s.bondsImported} Bonds, ${s.equipmentImported} equipment items.` +
+      (s.skillsSkipped.length ? ` ${s.skillsSkipped.length} skill(s) skipped -- see notes.` : '');
+    status.style.color = 'var(--good)';
+    wizStep = 1;
+    renderWizard();
+    window.scrollTo({top:0,behavior:'smooth'});
+  };
+  if(fileInput.files && fileInput.files[0]){
+    const reader = new FileReader();
+    reader.onload = e => finish(e.target.result);
+    reader.readAsText(fileInput.files[0]);
+  } else if((textInput.value||'').trim()){
+    finish(textInput.value);
+  } else {
+    status.textContent = 'Choose a .json file or paste the exported JSON first.';
+    status.style.color = 'var(--accent)';
+  }
+}
 
 /* ══════════════════════════════════════════════
    STATE
@@ -690,9 +874,25 @@ function finishCharacter(){
     <textarea class="summary-out" id="finish-summary" readonly>${buildSummaryText()}</textarea>
     <div class="wiz-nav" style="margin-top:14px;">
       <button class="btn ghost sm" onclick="downloadCharacterJson()">Download JSON</button>
+      <button class="btn ghost sm" onclick="sendToAgentPortal()">Send Identity to Agent Portal →</button>
       <button class="btn sm" onclick="setAppMode('play'); playLoadCharacter('${character.code}');">Open in Play Mode →</button>
     </div>
+    <p class="hint" style="margin-top:10px;">"Send Identity" hands off your name, profession, employer, and a mechanical summary to the Agent Portal's Cover form as Handler Notes — it doesn't include physical appearance (this tool doesn't ask for any), so you'll still fill in face/hair/build/outfit there before submitting the brief for real.</p>
   `;
+}
+function sendToAgentPortal(){
+  const summaryLines = buildSummaryText().split('\n').slice(0, 12).join('\n');
+  const extras = character.notes ? `\n\n-- From import --\n${character.notes}` : '';
+  const notes = `Imported from Character Sheet Generator (code ${character.code}):\n${summaryLines}${extras}`;
+  try{
+    localStorage.setItem('dg_handoff_agent', JSON.stringify({
+      char_name: character.char_name,
+      employer: character.employer,
+      notes: notes,
+      source_code: character.code
+    }));
+  }catch(e){}
+  window.open('dg-agent-portal.html', '_blank');
 }
 function buildSummaryText(){
   const d = derived();

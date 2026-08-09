@@ -15,6 +15,7 @@ from playwright.sync_api import sync_playwright
 BASE = os.environ.get("DG_TEST_BASE", "http://127.0.0.1:8949")
 HERE = os.path.dirname(os.path.abspath(__file__))
 AGENTS = json.load(open(os.path.join(HERE, "mock-agents.json")))
+PIGEON_FIXTURE = open(os.path.join(HERE, "pigeon-export-fixture.json")).read()
 RESULTS_PATH = os.path.join(HERE, "results.json")
 
 results = []
@@ -216,6 +217,71 @@ def test_stat_generator(p, agent):
     page.close()
     return errs
 
+def test_pigeon_import(p):
+    """External import: pigeon-labs-stack's DELTA-GREEN-STATS JSON shape
+    (per its documented collectState() format) maps into our character,
+    including the skill-key aliasing (heavy_machiner -> Heavy Machinery),
+    skip-reporting for non-matching skills/specialties, and the handoff
+    into the Agent Portal's Cover form notes."""
+    page = p.new_page()
+    page.set_default_timeout(5000)
+    errs = collect_errors(page)
+    page.goto(f"{BASE}/stat-generator.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(200)
+
+    page.fill("#import-text", PIGEON_FIXTURE)
+    page.click("[onclick=\"runImport()\"]")
+    page.wait_for_timeout(150)
+    status = page.text_content("#import-status") or ""
+    record("stat-generator", "pigeon import reports skill/bond/equipment counts",
+           "7 skills" in status and "2 Bonds" in status and "3 equipment" in status, status)
+
+    name_val = page.input_value("#f-name")
+    record("stat-generator", "pigeon import fills identity", name_val == "Owen Castillo", name_val)
+
+    page.click("#wiz-next")
+    page.wait_for_timeout(100)
+    stat_vals = page.eval_on_selector_all(".stat-row input[type=number]", "els => els.map(e=>parseInt(e.value))")
+    record("stat-generator", "pigeon import maps characteristics correctly",
+           stat_vals == [13,11,15,14,10,8], str(stat_vals))
+    page.click("#wiz-next"); page.wait_for_timeout(100)  # derived
+    page.click("#wiz-next"); page.wait_for_timeout(100)  # skills
+
+    heavy_val = page.eval_on_selector("[onchange*=\"onSkillInput('Heavy Machinery'\"]", "el=>el.value")
+    record("stat-generator", "pigeon import aliases heavy_machiner -> Heavy Machinery", heavy_val == "20", heavy_val)
+
+    page.click("#wiz-next"); page.wait_for_timeout(100)  # bonds
+    bond_names = page.eval_on_selector_all(".bond-row input[type=text]", "els => els.map(e=>e.value)")
+    record("stat-generator", "pigeon import maps bonds with relationship", "Partner — Dana Whitlock" in bond_names, str(bond_names))
+
+    page.click("#wiz-next"); page.wait_for_timeout(100)  # equipment
+    equip_names = page.eval_on_selector_all(".equip-row .nm", "els => els.map(e=>e.textContent)")
+    record("stat-generator", "pigeon import maps equipment + weapons", "Glock 19" in equip_names, str(equip_names))
+
+    page.click("#wiz-next"); page.wait_for_timeout(100)  # finish
+    page.click("[onclick=\"finishCharacter()\"]")
+    page.wait_for_timeout(150)
+
+    with page.context.expect_page() as new_page_info:
+        page.click("[onclick=\"sendToAgentPortal()\"]")
+    portal_page = new_page_info.value
+    portal_page.wait_for_load_state("domcontentloaded")
+    portal_page.wait_for_timeout(300)
+    portal_errs = collect_errors(portal_page)
+    portal_name = portal_page.input_value("#dg-form [name=char_name]")
+    portal_notes = portal_page.input_value("#dg-form [name=notes]")
+    record("stat-generator", "handoff prefills Agent Portal Cover form name", portal_name == "Owen Castillo", portal_name)
+    record("stat-generator", "handoff notes include imported extras (physical desc, motivations)",
+           "Physical description" in portal_notes and "Motivations" in portal_notes, portal_notes[:120])
+    cleared = portal_page.evaluate("() => localStorage.getItem('dg_handoff_agent')")
+    record("stat-generator", "handoff key clears after use", cleared is None, str(cleared))
+    portal_page.wait_for_timeout(100)
+    record("stat-generator", "no JS exceptions on handoff receiving page", len(portal_errs)==0, "; ".join(portal_errs))
+
+    portal_page.close()
+    page.close()
+    return errs
+
 def test_agent_portal_restore_dossier(p, agent):
     """Regression check: restoring an agent by code on the Cover tab must
     re-render the dossier ('pop up') in place, not just jump silently to
@@ -359,6 +425,8 @@ def main():
 
         for agent in AGENTS:
             safe(test_stat_generator, browser, agent, area="stat-generator")
+
+        safe(test_pigeon_import, browser, area="stat-generator")
 
         safe(test_agent_portal_restore_dossier, browser, AGENTS[0], area="agent-portal")
 

@@ -3320,6 +3320,30 @@ function rerollAgent() {
   afData = saved.data;
 })();
 
+/* ── HANDOFF FROM CHARACTER SHEET GENERATOR ──
+   stat-generator.html's "Send Identity to Agent Portal" writes this key
+   before opening this page. It only carries name + a mechanical summary
+   (as notes) -- that tool has no physical-appearance data, so the rest of
+   this Cover brief still needs to be filled in by hand. */
+(function applyHandoff() {
+  let handoff;
+  try { handoff = JSON.parse(localStorage.getItem('dg_handoff_agent') || 'null'); }
+  catch(e) { handoff = null; }
+  if (!handoff) return;
+  try { localStorage.removeItem('dg_handoff_agent'); } catch(e) {}
+
+  const form = document.getElementById('dg-form');
+  if (!form) return;
+  if (handoff.char_name && form.elements['char_name']) form.elements['char_name'].value = handoff.char_name;
+  if (handoff.notes && form.elements['notes']) form.elements['notes'].value = handoff.notes;
+
+  const status = document.getElementById('code-load-status');
+  if (status) {
+    status.textContent = 'Identity imported from Character Sheet Generator' + (handoff.source_code ? ' (' + handoff.source_code + ')' : '') + ' — fill in appearance below to complete the brief.';
+    status.style.color = '#8b1a1a';
+  }
+})();
+
 </script>
 </body>
 </html>

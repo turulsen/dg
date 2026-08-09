@@ -9,7 +9,7 @@ Player-facing tools for a Delta Green campaign, published as a static site via G
 | Page | Purpose |
 |---|---|
 | `index.html` | Hub landing page — links to everything below |
-| `stat-generator.html` | Full character sheet generator: a 7-step wizard (identity, characteristics, derived stats, skills, Bonds, equipment, finish) with Quick/Random/Point-Buy creation paths, three selectable visual themes, and a **Play Mode** for running the finished sheet live at the table (HP/WP/SAN trackers, SAN-loss roller, Bond and skill tracking, field notes) |
+| `stat-generator.html` | Full character sheet generator: a 7-step wizard (identity, characteristics, derived stats, skills, Bonds, equipment, finish) with Quick/Random/Point-Buy creation paths, three selectable visual themes, a **Play Mode** for running the finished sheet live at the table (HP/WP/SAN trackers, SAN-loss roller, Bond and skill tracking, field notes), and a **JSON import** from [pigeon-labs-stack's DELTA-GREEN-STATS](https://pigeon-labs-stack.github.io/DELTA-GREEN-STATS/) with a one-click handoff of the imported identity into the Agent Portal's Cover form |
 | `dg-agent-portal.html` | Character brief, cover identity, and dossier — plus agent file across eras, medical history, and after-action reports (backed by a Google Apps Script + Sheet) |
 | `dg-id-creator.html` | Printable cover-identity card generator |
 
@@ -25,7 +25,7 @@ backends faked out so it never touches real data. See `test/README.md`.
 
 Rough priority order, cheapest/highest-value first:
 
-1. **Unify the character-code system.** `stat-generator.html` currently saves locally (`dg_char_<code>`) and doesn't push into the Agent Portal's Apps Script backend, and the ID Creator's code format is still a different, incompatible scheme — the Portal's field schema (`char_name`, `age_range`, etc.) and code format should be documented once and shared across all three tools so one code loads a character everywhere. This is now the single biggest gap.
+1. **Unify the character-code system.** `stat-generator.html` currently saves locally (`dg_char_<code>`) and doesn't push into the Agent Portal's Apps Script backend, and the ID Creator's code format is still a different, incompatible scheme — the Portal's field schema (`char_name`, `age_range`, etc.) and code format should be documented once and shared across all three tools so one code loads a character everywhere. The one-way "Send Identity to Agent Portal" handoff (localStorage `dg_handoff_agent`, consumed once on load) is a stopgap, not a fix — this is still the single biggest gap.
 2. ~~Skills & weapons.~~ Done — `stat-generator.html`'s wizard now covers skills (full list, point pools), Bonds, and equipment, plus a Play Mode for running the sheet live.
 3. **A real percentile roller.** Play Mode tracks HP/WP/SAN and has a SAN-loss roller, but there's no roll-under-a-skill roller yet — the most obvious next in-session addition.
 4. **Handout/clue log.** A shared, per-campaign log where the Handler drops handouts (pairs well with a "delta-green-handouts" style PDF workflow) and players can revisit them.
