@@ -9,27 +9,13 @@ Usage:
     python3 -m http.server 8949 &
     python3 test/run_tests.py
 """
-import json, os, re, sys, time
+import json, os, sys
 from playwright.sync_api import sync_playwright
 
 BASE = os.environ.get("DG_TEST_BASE", "http://127.0.0.1:8949")
 HERE = os.path.dirname(os.path.abspath(__file__))
 AGENTS = json.load(open(os.path.join(HERE, "mock-agents.json")))
 RESULTS_PATH = os.path.join(HERE, "results.json")
-
-# Stubs XLSX (loaded from cdnjs in the real page) so the export button's
-# wiring can be verified even when that CDN is unreachable -- as it is
-# from this sandbox's egress proxy, same as fonts.googleapis.com.
-XLSX_STUB = """
-window.XLSX = {
-  utils: {
-    book_new: () => ({sheets:{}}),
-    aoa_to_sheet: (data) => ({__data: data}),
-    book_append_sheet: (wb, ws, name) => { wb.sheets[name] = ws; }
-  },
-  writeFile: (wb, filename) => { window.__lastExport = {wb, filename}; }
-};
-"""
 
 results = []
 
@@ -94,133 +80,109 @@ def fill_cover_form(page, agent, form_selector="#dg-form"):
         page.fill(vibe_sel, agent.get("vibe",""))
 
 def test_stat_generator(p):
-    """stat-generator.html is a ported copy of pigeon-labs-stack's
-    DELTA-GREEN-STATS (MIT licensed) plus a small "Send to Agent Portal"
-    addition -- exercises stat adjustment, both random modes, reset, the
-    Bond generator, the XLSX export wiring, and the handoff."""
+    """stats/index.html is a full directory-level port of pigeon-labs-
+    stack's DELTA-GREEN-STATS (PolyForm Noncommercial licensed) -- a much
+    larger tool than the earlier single-file port: 6 themes, an 8-step
+    wizard, 18 professions with contextual skills, random bio generation,
+    a dice roller widget, Bonds, equipment, and save/share. This is
+    third-party production code, not something built here, so the test
+    favors breadth (does each major feature work without throwing) over
+    exhaustively verifying every one of its ~17,000 lines."""
     page = p.new_page()
-    page.set_default_timeout(5000)
+    page.set_default_timeout(8000)
     errs = collect_errors(page)
-    page.add_init_script(XLSX_STUB)
-    page.goto(f"{BASE}/stat-generator.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(300)
-    record("stat-generator", "page loads", len(errs)==0, "; ".join(errs))
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+    record("stats-terminal", "page loads with no JS exceptions", len(errs)==0, "; ".join(errs))
 
-    initial_vals = page.eval_on_selector_all(".stat-value", "els => els.map(e=>e.textContent)")
-    initial_remaining = page.text_content("#totalPoints")
-    record("stat-generator", "starts with six stats at 3, 54 points remaining",
-           initial_vals == ["3"]*6 and initial_remaining == "54",
-           f"vals={initial_vals} remaining={initial_remaining}")
+    hub_link = page.get_attribute("a[href='../index.html']", "href") if page.locator("a[href='../index.html']").count() else None
+    record("stats-terminal", "Agent Hub nav link present", hub_link == "../index.html", str(hub_link))
 
-    # bond-categories checkboxes must actually be inside the <form> --
-    # regression check for the unclosed-tag fix made when porting
-    checkbox_count = page.eval_on_selector_all("#bond-categories input[type=checkbox]", "els => els.length")
-    record("stat-generator", "all 5 bond-category checkboxes are inside the form (unclosed-tag fix)",
-           checkbox_count == 5, f"{checkbox_count} checkboxes")
+    # All six themes must switch without throwing
+    theme_options = page.eval_on_selector_all("#cs-theme-select option", "els => els.map(e=>e.value)")
+    record("stats-terminal", "theme selector has all 6 themes",
+           set(theme_options) == {"xfiles","modern","son-of-sam","field-notes","field-doc","mobile"}, str(theme_options))
+    for t in theme_options:
+        page.select_option("#cs-theme-select", t)
+        page.wait_for_timeout(200)
+    record("stats-terminal", "cycling through every theme throws no JS exceptions", len(errs)==0, "; ".join(errs))
+    page.select_option("#cs-theme-select", "xfiles")
+    page.wait_for_timeout(200)
 
-    # manual stat adjustment
-    str_plus = page.locator("#STR-value").locator("xpath=..").locator("button", has_text="+")
-    for _ in range(3):
-        str_plus.click()
+    # Manual stat adjustment
+    page.click("#STR-value ~ button, .stat-container:has(#STR-value) button:has-text('+')")
+    page.wait_for_timeout(100)
     str_val = page.text_content("#STR-value")
-    str_x5 = page.text_content("#STR-x5-value")
-    remaining_after_adjust = page.text_content("#totalPoints")
-    record("stat-generator", "manual +/- adjusts value, x5, and remaining points",
-           str_val == "6" and str_x5 == "30" and remaining_after_adjust == "51",
-           f"str={str_val} x5={str_x5} remaining={remaining_after_adjust}")
+    record("stats-terminal", "manual + button increments STR", str_val == "4", str_val)
 
-    # random point buy: must sum to exactly 72, every stat 3-18
+    # Random point buy: must sum to exactly 72
     page.click("#random-point-buy")
-    page.wait_for_timeout(100)
+    page.wait_for_timeout(150)
     buy_vals = page.eval_on_selector_all(".stat-value", "els => els.map(e=>parseInt(e.textContent))")
-    record("stat-generator", "random point buy spends exactly 72 points, all stats 3-18",
-           sum(buy_vals) == 72 and all(3 <= v <= 18 for v in buy_vals), str(buy_vals))
+    record("stats-terminal", "random point buy spends exactly 72 points, all stats 3-18",
+           len(buy_vals)==6 and sum(buy_vals) == 72 and all(3 <= v <= 18 for v in buy_vals), str(buy_vals))
 
-    # random dice roll: 4d6 drop lowest per stat, so each stat in 3-18
-    page.click("#random-dice-roll")
-    page.wait_for_timeout(100)
-    dice_vals = page.eval_on_selector_all(".stat-value", "els => els.map(e=>parseInt(e.textContent))")
-    record("stat-generator", "random dice roll produces 6 stats in 3-18", all(3 <= v <= 18 for v in dice_vals), str(dice_vals))
-
-    # reset
     page.click("#reset-button")
-    page.wait_for_timeout(100)
+    page.wait_for_timeout(150)
     reset_vals = page.eval_on_selector_all(".stat-value", "els => els.map(e=>e.textContent)")
-    reset_remaining = page.text_content("#totalPoints")
-    record("stat-generator", "reset returns to six 3s and 54 remaining",
-           reset_vals == ["3"]*6 and reset_remaining == "54", f"{reset_vals} remaining={reset_remaining}")
+    record("stats-terminal", "reset returns all six stats to 3", reset_vals == ["3"]*6, str(reset_vals))
 
-    # Bond generator (default category is DELTA_GREEN, pre-checked)
-    default_checked = page.eval_on_selector("#DELTA_GREEN", "el => el.checked")
-    page.click("#bonds-button")
-    page.wait_for_timeout(1500)  # typing effect
-    bond_text = (page.text_content("#bondText") or "").strip()
-    record("stat-generator", "Bond generator produces text with a default category checked",
-           default_checked and len(bond_text) > 0, bond_text[:80])
+    # Profession select populates a contextual skill list
+    prof_options = page.eval_on_selector_all("#cs-profession-select option", "els => els.map(e=>e.value).filter(v=>v)")
+    record("stats-terminal", "profession dropdown has ~18 professions", len(prof_options) >= 15, f"{len(prof_options)} professions")
+    if prof_options:
+        page.select_option("#cs-profession-select", prof_options[0])
+        page.wait_for_timeout(200)
 
-    # XLSX export wiring (library itself is stubbed -- see XLSX_STUB)
-    page.click("#export-button")
-    page.wait_for_timeout(100)
-    export_filename = page.evaluate("() => window.__lastExport ? window.__lastExport.filename : null")
-    record("stat-generator", "export button invokes XLSX.writeFile with expected filename",
-           export_filename == "DeltaGreenCharacterSheet.xlsx", str(export_filename))
+    # Random bio fills the name field
+    page.click("#random-bio-button")
+    page.wait_for_timeout(200)
+    bio_name = page.input_value("#cs-name")
+    record("stats-terminal", "Random Bio fills the name field", bool(bio_name) and bio_name != "Agent", bio_name)
 
-    # Dice roller
-    page.click("#d100-button")
-    page.wait_for_timeout(80)
-    log_after_quick = page.text_content("#diceLog") or ""
-    record("stat-generator", "quick dice button (D100) logs a roll in range",
-           "1d100:" in log_after_quick and "= " in log_after_quick, log_after_quick[:60])
+    # Wizard opens to step 1
+    page.click("#wiz-toggle-btn")
+    page.wait_for_timeout(200)
+    wiz_heading = page.text_content("text=STEP 1 OF") if page.locator("text=STEP 1 OF").count() else None
+    record("stats-terminal", "Character Creation Wizard opens to step 1", bool(wiz_heading), wiz_heading or "not found")
+    page.click("#wiz-toggle-btn")
+    page.wait_for_timeout(150)
 
-    page.fill("#dice-count", "2")
-    page.fill("#dice-sides", "6")
-    page.fill("#dice-mod", "3")
-    page.click("#custom-roll-button")
-    page.wait_for_timeout(80)
-    custom_entry = page.eval_on_selector("#diceLog div", "el => el.textContent")
-    # e.g. "2d6 +3: [4, 6] +3 = 13" -- verify the displayed total matches rolls + mod
-    m = re.match(r"2d6 \+3: \[([\d, ]+)\] \+3 = (\d+)", custom_entry or "")
-    rolls_ok = bool(m) and sum(int(x) for x in m.group(1).split(", ")) + 3 == int(m.group(2))
-    record("stat-generator", "custom NdX+mod roll computes correctly", rolls_ok, custom_entry or "")
+    # Dice roller widget: toggled via #dr-arrow. It starts collapsed on a
+    # fresh load, but switching to the "field-doc" (Live Play) theme -- as
+    # the theme cycle above just did -- auto-opens it and that state
+    # persists across switching back, so check current state rather than
+    # assuming collapsed.
+    d20 = page.locator("button[data-die='d20']")
+    if not d20.is_visible():
+        page.click("#dr-arrow")
+        page.wait_for_timeout(150)
+    d20_visible = d20.is_visible()
+    if d20_visible:
+        d20.click()
+        page.wait_for_timeout(150)
+    record("stats-terminal", "dice roller widget opens and rolls without throwing",
+           d20_visible and len(errs)==0, f"visible={d20_visible}")
 
-    page.fill("#skill-target", "100")  # target itself clamps to 99, checked below
-    page.click("#skill-check-button")
-    page.wait_for_timeout(80)
-    skill_entries = page.eval_on_selector_all("#diceLog div", "els => els.map(e=>e.textContent)")
-    m = re.match(r"d100 vs 99%: rolled (\d+) — (SUCCESS|FAILURE)", skill_entries[0])
-    record("stat-generator", "skill check clamps target to 99 and reports SUCCESS/FAILURE correctly",
-           bool(m) and ((int(m.group(1)) <= 99) == (m.group(2) == "SUCCESS")), skill_entries[0])
-
-    for _ in range(10):
-        page.click("#skill-check-button")
-        page.wait_for_timeout(30)
-    log_count = page.eval_on_selector_all("#diceLog div", "els => els.length")
-    record("stat-generator", "dice log caps at 8 entries", log_count == 8, f"{log_count} entries")
-
-    # Send to Agent Portal handoff
-    with page.context.expect_page() as new_page_info:
-        page.click("#send-to-portal")
-    portal_page = new_page_info.value
-    portal_page.wait_for_load_state("domcontentloaded")
-    portal_page.wait_for_timeout(300)
-    portal_errs = collect_errors(portal_page)
-    portal_notes = portal_page.input_value("#dg-form [name=notes]")
-    record("stat-generator", "handoff prefills Agent Portal notes with stats and Bond text",
-           "DELTA GREEN" in portal_notes and "Bond" in portal_notes, portal_notes[:120])
-    cleared = portal_page.evaluate("() => localStorage.getItem('dg_handoff_agent')")
-    record("stat-generator", "handoff key clears after use", cleared is None, str(cleared))
-    record("stat-generator", "no JS exceptions on handoff receiving page", len(portal_errs)==0, "; ".join(portal_errs))
-    portal_page.close()
+    # Mobile theme: verify no horizontal overflow specifically (see test_mobile_no_overflow
+    # for why the other 5 themes are excluded from that general sweep)
+    page.select_option("#cs-theme-select", "mobile")
+    page.wait_for_timeout(200)
+    record("stats-terminal", "no JS exceptions across the whole run", len(errs)==0, "; ".join(errs))
 
     page.close()
     return errs
 
 def test_mobile_no_overflow(p):
     """Regression check: no page should force horizontal scroll on a phone
-    viewport. stat-generator.html had this bug (fixed-width elements from
-    the ported original, which had no responsive CSS at all)."""
+    viewport. stats/index.html is the one exception with an asterisk: it's
+    pigeon-labs-stack's own multi-theme tool, and only its dedicated
+    "Mobile" theme is meant to be responsive -- the other five (X-Files,
+    Modern, Son of Sam, Field Notes, Live Play) are desktop-oriented by the
+    original design, so they're checked separately with that theme
+    selected rather than folded into the general no-overflow sweep."""
     errs_all = []
-    for path in ["index.html", "stat-generator.html", "dg-agent-portal.html", "dg-id-creator.html"]:
+    for path in ["index.html", "dg-agent-portal.html", "dg-id-creator.html"]:
         page = p.new_page(viewport={"width": 390, "height": 844})
         page.set_default_timeout(5000)
         errs = collect_errors(page)
@@ -232,6 +194,19 @@ def test_mobile_no_overflow(p):
                scroll_width <= 390, f"scrollWidth={scroll_width}")
         errs_all.extend(errs)
         page.close()
+
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    page.set_default_timeout(5000)
+    errs = collect_errors(page)
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+    page.select_option("#cs-theme-select", "mobile")
+    page.wait_for_timeout(400)
+    scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
+    record("mobile", "stats/index.html has no horizontal overflow at 390px viewport (Mobile theme)",
+           scroll_width <= 390, f"scrollWidth={scroll_width}")
+    errs_all.extend(errs)
+    page.close()
     return errs_all
 
 def test_agent_portal_restore_dossier(p, agent):
@@ -375,7 +350,7 @@ def main():
                 record(area, f"{fn.__name__} crashed", False, str(e)[:200])
                 return None
 
-        safe(test_stat_generator, browser, area="stat-generator")
+        safe(test_stat_generator, browser, area="stats-terminal")
 
         safe(test_mobile_no_overflow, browser, area="mobile")
 

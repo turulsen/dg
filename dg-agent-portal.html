@@ -3321,10 +3321,11 @@ function rerollAgent() {
 })();
 
 /* ── HANDOFF FROM CHARACTER SHEET GENERATOR ──
-   stat-generator.html's "Send Identity to Agent Portal" writes this key
-   before opening this page. It only carries name + a mechanical summary
-   (as notes) -- that tool has no physical-appearance data, so the rest of
-   this Cover brief still needs to be filled in by hand. */
+   Any page can hand off an agent by writing {char_name, notes, source_code}
+   to localStorage under dg_handoff_agent before opening this page -- it's
+   picked up once, on load, and cleared. Nothing currently writes this key
+   (the stats terminal that used to doesn't anymore; see stats/ instead),
+   but the Cover form still honors it if something does. */
 (function applyHandoff() {
   let handoff;
   try { handoff = JSON.parse(localStorage.getItem('dg_handoff_agent') || 'null'); }

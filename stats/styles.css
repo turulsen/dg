@@ -1,0 +1,7598 @@
+﻿/* ============================================================================   DELTA GREEN STATS - PRODUCTION STYLESHEET   ============================================================================   Organized for easy customization with clear sections for:   1. Color configuration (CSS variables)   2. Global styling   3. Component styling   4. Layout patterns   5. Modern theme (Catppuccin-inspired)   ============================================================================ */
+/* ============================================================================   CONFIGURATION: Colors, Spacing, Typography   ============================================================================ */
+:root {
+    /* === X-Files Theme Colors === */
+    --primary-color: #00b521;
+    --bg-color: #000000;
+    --text-color: #ffffff;
+    --input-bg: #000000;
+    --input-border: #00b521;
+    /* === Spacing === */
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 12px;
+    --spacing-lg: 20px;
+    --spacing-xl: 30px;
+    --spacing-2xl: 50px;
+    /* === Border Radius === */
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    /* === Font Sizes === */
+    --font-xs: 12px;
+    --font-sm: 14px;
+    --font-base: 16px;
+    --font-lg: 18px;
+    --font-xl: 32px;
+}
+
+/* ── Modern Theme (Catppuccin Mocha) ─────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════   MODERN THEME — Catppuccin Mocha   Full palette, JetBrains Mono, per-section accents, riced aesthetic═══════════════════════════════════════════════════════════════════ */
+.theme-modern {
+    /* ── Catppuccin Mocha full palette ──────────────── */
+    --ctp-crust: #11111b;
+    --ctp-mantle: #181825;
+    --ctp-base: #1e1e2e;
+    --ctp-surface0: #313244;
+    --ctp-surface1: #45475a;
+    --ctp-surface2: #585b70;
+    --ctp-overlay0: #6c7086;
+    --ctp-overlay1: #7f849c;
+    --ctp-overlay2: #9399b2;
+    --ctp-subtext0: #a6adc8;
+    --ctp-subtext1: #bac2de;
+    --ctp-text: #cdd6f4;
+    --ctp-lavender: #b4befe;
+    --ctp-blue: #89b4fa;
+    --ctp-sapphire: #74c7ec;
+    --ctp-sky: #89dceb;
+    --ctp-teal: #94e2d5;
+    --ctp-green: #a6e3a1;
+    --ctp-yellow: #f9e2af;
+    --ctp-peach: #fab387;
+    --ctp-maroon: #eba0ac;
+    --ctp-red: #f38ba8;
+    --ctp-mauve: #cba6f7;
+    --ctp-pink: #f5c2e7;
+    --ctp-flamingo: #f2cdcd;
+    --ctp-rosewater: #f5e0dc;
+    /* ── Semantic tokens ────────────────────────────── */
+    --primary-color: var(--ctp-mauve);
+    --bg-color: var(--ctp-crust);
+    --text-color: var(--ctp-text);
+    --input-bg: var(--ctp-surface0);
+    --input-border: var(--ctp-surface1);
+    font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+    background-color: var(--bg-color);
+    /* Faint dot-grid gives the flat page some texture */
+    background-image: radial-gradient(circle, rgba(203, 166, 247, 0.07) 1px, transparent 1px);
+    background-size: 28px 28px;
+    color: var(--text-color);
+}
+
+/* ── Page title: pastel gradient across the full Mocha palette ─ */
+.theme-modern .page-title {
+    background: linear-gradient(90deg, var(--ctp-mauve) 0%, var(--ctp-blue) 40%, var(--ctp-teal) 75%, var(--ctp-green) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+}
+
+.theme-modern .site-intro {
+    color: var(--ctp-subtext0);
+    font-size: 0.82rem;
+    line-height: 1.4;
+    text-align: center;
+    flex: 0 0 100%;
+    width: 100%;
+    max-width: 100%;
+    padding: 0 33.5%;
+    box-sizing: border-box;
+    margin-bottom: var(--spacing-lg);
+    opacity: 0.85;
+}
+
+.theme-modern .site-intro strong {
+    color: var(--ctp-mauve);
+    -webkit-text-fill-color: var(--ctp-mauve);
+}
+
+/* ── Per-section accent colours ────────────────────────────────── */
+.theme-modern #cs-biography-fieldset {
+    --primary-color: var(--ctp-mauve);
+}
+
+.theme-modern .panel-skills {
+    --primary-color: var(--ctp-lavender);
+}
+
+.theme-modern .panel-bonus-skills {
+    --primary-color: var(--ctp-teal);
+}
+
+.theme-modern #cs-bonds-fieldset {
+    --primary-color: var(--ctp-blue);
+}
+
+.theme-modern #eq-picker-fieldset {
+    --primary-color: var(--ctp-pink);
+}
+
+/* ── Panels: surface0 bg gives real contrast vs crust body ─── */
+.theme-modern #cs-biography-fieldset,
+.theme-modern .panel-skills,
+.theme-modern .panel-bonus-skills,
+.theme-modern #cs-bonds-fieldset,
+.theme-modern #eq-picker-fieldset {
+    background: var(--ctp-surface0);
+    border: 1px solid var(--ctp-surface1);
+    border-left: 3px solid var(--primary-color);
+    border-radius: 8px;
+    /* top-edge inner highlight + crisp drop shadow — no bloom */
+    box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.07) inset, 0 2px 4px rgba(0, 0, 0, 0.5), 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Legends: solid coloured pill, crust text ───────────────── */
+.theme-modern #cs-biography-fieldset>legend,
+.theme-modern .panel-skills>legend,
+.theme-modern .panel-bonus-skills>legend,
+.theme-modern #cs-bonds-fieldset>legend,
+.theme-modern #eq-picker-fieldset>legend {
+    background: var(--primary-color);
+    color: var(--ctp-crust);
+    border-radius: 4px;
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 700;
+    padding: 2px 10px;
+    font-family: 'JetBrains Mono', monospace;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Inputs ─────────────────────────────────────────────────── */
+.theme-modern input,
+.theme-modern textarea {
+    /* base is darker than the surface0 panel — looks sunken */
+    background: var(--ctp-base);
+    border-color: var(--ctp-surface1);
+    color: var(--ctp-text);
+    border-radius: 5px;
+    font-family: 'JetBrains Mono', monospace;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+/* Auto-expand motivations textarea to fit its content */
+.theme-modern #cs-motivations {
+    field-sizing: content;
+    min-height: 60px;
+    overflow: hidden;
+    resize: none;
+}
+
+/* ── Specialty skill name: match existing skill label style ──── */
+.theme-modern #cs-specialty-skills .cs-skill-name {
+    color: var(--primary-color);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.9rem;
+}
+
+/* ── Bond intro text: match bonds section accent (blue) ──────── */
+.theme-modern #cs-bonds-fieldset .bonus-skills-description {
+    color: var(--ctp-blue);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    opacity: 0.9;
+}
+
+.theme-modern #cs-bonds-fieldset .bonus-skills-description strong {
+    color: var(--ctp-blue);
+    -webkit-text-fill-color: var(--ctp-blue);
+}
+
+/* ── JSON import textarea placeholder: plain readable text ───── */
+.theme-modern #json-import-area::placeholder {
+    color: var(--ctp-subtext0);
+    font-style: normal;
+    opacity: 0.8;
+}
+
+.theme-modern input:focus,
+.theme-modern textarea:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 28%, transparent);
+    outline: none;
+}
+
+.theme-modern .panel-skills input,
+.theme-modern .panel-bonus-skills select {
+    border-color: var(--ctp-surface1);
+    background-color: var(--ctp-base);
+}
+
+/* ── Selects ─────────────────────────────────────────────────── */
+.theme-modern select {
+    background-color: var(--ctp-base);
+    color: var(--ctp-text);
+    border: 1px solid var(--ctp-surface1);
+    border-radius: 5px;
+    font-family: 'JetBrains Mono', monospace;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.theme-modern select option {
+    background-color: var(--ctp-base);
+    color: var(--ctp-text);
+}
+
+/* ── Equipment search/filter ─────────────────────────────────── */
+.theme-modern .eq-search-input,
+.theme-modern .eq-cat-select {
+    border-color: var(--ctp-surface1);
+    background: var(--ctp-base);
+}
+
+.theme-modern .eq-search-input:focus,
+.theme-modern .eq-cat-select:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 28%, transparent);
+}
+
+/* ── Buttons: ghost outline, section-colour highlight on hover ─ */
+.theme-modern button,
+.theme-modern .adjust-button {
+    background: transparent;
+    border: 1px solid var(--ctp-surface1);
+    color: var(--ctp-subtext1);
+    border-radius: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    filter: none;
+}
+
+.theme-modern button:hover,
+.theme-modern .adjust-button:hover {
+    background: color-mix(in srgb, var(--primary-color) 14%, transparent);
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+    filter: none;
+}
+
+/* Utility buttons (eq picker) */
+.theme-modern .eq-add-btn,
+.theme-modern .eq-remove-btn,
+.theme-modern .eq-clear-btn {
+    background-color: transparent;
+    border-color: var(--ctp-surface1);
+    color: var(--ctp-subtext0);
+    filter: none;
+}
+
+/* ── Primary action buttons: filled with section colour ─────── */
+.theme-modern #random-point-buy,
+.theme-modern #random-dice-roll,
+.theme-modern #random-bio-button,
+.theme-modern #add-skill-button,
+.theme-modern #bonds-button,
+.theme-modern #add-bond-button,
+.theme-modern #share-link-btn,
+.theme-modern #preview-json,
+.theme-modern #export-json,
+.theme-modern #refresh-stats,
+.theme-modern #export-printable,
+.theme-modern #json-to-printable-button,
+.theme-modern #json-to-editor-button {
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--primary-color) 90%, white) 0%, var(--primary-color) 100%);
+    border-color: color-mix(in srgb, var(--primary-color) 80%, black);
+    color: var(--ctp-crust);
+    box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.18) inset, 0 3px 10px rgba(0, 0, 0, 0.4);
+}
+
+.theme-modern #random-point-buy:hover,
+.theme-modern #random-dice-roll:hover,
+.theme-modern #random-bio-button:hover,
+.theme-modern #add-skill-button:hover,
+.theme-modern #bonds-button:hover,
+.theme-modern #add-bond-button:hover,
+.theme-modern #share-link-btn:hover,
+.theme-modern #preview-json:hover,
+.theme-modern #export-json:hover,
+.theme-modern #refresh-stats:hover,
+.theme-modern #export-printable:hover,
+.theme-modern #json-to-printable-button:hover,
+.theme-modern #json-to-editor-button:hover {
+    background: color-mix(in srgb, var(--primary-color) 82%, white);
+    border-color: color-mix(in srgb, var(--primary-color) 82%, white);
+    color: var(--ctp-crust);
+    filter: none;
+}
+
+/* ── Danger buttons ──────────────────────────────────────────── */
+.theme-modern #reset-button,
+.theme-modern #clear-save-btn {
+    background: transparent;
+    border-color: color-mix(in srgb, var(--ctp-red) 45%, transparent);
+    color: var(--ctp-red);
+}
+
+.theme-modern #reset-button:hover,
+.theme-modern #clear-save-btn:hover {
+    background: color-mix(in srgb, var(--ctp-red) 14%, transparent);
+    border-color: var(--ctp-red);
+    color: var(--ctp-red);
+    filter: none;
+}
+
+/* ── Apply / prepare reminder buttons ───────────────────────── */
+.theme-modern .bonus-prep-row #reminder-prepare-bonus,
+.theme-modern .bonus-apply-row #reminder-apply-bonus,
+.theme-modern #bio-profession-apply-row #reminder-apply-profession {
+    color: var(--ctp-red);
+}
+
+.theme-modern #prepare-bonus-button,
+.theme-modern #apply-bonus-button,
+.theme-modern #bio-profession-apply-row #apply-profession-button {
+    background: var(--ctp-red);
+    border-color: var(--ctp-red);
+    color: var(--ctp-crust);
+}
+
+.theme-modern #prepare-bonus-button.prepare-bonus-done,
+.theme-modern #apply-bonus-button.apply-bonus-done,
+.theme-modern #bio-profession-apply-row #apply-profession-button.apply-profession-done {
+    background: var(--ctp-green);
+    border-color: var(--ctp-green);
+    color: var(--ctp-crust);
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────── */
+.theme-modern ::-webkit-scrollbar-thumb {
+    background: var(--ctp-surface2);
+    border-radius: 4px;
+}
+
+.theme-modern ::-webkit-scrollbar-thumb:hover {
+    background: var(--ctp-overlay0);
+}
+
+.theme-modern ::-webkit-scrollbar-track {
+    background: var(--ctp-mantle);
+}
+
+/* ── Selection ───────────────────────────────────────────────── */
+.theme-modern ::selection {
+    background: color-mix(in srgb, var(--ctp-mauve) 35%, transparent);
+    color: var(--ctp-text);
+}
+
+/* ── JSON viewer ─────────────────────────────────────────────── */
+.theme-modern #cs-json {
+    background: var(--ctp-crust) !important;
+    color: var(--ctp-green) !important;
+    border-color: var(--ctp-surface0) !important;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+/* ── Sanity checkboxes ───────────────────────────────────────── */
+.theme-modern .sanity-adaptation-checkbox {
+    accent-color: var(--primary-color);
+}
+
+.theme-modern .sanity-adaptation-checkbox+span {
+    color: var(--primary-color);
+}
+
+/* ── Statistics section: multi-accent rainbow treatment ─────── */
+/* "STATISTICS:" heading gets the same gradient sweep as the page title */
+.theme-modern .stats-section h2 {
+    background: linear-gradient(90deg, var(--ctp-flamingo) 0%, var(--ctp-pink) 20%, var(--ctp-mauve) 40%, var(--ctp-lavender) 60%, var(--ctp-blue) 80%, var(--ctp-teal) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* Point-buy stat cards — each card picks its own Catppuccin accent */
+.theme-modern #stats .stat-container:nth-child(1) {
+    --primary-color: var(--ctp-flamingo);
+}
+
+.theme-modern #stats .stat-container:nth-child(2) {
+    --primary-color: var(--ctp-pink);
+}
+
+.theme-modern #stats .stat-container:nth-child(3) {
+    --primary-color: var(--ctp-mauve);
+}
+
+.theme-modern #stats .stat-container:nth-child(4) {
+    --primary-color: var(--ctp-lavender);
+}
+
+.theme-modern #stats .stat-container:nth-child(5) {
+    --primary-color: var(--ctp-blue);
+}
+
+.theme-modern #stats .stat-container:nth-child(6) {
+    --primary-color: var(--ctp-teal);
+}
+
+/* Character sheet stat inputs — same arc as the point-buy cards */
+.theme-modern #cs-stats .stat-container:nth-child(1) {
+    --primary-color: var(--ctp-flamingo);
+}
+
+.theme-modern #cs-stats .stat-container:nth-child(2) {
+    --primary-color: var(--ctp-pink);
+}
+
+.theme-modern #cs-stats .stat-container:nth-child(3) {
+    --primary-color: var(--ctp-mauve);
+}
+
+.theme-modern #cs-stats .stat-container:nth-child(4) {
+    --primary-color: var(--ctp-lavender);
+}
+
+.theme-modern #cs-stats .stat-container:nth-child(5) {
+    --primary-color: var(--ctp-blue);
+}
+
+.theme-modern #cs-stats .stat-container:nth-child(6) {
+    --primary-color: var(--ctp-teal);
+}
+
+/* Derived attributes (HP, WP, SAN, BP) — cool half of the palette */
+.theme-modern #cs-derived-attributes .stat-container:nth-child(1) {
+    --primary-color: var(--ctp-maroon);
+}
+
+.theme-modern #cs-derived-attributes .stat-container:nth-child(2) {
+    --primary-color: var(--ctp-lavender);
+}
+
+.theme-modern #cs-derived-attributes .stat-container:nth-child(3) {
+    --primary-color: var(--ctp-blue);
+}
+
+.theme-modern #cs-derived-attributes .stat-container:nth-child(4) {
+    --primary-color: var(--ctp-teal);
+}
+
+/* ── Son of Sam Theme (Black / Red / White — all sharp edges) ───────────── */
+.theme-son-of-sam {
+    --primary-color: #cc0000;
+    --bg-color: #000000;
+    --text-color: #f0f0f0;
+    --input-bg: #080000;
+    --input-border: var(--primary-color);
+    --radius-sm: 0px;
+    --radius-md: 0px;
+    font-family: 'JetBrains Mono', monospace;
+    /* Ritual manuscript grid — very faint red lines on black */
+    background-image: linear-gradient(rgba(204, 0, 0, 0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(204, 0, 0, 0.045) 1px, transparent 1px);
+    background-size: 52px 52px;
+    cursor: crosshair;
+}
+
+/* Zero out every border-radius — strict 90° angles throughout */
+.theme-son-of-sam *,
+.theme-son-of-sam *::before,
+.theme-son-of-sam *::after {
+    border-radius: 0 !important;
+}
+
+/* ── Statistics buy section ──────────────────────────────────────────────── */
+.theme-son-of-sam #stats-buy-section {
+    --primary-color: #cc0000;
+    border: 1px solid rgba(204, 0, 0, 0.4);
+    padding: 24px 20px 18px;
+    background: rgba(204, 0, 0, 0.02);
+    max-width: 960px;
+    width: 100%;
+}
+
+.theme-son-of-sam #stats-buy-section+.button-container {
+    --primary-color: #cc0000;
+}
+
+/* ── Per-section accents — all the same red ─────────────────────────────── */
+.theme-son-of-sam #cs-biography-fieldset,
+.theme-son-of-sam .panel-skills,
+.theme-son-of-sam .panel-bonus-skills,
+.theme-son-of-sam #cs-bonds-fieldset,
+.theme-son-of-sam #eq-picker-fieldset {
+    --primary-color: #cc0000;
+    border-color: #cc0000;
+}
+
+.theme-son-of-sam #stats-buy-section {
+    --primary-color: #cc0000;
+}
+
+/* Legend labels: blood-red background, black text */
+.theme-son-of-sam #cs-biography-fieldset>legend,
+.theme-son-of-sam .panel-skills>legend,
+.theme-son-of-sam .panel-bonus-skills>legend,
+.theme-son-of-sam #cs-bonds-fieldset>legend,
+.theme-son-of-sam #eq-picker-fieldset>legend {
+    background: var(--primary-color);
+    color: #000000;
+}
+
+/* ── Select / dropdown styling ───────────────────────────────────────────── */
+.theme-son-of-sam select {
+    background-color: #080000;
+    color: var(--text-color);
+    border: 1px solid var(--primary-color);
+}
+
+.theme-son-of-sam select:hover {
+    border-color: #ff0000;
+}
+
+.theme-son-of-sam select:focus {
+    outline: none;
+    border-color: #ff0000;
+    box-shadow: 0 0 6px rgba(204, 0, 0, 0.4);
+}
+
+.theme-son-of-sam select option {
+    background-color: #080000;
+    color: var(--text-color);
+}
+
+/* Specialty selects in skills grid — underline-only, red */
+.theme-son-of-sam .cs-skill-specialty {
+    background-color: transparent;
+    color: var(--primary-color);
+    border: none;
+    border-bottom: 1px solid color-mix(in srgb, var(--primary-color) 45%, transparent);
+    font-weight: 500;
+    padding: 1px 2px;
+    cursor: pointer;
+}
+
+.theme-son-of-sam .cs-skill-specialty:hover {
+    border-bottom-color: #ff0000;
+}
+
+.theme-son-of-sam .cs-skill-specialty:focus {
+    outline: none;
+    border-bottom-color: #ff0000;
+    box-shadow: none;
+}
+
+/* ── Input overrides ─────────────────────────────────────────────────────── */
+.theme-son-of-sam .panel-skills input,
+.theme-son-of-sam .panel-bonus-skills select {
+    border-color: var(--primary-color);
+    background-color: var(--input-bg);
+}
+
+.theme-son-of-sam .eq-search-input,
+.theme-son-of-sam .eq-cat-select {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
+}
+
+.theme-son-of-sam .eq-search-input:focus,
+.theme-son-of-sam .eq-cat-select:focus {
+    border-color: var(--primary-color);
+}
+
+/* ── Solid-filled buttons — red-family shades ────────────────────────────── */
+.theme-son-of-sam button,
+.theme-son-of-sam .adjust-button {
+    --btn-color: var(--primary-color);
+    background-color: var(--btn-color);
+    border-color: var(--btn-color);
+    color: #000000;
+}
+
+.theme-son-of-sam button:hover,
+.theme-son-of-sam .adjust-button:hover {
+    background-color: var(--btn-color);
+    color: #000000;
+    filter: brightness(1.35);
+}
+
+/* Restore transparency for small utility / icon buttons */
+.theme-son-of-sam .eq-add-btn,
+.theme-son-of-sam .eq-remove-btn,
+.theme-son-of-sam .eq-clear-btn {
+    background-color: transparent;
+    border-color: rgba(204, 0, 0, 0.3);
+    color: inherit;
+    filter: none;
+}
+
+.theme-son-of-sam .dr-handle-controls button {
+    background: transparent;
+    border: none;
+    color: inherit;
+    filter: none;
+}
+
+/* All buttons use the same #cc0000 — no individual overrides needed */
+/* ── Reminder text (pulsing red) and action buttons ─────────────────────── */
+.theme-son-of-sam .bonus-prep-row #reminder-prepare-bonus,
+.theme-son-of-sam .bonus-apply-row #reminder-apply-bonus,
+.theme-son-of-sam #bio-profession-apply-row #reminder-apply-profession {
+    color: #ff5252;
+}
+
+.theme-son-of-sam #prepare-bonus-button,
+.theme-son-of-sam #apply-bonus-button,
+.theme-son-of-sam #bio-profession-apply-row #apply-profession-button {
+    background: #cc0000;
+    border-color: #cc0000;
+    color: #000000;
+}
+
+/* Done state: white (no green in this theme) */
+.theme-son-of-sam #prepare-bonus-button.prepare-bonus-done,
+.theme-son-of-sam #apply-bonus-button.apply-bonus-done,
+.theme-son-of-sam #bio-profession-apply-row #apply-profession-button.apply-profession-done {
+    background: #f0f0f0;
+    border-color: #f0f0f0;
+    color: #000000;
+}
+
+/* ── Bond text box — sharp rectangle, blood-red glow ────────────────────── */
+.theme-son-of-sam #bondText {
+    box-shadow: 0 0 18px rgba(204, 0, 0, 0.45), 0 0 50px rgba(204, 0, 0, 0.08), inset 0 0 80px rgba(0, 0, 0, 0.5);
+    text-shadow: 0 0 5px rgba(204, 0, 0, 0.7);
+    animation: none;
+}
+
+/* Pyramid canvas: hidden in SoS — sigil replaces it */
+.theme-son-of-sam #bond-pyramid-canvas {
+    opacity: 0;
+    animation: none !important;
+}
+
+/* Bond-box sigil: hidden everywhere, shown + animated in SoS */
+#sos-bond-sigil {
+    display: none;
+}
+
+.theme-son-of-sam #sos-bond-sigil {
+    display: block;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 76%;
+    height: 76%;
+    max-width: 198px;
+    max-height: 198px;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.35;
+    filter: drop-shadow(0 0 6px rgba(204, 0, 0, 0.6));
+    animation: sp-sigil-flicker 14s linear infinite;
+    animation-delay: -7s;
+}
+
+/* ── Son of Sam sigil — animated occult symbol replaces the page title ────────────   A circle + inverted triangle + cross spine + inner eye, drawing itself stroke   by stroke as if being carved by an unseen hand, with periodic glitch cuts.   Uses stroke-dashoffset animation — no JS, compositor-friendly.   Path lengths: ring=327, tri=251, vln=100, hln=104, eye=50   Animation cycle: 14 s total — ~7.5 s draw, ~3 s hold, ~1.5 s glitch, ~2 s settle   ─────────────────────────────────────────────────────────────────── */
+#sos-sigil {
+    display: none;
+}
+
+/* In SoS: show sigil ONLY — hide the text */
+.theme-son-of-sam #sos-sigil {
+    display: block;
+    width: 96px;
+    height: 96px;
+    margin: 4px auto 6px;
+    overflow: visible;
+    filter: drop-shadow(0 0 5px rgba(204, 0, 0, 0.75));
+    animation: sp-sigil-flicker 14s linear infinite;
+}
+
+.theme-son-of-sam .page-title-text {
+    display: none;
+}
+
+/* Scanlines overlay on both sigils — horizontal CRT bands */
+.theme-son-of-sam #sos-sigil,
+.theme-son-of-sam #sos-bond-sigil {
+    background: repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(0, 0, 0, 0.20) 3px, rgba(0, 0, 0, 0.20) 4px);
+}
+
+/* Base style for all sigil paths */
+.sp {
+    fill: none;
+    stroke: #cc0000;
+    stroke-width: 1.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+/* Filled anchor dots — invisible by default until animated in */
+.sp-d1,
+.sp-d2,
+.sp-d3,
+.sp-core {
+    fill: #cc0000;
+    stroke: none;
+    opacity: 0;
+}
+
+/* All paths start fully invisible (dashoffset = full path length) */
+.sp-ring {
+    stroke-dasharray: 327;
+    stroke-dashoffset: 327;
+}
+
+.sp-tri {
+    stroke-dasharray: 249;
+    stroke-dashoffset: 249;
+}
+
+.sp-vln {
+    stroke-dasharray: 100;
+    stroke-dashoffset: 100;
+}
+
+.sp-hln {
+    stroke-dasharray: 104;
+    stroke-dashoffset: 104;
+}
+
+.sp-eye {
+    stroke-dasharray: 50;
+    stroke-dashoffset: 50;
+}
+
+/* Activate animations only in SoS theme */
+.theme-son-of-sam .sp-ring {
+    animation: sp-draw-ring 14s linear infinite;
+}
+
+.theme-son-of-sam .sp-tri {
+    animation: sp-draw-tri 14s linear infinite;
+}
+
+.theme-son-of-sam .sp-vln {
+    animation: sp-draw-vln 14s linear infinite;
+}
+
+.theme-son-of-sam .sp-hln {
+    animation: sp-draw-hln 14s linear infinite;
+}
+
+.theme-son-of-sam .sp-eye {
+    animation: sp-draw-eye 14s linear infinite;
+}
+
+.theme-son-of-sam .sp-d1,
+.theme-son-of-sam .sp-d2,
+.theme-son-of-sam .sp-d3 {
+    animation: sp-dot-in 14s linear infinite;
+}
+
+.theme-son-of-sam .sp-core {
+    animation: sp-core-in 14s linear infinite;
+}
+
+/*  Timing breakdown (14 s cycle):    0 – 18 %  (0 – 2.5 s)  outer ring draws    18 – 32 %  (2.5 – 4.5 s)  triangle draws    32 – 39 %  (4.5 – 5.5 s)  vertical spine draws    39 – 47 %  (5.5 – 6.6 s)  horizontal bar draws    47 – 54 %  (6.6 – 7.6 s)  inner eye + anchor dots appear    54 – 57 %  (7.6 – 8.0 s)  centre point appears    57 – 87 %  fully visible, held    87 – 93 %  signal-dropout glitch burst    93 – 100 % settle before loop*/
+@keyframes sp-draw-ring {
+    0% {
+        stroke-dashoffset: 327;
+    }
+
+    18% {
+        stroke-dashoffset: 0;
+    }
+
+    75% {
+        stroke-dashoffset: 0;
+    }
+
+    77% {
+        stroke-dashoffset: 50;
+    }
+
+    /* glitch: partial erase */
+    79% {
+        stroke-dashoffset: 0;
+    }
+
+    /* recover */
+    100% {
+        stroke-dashoffset: 0;
+    }
+}
+
+@keyframes sp-draw-tri {
+    0% {
+        stroke-dashoffset: 249;
+    }
+
+    18% {
+        stroke-dashoffset: 249;
+    }
+
+    /* wait for ring */
+    32% {
+        stroke-dashoffset: 0;
+    }
+
+    71% {
+        stroke-dashoffset: 0;
+    }
+
+    73.5% {
+        stroke-dashoffset: 80;
+    }
+
+    /* glitch */
+    76% {
+        stroke-dashoffset: 0;
+    }
+
+    100% {
+        stroke-dashoffset: 0;
+    }
+}
+
+@keyframes sp-draw-vln {
+    0% {
+        stroke-dashoffset: 100;
+    }
+
+    32% {
+        stroke-dashoffset: 100;
+    }
+
+    /* wait */
+    39% {
+        stroke-dashoffset: 0;
+    }
+
+    81% {
+        stroke-dashoffset: 0;
+    }
+
+    83.5% {
+        stroke-dashoffset: 55;
+    }
+
+    /* glitch */
+    86% {
+        stroke-dashoffset: 0;
+    }
+
+    100% {
+        stroke-dashoffset: 0;
+    }
+}
+
+@keyframes sp-draw-hln {
+    0% {
+        stroke-dashoffset: 104;
+    }
+
+    39% {
+        stroke-dashoffset: 104;
+    }
+
+    /* wait */
+    47% {
+        stroke-dashoffset: 0;
+    }
+
+    100% {
+        stroke-dashoffset: 0;
+    }
+}
+
+@keyframes sp-draw-eye {
+    0% {
+        stroke-dashoffset: 50;
+    }
+
+    47% {
+        stroke-dashoffset: 50;
+    }
+
+    /* wait */
+    54% {
+        stroke-dashoffset: 0;
+    }
+
+    69% {
+        stroke-dashoffset: 0;
+    }
+
+    71.5% {
+        stroke-dashoffset: 25;
+    }
+
+    /* glitch */
+    74% {
+        stroke-dashoffset: 0;
+    }
+
+    100% {
+        stroke-dashoffset: 0;
+    }
+}
+
+@keyframes sp-dot-in {
+
+    0%,
+    46% {
+        opacity: 0;
+    }
+
+    52% {
+        opacity: 0.9;
+    }
+
+    100% {
+        opacity: 0.9;
+    }
+}
+
+@keyframes sp-core-in {
+
+    0%,
+    53% {
+        opacity: 0;
+    }
+
+    57% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 1;
+    }
+}
+
+/* Full-sigil signal dropout — like the transmission cutting out mid-ritual */
+@keyframes sp-sigil-flicker {
+
+    /* signal acquisition — fade in from nothing */
+    0% {
+        opacity: 0;
+    }
+
+    4% {
+        opacity: 0.55;
+    }
+
+    5% {
+        opacity: 0.2;
+    }
+
+    6% {
+        opacity: 0.85;
+    }
+
+    8% {
+        opacity: 1;
+    }
+
+    /* minor scatter dips during draw phase */
+    21% {
+        opacity: 1;
+    }
+
+    21.4% {
+        opacity: 0.45;
+    }
+
+    22% {
+        opacity: 1;
+    }
+
+    37% {
+        opacity: 1;
+    }
+
+    37.5% {
+        opacity: 0.55;
+    }
+
+    38% {
+        opacity: 1;
+    }
+
+    /* hold phase — slow breathe */
+    55% {
+        opacity: 1;
+    }
+
+    63% {
+        opacity: 0.80;
+    }
+
+    71% {
+        opacity: 1;
+    }
+
+    /* pre-glitch signal decay */
+    83% {
+        opacity: 1;
+    }
+
+    85% {
+        opacity: 0.55;
+    }
+
+    /* main glitch burst */
+    87% {
+        opacity: 0.08;
+    }
+
+    88% {
+        opacity: 0.75;
+    }
+
+    89% {
+        opacity: 0.03;
+    }
+
+    90% {
+        opacity: 0.88;
+    }
+
+    91% {
+        opacity: 0.28;
+    }
+
+    92% {
+        opacity: 1;
+    }
+
+    93% {
+        opacity: 1;
+    }
+
+    /* fade out before next cycle restarts */
+    97% {
+        opacity: 1;
+    }
+
+    99% {
+        opacity: 0.3;
+    }
+
+    100% {
+        opacity: 0;
+    }
+}
+
+/* ── Sanity checkboxes ───────────────────────────────────────────────────── */
+.theme-son-of-sam .sanity-adaptation-checkbox {
+    accent-color: var(--primary-color);
+}
+
+.theme-son-of-sam .sanity-adaptation-checkbox+span {
+    color: var(--primary-color);
+}
+
+/* ── JSON output display ─────────────────────────────────────────────────── */
+.theme-son-of-sam #cs-json {
+    background: #080000 !important;
+    color: var(--primary-color) !important;
+    border-color: var(--primary-color) !important;
+}
+
+/* ── Atmospheric overlays on body (body IS .theme-son-of-sam) ────────────── */
+/* Vignette — darkness closing in from the edges */
+.theme-son-of-sam::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 998;
+    background: radial-gradient(ellipse at 50% 42%, transparent 28%, rgba(0, 0, 0, 0.72) 100%);
+}
+
+/* Faded sigil watermark — vast occult symbol lurking behind the page */
+.theme-son-of-sam::before {
+    content: '⛧';
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 80vmin;
+    color: #cc0000;
+    opacity: 0.04;
+    pointer-events: none;
+    z-index: 0;
+    line-height: 1;
+    user-select: none;
+}
+
+/* ── Page title ──────────────────────────────────────────────────────────── */
+.theme-son-of-sam .page-title {
+    color: #cc0000;
+    letter-spacing: 0.22em;
+    text-shadow: 0 0 8px rgba(204, 0, 0, 0.95), 0 0 22px rgba(204, 0, 0, 0.55), 0 0 55px rgba(204, 0, 0, 0.2);
+    animation: sos-title-flicker 9s ease-in-out infinite;
+}
+
+.theme-son-of-sam .site-intro {
+    color: rgba(255, 255, 255, 0.5);
+    font-family: 'Permanent Marker', cursive;
+    font-size: 0.82rem;
+    line-height: 1.4;
+    text-align: center;
+    flex: 0 0 100%;
+    width: 100%;
+    max-width: 100%;
+    padding: 0 33.5%;
+    box-sizing: border-box;
+    margin-bottom: var(--spacing-lg);
+    letter-spacing: 0.06em;
+}
+
+.theme-son-of-sam .site-intro strong {
+    color: #cc0000;
+    text-shadow: 0 0 6px rgba(204, 0, 0, 0.6);
+}
+
+.theme-son-of-sam .random-bio-ref {
+    color: #cc0000;
+    text-shadow: 0 0 6px rgba(204, 0, 0, 0.6);
+}
+
+.theme-son-of-sam #cs-specialty-skills .cs-skill-name {
+    color: var(--primary-color);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.9rem;
+}
+
+.theme-son-of-sam #cs-bonds-fieldset .bonus-skills-description {
+    font-family: 'Permanent Marker', cursive;
+}
+
+/* ── Section legend headers — ominous uppercase + rare glitch ────────────── */
+.theme-son-of-sam #cs-biography-fieldset>legend,
+.theme-son-of-sam .panel-skills>legend,
+.theme-son-of-sam .panel-bonus-skills>legend,
+.theme-son-of-sam #cs-bonds-fieldset>legend,
+.theme-son-of-sam #eq-picker-fieldset>legend {
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    font-weight: bold;
+}
+
+/* Occult sigils flanking each section header */
+.theme-son-of-sam #cs-biography-fieldset>legend::before,
+.theme-son-of-sam .panel-skills>legend::before,
+.theme-son-of-sam .panel-bonus-skills>legend::before,
+.theme-son-of-sam #cs-bonds-fieldset>legend::before,
+.theme-son-of-sam #eq-picker-fieldset>legend::before {
+    content: '⸸ ';
+}
+
+.theme-son-of-sam #cs-biography-fieldset>legend::after,
+.theme-son-of-sam .panel-skills>legend::after,
+.theme-son-of-sam .panel-bonus-skills>legend::after,
+.theme-son-of-sam #cs-bonds-fieldset>legend::after,
+.theme-son-of-sam #eq-picker-fieldset>legend::after {
+    content: ' ⸸';
+}
+
+.theme-son-of-sam #cs-biography-fieldset>legend {
+    animation: sos-legend-glitch 7s infinite 0.0s;
+}
+
+.theme-son-of-sam .panel-skills>legend {
+    animation: sos-legend-glitch 6s infinite 2.7s;
+}
+
+.theme-son-of-sam .panel-bonus-skills>legend {
+    animation: sos-legend-glitch 9s infinite 0.5s;
+}
+
+.theme-son-of-sam #cs-bonds-fieldset>legend {
+    animation: sos-legend-glitch 7.5s infinite 3.4s;
+}
+
+.theme-son-of-sam #eq-picker-fieldset>legend {
+    animation: sos-legend-glitch 6.5s infinite 1.8s;
+}
+
+/* ── Fieldset pulsing border glow — slow, ominous heartbeat ─────────────── */
+.theme-son-of-sam #cs-biography-fieldset,
+.theme-son-of-sam .panel-skills,
+.theme-son-of-sam .panel-bonus-skills,
+.theme-son-of-sam #cs-bonds-fieldset,
+.theme-son-of-sam #eq-picker-fieldset {
+    animation: sos-border-pulse 4s ease-in-out infinite;
+}
+
+/* Stagger each fieldset's pulse so they don't all beat in sync */
+.theme-son-of-sam #cs-biography-fieldset {
+    animation-delay: 0.0s;
+}
+
+.theme-son-of-sam .panel-skills {
+    animation-delay: 1.4s;
+}
+
+.theme-son-of-sam .panel-bonus-skills {
+    animation-delay: 2.1s;
+}
+
+.theme-son-of-sam #cs-bonds-fieldset {
+    animation-delay: 2.8s;
+}
+
+.theme-son-of-sam #eq-picker-fieldset {
+    animation-delay: 3.5s;
+}
+
+/* ── Input / textarea focus — blood seeping through the screen ───────────── */
+.theme-son-of-sam input:focus,
+.theme-son-of-sam textarea:focus,
+.theme-son-of-sam select:focus {
+    outline: none;
+    box-shadow: 0 0 0 1px #cc0000, 0 0 14px rgba(204, 0, 0, 0.7) !important;
+}
+
+/* ── Custom scrollbar — blood on black ───────────────────────────────────── */
+.theme-son-of-sam ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.theme-son-of-sam ::-webkit-scrollbar-track {
+    background: #0a0000;
+}
+
+.theme-son-of-sam ::-webkit-scrollbar-thumb {
+    background: #cc0000;
+}
+
+.theme-son-of-sam ::-webkit-scrollbar-thumb:hover {
+    background: #ff1a1a;
+}
+
+/* ── Text selection — marked in blood ───────────────────────────────────── */
+.theme-son-of-sam ::selection {
+    background: rgba(204, 0, 0, 0.55);
+    color: #f0f0f0;
+}
+
+/* ── Restore sane cursors for interactive elements ───────────────────────── */
+.theme-son-of-sam button,
+.theme-son-of-sam select,
+.theme-son-of-sam a,
+.theme-son-of-sam label[for] {
+    cursor: pointer;
+}
+
+.theme-son-of-sam input[type="text"],
+.theme-son-of-sam input[type="number"],
+.theme-son-of-sam textarea {
+    cursor: text;
+}
+
+/* ── Handwritten font for filled/generated content ───────────────────────── */
+.theme-son-of-sam input[type="text"],
+.theme-son-of-sam input[type="number"],
+.theme-son-of-sam textarea,
+.theme-son-of-sam select,
+.theme-son-of-sam .stat-value,
+.theme-son-of-sam #bond-text-content,
+.theme-son-of-sam .bond-entry,
+.theme-son-of-sam .description-text {
+    font-family: 'Rock Salt', cursive;
+    letter-spacing: 0.02em;
+}
+
+/* ── Son of Sam: bond entry text white, Relationship/Score labels red ── */
+.theme-son-of-sam .bond-entry {
+    color: #ffffff;
+}
+
+.theme-son-of-sam .bond-entry-field {
+    color: #ffffff !important;
+}
+
+.theme-son-of-sam .bond-entry label {
+    color: #cc0000 !important;
+    opacity: 1 !important;
+}
+
+/* Bond generation window — white text so it reads against dark bg */
+.theme-son-of-sam #bondText {
+    color: #ffffff;
+}
+
+/* Reduce Rock Salt size in fields/bonds so it doesn't break layout — .stat-value keeps its natural size */
+.theme-son-of-sam input[type="text"],
+.theme-son-of-sam input[type="number"],
+.theme-son-of-sam textarea,
+.theme-son-of-sam select,
+.theme-son-of-sam #bond-text-content,
+.theme-son-of-sam .bond-entry,
+.theme-son-of-sam .description-text {
+    font-size: 0.7rem;
+}
+
+/* Rock Salt bond output box — line spacing only, size set above */
+.theme-son-of-sam #bond-text-content {
+    line-height: 1.7;
+}
+
+/* Bond entry carved-in reveal — text etches into existence */
+@keyframes sos-carve-in {
+    0% {
+        opacity: 0;
+        transform: scaleY(0.88);
+        filter: blur(2px);
+    }
+
+    40% {
+        opacity: 0.45;
+        transform: scaleY(1.02);
+        filter: blur(1px);
+    }
+
+    70% {
+        opacity: 0.8;
+        filter: blur(0.3px);
+    }
+
+    100% {
+        opacity: 1;
+        transform: scaleY(1);
+        filter: none;
+    }
+}
+
+.theme-son-of-sam .bond-entry.sos-carving {
+    animation: sos-carve-in 0.9s ease-out both;
+    transform-origin: top center;
+}
+
+/* ── Son of Sam keyframes ────────────────────────────────────────────────── */
+/* Page title: rare flicker, like a dying signal */
+@keyframes sos-title-flicker {
+
+    0%,
+    90%,
+    100% {
+        opacity: 1;
+        text-shadow: 0 0 8px rgba(204, 0, 0, 0.95), 0 0 22px rgba(204, 0, 0, 0.55), 0 0 55px rgba(204, 0, 0, 0.2);
+    }
+
+    91% {
+        opacity: 0.55;
+        text-shadow: none;
+    }
+
+    92% {
+        opacity: 1;
+        text-shadow: 0 0 8px rgba(204, 0, 0, 0.95);
+    }
+
+    93% {
+        opacity: 0.4;
+        text-shadow: none;
+    }
+
+    94% {
+        opacity: 1;
+        text-shadow: 0 0 8px rgba(204, 0, 0, 0.95), 0 0 22px rgba(204, 0, 0, 0.55);
+    }
+}
+
+/* Legend glitch: brief positional jitter, then stillness */
+@keyframes sos-legend-glitch {
+
+    0%,
+    85%,
+    100% {
+        transform: translate(0, 0);
+    }
+
+    86% {
+        transform: translate(-2px, 0px);
+    }
+
+    87% {
+        transform: translate(2px, 0px);
+    }
+
+    88% {
+        transform: translate(0px, 1px);
+    }
+
+    89% {
+        transform: translate(-1px, -1px);
+    }
+
+    90% {
+        transform: translate(0px, 0px);
+    }
+}
+
+/* Fieldset border pulse: slow, irregular heartbeat glow */
+@keyframes sos-border-pulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 5px rgba(204, 0, 0, 0.08);
+    }
+
+    40% {
+        box-shadow: 0 0 18px rgba(204, 0, 0, 0.28);
+    }
+
+    55% {
+        box-shadow: 0 0 10px rgba(204, 0, 0, 0.15);
+    }
+
+    70% {
+        box-shadow: 0 0 22px rgba(204, 0, 0, 0.32);
+    }
+}
+
+/* ============================================================================   GLOBAL STYLING   ============================================================================ */
+* {
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: 'Courier New', monospace;
+    background-color: var(--bg-color);
+    background-image: linear-gradient(rgba(60, 100, 220, 0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(60, 100, 220, 0.045) 1px, transparent 1px);
+    background-size: 28px 28px;
+    color: var(--text-color);
+    padding: var(--spacing-lg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+}
+
+h2 {
+    font-size: var(--font-lg);
+    color: var(--primary-color);
+    margin: 0 0 var(--spacing-lg) 0;
+    padding-left: 0;
+    width: 100%;
+    font-weight: bold;
+    text-align: center;
+}
+
+label {
+    color: inherit;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+input[type="text"],
+input[type="number"],
+textarea,
+select {
+    font-family: inherit;
+    font-size: var(--font-base);
+    padding: var(--spacing-xs) var(--spacing-md);
+    border: 1px solid var(--input-border);
+    border-radius: var(--radius-md);
+    background-color: var(--input-bg);
+    color: var(--text-color);
+    cursor: pointer;
+}
+
+/* X-Files (default) theme select styling - CRT green on black */
+.theme-xfiles select {
+    background-color: #000000;
+    color: #00b521;
+    border: 2px solid #00b521;
+    font-weight: 500;
+}
+
+.theme-xfiles select option {
+    background-color: #000000;
+    color: #00b521;
+}
+
+.theme-xfiles select:hover {
+    border-color: #00ff00;
+}
+
+.theme-xfiles select:focus {
+    outline: none;
+    border-color: #00ff00;
+    box-shadow: 0 0 8px rgba(0, 255, 0, 0.3);
+}
+
+.theme-xfiles #bio-gender-select {
+    background-color: #000000;
+    color: #00b521;
+    border: 2px solid #00b521;
+    font-weight: 500;
+    padding: 2px 6px;
+    margin: 0;
+}
+
+.theme-xfiles #bio-gender-select:hover,
+.theme-xfiles #bio-gender-select:focus {
+    border-color: #00ff00;
+    box-shadow: 0 0 8px rgba(0, 255, 0, 0.3);
+}
+
+/* X-Files theme highlight for empty/required inputs and pick dropdowns */
+.theme-xfiles .highlight-empty-input,
+.theme-xfiles .custom-skill-name.empty-reminder,
+.theme-xfiles select.highlight-empty-input {
+    border: 2px solid #fe640b !important;
+    background: #000 !important;
+    color: #00b521 !important;
+}
+
+/* Dark theme highlight overrides — keeps warning border, swaps light bg for dark-compatible tint */
+.theme-modern .highlight-empty-input,
+.theme-modern select.highlight-empty-input {
+    background: color-mix(in srgb, #fe640b 12%, var(--ctp-base)) !important;
+}
+
+.theme-son-of-sam .highlight-empty-input,
+.theme-son-of-sam select.highlight-empty-input {
+    background: rgba(204, 0, 0, 0.12) !important;
+}
+
+/* X-Files: specialty selects inside skills grid — inline terminal text style */
+.theme-xfiles .cs-skill-specialty {
+    background-color: transparent;
+    color: #00b521;
+    border: none;
+    border-bottom: 1px solid rgba(0, 181, 33, 0.45);
+    border-radius: 0;
+    font-weight: 500;
+    padding: 1px 2px;
+    cursor: pointer;
+}
+
+.theme-xfiles .cs-skill-specialty:hover {
+    border-bottom-color: #00ff00;
+    color: #00ff00;
+}
+
+.theme-xfiles .cs-skill-specialty:focus {
+    outline: none;
+    border-bottom-color: #00ff00;
+    box-shadow: none;
+}
+
+/* Modern theme: Statistics buy section — Catppuccin flamingo/pink accent */
+.theme-modern #stats-buy-section {
+    --primary-color: #f5bde6;
+}
+
+/* The button-container (Random Point Buy / Dice Roll / Reset) sits as a sibling   to #stats-buy-section, so we need to explicitly scope it too */
+.theme-modern #stats-buy-section+.button-container {
+    --primary-color: #f5bde6;
+}
+
+/* X-Files stat buy section: terminal panel */
+.theme-xfiles #stats-buy-section {
+    border: 1px solid rgba(0, 181, 33, 0.35);
+    border-radius: 4px;
+    padding: 24px 20px 18px;
+    background: rgba(0, 181, 33, 0.02);
+    box-shadow: 0 0 30px rgba(0, 181, 33, 0.06), inset 0 0 60px rgba(0, 0, 0, 0.4);
+    max-width: 960px;
+    width: 100%;
+}
+
+.theme-xfiles #stats-buy-section h2 {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #00b521;
+    opacity: 0.75;
+    margin-bottom: 16px;
+    border: none;
+    padding: 0;
+}
+
+.theme-xfiles #stats-buy-section .button-container {
+    margin-top: 16px;
+    margin-bottom: 0;
+}
+
+/* ── X-Files atmospheric overlays ─────────────────────────────────────────── */
+/* Corner vignette — phosphor green-black darkness closing in from the edges */
+.theme-xfiles::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 998;
+    background: radial-gradient(ellipse at 50% 42%, transparent 30%, rgba(0, 10, 0, 0.78) 100%);
+}
+
+/* Full-page CRT scanlines */
+.theme-xfiles::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 999;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0, 0, 0, 0.12) 2px, rgba(0, 0, 0, 0.12) 4px);
+}
+
+/* Fieldset pulsing border glow — slow phosphor heartbeat */
+.theme-xfiles #cs-biography-fieldset,
+.theme-xfiles .panel-skills,
+.theme-xfiles .panel-bonus-skills,
+.theme-xfiles #cs-bonds-fieldset,
+.theme-xfiles #eq-picker-fieldset {
+    animation: xfiles-border-pulse 4s ease-in-out infinite !important;
+}
+
+/* Stagger each fieldset so they don't all beat together */
+.theme-xfiles #cs-biography-fieldset {
+    animation-delay: 0.0s !important;
+}
+
+.theme-xfiles .panel-skills {
+    animation-delay: 1.4s !important;
+}
+
+.theme-xfiles .panel-bonus-skills {
+    animation-delay: 2.1s !important;
+}
+
+.theme-xfiles #cs-bonds-fieldset {
+    animation-delay: 2.8s !important;
+}
+
+.theme-xfiles #eq-picker-fieldset {
+    animation-delay: 3.5s !important;
+}
+
+/* Custom scrollbar — phosphor on black */
+.theme-xfiles ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.theme-xfiles ::-webkit-scrollbar-track {
+    background: #000;
+}
+
+.theme-xfiles ::-webkit-scrollbar-thumb {
+    background: #00b521;
+}
+
+.theme-xfiles ::-webkit-scrollbar-thumb:hover {
+    background: #00ff00;
+}
+
+/* Text selection — marked in green */
+.theme-xfiles ::selection {
+    background: rgba(0, 181, 33, 0.4);
+    color: #000000;
+}
+
+/* Page title: lift above fixed overlays + dedicated glitch animation */
+.theme-xfiles .page-title {
+    position: relative;
+    z-index: 1000;
+    animation: xfiles-title-glitch 7s ease-in-out infinite !important;
+}
+
+.theme-xfiles .site-intro {
+    color: rgba(0, 181, 33, 0.65);
+    font-size: 0.82rem;
+    line-height: 1.4;
+    text-align: center;
+    flex: 0 0 100%;
+    width: 100%;
+    max-width: 100%;
+    padding: 0 33.5%;
+    box-sizing: border-box;
+    margin-bottom: var(--spacing-lg);
+    letter-spacing: 0.04em;
+}
+
+.theme-xfiles .site-intro strong {
+    color: rgb(0, 181, 33);
+}
+
+/* ── Dropdown triangles: X-Files green ──────────────────────── */
+.theme-xfiles .profession-details-summary::before {
+    color: #00b521;
+    opacity: 1;
+}
+
+/* advanced-options arrow inherits var(--bg-color) = dark, stays visible on green summary bar */
+
+.theme-xfiles .prof-expand-hint {
+    color: #00b521;
+}
+
+.theme-xfiles .random-bio-ref {
+    color: #00b521;
+}
+
+.theme-xfiles #totalPoints.points-depleted {
+    color: #ff3333;
+    text-shadow: 0 0 8px rgba(255, 51, 51, 0.6);
+}
+
+.theme-xfiles .disclaimer p {
+    color: #00b521;
+    opacity: 1;
+}
+
+/* Restore the blinking cursor — .theme-xfiles * overrides it with textFlicker */
+.theme-xfiles .blinking-cursor {
+    animation: blink 1s step-start 5s infinite !important;
+}
+
+/* X-Files border-pulse keyframe (green) */
+@keyframes xfiles-border-pulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 5px rgba(0, 181, 33, 0.06);
+    }
+
+    40% {
+        box-shadow: 0 0 18px rgba(0, 181, 33, 0.25);
+    }
+
+    55% {
+        box-shadow: 0 0 10px rgba(0, 181, 33, 0.13);
+    }
+
+    70% {
+        box-shadow: 0 0 22px rgba(0, 181, 33, 0.30);
+    }
+}
+
+/* Page title CRT glitch — rare burst of jitter and signal dropout */
+@keyframes xfiles-title-glitch {
+
+    0%,
+    84%,
+    100% {
+        opacity: 1;
+        transform: translateX(0);
+        text-shadow: 0 0 6px rgba(0, 255, 0, 0.9), 0 0 20px rgba(0, 181, 33, 0.5), 0 0 50px rgba(0, 181, 33, 0.15);
+    }
+
+    85% {
+        opacity: 0.5;
+        transform: translateX(-3px);
+        text-shadow: none;
+    }
+
+    86% {
+        opacity: 1;
+        transform: translateX(3px);
+        text-shadow: 0 0 6px rgba(0, 255, 0, 0.9);
+    }
+
+    87% {
+        opacity: 0.25;
+        transform: translateX(0px);
+        text-shadow: none;
+    }
+
+    88% {
+        opacity: 1;
+        transform: translateX(-2px);
+        text-shadow: 0 0 6px rgba(0, 255, 0, 0.9), 0 0 20px rgba(0, 181, 33, 0.5);
+    }
+
+    89% {
+        opacity: 0.7;
+        transform: translateX(0px);
+        text-shadow: none;
+    }
+
+    90% {
+        opacity: 1;
+        transform: translateX(0px);
+        text-shadow: 0 0 6px rgba(0, 255, 0, 0.9), 0 0 20px rgba(0, 181, 33, 0.5), 0 0 50px rgba(0, 181, 33, 0.15);
+    }
+}
+
+/* ============================================================================   PAGE LAYOUT   ============================================================================ */
+.page-title {
+    font-size: var(--font-xl);
+    font-weight: 700;
+    color: var(--primary-color);
+    text-align: center;
+    width: 100%;
+    max-width: 1600px;
+    margin-bottom: var(--spacing-lg);
+    padding-bottom: var(--spacing-md);
+    border-bottom: 1px solid var(--primary-color);
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    letter-spacing: 1px;
+}
+
+.content {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    max-width: 1600px;
+    width: 100%;
+    flex-wrap: wrap;
+    gap: var(--spacing-lg);
+}
+
+/* Main content area — must be full-width as a flex child of .content */
+#app-main {
+    width: 100%;
+}
+
+.stats-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.stats-section h2 {
+    margin-top: 0;
+    text-align: center;
+}
+
+/* Stat grid: 6 cards on desktop, collapses on smaller screens */
+#stats {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 10px;
+    width: 100%;
+    max-width: 900px;
+}
+
+/* ============================================================================   STAT CONTAINERS   ============================================================================ */
+/* Base row layout — used by #cs-stats (character sheet) */
+.stat-container {
+    display: flex;
+    align-items: center;
+    margin-bottom: var(--spacing-md);
+    gap: var(--spacing-md);
+}
+
+.stat-label {
+    text-align: left;
+    color: var(--primary-color);
+    min-width: 50px;
+    font-weight: bold;
+}
+
+.stat-value {
+    text-align: center;
+    color: var(--text-color);
+    min-width: 50px;
+    font-weight: bold;
+}
+
+.x5-value {
+    text-align: center;
+    color: var(--text-color);
+    min-width: 30px;
+    margin-right: var(--spacing-md);
+    font-weight: bold;
+}
+
+.descriptor {
+    text-align: center;
+    color: var(--primary-color);
+    width: 140px;
+    min-width: 80px;
+    font-weight: bold;
+}
+
+/* #stats card grid — overrides the base row layout */
+#stats .stat-container {
+    flex-direction: column;
+    text-align: center;
+    border: 2px solid var(--primary-color);
+    border-radius: var(--radius-md);
+    padding: 14px 6px 10px;
+    gap: 5px;
+    background: color-mix(in srgb, var(--primary-color) 4%, transparent);
+    transition: box-shadow 0.25s ease, border-color 0.25s ease;
+    min-width: 0;
+    margin-bottom: 0;
+}
+
+#stats .stat-container:hover {
+    box-shadow: 0 0 14px color-mix(in srgb, var(--primary-color) 30%, transparent);
+}
+
+/* Modern theme stat cards: gradient depth + lift shadow */
+.theme-modern #stats .stat-container {
+    background: linear-gradient(160deg, color-mix(in srgb, var(--primary-color) 10%, var(--ctp-surface1)) 0%, color-mix(in srgb, var(--primary-color) 3%, var(--ctp-surface0)) 100%);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.07) inset, 0 3px 12px rgba(0, 0, 0, 0.45), 0 0 20px -6px color-mix(in srgb, var(--primary-color) 30%, transparent);
+    border-radius: 8px;
+}
+
+.theme-modern #stats .stat-container:hover {
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.07) inset, 0 4px 20px color-mix(in srgb, var(--primary-color) 35%, transparent), 0 6px 24px rgba(0, 0, 0, 0.5);
+    transform: translateY(-2px);
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+/* Shared overrides for all #stats text children */
+#stats .stat-label,
+#stats .stat-value,
+#stats .x5-value,
+#stats .descriptor {
+    text-align: center;
+    min-width: unset;
+}
+
+#stats .stat-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+}
+
+#stats .stat-value {
+    font-size: 2.2rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+#stats .stat-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: center;
+}
+
+#stats .adjust-button {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
+#stats .x5-value {
+    font-size: 0.68rem;
+    opacity: 0.65;
+    margin: 0;
+}
+
+#stats .descriptor {
+    font-size: 0.6rem;
+    opacity: 0.85;
+    width: 100%;
+    letter-spacing: 0.3px;
+}
+
+@media (max-width: 900px) {
+    #stats {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 400px) {
+    #stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* ============================================================================   BUTTONS   ============================================================================ */
+button,
+.adjust-button {
+    background-color: var(--input-bg);
+    color: var(--primary-color);
+    border: 2px solid var(--primary-color);
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: var(--font-sm);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: bold;
+    transition: all 0.3s ease;
+    letter-spacing: 0.5px;
+}
+
+button:hover,
+.adjust-button:hover {
+    background-color: var(--primary-color);
+    color: var(--input-bg);
+}
+
+button:disabled,
+.adjust-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.button-container {
+    display: flex;
+    justify-content: center;
+    gap: var(--spacing-md);
+    margin: var(--spacing-2xl) auto 40px;
+    flex-wrap: wrap;
+    width: 100%;
+    max-width: 960px;
+}
+
+.button-container button {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 220px;
+}
+
+/* ============================================================================   INFORMATION & FEEDBACK   ============================================================================ */
+.total-points {
+    color: var(--primary-color);
+    margin-top: var(--spacing-md);
+    font-weight: 700;
+    text-align: center;
+    border: 2px solid var(--primary-color);
+    padding: 6px 24px;
+    border-radius: 24px;
+    display: inline-block;
+    font-size: 0.95rem;
+    letter-spacing: 1px;
+}
+
+/* ============================================================================   TEXT BOX & BONDS DISPLAY   ============================================================================ */
+.text-box {
+    width: 100%;
+    max-width: 600px;
+    min-height: 120px;
+    height: auto;
+    background-color: var(--input-bg);
+    color: var(--primary-color);
+    border: 2px solid var(--primary-color);
+    margin-top: var(--spacing-xl);
+    padding: var(--spacing-md);
+    overflow-y: visible;
+    overflow-x: hidden;
+    position: relative;
+    font-weight: bold;
+    text-shadow: 2px 2px 8px rgba(0, 0, 0, 1);
+}
+
+.text-box::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url('assets/art/logo.png');
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 200px 200px;
+    opacity: 0.1;
+    pointer-events: none;
+}
+
+#bondText {
+    min-height: 250px;
+    isolation: isolate;
+    /* contains z-index children so pyramid stays inside the box */
+}
+
+/* Rotating pyramid canvas — JS-driven, 24fps cap, no shadowBlur, batched paths.   Hidden on all themes except X-Files via opacity; JS also gates on _pyramidVisible. */
+#bond-pyramid-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0;
+}
+
+.theme-xfiles #bond-pyramid-canvas {
+    opacity: 1;
+}
+
+/* Bond text output — sits above the pyramid canvas, below scan lines */
+#bond-text-content {
+    position: relative;
+    z-index: 1;
+    display: block;
+}
+
+.theme-xfiles #bond-text-content {
+    padding-top: 18%;
+}
+
+/* X-Files: CRT phosphor screen treatment on the bond text box */
+.theme-xfiles #bondText {
+    aspect-ratio: 4 / 3;
+    /* classic TV screen proportions */
+    height: auto;
+    /* let aspect-ratio drive height instead of .text-box fixed 250px */
+    border-radius: 8% / 6%;
+    /* vintage CRT tube glass barrel curve */
+    overflow: hidden;
+    /* clip canvas, scan lines, and text to the curved shape */
+    box-shadow:
+        /* outer phosphor glow */
+        0 0 18px rgba(0, 181, 33, 0.55), 0 0 60px rgba(0, 181, 33, 0.12),
+        /* inset corner vignette — tube glass darkens toward all four edges */
+        inset 0 0 120px rgba(0, 0, 0, 0.85), inset 0 0 50px rgba(0, 0, 0, 0.55);
+    text-shadow: 0 0 7px rgba(0, 181, 33, 0.95), 0 0 2px rgba(0, 181, 33, 0.5);
+    animation: crt-flicker 9s ease-in-out infinite;
+}
+
+/* Glass specular highlight — subtle reflection on the curved screen surface */
+.theme-xfiles #bondText::before {
+    background-image: radial-gradient(ellipse at 38% 26%, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.01) 40%, transparent 65%);
+    background-size: 100% 100%;
+    opacity: 1;
+}
+
+/* Scan line overlay — drifting horizontal bands */
+.theme-xfiles #bondText::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0, 0, 0, 0.13) 2px, rgba(0, 0, 0, 0.13) 4px);
+    background-size: 100% 4px;
+    animation: crt-scanlines-drift 8s linear infinite;
+    pointer-events: none;
+    z-index: 2;
+}
+
+/* Suspend expensive visual effects during bond text typing.   .bond-typing is added to <body> so we can target the whole X-Files page.   We need to beat both:     - .theme-xfiles * { animation: textFlicker }  (specificity 0,1,0)     - .theme-xfiles #some-id { animation: ... !important } (specificity 1,1,0)   .bond-typing.theme-xfiles * beats the wildcard rule (0,2,0 > 0,1,0).   .bond-typing.theme-xfiles #id beats the id rules (1,2,0 > 1,1,0). */
+.bond-typing.theme-xfiles,
+.bond-typing.theme-xfiles * {
+    animation: none !important;
+    text-shadow: none !important;
+}
+
+/* Explicit ID overrides — IDs in the original rules need matching ID here to win */
+.bond-typing.theme-xfiles #cs-bonds-fieldset,
+.bond-typing.theme-xfiles #cs-biography-fieldset,
+.bond-typing.theme-xfiles #eq-picker-fieldset,
+.bond-typing.theme-xfiles .page-title {
+    animation: none !important;
+    box-shadow: none !important;
+}
+
+/* ============================================================================   BOND MANAGEMENT   ============================================================================ */
+/* Two-column layout: generator left, categories + list right */
+.bonds-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    align-items: start;
+}
+
+.bonds-left,
+.bonds-right {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.bonds-right {
+    border: 2px solid var(--primary-color);
+    padding: var(--spacing-md);
+    min-height: 150px;
+    overflow-y: visible;
+}
+
+.bonds-right .bonds-list {
+    margin-top: 0;
+}
+
+/* Text box fills its column instead of being capped at 600px */
+.bonds-left .text-box {
+    max-width: 100%;
+    width: 100%;
+    margin-top: 0;
+}
+
+/* Buttons fill the left column */
+.bonds-left .section-flex-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.bonds-left .section-flex-buttons button {
+    flex: 1;
+}
+
+/* Categories as a balanced pill row — fills the same width as the buttons above */
+.bond-categories {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 6px;
+    margin: 0;
+    width: 100%;
+    color: var(--primary-color);
+    font-weight: bold;
+}
+
+.bond-categories label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+    padding: 4px 4px;
+    border: 1px solid color-mix(in srgb, var(--primary-color) 50%, transparent);
+    border-radius: 4px;
+    margin-bottom: 0;
+    cursor: pointer;
+    font-size: 0.72rem;
+    opacity: 0.75;
+    transition: opacity 0.15s, background 0.15s, border-color 0.15s;
+    text-align: center;
+    line-height: 1.2;
+    word-break: break-word;
+    hyphens: auto;
+}
+
+.bond-categories label:hover {
+    opacity: 1;
+    background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+    border-color: var(--primary-color);
+}
+
+.bond-categories input[type="checkbox"] {
+    margin-right: 0;
+    cursor: pointer;
+    accent-color: #ee99a0;
+    display: inline !important;
+    width: 13px;
+    height: 13px;
+    flex-shrink: 0;
+}
+
+@media (max-width: 700px) {
+    .bonds-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .bond-categories {
+        flex-wrap: wrap;
+    }
+
+    .bond-categories label {
+        flex: 1 1 40%;
+    }
+}
+
+.bond-entry {
+    border: 1px solid var(--primary-color);
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--primary-color) 5%, transparent);
+}
+
+.bond-entry input[type="text"],
+.bond-entry input[type="number"],
+.bond-entry textarea {
+    background: color-mix(in srgb, var(--primary-color) 5%, transparent);
+    color: var(--primary-color);
+    border: 1px solid color-mix(in srgb, var(--primary-color) 30%, transparent);
+    width: 100%;
+    margin-bottom: var(--spacing-sm);
+}
+
+.bond-entry-field {
+    background: color-mix(in srgb, var(--primary-color) 5%, transparent) !important;
+    color: var(--primary-color) !important;
+    border: 1px solid color-mix(in srgb, var(--primary-color) 30%, transparent) !important;
+    width: 100%;
+    margin-bottom: var(--spacing-sm);
+    padding: 4px !important;
+    font-family: inherit !important;
+    overflow: visible !important;
+    white-space: normal !important;
+    text-overflow: clip !important;
+}
+
+/* Description textareas must use overflow:hidden so the JS scrollHeight auto-size works */
+textarea.bond-entry-field {
+    overflow: hidden !important;
+    resize: none !important;
+    field-sizing: content;
+    min-height: 80px;
+}
+
+.bond-entry-field[readonly] {
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    resize: vertical;
+}
+
+.bond-remove-button {
+    padding: 6px 12px;
+    background: var(--primary-color);
+    color: var(--bg-color);
+    border: 1px solid var(--primary-color);
+    transition: opacity 0.2s ease;
+}
+
+.bond-remove-button:hover {
+    opacity: 0.8;
+}
+
+.bond-entry input[type="text"]:focus,
+.bond-entry input[type="number"]:focus,
+.bond-entry textarea:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--primary-color) 30%, transparent);
+}
+
+.bond-entry button {
+    padding: var(--spacing-xs) var(--spacing-md);
+    font-size: var(--font-xs);
+}
+
+.bond-entry pre {
+    background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+    padding: var(--spacing-md);
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+    margin-top: var(--spacing-sm);
+    border: 1px solid color-mix(in srgb, var(--primary-color) 20%, transparent);
+    font-size: var(--font-xs);
+    line-height: 1.4;
+}
+
+.bond-entry code {
+    color: var(--primary-color);
+    font-family: 'Courier New', monospace;
+}
+
+#add-bond-button {
+    padding: var(--spacing-md) var(--spacing-lg);
+}
+
+#random-bio-button {
+    padding: var(--spacing-md) var(--spacing-lg);
+    margin-bottom: var(--spacing-lg);
+    background-color: var(--primary-color);
+    color: var(--bg-color);
+    border: 1px solid var(--primary-color);
+    border-radius: var(--radius-md);
+}
+
+#random-bio-button:hover {
+    filter: brightness(1.2);
+}
+
+#bio-gender-select {
+    padding: 2px 6px;
+    margin: 0;
+    background-color: var(--input-bg);
+    color: var(--primary-color);
+    border: 1px solid var(--primary-color);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    font-weight: bold;
+}
+
+#bio-gender-select:hover,
+#bio-gender-select:focus {
+    filter: brightness(1.2);
+}
+
+/* Override biography fieldset label styling for gender selector */
+#cs-biography-fieldset div label[for="bio-gender-select"] {
+    display: inline;
+    grid-template-columns: auto;
+    align-items: auto;
+    gap: 0;
+    margin-top: 0;
+    margin-right: 0;
+}
+
+/* ============================================================================   CHARACTER SHEET STYLING   ============================================================================ */
+#character-sheet {
+    max-width: 1400px;
+    width: 100%;
+}
+
+#cs-name,
+#cs-img,
+#cs-type {
+    width: 300px;
+}
+
+#cs-physical-desc {
+    width: 100%;
+    height: 40px;
+}
+
+#cs-motivations {
+    width: 100%;
+    min-height: 40px;
+    height: auto;
+    overflow: hidden;
+    resize: none;
+}
+
+#cs-derived-attributes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+#cs-derived-attributes .stat-container {
+    margin-bottom: 0;
+    gap: 2px;
+}
+
+#cs-derived-attributes .stat-label {
+    min-width: unset;
+}
+
+.derived-readonly {
+    background: transparent;
+    border: none;
+    outline: none;
+    cursor: default;
+    color: var(--primary-color);
+    font-weight: bold;
+    font-size: inherit;
+    width: 3ch;
+    min-width: 3ch;
+    max-width: 3ch;
+    flex-shrink: 0;
+    padding: 0;
+    text-align: center;
+    pointer-events: none;
+    -moz-appearance: textfield;
+    appearance: textfield;
+    box-sizing: content-box;
+}
+
+.derived-readonly::-webkit-inner-spin-button,
+.derived-readonly::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+}
+
+/* Skills Grid */
+#cs-skills {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--spacing-xs) 80px;
+    align-items: center;
+    align-content: start;
+    width: 100%;
+}
+
+.cs-skill-pair {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: var(--spacing-xs);
+    width: 100%;
+}
+
+.cs-skill-value-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 7ch;
+    border: 1px solid var(--input-border);
+    border-radius: var(--radius-md);
+    background-color: var(--input-bg);
+    padding: var(--spacing-xs) 2px;
+    box-sizing: border-box;
+    cursor: pointer;
+}
+
+.cs-skill-pct {
+    color: var(--text-color);
+    font-size: var(--font-base);
+    line-height: 1;
+    pointer-events: none;
+    flex-shrink: 0;
+}
+
+#cs-skills .cs-skill-name {
+    color: var(--primary-color);
+    font-size: 0.9rem;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: var(--spacing-xs) 0;
+}
+
+#cs-skills .cs-skill-input,
+#cs-specialty-skills .cs-skill-input {
+    width: 3.5ch;
+    flex-shrink: 0;
+    text-align: center;
+    padding: 0;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+    outline: none;
+    color: var(--text-color);
+    font-size: var(--font-base);
+}
+
+/* Remove spinner arrows so the value sits symmetrically centred */
+#cs-skills .cs-skill-input::-webkit-outer-spin-button,
+#cs-skills .cs-skill-input::-webkit-inner-spin-button,
+#cs-specialty-skills .cs-skill-input::-webkit-outer-spin-button,
+#cs-specialty-skills .cs-skill-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+#cs-skills .cs-skill-input[type=number],
+#cs-specialty-skills .cs-skill-input[type=number] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+#cs-profession-select {
+    background: transparent;
+    color: var(--primary-color);
+    border: 1px solid var(--primary-color);
+    width: 100%;
+}
+
+/* X-Files theme select options - ensure all dropdowns follow CRT theme */
+#cs-profession-info {
+    margin-top: 8px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* Collapsible profession details block */
+.profession-details {
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    margin-top: 6px;
+}
+
+.profession-details-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    cursor: pointer;
+    background: rgba(0, 0, 0, 0.25);
+    user-select: none;
+    list-style: none;
+    flex-wrap: wrap;
+    position: relative;
+}
+
+.profession-details-summary::-webkit-details-marker {
+    display: none;
+}
+
+.profession-details-summary::before {
+    content: '\25B6';
+    font-size: 0.6em;
+    opacity: 0.7;
+    transition: transform 0.2s;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.profession-details[open] .profession-details-summary::before {
+    transform: rotate(90deg);
+}
+
+.prof-name-pill {
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    opacity: 0.9;
+}
+
+.prof-bonds-pill {
+    font-size: 0.72rem;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.08em;
+    opacity: 0.6;
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+.prof-expand-hint {
+    font-size: 0.78rem;
+    font-style: normal;
+    font-weight: 600;
+    opacity: 1;
+    white-space: nowrap;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    pointer-events: none;
+}
+
+.profession-details[open] .prof-expand-hint {
+    display: none;
+}
+
+.profession-details-text {
+    background: rgba(0, 0, 0, 0.18);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 12px 16px;
+    margin: 0;
+    font-family: inherit;
+    font-size: 0.88em;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.cs-skill-specialty {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    color: inherit;
+    font-size: 0.95em;
+    flex: 1 1 0;
+    min-width: 0;
+    width: auto;
+}
+
+.custom-skill-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    align-items: center;
+}
+
+.custom-skill-row button {
+    padding: 4px 8px;
+    width: auto;
+}
+
+/* ── Specialty skill instances (#cs-specialty-skills) ── */
+#cs-specialty-skills {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--spacing-xs) 80px;
+    width: 100%;
+    margin-top: 10px;
+}
+
+.specialty-skill-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    align-items: center;
+    grid-column: 1;
+}
+
+.specialty-controls {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.specialty-skill-name {
+    min-width: 10ch;
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.specialty-remove-btn {
+    flex: 0 0 auto;
+    width: 1.6em;
+    height: 1.6em;
+    padding: 0;
+    font-size: 1.1em;
+    line-height: 1;
+    color: #cc2222;
+    background: transparent;
+    border: 1px solid #cc2222;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    opacity: 0.75;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.specialty-remove-btn:hover {
+    opacity: 1;
+    background: rgba(204, 34, 34, 0.15);
+}
+
+.specialty-add-row {
+    margin-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding-top: 8px;
+}
+
+.specialty-add-btn {
+    font-size: 0.85em;
+    padding: 4px 12px;
+    opacity: 0.85;
+}
+
+.specialty-add-btn:hover {
+    opacity: 1;
+}
+
+/* Free-text input revealed when the "— custom —" option is chosen in a specialty dropdown */
+.specialty-custom-text {
+    background: transparent;
+    color: inherit;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 3px 8px;
+    font-size: 0.95em;
+    min-width: 14ch;
+    flex: 1;
+    margin-left: 4px;
+}
+
+.specialty-custom-text:focus {
+    outline: 1px solid #fe640b;
+    border-color: #fe640b;
+}
+
+/* ── Specialty skill rules tooltip ─────────────────────────────────────── */
+/* Skill labels with rule descriptions get a help cursor — no icon, just the cursor change */
+.cs-skill-name[data-tooltip-key] {
+    cursor: help;
+    width: fit-content;
+}
+
+/* Fixed-position popover — shown/hidden via JS, never clipped by ancestors */
+#specialty-tooltip-panel {
+    display: none;
+    position: fixed;
+    z-index: 99999;
+    max-width: min(420px, 90vw);
+    background: #141414;
+    color: #d4c9a8;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 5px;
+    padding: 14px 16px;
+    font-size: 0.93em;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    box-shadow: 0 6px 28px rgba(0, 0, 0, 0.8);
+    pointer-events: none;
+}
+
+.custom-skill-name,
+.custom-skill-value {
+    background: transparent;
+    color: inherit;
+    font-size: 0.95em;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 4px 8px;
+}
+
+.custom-skill-name {
+    flex: 1;
+    border: 1px solid color-mix(in srgb, var(--primary-color) 30%, transparent);
+    border-radius: 4px;
+}
+
+.highlight-empty-input {
+    border: 2px solid #fe640b !important;
+    background: #fff3e0 !important;
+}
+
+.custom-skill-name.empty-reminder {
+    border: 3px solid #ff6b6b !important;
+    background: rgba(255, 107, 107, 0.15) !important;
+    box-shadow: 0 0 10px rgba(255, 107, 107, 0.5) !important;
+}
+
+.custom-skill-value {
+    width: 7ch;
+    text-align: center;
+}
+
+/* Reminder text styling */
+.reminder-text {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: #ff9500;
+    white-space: nowrap;
+}
+
+@keyframes pulse-reminder {
+
+    0%,
+    100% {
+        border-color: #ff6b6b;
+        box-shadow: 0 0 8px rgba(255, 107, 107, 0.4);
+    }
+
+    50% {
+        border-color: #ff9500;
+        box-shadow: 0 0 12px rgba(255, 150, 0, 0.6);
+    }
+}
+
+/* Biography Fields */
+#cs-biography-fieldset label {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    align-items: start;
+    gap: var(--spacing-md);
+    margin-top: var(--spacing-sm);
+}
+
+#cs-biography-fieldset input[type="text"],
+#cs-biography-fieldset textarea {
+    width: 100%;
+}
+
+/* Bonds Section */
+#cs-bonds {
+    padding: var(--spacing-md) 0;
+}
+
+/* ============================================================================   FIELDSETS & PANELS   ============================================================================ */
+fieldset {
+    border: 1px solid var(--primary-color);
+    padding: var(--spacing-lg) var(--spacing-md) var(--spacing-md);
+    margin-top: var(--spacing-md);
+    border-radius: var(--radius-md);
+}
+
+legend {
+    color: var(--bg-color);
+    background: var(--primary-color);
+    padding: 3px 12px;
+    font-weight: 700;
+    font-size: 0.72rem;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    border-radius: 3px;
+}
+
+.panel {
+    position: relative;
+}
+
+.panel.panel-proto {
+    display: none;
+}
+
+/* Utility classes for common inline styles */
+.section-flex {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 12px;
+}
+
+.section-flex-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.section-buttons {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+.section-buttons button {
+    flex: 1 1 auto;
+    min-width: 120px;
+    white-space: normal;
+    line-height: 1.2;
+}
+
+.bonds-list {
+    margin-top: 12px;
+}
+
+.hidden-section {
+    display: none;
+}
+
+.description-text {
+    font-size: 0.9em;
+    margin-bottom: 12px;
+    opacity: 0.8;
+}
+
+/* Save & Share standalone bar */
+.save-share-bar {
+    margin-top: var(--spacing-md);
+}
+
+.save-share-bar .section-buttons {
+    margin-top: 0;
+}
+
+/* Download/Upload buttons are only shown in the Live Play (field-doc) theme */
+#download-sheet-btn,
+#upload-sheet-btn,
+#clear-sheet-lp-btn {
+    display: none;
+}
+
+/* Larger text for these three buttons when visible in field-doc */
+.theme-field-doc #download-sheet-btn,
+.theme-field-doc #upload-sheet-btn,
+.theme-field-doc #clear-sheet-lp-btn {
+    font-size: 1rem !important;
+    letter-spacing: 0.08em;
+    padding: 8px 14px;
+}
+
+/* Advanced Options collapsible */
+#advanced-options-details {
+    border: 1px solid var(--primary-color);
+    margin-top: var(--spacing-md);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+#advanced-options-details>summary {
+    color: var(--bg-color);
+    background: var(--primary-color);
+    padding: 8px 14px;
+    font-weight: 700;
+    font-size: 0.85rem;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    user-select: none;
+}
+
+#advanced-options-details>summary::-webkit-details-marker {
+    display: none;
+}
+
+#advanced-options-details>summary::before {
+    content: '\25BC';
+    font-size: 0.65em;
+    opacity: 0.75;
+    transition: transform 0.2s;
+    display: inline-block;
+}
+
+#advanced-options-details[open]>summary::before {
+    transform: rotate(-180deg);
+}
+
+.advanced-options-body {
+    padding: var(--spacing-lg) var(--spacing-md) var(--spacing-md);
+}
+
+.advanced-options-hints {
+    font-size: 0.78rem;
+    font-style: italic;
+    opacity: 0.6;
+    margin-left: 6px;
+    font-weight: normal;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+#advanced-options-details[open] .advanced-options-hints {
+    display: none;
+}
+
+/* Textarea sizing */
+textarea {
+    width: 100%;
+}
+
+#cs-physical-desc {
+    height: 60px;
+}
+
+#cs-motivations {
+    min-height: 60px;
+    height: auto;
+    overflow: hidden;
+    resize: none;
+}
+
+#cs-prototype-json,
+#cs-items-json {
+    height: 140px;
+}
+
+#json-import-area {
+    height: 120px;
+}
+
+.json-drop-zone {
+    border: 2px dashed currentColor;
+    border-radius: var(--radius-md);
+    padding: 14px 12px;
+    text-align: center;
+    cursor: pointer;
+    opacity: 0.55;
+    transition: opacity 0.15s, background 0.15s;
+    margin-bottom: 6px;
+    user-select: none;
+}
+
+.json-drop-zone:hover,
+.json-drop-zone.drag-over {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.json-drop-label {
+    font-size: 0.8rem;
+    pointer-events: none;
+}
+
+/* ── Advanced Options collapsible grid ──────────────────────────────── */
+.export-actions-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.export-action-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* ── Import / Export option rows ────────────────────────────── */
+.io-option-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 4px;
+}
+
+.io-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+}
+
+.io-option>button {
+    flex-shrink: 0;
+    width: 140px;
+    min-width: 140px;
+    text-align: center;
+    white-space: normal;
+    line-height: 1.2;
+}
+
+.io-option-desc {
+    flex: 1;
+    font-size: 0.83em;
+    opacity: 0.75;
+    line-height: 1.45;
+    margin: 0;
+    padding-top: 6px;
+}
+
+.export-action-group-label {
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    opacity: 0.55;
+    padding-bottom: 2px;
+    border-bottom: 1px solid currentColor;
+    width: fit-content;
+    min-width: 80px;
+}
+
+/* ── Toast notification ─────────────────────────────────────────────── */
+#dg-toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(12px);
+    background: rgba(0, 0, 0, 0.85);
+    color: #fff;
+    font-size: 13px;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 10px 20px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.25s, transform 0.25s;
+    pointer-events: none;
+    z-index: 9999;
+}
+
+#dg-toast.dg-toast-visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+/* ═══════════════════════════════════════════════════════════════════   DICE ROLLER PANEL═══════════════════════════════════════════════════════════════════ */
+#dr-panel {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    width: 270px;
+    background: var(--bg-color, #0a0a0a);
+    border: 1px solid var(--primary-color, #00b521);
+    border-radius: 8px;
+    box-shadow: 0 0 28px color-mix(in srgb, var(--primary-color) 20%, transparent), 0 6px 20px rgba(0, 0, 0, 0.7);
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--primary-color, #00b521);
+    z-index: 8000;
+    user-select: none;
+}
+
+/* Handle */
+#dr-handle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    cursor: grab;
+    border-bottom: 1px solid color-mix(in srgb, var(--primary-color) 30%, transparent);
+    background: color-mix(in srgb, var(--primary-color) 6%, transparent);
+    border-radius: 8px 8px 0 0;
+}
+
+#dr-handle:active {
+    cursor: grabbing;
+}
+
+#dr-title {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    font-weight: bold;
+    flex: 1;
+}
+
+.dr-handle-controls button {
+    background: transparent;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 0 3px;
+    width: auto;
+    min-width: 0;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+    line-height: 1;
+}
+
+.dr-handle-controls button:hover {
+    opacity: 1;
+}
+
+/* Body */
+#dr-body {
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* ── Die selector pills ─────────────────────────────────────────── */
+#dr-die-pills {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.dr-die-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 5px 2px;
+    text-align: center;
+    font-size: 10px;
+    font-family: inherit;
+    letter-spacing: 0.05em;
+    font-weight: bold;
+    background: transparent;
+    border: 1px solid rgba(128, 128, 128, 0.35);
+    border-radius: 4px;
+    color: inherit;
+    cursor: pointer;
+    opacity: 0.55;
+    transition: opacity 0.15s, border-color 0.15s, background 0.15s;
+    min-width: 0;
+    width: auto;
+    flex: 1;
+    max-width: 42px;
+}
+
+.dr-die-btn:hover {
+    opacity: 0.85;
+    border-color: var(--primary-color, #00b521);
+}
+
+.dr-die-btn-active {
+    opacity: 1 !important;
+    border-color: var(--primary-color, #00b521) !important;
+    background: color-mix(in srgb, var(--primary-color) 12%, transparent) !important;
+}
+
+/* ── Face area ──────────────────────────────────────────────────── */
+#dr-face-area {
+    display: flex;
+    justify-content: center;
+    min-height: 84px;
+    align-items: center;
+}
+
+.dr-face-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+}
+
+/* Single-die face (d4–d20) */
+#dr-face-single .dr-die-face {
+    width: 70px;
+    height: 70px;
+    font-size: 28px;
+}
+
+.dr-face-type {
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    opacity: 0.45;
+    margin-top: 2px;
+}
+
+/* Percentile pair */
+.dr-pct-pair {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.dr-pct-die {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+}
+
+.dr-pct-lbl {
+    font-size: 8px;
+    letter-spacing: 0.1em;
+    opacity: 0.45;
+}
+
+.dr-pct-sep {
+    font-size: 16px;
+    opacity: 0.3;
+    margin-bottom: 14px;
+}
+
+/* Shared die face */
+.dr-die-face {
+    width: 58px;
+    height: 58px;
+    border: none;
+    border-radius: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    font-weight: bold;
+    letter-spacing: -1px;
+    background: transparent;
+    box-shadow: none;
+    position: relative;
+    overflow: visible;
+    color: var(--primary-color, #00b521);
+}
+
+/* ── Die face icons — game-icons.net via Iconify CDN (CC BY 3.0) ── */
+.dr-face-num {
+    position: relative;
+    z-index: 1;
+}
+
+/* Subtle background die shape in the rolling face area */
+.dr-die-face::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    opacity: 0.18;
+    background-color: currentColor;
+    -webkit-mask-size: 80%;
+    mask-size: 80%;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+    pointer-events: none;
+}
+
+.dr-die-face.dr-shape-d4::before {
+    -webkit-mask-image: url('https://api.iconify.design/game-icons/d4.svg');
+    mask-image: url('https://api.iconify.design/game-icons/d4.svg');
+}
+
+.dr-die-face.dr-shape-d6::before {
+    -webkit-mask-image: url('https://api.iconify.design/game-icons/perspective-dice-six.svg');
+    mask-image: url('https://api.iconify.design/game-icons/perspective-dice-six.svg');
+}
+
+.dr-die-face.dr-shape-d8::before {
+    -webkit-mask-image: url('https://api.iconify.design/game-icons/dice-eight-faces-eight.svg');
+    mask-image: url('https://api.iconify.design/game-icons/dice-eight-faces-eight.svg');
+}
+
+.dr-die-face.dr-shape-d10::before {
+    -webkit-mask-image: url('https://api.iconify.design/game-icons/d10.svg');
+    mask-image: url('https://api.iconify.design/game-icons/d10.svg');
+}
+
+.dr-die-face.dr-shape-d12::before {
+    -webkit-mask-image: url('https://api.iconify.design/game-icons/d12.svg');
+    mask-image: url('https://api.iconify.design/game-icons/d12.svg');
+}
+
+.dr-die-face.dr-shape-d20::before {
+    -webkit-mask-image: url('https://api.iconify.design/game-icons/dice-twenty-faces-twenty.svg');
+    mask-image: url('https://api.iconify.design/game-icons/dice-twenty-faces-twenty.svg');
+}
+
+/* ── Die icons in selector buttons ─────────────────────────────── */
+.dr-die-icon {
+    display: block;
+    width: 24px;
+    height: 24px;
+    background-color: currentColor;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+    flex-shrink: 0;
+}
+
+.dr-die-lbl {
+    font-size: 8px;
+    font-weight: bold;
+    letter-spacing: 0.05em;
+    line-height: 1;
+}
+
+.dr-die-btn[data-die="d4"] .dr-die-icon {
+    -webkit-mask-image: url('https://api.iconify.design/game-icons/d4.svg');
+    mask-image: url('https://api.iconify.design/game-icons/d4.svg');
+}
+
+.dr-die-btn[data-die="d6"] .dr-die-icon {
+    -webkit-mask-image: url('https://api.iconify.design/game-icons/perspective-dice-six.svg');
+    mask-image: url('https://api.iconify.design/game-icons/perspective-dice-six.svg');
+}
+
+.dr-die-btn[data-die="d8"] .dr-die-icon {
+    -webkit-mask-image: url('https://api.iconify.design/game-icons/dice-eight-faces-eight.svg');
+    mask-image: url('https://api.iconify.design/game-icons/dice-eight-faces-eight.svg');
+}
+
+.dr-die-btn[data-die="d10"] .dr-die-icon {
+    -webkit-mask-image: url('https://api.iconify.design/game-icons/d10.svg');
+    mask-image: url('https://api.iconify.design/game-icons/d10.svg');
+}
+
+.dr-die-btn[data-die="d12"] .dr-die-icon {
+    -webkit-mask-image: url('https://api.iconify.design/game-icons/d12.svg');
+    mask-image: url('https://api.iconify.design/game-icons/d12.svg');
+}
+
+.dr-die-btn[data-die="d20"] .dr-die-icon {
+    -webkit-mask-image: url('https://api.iconify.design/game-icons/dice-twenty-faces-twenty.svg');
+    mask-image: url('https://api.iconify.design/game-icons/dice-twenty-faces-twenty.svg');
+}
+
+.dr-die-btn[data-die="dpct"] .dr-die-icon {
+    -webkit-mask-image: url('https://api.iconify.design/game-icons/d10.svg');
+    mask-image: url('https://api.iconify.design/game-icons/d10.svg');
+}
+
+/* Animations */
+@keyframes dr-spin-anim {
+    0% {
+        transform: rotateX(0deg) scale(1);
+        opacity: 1;
+    }
+
+    40% {
+        transform: rotateX(90deg) scale(0.82);
+        opacity: 0.35;
+    }
+
+    60% {
+        transform: rotateX(270deg) scale(0.82);
+        opacity: 0.35;
+    }
+
+    100% {
+        transform: rotateX(360deg) scale(1);
+        opacity: 1;
+    }
+}
+
+@keyframes dr-land-anim {
+    0% {
+        transform: scale(1.22);
+        opacity: 0.5;
+    }
+
+    60% {
+        transform: scale(0.94);
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.dr-die-face.dr-spin {
+    animation: dr-spin-anim 0.08s linear;
+}
+
+.dr-die-face.dr-land {
+    animation: dr-land-anim 0.42s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* ── Result box ─────────────────────────────────────────────────── */
+.dr-result-box {
+    width: 100%;
+    min-height: 44px;
+    border: 1px solid rgba(128, 128, 128, 0.25);
+    border-radius: 5px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 6px;
+    gap: 1px;
+    transition: border-color 0.25s, background 0.25s, box-shadow 0.25s;
+}
+
+#dr-target-display {
+    font-size: 9px;
+    opacity: 0.45;
+    letter-spacing: 0.08em;
+}
+
+#dr-result-label {
+    font-size: 15px;
+    font-weight: bold;
+    letter-spacing: 0.05em;
+    text-align: center;
+    transition: color 0.25s;
+}
+
+.dr-result-box.dr-rolling {
+    border-color: rgba(128, 128, 128, 0.3);
+}
+
+.dr-result-box.dr-result-critical {
+    border-color: #ffd700;
+    background: rgba(255, 215, 0, 0.07);
+    box-shadow: 0 0 14px rgba(255, 215, 0, 0.3);
+}
+
+.dr-result-box.dr-result-success {
+    border-color: #69f0ae;
+    background: rgba(105, 240, 174, 0.05);
+}
+
+.dr-result-box.dr-result-failure {
+    border-color: #ff6d00;
+    background: rgba(255, 109, 0, 0.07);
+}
+
+.dr-result-box.dr-result-fumble {
+    border-color: #ff1744;
+    background: rgba(255, 23, 68, 0.10);
+    box-shadow: 0 0 16px rgba(255, 23, 68, 0.3);
+}
+
+/* ── Breakdown line (expr rolls) ────────────────────────────────── */
+#dr-breakdown {
+    font-size: 9px;
+    opacity: 0.55;
+    text-align: center;
+    letter-spacing: 0.03em;
+    min-height: 11px;
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    width: 100%;
+}
+
+/* ── Skill context label ────────────────────────────────────────── */
+#dr-skill-name {
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-align: center;
+    opacity: 0.5;
+    text-transform: uppercase;
+    min-height: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    width: 100%;
+}
+
+/* ── Manual row ─────────────────────────────────────────────────── */
+#dr-manual-row {
+    display: flex;
+    gap: 6px;
+}
+
+#dr-manual-target {
+    flex: 1;
+    padding: 5px 8px;
+    background: transparent;
+    border: 1px solid rgba(128, 128, 128, 0.35);
+    border-radius: 4px;
+    color: inherit;
+    font-family: inherit;
+    font-size: 12px;
+    text-align: center;
+    min-width: 0;
+}
+
+#dr-manual-target:focus {
+    outline: none;
+    border-color: var(--primary-color, #00b521);
+}
+
+#dr-manual-row button {
+    padding: 5px 14px;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    width: auto;
+    flex-shrink: 0;
+}
+
+#dr-hint {
+    font-size: 8px;
+    opacity: 0.3;
+    text-align: center;
+    line-height: 1.4;
+    letter-spacing: 0.03em;
+}
+
+/* ── Skill inputs: pointer + hover ring ─────────────────────────── */
+#cs-skills .cs-skill-input,
+#cs-custom-skills .custom-skill-value {
+    cursor: pointer;
+}
+
+#cs-skills .cs-skill-input:hover,
+#cs-custom-skills .custom-skill-value:hover {
+    outline: 1px solid var(--primary-color, #00b521);
+}
+
+/* ── Mobile: full-width bottom sheet ───────────────────────────── */
+@media (max-width: 600px) {
+    #dr-panel {
+        right: 0;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        border-radius: 12px 12px 0 0;
+        border-left: none;
+        border-right: none;
+        border-bottom: none;
+    }
+
+    #dr-die-pills {
+        gap: 5px;
+    }
+
+    .dr-die-btn {
+        max-width: none;
+        flex: 1;
+    }
+}
+
+#cs-json {
+    white-space: pre-wrap;
+    padding: 10px;
+    margin-top: 10px;
+    max-height: 400px;
+    overflow: auto;
+}
+
+/* Section labels */
+#cs-biography-fieldset label[style*="display:block"] {
+    display: block;
+    margin-top: 8px;
+}
+
+/* Profession row in biography fieldset */
+#bio-profession-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    width: 100%;
+    margin-bottom: 6px;
+}
+
+/* Info divs */
+#cs-profession-optional-skills {
+    margin-top: 8px;
+    width: 100%;
+}
+
+.optional-skills-container {
+    margin-top: 12px;
+    padding: 8px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+}
+
+.optional-skill-choose-text {
+    margin-bottom: 4px;
+    font-weight: normal;
+    white-space: pre-wrap;
+}
+
+.optional-skill-counter {
+    font-size: 0.78rem;
+    font-weight: 700;
+    opacity: 0.75;
+    margin-bottom: 8px;
+    letter-spacing: 0.04em;
+}
+
+.optional-skill-item {
+    margin: 6px 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.optional-skill-check {
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+.optional-skill-label {
+    cursor: pointer;
+    flex: 1;
+    margin: 0;
+}
+
+/* Bio generator toolbar — horizontal row using full panel width */
+#bio-generator-section {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 14px 24px;
+    margin-top: 20px;
+    width: 100%;
+}
+
+#bio-generator-hint {
+    flex: 1;
+    min-width: 200px;
+    margin: 0;
+    font-size: 0.82rem;
+    opacity: 0.6;
+    line-height: 1.55;
+}
+
+#bio-gender-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+/* Override the biography fieldset's label grid for elements inside the generator, gender, and optional-skills rows */
+#bio-gender-row label,
+#bio-profession-apply-row label,
+#cs-profession-optional-skills label {
+    display: inline;
+    grid-template-columns: unset;
+    margin-top: 0;
+    white-space: nowrap;
+    font-size: 0.85rem;
+}
+
+.bonus-method-block {
+    border: 1px solid rgba(128, 128, 128, 0.2);
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+}
+
+.bonus-method-label {
+    font-weight: 600;
+    font-size: 0.88rem;
+    margin-bottom: 2px;
+    letter-spacing: 0.02em;
+    color: var(--primary-color);
+}
+
+.bonus-method-separator {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    margin: 10px 0;
+    gap: 8px;
+    font-size: 0.8rem;
+    opacity: 0.55;
+}
+
+.bonus-method-separator::before,
+.bonus-method-separator::after {
+    content: '';
+    flex: 1;
+    border-top: 1px solid currentColor;
+}
+
+.bonus-package-row {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 0;
+    text-align: center;
+}
+
+
+.bonus-package-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.bonus-package-controls label {
+    font-size: 0.85rem;
+    opacity: 0.8;
+    white-space: nowrap;
+}
+
+.bonus-package-controls select {
+    min-width: 220px;
+    max-width: 320px;
+}
+
+.bonus-package-desc {
+    display: none;
+    font-size: 0.8rem;
+    opacity: 0.7;
+    max-width: 520px;
+    line-height: 1.5;
+    margin: 0;
+}
+
+#bonus-dropdowns {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(4, auto);
+    grid-auto-flow: column;
+    gap: 12px;
+    margin-bottom: 24px;
+    justify-items: center;
+    text-align: center;
+}
+
+/* Button styling */
+#apply-profession-button {
+    display: none;
+}
+
+#bio-profession-apply-row {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+    margin-bottom: 16px;
+    text-align: center;
+}
+
+#bio-profession-apply-row #reminder-apply-profession {
+    color: #ff3b30;
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+    animation: pulse-reminder 1.6s ease-in-out infinite;
+}
+
+#bio-profession-apply-row #apply-profession-button {
+    display: inline-block;
+    background: #ff3b30;
+    border-color: #ff3b30;
+    color: #fff;
+    transition: background 0.3s, border-color 0.3s;
+}
+
+#bio-profession-apply-row #apply-profession-button.apply-profession-done {
+    background: #34c759;
+    border-color: #34c759;
+    color: #fff;
+    opacity: 0.5;
+    cursor: default;
+    pointer-events: none;
+}
+
+#bonus-skills-section {
+    display: none;
+}
+
+/* ============================================================================   CHECKBOXES   ============================================================================ */
+input[type="checkbox"] {
+    display: none;
+}
+
+input[type="checkbox"]+label {
+    background-color: #eee;
+    padding: var(--spacing-xs);
+    border-radius: var(--radius-sm);
+    display: inline-block;
+    color: #000000;
+}
+
+input[type="checkbox"]:checked+label {
+    background-color: var(--primary-color);
+    color: #ffffff;
+}
+
+/* Field-notes: checked optional-skill labels need explicit light text so the
+   high-specificity biography label rule (color:#1a1408) doesn't win */
+.theme-field-notes input[type="checkbox"]:checked+label {
+    color: #f5f0e0 !important;
+}
+
+/* Sanity adaptation checkboxes */
+.sanity-adaptation-checkbox {
+    display: inline-block !important;
+    width: 14px !important;
+    height: 14px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    cursor: pointer;
+    accent-color: var(--primary-color);
+}
+
+.sanity-adaptation-checkbox+span {
+    display: inline;
+}
+
+/* X-Files theme sanity checkboxes */
+.theme-xfiles .sanity-adaptation-checkbox {
+    accent-color: #00b521;
+}
+
+.theme-xfiles .sanity-adaptation-checkbox+span {
+    color: #00b521;
+}
+
+/* Sanity adaptations section */
+.sanity-adaptations-section {
+    font-size: 0.9em;
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.skills-footer-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-top: 12px;
+}
+
+.sanity-adaptations-section {
+    margin-top: var(--spacing-xl);
+}
+
+.sanity-adaptations-title {
+    font-weight: bold;
+    font-size: 1em;
+    color: var(--primary-color);
+    cursor: help;
+    width: fit-content;
+    margin-bottom: 8px;
+    letter-spacing: 0.04em;
+}
+
+.sanity-adaptations-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 220px;
+}
+
+.sanity-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.sanity-category-label {
+    margin: 0;
+    flex: 0 0 auto;
+    color: var(--primary-color);
+}
+
+.sanity-checkboxes {
+    display: flex;
+    gap: 4px;
+}
+
+.sanity-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin: 0;
+}
+
+.bonus-prep-row,
+.bonus-apply-row {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    text-align: center;
+}
+
+.bonus-apply-row {
+    margin-top: 12px;
+}
+
+.bonus-prep-row #reminder-prepare-bonus,
+.bonus-apply-row #reminder-apply-bonus {
+    color: #ff3b30;
+    animation: pulse-reminder 1.6s ease-in-out infinite;
+}
+
+#prepare-bonus-button,
+#apply-bonus-button {
+    background: #ff3b30;
+    border-color: #ff3b30;
+    color: #fff;
+    transition: background 0.3s, border-color 0.3s;
+}
+
+#prepare-bonus-button.prepare-bonus-done,
+#apply-bonus-button.apply-bonus-done {
+    background: #34c759;
+    border-color: #34c759;
+    color: #fff;
+    opacity: 0.5;
+    cursor: default;
+    pointer-events: none;
+}
+
+.bmc-container {
+    display: flex;
+    justify-content: center;
+    margin-top: 20px;
+    width: 100%;
+}
+
+/* ============================================================================   MISC COMPONENTS   ============================================================================ */
+.github-link-container {
+    margin-top: var(--spacing-2xl);
+    text-align: center;
+    width: 100%;
+}
+
+.github-link-container a {
+    color: var(--primary-color);
+    font-weight: bold;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: opacity 0.3s ease;
+}
+
+.github-link-container a:hover {
+    opacity: 0.8;
+    text-decoration: underline;
+}
+
+.github-icon {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    stroke: var(--primary-color);
+}
+
+/* Buy Me A Coffee Button removed - now uses simple link styled like GitHub button */
+.cs-bonus-skill-select {
+    border: 2px solid var(--input-border);
+    font-size: 0.95em;
+    transition: all 0.2s ease;
+    text-align: center;
+    text-align-last: center;
+    width: 100%;
+    min-width: 14em;
+    box-sizing: border-box;
+}
+
+.cs-bonus-skill-select:hover {
+    border-color: var(--primary-color);
+}
+
+.cs-bonus-skill-select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--primary-color) 30%, transparent);
+}
+
+.disclaimer {
+    margin-top: var(--spacing-2xl);
+    text-align: center;
+    width: 100%;
+    max-width: 1200px;
+    margin-left: auto;
+    margin-right: auto;
+    padding: var(--spacing-lg);
+}
+
+.disclaimer p {
+    font-size: 0.85em;
+    color: var(--text-color);
+    opacity: 0.7;
+    line-height: 1.6;
+    margin: 0;
+}
+
+#theme-selector {
+    width: 1600px;
+    max-width: 100%;
+    margin: 0 auto var(--spacing-md);
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-end;
+    gap: var(--spacing-sm);
+    align-items: center;
+}
+
+#theme-selector label {
+    color: var(--primary-color);
+    font-weight: bold;
+}
+
+#theme-selector select {
+    background: transparent;
+    color: var(--primary-color);
+    border: 1px solid var(--primary-color);
+    padding: var(--spacing-xs) var(--spacing-md);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+}
+
+#cs-json {
+    font-family: 'Courier New', monospace;
+    font-size: var(--font-xs);
+    background: #000 !important;
+    color: #00b521 !important;
+    padding: var(--spacing-md);
+    border: 1px solid #00b521 !important;
+    border-radius: var(--radius-sm);
+    max-height: 400px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    margin-top: var(--spacing-md);
+}
+
+.theme-modern #cs-json {
+    background: var(--input-bg) !important;
+    color: var(--primary-color) !important;
+    border-color: var(--primary-color) !important;
+}
+
+/* ============================================================================   ANIMATIONS   ============================================================================ */
+@keyframes blink {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0;
+    }
+}
+
+.blinking-cursor {
+    animation: blink 1s step-start 5s infinite;
+}
+
+@keyframes textFlicker {
+
+    0%,
+    100% {
+        text-shadow: 0 0 4px rgba(0, 255, 0, 0.4), 0 0 11px rgba(0, 255, 0, 0.2), 0 0 19px rgba(0, 255, 0, 0.1), 0 0 40px rgba(0, 255, 0, 0.05);
+        opacity: 0.99;
+    }
+
+    25%,
+    75% {
+        text-shadow: none;
+        opacity: 0.99;
+    }
+}
+
+/* CRT bond display — scan line drift and phosphor flicker */
+@keyframes crt-flicker {
+
+    0%,
+    18%,
+    20%,
+    22%,
+    58%,
+    61%,
+    78%,
+    81%,
+    100% {
+        opacity: 1;
+    }
+
+    19% {
+        opacity: 0.88;
+    }
+
+    21% {
+        opacity: 0.97;
+    }
+
+    59% {
+        opacity: 0.82;
+    }
+
+    60% {
+        opacity: 0.95;
+    }
+
+    79% {
+        opacity: 0.90;
+    }
+
+    80% {
+        opacity: 0.98;
+    }
+}
+
+@keyframes crt-scanlines-drift {
+    to {
+        background-position: 0 4px;
+    }
+}
+
+/* Only apply the CRT flicker in the X-Files theme — other themes opt out explicitly */
+.theme-xfiles body,
+.theme-xfiles * {
+    animation: textFlicker 20s infinite;
+}
+
+/* ============================================================================   RESPONSIVE DESIGN   ============================================================================ */
+@media (max-width: 900px) {
+    .text-box {
+        width: 100%;
+    }
+}
+
+@media (max-width: 640px) {
+    #cs-skills {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 600px) {
+    body {
+        padding: var(--spacing-md);
+    }
+
+    .page-title {
+        font-size: var(--font-lg);
+    }
+
+    .button-container {
+        flex-direction: column;
+        width: 100%;
+    }
+
+    button {
+        width: 100%;
+    }
+
+    #theme-selector {
+        flex-direction: column;
+        width: 100%;
+    }
+}
+
+/* ── Utility: screen-reader-only (visually hidden but accessible) ─────────── */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* ============================================================================   BUY ME A COFFEE BADGE   ============================================================================*/
+.bmc-img {
+    height: 60px !important;
+    width: 217px !important;
+    display: block;
+    transform: scale(0.6);
+    transform-origin: center;
+}
+
+.bmc-badge-link {
+    display: flex;
+    justify-content: center;
+}
+
+/* ── Equipment Picker ─────────────────────────────────────────────── */
+.eq-controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.eq-search-input,
+.eq-cat-select {
+    border: 1px solid rgba(128, 128, 128, 0.35);
+    border-radius: 4px;
+    color: inherit;
+    font-family: inherit;
+    font-size: var(--font-sm);
+}
+
+.eq-search-input {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 10px;
+    background: transparent;
+}
+
+.eq-cat-select {
+    padding: 6px 8px;
+    background: var(--bg-color);
+    cursor: pointer;
+}
+
+.eq-search-input:focus,
+.eq-cat-select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.eq-panels {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    align-items: start;
+}
+
+@media (max-width: 600px) {
+    .eq-panels {
+        grid-template-columns: 1fr;
+    }
+}
+
+.eq-panel-header {
+    font-size: var(--font-xs);
+    letter-spacing: 0.14em;
+    font-weight: bold;
+    opacity: 0.6;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.eq-scrolllist {
+    max-height: 320px;
+    overflow-y: auto;
+    border: 1px solid rgba(128, 128, 128, 0.18);
+    border-radius: 4px;
+    padding: 3px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(128, 128, 128, 0.3) transparent;
+}
+
+.eq-cat-group {
+    margin-bottom: 12px;
+}
+
+.eq-cat-group:last-child,
+.eq-loadout-section:last-child {
+    margin-bottom: 0;
+}
+
+.eq-cat-group-header,
+.eq-loadout-section-header {
+    font-size: var(--font-xs);
+    letter-spacing: 0.14em;
+    font-weight: bold;
+    color: var(--primary-color);
+}
+
+.eq-cat-group-header {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 6px 5px;
+    position: sticky;
+    top: 0;
+    background: var(--bg-color);
+    z-index: 1;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+    margin-bottom: 3px;
+}
+
+.eq-loadout-section-header {
+    padding: 3px 0 3px 8px;
+    margin-bottom: 7px;
+    border-left: 3px solid var(--primary-color);
+}
+
+.eq-cat-group-bar {
+    display: inline-block;
+    width: 3px;
+    height: 12px;
+    border-radius: 2px;
+    background: var(--primary-color);
+    flex-shrink: 0;
+}
+
+.eq-cat-group-label {
+    flex: 1;
+}
+
+.eq-catalog-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 6px 6px 12px;
+    border-radius: 3px;
+    border-left: 2px solid transparent;
+    transition: background 0.12s, border-left-color 0.12s;
+}
+
+.eq-catalog-item:hover {
+    background: rgba(128, 128, 128, 0.07);
+    border-left-color: var(--primary-color);
+}
+
+.eq-item-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.eq-item-name,
+.eq-item-meta,
+.eq-card-name,
+.eq-card-stats {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.eq-item-name,
+.eq-item-meta {
+    display: block;
+}
+
+.eq-item-name {
+    font-size: var(--font-base);
+    font-weight: bold;
+}
+
+.eq-item-meta {
+    font-size: var(--font-sm);
+    opacity: 0.55;
+    letter-spacing: 0.02em;
+}
+
+.eq-expense-badge {
+    font-weight: bold;
+    font-size: var(--font-xs);
+}
+
+.eq-expense-badge::before {
+    content: '\25B2\00A0';
+}
+
+.eq-expense-incidental {
+    color: #6abf6a;
+}
+
+.eq-expense-standard {
+    color: #4a9eda;
+}
+
+.eq-expense-unusual {
+    color: #c8a000;
+}
+
+.eq-expense-major {
+    color: #d47800;
+}
+
+.eq-expense-extreme {
+    color: #c0392b;
+}
+
+.eq-add-btn {
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    font-size: 18px;
+    line-height: 1;
+    background: transparent;
+    border: 1px solid rgba(128, 128, 128, 0.3);
+    border-radius: 3px;
+    color: inherit;
+    cursor: pointer;
+    opacity: 0.4;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.eq-add-btn:hover {
+    opacity: 1;
+    background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+}
+
+.eq-loadout-section {
+    margin-bottom: 14px;
+}
+
+.eq-loadout-cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.eq-loadout-card {
+    position: relative;
+    flex: 1 1 110px;
+    min-width: 100px;
+    max-width: 100%;
+    border: 1px solid rgba(128, 128, 128, 0.2);
+    border-left: 3px solid var(--primary-color);
+    border-radius: 3px;
+    padding: 6px 22px 6px 8px;
+    background: rgba(128, 128, 128, 0.04);
+    transition: background 0.12s;
+    cursor: default;
+}
+
+.eq-loadout-card:hover {
+    background: rgba(128, 128, 128, 0.1);
+}
+
+/* ── Custom equipment add row ─────────────────────────── */
+.eq-custom-add-row {
+    display: flex;
+    gap: 6px;
+    padding: 8px 6px 4px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    margin-top: 4px;
+}
+
+.eq-custom-name-input {
+    flex: 1;
+    min-width: 0;
+    background: var(--input-bg);
+    color: var(--primary-color);
+    border: 1px solid var(--input-border);
+    padding: 4px 8px;
+    font-size: 0.85em;
+    border-radius: 3px;
+    font-family: inherit;
+}
+
+.eq-custom-name-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.eq-custom-add-btn {
+    padding: 4px 10px;
+    font-size: 0.82em;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.eq-card-name {
+    font-size: var(--font-xs);
+    font-weight: bold;
+    line-height: 1.3;
+}
+
+.eq-card-stats {
+    font-size: 11px;
+    opacity: 0.55;
+    margin-top: 3px;
+    letter-spacing: 0.02em;
+}
+
+.eq-remove-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    font-size: 13px;
+    line-height: 1;
+    background: transparent;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    opacity: 0.25;
+    transition: opacity 0.15s, color 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.eq-remove-btn:hover {
+    opacity: 1;
+    color: #ff6d00;
+}
+
+.eq-clear-btn {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    padding: 3px 8px;
+    background: transparent;
+    border: 1px solid rgba(128, 128, 128, 0.3);
+    border-radius: 3px;
+    color: inherit;
+    cursor: pointer;
+    opacity: 0.45;
+    transition: opacity 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.eq-clear-btn:hover {
+    opacity: 1;
+    border-color: #ff6d00;
+    color: #ff6d00;
+}
+
+.eq-count {
+    font-weight: normal;
+    opacity: 0.6;
+}
+
+.eq-empty {
+    padding: 20px 8px;
+    font-size: var(--font-xs);
+    opacity: 0.35;
+    text-align: center;
+    letter-spacing: 0.05em;
+}
+
+.eq-hint {
+    font-size: 11px;
+    opacity: 0.35;
+    text-align: center;
+    letter-spacing: 0.03em;
+    margin-top: 10px;
+    margin-bottom: 0;
+}
+
+/* ============================================================================   FIELD NOTES THEME — Handwritten notebook / field report aesthetic   Cardboard outer surround, graph-paper panel interiors, Permanent Marker   labels, black ink borders, squared-off everything. No drama — just notes   made in the dark by someone who knows too much already.   ============================================================================ */
+.theme-field-notes {
+    --primary-color: #1a1408;
+    --bg-color: #faf7ee;
+    --text-color: #1a1408;
+    --input-bg: transparent;
+    --input-border: #1a1408;
+    --radius-sm: 0px;
+    --radius-md: 0px;
+    /* Cork/cardboard outer surround — same worn texture as the LP sheet */
+    background-color: #7a5c2e;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.25'/%3E%3C/svg%3E");
+    color: #1a1408;
+    font-family: 'Permanent Marker', cursive;
+    font-weight: 400;
+}
+
+/* Desk-lamp vignette — strong overhead light source, darkness closing in from edges */
+.theme-field-notes::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 998;
+    background: radial-gradient(ellipse at 50% 35%, transparent 20%, rgba(0, 0, 0, 0.68) 80%);
+}
+
+/* Hard right-angles — no soft edges anywhere on a field notes page */
+.theme-field-notes *,
+.theme-field-notes *::before,
+.theme-field-notes *::after {
+    border-radius: 0 !important;
+    font-weight: 400;
+}
+
+/* ── Page title ────────────────────────────────────────────────────────────── */
+.theme-field-notes .page-title {
+    color: #1a1408;
+    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    font-size: 3.2rem;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-shadow: none;
+    -webkit-text-fill-color: #1a1408;
+    border-bottom: 3px solid #1a1408;
+}
+
+.theme-field-notes .blinking-cursor {
+    display: none;
+}
+
+/* ── Site intro ────────────────────────────────────────────────────────────── */
+.theme-field-notes .site-intro {
+    color: #1a1408;
+    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    font-size: 1.1rem;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    text-align: center;
+    flex: 0 0 100%;
+    width: 100%;
+    max-width: 100%;
+    padding: 0 33.5%;
+    box-sizing: border-box;
+    margin-bottom: var(--spacing-lg);
+    line-height: 1.4;
+}
+
+.theme-field-notes .site-intro strong {
+    color: #1a1408;
+    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    font-size: 1.1rem;
+    font-weight: 400;
+    -webkit-text-fill-color: #1a1408;
+}
+
+/* ── Stats buy section + its button row ─────────────────────────────────────── */
+.theme-field-notes #stats-buy-section {
+    background-color: #faf7ee;
+    background-image:
+        /* binding crease — soft shadow either side of the centre fold */
+        linear-gradient(to right,
+            transparent calc(50% - 18px),
+            rgba(0, 0, 0, 0.06) calc(50% - 4px),
+            rgba(0, 0, 0, 0.13) calc(50% - 1px),
+            rgba(0, 0, 0, 0.15) 50%,
+            rgba(0, 0, 0, 0.13) calc(50% + 1px),
+            rgba(0, 0, 0, 0.06) calc(50% + 4px),
+            transparent calc(50% + 18px)),
+        linear-gradient(rgba(80, 120, 200, 0.15) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(80, 120, 200, 0.15) 1px, transparent 1px);
+    background-size: 100% 100%, 20px 20px, 20px 20px;
+    border: 3px solid #1a1408;
+    padding: 20px 16px 16px;
+    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35);
+    max-width: 960px;
+    width: 100%;
+    border-top-left-radius: 0 !important;
+    border-bottom-left-radius: 0 !important;
+    border-top-right-radius: 30px !important;
+    border-bottom-right-radius: 30px !important;
+    overflow: hidden;
+    transform: translateX(0);
+    /* 1 — right */
+}
+
+.theme-field-notes #stats-buy-section+.button-container {
+    --primary-color: #1a1408;
+    transform: translateX(0);
+    /* follow stats section */
+}
+
+/* ── Stat containers in the buy section ──────────────────────────────────── */
+.theme-field-notes #stats .stat-container {
+    background-color: #faf7ee;
+    background-image: linear-gradient(rgba(80, 120, 200, 0.14) 1px, transparent 1px), linear-gradient(90deg, rgba(80, 120, 200, 0.14) 1px, transparent 1px);
+    background-size: 20px 20px;
+    border: 2px solid #1a1408;
+    box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.25);
+}
+
+.theme-field-notes #stats .stat-container .stat-label {
+    font-family: 'Permanent Marker', cursive;
+    font-size: 1.2rem;
+    font-weight: 400;
+    color: #1a1408;
+}
+
+.theme-field-notes #stats .stat-container .descriptor {
+    font-family: 'Permanent Marker', cursive;
+    font-size: 0.85rem;
+    font-weight: 400;
+    color: #1a1408;
+}
+
+.theme-field-notes #stats .stat-container .stat-value {
+    font-family: 'Permanent Marker', cursive;
+    color: #1a1408;
+    font-size: 2.4rem;
+    font-weight: 400;
+}
+
+.theme-field-notes #stats .stat-container .x5-value {
+    font-family: 'Courier New', Courier, monospace;
+    color: #5a4a2a;
+    font-size: 0.78rem;
+    opacity: 0.8;
+}
+
+/* ── Per-section panels — graph paper on off-white ─────────────────────── */
+.theme-field-notes #cs-biography-fieldset,
+.theme-field-notes .panel-skills,
+.theme-field-notes .panel-bonus-skills,
+.theme-field-notes #cs-bonds-fieldset,
+.theme-field-notes #eq-picker-fieldset {
+    --primary-color: #1a1408;
+    background-color: #faf7ee;
+    background-image:
+        /* binding crease — soft shadow either side of the centre fold */
+        linear-gradient(to right,
+            transparent calc(50% - 18px),
+            rgba(0, 0, 0, 0.06) calc(50% - 4px),
+            rgba(0, 0, 0, 0.13) calc(50% - 1px),
+            rgba(0, 0, 0, 0.15) 50%,
+            rgba(0, 0, 0, 0.13) calc(50% + 1px),
+            rgba(0, 0, 0, 0.06) calc(50% + 4px),
+            transparent calc(50% + 18px)),
+        linear-gradient(rgba(80, 120, 200, 0.15) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(80, 120, 200, 0.15) 1px, transparent 1px);
+    background-size: 100% 100%, 20px 20px, 20px 20px;
+    border: 2px solid #1a1408;
+    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.3);
+    /* Field Notes notebook: right side only has rounded corners, left is flat (binding) */
+    border-top-left-radius: 0 !important;
+    border-bottom-left-radius: 0 !important;
+    border-top-right-radius: 30px !important;
+    border-bottom-right-radius: 30px !important;
+    overflow: hidden;
+    position: relative;
+}
+
+/* Alternating left/right offsets — staggered notebook page effect */
+.theme-field-notes #cs-biography-fieldset {
+    transform: translateX(0);
+}
+
+/* 2 — left  */
+.theme-field-notes .panel-skills {
+    transform: translateX(0);
+}
+
+/* 3 — right */
+.theme-field-notes .panel-bonus-skills {
+    transform: translateX(0);
+}
+
+/* 4 — left  */
+.theme-field-notes #cs-bonds-fieldset {
+    transform: translateX(0);
+}
+
+/* 5 — right */
+.theme-field-notes #eq-picker-fieldset {
+    transform: translateX(0);
+}
+
+/* 6 — left  */
+
+/* ── Coffee drops ────────────────────────────────────────────────────────── */
+.theme-field-notes #cs-biography-fieldset::after {
+    content: '';
+    position: absolute;
+    width: 800px;
+    height: 800px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 800'%3E%3Cdefs%3E%3Cfilter id='dp'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.08' numOctaves='3' seed='14' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='7' xChannelSelector='R' yChannelSelector='G'/%3E%3C/filter%3E%3C/defs%3E%3Cellipse cx='520' cy='690' rx='22' ry='13' fill='rgba(101,67,33,0.52)' transform='rotate(-15,520,690)' filter='url(%23dp)'/%3E%3Cellipse cx='570' cy='660' rx='13' ry='9' fill='rgba(101,67,33,0.42)' transform='rotate(18,570,660)' filter='url(%23dp)'/%3E%3Cellipse cx='480' cy='720' rx='10' ry='10' fill='rgba(101,67,33,0.36)' filter='url(%23dp)'/%3E%3Cellipse cx='555' cy='720' rx='7' ry='5' fill='rgba(101,67,33,0.30)' transform='rotate(-8,555,720)' filter='url(%23dp)'/%3E%3Cellipse cx='590' cy='700' rx='16' ry='9' fill='rgba(101,67,33,0.44)' transform='rotate(-30,590,700)' filter='url(%23dp)'/%3E%3Cellipse cx='500' cy='750' rx='8' ry='6' fill='rgba(101,67,33,0.28)' transform='rotate(22,500,750)' filter='url(%23dp)'/%3E%3C/svg%3E") no-repeat;
+    background-size: 100% 100%;
+    top: -250px;
+    right: -200px;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.theme-field-notes #cs-bonds-fieldset::after {
+    content: '';
+    position: absolute;
+    width: 600px;
+    height: 600px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 600'%3E%3Cdefs%3E%3Cfilter id='dp2'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.09' numOctaves='3' seed='9' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='6' xChannelSelector='R' yChannelSelector='G'/%3E%3C/filter%3E%3C/defs%3E%3Cellipse cx='390' cy='515' rx='17' ry='10' fill='rgba(101,67,33,0.50)' transform='rotate(-15,390,515)' filter='url(%23dp2)'/%3E%3Cellipse cx='430' cy='490' rx='11' ry='7' fill='rgba(101,67,33,0.38)' transform='rotate(12,430,490)' filter='url(%23dp2)'/%3E%3Cellipse cx='360' cy='538' rx='9' ry='9' fill='rgba(101,67,33,0.32)' filter='url(%23dp2)'/%3E%3Cellipse cx='425' cy='530' rx='6' ry='4' fill='rgba(101,67,33,0.26)' filter='url(%23dp2)'/%3E%3Cellipse cx='408' cy='555' rx='12' ry='7' fill='rgba(101,67,33,0.40)' transform='rotate(-25,408,555)' filter='url(%23dp2)'/%3E%3C/svg%3E") no-repeat;
+    background-size: 100% 100%;
+    bottom: -150px;
+    right: -160px;
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* Skills panel — small cluster top-left corner, like the notebook was open face-down on a wet desk */
+.theme-field-notes .panel-skills::after {
+    content: '';
+    position: absolute;
+    width: 400px;
+    height: 400px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'%3E%3Cdefs%3E%3Cfilter id='dp3'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.10' numOctaves='3' seed='5' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='8' xChannelSelector='R' yChannelSelector='G'/%3E%3C/filter%3E%3C/defs%3E%3Cellipse cx='60' cy='80' rx='28' ry='16' fill='rgba(101,67,33,0.48)' transform='rotate(8,60,80)' filter='url(%23dp3)'/%3E%3Cellipse cx='110' cy='55' rx='15' ry='10' fill='rgba(101,67,33,0.38)' transform='rotate(-20,110,55)' filter='url(%23dp3)'/%3E%3Cellipse cx='40' cy='130' rx='11' ry='11' fill='rgba(101,67,33,0.30)' filter='url(%23dp3)'/%3E%3Cellipse cx='85' cy='110' rx='8' ry='5' fill='rgba(101,67,33,0.24)' transform='rotate(15,85,110)' filter='url(%23dp3)'/%3E%3Cellipse cx='130' cy='85' rx='19' ry='10' fill='rgba(101,67,33,0.42)' transform='rotate(-10,130,85)' filter='url(%23dp3)'/%3E%3C/svg%3E") no-repeat;
+    background-size: 100% 100%;
+    top: -60px;
+    left: -60px;
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* Bonus skills panel — long thin spill trail down the right edge */
+.theme-field-notes .panel-bonus-skills::after {
+    content: '';
+    position: absolute;
+    width: 300px;
+    height: 500px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 500'%3E%3Cdefs%3E%3Cfilter id='dp4'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.07' numOctaves='4' seed='21' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='9' xChannelSelector='R' yChannelSelector='G'/%3E%3C/filter%3E%3C/defs%3E%3Cellipse cx='240' cy='120' rx='14' ry='24' fill='rgba(101,67,33,0.45)' transform='rotate(5,240,120)' filter='url(%23dp4)'/%3E%3Cellipse cx='260' cy='180' rx='9' ry='18' fill='rgba(101,67,33,0.35)' transform='rotate(-8,260,180)' filter='url(%23dp4)'/%3E%3Cellipse cx='250' cy='240' rx='11' ry='8' fill='rgba(101,67,33,0.30)' transform='rotate(12,250,240)' filter='url(%23dp4)'/%3E%3Cellipse cx='265' cy='155' rx='6' ry='12' fill='rgba(101,67,33,0.28)' transform='rotate(-3,265,155)' filter='url(%23dp4)'/%3E%3Cellipse cx='245' cy='290' rx='8' ry='6' fill='rgba(101,67,33,0.22)' transform='rotate(20,245,290)' filter='url(%23dp4)'/%3E%3C/svg%3E") no-repeat;
+    background-size: 100% 100%;
+    top: 40px;
+    right: -80px;
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* Equipment panel — a couple of fat drops bottom-left, like something tipped over on the table */
+.theme-field-notes #eq-picker-fieldset::after {
+    content: '';
+    position: absolute;
+    width: 500px;
+    height: 300px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 500 300'%3E%3Cdefs%3E%3Cfilter id='dp5'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.06' numOctaves='4' seed='33' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='10' xChannelSelector='R' yChannelSelector='G'/%3E%3C/filter%3E%3C/defs%3E%3Cellipse cx='70' cy='220' rx='32' ry='19' fill='rgba(101,67,33,0.46)' transform='rotate(-12,70,220)' filter='url(%23dp5)'/%3E%3Cellipse cx='130' cy='245' rx='20' ry='13' fill='rgba(101,67,33,0.38)' transform='rotate(9,130,245)' filter='url(%23dp5)'/%3E%3Cellipse cx='50' cy='265' rx='14' ry='14' fill='rgba(101,67,33,0.32)' filter='url(%23dp5)'/%3E%3Cellipse cx='100' cy='270' rx='10' ry='7' fill='rgba(101,67,33,0.26)' transform='rotate(-18,100,270)' filter='url(%23dp5)'/%3E%3Cellipse cx='155' cy='215' rx='24' ry='12' fill='rgba(101,67,33,0.42)' transform='rotate(6,155,215)' filter='url(%23dp5)'/%3E%3Cellipse cx='80' cy='240' rx='7' ry='5' fill='rgba(101,67,33,0.20)' transform='rotate(25,80,240)' filter='url(%23dp5)'/%3E%3C/svg%3E") no-repeat;
+    background-size: 100% 100%;
+    bottom: -80px;
+    left: -60px;
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* Section legend: stamped black label bar */
+.theme-field-notes #cs-biography-fieldset>legend,
+.theme-field-notes .panel-skills>legend,
+.theme-field-notes .panel-bonus-skills>legend,
+.theme-field-notes #cs-bonds-fieldset>legend,
+.theme-field-notes #eq-picker-fieldset>legend {
+    background: #1a1408;
+    color: #f5f0e0;
+    font-family: 'Permanent Marker', cursive;
+    font-size: 1.2rem;
+    font-weight: 400;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 3px 14px 4px;
+}
+
+/* ── Stats section header ─────────────────────────────────────────────────── */
+.theme-field-notes .stats-section h2 {
+    font-family: 'Permanent Marker', cursive;
+    font-size: 1.2rem;
+    font-weight: 400;
+    color: #1a1408;
+    letter-spacing: 0.08em;
+}
+
+/* ── Inputs and textareas — written on the lines ───────────────────────── */
+.theme-field-notes input[type="text"],
+.theme-field-notes input[type="number"],
+.theme-field-notes textarea {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid rgba(26, 20, 8, 0.55);
+    color: #1a1408;
+    font-family: 'Permanent Marker', cursive;
+    font-size: 1.2rem;
+    font-weight: 400;
+    box-shadow: none;
+}
+
+.theme-field-notes input[type="text"]:focus,
+.theme-field-notes input[type="number"]:focus,
+.theme-field-notes textarea:focus {
+    outline: none;
+    border-bottom: 2px solid #1a1408;
+    box-shadow: none;
+    background: rgba(80, 120, 200, 0.06);
+}
+
+/* Skill value inputs: wrapper is the visual box, input is naked inside */
+/* The wrapper overrides the base box style for field-notes look */
+.theme-field-notes .cs-skill-value-wrap {
+    border: 1px solid rgba(26, 20, 8, 0.45);
+    border-bottom: 2px solid #1a1408;
+    background: rgba(255, 255, 255, 0.35);
+    width: auto;
+    min-width: 4ch;
+    box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.25);
+}
+
+.theme-field-notes .cs-skill-pct {
+    font-family: 'Permanent Marker', cursive;
+    font-size: 1.2rem;
+    font-weight: 400;
+    color: #1a1408;
+    line-height: 1;
+}
+
+.theme-field-notes #cs-skills .cs-skill-input,
+.theme-field-notes #cs-specialty-skills .cs-skill-input,
+.theme-field-notes .panel-skills input[type="number"],
+.theme-field-notes .cs-skill-input {
+    font-family: 'Permanent Marker', cursive;
+    font-weight: 400;
+    font-size: 1.2rem;
+    color: #1a1408;
+}
+
+/* ── Selects ─────────────────────────────────────────────────────────────── */
+.theme-field-notes select {
+    background: #f5f0e0;
+    border: 2px solid #1a1408;
+    color: #1a1408;
+    font-family: 'Permanent Marker', cursive;
+    font-size: 0.85rem;
+}
+
+.theme-field-notes select:focus {
+    outline: none;
+    border-color: #1a1408;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.22);
+}
+
+.theme-field-notes select option {
+    background: #faf7ee;
+    color: #1a1408;
+}
+
+/* Specialty selects in the skills grid — underline only */
+.theme-field-notes .cs-skill-specialty {
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid rgba(26, 20, 8, 0.4);
+    color: #1a1408;
+    font-family: 'Permanent Marker', cursive;
+    font-size: 0.8rem;
+}
+
+.theme-field-notes .cs-skill-specialty:focus {
+    outline: none;
+    box-shadow: none;
+    border-bottom-color: #1a1408;
+}
+
+/* Equipment search / category selects */
+.theme-field-notes .eq-search-input,
+.theme-field-notes .eq-cat-select {
+    border-color: rgba(26, 20, 8, 0.5);
+    background: rgba(255, 255, 255, 0.5);
+}
+
+.theme-field-notes .eq-search-input:focus,
+.theme-field-notes .eq-cat-select:focus {
+    border-color: #1a1408;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.theme-field-notes button,
+.theme-field-notes .adjust-button {
+    background: #1a1408;
+    color: #f5f0e0;
+    border: 2px solid #1a1408;
+    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    font-size: 1rem;
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.3);
+}
+
+.theme-field-notes button:hover,
+.theme-field-notes .adjust-button:hover {
+    background: #3a2e18;
+    border-color: #3a2e18;
+    box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.25);
+    transform: translate(2px, 2px);
+}
+
+.theme-field-notes button:active,
+.theme-field-notes .adjust-button:active {
+    box-shadow: none;
+    transform: translate(3px, 3px);
+}
+
+/* Small utility / icon buttons — transparent so they don't scream */
+.theme-field-notes .eq-add-btn,
+.theme-field-notes .eq-remove-btn,
+.theme-field-notes .eq-clear-btn {
+    background: transparent;
+    border: 1px solid rgba(26, 20, 8, 0.4);
+    color: #1a1408;
+    box-shadow: none;
+}
+
+.theme-field-notes .eq-add-btn:hover,
+.theme-field-notes .eq-remove-btn:hover,
+.theme-field-notes .eq-clear-btn:hover {
+    background: rgba(26, 20, 8, 0.08);
+    transform: none;
+    box-shadow: none;
+}
+
+.theme-field-notes .dr-handle-controls button {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    color: inherit;
+    transform: none;
+}
+
+.theme-field-notes .dr-handle-controls button:hover {
+    background: rgba(26, 20, 8, 0.1);
+    transform: none;
+}
+
+/* ── Action buttons (prepare / apply / reset) ────────────────────────────── */
+.theme-field-notes #prepare-bonus-button,
+.theme-field-notes #apply-bonus-button,
+.theme-field-notes #bio-profession-apply-row #apply-profession-button {
+    background: #1a1408;
+    border-color: #1a1408;
+    color: #f5f0e0;
+}
+
+/* Done state: white paper check — job complete */
+.theme-field-notes #prepare-bonus-button.prepare-bonus-done,
+.theme-field-notes #apply-bonus-button.apply-bonus-done,
+.theme-field-notes #bio-profession-apply-row #apply-profession-button.apply-profession-done {
+    background: #f5f0e0;
+    border-color: #1a1408;
+    color: #1a1408;
+}
+
+/* Reminder text — written in red marker, hard to miss */
+.theme-field-notes .bonus-prep-row #reminder-prepare-bonus,
+.theme-field-notes .bonus-apply-row #reminder-apply-bonus,
+.theme-field-notes #bio-profession-apply-row #reminder-apply-profession {
+    color: #b01828;
+    font-family: 'Permanent Marker', cursive;
+    font-size: 1.2rem;
+    font-weight: 400;
+    letter-spacing: 0.04em;
+    text-shadow: 1px 1px 0 rgba(176, 24, 40, 0.2);
+    animation: none;
+}
+
+.theme-field-notes .bonus-prep-row #reminder-prepare-bonus {
+    display: inline-block;
+    transform: rotate(-2deg);
+    transform-origin: left center;
+}
+
+/* ── Biography labels (Employer:, Nationality: etc) ─────────────────────── */
+.theme-field-notes #cs-biography-fieldset label {
+    font-family: 'Permanent Marker', cursive;
+    font-size: 1.2rem;
+    font-weight: 400;
+    color: #1a1408;
+}
+
+/* Bio hint text — Caveat biro style; key phrases in dark-red correction ink */
+.theme-field-notes #cs-biography-fieldset .description-text {
+    font-family: 'Caveat', cursive;
+    font-size: 1.2rem;
+    color: #1a3a7a;
+    transform: rotate(1.5deg);
+    transform-origin: left top;
+}
+
+.theme-field-notes #bio-gender-row {
+    margin-top: 28px;
+}
+
+.theme-field-notes #cs-biography-fieldset .description-text strong {
+    font-family: 'Caveat', cursive;
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #8b1a1a;
+}
+
+/* Bonds description — same biro treatment */
+.theme-field-notes #cs-bonds-fieldset .bonus-skills-description {
+    font-family: 'Caveat', cursive;
+    font-size: 1rem;
+    color: #1a3a7a;
+    transform: rotate(-1.2deg);
+    transform-origin: left top;
+}
+
+.theme-field-notes #cs-bonds-fieldset .bonus-skills-description strong {
+    font-family: 'Caveat', cursive;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #8b1a1a;
+}
+
+/* Motivations textarea — grows with content */
+.theme-field-notes #cs-motivations {
+    min-height: 60px;
+    height: auto;
+    overflow: hidden;
+    resize: none;
+}
+
+/* ── Skill labels ────────────────────────────────────────────────────────── */
+/* Must include the ID to beat #cs-skills .cs-skill-name { 0.9rem } in base CSS */
+.theme-field-notes #cs-skills .cs-skill-name,
+.theme-field-notes #cs-specialty-skills .cs-skill-name,
+.theme-field-notes .cs-skill-name {
+    font-family: 'Permanent Marker', cursive;
+    font-size: 1.2rem;
+    font-weight: 400;
+    color: #1a1408;
+}
+
+/* ── Bond text box ───────────────────────────────────────────────────────── */
+.theme-field-notes #bondText {
+    background-color: #faf7ee;
+    background-image: linear-gradient(rgba(80, 120, 200, 0.15) 1px, transparent 1px);
+    background-size: 100% 24px;
+    border: 2px solid #1a1408;
+    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.28);
+    color: #1a1408;
+    font-family: 'Permanent Marker', cursive;
+    font-size: 1.2rem;
+    font-weight: 400;
+    text-shadow: none;
+    animation: none;
+}
+
+/* Bond generated text: biro ballpoint — smaller than marker, dark-blue ink */
+.theme-field-notes #bond-text-content {
+    font-family: 'Caveat', cursive;
+    font-size: 1.4rem;
+    font-weight: 400;
+    color: #1a3a7a;
+    line-height: 1.6;
+}
+
+/* Pyramid canvas: not visible here */
+.theme-field-notes #bond-pyramid-canvas,
+.theme-field-notes #sos-bond-sigil,
+.theme-field-notes #sos-sigil {
+    display: none !important;
+}
+
+/* ── Bond entries ────────────────────────────────────────────────────────── */
+.theme-field-notes .bond-entry {
+    background-color: #faf7ee;
+    background-image: linear-gradient(rgba(80, 120, 200, 0.14) 1px, transparent 1px);
+    background-size: 100% 24px;
+    border: 2px solid #1a1408;
+    box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.22);
+    color: #1a1408;
+}
+
+.theme-field-notes .bond-entry input,
+.theme-field-notes .bond-entry textarea,
+.theme-field-notes .bond-entry-field {
+    font-family: 'Caveat', cursive !important;
+    font-size: 1.4rem !important;
+    font-weight: 400 !important;
+    color: #1a3a7a !important;
+}
+
+.theme-field-notes .bond-entry label {
+    font-family: 'Courier New', Courier, monospace;
+    color: #5a4a2a;
+    opacity: 1;
+}
+
+/* ── JSON output panel ───────────────────────────────────────────────────── */
+.theme-field-notes #cs-json {
+    background: #f5f0e0 !important;
+    color: #1a1408 !important;
+    border: 2px solid #1a1408 !important;
+    font-family: 'Courier New', Courier, monospace !important;
+}
+
+/* ── Advanced options ────────────────────────────────────────────────────── */
+.theme-field-notes #advanced-options-details summary {
+    color: #f5f0e0;
+    font-family: 'Courier New', Courier, monospace;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 0.78rem;
+}
+
+.theme-field-notes .advanced-options-body {
+    background: #faf7ee;
+    background-image: linear-gradient(rgba(80, 120, 200, 0.12) 1px, transparent 1px), linear-gradient(90deg, rgba(80, 120, 200, 0.12) 1px, transparent 1px);
+    background-size: 20px 20px;
+    border: 2px solid #1a1408;
+}
+
+.theme-field-notes .json-drop-zone {
+    border: 2px dashed #1a1408;
+    background: #ebe6d4;
+}
+
+.theme-field-notes .json-drop-zone:hover {
+    background: #e0dac8;
+}
+
+/* ── Save/share bar ──────────────────────────────────────────────────────── */
+.theme-field-notes .save-share-bar {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.theme-field-notes #theme-selector {
+    color: #1a1408;
+    font-family: 'Courier New', Courier, monospace;
+}
+
+.theme-field-notes .github-link-container a,
+.theme-field-notes .github-link-container svg {
+    color: #1a1408;
+    stroke: #1a1408;
+}
+
+/* ── Dice roller panel ───────────────────────────────────────────────────── */
+.theme-field-notes #dr-panel {
+    background: #1a1408;
+    border: 2px solid #f5f0e0;
+    color: #f5f0e0;
+    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.4);
+}
+
+.theme-field-notes #dr-handle {
+    background: #1a1408;
+    color: #f5f0e0;
+    font-family: 'Courier New', Courier, monospace;
+}
+
+.theme-field-notes .dr-die-btn {
+    background: #2e2810;
+    color: #f5f0e0;
+    border: 2px solid #f5f0e0;
+    font-family: 'Courier New', Courier, monospace;
+}
+
+.theme-field-notes .dr-die-btn-active,
+.theme-field-notes .dr-die-btn:hover {
+    background: #f5f0e0;
+    color: #1a1408;
+    transform: none;
+    box-shadow: none;
+}
+
+.theme-field-notes .dr-die-face,
+.theme-field-notes .dr-face-num {
+    color: #f5f0e0;
+}
+
+.theme-field-notes #dr-roll-btn {
+    background: #f5f0e0;
+    color: #1a1408;
+    border: 2px solid #f5f0e0;
+}
+
+.theme-field-notes #dr-roll-btn:hover {
+    background: #d8d4c4;
+    transform: none;
+    box-shadow: none;
+}
+
+.theme-field-notes #dr-manual-target {
+    background: #2e2810;
+    color: #f5f0e0;
+    border: 1px solid #6a6040;
+}
+
+/* ── Sanity checkboxes ───────────────────────────────────────────────────── */
+.theme-field-notes .sanity-adaptation-checkbox {
+    accent-color: #1a1408;
+}
+
+.theme-field-notes .sanity-adaptation-checkbox+span {
+    color: #3a2e18;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.8rem;
+}
+
+/* ── Custom scrollbar — kraft paper and ink ──────────────────────────────── */
+.theme-field-notes ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.theme-field-notes ::-webkit-scrollbar-track {
+    background: #c4ae88;
+}
+
+.theme-field-notes ::-webkit-scrollbar-thumb {
+    background: #1a1408;
+}
+
+.theme-field-notes ::-webkit-scrollbar-thumb:hover {
+    background: #3a2e18;
+}
+
+/* ── Text selection ──────────────────────────────────────────────────────── */
+.theme-field-notes ::selection {
+    background: rgba(80, 120, 200, 0.28);
+    color: #1a1408;
+}
+
+/* ── Hide LP-only elements (tracker bar, lp-sheet) ───────────────────────── */
+.theme-field-notes #lp-tracker-bar {
+    display: none !important;
+}
+
+.theme-field-notes #lp-sheet {
+    display: none !important;
+}
+
+/* ============================================================================   LIVE PLAY ELEMENTS — hidden by default, shown in Field Document theme   ============================================================================ */
+.lp-only {
+    display: none !important;
+}
+
+/* ============================================================================   FIELD DOCUMENT (LIVE PLAY) THEME — DD Form 315 aesthetic   ============================================================================ */
+.theme-field-doc {
+    --primary-color: #1a1408;
+    --bg-color: #cac6b8;
+    --text-color: #1a1408;
+    --input-bg: #f5f0e0;
+    --input-border: #1a1408;
+    background-color: #7a5c2e;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.25'/%3E%3C/svg%3E");
+    color: #1a1408;
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+/* ── Reveal live-play tracker bar ────────────────────────────────── */
+.theme-field-doc #lp-tracker-bar {
+    display: flex !important;
+}
+
+/* ── Hide ALL character sheet fieldsets and creation panels ──────── */
+.theme-field-doc #stats-buy-section,
+.theme-field-doc #stats-buy-section+.button-container,
+.theme-field-doc #character-sheet>fieldset,
+.theme-field-doc #cs-json,
+.theme-field-doc .advanced-options-hints,
+.theme-field-doc .page-title,
+.theme-field-doc .site-intro {
+    display: none !important;
+}
+
+/* ── Show the full LP sheet view ─────────────────────────────────── */
+.theme-field-doc #lp-sheet {
+    display: block !important;
+}
+
+/* ── Page title ──────────────────────────────────────────────────── */
+.theme-field-doc .page-title {
+    color: #1a1408;
+    font-family: 'Courier New', Courier, monospace;
+    font-weight: 900;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    text-shadow: none;
+    -webkit-text-fill-color: #1a1408;
+}
+
+.theme-field-doc .site-intro {
+    color: #3a3020;
+    font-size: 0.78rem;
+}
+
+.theme-field-doc .site-intro strong {
+    color: #1a1408;
+    -webkit-text-fill-color: #1a1408;
+}
+
+/* ── Advanced options ────────────────────────────────────────────── */
+.theme-field-doc #advanced-options-details summary {
+    color: #f5f0e0;
+    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-size: 1rem;
+}
+
+.theme-field-doc #advanced-options-details summary::before {
+    color: #008a2a;
+}
+
+.theme-field-doc .advanced-options-body {
+    background: #f5f0e0;
+    border: 1px solid #1a1408;
+}
+
+.theme-field-doc .json-drop-zone {
+    border: 2px dashed #1a1408;
+    background: #ebe6d4;
+}
+
+.theme-field-doc .json-drop-zone:hover {
+    background: #e0dac8;
+}
+
+/* ── Save/share bar ──────────────────────────────────────────────── */
+.theme-field-doc .save-share-bar {
+    background: transparent;
+    border: none;
+}
+
+.theme-field-doc #theme-selector {
+    color: #1a1408;
+}
+
+.theme-field-doc .github-link-container a,
+.theme-field-doc .github-link-container svg {
+    color: #1a1408;
+    stroke: #1a1408;
+}
+
+/* ── Save/share buttons in field-doc ────────────────────────────── */
+.theme-field-doc .section-buttons button {
+    background: #1a1408;
+    color: #f5f0e0;
+    border: 1px solid #1a1408;
+    border-radius: 0;
+    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.theme-field-doc .section-buttons button:hover {
+    background: #3a3020;
+}
+
+/* ── Dice roller panel ───────────────────────────────────────────── */
+.theme-field-doc #dr-panel {
+    background: #1a1408;
+    border: 2px solid #f5f0e0;
+    color: #f5f0e0;
+}
+
+.theme-field-doc #dr-handle {
+    background: #1a1408;
+    color: #f5f0e0;
+}
+
+.theme-field-doc .dr-die-btn {
+    background: #2e2810;
+    color: #f5f0e0;
+    border-color: #f5f0e0;
+}
+
+.theme-field-doc .dr-die-btn-active,
+.theme-field-doc .dr-die-btn:hover {
+    background: #f5f0e0;
+    color: #1a1408;
+}
+
+.theme-field-doc .dr-die-face,
+.theme-field-doc .dr-face-num {
+    color: #f5f0e0;
+}
+
+.theme-field-doc #dr-roll-btn {
+    background: #f5f0e0;
+    color: #1a1408;
+    border: 1px solid #f5f0e0;
+}
+
+.theme-field-doc #dr-manual-target {
+    background: #2e2810;
+    color: #f5f0e0;
+    border: 1px solid #6a6040;
+}
+
+/* ── Sigil / pyramid: hidden ─────────────────────────────────────── */
+.theme-field-doc #bond-pyramid-canvas,
+.theme-field-doc #sos-bond-sigil,
+.theme-field-doc #sos-sigil {
+    display: none !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────   LIVE PLAY STICKY TRACKER BAR   ────────────────────────────────────────────────────────────────── */
+#lp-tracker-bar {
+    display: none;
+    align-items: stretch;
+    background: #1a1408;
+    border-bottom: 2px solid #4a4030;
+    margin-bottom: 8px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+.lp-tracker-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 6px 10px;
+    border-right: 1px solid #4a4030;
+    flex: 1;
+    min-width: 0;
+}
+
+.lp-tracker-item:last-child {
+    border-right: none;
+}
+
+.lp-tracker-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    min-width: 0;
+}
+
+.lp-tracker-label {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.58rem;
+    font-weight: 700;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: #a89878;
+    line-height: 1;
+}
+
+.lp-tracker-values {
+    display: flex;
+    align-items: baseline;
+    gap: 2px;
+}
+
+.lp-tracker-current {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #f5f0e0;
+    line-height: 1;
+}
+
+.lp-tracker-sep {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 1rem;
+    color: #6a6040;
+    line-height: 1;
+}
+
+.lp-tracker-max {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 1rem;
+    font-weight: normal;
+    color: #8a8060;
+    line-height: 1;
+}
+
+.lp-tracker-status {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.48rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: transparent;
+    line-height: 1;
+    min-height: 0.65em;
+    transition: color 0.2s;
+}
+
+.lp-tracker-btn {
+    background: transparent !important;
+    color: #a89878 !important;
+    border: 1px solid #4a4030 !important;
+    font-family: 'Courier New', Courier, monospace !important;
+    font-size: 1.1rem !important;
+    font-weight: 700 !important;
+    width: 26px;
+    height: 26px;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    padding: 0 !important;
+    cursor: pointer;
+    flex-shrink: 0;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+    border-radius: 2px !important;
+    line-height: 1;
+    transition: background 0.1s, color 0.1s;
+}
+
+/* Style for the D% triangle button SVG */
+.lp-tracker-btn.lp-dice-quick svg {
+    width: 1.6em;
+    height: 1.6em;
+    display: inline-block;
+    vertical-align: middle;
+    margin-top: -2px;
+    margin-bottom: -2px;
+}
+
+.lp-tracker-btn:hover {
+    background: #4a4030 !important;
+    color: #f5f0e0 !important;
+}
+
+/* Critical / warning colour states */
+#lp-track-hp.lp-critical .lp-tracker-current,
+#lp-track-hp.lp-critical .lp-tracker-status {
+    color: #ff5555;
+}
+
+#lp-track-hp.lp-dying .lp-tracker-current,
+#lp-track-hp.lp-dying .lp-tracker-status {
+    color: #ff2222;
+    animation: lp-pulse 0.7s infinite;
+}
+
+#lp-track-san.lp-warning .lp-tracker-current,
+#lp-track-san.lp-warning .lp-tracker-status {
+    color: #f5c542;
+}
+
+#lp-track-san.lp-critical .lp-tracker-current,
+#lp-track-san.lp-critical .lp-tracker-status {
+    color: #ff5555;
+}
+
+@keyframes lp-pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.3;
+    }
+}
+
+.lp-track-bp .lp-tracker-inner {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 4px;
+}
+
+.lp-track-bp .lp-tracker-current {
+    font-size: 1.2rem;
+    color: #8a8060;
+}
+
+.lp-track-bp .lp-tracker-label {
+    color: #6a6040;
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+}
+
+.lp-track-dice {
+    flex: 0 0 auto;
+    min-width: 68px;
+    padding: 0 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+}
+
+.lp-dice-quick {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
+    max-width: 44px !important;
+    max-height: 44px !important;
+    font-size: 0 !important;
+    background: #008a2a !important;
+    border: none !important;
+    clip-path: polygon(50% 13.4%, 0% 100%, 100% 100%);
+    -webkit-clip-path: polygon(50% 13.4%, 0% 100%, 100% 100%);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+    display: block;
+    margin: 0 auto;
+    transform: translateY(-5px);
+    color: transparent !important;
+    outline: none !important;
+    transition: background 0.15s, box-shadow 0.15s;
+}
+
+.lp-dice-result {
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #a89878;
+    text-align: center;
+    min-height: 1em;
+}
+
+.lp-dice-result:empty {
+    display: none;
+}
+
+/* ──────────────────────────────────────────────────────────────────   LP SHEET — DD FORM 315 STYLED LIVE SHEET   ────────────────────────────────────────────────────────────────── */
+#lp-sheet {
+    display: none;
+    background-color: #f9f7f0;
+    border: 1px solid #000;
+    margin-bottom: 10px;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 10pt;
+    color: #000;
+    line-height: 1.3;
+}
+
+/* Title bar */
+.lp-dg-title {
+    background: #000;
+    color: #f5f0e0;
+    text-align: center;
+    font-size: 18pt;
+    font-weight: 900;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    padding: 3px 0 5px;
+    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+}
+
+/* Section band (horizontal strip with rot-label) */
+.lp-band {
+    display: flex;
+    border-top: 1px solid #000;
+}
+
+/* Rotating vertical section label */
+.lp-rot-label {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    font-size: 8pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    background: #000;
+    color: #fff;
+    padding: 5px 2px;
+    text-align: center;
+    width: 14px;
+    min-width: 14px;
+    max-width: 14px;
+    border-right: 1px solid #000;
+}
+
+/* Section header (black bar) */
+.lp-sec-hd {
+    background: #000;
+    color: #fff;
+    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    font-weight: 400;
+    font-size: 11pt;
+    padding: 2px 4px;
+    letter-spacing: 1px;
+    /* No border — row separators are handled by .lp-sp-row { border-bottom }  */
+    /* so the section header itself adds zero extra pixels above or below        */
+}
+
+/* Generic bordered table cell */
+.lp-tc {
+    border: 1px solid #000;
+    padding: 2px 4px;
+    vertical-align: middle;
+}
+
+/* Force all LP table body rows to the same height so left and right   columns stay grid-aligned across the full width of the sheet */
+#lp-sheet .lp-full-table tbody tr {
+    height: 28px;
+}
+
+/* Last row of any LP table: drop border-bottom so it doesn't stack   with .lp-sp-row { border-bottom } and create a 2px line on the left   while the right column (textarea) only sees the 1px row separator */
+#lp-sheet .lp-full-table tr:last-child .lp-tc {
+    border-bottom: none;
+}
+
+/* Sub-header row (column labels inside <thead>) — must look clearly   lighter than the black .lp-sec-hd bar above it */
+#lp-sheet .lp-full-table thead th.lp-tc {
+    background: #e0e0e0;
+    color: #000;
+    font-weight: normal;
+    font-size: 8pt;
+    padding: 1px 4px;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+}
+
+/* Full-width collapsed-border table */
+.lp-full-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+/* Personal-data flat grid */
+.lp-cell {
+    padding: 1px 3px 3px;
+    vertical-align: top;
+}
+
+.lp-field-label {
+    font-size: 8pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    opacity: 0.65;
+    letter-spacing: 0.3px;
+    margin-bottom: 1px;
+}
+
+/* ── LP proxy inputs (typewritten form fields) ───────────────────── */
+.lp-proxy {
+    background: transparent;
+    border: none;
+    color: #000;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 10pt;
+    font-weight: normal;
+    width: 100%;
+    padding: 0 2px 1px;
+    display: block;
+    box-sizing: border-box;
+}
+
+.lp-proxy:focus {
+    background: #fffce8;
+    border-bottom-color: #000;
+    outline: none;
+}
+
+.lp-proxy[readonly] {
+    color: #444;
+    font-weight: normal;
+    border-bottom-color: #bbb;
+    cursor: default;
+    pointer-events: none;
+}
+
+/* Textareas */
+.lp-ta {
+    background-color: #f5f4ef;
+    background-image: linear-gradient(rgba(60, 100, 220, 0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(60, 100, 220, 0.07) 1px, transparent 1px);
+    background-size: 22px 22px;
+    border: none;
+    color: #000;
+    font-family: 'Permanent Marker', cursive;
+    font-size: 12pt;
+    width: 100%;
+    padding: 2px 3px;
+    resize: vertical;
+    min-height: 35px;
+    display: block;
+    box-sizing: border-box;
+}
+
+.lp-ta:focus {
+    background-color: #fffce8;
+    background-image: none;
+    outline: none;
+}
+
+/* Handwritten marker-pen font for bio/personal-data fields */
+.lp-handwritten,
+#lp-sheet .lp-handwritten {
+    font-family: 'Permanent Marker', cursive !important;
+    font-weight: normal !important;
+    font-size: 12pt !important;
+}
+
+/* Editable stat SCORE inputs */
+.lp-stat-inp {
+    width: 100%;
+    text-align: center;
+    font-family: 'Permanent Marker', cursive;
+    font-size: 12pt;
+    font-weight: normal;
+    background: transparent;
+    border: none;
+    color: #000;
+    padding: 0;
+    box-sizing: border-box;
+    cursor: text;
+}
+
+/* Editable distinguishing features inputs */
+.lp-feat-inp {
+    width: 100%;
+    font-family: 'Permanent Marker', cursive;
+    font-size: 12pt;
+    font-style: normal;
+    background: transparent;
+    border: none;
+    color: #000;
+    padding: 0 2px;
+    box-sizing: border-box;
+    cursor: text;
+}
+
+.lp-stat-inp:focus,
+.lp-feat-inp:focus {
+    background: #fffce8;
+    outline: 1px solid #000;
+}
+
+/* Name-size large text */
+.lp-name-input {
+    font-size: 10pt;
+    padding-bottom: 2px;
+}
+
+/* Tiny short fields */
+.lp-tiny {
+    width: 4em !important;
+}
+
+/* ── Stats + Psychological side-by-side row ──────────────────────── */
+.lp-stats-psych-row>.lp-rot-label {
+    border-right: 1px solid #000;
+}
+
+/* ── Flex-row layout: each section pair is one .lp-sp-row ───────── */
+/* border-bottom on the ROW = exactly one separator line per section */
+/* Both columns in a row share the same top edge → headers aligned   */
+.lp-sp-grid {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.lp-sp-row {
+    display: flex;
+    align-items: stretch;
+    border-bottom: 1px solid #000;
+}
+
+.lp-sp-last-row {
+    flex: 1;
+    border-bottom: none;
+}
+
+.lp-sp-col-l {
+    flex: 0 0 44%;
+    min-width: 0;
+    border-right: 1px solid #000;
+    display: flex;
+    flex-direction: column;
+}
+
+.lp-sp-col-r {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Keep old names as no-ops so stray references don't error */
+/* .lp-sp-cell, .lp-sp-fill, .lp-stats-col, .lp-psych-col — retired */
+/* Section block within a column */
+.lp-section-block {
+    border-top: 1px solid #000;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.lp-section-block .lp-ta {
+    flex: 1;
+    min-height: 50px;
+}
+
+/* ── Derived attribute row (current/max with +/− ) ───────────────── */
+.lp-attr-controls {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    justify-content: center;
+}
+
+/* Small inline + / − buttons for derived attrs */
+.lp-adj-btn {
+    background: #000 !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 0 !important;
+    font-family: Arial, Helvetica, sans-serif !important;
+    font-size: 13pt !important;
+    font-weight: bold !important;
+    width: 18px;
+    height: 18px;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    padding: 0 !important;
+    cursor: pointer;
+    flex-shrink: 0;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+    line-height: 1;
+    transition: background 0.1s;
+}
+
+.lp-adj-btn:hover {
+    background: #444 !important;
+}
+
+/* ── Bonds compact table ─────────────────────────────────────────── */
+.lp-bond-name-input {
+    background: transparent;
+    border: none;
+    font-family: 'Permanent Marker', cursive;
+    font-size: 12pt;
+    font-weight: normal;
+    width: 100%;
+    padding: 0 2px;
+    box-sizing: border-box;
+    color: #000;
+}
+
+.lp-bond-name-input:focus {
+    background: #fffce8;
+    outline: none;
+    border-bottom-color: #000;
+}
+
+.lp-bond-score-input {
+    width: 36px;
+    text-align: center;
+    font-size: 12pt;
+    font-weight: normal;
+    font-family: 'Permanent Marker', cursive;
+    border: none;
+    background: transparent;
+    color: #000;
+    padding: 0 2px;
+    box-sizing: border-box;
+}
+
+.lp-bond-score-input:focus {
+    background: #fffce8;
+    outline: none;
+}
+
+.lp-bond-dmg-btn {
+    background: #900 !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 0 !important;
+    font-family: Arial, Helvetica, sans-serif !important;
+    font-size: 9pt !important;
+    font-weight: 700 !important;
+    padding: 1px 4px !important;
+    cursor: pointer;
+    white-space: nowrap;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+}
+
+.lp-bond-dmg-btn:hover {
+    background: #c00 !important;
+}
+
+/* ── Weapon table editable row inputs ────────────────────────────── */
+.lp-weapon-del-btn {
+    background: #555 !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 0 !important;
+    font-size: 11pt !important;
+    font-weight: bold !important;
+    width: 18px;
+    height: 18px;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    padding: 0 !important;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.lp-weapon-del-btn:hover {
+    background: #900 !important;
+}
+
+/* Weapon table inputs: no underline, no extra decoration */
+#lp-weapons-tbody input[type="text"] {
+    text-decoration: none !important;
+    -webkit-text-decoration: none !important;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+#lp-weapons-tbody input[type="text"]:not(.lp-weapon-name-inp) {
+    text-align: center;
+}
+
+/* ── Skills 3-col grid ───────────────────────────────────────────── */
+.lp-skills-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    align-items: start;
+    /* columns sit at top — no phantom stretching */
+    gap: 2px;
+    padding: 2px;
+}
+
+.lp-skill-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    /* lock column widths for uniform cells */
+    font-size: 13pt;
+}
+
+/* ── Skill cell classes (replaces per-row inline styles) ─────────── */
+.lp-sk-cb-td {
+    width: 24px;
+    min-width: 24px;
+    text-align: center;
+    padding: 2px;
+}
+
+.lp-sk-name-td {
+    /* fills remaining width inside the fixed-layout table */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 3px 6px;
+    font-size: 13pt;
+    font-family: 'Permanent Marker', cursive;
+}
+
+.lp-sk-val-td {
+    width: 58px;
+    min-width: 58px;
+    text-align: center;
+    padding: 2px 3px;
+}
+
+/* Extra (LP-only) skill name editable input */
+.lp-skill-name-inp {
+    width: 100%;
+    background: transparent;
+    border: none;
+    font-family: 'Permanent Marker', cursive;
+    font-size: 13pt;
+    padding: 0;
+    box-sizing: border-box;
+    color: inherit;
+}
+
+.lp-skill-table td,
+.lp-skill-table th {
+    border: 1px solid #000;
+    padding: 4px 3px;
+}
+
+/* Enforce uniform row height — blank pad rows match filled rows */
+.lp-skill-table tbody td {
+    height: 34px;
+}
+
+.lp-skill-cb {
+    width: 14px;
+    height: 14px;
+    display: block;
+    margin: 0 auto;
+    cursor: pointer;
+    accent-color: #000;
+}
+
+.lp-skill-cb.lp-skill-cb-zero,
+.lp-skill-cb:disabled {
+    opacity: 0.25;
+    cursor: not-allowed;
+}
+
+.lp-skill-val {
+    background: transparent;
+    border: none;
+    width: 100%;
+    min-width: 36px;
+    text-align: center;
+    font-size: 13pt !important;
+    font-family: 'Permanent Marker', cursive !important;
+    color: #000;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-text-decoration: none;
+    text-decoration: none;
+}
+
+.lp-skill-val:focus {
+    background: #fffce8;
+    outline: none;
+}
+
+.lp-skills-footer {
+    border-top: 1px solid #000;
+    padding: 2px 6px;
+    font-size: 8pt;
+    font-style: italic;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+/* ── General utility ─────────────────────────────────────────────── */
+.lp-footnote {
+    border-top: 1px solid #000;
+    padding: 2px 5px;
+    font-size: 6.5pt;
+    font-style: italic;
+}
+
+.lp-btn-sm {
+    background: #000 !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 0 !important;
+    font-family: Arial, Helvetica, sans-serif !important;
+    font-size: 9pt !important;
+    font-weight: bold !important;
+    padding: 2px 6px !important;
+    cursor: pointer;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+    white-space: nowrap;
+}
+
+.lp-btn-sm:hover {
+    background: #333 !important;
+}
+
+/* ── Advancement button ─────────────────────────────────────────────────── */
+.lp-btn-advance {
+    background: #7b5e00 !important;
+}
+
+.lp-btn-advance:hover {
+    background: #5a4500 !important;
+}
+
+/* ── Advancement modal overlay ──────────────────────────────────────────── */
+#lp-adv-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    z-index: 9000;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    box-sizing: border-box;
+}
+
+.lp-adv-dialog {
+    background: #f5f0e8;
+    border: 2px solid #000;
+    max-width: 560px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 10pt;
+    color: #000;
+    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.45);
+}
+
+.lp-adv-title {
+    background: #000;
+    color: #fff;
+    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    font-size: 14pt;
+    font-weight: 400;
+    letter-spacing: 2px;
+    padding: 6px 10px;
+    text-align: center;
+}
+
+.lp-adv-rule {
+    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    font-size: 10pt;
+    font-style: normal;
+    font-weight: 400;
+    letter-spacing: 0.5px;
+    color: #444;
+    margin: 4px 10px 2px;
+    text-align: center;
+}
+
+.lp-adv-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9.5pt;
+    margin: 4px 0 0;
+}
+
+.lp-adv-table th {
+    background: #d6cfc0;
+    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    font-size: 10pt;
+    font-weight: 400;
+    letter-spacing: 1px;
+    text-align: center;
+    padding: 3px 6px;
+    border: 1px solid #888;
+}
+
+.lp-adv-table td {
+    padding: 3px 6px;
+    border: 1px solid #bbb;
+    text-align: center;
+}
+
+.lp-adv-table td:first-child {
+    text-align: left;
+    font-family: 'Permanent Marker', cursive;
+    font-size: 9pt;
+}
+
+.lp-adv-improved {
+    background: #e8f4e8;
+}
+
+.lp-adv-unchanged {
+    background: #f0f0f0;
+    color: #666;
+}
+
+.lp-adv-summary {
+    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    font-size: 11pt;
+    font-weight: 400;
+    font-style: normal;
+    text-align: center;
+    padding: 6px 10px 4px;
+    border-top: 1px solid #ccc;
+    letter-spacing: 1px;
+}
+
+.lp-adv-footer {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    padding: 6px 10px 10px;
+    border-top: 1px solid #bbb;
+}
+
+.lp-bond-row {
+    position: relative;
+}
+
+.lp-bond-row[data-desc]:not([data-desc=""]):hover::after {
+    content: attr(data-desc);
+    position: absolute;
+    z-index: 200;
+    top: 100%;
+    left: 0;
+    background: #111;
+    color: #fff;
+    padding: 6px 10px;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 9pt;
+    font-style: normal;
+    font-weight: normal;
+    max-width: 340px;
+    min-width: 140px;
+    white-space: normal;
+    word-wrap: break-word;
+    border: 1px solid #555;
+    pointer-events: none;
+    line-height: 1.5;
+}
+
+.lp-san-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 4px;
+    font-size: 8pt;
+}
+
+/* ── LP sheet: override global input rules that hide/pad inputs ───── */
+/* Global: input[type="checkbox"]{ display:none } (specificity 0,1,1)  */
+/* Global: input[type="text"]{ padding:4px 12px } (specificity 0,1,1)  */
+/* These scoped rules use specificity (1,0,1) to win.                  */
+#lp-sheet input[type="checkbox"] {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    margin: 0 1px;
+    padding: 0;
+    cursor: pointer;
+    vertical-align: middle;
+}
+
+#lp-sheet input[type="text"],
+#lp-sheet input[type="number"] {
+    padding: 0 2px;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 10pt;
+}
+
+/* Editable (non-readonly) LP inputs use marker-pen font as visual cue */
+#lp-sheet input[type="text"]:not([readonly]),
+#lp-sheet input[type="number"]:not([readonly]),
+#lp-sheet textarea {
+    font-family: 'Permanent Marker', cursive !important;
+    font-size: 12pt !important;
+    text-decoration: none !important;
+}
+
+/* ── Session skill checkboxes (old css-skills path, no longer used) ─ */
+.lp-skill-check {
+    display: none;
+}
+
+.lp-bond-damage-btn {
+    display: none;
+}
+
+/* ============================================================================
+   MOBILE THEME — Field Notes aesthetic, touch-optimised single-column layout
+   Auto-applied on page load when screen width ≤ 768px (user can switch away).
+   ============================================================================ */
+
+.theme-mobile {
+    --primary-color: #1a1408;
+    --bg-color: #faf7ee;
+    --text-color: #1a1408;
+    --input-bg: transparent;
+    --input-border: rgba(26, 20, 8, 0.5);
+    --spacing-xs: 6px;
+    --spacing-sm: 10px;
+    --spacing-md: 14px;
+    --spacing-lg: 20px;
+    --spacing-xl: 28px;
+    --spacing-2xl: 36px;
+    --radius-sm: 0px;
+    --radius-md: 0px;
+    background-color: #faf7ee;
+    /* Ruled-paper lines */
+    background-image: linear-gradient(rgba(80, 120, 200, 0.12) 1px, transparent 1px);
+    background-size: 100% 32px;
+    color: #1a1408;
+    font-family: 'Permanent Marker', cursive;
+    font-weight: 400;
+    font-size: 15px;
+}
+
+/* Hard right-angles like field-notes */
+.theme-mobile *,
+.theme-mobile *::before,
+.theme-mobile *::after {
+    border-radius: 0 !important;
+    font-weight: 400;
+}
+
+/* ── Page title ─────────────────────────────────────────────────────── */
+.theme-mobile .page-title {
+    color: #1a1408;
+    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    font-size: 2.2rem;
+    font-weight: 400;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-shadow: none;
+    -webkit-text-fill-color: #1a1408;
+    border-bottom: 3px solid #1a1408;
+    text-align: center;
+    width: 100%;
+    margin-bottom: var(--spacing-md);
+    padding-bottom: 8px;
+}
+
+.theme-mobile .blinking-cursor {
+    display: none;
+}
+
+.theme-mobile .site-intro {
+    color: #1a1408;
+    font-family: 'Permanent Marker', cursive;
+    font-size: 0.75rem;
+    text-align: center;
+    padding: 0;
+    margin-bottom: var(--spacing-md);
+    opacity: 0.75;
+}
+
+.theme-mobile .site-intro strong {
+    color: #1a1408;
+    -webkit-text-fill-color: #1a1408;
+}
+
+/* ── STATISTICS section ─────────────────────────────────────────────── */
+.theme-mobile #stats-buy-section {
+    background-color: #faf7ee;
+    background-image:
+        linear-gradient(rgba(80, 120, 200, 0.12) 1px, transparent 1px);
+    background-size: 100% 32px;
+    border: 2px solid #1a1408;
+    padding: 16px 12px 12px;
+    width: 100%;
+    box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.25);
+}
+
+.theme-mobile #stats-buy-section+.button-container {
+    --primary-color: #1a1408;
+}
+
+/* Stat cards: 2-column on mobile, tight and minimal */
+.theme-mobile #stats {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 4px;
+}
+
+.theme-mobile #stats .stat-container {
+    background-color: #f0ecdf;
+    border: 1px solid rgba(26, 20, 8, 0.35);
+    padding: 4px 6px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 4px;
+}
+
+.theme-mobile #stats .stat-container .stat-label {
+    font-family: 'Bebas Neue', 'Barlow Condensed', sans-serif;
+    font-size: 0.95rem;
+    color: #1a1408;
+    text-align: left;
+    min-width: unset;
+}
+
+.theme-mobile #stats .stat-container .stat-value {
+    font-family: 'Permanent Marker', cursive;
+    font-size: 1.1rem;
+    color: #1a1408;
+    min-width: unset;
+    text-align: center;
+}
+
+.theme-mobile #stats .stat-container .x5-value {
+    font-size: 0.7rem;
+    color: rgba(26, 20, 8, 0.55);
+    text-align: right;
+}
+
+.theme-mobile #stats .stat-container .descriptor {
+    display: none;
+}
+
+/* Adjust/increment buttons: touch-friendly but compact */
+.theme-mobile .adjust-button,
+.theme-mobile .stat-dec-btn,
+.theme-mobile .stat-inc-btn {
+    min-width: 36px;
+    min-height: 36px;
+    font-size: 1rem;
+    padding: 2px;
+}
+
+/* ── Fieldsets ──────────────────────────────────────────────────────── */
+.theme-mobile #cs-biography-fieldset,
+.theme-mobile .panel-skills,
+.theme-mobile .panel-bonus-skills,
+.theme-mobile #cs-bonds-fieldset,
+.theme-mobile #eq-picker-fieldset {
+    background-color: #faf7ee;
+    background-image: linear-gradient(rgba(80, 120, 200, 0.12) 1px, transparent 1px);
+    background-size: 100% 32px;
+    border: 2px solid #1a1408;
+    padding: 16px 12px 12px;
+    box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.25);
+    margin-bottom: var(--spacing-md);
+}
+
+.theme-mobile #cs-biography-fieldset>legend,
+.theme-mobile .panel-skills>legend,
+.theme-mobile .panel-bonus-skills>legend,
+.theme-mobile #cs-bonds-fieldset>legend,
+.theme-mobile #eq-picker-fieldset>legend {
+    font-family: 'Bebas Neue', 'Barlow Condensed', sans-serif;
+    font-size: 1.1rem;
+    letter-spacing: 0.08em;
+    background: #1a1408;
+    color: #faf7ee;
+    padding: 2px 10px;
+}
+
+/* ── STATISTICS heading ─────────────────────────────────────────────── */
+.theme-mobile .stats-section h2 {
+    font-family: 'Bebas Neue', 'Barlow Condensed', sans-serif;
+    font-size: 1.2rem;
+    font-weight: 400;
+    color: #1a1408;
+    letter-spacing: 0.08em;
+    text-align: center;
+    -webkit-text-fill-color: #1a1408;
+}
+
+/* ── Inputs ─────────────────────────────────────────────────────────── */
+.theme-mobile input[type="text"],
+.theme-mobile input[type="number"],
+.theme-mobile textarea {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid rgba(26, 20, 8, 0.5);
+    color: #1a1408;
+    font-family: 'Permanent Marker', cursive;
+    font-size: 1rem;
+    box-shadow: none;
+    padding: 4px 2px;
+    min-height: 40px;
+    width: 100%;
+}
+
+.theme-mobile input[type="text"]:focus,
+.theme-mobile input[type="number"]:focus,
+.theme-mobile textarea:focus {
+    outline: none;
+    border-bottom-color: #1a1408;
+    background: rgba(80, 120, 200, 0.06);
+}
+
+/* ── Skills: single column on mobile ───────────────────────────────── */
+.theme-mobile #cs-skills {
+    grid-template-columns: 1fr !important;
+    gap: 2px 0;
+}
+
+/* Override the inline gridColumn/gridRow set by JS — force every pair into column 1 */
+.theme-mobile #cs-skills .cs-skill-pair {
+    grid-column: 1 !important;
+    grid-row: auto !important;
+}
+
+.theme-mobile .cs-skill-pair {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border-bottom: 1px solid rgba(26, 20, 8, 0.12);
+    padding: 3px 0;
+}
+
+.theme-mobile .cs-skill-value-wrap {
+    background: transparent;
+    border: 1.5px solid rgba(26, 20, 8, 0.45);
+    min-width: 52px;
+}
+
+.theme-mobile .cs-skill-pct {
+    color: rgba(26, 20, 8, 0.55);
+    font-size: 0.7rem;
+}
+
+.theme-mobile #cs-skills .cs-skill-input,
+.theme-mobile #cs-specialty-skills .cs-skill-input,
+.theme-mobile .cs-skill-input {
+    font-family: 'Permanent Marker', cursive;
+    color: #1a1408;
+    background: transparent;
+    border: none;
+    font-size: 1rem;
+    text-align: center;
+    width: 3ch;
+}
+
+.theme-mobile #cs-skills .cs-skill-name,
+.theme-mobile #cs-specialty-skills .cs-skill-name,
+.theme-mobile .cs-skill-name {
+    font-family: 'Permanent Marker', cursive;
+    font-size: 0.85rem;
+    color: #1a1408;
+    letter-spacing: 0.02em;
+}
+
+/* ── Specialty skills: single column on mobile ──────────────────────── */
+.theme-mobile #cs-specialty-skills {
+    grid-template-columns: 1fr;
+    gap: var(--spacing-xs);
+}
+
+.theme-mobile .specialty-skill-row {
+    grid-template-columns: 1fr auto;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.theme-mobile .specialty-controls {
+    flex-wrap: wrap;
+    min-width: 0;
+}
+
+.theme-mobile .specialty-skill-name {
+    white-space: normal;
+    min-width: 0;
+}
+
+/* ── Select dropdowns ───────────────────────────────────────────────── */
+.theme-mobile select {
+    background: #f0ecdf;
+    color: #1a1408;
+    border: 1.5px solid rgba(26, 20, 8, 0.5);
+    font-family: 'Permanent Marker', cursive;
+    font-size: 0.9rem;
+    padding: 6px 8px;
+    min-height: 40px;
+}
+
+.theme-mobile select option {
+    background: #faf7ee;
+    color: #1a1408;
+}
+
+/* ── Buttons: full-width, large touch targets ───────────────────────── */
+.theme-mobile button,
+.theme-mobile .adjust-button {
+    background: #1a1408;
+    color: #faf7ee;
+    border: 2px solid #1a1408;
+    font-family: 'Bebas Neue', 'Barlow Condensed', sans-serif;
+    font-size: 1rem;
+    letter-spacing: 0.06em;
+    padding: 10px 14px;
+    min-height: 44px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.theme-mobile button:hover,
+.theme-mobile .adjust-button:hover {
+    background: #faf7ee;
+    color: #1a1408;
+}
+
+.theme-mobile button:active,
+.theme-mobile .adjust-button:active {
+    opacity: 0.75;
+}
+
+.theme-mobile .button-container {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    margin-top: var(--spacing-lg);
+    margin-bottom: var(--spacing-lg);
+}
+
+.theme-mobile .button-container button {
+    max-width: 100%;
+    width: 100%;
+}
+
+/* ── Bonds: single-column stacked layout ───────────────────────────── */
+.theme-mobile .bonds-layout {
+    grid-template-columns: 1fr;
+}
+
+.theme-mobile .bonds-right {
+    border: 1.5px solid rgba(26, 20, 8, 0.4);
+    padding: var(--spacing-sm);
+    min-height: unset;
+}
+
+/* ── Bonus skill dropdowns: single column ───────────────────────────── */
+.theme-mobile #bonus-dropdowns {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    grid-auto-flow: row;
+    justify-items: stretch;
+    text-align: left;
+}
+
+.theme-mobile #bonus-dropdowns label {
+    align-items: flex-start !important;
+}
+
+/* ── Equipment panels: single column ───────────────────────────────── */
+.theme-mobile .eq-panels {
+    grid-template-columns: 1fr;
+}
+
+/* Allow text to wrap — base rules use white-space:nowrap which overflows */
+.theme-mobile .eq-item-name,
+.theme-mobile .eq-item-meta,
+.theme-mobile .eq-card-name,
+.theme-mobile .eq-card-stats {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+}
+
+/* Loadout cards: full-width stack on mobile */
+.theme-mobile .eq-loadout-card {
+    flex: 1 1 100%;
+    min-width: 0;
+}
+
+/* Scrollable catalog: taller on mobile so less scrolling needed */
+.theme-mobile .eq-scrolllist {
+    max-height: 50vh;
+}
+
+/* Search + filter row: stack vertically */
+.theme-mobile .eq-search-row {
+    flex-direction: column;
+    gap: 6px;
+}
+
+.theme-mobile .eq-search-input,
+.theme-mobile .eq-cat-select {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* ── Bond entries ──────────────────────────────────────────────────── */
+.theme-mobile .bond-entry {
+    border-bottom: 1.5px solid rgba(26, 20, 8, 0.3);
+    padding: var(--spacing-sm) 0;
+    width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+/* Override inline flex rows so they wrap on narrow screens */
+.theme-mobile .bond-entry>div[style] {
+    flex-wrap: wrap !important;
+}
+
+/* Name row: input fills width, remove button shrinks */
+.theme-mobile .bond-entry>div:first-child {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 6px;
+    align-items: flex-start;
+}
+
+.theme-mobile .bond-entry>div:first-child .bond-entry-field {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.theme-mobile .bond-entry>div:first-child .bond-remove-button {
+    flex: 0 0 auto;
+    font-size: 0.75rem;
+    padding: 6px 8px;
+    min-height: 36px;
+}
+
+/* Description textarea: auto-height, fills width */
+.theme-mobile .bond-entry textarea.bond-entry-field {
+    height: auto !important;
+    min-height: 60px;
+    field-sizing: content;
+    width: 100% !important;
+    resize: none;
+    overflow-y: hidden;
+    box-sizing: border-box;
+}
+
+/* Relationship + score row: stack vertically */
+.theme-mobile .bond-entry>div:last-child {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 6px;
+}
+
+.theme-mobile .bond-entry>div:last-child>div {
+    flex: 1 1 100% !important;
+    width: 100%;
+}
+
+.theme-mobile .bond-entry input,
+.theme-mobile .bond-entry textarea,
+.theme-mobile .bond-entry-field {
+    font-family: 'Permanent Marker', cursive;
+    color: #1a1408;
+    font-size: 1rem;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* ── Theme selector ─────────────────────────────────────────────────── */
+.theme-mobile #theme-selector {
+    border-color: #1a1408;
+    color: #1a1408;
+}
+
+/* ── Save/share bar ─────────────────────────────────────────────────── */
+.theme-mobile .save-share-bar {
+    background: rgba(26, 20, 8, 0.06);
+    border: 1.5px solid rgba(26, 20, 8, 0.4);
+}
+
+/* ── Footer links ───────────────────────────────────────────────────── */
+.theme-mobile .github-link-container a,
+.theme-mobile .github-link-container svg {
+    color: #1a1408;
+    stroke: #1a1408;
+}
+
+/* ── JSON / Advanced options: keep visible but collapsed ───────────── */
+.theme-mobile #cs-json {
+    background: rgba(26, 20, 8, 0.04);
+    border: 1.5px solid rgba(26, 20, 8, 0.3);
+}
+
+/* ── Hide LP-only elements ──────────────────────────────────────────── */
+.theme-mobile #lp-tracker-bar,
+.theme-mobile #lp-sheet {
+    display: none !important;
+}
+
+/* ── Hide canvas-heavy decoration ───────────────────────────────────── */
+.theme-mobile #bond-pyramid-canvas,
+.theme-mobile #sos-bond-sigil,
+.theme-mobile #sos-sigil {
+    display: none !important;
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────────────── */
+.theme-mobile ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.theme-mobile ::-webkit-scrollbar-track {
+    background: #ece8d9;
+}
+
+.theme-mobile ::-webkit-scrollbar-thumb {
+    background: rgba(26, 20, 8, 0.35);
+}
+
+/* ── Text selection ─────────────────────────────────────────────────── */
+.theme-mobile ::selection {
+    background: rgba(80, 120, 200, 0.28);
+    color: #1a1408;
+}
+
+/* ── Profession details expand / description ────────────────────────── */
+.theme-mobile .profession-details {
+    border-color: rgba(26, 20, 8, 0.22);
+    background: transparent;
+    border-radius: 6px;
+}
+
+.theme-mobile .profession-details-summary {
+    background: rgba(26, 20, 8, 0.06);
+    justify-content: center;
+    padding: 10px 12px;
+}
+
+/* Completely hide the name and bonds pills */
+.theme-mobile .prof-name-pill,
+.theme-mobile .prof-bonds-pill {
+    display: none !important;
+}
+
+/* Hide the original hint text; inject replacement via ::before */
+.theme-mobile .prof-expand-hint {
+    position: static !important;
+    transform: none !important;
+    font-size: 0 !important;
+    color: transparent !important;
+    letter-spacing: 0 !important;
+    white-space: normal;
+    pointer-events: none;
+}
+
+.theme-mobile .prof-expand-hint::before {
+    content: 'CLICK FOR FULL DESCRIPTION';
+    display: block;
+    text-align: center;
+    font-size: 0.82rem;
+    color: rgba(26, 20, 8, 0.75);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+}
+
+.theme-mobile .profession-details[open] .prof-expand-hint {
+    display: none !important;
+}
+
+/* Full description text — readable on the light Field Notes background */
+.theme-mobile .profession-details-text {
+    background: rgba(26, 20, 8, 0.04);
+    border-top-color: rgba(26, 20, 8, 0.12);
+    color: #1a1408;
+    font-size: 0.82rem;
+    padding: 10px 12px;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-x: hidden;
+}
+
+/* ── LP tracker: SAN Check button ──────────────────────────────────── */
+.lp-track-san-check {
+    flex: 0 0 auto;
+    padding: 4px 10px;
+}
+
+.lp-san-check-btn {
+    width: auto !important;
+    height: auto !important;
+    min-height: 38px !important;
+    padding: 4px 16px !important;
+    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif !important;
+    font-size: 1.15rem !important;
+    line-height: 1 !important;
+    letter-spacing: 0.12em !important;
+    text-transform: uppercase !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+    background: rgba(0, 100, 30, 0.18) !important;
+    border-color: #3a7a3a !important;
+    color: #8acf8a !important;
+}
+
+.lp-san-check-btn:hover {
+    background: #2a6a2a !important;
+    color: #c8f0c8 !important;
+    border-color: #6acf6a !important;
+}
+
+/* ── LP theme: clickable x5 stat values ─────────────────────────────── */
+.theme-field-doc #stats .x5-value,
+.theme-field-doc #lp-sheet span[id^="lp-stat-"][id$="-x5"] {
+    cursor: pointer;
+    border-bottom: 1px dashed rgba(180, 160, 100, 0.4);
+    transition: color 0.1s, border-bottom-color 0.1s;
+}
+
+.theme-field-doc #stats .x5-value:hover,
+.theme-field-doc #lp-sheet span[id^="lp-stat-"][id$="-x5"]:hover {
+    color: #f5c542;
+    border-bottom-color: #f5c542;
+}
+
+/* ============================================================================
+   WIZARD — Guided step-by-step character creation overlay.
+   Activated by the Wizard button; adapts to the currently selected theme.
+   ============================================================================ */
+
+/* ── Wizard promo block ─────────────────────────────────────────────── */
+.wiz-promo {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 16px;
+    margin: 0 auto 16px;
+    max-width: 1600px;
+    width: 100%;
+    border: 1px solid var(--primary-color, #333);
+    border-left: 5px solid var(--primary-color, #333);
+    background: color-mix(in srgb, var(--primary-color, #333) 6%, var(--bg-color, #fff));
+}
+
+.wiz-promo-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+.wiz-promo-text strong {
+    font-size: 1.05rem;
+    letter-spacing: 0.04em;
+}
+
+.wiz-promo-text span {
+    opacity: 0.85;
+}
+
+#wiz-toggle-btn {
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    padding: 8px 20px;
+    cursor: pointer;
+    background: var(--primary-color, #333);
+    color: var(--bg-color, #fff);
+    border: none;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+#wiz-toggle-btn:hover {
+    opacity: 0.85;
+}
+
+/* Hide in Live Play and Mobile themes */
+.theme-field-doc .wiz-promo,
+.theme-mobile .wiz-promo {
+    display: none;
+}
+
+/* ── Outer flex row: tips sidebar left, shell right ────────────────── */
+#wiz-outer {
+    display: grid;
+    grid-template-columns: 420px minmax(0, 1fr);
+    align-items: flex-start;
+    gap: 24px;
+    width: 100%;
+    max-width: 1600px;
+    margin: 0 auto;
+    min-height: 100vh;
+}
+
+/* ── Tips sidebar ───────────────────────────────────────────────────── */
+#wiz-tips {
+    grid-column: 1;
+    position: sticky;
+    top: 24px;
+    background: var(--bg-color, #fff);
+    border: 1px solid var(--primary-color, #333);
+    border-left: 5px solid var(--primary-color, #333);
+    color: var(--text-color, inherit);
+    font-size: 1.1rem;
+    line-height: 1.75;
+    padding: 14px 14px 14px 12px;
+    white-space: pre-wrap;
+}
+
+#wiz-tips::before {
+    content: 'TIPS & CONTEXT';
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    border-radius: 3px;
+    padding: 3px 12px;
+    background: var(--primary-color, #333);
+    color: var(--bg-color, #fff);
+    margin-bottom: 12px;
+    width: fit-content;
+}
+
+/* HTML-mode tips (details/summary layout) */
+#wiz-tips.wiz-tips-html {
+    white-space: normal;
+}
+
+#wiz-tips.wiz-tips-html p {
+    margin: 0 0 0.6em;
+}
+
+#wiz-tips.wiz-tips-html details {
+    margin: 0.4em 0;
+    border: 1px solid var(--primary-color, #333);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+#wiz-tips.wiz-tips-html details details {
+    margin: 0.3em 0.5em 0.3em;
+}
+
+#wiz-tips.wiz-tips-html summary {
+    cursor: pointer;
+    padding: 0.3em 0.6em;
+    background: var(--primary-color, #333);
+    color: var(--bg-color, #fff);
+    font-weight: bold;
+    font-size: 0.95em;
+    list-style: none;
+    user-select: none;
+}
+
+#wiz-tips.wiz-tips-html summary::-webkit-details-marker {
+    display: none;
+}
+
+#wiz-tips.wiz-tips-html summary::before {
+    content: '\25B6\00A0';
+    font-size: 0.75em;
+}
+
+#wiz-tips.wiz-tips-html details[open]>summary::before {
+    content: '\25BC\00A0';
+}
+
+#wiz-tips.wiz-tips-html details details summary {
+    background: color-mix(in srgb, var(--primary-color, #333) 65%, var(--bg-color, #fff));
+}
+
+#wiz-tips.wiz-tips-html details> :not(summary) {
+    padding: 0.4em 0.7em;
+    font-size: 0.95em;
+}
+
+#wiz-tips.wiz-tips-html dl {
+    margin: 0;
+}
+
+#wiz-tips.wiz-tips-html dt {
+    font-weight: bold;
+    margin-top: 0.4em;
+}
+
+#wiz-tips.wiz-tips-html dd {
+    margin: 0 0 0.25em 1em;
+}
+
+/* Narrow screens: tips becomes a top banner instead of sidebar */
+@media (max-width: 960px) {
+    #wiz-outer {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    #wiz-tips {
+        grid-column: 1;
+        width: 100%;
+        position: static;
+        border-left: 1px solid var(--primary-color, #333);
+        border-top: 5px solid var(--primary-color, #333);
+        font-size: 0.95rem;
+        padding: 10px 14px;
+    }
+}
+
+/* ── Wizard shell wrapper ───────────────────────────────────────────── */
+#wiz-shell {
+    grid-column: 2;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+/* ── Header: step label + progress bar ─────────────────────────────── */
+#wiz-header {
+    background: var(--primary-color, #333);
+    color: #fff;
+    padding: 12px 16px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+#wiz-step-label {
+    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    font-size: 1.25rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+#wiz-progress-track {
+    height: 6px;
+    background: rgba(255, 255, 255, 0.25);
+    position: relative;
+    overflow: hidden;
+}
+
+#wiz-progress-fill {
+    height: 100%;
+    background: rgba(255, 255, 255, 0.9);
+    width: 0%;
+    transition: width 0.35s ease;
+}
+
+/* ── Content area ───────────────────────────────────────────────────── */
+#wiz-content {
+    width: 100%;
+}
+
+/* ── Navigation row ─────────────────────────────────────────────────── */
+#wiz-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 0 0;
+    width: 100%;
+}
+
+/* Nav buttons inherit theme-mobile button styles; override for size */
+#wiz-back,
+#wiz-next {
+    flex: 1 1 0;
+    font-family: inherit !important;
+    font-size: 1.1rem !important;
+    letter-spacing: 0.1em !important;
+    padding: 12px 18px !important;
+    min-height: 48px !important;
+}
+
+#wiz-back:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+/* ── Undo mobile single-column overrides inside the shell ───────────── */
+
+/* Skills: restore 3-column grid */
+#wiz-shell #cs-skills {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: var(--spacing-xs) 30px !important;
+}
+
+#wiz-shell #cs-skills .cs-skill-pair {
+    grid-column: auto !important;
+    grid-row: auto !important;
+}
+
+/* Specialty skills: single column, dropdown gets all available space */
+#wiz-shell #cs-specialty-skills {
+    grid-template-columns: 1fr !important;
+    gap: 8px 0 !important;
+}
+
+#wiz-shell .specialty-skill-row {
+    grid-template-columns: 1fr auto !important;
+    overflow: visible !important;
+    width: 100% !important;
+}
+
+#wiz-shell .specialty-controls {
+    overflow: visible !important;
+    min-width: 0 !important;
+}
+
+#wiz-shell .cs-skill-specialty,
+#wiz-shell .specialty-type-select {
+    flex: 0 0 auto !important;
+    width: 160px !important;
+    min-width: 0 !important;
+    font-size: 0.9rem !important;
+    font-family: inherit !important;
+}
+
+#wiz-shell .specialty-custom-text {
+    flex: 1 1 auto !important;
+    min-width: 100px !important;
+    width: 0 !important;
+    font-size: 0.9rem !important;
+    font-family: inherit !important;
+}
+
+/* Add Specialty Skill button: full width for clarity */
+#wiz-shell .specialty-add-btn {
+    width: auto !important;
+    margin-top: 8px !important;
+}
+
+/* Warning box wrapping Add Specialty Skill + Sanity Adaptations */
+#wiz-shell .skills-advanced-warning-box {
+    margin-top: 12px;
+    border: 2px solid #c8a000;
+    border-radius: 4px;
+    padding: 10px 12px 8px;
+    background: color-mix(in srgb, #c8a000 8%, var(--bg-color, #fff));
+    position: relative;
+}
+
+#wiz-shell .skills-advanced-warning-box::before {
+    content: '⚠ Advanced — discuss with your Handler first';
+    display: block;
+    font-size: 0.8rem;
+    font-weight: bold;
+    color: #c8a000;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+}
+
+#wiz-shell .skills-advanced-warning-box::after {
+    content: 'New players: you most likely do not need to change anything here. These settings are filled in automatically from your profession and are best left alone unless your Handler instructs otherwise.';
+    display: block;
+    font-size: 0.8rem;
+    opacity: 0.8;
+    margin-top: 8px;
+    font-style: italic;
+    line-height: 1.5;
+}
+
+/* Bonus skill dropdowns: restore 2-col × 4-row column-flow layout */
+#wiz-shell #bonus-dropdowns {
+    grid-template-columns: repeat(2, 1fr) !important;
+    grid-template-rows: repeat(4, auto) !important;
+    grid-auto-flow: column !important;
+    justify-items: center !important;
+    text-align: center !important;
+}
+
+#wiz-shell #bonus-dropdowns label {
+    align-items: center !important;
+}
+
+/* Bonds: restore 2-col layout (text/canvas left, entries right) */
+#wiz-shell .bonds-layout {
+    grid-template-columns: 1fr 1fr !important;
+}
+
+#wiz-shell .bonds-right {
+    border: 2px solid var(--primary-color) !important;
+    padding: var(--spacing-md) !important;
+    min-height: 150px !important;
+}
+
+/* Equipment: restore 2-col layout */
+#wiz-shell .eq-panels {
+    grid-template-columns: 1fr 1fr !important;
+}
+
+/* Equipment text: restore overflow handling */
+#wiz-shell .eq-item-name,
+#wiz-shell .eq-item-meta,
+#wiz-shell .eq-card-name,
+#wiz-shell .eq-card-stats {
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+}
+
+/* ── Step-8 (Save & Export) hero layout ────────────────────────────── */
+
+/* Natural height — no full-viewport stretch; content sits tight under header */
+#wiz-outer.step-last {
+    align-items: flex-start;
+}
+
+/* Shell is a flex column sized to its content */
+#wiz-outer.step-last #wiz-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* Pyramid canvas area: fixed height, no flex-grow */
+#wiz-pyramid-area {
+    flex: none;
+    height: 280px;
+    position: relative;
+    overflow: hidden;
+}
+
+#wiz-pyr-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* Hide the remaining save-share-bar content on step-last (buttons moved to nav) */
+#wiz-outer.step-last #wiz-content {
+    display: none !important;
+}
+
+/* 2×2 uniform button grid */
+#wiz-outer.step-last #wiz-nav {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 12px !important;
+    padding: 16px 0 0 !important;
+    flex: none;
+}
+
+#wiz-outer.step-last #wiz-nav button {
+    flex: unset !important;
+    width: 100% !important;
+    font-family: inherit !important;
+    font-size: 1.05rem !important;
+    letter-spacing: 0.05em !important;
+    padding: 14px 12px !important;
+    min-height: 52px !important;
+}

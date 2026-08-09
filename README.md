@@ -9,21 +9,23 @@ Player-facing tools for a Delta Green campaign, published as a static site via G
 | Page | Purpose |
 |---|---|
 | `index.html` | Hub landing page — links to everything below |
-| `stat-generator.html` | Stats terminal — point-buy (72 points) or random-roll (4d6 drop lowest) your six characteristics, generate a Bond, export an XLSX character sheet. Ported from [pigeon-labs-stack's DELTA-GREEN-STATS](https://pigeon-labs-stack.github.io/DELTA-GREEN-STATS/) (MIT licensed, see attribution below), with a dice roller, mobile-responsive layout (the original had neither), and a "Send to Agent Portal" handoff added on top |
+| `stats/index.html` | Full Delta Green character creator — point-buy or dice-roll stats, 18 professions with contextual skills, bonus skill points, random bio generation, Bonds, equipment loadout, a dice-roller widget, save/share, and printable/Foundry VTT export. **Six visual themes**, including a dedicated "Live Play" mode with a sticky HP/WP/SAN tracker bar for use at the table. Ported wholesale from [pigeon-labs-stack's DELTA-GREEN-STATS](https://pigeon-labs-stack.github.io/DELTA-GREEN-STATS/) — see Attribution below |
 | `dg-agent-portal.html` | Character brief, cover identity, and dossier — plus agent file across eras, medical history, and after-action reports (backed by a Google Apps Script + Sheet) |
 | `dg-id-creator.html` | Printable cover-identity card generator |
 
-All pages are plain static HTML/CSS/JS — no build step, no dependencies to install.
+All pages are static HTML/CSS/JS with no build step. `stats/` is the one exception to "single self-contained file" — it's a direct, unminified copy of pigeon-labs-stack's own multi-file layout (one HTML file, one stylesheet, twelve `.js` files), kept that way deliberately so it stays diffable against upstream.
 
 ## Attribution
 
-`stat-generator.html` is a port of [PigeonFX/DELTA-GREEN-STATS](https://github.com/PigeonFX/DELTA-GREEN-STATS) (© 2024 Brook Morton, MIT License — full text in that file's header comment). The stats terminal, point-buy/dice-roll logic, the Bond generator and its bond text, and the XLSX export are all theirs, copied in with the license notice retained as MIT requires. The original had zero responsive CSS — on a phone its fixed-width layout (an 800px text box, three-column flex row) forced horizontal scroll and overlapping text. This hub's own additions on top: the Agent Hub nav link, a real mobile layout via a `@media (max-width: 760px)` block, a general-purpose dice roller (quick d4–d100 buttons, custom NdX+mod, roll-under-% skill checks), the "Send to Agent Portal" handoff, an inlined copy of the background logo, and fixing a couple of unclosed tags in the original markup.
+`stats/` is a copy of [pigeon-labs-stack/DELTA-GREEN-STATS](https://github.com/pigeon-labs-stack/DELTA-GREEN-STATS) — **not** the archived `PigeonFX/DELTA-GREEN-STATS` this hub's stat generator was based on earlier. Both exist; `PigeonFX`'s is a much smaller, single-page point-buy/dice-roll/Bond-generator tool with no skills, professions, or themes, and is archived. `pigeon-labs-stack`'s is a separate, actively developed, far more complete fork/continuation — professions, skills, bio generation, equipment, Foundry VTT export, and the theme system — and is what's actually live at the pigeon-labs-stack.github.io URL this hub links out to. The two got conflated in an earlier pass here (a third-party Foundry module claiming to mirror the *simple* tool was actually built against *this* richer one's data shapes) — worth knowing if anything here ever looks inconsistent with the simple tool's source.
 
-An earlier version of this page was a custom-built 7-step character wizard (skills, Bonds-with-scores, equipment, a Play Mode, JSON import) built against a schema inferred from a *third-party* Foundry VTT port that claimed to mirror DELTA-GREEN-STATS but had actually expanded well past it. Once the real site's source was checked directly, it turned out to be much simpler — no skills, no equipment, no JSON export, just stats/Bonds/XLSX — so the custom wizard was scrapped in favor of this direct, attributed port instead of a tool built on a guess.
+Licensed under the **PolyForm Noncommercial License 1.0.0** (© 2024 Brook Morton) — not MIT. Full text in `stats/LICENSE-UPSTREAM.md`; the required copyright/license notice is also in a comment at the top of `stats/index.html`. This use (a free, unofficial, noncommercial fan hub) is squarely inside what that license permits. This hub's own changes on top of the upstream copy: the Agent Hub nav link, and the footer's legal disclaimer adjusted — upstream's says it's "published by arrangement with the Delta Green Partnership," which describes pigeon-labs-stack's own relationship with the IP holder, not this fork's, so that specific claim was removed while keeping the trademark/copyright acknowledgment.
+
+Everything else in this repo — the Agent Portal, ID Creator, and hub page — is built fresh; the Delta Green stat/skill rules referenced there are generic game mechanics (not copyrightable), not lifted from anyone's code.
 
 ## QA
 
-There's an automated smoke-test suite in `test/` that exercises all three
+There's an automated smoke-test suite in `test/` that exercises all four
 pages, with the Google Apps Script / Anthropic backends faked out so it never
 touches real data. See `test/README.md`.
 
@@ -31,15 +33,13 @@ touches real data. See `test/README.md`.
 
 Rough priority order, cheapest/highest-value first:
 
-1. **Unify the character-code system.** The Agent Portal and the ID Creator still use two different, incompatible code formats — a code generated on one doesn't load on the other. The "Send to Agent Portal" handoff (localStorage `dg_handoff_agent`, consumed once on load) bridges stats-terminal output into the Cover form's notes, but it's a one-way stopgap, not a real fix.
-2. **Skills & weapons.** Neither tool here has a skill list, equipment, or weapons yet — the actual next step, now that the stats terminal is grounded in something real rather than a guessed schema.
-3. ~~A real percentile roller.~~ Done — the stats terminal has a dice roller (quick d4–d100, custom NdX+mod, roll-under-% skill checks) with a short roll log. Still no HP/SAN tracker for use at the table, though — nothing here tracks *live* play state yet.
-4. **Handout/clue log.** A shared, per-campaign log where the Handler drops handouts (pairs well with a "delta-green-handouts" style PDF workflow) and players can revisit them.
-5. **Multi-agent / campaign view.** Every tool here is single-character-at-a-time. A "my agents" list, synced via the existing Apps Script, would help players juggling a roster.
+1. **Unify the character-code system.** There are now *three* separate identity/save systems that don't talk to each other: the Agent Portal's `PREFIX-XXXX` codes (Apps Script-backed), the ID Creator's `DG-` base64 codes, and `stats/`'s own save/share-link system (localStorage + a TinyURL-shortened link). A code or save from one doesn't load in either of the others. Still the single biggest gap.
+2. ~~Skills & weapons.~~ Done — `stats/` covers skills (full list + specialties), professions, and an equipment/weapon loadout picker.
+3. ~~A real percentile roller.~~ Done — `stats/` has its own dice-roller widget (quick dice, custom rolls, roll-under-% checks) built in.
+4. ~~Live-play HP/SAN tracking.~~ Done, sort of — `stats/`'s "Live Play (Field Notes)" theme has a sticky HP/WP/SAN/BP tracker bar and a full live character sheet. It's independent of the Agent Portal's dossier system, though (see #1).
+5. **Handout/clue log.** A shared, per-campaign log where the Handler drops handouts (pairs well with a "delta-green-handouts" style PDF workflow) and players can revisit them.
 6. **Offline/PWA support.** Add a manifest + service worker so the hub works at the table without signal.
 7. **Access control.** The Agent Portal already gates some content behind a character code; if players shouldn't see each other's dossiers, consider per-agent codes tied to real auth rather than security-by-obscurity codes.
-
-Everything else in this repo — the Agent Portal, ID Creator, and hub page — is built fresh; the Delta Green stat/skill rules referenced there are generic game mechanics (not copyrightable), not lifted from anyone's code.
 
 ---
 
