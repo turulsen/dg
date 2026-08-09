@@ -121,25 +121,27 @@ def test_stat_generator(p, agent):
     page.close()
     return errs
 
-def test_portrait_questionnaire(p, agent):
+def test_agent_portal_restore_dossier(p, agent):
+    """Regression check: restoring an agent by code on the Cover tab must
+    re-render the dossier ('pop up') in place, not just jump silently to
+    the Agent File tab."""
     page = p.new_page()
     page.set_default_timeout(5000)
     errs = collect_errors(page)
     mock_routes(page)
-    page.goto(f"{BASE}/portrait-questionnaire.html", wait_until="domcontentloaded", timeout=15000)
+    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(200)
-    record("portrait-questionnaire", f"page loads ({agent['char_name']})", True, "")
 
-    fill_cover_form(page, agent, "#dg-form")
-    page.click("#submit-btn")
+    page.fill("#agent-code-input", "REST-OR3D")
+    page.click(".sticky-btn")
     page.wait_for_timeout(400)
-    status = page.text_content("#status")
-    dossier_html = page.inner_html("#dossier-container")
-    ok = (status or "").strip() != "" and agent["char_name"] in dossier_html
-    record("portrait-questionnaire", "submit renders dossier with agent name", ok, status or "")
 
-    console_errs = [e for e in errs if "pageerror" in e]
-    record("portrait-questionnaire", "no JS exceptions during submit", len(console_errs)==0, "; ".join(console_errs))
+    status = page.text_content("#code-load-status")
+    dossier_html = page.inner_html("#dossier-wrap")
+    cover_still_active = page.is_visible("#panel-cover")
+    ok = "restored" in (status or "").lower() and "Mock Loaded Agent" in dossier_html and cover_still_active
+    record("agent-portal", "restoring by code re-renders dossier on Cover tab", ok,
+           f"status={status!r} cover_visible={cover_still_active}")
     page.close()
     return errs
 
@@ -263,8 +265,7 @@ def main():
         for agent in AGENTS:
             safe(test_stat_generator, browser, agent, area="stat-generator")
 
-        for agent in AGENTS[:3]:
-            safe(test_portrait_questionnaire, browser, agent, area="portrait-questionnaire")
+        safe(test_agent_portal_restore_dossier, browser, AGENTS[0], area="agent-portal")
 
         codes = []
         for agent in AGENTS:

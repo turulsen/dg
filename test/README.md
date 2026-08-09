@@ -1,6 +1,6 @@
 # QA harness
 
-Automated smoke tests for the four Agent Hub pages, run against a set of mock
+Automated smoke tests for the three Agent Hub pages, run against a set of mock
 Delta Green agents. Nothing here ever touches the real Google Apps Script
 backend or Anthropic API — `run_tests.py` intercepts and fakes both, and
 Google Fonts requests are blocked to keep tests fast and offline-safe.
@@ -19,23 +19,27 @@ non-zero if anything fails.
 
 - **stat-generator.html** — random 3d6 rolls stay in range, point-buy pool
   math updates on edit, sheet generation includes name + derived stats.
-- **portrait-questionnaire.html** — full form fill + submit renders a
-  dossier, no JS exceptions.
 - **dg-agent-portal.html** — tab switching (Cover / Agent File / Cover IDs),
   full profession dropdown, random agent generator per profession, cover
-  form submit + dossier render, localStorage persistence, Agent File
-  code-gate loading via the JSONP endpoint.
+  form submit + dossier render, localStorage persistence, restoring an
+  agent by code re-renders the dossier in place on the Cover tab (not just
+  a silent jump to Agent File), Agent File code-gate loading via the JSONP
+  endpoint.
 - **dg-id-creator.html** — manual name entry, code loader behavior.
+
+`dg-id-creator.html`'s visual theme (paper/dossier styling to match the rest
+of the hub) is a CSS-only change with no functional test coverage — verify
+it visually if you touch that stylesheet again.
 
 ## Known gap this suite documents, doesn't fix
 
 `dg-id-creator.html`'s code loader expects a base64-JSON code prefixed
-`DG-`; `dg-agent-portal.html` / `stat-generator.html` /
-`portrait-questionnaire.html` all use short `PREFIX-XXXX` codes tied to the
-Apps Script backend. A code generated on one page is rejected on the other.
-This is tracked as roadmap item #1 in the root README ("Unify the
-character-code system") — fixing it is a schema decision, not a bug fix, so
-it's left as a documented gap rather than silently patched.
+`DG-`; `dg-agent-portal.html` and `stat-generator.html` both use short
+`PREFIX-XXXX` codes tied to the Apps Script backend. A code generated on one
+page is rejected on the other. This is tracked as roadmap item #1 in the
+root README ("Unify the character-code system") — fixing it is a schema
+decision, not a bug fix, so it's left as a documented gap rather than
+silently patched.
 
 ## Mock agents
 

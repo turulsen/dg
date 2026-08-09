@@ -10,15 +10,14 @@ Player-facing tools for a Delta Green campaign, published as a static site via G
 |---|---|
 | `index.html` | Hub landing page — links to everything below |
 | `stat-generator.html` | Random 3d6 or point-buy characteristic generator, with derived Hit Points / Willpower / Sanity / Breaking Point |
-| `portrait-questionnaire.html` | Character brief form so the Handler can generate a reference portrait |
-| `dg-agent-portal.html` | Agent dossier — cover identity, agent file across eras, medical history, after-action reports (backed by a Google Apps Script + Sheet) |
+| `dg-agent-portal.html` | Character brief, cover identity, and dossier — plus agent file across eras, medical history, and after-action reports (backed by a Google Apps Script + Sheet) |
 | `dg-id-creator.html` | Printable cover-identity card generator |
 
 All pages are plain static HTML/CSS/JS — no build step, no dependencies to install.
 
 ## QA
 
-There's an automated smoke-test suite in `test/` that exercises all four
+There's an automated smoke-test suite in `test/` that exercises all three
 pages against a set of mock agents, with the Google Apps Script / Anthropic
 backends faked out so it never touches real data. See `test/README.md`.
 
@@ -26,7 +25,7 @@ backends faked out so it never touches real data. See `test/README.md`.
 
 Rough priority order, cheapest/highest-value first:
 
-1. **Unify the character-code system.** `stat-generator.html` currently saves locally and doesn't push into the Agent Portal's Apps Script backend — the Portal's field schema (`char_name`, `age_range`, etc.) and code format should be documented once and shared across all four tools so one code loads a character everywhere.
+1. **Unify the character-code system.** `stat-generator.html` currently saves locally and doesn't push into the Agent Portal's Apps Script backend, and the ID Creator's code format is still a different, incompatible scheme — the Portal's field schema (`char_name`, `age_range`, etc.) and code format should be documented once and shared across all three tools so one code loads a character everywhere.
 2. **Skills & weapons.** The current tools cover stats and identity but not skills, equipment, or weapons — a skill sheet (with the standard Delta Green skill list and percentiles) and a simple loadout/inventory tracker would round out character creation.
 3. **Session/dice tools for play.** A percentile roller (roll-under vs. a skill or stat×5), a SAN-loss roller (e.g. `1d4/1d8`), and a Bond tracker (Delta Green's replacement for standard sanity recovery) would make this useful *during* sessions, not just at character creation.
 4. **Handout/clue log.** A shared, per-campaign log where the Handler drops handouts (pairs well with a "delta-green-handouts" style PDF workflow) and players can revisit them.

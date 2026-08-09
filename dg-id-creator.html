@@ -5,15 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Delta Green — Agent Cover ID Creator</title>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Special+Elite&family=Source+Sans+3:wght@300;400;600&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Oswald:wght@400;600;700&family=Roboto+Condensed:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Special+Elite&family=Source+Sans+3:wght@300;400;600&family=Courier+Prime:ital,wght@0,400;0,700;1,400&display=swap');
+
+:root{
+  --paper:#f4eed8;
+  --ink:#1c1608;
+  --ink-2:#4a3f28;
+  --ink-3:#8a7a5a;
+  --ink-placeholder:#b8a878;
+  --red:#8b1a1a;
+  --green:#1a4a1a;
+  --rule:rgba(160,130,70,.35);
+}
 
 *{box-sizing:border-box;margin:0;padding:0;}
 
 body{
-  background:#111210;
+  background:#0e100b;
   font-family:'Source Sans 3',sans-serif;
   font-weight:300;
-  color:#e0ddd5;
+  color:var(--ink);
   min-height:100vh;
   padding:28px 16px 80px;
 }
@@ -23,55 +34,55 @@ body{
   max-width:960px;margin:0 auto 20px;
   display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;
 }
-.app-title{font-family:'Special Elite',monospace;font-size:12px;letter-spacing:.28em;text-transform:uppercase;color:#3a8a3a;}
-.app-stamp{font-family:'Special Elite',monospace;font-size:9px;letter-spacing:.2em;text-transform:uppercase;border:1.5px solid #3a8a3a;color:#3a8a3a;padding:3px 10px;opacity:.6;}
+.app-title{font-family:'Special Elite',monospace;font-size:12px;letter-spacing:.28em;text-transform:uppercase;color:var(--paper);}
+.app-stamp{font-family:'Special Elite',monospace;font-size:9px;letter-spacing:.2em;text-transform:uppercase;border:1.5px solid var(--red);color:#c86a6a;padding:3px 10px;opacity:.8;}
 
 /* ── LAYOUT ── */
 .workspace{max-width:960px;margin:0 auto;display:grid;grid-template-columns:300px 1fr;gap:20px;align-items:start;}
 
 /* ── FORM PANEL ── */
-.form-panel{background:#1c1e1a;border:1px solid #2a2d28;padding:24px;}
-.panel-title{font-family:'Special Elite',monospace;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:#3a8a3a;margin-bottom:18px;padding-bottom:8px;border-bottom:1px solid #2a2d28;}
+.form-panel{background:var(--paper);border:1px solid var(--rule);box-shadow:0 4px 18px rgba(0,0,0,.35);padding:24px;}
+.panel-title{font-family:'Special Elite',monospace;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--red);margin-bottom:18px;padding-bottom:8px;border-bottom:1px solid var(--red);}
 .f-group{margin-bottom:14px;}
-.f-label{display:block;font-family:'Special Elite',monospace;font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:#6a6a5a;margin-bottom:4px;}
+.f-label{display:block;font-family:'Courier Prime',monospace;font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-2);margin-bottom:4px;}
 .f-input,.f-select{
-  width:100%;background:transparent;border:none;border-bottom:1px solid #2a2d28;
-  padding:6px 0;font-family:'Source Sans 3',sans-serif;font-size:13px;font-weight:300;
-  color:#e0ddd5;outline:none;-webkit-appearance:none;border-radius:0;
+  width:100%;background:transparent;border:none;border-bottom:1px solid var(--rule);
+  padding:6px 0;font-family:'Courier Prime',monospace;font-size:13px;font-weight:400;
+  color:var(--ink);outline:none;-webkit-appearance:none;border-radius:0;
 }
 .f-select{
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236a6a5a'/%3E%3C/svg%3E");
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23b8a878'/%3E%3C/svg%3E");
   background-repeat:no-repeat;background-position:right 4px center;cursor:pointer;padding-right:18px;
 }
-.f-input:focus,.f-select:focus{border-bottom-color:#3a8a3a;}
-.f-input::placeholder{color:#3a3a2a;}
+.f-input:focus,.f-select:focus{border-bottom-color:var(--red);}
+.f-input::placeholder{color:var(--ink-placeholder);}
 
 .photo-upload{
-  border:1.5px dashed #2a2d28;padding:14px;text-align:center;cursor:pointer;
+  border:1.5px dashed var(--rule);padding:14px;text-align:center;cursor:pointer;
   transition:border-color .2s;margin-top:4px;
 }
-.photo-upload:hover{border-color:#3a8a3a;}
+.photo-upload:hover{border-color:var(--red);}
 .photo-upload input{display:none;}
 .photo-preview{width:100%;height:100px;object-fit:cover;object-position:top center;display:none;margin-top:8px;}
-.upload-hint{font-family:'Special Elite',monospace;font-size:8px;letter-spacing:.15em;color:#3a3a2a;}
+.upload-hint{font-family:'Courier Prime',monospace;font-size:8px;letter-spacing:.15em;color:var(--ink-3);}
 
 .gen-btn{
   width:100%;font-family:'Special Elite',monospace;font-size:11px;letter-spacing:.18em;
-  text-transform:uppercase;background:#3a8a3a;color:#111210;border:none;padding:12px;
-  cursor:pointer;margin-top:18px;transition:opacity .2s;
+  text-transform:uppercase;background:var(--ink);color:var(--paper);border:none;padding:12px;
+  cursor:pointer;margin-top:18px;box-shadow:0 2px 6px rgba(0,0,0,.28);transition:opacity .2s;
 }
-.gen-btn:hover{opacity:.85;}
+.gen-btn:hover{opacity:.8;}
 
 /* code loader */
-.code-panel{background:#1c1e1a;border:1px solid #2a2d28;padding:16px 24px;margin-bottom:20px;grid-column:1/-1;}
+.code-panel{background:var(--paper);border:1px solid var(--rule);box-shadow:0 4px 18px rgba(0,0,0,.35);padding:16px 24px;margin-bottom:20px;grid-column:1/-1;}
 .code-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
 .code-input{
-  flex:1;min-width:160px;background:transparent;border:none;border-bottom:1px solid #2a2d28;
-  padding:6px 0;font-family:'Source Sans 3',sans-serif;font-size:13px;color:#e0ddd5;outline:none;
+  flex:1;min-width:160px;background:transparent;border:none;border-bottom:1px solid var(--rule);
+  padding:6px 0;font-family:'Courier Prime',monospace;font-size:13px;color:var(--ink);outline:none;
 }
-.code-input::placeholder{color:#3a3a2a;}
-.code-btn{font-family:'Special Elite',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;background:#2a2d28;color:#e0ddd5;border:none;padding:8px 14px;cursor:pointer;}
-.code-btn:hover{background:#3a3d38;}
+.code-input::placeholder{color:var(--ink-placeholder);}
+.code-btn{font-family:'Special Elite',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;background:var(--ink);color:var(--paper);border:none;padding:8px 14px;cursor:pointer;transition:opacity .2s;}
+.code-btn:hover{opacity:.8;}
 
 /* ── RIGHT PANEL ── */
 .right-panel{display:flex;flex-direction:column;gap:20px;}
@@ -79,10 +90,10 @@ body{
 /* card wrapper */
 .card-wrapper{display:flex;flex-direction:column;align-items:flex-start;gap:14px;}
 .card-placeholder{
-  width:540px;height:340px;border:1.5px dashed #2a2d28;
+  width:540px;height:340px;border:1.5px dashed var(--rule);background:rgba(244,238,216,.04);
   display:flex;align-items:center;justify-content:center;
 }
-.card-placeholder span{font-family:'Special Elite',monospace;font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:#2a2d28;}
+.card-placeholder span{font-family:'Special Elite',monospace;font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3);}
 
 /* ── THE CARD ITSELF ── */
 .id-card{
@@ -95,24 +106,24 @@ body{
 .card-actions{display:none;gap:10px;flex-wrap:wrap;}
 .card-btn{
   font-family:'Special Elite',monospace;font-size:9px;letter-spacing:.15em;text-transform:uppercase;
-  background:rgba(255,255,255,.06);color:#aaa;border:1px solid rgba(255,255,255,.12);
+  background:rgba(244,238,216,.08);color:#c8bfa0;border:1px solid rgba(244,238,216,.18);
   padding:8px 14px;cursor:pointer;transition:all .2s;
 }
-.card-btn:hover{background:rgba(255,255,255,.14);color:#fff;}
-.card-btn.primary{background:#8b1a1a;color:#e8e2d4;border-color:#8b1a1a;}
+.card-btn:hover{background:rgba(244,238,216,.16);color:var(--paper);}
+.card-btn.primary{background:var(--red);color:var(--paper);border-color:var(--red);}
 .card-btn.primary:hover{opacity:.85;}
 
 /* ── HISTORY ── */
-.history-panel{background:#1c1e1a;border:1px solid #2a2d28;padding:18px;}
-.history-title{font-family:'Special Elite',monospace;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:#3a8a3a;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid #2a2d28;}
-.history-empty{font-size:12px;color:#2a3a2a;font-style:italic;text-align:center;padding:14px 0;}
+.history-panel{background:var(--paper);border:1px solid var(--rule);box-shadow:0 4px 18px rgba(0,0,0,.35);padding:18px;}
+.history-title{font-family:'Special Elite',monospace;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--red);margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid var(--red);}
+.history-empty{font-size:12px;color:var(--ink-3);font-style:italic;text-align:center;padding:14px 0;}
 .history-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;}
-.history-card{background:#111210;border:1px solid #2a2d28;padding:7px;cursor:pointer;transition:all .2s;}
-.history-card:hover{border-color:#3a8a3a;}
-.history-thumb{width:100%;height:72px;overflow:hidden;position:relative;background:#0a0a08;margin-bottom:5px;}
-.history-info{font-family:'Special Elite',monospace;font-size:7px;letter-spacing:.06em;text-transform:uppercase;color:#4a4a3a;line-height:1.7;}
-.history-del{float:right;background:none;border:none;color:rgba(180,40,40,.5);cursor:pointer;font-size:13px;padding:0;line-height:1;}
-.history-del:hover{color:rgba(200,60,60,.9);}
+.history-card{background:rgba(0,0,0,.03);border:1px solid var(--rule);padding:7px;cursor:pointer;transition:all .2s;}
+.history-card:hover{border-color:var(--red);}
+.history-thumb{width:100%;height:72px;overflow:hidden;position:relative;background:var(--ink);margin-bottom:5px;}
+.history-info{font-family:'Courier Prime',monospace;font-size:7px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);line-height:1.7;}
+.history-del{float:right;background:none;border:none;color:rgba(139,26,26,.55);cursor:pointer;font-size:13px;padding:0;line-height:1;}
+.history-del:hover{color:var(--red);}
 
 @media(max-width:700px){
   .workspace{grid-template-columns:1fr;}
@@ -127,7 +138,7 @@ body{
   <div class="app-stamp">Handler Access Only</div>
 </div>
 <div style="max-width:1000px;margin:-8px auto 16px;padding:0 16px;">
-  <a href="index.html" style="font-family:'Special Elite',monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#3a8a3a;text-decoration:none;">← Agent Hub</a>
+  <a href="index.html" style="font-family:'Special Elite',monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#c8bfa0;text-decoration:none;">← Agent Hub</a>
 </div>
 
 <div class="workspace">
@@ -138,7 +149,7 @@ body{
     <div class="code-row">
       <input class="code-input" id="agent-code-in" placeholder="Paste character brief code to prefill name">
       <button class="code-btn" onclick="loadFromCode()">Load Agent</button>
-      <span id="code-status" style="font-size:11px;color:#3a8a3a;font-style:italic;"></span>
+      <span id="code-status" style="font-size:11px;color:#1a4a1a;font-style:italic;"></span>
     </div>
   </div>
 
@@ -878,7 +889,7 @@ function renderHistory() {
       </div>
       <div class="history-info">
         ${item.data.name}<br>${item.data.agencyKey} · ${item.data.era}<br>
-        <span style="color:#2a3a2a;">${item.ts}</span>
+        <span style="color:#8a7a5a;">${item.ts}</span>
       </div>
       <button class="history-del" onclick="delHistory(${idx},event)">×</button>`;
     el.addEventListener('click', () => restoreHistory(idx));
@@ -905,7 +916,7 @@ function restoreHistory(idx) {
 function loadFromCode() {
   const raw = (document.getElementById('agent-code-in').value||'').trim();
   const status = document.getElementById('code-status');
-  if (!raw.startsWith('DG-')) { status.textContent='Invalid code.'; status.style.color='#aa4a4a'; return; }
+  if (!raw.startsWith('DG-')) { status.textContent='Invalid code.'; status.style.color='#8b1a1a'; return; }
   try {
     const b64 = raw.replace(/^DG-/,'').replace(/-/g,'');
     const json = decodeURIComponent(escape(atob(b64)));
@@ -913,9 +924,9 @@ function loadFromCode() {
     if (data.char_name) {
       document.getElementById('card-name').value = data.char_name;
       status.textContent = 'Agent loaded: ' + data.char_name;
-      status.style.color = '#3a8a3a';
+      status.style.color = '#1a4a1a';
     }
-  } catch(e) { status.textContent='Could not read code.'; status.style.color='#aa4a4a'; }
+  } catch(e) { status.textContent='Could not read code.'; status.style.color='#8b1a1a'; }
 }
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>

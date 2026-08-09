@@ -1841,13 +1841,13 @@ function loadAgentCode(){
       });
       document.getElementById('submit-btn').textContent='Update Brief';
       document.getElementById('submit-btn').disabled=false;
+      if (data.ref_image_base64) photoDataUrl = data.ref_image_base64;
       afCode = existingCode;
       afData = data;
       persistAgent(existingCode, data);
       const afInput = document.getElementById('af-code-input');
       if (afInput) afInput.value = existingCode;
-      switchTab('agent');
-      setTimeout(() => renderAgentFile(data), 80);
+      renderDossier(data, existingCode, true);
     }else{
       status.textContent=json.status==='NOT_FOUND'?'Code not found. Check with your Handler.':'Could not retrieve file.';
     }
