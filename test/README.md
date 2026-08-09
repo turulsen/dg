@@ -29,6 +29,19 @@ non-zero if anything fails.
   covered: PDF/Foundry/Sheets export (each dynamically loads its own CDN
   library — pdf-lib, JSZip — unreachable from this sandbox), and the
   save/share-link flow (calls the TinyURL API, also unreachable here).
+- **`test_stat_generator_agent_file_nav`** — the "Open Agent File" button
+  above the theme selector (replacing the old paragraph that mentioned
+  Foundry VTT). Checks the old paragraph is gone, the button exports the
+  current character through the same path as the Export to Agent File
+  button, and lands the player directly on the Agent Portal's Agent File
+  tab showing that character (not the Portal's default Cover tab). This
+  test needs its own font-blocking `page.route` calls alongside its
+  script.google.com capture, unlike most tests here that get font-blocking
+  for free via `mock_routes()` — dg-agent-portal.html's inline `<script>`
+  sits right after its Google Fonts `<link>`, so an unblocked font request
+  that never resolves in this sandbox hangs that script's execution
+  entirely (this hung the test outright before the fix, not just slowed
+  it down).
 - **Mobile layout (`test_mobile_no_overflow`)** — checks `document.
   documentElement.scrollWidth` stays at or under the viewport width (390px).
   `stats/index.html` is a partial exception: only its dedicated "Mobile"

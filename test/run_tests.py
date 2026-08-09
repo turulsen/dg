@@ -173,6 +173,85 @@ def test_stat_generator(p):
     page.close()
     return errs
 
+def test_stat_generator_agent_file_nav(p):
+    """The "Open Agent File" button above the theme selector on
+    stats/index.html (replacing the old Foundry-VTT-mentioning intro
+    paragraph -- this hub doesn't use Foundry). One click should export the
+    current character (same path as the Export to Agent File button
+    further down the page) and land directly on the Agent Portal's Agent
+    File tab showing that agent, not just the Portal's default Cover tab."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+
+    captured = {}
+    def capture(route):
+        if route.request.method == "POST":
+            captured["body"] = route.request.post_data
+        route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", capture)
+    # The button navigates to dg-agent-portal.html, whose inline <script>
+    # sits right after a Google Fonts <link> -- browsers hold script
+    # execution until a preceding stylesheet resolves, so an unblocked font
+    # request that never resolves in this sandbox hangs script execution
+    # (and the tab-switch/render this test checks for) entirely. Every
+    # other test that touches dg-agent-portal.html gets this for free via
+    # mock_routes(); this one needs it explicitly alongside its own
+    # script.google.com capture.
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(400)
+
+    record("stats-terminal", "old Foundry-VTT intro paragraph is gone",
+           page.locator("p.site-intro").count() == 0, "")
+    record("stats-terminal", "Open Agent File button is present above the theme selector",
+           page.locator("#site-intro-agent-file-btn").count() == 1, "")
+
+    page.fill("#cs-name", "Priya Anand")
+    page.wait_for_timeout(150)
+
+    # wait_for_url/expect_navigation are unreliable for this same-tab
+    # window.location.href hop (the navigation consistently completes --
+    # page.url reflects it correctly -- but the wait helpers time out
+    # anyway), so poll instead: first for the URL (commits early, while the
+    # destination page may still be loading/running its scripts), then
+    # separately for the destination page's own JS to actually run and mark
+    # the Agent File tab active.
+    page.click("#site-intro-agent-file-btn")
+    for _ in range(20):
+        if page.url.endswith("dg-agent-portal.html#agent"):
+            break
+        page.wait_for_timeout(300)
+    agent_tab_active = False
+    for _ in range(20):
+        agent_tab_active = "active" in (page.eval_on_selector("#tw-agent", "el => el.className") or "")
+        if agent_tab_active:
+            break
+        page.wait_for_timeout(300)
+
+    record("stats-terminal", "Open Agent File button navigates straight to the Agent File tab",
+           page.url.endswith("dg-agent-portal.html#agent") and agent_tab_active,
+           page.url)
+
+    af_html = ""
+    for _ in range(15):
+        af_html = page.inner_html("#panel-agent") if page.locator("#panel-agent").count() else ""
+        if "Priya Anand" in af_html:
+            break
+        page.wait_for_timeout(300)
+    record("stats-terminal", "Agent File tab shows the just-exported character",
+           "Priya Anand" in af_html, "")
+
+    body = json.loads(captured.get("body") or "{}")
+    record("stats-terminal", "the nav button's export used the real char_name",
+           body.get("char_name") == "Priya Anand", str(body.get("char_name")))
+
+    record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_agent_file_export(p):
     """The "Export to Agent File" bridge (stats/agent-portal-export.js):
     submits through the exact same APPS_SCRIPT_URL path the Cover form's
@@ -533,6 +612,8 @@ def main():
                 return None
 
         safe(test_stat_generator, browser, area="stats-terminal")
+
+        safe(test_stat_generator_agent_file_nav, browser, area="stats-terminal")
 
         safe(test_agent_file_export, browser, area="agent-file-export")
 

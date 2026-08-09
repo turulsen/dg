@@ -4482,6 +4482,12 @@ function rerollAgent() {
   if (gateInput) gateInput.value = saved.code;
   afCode = saved.code;
   afData = saved.data;
+  // stats/'s "Open Agent File" nav button links here as #agent so the
+  // just-exported (or previously restored) agent opens straight to the
+  // Agent File tab instead of landing on Cover.
+  if (window.location.hash === '#agent') {
+    openInAgentFile();
+  }
 })();
 
 /* ── HANDOFF FROM CHARACTER SHEET GENERATOR ──

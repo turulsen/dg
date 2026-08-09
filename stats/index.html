@@ -127,11 +127,11 @@
                 </svg>
                 <span class="page-title-text">DELTA GREEN STATS<span class="blinking-cursor">_</span></span>
             </h1>
-            <p class="site-intro">
-                Build your Agent. Roll stats. Pick a profession. Spend bonus points. Generate a background.
-                Export to <strong>Foundry VTT</strong> or print your sheet — with five themes including
-                "Live Play" theme for use at the table.
-            </p>
+            <button type="button" id="site-intro-agent-file-btn" onclick="dgGoToAgentFile()"
+                style="display:block;margin:0 auto var(--spacing-lg);padding:10px 20px;font-family:'JetBrains Mono',monospace;"
+                title="Sends this character to the Agent Portal as an Agent File (name, stats-derived build/outfit, notes) and opens it there.">
+                &#8594; Open Agent File <span style="opacity:.7;">— exports this character first</span>
+            </button>
             <div id="theme-selector">
                 <label>Theme:</label>
                 <select id="cs-theme-select" aria-label="Theme selector">

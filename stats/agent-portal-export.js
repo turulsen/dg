@@ -165,7 +165,7 @@
     } catch (e) { /* best effort */ }
 
     fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors',
+      method: 'POST', mode: 'no-cors', keepalive: true,
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify(payload),
     }).then(() => {
@@ -181,5 +181,16 @@
     });
   }
 
-  window.dgAgentPortalExport = { run, buildFromStats, ageToRange, sexToOption, buildNotes, genCode, PROFESSION_OUTFIT };
+  // Nav shortcut above the theme selector: export (best effort -- run()
+  // silently no-ops if there's no name yet) then jump straight to the
+  // Agent Portal's Agent File tab. The localStorage write in run() happens
+  // synchronously before its fetch, and that fetch is keepalive:true, so
+  // navigating away immediately doesn't lose either.
+  function goToAgentFile() {
+    try { run(); } catch (e) { /* best effort -- still navigate below */ }
+    window.location.href = '../dg-agent-portal.html#agent';
+  }
+
+  window.dgAgentPortalExport = { run, goToAgentFile, buildFromStats, ageToRange, sexToOption, buildNotes, genCode, PROFESSION_OUTFIT };
+  window.dgGoToAgentFile = goToAgentFile;
 })();

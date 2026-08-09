@@ -26,6 +26,10 @@ All pages are static HTML/CSS/JS with no build step. `stats/` is the one excepti
 
 Everything else about physical appearance is left blank, same as any new agent — the Cover tab in the Portal stays the place to fill in or edit the rest. The exported agent's code is saved to this browser's `localStorage` (`dg_last_agent`) so the Agent Portal picks it up automatically if opened next in the same browser.
 
+There are two ways to trigger this from `stats/index.html`:
+- **"→ Open Agent File"**, the button above the theme selector (replacing the old paragraph that mentioned Foundry VTT — this hub doesn't use Foundry, so that was just noise). One click exports the current character *and* navigates straight to the Agent Portal, landing directly on the Agent File tab with that character already showing, not the Portal's default Cover tab.
+- The **"→ Export to Agent File"** button further down, in the save/share bar, for exporting without leaving the page.
+
 This bridges `stats/` → Agent Portal one-way. It does *not* unify the three separate code/save systems described in Roadmap item #1 below — the ID Creator's own code format is still separate.
 
 ## Attribution
@@ -54,6 +58,7 @@ Rough priority order, cheapest/highest-value first:
 5. **Handout/clue log.** A shared, per-campaign log where the Handler drops handouts (pairs well with a "delta-green-handouts" style PDF workflow) and players can revisit them.
 6. **Offline/PWA support.** Add a manifest + service worker so the hub works at the table without signal.
 7. **Access control.** The Agent Portal already gates some content behind a character code; if players shouldn't see each other's dossiers, consider per-agent codes tied to real auth rather than security-by-obscurity codes.
+8. **Multi-source character sheet import ("Phase 2").** Several existing agents in this campaign were built on other tools before this hub existed: [PigeonFX/DELTA-GREEN-STATS](https://github.com/PigeonFX/DELTA-GREEN-STATS) (the older, simpler archived tool — see Attribution), [Kappa Black](https://www.kappablack.com/)'s character sheet, and the official Delta Green agent-brief PDFs (fillable forms, e.g. the pre-generated `USSS Personal Protective Detail` agent). Goal: a player picks their source, imports in a few clicks/seconds, and the character is immediately playable and saved (presumably via the same Export to Agent File / `PREFIX-XXXX` path everything else already uses), plus a way to browse and switch between everyone's imported sheets rather than juggling separate files. Three different import parsers (two web tools' own save/export formats, one PDF form-field extraction) is real scope — worth its own design pass rather than folding into an existing feature, which is why it's tracked here as a distinct future phase rather than attempted piecemeal.
 
 ---
 
