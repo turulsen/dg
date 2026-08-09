@@ -11,6 +11,35 @@
  *   .share()      — encode state into URL hash and copy to clipboard
  *   .clearSave()  — wipe localStorage save
  */
+
+/* Resolve a human-readable profession title ("Pilot", "Federal Agent", as
+   written by every importer -- PDF, Sheets, Foundry JSON -- into cs-name
+   etc.) to the <select>'s actual option value ("pilot_sailor",
+   "federal_agent"). Deliberately a plain top-level function (not inside
+   this file's IIFE) so scripts.js's importFoundryJSONToEditor() -- which
+   writes bio fields directly rather than going through applyState() --
+   can call it too, matching how professions/selectProfession are already
+   shared globals across these files. Several titles are compound ("Pilot
+   or Sailor", "Soldier or Marine"), so an imported single-word profession
+   needs to match against each half, not just the title as a whole. */
+function matchProfessionKey(profStr) {
+    if (!profStr || typeof professions === 'undefined') return null;
+    const target = profStr.trim().toLowerCase();
+    if (!target) return null;
+    if (professions[target]) return target; // already a valid key
+    for (const [key, p] of Object.entries(professions)) {
+        const title = (p.title || '').toLowerCase();
+        if (title === target) return key;
+        const parts = title.split(/\s+or\s+/);
+        if (parts.some(part => part.trim() === target)) return key;
+    }
+    for (const [key, p] of Object.entries(professions)) {
+        const title = (p.title || '').toLowerCase();
+        if (title.includes(target) || target.includes(title)) return key;
+    }
+    return null;
+}
+
 (function () {
     'use strict';
 
@@ -292,8 +321,22 @@
             if (state.bio?.profession) {
                 const sel = document.getElementById('cs-profession-select');
                 if (sel) {
-                    sel.value = state.bio.profession;
-                    if (typeof selectProfession === 'function') selectProfession(state.bio.profession);
+                    // Every importer (PDF, Sheets, Foundry JSON) writes a
+                    // human-readable title here ("Pilot", "Federal Agent"),
+                    // not the <select>'s option value ("pilot_sailor",
+                    // "federal_agent") -- setting sel.value to a title
+                    // silently matches nothing, leaving whatever profession
+                    // (or none) was selected before the import in place, so
+                    // every profession-derived field downstream (including
+                    // the Agent Portal export's outfit guess) stays stuck on
+                    // the *previous* character. Resolve it to a real key
+                    // first; only fall back to the raw string if that fails,
+                    // matching the old (broken) behavior rather than
+                    // silently dropping a value applyState() did receive.
+                    const key = (typeof matchProfessionKey === 'function' && matchProfessionKey(state.bio.profession))
+                        || state.bio.profession;
+                    sel.value = key;
+                    if (typeof selectProfession === 'function') selectProfession(key);
                 }
             }
 

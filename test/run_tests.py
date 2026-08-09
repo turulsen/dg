@@ -337,6 +337,67 @@ def test_stat_generator_sheets_roundtrip(p):
     page.close()
     return errs
 
+def test_foundry_import_profession_and_outfit(p):
+    """Regression test for a real bug found from a user's Kappa Black
+    Foundry VTT export: importFoundryJSONToEditor() never touched the
+    profession <select> at all, so importing left whatever profession
+    (or none) was selected before the import in place. That silently
+    broke Export to Agent File's profession-derived outfit guess -- a
+    "Pilot" character came out wearing a leftover police officer's
+    patrol uniform, not because PROFESSION_OUTFIT lacked a pilot entry,
+    but because the profession itself was never actually set.
+
+    Also covers the deeper cause: every importer (PDF, Sheets, Foundry
+    JSON) writes a human-readable profession *title* ("Pilot", "Federal
+    Agent"), never the <select>'s actual option value ("pilot_sailor",
+    "federal_agent") -- setting .value to a title matches no option and
+    silently no-ops. matchProfessionKey() (stats/save-load.js, shared
+    with scripts.js as a plain top-level function) resolves compound
+    titles like "Pilot or Sailor" against a single-word import too."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    captured = {}
+    def capture(route):
+        if route.request.method == "POST":
+            captured["body"] = route.request.post_data
+        route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", capture)
+
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+    page.evaluate("document.getElementById('advanced-options-details').open = true")
+    page.wait_for_timeout(200)
+
+    # Pre-pollute the profession select, like a leftover character from
+    # an earlier session in the same browser -- this is what the reported
+    # bug actually depended on to produce a *wrong* (not just blank) outfit.
+    page.select_option("#cs-profession-select", "police_officer")
+    page.wait_for_timeout(150)
+
+    foundry_json_path = os.path.join(HERE, "fixtures", "kappablack-foundry.json")
+    json_text = open(foundry_json_path).read()
+    page.fill("#json-import-area", json_text)
+    page.click("#json-to-editor-button")
+    page.wait_for_timeout(600)
+
+    prof_val = page.eval_on_selector("#cs-profession-select", "el => el.value")
+    record("stats-terminal", "Foundry JSON import resolves a profession title ('Pilot') to its select key ('pilot_sailor')",
+           prof_val == "pilot_sailor", f"value={prof_val!r}")
+
+    page.click("#export-agent-file-btn")
+    page.wait_for_timeout(500)
+    body = json.loads(captured.get("body") or "{}")
+    record("stats-terminal", "outfit reflects the imported Pilot profession, not the pre-existing Police Officer one",
+           body.get("jacket") == "flight/deck jacket" and body.get("footwear") == "deck shoes",
+           f"jacket={body.get('jacket')!r} footwear={body.get('footwear')!r}")
+
+    record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_agent_file_export(p):
     """The "Export to Agent File" bridge (stats/agent-portal-export.js):
     submits through the exact same APPS_SCRIPT_URL path the Cover form's
@@ -951,6 +1012,8 @@ def main():
         safe(test_stat_generator_agent_file_nav, browser, area="stats-terminal")
 
         safe(test_stat_generator_sheets_roundtrip, browser, area="stats-terminal")
+
+        safe(test_foundry_import_profession_and_outfit, browser, area="stats-terminal")
 
         safe(test_agent_file_export, browser, area="agent-file-export")
 

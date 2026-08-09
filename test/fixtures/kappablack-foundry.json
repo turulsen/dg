@@ -1,0 +1,194 @@
+{
+  "type": "agent",
+  "name": "Alistair Islay Lagavulin",
+  "prototypeToken": {
+    "name": "Alistair Islay Lagavulin"
+  },
+  "items": [
+    {
+      "type": "weapon",
+      "_id": "rtbP9GwDTtj7rPj6",
+      "name": "Unarmed Attack",
+      "img": "systems/deltagreen/assets/icons/swap-bag-black-bg.svg",
+      "system": {
+        "name": "Unarmed Attack",
+        "description": "Unarmed Attack",
+        "skill": "Unarmed Combat",
+        "skillModifier": 0,
+        "customSkillTarget": 0,
+        "range": "",
+        "damage": "1D4-1",
+        "armorPiercing": 0,
+        "lethality": 0,
+        "isLethal": false,
+        "killRadius": "",
+        "ammo": "",
+        "expense": "",
+        "equipped": true
+      }
+    },
+    {
+      "type": "motivation",
+      "_id": "rKfK6qf6pkFRprPh",
+      "name": "Fulfilling grandfathers dream \"Whisky in space\"",
+      "img": "systems/deltagreen/assets/icons/swap-bag-black-bg.svg",
+      "system": {
+        "name": "Fulfilling grandfathers dream \"Whisky in space\"",
+        "description": "<p>Fulfilling grandfathers dream \"Whisky in space\"</p>",
+        "disorder": "",
+        "crossedOut": false,
+        "disorderCured": false
+      }
+    },
+    {
+      "type": "motivation",
+      "_id": "QjCLBLzqnf8cGCQR",
+      "name": "Helping humanity through sciences",
+      "img": "systems/deltagreen/assets/icons/swap-bag-black-bg.svg",
+      "system": {
+        "name": "Helping humanity through sciences",
+        "description": "<p>Helping humanity through sciences</p>",
+        "disorder": "",
+        "crossedOut": false,
+        "disorderCured": false
+      }
+    },
+    {
+      "type": "motivation",
+      "_id": "dKnkbJnwLmdtkqhw",
+      "name": "Searching for extraterrestrial life",
+      "img": "systems/deltagreen/assets/icons/swap-bag-black-bg.svg",
+      "system": {
+        "name": "Searching for extraterrestrial life",
+        "description": "<p>Searching for extraterrestrial life</p>",
+        "disorder": "",
+        "crossedOut": false,
+        "disorderCured": false
+      }
+    },
+    {
+      "type": "motivation",
+      "_id": "WbcNTjTQmRtjKd69",
+      "name": "Searching for intelligent desgin (ID) ",
+      "img": "systems/deltagreen/assets/icons/swap-bag-black-bg.svg",
+      "system": {
+        "name": "Searching for intelligent desgin (ID) ",
+        "description": "<p>Searching for intelligent desgin (ID)</p>",
+        "disorder": "",
+        "crossedOut": false,
+        "disorderCured": false
+      }
+    },
+    {
+      "type": "motivation",
+      "_id": "g9HR6cNQRj9bR9PD",
+      "name": "",
+      "img": "systems/deltagreen/assets/icons/swap-bag-black-bg.svg",
+      "system": {
+        "name": "",
+        "description": "<p></p>",
+        "disorder": "",
+        "crossedOut": false,
+        "disorderCured": false
+      }
+    },
+    {
+      "type": "motivation",
+      "_id": "g6nzqDTn7TnrKnMH",
+      "name": "Disorder: light schizophrenia - hallucinations of a person that helps in researches",
+      "img": "systems/deltagreen/assets/icons/swap-bag-black-bg.svg",
+      "system": {
+        "name": "Disorder: light schizophrenia - hallucinations of a person that helps in researches",
+        "description": "<p>Disorder: light schizophrenia - hallucinations of a person that helps in researches</p>",
+        "disorder": "",
+        "crossedOut": false,
+        "disorderCured": false
+      }
+    },
+    {
+      "type": "gear",
+      "_id": "dhfPQ9ffPhQFhJpR",
+      "name": "Agent's Gear",
+      "img": "systems/deltagreen/assets/icons/swap-bag-black-bg.svg",
+      "system": {
+        "name": "Agent's Gear",
+        "description": "<p>Extensive collection of tools, including some that have been hardened or modified for use in space. You also have access to launch sites and training facilities.</p>\n<p></p>\n<p>Incredible whisky collection of about 1000 different sorts.</p>",
+        "expense": "",
+        "equipped": true
+      }
+    },
+    {
+      "type": "bond",
+      "_id": "Rc9HzJJc8tDdKrKp",
+      "name": "Spouse",
+      "img": "systems/deltagreen/assets/icons/person-black-bg.svg",
+      "system": {
+        "name": "Spouse",
+        "description": "Spouse",
+        "score": 10,
+        "relationship": "",
+        "hasBeenDamagedSinceLastHomeScene": false
+      }
+    },
+    {
+      "type": "bond",
+      "_id": "G9jW9bDKjcQwkJkL",
+      "name": "2 Deerhounds, Scotch&Rock",
+      "img": "systems/deltagreen/assets/icons/person-black-bg.svg",
+      "system": {
+        "name": "2 Deerhounds, Scotch&Rock",
+        "description": "2 Deerhounds, Scotch&Rock",
+        "score": 10,
+        "relationship": "",
+        "hasBeenDamagedSinceLastHomeScene": false
+      }
+    }
+  ],
+  "system": {
+    "schemaVersion": 1,
+    "biography": {
+      "profession": "Pilot",
+      "employer": "NASA - Astronaut Corps",
+      "nationality": "Scottish",
+      "age": "37",
+      "education": "",
+      "sex": "M"
+    },
+    "physical": {
+      "description": "",
+      "wounds": "",
+      "firstAidAttempted": false,
+      "exhausted": false,
+      "exhaustedPenalty": 0
+    },
+    "physical_description": "",
+    "physicalDescription": "<p>Anywhere from 5,000 to 18,000 people apply for the space program annually.</p>",
+    "statistics": {
+      "str": { "value": 10, "distinguishing_feature": "", "x5": 50 },
+      "con": { "value": 13, "distinguishing_feature": "", "x5": 65 },
+      "dex": { "value": 13, "distinguishing_feature": "", "x5": 65 },
+      "int": { "value": 14, "distinguishing_feature": "Bright", "x5": 70 },
+      "pow": { "value": 12, "distinguishing_feature": "", "x5": 60 },
+      "cha": { "value": 10, "distinguishing_feature": "", "x5": 50 }
+    },
+    "health": { "value": 12, "max": 12, "min": 0, "protection": 0 },
+    "wp": { "value": 12, "max": 12, "min": 0 },
+    "sanity": {
+      "value": 60,
+      "max": 99,
+      "currentBreakingPoint": 0,
+      "adaptations": {
+        "violence": { "incident1": false, "incident2": false, "incident3": false, "isAdapted": false },
+        "helplessness": { "incident1": false, "incident2": false, "incident3": false, "isAdapted": false }
+      }
+    },
+    "skills": {
+      "accounting": { "proficiency": 10 },
+      "alertness": { "proficiency": 60 },
+      "athletics": { "proficiency": 50 },
+      "bureaucracy": { "proficiency": 30 },
+      "navigate": { "proficiency": 70 },
+      "pilot": { "proficiency": 80 }
+    }
+  }
+}

@@ -2572,6 +2572,20 @@ function importFoundryJSONToEditor() {
         setInput('cs-bio-age', bio.age || '');
         setInput('cs-bio-education', bio.education || '');
 
+        // Profession -- real Foundry VTT exports write a human-readable
+        // title ("Pilot"), not the <select>'s option value ("pilot_sailor"),
+        // so it has to be resolved first or it silently leaves whatever
+        // profession was selected before this import in place.
+        if (bio.profession) {
+            const profSelect = document.getElementById('cs-profession-select');
+            if (profSelect) {
+                const profKey = (typeof matchProfessionKey === 'function' && matchProfessionKey(bio.profession))
+                    || bio.profession;
+                profSelect.value = profKey;
+                if (typeof selectProfession === 'function') selectProfession(profKey);
+            }
+        }
+
         // Physical description
         const physDescEl = document.getElementById('cs-physical-desc');
         if (physDescEl) physDescEl.value = sys.physicalDescription || sys.physical?.description || '';
