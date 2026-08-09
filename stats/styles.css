@@ -610,6 +610,16 @@
     filter: none;
 }
 
+/* Fix (not upstream): the selected die button's background goes to a
+   near-black 12% tint via !important (see .dr-die-btn-active), but this
+   theme's blanket "button { color: #000000 }" above still applies -- black
+   text on a near-black background is unreadable. Give it the theme's red
+   text color back, matching how the rest of the dice panel (#dr-panel)
+   is already styled in this theme. */
+.theme-son-of-sam .dr-die-btn-active {
+    color: var(--primary-color);
+}
+
 .theme-son-of-sam .dr-handle-controls button {
     background: transparent;
     border: none;
