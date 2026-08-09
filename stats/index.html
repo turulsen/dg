@@ -632,12 +632,28 @@
                                                 style="display:flex;flex-direction:column;align-items:center;gap:4px;"><span
                                                     style="font-size:2.4em;line-height:1;">⬆</span>Import from<br>PDF
                                                 Sheet</button>
-                                            <p class="io-option-desc">Reads back a <strong>DD Form 315 PDF</strong>
-                                                exported by this site. Recovers stats, skills, biography, bonds, and
-                                                gear. <strong>Limitation:</strong> specialty skills (e.g. Foreign
-                                                Language, Art) and some bond detail cannot be precisely recovered from
-                                                PDF form fields alone &mdash; these may need manual re-entry after
-                                                import.</p>
+                                            <p class="io-option-desc">Reads back a filled-in <strong>DD Form
+                                                    315</strong> &mdash; whether exported by this site, or a
+                                                pre-generated official Delta Green Agent PDF from a published
+                                                scenario, since both use the same fillable form. Recovers stats,
+                                                skills, biography, bonds, and gear. <strong>Limitation:</strong>
+                                                specialty skills (e.g. Foreign Language, Art) and some bond detail
+                                                cannot be precisely recovered from PDF form fields alone &mdash;
+                                                these may need manual re-entry after import.</p>
+                                        </div>
+                                        <div class="io-option">
+                                            <button type="button" id="import-sheets-btn" onclick="importFromSheets()"
+                                                style="display:flex;flex-direction:column;align-items:center;gap:4px;"><span
+                                                    style="font-size:2.4em;line-height:1;">⬆</span>Import from<br>Google
+                                                Sheet</button>
+                                            <p class="io-option-desc">Reads back a filled-in <strong>.xlsx</strong>
+                                                spreadsheet &mdash; either downloaded straight from <em>Export Google
+                                                    Sheet</em> above, or downloaded again after uploading and editing
+                                                it in Google Sheets. Recovers stats, skills (including specialties),
+                                                biography, bonds, and gear. <strong>Limitation:</strong> the
+                                                structured weapons table and SAN incident checkboxes are not
+                                                recovered &mdash; gear text still comes through, and weapon rows may
+                                                need manual re-entry after import.</p>
                                         </div>
                                     </div>
                                 </div>
@@ -772,6 +788,7 @@
         <script src="printable-sheet.js"></script>
         <script src="pdf-export.js"></script>
         <script src="sheets-export.js"></script>
+        <script src="sheets-import.js"></script>
         <script src="save-load.js"></script>
         <script src="agent-portal-export.js"></script>
         <script src="dice-roller.js"></script>

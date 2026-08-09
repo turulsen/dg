@@ -252,6 +252,91 @@ def test_stat_generator_agent_file_nav(p):
     page.close()
     return errs
 
+def test_stat_generator_sheets_roundtrip(p):
+    """Phase 2 (multi-source import), pigeon-labs-stack's own "Google
+    Sheet" export/import path: exportToSheets() (sheets-export.js) and the
+    matching importFromSheets() (stats/sheets-import.js, this hub's
+    addition) round-trip a character through the .xlsx file real players
+    would download from here, upload to Google Sheets, and eventually
+    download again.
+
+    Both directions depend on JSZip, loaded from a CDN this sandbox
+    blocks -- so unlike most of this suite, this test serves a vendored
+    copy (test/vendor/jszip.min.js) in place of the CDN URL rather than
+    skipping the check outright. This is also true of PDF export/import
+    (pdf-lib) and Foundry export, which remain untested here for the same
+    reason but haven't been given a vendored fixture (see test/README.md).
+
+    Along the way this also regression-tests the DD Form 315 PDF/xlsx
+    template assets actually existing in stats/assets/ -- both were
+    missing entirely from the initial port (silent 404s), which this
+    export step would fail on if they hadn't been restored."""
+    page = p.new_page()
+    page.set_default_timeout(10000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    jszip_path = os.path.join(HERE, "vendor", "jszip.min.js")
+    page.route("**/cdnjs.cloudflare.com/ajax/libs/jszip/**", lambda r: r.fulfill(path=jszip_path))
+
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+
+    page.fill("#cs-name", "Priya Anand")
+    page.select_option("#cs-profession-select", "federal_agent")
+    page.wait_for_timeout(200)
+    str_plus = page.locator("#STR-value").locator("xpath=..").locator("button", has_text="+")
+    for _ in range(10):
+        str_plus.click()
+    page.fill("#cs-bio-employer", "Federal Bureau of Investigation")
+    page.fill("#cs-bio-nationality", "American")
+    page.fill("#cs-bio-age", "34")
+    page.wait_for_timeout(200)
+
+    page.evaluate("document.getElementById('advanced-options-details').open = true")
+    page.wait_for_timeout(200)
+
+    with page.expect_download(timeout=15000) as dl_info:
+        page.click("#export-sheets")
+    dl = dl_info.value
+    record("stats-terminal", "Export Google Sheet downloads an .xlsx (template asset present, not 404ing)",
+           dl.suggested_filename.endswith(".xlsx"), dl.suggested_filename)
+    xlsx_path = os.path.join(HERE, "results-tmp-exported.xlsx")
+    dl.save_as(xlsx_path)
+
+    # Blank the form, then import the just-exported file back
+    page.evaluate("""() => {
+        document.getElementById('cs-name').value = '';
+        document.getElementById('cs-bio-employer').value = '';
+        document.getElementById('cs-bio-nationality').value = '';
+        document.getElementById('cs-bio-age').value = '';
+    }""")
+
+    page.click("#import-sheets-btn")
+    page.wait_for_timeout(200)
+    page.set_input_files("#dg-sheets-import-input", xlsx_path)
+    page.wait_for_timeout(1200)
+    try:
+        os.remove(xlsx_path)
+    except OSError:
+        pass
+
+    name_val = page.input_value("#cs-name")
+    employer_val = page.input_value("#cs-bio-employer")
+    nationality_val = page.input_value("#cs-bio-nationality")
+    age_val = page.input_value("#cs-bio-age")
+    str_val = page.input_value("#cs-STR")
+    record("stats-terminal", "Sheets round-trip recovers name/employer/nationality/age",
+           (name_val, employer_val, nationality_val, age_val) ==
+           ("Priya Anand", "Federal Bureau of Investigation", "American", "34"),
+           f"{name_val!r} / {employer_val!r} / {nationality_val!r} / {age_val!r}")
+    record("stats-terminal", "Sheets round-trip recovers STR (13 = 3 base + 10 point-buy clicks)",
+           str_val == "13", f"STR={str_val!r}")
+
+    record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_agent_file_export(p):
     """The "Export to Agent File" bridge (stats/agent-portal-export.js):
     submits through the exact same APPS_SCRIPT_URL path the Cover form's
@@ -864,6 +949,8 @@ def main():
         safe(test_stat_generator, browser, area="stats-terminal")
 
         safe(test_stat_generator_agent_file_nav, browser, area="stats-terminal")
+
+        safe(test_stat_generator_sheets_roundtrip, browser, area="stats-terminal")
 
         safe(test_agent_file_export, browser, area="agent-file-export")
 

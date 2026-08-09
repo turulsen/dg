@@ -1,3 +1,4 @@
 test/results.json
+test/results-tmp-*.xlsx
 __pycache__/
 *.pyc

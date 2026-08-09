@@ -26,9 +26,25 @@ non-zero if anything fails.
   reset returns all six stats to 3, the profession dropdown has ~18 options,
   Random Bio fills the name field, the Character Creation Wizard opens to
   step 1, and the dice-roller widget opens and rolls without throwing. Not
-  covered: PDF/Foundry/Sheets export (each dynamically loads its own CDN
-  library — pdf-lib, JSZip — unreachable from this sandbox), and the
-  save/share-link flow (calls the TinyURL API, also unreachable here).
+  covered: PDF export/import (pdf-lib, unreachable from this sandbox and
+  not yet vendored the way JSZip is — see `test_stat_generator_
+  sheets_roundtrip` below) and Foundry export, and the save/share-link
+  flow (calls the TinyURL API, also unreachable here).
+- **`test_stat_generator_sheets_roundtrip`** — the Google Sheet export
+  (`sheets-export.js`, pre-existing) and import (`stats/sheets-import.js`,
+  this hub's addition) round-trip a character through a real `.xlsx` file:
+  builds a character, exports it, blanks the form, imports the exported
+  file back, and checks name/employer/nationality/age/STR all survive the
+  round trip. Both directions need JSZip, loaded from a CDN this sandbox
+  blocks -- unlike most CDN-dependent features here, this one gets a
+  vendored local copy (`test/vendor/jszip.min.js`) served in place of the
+  CDN URL via `page.route`, rather than being skipped, since the round
+  trip is the main thing worth verifying about this feature. Also
+  regression-tests that `stats/assets/Delta-Green-character-sheet-
+  template.xlsx` actually exists -- it was missing entirely from the
+  initial port (a silent 404 on every export attempt) until restored
+  alongside the DD Form 315 PDF template (see the root README's Import
+  Character section).
 - **`test_stat_generator_agent_file_nav`** — the "Open Agent File" button
   above the theme selector (replacing the old paragraph that mentioned
   Foundry VTT). Checks the old paragraph is gone, the button exports the
@@ -107,6 +123,22 @@ non-zero if anything fails.
   -- this cost a debugging pass here too before the pattern was applied
   consistently to every test that touches one of these three pages'
   scripts for the first time.
+- **`test_agent_roster`** — the Agent Roster drawer (ported from the
+  project's `Dev` branch alongside the Cover ID Fabricator). Submits 3
+  different agents across separate page loads (tracking each one's real
+  generated code, not assuming order), checks all 3 join the roster and
+  the most recently submitted is the one marked active, switches to a
+  different card and confirms that agent's data actually loads (exercises
+  the "fetch by code" path, not just the in-memory shortcut), deletes an
+  entry, and exports the roster as JSON. The "most recent is active" check
+  is a regression test for a real bug found while building this: `handleSubmit()`
+  never updated the in-memory `afCode`/`afData` globals after a fresh
+  Cover submission (only the load-by-code path did), so the roster's
+  active-agent detection kept pointing at whichever agent was active
+  *before* the latest submission. Needs a custom, code-aware
+  `script.google.com` mock (not the shared `mock_routes()`, which returns
+  identical data regardless of the requested code) so switching to a
+  specific agent can be verified to load *that* agent, not just some agent.
 
 `dg-id-creator.html`'s visual theme (paper/dossier styling to match the rest
 of the hub) is a CSS-only change with no functional test coverage — verify
@@ -123,6 +155,15 @@ to either. Nothing generated on one loads on either of the others. This is
 tracked as roadmap item #1 in the root README ("Unify the character-code
 system") — fixing it is a schema/architecture decision, not a bug fix, so
 it's left as a documented gap rather than silently patched.
+
+## Vendored fixtures
+
+`test/vendor/jszip.min.js` is a local copy of the same JSZip build
+`sheets-export.js`/`sheets-import.js` load from cdnjs.cloudflare.com in
+production, served in its place via `page.route` for
+`test_stat_generator_sheets_roundtrip` since that CDN (like unpkg.com for
+pdf-lib) is blocked from this sandbox. Update it if the app's own
+`JSZIP_CDN` version pin ever changes.
 
 ## Mock agents
 
