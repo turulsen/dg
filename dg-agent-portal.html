@@ -1600,6 +1600,20 @@ body{
           <button class="af-small-btn" onclick="showAfGate()">Load Different Agent</button>
         </div>
 
+        <!-- Jump to the Character Creator -- there's no real link between an
+             Agent File and a stats/ character (see the root README's
+             roadmap item #1: three separate identity systems), so this is
+             honest about what it does: stats/ auto-saves and auto-loads on
+             its own, so if a character is already there this resumes it,
+             and if nothing is saved there it's a blank sheet ready to fill
+             in -- exactly the "no character sheet linked -> create new"
+             fallback, without pretending a real link exists. -->
+        <div style="margin:12px 0;">
+          <button class="af-small-btn" onclick="location.href='stats/index.html'"
+            title="Opens the Character Creator. Resumes whatever character is already saved there in this browser, or starts a blank one if none is.">
+            &rarr; Open Character Sheet</button>
+        </div>
+
         <!-- Era selector — shown when no eras exist yet -->
         <div id="af-era-select" style="display:none;">
           <div class="paper-stack" style="margin-top:12px;">

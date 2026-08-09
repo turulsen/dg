@@ -786,6 +786,53 @@ def test_agent_portal_restore_dossier(p, agent):
     page.close()
     return errs
 
+def test_agent_file_open_character_sheet_btn(p):
+    """The "Open Character Sheet" button above the era grid on the Agent
+    File tab. There's no real link between an Agent File and a stats/
+    character (roadmap item #1: three separate identity systems), so this
+    is honest about what it does -- just navigates to stats/index.html,
+    which auto-saves/auto-loads on its own (resumes a character already
+    there, or starts blank if none is). Checks the button is present only
+    once an agent is actually loaded (not on the code-entry gate), and
+    that it navigates to the right page."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+
+    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+
+    # The button lives inside #af-content, which is display:none until an
+    # agent is loaded -- so it's present in the DOM but must not be
+    # visible yet, not merely absent.
+    record("agent-portal", "Open Character Sheet button is not visible on the Agent File code gate",
+           not page.is_visible("button[onclick*='stats/index.html']"), "")
+
+    page.fill("#dg-form [name=char_name]", "Marcus Reyes")
+    page.click("#submit-btn")
+    page.wait_for_timeout(400)
+    page.click("#open-agent-file-btn")
+    page.wait_for_timeout(400)
+
+    btn = page.locator("button[onclick*='stats/index.html']")
+    record("agent-portal", "Open Character Sheet button appears once an agent is loaded",
+           btn.count() == 1, "")
+
+    btn.click()
+    for _ in range(20):
+        if page.url.endswith("stats/index.html"):
+            break
+        page.wait_for_timeout(300)
+    record("agent-portal", "Open Character Sheet button navigates to stats/index.html",
+           page.url.endswith("stats/index.html"), page.url)
+
+    record("agent-portal", "no JS exceptions", len(errs)==0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_agent_portal_cover(p, agent):
     page = p.new_page()
     page.set_default_timeout(5000)
@@ -1026,6 +1073,8 @@ def main():
         safe(test_mobile_no_overflow, browser, area="mobile")
 
         safe(test_agent_portal_restore_dossier, browser, AGENTS[0], area="agent-portal")
+
+        safe(test_agent_file_open_character_sheet_btn, browser, area="agent-portal")
 
         codes = []
         for agent in AGENTS:

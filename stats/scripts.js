@@ -2964,9 +2964,13 @@ function setTheme(theme, { skipSave = false } = {}) {
                 lpSyncBar();
                 if (typeof renderLpBonds === 'function') renderLpBonds();
             }
-            // Expand the dice roller if it is currently collapsed
+            // Expand the dice roller if it is currently collapsed -- except
+            // on narrow (phone) viewports, where the expanded panel is tall
+            // enough to cover most of the screen (SAN incidents, the skills
+            // grid, etc. underneath it) for as long as it stays open. Stay
+            // collapsed there; the handle bar is still one tap away.
             const drPanel = document.getElementById('dr-panel');
-            if (drPanel && drPanel.classList.contains('dr-collapsed')) {
+            if (drPanel && drPanel.classList.contains('dr-collapsed') && window.innerWidth > 700) {
                 window.dgDice?._toggle?.();
             }
         }
