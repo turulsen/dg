@@ -1353,6 +1353,74 @@ def test_acell_cells(p):
     page.close()
     return errs
 
+def test_acell_sheet(p):
+    """a-cell.html's Sheet tab: a dense, spreadsheet-style read-only
+    roster table -- Cell (Operation), Handler, Agent Name, Player Name,
+    HP, SAN, and a rough Online presence indicator derived from how
+    recently Cloud Save last pushed for that Agent (updated_at). Same
+    list_characters data Play and Cells already use, just laid out as
+    table rows for scanning the whole roster at once."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    skip_acell_gate(page)
+
+    now_ms = 1700000000000
+    fake_characters = [
+        {"agent_code": "OWEN-CS12",
+         "character_json": json.dumps({"bio": {"name": "Owen Castillo", "player_name": "Gergo P"},
+                                        "derived": {"hp": 13, "san": 50}}),
+         "handler": "Sam", "operation": "OPERATION MOONLIGHT", "updated_at": now_ms},
+        {"agent_code": "PRIY-AN34",
+         "character_json": json.dumps({"bio": {"name": "Priya Anand"}, "derived": {"hp": 9, "san": 65}}),
+         "handler": "Sam", "operation": "", "updated_at": now_ms - 20 * 60 * 1000},
+        {"agent_code": "MARC-9XQ2",
+         "character_json": json.dumps({"bio": {"name": "Marcus Reyes"}, "derived": {"hp": 11, "san": 40}}),
+         "handler": "Jo", "operation": "", "updated_at": now_ms - 2 * 60 * 60 * 1000},
+    ]
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "action=list_characters" in url and "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            body = f'{cb}({json.dumps({"status": "OK", "characters": fake_characters})})'
+            route.fulfill(status=200, content_type="application/javascript", body=body)
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+    page.add_init_script(f"Date.now = () => {now_ms}")
+
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(400)
+    page.click('.tw[data-tab="sheet"]')
+    page.wait_for_timeout(400)
+
+    headers = page.eval_on_selector_all("#sheet-wrap th", "els => els.map(e=>e.textContent)")
+    record("acell", "Sheet table has the requested columns in order",
+           headers == ["Cell", "Handler", "Agent Name", "Player Name", "HP", "SAN", "Online"], str(headers))
+
+    row_texts = page.eval_on_selector_all("#sheet-wrap tbody tr", "els => els.map(e=>e.textContent)")
+    record("acell", "Sheet lists every Agent on file as a table row",
+           len(row_texts) == 3, str(row_texts))
+    record("acell", "a row shows the Agent name, player name, HP, and SAN together",
+           "Owen Castillo" in row_texts[0] and "Gergo P" in row_texts[0]
+           and "13" in row_texts[0] and "50" in row_texts[0], row_texts[0])
+    record("acell", "an Agent with no Player Name shows a clear placeholder, not blank",
+           "—" in row_texts[1], row_texts[1])
+
+    dots = page.eval_on_selector_all("#sheet-wrap .sheet-dot", "els => els.map(e=>e.className)")
+    record("acell", "Online status reflects how recently each Agent's sheet last synced (just now / 20 min ago / 2 hours ago)",
+           dots == ["sheet-dot on", "sheet-dot recent", "sheet-dot off"], str(dots))
+
+    page.close()
+    return errs
+
 def test_acell_music(p):
     """a-cell.html's Music tab: the Handler's broadcast side of Table
     Radio. Setting a channel + track URL posts set_now_playing (a new
@@ -2216,6 +2284,8 @@ def main():
         safe(test_acell_play, browser, area="acell")
 
         safe(test_acell_cells, browser, area="acell")
+
+        safe(test_acell_sheet, browser, area="acell")
 
         safe(test_acell_music, browser, area="acell")
 

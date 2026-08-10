@@ -228,6 +228,28 @@
     margin-top:12px; min-height:1.4em;
   }
 
+  /* ── Sheet: dense spreadsheet-style roster table ── */
+  .sheet-toolbar{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+  .sheet-wrap{ overflow-x:auto; background:var(--paper); box-shadow:var(--paper-shadow); }
+  .sheet-table{ border-collapse:collapse; width:100%; min-width:640px; font-family:'Courier Prime',monospace; font-size:12px; }
+  .sheet-table th{
+    text-align:left; font-family:'Special Elite',monospace; font-weight:400; font-size:10px;
+    letter-spacing:.08em; text-transform:uppercase; color:var(--ink-2);
+    background:var(--tab-inactive); border:1px solid var(--rule); padding:8px 10px; white-space:nowrap;
+  }
+  .sheet-table td{ border:1px solid var(--paper-line); padding:7px 10px; color:var(--ink); white-space:nowrap; }
+  .sheet-table tr:nth-child(even) td{ background:rgba(28,22,8,.035); }
+  .sheet-table td.sheet-empty-cell{ color:var(--ink-3); font-style:italic; }
+  .sheet-online{ display:inline-flex; align-items:center; gap:5px; }
+  .sheet-dot{ width:8px; height:8px; border-radius:50%; display:inline-block; }
+  .sheet-dot.on{ background:#2f8f3a; }
+  .sheet-dot.recent{ background:#c9a227; }
+  .sheet-dot.off{ background:#8a8272; }
+  .sheet-loading, .sheet-error{
+    color:var(--ink-3); font-size:13px; font-style:italic; text-align:center; padding:26px 10px;
+    background:var(--paper); box-shadow:var(--paper-shadow);
+  }
+
   footer.site-footer{ text-align:center; color:#6a6250; font-size:11px; margin-top:56px; }
 </style>
 </head>
@@ -258,6 +280,7 @@
     <div class="tab-strip" id="acell-tab-strip">
       <div class="tw active" data-tab="play"><span>Play</span></div>
       <div class="tw inactive" data-tab="cells"><span>Cells</span></div>
+      <div class="tw inactive" data-tab="sheet"><span>Sheet</span></div>
       <div class="tw inactive" data-tab="music"><span>Music</span></div>
     </div>
     <div class="folder-body">
@@ -287,6 +310,16 @@
           </label>
         </div>
         <div class="cells-list" id="cells-list">
+          <div class="play-loading">Loading agents…</div>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="panel-sheet">
+        <div class="sheet-toolbar">
+          <button type="button" class="paper-btn" id="sheet-refresh-btn">&#8635; Refresh</button>
+          <span class="play-refresh-note" id="sheet-refresh-note"></span>
+        </div>
+        <div class="sheet-wrap" id="sheet-wrap">
           <div class="play-loading">Loading agents…</div>
         </div>
       </div>
@@ -787,6 +820,110 @@
   operationFilter.addEventListener('change', applyFilters);
 
   fetchList();
+})();
+</script>
+
+<script>
+/* ══════════════════════════════════════════════
+   SHEET -- a dense, spreadsheet-style read-only roster table: Cell
+   (Operation), Handler, Agent Name, Player Name, HP, SAN, and a rough
+   "Online" presence indicator. Same list_characters data Play and
+   Cells already fetch, just laid out as actual table rows instead of
+   cards -- for scanning the whole roster at a glance rather than
+   picking one Agent at a time. "Online" isn't a real presence system
+   (no heartbeat/websocket) -- it's a proxy from how recently Cloud
+   Save last pushed for that Agent (updated_at): a player actively
+   editing their sheet pushes every ~4s, so a fresh updated_at is a
+   reasonable stand-in for "at the table right now."
+   ══════════════════════════════════════════════ */
+(function () {
+  "use strict";
+  var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
+  var ONLINE_MS = 5 * 60 * 1000;
+  var RECENT_MS = 30 * 60 * 1000;
+
+  var wrap = document.getElementById('sheet-wrap');
+  var refreshBtn = document.getElementById('sheet-refresh-btn');
+  var refreshNote = document.getElementById('sheet-refresh-note');
+
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
+  }
+
+  function onlineCell(updatedAt) {
+    var ts = Number(updatedAt) || 0;
+    if (!ts) return '<span class="sheet-online"><span class="sheet-dot off"></span>&mdash;</span>';
+    var age = Date.now() - ts;
+    if (age <= ONLINE_MS) return '<span class="sheet-online"><span class="sheet-dot on"></span>Online</span>';
+    if (age <= RECENT_MS) return '<span class="sheet-online"><span class="sheet-dot recent"></span>Recent</span>';
+    return '<span class="sheet-online"><span class="sheet-dot off"></span>Offline</span>';
+  }
+
+  function cell(v) {
+    return v ? escapeHtml(v) : '<span class="sheet-empty-cell">&mdash;</span>';
+  }
+
+  function fetchSheet() {
+    refreshBtn.disabled = true;
+    var cbName = '_acellSheet_' + Date.now();
+    var timer = setTimeout(function () {
+      delete window[cbName];
+      refreshBtn.disabled = false;
+      wrap.innerHTML = '<div class="sheet-error">Could not load the roster. (The A-Cell backend addition may not be deployed yet.)</div>';
+    }, 7000);
+    window[cbName] = function (res) {
+      clearTimeout(timer);
+      delete window[cbName];
+      refreshBtn.disabled = false;
+      var s = document.getElementById('_acell_sheet_script');
+      if (s) s.remove();
+      if (!res || res.status !== 'OK' || !Array.isArray(res.characters)) {
+        wrap.innerHTML = '<div class="sheet-error">Could not load the roster.</div>';
+        return;
+      }
+      var rows = res.characters.map(function (c) {
+        var state = null;
+        try { state = JSON.parse(c.character_json); } catch (e) { /* skip unparsable rows */ }
+        return { code: c.agent_code, state: state, handler: c.handler || '', operation: c.operation || '', updated_at: c.updated_at };
+      }).filter(function (r) { return r.code && r.state; });
+      renderSheet(rows);
+      refreshNote.textContent = 'Updated ' + new Date().toLocaleTimeString();
+    };
+    var s = document.createElement('script');
+    s.id = '_acell_sheet_script';
+    s.src = APPS_SCRIPT_URL + '?action=list_characters&callback=' + cbName;
+    document.head.appendChild(s);
+  }
+
+  function renderSheet(rows) {
+    if (!rows.length) {
+      wrap.innerHTML = '<div class="sheet-error">No Agents on file yet.</div>';
+      return;
+    }
+    var body = rows.map(function (r) {
+      var bio = r.state.bio || {};
+      var derived = r.state.derived || {};
+      return '<tr>' +
+        '<td>' + cell(r.operation) + '</td>' +
+        '<td>' + cell(r.handler) + '</td>' +
+        '<td>' + cell(bio.name) + '</td>' +
+        '<td>' + cell(bio.player_name) + '</td>' +
+        '<td>' + cell(derived.hp) + '</td>' +
+        '<td>' + cell(derived.san) + '</td>' +
+        '<td>' + onlineCell(r.updated_at) + '</td>' +
+        '</tr>';
+    }).join('');
+    wrap.innerHTML =
+      '<table class="sheet-table"><thead><tr>' +
+      '<th>Cell</th><th>Handler</th><th>Agent Name</th><th>Player Name</th><th>HP</th><th>SAN</th><th>Online</th>' +
+      '</tr></thead><tbody>' + body + '</tbody></table>';
+  }
+
+  refreshBtn.addEventListener('click', fetchSheet);
+  fetchSheet();
 })();
 </script>
 
