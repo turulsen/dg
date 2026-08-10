@@ -483,6 +483,8 @@ ADAPTING TO HELPLESSNESS: Your Agent's personal drive suffers — permanently lo
 ADAPTING TO THE UNNATURAL: There is no adapting to the Unnatural. Every encounter is a fresh shock. The only way to reach equilibrium is 0 SAN, whereupon the horrors make perfect sense and no longer inflict mental damage.`,
 
     // ── Biography fields ─────────────────────────────────────────────────────
+    bio_player_name:
+        `Player Name\n\nYour own real name (or whatever your Handler knows you by) -- not your Agent's. Lets your Handler tell whose character sheet this is at a glance in A-Cell.`,
     bio_name:
         `Name\n\nWhat's your Agent's name? Delta Green games are most effective when they feel grounded in the real world, so make the name sound real. Avoid clichés and silliness.`,
     bio_employer:

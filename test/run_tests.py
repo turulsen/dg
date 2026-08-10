@@ -593,6 +593,40 @@ def test_import_agent_auto_detect(p):
     page.close()
     return errs
 
+def test_player_name_field(p):
+    """A dedicated "Player Name" biography field (the real person
+    playing this Agent, distinct from the Agent's own name) -- so a
+    Handler can tell whose character sheet they're looking at in
+    A-Cell. Stored as bio.player_name in collectState()/applyState(),
+    the same way every other biography field already round-trips."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(400)
+    record("stats-terminal", "Player Name field is present",
+           page.query_selector("#cs-player-name") is not None, "")
+
+    page.fill("#cs-player-name", "Gergo P")
+    page.fill("#cs-name", "Owen Castillo")
+    page.wait_for_timeout(200)
+    state = page.evaluate("() => window.dgSaveLoad.collectState()")
+    record("stats-terminal", "collectState() carries the player name under bio.player_name",
+           state.get("bio", {}).get("player_name") == "Gergo P", str(state.get("bio")))
+
+    page.evaluate("(s) => window.dgSaveLoad.applyState(s)", state)
+    page.wait_for_timeout(200)
+    record("stats-terminal", "applyState() restores the player name field",
+           page.eval_on_selector("#cs-player-name", "el => el.value") == "Gergo P", "")
+    record("stats-terminal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+
+    page.close()
+    return errs
+
 def test_cloud_save(p):
     """Automatic background cloud sync (stats/cloud-sync.js) -- lets a
     character built on one device be picked up on another by an Agent
@@ -1135,6 +1169,7 @@ def test_acell_play(p):
             "agent_code": "OWEN-CS12",
             "character_json": json.dumps({
                 "bio": {"name": "Owen Castillo", "profession": "Federal Agent", "nationality": "American",
+                        "player_name": "Gergo P",
                         "motivations": "Protect my sister at any cost.\n[Disorder: Paranoia]"},
                 "csStats": {"STR": 12, "CON": 13, "DEX": 14, "INT": 15, "POW": 10, "CHA": 11},
                 "derived": {"hp": 13, "wp": 10, "san": 50, "bp": 40},
@@ -1196,6 +1231,8 @@ def test_acell_play(p):
     adapt = page.eval_on_selector_all("#play-view .pv-adapt-boxes", "els => els.map(e=>e.textContent.trim())")
     record("acell", "dossier dropdown shows Violence/Helplessness adaptation as checked/unchecked boxes",
            len(adapt) == 2 and adapt[0].count('▣') == 2 and adapt[0].count('□') == 1, str(adapt))
+    record("acell", "sticky header shows the Player Name so the Handler knows who made this Agent",
+           "Gergo P" in page.inner_text("#play-view .pv-player"), "")
 
     # Refresh re-fetches the roster and keeps the selected Agent's panel
     # showing their (possibly updated) view, instead of dropping the
@@ -1236,7 +1273,7 @@ def test_acell_cells(p):
     fake_characters = [
         {
             "agent_code": "OWEN-CS12",
-            "character_json": json.dumps({"bio": {"name": "Owen Castillo", "profession": "Federal Agent"}}),
+            "character_json": json.dumps({"bio": {"name": "Owen Castillo", "profession": "Federal Agent", "player_name": "Gergo P"}}),
             "handler": "Sam",
             "operation": "OPERATION MOONLIGHT",
         },
@@ -1279,6 +1316,11 @@ def test_acell_cells(p):
     names = page.eval_on_selector_all("#cells-list .cells-info .name", "els => els.map(e=>e.textContent)")
     record("acell", "Cells lists every Agent on file",
            names == ["Owen Castillo", "Priya Anand", "Marcus Reyes"], str(names))
+    cells_text = page.inner_text("#cells-list")
+    record("acell", "Cells shows the Player Name for an Agent that has one",
+           "Gergo P" in cells_text, "")
+    record("acell", "Cells shows a clear 'not set' for an Agent with no Player Name yet",
+           "not set" in cells_text, "")
 
     handler_opts = page.eval_on_selector_all("#cells-filter-handler option", "els => els.map(e=>e.value)")
     operation_opts = page.eval_on_selector_all("#cells-filter-operation option", "els => els.map(e=>e.value)")
@@ -2152,6 +2194,8 @@ def main():
         safe(test_kappablack_toml_import, browser, area="stats-terminal")
 
         safe(test_import_agent_auto_detect, browser, area="stats-terminal")
+
+        safe(test_player_name_field, browser, area="stats-terminal")
 
         safe(test_cloud_save, browser, area="stats-terminal")
 

@@ -130,6 +130,8 @@
   .pv-sticky-info{ min-width:0; }
   .pv-bio{ font-family:'Special Elite',monospace; font-size:18px; color:var(--ink); overflow-wrap:anywhere; }
   .pv-sub{ color:var(--ink-3); font-size:10px; margin-top:2px; font-family:'Courier Prime',monospace; letter-spacing:.04em; }
+  .pv-player{ color:var(--ink-2); font-size:11px; margin-top:4px; font-family:'Courier Prime',monospace; }
+  .pv-player b{ color:var(--ink); font-family:'Special Elite',monospace; font-weight:400; }
   .pv-vitals{ display:flex; gap:14px; flex-wrap:wrap; margin-left:auto; }
   .pv-vital{ text-align:center; }
   .pv-vital .lbl{ font-size:9px; color:var(--ink-3); letter-spacing:.1em; font-family:'Courier Prime',monospace; }
@@ -192,6 +194,8 @@
   .cells-info{ min-width:0; flex:1 1 180px; }
   .cells-info .name{ font-family:'Special Elite',monospace; font-size:14px; color:var(--ink); overflow-wrap:anywhere; }
   .cells-info .meta{ font-size:11px; color:var(--ink-3); margin-top:2px; font-family:'Courier Prime',monospace; }
+  .cells-player-meta b{ color:var(--ink); }
+  .cells-empty-note{ font-style:italic; }
   .cells-tags{ display:flex; gap:14px; flex-wrap:wrap; margin-left:auto; }
   .cells-tag-field{ display:flex; flex-direction:column; gap:4px; }
   .cells-tag-field span{
@@ -612,6 +616,7 @@
       '<div class="pv-sticky-info">' +
       '<div class="pv-bio">' + escapeHtml(bio.name || 'Unknown Agent') + '</div>' +
       '<div class="pv-sub">' + subParts.join(' &middot; ') + '</div>' +
+      '<div class="pv-player">Player: <b>' + (bio.player_name ? escapeHtml(bio.player_name) : '<span class="pv-empty-note">not set</span>') + '</b></div>' +
       '</div>' +
       '<div class="pv-vitals">' +
       '<div class="pv-vital"><div class="lbl">HP</div><div class="val">' + (derived.hp ?? '&mdash;') + '</div></div>' +
@@ -746,8 +751,9 @@
       var bio = a.state.bio || {};
       var name = bio.name || 'Unknown Agent';
       var meta = [a.code, bio.profession].filter(Boolean).map(escapeHtml).join(' &middot; ');
+      var playerMeta = 'Player: ' + (bio.player_name ? '<b>' + escapeHtml(bio.player_name) + '</b>' : '<span class="cells-empty-note">not set</span>');
       return '<div class="cells-row" data-i="' + i + '" data-handler="' + escapeHtml(a.handler) + '" data-operation="' + escapeHtml(a.operation) + '">' +
-        '<div class="cells-info"><div class="name">' + escapeHtml(name) + '</div><div class="meta">' + meta + '</div></div>' +
+        '<div class="cells-info"><div class="name">' + escapeHtml(name) + '</div><div class="meta">' + meta + '</div><div class="meta cells-player-meta">' + playerMeta + '</div></div>' +
         '<div class="cells-tags">' +
         '<label class="cells-tag-field"><span>Handler</span><input type="text" class="cells-handler-input" data-i="' + i + '" value="' + escapeHtml(a.handler) + '" placeholder="&#8212;"></label>' +
         '<label class="cells-tag-field"><span>Operation</span><input type="text" class="cells-operation-input" data-i="' + i + '" value="' + escapeHtml(a.operation) + '" placeholder="&#8212;"></label>' +

@@ -82,6 +82,7 @@ function matchProfessionKey(profStr) {
 
         // Biography
         const bio = {
+            player_name: g('cs-player-name'),
             name: g('cs-name'),
             profession: g('cs-profession-select'),
             employer: g('cs-bio-employer'),
@@ -248,6 +249,7 @@ function matchProfessionKey(profStr) {
         // Bio fields
         if (state.bio) {
             const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v ?? ''; };
+            set('cs-player-name', state.bio.player_name);
             set('cs-name', state.bio.name);
             set('cs-bio-employer', state.bio.employer);
             set('cs-bio-nationality', state.bio.nationality);
