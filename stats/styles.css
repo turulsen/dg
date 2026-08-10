@@ -7832,28 +7832,89 @@ input[type="checkbox"]:checked+label {
        full "SANITY ROLL" text button, and a dice-icon quick-roll button)
        into one row -- on a 390px screen that's roughly 65px per item,
        nowhere near enough for "SANITY ROLL" as text, so it overlapped
-       instead of wrapping. The two roll-shortcut items are convenience
-       duplicates of rolls a player can already make from the Dice Roller
-       widget or by clicking a skill's % in the sheet below, so drop them
-       on narrow screens and let HP/WP/SAN/BP -- the bar's actual stated
-       purpose -- have the room they need to stay legible. */
-    .lp-track-san-check,
+       instead of wrapping. Both roll-shortcut items were dropped
+       initially as convenience duplicates of rolls a player can already
+       make elsewhere, but SANITY ROLL earns its keep at the table (it's
+       the one roll made constantly during play, unlike the generic
+       dice-icon quick-roll, which stays dropped): kept and moved via
+       flex `order` to sit between SAN and BP -- not because it's tied
+       to SAN positionally, but because BP's own column (just a bare
+       number, no +/- buttons) has spare width once shrunk to its
+       content instead of sharing an equal flex:1 slice with HP/WP/SAN,
+       and that's exactly the room SANITY ROLL needs. */
     .lp-track-dice {
         display: none;
     }
-    .lp-tracker-item {
+    .lp-track-san-check {
+        order: 4;
+        flex: 0 0 auto;
         padding: 5px 4px;
     }
+    .lp-track-bp {
+        order: 5;
+        flex: 0 0 auto;
+    }
+    /* "SANITY ROLL" itself is dropped to font-size:0 and replaced with
+       shorter injected text -- letting the button stay legible at a
+       readable size while taking meaningfully less width than the full
+       label would, so HP/WP/SAN keep enough room for their own
+       -/+ buttons and *both* digits of a real (often two-digit) current
+       and max value -- see the sizing rules below, which needed a real
+       pass with realistic two-digit stats (e.g. HP 15/15, SAN 75/75),
+       not just the low single-digit defaults a fresh, unbuilt character
+       shows: the previous pass here only checked those defaults, so a
+       genuinely two-digit value clipped under a +/- button in actual
+       play despite looking fine while testing. The combined-class
+       selector (.lp-tracker-btn.lp-san-check-btn, not just
+       .lp-san-check-btn) is required, not stylistic: this button
+       carries both classes, and the generic .lp-tracker-btn mobile rule
+       right below (sizing the small -/+ buttons) has equal specificity
+       to a single-class selector, so without the extra class here
+       source order would let that rule re-widen the font-size and
+       render both labels stacked at once. */
+    .lp-tracker-btn.lp-san-check-btn {
+        min-height: 28px !important;
+        padding: 2px 6px !important;
+        font-size: 0 !important;
+    }
+    .lp-san-check-btn::before {
+        content: 'SAN ROLL';
+        font-size: 0.66rem;
+        letter-spacing: 0.01em;
+    }
+    .lp-tracker-item {
+        padding: 4px 1px;
+        gap: 1px;
+    }
     .lp-tracker-btn {
-        width: 20px;
-        height: 20px;
-        font-size: 0.9rem !important;
+        width: 17px;
+        height: 17px;
+        font-size: 0.75rem !important;
     }
     .lp-tracker-current {
-        font-size: 1.3rem;
+        font-size: 1.05rem;
+    }
+    /* .lp-tracker-sep/-max ("/15") were never shrunk for mobile, only
+       -current was -- always oversized for a squeezed row, just not a
+       visible collision with the -/+ buttons until the row narrowed
+       further to make room for SANITY ROLL above, and not caught
+       earlier since single-digit defaults left enough slack to hide it. */
+    .lp-tracker-sep,
+    .lp-tracker-max {
+        font-size: 0.6rem;
+    }
+    /* BP's own selector (.lp-track-bp .lp-tracker-current, 2 classes)
+       outranks the plain .lp-tracker-current rule above (1 class), so
+       it needs its own explicit mobile override or it stays at the
+       desktop 1.2rem despite BP's now-narrow shrink-to-content column. */
+    .lp-track-bp .lp-tracker-current {
+        font-size: 0.95rem;
+    }
+    .lp-track-bp .lp-tracker-label {
+        font-size: 0.55rem;
     }
     .lp-tracker-label {
-        font-size: 0.5rem;
+        font-size: 0.46rem;
     }
 
     /* Dice Roller widget: fixed at 270px wide and bottom:24px/right:24px

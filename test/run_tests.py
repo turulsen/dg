@@ -636,15 +636,8 @@ def test_cloud_save(p):
     record("stats-terminal", "the auto-minted cloud code is persisted to localStorage",
            bool(code) and save_posts and save_posts[0].get("agent_code") == code, f"code={code!r}")
 
-    # Clicking Start Cloud Save while already active is a no-op, not a
-    # second code/duplicate push.
-    posts_before_click = len(posts)
-    page.click("#cloud-save-bar button:has-text('Start Cloud Save')")
-    page.wait_for_timeout(300)
-    record("stats-terminal", "clicking Start Cloud Save while already active doesn't mint a second code",
-           page.evaluate("window.dgCloudSave.getCloudCode()") == code)
-    record("stats-terminal", "clicking Start Cloud Save while already active doesn't push again",
-           len(posts) == posts_before_click, f"before={posts_before_click} after={len(posts)}")
+    record("stats-terminal", "there is no Start Cloud Save button -- naming the agent is the only trigger",
+           page.locator("#cloud-save-bar button", has_text="Start Cloud Save").count() == 0)
 
     # A further edit should schedule (debounced) another push -- proves
     # ongoing "saved dynamically and updated" behavior, not just the
@@ -1004,6 +997,21 @@ def test_mobile_no_overflow(p):
     page.wait_for_timeout(400)
     page.fill("#cs-name", "Priya Anand")
     page.select_option("#cs-profession-select", "federal_agent")
+
+    # A fresh character's HP/WP/SAN default to low single-digit values,
+    # which an earlier pass here tested against exclusively -- looked
+    # fine, but silently left the tracker items too narrow for a *real*
+    # played character's typical two-digit values (e.g. HP 15/15,
+    # SAN 75/75), which visually collided with the +/- buttons. Push
+    # STR/CON/POW up so this test actually catches that -- has to happen
+    # here, before switching to Live Play, since that theme hides the
+    # normal stat editor's +/- buttons this needs to click.
+    for stat_id in ["STR", "CON", "POW"]:
+        btn = page.locator(f"#{stat_id}-value").locator("xpath=..").locator("button", has_text="+")
+        for _ in range(12):
+            btn.click()
+    page.wait_for_timeout(200)
+
     page.select_option("#cs-theme-select", "field-doc")
     page.wait_for_timeout(600)
     scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
@@ -1045,6 +1053,50 @@ def test_mobile_no_overflow(p):
     }""")
     record("mobile", "sticky HP/WP/SAN/BP tracker bar fits without its own overflow",
            tracker_overflow <= 2, f"overflow={tracker_overflow}")
+
+    record("mobile", "SANITY ROLL is present in the tracker bar on mobile (kept, unlike the generic dice quick-roll)",
+           page.locator("#lp-track-san-check").is_visible())
+    san_order = page.evaluate("""() => {
+        const bar = document.getElementById('lp-tracker-bar');
+        const kids = Array.from(bar.children).filter(el => getComputedStyle(el).display !== 'none');
+        const rects = kids.map(el => el.getBoundingClientRect().left);
+        const order = kids.map(el => el.id || el.className);
+        return order.map((id, i) => [id, rects[i]]).sort((a, b) => a[1] - b[1]).map(x => x[0]);
+    }""")
+    san_idx = next((i for i, x in enumerate(san_order) if "lp-track-san" == x), -1)
+    check_idx = next((i for i, x in enumerate(san_order) if "san-check" in x), -1)
+    bp_idx = next((i for i, x in enumerate(san_order) if "lp-track-bp" in x), -1)
+    record("mobile", "SANITY ROLL sits visually between SAN and BP in the tracker bar",
+           -1 not in (san_idx, check_idx, bp_idx) and san_idx < check_idx < bp_idx, f"order={san_order}")
+
+    hp_val = page.eval_on_selector("#lp-cur-hp", "el => el.textContent")
+    record("mobile", "tracker bar test actually exercises two-digit values, not just a fresh character's low defaults",
+           len(hp_val) >= 2, f"HP={hp_val!r}")
+
+    def item_box(sel):
+        return page.evaluate(f"""() => {{
+            const el = document.querySelector('{sel}');
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            return {{ left: r.left, right: r.right, top: r.top, bottom: r.bottom }};
+        }}""")
+
+    # With realistic two-digit stats, confirm no two tracker items
+    # visually overlap -- the actual symptom of the bug this caught
+    # (current value's digits colliding with the neighboring +/- button)
+    # rather than just re-checking the container's own scrollWidth,
+    # which page-level and #lp-tracker-bar-level checks above already do
+    # and which did NOT catch this (the container itself never overflowed;
+    # its children just crowded on top of each other inside it).
+    item_ids = ["#lp-track-hp", "#lp-track-wp", "#lp-track-san", "#lp-track-san-check", "#lp-track-bp"]
+    boxes = [item_box(sel) for sel in item_ids]
+    overlaps = []
+    for i in range(len(boxes) - 1):
+        if boxes[i] and boxes[i + 1] and boxes[i]["right"] > boxes[i + 1]["left"] + 1:
+            overlaps.append((item_ids[i], item_ids[i + 1]))
+    record("mobile", "tracker bar items don't visually overlap with realistic two-digit stat values",
+           len(overlaps) == 0, f"overlaps={overlaps} boxes={boxes}")
+
     dr_box = page.evaluate("""() => {
         const dr = document.getElementById('dr-panel');
         if (!dr) return null;

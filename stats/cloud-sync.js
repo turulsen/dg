@@ -14,9 +14,11 @@
    debounced edit pushes an upsert (same code overwrites its own row --
    not a new one each time, unlike a Cover-form brief submission).
 
-   No manual stop: once a character is named, syncing it is just how
-   this page behaves now, same as the pre-existing localStorage
-   autosave it sits alongside -- not a togglable setting.
+   No manual start or stop button: once a character is named, syncing
+   it is just how this page behaves now, same as the pre-existing
+   localStorage autosave it sits alongside -- not a togglable setting.
+   Only loadFromCloud() (below) is still an explicit action, since
+   pulling a character down inherently needs a code from the player.
 
    Uses the exact same APPS_SCRIPT_URL and no-cors/keepalive POST pattern
    agent-portal-export.js already uses for Export to Agent File -- not a
@@ -73,10 +75,9 @@
 
     // Mints a code on first meaningful edit (a real name present) if one
     // doesn't already exist, and pushes right away for immediate feedback
-    // -- matching startCloudSave()'s behavior -- rather than leaving the
-    // player staring at a status line for up to SYNC_DEBOUNCE_MS. Returns
-    // '' when there's nothing to name yet, which scheduleCloudSync()
-    // below treats as "nothing to do."
+    // rather than leaving the player staring at a status line for up to
+    // SYNC_DEBOUNCE_MS. Returns '' when there's nothing to name yet,
+    // which scheduleCloudSync() below treats as "nothing to do."
     function ensureCloudCode() {
         const existing = getCloudCode();
         if (existing) return existing;
@@ -97,13 +98,6 @@
     }
     document.addEventListener('input', scheduleCloudSync);
     document.addEventListener('change', scheduleCloudSync);
-
-    function startCloudSave() {
-        if (getCloudCode()) { renderStatus(); return; }
-        const name = document.getElementById('cs-name')?.value || '';
-        setCloudCode(genCloudCode(name));
-        pushToCloud();
-    }
 
     function loadFromCloud(codeArg) {
         const code = (codeArg || prompt('Enter the Agent Code to load:') || '').trim().toUpperCase();
@@ -142,6 +136,6 @@
         document.head.appendChild(script);
     }
 
-    window.dgCloudSave = { startCloudSave, loadFromCloud, getCloudCode };
+    window.dgCloudSave = { loadFromCloud, getCloudCode };
     document.addEventListener('DOMContentLoaded', () => renderStatus());
 })();

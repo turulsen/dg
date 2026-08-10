@@ -155,12 +155,10 @@
                  the Agent Portal backend by Agent Code, so it can be picked up
                  on another device without a file changing hands. Starts on its
                  own the first time you edit anything after entering a real
-                 name -- not a toggle, so there's no Stop; see
-                 stats/cloud-sync.js for the code lifecycle. -->
+                 name -- not a toggle, so there's no Start or Stop button, only
+                 Load (pulling a character down inherently needs a code from
+                 the player). See stats/cloud-sync.js for the code lifecycle. -->
             <div id="cloud-save-bar" style="text-align:center;margin:0 auto var(--spacing-lg);font-family:'JetBrains Mono',monospace;font-size:0.85em;">
-                <button type="button" onclick="dgCloudSave.startCloudSave()"
-                    title="Starts cloud saving this character right now, even before entering a name.">
-                    ☁ Start Cloud Save</button>
                 <button type="button" onclick="dgCloudSave.loadFromCloud()"
                     title="Load a character previously cloud-saved from any device, by its Agent Code.">
                     ☁ Load by Code</button>

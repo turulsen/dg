@@ -113,27 +113,29 @@ non-zero if anything fails.
 - **`test_cloud_save`** — the automatic background Cloud Save
   (`stats/cloud-sync.js`): inactive (no requests) on page load before a
   name is entered, auto-starts and pushes an initial `action:
-  'save_character'` POST from *entering a name alone* (no button
-  click), clicking "Start Cloud Save" while already active is a no-op
-  (no second code, no duplicate push), a debounced push fires again
-  after a further edit (proves the *ongoing* sync, not just the initial
+  'save_character'` POST from *entering a name alone* (no button to
+  click — there isn't one), a debounced push fires again after a
+  further edit (proves the *ongoing* sync, not just the initial
   auto-start push — this test genuinely waits out the 4s debounce), and
-  there's no Stop button — once a character is named, syncing it is just
-  how the page behaves, not a togglable setting (an earlier version of
-  this feature had Stop, which needed its own persisted opt-out flag
-  since any edit could re-provision a cleared code; removed rather than
-  kept working, since a toggle nobody can predict when it'll silently
-  flip back on is worse than not having one). "Load by Code" (called
+  there's neither a Start nor a Stop button — both existed briefly
+  during development and were removed once syncing became fully
+  automatic, since neither was really a setting to toggle (Stop in
+  particular would have needed its own persisted opt-out flag just to
+  mean anything, since any further edit could otherwise silently
+  re-provision a cleared code and resume — a toggle nobody can predict
+  the state of is worse than not having one). "Load by Code" (called
   directly with a code argument, bypassing the native `prompt()` this
-  test isn't exercising) restores a character from a mocked
-  `action=load_character` response and re-activates syncing under that
-  code. This only exercises the client side against a mocked Apps Script
-  backend — the real backend needs `character-cloud-save-addition.gs`
-  (handed over separately, not part of this repo) pasted into the live
-  Apps Script project and redeployed, which this sandbox cannot verify
-  directly (outbound requests to script.google.com are blocked here,
-  confirmed by a direct `curl` test) — confirmed working against the
-  real deployment by the user directly.
+  test isn't exercising) is the one manual control left, since pulling a
+  character down inherently needs a code from the player; restores a
+  character from a mocked `action=load_character` response and
+  re-activates syncing under that code. This only exercises the client
+  side against a mocked Apps Script backend — the real backend needs
+  `character-cloud-save-addition.gs` (handed over separately, not part
+  of this repo) pasted into the live Apps Script project and
+  redeployed, which this sandbox cannot verify directly (outbound
+  requests to script.google.com are blocked here, confirmed by a direct
+  `curl` test) — confirmed working against the real deployment by the
+  user directly.
 - **`test_agent_file_open_character_sheet_btn`** — the "Open Character
   Sheet" button on the Agent Portal's Agent File tab, added above the era
   selector. Checks the button is present-but-hidden on the code-gate
@@ -160,9 +162,22 @@ non-zero if anything fails.
   Bonds table -- both of which used to sit off-screen to the right in the
   old side-by-side layout -- have their own bounding boxes fully within
   the viewport, not just a smaller overall scrollWidth. The sticky
-  HP/WP/SAN/BP tracker bar must fit without its own overflow, and the
-  Dice Roller widget (which auto-expands on wide viewports only -- see
-  above) must stay within the viewport rather than the fixed 270px
+  HP/WP/SAN/BP tracker bar must fit without its own overflow; SANITY
+  ROLL (shortened to "SAN ROLL" and repositioned via flex `order`,
+  unlike the generic dice quick-roll, which stays dropped as redundant)
+  must still be visible and sit between SAN and BP. This test also
+  pushes STR/CON/POW up before checking the tracker bar, not just
+  testing a fresh character's low single-digit defaults -- an earlier
+  version of this test only checked those defaults, which silently
+  hid a real bug: `.lp-tracker-sep`/`-max` (the "/15" half of "15/15")
+  were never actually shrunk for mobile, so a genuinely two-digit value
+  visually collided with the +/- buttons in real play despite every
+  page/bar-level overflow check passing (the container itself never
+  overflowed; its children just crowded on top of each other inside
+  it), which is why this test now also checks tracker items' own
+  bounding boxes for pairwise overlap, not just container scrollWidth.
+  The Dice Roller widget (which auto-expands on wide viewports only --
+  see above) must stay within the viewport rather than the fixed 270px
   floating panel it used to be.
 - **dg-agent-portal.html** — tab switching (Cover / Agent File / Cover IDs),
   full profession dropdown, random agent generator per profession, cover
