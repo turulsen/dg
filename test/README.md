@@ -110,22 +110,30 @@ non-zero if anything fails.
   check rather than treated as a failure, since it's the same intentional
   pattern `importFromPDF`/`importFromSheets` already use for their own
   bad-file cases.
-- **`test_cloud_save`** — the opt-in background Cloud Save
-  (`stats/cloud-sync.js`): inactive (no requests) until "Start Cloud
-  Save" mints a code and pushes an initial `action: 'save_character'`
-  POST, a debounced push fires again after a further edit (proves the
-  *ongoing* sync, not just a one-shot save — this test genuinely waits
-  out the 4s debounce), "Stop" (behind a `confirm()`, auto-accepted by
-  the test) clears the local code without touching the last synced copy,
-  and "Load by Code" (called directly with a code argument, bypassing
-  the native `prompt()` this test isn't exercising) restores a character
-  from a mocked `action=load_character` response and re-activates syncing
-  under that code. This only exercises the client side against a mocked
-  Apps Script backend — the real backend needs `character-cloud-save-
-  addition.gs` (handed over separately, not part of this repo) pasted
-  into the live Apps Script project and redeployed, which this sandbox
-  cannot verify directly (outbound requests to script.google.com are
-  blocked here, confirmed by a direct `curl` test).
+- **`test_cloud_save`** — the automatic background Cloud Save
+  (`stats/cloud-sync.js`): inactive (no requests) on page load before a
+  name is entered, auto-starts and pushes an initial `action:
+  'save_character'` POST from *entering a name alone* (no button
+  click), clicking "Start Cloud Save" while already active is a no-op
+  (no second code, no duplicate push), a debounced push fires again
+  after a further edit (proves the *ongoing* sync, not just the initial
+  auto-start push — this test genuinely waits out the 4s debounce), and
+  there's no Stop button — once a character is named, syncing it is just
+  how the page behaves, not a togglable setting (an earlier version of
+  this feature had Stop, which needed its own persisted opt-out flag
+  since any edit could re-provision a cleared code; removed rather than
+  kept working, since a toggle nobody can predict when it'll silently
+  flip back on is worse than not having one). "Load by Code" (called
+  directly with a code argument, bypassing the native `prompt()` this
+  test isn't exercising) restores a character from a mocked
+  `action=load_character` response and re-activates syncing under that
+  code. This only exercises the client side against a mocked Apps Script
+  backend — the real backend needs `character-cloud-save-addition.gs`
+  (handed over separately, not part of this repo) pasted into the live
+  Apps Script project and redeployed, which this sandbox cannot verify
+  directly (outbound requests to script.google.com are blocked here,
+  confirmed by a direct `curl` test) — confirmed working against the
+  real deployment by the user directly.
 - **`test_agent_file_open_character_sheet_btn`** — the "Open Character
   Sheet" button on the Agent Portal's Agent File tab, added above the era
   selector. Checks the button is present-but-hidden on the code-gate

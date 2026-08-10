@@ -568,15 +568,20 @@ def test_import_agent_auto_detect(p):
     return errs
 
 def test_cloud_save(p):
-    """Opt-in background cloud sync (stats/cloud-sync.js) -- lets a
+    """Automatic background cloud sync (stats/cloud-sync.js) -- lets a
     character built on one device be picked up on another by an Agent
-    Code, without an export/import file changing hands. Off by default
-    (no code, no requests); "Start Cloud Save" mints a code and starts a
-    debounced push on every edit; "Load by Code" pulls a saved character
-    back down. This exercises only the client side against a mocked
-    Apps Script backend -- the real backend needs the paired
-    character-cloud-save-addition.gs pasted into the live Apps Script
-    project and redeployed, which this sandbox cannot verify directly."""
+    Code, without an export/import file changing hands. Auto-starts on
+    the first edit made once a real name is present (idle theme-
+    switching or point-buy fiddling before naming an agent shouldn't
+    mint a throwaway row for every casual visitor); every further edit
+    pushes a debounced upsert; "Load by Code" pulls a saved character
+    back down. No Stop button -- once a character is named, syncing it
+    is just how the page behaves, not a togglable setting, same as the
+    pre-existing localStorage autosave it sits alongside. This exercises
+    only the client side against a mocked Apps Script backend -- the
+    real backend needs the paired character-cloud-save-addition.gs
+    pasted into the live Apps Script project and redeployed, which this
+    sandbox cannot verify directly."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -607,19 +612,20 @@ def test_cloud_save(p):
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(400)
 
-    # No code yet -- silent, nothing sent, matching the app's local-by-default posture.
-    record("stats-terminal", "Cloud Save is inactive until explicitly started",
-           page.eval_on_selector("#cloud-save-status", "el => el.textContent.trim()") == "")
+    # No code yet and no name entered -- silent, nothing sent, so an idle
+    # visitor never mints a throwaway row just from loading the page.
+    record("stats-terminal", "Cloud Save is inactive on page load, before any name is entered",
+           page.eval_on_selector("#cloud-save-status", "el => el.textContent.trim()") == "" and len(posts) == 0)
 
+    # Entering a real name -- with NO button click -- is the auto-start trigger.
     page.fill("#cs-name", "Priya Anand")
-    page.click("#cloud-save-bar button:has-text('Start Cloud Save')")
     page.wait_for_timeout(500)
 
     status1 = page.eval_on_selector("#cloud-save-status", "el => el.textContent")
-    record("stats-terminal", "Start Cloud Save shows an active code in the status line",
+    record("stats-terminal", "naming the agent auto-starts Cloud Save without pressing Start",
            "Cloud Save active" in status1 or "Synced" in status1, status1)
     save_posts = [b for b in posts if b.get("action") == "save_character"]
-    record("stats-terminal", "Start Cloud Save immediately pushes the character",
+    record("stats-terminal", "auto-start immediately pushes the character (not waiting for the debounce)",
            len(save_posts) >= 1, f"posts={posts}")
     if save_posts:
         first_state = json.loads(save_posts[0]["character_json"])
@@ -627,30 +633,34 @@ def test_cloud_save(p):
                first_state.get("bio", {}).get("name") == "Priya Anand", str(first_state.get("bio")))
 
     code = page.evaluate("window.dgCloudSave.getCloudCode()")
-    record("stats-terminal", "the minted cloud code is persisted to localStorage",
+    record("stats-terminal", "the auto-minted cloud code is persisted to localStorage",
            bool(code) and save_posts and save_posts[0].get("agent_code") == code, f"code={code!r}")
 
-    # An edit after Start Cloud Save should schedule (debounced) another
-    # push -- proves the ongoing "saved dynamically and updated" behavior,
-    # not just a one-shot save on the button click.
+    # Clicking Start Cloud Save while already active is a no-op, not a
+    # second code/duplicate push.
+    posts_before_click = len(posts)
+    page.click("#cloud-save-bar button:has-text('Start Cloud Save')")
+    page.wait_for_timeout(300)
+    record("stats-terminal", "clicking Start Cloud Save while already active doesn't mint a second code",
+           page.evaluate("window.dgCloudSave.getCloudCode()") == code)
+    record("stats-terminal", "clicking Start Cloud Save while already active doesn't push again",
+           len(posts) == posts_before_click, f"before={posts_before_click} after={len(posts)}")
+
+    # A further edit should schedule (debounced) another push -- proves
+    # ongoing "saved dynamically and updated" behavior, not just the
+    # initial auto-start push.
     page.fill("#cs-bio-nationality", "Indian-American")
     page.wait_for_timeout(4500)
     save_posts_after_edit = [b for b in posts if b.get("action") == "save_character"]
-    record("stats-terminal", "editing after Start Cloud Save schedules another debounced push",
+    record("stats-terminal", "editing after auto-start schedules another debounced push",
            len(save_posts_after_edit) >= 2, f"count={len(save_posts_after_edit)}")
     if len(save_posts_after_edit) >= 2:
         latest_state = json.loads(save_posts_after_edit[-1]["character_json"])
         record("stats-terminal", "the debounced push carries the edited field",
                latest_state.get("bio", {}).get("nationality") == "Indian-American", str(latest_state.get("bio")))
 
-    # Stop Cloud Save -- gated behind a confirm() dialog.
-    page.on("dialog", lambda d: d.accept())
-    page.click("#cloud-save-bar button:has-text('Stop')")
-    page.wait_for_timeout(300)
-    record("stats-terminal", "Stop Cloud Save clears the local code",
-           page.evaluate("window.dgCloudSave.getCloudCode()") == "")
-    record("stats-terminal", "Stop Cloud Save clears the status line",
-           page.eval_on_selector("#cloud-save-status", "el => el.textContent.trim()") == "")
+    record("stats-terminal", "there is no Stop button -- Cloud Save is not a togglable setting",
+           page.locator("#cloud-save-bar button", has_text="Stop").count() == 0)
 
     # Load by Code -- called directly with a code argument (bypassing the
     # native prompt(), which this test isn't exercising) against the

@@ -2,25 +2,28 @@
    CLOUD SAVE (this hub's addition, not part of the upstream character
    creator)
 
-   Opt-in, silent background sync of the current character to the Agent
+   Automatic background sync of the current character to the Agent
    Portal's Google Apps Script backend, keyed by an Agent Code -- so a
    character built on one device can be picked up on another without an
-   export/import file changing hands. Off by default: until a code
-   exists (via "Start Cloud Save" or loading an existing code), nothing
-   is sent anywhere, matching this app's existing all-local-by-default
-   behavior. Once a code exists, every debounced edit pushes an upsert
-   (same code overwrites its own row -- not a new one each time, unlike
-   a Cover-form brief submission).
+   export/import file changing hands. Auto-starts on the first edit made
+   once the agent has a real name (the same "is this actually a
+   character yet" threshold agent-portal-export.js already uses) -- not
+   on literally any interaction, so idle theme-switching or point-buy
+   fiddling before naming an agent doesn't mint a throwaway row in the
+   Characters tab for every casual visitor. Once a code exists, every
+   debounced edit pushes an upsert (same code overwrites its own row --
+   not a new one each time, unlike a Cover-form brief submission).
+
+   No manual stop: once a character is named, syncing it is just how
+   this page behaves now, same as the pre-existing localStorage
+   autosave it sits alongside -- not a togglable setting.
 
    Uses the exact same APPS_SCRIPT_URL and no-cors/keepalive POST pattern
    agent-portal-export.js already uses for Export to Agent File -- not a
    new backend integration, just a new `action` on the same endpoint.
    Requires a matching addition to the Apps Script project itself (see
-   character-cloud-save-addition.gs, handed over separately) -- until
-   that is pasted in and redeployed, saves/loads simply fail silently or
-   return NOT_FOUND, the same graceful-degradation behavior this app
-   already has for every other Apps Script call, so this feature is
-   safe to ship ahead of that step.
+   character-cloud-save-addition.gs, handed over separately) -- deployed
+   and confirmed working.
    ══════════════════════════════════════════════ */
 (function () {
     "use strict";
@@ -41,10 +44,6 @@
     }
     function setCloudCode(code) {
         try { localStorage.setItem(CLOUD_CODE_KEY, code); } catch (e) { /* best effort */ }
-        renderStatus();
-    }
-    function clearCloudCode() {
-        try { localStorage.removeItem(CLOUD_CODE_KEY); } catch (e) { /* best effort */ }
         renderStatus();
     }
 
@@ -72,9 +71,27 @@
           .catch(() => { /* silent, same as every other Apps Script call in this app */ });
     }
 
+    // Mints a code on first meaningful edit (a real name present) if one
+    // doesn't already exist, and pushes right away for immediate feedback
+    // -- matching startCloudSave()'s behavior -- rather than leaving the
+    // player staring at a status line for up to SYNC_DEBOUNCE_MS. Returns
+    // '' when there's nothing to name yet, which scheduleCloudSync()
+    // below treats as "nothing to do."
+    function ensureCloudCode() {
+        const existing = getCloudCode();
+        if (existing) return existing;
+        const name = (document.getElementById('cs-name')?.value || '').trim();
+        if (!name || name === 'Agent') return '';
+        const code = genCloudCode(name);
+        setCloudCode(code);
+        pushToCloud();
+        return code;
+    }
+
     let _syncDebounce;
     function scheduleCloudSync() {
-        if (!getCloudCode()) return;
+        const code = ensureCloudCode();
+        if (!code) return;
         clearTimeout(_syncDebounce);
         _syncDebounce = setTimeout(pushToCloud, SYNC_DEBOUNCE_MS);
     }
@@ -86,12 +103,6 @@
         const name = document.getElementById('cs-name')?.value || '';
         setCloudCode(genCloudCode(name));
         pushToCloud();
-    }
-
-    function stopCloudSave() {
-        if (!getCloudCode()) return;
-        if (!confirm('Stop cloud saving this character on this device? The last synced cloud copy is kept and can still be loaded by its code -- this only stops further updates from this browser.')) return;
-        clearCloudCode();
     }
 
     function loadFromCloud(codeArg) {
@@ -131,6 +142,6 @@
         document.head.appendChild(script);
     }
 
-    window.dgCloudSave = { startCloudSave, stopCloudSave, loadFromCloud, getCloudCode };
+    window.dgCloudSave = { startCloudSave, loadFromCloud, getCloudCode };
     document.addEventListener('DOMContentLoaded', () => renderStatus());
 })();
