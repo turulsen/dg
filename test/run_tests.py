@@ -976,14 +976,15 @@ def test_mobile_no_overflow(p):
     errs_all.extend(errs)
     page.close()
 
-    # Live Play (field-doc): the full character sheet deliberately keeps
-    # its printed-form width and scrolls horizontally within #lp-sheet
-    # rather than reflowing -- so the *page* must still never overflow,
-    # even with the sheet's own content (many fixed/percentage-width
-    # columns) at its natural size. Also exercises the sticky HP/WP/SAN/BP
-    # tracker bar and the Dice Roller widget, which auto-expands when this
-    # theme is selected -- both were previously overlapping/illegible on a
-    # phone independent of the page-level scrollWidth check.
+    # Live Play (field-doc): the full character sheet reflows to a single
+    # column below 700px (buildLpSheet()'s Personal Data table and the
+    # Stats+Bonds/Derived+Motivations/Physical Desc+Incidents side-by-side
+    # pairs all stack) instead of the earlier approach of widening the
+    # whole sheet and letting it scroll horizontally, which in practice
+    # left Nationality/Sex/Age/Education and the entire Bonds table
+    # sitting off-screen with no visual cue there was more to scroll to.
+    # Also exercises the sticky HP/WP/SAN/BP tracker bar and the Dice
+    # Roller widget, which auto-expands when this theme is selected.
     page = p.new_page(viewport={"width": 390, "height": 844})
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -999,8 +1000,35 @@ def test_mobile_no_overflow(p):
     record("mobile", "stats/index.html has no horizontal overflow at 390px viewport (Live Play theme, filled)",
            scroll_width <= 390, f"scrollWidth={scroll_width}")
     lp_scroll_width = page.evaluate("() => document.getElementById('lp-sheet')?.scrollWidth || 0")
-    record("mobile", "Live Play sheet itself is wider than the viewport (scrolls internally by design)",
-           lp_scroll_width > 390, f"lp scrollWidth={lp_scroll_width}")
+    record("mobile", "Live Play sheet itself now reflows to fit the viewport instead of scrolling horizontally",
+           lp_scroll_width <= 390, f"lp scrollWidth={lp_scroll_width}")
+
+    # Fields that used to sit off-screen to the right of Name/Profession/
+    # Employer in the old side-by-side Personal Data table -- confirm
+    # each one's own bounding box is now within the viewport, not just
+    # that the sheet's overall scrollWidth shrank.
+    for field_id in ["cs-bio-nationality", "cs-bio-sex", "cs-bio-age", "cs-bio-education"]:
+        box = page.evaluate(f"""() => {{
+            const el = document.querySelector('#lp-sheet .lp-proxy[data-src="{field_id}"]');
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            return {{ right: r.right, width: r.width }};
+        }}""")
+        record("mobile", f"Live Play Personal Data field '{field_id}' is fully within the viewport, not clipped off-screen",
+               bool(box) and box["right"] <= 390 and box["width"] > 20, f"box={box}")
+
+    # The Bonds table used to be the right-hand column of a 44%/flex-1
+    # side-by-side row that only fit inside a 780px-wide scrolling sheet
+    # -- confirm its header is now visible within the viewport at all.
+    bonds_visible = page.evaluate("""() => {
+        const el = document.getElementById('lp-bonds-tbody');
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        return r.width > 20 && r.right <= 390;
+    }""")
+    record("mobile", "Live Play Bonds table is visible within the viewport, not pushed off-screen",
+           bonds_visible)
+
     tracker_overflow = page.evaluate("""() => {
         const bar = document.getElementById('lp-tracker-bar');
         return bar ? bar.scrollWidth - bar.clientWidth : 0;

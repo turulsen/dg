@@ -140,14 +140,22 @@ non-zero if anything fails.
   plus all six `stats/index.html` themes individually (X-Files, Modern, Son
   of Sam, Field Notes, Mobile, and Live Play with real content filled in —
   see the root README's Mobile section for what was actually wrong and how
-  it was fixed). Live Play gets three extra checks since page-level
-  scrollWidth alone doesn't catch everything that was broken there: the
-  full character sheet's own `#lp-sheet` *is* expected to be wider than the
-  viewport (it scrolls horizontally within its own box by design, so this
-  test asserts `scrollWidth > 390` for it, not `<=`), the sticky HP/WP/SAN/
-  BP tracker bar must fit without its own overflow, and the Dice Roller
-  widget (which auto-expands when Live Play is selected) must stay within
-  the viewport rather than the fixed 270px floating panel it used to be.
+  it was fixed). Live Play gets several extra checks since page-level
+  scrollWidth alone doesn't catch everything that was broken there: an
+  earlier version of this fix let `#lp-sheet` scroll horizontally within
+  its own box "like panning a PDF," so this test used to assert it was
+  *wider* than the viewport on purpose -- real usage on a phone showed
+  that just left content off-screen with no cue there was more to scroll
+  to, so it now genuinely reflows below 700px and this test asserts
+  `scrollWidth <= 390` for it like everything else, plus checks that
+  specific Personal Data fields (Nationality/Sex/Age/Education) and the
+  Bonds table -- both of which used to sit off-screen to the right in the
+  old side-by-side layout -- have their own bounding boxes fully within
+  the viewport, not just a smaller overall scrollWidth. The sticky
+  HP/WP/SAN/BP tracker bar must fit without its own overflow, and the
+  Dice Roller widget (which auto-expands on wide viewports only -- see
+  above) must stay within the viewport rather than the fixed 270px
+  floating panel it used to be.
 - **dg-agent-portal.html** — tab switching (Cover / Agent File / Cover IDs),
   full profession dropdown, random agent generator per profession, cover
   form submit + dossier render, localStorage persistence, restoring an

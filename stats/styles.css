@@ -7671,31 +7671,81 @@ input[type="checkbox"]:checked+label {
         overflow-wrap: anywhere;
     }
 
-    /* Live Play's full character sheet deliberately mirrors a printed
-       DD Form 315-style paper form -- fixed percentage-width table
-       columns, two side-by-side sub-columns (.lp-sp-col-l at 44% / a
-       remaining .lp-sp-col-r) for Stats+Bonds and Derived+Motivations,
-       a 3-column skills grid, etc. Below their design width these
-       don't just truncate gracefully, they visually overlap and cut
-       off mid-word (percentage widths and fixed-layout tables don't
-       degrade the way normal text flow does). Rather than trying to
-       reflow a form that's intentionally shaped like a specific piece
-       of paper, give it back the width it needs and let the whole
-       sheet scroll horizontally as one unit -- like panning around a
-       PDF or a spreadsheet on a phone -- instead of squeezing into
-       390px illegibly. This is the one deliberate exception to "no
-       page should ever need horizontal scroll" here. */
+    /* Live Play's full character sheet mirrors a printed DD Form
+       315-style paper form -- fixed percentage-width table columns,
+       two side-by-side sub-columns (.lp-sp-col-l at 44% / a remaining
+       .lp-sp-col-r) for Stats+Bonds and Derived+Motivations, a
+       3-column skills grid, etc. Below their design width these don't
+       just truncate gracefully, they visually overlap and cut off
+       mid-word (percentage widths and fixed-layout tables don't
+       degrade the way normal text flow does). An earlier version of
+       this fix widened the whole sheet and let it scroll horizontally
+       instead -- "like panning a PDF" -- but in practice that meant
+       Nationality/Sex/Age/Education and the entire Bonds table sat
+       off-screen with no visual cue there was more to scroll to, which
+       is worse than reflowing the paper-form metaphor loses some
+       fidelity. So: actually reflow it. Every side-by-side pair below
+       stacks to one column below the 700px breakpoint; nothing here
+       needs `!important`-fighting inline percentage widths except
+       where the generated HTML sets them inline (buildLpSheet() in
+       scripts.js), which does need it. */
     #lp-sheet {
-        overflow-x: auto;
+        overflow-x: hidden;
     }
-    #lp-sheet .lp-band > div,
-    #lp-sheet .lp-sp-grid {
-        min-width: 780px;
+
+    /* Personal Data band: a real <table> with inline width:18%/20%/
+       14%/7%/5% percentage <td>s (see buildLpSheet()) -- switching
+       table/tr/td to block display stacks each field as its own full-
+       width row instead of squeezing seven fields into one. Scoped to
+       `.lp-band > div > table` (a direct child) rather than the more
+       obvious `.lp-band table.lp-full-table`, because the Stats+Bonds
+       row (`.lp-band.lp-stats-psych-row`) also carries the `.lp-band`
+       class -- an unscoped descendant selector would reach three
+       levels deeper into .lp-sp-grid and wreck the Statistics/Bonds/
+       Derived Attributes tables' own row layout too, which must stay
+       untouched (see .lp-sp-row below for how those actually reflow). */
+    #lp-sheet .lp-band > div > table.lp-full-table,
+    #lp-sheet .lp-band > div > table.lp-full-table > tbody,
+    #lp-sheet .lp-band > div > table.lp-full-table > tbody > tr,
+    #lp-sheet .lp-band > div > table.lp-full-table > tr {
+        display: block;
+        width: 100%;
+        /* The base #lp-sheet .lp-full-table tbody tr rule fixes every LP
+           table row to 28px so left/right columns stay grid-aligned --
+           correct for the Statistics/Bonds/Derived Attributes tables
+           (untouched, still real single-line table rows), but this row
+           now stacks seven fields and needs to grow with its content
+           instead of clipping them and overlapping the next band. */
+        height: auto;
     }
-    #lp-sheet .lp-full-table {
-        width: max-content;
-        min-width: 100%;
+    #lp-sheet .lp-band > div > table.lp-full-table td.lp-cell {
+        display: block;
+        width: 100% !important;
+        box-sizing: border-box;
+        border-right: none !important;
+        border-bottom: 1px solid #000;
     }
+    #lp-sheet .lp-band > div > table.lp-full-table tr:last-child td.lp-cell:last-child {
+        border-bottom: none;
+    }
+
+    /* Stats+Bonds / Derived+Motivations / Physical Desc+Incidents:
+       each .lp-sp-row holds a 44%/flex-1 side-by-side pair -- stack
+       instead, with a bottom border where the vertical divider used
+       to be so the section break is still visible. */
+    #lp-sheet .lp-sp-row {
+        flex-direction: column;
+    }
+    #lp-sheet .lp-sp-col-l {
+        flex-basis: auto;
+        border-right: none;
+        border-bottom: 1px solid #000;
+    }
+
+    /* Weapons table already scrolls within its own wrapper div
+       (buildLpSheet()), which stays as designed -- a compact 6-column
+       stat table has no useful single-column reflow, and unlike the
+       bands above, nothing outside that wrapper is affected by it. */
 
     /* Skills grid: fixed 3 columns + an 80px column-gap were never going
        to fit a phone. Same underlying issue as the fieldset above --
@@ -7712,6 +7762,40 @@ input[type="checkbox"]:checked+label {
     .cs-skill-pair,
     .cs-skill-name {
         min-width: 0;
+    }
+
+    /* Live Play's own "Applicable Skill Sets" grid -- same fixed
+       3-column issue as #cs-skills above, but this one *did* force
+       page-level overflow: a CSS grid's `1fr` track has an implicit
+       `minmax(auto, 1fr)`, and `auto` behaves like each track's
+       min-content size unless overridden -- .lp-sk-name-td's
+       white-space:nowrap (needed for its own text-overflow:ellipsis
+       to work) means that min-content size was each skill table's
+       longest unwrapped name, not 0, so the grid never actually
+       shrank below that regardless of column count. min-width:0 on
+       both the grid and its table children is the actual fix; the
+       column count is just for legibility. */
+    #lp-sheet .lp-skills-grid {
+        grid-template-columns: repeat(2, 1fr);
+        min-width: 0;
+    }
+    #lp-sheet .lp-skills-grid > table {
+        min-width: 0;
+    }
+
+    /* Skills footer: "Checkbox = Failed..." note and the +ADD SKILL /
+       CLEAR SESSION MARKS / ROLL IMPROVEMENTS button row sit side by
+       side (space-between) at full size -- three nowrap buttons don't
+       fit next to that note on a phone. Stack the note above the
+       buttons, and let the button row wrap onto a second line instead
+       of forcing the page wide. */
+    #lp-sheet .lp-skills-footer {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+    }
+    #lp-sheet .lp-skills-footer > div {
+        flex-wrap: wrap;
     }
 
     /* Biography fields: a fixed 160px label column left barely 170px for
