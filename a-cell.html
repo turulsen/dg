@@ -5,30 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Delta Green — A-Cell</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/theme-folder.css">
 <style>
-  :root{
-    --ink:#e8e2d4; --paper:#e8e2d4; --bg:#1c1b16; --bg2:#14130f;
-    --red:#8b1a1a; --red-glow:#8b1a1a40; --rule:#4a4636; --dim:#a89868;
-    --term-green:#3ef07a; --term-green-dim:#1e7a42;
-  }
-  *{box-sizing:border-box;margin:0;padding:0;}
-  body{
-    background:var(--bg); color:var(--ink);
-    font-family:'Source Sans 3',sans-serif; font-weight:300;
-    min-height:100vh; padding:0 0 80px;
-  }
+  :root{ --term-green:#3ef07a; --term-green-dim:#1e7a42; }
+  *{box-sizing:border-box;}
 
   /* ══════════════════════════════════════════════
      A-CELL GATE -- same black-screen green-terminal aesthetic as the
      hub's boot splash (index.html), but interactive: the Handler types
      the clearance password (MASTICATE) and presses Enter. Session-gated
-     like the boot splash, so re-entering A-Cell later in the same tab
-     doesn't ask again -- but a fresh tab/session always asks. This is a
-     client-side flavor gate for in-fiction "clearance", not real access
-     control: anyone with devtools/view-source can read the password
-     check below. Do not rely on this for anything that actually needs
-     to be secret.
+     like the boot splash. Deliberately kept as its own distinct
+     black-terminal moment even though the rest of the page below now
+     uses the folder/paper look -- this is the "before you're let in"
+     beat, not the working UI. Client-side flavor gate for in-fiction
+     "clearance", not real access control.
      ══════════════════════════════════════════════ */
   #acell-gate{
     position:fixed; inset:0; z-index:9999; background:#000;
@@ -77,113 +68,100 @@
   }
   body.acell-lock{ overflow:hidden; height:100vh; }
 
-  header{
-    background:var(--bg2); border-bottom:2px solid var(--red);
-    padding:32px 20px 30px; text-align:center; position:relative;
+  /* ── Post-gate: folder/paper look, shared with Agent Hub + Agent File ── */
+  .hub-header{ max-width:900px; margin:0 auto; padding:32px 6px 22px; position:relative; }
+  .hub-header .back-link{
+    font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.15em;
+    text-transform:uppercase; color:#8a9878; text-decoration:none;
   }
-  .back-link{
-    position:absolute; top:16px; left:20px;
-    font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:.05em;
-    color:var(--dim); text-decoration:none;
-  }
-  .back-link:hover{ color:var(--ink); }
-  .stamp{
+  .hub-header .back-link:hover{ color:#c8c1a8; }
+  .hub-header .stamp{
     font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.3em;
-    text-transform:uppercase; color:var(--red); border:1.5px solid var(--red);
-    display:inline-block; padding:4px 12px; margin-bottom:16px; opacity:.85;
+    text-transform:uppercase; color:#c96a6a; border:1.5px solid #c96a6a;
+    display:inline-block; padding:4px 12px; margin:14px 0 10px; opacity:.85;
   }
-  h1{
-    font-family:'Special Elite',monospace; font-size:clamp(24px,4.5vw,34px);
-    letter-spacing:.02em; margin-bottom:8px;
+  .hub-header h1{
+    font-family:'Special Elite',monospace; font-weight:400; font-size:clamp(22px,4vw,30px);
+    color:#e9e3ce; margin:0 0 8px; letter-spacing:.01em;
   }
-  header p{ color:var(--dim); font-size:13px; max-width:520px; margin:0 auto; line-height:1.6; }
-  main{max-width:980px; margin:0 auto; padding:40px 20px 0;}
-
-  section{ margin-bottom:44px; }
-  .sec-head{
-    font-family:'Special Elite',monospace; font-size:12px; letter-spacing:.2em;
-    text-transform:uppercase; color:var(--red); margin-bottom:14px;
-    border-bottom:1px solid var(--rule); padding-bottom:8px;
-  }
-  .acell-card{
-    background:var(--bg2); border:1px solid var(--rule); border-left:3px solid var(--red);
-    padding:20px 22px;
-  }
-  .acell-card p{ font-size:13px; color:var(--dim); line-height:1.7; }
+  .hub-header p{ font-size:13px; color:#b7b09a; max-width:62ch; line-height:1.7; margin:0; }
+  .folder-wrap{ max-width:900px; margin:26px auto 0; padding:0 6px; }
 
   /* ── Play: agent list + simplified read-only view ── */
-  .play-layout{ display:grid; grid-template-columns:260px 1fr; gap:18px; align-items:start; }
+  .play-layout{ display:grid; grid-template-columns:240px 1fr; gap:18px; align-items:start; }
   @media (max-width:720px){ .play-layout{ grid-template-columns:1fr; } }
   .play-agent-list{
     display:flex; flex-direction:column; gap:6px;
-    max-height:560px; overflow-y:auto;
-    background:var(--bg2); border:1px solid var(--rule); padding:8px;
+    max-height:520px; overflow-y:auto;
+    background:rgba(28,22,8,.04); border:1px solid var(--rule); padding:8px;
   }
   .play-agent-btn{
     text-align:left; background:transparent; border:1px solid var(--rule); color:var(--ink);
     padding:9px 11px; font-family:inherit; cursor:pointer; transition:border-color .15s, background .15s;
   }
-  .play-agent-btn:hover{ border-color:var(--dim); }
-  .play-agent-btn.active{ border-color:var(--red); background:var(--red-glow); }
-  .play-agent-btn .pa-name{ font-family:'Special Elite',monospace; font-size:13px; overflow-wrap:anywhere; }
-  .play-agent-btn .pa-meta{ color:var(--dim); font-size:10px; margin-top:3px; }
-  .play-view{ background:var(--bg2); border:1px solid var(--rule); padding:20px 22px; min-height:180px; }
+  .play-agent-btn:hover{ border-color:var(--ink-2); }
+  .play-agent-btn.active{ border-color:var(--red); background:rgba(139,26,26,.08); }
+  .play-agent-btn .pa-name{ font-family:'Special Elite',monospace; font-size:13px; color:var(--ink); overflow-wrap:anywhere; }
+  .play-agent-btn .pa-meta{ color:var(--ink-3); font-size:10px; margin-top:3px; font-family:'Courier Prime',monospace; }
+  #play-view.paper{ padding:var(--s6) var(--s5); min-height:180px; }
   .play-view-empty, .play-loading, .play-error{
-    color:var(--dim); font-size:13px; font-style:italic; text-align:center; padding:26px 10px;
+    color:var(--ink-3); font-size:13px; font-style:italic; text-align:center; padding:26px 10px;
   }
-  .pv-bio{ font-family:'Special Elite',monospace; font-size:19px; overflow-wrap:anywhere; }
-  .pv-sub{ color:var(--dim); font-size:12px; margin:4px 0 18px; }
+  .pv-bio{ font-family:'Special Elite',monospace; font-size:19px; color:var(--ink); overflow-wrap:anywhere; }
+  .pv-sub{ color:var(--ink-3); font-size:11px; margin:4px 0 18px; font-family:'Courier Prime',monospace; letter-spacing:.04em; }
   .pv-stats{ display:grid; grid-template-columns:repeat(6,1fr); gap:8px; margin-bottom:16px; }
   @media (max-width:520px){ .pv-stats{ grid-template-columns:repeat(3,1fr); } }
   .pv-stat{ text-align:center; border:1px solid var(--rule); padding:8px 4px; }
-  .pv-stat .lbl{ font-size:10px; color:var(--dim); letter-spacing:.1em; }
-  .pv-stat .val{ font-family:'Special Elite',monospace; font-size:19px; }
-  .pv-derived{ display:flex; gap:16px; flex-wrap:wrap; margin-bottom:20px; font-size:12px; color:var(--dim); }
+  .pv-stat .lbl{ font-size:9px; color:var(--ink-3); letter-spacing:.1em; font-family:'Courier Prime',monospace; }
+  .pv-stat .val{ font-family:'Special Elite',monospace; font-size:19px; color:var(--ink); }
+  .pv-derived{ display:flex; gap:16px; flex-wrap:wrap; margin-bottom:20px; font-size:11px; color:var(--ink-3); font-family:'Courier Prime',monospace; }
   .pv-derived strong{ color:var(--ink); font-family:'Special Elite',monospace; }
-  .pv-skills{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:3px 16px; font-size:12px; }
-  .pv-skill{ display:flex; justify-content:space-between; gap:8px; border-bottom:1px dotted var(--rule); padding:3px 0; }
-  .pv-skill .sv{ color:var(--dim); flex-shrink:0; }
+  .pv-skills{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:3px 16px; font-size:11px; font-family:'Courier Prime',monospace; }
+  .pv-skill{ display:flex; justify-content:space-between; gap:8px; border-bottom:1px dotted var(--rule); padding:3px 0; color:var(--ink-2); }
+  .pv-skill .sv{ color:var(--ink-3); flex-shrink:0; }
 
   /* ── Cells: full roster, filterable, inline Handler/Operation tags ── */
   .cells-filters{ display:flex; gap:20px; flex-wrap:wrap; margin-bottom:16px; }
   .cells-filters label{
     display:flex; flex-direction:column; gap:5px;
-    font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:.1em;
-    text-transform:uppercase; color:var(--dim);
+    font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--ink-3);
   }
   .cells-filters select{
-    background:var(--bg2); border:1px solid var(--rule); color:var(--ink);
+    background:var(--paper); border:1px solid var(--rule); color:var(--ink);
     padding:7px 10px; font-family:'Source Sans 3',sans-serif; font-size:13px; min-width:160px;
   }
   .cells-list{ display:flex; flex-direction:column; gap:8px; }
   .cells-row{
     display:flex; align-items:center; gap:14px; flex-wrap:wrap;
-    background:var(--bg2); border:1px solid var(--rule); padding:12px 16px;
+    background:rgba(28,22,8,.04); border:1px solid var(--rule); padding:12px 16px;
   }
   .cells-row.cells-row-hidden{ display:none; }
   .cells-info{ min-width:0; flex:1 1 180px; }
-  .cells-info .name{ font-family:'Special Elite',monospace; font-size:14px; overflow-wrap:anywhere; }
-  .cells-info .meta{ font-size:11px; color:var(--dim); margin-top:2px; }
-  .cells-tags{ display:flex; gap:8px; flex-wrap:wrap; margin-left:auto; }
+  .cells-info .name{ font-family:'Special Elite',monospace; font-size:14px; color:var(--ink); overflow-wrap:anywhere; }
+  .cells-info .meta{ font-size:11px; color:var(--ink-3); margin-top:2px; font-family:'Courier Prime',monospace; }
+  .cells-tags{ display:flex; gap:14px; flex-wrap:wrap; margin-left:auto; }
   .cells-tag-field{ display:flex; flex-direction:column; gap:4px; }
   .cells-tag-field span{
-    font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:.1em;
-    text-transform:uppercase; color:var(--dim);
+    font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--ink-3);
   }
   .cells-tag-field input{
-    background:var(--bg); border:1px solid var(--rule); color:var(--ink);
-    padding:6px 9px; font-size:12px; width:140px; font-family:'JetBrains Mono',monospace;
+    background:transparent; border:none; border-bottom:1.5px solid rgba(90,74,16,.4);
+    color:var(--ink); padding:4px 0; font-size:12px; width:140px; font-family:'Courier Prime',monospace;
   }
-  .cells-tag-field input:focus{ outline:none; border-color:var(--red); }
+  .cells-tag-field input:focus{ outline:none; border-bottom-color:var(--red); }
   .cells-save-note{
-    font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--term-green);
+    font-family:'Courier Prime',monospace; font-size:9px; color:var(--green);
     min-height:1.2em; margin-top:2px;
   }
 
-  footer{ text-align:center; color:var(--rule); font-size:11px; margin-top:64px; }
+  .music-copy{ font-size:12px; color:var(--ink-2); line-height:1.85; max-width:52ch; margin-bottom:var(--s4); }
+
+  footer.site-footer{ text-align:center; color:#6a6250; font-size:11px; margin-top:56px; }
 </style>
 </head>
-<body class="acell-lock">
+<body class="acell-lock folder-theme">
 
 <div id="acell-gate">
   <div id="acell-term">
@@ -198,50 +176,70 @@
   </div>
 </div>
 
-<header>
+<div class="hub-header">
   <a class="back-link" href="index.html">&larr; Clearance</a>
   <div class="stamp">Clearance: A-Cell</div>
   <h1>A-Cell</h1>
   <p>Handler tools — run Play from a simplified agent view, organize every Agent on file into Cells, and curate the table's music.</p>
-</header>
+</div>
 
-<main>
-  <section>
-    <div class="sec-head">Play</div>
-    <div class="play-layout">
-      <div class="play-agent-list" id="play-agent-list">
-        <div class="play-loading">Loading agents…</div>
+<div class="folder-wrap">
+  <div class="folder">
+    <div class="tab-strip" id="acell-tab-strip">
+      <div class="tw active" data-tab="play"><span>Play</span></div>
+      <div class="tw inactive" data-tab="cells"><span>Cells</span></div>
+      <div class="tw inactive" data-tab="music"><span>Music</span></div>
+    </div>
+    <div class="folder-body">
+
+      <div class="tab-panel active" id="panel-play">
+        <div class="play-layout">
+          <div class="play-agent-list" id="play-agent-list">
+            <div class="play-loading">Loading agents…</div>
+          </div>
+          <div class="paper" id="play-view">
+            <div class="play-view-empty">Select an Agent to view their stats and skills.</div>
+          </div>
+        </div>
       </div>
-      <div class="play-view" id="play-view">
-        <div class="play-view-empty">Select an Agent to view their stats and skills.</div>
+
+      <div class="tab-panel" id="panel-cells">
+        <div class="cells-filters">
+          <label>Handler
+            <select id="cells-filter-handler"><option value="">All</option></select>
+          </label>
+          <label>Operation
+            <select id="cells-filter-operation"><option value="">All</option></select>
+          </label>
+        </div>
+        <div class="cells-list" id="cells-list">
+          <div class="play-loading">Loading agents…</div>
+        </div>
       </div>
-    </div>
-  </section>
 
-  <section>
-    <div class="sec-head">Cells</div>
-    <div class="cells-filters">
-      <label>Handler
-        <select id="cells-filter-handler"><option value="">All</option></select>
-      </label>
-      <label>Operation
-        <select id="cells-filter-operation"><option value="">All</option></select>
-      </label>
-    </div>
-    <div class="cells-list" id="cells-list">
-      <div class="play-loading">Loading agents…</div>
-    </div>
-  </section>
+      <div class="tab-panel" id="panel-music">
+        <div class="paper">
+          <div class="paper-rules"></div>
+          <div class="paper-margin"></div>
+          <div class="holes"><div class="hole"></div><div class="hole"></div><div class="hole"></div></div>
+          <div class="paper-content">
+            <div class="paper-header">
+              <div>
+                <div class="paper-title-sub">Table Soundtrack</div>
+                <div class="paper-title">Music</div>
+              </div>
+            </div>
+            <div class="stamps"><div class="stamp">Coming Online Next</div></div>
+            <p class="music-copy">Play and curate the table's soundtrack — YouTube/SoundCloud links and sound effects, loosely synced to everyone in the Cell.</p>
+          </div>
+        </div>
+      </div>
 
-  <section>
-    <div class="sec-head">Music</div>
-    <div class="acell-card">
-      <p>Play and curate the table's soundtrack — YouTube/SoundCloud links and sound effects, loosely synced to everyone in the Cell. Coming online next.</p>
     </div>
-  </section>
-</main>
+  </div>
+</div>
 
-<footer>Delta Green is a trademark of Arc Dream Publishing. Unofficial fan-made campaign tools.</footer>
+<footer class="site-footer">Delta Green is a trademark of Arc Dream Publishing. Unofficial fan-made campaign tools.</footer>
 
 <script>
 /* ══════════════════════════════════════════════
@@ -309,6 +307,28 @@
   // Handler who clicked elsewhere doesn't have to click back into it.
   document.addEventListener('click', function () {
     if (!input.disabled) input.focus();
+  });
+})();
+</script>
+
+<script>
+/* A-Cell's own folder tab strip (Play / Cells / Music) -- a fixed
+   3-tab strip, unlike agent-hub.html's dynamically-built per-agent
+   tabs. Mirrors dg-agent-portal.html's switchTab(): a full class
+   replace per tab, not classList.toggle, so 'tw active' and
+   'tw inactive' stay mutually exclusive. */
+(function () {
+  var strip = document.getElementById('acell-tab-strip');
+  strip.addEventListener('click', function (e) {
+    var tab = e.target.closest('.tw');
+    if (!tab) return;
+    var id = tab.dataset.tab;
+    strip.querySelectorAll('.tw').forEach(function (t) {
+      t.className = 'tw ' + (t.dataset.tab === id ? 'active' : 'inactive');
+    });
+    document.querySelectorAll('.folder-body > .tab-panel').forEach(function (p) {
+      p.classList.toggle('active', p.id === 'panel-' + id);
+    });
   });
 })();
 </script>

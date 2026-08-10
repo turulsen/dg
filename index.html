@@ -5,29 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Delta Green — Clearance</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/theme-folder.css">
 <style>
   :root{
-    --ink:#e8e2d4; --paper:#e8e2d4; --bg:#1c1b16; --bg2:#14130f;
-    --red:#8b1a1a; --red-glow:#8b1a1a40; --rule:#4a4636; --dim:#a89868;
     --term-green:#3ef07a; --term-green-dim:#1e7a42;
   }
-  *{box-sizing:border-box;margin:0;padding:0;}
-  body{
-    background:var(--bg); color:var(--ink);
-    font-family:'Source Sans 3',sans-serif; font-weight:300;
-    min-height:100vh; padding:0 0 80px;
-  }
+  *{box-sizing:border-box;}
 
   /* ══════════════════════════════════════════════
      BOOT SPLASH -- black screen, green CRT-terminal text, then a fading
-     "Mars Technologies" front-company wordmark. Session-gated (not
-     localStorage): sessionStorage persists for this tab's lifetime, so
-     it plays once per new tab/session (matching "load in every new
-     session") but not on every internal hub navigation within the same
-     tab -- after this, loading is instant, matching "every loading
-     after this is fast and snappy". Runs ~8s total, capped at ~8.6s so
-     it can never meaningfully overrun that even on a slow device.
+     Mars Technologies seal. Session-gated (not localStorage):
+     sessionStorage persists for this tab's lifetime, so it plays once
+     per new tab/session (matching "load in every new session") but not
+     on every internal hub navigation within the same tab -- after this,
+     loading is instant, matching "every loading after this is fast and
+     snappy". Runs ~8s total, capped at ~8.6s so it can never
+     meaningfully overrun that even on a slow device. Deliberately kept
+     as its own distinct black-terminal moment even though the rest of
+     the page now uses the folder/paper look -- this is the "before
+     you're let in" beat, not the working UI.
      ══════════════════════════════════════════════ */
   #boot-splash{
     position:fixed; inset:0; z-index:9999; background:#000;
@@ -62,73 +59,60 @@
   }
   body.boot-lock{ overflow:hidden; height:100vh; }
 
-  header{
-    background:var(--bg2); border-bottom:2px solid var(--red);
-    padding:48px 20px 36px; text-align:center;
-  }
-  .stamp{
+  /* ── Post-splash: folder/paper look, shared with Agent Hub + Agent File ── */
+  .hub-header{ max-width:900px; margin:0 auto; padding:40px 6px 22px; text-align:center; }
+  .hub-header .stamp{
     font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.3em;
-    text-transform:uppercase; color:var(--red); border:1.5px solid var(--red);
-    display:inline-block; padding:4px 12px; margin-bottom:20px; opacity:.8;
+    text-transform:uppercase; color:#c96a6a; border:1.5px solid #c96a6a;
+    display:inline-block; padding:4px 12px; margin-bottom:18px; opacity:.85;
   }
-  h1{
-    font-family:'Special Elite',monospace; font-size:clamp(26px,5vw,40px);
-    letter-spacing:.02em; margin-bottom:10px;
+  .hub-header h1{
+    font-family:'Special Elite',monospace; font-weight:400; font-size:clamp(24px,4.5vw,34px);
+    color:#e9e3ce; margin:0 0 10px; letter-spacing:.01em;
   }
-  header p{
-    color:var(--dim); font-size:14px; max-width:520px; margin:0 auto; line-height:1.7;
-  }
-  main{max-width:960px; margin:0 auto; padding:48px 20px 0;}
+  .hub-header p{ font-size:13px; color:#b7b09a; max-width:60ch; margin:0 auto; line-height:1.7; }
+  .folder-wrap{ max-width:900px; margin:8px auto 0; padding:0 6px; }
 
-  /* ── Clearance branch chooser ── */
-  .clearance-grid{
-    display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:24px;
-    margin-bottom:8px;
+  .clearance-choices{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:18px;
+    margin-bottom:var(--s6);
   }
-  .clearance-card{
-    background:var(--bg2); border:1px solid var(--rule);
-    padding:32px 26px; text-decoration:none; color:var(--ink);
-    display:flex; flex-direction:column; gap:12px; text-align:center;
-    transition:border-color .2s, transform .15s, box-shadow .2s;
+  .clearance-choice{
+    background:rgba(28,22,8,.03); border:1px solid var(--rule);
+    padding:22px 20px; text-decoration:none; color:var(--ink);
+    display:flex; flex-direction:column; gap:8px;
     position:relative; overflow:hidden;
+    transition:border-color .15s, transform .15s;
   }
-  .clearance-card::before{
-    content:''; position:absolute; inset:0 0 auto 0; height:3px;
+  .clearance-choice::before{ content:''; position:absolute; inset:0 0 auto 0; height:3px; }
+  .clearance-choice.cc-agent::before{ background:var(--ink-3); }
+  .clearance-choice.cc-acell::before{ background:var(--red); }
+  .clearance-choice:hover{ transform:translateY(-2px); border-color:var(--ink-2); }
+  .cc-code{
+    font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.22em;
+    text-transform:uppercase; color:var(--ink-3);
   }
-  .clearance-card.clearance-agent::before{ background:var(--dim); }
-  .clearance-card.clearance-acell::before{ background:var(--red); }
-  .clearance-card:hover{ transform:translateY(-3px); }
-  .clearance-card.clearance-agent:hover{ border-color:var(--dim); box-shadow:0 4px 18px rgba(168,152,104,.15); }
-  .clearance-card.clearance-acell:hover{ border-color:var(--red); box-shadow:0 4px 18px rgba(139,26,26,.2); }
-  .clearance-card .clearance-code{
-    font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:.3em;
-    text-transform:uppercase; color:var(--dim);
-  }
-  .clearance-card.clearance-acell .clearance-code{ color:var(--red); }
-  .clearance-card h2{
-    font-family:'Special Elite',monospace; font-size:22px; letter-spacing:.03em;
-  }
-  .clearance-card p{ font-size:13px; color:var(--dim); line-height:1.7; }
-  .clearance-card .go{
-    font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.15em;
-    text-transform:uppercase; color:var(--ink); margin-top:auto; padding-top:10px;
+  .clearance-choice.cc-acell .cc-code{ color:var(--red); }
+  .cc-title{ font-family:'Special Elite',monospace; font-size:19px; letter-spacing:.02em; }
+  .clearance-choice p{ font-size:12px; color:var(--ink-2); line-height:1.65; margin:0; }
+  .cc-go{
+    font-family:'Special Elite',monospace; font-size:9px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--ink); margin-top:auto; padding-top:6px;
   }
 
-  section.notes{
-    max-width:720px; margin:64px auto 0; padding:0 20px;
-    font-size:13px; color:var(--dim); line-height:1.8;
+  .notes-block{ font-size:12px; color:var(--ink-2); line-height:1.8; }
+  .notes-block h3{
+    font-family:'Special Elite',monospace; font-size:11px; letter-spacing:.18em;
+    text-transform:uppercase; color:var(--red); margin-bottom:10px;
+    border-bottom:1px solid var(--rule); padding-bottom:7px;
   }
-  section.notes h3{
-    font-family:'Special Elite',monospace; font-size:12px; letter-spacing:.2em;
-    text-transform:uppercase; color:var(--red); margin-bottom:12px;
-    border-bottom:1px solid var(--rule); padding-bottom:8px;
-  }
-  section.notes ul{ padding-left:18px; }
-  section.notes li{ margin-bottom:6px; }
-  footer{ text-align:center; color:var(--rule); font-size:11px; margin-top:64px; }
+  .notes-block ul{ padding-left:18px; margin:0; }
+  .notes-block li{ margin-bottom:5px; }
+
+  footer.site-footer{ text-align:center; color:#6a6250; font-size:11px; margin-top:56px; }
 </style>
 </head>
-<body class="boot-lock">
+<body class="boot-lock folder-theme">
 
 <div id="boot-splash">
   <div id="boot-term"></div>
@@ -139,39 +123,57 @@
   </div>
 </div>
 
-<header>
+<div class="hub-header">
   <div class="stamp">Friendly Programs Division — Internal Use</div>
   <h1>Delta Green Agent Hub</h1>
   <p>Player-facing tools for the campaign — build a cover identity, roll or point-buy a new Agent, and keep dossiers up to date between sessions.</p>
-</header>
+</div>
 
-<main>
-  <div class="clearance-grid">
-    <a class="clearance-card clearance-agent" href="agent-hub.html">
-      <span class="clearance-code">Clearance: Agent</span>
-      <h2>AGENT</h2>
-      <p>Build and manage your own Agent — character creation, the agent files you've submitted, and your cover ID.</p>
-      <span class="go">→ Enter as Agent</span>
-    </a>
-    <a class="clearance-card clearance-acell" href="a-cell.html">
-      <span class="clearance-code">Clearance: A-Cell</span>
-      <h2>A-CELL</h2>
-      <p>Handler tools — every Agent on file, organized into Cells, plus a shared table soundtrack. Password required.</p>
-      <span class="go">→ Enter as Handler</span>
-    </a>
+<div class="folder-wrap">
+  <div class="folder">
+    <div class="folder-body">
+      <div class="paper">
+        <div class="paper-rules"></div>
+        <div class="paper-margin"></div>
+        <div class="holes"><div class="hole"></div><div class="hole"></div><div class="hole"></div></div>
+        <div class="paper-content">
+          <div class="paper-header">
+            <div>
+              <div class="paper-title-sub">Clearance Required</div>
+              <div class="paper-title">Choose Your Access Level</div>
+            </div>
+          </div>
+
+          <div class="clearance-choices">
+            <a class="clearance-choice cc-agent" href="agent-hub.html">
+              <span class="cc-code">Clearance: Agent</span>
+              <span class="cc-title">AGENT</span>
+              <p>Build and manage your own Agent — character creation, the agent files you've submitted, and your cover ID.</p>
+              <span class="cc-go">&rarr; Enter as Agent</span>
+            </a>
+            <a class="clearance-choice cc-acell" href="a-cell.html">
+              <span class="cc-code">Clearance: A-Cell</span>
+              <span class="cc-title">A-CELL</span>
+              <p>Handler tools — every Agent on file, organized into Cells, plus a shared table soundtrack. Password required.</p>
+              <span class="cc-go">&rarr; Enter as Handler</span>
+            </a>
+          </div>
+
+          <div class="notes-block">
+            <h3>Notes</h3>
+            <ul>
+              <li>Players should use <strong>AGENT</strong> — that's the character creator, your submitted agent files, and the cover ID fabricator.</li>
+              <li><strong>A-CELL</strong> is for the Handler only, and asks for a password before showing anything.</li>
+              <li>All defaults follow the Delta Green <em>Agent's Handbook</em> — check with your Handler if your table uses house rules.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
+</div>
 
-  <section class="notes">
-    <h3>Notes</h3>
-    <ul>
-      <li>Players should use <strong>AGENT</strong> — that's the character creator, your submitted agent files, and the cover ID fabricator.</li>
-      <li><strong>A-CELL</strong> is for the Handler only, and asks for a password before showing anything.</li>
-      <li>All defaults follow the Delta Green <em>Agent's Handbook</em> — check with your Handler if your table uses house rules.</li>
-    </ul>
-  </section>
-</main>
-
-<footer>Delta Green is a trademark of Arc Dream Publishing. Unofficial fan-made campaign tools.</footer>
+<footer class="site-footer">Delta Green is a trademark of Arc Dream Publishing. Unofficial fan-made campaign tools.</footer>
 
 <script>
 /* Boot splash -- see the #boot-splash CSS block above for the design

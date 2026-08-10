@@ -1041,9 +1041,17 @@ function adjustStat(stat, adjustment) {
  * Called after every stat change in point buy mode.
  */
 function updateTotalPoints() {
-    const totalPointsUsed = stats.reduce((total, stat) => total + parseInt(document.getElementById(`${stat}-value`).innerText), 0);
+    // Stat value spans live in the point-buy editor, which some themes
+    // (e.g. field-doc/Live Play) hide -- degrade to the same default (3)
+    // getStatValue() already uses elsewhere, rather than assuming the
+    // editor is always in the DOM.
+    const totalPointsUsed = stats.reduce((total, stat) => {
+        const valEl = document.getElementById(`${stat}-value`);
+        return total + (valEl ? (parseInt(valEl.innerText) || 3) : 3);
+    }, 0);
     const remainingPoints = CONFIG.POINT_BUY_TOTAL - totalPointsUsed;
     const el = document.getElementById('totalPoints');
+    if (!el) return;
     el.innerText = remainingPoints;
     el.classList.toggle('points-depleted', remainingPoints <= 0);
 }

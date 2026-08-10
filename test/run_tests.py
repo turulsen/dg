@@ -537,7 +537,13 @@ def test_import_agent_auto_detect(p):
     # (downloadSheet()'s own export format, distinct from a Foundry actor)
     # and route it through applyState(), not applyImportedAgentData().
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(400)
+    # A longer wait than the other steps' 400ms: save-load.js's own
+    # restore-on-load (window 'load' + 200ms) autoloads whatever this
+    # page's own autosave last wrote to localStorage (the previous
+    # step's Foundry import); calling importAgentAuto() before that
+    # settles races against it, occasionally letting the stale restore
+    # win and overwrite this test's import moments later.
+    page.wait_for_timeout(900)
     native_state = {
         "v": 1,
         "bio": {"name": "Native Sniff Test", "profession": "", "employer": "", "nationality": "",
@@ -876,7 +882,7 @@ def test_hub_boot_splash(p):
     record("hub", "boot splash resolves and clears the DOM within its ~8.6s cap",
            page.locator("#boot-splash").count() == 0, "")
     record("hub", "clearance chooser is visible once the splash clears",
-           page.locator(".clearance-card").count() == 2, "")
+           page.locator(".clearance-choice").count() == 2, "")
     record("hub", "boot-lock no longer blocks page scrolling once revealed",
            "boot-lock" not in page.eval_on_selector("body", "el => el.className"), "")
 
@@ -888,7 +894,7 @@ def test_hub_boot_splash(p):
     record("hub", "boot splash does not replay on a same-tab reload (sessionStorage-gated)",
            page.locator("#boot-splash").count() == 0, "")
     record("hub", "clearance chooser is immediately visible on the repeat load",
-           page.locator(".clearance-card").count() == 2, "")
+           page.locator(".clearance-choice").count() == 2, "")
 
     page.close()
     return errs
@@ -905,38 +911,37 @@ def test_hub_clearance_branches(p):
     skip_boot_splash(page)
     page.goto(f"{BASE}/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(200)
-    hrefs = page.eval_on_selector_all(".clearance-card", "els => els.map(e=>e.getAttribute('href'))")
+    hrefs = page.eval_on_selector_all(".clearance-choice", "els => els.map(e=>e.getAttribute('href'))")
     record("hub", "hub has exactly 2 clearance branches (Agent, A-Cell)",
            hrefs == ["agent-hub.html", "a-cell.html"], str(hrefs))
     page.close()
     return errs
 
 def test_agent_hub(p):
-    """agent-hub.html (the Agent clearance branch): Latest Agent(s) quick
-    access and the Agent Files list both read the same dg_agent_roster
-    localStorage the Agent Portal's own roster drawer already writes to
-    -- nothing new to keep in sync, just surfaced as the primary entry
-    point instead of a slide-up drawer. Each Agent File gets three
-    actions (Play / Files / ID Creator) linking to stats/ and the Agent
-    Portal with query params those pages now handle (see
-    test_stats_load_by_code_query_param and
-    test_agent_portal_code_query_param)."""
+    """agent-hub.html (the Agent clearance branch): a folder look shared
+    with the Agent File -- every Agent (plus a pinned "+ New Recruit")
+    is a folder ear-tab, and the active tab's paper panel shows that
+    Agent's dossier with three actions (Play/Recruit / Agent File /
+    Cover ID) linking to stats/ and the Agent Portal with query params
+    those pages now handle (see test_stats_load_by_code_query_param and
+    test_agent_portal_code_query_param). Reads the same dg_agent_roster
+    localStorage the Agent Portal's own roster drawer already writes to."""
     errs_all = []
 
-    # No agents on file -> empty state, no quick-access section at all
+    # No agents on file -> only the New Recruit tab, an empty-state panel
     page = p.new_page()
     page.set_default_timeout(5000)
     errs = collect_errors(page)
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
-    record("hub", "Agent Files shows an empty-state note with no agents on file",
-           "No agents on file" in page.inner_text("#file-list"), "")
-    record("hub", "Latest Agent(s) quick access is hidden with no agents on file",
-           not page.is_visible("#quick-access-section"), "")
+    record("hub", "with no agents on file, New Recruit is the only tab",
+           page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)") == ["+ New Recruit"], "")
+    record("hub", "the empty-state panel explains there's nothing on file yet",
+           "No Agents on File" in page.inner_text("#folder-body"), "")
     errs_all.extend(errs)
     page.close()
 
-    # Two agents on file -> both sections populate, actions link correctly
+    # Two agents on file -> a tab per agent, most recent first, active by default
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -954,20 +959,29 @@ def test_agent_hub(p):
     page.reload(wait_until="domcontentloaded")
     page.wait_for_timeout(400)
 
-    record("hub", "Latest Agent(s) quick access shows both agents, most recent first",
-           page.eval_on_selector_all(".quick-card .name", "els => els.map(e=>e.textContent)")
-           == ["Owen Castillo", "Priya Anand"], "")
-    record("hub", "Agent Files lists both agents",
-           page.locator(".file-card").count() == 2, "")
+    tab_labels = page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)")
+    record("hub", "one tab per Agent (most recent first) plus New Recruit pinned first",
+           tab_labels == ['+ New Recruit', 'Owen "Ferro"', 'Priya Anand'], str(tab_labels))
+    record("hub", "the most recently-saved Agent's tab is active by default",
+           "active" in page.eval_on_selector('.tw[data-tab="OWEN-CS12"]', "el => el.className"), "")
+    record("hub", "that Agent's paper panel is the active one",
+           "active" in page.eval_on_selector("#panel-OWEN-CS12", "el => el.className"), "")
 
-    first_card_hrefs = page.eval_on_selector_all(
-        "#file-list .file-card:first-child .file-btn", "els => els.map(e => e.getAttribute('href'))")
+    action_hrefs = page.eval_on_selector_all(
+        "#panel-OWEN-CS12 .paper-btn", "els => els.map(e => e.getAttribute('href'))")
     record("hub", "Play links to stats/ with load+theme query params for that exact agent",
-           first_card_hrefs[0] == "stats/index.html?load=OWEN-CS12&theme=field-doc", str(first_card_hrefs))
-    record("hub", "Files links to the Agent Portal's Agent File tab for that exact agent",
-           first_card_hrefs[1] == "dg-agent-portal.html?code=OWEN-CS12#agent", str(first_card_hrefs))
-    record("hub", "ID Creator links to the Agent Portal's Cover IDs tab for that exact agent",
-           first_card_hrefs[2] == "dg-agent-portal.html?code=OWEN-CS12#ids", str(first_card_hrefs))
+           action_hrefs[0] == "stats/index.html?load=OWEN-CS12&theme=field-doc", str(action_hrefs))
+    record("hub", "Agent File links to the Agent Portal's Agent File tab for that exact agent",
+           action_hrefs[1] == "dg-agent-portal.html?code=OWEN-CS12#agent", str(action_hrefs))
+    record("hub", "Cover ID links to the Agent Portal's Cover IDs tab for that exact agent",
+           action_hrefs[2] == "dg-agent-portal.html?code=OWEN-CS12#ids", str(action_hrefs))
+
+    # Clicking a tab switches the active panel.
+    page.click('.tw[data-tab="PRIY-AN34"]')
+    page.wait_for_timeout(150)
+    record("hub", "clicking a tab activates that Agent's panel and deactivates the others",
+           "active" in page.eval_on_selector("#panel-PRIY-AN34", "el => el.className")
+           and "active" not in page.eval_on_selector("#panel-OWEN-CS12", "el => el.className"), "")
 
     errs_all.extend(errs)
     page.close()
@@ -979,11 +993,11 @@ def test_agent_hub_recruit_flag(p):
     in the cloud (Cloud Save) -- reported case: an Agent File on one
     device with no character sheet yet still showed Play, and clicking
     it landed on a different, previously-played Agent's sheet with no
-    warning. Each Agent File's Play button is checked against
-    load_character; an Agent with no cloud character flips the button to
-    Recruit with an explainer note, while one with an existing character
-    keeps Play. A check that errors or times out leaves the button as
-    Play rather than risking a false Recruit label."""
+    warning. Each Agent's Play button is checked against load_character;
+    an Agent with no cloud character flips the button to Recruit with an
+    explainer stamp, while one with an existing character keeps Play. A
+    check that errors or times out leaves the button as Play rather than
+    risking a false Recruit label."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -1013,14 +1027,20 @@ def test_agent_hub_recruit_flag(p):
     page.reload(wait_until="domcontentloaded")
     page.wait_for_timeout(1200)
 
-    owen_btn = page.eval_on_selector('[data-play-btn="OWEN-CS12"]', "el => el.textContent.trim()")
-    priy_btn = page.eval_on_selector('[data-play-btn="PRIY-AN34"]', "el => el.textContent.trim()")
+    owen_btn = page.eval_on_selector('#ah-play-OWEN-CS12', "el => el.textContent.trim()")
     record("hub", "Agent with an existing character keeps the Play label", "Play" in owen_btn, owen_btn)
+    # textContent, not inner_text: the stamp's CSS applies text-transform:
+    # uppercase, which inner_text would render as-displayed rather than
+    # the raw DOM text this is actually checking for.
+    record("hub", "no 'No Character Sheet Yet' stamp for the Agent that already has one",
+           "No Character Sheet Yet" not in page.eval_on_selector("#ah-charstamp-OWEN-CS12", "el => el.textContent"), "")
+
+    page.click('.tw[data-tab="PRIY-AN34"]')
+    page.wait_for_timeout(150)
+    priy_btn = page.eval_on_selector('#ah-play-PRIY-AN34', "el => el.textContent.trim()")
     record("hub", "Agent with no character yet flips to Recruit", "Recruit" in priy_btn, priy_btn)
-    record("hub", "Recruit explainer note is shown for the flagged Agent",
-           page.eval_on_selector("#recruit-note-PRIY-AN34", "el => el.classList.contains('recruit-note-shown')"), "")
-    record("hub", "no Recruit note for the Agent that already has a character",
-           not page.eval_on_selector("#recruit-note-OWEN-CS12", "el => el.classList.contains('recruit-note-shown')"), "")
+    record("hub", "'No Character Sheet Yet' stamp is shown for the flagged Agent",
+           "No Character Sheet Yet" in page.eval_on_selector("#ah-charstamp-PRIY-AN34", "el => el.textContent"), "")
 
     page.close()
     return errs
@@ -1219,6 +1239,9 @@ def test_acell_cells(p):
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
+    # Cells lives behind its own folder tab now (Play is active by default).
+    page.click('.tw[data-tab="cells"]')
+    page.wait_for_timeout(100)
 
     names = page.eval_on_selector_all("#cells-list .cells-info .name", "els => els.map(e=>e.textContent)")
     record("acell", "Cells lists every Agent on file",

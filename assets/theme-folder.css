@@ -1,0 +1,276 @@
+/* ══════════════════════════════════════════════
+   SHARED FOLDER/PAPER LOOK
+   Extracted from dg-agent-portal.html's original inline styles (the
+   "manila folder on a desk" system: paper, ruled lines, ear-tabs) so
+   index.html, agent-hub.html, and a-cell.html can share one visual
+   language with the Agent File instead of each having their own look.
+   Every page linking this still needs its own <head> Google Fonts
+   <link> for Special Elite + Courier Prime + Source Sans 3 (this file
+   only sets font-family, it doesn't load the fonts) -- matches how
+   every page in this project already loads its own fonts, no shared
+   <head> include exists.
+   ══════════════════════════════════════════════ */
+
+:root{
+  /* Paper system */
+  --paper:#f4eed8;
+  --paper-line:rgba(180,148,72,.18);
+  --paper-margin:rgba(180,60,60,.22);
+  --paper-shadow:0 4px 18px rgba(0,0,0,.22), 0 1px 4px rgba(0,0,0,.12);
+
+  /* Ink system */
+  --ink:#1c1608;
+  --ink-2:#4a3f28;
+  --ink-3:#8a7a5a;
+  --ink-placeholder:#b8a878;
+
+  /* Accent */
+  --red:#8b1a1a;
+  --green:#1a4a1a;
+
+  /* Rule */
+  --rule:rgba(160,130,70,.35);
+
+  /* Tab strip */
+  --tab-inactive:#bab3a0;
+  --tab-active:#d7d0be;
+
+  /* Spacing (8pt grid) */
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px;
+  --s5:24px; --s6:32px; --s7:48px;
+
+  /* Line grid -- 27px to match ruled paper */
+  --line:27px;
+}
+
+body.folder-theme{
+  background:#0e100b;
+  background-image:radial-gradient(ellipse at 50% 20%, #141710 0%, #090b07 100%);
+  min-height:100vh;
+  font-family:'Source Sans 3', sans-serif;
+  font-weight:300;
+  color:#e9e3ce;
+  padding:var(--s5) var(--s3) 90px;
+}
+
+/* ── FOLDER WRAPPER ── */
+.folder{
+  width:100%;
+  max-width:900px;
+  margin:0 auto;
+  filter:drop-shadow(0 28px 56px rgba(0,0,0,.7)) drop-shadow(0 6px 14px rgba(0,0,0,.5));
+}
+
+/* ── TAB STRIP -- CSS abstraction of manila folder ear tabs ── */
+.tab-strip{
+  display:flex;
+  align-items:flex-end;
+  padding-left:28px;
+  gap:4px;
+  position:relative;
+  z-index:2;
+  user-select:none;
+  flex-wrap:wrap;
+  row-gap:0;
+}
+
+.tw{
+  position:relative;
+  height:38px;
+  padding:0 18px;
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  border-radius:6px 6px 0 0;
+  background:var(--tab-inactive);
+  transform:translateY(6px);
+  transition:transform 120ms ease, background 120ms ease;
+  border:1px solid #a8a090;
+  border-bottom:none;
+  box-shadow:inset 0 6px 8px rgba(0,0,0,.18);
+  z-index:1;
+}
+
+.tw.active{
+  background:var(--tab-active);
+  transform:translateY(0);
+  border:1px solid #b8b0a0;
+  border-bottom:none;
+  box-shadow:none;
+  z-index:4;
+}
+
+.tw:hover:not(.active){
+  background:#c8c1ae;
+  transform:translateY(3px);
+}
+
+.tw span{
+  font-family:'Special Elite', monospace;
+  font-size:9px;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  white-space:nowrap;
+  pointer-events:none;
+  transition:color 120ms;
+}
+
+.tw.active span{ color:var(--ink); }
+.tw.inactive span{ color:#6a6050; }
+
+/* A pinned "add new" tab (e.g. + New Recruit) -- dashed border marks it
+   as a create action, not an existing record. */
+.tw.tw-new{ border-style:dashed; }
+.tw.tw-new span{ color:#4a3f28; }
+.tw.tw-new.active{ background:var(--tab-active); }
+.tw.tw-new.active span{ color:var(--ink); }
+
+/* ── FOLDER BODY ── */
+.folder-body{
+  background:var(--tab-active);
+  padding:3.2% 4% 3.6%;
+  min-height:200px;
+  position:relative;
+  border-radius:6px 6px 3px 3px;
+  z-index:3;
+  overflow:hidden;
+}
+
+/* ── TAB PANELS ── */
+.tab-panel{ display:none; }
+.tab-panel.active{ display:block; }
+
+/* ── PAPER ── */
+.paper{
+  background:var(--paper);
+  border-radius:1px;
+  box-shadow:var(--paper-shadow);
+  position:relative;
+  z-index:1;
+  /* Left pad for hole punches + margin line */
+  padding:var(--s6) var(--s5) var(--s6) 52px;
+  overflow:hidden;
+}
+
+/* Ruled lines -- aligned to --line grid */
+.paper-rules{
+  position:absolute;
+  inset:0;
+  background:repeating-linear-gradient(
+    180deg,
+    transparent 0px,
+    transparent calc(var(--line) - 1px),
+    var(--paper-line) calc(var(--line) - 1px),
+    var(--paper-line) var(--line)
+  );
+  pointer-events:none;
+  z-index:1;
+}
+
+/* Red margin line */
+.paper-margin{
+  position:absolute;
+  top:0; left:44px; bottom:0;
+  width:1.5px;
+  background:var(--paper-margin);
+  pointer-events:none;
+  z-index:2;
+}
+
+/* Hole punches */
+.holes{
+  position:absolute;
+  left:10px; top:0; bottom:0;
+  display:flex; flex-direction:column;
+  justify-content:space-around;
+  padding:var(--s7) 0;
+  z-index:4;
+}
+.hole{
+  width:16px; height:16px;
+  border-radius:50%;
+  background:color-mix(in srgb, var(--paper) 60%, transparent);
+  box-shadow:inset 0 1px 4px rgba(0,0,0,.35), inset 0 0 0 1px rgba(0,0,0,.1);
+}
+
+/* Content lives above all overlays */
+.paper-content{ position:relative; z-index:5; }
+
+.paper-header{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  border-bottom:2px solid var(--ink);
+  padding-bottom:var(--s3);
+  margin-bottom:var(--s4);
+  gap:12px;
+  flex-wrap:wrap;
+}
+.paper-title-sub{
+  font-family:'Courier Prime', monospace;
+  font-size:8px;
+  letter-spacing:.25em;
+  text-transform:uppercase;
+  color:var(--ink-2);
+  margin-bottom:var(--s1);
+}
+.paper-title{
+  font-family:'Special Elite', monospace;
+  font-size:24px;
+  line-height:1.1;
+  color:var(--ink);
+  letter-spacing:.02em;
+}
+.paper-meta{
+  text-align:right;
+  font-family:'Courier Prime', monospace;
+  font-size:9px;
+  letter-spacing:.08em;
+  color:var(--ink-2);
+  line-height:1.9;
+}
+
+/* ── STAMPS ── */
+.stamps{ display:flex; gap:var(--s2); flex-wrap:wrap; margin-bottom:var(--s4); }
+.stamp{
+  font-family:'Special Elite', monospace;
+  font-size:9px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  border:1.5px solid var(--red);
+  color:var(--red);
+  padding:3px 10px;
+  opacity:.85;
+  transform:rotate(-1deg);
+}
+.stamp.stamp-green{ border-color:var(--green); color:var(--green); transform:rotate(.6deg); }
+
+/* ── PAPER BODY TEXT / ACTIONS ── */
+.dossier-line{ font-size:12px; color:var(--ink-2); line-height:1.8; margin-bottom:var(--s5); }
+.dossier-line b{ color:var(--ink); }
+
+.paper-actions{ display:flex; gap:10px; flex-wrap:wrap; }
+.paper-btn{
+  font-family:'Special Elite', monospace;
+  font-size:10px;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  background:transparent;
+  border:1.5px solid var(--ink-2);
+  color:var(--ink);
+  padding:9px 16px;
+  cursor:pointer;
+  text-decoration:none;
+  display:inline-block;
+  transition:border-color .15s, background .15s;
+}
+.paper-btn:hover{ border-color:var(--red); background:rgba(139,26,26,.08); }
+.paper-btn.primary{ border-color:var(--red); color:var(--red); }
+
+@media (max-width:560px){
+  .tw{ padding:0 12px; height:34px; }
+  .paper{ padding:var(--s5) var(--s3) var(--s5) 40px; }
+  .paper-meta{ text-align:left; }
+}

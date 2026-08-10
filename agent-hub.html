@@ -5,178 +5,105 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Delta Green — Agent</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/theme-folder.css">
 <style>
-  :root{
-    --ink:#e8e2d4; --paper:#e8e2d4; --bg:#1c1b16; --bg2:#14130f;
-    --red:#8b1a1a; --red-glow:#8b1a1a40; --rule:#4a4636; --dim:#a89868;
-  }
-  *{box-sizing:border-box;margin:0;padding:0;}
-  body{
-    background:var(--bg); color:var(--ink);
-    font-family:'Source Sans 3',sans-serif; font-weight:300;
-    min-height:100vh; padding:0 0 80px;
-  }
-  header{
-    background:var(--bg2); border-bottom:2px solid var(--red);
-    padding:32px 20px 30px; text-align:center; position:relative;
-  }
-  .back-link{
-    position:absolute; top:16px; left:20px;
-    font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:.05em;
-    color:var(--dim); text-decoration:none;
-  }
-  .back-link:hover{ color:var(--ink); }
-  .stamp{
-    font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.3em;
-    text-transform:uppercase; color:var(--dim); border:1.5px solid var(--dim);
-    display:inline-block; padding:4px 12px; margin-bottom:16px; opacity:.85;
-  }
-  h1{
-    font-family:'Special Elite',monospace; font-size:clamp(24px,4.5vw,34px);
-    letter-spacing:.02em; margin-bottom:8px;
-  }
-  header p{ color:var(--dim); font-size:13px; max-width:520px; margin:0 auto; line-height:1.6; }
-  main{max-width:980px; margin:0 auto; padding:40px 20px 0;}
-
-  section{ margin-bottom:44px; }
-  .sec-head{
-    font-family:'Special Elite',monospace; font-size:12px; letter-spacing:.2em;
-    text-transform:uppercase; color:var(--red); margin-bottom:14px;
-    border-bottom:1px solid var(--rule); padding-bottom:8px;
-  }
-
-  /* ── Latest Agents quick-access strip ── */
-  .quick-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px; }
-  .quick-card{
-    display:flex; align-items:center; gap:14px;
-    background:var(--bg2); border:1px solid var(--rule); border-left:3px solid var(--red);
-    padding:14px 16px; text-decoration:none; color:var(--ink);
-    transition:border-color .2s, transform .15s;
-  }
-  .quick-card:hover{ border-color:var(--red); transform:translateY(-2px); }
-  .quick-photo{
-    width:46px; height:46px; border-radius:4px; flex-shrink:0; overflow:hidden;
-    background:var(--bg); border:1px solid var(--rule);
-    display:flex; align-items:center; justify-content:center;
-    font-family:'Special Elite',monospace; font-size:18px; color:var(--dim);
-  }
-  .quick-photo img{ width:100%; height:100%; object-fit:cover; display:block; }
-  .quick-info{ min-width:0; flex:1; }
-  .quick-info .name{ font-family:'Special Elite',monospace; font-size:14px; overflow-wrap:anywhere; }
-  .quick-info .meta{ font-size:11px; color:var(--dim); margin-top:2px; }
-
-  /* ── New Recruit CTA ── */
-  .recruit-card{
-    display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:16px;
-    background:var(--bg2); border:1px solid var(--rule); border-left:3px solid var(--dim);
-    padding:22px 24px; text-decoration:none; color:var(--ink);
-    transition:border-color .2s, transform .15s;
-  }
-  .recruit-card:hover{ border-color:var(--dim); transform:translateY(-2px); }
-  .recruit-card h2{ font-family:'Special Elite',monospace; font-size:18px; margin-bottom:4px; }
-  .recruit-card p{ font-size:13px; color:var(--dim); }
-  .recruit-card .go{
+  *{box-sizing:border-box;}
+  .hub-header{ max-width:900px; margin:0 auto; padding:6px 6px 22px; }
+  .hub-header .back-link{
     font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.15em;
-    text-transform:uppercase; white-space:nowrap;
+    text-transform:uppercase; color:#8a9878; text-decoration:none;
   }
+  .hub-header .back-link:hover{ color:#c8c1a8; }
+  .hub-header h1{
+    font-family:'Special Elite',monospace; font-weight:400; font-size:clamp(22px,4vw,30px);
+    color:#e9e3ce; margin:14px 0 8px; letter-spacing:.01em;
+  }
+  .hub-header p{ font-size:13px; color:#b7b09a; max-width:62ch; line-height:1.7; margin:0; }
+  .folder-wrap{ max-width:900px; margin:26px auto 0; padding:0 6px; }
 
-  /* ── Agent Files list ── */
-  .file-list{ display:flex; flex-direction:column; gap:10px; }
-  .file-card{
-    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
-    background:var(--bg2); border:1px solid var(--rule);
-    padding:12px 16px;
-  }
-  .file-photo{
-    width:44px; height:44px; border-radius:4px; flex-shrink:0; overflow:hidden;
-    background:var(--bg); border:1px solid var(--rule);
+  .paper-header .lead{ display:flex; align-items:center; gap:14px; }
+  .paper-photo{
+    width:56px; height:56px; flex-shrink:0; border-radius:2px; overflow:hidden;
+    background:var(--ink-placeholder); border:1px solid var(--ink-2);
     display:flex; align-items:center; justify-content:center;
-    font-family:'Special Elite',monospace; font-size:17px; color:var(--dim);
+    font-family:'Special Elite',monospace; font-size:22px; color:var(--paper);
   }
-  .file-photo img{ width:100%; height:100%; object-fit:cover; display:block; }
-  .file-info{ min-width:0; flex:1 1 180px; }
-  .file-info .name{ font-family:'Special Elite',monospace; font-size:14px; overflow-wrap:anywhere; }
-  .file-info .meta{ font-size:11px; color:var(--dim); margin-top:2px; }
-  .file-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-left:auto; }
-  .file-btn{
-    font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:.08em;
-    text-transform:uppercase; color:var(--ink); background:transparent;
-    border:1px solid var(--rule); padding:7px 12px; text-decoration:none;
-    transition:border-color .15s, background .15s;
-  }
-  .file-btn:hover{ border-color:var(--red); background:var(--red-glow); }
-  .empty-note{
-    font-size:13px; color:var(--dim); font-style:italic;
-    background:var(--bg2); border:1px dashed var(--rule); padding:18px; text-align:center;
-  }
-  .recruit-note{
-    font-size:11px; color:var(--red); margin-top:3px; display:none;
-  }
-  .recruit-note.recruit-note-shown{ display:block; }
+  .paper-photo img{ width:100%; height:100%; object-fit:cover; display:block; }
 
-  footer{ text-align:center; color:var(--rule); font-size:11px; margin-top:64px; }
+  .recruit-copy, .empty-copy{ font-size:12px; color:var(--ink-2); line-height:1.85; max-width:52ch; margin-bottom:var(--s5); }
+  .empty-panel .paper-title{ font-size:20px; }
 </style>
 </head>
-<body>
+<body class="folder-theme">
 
-<header>
+<div class="hub-header">
   <a class="back-link" href="index.html">&larr; Clearance</a>
-  <div class="stamp">Clearance: Agent</div>
   <h1>Agent Hub</h1>
-  <p>Build a cover identity, roll or point-buy a new Agent, and keep dossiers up to date between sessions.</p>
-</header>
+  <p>Build a cover identity, roll or point-buy a new Agent, and keep dossiers up to date between sessions. Each tab below is one of your Agents.</p>
+</div>
 
-<main>
-  <section id="quick-access-section" style="display:none;">
-    <div class="sec-head">Latest Agent(s) — Quick Access</div>
-    <div class="quick-grid" id="quick-access-grid"></div>
-  </section>
-
-  <section>
-    <div class="sec-head">New Recruit</div>
-    <a class="recruit-card" href="stats/index.html?new=1">
-      <div>
-        <h2>Character Creator</h2>
-        <p>Full character creation — stats, 18 professions, bonus skill points, random bio, Bonds, equipment, dice roller, and a dedicated Live Play theme. Auto-saves as you go.</p>
+<div class="folder-wrap">
+  <div class="folder">
+    <div class="tab-strip" id="tab-strip">
+      <div class="tw tw-new" data-tab="new"><span>+ New Recruit</span></div>
+    </div>
+    <div class="folder-body" id="folder-body">
+      <div class="tab-panel" id="panel-new">
+        <div class="paper">
+          <div class="paper-rules"></div>
+          <div class="paper-margin"></div>
+          <div class="holes"><div class="hole"></div><div class="hole"></div><div class="hole"></div></div>
+          <div class="paper-content">
+            <div class="paper-header">
+              <div>
+                <div class="paper-title-sub">Open a New Case File</div>
+                <div class="paper-title">New Recruit</div>
+              </div>
+            </div>
+            <p class="recruit-copy">Full character creation — stats, 18 professions, bonus skill points, random bio, Bonds, equipment, dice roller, and a dedicated Live Play theme. Auto-saves as you go, and always opens blank.</p>
+            <div class="paper-actions">
+              <a class="paper-btn primary" href="stats/index.html?new=1">&rarr; Build a Character</a>
+            </div>
+          </div>
+        </div>
       </div>
-      <span class="go">&rarr; Build a character</span>
-    </a>
-  </section>
-
-  <section>
-    <div class="sec-head">Agent Files</div>
-    <div class="file-list" id="file-list"></div>
-  </section>
-</main>
-
-<footer>Delta Green is a trademark of Arc Dream Publishing. Unofficial fan-made campaign tools.</footer>
+      <!-- per-agent panels injected below by JS; empty-state panel injected if roster is empty -->
+    </div>
+  </div>
+</div>
 
 <script>
 /* ══════════════════════════════════════════════
-   AGENT FILES -- reads the exact same dg_agent_roster localStorage
-   this hub's Agent Portal roster already writes to (see
-   dg-agent-portal.html's ROSTER_* functions), so nothing new needs to
-   track "which agents has this player made" -- it's the same data,
-   just surfaced here as the primary entry point instead of a
-   slide-up drawer. Each agent gets three actions:
-     Play        -> stats/index.html?load=CODE&theme=field-doc
-                    (loads that exact agent from the cloud backend and
-                    jumps straight to the Live Play theme)
-     Files       -> dg-agent-portal.html?code=CODE#agent
-                    (that agent's full dossier/photos/medical/AAR)
-     ID Creator  -> dg-agent-portal.html?code=CODE#ids
-                    (Cover ID Fabricator, pre-loaded with that agent)
-   Both dg-agent-portal.html query-param handlers are new additions
-   alongside this page -- see openSpecificAgent() there.
+   AGENT HUB -- unified roster view. Reads the same dg_agent_roster
+   localStorage the Agent Portal's roster drawer already writes to.
+   Every Agent (plus a pinned "+ New Recruit") is a folder ear-tab;
+   the active tab's paper panel shows that Agent's dossier with three
+   actions:
+     Play/Recruit -> stats/index.html?load=CODE&theme=field-doc
+                     (label flips to "Recruit" if this Agent has no
+                     cloud character yet -- checked async per agent
+                     against load_character, see checkCharacterExists)
+     Agent File    -> dg-agent-portal.html?code=CODE#agent
+     Cover ID      -> dg-agent-portal.html?code=CODE#ids
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
   const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
   const ROSTER_KEY = 'dg_agent_roster';
+  const ERA_LABELS = { '90s': '1990s', '00s': '2000s', '10s': '2010s', '20s': '2020s' };
 
   function rosterLoad() {
     try { return JSON.parse(localStorage.getItem(ROSTER_KEY) || '{}'); } catch (e) { return {}; }
+  }
+
+  function eraLabel(a) {
+    let era = a.campaign_era || '';
+    if (!era && a.active_eras) {
+      try { const eras = JSON.parse(a.active_eras); if (Array.isArray(eras) && eras.length) era = eras[0]; }
+      catch (e) { era = a.active_eras; }
+    }
+    return ERA_LABELS[era] || era || '';
   }
 
   function extractDriveId(url) {
@@ -201,62 +128,9 @@
     document.head.appendChild(s);
   }
 
-  const roster = rosterLoad();
-  const agents = Object.values(roster).sort((a, b) => (b.saved_at || 0) - (a.saved_at || 0));
-
-  // ── Latest Agent(s) quick access: up to 3 most recent ──
-  if (agents.length) {
-    document.getElementById('quick-access-section').style.display = 'block';
-    const grid = document.getElementById('quick-access-grid');
-    grid.innerHTML = agents.slice(0, 3).map(a => {
-      const photoId = 'qa-photo-' + a.code;
-      return `<a class="quick-card" href="dg-agent-portal.html?code=${encodeURIComponent(a.code)}#agent">
-        <div class="quick-photo" id="${photoId}">${(a.char_name || '?').charAt(0).toUpperCase()}</div>
-        <div class="quick-info">
-          <div class="name">${a.char_name || 'Unknown Agent'}</div>
-          <div class="meta">${a.code}${a.codename ? ' · "' + a.codename + '"' : ''}</div>
-        </div>
-      </a>`;
-    }).join('');
-    agents.slice(0, 3).forEach(a => { if (a.face_plate_url) loadFacePlate(a.code, a.face_plate_url, 'qa-photo-' + a.code); });
-  }
-
-  // ── Agent Files: full list ──
-  const fileList = document.getElementById('file-list');
-  if (!agents.length) {
-    fileList.innerHTML = '<div class="empty-note">No agents on file yet. Build one via New Recruit above, then submit or export it to add it here.</div>';
-    return;
-  }
-  fileList.innerHTML = agents.map(a => {
-    const code = encodeURIComponent(a.code);
-    const photoId = 'file-photo-' + a.code;
-    const meta = [a.age_range, a.sex, a.nationality].filter(Boolean).join(' · ');
-    return `<div class="file-card">
-      <div class="file-photo" id="${photoId}">${(a.char_name || '?').charAt(0).toUpperCase()}</div>
-      <div class="file-info">
-        <div class="name">${a.char_name || 'Unknown Agent'}</div>
-        <div class="meta">${a.code}${a.codename ? ' · "' + a.codename + '"' : ''}${meta ? ' · ' + meta : ''}</div>
-        <div class="recruit-note" id="recruit-note-${a.code}">No character sheet yet — Recruit starts creating one.</div>
-      </div>
-      <div class="file-actions">
-        <a class="file-btn" data-play-btn="${a.code}" href="stats/index.html?load=${code}&theme=field-doc">&#9654; Play</a>
-        <a class="file-btn" href="dg-agent-portal.html?code=${code}#agent">Files</a>
-        <a class="file-btn" href="dg-agent-portal.html?code=${code}#ids">ID Creator</a>
-      </div>
-    </div>`;
-  }).join('');
-  agents.forEach(a => { if (a.face_plate_url) loadFacePlate(a.code, a.face_plate_url, 'file-photo-' + a.code); });
-
-  // ── Play vs Recruit: a Play button only makes sense once this Agent
-  // has an actual character sheet in the cloud (stats/ Cloud Save). An
-  // Agent File can exist (submitted via Cover form / Agent File export)
-  // before that happens -- without this check, clicking Play for such
-  // an Agent would silently show whatever character was last auto-saved
-  // on this device (e.g. a different Agent entirely) instead of making
-  // clear there's nothing to load yet. Checked per-agent against the
-  // same load_character action stats/cloud-sync.js uses; a check that
-  // times out or errors leaves the button as "Play" rather than risking
-  // a false "Recruit" label on a real character.
+  // Async, per agent: does a cloud character sheet already exist? A
+  // check that errors or times out leaves the button as "Play" rather
+  // than risking a false "Recruit" label on a real character.
   function checkCharacterExists(code) {
     return new Promise(resolve => {
       const cbName = '_ahCharCheck_' + code.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
@@ -275,14 +149,116 @@
     });
   }
 
-  agents.forEach(a => {
-    checkCharacterExists(a.code).then(exists => {
-      if (exists !== false) return; // true (has a sheet) or null (check failed) -> leave as "Play"
-      const btn = document.querySelector('[data-play-btn="' + CSS.escape(a.code) + '"]');
-      if (btn) { btn.textContent = '▶ Recruit'; btn.title = 'No character sheet on file yet for this Agent -- starts the Character Creation Wizard.'; }
-      const note = document.getElementById('recruit-note-' + a.code);
-      if (note) note.classList.add('recruit-note-shown');
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
+  }
+
+  function tabLabel(a) {
+    const first = (a.char_name || '').trim().split(/\s+/)[0] || 'Unknown';
+    return a.codename ? `${first} "${a.codename}"` : (a.char_name || 'Unknown Agent');
+  }
+
+  const roster = rosterLoad();
+  const agents = Object.values(roster).sort((a, b) => (b.saved_at || 0) - (a.saved_at || 0));
+
+  const tabStrip = document.getElementById('tab-strip');
+  const folderBody = document.getElementById('folder-body');
+
+  // Sets exactly one tab/panel active by id, mirroring dg-agent-portal.html's
+  // switchTab() -- a full class replace (not classList.toggle), since 'tw
+  // active' and 'tw inactive' must stay mutually exclusive: with both
+  // classes present at once, CSS source order would pick the wrong text
+  // color for the "active" tab's label.
+  function setActiveTab(id) {
+    tabStrip.querySelectorAll('.tw').forEach(t => {
+      const isNew = t.classList.contains('tw-new');
+      t.className = 'tw' + (isNew ? ' tw-new' : '') + (t.dataset.tab === id ? ' active' : ' inactive');
     });
+    folderBody.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + id));
+  }
+
+  if (!agents.length) {
+    const panel = document.createElement('div');
+    panel.className = 'tab-panel empty-panel';
+    panel.id = 'panel-empty';
+    panel.innerHTML = `<div class="paper">
+      <div class="paper-rules"></div>
+      <div class="paper-margin"></div>
+      <div class="holes"><div class="hole"></div><div class="hole"></div><div class="hole"></div></div>
+      <div class="paper-content">
+        <div class="paper-header"><div>
+          <div class="paper-title-sub">Delta Green — Agent Roster</div>
+          <div class="paper-title">No Agents on File</div>
+        </div></div>
+        <p class="empty-copy">Nothing here yet. Build a new Agent via the New Recruit tab, then submit or export it to add it to this roster.</p>
+      </div>
+    </div>`;
+    folderBody.appendChild(panel);
+    setActiveTab('empty');
+  } else {
+    agents.forEach((a, i) => {
+      const tab = document.createElement('div');
+      tab.className = 'tw';
+      tab.dataset.tab = a.code;
+      tab.innerHTML = `<span>${escapeHtml(tabLabel(a))}</span>`;
+      tabStrip.appendChild(tab);
+
+      const meta = [a.age_range, a.sex, a.nationality].filter(Boolean).map(escapeHtml).join(' &middot; ');
+      const era = eraLabel(a);
+      const photoId = 'ah-photo-' + a.code;
+      const playBtnId = 'ah-play-' + a.code;
+      const stampId = 'ah-charstamp-' + a.code;
+
+      const panel = document.createElement('div');
+      panel.className = 'tab-panel';
+      panel.id = 'panel-' + a.code;
+      panel.innerHTML = `<div class="paper">
+        <div class="paper-rules"></div>
+        <div class="paper-margin"></div>
+        <div class="holes"><div class="hole"></div><div class="hole"></div><div class="hole"></div></div>
+        <div class="paper-content">
+          <div class="paper-header">
+            <div class="lead">
+              <div class="paper-photo" id="${photoId}">${(a.char_name || '?').charAt(0).toUpperCase()}</div>
+              <div>
+                <div class="paper-title-sub">Delta Green — Agent Roster</div>
+                <div class="paper-title">${escapeHtml(a.char_name || 'Unknown Agent')}</div>
+              </div>
+            </div>
+            <div class="paper-meta">CODE: ${escapeHtml(a.code)}<br>COVER: ${a.codename ? escapeHtml(a.codename) : '&mdash;'}<br>SAVED: ${a.saved_at ? new Date(a.saved_at).toLocaleDateString() : '&mdash;'}</div>
+          </div>
+          <div class="stamps" id="${stampId}">${era ? `<div class="stamp">${escapeHtml(era)}</div>` : ''}</div>
+          ${meta ? `<div class="dossier-line">${meta}</div>` : ''}
+          <div class="paper-actions">
+            <a class="paper-btn primary" id="${playBtnId}" href="stats/index.html?load=${encodeURIComponent(a.code)}&theme=field-doc">&#9654; Play</a>
+            <a class="paper-btn" href="dg-agent-portal.html?code=${encodeURIComponent(a.code)}#agent">Agent File</a>
+            <a class="paper-btn" href="dg-agent-portal.html?code=${encodeURIComponent(a.code)}#ids">Cover ID</a>
+          </div>
+        </div>
+      </div>`;
+      folderBody.appendChild(panel);
+
+      if (a.face_plate_url) loadFacePlate(a.code, a.face_plate_url, photoId);
+
+      checkCharacterExists(a.code).then(exists => {
+        if (exists !== false) return; // true (has a sheet) or null (check failed) -> leave as Play
+        const btn = document.getElementById(playBtnId);
+        if (btn) { btn.textContent = '✎ Recruit'; btn.title = 'No character sheet on file yet for this Agent -- starts the Character Creation Wizard.'; }
+        const stamps = document.getElementById(stampId);
+        if (stamps) stamps.insertAdjacentHTML('beforeend', '<div class="stamp">No Character Sheet Yet</div>');
+      });
+    });
+
+    setActiveTab(agents[0].code);
+  }
+
+  tabStrip.addEventListener('click', e => {
+    const tab = e.target.closest('.tw');
+    if (!tab) return;
+    setActiveTab(tab.dataset.tab);
   });
 })();
 </script>
