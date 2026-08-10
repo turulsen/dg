@@ -110,6 +110,10 @@
     font-size:13px; color:var(--dim); font-style:italic;
     background:var(--bg2); border:1px dashed var(--rule); padding:18px; text-align:center;
   }
+  .recruit-note{
+    font-size:11px; color:var(--red); margin-top:3px; display:none;
+  }
+  .recruit-note.recruit-note-shown{ display:block; }
 
   footer{ text-align:center; color:var(--rule); font-size:11px; margin-top:64px; }
 </style>
@@ -131,7 +135,7 @@
 
   <section>
     <div class="sec-head">New Recruit</div>
-    <a class="recruit-card" href="stats/index.html">
+    <a class="recruit-card" href="stats/index.html?new=1">
       <div>
         <h2>Character Creator</h2>
         <p>Full character creation — stats, 18 professions, bonus skill points, random bio, Bonds, equipment, dice roller, and a dedicated Live Play theme. Auto-saves as you go.</p>
@@ -232,15 +236,54 @@
       <div class="file-info">
         <div class="name">${a.char_name || 'Unknown Agent'}</div>
         <div class="meta">${a.code}${a.codename ? ' · "' + a.codename + '"' : ''}${meta ? ' · ' + meta : ''}</div>
+        <div class="recruit-note" id="recruit-note-${a.code}">No character sheet yet — Recruit starts creating one.</div>
       </div>
       <div class="file-actions">
-        <a class="file-btn" href="stats/index.html?load=${code}&theme=field-doc">&#9654; Play</a>
+        <a class="file-btn" data-play-btn="${a.code}" href="stats/index.html?load=${code}&theme=field-doc">&#9654; Play</a>
         <a class="file-btn" href="dg-agent-portal.html?code=${code}#agent">Files</a>
         <a class="file-btn" href="dg-agent-portal.html?code=${code}#ids">ID Creator</a>
       </div>
     </div>`;
   }).join('');
   agents.forEach(a => { if (a.face_plate_url) loadFacePlate(a.code, a.face_plate_url, 'file-photo-' + a.code); });
+
+  // ── Play vs Recruit: a Play button only makes sense once this Agent
+  // has an actual character sheet in the cloud (stats/ Cloud Save). An
+  // Agent File can exist (submitted via Cover form / Agent File export)
+  // before that happens -- without this check, clicking Play for such
+  // an Agent would silently show whatever character was last auto-saved
+  // on this device (e.g. a different Agent entirely) instead of making
+  // clear there's nothing to load yet. Checked per-agent against the
+  // same load_character action stats/cloud-sync.js uses; a check that
+  // times out or errors leaves the button as "Play" rather than risking
+  // a false "Recruit" label on a real character.
+  function checkCharacterExists(code) {
+    return new Promise(resolve => {
+      const cbName = '_ahCharCheck_' + code.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
+      const timer = setTimeout(() => { delete window[cbName]; resolve(null); }, 6000);
+      window[cbName] = function (res) {
+        clearTimeout(timer);
+        delete window[cbName];
+        const s = document.getElementById('s-' + cbName);
+        if (s) s.remove();
+        resolve(!!(res && res.status === 'OK'));
+      };
+      const s = document.createElement('script');
+      s.id = 's-' + cbName;
+      s.src = APPS_SCRIPT_URL + '?action=load_character&code=' + encodeURIComponent(code) + '&callback=' + cbName;
+      document.head.appendChild(s);
+    });
+  }
+
+  agents.forEach(a => {
+    checkCharacterExists(a.code).then(exists => {
+      if (exists !== false) return; // true (has a sheet) or null (check failed) -> leave as "Play"
+      const btn = document.querySelector('[data-play-btn="' + CSS.escape(a.code) + '"]');
+      if (btn) { btn.textContent = '▶ Recruit'; btn.title = 'No character sheet on file yet for this Agent -- starts the Character Creation Wizard.'; }
+      const note = document.getElementById('recruit-note-' + a.code);
+      if (note) note.classList.add('recruit-note-shown');
+    });
+  });
 })();
 </script>
 

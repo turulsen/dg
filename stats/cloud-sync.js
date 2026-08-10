@@ -99,7 +99,8 @@
     document.addEventListener('input', scheduleCloudSync);
     document.addEventListener('change', scheduleCloudSync);
 
-    function loadFromCloud(codeArg) {
+    function loadFromCloud(codeArg, opts) {
+        opts = opts || {};
         const code = (codeArg || prompt('Enter the Agent Code to load:') || '').trim().toUpperCase();
         if (!code) return;
         const status = document.getElementById('cloud-load-status');
@@ -112,6 +113,10 @@
             if (s) s.remove();
 
             if (!res || res.status !== 'OK' || !res.character_json) {
+                if (res && res.status === 'NOT_FOUND' && opts.onNotFound) {
+                    opts.onNotFound();
+                    return;
+                }
                 if (status) status.textContent = (res && res.status === 'NOT_FOUND')
                     ? 'No cloud save found for that code.'
                     : 'Could not load that character.';
@@ -136,21 +141,89 @@
         document.head.appendChild(script);
     }
 
+    // Called when a `?load=` deep link's Agent Code has no cloud character
+    // yet (a real case: an Agent File was submitted, but that Agent hasn't
+    // been through Character Creation). Without this, the page would just
+    // keep showing whatever character was last auto-saved locally on this
+    // device -- e.g. a *different* Agent from a previous session -- with
+    // no indication anything was wrong, silently misattributing edits to
+    // the wrong Agent. Instead: wipe the stale sheet, adopt this Agent's
+    // code so the very first save syncs under it (not a new random code),
+    // and open the Character Creation Wizard so the Handler/player can
+    // build this Agent's sheet right away.
+    function startRecruitFlow(code) {
+        if (window.dgSaveLoad?.resetSheet) window.dgSaveLoad.resetSheet();
+        setCloudCode(code);
+        // skipSave: true -- otherwise setTheme() immediately re-saves the
+        // sheet to localStorage exactly as it stands right now (still
+        // blank, since the Agent File name fetch below hasn't resolved
+        // yet), and that blank snapshot then wins when save-load.js's own
+        // restore runs moments later, wiping out the pre-filled name.
+        if (typeof setTheme === 'function') setTheme('modern', { skipSave: true });
+        setTimeout(() => { if (window.dgWizard?.activate) window.dgWizard.activate(); }, 200);
+
+        // Best-effort: the Agent File (submitted separately, via the Cover
+        // form or Agent File export) may already know this Agent's name --
+        // pre-fill it so the wizard doesn't open on a totally blank sheet.
+        const cbName = '_dgRecruitAgentFileCb' + Date.now();
+        window[cbName] = function (res) {
+            delete window[cbName];
+            const s = document.getElementById('_dg_recruit_af_script');
+            if (s) s.remove();
+            const nameEl = document.getElementById('cs-name');
+            if (res && res.status === 'OK' && res.data?.char_name && nameEl && !nameEl.value) {
+                nameEl.value = res.data.char_name;
+            }
+        };
+        const script = document.createElement('script');
+        script.id = '_dg_recruit_af_script';
+        script.src = APPS_SCRIPT_URL + '?code=' + encodeURIComponent(code) + '&callback=' + cbName;
+        document.head.appendChild(script);
+    }
+
     window.dgCloudSave = { loadFromCloud, getCloudCode };
     document.addEventListener('DOMContentLoaded', () => renderStatus());
 
     // agent-hub.html's Agent Files "Play" button links here as
     // `?load=XXXX-YYYY&theme=field-doc` -- load that exact agent from
     // the cloud and jump straight to Live Play, rather than leaving
-    // whatever was last auto-saved in this browser showing.
+    // whatever was last auto-saved in this browser showing. If that Agent
+    // Code has no cloud character yet, startRecruitFlow() takes over
+    // instead (see above) rather than silently leaving a stale character
+    // on screen.
     document.addEventListener('DOMContentLoaded', () => {
         const params = new URLSearchParams(window.location.search);
         const loadCode = params.get('load');
         if (!loadCode) return;
-        loadFromCloud(loadCode);
+        let notFound = false;
+        loadFromCloud(loadCode, {
+            onNotFound: () => { notFound = true; startRecruitFlow(loadCode); },
+        });
         const theme = params.get('theme');
         if (theme && typeof setTheme === 'function') {
-            setTimeout(() => setTheme(theme), 400);
+            setTimeout(() => { if (!notFound) setTheme(theme); }, 400);
         }
+    });
+
+    // agent-hub.html's "New Recruit" card links here as `?new=1` -- a
+    // totally blank sheet, not whatever this device last auto-saved
+    // locally (which could be a different, already-played Agent). Runs
+    // on DOMContentLoaded, which always fires before save-load.js's own
+    // restore (window 'load' + 200ms), so the wipe is guaranteed to land
+    // before loadLocal() would otherwise repopulate the form. Also drops
+    // any remembered Cloud Save code so the new character mints its own
+    // fresh code on first save, instead of silently overwriting whatever
+    // Agent that old code belonged to.
+    document.addEventListener('DOMContentLoaded', () => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('new') !== '1') return;
+        if (window.dgSaveLoad?.resetSheet) window.dgSaveLoad.resetSheet();
+        try { localStorage.removeItem(CLOUD_CODE_KEY); } catch (e) { /* best effort */ }
+        renderStatus();
+        // Strip ?new=1 so a later refresh (after the player has started
+        // filling in this new Agent) doesn't wipe it out a second time.
+        params.delete('new');
+        const clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '') + window.location.hash;
+        history.replaceState(null, '', clean);
     });
 })();

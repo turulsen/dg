@@ -66,7 +66,7 @@
     opacity:0; transition:opacity 1.1s ease;
   }
   #acell-logo.acell-logo-in{ opacity:1; }
-  #acell-logo svg{ width:76px; height:76px; }
+  #acell-logo img{ width:150px; height:auto; filter:drop-shadow(0 0 10px rgba(62,240,122,.6)); }
   #acell-logo .acell-logo-word{
     font-family:'JetBrains Mono',monospace; font-weight:700; letter-spacing:.32em;
     font-size:16px; color:var(--term-green); text-shadow:0 0 10px rgba(62,240,122,.6);
@@ -144,6 +144,42 @@
   .pv-skill{ display:flex; justify-content:space-between; gap:8px; border-bottom:1px dotted var(--rule); padding:3px 0; }
   .pv-skill .sv{ color:var(--dim); flex-shrink:0; }
 
+  /* ── Cells: full roster, filterable, inline Handler/Operation tags ── */
+  .cells-filters{ display:flex; gap:20px; flex-wrap:wrap; margin-bottom:16px; }
+  .cells-filters label{
+    display:flex; flex-direction:column; gap:5px;
+    font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--dim);
+  }
+  .cells-filters select{
+    background:var(--bg2); border:1px solid var(--rule); color:var(--ink);
+    padding:7px 10px; font-family:'Source Sans 3',sans-serif; font-size:13px; min-width:160px;
+  }
+  .cells-list{ display:flex; flex-direction:column; gap:8px; }
+  .cells-row{
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    background:var(--bg2); border:1px solid var(--rule); padding:12px 16px;
+  }
+  .cells-row.cells-row-hidden{ display:none; }
+  .cells-info{ min-width:0; flex:1 1 180px; }
+  .cells-info .name{ font-family:'Special Elite',monospace; font-size:14px; overflow-wrap:anywhere; }
+  .cells-info .meta{ font-size:11px; color:var(--dim); margin-top:2px; }
+  .cells-tags{ display:flex; gap:8px; flex-wrap:wrap; margin-left:auto; }
+  .cells-tag-field{ display:flex; flex-direction:column; gap:4px; }
+  .cells-tag-field span{
+    font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--dim);
+  }
+  .cells-tag-field input{
+    background:var(--bg); border:1px solid var(--rule); color:var(--ink);
+    padding:6px 9px; font-size:12px; width:140px; font-family:'JetBrains Mono',monospace;
+  }
+  .cells-tag-field input:focus{ outline:none; border-color:var(--red); }
+  .cells-save-note{
+    font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--term-green);
+    min-height:1.2em; margin-top:2px;
+  }
+
   footer{ text-align:center; color:var(--rule); font-size:11px; margin-top:64px; }
 </style>
 </head>
@@ -156,11 +192,7 @@
   </div>
   <a id="acell-back" href="index.html">&larr; back to clearance</a>
   <div id="acell-logo">
-    <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <polygon points="50,10 90,82 10,82" stroke="#3ef07a" stroke-width="3" stroke-linejoin="round"/>
-      <polygon points="50,32 74,74 26,74" stroke="#3ef07a" stroke-width="1.4" opacity=".55" stroke-linejoin="round"/>
-      <circle cx="50" cy="63" r="4" fill="#3ef07a"/>
-    </svg>
+    <img src="assets/delta-green-triangle.png" alt="" width="150">
     <div class="acell-logo-word">DELTA GREEN</div>
     <div class="acell-logo-sub">A-Cell Handler Access</div>
   </div>
@@ -188,8 +220,16 @@
 
   <section>
     <div class="sec-head">Cells</div>
-    <div class="acell-card">
-      <p>Every Agent on file, filterable by Handler and Operation. Tag agents into Cells here. Coming online next.</p>
+    <div class="cells-filters">
+      <label>Handler
+        <select id="cells-filter-handler"><option value="">All</option></select>
+      </label>
+      <label>Operation
+        <select id="cells-filter-operation"><option value="">All</option></select>
+      </label>
+    </div>
+    <div class="cells-list" id="cells-list">
+      <div class="play-loading">Loading agents…</div>
     </div>
   </section>
 
@@ -406,6 +446,147 @@
       '</div>' +
       '<div class="pv-skills">' + skillsHtml + '</div>';
   }
+
+  fetchList();
+})();
+</script>
+
+<script>
+/* ══════════════════════════════════════════════
+   CELLS -- every Agent on file (same list_characters action as Play,
+   fetched independently here since this is a self-contained section
+   like the rest of this project's pages), filterable by Handler and
+   Operation, with both tags editable inline right in the row ("added
+   easily"). Tags persist via a new update_character_field action --
+   part of the same backend addition handed over separately (see
+   acell-cells-tagging-addition.txt), which also adds the handler/
+   operation columns to the Characters sheet and extends
+   list_characters to return them. Until that's pasted in and
+   redeployed, tags read back as empty and edits save silently
+   nowhere -- same "coming online" state Play was in before its own
+   addition, not a bug in this page.
+   ══════════════════════════════════════════════ */
+(function () {
+  "use strict";
+  var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
+  var TAG_SAVE_DEBOUNCE_MS = 700;
+
+  var listEl = document.getElementById('cells-list');
+  var handlerFilter = document.getElementById('cells-filter-handler');
+  var operationFilter = document.getElementById('cells-filter-operation');
+  var agents = [];
+
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
+  }
+
+  function fetchList() {
+    var cbName = '_acellCellsList_' + Date.now();
+    var timer = setTimeout(function () {
+      delete window[cbName];
+      listEl.innerHTML = '<div class="play-error">Could not load the Agent list. (The A-Cell backend addition may not be deployed yet.)</div>';
+    }, 7000);
+    window[cbName] = function (res) {
+      clearTimeout(timer);
+      delete window[cbName];
+      var script = document.getElementById('_acell_cells_list_script');
+      if (script) script.remove();
+      if (!res || res.status !== 'OK' || !Array.isArray(res.characters)) {
+        listEl.innerHTML = '<div class="play-error">Could not load the Agent list.</div>';
+        return;
+      }
+      agents = res.characters.map(function (c) {
+        var state = null;
+        try { state = JSON.parse(c.character_json); } catch (e) { /* skip unparsable rows */ }
+        return { code: c.agent_code, state: state, handler: c.handler || '', operation: c.operation || '' };
+      }).filter(function (c) { return c.code && c.state; });
+      renderFilters();
+      renderList();
+    };
+    var s = document.createElement('script');
+    s.id = '_acell_cells_list_script';
+    s.src = APPS_SCRIPT_URL + '?action=list_characters&callback=' + cbName;
+    document.head.appendChild(s);
+  }
+
+  // Rebuilds the filter dropdowns from whatever tags currently exist on
+  // the roster, preserving the current selection where still valid --
+  // so a freshly-typed tag becomes filterable without a reload.
+  function renderFilters() {
+    [[handlerFilter, 'handler'], [operationFilter, 'operation']].forEach(function (pair) {
+      var el = pair[0], key = pair[1];
+      var current = el.value;
+      var values = Array.from(new Set(agents.map(function (a) { return a[key]; }).filter(Boolean))).sort();
+      el.innerHTML = '<option value="">All</option>' + values.map(function (v) {
+        return '<option value="' + escapeHtml(v) + '">' + escapeHtml(v) + '</option>';
+      }).join('');
+      if (values.indexOf(current) !== -1) el.value = current;
+    });
+  }
+
+  function applyFilters() {
+    var h = handlerFilter.value, o = operationFilter.value;
+    Array.prototype.forEach.call(listEl.querySelectorAll('.cells-row'), function (row) {
+      var match = (!h || row.dataset.handler === h) && (!o || row.dataset.operation === o);
+      row.classList.toggle('cells-row-hidden', !match);
+    });
+  }
+
+  function saveTag(code, field, value, noteEl) {
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors', keepalive: true,
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'update_character_field', agent_code: code, field: field, value: value }),
+    }).then(function () {
+      if (noteEl) { noteEl.textContent = 'Saved.'; setTimeout(function () { noteEl.textContent = ''; }, 1800); }
+    }).catch(function () { /* silent, same as every other Apps Script write in this app */ });
+  }
+
+  function renderList() {
+    if (!agents.length) {
+      listEl.innerHTML = '<div class="play-error">No Agents on file yet.</div>';
+      return;
+    }
+    listEl.innerHTML = agents.map(function (a, i) {
+      var bio = a.state.bio || {};
+      var name = bio.name || 'Unknown Agent';
+      var meta = [a.code, bio.profession].filter(Boolean).map(escapeHtml).join(' &middot; ');
+      return '<div class="cells-row" data-i="' + i + '" data-handler="' + escapeHtml(a.handler) + '" data-operation="' + escapeHtml(a.operation) + '">' +
+        '<div class="cells-info"><div class="name">' + escapeHtml(name) + '</div><div class="meta">' + meta + '</div></div>' +
+        '<div class="cells-tags">' +
+        '<label class="cells-tag-field"><span>Handler</span><input type="text" class="cells-handler-input" data-i="' + i + '" value="' + escapeHtml(a.handler) + '" placeholder="&#8212;"></label>' +
+        '<label class="cells-tag-field"><span>Operation</span><input type="text" class="cells-operation-input" data-i="' + i + '" value="' + escapeHtml(a.operation) + '" placeholder="&#8212;"></label>' +
+        '</div>' +
+        '<div class="cells-save-note" id="cells-save-note-' + i + '"></div>' +
+        '</div>';
+    }).join('');
+
+    var debounce = {};
+    function wireTagInput(selector, field) {
+      Array.prototype.forEach.call(listEl.querySelectorAll(selector), function (input) {
+        input.addEventListener('input', function () {
+          var i = parseInt(input.dataset.i, 10);
+          var agent = agents[i];
+          agent[field] = input.value;
+          var row = listEl.querySelector('.cells-row[data-i="' + i + '"]');
+          if (row) row.dataset[field] = input.value;
+          clearTimeout(debounce[field + i]);
+          debounce[field + i] = setTimeout(function () {
+            saveTag(agent.code, field, agent[field], document.getElementById('cells-save-note-' + i));
+            renderFilters();
+          }, TAG_SAVE_DEBOUNCE_MS);
+        });
+      });
+    }
+    wireTagInput('.cells-handler-input', 'handler');
+    wireTagInput('.cells-operation-input', 'operation');
+  }
+
+  handlerFilter.addEventListener('change', applyFilters);
+  operationFilter.addEventListener('change', applyFilters);
 
   fetchList();
 })();

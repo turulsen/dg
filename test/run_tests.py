@@ -848,9 +848,9 @@ def test_cover_ids_tab(p):
 def test_hub_boot_splash(p):
     """index.html's boot splash: black screen, green CRT-terminal text
     (waiting_for_clearance / delta_green / acces_granted), then a fading
-    Mars Technologies wordmark, revealing the clearance chooser
-    underneath -- capped at ~4.5s total (spec asked for "max 5s").
-    Session-gated via sessionStorage, not localStorage, so it plays once
+    Mars Technologies seal, revealing the clearance chooser underneath --
+    runs ~8s total, capped at ~8.6s so it can never meaningfully overrun
+    that. Session-gated via sessionStorage, not localStorage, so it plays once
     per new tab ("load in every new session") but a same-tab reload
     skips straight to the clearance grid ("after this every loading is
     fast very snappy")."""
@@ -869,11 +869,11 @@ def test_hub_boot_splash(p):
            term_text.startswith(">"), repr(term_text))
 
     # Splash types "waiting_for_clearance:", "delta_green", "acces_granted"
-    # then fades in the Mars Technologies wordmark before fading out --
+    # then fades in the Mars Technologies seal before fading out --
     # generously bounded wait, then assert it actually finished by the
-    # ~4.5s hard cap this page enforces (never truly hangs past it).
-    page.wait_for_timeout(4300)
-    record("hub", "boot splash resolves and clears the DOM within its ~4.5s cap",
+    # ~8.6s hard cap this page enforces (never truly hangs past it).
+    page.wait_for_timeout(8500)
+    record("hub", "boot splash resolves and clears the DOM within its ~8.6s cap",
            page.locator("#boot-splash").count() == 0, "")
     record("hub", "clearance chooser is visible once the splash clears",
            page.locator(".clearance-card").count() == 2, "")
@@ -972,6 +972,58 @@ def test_agent_hub(p):
     errs_all.extend(errs)
     page.close()
     return errs_all
+
+def test_agent_hub_recruit_flag(p):
+    """Bug fix: an Agent File can exist (submitted via Cover form /
+    Agent File export) before that Agent has an actual character sheet
+    in the cloud (Cloud Save) -- reported case: an Agent File on one
+    device with no character sheet yet still showed Play, and clicking
+    it landed on a different, previously-played Agent's sheet with no
+    warning. Each Agent File's Play button is checked against
+    load_character; an Agent with no cloud character flips the button to
+    Recruit with an explainer note, while one with an existing character
+    keeps Play. A check that errors or times out leaves the button as
+    Play rather than risking a false Recruit label."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    def fake_apps_script(route):
+        url = route.request.url
+        if "action=load_character" in url and "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            has_sheet = "OWEN-CS12" in url
+            res = {"status": "OK", "character_json": "{}"} if has_sheet else {"status": "NOT_FOUND"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        elif "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"OK"}})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    roster = {
+        "OWEN-CS12": {"code": "OWEN-CS12", "char_name": "Owen Castillo", "saved_at": 2000},
+        "PRIY-AN34": {"code": "PRIY-AN34", "char_name": "Priya Anand", "saved_at": 1000},
+    }
+    page.evaluate("(r) => localStorage.setItem('dg_agent_roster', JSON.stringify(r))", roster)
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_timeout(1200)
+
+    owen_btn = page.eval_on_selector('[data-play-btn="OWEN-CS12"]', "el => el.textContent.trim()")
+    priy_btn = page.eval_on_selector('[data-play-btn="PRIY-AN34"]', "el => el.textContent.trim()")
+    record("hub", "Agent with an existing character keeps the Play label", "Play" in owen_btn, owen_btn)
+    record("hub", "Agent with no character yet flips to Recruit", "Recruit" in priy_btn, priy_btn)
+    record("hub", "Recruit explainer note is shown for the flagged Agent",
+           page.eval_on_selector("#recruit-note-PRIY-AN34", "el => el.classList.contains('recruit-note-shown')"), "")
+    record("hub", "no Recruit note for the Agent that already has a character",
+           not page.eval_on_selector("#recruit-note-OWEN-CS12", "el => el.classList.contains('recruit-note-shown')"), "")
+
+    page.close()
+    return errs
 
 def test_acell_gate(p):
     """a-cell.html: the Handler's clearance branch. Same black-screen
@@ -1113,6 +1165,96 @@ def test_acell_play(p):
     page.close()
     return errs
 
+def test_acell_cells(p):
+    """a-cell.html's Cells section: the same cross-player Agent roster
+    as Play, but organized -- each row gets inline Handler/Operation
+    tag inputs (a new update_character_field Apps Script action, part
+    of acell-cells-tagging-addition.txt handed over separately), and
+    two filter dropdowns built from whatever tags are currently on the
+    roster. Editing a tag debounces a save and the filter dropdowns
+    pick up the new value without a reload."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    skip_acell_gate(page)
+
+    fake_characters = [
+        {
+            "agent_code": "OWEN-CS12",
+            "character_json": json.dumps({"bio": {"name": "Owen Castillo", "profession": "Federal Agent"}}),
+            "handler": "Sam",
+            "operation": "OPERATION MOONLIGHT",
+        },
+        {
+            "agent_code": "PRIY-AN34",
+            "character_json": json.dumps({"bio": {"name": "Priya Anand", "profession": "Forensic Accountant"}}),
+            "handler": "Sam",
+            "operation": "",
+        },
+        {
+            "agent_code": "MARC-9XQ2",
+            "character_json": json.dumps({"bio": {"name": "Marcus Reyes", "profession": "Pilot"}}),
+            "handler": "Jo",
+            "operation": "OPERATION MOONLIGHT",
+        },
+    ]
+    posts = []
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            posts.append(json.loads(req.post_data or "{}"))
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "action=list_characters" in url and "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            body = f'{cb}({json.dumps({"status": "OK", "characters": fake_characters})})'
+            route.fulfill(status=200, content_type="application/javascript", body=body)
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+
+    names = page.eval_on_selector_all("#cells-list .cells-info .name", "els => els.map(e=>e.textContent)")
+    record("acell", "Cells lists every Agent on file",
+           names == ["Owen Castillo", "Priya Anand", "Marcus Reyes"], str(names))
+
+    handler_opts = page.eval_on_selector_all("#cells-filter-handler option", "els => els.map(e=>e.value)")
+    operation_opts = page.eval_on_selector_all("#cells-filter-operation option", "els => els.map(e=>e.value)")
+    record("acell", "Handler filter is built from the roster's existing tags",
+           handler_opts == ["", "Jo", "Sam"], str(handler_opts))
+    record("acell", "Operation filter is built from the roster's existing tags (blank tags excluded)",
+           operation_opts == ["", "OPERATION MOONLIGHT"], str(operation_opts))
+
+    page.select_option("#cells-filter-handler", "Sam")
+    page.wait_for_timeout(100)
+    visible_names = page.eval_on_selector_all(
+        "#cells-list .cells-row:not(.cells-row-hidden) .cells-info .name", "els => els.map(e=>e.textContent)")
+    record("acell", "filtering by Handler shows only that Handler's Agents",
+           visible_names == ["Owen Castillo", "Priya Anand"], str(visible_names))
+    page.select_option("#cells-filter-handler", "")
+
+    # Editing a tag inline saves via update_character_field, debounced.
+    op_input = page.locator("#cells-list .cells-row:nth-child(2) .cells-operation-input")
+    op_input.fill("OPERATION NIGHTGLASS")
+    page.wait_for_timeout(1200)
+    matching_posts = [p_ for p_ in posts if p_.get("action") == "update_character_field"
+                       and p_.get("agent_code") == "PRIY-AN34" and p_.get("field") == "operation"]
+    record("acell", "editing a tag inline saves via update_character_field with the right agent/field/value",
+           len(matching_posts) == 1 and matching_posts[0].get("value") == "OPERATION NIGHTGLASS", str(matching_posts))
+
+    operation_opts_after = page.eval_on_selector_all("#cells-filter-operation option", "els => els.map(e=>e.value)")
+    record("acell", "a newly-typed tag becomes filterable without a reload",
+           "OPERATION NIGHTGLASS" in operation_opts_after, str(operation_opts_after))
+
+    page.close()
+    return errs
+
 def test_agent_portal_code_query_param(p):
     """agent-hub.html's Agent Files "Files" and "ID Creator" buttons link
     to dg-agent-portal.html?code=XXXX#agent / #ids -- a new
@@ -1193,6 +1335,111 @@ def test_stats_load_by_code_query_param(p):
     record("stats-terminal", "?theme=field-doc jumps straight to the Live Play theme",
            "theme-field-doc" in page.eval_on_selector("body", "el => el.className"), "")
     record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
+    page.close()
+    return errs
+
+def test_stats_recruit_flow_on_missing_character(p):
+    """Bug fix: stats/index.html?load=CODE for an Agent Code with no
+    cloud character yet (NOT_FOUND) must not silently keep showing
+    whatever character was last auto-saved locally on this device --
+    that's how a different Agent's sheet gets mistaken for a brand new
+    one (reported: an Agent File existed for one Agent with no character
+    sheet yet, but Play kept showing a previously-played Agent's sheet
+    from the same device). startRecruitFlow() (stats/cloud-sync.js)
+    instead wipes the stale sheet, adopts the requested code so the
+    first save syncs correctly, pre-fills the name from the Agent File
+    if known, and opens the Character Creation Wizard instead of Live
+    Play."""
+    page = p.new_page()
+    page.set_default_timeout(10000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+
+    # Seed a DIFFERENT character's local autosave, simulating a device
+    # last used to play a different Agent.
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(400)
+    page.fill("#cs-name", "Patrick Previous")
+    page.wait_for_timeout(1800)
+
+    def fake_apps_script(route):
+        url = route.request.url
+        if "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        if "action=load_character" in url:
+            route.fulfill(status=200, content_type="application/javascript",
+                           body=f'{cb}({json.dumps({"status": "NOT_FOUND"})})')
+        else:
+            route.fulfill(status=200, content_type="application/javascript",
+                           body=f'{cb}({json.dumps({"status": "OK", "data": {"char_name": "Dani Uribe"}})})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/stats/index.html?load=DANI-U8BM&theme=field-doc", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(1500)
+
+    name_val = page.eval_on_selector("#cs-name", "el => el.value")
+    record("stats-terminal", "a not-found Play link does not leave the previous Agent's name on screen",
+           name_val != "Patrick Previous", name_val)
+    record("stats-terminal", "the Agent File's known name pre-fills the sheet instead",
+           name_val == "Dani Uribe", name_val)
+    record("stats-terminal", "the requested Agent Code is adopted as the Cloud Save code",
+           page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')") == "DANI-U8BM", "")
+    record("stats-terminal", "the Character Creation Wizard opens instead of jumping to Live Play",
+           page.query_selector("#wiz-outer") is not None, "")
+
+    page.close()
+    return errs
+
+def test_stats_new_recruit_blank_sheet(p):
+    """agent-hub.html's "New Recruit" card links to
+    stats/index.html?new=1 -- a totally blank sheet, not whatever this
+    device last auto-saved locally (a real prior confusion: a previously-
+    played Agent's sheet showing up under what was meant to be a brand
+    new character). The ?new=1 handler (stats/cloud-sync.js) wipes the
+    stale sheet and drops any remembered Cloud Save code before
+    save-load.js's own restore would otherwise repopulate the form, then
+    strips ?new=1 from the URL so a later refresh doesn't wipe out the
+    new character the player has since started filling in."""
+    page = p.new_page()
+    page.set_default_timeout(10000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+
+    # Seed a previous character's local autosave AND a minted cloud code,
+    # simulating a device last used to play a different Agent.
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(400)
+    page.fill("#cs-name", "Patrick Previous")
+    page.wait_for_timeout(4200)
+    prior_code = page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')")
+    record("stats-terminal", "(setup) a prior Agent's cloud code is present before the New Recruit visit",
+           bool(prior_code), f"prior_code={prior_code!r}")
+
+    page.goto(f"{BASE}/stats/index.html?new=1", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(1000)
+
+    record("stats-terminal", "New Recruit shows a totally blank name field, not the previous Agent's",
+           page.eval_on_selector("#cs-name", "el => el.value") == "", "")
+    record("stats-terminal", "New Recruit drops the previous Agent's remembered Cloud Save code",
+           page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')") in (None, ""), "")
+    record("stats-terminal", "?new=1 is stripped from the URL so a refresh won't wipe the new character again",
+           "new=1" not in page.evaluate("() => window.location.search"), "")
+
+    # A same-page reload after ?new=1 has been stripped must NOT wipe out
+    # whatever the player has since typed for the new Agent.
+    page.fill("#cs-name", "Dani Fresh")
+    page.wait_for_timeout(1800)
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_timeout(600)
+    record("stats-terminal", "a refresh after New Recruit preserves what was typed (no repeat wipe)",
+           page.eval_on_selector("#cs-name", "el => el.value") == "Dani Fresh", "")
+
     page.close()
     return errs
 
@@ -1739,13 +1986,21 @@ def main():
 
         safe(test_agent_hub, browser, area="hub")
 
+        safe(test_agent_hub_recruit_flag, browser, area="hub")
+
         safe(test_acell_gate, browser, area="acell")
 
         safe(test_acell_play, browser, area="acell")
 
+        safe(test_acell_cells, browser, area="acell")
+
         safe(test_agent_portal_code_query_param, browser, area="agent-portal")
 
         safe(test_stats_load_by_code_query_param, browser, area="stats-terminal")
+
+        safe(test_stats_recruit_flow_on_missing_character, browser, area="stats-terminal")
+
+        safe(test_stats_new_recruit_blank_sheet, browser, area="stats-terminal")
 
         safe(test_mobile_no_overflow, browser, area="mobile")
 

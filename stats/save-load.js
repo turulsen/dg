@@ -638,9 +638,11 @@ function matchProfessionKey(profStr) {
         location.reload();
     }
 
-    function clearSheet() {
-        if (!confirm('Clear the entire sheet? All values will be reset. This cannot be undone.')) return;
-
+    // The actual reset, split out from clearSheet()'s confirm() prompt so
+    // agent-hub.html's Play button can trigger the same wipe automatically
+    // when it deep-links to an Agent Code with no cloud character yet --
+    // see resetSheet() below and cloud-sync.js's startRecruitFlow().
+    function _resetSheetFields() {
         // Wipe localStorage
         localStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem('dg-equipment-loadout');
@@ -673,8 +675,21 @@ function matchProfessionKey(profStr) {
         // Clear bonds
         window.bondsOnSheet = [];
         if (typeof renderBondsOnSheet === 'function') renderBondsOnSheet();
+    }
 
+    function clearSheet() {
+        if (!confirm('Clear the entire sheet? All values will be reset. This cannot be undone.')) return;
+        _resetSheetFields();
         showToast('Sheet cleared.');
+    }
+
+    // Same wipe as Clear Sheet, without the confirm() prompt -- for
+    // automatic use when the app itself determines the current sheet
+    // shouldn't be shown (e.g. a Play link for an Agent Code that has no
+    // cloud character yet, where showing whatever was last auto-saved
+    // locally would silently misattribute it to the wrong Agent).
+    function resetSheet() {
+        _resetSheetFields();
     }
 
     /* =========================================================================
@@ -891,7 +906,7 @@ function matchProfessionKey(profStr) {
     /* =========================================================================
        PUBLIC API
     ========================================================================= */
-    window.dgSaveLoad = { save, loadLocal, share, clearSave, clearSheet, downloadSheet, uploadSheet, collectState, applyState, importFromSheet };
+    window.dgSaveLoad = { save, loadLocal, share, clearSave, clearSheet, resetSheet, downloadSheet, uploadSheet, collectState, applyState, importFromSheet };
 
     /* =========================================================================
        INIT — run after scripts.js window.onload (and its 50 ms inner timer)
