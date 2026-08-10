@@ -341,9 +341,19 @@
             document.body.appendChild(input);
         }
         input.value = '';
-        input.onchange = async function (e) {
+        input.onchange = function (e) {
             const file = e.target.files?.[0];
-            if (!file) return;
+            if (file) importPdfFile(file);
+        };
+        input.click();
+    }
+
+    /**
+     * Same import as importFromPDF() above, but takes a File directly --
+     * shared with the auto-detecting "Import Agent" drop zone (scripts.js),
+     * which already has the File in hand and doesn't need its own picker.
+     */
+    async function importPdfFile(file) {
             if (window.showToast) showToast('Reading PDF\u2026');
             try {
                 await loadPdfLib();
@@ -440,9 +450,8 @@
                 console.error('[DG PDF Import]', err);
                 if (window.showToast) showToast('PDF import failed \u2014 see console for details.');
             }
-        };
-        input.click();
     }
 
     window.importFromPDF = importFromPDF;
+    window.importPdfFile = importPdfFile;
 })();

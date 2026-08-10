@@ -132,6 +132,42 @@
                 title="Sends this character to the Agent Portal as an Agent File (name, stats-derived build/outfit, notes) and opens it there.">
                 &#8594; Open Agent File <span style="opacity:.7;">— exports this character first</span>
             </button>
+            <!-- One-button, format-agnostic import -- drop or pick a file and the
+                 page figures out whether it's a Kappa Black .toml, a Foundry VTT
+                 (or this site's own) .json, an exported .html sheet, a DD Form 315
+                 .pdf, or a Google Sheet .xlsx, then routes it to the matching
+                 importer. Existing format-specific buttons still live in Advanced
+                 below for pasting text or troubleshooting a file this doesn't
+                 recognize. -->
+            <div id="agent-drop-zone" class="json-drop-zone agent-drop-zone-primary"
+                style="max-width:480px;margin:0 auto var(--spacing-lg);"
+                ondragover="agentDropZone.over(event)" ondragleave="agentDropZone.leave(event)"
+                ondrop="agentDropZone.drop(event)"
+                onclick="document.getElementById('agent-import-auto-input').click()"
+                title="Drop a character file here, or click to browse. Recognizes Kappa Black .toml/.json, Foundry VTT .json, this site's exported .html/.json, DD Form 315 .pdf, and the Google Sheet .xlsx template automatically.">
+                <span class="json-drop-label" id="agent-drop-label">&#8593; Import Agent
+                    <br><span style="opacity:.7;">drop a file here, or click to browse — any format</span></span>
+                <input type="file" id="agent-import-auto-input"
+                    accept=".toml,.json,.pdf,.xlsx,.html,.htm,application/json,application/pdf,text/html,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    style="display:none" onchange="agentDropZone.fileSelected(event)">
+            </div>
+            <!-- Cloud Save -- opt-in background sync of this character to the
+                 Agent Portal backend by Agent Code, so it can be picked up on
+                 another device without a file changing hands. Off by default;
+                 see stats/cloud-sync.js for how the code lifecycle works. -->
+            <div id="cloud-save-bar" style="text-align:center;margin:0 auto var(--spacing-lg);font-family:'JetBrains Mono',monospace;font-size:0.85em;">
+                <button type="button" onclick="dgCloudSave.startCloudSave()"
+                    title="Assigns this character a cloud save code and starts syncing every edit to it automatically. Enter a name first so the code matches your agent.">
+                    ☁ Start Cloud Save</button>
+                <button type="button" onclick="dgCloudSave.loadFromCloud()"
+                    title="Load a character previously cloud-saved from any device, by its Agent Code.">
+                    ☁ Load by Code</button>
+                <button type="button" onclick="dgCloudSave.stopCloudSave()"
+                    title="Stops syncing this character from this browser. The last synced cloud copy is kept.">
+                    Stop</button>
+                <div id="cloud-save-status" style="margin-top:4px;opacity:.75;"></div>
+                <div id="cloud-load-status" style="opacity:.75;"></div>
+            </div>
             <div id="theme-selector">
                 <label>Theme:</label>
                 <select id="cs-theme-select" aria-label="Theme selector">
@@ -813,6 +849,7 @@
         <script src="sheets-import.js"></script>
         <script src="save-load.js"></script>
         <script src="agent-portal-export.js"></script>
+        <script src="cloud-sync.js"></script>
         <script src="dice-roller.js"></script>
         <script src="equipment-data.js"></script>
         <script src="equipment-picker.js"></script>

@@ -7608,6 +7608,24 @@ input[type="checkbox"]:checked+label {
 }
 
 /* ══════════════════════════════════════════════
+   AGENT HUB ADDITION: the top-of-page "Import Agent" drop zone --
+   a bigger, more inviting variant of .json-drop-zone (opacity 1 instead
+   of the muted 0.55 default, thicker text) since this one is meant to be
+   the obvious first thing a player reaches for, not a buried advanced
+   option.
+   ══════════════════════════════════════════════ */
+.agent-drop-zone-primary {
+    opacity: 1;
+    padding: 18px 16px;
+    border-width: 2px;
+}
+
+.agent-drop-zone-primary .json-drop-label {
+    font-size: 0.95rem;
+    font-weight: bold;
+}
+
+/* ══════════════════════════════════════════════
    AGENT HUB ADDITION: mobile overflow fixes for the five non-Mobile
    themes (X-Files, Modern, Son of Sam, Field Notes, Live Play). Not
    theme-scoped -- these are all viewport-width-gated, so they change

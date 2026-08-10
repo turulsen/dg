@@ -2450,6 +2450,125 @@ function exportCharacterJSON() {
     }
 }
 
+/* ══════════════════════════════════════════════
+   IMPORT AGENT (auto-detecting, this hub's addition)
+
+   One drop zone / file picker for every format this page can import,
+   instead of making a player figure out which of five buttons matches
+   their file first. Detects format from the file extension, falling back
+   to sniffing the actual bytes/content for files dragged in without one
+   (a common case on mobile, where "Share" sheets sometimes strip
+   extensions), then hands off to that format's existing importer --
+   this adds no new parsing logic of its own, just the routing in front
+   of importPdfFile() (pdf-export.js), importSheetsFile()
+   (sheets-import.js), dgSaveLoad.importFromSheet() (save-load.js), and
+   the Kappa Black / Foundry JSON paths already in this file.
+   ══════════════════════════════════════════════ */
+
+window.agentDropZone = {
+    over(e) {
+        e.preventDefault();
+        document.getElementById('agent-drop-zone')?.classList.add('drag-over');
+    },
+    leave(e) {
+        document.getElementById('agent-drop-zone')?.classList.remove('drag-over');
+    },
+    drop(e) {
+        e.preventDefault();
+        document.getElementById('agent-drop-zone')?.classList.remove('drag-over');
+        const file = e.dataTransfer?.files?.[0];
+        if (file) importAgentAuto(file);
+    },
+    fileSelected(e) {
+        const file = e.target?.files?.[0];
+        if (file) importAgentAuto(file);
+        e.target.value = '';
+    }
+};
+
+function importAgentTextByFormat(text, format) {
+    const trimmed = text.trim();
+    if (format === 'toml') {
+        const toml = parseSimpleTOML(trimmed);
+        if (!toml.name) throw new Error('Not a recognizable Kappa Black export -- no "name" field found.');
+        applyImportedAgentData(convertKappaBlackToAgentData(toml));
+        return;
+    }
+    // format === 'json'
+    const data = JSON.parse(trimmed);
+    if (data && data.v === 1 && data.bio) {
+        // This site's own native state export (downloadSheet() in save-load.js) --
+        // goes straight through applyState(), not applyImportedAgentData(), since
+        // it's already in this app's internal shape, not a Foundry-style actor.
+        if (window.dgSaveLoad?.applyState) {
+            window.dgSaveLoad.applyState(data);
+            setTimeout(() => {
+                window.dgSaveLoad.save?.();
+                if (typeof syncLpFromForm === 'function') syncLpFromForm();
+            }, 300);
+            if (window.showToast) showToast('Character loaded!');
+            return;
+        }
+    }
+    // Otherwise assume a Foundry VTT actor JSON -- also covers Kappa
+    // Black's own JSON export, which already is one.
+    applyImportedAgentData(data);
+}
+
+async function importAgentAuto(file) {
+    if (!file) return;
+    try {
+        const nameLower = (file.name || '').toLowerCase();
+        const dot = nameLower.lastIndexOf('.');
+        const ext = dot >= 0 ? nameLower.slice(dot + 1) : '';
+
+        if (ext === 'pdf' || file.type === 'application/pdf') {
+            if (typeof window.importPdfFile !== 'function') throw new Error('PDF importer not loaded.');
+            return void window.importPdfFile(file);
+        }
+        if (ext === 'xlsx' || file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+            if (typeof window.importSheetsFile !== 'function') throw new Error('Spreadsheet importer not loaded.');
+            return void window.importSheetsFile(file);
+        }
+        if (ext === 'html' || ext === 'htm' || file.type === 'text/html') {
+            if (!window.dgSaveLoad?.importFromSheet) throw new Error('Sheet importer not loaded.');
+            return void window.dgSaveLoad.importFromSheet(file);
+        }
+        if (ext === 'toml') return void importAgentTextByFormat(await file.text(), 'toml');
+        if (ext === 'json') return void importAgentTextByFormat(await file.text(), 'json');
+
+        // No extension to go on (or an unrecognized one) -- sniff the
+        // actual content instead of giving up.
+        const headBytes = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+        const headStr = String.fromCharCode(...headBytes);
+        if (headStr.startsWith('%PDF')) {
+            if (typeof window.importPdfFile !== 'function') throw new Error('PDF importer not loaded.');
+            return void window.importPdfFile(file);
+        }
+        if (headStr.startsWith('PK')) {
+            // Zip signature -- .xlsx is the only zip-based format this page imports.
+            if (typeof window.importSheetsFile !== 'function') throw new Error('Spreadsheet importer not loaded.');
+            return void window.importSheetsFile(file);
+        }
+        const text = await file.text();
+        const trimmed = text.trim();
+        if (trimmed.startsWith('<')) {
+            if (!window.dgSaveLoad?.importFromSheet) throw new Error('Sheet importer not loaded.');
+            return void window.dgSaveLoad.importFromSheet(file);
+        }
+        if (trimmed.startsWith('{')) return void importAgentTextByFormat(text, 'json');
+        if (/^[A-Za-z_][\w]*\s*=/.test(trimmed)) return void importAgentTextByFormat(text, 'toml');
+
+        throw new Error('Unrecognized file format.');
+    } catch (err) {
+        console.error('[DG Import Agent]', err);
+        const msg = "Couldn't recognize that file. Supported: Kappa Black .toml/.json, "
+            + "Foundry VTT .json, this site's own exported .json/.html, DD Form 315 .pdf, "
+            + "or the Google Sheet .xlsx template.";
+        if (window.showToast) showToast(msg); else alert(msg);
+    }
+}
+
 /* ── JSON drop-zone helper ──────────────────────────────────────────── */
 window.jsonDropZone = {
     over(e) {

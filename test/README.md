@@ -90,6 +90,42 @@ non-zero if anything fails.
   row per `[[skills]]` entry that has a `type` (7 total: Craft ×2, Pilot,
   Military Science, Science ×3), both bonds, and — end to end — that
   Export to Agent File's outfit guess reflects the imported profession.
+- **`test_import_agent_auto_detect`** — the single "Import Agent" drop
+  zone (`#agent-drop-zone` / `#agent-import-auto-input`) at the top of
+  `stats/index.html`, replacing having to pick the right button out of
+  five in Advanced. `importAgentAuto()` (`stats/scripts.js`) detects
+  format by file extension, falling back to sniffing the actual
+  bytes/content for a file dropped in without one. This test proves the
+  *routing*, not the underlying parsers (those have their own coverage
+  above): a real `.toml` fixture routes through the Kappa Black path
+  (checked via the "Driving" → `drive` synonym, which only that parser
+  performs), a real Foundry `.json` fixture routes through
+  `applyImportedAgentData()`, an extension-less file whose content is
+  this site's own `v:1` state JSON is content-sniffed and routed through
+  `applyState()` instead (a different function than the Foundry path,
+  since both are valid `.json` a player might hand over), and an
+  unrecognized format fails closed (an auto-dismissed `alert()`) rather
+  than throwing — deliberately triggers the dispatcher's own
+  `console.error` logging, which is filtered out of the test's exception
+  check rather than treated as a failure, since it's the same intentional
+  pattern `importFromPDF`/`importFromSheets` already use for their own
+  bad-file cases.
+- **`test_cloud_save`** — the opt-in background Cloud Save
+  (`stats/cloud-sync.js`): inactive (no requests) until "Start Cloud
+  Save" mints a code and pushes an initial `action: 'save_character'`
+  POST, a debounced push fires again after a further edit (proves the
+  *ongoing* sync, not just a one-shot save — this test genuinely waits
+  out the 4s debounce), "Stop" (behind a `confirm()`, auto-accepted by
+  the test) clears the local code without touching the last synced copy,
+  and "Load by Code" (called directly with a code argument, bypassing
+  the native `prompt()` this test isn't exercising) restores a character
+  from a mocked `action=load_character` response and re-activates syncing
+  under that code. This only exercises the client side against a mocked
+  Apps Script backend — the real backend needs `character-cloud-save-
+  addition.gs` (handed over separately, not part of this repo) pasted
+  into the live Apps Script project and redeployed, which this sandbox
+  cannot verify directly (outbound requests to script.google.com are
+  blocked here, confirmed by a direct `curl` test).
 - **`test_agent_file_open_character_sheet_btn`** — the "Open Character
   Sheet" button on the Agent Portal's Agent File tab, added above the era
   selector. Checks the button is present-but-hidden on the code-gate

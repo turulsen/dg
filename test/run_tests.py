@@ -470,6 +470,207 @@ def test_kappablack_toml_import(p):
     page.close()
     return errs
 
+def test_import_agent_auto_detect(p):
+    """The single "Import Agent" drop zone at the top of the page
+    (#agent-drop-zone / #agent-import-auto-input) replaces having to pick
+    the right button out of five in Advanced for a player who just wants
+    to load their character. importAgentAuto() (stats/scripts.js) detects
+    format from the file extension, falling back to sniffing the actual
+    bytes/content for files dropped in without one, then hands off to the
+    existing format-specific importer -- this test proves the *routing*,
+    not the underlying parsers (those already have their own coverage
+    above and in test_stat_generator_sheets_roundtrip)."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+
+    # .toml by extension, through the same #agent-import-auto-input a
+    # player would use.
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(400)
+    toml_path = os.path.join(HERE, "fixtures", "kappablack-export.toml")
+    page.set_input_files("#agent-import-auto-input", toml_path)
+    page.wait_for_timeout(600)
+    record("stats-terminal", "Import Agent routes a .toml file to the Kappa Black importer (name)",
+           page.eval_on_selector("#cs-name", "el => el.value") == "Alistair Islay Lagavulin")
+    record("stats-terminal", "Import Agent routes a .toml file to the Kappa Black importer (profession)",
+           page.eval_on_selector("#cs-profession-select", "el => el.value") == "pilot_sailor")
+    record("stats-terminal", "Import Agent's .toml routing goes through the real TOML parser, not a JSON fallback (Driving -> drive)",
+           page.eval_on_selector("#cs-skill-drive", "el => el.value") == "20")
+
+    # .json by extension (Foundry VTT actor shape), on a fresh page.
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(400)
+    json_path = os.path.join(HERE, "fixtures", "kappablack-foundry.json")
+    page.set_input_files("#agent-import-auto-input", json_path)
+    page.wait_for_timeout(600)
+    record("stats-terminal", "Import Agent routes a .json file to the Foundry importer (name)",
+           page.eval_on_selector("#cs-name", "el => el.value") == "Alistair Islay Lagavulin")
+    record("stats-terminal", "Import Agent routes a .json file to the Foundry importer (profession)",
+           page.eval_on_selector("#cs-profession-select", "el => el.value") == "pilot_sailor")
+
+    # Extension-less file (e.g. a mobile "Share" sheet that stripped it) --
+    # content-sniffing must still recognize this site's own v:1 state JSON
+    # (downloadSheet()'s own export format, distinct from a Foundry actor)
+    # and route it through applyState(), not applyImportedAgentData().
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(400)
+    native_state = {
+        "v": 1,
+        "bio": {"name": "Native Sniff Test", "profession": "", "employer": "", "nationality": "",
+                "sex": "", "age": "", "education": ""},
+        "stats": {"STR": 10, "CON": 10, "DEX": 10, "INT": 10, "POW": 10, "CHA": 10},
+        "csStats": {"STR": 10, "CON": 10, "DEX": 10, "INT": 10, "POW": 10, "CHA": 10},
+        "derived": {"hp": 7, "wp": 10, "san": 50, "bp": 40},
+        "skills": {}, "skillSpecs": {}, "customSkills": [], "bonds": [],
+        "sanity": {"violence": [False, False, False], "helplessness": [False, False, False]},
+        "equipment": [], "lpNotes": {"wounds": "", "gear": "", "remarks": ""},
+        "lpWeapons": [], "lpFeat": {}, "optionalSkillChecked": [],
+        "bonusPrepared": False, "bonusSkills": [], "bonusApplied": False,
+        "appliedBonuses": {}, "specialtyInstances": [], "lpCheckedSkills": [],
+        "lpCustomSkills": [], "professionSkillsApplied": False,
+    }
+    page.evaluate(
+        """(stateJson) => {
+            const file = new File([stateJson], 'upload', { type: '' });
+            return window.importAgentAuto(file);
+        }""",
+        json.dumps(native_state),
+    )
+    page.wait_for_timeout(600)
+    record("stats-terminal", "Import Agent content-sniffs an extension-less file as this site's own v:1 JSON (not the Foundry path)",
+           page.eval_on_selector("#cs-name", "el => el.value") == "Native Sniff Test")
+    record("stats-terminal", "content-sniffed v:1 JSON goes through applyState() (HP survives, a field only that path sets here)",
+           page.eval_on_selector("#cs-hp", "el => el.value") == "7")
+
+    # Unrecognized format -- must fail closed (an alert, auto-dismissed by
+    # Playwright) rather than throwing an unhandled exception. This
+    # deliberately triggers importAgentAuto()'s own console.error logging
+    # (expected, not a bug -- same pattern importFromPDF/importFromSheets
+    # already use for their own bad-file cases), so that one line is
+    # filtered out of the exception check below rather than counted as one.
+    page.evaluate(
+        """() => {
+            const file = new File(['not a real character export'], 'notes.xyz', { type: '' });
+            return window.importAgentAuto(file);
+        }"""
+    )
+    page.wait_for_timeout(300)
+
+    real_errs = [e for e in errs if "Unrecognized file format" not in e]
+    record("stats-terminal", "unrecognized format fails closed without an unhandled exception",
+           len(real_errs) == len(errs) - 1, f"errs={errs}")
+    record("stats-terminal", "no JS exceptions", len(real_errs)==0, "; ".join(real_errs))
+    page.close()
+    return errs
+
+def test_cloud_save(p):
+    """Opt-in background cloud sync (stats/cloud-sync.js) -- lets a
+    character built on one device be picked up on another by an Agent
+    Code, without an export/import file changing hands. Off by default
+    (no code, no requests); "Start Cloud Save" mints a code and starts a
+    debounced push on every edit; "Load by Code" pulls a saved character
+    back down. This exercises only the client side against a mocked
+    Apps Script backend -- the real backend needs the paired
+    character-cloud-save-addition.gs pasted into the live Apps Script
+    project and redeployed, which this sandbox cannot verify directly."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    posts = []
+    def route_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            posts.append(json.loads(req.post_data or "{}"))
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "action=load_character" in url and "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            code = url.split("code=")[1].split("&")[0]
+            if code == "TESTCODE":
+                char_state = {"v": 1, "bio": {"name": "Cloud Loaded Character", "profession": "Pilot"}}
+                body = f'{cb}({json.dumps({"status": "OK", "agent_code": code, "updated_at": "now", "character_json": json.dumps(char_state)})})'
+            else:
+                body = f'{cb}({json.dumps({"status": "NOT_FOUND"})})'
+            route.fulfill(status=200, content_type="application/javascript", body=body)
+            return
+        route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", route_apps_script)
+
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(400)
+
+    # No code yet -- silent, nothing sent, matching the app's local-by-default posture.
+    record("stats-terminal", "Cloud Save is inactive until explicitly started",
+           page.eval_on_selector("#cloud-save-status", "el => el.textContent.trim()") == "")
+
+    page.fill("#cs-name", "Priya Anand")
+    page.click("#cloud-save-bar button:has-text('Start Cloud Save')")
+    page.wait_for_timeout(500)
+
+    status1 = page.eval_on_selector("#cloud-save-status", "el => el.textContent")
+    record("stats-terminal", "Start Cloud Save shows an active code in the status line",
+           "Cloud Save active" in status1 or "Synced" in status1, status1)
+    save_posts = [b for b in posts if b.get("action") == "save_character"]
+    record("stats-terminal", "Start Cloud Save immediately pushes the character",
+           len(save_posts) >= 1, f"posts={posts}")
+    if save_posts:
+        first_state = json.loads(save_posts[0]["character_json"])
+        record("stats-terminal", "the pushed character_json carries the real character data (name)",
+               first_state.get("bio", {}).get("name") == "Priya Anand", str(first_state.get("bio")))
+
+    code = page.evaluate("window.dgCloudSave.getCloudCode()")
+    record("stats-terminal", "the minted cloud code is persisted to localStorage",
+           bool(code) and save_posts and save_posts[0].get("agent_code") == code, f"code={code!r}")
+
+    # An edit after Start Cloud Save should schedule (debounced) another
+    # push -- proves the ongoing "saved dynamically and updated" behavior,
+    # not just a one-shot save on the button click.
+    page.fill("#cs-bio-nationality", "Indian-American")
+    page.wait_for_timeout(4500)
+    save_posts_after_edit = [b for b in posts if b.get("action") == "save_character"]
+    record("stats-terminal", "editing after Start Cloud Save schedules another debounced push",
+           len(save_posts_after_edit) >= 2, f"count={len(save_posts_after_edit)}")
+    if len(save_posts_after_edit) >= 2:
+        latest_state = json.loads(save_posts_after_edit[-1]["character_json"])
+        record("stats-terminal", "the debounced push carries the edited field",
+               latest_state.get("bio", {}).get("nationality") == "Indian-American", str(latest_state.get("bio")))
+
+    # Stop Cloud Save -- gated behind a confirm() dialog.
+    page.on("dialog", lambda d: d.accept())
+    page.click("#cloud-save-bar button:has-text('Stop')")
+    page.wait_for_timeout(300)
+    record("stats-terminal", "Stop Cloud Save clears the local code",
+           page.evaluate("window.dgCloudSave.getCloudCode()") == "")
+    record("stats-terminal", "Stop Cloud Save clears the status line",
+           page.eval_on_selector("#cloud-save-status", "el => el.textContent.trim()") == "")
+
+    # Load by Code -- called directly with a code argument (bypassing the
+    # native prompt(), which this test isn't exercising) against the
+    # mocked action=load_character response above.
+    page.evaluate("window.dgCloudSave.loadFromCloud('TESTCODE')")
+    page.wait_for_timeout(500)
+    record("stats-terminal", "Load by Code restores the character from the cloud save",
+           page.eval_on_selector("#cs-name", "el => el.value") == "Cloud Loaded Character")
+    record("stats-terminal", "Load by Code re-activates Cloud Save under the loaded code",
+           page.evaluate("window.dgCloudSave.getCloudCode()") == "TESTCODE")
+
+    page.evaluate("window.dgCloudSave.loadFromCloud('NOPE-CODE')")
+    page.wait_for_timeout(400)
+    record("stats-terminal", "Load by Code reports a clean not-found for an unknown code",
+           "No cloud save found" in (page.eval_on_selector("#cloud-load-status", "el => el.textContent") or ""))
+
+    record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_agent_file_export(p):
     """The "Export to Agent File" bridge (stats/agent-portal-export.js):
     submits through the exact same APPS_SCRIPT_URL path the Cover form's
@@ -1137,6 +1338,10 @@ def main():
         safe(test_foundry_import_profession_and_outfit, browser, area="stats-terminal")
 
         safe(test_kappablack_toml_import, browser, area="stats-terminal")
+
+        safe(test_import_agent_auto_detect, browser, area="stats-terminal")
+
+        safe(test_cloud_save, browser, area="stats-terminal")
 
         safe(test_agent_file_export, browser, area="agent-file-export")
 

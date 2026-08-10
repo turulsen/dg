@@ -136,9 +136,19 @@
       document.body.appendChild(input);
     }
     input.value = "";
-    input.onchange = async function (e) {
+    input.onchange = function (e) {
       const file = e.target.files?.[0];
-      if (!file) return;
+      if (file) importSheetsFile(file);
+    };
+    input.click();
+  }
+
+  /**
+   * Same import as importFromSheets() above, but takes a File directly --
+   * shared with the auto-detecting "Import Agent" drop zone (scripts.js),
+   * which already has the File in hand and doesn't need its own picker.
+   */
+  async function importSheetsFile(file) {
       if (window.showToast) showToast("Reading spreadsheet…");
       try {
         await loadJSZip();
@@ -245,9 +255,8 @@
         if (window.showToast) showToast("Could not read that spreadsheet — see console for details.");
         else alert("Could not read that spreadsheet: " + err.message);
       }
-    };
-    input.click();
   }
 
   window.importFromSheets = importFromSheets;
+  window.importSheetsFile = importSheetsFile;
 })();
