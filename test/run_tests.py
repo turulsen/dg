@@ -800,6 +800,19 @@ def test_agent_file_export(p):
            bool(captured.get("body")), "no POST captured" if not captured.get("body") else "")
     record("agent-file-export", "char_name and agent_code present in payload",
            body.get("char_name") == "Owen Castillo" and bool(body.get("agent_code")), str(body.get("agent_code")))
+
+    # Bug fix: the exported Agent File code used to always be a fresh,
+    # unrelated random code (genCode()), independent of this character's
+    # own Cloud Save code -- so a Play/Recruit link built from the Agent
+    # File later couldn't find the character it actually belonged to
+    # (real report: an Agent with a saved character showed "Recruit",
+    # and going through Character Creation partially overwrote the real
+    # character before the mismatch was caught). It must now reuse
+    # whatever Cloud Save code this character already has.
+    cloud_code = page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')")
+    record("agent-file-export", "the exported Agent Code is this character's own Cloud Save code, not a new unrelated one",
+           bool(cloud_code) and body.get("agent_code") == cloud_code,
+           f"cloud_code={cloud_code} exported={body.get('agent_code')}")
     record("agent-file-export", "age/sex map into the Cover form's expected values",
            body.get("age_range") == "Late 30s" and body.get("sex") == "Male",
            f"age_range={body.get('age_range')} sex={body.get('sex')}")

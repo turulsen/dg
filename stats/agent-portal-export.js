@@ -156,7 +156,16 @@
       notes: buildNotes(state),
       submitted_at: new Date().toISOString(),
     };
-    const agentCode = genCode(payload.char_name);
+    // Reuse this character's own Cloud Save code if one already exists
+    // (it does for any named character -- ensureCloudCode() in
+    // cloud-sync.js mints one on the very first edit) rather than
+    // minting a brand new, unrelated one here. Minting a second code
+    // for the same character meant the Agent File and the actual saved
+    // character permanently pointed at two different Characters-sheet
+    // rows -- Play/Recruit links built from the Agent File's code could
+    // never find the real character (a NOT_FOUND that looked like "this
+    // Agent has no sheet yet" for an Agent who very much did).
+    const agentCode = window.dgCloudSave?.getCloudCode?.() || genCode(payload.char_name);
     payload.agent_code = agentCode;
 
     if (btn) { btn.disabled = true; }
