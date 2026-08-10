@@ -1041,6 +1041,78 @@ def test_acell_gate(p):
 
     return errs_all
 
+def test_acell_play(p):
+    """a-cell.html's Play section: every Agent on file (not just the
+    ones in this browser's own dg_agent_roster), pulled from a new
+    list_characters Apps Script action (see
+    acell-play-list-characters-addition.txt, handed over separately --
+    not yet deployed on the live backend, same as every other .gs
+    addition this project needs pasted in manually) that returns every
+    row of the same Characters sheet Cloud Save already writes to.
+    Picking an Agent renders a simplified read-only view: name, the six
+    stats, HP/WP/SAN/BP, and skills."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    skip_acell_gate(page)
+
+    fake_characters = [
+        {
+            "agent_code": "OWEN-CS12",
+            "character_json": json.dumps({
+                "bio": {"name": "Owen Castillo", "profession": "Federal Agent", "nationality": "American"},
+                "csStats": {"STR": 12, "CON": 13, "DEX": 14, "INT": 15, "POW": 10, "CHA": 11},
+                "derived": {"hp": 13, "wp": 10, "san": 50, "bp": 40},
+                "skills": {"firearms": 60, "alertness": 50, "drive": 40},
+                "customSkills": [{"name": "Forgery", "value": 35}],
+            }),
+        },
+        {
+            "agent_code": "PRIY-AN34",
+            "character_json": json.dumps({
+                "bio": {"name": "Priya Anand", "profession": "Forensic Accountant"},
+                "csStats": {"STR": 8, "CON": 9, "DEX": 10, "INT": 17, "POW": 13, "CHA": 12},
+                "derived": {"hp": 9, "wp": 13, "san": 65, "bp": 52},
+                "skills": {"accounting": 70, "bureaucracy": 40},
+                "customSkills": [],
+            }),
+        },
+    ]
+
+    def fake_apps_script(route):
+        url = route.request.url
+        if "action=list_characters" in url and "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            body = f'{cb}({json.dumps({"status": "OK", "characters": fake_characters})})'
+            route.fulfill(status=200, content_type="application/javascript", body=body)
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+
+    names = page.eval_on_selector_all("#play-agent-list .pa-name", "els => els.map(e=>e.textContent)")
+    record("acell", "Play lists every Agent on file, not just this browser's own roster",
+           names == ["Owen Castillo", "Priya Anand"], str(names))
+
+    page.click("#play-agent-list .play-agent-btn:first-child")
+    page.wait_for_timeout(200)
+    record("acell", "selecting an Agent shows their name in the simplified view",
+           "Owen Castillo" in page.inner_text("#play-view .pv-bio"), "")
+    stat_vals = page.eval_on_selector_all("#play-view .pv-stat .val", "els => els.map(e=>e.textContent)")
+    record("acell", "simplified view shows the six stats in order",
+           stat_vals == ["12", "13", "14", "15", "10", "11"], str(stat_vals))
+    record("acell", "simplified view shows a predefined skill score",
+           "60" in page.inner_text("#play-view .pv-skills"), "")
+    record("acell", "simplified view shows a custom skill",
+           "Forgery" in page.inner_text("#play-view .pv-skills"), "")
+
+    page.close()
+    return errs
+
 def test_agent_portal_code_query_param(p):
     """agent-hub.html's Agent Files "Files" and "ID Creator" buttons link
     to dg-agent-portal.html?code=XXXX#agent / #ids -- a new
@@ -1668,6 +1740,8 @@ def main():
         safe(test_agent_hub, browser, area="hub")
 
         safe(test_acell_gate, browser, area="acell")
+
+        safe(test_acell_play, browser, area="acell")
 
         safe(test_agent_portal_code_query_param, browser, area="agent-portal")
 
