@@ -88,6 +88,10 @@
   .folder-wrap{ max-width:900px; margin:26px auto 0; padding:0 6px; }
 
   /* ── Play: agent list + simplified read-only view ── */
+  .play-toolbar{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+  .play-refresh-note{
+    font-family:'Courier Prime',monospace; font-size:10px; color:var(--ink-3);
+  }
   .play-layout{ display:grid; grid-template-columns:240px 1fr; gap:18px; align-items:start; }
   @media (max-width:720px){ .play-layout{ grid-template-columns:1fr; } }
   .play-agent-list{
@@ -103,22 +107,70 @@
   .play-agent-btn.active{ border-color:var(--red); background:rgba(139,26,26,.08); }
   .play-agent-btn .pa-name{ font-family:'Special Elite',monospace; font-size:13px; color:var(--ink); overflow-wrap:anywhere; }
   .play-agent-btn .pa-meta{ color:var(--ink-3); font-size:10px; margin-top:3px; font-family:'Courier Prime',monospace; }
-  #play-view.paper{ padding:var(--s6) var(--s5); min-height:180px; }
+  #play-view.paper{ padding:0; min-height:180px; overflow:visible; }
   .play-view-empty, .play-loading, .play-error{
     color:var(--ink-3); font-size:13px; font-style:italic; text-align:center; padding:26px 10px;
   }
-  .pv-bio{ font-family:'Special Elite',monospace; font-size:19px; color:var(--ink); overflow-wrap:anywhere; }
-  .pv-sub{ color:var(--ink-3); font-size:11px; margin:4px 0 18px; font-family:'Courier Prime',monospace; letter-spacing:.04em; }
-  .pv-stats{ display:grid; grid-template-columns:repeat(6,1fr); gap:8px; margin-bottom:16px; }
+
+  /* ── Sticky header: photo, name, and the vitals that move during
+     play (HP/WP/SAN/BP) -- mirrors Live Play's own tracker bar, kept
+     visible while scrolling the dossier dropdown below it. ── */
+  .pv-sticky{
+    position:sticky; top:0; z-index:2; background:var(--paper);
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    padding:18px 22px 14px; border-bottom:2px solid var(--ink);
+  }
+  .pv-photo{
+    width:52px; height:52px; flex-shrink:0; border-radius:2px; overflow:hidden;
+    background:var(--ink-placeholder); border:1px solid var(--ink-2);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Special Elite',monospace; font-size:20px; color:var(--paper);
+  }
+  .pv-photo img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .pv-sticky-info{ min-width:0; }
+  .pv-bio{ font-family:'Special Elite',monospace; font-size:18px; color:var(--ink); overflow-wrap:anywhere; }
+  .pv-sub{ color:var(--ink-3); font-size:10px; margin-top:2px; font-family:'Courier Prime',monospace; letter-spacing:.04em; }
+  .pv-vitals{ display:flex; gap:14px; flex-wrap:wrap; margin-left:auto; }
+  .pv-vital{ text-align:center; }
+  .pv-vital .lbl{ font-size:9px; color:var(--ink-3); letter-spacing:.1em; font-family:'Courier Prime',monospace; }
+  .pv-vital .val{ font-family:'Special Elite',monospace; font-size:18px; color:var(--ink); }
+
+  /* ── Dropdown: reference sheet -- core stats, skills, bonds,
+     motivations/disorders, sanity adaptation. Collapsed by default so
+     the sticky vitals are what's visible at a glance. ── */
+  .pv-details{ padding:16px 22px 22px; }
+  .pv-details summary{
+    cursor:pointer; font-family:'Special Elite',monospace; font-size:12px;
+    letter-spacing:.08em; color:var(--red); list-style:none; margin-bottom:14px;
+  }
+  .pv-details summary::-webkit-details-marker{ display:none; }
+  .pv-details summary::before{ content:'▸ '; }
+  .pv-details[open] summary::before{ content:'▾ '; }
+  .pv-sec-hd{
+    font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--ink-2); margin:18px 0 8px;
+    border-bottom:1px solid var(--rule); padding-bottom:5px;
+  }
+  .pv-sec-hd:first-of-type{ margin-top:0; }
+  .pv-stats{ display:grid; grid-template-columns:repeat(6,1fr); gap:8px; }
   @media (max-width:520px){ .pv-stats{ grid-template-columns:repeat(3,1fr); } }
   .pv-stat{ text-align:center; border:1px solid var(--rule); padding:8px 4px; }
   .pv-stat .lbl{ font-size:9px; color:var(--ink-3); letter-spacing:.1em; font-family:'Courier Prime',monospace; }
   .pv-stat .val{ font-family:'Special Elite',monospace; font-size:19px; color:var(--ink); }
-  .pv-derived{ display:flex; gap:16px; flex-wrap:wrap; margin-bottom:20px; font-size:11px; color:var(--ink-3); font-family:'Courier Prime',monospace; }
-  .pv-derived strong{ color:var(--ink); font-family:'Special Elite',monospace; }
   .pv-skills{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:3px 16px; font-size:11px; font-family:'Courier Prime',monospace; }
   .pv-skill{ display:flex; justify-content:space-between; gap:8px; border-bottom:1px dotted var(--rule); padding:3px 0; color:var(--ink-2); }
   .pv-skill .sv{ color:var(--ink-3); flex-shrink:0; }
+  .pv-bond-row{
+    display:flex; justify-content:space-between; gap:10px; font-size:12px;
+    color:var(--ink-2); border-bottom:1px dotted var(--rule); padding:5px 0;
+  }
+  .pv-bond-row .bn{ font-family:'Special Elite',monospace; color:var(--ink); }
+  .pv-bond-row .bs{ font-family:'Courier Prime',monospace; color:var(--ink-3); flex-shrink:0; }
+  .pv-empty-note{ font-size:11px; color:var(--ink-3); font-style:italic; }
+  .pv-motivations{ font-size:12px; color:var(--ink-2); line-height:1.7; white-space:pre-wrap; }
+  .pv-adapt-row{ display:flex; align-items:center; gap:10px; font-size:12px; color:var(--ink-2); margin-bottom:6px; }
+  .pv-adapt-row .lbl{ width:110px; flex-shrink:0; font-family:'Courier Prime',monospace; font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-3); }
+  .pv-adapt-boxes{ font-size:15px; letter-spacing:.15em; color:var(--ink); }
 
   /* ── Cells: full roster, filterable, inline Handler/Operation tags ── */
   .cells-filters{ display:flex; gap:20px; flex-wrap:wrap; margin-bottom:16px; }
@@ -157,6 +209,20 @@
   }
 
   .music-copy{ font-size:12px; color:var(--ink-2); line-height:1.85; max-width:52ch; margin-bottom:var(--s4); }
+  .music-field{ display:flex; flex-direction:column; gap:4px; margin-bottom:14px; max-width:420px; }
+  .music-field span{
+    font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--ink-3);
+  }
+  .music-field input{
+    background:transparent; border:none; border-bottom:1.5px solid rgba(90,74,16,.4);
+    color:var(--ink); padding:5px 0; font-size:13px; font-family:'Courier Prime',monospace;
+  }
+  .music-field input:focus{ outline:none; border-bottom-color:var(--red); }
+  .music-status{
+    font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3);
+    margin-top:12px; min-height:1.4em;
+  }
 
   footer.site-footer{ text-align:center; color:#6a6250; font-size:11px; margin-top:56px; }
 </style>
@@ -193,6 +259,10 @@
     <div class="folder-body">
 
       <div class="tab-panel active" id="panel-play">
+        <div class="play-toolbar">
+          <button type="button" class="paper-btn" id="play-refresh-btn">&#8635; Refresh</button>
+          <span class="play-refresh-note" id="play-refresh-note"></span>
+        </div>
         <div class="play-layout">
           <div class="play-agent-list" id="play-agent-list">
             <div class="play-loading">Loading agents…</div>
@@ -229,8 +299,25 @@
                 <div class="paper-title">Music</div>
               </div>
             </div>
-            <div class="stamps"><div class="stamp">Coming Online Next</div></div>
-            <p class="music-copy">Play and curate the table's soundtrack — YouTube/SoundCloud links and sound effects, loosely synced to everyone in the Cell.</p>
+            <p class="music-copy">Broadcast to a channel name your players tune their Table Radio to (the small widget on every Hub page). YouTube, SoundCloud, or a direct audio file link — loosely synced, not frame-accurate.</p>
+
+            <div class="music-field">
+              <span>Channel</span>
+              <input type="text" id="music-channel-input" placeholder="e.g. your name, or the Cell's codename">
+            </div>
+            <div class="music-field">
+              <span>Track URL</span>
+              <input type="text" id="music-url-input" placeholder="https://youtube.com/watch?v=…">
+            </div>
+            <div class="music-field">
+              <span>Title (optional)</span>
+              <input type="text" id="music-title-input" placeholder="What's playing">
+            </div>
+            <div class="paper-actions">
+              <a class="paper-btn primary" id="music-set-btn">&#9658; Set Now Playing</a>
+              <a class="paper-btn" id="music-stop-btn">&#9632; Stop</a>
+            </div>
+            <div class="music-status" id="music-status"></div>
           </div>
         </div>
       </div>
@@ -369,7 +456,10 @@
 
   var listEl = document.getElementById('play-agent-list');
   var viewEl = document.getElementById('play-view');
+  var refreshBtn = document.getElementById('play-refresh-btn');
+  var refreshNote = document.getElementById('play-refresh-note');
   var characters = [];
+  var selectedCode = null;
 
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -379,14 +469,17 @@
   }
 
   function fetchList() {
+    refreshBtn.disabled = true;
     var cbName = '_acellPlayList_' + Date.now();
     var timer = setTimeout(function () {
       delete window[cbName];
+      refreshBtn.disabled = false;
       listEl.innerHTML = '<div class="play-error">Could not load the Agent list. (The A-Cell backend addition may not be deployed yet.)</div>';
     }, 7000);
     window[cbName] = function (res) {
       clearTimeout(timer);
       delete window[cbName];
+      refreshBtn.disabled = false;
       var script = document.getElementById('_acell_play_list_script');
       if (script) script.remove();
       if (!res || res.status !== 'OK' || !Array.isArray(res.characters)) {
@@ -399,6 +492,7 @@
         return { code: c.agent_code, state: state };
       }).filter(function (c) { return c.code && c.state; });
       renderList();
+      refreshNote.textContent = 'Updated ' + new Date().toLocaleTimeString();
     };
     var s = document.createElement('script');
     s.id = '_acell_play_list_script';
@@ -409,13 +503,15 @@
   function renderList() {
     if (!characters.length) {
       listEl.innerHTML = '<div class="play-error">No Agents on file yet.</div>';
+      viewEl.innerHTML = '<div class="play-view-empty">Select an Agent to view their stats and skills.</div>';
+      selectedCode = null;
       return;
     }
     listEl.innerHTML = characters.map(function (c, i) {
       var bio = c.state.bio || {};
       var name = bio.name || 'Unknown Agent';
       var prof = bio.profession || '';
-      return '<button type="button" class="play-agent-btn" data-i="' + i + '">' +
+      return '<button type="button" class="play-agent-btn' + (c.code === selectedCode ? ' active' : '') + '" data-i="' + i + '">' +
         '<div class="pa-name">' + escapeHtml(name) + '</div>' +
         '<div class="pa-meta">' + escapeHtml(c.code) + (prof ? ' &middot; ' + escapeHtml(prof) : '') + '</div>' +
         '</button>';
@@ -424,9 +520,50 @@
       btn.addEventListener('click', function () {
         Array.prototype.forEach.call(listEl.querySelectorAll('.play-agent-btn'), function (b) { b.classList.remove('active'); });
         btn.classList.add('active');
-        renderView(characters[parseInt(btn.dataset.i, 10)]);
+        var c = characters[parseInt(btn.dataset.i, 10)];
+        selectedCode = c.code;
+        renderView(c);
       });
     });
+    // Refresh (not a first load): if the previously-selected Agent is
+    // still on the roster, re-render their (possibly updated) view
+    // instead of dropping back to the empty-selection state.
+    if (selectedCode) {
+      var stillThere = characters.find(function (c) { return c.code === selectedCode; });
+      if (stillThere) renderView(stillThere);
+    }
+  }
+
+  // Best-effort photo lookup: character_json (Characters sheet, via
+  // list_characters) has no photo -- that lives on the Agent File
+  // (Delta Green Briefs sheet), fetched separately per selected Agent
+  // rather than for the whole roster up front, to avoid N extra
+  // requests just to render the list.
+  function loadPlayPhoto(code, imgElId) {
+    var cbName = '_acellPlayAf_' + code.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
+    window[cbName] = function (res) {
+      delete window[cbName];
+      var s = document.getElementById('s-' + cbName);
+      if (s) s.remove();
+      var faceUrl = res && res.status === 'OK' && res.data ? res.data.face_plate_url : null;
+      var m = faceUrl && faceUrl.match(/^gdrive:(.+)$/);
+      if (!m) return;
+      var cb2 = '_acellPlayFace_' + code.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
+      window[cb2] = function (json) {
+        delete window[cb2];
+        if (json.status === 'OK' && json.dataUri) {
+          var div = document.getElementById(imgElId);
+          if (div) div.innerHTML = '<img src="' + json.dataUri + '" alt="">';
+        }
+      };
+      var s2 = document.createElement('script');
+      s2.src = APPS_SCRIPT_URL + '?action=imgdata&id=' + encodeURIComponent(m[1]) + '&callback=' + cb2;
+      document.head.appendChild(s2);
+    };
+    var s = document.createElement('script');
+    s.id = 's-' + cbName;
+    s.src = APPS_SCRIPT_URL + '?code=' + encodeURIComponent(code) + '&callback=' + cbName;
+    document.head.appendChild(s);
   }
 
   function renderView(c) {
@@ -435,6 +572,8 @@
     var stats = st.csStats || st.stats || {};
     var derived = st.derived || {};
     var skills = st.skills || {};
+    var bonds = Array.isArray(st.bonds) ? st.bonds : [];
+    var sanity = st.sanity || {};
 
     var statsHtml = ['STR', 'CON', 'DEX', 'INT', 'POW', 'CHA'].map(function (k) {
       var v = stats[k];
@@ -452,21 +591,54 @@
       });
     }
 
+    var bondsHtml = bonds.length
+      ? bonds.map(function (b) {
+          var label = [b.name, b.relationship].filter(Boolean).map(escapeHtml).join(' &middot; ');
+          return '<div class="pv-bond-row"><span class="bn">' + (label || 'Unnamed Bond') + '</span><span class="bs">' + (b.score ?? '&mdash;') + '</span></div>';
+        }).join('')
+      : '<div class="pv-empty-note">No bonds recorded.</div>';
+
+    function adaptBoxes(arr) {
+      if (!Array.isArray(arr) || !arr.length) return '&mdash;';
+      return arr.map(function (checked) { return checked ? '&#9635;' : '&#9633;'; }).join(' ');
+    }
+
+    var photoId = 'pv-photo-' + c.code;
     var subParts = [c.code, bio.profession, bio.nationality].filter(Boolean).map(escapeHtml);
 
     viewEl.innerHTML =
+      '<div class="pv-sticky">' +
+      '<div class="pv-photo" id="' + photoId + '">' + (bio.name || '?').charAt(0).toUpperCase() + '</div>' +
+      '<div class="pv-sticky-info">' +
       '<div class="pv-bio">' + escapeHtml(bio.name || 'Unknown Agent') + '</div>' +
       '<div class="pv-sub">' + subParts.join(' &middot; ') + '</div>' +
-      '<div class="pv-stats">' + statsHtml + '</div>' +
-      '<div class="pv-derived">' +
-      '<span>HP <strong>' + (derived.hp ?? '&mdash;') + '</strong></span>' +
-      '<span>WP <strong>' + (derived.wp ?? '&mdash;') + '</strong></span>' +
-      '<span>SAN <strong>' + (derived.san ?? '&mdash;') + '</strong></span>' +
-      '<span>BP <strong>' + (derived.bp ?? '&mdash;') + '</strong></span>' +
       '</div>' +
-      '<div class="pv-skills">' + skillsHtml + '</div>';
+      '<div class="pv-vitals">' +
+      '<div class="pv-vital"><div class="lbl">HP</div><div class="val">' + (derived.hp ?? '&mdash;') + '</div></div>' +
+      '<div class="pv-vital"><div class="lbl">WP</div><div class="val">' + (derived.wp ?? '&mdash;') + '</div></div>' +
+      '<div class="pv-vital"><div class="lbl">SAN</div><div class="val">' + (derived.san ?? '&mdash;') + '</div></div>' +
+      '<div class="pv-vital"><div class="lbl">BP</div><div class="val">' + (derived.bp ?? '&mdash;') + '</div></div>' +
+      '</div>' +
+      '</div>' +
+      '<details class="pv-details" open>' +
+      '<summary>Full Dossier</summary>' +
+      '<div class="pv-sec-hd">Stats</div>' +
+      '<div class="pv-stats">' + statsHtml + '</div>' +
+      '<div class="pv-sec-hd">Skills</div>' +
+      '<div class="pv-skills">' + skillsHtml + '</div>' +
+      '<div class="pv-sec-hd">Bonds</div>' +
+      bondsHtml +
+      '<div class="pv-sec-hd">Motivations &amp; Disorders</div>' +
+      '<div class="pv-motivations">' + (bio.motivations ? escapeHtml(bio.motivations) : '<span class="pv-empty-note">None recorded.</span>') + '</div>' +
+      '<div class="pv-sec-hd">Sanity Adaptation</div>' +
+      '<div class="pv-adapt-row"><span class="lbl">Violence</span><span class="pv-adapt-boxes">' + adaptBoxes(sanity.violence) + '</span></div>' +
+      '<div class="pv-adapt-row"><span class="lbl">Helplessness</span><span class="pv-adapt-boxes">' + adaptBoxes(sanity.helplessness) + '</span></div>' +
+      '</details>';
+
+    loadPlayPhoto(c.code, photoId);
   }
 
+  refreshBtn.addEventListener('click', fetchList);
   fetchList();
 })();
 </script>
@@ -611,6 +783,80 @@
   fetchList();
 })();
 </script>
+
+<script>
+/* ══════════════════════════════════════════════
+   MUSIC -- the Handler's broadcast side of Table Radio. Sets a track
+   for a named channel via set_now_playing; players tune in to that
+   same channel name from the small widget on every Hub page (see
+   assets/table-radio.js). Both share the new set_now_playing /
+   get_now_playing Apps Script actions (acell-table-radio-addition.txt,
+   handed over separately).
+   ══════════════════════════════════════════════ */
+(function () {
+  "use strict";
+  var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
+  var CHANNEL_KEY = 'dg_acell_broadcast_channel';
+
+  var channelInput = document.getElementById('music-channel-input');
+  var urlInput = document.getElementById('music-url-input');
+  var titleInput = document.getElementById('music-title-input');
+  var setBtn = document.getElementById('music-set-btn');
+  var stopBtn = document.getElementById('music-stop-btn');
+  var statusEl = document.getElementById('music-status');
+
+  var remembered = '';
+  try { remembered = localStorage.getItem(CHANNEL_KEY) || ''; } catch (e) { /* best effort */ }
+  if (remembered) channelInput.value = remembered;
+
+  function checkCurrent() {
+    var ch = channelInput.value.trim();
+    if (!ch) { statusEl.textContent = ''; return; }
+    var cbName = '_acellMusicCheck_' + Date.now();
+    window[cbName] = function (res) {
+      delete window[cbName];
+      var s = document.getElementById('_acell_music_check_script');
+      if (s) s.remove();
+      if (res && res.status === 'OK' && res.track_url) {
+        statusEl.textContent = 'Currently broadcasting to "' + ch + '": ' + (res.track_title || res.track_url);
+      } else {
+        statusEl.textContent = 'Nothing currently broadcasting to "' + ch + '".';
+      }
+    };
+    var s = document.createElement('script');
+    s.id = '_acell_music_check_script';
+    s.src = APPS_SCRIPT_URL + '?action=get_now_playing&channel=' + encodeURIComponent(ch) + '&callback=' + cbName;
+    document.head.appendChild(s);
+  }
+
+  function setNowPlaying(trackUrl, trackTitle) {
+    var ch = channelInput.value.trim();
+    if (!ch) { statusEl.textContent = 'Enter a channel name first.'; return; }
+    try { localStorage.setItem(CHANNEL_KEY, ch); } catch (e) { /* best effort */ }
+    statusEl.textContent = 'Saving…';
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors', keepalive: true,
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'set_now_playing', channel: ch, track_url: trackUrl, track_title: trackTitle }),
+    }).then(function () {
+      statusEl.textContent = trackUrl
+        ? 'Broadcasting to "' + ch + '": ' + (trackTitle || trackUrl)
+        : 'Stopped broadcasting to "' + ch + '".';
+    }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+  }
+
+  setBtn.addEventListener('click', function () {
+    var url = urlInput.value.trim();
+    if (!url) { statusEl.textContent = 'Paste a track URL first.'; return; }
+    setNowPlaying(url, titleInput.value.trim());
+  });
+  stopBtn.addEventListener('click', function () { setNowPlaying('', ''); });
+
+  if (remembered) checkCurrent();
+})();
+</script>
+
+<script src="assets/table-radio.js"></script>
 
 </body>
 </html>

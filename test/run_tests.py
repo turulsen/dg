@@ -1134,11 +1134,15 @@ def test_acell_play(p):
         {
             "agent_code": "OWEN-CS12",
             "character_json": json.dumps({
-                "bio": {"name": "Owen Castillo", "profession": "Federal Agent", "nationality": "American"},
+                "bio": {"name": "Owen Castillo", "profession": "Federal Agent", "nationality": "American",
+                        "motivations": "Protect my sister at any cost.\n[Disorder: Paranoia]"},
                 "csStats": {"STR": 12, "CON": 13, "DEX": 14, "INT": 15, "POW": 10, "CHA": 11},
                 "derived": {"hp": 13, "wp": 10, "san": 50, "bp": 40},
                 "skills": {"firearms": 60, "alertness": 50, "drive": 40},
                 "customSkills": [{"name": "Forgery", "value": 35}],
+                "bonds": [{"name": "Maria Castillo", "relationship": "Sister", "score": 8},
+                          {"name": "Delta Green", "relationship": "Handler", "score": 12}],
+                "sanity": {"violence": [True, True, False], "helplessness": [False, False, False]},
             }),
         },
         {
@@ -1181,6 +1185,35 @@ def test_acell_play(p):
            "60" in page.inner_text("#play-view .pv-skills"), "")
     record("acell", "simplified view shows a custom skill",
            "Forgery" in page.inner_text("#play-view .pv-skills"), "")
+    vitals = page.eval_on_selector_all("#play-view .pv-vital .val", "els => els.map(e=>e.textContent)")
+    record("acell", "sticky header shows HP/WP/SAN/BP (the vitals that move during play)",
+           vitals == ["13", "10", "50", "40"], str(vitals))
+    dossier_text = page.inner_text("#play-view .pv-details")
+    record("acell", "dossier dropdown shows bond names and scores",
+           "Maria Castillo" in dossier_text and "8" in dossier_text, dossier_text)
+    record("acell", "dossier dropdown shows motivations/disorders text",
+           "Paranoia" in dossier_text, "")
+    adapt = page.eval_on_selector_all("#play-view .pv-adapt-boxes", "els => els.map(e=>e.textContent.trim())")
+    record("acell", "dossier dropdown shows Violence/Helplessness adaptation as checked/unchecked boxes",
+           len(adapt) == 2 and adapt[0].count('▣') == 2 and adapt[0].count('□') == 1, str(adapt))
+
+    # Refresh re-fetches the roster and keeps the selected Agent's panel
+    # showing their (possibly updated) view, instead of dropping the
+    # selection.
+    fake_characters[0]["character_json"] = json.dumps({
+        "bio": {"name": "Owen Castillo", "profession": "Federal Agent", "nationality": "American"},
+        "csStats": {"STR": 12, "CON": 13, "DEX": 14, "INT": 15, "POW": 10, "CHA": 99},
+        "derived": {"hp": 13, "wp": 10, "san": 50, "bp": 40},
+        "skills": {"firearms": 60, "alertness": 50, "drive": 40},
+        "customSkills": [{"name": "Forgery", "value": 35}],
+    })
+    page.click("#play-refresh-btn")
+    page.wait_for_timeout(400)
+    stat_vals_after = page.eval_on_selector_all("#play-view .pv-stat .val", "els => els.map(e=>e.textContent)")
+    record("acell", "Refresh pulls updated stats and keeps the same Agent's view open",
+           stat_vals_after == ["12", "13", "14", "15", "10", "99"], str(stat_vals_after))
+    record("acell", "Refresh shows an 'Updated' timestamp note",
+           "Updated" in page.inner_text("#play-refresh-note"), "")
 
     page.close()
     return errs
@@ -1274,6 +1307,129 @@ def test_acell_cells(p):
     operation_opts_after = page.eval_on_selector_all("#cells-filter-operation option", "els => els.map(e=>e.value)")
     record("acell", "a newly-typed tag becomes filterable without a reload",
            "OPERATION NIGHTGLASS" in operation_opts_after, str(operation_opts_after))
+
+    page.close()
+    return errs
+
+def test_acell_music(p):
+    """a-cell.html's Music tab: the Handler's broadcast side of Table
+    Radio. Setting a channel + track URL posts set_now_playing (a new
+    Apps Script action, part of acell-table-radio-addition.txt handed
+    over separately); Stop posts the same action with an empty
+    track_url. Both share the channel name with the player-facing
+    widget (assets/table-radio.js)."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    skip_acell_gate(page)
+
+    posts = []
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            posts.append(json.loads(req.post_data or "{}"))
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.click('.tw[data-tab="music"]')
+    page.wait_for_timeout(150)
+
+    page.fill("#music-channel-input", "SAM")
+    page.fill("#music-url-input", "https://youtube.com/watch?v=dQw4w9WgXcQ")
+    page.fill("#music-title-input", "Table Theme")
+    page.click("#music-set-btn")
+    page.wait_for_timeout(300)
+
+    set_posts = [p_ for p_ in posts if p_.get("action") == "set_now_playing"]
+    record("acell", "Set Now Playing posts the channel, track URL, and title",
+           len(set_posts) == 1 and set_posts[0].get("channel") == "SAM"
+           and set_posts[0].get("track_url") == "https://youtube.com/watch?v=dQw4w9WgXcQ"
+           and set_posts[0].get("track_title") == "Table Theme", str(set_posts))
+    record("acell", "status line confirms what's broadcasting",
+           "SAM" in page.inner_text("#music-status") and "Table Theme" in page.inner_text("#music-status"), "")
+    record("acell", "the broadcast channel is remembered for next time",
+           page.evaluate("() => localStorage.getItem('dg_acell_broadcast_channel')") == "SAM", "")
+
+    page.click("#music-stop-btn")
+    page.wait_for_timeout(300)
+    stop_posts = [p_ for p_ in posts if p_.get("action") == "set_now_playing" and p_.get("track_url") == ""]
+    record("acell", "Stop posts set_now_playing with an empty track_url for the same channel",
+           len(stop_posts) == 1 and stop_posts[0].get("channel") == "SAM", str(stop_posts))
+    record("acell", "status line confirms broadcasting stopped",
+           "Stopped" in page.inner_text("#music-status"), "")
+
+    page.close()
+    return errs
+
+def test_table_radio_widget(p):
+    """assets/table-radio.js: a small persistent widget on every Hub
+    page, so a player stays "tuned in" to the Handler's music channel
+    (via get_now_playing) as they move between pages -- each full page
+    load is a fresh document, so continuity comes from remembering the
+    channel (localStorage) and re-syncing to the server-stamped
+    started_at on every page, not from one <audio> element surviving
+    navigation."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=get_now_playing" in url:
+                res = {"status": "OK", "channel": "SAM", "track_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                       "track_title": "Table Theme", "started_at": 1700000000000}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(400)
+    record("radio", "shows a collapsed 'Tune In' pill when no channel is set",
+           page.is_visible("#dg-radio-pill"), "")
+
+    page.on("dialog", lambda d: d.accept("SAM"))
+    page.click("#dg-radio-pill")
+    page.wait_for_timeout(600)
+    record("radio", "tuning in shows the tuned panel with the channel name",
+           page.is_visible("#dg-radio-panel") and "SAM" in page.inner_text("#dg-radio-panel"), "")
+    record("radio", "the channel is remembered in localStorage",
+           page.evaluate("() => localStorage.getItem('dg_radio_channel')") == "SAM", "")
+    record("radio", "the current track title is shown",
+           "Table Theme" in page.eval_on_selector("#dg-radio-track", "el => el.textContent"), "")
+    record("radio", "a YouTube embed is created for the current track",
+           page.query_selector("#dg-radio-embed-wrap iframe") is not None, "")
+
+    # Navigating to a completely different page keeps the same channel
+    # tuned in (this is the whole point -- "as they go back and forth").
+    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(600)
+    record("radio", "the widget is present and still tuned to the same channel after navigating to a different page",
+           page.is_visible("#dg-radio-panel") and "SAM" in page.inner_text("#dg-radio-panel"), "")
+
+    # Leaving the channel collapses back to the Tune In pill.
+    page.click("#dg-radio-leave")
+    page.wait_for_timeout(150)
+    record("radio", "leaving the channel clears localStorage and collapses back to the pill",
+           page.evaluate("() => localStorage.getItem('dg_radio_channel')") is None
+           and page.is_visible("#dg-radio-pill"), "")
 
     page.close()
     return errs
@@ -2016,6 +2172,10 @@ def main():
         safe(test_acell_play, browser, area="acell")
 
         safe(test_acell_cells, browser, area="acell")
+
+        safe(test_acell_music, browser, area="acell")
+
+        safe(test_table_radio_widget, browser, area="radio")
 
         safe(test_agent_portal_code_query_param, browser, area="agent-portal")
 
