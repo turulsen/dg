@@ -62,6 +62,12 @@ def skip_boot_splash(page):
     own check runs immediately on page load."""
     page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
 
+def skip_acell_gate(page):
+    """a-cell.html's password gate is session-gated the same way as the
+    boot splash -- see skip_boot_splash above for why tests that aren't
+    specifically exercising the gate itself should pre-seed past it."""
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_unlocked', '1'); } catch (e) {}")
+
 def collect_errors(page):
     errs = []
     page.on("pageerror", lambda e: errs.append(f"pageerror: {e}"))
@@ -967,6 +973,74 @@ def test_agent_hub(p):
     page.close()
     return errs_all
 
+def test_acell_gate(p):
+    """a-cell.html: the Handler's clearance branch. Same black-screen
+    green-terminal aesthetic as index.html's boot splash, but
+    interactive -- the Handler types the password (MASTICATE,
+    case-insensitive) and presses Enter. A client-side flavor gate for
+    in-fiction "clearance", not real access control. Wrong password ->
+    access_denied, gate stays up, retry. Right password -> acces_granted,
+    the Delta Green triangle logo fades in, then the gate clears to
+    reveal the A-Cell hub (Play / Cells / Music sections). Session-gated
+    like the boot splash: unlocks once per tab, re-asks in a fresh
+    session."""
+    errs_all = []
+
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+
+    record("acell", "gate is visible on first load with the clearance prompt",
+           page.is_visible("#acell-gate") and "enter_clearance_code:" in page.inner_text("#acell-term-log"), "")
+
+    # Wrong password -> denied, gate stays up.
+    page.fill("#acell-pw-input", "WRONGPASS")
+    page.press("#acell-pw-input", "Enter")
+    page.wait_for_timeout(200)
+    record("acell", "wrong password shows access_denied and keeps the gate up",
+           "access_denied" in page.inner_text("#acell-term-log") and page.is_visible("#acell-gate"), "")
+
+    # Correct password (case-insensitive) -> granted, logo, gate clears.
+    page.fill("#acell-pw-input", "masticate")
+    page.press("#acell-pw-input", "Enter")
+    page.wait_for_timeout(200)
+    record("acell", "correct password (case-insensitive) shows acces_granted",
+           "acces_granted" in page.inner_text("#acell-term-log"), "")
+    page.wait_for_timeout(2500)
+    record("acell", "gate is removed from the DOM after unlock",
+           page.query_selector("#acell-gate") is None, "")
+    record("acell", "A-Cell hub (Play/Cells/Music sections) is visible after unlock",
+           page.is_visible("text=Play") and page.is_visible("text=Cells") and page.is_visible("text=Music"), "")
+    record("acell", "body scroll lock is released after unlock",
+           not page.eval_on_selector("body", "el => el.classList.contains('acell-lock')"), "")
+
+    errs_all.extend(errs)
+    page.close()
+
+    # Same-tab reload -> gate skipped (sessionStorage-gated, like the boot splash).
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    page.fill("#acell-pw-input", "MASTICATE")
+    page.press("#acell-pw-input", "Enter")
+    page.wait_for_timeout(2500)
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_timeout(300)
+    record("acell", "gate is skipped on a same-tab reload once unlocked",
+           page.query_selector("#acell-gate") is None, "")
+    errs_all.extend(errs)
+    page.close()
+
+    return errs_all
+
 def test_agent_portal_code_query_param(p):
     """agent-hub.html's Agent Files "Files" and "ID Creator" buttons link
     to dg-agent-portal.html?code=XXXX#agent / #ids -- a new
@@ -1061,12 +1135,13 @@ def test_mobile_no_overflow(p):
     min-width: min-content, a few fixed-column grids/tables -- for all
     five, so they're now checked the same as Mobile rather than excluded."""
     errs_all = []
-    for path in ["index.html", "agent-hub.html", "dg-agent-portal.html", "dg-id-creator.html"]:
+    for path in ["index.html", "agent-hub.html", "dg-agent-portal.html", "dg-id-creator.html", "a-cell.html"]:
         page = p.new_page(viewport={"width": 390, "height": 844})
         page.set_default_timeout(5000)
         errs = collect_errors(page)
         mock_routes(page)
         skip_boot_splash(page)
+        skip_acell_gate(page)
         page.goto(f"{BASE}/{path}", wait_until="domcontentloaded", timeout=15000)
         page.wait_for_timeout(300)
         scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
@@ -1591,6 +1666,8 @@ def main():
         safe(test_hub_clearance_branches, browser, area="hub")
 
         safe(test_agent_hub, browser, area="hub")
+
+        safe(test_acell_gate, browser, area="acell")
 
         safe(test_agent_portal_code_query_param, browser, area="agent-portal")
 
