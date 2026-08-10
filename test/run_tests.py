@@ -1423,11 +1423,15 @@ def test_acell_sheet(p):
 
 def test_acell_music(p):
     """a-cell.html's Music tab: the Handler's broadcast side of Table
-    Radio. Setting a channel + track URL posts set_now_playing (a new
-    Apps Script action, part of acell-table-radio-addition.txt handed
-    over separately); Stop posts the same action with an empty
-    track_url. Both share the channel name with the player-facing
-    widget (assets/table-radio.js)."""
+    Radio. Setting a channel + track URL posts set_now_playing (an Apps
+    Script action, part of acell-table-radio-addition.txt handed over
+    separately); Stop posts the same action with an empty track_url.
+    set_now_playing is a no-cors POST, so a genuine backend failure
+    (addition not deployed, wrong action name, etc.) would otherwise
+    look identical to success -- the status line only claims
+    "Broadcasting" once a real GET read-back (get_now_playing) confirms
+    the track actually landed, exercised here against a stateful mock
+    backend that behaves like the real Apps Script action pair."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -1436,14 +1440,34 @@ def test_acell_music(p):
     skip_acell_gate(page)
 
     posts = []
+    backend_state = {"track_url": "", "track_title": ""}
 
     def fake_apps_script(route):
         req = route.request
         if req.method == "POST":
-            posts.append(json.loads(req.post_data or "{}"))
+            body = json.loads(req.post_data or "{}")
+            posts.append(body)
+            if body.get("action") == "set_now_playing":
+                backend_state["track_url"] = body.get("track_url", "")
+                backend_state["track_title"] = body.get("track_title", "")
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
-        route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=get_now_playing" in url:
+                if backend_state["track_url"]:
+                    res = {"status": "OK", "track_url": backend_state["track_url"],
+                           "track_title": backend_state["track_title"], "started_at": 1700000000000}
+                else:
+                    res = {"status": "NOT_FOUND"}
+            elif "action=get_playlist" in url:
+                res = {"status": "OK", "playlist": []}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", fake_apps_script)
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
@@ -1454,25 +1478,86 @@ def test_acell_music(p):
     page.fill("#music-url-input", "https://youtube.com/watch?v=dQw4w9WgXcQ")
     page.fill("#music-title-input", "Table Theme")
     page.click("#music-set-btn")
-    page.wait_for_timeout(300)
+    page.wait_for_timeout(1500)
 
     set_posts = [p_ for p_ in posts if p_.get("action") == "set_now_playing"]
     record("acell", "Set Now Playing posts the channel, track URL, and title",
            len(set_posts) == 1 and set_posts[0].get("channel") == "SAM"
            and set_posts[0].get("track_url") == "https://youtube.com/watch?v=dQw4w9WgXcQ"
            and set_posts[0].get("track_title") == "Table Theme", str(set_posts))
-    record("acell", "status line confirms what's broadcasting",
-           "SAM" in page.inner_text("#music-status") and "Table Theme" in page.inner_text("#music-status"), "")
+    record("acell", "status line confirms broadcasting only after a real read-back (get_now_playing) verifies it",
+           "SAM" in page.inner_text("#music-status") and "Table Theme" in page.inner_text("#music-status"), page.inner_text("#music-status"))
     record("acell", "the broadcast channel is remembered for next time",
            page.evaluate("() => localStorage.getItem('dg_acell_broadcast_channel')") == "SAM", "")
 
     page.click("#music-stop-btn")
-    page.wait_for_timeout(300)
+    page.wait_for_timeout(1500)
     stop_posts = [p_ for p_ in posts if p_.get("action") == "set_now_playing" and p_.get("track_url") == ""]
     record("acell", "Stop posts set_now_playing with an empty track_url for the same channel",
            len(stop_posts) == 1 and stop_posts[0].get("channel") == "SAM", str(stop_posts))
     record("acell", "status line confirms broadcasting stopped",
            "Stopped" in page.inner_text("#music-status"), "")
+
+    # Playlist: add a track, see it rendered, then remove it.
+    page.fill("#music-url-input", "https://youtube.com/watch?v=abc12345678")
+    page.fill("#music-title-input", "Ambient Track")
+    page.click("#music-add-playlist-btn")
+    page.wait_for_timeout(300)
+    record("acell", "adding a track shows it in the playlist",
+           "Ambient Track" in page.inner_text("#music-playlist"), "")
+    save_playlist_posts = [p_ for p_ in posts if p_.get("action") == "save_playlist"]
+    record("acell", "adding a track persists the playlist via save_playlist",
+           len(save_playlist_posts) >= 1 and "Ambient Track" in save_playlist_posts[-1].get("playlist_json", ""),
+           str(save_playlist_posts[-1:]))
+
+    page.click('#music-playlist button[data-remove="0"]')
+    page.wait_for_timeout(300)
+    record("acell", "removing a track clears it from the playlist",
+           "Ambient Track" not in page.inner_text("#music-playlist"), "")
+
+    page.close()
+    return errs
+
+def test_acell_music_backend_not_deployed(p):
+    """Bug report: the Music tab said "Broadcasting" while the player
+    widget said "Waiting for the Handler" -- because set_now_playing is
+    a no-cors POST, fetch() resolves "successfully" even when the
+    backend addition isn't deployed and never actually saved anything.
+    Against a backend that only ever reports NOT_FOUND (simulating the
+    addition not being installed), the status line must say so
+    honestly instead of claiming success."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    skip_acell_gate(page)
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            route.fulfill(status=200, content_type="application/javascript",
+                           body=f'{cb}({json.dumps({"status": "NOT_FOUND"})})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.click('.tw[data-tab="music"]')
+    page.wait_for_timeout(150)
+    page.fill("#music-channel-input", "SAM")
+    page.fill("#music-url-input", "https://youtube.com/watch?v=dQw4w9WgXcQ")
+    page.click("#music-set-btn")
+    page.wait_for_timeout(1500)
+
+    status = page.inner_text("#music-status")
+    record("acell", "an undeployed backend is reported honestly, not as a false 'Broadcasting' success",
+           "Broadcasting" not in status and ("confirm" in status.lower() or "deploy" in status.lower()), status)
 
     page.close()
     return errs
@@ -2288,6 +2373,8 @@ def main():
         safe(test_acell_sheet, browser, area="acell")
 
         safe(test_acell_music, browser, area="acell")
+
+        safe(test_acell_music_backend_not_deployed, browser, area="acell")
 
         safe(test_table_radio_widget, browser, area="radio")
 

@@ -227,6 +227,13 @@
     font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3);
     margin-top:12px; min-height:1.4em;
   }
+  .music-playlist-empty{ font-size:11px; color:var(--ink-3); font-style:italic; }
+  .music-playlist-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    border-bottom:1px dotted var(--rule); padding:7px 0; font-size:12px;
+  }
+  .mpr-title{ color:var(--ink); overflow-wrap:anywhere; }
+  .mpr-actions{ display:flex; gap:6px; flex-shrink:0; }
 
   /* ── Sheet: dense spreadsheet-style roster table ── */
   .sheet-toolbar{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
@@ -352,9 +359,13 @@
             </div>
             <div class="paper-actions">
               <a class="paper-btn primary" id="music-set-btn">&#9658; Set Now Playing</a>
+              <a class="paper-btn" id="music-add-playlist-btn">+ Add to Playlist</a>
               <a class="paper-btn" id="music-stop-btn">&#9632; Stop</a>
             </div>
             <div class="music-status" id="music-status"></div>
+
+            <div class="pv-sec-hd">Playlist</div>
+            <div id="music-playlist"></div>
           </div>
         </div>
       </div>
@@ -932,44 +943,77 @@
    MUSIC -- the Handler's broadcast side of Table Radio. Sets a track
    for a named channel via set_now_playing; players tune in to that
    same channel name from the small widget on every Hub page (see
-   assets/table-radio.js). Both share the new set_now_playing /
-   get_now_playing Apps Script actions (acell-table-radio-addition.txt,
-   handed over separately).
+   assets/table-radio.js). Both share the set_now_playing /
+   get_now_playing Apps Script actions (acell-table-radio-addition.txt)
+   plus get_playlist / save_playlist (acell-table-radio-playlist-
+   addition.txt), both handed over separately.
+
+   set_now_playing is a `mode:'no-cors'` POST (needed to avoid a CORS
+   error against Apps Script), which means the browser genuinely cannot
+   tell whether the server understood the request -- fetch() resolves
+   "successfully" even if the backend addition isn't deployed yet, or
+   the action isn't recognized. So every write here is followed by a
+   real GET read-back (which CAN see the actual response) before the
+   status line claims success -- "Broadcasting" only appears once
+   get_now_playing / get_playlist confirms the change actually landed.
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
   var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
   var CHANNEL_KEY = 'dg_acell_broadcast_channel';
+  var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm it. Check that the Table Radio addition (set_now_playing / get_now_playing) is pasted into Apps Script and redeployed.';
 
   var channelInput = document.getElementById('music-channel-input');
   var urlInput = document.getElementById('music-url-input');
   var titleInput = document.getElementById('music-title-input');
   var setBtn = document.getElementById('music-set-btn');
   var stopBtn = document.getElementById('music-stop-btn');
+  var addPlaylistBtn = document.getElementById('music-add-playlist-btn');
   var statusEl = document.getElementById('music-status');
+  var playlistEl = document.getElementById('music-playlist');
+
+  var playlist = [];
+
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
+  }
 
   var remembered = '';
   try { remembered = localStorage.getItem(CHANNEL_KEY) || ''; } catch (e) { /* best effort */ }
   if (remembered) channelInput.value = remembered;
 
+  function jsonpGet(action, params, cb) {
+    var cbName = '_acellMusic_' + action + '_' + Date.now();
+    var timer = setTimeout(function () { delete window[cbName]; cb(null); }, 7000);
+    window[cbName] = function (res) {
+      clearTimeout(timer);
+      delete window[cbName];
+      var s = document.getElementById('s-' + cbName);
+      if (s) s.remove();
+      cb(res);
+    };
+    var s = document.createElement('script');
+    s.id = 's-' + cbName;
+    var qs = 'action=' + action + '&callback=' + cbName;
+    Object.keys(params || {}).forEach(function (k) { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
+    s.src = APPS_SCRIPT_URL + '?' + qs;
+    document.head.appendChild(s);
+  }
+
   function checkCurrent() {
     var ch = channelInput.value.trim();
     if (!ch) { statusEl.textContent = ''; return; }
-    var cbName = '_acellMusicCheck_' + Date.now();
-    window[cbName] = function (res) {
-      delete window[cbName];
-      var s = document.getElementById('_acell_music_check_script');
-      if (s) s.remove();
+    jsonpGet('get_now_playing', { channel: ch }, function (res) {
       if (res && res.status === 'OK' && res.track_url) {
         statusEl.textContent = 'Currently broadcasting to "' + ch + '": ' + (res.track_title || res.track_url);
       } else {
         statusEl.textContent = 'Nothing currently broadcasting to "' + ch + '".';
       }
-    };
-    var s = document.createElement('script');
-    s.id = '_acell_music_check_script';
-    s.src = APPS_SCRIPT_URL + '?action=get_now_playing&channel=' + encodeURIComponent(ch) + '&callback=' + cbName;
-    document.head.appendChild(s);
+    });
+    loadPlaylist(ch);
   }
 
   function setNowPlaying(trackUrl, trackTitle) {
@@ -982,10 +1026,75 @@
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({ action: 'set_now_playing', channel: ch, track_url: trackUrl, track_title: trackTitle }),
     }).then(function () {
-      statusEl.textContent = trackUrl
-        ? 'Broadcasting to "' + ch + '": ' + (trackTitle || trackUrl)
-        : 'Stopped broadcasting to "' + ch + '".';
+      statusEl.textContent = 'Saved — checking…';
+      setTimeout(function () { verifyNowPlaying(ch, trackUrl, trackTitle); }, 900);
     }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+  }
+
+  function verifyNowPlaying(ch, expectedUrl, expectedTitle) {
+    jsonpGet('get_now_playing', { channel: ch }, function (res) {
+      var live = res && res.status === 'OK' ? (res.track_url || '') : '';
+      if (live === expectedUrl) {
+        statusEl.textContent = expectedUrl
+          ? 'Broadcasting to "' + ch + '": ' + (expectedTitle || expectedUrl)
+          : 'Stopped broadcasting to "' + ch + '".';
+      } else {
+        statusEl.textContent = NOT_DEPLOYED_MSG;
+      }
+    });
+  }
+
+  /* ── Playlist: a saved list of tracks per channel, so the Handler
+     doesn't have to re-paste a URL every time -- click one to make it
+     the current track. Same read-back-to-confirm discipline as
+     set_now_playing above. ── */
+  function renderPlaylist() {
+    if (!playlist.length) {
+      playlistEl.innerHTML = '<div class="music-playlist-empty">No saved tracks yet -- paste a URL above and hit "+ Add to Playlist".</div>';
+      return;
+    }
+    playlistEl.innerHTML = playlist.map(function (t, i) {
+      return '<div class="music-playlist-row">' +
+        '<span class="mpr-title">' + escapeHtml(t.title || t.url) + '</span>' +
+        '<span class="mpr-actions">' +
+        '<button type="button" class="paper-btn" data-play="' + i + '">&#9658; Play</button>' +
+        '<button type="button" class="paper-btn" data-remove="' + i + '">Remove</button>' +
+        '</span></div>';
+    }).join('');
+    Array.prototype.forEach.call(playlistEl.querySelectorAll('[data-play]'), function (btn) {
+      btn.addEventListener('click', function () {
+        var t = playlist[parseInt(btn.dataset.play, 10)];
+        if (!t) return;
+        urlInput.value = t.url;
+        titleInput.value = t.title || '';
+        setNowPlaying(t.url, t.title || '');
+      });
+    });
+    Array.prototype.forEach.call(playlistEl.querySelectorAll('[data-remove]'), function (btn) {
+      btn.addEventListener('click', function () {
+        playlist.splice(parseInt(btn.dataset.remove, 10), 1);
+        renderPlaylist();
+        savePlaylist();
+      });
+    });
+  }
+
+  function loadPlaylist(ch) {
+    if (!ch) { playlist = []; renderPlaylist(); return; }
+    jsonpGet('get_playlist', { channel: ch }, function (res) {
+      playlist = (res && res.status === 'OK' && Array.isArray(res.playlist)) ? res.playlist : [];
+      renderPlaylist();
+    });
+  }
+
+  function savePlaylist() {
+    var ch = channelInput.value.trim();
+    if (!ch) return;
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors', keepalive: true,
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'save_playlist', channel: ch, playlist_json: JSON.stringify(playlist) }),
+    }).catch(function () { /* best effort, same as every other Apps Script write here */ });
   }
 
   setBtn.addEventListener('click', function () {
@@ -994,6 +1103,14 @@
     setNowPlaying(url, titleInput.value.trim());
   });
   stopBtn.addEventListener('click', function () { setNowPlaying('', ''); });
+  addPlaylistBtn.addEventListener('click', function () {
+    var url = urlInput.value.trim();
+    if (!url) { statusEl.textContent = 'Paste a track URL first.'; return; }
+    playlist.push({ url: url, title: titleInput.value.trim() });
+    renderPlaylist();
+    savePlaylist();
+    statusEl.textContent = 'Added to playlist.';
+  });
 
   if (remembered) checkCurrent();
 })();
