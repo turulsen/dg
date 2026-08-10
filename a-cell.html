@@ -58,14 +58,6 @@
   }
   #acell-logo.acell-logo-in{ opacity:1; }
   #acell-logo img{ width:150px; height:auto; filter:drop-shadow(0 0 10px rgba(62,240,122,.6)); }
-  #acell-logo .acell-logo-word{
-    font-family:'JetBrains Mono',monospace; font-weight:700; letter-spacing:.32em;
-    font-size:16px; color:var(--term-green); text-shadow:0 0 10px rgba(62,240,122,.6);
-  }
-  #acell-logo .acell-logo-sub{
-    font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:.28em;
-    color:var(--term-green-dim); text-transform:uppercase;
-  }
   body.acell-lock{ overflow:hidden; height:100vh; }
 
   /* ── Post-gate: folder/paper look, shared with Agent Hub + Agent File ── */
@@ -146,8 +138,8 @@
     letter-spacing:.08em; color:var(--red); list-style:none; margin-bottom:14px;
   }
   .pv-details summary::-webkit-details-marker{ display:none; }
-  .pv-details summary::before{ content:'▸ '; }
-  .pv-details[open] summary::before{ content:'▾ '; }
+  .pv-details summary::before{ content:'> '; }
+  .pv-details[open] summary::before{ content:'v '; }
   .pv-sec-hd{
     font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.16em;
     text-transform:uppercase; color:var(--ink-2); margin:18px 0 8px;
@@ -174,43 +166,49 @@
   .pv-adapt-row .lbl{ width:110px; flex-shrink:0; font-family:'Courier Prime',monospace; font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-3); }
   .pv-adapt-boxes{ font-size:15px; letter-spacing:.15em; color:var(--ink); }
 
-  /* ── Cells: full roster, filterable, inline Handler/Operation tags ── */
-  .cells-filters{ display:flex; gap:20px; flex-wrap:wrap; margin-bottom:16px; }
-  .cells-filters label{
-    display:flex; flex-direction:column; gap:5px;
+  /* ── Cells: real named groups (a Handler + a set of member Agents,
+     picked from the full roster) rather than a per-Agent text tag --
+     one Agent can belong to several Cells, or none yet. ── */
+  .cells-toolbar{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+  .cells-create-form{
+    background:rgba(28,22,8,.04); border:1px solid var(--rule); padding:14px 16px; margin-bottom:16px;
+    display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;
+  }
+  .cells-create-field{ display:flex; flex-direction:column; gap:4px; }
+  .cells-create-field span{
     font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.1em;
     text-transform:uppercase; color:var(--ink-3);
   }
-  .cells-filters select{
-    background:var(--paper); border:1px solid var(--rule); color:var(--ink);
-    padding:7px 10px; font-family:'Source Sans 3',sans-serif; font-size:13px; min-width:160px;
-  }
-  .cells-list{ display:flex; flex-direction:column; gap:8px; }
-  .cells-row{
-    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
-    background:rgba(28,22,8,.04); border:1px solid var(--rule); padding:12px 16px;
-  }
-  .cells-row.cells-row-hidden{ display:none; }
-  .cells-info{ min-width:0; flex:1 1 180px; }
-  .cells-info .name{ font-family:'Special Elite',monospace; font-size:14px; color:var(--ink); overflow-wrap:anywhere; }
-  .cells-info .meta{ font-size:11px; color:var(--ink-3); margin-top:2px; font-family:'Courier Prime',monospace; }
-  .cells-player-meta b{ color:var(--ink); }
-  .cells-empty-note{ font-style:italic; }
-  .cells-tags{ display:flex; gap:14px; flex-wrap:wrap; margin-left:auto; }
-  .cells-tag-field{ display:flex; flex-direction:column; gap:4px; }
-  .cells-tag-field span{
-    font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.1em;
-    text-transform:uppercase; color:var(--ink-3);
-  }
-  .cells-tag-field input{
+  .cells-create-field input{
     background:transparent; border:none; border-bottom:1.5px solid rgba(90,74,16,.4);
-    color:var(--ink); padding:4px 0; font-size:12px; width:140px; font-family:'Courier Prime',monospace;
+    color:var(--ink); padding:5px 0; font-size:13px; width:200px; font-family:'Courier Prime',monospace;
   }
-  .cells-tag-field input:focus{ outline:none; border-bottom-color:var(--red); }
-  .cells-save-note{
-    font-family:'Courier Prime',monospace; font-size:9px; color:var(--green);
-    min-height:1.2em; margin-top:2px;
+  .cells-create-field input:focus{ outline:none; border-bottom-color:var(--red); }
+  .cells-create-error{ color:var(--red); font-size:11px; width:100%; min-height:1.3em; }
+  .cells-groups{ display:flex; flex-direction:column; gap:12px; margin-bottom:var(--s5); }
+  .cell-card{ background:rgba(28,22,8,.04); border:1px solid var(--rule); padding:14px 16px; }
+  .cell-card-head{ display:flex; align-items:baseline; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+  .cell-card-name{ font-family:'Special Elite',monospace; font-size:15px; color:var(--ink); }
+  .cell-card-handler{ font-size:11px; color:var(--ink-3); font-family:'Courier Prime',monospace; }
+  .cell-card-handler b{ color:var(--ink); }
+  .cell-members{ margin-top:10px; display:flex; flex-direction:column; gap:5px; }
+  .cell-member-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    font-size:12px; padding:4px 0; border-bottom:1px dotted var(--rule);
   }
+  .cell-member-row .cmr-name{ color:var(--ink); }
+  .cell-add-row{ display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap; }
+  .cell-add-row select{
+    background:var(--paper); border:1px solid var(--rule); color:var(--ink);
+    padding:6px 9px; font-family:'Source Sans 3',sans-serif; font-size:12px; min-width:180px;
+  }
+  .cells-empty-note{ font-style:italic; color:var(--ink-3); }
+  .cells-unassigned{ display:flex; flex-wrap:wrap; gap:8px; }
+  .cells-unassigned-chip{
+    background:rgba(28,22,8,.04); border:1px solid var(--rule); color:var(--ink-2);
+    font-size:11px; font-family:'Courier Prime',monospace; padding:5px 10px;
+  }
+  .cells-status{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); min-height:1.4em; margin-bottom:10px; }
 
   .music-copy{ font-size:12px; color:var(--ink-2); line-height:1.85; max-width:52ch; margin-bottom:var(--s4); }
   .music-field{ display:flex; flex-direction:column; gap:4px; margin-bottom:14px; max-width:420px; }
@@ -235,6 +233,50 @@
   .mpr-title{ color:var(--ink); overflow-wrap:anywhere; }
   .mpr-actions{ display:flex; gap:6px; flex-shrink:0; }
 
+  /* ── Channel dial: a dark field-radio console dropped onto the paper,
+     matching the player-facing Table Radio widget's look. Turned to a
+     fixed 1-5 stop instead of typed -- no more two players landing on
+     "sam" vs "Sam" and never hearing each other. ── */
+  .acell-radio-panel{
+    background:radial-gradient(circle at 30% 20%,#232a1a,#12160d 75%);
+    border:1px solid #3a4432; border-radius:8px; padding:14px 10px 10px; max-width:200px;
+    box-shadow:inset 0 0 10px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.25);
+  }
+  .arp-label{
+    font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.14em;
+    text-transform:uppercase; color:#7a8a68; text-align:center; margin-bottom:8px;
+  }
+  .dgr-dial-wrap{ text-align:center; }
+  .dgr-dial{ width:100px; height:100px; margin:0 auto 10px; position:relative; }
+  .dgr-dial-ring{
+    width:100%; height:100%; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#2a3020,#12160d 70%);
+    border:2px solid #3a4432; position:relative; box-shadow:inset 0 0 10px rgba(0,0,0,.6);
+  }
+  .dgr-tick{
+    position:absolute; width:18px; height:18px; margin:-9px 0 0 -9px;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Courier Prime',monospace; font-size:11px; color:#7a8a68; cursor:pointer;
+  }
+  .dgr-tick.active{ color:#d8f0c0; font-weight:bold; }
+  .dgr-knob{
+    position:absolute; top:50%; left:50%; width:42px; height:42px; margin:-21px;
+    border-radius:50%; background:radial-gradient(circle at 35% 30%,#4a5a3a,#1c2214 75%);
+    border:1px solid #5a6a48; box-shadow:0 2px 4px rgba(0,0,0,.5); transition:transform .25s ease;
+  }
+  .dgr-pointer{
+    position:absolute; top:3px; left:50%; width:2px; height:13px;
+    background:#d8f0c0; margin-left:-1px; border-radius:1px;
+  }
+  .dgr-dial-controls{ display:flex; align-items:center; justify-content:center; gap:10px; }
+  .dgr-turn{
+    background:#20261a; border:1px solid #3a4432; color:#c9d4b8; border-radius:50%;
+    width:24px; height:24px; font-size:12px; cursor:pointer; line-height:1; padding:0;
+  }
+  .dgr-turn:hover{ border-color:#5a6a48; }
+  .dgr-dial-readout{ font-family:'Courier Prime',monospace; font-size:12px; color:#e6ecd8; min-width:40px; }
+  .dgr-dial-readout b{ color:#a8c890; }
+
   /* ── Sheet: dense spreadsheet-style roster table ── */
   .sheet-toolbar{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
   .sheet-wrap{ overflow-x:auto; background:var(--paper); box-shadow:var(--paper-shadow); }
@@ -257,6 +299,39 @@
     background:var(--paper); box-shadow:var(--paper-shadow);
   }
 
+  /* ── Admin: permanent deletion, gated behind a two-step confirm
+     (type the Agent's tagged Handler name, then the A-Cell password)
+     so nobody wipes a Cell by a stray click. Everything here is
+     styled with --red to read as clearly destructive against the
+     rest of the paper-toned UI. ── */
+  .admin-toolbar{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+  .admin-copy{ font-size:12px; color:var(--ink-2); line-height:1.85; max-width:60ch; margin-bottom:var(--s3); }
+  .admin-status{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); min-height:1.4em; margin-bottom:10px; }
+  .admin-list{ display:flex; flex-direction:column; gap:8px; }
+  .admin-row{
+    background:rgba(28,22,8,.04); border:1px solid var(--rule); border-left:3px solid var(--red);
+    padding:12px 16px;
+  }
+  .admin-row-top{ display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+  .admin-row-info .name{ font-family:'Special Elite',monospace; font-size:14px; color:var(--ink); }
+  .admin-row-info .meta{ font-size:11px; color:var(--ink-3); margin-top:2px; font-family:'Courier Prime',monospace; }
+  .admin-delete-btn{ border-color:var(--red); color:var(--red); }
+  .admin-delete-btn:hover{ background:var(--red); color:var(--paper); }
+  .admin-confirm{ margin-top:12px; padding-top:12px; border-top:1px dotted var(--rule); }
+  .admin-confirm p{ font-size:12px; color:var(--ink-2); margin:0 0 8px; }
+  .admin-confirm input{
+    background:transparent; border:none; border-bottom:1.5px solid var(--red);
+    color:var(--ink); padding:5px 0; font-size:13px; font-family:'Courier Prime',monospace;
+    width:100%; max-width:280px; margin-bottom:8px;
+  }
+  .admin-confirm input:focus{ outline:none; }
+  .admin-confirm-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+  .admin-confirm-error{ color:var(--red); font-size:11px; margin:0 0 8px; min-height:1.3em; }
+  .admin-loading, .admin-error{
+    color:var(--ink-3); font-size:13px; font-style:italic; text-align:center; padding:26px 10px;
+    background:var(--paper); box-shadow:var(--paper-shadow);
+  }
+
   footer.site-footer{ text-align:center; color:#6a6250; font-size:11px; margin-top:56px; }
 </style>
 </head>
@@ -267,16 +342,14 @@
     <div id="acell-term-log"></div>
     <div class="acell-input-line" id="acell-input-line">&gt;<input id="acell-pw-input" type="password" autocomplete="off" spellcheck="false" maxlength="40"><span class="boot-cursor"></span></div>
   </div>
-  <a id="acell-back" href="index.html">&larr; back to clearance</a>
+  <a id="acell-back" href="index.html">&lt;- back to clearance</a>
   <div id="acell-logo">
     <img src="assets/delta-green-triangle.png" alt="" width="150">
-    <div class="acell-logo-word">DELTA GREEN</div>
-    <div class="acell-logo-sub">A-Cell Handler Access</div>
   </div>
 </div>
 
 <div class="hub-header">
-  <a class="back-link" href="index.html">&larr; Clearance</a>
+  <a class="back-link" href="index.html">&lt;- Clearance</a>
   <div class="stamp">Clearance: A-Cell</div>
   <h1>A-Cell</h1>
   <p>Handler tools — run Play from a simplified agent view, organize every Agent on file into Cells, and curate the table's music.</p>
@@ -289,12 +362,13 @@
       <div class="tw inactive" data-tab="cells"><span>Cells</span></div>
       <div class="tw inactive" data-tab="sheet"><span>Sheet</span></div>
       <div class="tw inactive" data-tab="music"><span>Music</span></div>
+      <div class="tw inactive" data-tab="admin"><span>Admin</span></div>
     </div>
     <div class="folder-body">
 
       <div class="tab-panel active" id="panel-play">
         <div class="play-toolbar">
-          <button type="button" class="paper-btn" id="play-refresh-btn">&#8635; Refresh</button>
+          <button type="button" class="paper-btn" id="play-refresh-btn">Refresh</button>
           <span class="play-refresh-note" id="play-refresh-note"></span>
         </div>
         <div class="play-layout">
@@ -308,22 +382,23 @@
       </div>
 
       <div class="tab-panel" id="panel-cells">
-        <div class="cells-filters">
-          <label>Handler
-            <select id="cells-filter-handler"><option value="">All</option></select>
-          </label>
-          <label>Operation
-            <select id="cells-filter-operation"><option value="">All</option></select>
-          </label>
+        <div class="cells-toolbar">
+          <button type="button" class="paper-btn primary" id="cells-create-btn">+ Create Cell</button>
+          <button type="button" class="paper-btn" id="cells-refresh-btn">Refresh</button>
+          <span class="play-refresh-note" id="cells-refresh-note"></span>
         </div>
-        <div class="cells-list" id="cells-list">
-          <div class="play-loading">Loading agents…</div>
+        <div id="cells-create-form-slot"></div>
+        <div class="cells-status" id="cells-status"></div>
+        <div class="cells-groups" id="cells-groups">
+          <div class="play-loading">Loading Cells…</div>
         </div>
+        <div class="pv-sec-hd">Unassigned Agents</div>
+        <div class="cells-unassigned" id="cells-unassigned"></div>
       </div>
 
       <div class="tab-panel" id="panel-sheet">
         <div class="sheet-toolbar">
-          <button type="button" class="paper-btn" id="sheet-refresh-btn">&#8635; Refresh</button>
+          <button type="button" class="paper-btn" id="sheet-refresh-btn">Refresh</button>
           <span class="play-refresh-note" id="sheet-refresh-note"></span>
         </div>
         <div class="sheet-wrap" id="sheet-wrap">
@@ -343,11 +418,13 @@
                 <div class="paper-title">Music</div>
               </div>
             </div>
-            <p class="music-copy">Broadcast to a channel name your players tune their Table Radio to (the small widget on every Hub page). YouTube, SoundCloud, or a direct audio file link — loosely synced, not frame-accurate.</p>
+            <p class="music-copy">Broadcast to a channel your players dial their Table Radio to (the small widget on every Hub page). YouTube, SoundCloud, or a direct audio file link — loosely synced, not frame-accurate.</p>
 
             <div class="music-field">
               <span>Channel</span>
-              <input type="text" id="music-channel-input" placeholder="e.g. your name, or the Cell's codename">
+              <div class="acell-radio-panel" id="music-dial-panel">
+                <div class="arp-label">Channel Select</div>
+              </div>
             </div>
             <div class="music-field">
               <span>Track URL</span>
@@ -358,15 +435,27 @@
               <input type="text" id="music-title-input" placeholder="What's playing">
             </div>
             <div class="paper-actions">
-              <a class="paper-btn primary" id="music-set-btn">&#9658; Set Now Playing</a>
+              <a class="paper-btn primary" id="music-set-btn">Set Now Playing</a>
               <a class="paper-btn" id="music-add-playlist-btn">+ Add to Playlist</a>
-              <a class="paper-btn" id="music-stop-btn">&#9632; Stop</a>
+              <a class="paper-btn" id="music-stop-btn">Stop</a>
             </div>
             <div class="music-status" id="music-status"></div>
 
             <div class="pv-sec-hd">Playlist</div>
             <div id="music-playlist"></div>
           </div>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="panel-admin">
+        <div class="admin-toolbar">
+          <button type="button" class="paper-btn" id="admin-refresh-btn">Refresh</button>
+          <span class="play-refresh-note" id="admin-refresh-note"></span>
+        </div>
+        <p class="admin-copy">Permanently delete an Agent from the Google Sheet -- removes their character sheet AND their Agent File / Cover ID submission. This cannot be undone. Deleting requires typing the Agent's tagged Handler name, then the A-Cell password.</p>
+        <div class="admin-status" id="admin-status"></div>
+        <div class="admin-list" id="admin-list">
+          <div class="admin-loading">Loading agents…</div>
         </div>
       </div>
 
@@ -648,7 +737,7 @@
 
     function adaptBoxes(arr) {
       if (!Array.isArray(arr) || !arr.length) return '&mdash;';
-      return arr.map(function (checked) { return checked ? '&#9635;' : '&#9633;'; }).join(' ');
+      return arr.map(function (checked) { return checked ? '[X]' : '[ ]'; }).join(' ');
     }
 
     var photoId = 'pv-photo-' + c.code;
@@ -694,28 +783,33 @@
 
 <script>
 /* ══════════════════════════════════════════════
-   CELLS -- every Agent on file (same list_characters action as Play,
-   fetched independently here since this is a self-contained section
-   like the rest of this project's pages), filterable by Handler and
-   Operation, with both tags editable inline right in the row ("added
-   easily"). Tags persist via a new update_character_field action --
-   part of the same backend addition handed over separately (see
-   acell-cells-tagging-addition.txt), which also adds the handler/
-   operation columns to the Characters sheet and extends
-   list_characters to return them. Until that's pasted in and
-   redeployed, tags read back as empty and edits save silently
-   nowhere -- same "coming online" state Play was in before its own
-   addition, not a bug in this page.
+   CELLS -- real named groups: a Cell has its own name and Handler,
+   plus a list of member Agents picked from the full roster (not a
+   text tag typed per Agent) -- one Agent can belong to several Cells
+   at once, or none yet. Backed by two new actions, list_cells /
+   create_cell / update_cell_members (acell-cell-groups-addition.txt,
+   handed over separately) plus the existing list_characters (for
+   Agent names to show/pick from). Like every other write in this app,
+   create_cell and update_cell_members are no-cors POSTs, so a Cell
+   only shows a change once a real read-back (list_cells) confirms it
+   landed.
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
   var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
-  var TAG_SAVE_DEBOUNCE_MS = 700;
+  var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm it. Check that the Cells addition (list_cells / create_cell / update_cell_members) is pasted into Apps Script and redeployed.';
 
-  var listEl = document.getElementById('cells-list');
-  var handlerFilter = document.getElementById('cells-filter-handler');
-  var operationFilter = document.getElementById('cells-filter-operation');
-  var agents = [];
+  var groupsEl = document.getElementById('cells-groups');
+  var unassignedEl = document.getElementById('cells-unassigned');
+  var statusEl = document.getElementById('cells-status');
+  var createBtn = document.getElementById('cells-create-btn');
+  var createFormSlot = document.getElementById('cells-create-form-slot');
+  var refreshBtn = document.getElementById('cells-refresh-btn');
+  var refreshNote = document.getElementById('cells-refresh-note');
+
+  var cells = [];
+  var agents = []; // { code, name }
+  var agentsByCode = {};
 
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -724,128 +818,199 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
   }
 
-  function fetchList() {
-    var cbName = '_acellCellsList_' + Date.now();
-    var timer = setTimeout(function () {
-      delete window[cbName];
-      listEl.innerHTML = '<div class="play-error">Could not load the Agent list. (The A-Cell backend addition may not be deployed yet.)</div>';
-    }, 7000);
+  function jsonpGet(action, params, cb) {
+    var cbName = '_acellCells_' + action + '_' + Date.now();
+    var timer = setTimeout(function () { delete window[cbName]; cb(null); }, 7000);
     window[cbName] = function (res) {
       clearTimeout(timer);
       delete window[cbName];
-      var script = document.getElementById('_acell_cells_list_script');
-      if (script) script.remove();
-      if (!res || res.status !== 'OK' || !Array.isArray(res.characters)) {
-        listEl.innerHTML = '<div class="play-error">Could not load the Agent list.</div>';
-        return;
-      }
-      agents = res.characters.map(function (c) {
-        var state = null;
-        try { state = JSON.parse(c.character_json); } catch (e) { /* skip unparsable rows */ }
-        return { code: c.agent_code, state: state, handler: c.handler || '', operation: c.operation || '' };
-      }).filter(function (c) { return c.code && c.state; });
-      renderFilters();
-      renderList();
+      var s = document.getElementById('s-' + cbName);
+      if (s) s.remove();
+      cb(res);
     };
     var s = document.createElement('script');
-    s.id = '_acell_cells_list_script';
-    s.src = APPS_SCRIPT_URL + '?action=list_characters&callback=' + cbName;
+    s.id = 's-' + cbName;
+    var qs = 'action=' + action + '&callback=' + cbName;
+    Object.keys(params || {}).forEach(function (k) { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
+    s.src = APPS_SCRIPT_URL + '?' + qs;
     document.head.appendChild(s);
   }
 
-  // Rebuilds the filter dropdowns from whatever tags currently exist on
-  // the roster, preserving the current selection where still valid --
-  // so a freshly-typed tag becomes filterable without a reload.
-  function renderFilters() {
-    [[handlerFilter, 'handler'], [operationFilter, 'operation']].forEach(function (pair) {
-      var el = pair[0], key = pair[1];
-      var current = el.value;
-      var values = Array.from(new Set(agents.map(function (a) { return a[key]; }).filter(Boolean))).sort();
-      el.innerHTML = '<option value="">All</option>' + values.map(function (v) {
-        return '<option value="' + escapeHtml(v) + '">' + escapeHtml(v) + '</option>';
-      }).join('');
-      if (values.indexOf(current) !== -1) el.value = current;
+  function agentName(code) {
+    var a = agentsByCode[code];
+    return a ? a.name : code;
+  }
+
+  function fetchAll(isRefresh) {
+    var cellsDone = false, agentsDone = false, cellsOk = false, agentsOk = false;
+    function maybeRender() {
+      if (!cellsDone || !agentsDone) return;
+      if (!cellsOk || !agentsOk) {
+        groupsEl.innerHTML = '<div class="cells-empty-note">Could not load Cells. (The A-Cell Cells addition may not be deployed yet.)</div>';
+        unassignedEl.innerHTML = '';
+        return;
+      }
+      renderAll();
+      if (isRefresh) refreshNote.textContent = 'Updated ' + new Date().toLocaleTimeString();
+    }
+    jsonpGet('list_cells', {}, function (res) {
+      cellsDone = true;
+      if (res && res.status === 'OK' && Array.isArray(res.cells)) {
+        cells = res.cells;
+        cellsOk = true;
+      }
+      maybeRender();
+    });
+    jsonpGet('list_characters', {}, function (res) {
+      agentsDone = true;
+      if (res && res.status === 'OK' && Array.isArray(res.characters)) {
+        agents = res.characters.map(function (c) {
+          var state = null;
+          try { state = JSON.parse(c.character_json); } catch (e) { /* skip unparsable rows */ }
+          var bio = (state && state.bio) || {};
+          return { code: c.agent_code, name: bio.name || c.agent_code };
+        }).filter(function (a) { return a.code; });
+        agentsByCode = {};
+        agents.forEach(function (a) { agentsByCode[a.code] = a; });
+        agentsOk = true;
+      }
+      maybeRender();
     });
   }
 
-  function applyFilters() {
-    var h = handlerFilter.value, o = operationFilter.value;
-    Array.prototype.forEach.call(listEl.querySelectorAll('.cells-row'), function (row) {
-      var match = (!h || row.dataset.handler === h) && (!o || row.dataset.operation === o);
-      row.classList.toggle('cells-row-hidden', !match);
-    });
+  function renderAll() {
+    renderGroups();
+    renderUnassigned();
   }
 
-  function saveTag(code, field, value, noteEl) {
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors', keepalive: true,
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'update_character_field', agent_code: code, field: field, value: value }),
-    }).then(function () {
-      if (noteEl) { noteEl.textContent = 'Saved.'; setTimeout(function () { noteEl.textContent = ''; }, 1800); }
-    }).catch(function () { /* silent, same as every other Apps Script write in this app */ });
-  }
-
-  function renderList() {
-    if (!agents.length) {
-      listEl.innerHTML = '<div class="play-error">No Agents on file yet.</div>';
+  function renderGroups() {
+    if (!cells.length) {
+      groupsEl.innerHTML = '<div class="cells-empty-note">No Cells yet -- click "+ Create Cell" to start one.</div>';
       return;
     }
-    listEl.innerHTML = agents.map(function (a, i) {
-      var bio = a.state.bio || {};
-      var name = bio.name || 'Unknown Agent';
-      var meta = [a.code, bio.profession].filter(Boolean).map(escapeHtml).join(' &middot; ');
-      var playerMeta = 'Player: ' + (bio.player_name ? '<b>' + escapeHtml(bio.player_name) + '</b>' : '<span class="cells-empty-note">not set</span>');
-      return '<div class="cells-row" data-i="' + i + '" data-handler="' + escapeHtml(a.handler) + '" data-operation="' + escapeHtml(a.operation) + '">' +
-        '<div class="cells-info"><div class="name">' + escapeHtml(name) + '</div><div class="meta">' + meta + '</div><div class="meta cells-player-meta">' + playerMeta + '</div></div>' +
-        '<div class="cells-tags">' +
-        '<label class="cells-tag-field"><span>Handler</span><input type="text" class="cells-handler-input" data-i="' + i + '" value="' + escapeHtml(a.handler) + '" placeholder="&#8212;"></label>' +
-        '<label class="cells-tag-field"><span>Operation</span><input type="text" class="cells-operation-input" data-i="' + i + '" value="' + escapeHtml(a.operation) + '" placeholder="&#8212;"></label>' +
-        '</div>' +
-        '<div class="cells-save-note" id="cells-save-note-' + i + '"></div>' +
+    groupsEl.innerHTML = cells.map(function (c, i) {
+      var members = c.member_codes.map(function (code, mi) {
+        return '<div class="cell-member-row"><span class="cmr-name">' + escapeHtml(agentName(code)) + '</span>' +
+          '<button type="button" class="paper-btn" data-remove-cell="' + i + '" data-remove-agent="' + escapeHtml(code) + '">Remove</button></div>';
+      }).join('') || '<div class="cells-empty-note">No members yet.</div>';
+      var available = agents.filter(function (a) { return c.member_codes.indexOf(a.code) === -1; });
+      var options = '<option value="">Add an Agent…</option>' + available.map(function (a) {
+        return '<option value="' + escapeHtml(a.code) + '">' + escapeHtml(a.name) + '</option>';
+      }).join('');
+      return '<div class="cell-card" data-i="' + i + '">' +
+        '<div class="cell-card-head"><div class="cell-card-name">' + escapeHtml(c.name) + '</div>' +
+        '<div class="cell-card-handler">Handler: ' + (c.handler ? '<b>' + escapeHtml(c.handler) + '</b>' : '<span class="cells-empty-note">not set</span>') + '</div></div>' +
+        '<div class="cell-members">' + members + '</div>' +
+        '<div class="cell-add-row"><select data-add-select="' + i + '">' + options + '</select>' +
+        '<button type="button" class="paper-btn" data-add-btn="' + i + '">Add</button></div>' +
         '</div>';
     }).join('');
 
-    var debounce = {};
-    function wireTagInput(selector, field) {
-      Array.prototype.forEach.call(listEl.querySelectorAll(selector), function (input) {
-        input.addEventListener('input', function () {
-          var i = parseInt(input.dataset.i, 10);
-          var agent = agents[i];
-          agent[field] = input.value;
-          var row = listEl.querySelector('.cells-row[data-i="' + i + '"]');
-          if (row) row.dataset[field] = input.value;
-          clearTimeout(debounce[field + i]);
-          debounce[field + i] = setTimeout(function () {
-            saveTag(agent.code, field, agent[field], document.getElementById('cells-save-note-' + i));
-            renderFilters();
-          }, TAG_SAVE_DEBOUNCE_MS);
-        });
+    Array.prototype.forEach.call(groupsEl.querySelectorAll('[data-add-btn]'), function (btn) {
+      btn.addEventListener('click', function () {
+        var i = parseInt(btn.dataset.addBtn, 10);
+        var select = groupsEl.querySelector('[data-add-select="' + i + '"]');
+        var code = select.value;
+        if (!code) return;
+        var newMembers = cells[i].member_codes.concat([code]);
+        saveMembers(cells[i], newMembers);
       });
-    }
-    wireTagInput('.cells-handler-input', 'handler');
-    wireTagInput('.cells-operation-input', 'operation');
+    });
+    Array.prototype.forEach.call(groupsEl.querySelectorAll('[data-remove-agent]'), function (btn) {
+      btn.addEventListener('click', function () {
+        var i = parseInt(btn.dataset.removeCell, 10);
+        var code = btn.dataset.removeAgent;
+        var newMembers = cells[i].member_codes.filter(function (c) { return c !== code; });
+        saveMembers(cells[i], newMembers);
+      });
+    });
   }
 
-  handlerFilter.addEventListener('change', applyFilters);
-  operationFilter.addEventListener('change', applyFilters);
+  function renderUnassigned() {
+    var assigned = {};
+    cells.forEach(function (c) { c.member_codes.forEach(function (code) { assigned[code] = true; }); });
+    var unassigned = agents.filter(function (a) { return !assigned[a.code]; });
+    unassignedEl.innerHTML = unassigned.length
+      ? unassigned.map(function (a) { return '<span class="cells-unassigned-chip">' + escapeHtml(a.name) + '</span>'; }).join('')
+      : '<div class="cells-empty-note">Every Agent on file belongs to at least one Cell.</div>';
+  }
 
-  fetchList();
+  function saveMembers(cellObj, newMembers) {
+    statusEl.textContent = 'Saving…';
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors', keepalive: true,
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'update_cell_members', cell_id: cellObj.cell_id, member_codes: newMembers }),
+    }).then(function () {
+      setTimeout(function () {
+        jsonpGet('list_cells', {}, function (res) {
+          var updated = res && res.status === 'OK' && Array.isArray(res.cells) &&
+            res.cells.some(function (c) { return c.cell_id === cellObj.cell_id && JSON.stringify(c.member_codes.slice().sort()) === JSON.stringify(newMembers.slice().sort()); });
+          if (!updated) { statusEl.textContent = NOT_DEPLOYED_MSG; return; }
+          cells = res.cells;
+          statusEl.textContent = '';
+          renderAll();
+        });
+      }, 900);
+    }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+  }
+
+  function showCreateForm() {
+    if (createFormSlot.childNodes.length) { createFormSlot.innerHTML = ''; return; }
+    createFormSlot.innerHTML =
+      '<div class="cells-create-form">' +
+      '<label class="cells-create-field"><span>Cell Name</span><input type="text" id="cells-new-name" placeholder="e.g. Cell Alpha"></label>' +
+      '<label class="cells-create-field"><span>Handler</span><input type="text" id="cells-new-handler" placeholder="Handler name"></label>' +
+      '<button type="button" class="paper-btn primary" id="cells-new-confirm">Create</button>' +
+      '<button type="button" class="paper-btn" id="cells-new-cancel">Cancel</button>' +
+      '<div class="cells-create-error" id="cells-new-error"></div>' +
+      '</div>';
+    document.getElementById('cells-new-cancel').addEventListener('click', function () { createFormSlot.innerHTML = ''; });
+    document.getElementById('cells-new-confirm').addEventListener('click', function () {
+      var name = document.getElementById('cells-new-name').value.trim();
+      var handler = document.getElementById('cells-new-handler').value.trim();
+      var errEl = document.getElementById('cells-new-error');
+      if (!name) { errEl.textContent = 'Give the Cell a name first.'; return; }
+      statusEl.textContent = 'Creating…';
+      fetch(APPS_SCRIPT_URL, {
+        method: 'POST', mode: 'no-cors', keepalive: true,
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'create_cell', name: name, handler: handler }),
+      }).then(function () {
+        setTimeout(function () {
+          jsonpGet('list_cells', {}, function (res) {
+            var created = res && res.status === 'OK' && Array.isArray(res.cells) &&
+              res.cells.some(function (c) { return c.name === name && c.handler === handler; });
+            if (!created) { statusEl.textContent = NOT_DEPLOYED_MSG; return; }
+            cells = res.cells;
+            statusEl.textContent = '';
+            createFormSlot.innerHTML = '';
+            renderAll();
+          });
+        }, 900);
+      }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+    });
+  }
+
+  createBtn.addEventListener('click', showCreateForm);
+  refreshBtn.addEventListener('click', function () { fetchAll(true); });
+  fetchAll(false);
 })();
 </script>
 
 <script>
 /* ══════════════════════════════════════════════
-   SHEET -- a dense, spreadsheet-style read-only roster table: Cell
-   (Operation), Handler, Agent Name, Player Name, HP, SAN, and a rough
-   "Online" presence indicator. Same list_characters data Play and
-   Cells already fetch, just laid out as actual table rows instead of
-   cards -- for scanning the whole roster at a glance rather than
-   picking one Agent at a time. "Online" isn't a real presence system
-   (no heartbeat/websocket) -- it's a proxy from how recently Cloud
-   Save last pushed for that Agent (updated_at): a player actively
-   editing their sheet pushes every ~4s, so a fresh updated_at is a
-   reasonable stand-in for "at the table right now."
+   SHEET -- a dense, spreadsheet-style read-only roster table: Cell,
+   Handler, Agent Name, Player Name, HP, SAN, and a rough "Online"
+   presence indicator. Cell/Handler now come from real Cell group
+   membership (list_cells) rather than a per-Agent tag -- an Agent in
+   more than one Cell shows all of them, comma-separated; an Agent in
+   none shows an em dash, same as any other empty cell. "Online" isn't
+   a real presence system (no heartbeat/websocket) -- it's a proxy
+   from how recently Cloud Save last pushed for that Agent
+   (updated_at): a player actively editing their sheet pushes every
+   ~4s, so a fresh updated_at is a reasonable stand-in for "at the
+   table right now."
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
@@ -877,36 +1042,72 @@
     return v ? escapeHtml(v) : '<span class="sheet-empty-cell">&mdash;</span>';
   }
 
-  function fetchSheet() {
-    refreshBtn.disabled = true;
-    var cbName = '_acellSheet_' + Date.now();
-    var timer = setTimeout(function () {
-      delete window[cbName];
-      refreshBtn.disabled = false;
-      wrap.innerHTML = '<div class="sheet-error">Could not load the roster. (The A-Cell backend addition may not be deployed yet.)</div>';
-    }, 7000);
+  function jsonpGet(action, params, cb) {
+    var cbName = '_acellSheet_' + action + '_' + Date.now();
+    var timer = setTimeout(function () { delete window[cbName]; cb(null); }, 7000);
     window[cbName] = function (res) {
       clearTimeout(timer);
       delete window[cbName];
-      refreshBtn.disabled = false;
-      var s = document.getElementById('_acell_sheet_script');
+      var s = document.getElementById('s-' + cbName);
       if (s) s.remove();
-      if (!res || res.status !== 'OK' || !Array.isArray(res.characters)) {
-        wrap.innerHTML = '<div class="sheet-error">Could not load the roster.</div>';
+      cb(res);
+    };
+    var s = document.createElement('script');
+    s.id = 's-' + cbName;
+    var qs = 'action=' + action + '&callback=' + cbName;
+    Object.keys(params || {}).forEach(function (k) { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
+    s.src = APPS_SCRIPT_URL + '?' + qs;
+    document.head.appendChild(s);
+  }
+
+  function fetchSheet() {
+    refreshBtn.disabled = true;
+    var charsDone = false, cellsDone = false, charsOk = false, cellsOk = false;
+    var characters = [], cellGroups = [];
+
+    function maybeRender() {
+      if (!charsDone || !cellsDone) return;
+      refreshBtn.disabled = false;
+      if (!charsOk) {
+        wrap.innerHTML = '<div class="sheet-error">Could not load the roster. (The A-Cell backend addition may not be deployed yet.)</div>';
         return;
       }
-      var rows = res.characters.map(function (c) {
+      // Cell/Handler columns degrade gracefully (show a dash) if the
+      // Cells addition specifically isn't deployed yet -- the rest of
+      // the sheet is still useful without it.
+      var cellsByAgent = {};
+      if (cellsOk) {
+        cellGroups.forEach(function (c) {
+          c.member_codes.forEach(function (code) {
+            if (!cellsByAgent[code]) cellsByAgent[code] = [];
+            cellsByAgent[code].push(c);
+          });
+        });
+      }
+      var rows = characters.map(function (c) {
         var state = null;
         try { state = JSON.parse(c.character_json); } catch (e) { /* skip unparsable rows */ }
-        return { code: c.agent_code, state: state, handler: c.handler || '', operation: c.operation || '', updated_at: c.updated_at };
+        var memberOf = cellsByAgent[c.agent_code] || [];
+        return {
+          code: c.agent_code, state: state, updated_at: c.updated_at,
+          cellNames: memberOf.map(function (m) { return m.name; }).join(', '),
+          handlers: Array.from(new Set(memberOf.map(function (m) { return m.handler; }).filter(Boolean))).join(', '),
+        };
       }).filter(function (r) { return r.code && r.state; });
       renderSheet(rows);
       refreshNote.textContent = 'Updated ' + new Date().toLocaleTimeString();
-    };
-    var s = document.createElement('script');
-    s.id = '_acell_sheet_script';
-    s.src = APPS_SCRIPT_URL + '?action=list_characters&callback=' + cbName;
-    document.head.appendChild(s);
+    }
+
+    jsonpGet('list_characters', {}, function (res) {
+      charsDone = true;
+      if (res && res.status === 'OK' && Array.isArray(res.characters)) { characters = res.characters; charsOk = true; }
+      maybeRender();
+    });
+    jsonpGet('list_cells', {}, function (res) {
+      cellsDone = true;
+      if (res && res.status === 'OK' && Array.isArray(res.cells)) { cellGroups = res.cells; cellsOk = true; }
+      maybeRender();
+    });
   }
 
   function renderSheet(rows) {
@@ -918,8 +1119,8 @@
       var bio = r.state.bio || {};
       var derived = r.state.derived || {};
       return '<tr>' +
-        '<td>' + cell(r.operation) + '</td>' +
-        '<td>' + cell(r.handler) + '</td>' +
+        '<td>' + cell(r.cellNames) + '</td>' +
+        '<td>' + cell(r.handlers) + '</td>' +
         '<td>' + cell(bio.name) + '</td>' +
         '<td>' + cell(bio.player_name) + '</td>' +
         '<td>' + cell(derived.hp) + '</td>' +
@@ -941,12 +1142,15 @@
 <script>
 /* ══════════════════════════════════════════════
    MUSIC -- the Handler's broadcast side of Table Radio. Sets a track
-   for a named channel via set_now_playing; players tune in to that
-   same channel name from the small widget on every Hub page (see
-   assets/table-radio.js). Both share the set_now_playing /
-   get_now_playing Apps Script actions (acell-table-radio-addition.txt)
-   plus get_playlist / save_playlist (acell-table-radio-playlist-
-   addition.txt), both handed over separately.
+   for a channel via set_now_playing; players dial that same numbered
+   channel (1-5) on the small widget on every Hub page (see
+   assets/table-radio.js). The channel is picked with the same rotary
+   dial UI as the player-facing widget, not typed -- a free-text
+   channel name let two players land on "sam" vs "Sam" and never hear
+   each other. Both share the set_now_playing / get_now_playing Apps
+   Script actions (acell-table-radio-addition.txt) plus get_playlist /
+   save_playlist (acell-table-radio-playlist-addition.txt), both handed
+   over separately.
 
    set_now_playing is a `mode:'no-cors'` POST (needed to avoid a CORS
    error against Apps Script), which means the browser genuinely cannot
@@ -962,8 +1166,11 @@
   var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
   var CHANNEL_KEY = 'dg_acell_broadcast_channel';
   var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm it. Check that the Table Radio addition (set_now_playing / get_now_playing) is pasted into Apps Script and redeployed.';
+  // Fixed numbered channels, turned on a dial rather than typed -- five
+  // slots, no typos, no two players landing on "sam" vs "Sam".
+  var CHANNELS = ['1', '2', '3', '4', '5'];
 
-  var channelInput = document.getElementById('music-channel-input');
+  var dialPanel = document.getElementById('music-dial-panel');
   var urlInput = document.getElementById('music-url-input');
   var titleInput = document.getElementById('music-title-input');
   var setBtn = document.getElementById('music-set-btn');
@@ -981,9 +1188,76 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
   }
 
+  function channelIndex(ch) {
+    var i = CHANNELS.indexOf(ch);
+    return i === -1 ? 0 : i;
+  }
+  function dialHtml() {
+    var ticks = CHANNELS.map(function (c) {
+      return '<div class="dgr-tick" data-ch="' + c + '">' + c + '</div>';
+    }).join('');
+    return (
+      '<div class="dgr-dial-wrap">' +
+      '<div class="dgr-dial"><div class="dgr-dial-ring">' + ticks +
+      '<div class="dgr-knob"><div class="dgr-pointer"></div></div>' +
+      '</div></div>' +
+      '<div class="dgr-dial-controls">' +
+      '<button type="button" class="dgr-turn" data-dir="-1" aria-label="Turn dial left">&lt;</button>' +
+      '<div class="dgr-dial-readout">CH <b class="dgr-dial-ch"></b></div>' +
+      '<button type="button" class="dgr-turn" data-dir="1" aria-label="Turn dial right">&gt;</button>' +
+      '</div></div>'
+    );
+  }
+  function positionTicks(container) {
+    var r = 38;
+    var n = CHANNELS.length;
+    Array.prototype.forEach.call(container.querySelectorAll('.dgr-tick'), function (el, i) {
+      var angle = (i * (360 / n) - 90) * Math.PI / 180;
+      el.style.left = 'calc(50% + ' + (r * Math.cos(angle)).toFixed(1) + 'px)';
+      el.style.top = 'calc(50% + ' + (r * Math.sin(angle)).toFixed(1) + 'px)';
+    });
+  }
+  function wireDial(container, initialCh, onChange) {
+    var idx = channelIndex(initialCh);
+    var knob = container.querySelector('.dgr-knob');
+    var readout = container.querySelector('.dgr-dial-ch');
+    var ticks = container.querySelectorAll('.dgr-tick');
+    positionTicks(container);
+    function render() {
+      knob.style.transform = 'rotate(' + (idx * (360 / CHANNELS.length)) + 'deg)';
+      readout.textContent = CHANNELS[idx];
+      Array.prototype.forEach.call(ticks, function (t) {
+        t.classList.toggle('active', t.getAttribute('data-ch') === CHANNELS[idx]);
+      });
+    }
+    render();
+    Array.prototype.forEach.call(container.querySelectorAll('.dgr-turn'), function (btn) {
+      btn.addEventListener('click', function () {
+        idx = (idx + parseInt(btn.getAttribute('data-dir'), 10) + CHANNELS.length) % CHANNELS.length;
+        render();
+        onChange(CHANNELS[idx]);
+      });
+    });
+    Array.prototype.forEach.call(ticks, function (t) {
+      t.addEventListener('click', function () {
+        idx = channelIndex(t.getAttribute('data-ch'));
+        render();
+        onChange(CHANNELS[idx]);
+      });
+    });
+    return { get: function () { return CHANNELS[idx]; } };
+  }
+
   var remembered = '';
   try { remembered = localStorage.getItem(CHANNEL_KEY) || ''; } catch (e) { /* best effort */ }
-  if (remembered) channelInput.value = remembered;
+  var currentChannel = CHANNELS[channelIndex(remembered)];
+
+  dialPanel.insertAdjacentHTML('beforeend', dialHtml());
+  wireDial(dialPanel, currentChannel, function (ch) {
+    currentChannel = ch;
+    try { localStorage.setItem(CHANNEL_KEY, ch); } catch (e) { /* best effort */ }
+    checkCurrent();
+  });
 
   function jsonpGet(action, params, cb) {
     var cbName = '_acellMusic_' + action + '_' + Date.now();
@@ -1004,22 +1278,19 @@
   }
 
   function checkCurrent() {
-    var ch = channelInput.value.trim();
-    if (!ch) { statusEl.textContent = ''; return; }
+    var ch = currentChannel;
     jsonpGet('get_now_playing', { channel: ch }, function (res) {
       if (res && res.status === 'OK' && res.track_url) {
-        statusEl.textContent = 'Currently broadcasting to "' + ch + '": ' + (res.track_title || res.track_url);
+        statusEl.textContent = 'Currently broadcasting to CH ' + ch + ': ' + (res.track_title || res.track_url);
       } else {
-        statusEl.textContent = 'Nothing currently broadcasting to "' + ch + '".';
+        statusEl.textContent = 'Nothing currently broadcasting to CH ' + ch + '.';
       }
     });
     loadPlaylist(ch);
   }
 
   function setNowPlaying(trackUrl, trackTitle) {
-    var ch = channelInput.value.trim();
-    if (!ch) { statusEl.textContent = 'Enter a channel name first.'; return; }
-    try { localStorage.setItem(CHANNEL_KEY, ch); } catch (e) { /* best effort */ }
+    var ch = currentChannel;
     statusEl.textContent = 'Saving…';
     fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors', keepalive: true,
@@ -1036,8 +1307,8 @@
       var live = res && res.status === 'OK' ? (res.track_url || '') : '';
       if (live === expectedUrl) {
         statusEl.textContent = expectedUrl
-          ? 'Broadcasting to "' + ch + '": ' + (expectedTitle || expectedUrl)
-          : 'Stopped broadcasting to "' + ch + '".';
+          ? 'Broadcasting to CH ' + ch + ': ' + (expectedTitle || expectedUrl)
+          : 'Stopped broadcasting to CH ' + ch + '.';
       } else {
         statusEl.textContent = NOT_DEPLOYED_MSG;
       }
@@ -1057,7 +1328,7 @@
       return '<div class="music-playlist-row">' +
         '<span class="mpr-title">' + escapeHtml(t.title || t.url) + '</span>' +
         '<span class="mpr-actions">' +
-        '<button type="button" class="paper-btn" data-play="' + i + '">&#9658; Play</button>' +
+        '<button type="button" class="paper-btn" data-play="' + i + '">Play</button>' +
         '<button type="button" class="paper-btn" data-remove="' + i + '">Remove</button>' +
         '</span></div>';
     }).join('');
@@ -1080,7 +1351,6 @@
   }
 
   function loadPlaylist(ch) {
-    if (!ch) { playlist = []; renderPlaylist(); return; }
     jsonpGet('get_playlist', { channel: ch }, function (res) {
       playlist = (res && res.status === 'OK' && Array.isArray(res.playlist)) ? res.playlist : [];
       renderPlaylist();
@@ -1088,8 +1358,7 @@
   }
 
   function savePlaylist() {
-    var ch = channelInput.value.trim();
-    if (!ch) return;
+    var ch = currentChannel;
     fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors', keepalive: true,
       headers: { 'Content-Type': 'text/plain' },
@@ -1112,7 +1381,186 @@
     statusEl.textContent = 'Added to playlist.';
   });
 
-  if (remembered) checkCurrent();
+  checkCurrent();
+})();
+</script>
+
+<script>
+/* ══════════════════════════════════════════════
+   ADMIN -- permanently delete an Agent from the Google Sheet: their
+   Characters row (character sheet) AND their Delta Green Briefs row
+   (Agent File / Cover ID submission). Gated behind two confirmations
+   so a stray click can't wipe an Agent -- first typing the Agent's
+   own name, then the A-Cell password. Both checks are client-side,
+   same "flavor gate, not real security" model as the A-Cell password
+   gate itself.
+
+   delete_character is a NEW backend action (acell-admin-delete-
+   addition.txt, handed over separately) -- like every other write in
+   this app it's a no-cors POST, so the client can't see whether it
+   actually landed; the row is only removed from view once a real
+   read-back (list_characters) confirms the Agent's code is gone.
+   ══════════════════════════════════════════════ */
+(function () {
+  "use strict";
+  var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
+  var ACELL_PASSWORD = 'MASTICATE';
+  var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm the delete. Check that the Admin addition (delete_character) is pasted into Apps Script and redeployed.';
+
+  var listEl = document.getElementById('admin-list');
+  var statusEl = document.getElementById('admin-status');
+  var refreshBtn = document.getElementById('admin-refresh-btn');
+  var refreshNote = document.getElementById('admin-refresh-note');
+  var agents = [];
+
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
+  }
+
+  function jsonpGet(action, params, cb) {
+    var cbName = '_acellAdmin_' + action + '_' + Date.now();
+    var timer = setTimeout(function () { delete window[cbName]; cb(null); }, 7000);
+    window[cbName] = function (res) {
+      clearTimeout(timer);
+      delete window[cbName];
+      var s = document.getElementById('s-' + cbName);
+      if (s) s.remove();
+      cb(res);
+    };
+    var s = document.createElement('script');
+    s.id = 's-' + cbName;
+    var qs = 'action=' + action + '&callback=' + cbName;
+    Object.keys(params || {}).forEach(function (k) { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
+    s.src = APPS_SCRIPT_URL + '?' + qs;
+    document.head.appendChild(s);
+  }
+
+  function fetchList(isRefresh) {
+    jsonpGet('list_characters', {}, function (res) {
+      if (!res || res.status !== 'OK' || !Array.isArray(res.characters)) {
+        listEl.innerHTML = '<div class="admin-error">Could not load the Agent list.</div>';
+        return;
+      }
+      agents = res.characters.map(function (c) {
+        var state = null;
+        try { state = JSON.parse(c.character_json); } catch (e) { /* skip unparsable rows */ }
+        return { code: c.agent_code, state: state };
+      }).filter(function (c) { return c.code && c.state; });
+      renderList();
+      if (isRefresh) refreshNote.textContent = 'Updated ' + new Date().toLocaleTimeString();
+    });
+  }
+
+  function renderList() {
+    if (!agents.length) {
+      listEl.innerHTML = '<div class="admin-error">No Agents on file yet.</div>';
+      return;
+    }
+    listEl.innerHTML = agents.map(function (a, i) {
+      var bio = a.state.bio || {};
+      var name = bio.name || 'Unknown Agent';
+      var meta = [a.code, bio.profession].filter(Boolean).map(escapeHtml).join(' &middot; ');
+      return '<div class="admin-row" data-i="' + i + '">' +
+        '<div class="admin-row-top">' +
+        '<div class="admin-row-info"><div class="name">' + escapeHtml(name) + '</div><div class="meta">' + meta + '</div></div>' +
+        '<button type="button" class="paper-btn admin-delete-btn" data-i="' + i + '">Delete</button>' +
+        '</div>' +
+        '<div class="admin-confirm-slot" id="admin-confirm-slot-' + i + '"></div>' +
+        '</div>';
+    }).join('');
+
+    Array.prototype.forEach.call(listEl.querySelectorAll('.admin-delete-btn'), function (btn) {
+      btn.addEventListener('click', function () { openConfirm(parseInt(btn.dataset.i, 10)); });
+    });
+  }
+
+  function openConfirm(i) {
+    var agent = agents[i];
+    var slot = document.getElementById('admin-confirm-slot-' + i);
+    if (!agent || !slot) return;
+    if (slot.childNodes.length) { slot.innerHTML = ''; return; } // toggle closed
+    renderStep1(slot, agent, i);
+  }
+
+  function renderStep1(slot, agent, i) {
+    var name = (agent.state.bio || {}).name || agent.code;
+    slot.innerHTML =
+      '<div class="admin-confirm">' +
+      '<p>Step 1 of 2 -- type this Agent\'s name (<b>' + escapeHtml(name) + '</b>) to continue:</p>' +
+      '<div class="admin-confirm-error" id="admin-err1-' + i + '"></div>' +
+      '<input type="text" id="admin-handler-input-' + i + '" placeholder="Agent name" autocomplete="off">' +
+      '<div class="admin-confirm-actions">' +
+      '<button type="button" class="paper-btn admin-delete-btn" id="admin-step1-btn-' + i + '">Continue</button>' +
+      '<button type="button" class="paper-btn" id="admin-cancel1-' + i + '">Cancel</button>' +
+      '</div></div>';
+    document.getElementById('admin-cancel1-' + i).addEventListener('click', function () { slot.innerHTML = ''; });
+    document.getElementById('admin-step1-btn-' + i).addEventListener('click', function () {
+      var input = document.getElementById('admin-handler-input-' + i);
+      var errEl = document.getElementById('admin-err1-' + i);
+      if (input.value.trim().toLowerCase() !== name.trim().toLowerCase()) {
+        errEl.textContent = 'That doesn\'t match this Agent\'s name -- check the spelling above.';
+        return;
+      }
+      renderStep2(slot, agent, i);
+    });
+  }
+
+  function renderStep2(slot, agent, i) {
+    var name = (agent.state.bio || {}).name || agent.code;
+    slot.innerHTML =
+      '<div class="admin-confirm">' +
+      '<p>Step 2 of 2 -- enter the A-Cell password to permanently delete <b>' + escapeHtml(name) + '</b>:</p>' +
+      '<div class="admin-confirm-error" id="admin-err2-' + i + '"></div>' +
+      '<input type="password" id="admin-pw-input-' + i + '" placeholder="A-Cell password" autocomplete="off">' +
+      '<div class="admin-confirm-actions">' +
+      '<button type="button" class="paper-btn admin-delete-btn" id="admin-step2-btn-' + i + '">Delete Permanently</button>' +
+      '<button type="button" class="paper-btn" id="admin-cancel2-' + i + '">Cancel</button>' +
+      '</div></div>';
+    document.getElementById('admin-cancel2-' + i).addEventListener('click', function () { slot.innerHTML = ''; });
+    document.getElementById('admin-step2-btn-' + i).addEventListener('click', function () {
+      var input = document.getElementById('admin-pw-input-' + i);
+      var errEl = document.getElementById('admin-err2-' + i);
+      if (input.value !== ACELL_PASSWORD) {
+        errEl.textContent = 'Wrong password.';
+        return;
+      }
+      doDelete(agent, i, slot);
+    });
+  }
+
+  function doDelete(agent, i, slot) {
+    slot.innerHTML = '<div class="admin-confirm"><p>Deleting…</p></div>';
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors', keepalive: true,
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'delete_character', agent_code: agent.code }),
+    }).then(function () {
+      setTimeout(function () { verifyDelete(agent, i, slot); }, 900);
+    }).catch(function () {
+      slot.innerHTML = '<div class="admin-confirm"><p class="admin-confirm-error">Could not reach the backend.</p></div>';
+    });
+  }
+
+  function verifyDelete(agent, i, slot) {
+    jsonpGet('list_characters', {}, function (res) {
+      var stillThere = res && res.status === 'OK' && Array.isArray(res.characters) &&
+        res.characters.some(function (c) { return c.agent_code === agent.code; });
+      if (stillThere) {
+        slot.innerHTML = '<div class="admin-confirm"><p class="admin-confirm-error">' + NOT_DEPLOYED_MSG + '</p></div>';
+        return;
+      }
+      var name = (agent.state.bio || {}).name || agent.code;
+      agents = agents.filter(function (a) { return a.code !== agent.code; });
+      statusEl.textContent = 'Deleted ' + name + '.';
+      renderList();
+    });
+  }
+
+  refreshBtn.addEventListener('click', function () { fetchList(true); });
+  fetchList(false);
 })();
 </script>
 

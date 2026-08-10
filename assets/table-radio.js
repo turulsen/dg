@@ -28,9 +28,17 @@
   var CHANNEL_KEY = 'dg_radio_channel';
   var MUTED_KEY = 'dg_radio_muted';
   var POLL_MS = 20000;
+  // Fixed numbered channels, picked by turning a dial rather than typing a
+  // name -- five slots, no typos, no two players landing on "sam" vs "Sam".
+  var CHANNELS = ['1', '2', '3', '4', '5'];
 
   var lastStartedAt = null;
   var pollTimer = null;
+
+  function channelIndex(ch) {
+    var i = CHANNELS.indexOf(ch);
+    return i === -1 ? 0 : i;
+  }
 
   function getChannel() {
     try { return localStorage.getItem(CHANNEL_KEY) || ''; } catch (e) { return ''; }
@@ -86,6 +94,40 @@
     'font-size:11px;letter-spacing:.05em;cursor:pointer;}',
     '#dg-radio-embed-wrap{display:none;margin-top:6px;}',
     '#dg-radio-embed-wrap iframe, #dg-radio-embed-wrap audio{width:100%;border:0;border-radius:4px;}',
+    /* ── channel dial: a rotary knob with 5 fixed positions, turned
+       instead of typed ── */
+    '.dgr-dial-wrap{text-align:center;padding:2px 0 8px;}',
+    '.dgr-dial{width:104px;height:104px;margin:0 auto 10px;position:relative;}',
+    '.dgr-dial-ring{',
+    'width:100%;height:100%;border-radius:50%;',
+    'background:radial-gradient(circle at 35% 30%,#2a3020,#12160d 70%);',
+    'border:2px solid #3a4432;position:relative;',
+    'box-shadow:inset 0 0 10px rgba(0,0,0,.6),0 2px 6px rgba(0,0,0,.5);}',
+    '.dgr-tick{',
+    'position:absolute;width:20px;height:20px;margin:-10px 0 0 -10px;',
+    'display:flex;align-items:center;justify-content:center;',
+    'font-size:11px;color:#7a8a68;cursor:pointer;}',
+    '.dgr-tick.active{color:#d8f0c0;font-weight:bold;}',
+    '.dgr-knob{',
+    'position:absolute;top:50%;left:50%;width:46px;height:46px;margin:-23px;',
+    'border-radius:50%;background:radial-gradient(circle at 35% 30%,#4a5a3a,#1c2214 75%);',
+    'border:1px solid #5a6a48;box-shadow:0 2px 4px rgba(0,0,0,.5);',
+    'transition:transform .25s ease;}',
+    '.dgr-pointer{',
+    'position:absolute;top:4px;left:50%;width:2px;height:14px;',
+    'background:#d8f0c0;margin-left:-1px;border-radius:1px;}',
+    '.dgr-dial-controls{display:flex;align-items:center;justify-content:center;gap:10px;}',
+    '.dgr-turn{',
+    'background:#20261a;border:1px solid #3a4432;color:#c9d4b8;border-radius:50%;',
+    'width:26px;height:26px;font-size:13px;cursor:pointer;line-height:1;padding:0;}',
+    '.dgr-turn:hover{border-color:#5a6a48;}',
+    '.dgr-dial-readout{font-size:12px;color:#e6ecd8;min-width:44px;}',
+    '.dgr-dial-readout b{color:#a8c890;}',
+    '.dgr-confirm{',
+    'display:block;width:100%;background:#2a3a1c;color:#d8f0c0;',
+    'border:1px solid #4a6a30;border-radius:4px;padding:7px;font-family:inherit;',
+    'font-size:11px;letter-spacing:.05em;cursor:pointer;margin-top:2px;}',
+    '.dgr-confirm:hover{border-color:#6a9a40;}',
   ].join('');
   document.head.appendChild(style);
 
@@ -93,12 +135,84 @@
   root.id = 'dg-radio';
   document.body.appendChild(root);
 
+  /* ── channel dial: 5 fixed positions on a rotary knob, turned instead
+     of typed -- a real channel name field let two players land on
+     "sam" vs "Sam" and never hear each other; a dial with a fixed set
+     of stops can't be mistyped. ── */
+  function dialHtml() {
+    var ticks = CHANNELS.map(function (c) {
+      return '<div class="dgr-tick" data-ch="' + c + '">' + c + '</div>';
+    }).join('');
+    return (
+      '<div class="dgr-dial-wrap">' +
+      '<div class="dgr-dial"><div class="dgr-dial-ring">' + ticks +
+      '<div class="dgr-knob"><div class="dgr-pointer"></div></div>' +
+      '</div></div>' +
+      '<div class="dgr-dial-controls">' +
+      '<button type="button" class="dgr-turn" data-dir="-1" aria-label="Turn dial left">&lt;</button>' +
+      '<div class="dgr-dial-readout">CH <b class="dgr-dial-ch"></b></div>' +
+      '<button type="button" class="dgr-turn" data-dir="1" aria-label="Turn dial right">&gt;</button>' +
+      '</div></div>'
+    );
+  }
+  function positionTicks(container) {
+    var r = 40;
+    var n = CHANNELS.length;
+    Array.prototype.forEach.call(container.querySelectorAll('.dgr-tick'), function (el, i) {
+      var angle = (i * (360 / n) - 90) * Math.PI / 180;
+      el.style.left = 'calc(50% + ' + (r * Math.cos(angle)).toFixed(1) + 'px)';
+      el.style.top = 'calc(50% + ' + (r * Math.sin(angle)).toFixed(1) + 'px)';
+    });
+  }
+  function wireDial(container, initialCh, onChange) {
+    var idx = channelIndex(initialCh);
+    var knob = container.querySelector('.dgr-knob');
+    var readout = container.querySelector('.dgr-dial-ch');
+    var ticks = container.querySelectorAll('.dgr-tick');
+    positionTicks(container);
+    function render() {
+      knob.style.transform = 'rotate(' + (idx * (360 / CHANNELS.length)) + 'deg)';
+      readout.textContent = CHANNELS[idx];
+      Array.prototype.forEach.call(ticks, function (t) {
+        t.classList.toggle('active', t.getAttribute('data-ch') === CHANNELS[idx]);
+      });
+    }
+    render();
+    Array.prototype.forEach.call(container.querySelectorAll('.dgr-turn'), function (btn) {
+      btn.addEventListener('click', function () {
+        idx = (idx + parseInt(btn.getAttribute('data-dir'), 10) + CHANNELS.length) % CHANNELS.length;
+        render();
+        onChange(CHANNELS[idx]);
+      });
+    });
+    Array.prototype.forEach.call(ticks, function (t) {
+      t.addEventListener('click', function () {
+        idx = channelIndex(t.getAttribute('data-ch'));
+        render();
+        onChange(CHANNELS[idx]);
+      });
+    });
+    return { get: function () { return CHANNELS[idx]; } };
+  }
+
   function renderCollapsed() {
-    root.innerHTML = '<div id="dg-radio-pill">&#127911; Tune In</div>';
-    document.getElementById('dg-radio-pill').addEventListener('click', function () {
-      var ch = (prompt('Channel name (ask your Handler):') || '').trim();
-      if (!ch) return;
-      setChannel(ch);
+    root.innerHTML = '<div id="dg-radio-pill">Tune In</div>';
+    document.getElementById('dg-radio-pill').addEventListener('click', renderChoosing);
+  }
+
+  function renderChoosing() {
+    root.innerHTML =
+      '<div id="dg-radio-panel">' +
+      '<div class="dgr-head"><span><b>Tune In</b></span>' +
+      '<span><button type="button" class="dgr-btn" id="dg-radio-cancel">X</button></span></div>' +
+      dialHtml() +
+      '<button type="button" id="dg-radio-confirm-tune" class="dgr-confirm">Tune In</button>' +
+      '</div>';
+    var panel = document.getElementById('dg-radio-panel');
+    var dial = wireDial(panel, getChannel() || CHANNELS[0], function () { /* live-preview only, commit on confirm */ });
+    document.getElementById('dg-radio-cancel').addEventListener('click', renderCollapsed);
+    document.getElementById('dg-radio-confirm-tune').addEventListener('click', function () {
+      setChannel(dial.get());
       lastStartedAt = null;
       renderTuned();
       startPolling();
@@ -109,13 +223,14 @@
     var ch = getChannel();
     root.innerHTML =
       '<div id="dg-radio-panel">' +
-      '<div class="dgr-head"><span>&#127911; <b>' + escapeHtml(ch) + '</b></span>' +
-      '<span><button type="button" class="dgr-btn" id="dg-radio-mute">' + (isMuted() ? '&#128263;' : '&#128266;') + '</button> ' +
+      '<div class="dgr-head"><span><b id="dg-radio-ch-label">CH ' + escapeHtml(ch) + '</b></span>' +
+      '<span><button type="button" class="dgr-btn" id="dg-radio-mute">' + (isMuted() ? 'MUTED' : 'SOUND') + '</button> ' +
       '<button type="button" class="dgr-btn" id="dg-radio-change">Channel</button> ' +
-      '<button type="button" class="dgr-btn" id="dg-radio-leave">&times;</button></span></div>' +
+      '<button type="button" class="dgr-btn" id="dg-radio-leave">X</button></span></div>' +
+      '<div id="dg-radio-dial-slot"></div>' +
       '<div id="dg-radio-track">No signal yet.</div>' +
       '<div id="dg-radio-status">Waiting for the Handler…</div>' +
-      '<button type="button" id="dg-radio-resume">&#9658; Tap to resume audio</button>' +
+      '<button type="button" id="dg-radio-resume">Tap to resume audio</button>' +
       '<div id="dg-radio-embed-wrap"></div>' +
       '</div>';
 
@@ -124,12 +239,21 @@
       renderEmbed(window._dgRadioLast);
     });
     document.getElementById('dg-radio-change').addEventListener('click', function () {
-      var next = (prompt('Channel name:', ch) || '').trim();
-      if (!next || next === ch) return;
-      setChannel(next);
-      lastStartedAt = null;
-      window._dgRadioLast = null;
-      renderTuned();
+      var slot = document.getElementById('dg-radio-dial-slot');
+      if (slot.childNodes.length) { slot.innerHTML = ''; return; }
+      slot.innerHTML = dialHtml();
+      wireDial(slot, ch, function (newCh) {
+        if (newCh === ch) return;
+        setChannel(newCh);
+        ch = newCh;
+        lastStartedAt = null;
+        window._dgRadioLast = null;
+        document.getElementById('dg-radio-ch-label').textContent = 'CH ' + newCh;
+        document.getElementById('dg-radio-track').textContent = 'No signal yet.';
+        document.getElementById('dg-radio-status').textContent = 'Waiting for the Handler…';
+        renderEmbed(null);
+        startPolling();
+      });
     });
     document.getElementById('dg-radio-leave').addEventListener('click', function () {
       stopPolling();
@@ -155,7 +279,7 @@
     var resumeBtn = document.getElementById('dg-radio-resume');
     var muteBtn = document.getElementById('dg-radio-mute');
     if (!wrap) return; // panel not on screen (e.g. collapsed)
-    if (muteBtn) muteBtn.innerHTML = isMuted() ? '&#128263;' : '&#128266;';
+    if (muteBtn) muteBtn.textContent = isMuted() ? 'MUTED' : 'SOUND';
 
     if (!np || !np.track_url) {
       wrap.style.display = 'none';

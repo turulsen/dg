@@ -68,6 +68,24 @@ def skip_acell_gate(page):
     specifically exercising the gate itself should pre-seed past it."""
     page.add_init_script("try { sessionStorage.setItem('dg_acell_unlocked', '1'); } catch (e) {}")
 
+def wait_for_condition(fn, timeout_ms=25000, interval_ms=200):
+    """Polls fn() every interval_ms until it returns truthy or timeout_ms
+    elapses -- for assertions after a no-cors POST + read-back-to-verify
+    round trip (like every Apps Script write in this app), where a fixed
+    sleep either wastes time on the common case or, under system load,
+    isn't long enough and produces a flaky false failure. Returns the
+    last (falsy) result if it times out, so callers can still report
+    what they actually saw."""
+    import time
+    deadline = time.monotonic() + timeout_ms / 1000
+    result = None
+    while time.monotonic() < deadline:
+        result = fn()
+        if result:
+            return result
+        time.sleep(interval_ms / 1000)
+    return result
+
 def collect_errors(page):
     errs = []
     page.on("pageerror", lambda e: errs.append(f"pageerror: {e}"))
@@ -1230,7 +1248,7 @@ def test_acell_play(p):
            "Paranoia" in dossier_text, "")
     adapt = page.eval_on_selector_all("#play-view .pv-adapt-boxes", "els => els.map(e=>e.textContent.trim())")
     record("acell", "dossier dropdown shows Violence/Helplessness adaptation as checked/unchecked boxes",
-           len(adapt) == 2 and adapt[0].count('▣') == 2 and adapt[0].count('□') == 1, str(adapt))
+           len(adapt) == 2 and adapt[0].count('[X]') == 2 and adapt[0].count('[ ]') == 1, str(adapt))
     record("acell", "sticky header shows the Player Name so the Handler knows who made this Agent",
            "Gergo P" in page.inner_text("#play-view .pv-player"), "")
 
@@ -1256,53 +1274,54 @@ def test_acell_play(p):
     return errs
 
 def test_acell_cells(p):
-    """a-cell.html's Cells section: the same cross-player Agent roster
-    as Play, but organized -- each row gets inline Handler/Operation
-    tag inputs (a new update_character_field Apps Script action, part
-    of acell-cells-tagging-addition.txt handed over separately), and
-    two filter dropdowns built from whatever tags are currently on the
-    roster. Editing a tag debounces a save and the filter dropdowns
-    pick up the new value without a reload."""
+    """a-cell.html's Cells tab: real named Cell groups (a Handler + a
+    set of member Agents picked from the full roster), not a per-Agent
+    text tag -- backed by new list_cells/create_cell/update_cell_members
+    actions (acell-cell-groups-addition.txt, handed over separately).
+    One Agent can belong to more than one Cell; an Agent in none shows
+    up under "Unassigned Agents". Like every other write in this app,
+    create_cell/update_cell_members are no-cors POSTs verified by a
+    real list_cells read-back before the UI shows the change."""
     page = p.new_page()
-    page.set_default_timeout(8000)
+    page.set_default_timeout(30000)
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     skip_acell_gate(page)
 
     fake_characters = [
-        {
-            "agent_code": "OWEN-CS12",
-            "character_json": json.dumps({"bio": {"name": "Owen Castillo", "profession": "Federal Agent", "player_name": "Gergo P"}}),
-            "handler": "Sam",
-            "operation": "OPERATION MOONLIGHT",
-        },
-        {
-            "agent_code": "PRIY-AN34",
-            "character_json": json.dumps({"bio": {"name": "Priya Anand", "profession": "Forensic Accountant"}}),
-            "handler": "Sam",
-            "operation": "",
-        },
-        {
-            "agent_code": "MARC-9XQ2",
-            "character_json": json.dumps({"bio": {"name": "Marcus Reyes", "profession": "Pilot"}}),
-            "handler": "Jo",
-            "operation": "OPERATION MOONLIGHT",
-        },
+        {"agent_code": "OWEN-CS12",
+         "character_json": json.dumps({"bio": {"name": "Owen Castillo", "profession": "Federal Agent"}})},
+        {"agent_code": "PRIY-AN34",
+         "character_json": json.dumps({"bio": {"name": "Priya Anand", "profession": "Forensic Accountant"}})},
+        {"agent_code": "MARC-9XQ2",
+         "character_json": json.dumps({"bio": {"name": "Marcus Reyes", "profession": "Pilot"}})},
     ]
-    posts = []
+    cells_state = []
 
     def fake_apps_script(route):
         req = route.request
         if req.method == "POST":
-            posts.append(json.loads(req.post_data or "{}"))
+            body = json.loads(req.post_data or "{}")
+            if body.get("action") == "create_cell":
+                cell_id = "cell_" + str(len(cells_state) + 1)
+                cells_state.append({"cell_id": cell_id, "name": body.get("name"), "handler": body.get("handler", ""), "member_codes": []})
+            elif body.get("action") == "update_cell_members":
+                for c in cells_state:
+                    if c["cell_id"] == body.get("cell_id"):
+                        c["member_codes"] = body.get("member_codes", [])
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         url = req.url
-        if "action=list_characters" in url and "callback=" in url:
+        if "callback=" in url:
             cb = url.split("callback=")[1].split("&")[0]
-            body = f'{cb}({json.dumps({"status": "OK", "characters": fake_characters})})'
-            route.fulfill(status=200, content_type="application/javascript", body=body)
+            if "action=list_characters" in url:
+                res = {"status": "OK", "characters": fake_characters}
+            elif "action=list_cells" in url:
+                res = {"status": "OK", "cells": cells_state}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
         else:
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", fake_apps_script)
@@ -1311,55 +1330,79 @@ def test_acell_cells(p):
     page.wait_for_timeout(500)
     # Cells lives behind its own folder tab now (Play is active by default).
     page.click('.tw[data-tab="cells"]')
-    page.wait_for_timeout(100)
+    page.wait_for_timeout(500)
 
-    names = page.eval_on_selector_all("#cells-list .cells-info .name", "els => els.map(e=>e.textContent)")
-    record("acell", "Cells lists every Agent on file",
-           names == ["Owen Castillo", "Priya Anand", "Marcus Reyes"], str(names))
-    cells_text = page.inner_text("#cells-list")
-    record("acell", "Cells shows the Player Name for an Agent that has one",
-           "Gergo P" in cells_text, "")
-    record("acell", "Cells shows a clear 'not set' for an Agent with no Player Name yet",
-           "not set" in cells_text, "")
+    record("acell", "Cells starts empty with a prompt to create one",
+           "No Cells yet" in page.inner_text("#cells-groups"), "")
+    unassigned = page.inner_text("#cells-unassigned")
+    record("acell", "every Agent on file starts out Unassigned",
+           "Owen Castillo" in unassigned and "Priya Anand" in unassigned and "Marcus Reyes" in unassigned, unassigned)
 
-    handler_opts = page.eval_on_selector_all("#cells-filter-handler option", "els => els.map(e=>e.value)")
-    operation_opts = page.eval_on_selector_all("#cells-filter-operation option", "els => els.map(e=>e.value)")
-    record("acell", "Handler filter is built from the roster's existing tags",
-           handler_opts == ["", "Jo", "Sam"], str(handler_opts))
-    record("acell", "Operation filter is built from the roster's existing tags (blank tags excluded)",
-           operation_opts == ["", "OPERATION MOONLIGHT"], str(operation_opts))
+    # Create a Cell. Polls for the confirmed state instead of a fixed
+    # sleep -- create_cell is a no-cors POST verified by a list_cells
+    # read-back 900ms later, and under system load that round trip can
+    # take longer than any one fixed wait, so poll up to a generous cap
+    # rather than risk a flaky false failure (or wasting time when it's
+    # fast).
+    page.click("#cells-create-btn")
+    page.wait_for_timeout(150)
+    page.fill("#cells-new-name", "Cell Alpha")
+    page.fill("#cells-new-handler", "Sam")
+    page.click("#cells-new-confirm")
+    groups_text = wait_for_condition(lambda: page.inner_text("#cells-groups")
+                                      if "Cell Alpha" in page.inner_text("#cells-groups") else None)
+    record("acell", "creating a Cell shows it with its name and Handler once the backend confirms it",
+           bool(groups_text) and "Cell Alpha" in groups_text and "Sam" in groups_text, groups_text or "")
 
-    page.select_option("#cells-filter-handler", "Sam")
-    page.wait_for_timeout(100)
-    visible_names = page.eval_on_selector_all(
-        "#cells-list .cells-row:not(.cells-row-hidden) .cells-info .name", "els => els.map(e=>e.textContent)")
-    record("acell", "filtering by Handler shows only that Handler's Agents",
-           visible_names == ["Owen Castillo", "Priya Anand"], str(visible_names))
-    page.select_option("#cells-filter-handler", "")
+    # Add Owen to Cell Alpha. Checks are scoped to .cell-members (the
+    # actual member list), not the whole .cell-card -- that card also
+    # contains the "Add an Agent" dropdown, whose <option> list
+    # includes every NOT-yet-added Agent's name, so a plain "is Owen's
+    # name anywhere in this card" check is already true before the add
+    # even happens (he's sitting right there as an unselected option).
+    def alpha_members():
+        return page.inner_text('.cell-card[data-i="0"] .cell-members')
+    alpha_text = wait_for_condition(lambda: alpha_members() if "Owen Castillo" in alpha_members() else None)
+    record("acell", "adding an Agent to a Cell shows them as a member once confirmed",
+           bool(alpha_text) and "Owen Castillo" in alpha_text, alpha_text or "")
+    record("acell", "an Agent added to a Cell no longer shows as Unassigned",
+           "Owen Castillo" not in page.inner_text("#cells-unassigned"), "")
 
-    # Editing a tag inline saves via update_character_field, debounced.
-    op_input = page.locator("#cells-list .cells-row:nth-child(2) .cells-operation-input")
-    op_input.fill("OPERATION NIGHTGLASS")
-    page.wait_for_timeout(1200)
-    matching_posts = [p_ for p_ in posts if p_.get("action") == "update_character_field"
-                       and p_.get("agent_code") == "PRIY-AN34" and p_.get("field") == "operation"]
-    record("acell", "editing a tag inline saves via update_character_field with the right agent/field/value",
-           len(matching_posts) == 1 and matching_posts[0].get("value") == "OPERATION NIGHTGLASS", str(matching_posts))
+    # Create a second Cell and add the SAME Agent to it too (one Agent, two Cells).
+    page.click("#cells-create-btn")
+    page.wait_for_timeout(150)
+    page.fill("#cells-new-name", "Cell Bravo")
+    page.fill("#cells-new-handler", "Jo")
+    page.click("#cells-new-confirm")
+    wait_for_condition(lambda: page.locator('.cell-card[data-i="1"]').count() > 0)
+    page.select_option('[data-add-select="1"]', "OWEN-CS12")
+    page.click('[data-add-btn="1"]')
+    def bravo_members():
+        return page.inner_text('.cell-card[data-i="1"] .cell-members')
+    wait_for_condition(lambda: "Owen Castillo" in bravo_members())
+    record("acell", "one Agent can belong to more than one Cell at once",
+           "Owen Castillo" in alpha_members() and "Owen Castillo" in bravo_members(), "")
 
-    operation_opts_after = page.eval_on_selector_all("#cells-filter-operation option", "els => els.map(e=>e.value)")
-    record("acell", "a newly-typed tag becomes filterable without a reload",
-           "OPERATION NIGHTGLASS" in operation_opts_after, str(operation_opts_after))
+    # Remove Owen from Cell Alpha -- he should still show in Cell Bravo,
+    # and still not be Unassigned (Bravo still has him).
+    page.click('.cell-card[data-i="0"] button[data-remove-agent="OWEN-CS12"]')
+    wait_for_condition(lambda: "Owen Castillo" not in alpha_members())
+    record("acell", "removing an Agent from one Cell doesn't remove them from a different Cell",
+           "Owen Castillo" not in alpha_members() and "Owen Castillo" in bravo_members(), "")
+    record("acell", "an Agent still in at least one Cell is still not Unassigned",
+           "Owen Castillo" not in page.inner_text("#cells-unassigned"), "")
 
     page.close()
     return errs
 
 def test_acell_sheet(p):
     """a-cell.html's Sheet tab: a dense, spreadsheet-style read-only
-    roster table -- Cell (Operation), Handler, Agent Name, Player Name,
-    HP, SAN, and a rough Online presence indicator derived from how
-    recently Cloud Save last pushed for that Agent (updated_at). Same
-    list_characters data Play and Cells already use, just laid out as
-    table rows for scanning the whole roster at once."""
+    roster table -- Cell, Handler, Agent Name, Player Name, HP, SAN,
+    and a rough Online presence indicator derived from how recently
+    Cloud Save last pushed for that Agent (updated_at). Cell/Handler
+    now come from real Cell group membership (list_cells) -- an Agent
+    in a Cell shows that Cell's name/Handler, one not in any Cell
+    shows the same empty-cell dash as any other missing value."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -1372,13 +1415,16 @@ def test_acell_sheet(p):
         {"agent_code": "OWEN-CS12",
          "character_json": json.dumps({"bio": {"name": "Owen Castillo", "player_name": "Gergo P"},
                                         "derived": {"hp": 13, "san": 50}}),
-         "handler": "Sam", "operation": "OPERATION MOONLIGHT", "updated_at": now_ms},
+         "updated_at": now_ms},
         {"agent_code": "PRIY-AN34",
          "character_json": json.dumps({"bio": {"name": "Priya Anand"}, "derived": {"hp": 9, "san": 65}}),
-         "handler": "Sam", "operation": "", "updated_at": now_ms - 20 * 60 * 1000},
+         "updated_at": now_ms - 20 * 60 * 1000},
         {"agent_code": "MARC-9XQ2",
          "character_json": json.dumps({"bio": {"name": "Marcus Reyes"}, "derived": {"hp": 11, "san": 40}}),
-         "handler": "Jo", "operation": "", "updated_at": now_ms - 2 * 60 * 60 * 1000},
+         "updated_at": now_ms - 2 * 60 * 60 * 1000},
+    ]
+    fake_cells = [
+        {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12", "PRIY-AN34"]},
     ]
 
     def fake_apps_script(route):
@@ -1387,10 +1433,15 @@ def test_acell_sheet(p):
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         url = req.url
-        if "action=list_characters" in url and "callback=" in url:
+        if "callback=" in url:
             cb = url.split("callback=")[1].split("&")[0]
-            body = f'{cb}({json.dumps({"status": "OK", "characters": fake_characters})})'
-            route.fulfill(status=200, content_type="application/javascript", body=body)
+            if "action=list_characters" in url:
+                res = {"status": "OK", "characters": fake_characters}
+            elif "action=list_cells" in url:
+                res = {"status": "OK", "cells": fake_cells}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
         else:
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", fake_apps_script)
@@ -1399,7 +1450,7 @@ def test_acell_sheet(p):
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(400)
     page.click('.tw[data-tab="sheet"]')
-    page.wait_for_timeout(400)
+    page.wait_for_timeout(600)
 
     headers = page.eval_on_selector_all("#sheet-wrap th", "els => els.map(e=>e.textContent)")
     record("acell", "Sheet table has the requested columns in order",
@@ -1408,11 +1459,14 @@ def test_acell_sheet(p):
     row_texts = page.eval_on_selector_all("#sheet-wrap tbody tr", "els => els.map(e=>e.textContent)")
     record("acell", "Sheet lists every Agent on file as a table row",
            len(row_texts) == 3, str(row_texts))
-    record("acell", "a row shows the Agent name, player name, HP, and SAN together",
-           "Owen Castillo" in row_texts[0] and "Gergo P" in row_texts[0]
+    record("acell", "a row shows the Agent's Cell, Handler, player name, HP, and SAN together",
+           "Cell Alpha" in row_texts[0] and "Sam" in row_texts[0]
+           and "Owen Castillo" in row_texts[0] and "Gergo P" in row_texts[0]
            and "13" in row_texts[0] and "50" in row_texts[0], row_texts[0])
-    record("acell", "an Agent with no Player Name shows a clear placeholder, not blank",
-           "—" in row_texts[1], row_texts[1])
+    record("acell", "a different Agent in the same Cell shows that Cell too",
+           "Cell Alpha" in row_texts[1] and "Sam" in row_texts[1], row_texts[1])
+    record("acell", "an Agent in no Cell shows a clear placeholder, not blank",
+           "—" in row_texts[2], row_texts[2])
 
     dots = page.eval_on_selector_all("#sheet-wrap .sheet-dot", "els => els.map(e=>e.className)")
     record("acell", "Online status reflects how recently each Agent's sheet last synced (just now / 20 min ago / 2 hours ago)",
@@ -1474,27 +1528,36 @@ def test_acell_music(p):
     page.click('.tw[data-tab="music"]')
     page.wait_for_timeout(150)
 
-    page.fill("#music-channel-input", "SAM")
+    record("acell", "the channel dial defaults to channel 1 (no free-text channel field anymore)",
+           page.eval_on_selector("#music-dial-panel .dgr-dial-ch", "el => el.textContent") == "1", "")
+    # Turn the dial to channel 2 -- the same rotary control as the
+    # player-facing widget, not a typed name (which let two players land
+    # on "sam" vs "Sam" and never hear each other).
+    page.click('#music-dial-panel .dgr-turn[data-dir="1"]')
+    page.wait_for_timeout(100)
+    record("acell", "turning the dial's right button advances to channel 2",
+           page.eval_on_selector("#music-dial-panel .dgr-dial-ch", "el => el.textContent") == "2", "")
+
     page.fill("#music-url-input", "https://youtube.com/watch?v=dQw4w9WgXcQ")
     page.fill("#music-title-input", "Table Theme")
     page.click("#music-set-btn")
     page.wait_for_timeout(1500)
 
     set_posts = [p_ for p_ in posts if p_.get("action") == "set_now_playing"]
-    record("acell", "Set Now Playing posts the channel, track URL, and title",
-           len(set_posts) == 1 and set_posts[0].get("channel") == "SAM"
+    record("acell", "Set Now Playing posts the dialed channel, track URL, and title",
+           len(set_posts) == 1 and set_posts[0].get("channel") == "2"
            and set_posts[0].get("track_url") == "https://youtube.com/watch?v=dQw4w9WgXcQ"
            and set_posts[0].get("track_title") == "Table Theme", str(set_posts))
     record("acell", "status line confirms broadcasting only after a real read-back (get_now_playing) verifies it",
-           "SAM" in page.inner_text("#music-status") and "Table Theme" in page.inner_text("#music-status"), page.inner_text("#music-status"))
-    record("acell", "the broadcast channel is remembered for next time",
-           page.evaluate("() => localStorage.getItem('dg_acell_broadcast_channel')") == "SAM", "")
+           "CH 2" in page.inner_text("#music-status") and "Table Theme" in page.inner_text("#music-status"), page.inner_text("#music-status"))
+    record("acell", "the dialed channel is remembered for next time",
+           page.evaluate("() => localStorage.getItem('dg_acell_broadcast_channel')") == "2", "")
 
     page.click("#music-stop-btn")
     page.wait_for_timeout(1500)
     stop_posts = [p_ for p_ in posts if p_.get("action") == "set_now_playing" and p_.get("track_url") == ""]
     record("acell", "Stop posts set_now_playing with an empty track_url for the same channel",
-           len(stop_posts) == 1 and stop_posts[0].get("channel") == "SAM", str(stop_posts))
+           len(stop_posts) == 1 and stop_posts[0].get("channel") == "2", str(stop_posts))
     record("acell", "status line confirms broadcasting stopped",
            "Stopped" in page.inner_text("#music-status"), "")
 
@@ -1550,7 +1613,6 @@ def test_acell_music_backend_not_deployed(p):
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.click('.tw[data-tab="music"]')
     page.wait_for_timeout(150)
-    page.fill("#music-channel-input", "SAM")
     page.fill("#music-url-input", "https://youtube.com/watch?v=dQw4w9WgXcQ")
     page.click("#music-set-btn")
     page.wait_for_timeout(1500)
@@ -1558,6 +1620,101 @@ def test_acell_music_backend_not_deployed(p):
     status = page.inner_text("#music-status")
     record("acell", "an undeployed backend is reported honestly, not as a false 'Broadcasting' success",
            "Broadcasting" not in status and ("confirm" in status.lower() or "deploy" in status.lower()), status)
+
+    page.close()
+    return errs
+
+def test_acell_admin(p):
+    """a-cell.html's Admin tab: permanently deletes an Agent (Characters
+    row + Delta Green Briefs row) via a new delete_character action,
+    gated behind two client-side confirmations -- typing the Agent's
+    own name, then the A-Cell password (MASTICATE) -- so a stray click
+    can't wipe an Agent. Like every other write in this app,
+    delete_character is a no-cors POST, so the row is only removed
+    from view once a real read-back (list_characters) confirms the
+    Agent's code is actually gone."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    skip_acell_gate(page)
+
+    characters = [
+        {"agent_code": "OWEN-CS12",
+         "character_json": json.dumps({"bio": {"name": "Owen Castillo", "profession": "soldier"}}),
+         "updated_at": 1700000000000},
+        {"agent_code": "PRIY-AN34",
+         "character_json": json.dumps({"bio": {"name": "Priya Anand"}}),
+         "updated_at": 1700000000000},
+    ]
+    posts = []
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            body = json.loads(req.post_data or "{}")
+            posts.append(body)
+            if body.get("action") == "delete_character":
+                characters[:] = [c for c in characters if c["agent_code"] != body.get("agent_code")]
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=list_characters" in url:
+                res = {"status": "OK", "characters": characters}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.click('.tw[data-tab="admin"]')
+    page.wait_for_timeout(400)
+
+    record("acell", "Admin lists every Agent on file",
+           page.locator("#admin-list .admin-row").count() == 2, "")
+
+    owen_row = page.locator('.admin-row:has-text("Owen Castillo")')
+    owen_row.locator(".admin-delete-btn").click()
+    page.wait_for_timeout(150)
+
+    owen_row.locator('input[id^="admin-handler-input-"]').fill("Wrong Name")
+    owen_row.locator('button[id^="admin-step1-btn-"]').click()
+    page.wait_for_timeout(150)
+    record("acell", "step 1 rejects a name that doesn't match the Agent's own name",
+           owen_row.locator('[id^="admin-err1-"]').inner_text() != "", "")
+    record("acell", "no delete was sent while step 1 is still unconfirmed",
+           len(posts) == 0, str(posts))
+
+    owen_row.locator('input[id^="admin-handler-input-"]').fill("owen castillo")
+    owen_row.locator('button[id^="admin-step1-btn-"]').click()
+    page.wait_for_timeout(150)
+    record("acell", "step 1 accepts the Agent's own name case-insensitively and advances to step 2",
+           owen_row.locator('input[id^="admin-pw-input-"]').count() == 1, "")
+
+    owen_row.locator('input[id^="admin-pw-input-"]').fill("wrong")
+    owen_row.locator('button[id^="admin-step2-btn-"]').click()
+    page.wait_for_timeout(150)
+    record("acell", "step 2 rejects the wrong A-Cell password",
+           owen_row.locator('[id^="admin-err2-"]').inner_text() != "", "")
+    record("acell", "no delete was sent while step 2 is still unconfirmed",
+           len(posts) == 0, str(posts))
+
+    owen_row.locator('input[id^="admin-pw-input-"]').fill("MASTICATE")
+    owen_row.locator('button[id^="admin-step2-btn-"]').click()
+    page.wait_for_timeout(1500)
+
+    delete_posts = [p_ for p_ in posts if p_.get("action") == "delete_character"]
+    record("acell", "the correct password sends delete_character for the right Agent",
+           len(delete_posts) == 1 and delete_posts[0].get("agent_code") == "OWEN-CS12", str(delete_posts))
+    record("acell", "the deleted Agent's row disappears only after a real read-back confirms it's gone",
+           "Deleted Owen Castillo" in page.inner_text("#admin-status")
+           and page.locator("#admin-list .admin-row").count() == 1
+           and "Priya Anand" in page.inner_text("#admin-list"), "")
 
     page.close()
     return errs
@@ -1600,13 +1757,24 @@ def test_table_radio_widget(p):
     record("radio", "shows a collapsed 'Tune In' pill when no channel is set",
            page.is_visible("#dg-radio-pill"), "")
 
-    page.on("dialog", lambda d: d.accept("SAM"))
+    # Tuning in now turns a 5-position dial instead of typing a channel
+    # name into a prompt() -- click the pill to open the dial, click
+    # channel 3's tick directly (one of the two ways to move the dial,
+    # along with the turn buttons), then confirm.
     page.click("#dg-radio-pill")
+    page.wait_for_timeout(200)
+    record("radio", "clicking Tune In opens a channel dial instead of a text prompt",
+           page.is_visible('.dgr-dial-ring'), "")
+    page.click('.dgr-tick[data-ch="3"]')
+    page.wait_for_timeout(100)
+    record("radio", "clicking a tick on the dial selects that channel",
+           page.eval_on_selector(".dgr-dial-ch", "el => el.textContent") == "3", "")
+    page.click("#dg-radio-confirm-tune")
     page.wait_for_timeout(600)
-    record("radio", "tuning in shows the tuned panel with the channel name",
-           page.is_visible("#dg-radio-panel") and "SAM" in page.inner_text("#dg-radio-panel"), "")
-    record("radio", "the channel is remembered in localStorage",
-           page.evaluate("() => localStorage.getItem('dg_radio_channel')") == "SAM", "")
+    record("radio", "confirming tune-in shows the tuned panel with the dialed channel",
+           page.is_visible("#dg-radio-panel") and "CH 3" in page.inner_text("#dg-radio-panel"), "")
+    record("radio", "the dialed channel is remembered in localStorage",
+           page.evaluate("() => localStorage.getItem('dg_radio_channel')") == "3", "")
     record("radio", "the current track title is shown",
            "Table Theme" in page.eval_on_selector("#dg-radio-track", "el => el.textContent"), "")
     record("radio", "a YouTube embed is created for the current track",
@@ -1617,7 +1785,18 @@ def test_table_radio_widget(p):
     page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(600)
     record("radio", "the widget is present and still tuned to the same channel after navigating to a different page",
-           page.is_visible("#dg-radio-panel") and "SAM" in page.inner_text("#dg-radio-panel"), "")
+           page.is_visible("#dg-radio-panel") and "CH 3" in page.inner_text("#dg-radio-panel"), "")
+
+    # The "Channel" button re-opens the dial inline so a listener can
+    # re-tune to a different channel without leaving and re-choosing --
+    # turning it (via the turn-right button this time) switches live.
+    page.click("#dg-radio-change")
+    page.wait_for_timeout(150)
+    page.click('.dgr-turn[data-dir="1"]')
+    page.wait_for_timeout(150)
+    record("radio", "turning the dial on an already-tuned panel re-tunes to the next channel",
+           page.evaluate("() => localStorage.getItem('dg_radio_channel')") == "4"
+           and "CH 4" in page.inner_text("#dg-radio-panel"), "")
 
     # Leaving the channel collapses back to the Tune In pill.
     page.click("#dg-radio-leave")
@@ -1723,7 +1902,20 @@ def test_stats_recruit_flow_on_missing_character(p):
     instead wipes the stale sheet, adopts the requested code so the
     first save syncs correctly, pre-fills the name from the Agent File
     if known, and opens the Character Creation Wizard instead of Live
-    Play."""
+    Play.
+
+    Second bug fix (data loss report): a NOT_FOUND here can be wrong --
+    a flaky lookup, or an Agent whose real sheet just hasn't synced from
+    this device -- and once the wipe+adopt runs, every debounced
+    auto-save from that point silently overwrites the REAL Characters-
+    sheet row for that code as the wizard is filled in, with no undo.
+    A real Handler hit exactly this: an Agent with an existing sheet
+    showed "Recruit", and going through Character Creation partially
+    overwrote the real character (bonds/equipment updated, stats reset
+    to defaults) before they'd even finished. startRecruitFlow() now
+    requires an explicit confirm() before doing anything destructive --
+    this test accepts that dialog to exercise the proceed path; a
+    second test below exercises Cancel."""
     page = p.new_page()
     page.set_default_timeout(10000)
     errs = collect_errors(page)
@@ -1752,8 +1944,18 @@ def test_stats_recruit_flow_on_missing_character(p):
                            body=f'{cb}({json.dumps({"status": "OK", "data": {"char_name": "Dani Uribe"}})})')
     page.route("**/script.google.com/**", fake_apps_script)
 
+    dialog_messages = []
+    def handle_dialog(d):
+        dialog_messages.append(d.message)
+        d.accept()
+    page.on("dialog", handle_dialog)
+
     page.goto(f"{BASE}/stats/index.html?load=DANI-U8BM&theme=field-doc", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(1500)
+
+    record("stats-terminal", "a not-found Play link warns before overwriting, in case the Agent's real sheet just hasn't synced",
+           len(dialog_messages) == 1 and "DANI-U8BM" in dialog_messages[0] and "overwrite" in dialog_messages[0].lower(),
+           str(dialog_messages))
 
     name_val = page.eval_on_selector("#cs-name", "el => el.value")
     record("stats-terminal", "a not-found Play link does not leave the previous Agent's name on screen",
@@ -1764,6 +1966,43 @@ def test_stats_recruit_flow_on_missing_character(p):
            page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')") == "DANI-U8BM", "")
     record("stats-terminal", "the Character Creation Wizard opens instead of jumping to Live Play",
            page.query_selector("#wiz-outer") is not None, "")
+
+    page.close()
+    return errs
+
+def test_stats_recruit_flow_cancel_protects_existing_character(p):
+    """The other half of the confirm() gate above: if the Handler/player
+    chooses Cancel (because they're not sure the Agent's sheet really is
+    missing), startRecruitFlow() must NOT wipe the local sheet or adopt
+    the Agent Code for Cloud Save -- doing either would still risk the
+    next auto-save clobbering a real character even without the wizard
+    ever opening."""
+    page = p.new_page()
+    page.set_default_timeout(10000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    def fake_apps_script(route):
+        url = route.request.url
+        if "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        route.fulfill(status=200, content_type="application/javascript",
+                       body=f'{cb}({json.dumps({"status": "NOT_FOUND"})})')
+    page.route("**/script.google.com/**", fake_apps_script)
+    page.on("dialog", lambda d: d.dismiss())
+
+    page.goto(f"{BASE}/stats/index.html?load=PATR-EQ9A&theme=field-doc", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(1000)
+
+    record("stats-terminal", "choosing Cancel does not adopt the Agent Code for Cloud Save",
+           page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')") != "PATR-EQ9A", "")
+    record("stats-terminal", "choosing Cancel does not open the Character Creation Wizard",
+           page.query_selector("#wiz-outer") is None, "")
+    record("stats-terminal", "choosing Cancel shows a clear status instead of silently doing nothing",
+           "not loaded" in (page.inner_text("#cloud-load-status") or "").lower(), "")
 
     page.close()
     return errs
@@ -2376,6 +2615,8 @@ def main():
 
         safe(test_acell_music_backend_not_deployed, browser, area="acell")
 
+        safe(test_acell_admin, browser, area="acell")
+
         safe(test_table_radio_widget, browser, area="radio")
 
         safe(test_agent_portal_code_query_param, browser, area="agent-portal")
@@ -2383,6 +2624,8 @@ def main():
         safe(test_stats_load_by_code_query_param, browser, area="stats-terminal")
 
         safe(test_stats_recruit_flow_on_missing_character, browser, area="stats-terminal")
+
+        safe(test_stats_recruit_flow_cancel_protects_existing_character, browser, area="stats-terminal")
 
         safe(test_stats_new_recruit_blank_sheet, browser, area="stats-terminal")
 

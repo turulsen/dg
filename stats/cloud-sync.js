@@ -151,7 +151,31 @@
     // code so the very first save syncs under it (not a new random code),
     // and open the Character Creation Wizard so the Handler/player can
     // build this Agent's sheet right away.
+    //
+    // A "not found" here is a genuine, deliberate ground truth as far as
+    // this page can tell -- but being wrong about it is catastrophic:
+    // once resetSheet()+setCloudCode() run, every subsequent edit's
+    // debounced auto-save (scheduleCloudSync(), wired to input/change
+    // events all over the page) silently overwrites whatever the real
+    // Characters-sheet row for this exact code holds, field by field, as
+    // the wizard is filled in -- there is no undo on this page. A backend
+    // lookup that's flaky, or a genuinely-existing Agent whose sheet just
+    // hasn't synced from this device yet, both look identical to "doesn't
+    // exist" from here. So this requires an explicit human confirmation
+    // before doing anything destructive, the same way clearSheet() (the
+    // manual "Clear Sheet" button) already does -- this path just reaches
+    // the same wipe automatically instead of via a button click.
     function startRecruitFlow(code) {
+        const proceed = confirm(
+            'No cloud-saved character sheet was found for Agent Code ' + code + '.\n\n' +
+            'If this Agent already HAS a character sheet, continuing will start a BLANK one under the same code -- and every change you make from here will overwrite the real one as you go, with no undo.\n\n' +
+            'Only continue if you\'re sure this Agent has never been through Character Creation yet. Choose Cancel if you\'re not sure -- check with your Handler first.'
+        );
+        if (!proceed) {
+            const status = document.getElementById('cloud-load-status');
+            if (status) status.textContent = 'Not loaded -- no cloud character was found, and you chose not to start a blank one.';
+            return;
+        }
         if (window.dgSaveLoad?.resetSheet) window.dgSaveLoad.resetSheet();
         setCloudCode(code);
         // skipSave: true -- otherwise setTheme() immediately re-saves the

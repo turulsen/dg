@@ -38,7 +38,7 @@
 <body class="folder-theme">
 
 <div class="hub-header">
-  <a class="back-link" href="index.html">&larr; Clearance</a>
+  <a class="back-link" href="index.html">&lt;- Clearance</a>
   <h1>Agent Hub</h1>
   <p>Build a cover identity, roll or point-buy a new Agent, and keep dossiers up to date between sessions. Each tab below is one of your Agents.</p>
 </div>
@@ -63,7 +63,7 @@
             </div>
             <p class="recruit-copy">Full character creation — stats, 18 professions, bonus skill points, random bio, Bonds, equipment, dice roller, and a dedicated Live Play theme. Auto-saves as you go, and always opens blank.</p>
             <div class="paper-actions">
-              <a class="paper-btn primary" href="stats/index.html?new=1">&rarr; Build a Character</a>
+              <a class="paper-btn primary" href="stats/index.html?new=1">-&gt; Build a Character</a>
             </div>
           </div>
         </div>
@@ -233,7 +233,7 @@
           <div class="stamps" id="${stampId}">${era ? `<div class="stamp">${escapeHtml(era)}</div>` : ''}</div>
           ${meta ? `<div class="dossier-line">${meta}</div>` : ''}
           <div class="paper-actions">
-            <a class="paper-btn primary" id="${playBtnId}" href="stats/index.html?load=${encodeURIComponent(a.code)}&theme=field-doc">&#9654; Play</a>
+            <a class="paper-btn primary" id="${playBtnId}" href="stats/index.html?load=${encodeURIComponent(a.code)}&theme=field-doc">Play</a>
             <a class="paper-btn" href="dg-agent-portal.html?code=${encodeURIComponent(a.code)}#agent">Agent File</a>
             <a class="paper-btn" href="dg-agent-portal.html?code=${encodeURIComponent(a.code)}#ids">Cover ID</a>
           </div>
@@ -246,7 +246,7 @@
       checkCharacterExists(a.code).then(exists => {
         if (exists !== false) return; // true (has a sheet) or null (check failed) -> leave as Play
         const btn = document.getElementById(playBtnId);
-        if (btn) { btn.textContent = '✎ Recruit'; btn.title = 'No character sheet on file yet for this Agent -- starts the Character Creation Wizard.'; }
+        if (btn) { btn.textContent = 'Recruit'; btn.title = 'No character sheet on file yet for this Agent -- starts the Character Creation Wizard.'; }
         const stamps = document.getElementById(stampId);
         if (stamps) stamps.insertAdjacentHTML('beforeend', '<div class="stamp">No Character Sheet Yet</div>');
       });

@@ -49,14 +49,6 @@
   }
   #boot-logo.boot-logo-in{ opacity:1; }
   #boot-logo img{ width:140px; height:140px; filter:drop-shadow(0 0 10px rgba(62,240,122,.5)); }
-  #boot-logo .boot-logo-word{
-    font-family:'JetBrains Mono',monospace; font-weight:700; letter-spacing:.32em;
-    font-size:15px; color:var(--term-green); text-shadow:0 0 10px rgba(62,240,122,.6);
-  }
-  #boot-logo .boot-logo-sub{
-    font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:.28em;
-    color:var(--term-green-dim); text-transform:uppercase;
-  }
   body.boot-lock{ overflow:hidden; height:100vh; }
 
   /* ── Post-splash: folder/paper look, shared with Agent Hub + Agent File ── */
@@ -68,31 +60,44 @@
   }
   .hub-header h1{
     font-family:'Special Elite',monospace; font-weight:400; font-size:clamp(24px,4.5vw,34px);
-    color:#e9e3ce; margin:0 0 10px; letter-spacing:.01em;
+    color:#e9e3ce; margin:0; letter-spacing:.01em;
   }
-  .hub-header p{ font-size:13px; color:#b7b09a; max-width:60ch; margin:0 auto; line-height:1.7; }
   .folder-wrap{ max-width:900px; margin:8px auto 0; padding:0 6px; }
 
+  /* ── Clearance cards: each one its own little manila folder --
+     an ear-tab (the clearance code) sitting above a paper body (title,
+     copy, go-link), the same tab-over-body overlap trick as .tw/
+     .folder-body but as two standalone folders side by side instead
+     of one folder's tab strip. ── */
   .clearance-choices{
-    display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:18px;
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:30px;
     margin-bottom:var(--s6);
   }
   .clearance-choice{
-    background:rgba(28,22,8,.03); border:1px solid var(--rule);
-    padding:22px 20px; text-decoration:none; color:var(--ink);
-    display:flex; flex-direction:column; gap:8px;
-    position:relative; overflow:hidden;
-    transition:border-color .15s, transform .15s;
+    display:flex; flex-direction:column; text-decoration:none; color:var(--ink);
+    filter:drop-shadow(0 14px 26px rgba(0,0,0,.4)) drop-shadow(0 3px 8px rgba(0,0,0,.3));
+    transition:transform .15s;
   }
-  .clearance-choice::before{ content:''; position:absolute; inset:0 0 auto 0; height:3px; }
-  .clearance-choice.cc-agent::before{ background:var(--ink-3); }
-  .clearance-choice.cc-acell::before{ background:var(--red); }
-  .clearance-choice:hover{ transform:translateY(-2px); border-color:var(--ink-2); }
-  .cc-code{
-    font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.22em;
-    text-transform:uppercase; color:var(--ink-3);
+  .clearance-choice:hover{ transform:translateY(-3px); }
+  .cc-tab{
+    align-self:flex-start;
+    font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.2em;
+    text-transform:uppercase; color:var(--ink-2);
+    background:var(--tab-inactive); border:1px solid #a8a090; border-bottom:none;
+    border-radius:7px 7px 0 0; padding:8px 18px 9px; margin:0 0 -1px 20px;
+    position:relative; z-index:1; transition:background .15s;
   }
-  .clearance-choice.cc-acell .cc-code{ color:var(--red); }
+  .clearance-choice.cc-acell .cc-tab{ color:var(--red); }
+  .clearance-choice:hover .cc-tab{ background:var(--tab-active); }
+  .cc-body{
+    background:var(--paper); box-shadow:var(--paper-shadow);
+    border-radius:0 9px 9px 9px; padding:22px 20px 18px;
+    display:flex; flex-direction:column; gap:8px; flex:1;
+    position:relative; z-index:2; overflow:hidden;
+  }
+  .cc-body::before{ content:''; position:absolute; inset:0 0 auto 0; height:3px; }
+  .clearance-choice.cc-agent .cc-body::before{ background:var(--ink-3); }
+  .clearance-choice.cc-acell .cc-body::before{ background:var(--red); }
   .cc-title{ font-family:'Special Elite',monospace; font-size:19px; letter-spacing:.02em; }
   .clearance-choice p{ font-size:12px; color:var(--ink-2); line-height:1.65; margin:0; }
   .cc-go{
@@ -118,15 +123,12 @@
   <div id="boot-term"></div>
   <div id="boot-logo">
     <img src="assets/mars-tech-seal.png" alt="" width="140" height="140">
-    <div class="boot-logo-word">MARS TECHNOLOGIES</div>
-    <div class="boot-logo-sub">Applied Systems Division</div>
   </div>
 </div>
 
 <div class="hub-header">
-  <div class="stamp">Friendly Programs Division — Internal Use</div>
+  <div class="stamp">Classified</div>
   <h1>Delta Green Agent Hub</h1>
-  <p>Player-facing tools for the campaign — build a cover identity, roll or point-buy a new Agent, and keep dossiers up to date between sessions.</p>
 </div>
 
 <div class="folder-wrap">
@@ -146,16 +148,20 @@
 
           <div class="clearance-choices">
             <a class="clearance-choice cc-agent" href="agent-hub.html">
-              <span class="cc-code">Clearance: Agent</span>
-              <span class="cc-title">AGENT</span>
-              <p>Build and manage your own Agent — character creation, the agent files you've submitted, and your cover ID.</p>
-              <span class="cc-go">&rarr; Enter as Agent</span>
+              <span class="cc-tab">Clearance: Agent</span>
+              <span class="cc-body">
+                <span class="cc-title">AGENT</span>
+                <p>Build and manage your own Agent — character creation, the agent files you've submitted, and your cover ID.</p>
+                <span class="cc-go">-&gt; Enter as Agent</span>
+              </span>
             </a>
             <a class="clearance-choice cc-acell" href="a-cell.html">
-              <span class="cc-code">Clearance: A-Cell</span>
-              <span class="cc-title">A-CELL</span>
-              <p>Handler tools — every Agent on file, organized into Cells, plus a shared table soundtrack. Password required.</p>
-              <span class="cc-go">&rarr; Enter as Handler</span>
+              <span class="cc-tab">Clearance: A-Cell</span>
+              <span class="cc-body">
+                <span class="cc-title">A-CELL</span>
+                <p>Handler tools — every Agent on file, organized into Cells, plus a shared table soundtrack. Password required.</p>
+                <span class="cc-go">-&gt; Enter as Handler</span>
+              </span>
             </a>
           </div>
 
