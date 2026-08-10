@@ -48,6 +48,20 @@ def mock_routes(page):
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     page.route("**/api.anthropic.com/**", fake_anthropic)
 
+def skip_boot_splash(page):
+    """index.html's boot splash (black screen, green terminal text, then
+    a fading Mars Technologies wordmark) is session-gated via
+    sessionStorage so it only plays once per new tab -- real users see
+    it once, then every later hub visit in that tab is instant. Tests
+    that aren't specifically exercising the splash itself should look
+    like that "already seen it" case too, both so they don't waste ~3.5s
+    per run waiting it out and so the splash's full-viewport overlay
+    (z-index:9999) doesn't intercept clicks meant for the clearance
+    cards underneath it. Must run via add_init_script (before any page
+    script executes), not evaluate() after navigation -- the splash's
+    own check runs immediately on page load."""
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+
 def collect_errors(page):
     errs = []
     page.on("pageerror", lambda e: errs.append(f"pageerror: {e}"))
@@ -825,84 +839,216 @@ def test_cover_ids_tab(p):
     page.close()
     return errs
 
-def test_hub_two_cards(p):
-    """Regression check for the hub restructuring: the standalone Cover ID
-    Creator card is gone (it's reachable via the Agent Portal's Cover IDs
-    tab instead), leaving Character Creator + Agent Portal."""
-    page = p.new_page()
-    page.set_default_timeout(5000)
-    errs = collect_errors(page)
-    page.goto(f"{BASE}/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(300)
-    hrefs = page.eval_on_selector_all("a.card", "els => els.map(e=>e.getAttribute('href'))")
-    record("hub", "hub has exactly 2 cards (Character Creator, Agent Portal)",
-           hrefs == ["stats/index.html", "dg-agent-portal.html"], str(hrefs))
-    page.close()
-    return errs
-
-def test_hub_latest_agent_panel(p):
-    """The hub's "Continue Playing" panel: shows the most recently saved
-    agent (localStorage dg_last_agent, the same key the Cover form and
-    stats/'s Export to Agent File button both write) with a photo if one
-    was uploaded, and links straight to the Agent Portal's Agent File tab
-    for it. Must stay hidden entirely -- not show an empty/broken preview
-    -- in a fresh browser with no saved agent yet."""
-    errs_all = []
-
-    # No saved agent -> panel must not appear at all
-    page = p.new_page()
-    page.set_default_timeout(5000)
-    errs = collect_errors(page)
-    page.goto(f"{BASE}/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(300)
-    record("hub", "Continue Playing panel is hidden with no saved agent",
-           not page.is_visible("#latest-agent-panel"), "")
-    errs_all.extend(errs)
-    page.close()
-
-    # Saved agent with a photo -> panel shows a populated preview and links
-    # to the Agent File tab
+def test_hub_boot_splash(p):
+    """index.html's boot splash: black screen, green CRT-terminal text
+    (waiting_for_clearance / delta_green / acces_granted), then a fading
+    Mars Technologies wordmark, revealing the clearance chooser
+    underneath -- capped at ~4.5s total (spec asked for "max 5s").
+    Session-gated via sessionStorage, not localStorage, so it plays once
+    per new tab ("load in every new session") but a same-tab reload
+    skips straight to the clearance grid ("after this every loading is
+    fast very snappy")."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
     page.goto(f"{BASE}/index.html", wait_until="domcontentloaded", timeout=15000)
-    tiny_png = ("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1"
-                "HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
-    page.evaluate("""(photo) => {
-        localStorage.setItem('dg_last_agent', JSON.stringify({
-            code: 'MARC-9XQ2',
-            data: {
-                char_name: 'Marcus Reyes', codename: 'GRAYWOLF',
-                submitted_at: '2026-08-01T12:00:00Z', ref_image_base64: photo
-            }
-        }));
-    }""", tiny_png)
+    page.wait_for_timeout(150)
+    record("hub", "boot splash is present and covers the screen on first load",
+           page.locator("#boot-splash").count() == 1)
+    term_text = page.eval_on_selector("#boot-term", "el => el.textContent")
+    record("hub", "boot splash starts typing the clearance terminal sequence",
+           term_text.startswith(">"), repr(term_text))
+
+    # Splash types "waiting_for_clearance:", "delta_green", "acces_granted"
+    # then fades in the Mars Technologies wordmark before fading out --
+    # generously bounded wait, then assert it actually finished by the
+    # ~4.5s hard cap this page enforces (never truly hangs past it).
+    page.wait_for_timeout(4300)
+    record("hub", "boot splash resolves and clears the DOM within its ~4.5s cap",
+           page.locator("#boot-splash").count() == 0, "")
+    record("hub", "clearance chooser is visible once the splash clears",
+           page.locator(".clearance-card").count() == 2, "")
+    record("hub", "boot-lock no longer blocks page scrolling once revealed",
+           "boot-lock" not in page.eval_on_selector("body", "el => el.className"), "")
+
+    # A second load in the same tab (sessionStorage persists) must not
+    # replay the splash -- this is what "every loading after this is
+    # fast and snappy" actually means.
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_timeout(150)
+    record("hub", "boot splash does not replay on a same-tab reload (sessionStorage-gated)",
+           page.locator("#boot-splash").count() == 0, "")
+    record("hub", "clearance chooser is immediately visible on the repeat load",
+           page.locator(".clearance-card").count() == 2, "")
+
+    page.close()
+    return errs
+
+def test_hub_clearance_branches(p):
+    """index.html is now a splash + clearance chooser, not a direct tool
+    grid -- Character Creator and Agent Portal moved under the Agent
+    branch (agent-hub.html), and A-Cell (a-cell.html) is new. Regression
+    check for the hub restructuring: exactly two clearance branches,
+    pointing at the right pages."""
+    page = p.new_page()
+    page.set_default_timeout(5000)
+    errs = collect_errors(page)
+    skip_boot_splash(page)
+    page.goto(f"{BASE}/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(200)
+    hrefs = page.eval_on_selector_all(".clearance-card", "els => els.map(e=>e.getAttribute('href'))")
+    record("hub", "hub has exactly 2 clearance branches (Agent, A-Cell)",
+           hrefs == ["agent-hub.html", "a-cell.html"], str(hrefs))
+    page.close()
+    return errs
+
+def test_agent_hub(p):
+    """agent-hub.html (the Agent clearance branch): Latest Agent(s) quick
+    access and the Agent Files list both read the same dg_agent_roster
+    localStorage the Agent Portal's own roster drawer already writes to
+    -- nothing new to keep in sync, just surfaced as the primary entry
+    point instead of a slide-up drawer. Each Agent File gets three
+    actions (Play / Files / ID Creator) linking to stats/ and the Agent
+    Portal with query params those pages now handle (see
+    test_stats_load_by_code_query_param and
+    test_agent_portal_code_query_param)."""
+    errs_all = []
+
+    # No agents on file -> empty state, no quick-access section at all
+    page = p.new_page()
+    page.set_default_timeout(5000)
+    errs = collect_errors(page)
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    record("hub", "Agent Files shows an empty-state note with no agents on file",
+           "No agents on file" in page.inner_text("#file-list"), "")
+    record("hub", "Latest Agent(s) quick access is hidden with no agents on file",
+           not page.is_visible("#quick-access-section"), "")
+    errs_all.extend(errs)
+    page.close()
+
+    # Two agents on file -> both sections populate, actions link correctly
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    roster = {
+        "OWEN-CS12": {"code": "OWEN-CS12", "char_name": "Owen Castillo", "codename": "Ferro",
+                      "sex": "Male", "age_range": "Late 30s", "nationality": "American", "saved_at": 2000},
+        "PRIY-AN34": {"code": "PRIY-AN34", "char_name": "Priya Anand", "codename": "",
+                      "sex": "Female", "age_range": "Early 30s", "nationality": "Indian-American", "saved_at": 1000},
+    }
+    page.evaluate("(r) => localStorage.setItem('dg_agent_roster', JSON.stringify(r))", roster)
     page.reload(wait_until="domcontentloaded")
     page.wait_for_timeout(400)
 
-    record("hub", "Continue Playing panel appears with a saved agent",
-           page.is_visible("#latest-agent-panel"), "")
-    record("hub", "panel shows the saved agent's name",
-           page.inner_text("#latest-agent-name") == "Marcus Reyes", "")
-    meta = page.inner_text("#latest-agent-meta")
-    record("hub", "panel meta line shows code, codename, and updated date",
-           "MARC-9XQ2" in meta and "GRAYWOLF" in meta, meta)
-    record("hub", "panel shows the agent's uploaded photo",
-           page.locator("#latest-agent-photo img").count() == 1, "")
+    record("hub", "Latest Agent(s) quick access shows both agents, most recent first",
+           page.eval_on_selector_all(".quick-card .name", "els => els.map(e=>e.textContent)")
+           == ["Owen Castillo", "Priya Anand"], "")
+    record("hub", "Agent Files lists both agents",
+           page.locator(".file-card").count() == 2, "")
 
-    page.click("#latest-agent-panel")
-    for _ in range(20):
-        if page.url.endswith("dg-agent-portal.html#agent"):
-            break
-        page.wait_for_timeout(300)
-    record("hub", "panel links straight to the Agent Portal's Agent File tab",
-           page.url.endswith("dg-agent-portal.html#agent"), page.url)
+    first_card_hrefs = page.eval_on_selector_all(
+        "#file-list .file-card:first-child .file-btn", "els => els.map(e => e.getAttribute('href'))")
+    record("hub", "Play links to stats/ with load+theme query params for that exact agent",
+           first_card_hrefs[0] == "stats/index.html?load=OWEN-CS12&theme=field-doc", str(first_card_hrefs))
+    record("hub", "Files links to the Agent Portal's Agent File tab for that exact agent",
+           first_card_hrefs[1] == "dg-agent-portal.html?code=OWEN-CS12#agent", str(first_card_hrefs))
+    record("hub", "ID Creator links to the Agent Portal's Cover IDs tab for that exact agent",
+           first_card_hrefs[2] == "dg-agent-portal.html?code=OWEN-CS12#ids", str(first_card_hrefs))
 
     errs_all.extend(errs)
     page.close()
     return errs_all
+
+def test_agent_portal_code_query_param(p):
+    """agent-hub.html's Agent Files "Files" and "ID Creator" buttons link
+    to dg-agent-portal.html?code=XXXX#agent / #ids -- a new
+    openSpecificAgent() IIFE there that opens that exact agent by code,
+    taking priority over whatever autoRestore() would otherwise pick up
+    from dg_last_agent (the most-recently-active agent, which may not be
+    the one just clicked from Agent Files)."""
+    errs_all = []
+
+    def fake_apps_script(route):
+        url = route.request.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            fake_data = {"char_name": "Owen Castillo", "codename": "Ferro", "age_range": "Late 30s", "sex": "Male"}
+            body = f'{cb}({json.dumps({"status": "OK", "data": fake_data})})'
+            route.fulfill(status=200, content_type="application/javascript", body=body)
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", fake_apps_script)
+    page.goto(f"{BASE}/dg-agent-portal.html?code=OWEN-CS12#agent", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(600)
+    record("agent-portal", "?code=...#agent opens straight to the Agent File tab",
+           "active" in page.eval_on_selector("#tw-agent", "el => el.className"), "")
+    record("agent-portal", "?code=...#agent loads that exact agent's name",
+           page.eval_on_selector("#af-agent-name", "el => el.textContent") == "Owen Castillo", "")
+    errs_all.extend(errs)
+    page.close()
+
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", fake_apps_script)
+    page.goto(f"{BASE}/dg-agent-portal.html?code=OWEN-CS12#ids", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(600)
+    record("agent-portal", "?code=...#ids opens straight to the Cover IDs tab",
+           "active" in page.eval_on_selector("#tw-ids", "el => el.className"), "")
+    record("agent-portal", "?code=...#ids pre-fills the agent-code importer with that code",
+           page.eval_on_selector("#ids-agent-code", "el => el.value") == "OWEN-CS12", "")
+    errs_all.extend(errs)
+    page.close()
+    return errs_all
+
+def test_stats_load_by_code_query_param(p):
+    """agent-hub.html's Agent Files "Play" button links to
+    stats/index.html?load=XXXX&theme=field-doc -- loads that exact agent
+    from the Cloud Save backend (dgCloudSave.loadFromCloud(), see
+    stats/cloud-sync.js) and jumps straight to the Live Play theme,
+    rather than leaving whatever this browser last auto-saved showing."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    def fake_apps_script(route):
+        url = route.request.url
+        if "action=load_character" in url and "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            char_state = {"v": 1, "bio": {"name": "Owen Castillo", "profession": ""}}
+            body = f'{cb}({json.dumps({"status": "OK", "agent_code": "OWEN-CS12", "character_json": json.dumps(char_state)})})'
+            route.fulfill(status=200, content_type="application/javascript", body=body)
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/stats/index.html?load=OWEN-CS12&theme=field-doc", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(1000)
+    record("stats-terminal", "?load=... loads that exact agent's name from the cloud",
+           page.eval_on_selector("#cs-name", "el => el.value") == "Owen Castillo", "")
+    record("stats-terminal", "?theme=field-doc jumps straight to the Live Play theme",
+           "theme-field-doc" in page.eval_on_selector("body", "el => el.className"), "")
+    record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
+    page.close()
+    return errs
 
 def test_mobile_no_overflow(p):
     """Regression check: no page should force horizontal scroll on a phone
@@ -915,11 +1061,12 @@ def test_mobile_no_overflow(p):
     min-width: min-content, a few fixed-column grids/tables -- for all
     five, so they're now checked the same as Mobile rather than excluded."""
     errs_all = []
-    for path in ["index.html", "dg-agent-portal.html", "dg-id-creator.html"]:
+    for path in ["index.html", "agent-hub.html", "dg-agent-portal.html", "dg-id-creator.html"]:
         page = p.new_page(viewport={"width": 390, "height": 844})
         page.set_default_timeout(5000)
         errs = collect_errors(page)
         mock_routes(page)
+        skip_boot_splash(page)
         page.goto(f"{BASE}/{path}", wait_until="domcontentloaded", timeout=15000)
         page.wait_for_timeout(300)
         scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
@@ -928,31 +1075,33 @@ def test_mobile_no_overflow(p):
         errs_all.extend(errs)
         page.close()
 
-    # index.html's "Continue Playing" panel only appears with a saved agent
-    # in localStorage, so the general no-overflow sweep above (fresh
-    # browser, no agent) never actually exercises it -- check it separately
-    # with an agent seeded, including a photo, since that's the widest the
-    # panel gets.
+    # agent-hub.html's Latest Agent(s) / Agent Files sections only populate
+    # with agents in dg_agent_roster, so the general no-overflow sweep
+    # above (fresh browser, no agents) never actually exercises them --
+    # check separately with two agents seeded, since that's wider than
+    # the empty-state note.
     page = p.new_page(viewport={"width": 390, "height": 844})
     page.set_default_timeout(8000)
     errs = collect_errors(page)
-    # index.html's own inline <script> sits after its Google Fonts <link>,
-    # same as dg-agent-portal.html -- an unblocked font request that never
-    # resolves in this sandbox hangs that script (and page.reload()) rather
-    # than just slowing it down, so block fonts before the reload below.
+    # agent-hub.html's own inline <script> sits after its Google Fonts
+    # <link>, same as dg-agent-portal.html -- an unblocked font request
+    # that never resolves in this sandbox hangs that script (and
+    # page.reload()) rather than just slowing it down, so block fonts
+    # before the reload below.
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.goto(f"{BASE}/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.evaluate("""() => {
-        localStorage.setItem('dg_last_agent', JSON.stringify({
-            code: 'MARC-9XQ2',
-            data: { char_name: 'Marcus Reyes', codename: 'GRAYWOLF', submitted_at: '2026-08-01T12:00:00Z' }
+        localStorage.setItem('dg_agent_roster', JSON.stringify({
+            'MARC-9XQ2': { code: 'MARC-9XQ2', char_name: 'Marcus Reyes', codename: 'GRAYWOLF',
+                           sex: 'Male', age_range: 'Late 30s', nationality: 'American', saved_at: 1000 }
         }));
     }""")
     page.reload(wait_until="domcontentloaded", timeout=8000)
     page.wait_for_timeout(300)
     scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
-    record("mobile", "index.html has no horizontal overflow at 390px viewport (Continue Playing panel shown)",
+    record("mobile", "agent-hub.html has no horizontal overflow at 390px viewport (Agent Files populated)",
            scroll_width <= 390, f"scrollWidth={scroll_width}")
     errs_all.extend(errs)
     page.close()
@@ -1437,9 +1586,15 @@ def main():
 
         safe(test_cover_ids_tab, browser, area="cover-ids-tab")
 
-        safe(test_hub_two_cards, browser, area="hub")
+        safe(test_hub_boot_splash, browser, area="hub")
 
-        safe(test_hub_latest_agent_panel, browser, area="hub")
+        safe(test_hub_clearance_branches, browser, area="hub")
+
+        safe(test_agent_hub, browser, area="hub")
+
+        safe(test_agent_portal_code_query_param, browser, area="agent-portal")
+
+        safe(test_stats_load_by_code_query_param, browser, area="stats-terminal")
 
         safe(test_mobile_no_overflow, browser, area="mobile")
 

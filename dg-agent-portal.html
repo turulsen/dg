@@ -4753,6 +4753,38 @@ function rerollAgent() {
   }
 })();
 
+/* ── OPEN A SPECIFIC AGENT BY CODE (this hub's addition) ──
+   agent-hub.html's Agent Files section links here as
+   `?code=XXXX-YYYY#agent` (Files) or `?code=XXXX-YYYY#ids` (ID
+   Creator) so each of the three per-agent buttons opens straight to
+   that exact agent instead of whatever autoRestore() above picked up
+   from dg_last_agent -- an explicit `?code=` always wins over the
+   most-recent-agent fallback. */
+(function openSpecificAgent() {
+  const code = new URLSearchParams(window.location.search).get('code');
+  if (!code) return;
+  const upper = code.trim().toUpperCase();
+  if (!upper) return;
+
+  if (window.location.hash === '#ids') {
+    switchTab('ids');
+    const idsInput = document.getElementById('ids-agent-code');
+    if (idsInput) {
+      idsInput.value = upper;
+      setTimeout(() => { if (typeof idsImportAgent === 'function') idsImportAgent(); }, 50);
+    }
+    return;
+  }
+
+  // Default (including #agent): Agent File tab.
+  switchTab('agent');
+  const afInput = document.getElementById('af-code-input');
+  if (afInput) {
+    afInput.value = upper;
+    setTimeout(loadAgentFile, 50);
+  }
+})();
+
 /* ── HANDOFF FROM CHARACTER SHEET GENERATOR ──
    Any page can hand off an agent by writing {char_name, notes, source_code}
    to localStorage under dg_handoff_agent before opening this page -- it's

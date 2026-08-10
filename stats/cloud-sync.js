@@ -138,4 +138,19 @@
 
     window.dgCloudSave = { loadFromCloud, getCloudCode };
     document.addEventListener('DOMContentLoaded', () => renderStatus());
+
+    // agent-hub.html's Agent Files "Play" button links here as
+    // `?load=XXXX-YYYY&theme=field-doc` -- load that exact agent from
+    // the cloud and jump straight to Live Play, rather than leaving
+    // whatever was last auto-saved in this browser showing.
+    document.addEventListener('DOMContentLoaded', () => {
+        const params = new URLSearchParams(window.location.search);
+        const loadCode = params.get('load');
+        if (!loadCode) return;
+        loadFromCloud(loadCode);
+        const theme = params.get('theme');
+        if (theme && typeof setTheme === 'function') {
+            setTimeout(() => setTheme(theme), 400);
+        }
+    });
 })();
