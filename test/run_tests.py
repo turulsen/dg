@@ -1676,14 +1676,16 @@ def test_acell_music_backend_not_deployed(p):
     return errs
 
 def test_acell_admin(p):
-    """a-cell.html's Admin tab: permanently deletes an Agent (Characters
-    row + Delta Green Briefs row) via a new delete_character action,
-    gated behind two client-side confirmations -- typing the Agent's
-    own name, then the A-Cell password (MASTICATE) -- so a stray click
-    can't wipe an Agent. Like every other write in this app,
-    delete_character is a no-cors POST, so the row is only removed
-    from view once a real read-back (list_characters) confirms the
-    Agent's code is actually gone."""
+    """a-cell.html's Admin tab: soft-deletes an Agent (Characters row +
+    Delta Green Briefs row) via delete_character, gated behind two
+    client-side confirmations -- typing the Agent's own name, then the
+    A-Cell password (MASTICATE) -- so a stray click can't wipe an
+    Agent. Like every other write in this app, delete_character is a
+    no-cors POST, so the row is only removed from view once a real
+    read-back (list_characters) confirms the Agent's code is actually
+    gone. Unlike a hard delete, the Agent lands in Recently Deleted
+    (list_deleted_characters) and can be brought back with Restore
+    (restore_character), verified the same way."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -1699,6 +1701,7 @@ def test_acell_admin(p):
          "character_json": json.dumps({"bio": {"name": "Priya Anand"}}),
          "updated_at": 1700000000000},
     ]
+    deleted_characters = []
     posts = []
 
     def fake_apps_script(route):
@@ -1707,7 +1710,17 @@ def test_acell_admin(p):
             body = json.loads(req.post_data or "{}")
             posts.append(body)
             if body.get("action") == "delete_character":
-                characters[:] = [c for c in characters if c["agent_code"] != body.get("agent_code")]
+                code = body.get("agent_code")
+                idx = next((i for i, c in enumerate(characters) if c["agent_code"] == code), None)
+                if idx is not None:
+                    row = characters.pop(idx)
+                    deleted_characters.append({**row, "deleted_at": 1700000001000})
+            elif body.get("action") == "restore_character":
+                code = body.get("agent_code")
+                idx = next((i for i, c in enumerate(deleted_characters) if c["agent_code"] == code), None)
+                if idx is not None:
+                    row = deleted_characters.pop(idx)
+                    characters.append({k: v for k, v in row.items() if k != "deleted_at"})
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         url = req.url
@@ -1715,6 +1728,8 @@ def test_acell_admin(p):
             cb = url.split("callback=")[1].split("&")[0]
             if "action=list_characters" in url:
                 res = {"status": "OK", "characters": characters}
+            elif "action=list_deleted_characters" in url:
+                res = {"status": "OK", "characters": deleted_characters}
             else:
                 res = {"status": "OK"}
             route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
@@ -1766,6 +1781,23 @@ def test_acell_admin(p):
            "Deleted Owen Castillo" in page.inner_text("#admin-status")
            and page.locator("#admin-list .admin-row").count() == 1
            and "Priya Anand" in page.inner_text("#admin-list"), "")
+
+    deleted_text = wait_for_condition(lambda: page.inner_text("#admin-deleted-list")
+                                       if "Owen Castillo" in page.inner_text("#admin-deleted-list") else None)
+    record("acell", "a deleted Agent shows up in Recently Deleted, not just vanishing",
+           bool(deleted_text) and "Owen Castillo" in deleted_text, deleted_text or "")
+
+    page.click("#admin-deleted-list .admin-restore-btn")
+    page.wait_for_timeout(1500)
+
+    restore_posts = [p_ for p_ in posts if p_.get("action") == "restore_character"]
+    record("acell", "Restore sends restore_character for the right Agent",
+           len(restore_posts) == 1 and restore_posts[0].get("agent_code") == "OWEN-CS12", str(restore_posts))
+    record("acell", "a restored Agent reappears in the main Admin list",
+           "Owen Castillo" in page.inner_text("#admin-list")
+           and page.locator("#admin-list .admin-row").count() == 2, "")
+    record("acell", "a restored Agent drops out of Recently Deleted",
+           "Owen Castillo" not in page.inner_text("#admin-deleted-list"), "")
 
     page.close()
     return errs

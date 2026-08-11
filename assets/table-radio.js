@@ -27,7 +27,7 @@
   var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
   var CHANNEL_KEY = 'dg_radio_channel';
   var MUTED_KEY = 'dg_radio_muted';
-  var POLL_MS = 20000;
+  var POLL_MS = 6000;
   // Fixed numbered channels, picked by turning a dial rather than typing a
   // name -- five slots, no typos, no two players landing on "sam" vs "Sam".
   var CHANNELS = ['1', '2', '3', '4', '5'];
@@ -327,8 +327,20 @@
   function poll() {
     var ch = getChannel();
     if (!ch) return;
+    // A stale in-flight request (slow network, dropped response) shouldn't
+    // pile up scripts/globals every POLL_MS -- clear whatever the previous
+    // cycle left pending before starting a new one.
+    var prevScript = document.getElementById('_dg_radio_poll_script');
+    if (prevScript) prevScript.remove();
     var cbName = '_dgRadioPoll_' + Date.now();
+    var timedOut = false;
+    var timer = setTimeout(function () {
+      timedOut = true;
+      delete window[cbName];
+    }, 5000);
     window[cbName] = function (res) {
+      if (timedOut) return;
+      clearTimeout(timer);
       delete window[cbName];
       var s = document.getElementById('_dg_radio_poll_script');
       if (s) s.remove();

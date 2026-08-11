@@ -303,10 +303,12 @@
     background:var(--paper); box-shadow:var(--paper-shadow);
   }
 
-  /* ── Admin: permanent deletion, gated behind a two-step confirm
-     (type the Agent's own name, then the A-Cell password) so nobody
-     wipes a Cell by a stray click. Everything here is
-     styled with --red to read as clearly destructive against the
+  /* ── Admin: soft deletion, gated behind a two-step confirm (type the
+     Agent's own name, then the A-Cell password) so nobody wipes an
+     Agent by a stray click -- and even past that gate, deleting only
+     archives the Agent's rows rather than removing them, so a mistake
+     is still recoverable via Recently Deleted below. Everything here
+     is styled with --red to read as clearly destructive against the
      rest of the paper-toned UI. ── */
   .admin-toolbar{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
   .admin-copy{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.85; max-width:60ch; margin-bottom:var(--s3); }
@@ -335,6 +337,15 @@
     color:var(--ink-3); font-size:13px; font-style:italic; text-align:center; padding:26px 10px;
     background:var(--paper); box-shadow:var(--paper-shadow);
   }
+  .admin-deleted-list{ display:flex; flex-direction:column; gap:8px; }
+  .admin-deleted-row{
+    display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap;
+    background:rgba(28,22,8,.04); border:1px solid var(--rule); padding:10px 16px;
+  }
+  .admin-deleted-row .name{ font-family:'Special Elite',monospace; font-size:13px; color:var(--ink-2); }
+  .admin-deleted-row .meta{ font-size:11px; color:var(--ink-3); margin-top:2px; font-family:'Courier Prime',monospace; }
+  .admin-restore-btn{ border-color:var(--green); color:var(--green); }
+  .admin-restore-btn:hover{ background:var(--green); color:var(--paper); }
 
   footer.site-footer{ font-family:'Courier Prime',monospace; text-align:center; color:#6a6250; font-size:11px; margin-top:56px; }
 </style>
@@ -457,11 +468,13 @@
           <button type="button" class="paper-btn" id="admin-refresh-btn">Refresh</button>
           <span class="play-refresh-note" id="admin-refresh-note"></span>
         </div>
-        <p class="admin-copy">Permanently delete an Agent from the Google Sheet -- removes their character sheet AND their Agent File / Cover ID submission. This cannot be undone. Deleting requires typing the Agent's own name, then the A-Cell password.</p>
+        <p class="admin-copy">Remove an Agent from the Google Sheet -- moves their character sheet AND their Agent File / Cover ID submission to a recoverable archive (restore it below any time). Deleting requires typing the Agent's own name, then the A-Cell password.</p>
         <div class="admin-status" id="admin-status"></div>
         <div class="admin-list" id="admin-list">
           <div class="admin-loading">Loading agents…</div>
         </div>
+        <div class="pv-sec-hd">Recently Deleted</div>
+        <div class="admin-deleted-list" id="admin-deleted-list"></div>
       </div>
 
     </div>
@@ -1468,12 +1481,15 @@
   var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
   var ACELL_PASSWORD = 'MASTICATE';
   var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm the delete. Check that the Admin addition (delete_character) is pasted into Apps Script and redeployed.';
+  var RESTORE_NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm the restore. Check that the Admin addition (restore_character / list_deleted_characters) is pasted into Apps Script and redeployed.';
 
   var listEl = document.getElementById('admin-list');
+  var deletedListEl = document.getElementById('admin-deleted-list');
   var statusEl = document.getElementById('admin-status');
   var refreshBtn = document.getElementById('admin-refresh-btn');
   var refreshNote = document.getElementById('admin-refresh-note');
   var agents = [];
+  var deletedAgents = [];
 
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -1574,11 +1590,11 @@
     var name = (agent.state.bio || {}).name || agent.code;
     slot.innerHTML =
       '<div class="admin-confirm">' +
-      '<p>Step 2 of 2 -- enter the A-Cell password to permanently delete <b>' + escapeHtml(name) + '</b>:</p>' +
+      '<p>Step 2 of 2 -- enter the A-Cell password to delete <b>' + escapeHtml(name) + '</b> (moves to Recently Deleted, can be restored):</p>' +
       '<div class="admin-confirm-error" id="admin-err2-' + i + '"></div>' +
       '<input type="password" id="admin-pw-input-' + i + '" placeholder="A-Cell password" autocomplete="off">' +
       '<div class="admin-confirm-actions">' +
-      '<button type="button" class="paper-btn admin-delete-btn" id="admin-step2-btn-' + i + '">Delete Permanently</button>' +
+      '<button type="button" class="paper-btn admin-delete-btn" id="admin-step2-btn-' + i + '">Delete Agent</button>' +
       '<button type="button" class="paper-btn" id="admin-cancel2-' + i + '">Cancel</button>' +
       '</div></div>';
     document.getElementById('admin-cancel2-' + i).addEventListener('click', function () { slot.innerHTML = ''; });
@@ -1616,13 +1632,79 @@
       }
       var name = (agent.state.bio || {}).name || agent.code;
       agents = agents.filter(function (a) { return a.code !== agent.code; });
-      statusEl.textContent = 'Deleted ' + name + '.';
+      statusEl.textContent = 'Deleted ' + name + '. Restore it any time from Recently Deleted below.';
       renderList();
+      fetchDeleted();
     });
   }
 
-  refreshBtn.addEventListener('click', function () { fetchList(true); });
+  function fetchDeleted() {
+    jsonpGet('list_deleted_characters', {}, function (res) {
+      if (!res || res.status !== 'OK' || !Array.isArray(res.characters)) {
+        deletedListEl.innerHTML = '';
+        return;
+      }
+      deletedAgents = res.characters.map(function (c) {
+        var state = null;
+        try { state = JSON.parse(c.character_json); } catch (e) { /* skip unparsable rows */ }
+        return { code: c.agent_code, state: state, deleted_at: c.deleted_at };
+      }).filter(function (c) { return c.code; });
+      renderDeletedList();
+    });
+  }
+
+  function renderDeletedList() {
+    if (!deletedAgents.length) {
+      deletedListEl.innerHTML = '<div class="cells-empty-note">Nothing deleted yet.</div>';
+      return;
+    }
+    deletedListEl.innerHTML = deletedAgents.map(function (a, i) {
+      var bio = (a.state && a.state.bio) || {};
+      var name = bio.name || a.code;
+      var when = a.deleted_at ? new Date(Number(a.deleted_at)).toLocaleString() : '';
+      return '<div class="admin-deleted-row" data-i="' + i + '">' +
+        '<div><div class="name">' + escapeHtml(name) + '</div><div class="meta">' + escapeHtml(a.code) + (when ? ' &middot; deleted ' + escapeHtml(when) : '') + '</div></div>' +
+        '<button type="button" class="paper-btn admin-restore-btn" data-i="' + i + '">Restore</button>' +
+        '</div>';
+    }).join('');
+    Array.prototype.forEach.call(deletedListEl.querySelectorAll('.admin-restore-btn'), function (btn) {
+      btn.addEventListener('click', function () { doRestore(parseInt(btn.dataset.i, 10)); });
+    });
+  }
+
+  function doRestore(i) {
+    var agent = deletedAgents[i];
+    if (!agent) return;
+    statusEl.textContent = 'Restoring…';
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors', keepalive: true,
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'restore_character', agent_code: agent.code }),
+    }).then(function () {
+      setTimeout(function () { verifyRestore(agent); }, 900);
+    }).catch(function () {
+      statusEl.textContent = 'Could not reach the backend.';
+    });
+  }
+
+  function verifyRestore(agent) {
+    jsonpGet('list_characters', {}, function (res) {
+      var backInRoster = res && res.status === 'OK' && Array.isArray(res.characters) &&
+        res.characters.some(function (c) { return c.agent_code === agent.code; });
+      if (!backInRoster) {
+        statusEl.textContent = RESTORE_NOT_DEPLOYED_MSG;
+        return;
+      }
+      var name = (agent.state && agent.state.bio || {}).name || agent.code;
+      statusEl.textContent = 'Restored ' + name + '.';
+      fetchList();
+      fetchDeleted();
+    });
+  }
+
+  refreshBtn.addEventListener('click', function () { fetchList(true); fetchDeleted(); });
   fetchList(false);
+  fetchDeleted();
 })();
 </script>
 

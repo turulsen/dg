@@ -748,6 +748,68 @@ body{
 
 /* After-Action Reports */
 .aar-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:var(--s3);margin-bottom:var(--s3);}
+.aar-card{
+  background:var(--paper);border:1px solid var(--rule);
+  box-shadow:0 2px 8px rgba(0,0,0,.1);
+  cursor:pointer;transition:box-shadow 120ms;
+}
+.aar-card:hover{box-shadow:0 4px 14px rgba(0,0,0,.18);}
+.aar-polaroid{
+  background:#fff;
+  padding:var(--s2) var(--s2) var(--s5);
+  box-shadow:0 2px 6px rgba(0,0,0,.15);
+  margin:var(--s3) auto;
+  width:calc(100% - var(--s3));
+  transform:rotate(var(--pol-rot, -1deg));
+}
+.aar-polaroid img{width:100%;height:120px;object-fit:cover;display:block;}
+.aar-polaroid-empty{
+  width:100%;height:120px;background:#e8e8e8;
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Courier Prime',monospace;font-size:8px;color:#aaa;
+  letter-spacing:.1em;text-transform:uppercase;
+}
+.aar-polaroid-caption{
+  font-family:'Courier Prime',monospace;font-size:9px;color:#333;
+  text-align:center;padding:var(--s1) 0 0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.aar-card-meta{padding:var(--s2) var(--s3) var(--s3);border-top:1px solid var(--rule);}
+.aar-card-op{font-family:'Special Elite',monospace;font-size:11px;color:var(--ink);margin-bottom:2px;}
+.aar-card-date{font-family:'Courier Prime',monospace;font-size:9px;color:var(--ink-2);}
+
+/* AAR detail view -- opened from an aar-card, shows the full report
+   instead of the old alert() dump. */
+#aar-detail-overlay{
+  position:fixed;inset:0;background:rgba(10,8,4,.72);
+  z-index:400;display:none;align-items:center;justify-content:center;
+  padding:var(--s4);
+}
+#aar-detail-overlay.open{display:flex;}
+#aar-detail-card{
+  background:var(--paper);box-shadow:var(--paper-shadow);
+  max-width:480px;width:100%;max-height:86vh;overflow-y:auto;
+  padding:var(--s6) var(--s4) var(--s4);position:relative;
+}
+#aar-detail-close{
+  position:absolute;top:var(--s3);right:var(--s3);
+  font-family:'Special Elite',monospace;font-size:9px;letter-spacing:.1em;
+  color:var(--ink-3);cursor:pointer;background:none;border:none;padding:4px 8px;
+}
+#aar-detail-close:hover{color:var(--ink);}
+.aar-detail-op{font-family:'Special Elite',monospace;font-size:19px;color:var(--ink);margin:0 40px 4px 0;}
+.aar-detail-meta{
+  font-family:'Courier Prime',monospace;font-size:10px;color:var(--ink-3);
+  letter-spacing:.04em;margin-bottom:var(--s4);
+}
+.aar-detail-photo{
+  width:100%;max-height:280px;object-fit:cover;
+  margin-bottom:var(--s4);box-shadow:0 2px 8px rgba(0,0,0,.2);
+}
+.aar-detail-scene{
+  font-family:'Courier Prime',monospace;font-size:12px;color:var(--ink-2);
+  line-height:1.75;white-space:pre-wrap;margin-bottom:var(--s3);
+}
 
 /* Polaroid */
 .polaroid{
@@ -4176,12 +4238,36 @@ function renderAarEntries(data) {
 }
 
 function openAarDetail(idx) {
-  // TODO: expand to full detail view
   const entries = afData?.aar_log ? JSON.parse(afData.aar_log) : [];
   const e = entries[idx];
   if (!e) return;
-  alert(e.operation + '\n' + e.date + '\n\n' + e.scene);
+
+  document.getElementById('aar-detail-op').textContent = e.operation || 'Unknown Operation';
+  document.getElementById('aar-detail-meta').textContent = [e.date, e.location].filter(Boolean).join('   ·   ');
+
+  const photoEl = document.getElementById('aar-detail-photo');
+  if (e.photo) { photoEl.src = e.photo; photoEl.style.display = 'block'; }
+  else { photoEl.removeAttribute('src'); photoEl.style.display = 'none'; }
+
+  document.getElementById('aar-detail-scene').textContent = e.scene || '';
+
+  const promptBox = document.getElementById('aar-detail-prompt-box');
+  if (e.cinematic_prompt) {
+    document.getElementById('aar-detail-prompt').textContent = e.cinematic_prompt;
+    promptBox.style.display = 'block';
+  } else {
+    promptBox.style.display = 'none';
+  }
+
+  document.getElementById('aar-detail-overlay').classList.add('open');
 }
+
+function closeAarDetail() {
+  document.getElementById('aar-detail-overlay').classList.remove('open');
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeAarDetail();
+});
 
 function toggleAarForm() {
   aarFormVisible = !aarFormVisible;
@@ -5052,6 +5138,21 @@ function rosterClearAll() {
 
 
 </script>
+
+<!-- ══ AAR DETAIL VIEW ══ -->
+<div id="aar-detail-overlay" onclick="if(event.target===this) closeAarDetail()">
+  <div id="aar-detail-card">
+    <button id="aar-detail-close" onclick="closeAarDetail()">✕ CLOSE</button>
+    <div class="aar-detail-op" id="aar-detail-op"></div>
+    <div class="aar-detail-meta" id="aar-detail-meta"></div>
+    <img class="aar-detail-photo" id="aar-detail-photo" alt="" style="display:none">
+    <div class="aar-detail-scene" id="aar-detail-scene"></div>
+    <div class="co-debrief-box" id="aar-detail-prompt-box" style="display:none">
+      <span class="co-debrief-label">Cinematic Prompt</span>
+      <div class="co-debrief-content" id="aar-detail-prompt"></div>
+    </div>
+  </div>
+</div>
 
 <!-- ══ AGENT ROSTER DRAWER ══ -->
 <div id="roster-backdrop" onclick="rosterClose()"></div>
