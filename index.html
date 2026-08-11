@@ -68,9 +68,12 @@
     text-transform:uppercase; color:#c96a6a; border:1.5px solid #c96a6a;
     display:inline-block; padding:4px 12px; margin-bottom:18px; opacity:.85;
   }
-  .hub-header h1{
-    font-family:'Special Elite',monospace; font-weight:400; font-size:clamp(24px,4.5vw,34px);
-    color:#e9e3ce; margin:0; letter-spacing:.01em;
+  .hub-wordmark{
+    display:block; width:min(420px,80vw); height:auto; margin:0 auto 12px;
+  }
+  .hub-header .subtitle{
+    font-family:'Special Elite',monospace; font-weight:400; font-size:clamp(16px,3vw,22px);
+    color:#b7b09a; margin:0; letter-spacing:.12em; text-transform:uppercase;
   }
   .folder-wrap{ max-width:900px; margin:8px auto 0; padding:0 6px; }
 
@@ -138,7 +141,8 @@
 
 <div class="hub-header">
   <div class="stamp">Classified</div>
-  <h1>Delta Green Agent Hub</h1>
+  <img class="hub-wordmark" src="assets/delta-green-wordmark-white.png" alt="Delta Green">
+  <h1 class="subtitle">Agent Hub</h1>
 </div>
 
 <div class="folder-wrap">
