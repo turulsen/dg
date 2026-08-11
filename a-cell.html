@@ -526,7 +526,7 @@
 <div id="acell-gate">
   <div id="acell-term">
     <div id="acell-term-log"></div>
-    <div class="acell-input-line" id="acell-input-line">&gt;<input id="acell-pw-input" type="password" autocomplete="off" spellcheck="false" maxlength="40"><span class="boot-cursor"></span></div>
+    <div class="acell-input-line" id="acell-input-line">&gt;<input id="acell-pw-input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="40"><span class="boot-cursor"></span></div>
   </div>
   <a id="acell-back" href="index.html">&lt;- back to clearance</a>
   <div id="acell-logo">
@@ -703,6 +703,19 @@
   addLine('enter_clearance_code:');
   input.focus();
 
+  // Native type="password" masks with the browser's own round dots --
+  // this is a plain type="text" field instead, so the mask character can
+  // be an X. On every edit, input.value briefly holds whatever the
+  // browser just applied (insert/delete/paste, already correctly
+  // resolved) -- read that into realValue synchronously, before it ever
+  // paints, then overwrite the field with a same-length run of X's.
+  var realValue = '';
+  input.addEventListener('input', function () {
+    realValue = input.value;
+    input.value = 'X'.repeat(realValue.length);
+    input.setSelectionRange(input.value.length, input.value.length);
+  });
+
   function grantAccess() {
     input.disabled = true;
     inputLine.style.display = 'none';
@@ -717,11 +730,12 @@
   function denyAccess() {
     addLine('access_denied', 'term-denied');
     input.value = '';
+    realValue = '';
   }
 
   input.addEventListener('keydown', function (e) {
     if (e.key !== 'Enter') return;
-    var val = input.value.trim().toUpperCase();
+    var val = realValue.trim().toUpperCase();
     if (!val) return;
     if (val === PASSWORD) grantAccess();
     else denyAccess();

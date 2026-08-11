@@ -1209,8 +1209,14 @@ def test_acell_gate(p):
     record("acell", "gate is visible on first load with the clearance prompt",
            page.is_visible("#acell-gate") and "enter_clearance_code:" in page.inner_text("#acell-term-log"), "")
 
-    # Wrong password -> denied, gate stays up.
+    # Wrong password -> denied, gate stays up. The field itself is a
+    # plain type="text" input with its display rewritten to X's (not a
+    # native type="password" field, which would mask with round dots).
     page.fill("#acell-pw-input", "WRONGPASS")
+    record("acell", "the password field masks what's typed with X's, not the real characters",
+           page.input_value("#acell-pw-input") == "X" * len("WRONGPASS"), page.input_value("#acell-pw-input"))
+    record("acell", "the password field is a plain text input (X masking is manual, not the browser's own dots)",
+           page.eval_on_selector("#acell-pw-input", "el => el.type") == "text", "")
     page.press("#acell-pw-input", "Enter")
     page.wait_for_timeout(200)
     record("acell", "wrong password shows access_denied and keeps the gate up",
