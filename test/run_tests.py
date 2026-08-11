@@ -224,9 +224,21 @@ def test_stat_generator_agent_file_nav(p):
 
     captured = {}
     def capture(route):
+        url = route.request.url
         if route.request.method == "POST":
             captured["body"] = route.request.post_data
-        route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        if "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        # A callback-carrying GET (e.g. checkAgentKia's load_character
+        # check, fired once the destination page's Agent File tab
+        # renders) needs a real JSONP-wrapped response -- a raw JSON
+        # body gets executed as a <script> and throws on the object
+        # literal's ':'.
+        cb = url.split("callback=")[1].split("&")[0]
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"OK"}})')
     page.route("**/script.google.com/**", capture)
     # The button navigates to dg-agent-portal.html, whose inline <script>
     # sits right after a Google Fonts <link> -- browsers hold script
@@ -1221,6 +1233,16 @@ def test_acell_play(p):
                 "customSkills": [],
             }),
         },
+        {
+            "agent_code": "MARC-9XQ2",
+            "character_json": json.dumps({
+                "bio": {"name": "Marcus Reyes", "profession": "Pilot"},
+                "csStats": {"STR": 10, "CON": 10, "DEX": 10, "INT": 10, "POW": 10, "CHA": 10},
+                "derived": {"hp": 0, "wp": 8, "san": 30, "bp": 25},
+                "skills": {},
+                "customSkills": [],
+            }),
+        },
     ]
 
     fake_cells = [
@@ -1238,6 +1260,14 @@ def test_acell_play(p):
             cb = url.split("callback=")[1].split("&")[0]
             body = f'{cb}({json.dumps({"status": "OK", "cells": fake_cells})})'
             route.fulfill(status=200, content_type="application/javascript", body=body)
+        elif "callback=" in url:
+            # Other tab modules (Music, Admin, Sheet) fetch unconditionally
+            # on page load regardless of which tab is visible -- their
+            # calls need a real JSONP-wrapped response too, or the browser
+            # tries to execute a raw JSON object as a <script> and throws
+            # a syntax error on the object literal's ':'.
+            cb = url.split("callback=")[1].split("&")[0]
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"OK"}})')
         else:
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", fake_apps_script)
@@ -1247,7 +1277,7 @@ def test_acell_play(p):
 
     names = page.eval_on_selector_all("#play-agent-list .pa-name", "els => els.map(e=>e.textContent)")
     record("acell", "Play lists every Agent on file, not just this browser's own roster",
-           names == ["Owen Castillo", "Priya Anand"], str(names))
+           names == ["Owen Castillo", "Priya Anand", "Marcus Reyes"], str(names))
 
     page.click("#play-agent-list .play-agent-btn:first-child")
     page.wait_for_timeout(200)
@@ -1317,7 +1347,19 @@ def test_acell_play(p):
     page.wait_for_timeout(200)
     names_all = page.eval_on_selector_all("#play-agent-list .pa-name", "els => els.map(e=>e.textContent)")
     record("acell", "'All Agents' clears the filter back to the full roster",
-           names_all == ["Owen Castillo", "Priya Anand"], str(names_all))
+           names_all == ["Owen Castillo", "Priya Anand", "Marcus Reyes"], str(names_all))
+
+    # KIA: a live read of the last-saved HP, not a separate persisted
+    # flag -- Marcus is at 0 HP and should carry the stamp; Owen (13 HP)
+    # should not.
+    page.click('.play-agent-btn:has-text("Owen Castillo")')
+    page.wait_for_timeout(200)
+    record("acell", "an Agent above 0 HP shows no KIA stamp",
+           "KIA" not in page.inner_text("#play-view .pv-bio"), "")
+    page.click('.play-agent-btn:has-text("Marcus Reyes")')
+    page.wait_for_timeout(200)
+    record("acell", "an Agent at 0 HP shows a KIA stamp next to their name",
+           "KIA" in page.inner_text("#play-view .pv-bio"), page.inner_text("#play-view .pv-bio"))
 
     page.close()
     return errs
@@ -1471,7 +1513,7 @@ def test_acell_sheet(p):
          "character_json": json.dumps({"bio": {"name": "Priya Anand"}, "derived": {"hp": 9, "san": 65}}),
          "updated_at": now_ms - 20 * 60 * 1000},
         {"agent_code": "MARC-9XQ2",
-         "character_json": json.dumps({"bio": {"name": "Marcus Reyes"}, "derived": {"hp": 11, "san": 40}}),
+         "character_json": json.dumps({"bio": {"name": "Marcus Reyes"}, "derived": {"hp": 0, "san": 40}}),
          "updated_at": now_ms - 2 * 60 * 60 * 1000},
     ]
     fake_cells = [
@@ -1518,6 +1560,16 @@ def test_acell_sheet(p):
            "Cell Alpha" in row_texts[1] and "Sam" in row_texts[1], row_texts[1])
     record("acell", "an Agent in no Cell shows a clear placeholder, not blank",
            "—" in row_texts[2], row_texts[2])
+
+    # KIA: a live read of last-saved HP, not a separate flag. Marcus is
+    # at 0 HP and should carry the badge; Owen/Priya (13, 9 HP) should not.
+    record("acell", "an Agent at 0 HP shows a KIA badge in the Sheet row",
+           "KIA" in row_texts[2], row_texts[2])
+    record("acell", "an Agent above 0 HP does not show a KIA badge",
+           "KIA" not in row_texts[0] and "KIA" not in row_texts[1], "")
+    hp_cells = page.eval_on_selector_all("#sheet-wrap tbody tr:nth-child(3) td:nth-child(5)", "els => els.map(e=>e.textContent.trim())")
+    record("acell", "an Agent at 0 HP shows '0' in the HP column, not an empty-cell dash",
+           hp_cells == ["0"], str(hp_cells))
 
     dots = page.eval_on_selector_all("#sheet-wrap .sheet-dot", "els => els.map(e=>e.className)")
     record("acell", "Online status reflects how recently each Agent's sheet last synced (just now / 20 min ago / 2 hours ago)",
@@ -2436,7 +2488,18 @@ def test_agent_file_open_character_sheet_btn(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    def fake_apps_script(route):
+        url = route.request.url
+        if route.request.method == "POST" or "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        # A callback-carrying GET (e.g. checkAgentKia's load_character
+        # check, which now fires whenever the Agent File tab renders)
+        # needs a real JSONP-wrapped response -- a raw JSON body gets
+        # executed as a <script> and throws on the object literal's ':'.
+        cb = url.split("callback=")[1].split("&")[0]
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"OK"}})')
+    page.route("**/script.google.com/**", fake_apps_script)
 
     page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
@@ -2544,6 +2607,63 @@ def test_agent_portal_agent_file(p, code):
         record("agent-portal", "agent file loads by code", content_visible, f"code={code}")
     else:
         record("agent-portal", "agent file gate input present", False, "selector #af-code-input not found")
+    page.close()
+    return errs
+
+def test_agent_file_kia_stamp(p):
+    """The Agent File tab shows a KIA stamp when the Agent's saved
+    character sheet (load_character -- the same Cloud Save record
+    stats/ writes to, not this file's own Briefs data) has 0 or less
+    HP. Purely a live read, not a separate persisted flag -- heal the
+    Agent back above 0 and the stamp is gone next time this loads."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    briefs = {"DEAD-0001": {"char_name": "Owen Castillo"}, "ALIV-0002": {"char_name": "Priya Anand"}}
+    characters = {
+        "DEAD-0001": json.dumps({"derived": {"hp": 0}}),
+        "ALIV-0002": json.dumps({"derived": {"hp": 9}}),
+    }
+
+    def fake_apps_script(route):
+        url = route.request.url
+        if route.request.method == "POST" or "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        if "action=load_character" in url:
+            code = url.split("code=")[1].split("&")[0]
+            res = {"status": "OK", "character_json": characters[code]} if code in characters else {"status": "NOT_FOUND"}
+        elif "code=" in url:
+            code = url.split("code=")[1].split("&")[0]
+            res = {"status": "OK", "data": briefs[code]} if code in briefs else {"status": "NOT_FOUND"}
+        else:
+            res = {"status": "OK"}
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    page.click("#tw-agent")
+    page.wait_for_timeout(150)
+
+    page.fill("#af-code-input", "DEAD-0001")
+    page.click("#af-gate .af-gate-btn")
+    page.wait_for_timeout(800)
+    record("agent-portal", "Agent File shows a KIA stamp for an Agent whose saved sheet is at 0 HP",
+           page.is_visible("#af-kia-stamp"), "")
+
+    page.click("button:has-text('Load Different Agent')")
+    page.wait_for_timeout(200)
+    page.fill("#af-code-input", "ALIV-0002")
+    page.click("#af-gate .af-gate-btn")
+    page.wait_for_timeout(800)
+    record("agent-portal", "Agent File shows no KIA stamp for an Agent above 0 HP",
+           not page.is_visible("#af-kia-stamp"), "")
+
     page.close()
     return errs
 
@@ -2757,6 +2877,8 @@ def main():
 
         if codes and codes[0]:
             safe(test_agent_portal_agent_file, browser, codes[0], area="agent-portal")
+
+        safe(test_agent_file_kia_stamp, browser, area="agent-portal")
 
         safe(test_agent_roster, browser, area="agent-roster")
 

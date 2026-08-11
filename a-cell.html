@@ -125,6 +125,7 @@
   .pv-photo img{ width:100%; height:100%; object-fit:cover; display:block; }
   .pv-sticky-info{ min-width:0; }
   .pv-bio{ font-family:'Special Elite',monospace; font-size:18px; color:var(--ink); overflow-wrap:anywhere; }
+  .kia-name{ color:var(--red); text-decoration:line-through; text-decoration-thickness:2px; text-decoration-color:var(--red); }
   .pv-sub{ color:var(--ink-3); font-size:10px; margin-top:2px; font-family:'Courier Prime',monospace; letter-spacing:.04em; }
   .pv-player{ color:var(--ink-2); font-size:11px; margin-top:4px; font-family:'Courier Prime',monospace; }
   .pv-player b{ color:var(--ink); font-family:'Special Elite',monospace; font-weight:400; }
@@ -379,6 +380,11 @@
   .sheet-dot.on{ background:#2f8f3a; }
   .sheet-dot.recent{ background:#c9a227; }
   .sheet-dot.off{ background:#8a8272; }
+  .sheet-kia-badge{
+    font-family:'Special Elite',monospace; font-size:9px; letter-spacing:.08em;
+    color:var(--red); border:1px solid var(--red); padding:1px 5px; margin-left:6px;
+    display:inline-block; vertical-align:middle;
+  }
   .sheet-loading, .sheet-error{
     color:var(--ink-3); font-size:13px; font-style:italic; text-align:center; padding:26px 10px;
     background:var(--paper); box-shadow:var(--paper-shadow);
@@ -895,12 +901,16 @@
 
     var photoId = 'pv-photo-' + c.code;
     var subParts = [c.code, bio.profession, bio.nationality].filter(Boolean).map(escapeHtml);
+    // KIA: a live read of the last-saved HP, not a separate persisted
+    // flag -- heal the Agent back above 0 and this clears on its own
+    // next time this view renders.
+    var kia = typeof derived.hp === 'number' && derived.hp <= 0;
 
     viewEl.innerHTML =
       '<div class="pv-sticky">' +
       '<div class="pv-photo" id="' + photoId + '">' + (bio.name || '?').charAt(0).toUpperCase() + '</div>' +
       '<div class="pv-sticky-info">' +
-      '<div class="pv-bio">' + escapeHtml(bio.name || 'Unknown Agent') + '</div>' +
+      '<div class="pv-bio"><span class="' + (kia ? 'kia-name' : '') + '">' + escapeHtml(bio.name || 'Unknown Agent') + '</span>' + (kia ? ' <span class="stamp">KIA</span>' : '') + '</div>' +
       '<div class="pv-sub">' + subParts.join(' &middot; ') + '</div>' +
       '<div class="pv-player">Player: <b>' + (bio.player_name ? escapeHtml(bio.player_name) : '<span class="pv-empty-note">not set</span>') + '</b></div>' +
       '</div>' +
@@ -1197,6 +1207,14 @@
     return v ? escapeHtml(v) : '<span class="sheet-empty-cell">&mdash;</span>';
   }
 
+  // HP/SAN are numbers where 0 is real data (a KIA'd Agent's HP), not
+  // "nothing recorded" -- cell() above treats 0 as falsy and would show
+  // an em-dash instead, which reads as missing data on exactly the row
+  // where it matters most.
+  function numCell(v) {
+    return (typeof v === 'number') ? escapeHtml(String(v)) : '<span class="sheet-empty-cell">&mdash;</span>';
+  }
+
   function jsonpGet(action, params, cb) {
     var cbName = '_acellSheet_' + action + '_' + Date.now();
     var timer = setTimeout(function () { delete window[cbName]; cb(null); }, 7000);
@@ -1273,13 +1291,17 @@
     var body = rows.map(function (r) {
       var bio = r.state.bio || {};
       var derived = r.state.derived || {};
+      // KIA: a live read of the last-saved HP, not a separate persisted
+      // flag -- heal the Agent back above 0 and this clears on its own
+      // next Refresh.
+      var kia = typeof derived.hp === 'number' && derived.hp <= 0;
       return '<tr>' +
         '<td>' + cell(r.cellNames) + '</td>' +
         '<td>' + cell(r.handlers) + '</td>' +
-        '<td>' + cell(bio.name) + '</td>' +
+        '<td>' + (kia ? '<span class="kia-name">' + cell(bio.name) + '</span>' : cell(bio.name)) + (kia ? ' <span class="sheet-kia-badge">KIA</span>' : '') + '</td>' +
         '<td>' + cell(bio.player_name) + '</td>' +
-        '<td>' + cell(derived.hp) + '</td>' +
-        '<td>' + cell(derived.san) + '</td>' +
+        '<td>' + numCell(derived.hp) + '</td>' +
+        '<td>' + numCell(derived.san) + '</td>' +
         '<td>' + onlineCell(r.updated_at) + '</td>' +
         '</tr>';
     }).join('');

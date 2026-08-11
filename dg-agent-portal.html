@@ -588,6 +588,7 @@ body{
 }
 .af-header-label{font-family:'Courier Prime',monospace;font-size:7px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-3);}
 .af-header-name{font-family:'Special Elite',monospace;font-size:18px;color:var(--ink);line-height:1.1;}
+.af-header-name.kia-name{color:var(--red);text-decoration:line-through;text-decoration-thickness:2px;text-decoration-color:var(--red);}
 .af-header-code{font-family:'Courier Prime',monospace;font-size:10px;letter-spacing:.12em;color:var(--ink-2);}
 .af-small-btn{
   font-family:'Special Elite',monospace;font-size:8px;letter-spacing:.1em;text-transform:uppercase;
@@ -1659,6 +1660,7 @@ body{
             <div class="af-header-label">Asset File</div>
             <div class="af-header-name" id="af-agent-name">—</div>
             <div class="af-header-code" id="af-agent-code">—</div>
+            <div class="stamps"><span class="stamp" id="af-kia-stamp" style="display:none;">KIA</span></div>
           </div>
           <button class="af-small-btn" onclick="showAfGate()">Load Different Agent</button>
         </div>
@@ -3575,6 +3577,7 @@ function renderAgentFile(data) {
   // Header
   document.getElementById('af-agent-name').textContent = data.char_name || '—';
   document.getElementById('af-agent-code').textContent = afCode;
+  checkAgentKia(afCode);
 
   // Check for era data in sheet
   const eras = parseEras(data);
@@ -3601,6 +3604,43 @@ function renderAgentFile(data) {
 
   renderMedicalEntries(data);
   renderAarEntries(data);
+}
+
+/* ── KIA stamp: a live read of this Agent's saved character sheet (the
+   Cloud Save record stats/ writes to, not this file's own Briefs
+   data), so it reflects whatever HP was last synced -- heal the Agent
+   back above 0 and the stamp clears on its own next time this loads,
+   same as it appeared. Best-effort: no cloud character yet (never
+   built one) or an unreachable backend both just leave the stamp
+   hidden, same graceful-degradation every other Apps Script call here
+   already has. ── */
+function checkAgentKia(code) {
+  const stamp = document.getElementById('af-kia-stamp');
+  const nameEl = document.getElementById('af-agent-name');
+  if (!stamp || !code) return;
+  stamp.style.display = 'none';
+  if (nameEl) nameEl.classList.remove('kia-name');
+
+  const cbName = '_afKiaCb' + Date.now();
+  const timer = setTimeout(() => { delete window[cbName]; }, 7000);
+  window[cbName] = function (res) {
+    clearTimeout(timer);
+    delete window[cbName];
+    const s = document.getElementById('_af_kia_script');
+    if (s) s.remove();
+    if (!res || res.status !== 'OK' || !res.character_json) return;
+    let state;
+    try { state = JSON.parse(res.character_json); } catch (e) { return; }
+    const hp = state && state.derived && state.derived.hp;
+    if (typeof hp === 'number' && hp <= 0) {
+      stamp.style.display = 'inline-block';
+      if (nameEl) nameEl.classList.add('kia-name');
+    }
+  };
+  const s = document.createElement('script');
+  s.id = '_af_kia_script';
+  s.src = APPS_SCRIPT_URL + '?action=load_character&code=' + encodeURIComponent(code) + '&callback=' + cbName;
+  document.head.appendChild(s);
 }
 
 /* ── Parse eras from sheet data ── */
