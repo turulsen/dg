@@ -69,6 +69,10 @@
     '#dg-radio{position:fixed;right:14px;bottom:14px;z-index:9998;',
     'font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px;',
     'max-width:min(320px,calc(100vw - 28px));}',
+    /* stats/index.html's collapsed Dice Roller bar also docks bottom-right
+       on narrow screens (see #dr-panel's mobile rule in stats/styles.css)
+       -- lift the radio pill clear of it instead of stacking on top. */
+    '@media (max-width:600px){#dg-radio{bottom:78px;}}',
     '#dg-radio-pill{',
     'background:#161a14;color:#c9d4b8;border:1px solid #3a4432;border-radius:20px;',
     'padding:8px 14px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.4);',
