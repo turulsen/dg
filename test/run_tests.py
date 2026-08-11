@@ -2456,31 +2456,40 @@ def test_table_radio_audio_volume(p):
     record("radio", "a direct audio track renders an <audio> element",
            page.query_selector("#dg-radio-embed-wrap audio") is not None, "")
 
+    # Starts Muted by default (browsers always allow muted autoplay, so
+    # that's the one guaranteed-to-work starting state) -- checked before
+    # any interaction, since dragging the volume slider below is itself
+    # one of the things that changes it.
+    record("radio", "starts Muted by default",
+           page.eval_on_selector("#dg-radio-mute", "el => el.textContent") == "MUTED", "")
+
+    # Dragging the volume slider while Muted un-mutes too (a level nobody
+    # can hear isn't useful feedback) -- one drag both sets .volume and
+    # flips .muted to false.
     page.fill("#dg-radio-volume", "25")
     page.dispatch_event("#dg-radio-volume", "input")
     page.wait_for_timeout(100)
     vol = page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.volume")
     record("radio", "the volume slider sets the <audio> element's real .volume",
            abs(vol - 0.25) < 0.01, str(vol))
+    record("radio", "dragging the volume slider while Muted also un-mutes",
+           page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.muted") is False
+           and page.eval_on_selector("#dg-radio-mute", "el => el.textContent") == "SOUND", "")
 
-    # Starts Muted by default (browsers always allow muted autoplay, so
-    # that's the one guaranteed-to-work starting state) -- first click
-    # un-mutes, second click re-mutes.
-    record("radio", "starts Muted by default",
+    # Now Muted is off (from the drag above) -- one click mutes, a second un-mutes.
+    page.click("#dg-radio-mute")
+    page.wait_for_timeout(100)
+    muted_now = page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.muted")
+    record("radio", "Muting sets the <audio> element's real .muted to true",
+           muted_now is True, "")
+    record("radio", "Muting updates its own label",
            page.eval_on_selector("#dg-radio-mute", "el => el.textContent") == "MUTED", "")
-    page.click("#dg-radio-mute")
-    page.wait_for_timeout(100)
-    unmuted = page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.muted")
-    record("radio", "un-Muting sets the <audio> element's real .muted to false",
-           unmuted is False, "")
-    record("radio", "un-Muting updates its own label",
-           page.eval_on_selector("#dg-radio-mute", "el => el.textContent") == "SOUND", "")
 
     page.click("#dg-radio-mute")
     page.wait_for_timeout(100)
-    muted_again = page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.muted")
-    record("radio", "re-Muting sets .muted back to true on the same <audio> element (not a new one)",
-           muted_again is True, "")
+    unmuted_again = page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.muted")
+    record("radio", "un-Muting sets .muted back to false on the same <audio> element (not a new one)",
+           unmuted_again is False, "")
 
     page.close()
     return errs
@@ -2533,6 +2542,116 @@ def test_table_radio_library_track_kind(p):
            page.query_selector("#dg-radio-embed-wrap iframe") is None, "")
     record("radio", "the volume slider is available for it (a controllable <audio> element, unlike generic iframes)",
            page.eval_on_selector("#dg-radio-volume", "el => getComputedStyle(el).display") != "none", "")
+
+    page.close()
+    return errs
+
+def test_table_radio_yt_volume_reliability(p):
+    """Bug report: "volume controller doesn't work" on a YouTube track --
+    sound plays, dragging the slider does nothing. Two real gaps in the
+    IFrame Player API wiring: (1) applyLiveMuteVolume() treated a freshly
+    -constructed YT.Player OBJECT existing as "ready to call setVolume()
+    on" -- real YouTube embeds accept the call without throwing during
+    that window but silently no-op it, so a drag that lands before the
+    real handshake finishes just vanishes; (2) the volume slider's own
+    handler had no fallback at all when the live-apply failed (unlike
+    the Mute button, which already rebuilt the embed on failure), so a
+    drag that landed during that window had literally no path to ever
+    take effect. This fakes a YouTube API with a deliberately delayed
+    onReady to reproduce the exact window the bug lived in, and confirms
+    a drag during that window still lands once the player catches up
+    (via the same rebuild-on-failure fallback the Mute button already
+    had). Also confirms the origin playerVar (YouTube's own documented
+    recommendation for the postMessage control channel) is actually
+    being sent, and that dragging the slider while Muted (the default
+    starting state) un-mutes rather than silently applying a volume
+    nobody can hear."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=get_now_playing" in url:
+                res = {"status": "OK", "channel": "3", "track_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                       "track_title": "Table Theme", "started_at": 1700000000000}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    # Deliberately slow onReady (600ms) to reproduce the "drag lands
+    # before the real handshake finishes" window -- also records every
+    # constructed player's playerVars so the origin param can be checked,
+    # and every setVolume() call so a rebuilt-vs-original player and its
+    # final applied volume can both be verified.
+    fake_yt_api = """
+      window.__ytPlayerVarsLog = [];
+      window.__ytSetVolumeLog = [];
+      window.YT = { Player: function (elId, opts) {
+        var el = document.getElementById(elId);
+        if (el) el.innerHTML = '<iframe data-yt-fake="1"></iframe>';
+        window.__ytPlayerVarsLog.push(opts.playerVars);
+        this._opts = opts; this._volume = null; this._muted = null; this._id = window.__ytPlayerVarsLog.length;
+        var self = this;
+        setTimeout(function () {
+          if (opts.events && opts.events.onReady) opts.events.onReady({ target: self });
+        }, 600);
+      } };
+      window.YT.Player.prototype.setVolume = function (v) { this._volume = v; window.__ytSetVolumeLog.push({ id: this._id, v: v }); };
+      window.YT.Player.prototype.mute = function () { this._muted = true; };
+      window.YT.Player.prototype.unMute = function () { this._muted = false; };
+      window.YT.Player.prototype.playVideo = function () {};
+      window.YT.Player.prototype.destroy = function () {};
+      if (typeof window.onYouTubeIframeAPIReady === 'function') window.onYouTubeIframeAPIReady();
+    """
+    page.route("**/www.youtube.com/iframe_api", lambda r: r.fulfill(
+        status=200, content_type="application/javascript", body=fake_yt_api))
+
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.evaluate("() => localStorage.setItem('dg_radio_channel', '3')")
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_timeout(200)  # well before the 600ms fake onReady fires
+
+    record("radio", "starts Muted by default (the state the volume-drag-while-muted fix matters for)",
+           page.eval_on_selector("#dg-radio-mute", "el => el.textContent") == "MUTED", "")
+
+    # Drag the slider WHILE the (fake) player is still not ready.
+    page.fill("#dg-radio-volume", "55")
+    page.dispatch_event("#dg-radio-volume", "input")
+    page.wait_for_timeout(100)
+    record("radio", "dragging the slider while still Muted un-mutes (a level nobody can hear isn't useful feedback)",
+           page.eval_on_selector("#dg-radio-mute", "el => el.textContent") == "SOUND", "")
+
+    # Let the fake onReady(s) resolve -- whether the first drag triggered
+    # a rebuild (new player, fresh onReady applying the now-current
+    # volume) or the original player just came ready on its own, the end
+    # state must be the dragged value, actually applied via setVolume().
+    page.wait_for_timeout(900)
+    final_volume = page.evaluate("""() => {
+        var log = window.__ytSetVolumeLog || [];
+        return log.length ? log[log.length - 1].v : null;
+    }""")
+    record("radio", "the dragged volume (55) is actually applied via setVolume() once the player catches up",
+           final_volume == 55, f"setVolume log={final_volume}")
+
+    origin_sent = page.evaluate("""() => {
+        var log = window.__ytPlayerVarsLog || [];
+        return log.length ? log[log.length - 1].origin : null;
+    }""")
+    record("radio", "the origin playerVar is sent (YouTube's own recommendation for the postMessage control channel)",
+           bool(origin_sent) and origin_sent == page.evaluate("() => window.location.origin"), str(origin_sent))
 
     page.close()
     return errs
@@ -3532,6 +3651,8 @@ def main():
         safe(test_table_radio_audio_volume, browser, area="radio")
 
         safe(test_table_radio_library_track_kind, browser, area="radio")
+
+        safe(test_table_radio_yt_volume_reliability, browser, area="radio")
 
         safe(test_agent_portal_code_query_param, browser, area="agent-portal")
 

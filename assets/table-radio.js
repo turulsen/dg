@@ -64,6 +64,13 @@
   // no reload) or needs a full renderEmbed() rebuild.
   var currentEmbedKind = null; // 'yt' | 'sc' | 'audio' | 'generic' | null
   var ytPlayer = null;
+  // A freshly-constructed YT.Player object exists synchronously, well
+  // before the real embedded player has finished its handshake --
+  // calling setVolume()/mute() on it during that window silently no-ops
+  // in real YouTube embeds instead of throwing, so `ytPlayer` existing
+  // is NOT a safe readiness signal on its own. This flag is the actual
+  // one, set only inside onReady.
+  var ytPlayerReady = false;
   var scWidget = null;
   var ytApiLoading = false;
   var ytApiCallbacks = [];
@@ -148,6 +155,7 @@
 
   function destroyActivePlayers() {
     if (ytPlayer) { try { ytPlayer.destroy(); } catch (e) { /* already gone */ } ytPlayer = null; }
+    ytPlayerReady = false;
     scWidget = null; // SC.Widget doesn't need explicit teardown -- its iframe is about to be replaced/removed anyway
     currentEmbedKind = null;
   }
@@ -367,7 +375,17 @@
     });
     document.getElementById('dg-radio-volume').addEventListener('input', function (e) {
       setVolume(parseInt(e.target.value, 10) || 0);
-      applyLiveMuteVolume();
+      // Dragging the volume slider implies wanting to hear that level --
+      // without this, a still-Muted widget (the default until the first
+      // Sound tap) would apply the new volume internally but stay
+      // silent, reading as "the volume slider doesn't do anything" even
+      // though it technically did.
+      if (isMuted()) {
+        setMuted(false);
+        var muteBtn = document.getElementById('dg-radio-mute');
+        if (muteBtn) muteBtn.textContent = 'SOUND';
+      }
+      if (!applyLiveMuteVolume()) renderEmbed(window._dgRadioLast);
     });
     document.getElementById('dg-radio-toggle-expand').addEventListener('click', function () {
       setExpanded(!isExpanded());
@@ -424,7 +442,7 @@
   function applyLiveMuteVolume() {
     var muted = isMuted();
     var vol = getVolume();
-    if (currentEmbedKind === 'yt' && ytPlayer && typeof ytPlayer.setVolume === 'function') {
+    if (currentEmbedKind === 'yt' && ytPlayer && ytPlayerReady) {
       try {
         if (muted) { ytPlayer.mute(); } else { ytPlayer.unMute(); ytPlayer.setVolume(vol); }
         return true;
@@ -476,12 +494,18 @@
         if (!document.getElementById('dg-radio-yt-target')) return; // superseded by a later renderEmbed() call
         ytPlayer = new window.YT.Player('dg-radio-yt-target', {
           height: '220', width: '100%', videoId: ytId,
-          playerVars: { autoplay: 1, start: elapsed, mute: muted ? 1 : 0, playsinline: 1 },
+          // origin is YouTube's own recommended playerVar for the
+          // postMessage-based control channel (setVolume/mute/etc) --
+          // without it the video can still play visibly while those
+          // calls go nowhere, which is exactly the "sound plays, volume
+          // slider does nothing" shape of bug this was chasing.
+          playerVars: { autoplay: 1, start: elapsed, mute: muted ? 1 : 0, playsinline: 1, origin: window.location.origin },
           events: {
             onReady: function (e) {
+              ytPlayerReady = true;
               try {
-                e.target.setVolume(vol);
-                if (muted) e.target.mute(); else e.target.unMute();
+                e.target.setVolume(getVolume());
+                if (isMuted()) e.target.mute(); else e.target.unMute();
                 e.target.playVideo();
               } catch (e2) { /* best effort */ }
             }
