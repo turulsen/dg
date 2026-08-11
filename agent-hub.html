@@ -38,6 +38,28 @@
 
   .recruit-copy, .empty-copy{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.85; max-width:52ch; margin-bottom:var(--s5); }
   .empty-panel .paper-title{ font-size:20px; }
+
+  /* ── Handouts: whatever the Handler has filed that's relevant to this
+     Agent -- campaign-wide entries, plus anything scoped to a Cell this
+     Agent belongs to. Read-only mirror of A-Cell's Handouts tab. ── */
+  .ah-section-divider{
+    font-family:'Special Elite',monospace; font-size:11px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--ink-3); border-top:1px solid var(--rule); margin-top:var(--s5); padding-top:14px; margin-bottom:10px;
+  }
+  .ah-handouts{ display:flex; flex-direction:column; gap:12px; }
+  .ah-handouts-empty{ font-style:italic; color:var(--ink-3); font-size:12px; font-family:'Courier Prime',monospace; }
+  .ah-handout-card{ background:rgba(28,22,8,.04); border:1px solid var(--rule); padding:14px 16px; }
+  .ah-handout-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:8px; }
+  .ah-handout-scope{
+    font-family:'Special Elite',monospace; font-size:9px; letter-spacing:.14em; text-transform:uppercase;
+    border:1.5px solid var(--red); color:var(--red); padding:3px 10px; opacity:.85; display:inline-block;
+  }
+  .ah-handout-scope.all-cells{ border-color:var(--green); color:var(--green); }
+  .ah-handout-date{ font-family:'Courier Prime',monospace; font-size:10px; color:var(--ink-3); }
+  .ah-handout-title{ font-family:'Special Elite',monospace; font-size:15px; color:var(--ink); margin-bottom:8px; }
+  .ah-handout-body-row{ display:flex; gap:14px; }
+  .ah-handout-photo{ width:88px; height:88px; flex-shrink:0; object-fit:cover; border:1px solid var(--rule); display:block; }
+  .ah-handout-text{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.7; flex:1; min-width:0; white-space:pre-wrap; }
 </style>
 </head>
 <body class="folder-theme">
@@ -243,6 +265,8 @@
             <a class="paper-btn" href="dg-agent-portal.html?code=${encodeURIComponent(a.code)}#agent">Agent File</a>
             <a class="paper-btn" href="dg-agent-portal.html?code=${encodeURIComponent(a.code)}#ids">Cover ID</a>
           </div>
+          <div class="ah-section-divider">Handouts</div>
+          <div class="ah-handouts" id="ah-handouts-${a.code}"><div class="ah-handouts-empty">Loading&hellip;</div></div>
         </div>
       </div>`;
       folderBody.appendChild(panel);
@@ -259,6 +283,89 @@
     });
 
     setActiveTab(agents[0].code);
+    loadHandouts();
+  }
+
+  // Handouts: one shared fetch of Cells + Handouts, reused across every
+  // Agent's panel (rather than one fetch per Agent) -- a handout is
+  // relevant to an Agent if it's campaign-wide (no cell_id) or scoped to
+  // a Cell that Agent is a member of.
+  function jsonpGet(action, params, cb) {
+    const cbName = '_ahHandouts_' + action + '_' + Date.now();
+    const timer = setTimeout(() => { delete window[cbName]; cb(null); }, 7000);
+    window[cbName] = function (res) {
+      clearTimeout(timer);
+      delete window[cbName];
+      const s = document.getElementById('s-' + cbName);
+      if (s) s.remove();
+      cb(res);
+    };
+    const s = document.createElement('script');
+    s.id = 's-' + cbName;
+    let qs = 'action=' + action + '&callback=' + cbName;
+    Object.keys(params || {}).forEach(k => { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
+    s.src = APPS_SCRIPT_URL + '?' + qs;
+    document.head.appendChild(s);
+  }
+
+  function formatHandoutDate(ts) {
+    const n = Number(ts);
+    if (!n) return '';
+    return 'Filed ' + new Date(n).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+
+  function renderHandoutsFor(code, handouts, cellsById) {
+    const el = document.getElementById('ah-handouts-' + code);
+    if (!el) return;
+    if (!handouts.length) {
+      el.innerHTML = '<div class="ah-handouts-empty">Nothing filed for this Agent yet.</div>';
+      return;
+    }
+    el.innerHTML = handouts.map(h => {
+      const scopeClass = h.cell_id ? 'ah-handout-scope' : 'ah-handout-scope all-cells';
+      const scopeLabel = h.cell_id ? ((cellsById[h.cell_id] && cellsById[h.cell_id].name) || h.cell_id) : 'All Cells';
+      const photo = h.photo ? `<img class="ah-handout-photo" src="${h.photo}" alt="">` : '';
+      return `<div class="ah-handout-card">
+        <div class="ah-handout-head">
+          <span class="${scopeClass}">${escapeHtml(scopeLabel)}</span>
+          <span class="ah-handout-date">${escapeHtml(formatHandoutDate(h.created_at))}</span>
+        </div>
+        <div class="ah-handout-title">${escapeHtml(h.title)}</div>
+        <div class="ah-handout-body-row">${photo}<div class="ah-handout-text">${escapeHtml(h.body)}</div></div>
+      </div>`;
+    }).join('');
+  }
+
+  function loadHandouts() {
+    let cellsDone = false, handoutsDone = false, cellsOk = false, handoutsOk = false;
+    let cells = [], handouts = [];
+    function maybeRender() {
+      if (!cellsDone || !handoutsDone) return;
+      const cellsById = {};
+      cells.forEach(c => { cellsById[c.cell_id] = c; });
+      agents.forEach(a => {
+        if (!handoutsOk) {
+          const el = document.getElementById('ah-handouts-' + a.code);
+          if (el) el.innerHTML = '<div class="ah-handouts-empty">Could not load handouts.</div>';
+          return;
+        }
+        const myCellIds = cellsOk ? cells.filter(c => c.member_codes.indexOf(a.code) !== -1).map(c => c.cell_id) : [];
+        const relevant = handouts
+          .filter(h => !h.cell_id || myCellIds.indexOf(h.cell_id) !== -1)
+          .sort((x, y) => Number(y.created_at) - Number(x.created_at));
+        renderHandoutsFor(a.code, relevant, cellsById);
+      });
+    }
+    jsonpGet('list_cells', {}, res => {
+      cellsDone = true;
+      if (res && res.status === 'OK' && Array.isArray(res.cells)) { cells = res.cells; cellsOk = true; }
+      maybeRender();
+    });
+    jsonpGet('list_handouts', {}, res => {
+      handoutsDone = true;
+      if (res && res.status === 'OK' && Array.isArray(res.handouts)) { handouts = res.handouts; handoutsOk = true; }
+      maybeRender();
+    });
   }
 
   tabStrip.addEventListener('click', e => {

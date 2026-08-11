@@ -584,38 +584,7 @@
         </div>
         <div id="handouts-create-form-slot"></div>
         <div class="handouts-status" id="handouts-status"></div>
-        <div class="handouts-list" id="handouts-list">
-          <!-- SAMPLE CONTENT for design review -- not live data yet. -->
-          <div class="handout-card">
-            <div class="handout-card-head">
-              <span class="handout-scope">Cell Alpha</span>
-              <span class="handout-date">Filed Aug 11, 2026</span>
-            </div>
-            <div class="handout-title">Field Photograph — Meadowbrook Substation</div>
-            <div class="handout-body-row">
-              <div class="handout-photo" style="background:var(--ink-placeholder);"></div>
-              <div class="handout-text">Recovered from the scene, undeveloped roll found in the victim's coat. Timestamp is corrupted -- lab estimates late October. Subject in frame unidentified; note the burn pattern on the fence line behind them.</div>
-            </div>
-            <div class="handout-actions">
-              <button type="button" class="paper-btn">Edit</button>
-              <button type="button" class="paper-btn cell-delete-btn">Delete</button>
-            </div>
-          </div>
-          <div class="handout-card">
-            <div class="handout-card-head">
-              <span class="handout-scope all-cells">All Cells</span>
-              <span class="handout-date">Filed Aug 9, 2026</span>
-            </div>
-            <div class="handout-title">Wire Service Clipping</div>
-            <div class="handout-body-row">
-              <div class="handout-text">"Three additional livestock deaths reported in the county this week, bringing the total to eleven since July. State agriculture officials cite an undetermined pathogen; local ranchers aren't convinced." -- Meadowbrook Gazette, Aug 7</div>
-            </div>
-            <div class="handout-actions">
-              <button type="button" class="paper-btn">Edit</button>
-              <button type="button" class="paper-btn cell-delete-btn">Delete</button>
-            </div>
-          </div>
-        </div>
+        <div class="handouts-list" id="handouts-list"></div>
       </div>
 
       <div class="tab-panel" id="panel-sheet">
@@ -1367,6 +1336,228 @@
   }
 
   createBtn.addEventListener('click', showCreateForm);
+  refreshBtn.addEventListener('click', function () { fetchAll(true); });
+  fetchAll(false);
+})();
+</script>
+
+<script>
+/* ══════════════════════════════════════════════
+   HANDOUTS -- a shared clue/document log the Handler files, each entry
+   scoped to one Cell or every Cell. Player-facing agent-hub.html reads
+   the same list_handouts action and filters to what a given Agent's
+   Cell(s) can see.
+   ══════════════════════════════════════════════ */
+(function () {
+  "use strict";
+  var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
+  var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm it. Check that the Handouts addition (list_handouts / create_handout / update_handout / delete_handout) is pasted into Apps Script and redeployed.';
+
+  var listEl = document.getElementById('handouts-list');
+  var statusEl = document.getElementById('handouts-status');
+  var createBtn = document.getElementById('handouts-create-btn');
+  var createFormSlot = document.getElementById('handouts-create-form-slot');
+  var refreshBtn = document.getElementById('handouts-refresh-btn');
+  var refreshNote = document.getElementById('handouts-refresh-note');
+
+  var handouts = [];
+  var cells = [];
+  var cellsById = {};
+  var formPhotoDataUrl = null;
+
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
+  }
+
+  function jsonpGet(action, params, cb) {
+    var cbName = '_acellHandouts_' + action + '_' + Date.now();
+    var timer = setTimeout(function () { delete window[cbName]; cb(null); }, 7000);
+    window[cbName] = function (res) {
+      clearTimeout(timer);
+      delete window[cbName];
+      var s = document.getElementById('s-' + cbName);
+      if (s) s.remove();
+      cb(res);
+    };
+    var s = document.createElement('script');
+    s.id = 's-' + cbName;
+    var qs = 'action=' + action + '&callback=' + cbName;
+    Object.keys(params || {}).forEach(function (k) { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
+    s.src = APPS_SCRIPT_URL + '?' + qs;
+    document.head.appendChild(s);
+  }
+
+  function cellName(cellId) {
+    if (!cellId) return 'All Cells';
+    var c = cellsById[cellId];
+    return c ? c.name : cellId;
+  }
+
+  function formatDate(ts) {
+    var n = Number(ts);
+    if (!n) return '';
+    return 'Filed ' + new Date(n).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+
+  function fetchAll(isRefresh) {
+    var handoutsDone = false, cellsDone = false, handoutsOk = false, cellsOk = false;
+    function maybeRender() {
+      if (!handoutsDone || !cellsDone) return;
+      if (!handoutsOk) {
+        listEl.innerHTML = '<div class="handouts-empty-note">Could not load Handouts. (The A-Cell Handouts addition may not be deployed yet.)</div>';
+        return;
+      }
+      renderList();
+      if (isRefresh) refreshNote.textContent = 'Updated ' + new Date().toLocaleTimeString();
+    }
+    jsonpGet('list_handouts', {}, function (res) {
+      handoutsDone = true;
+      if (res && res.status === 'OK' && Array.isArray(res.handouts)) {
+        handouts = res.handouts.slice().sort(function (a, b) { return Number(b.created_at) - Number(a.created_at); });
+        handoutsOk = true;
+      }
+      maybeRender();
+    });
+    jsonpGet('list_cells', {}, function (res) {
+      cellsDone = true;
+      if (res && res.status === 'OK' && Array.isArray(res.cells)) {
+        cells = res.cells;
+        cellsById = {};
+        cells.forEach(function (c) { cellsById[c.cell_id] = c; });
+        cellsOk = true;
+      }
+      maybeRender();
+    });
+  }
+
+  function renderList() {
+    if (!handouts.length) {
+      listEl.innerHTML = '<div class="handouts-empty-note">No handouts filed yet -- click "+ New Handout" to add one.</div>';
+      return;
+    }
+    listEl.innerHTML = handouts.map(function (h, i) {
+      var scopeClass = h.cell_id ? 'handout-scope' : 'handout-scope all-cells';
+      var photoRow = h.photo
+        ? '<img class="handout-photo" src="' + h.photo + '" alt="">'
+        : '';
+      return '<div class="handout-card" data-i="' + i + '">' +
+        '<div class="handout-card-head">' +
+        '<span class="' + scopeClass + '">' + escapeHtml(cellName(h.cell_id)) + '</span>' +
+        '<span class="handout-date">' + escapeHtml(formatDate(h.created_at)) + '</span>' +
+        '</div>' +
+        '<div class="handout-title">' + escapeHtml(h.title) + '</div>' +
+        '<div class="handout-body-row">' + photoRow +
+        '<div class="handout-text">' + escapeHtml(h.body) + '</div>' +
+        '</div>' +
+        '<div class="handout-actions">' +
+        '<button type="button" class="paper-btn" data-edit-handout="' + i + '">Edit</button>' +
+        '<button type="button" class="paper-btn cell-delete-btn" data-delete-handout="' + i + '">Delete</button>' +
+        '</div>' +
+        '</div>';
+    }).join('');
+
+    Array.prototype.forEach.call(listEl.querySelectorAll('[data-edit-handout]'), function (btn) {
+      btn.addEventListener('click', function () { showForm(handouts[parseInt(btn.dataset.editHandout, 10)]); });
+    });
+    Array.prototype.forEach.call(listEl.querySelectorAll('[data-delete-handout]'), function (btn) {
+      btn.addEventListener('click', function () { deleteHandout(handouts[parseInt(btn.dataset.deleteHandout, 10)]); });
+    });
+  }
+
+  function deleteHandout(h) {
+    if (!confirm('Delete "' + h.title + '"? This cannot be undone.')) return;
+    statusEl.textContent = 'Deleting…';
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors', keepalive: true,
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'delete_handout', handout_id: h.handout_id }),
+    }).then(function () {
+      setTimeout(function () {
+        jsonpGet('list_handouts', {}, function (res) {
+          var stillThere = res && res.status === 'OK' && Array.isArray(res.handouts) &&
+            res.handouts.some(function (x) { return x.handout_id === h.handout_id; });
+          if (stillThere) { statusEl.textContent = NOT_DEPLOYED_MSG; return; }
+          if (res && res.status === 'OK' && Array.isArray(res.handouts)) {
+            handouts = res.handouts.slice().sort(function (a, b) { return Number(b.created_at) - Number(a.created_at); });
+          }
+          statusEl.textContent = 'Deleted ' + h.title + '.';
+          renderList();
+        });
+      }, 900);
+    }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+  }
+
+  function handlePhoto(input, prevImgId) {
+    if (!input.files[0]) return;
+    var r = new FileReader();
+    r.onload = function (e) {
+      formPhotoDataUrl = e.target.result;
+      var prev = document.getElementById(prevImgId);
+      if (prev) { prev.src = e.target.result; prev.style.display = 'block'; }
+    };
+    r.readAsDataURL(input.files[0]);
+  }
+
+  function showForm(editingHandout) {
+    if (!editingHandout && createFormSlot.childNodes.length) { createFormSlot.innerHTML = ''; return; }
+    formPhotoDataUrl = editingHandout ? (editingHandout.photo || null) : null;
+    var scopeOptions = '<option value="">All Cells</option>' + cells.map(function (c) {
+      var sel = editingHandout && editingHandout.cell_id === c.cell_id ? ' selected' : '';
+      return '<option value="' + escapeHtml(c.cell_id) + '"' + sel + '>' + escapeHtml(c.name) + '</option>';
+    }).join('');
+    createFormSlot.innerHTML =
+      '<div class="handouts-create-form">' +
+      '<div class="handouts-create-row">' +
+      '<label class="handouts-create-field"><span>Title</span><input type="text" id="handouts-new-title" placeholder="e.g. Field Photograph" value="' + (editingHandout ? escapeHtml(editingHandout.title) : '') + '"></label>' +
+      '<label class="handouts-create-field"><span>Scope</span><select id="handouts-new-scope">' + scopeOptions + '</select></label>' +
+      '</div>' +
+      '<label class="handouts-create-field"><span>Body</span><textarea id="handouts-new-body" placeholder="What the Agents see...">' + (editingHandout ? escapeHtml(editingHandout.body) : '') + '</textarea></label>' +
+      '<label class="handouts-create-field"><span>Photo (optional)</span><input type="file" accept="image/*" id="handouts-new-photo"></label>' +
+      (formPhotoDataUrl ? '<img id="handouts-new-photo-prev" class="handout-photo" src="' + formPhotoDataUrl + '" style="display:block;">' : '<img id="handouts-new-photo-prev" class="handout-photo" style="display:none;">') +
+      '<div class="handouts-create-actions">' +
+      '<button type="button" class="paper-btn primary" id="handouts-new-confirm">' + (editingHandout ? 'Save' : 'Create') + '</button>' +
+      '<button type="button" class="paper-btn" id="handouts-new-cancel">Cancel</button>' +
+      '</div>' +
+      '<div class="handouts-create-error" id="handouts-new-error"></div>' +
+      '</div>';
+    document.getElementById('handouts-new-photo').addEventListener('change', function () {
+      handlePhoto(this, 'handouts-new-photo-prev');
+    });
+    document.getElementById('handouts-new-cancel').addEventListener('click', function () { createFormSlot.innerHTML = ''; });
+    document.getElementById('handouts-new-confirm').addEventListener('click', function () {
+      var title = document.getElementById('handouts-new-title').value.trim();
+      var body = document.getElementById('handouts-new-body').value.trim();
+      var cellId = document.getElementById('handouts-new-scope').value;
+      var errEl = document.getElementById('handouts-new-error');
+      if (!title) { errEl.textContent = 'Give the handout a title first.'; return; }
+      statusEl.textContent = editingHandout ? 'Saving…' : 'Creating…';
+      var payload = editingHandout
+        ? { action: 'update_handout', handout_id: editingHandout.handout_id, title: title, body: body, photo: formPhotoDataUrl || '', cell_id: cellId }
+        : { action: 'create_handout', title: title, body: body, photo: formPhotoDataUrl || '', cell_id: cellId };
+      fetch(APPS_SCRIPT_URL, {
+        method: 'POST', mode: 'no-cors', keepalive: true,
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(payload),
+      }).then(function () {
+        setTimeout(function () {
+          jsonpGet('list_handouts', {}, function (res) {
+            var ok = res && res.status === 'OK' && Array.isArray(res.handouts) &&
+              res.handouts.some(function (x) { return x.title === title && x.cell_id === cellId; });
+            if (!ok) { statusEl.textContent = NOT_DEPLOYED_MSG; return; }
+            handouts = res.handouts.slice().sort(function (a, b) { return Number(b.created_at) - Number(a.created_at); });
+            statusEl.textContent = '';
+            createFormSlot.innerHTML = '';
+            renderList();
+          });
+        }, 900);
+      }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+    });
+  }
+
+  createBtn.addEventListener('click', function () { showForm(null); });
   refreshBtn.addEventListener('click', function () { fetchAll(true); });
   fetchAll(false);
 })();

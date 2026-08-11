@@ -1024,7 +1024,14 @@ def test_agent_hub(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    def fake_hub_apps_script(route):
+        url = route.request.url
+        if "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
+    page.route("**/script.google.com/**", fake_hub_apps_script)
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     roster = {
         "OWEN-CS12": {"code": "OWEN-CS12", "char_name": "Owen Castillo", "codename": "Ferro",
@@ -1063,6 +1070,62 @@ def test_agent_hub(p):
     errs_all.extend(errs)
     page.close()
     return errs_all
+
+def test_agent_hub_handouts(p):
+    """agent-hub.html's per-Agent Handouts section: a read-only mirror
+    of A-Cell's Handouts tab, filtered per Agent -- campaign-wide
+    entries (blank cell_id) show for everyone, Cell-scoped ones only
+    show for an Agent who's actually a member of that Cell. Cells and
+    Handouts are each fetched once and reused across every Agent's
+    panel rather than once per Agent."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    cells_fixture = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"], "channel": ""}]
+    handouts_fixture = [
+        {"handout_id": "h1", "title": "Cell Alpha Only Clue", "body": "Only Owen should see this.", "photo": "", "cell_id": "cell_1", "created_at": "2000"},
+        {"handout_id": "h2", "title": "Campaign Wide Notice", "body": "Everyone sees this.", "photo": "", "cell_id": "", "created_at": "1000"},
+    ]
+
+    def fake_apps_script(route):
+        url = route.request.url
+        if route.request.method == "POST" or "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        if "action=list_cells" in url:
+            res = {"status": "OK", "cells": cells_fixture}
+        elif "action=list_handouts" in url:
+            res = {"status": "OK", "handouts": handouts_fixture}
+        else:
+            res = {"status": "OK"}
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    roster = {
+        "OWEN-CS12": {"code": "OWEN-CS12", "char_name": "Owen Castillo", "codename": "Ferro", "saved_at": 2000},
+        "PRIY-AN34": {"code": "PRIY-AN34", "char_name": "Priya Anand", "codename": "", "saved_at": 1000},
+    }
+    page.evaluate("(r) => localStorage.setItem('dg_agent_roster', JSON.stringify(r))", roster)
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_timeout(900)
+
+    owen_titles = page.eval_on_selector_all("#ah-handouts-OWEN-CS12 .ah-handout-title", "els => els.map(e=>e.textContent)")
+    record("hub", "an Agent who's a Cell member sees both that Cell's handout and the campaign-wide one",
+           sorted(owen_titles) == sorted(["Cell Alpha Only Clue", "Campaign Wide Notice"]), str(owen_titles))
+
+    page.click('.tw[data-tab="PRIY-AN34"]')
+    page.wait_for_timeout(150)
+    priya_titles = page.eval_on_selector_all("#ah-handouts-PRIY-AN34 .ah-handout-title", "els => els.map(e=>e.textContent)")
+    record("hub", "an Agent in no Cell only sees the campaign-wide handout, not the Cell-scoped one",
+           priya_titles == ["Campaign Wide Notice"], str(priya_titles))
+
+    page.close()
+    return errs
 
 def test_agent_hub_recruit_flag(p):
     """Bug fix: an Agent File can exist (submitted via Cover form /
@@ -1531,6 +1594,119 @@ def test_acell_cells(p):
            and "Priya Anand" in page.inner_text("#cells-unassigned")
            and "Marcus Reyes" in page.inner_text("#cells-unassigned"),
            page.inner_text("#cells-unassigned"))
+
+    page.close()
+    return errs
+
+def test_acell_handouts(p):
+    """a-cell.html's Handouts tab: a shared clue/document log the
+    Handler files, each entry scoped to one Cell (cell_id set) or
+    every Cell (cell_id blank, shown as "All Cells"). Backed by
+    list_handouts/create_handout/update_handout/delete_handout. Like
+    every other write in this app, the no-cors POSTs are verified by a
+    real list_handouts read-back before the UI shows the change."""
+    page = p.new_page()
+    page.set_default_timeout(30000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    skip_acell_gate(page)
+
+    cells_fixture = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"], "channel": ""}]
+    handouts_state = []
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            body = json.loads(req.post_data or "{}")
+            action = body.get("action")
+            if action == "create_handout":
+                hid = "handout_" + str(len(handouts_state) + 1)
+                handouts_state.append({
+                    "handout_id": hid, "title": body.get("title", ""), "body": body.get("body", ""),
+                    "photo": body.get("photo", ""), "cell_id": body.get("cell_id", ""),
+                    "created_at": str(1000 + len(handouts_state)),
+                })
+            elif action == "update_handout":
+                for h in handouts_state:
+                    if h["handout_id"] == body.get("handout_id"):
+                        h["title"] = body.get("title", ""); h["body"] = body.get("body", "")
+                        h["photo"] = body.get("photo", ""); h["cell_id"] = body.get("cell_id", "")
+            elif action == "delete_handout":
+                handouts_state[:] = [h for h in handouts_state if h["handout_id"] != body.get("handout_id")]
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=list_cells" in url:
+                res = {"status": "OK", "cells": cells_fixture}
+            elif "action=list_handouts" in url:
+                res = {"status": "OK", "handouts": handouts_state}
+            elif "action=list_characters" in url:
+                res = {"status": "OK", "characters": []}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+    page.click('.tw[data-tab="handouts"]')
+    page.wait_for_timeout(500)
+
+    record("acell", "Handouts starts empty with a prompt to file one",
+           "No handouts filed yet" in page.inner_text("#handouts-list"), "")
+
+    # File a Cell-scoped handout.
+    page.click("#handouts-create-btn")
+    page.wait_for_timeout(150)
+    page.fill("#handouts-new-title", "Field Photograph")
+    page.select_option("#handouts-new-scope", label="Cell Alpha")
+    page.fill("#handouts-new-body", "Recovered from the scene.")
+    page.click("#handouts-new-confirm")
+    list_text = wait_for_condition(lambda: page.inner_text("#handouts-list")
+                                    if "Field Photograph" in page.inner_text("#handouts-list") else None)
+    record("acell", "filing a handout shows it once the backend confirms it",
+           bool(list_text) and "Field Photograph" in list_text and "cell alpha" in list_text.lower(), list_text or "")
+
+    # File an All Cells handout.
+    page.click("#handouts-create-btn")
+    page.wait_for_timeout(150)
+    page.fill("#handouts-new-title", "Wire Service Clipping")
+    page.fill("#handouts-new-body", "Three additional livestock deaths reported.")
+    page.click("#handouts-new-confirm")
+    wait_for_condition(lambda: "Wire Service Clipping" in page.inner_text("#handouts-list"))
+    record("acell", "a blank Scope files as All Cells",
+           "all cells" in page.inner_text("#handouts-list").lower(), page.inner_text("#handouts-list"))
+    record("acell", "both a Cell-scoped and an All Cells handout can coexist in the list",
+           page.locator(".handout-card").count() == 2, "")
+
+    # Edit the first one.
+    page.click('[data-edit-handout="1"]')
+    page.wait_for_timeout(200)
+    record("acell", "Edit opens the form pre-filled with that handout's title",
+           page.input_value("#handouts-new-title") == "Field Photograph", page.input_value("#handouts-new-title"))
+    page.fill("#handouts-new-title", "Field Photograph (annotated)")
+    page.click("#handouts-new-confirm")
+    wait_for_condition(lambda: "Field Photograph (annotated)" in page.inner_text("#handouts-list"))
+    record("acell", "editing a handout updates it in place once confirmed",
+           "Field Photograph (annotated)" in page.inner_text("#handouts-list"), page.inner_text("#handouts-list"))
+
+    # Delete: dismiss then accept.
+    page.once("dialog", lambda d: d.dismiss())
+    page.click('[data-delete-handout="0"]')
+    page.wait_for_timeout(300)
+    record("acell", "dismissing the Delete confirm leaves the handout in place",
+           page.locator(".handout-card").count() == 2, "")
+
+    page.once("dialog", lambda d: d.accept())
+    page.click('[data-delete-handout="0"]')
+    wait_for_condition(lambda: page.locator(".handout-card").count() == 1)
+    record("acell", "accepting Delete removes the handout",
+           page.locator(".handout-card").count() == 1, "")
 
     page.close()
     return errs
@@ -2885,11 +3061,15 @@ def main():
 
         safe(test_agent_hub_recruit_flag, browser, area="hub")
 
+        safe(test_agent_hub_handouts, browser, area="hub")
+
         safe(test_acell_gate, browser, area="acell")
 
         safe(test_acell_play, browser, area="acell")
 
         safe(test_acell_cells, browser, area="acell")
+
+        safe(test_acell_handouts, browser, area="acell")
 
         safe(test_acell_sheet, browser, area="acell")
 
