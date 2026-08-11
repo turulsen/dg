@@ -2656,6 +2656,49 @@ def test_table_radio_yt_volume_reliability(p):
     page.close()
     return errs
 
+def test_table_radio_mobile_buttons_not_stretched(p):
+    """Bug report (screenshot): on stats/index.html at a phone width, the
+    minimized mini-bar's buttons (Mute/Expand/Leave) rendered stretched
+    edge-to-edge and overflowing well past the widget's own 280px-wide
+    panel, overlapping the character sheet's form fields underneath.
+    Root cause: stats/styles.css has `@media (max-width:600px){ button {
+    width: 100%; } }`, meant for the page's OWN buttons stacking full-
+    width on narrow screens -- being a bare `button` selector, it also
+    grabbed this widget's plain <button> elements once appended to
+    <body>, since dg-agent-portal.html has no such rule (which is why
+    the report says the widget looked fine there and only broke once
+    Play navigated to the character sheet). Confirms every mini-bar
+    button now stays within the panel's own bounds on that exact page."""
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.evaluate("() => localStorage.setItem('dg_radio_channel', '3')")
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_timeout(700)
+
+    panel_box = page.evaluate("""() => {
+        var r = document.getElementById('dg-radio-panel').getBoundingClientRect();
+        return { left: r.left, right: r.right };
+    }""")
+    button_ids = ["dg-radio-mute", "dg-radio-toggle-expand", "dg-radio-leave"]
+    for bid in button_ids:
+        box = page.evaluate(f"""() => {{
+            var r = document.getElementById('{bid}').getBoundingClientRect();
+            return {{ left: r.left, right: r.right, width: r.width }};
+        }}""")
+        record("radio", f"#{bid} stays within the mini-bar panel's own bounds (not stretched to page-wide 100%)",
+               box["left"] >= panel_box["left"] - 1 and box["right"] <= panel_box["right"] + 1 and box["width"] < 150,
+               f"button={box} panel={panel_box}")
+
+    page.close()
+    return errs
+
 def test_agent_portal_code_query_param(p):
     """agent-hub.html's Agent Files "Files" and "ID Creator" buttons link
     to dg-agent-portal.html?code=XXXX#agent / #ids -- a new
@@ -3653,6 +3696,8 @@ def main():
         safe(test_table_radio_library_track_kind, browser, area="radio")
 
         safe(test_table_radio_yt_volume_reliability, browser, area="radio")
+
+        safe(test_table_radio_mobile_buttons_not_stretched, browser, area="radio")
 
         safe(test_agent_portal_code_query_param, browser, area="agent-portal")
 

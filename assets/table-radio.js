@@ -186,6 +186,16 @@
     '#dg-radio-panel .dgr-head b{color:#a8c890;}',
     '#dg-radio-panel .dgr-btn{',
     'background:transparent;border:1px solid #3a4432;color:#c9d4b8;border-radius:4px;',
+    // width:auto is deliberate, not decorative: stats/styles.css has a
+    // mobile rule (button{width:100%}) meant for the page's OWN buttons
+    // stacking full-width on narrow screens -- being a bare `button`
+    // selector, it also grabs this widget's plain <button> elements
+    // once appended to <body>, stretching Mute/Expand/Leave to the full
+    // panel width and blowing the mini-bar's layout apart (each button
+    // fighting the others for 100%, overflowing past the panel's own
+    // edge). This selector's specificity beats that bare one, so it's
+    // the fix, not just a style choice.
+    'width:auto;',
     'font-family:inherit;font-size:11px;padding:3px 7px;cursor:pointer;flex-shrink:0;}',
     '#dg-radio-panel .dgr-btn:hover{border-color:#5a6a48;}',
     /* ── mini bar: the persistent, always-visible controls, whether the
