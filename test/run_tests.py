@@ -890,8 +890,8 @@ def test_cover_ids_tab(p):
     if card_rendered:
         record("cover-ids-tab", "rendered card shows the entered cover name",
                "Marcus Reyes" in preview_text, preview_text[:80])
-        record("cover-ids-tab", "rendered card carries the 'not a government document' prop watermark",
-               "NOT A GOVERNMENT DOCUMENT" in preview_text, preview_text[:120])
+        record("cover-ids-tab", "the live on-screen preview does NOT carry the prop watermark (print/export-only, doesn't clutter the working view)",
+               "NOT A GOVERNMENT DOCUMENT" not in preview_text, preview_text[:120])
 
     # PRINT/EXPORT regression: FBI 90s renders as a plain inline-styled div
     # with no .ids-card-wrap class (a "credential-book" layout), which used
@@ -1546,6 +1546,7 @@ def test_acell_music(p):
 
     posts = []
     backend_state = {"track_url": "", "track_title": ""}
+    fake_cells = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": [], "channel": "4"}]
 
     def fake_apps_script(route):
         req = route.request
@@ -1555,6 +1556,10 @@ def test_acell_music(p):
             if body.get("action") == "set_now_playing":
                 backend_state["track_url"] = body.get("track_url", "")
                 backend_state["track_title"] = body.get("track_title", "")
+            elif body.get("action") == "set_cell_channel":
+                for c in fake_cells:
+                    if c["cell_id"] == body.get("cell_id"):
+                        c["channel"] = body.get("channel", "")
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         url = req.url
@@ -1568,6 +1573,8 @@ def test_acell_music(p):
                     res = {"status": "NOT_FOUND"}
             elif "action=get_playlist" in url:
                 res = {"status": "OK", "playlist": []}
+            elif "action=list_cells" in url:
+                res = {"status": "OK", "cells": fake_cells}
             else:
                 res = {"status": "OK"}
             route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
@@ -1603,6 +1610,8 @@ def test_acell_music(p):
            "CH 2" in page.inner_text("#music-status") and "Table Theme" in page.inner_text("#music-status"), page.inner_text("#music-status"))
     record("acell", "the dialed channel is remembered for next time",
            page.evaluate("() => localStorage.getItem('dg_acell_broadcast_channel')") == "2", "")
+    record("acell", "the on-air indicator shows On Air once broadcasting is confirmed",
+           page.inner_text("#music-air-indicator").strip().lower() == "on air", page.inner_text("#music-air-indicator"))
 
     page.click("#music-stop-btn")
     page.wait_for_timeout(1500)
@@ -1611,6 +1620,29 @@ def test_acell_music(p):
            len(stop_posts) == 1 and stop_posts[0].get("channel") == "2", str(stop_posts))
     record("acell", "status line confirms broadcasting stopped",
            "Stopped" in page.inner_text("#music-status"), "")
+    record("acell", "the on-air indicator drops back to Off Air once stopped",
+           page.inner_text("#music-air-indicator").strip().lower() == "off air", page.inner_text("#music-air-indicator"))
+
+    # Cue For Cell: Cell Alpha already has channel 4 assigned -- selecting
+    # it should tune the dial straight there.
+    page.select_option("#music-cell-select", label="Cell Alpha")
+    page.wait_for_timeout(200)
+    record("acell", "selecting a Cell with an assigned channel tunes the dial to it",
+           page.eval_on_selector("#music-dial-panel .dgr-dial-ch", "el => el.textContent") == "4", "")
+    record("acell", "a note explains the dial was tuned to that Cell's channel",
+           "Cell Alpha" in page.inner_text("#music-cell-note") and "4" in page.inner_text("#music-cell-note"), "")
+
+    # Turn the dial away, then assign the new channel back to the Cell.
+    page.click('#music-dial-panel .dgr-turn[data-dir="1"]')
+    page.wait_for_timeout(100)
+    page.click("#music-cell-assign-btn")
+    page.wait_for_timeout(1500)
+    assign_posts = [p_ for p_ in posts if p_.get("action") == "set_cell_channel"]
+    record("acell", "Assign CH to Cell sends set_cell_channel for the selected Cell and current dial position",
+           len(assign_posts) == 1 and assign_posts[0].get("cell_id") == "cell_1" and assign_posts[0].get("channel") == "5",
+           str(assign_posts))
+    record("acell", "the note confirms the assignment once a real read-back verifies it",
+           "cued to CH 5" in page.inner_text("#music-cell-note"), page.inner_text("#music-cell-note"))
 
     # Playlist: add a track, see it rendered, then remove it.
     page.fill("#music-url-input", "https://youtube.com/watch?v=abc12345678")

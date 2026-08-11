@@ -2256,11 +2256,13 @@ function idsGetOtherTmpl(f) {
   };
 }
 
-// Renders as a fixed overlay on every card, on-screen and in print/export
-// alike -- these are federal/municipal credential replicas, and a card that
-// leaves the table (left in a wallet, photographed, shown as a joke) should
-// still be unmistakably a game prop out of context. All styling is inline
-// so it survives idsPrint()'s separate, minimal print stylesheet unchanged.
+// Only applied at print/export time (see idsPrint() below), not to the
+// live on-screen preview -- these are federal/municipal credential
+// replicas, and a PRINTED/exported card that leaves the table (left in
+// a wallet, photographed, shown as a joke) should still be unmistakably
+// a game prop out of context, without cluttering the working preview
+// while the Handler is still building it. All styling is inline so it
+// survives idsPrint()'s separate, minimal print stylesheet unchanged.
 const IDS_WATERMARK_HTML =
   '<div style="position:absolute;inset:0;pointer-events:none;display:flex;'
   + 'align-items:center;justify-content:center;z-index:50;overflow:hidden;">'
@@ -2289,7 +2291,7 @@ function idsUpdateCard() {
   // OTHER / custom agency
   if (f.agency === 'OTHER') {
     var tmpl = idsGetOtherTmpl(f);
-    preview.innerHTML = idsRenderCard(tmpl, f) + IDS_WATERMARK_HTML;
+    preview.innerHTML = idsRenderCard(tmpl, f);
     if (note) note.textContent = 'CUSTOM · ' + (tmpl.other_layout || 'top-bottom');
     if (meta) meta.innerHTML = '';
     return;
@@ -2340,7 +2342,7 @@ function idsUpdateCard() {
   }
 
   // Render the card
-  preview.innerHTML = idsRenderCard(tmpl, f) + IDS_WATERMARK_HTML;
+  preview.innerHTML = idsRenderCard(tmpl, f);
 
   // Meta info
   if (meta) {
@@ -2630,8 +2632,10 @@ function idsPrint() {
     return;
   }
 
-  // Open print window with just the card
-  const cardHtml = preview.innerHTML;
+  // Open print window with just the card -- the PROP watermark is added
+  // here, not in the live preview, so it only ever appears on a printed
+  // or exported card, never while the Handler is still working on it.
+  const cardHtml = preview.innerHTML + IDS_WATERMARK_HTML;
   const win = window.open('', '_blank', 'width=600,height=500');
   win.document.write('<html><head><title>Delta Green Cover ID</title><style>'
     + 'body{margin:20px;background:#111;display:flex;align-items:center;justify-content:center;}'

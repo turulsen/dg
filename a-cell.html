@@ -214,36 +214,117 @@
   }
   .cells-status{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); min-height:1.4em; margin-bottom:10px; }
 
-  .music-copy{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.85; max-width:52ch; margin-bottom:var(--s4); }
-  .music-field{ display:flex; flex-direction:column; gap:4px; margin-bottom:14px; max-width:420px; }
-  .music-field span{
-    font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.12em;
-    text-transform:uppercase; color:var(--ink-3);
+  /* ── MUSIC: the whole tab as one field-radio unit (chassis, recessed
+     screen, numbered control sections), matching the tactility of the
+     Cover ID Fabricator's tablet in dg-agent-portal.html -- but in the
+     same dark olive-green palette the channel dial and the player-
+     facing Table Radio widget already use, so the dial doesn't clash
+     with its own housing. The dial itself (.dgr-*, below) is untouched
+     from before -- same component, same look, just re-housed. ── */
+  .acell-radio-shell-outer{
+    padding:0; border-radius:3px; position:relative; margin-bottom:var(--s4);
+    box-shadow:
+      inset 0 3px 10px rgba(0,0,0,.35),
+      inset 0 -2px 6px rgba(0,0,0,.15),
+      inset 3px 0 8px rgba(0,0,0,.12),
+      inset -3px 0 8px rgba(0,0,0,.12);
   }
-  .music-field input{
-    background:transparent; border:none; border-bottom:1.5px solid rgba(90,74,16,.4);
-    color:var(--ink); padding:5px 0; font-size:13px; font-family:'Courier Prime',monospace;
+  .acell-radio-shell{
+    background:#12160d; border-radius:9px; color:#c9d4b8;
+    display:flex; flex-direction:column; position:relative;
+    border:4px solid #1c2418; outline:1px solid #0a0f08;
+    box-shadow:
+      inset 0 0 40px rgba(0,20,0,.55),
+      inset 0 1px 0 rgba(255,255,255,.04),
+      0 4px 14px rgba(0,0,0,.5),
+      0 10px 28px rgba(0,0,0,.4);
   }
-  .music-field input:focus{ outline:none; border-bottom-color:var(--red); }
-  .music-status{
-    font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3);
-    margin-top:12px; min-height:1.4em;
+  .acell-radio-shell::before{
+    content:''; position:absolute; inset:0; border-radius:6px;
+    background:
+      repeating-linear-gradient(87deg,transparent 0px,transparent 18px,rgba(255,255,255,.006) 18px,rgba(255,255,255,.006) 19px),
+      repeating-linear-gradient(2deg,transparent 0px,transparent 60px,rgba(255,255,255,.004) 60px,rgba(255,255,255,.004) 61px);
+    pointer-events:none; z-index:10;
   }
-  .music-playlist-empty{ font-size:11px; color:var(--ink-3); font-style:italic; }
-  .music-playlist-row{
-    display:flex; align-items:center; justify-content:space-between; gap:10px;
-    border-bottom:1px dotted var(--rule); padding:7px 0; font-size:12px;
+  .acell-radio-shell::after{
+    content:''; position:absolute; top:0; left:0; width:55%; height:45%;
+    border-radius:6px 0 0 0;
+    background:linear-gradient(135deg,rgba(255,255,255,.035) 0%,rgba(255,255,255,.01) 40%,transparent 70%);
+    pointer-events:none; z-index:11;
   }
-  .mpr-title{ color:var(--ink); overflow-wrap:anywhere; }
-  .mpr-actions{ display:flex; gap:6px; flex-shrink:0; }
+  .acell-radio-header{
+    background:#0a0d08; border-bottom:1px solid #1a2214; padding:8px 14px;
+    display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;
+    border-radius:5px 5px 0 0; position:relative; z-index:2;
+  }
+  .arh-title{
+    font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.16em;
+    color:#a8c890; text-transform:uppercase; text-shadow:0 0 8px rgba(168,200,144,.3);
+  }
+  .arh-status{
+    font-family:'Courier Prime',monospace; font-size:8px; letter-spacing:.12em;
+    color:#5a6a48; text-transform:uppercase;
+  }
+  .arh-status.on-air{ color:#d8f0c0; text-shadow:0 0 8px rgba(216,240,192,.5); }
+  .acell-radio-body{
+    display:grid; grid-template-columns:220px 1fr; gap:0; flex:1; overflow:hidden;
+    position:relative; z-index:2;
+  }
+  @media (max-width:640px){ .acell-radio-body{ grid-template-columns:1fr; } }
+  .acell-radio-controls{
+    border-right:1px solid #1a2214; padding:14px 12px; display:flex; flex-direction:column; gap:16px;
+    background:#0e1209; box-shadow:inset -2px 0 6px rgba(0,0,0,.3);
+  }
+  .acell-radio-display{ padding:14px; background:#141a0e; overflow-y:auto; min-width:0; }
 
-  /* ── Channel dial: a dark field-radio console dropped onto the paper,
-     matching the player-facing Table Radio widget's look. Turned to a
-     fixed 1-5 stop instead of typed -- no more two players landing on
-     "sam" vs "Sam" and never hearing each other. ── */
+  .rdo-section{ display:flex; flex-direction:column; gap:6px; }
+  .rdo-section-label{
+    font-family:'Courier Prime',monospace; font-size:8px; letter-spacing:.2em;
+    color:#5a6a48; text-transform:uppercase; border-bottom:1px solid #1a2214;
+    padding-bottom:4px; text-shadow:0 0 6px rgba(90,106,72,.4);
+  }
+  .rdo-input, .rdo-select{
+    background:#0a0d08; border:1px solid #2a3020; color:#c9d4b8;
+    font-family:'Courier Prime',monospace; font-size:10px; padding:6px 8px;
+    outline:none; box-shadow:inset 0 1px 4px rgba(0,0,0,.5);
+    width:100%; box-sizing:border-box;
+  }
+  .rdo-input::placeholder{ color:#3a4432; }
+  .rdo-input:focus, .rdo-select:focus{
+    border-color:#5a6a48; box-shadow:inset 0 1px 4px rgba(0,0,0,.5), 0 0 6px rgba(122,138,104,.2);
+  }
+  .rdo-select{ appearance:none; cursor:pointer; }
+  .rdo-select option{ background:#0a0d08; }
+  .rdo-btn{
+    background:linear-gradient(180deg,#20261a 0%,#161a10 100%); border:1px solid #3a4432;
+    border-top-color:#4a5a3a; color:#c9d4b8; font-family:'Courier Prime',monospace;
+    font-size:9px; letter-spacing:.1em; text-transform:uppercase; padding:8px 10px;
+    cursor:pointer; flex:1; box-shadow:0 1px 0 rgba(255,255,255,.04), 0 2px 4px rgba(0,0,0,.4);
+    transition:all 80ms;
+  }
+  .rdo-btn:hover{ border-color:#5a6a48; box-shadow:0 0 8px rgba(122,138,104,.2), 0 2px 4px rgba(0,0,0,.4); }
+  .rdo-btn:active{ transform:translateY(1px); }
+  .rdo-btn-ghost{ background:transparent; color:#7a8a68; border-color:#2a3020; }
+  .rdo-btn-full{ width:100%; box-sizing:border-box; }
+  .rdo-btn-sm{ padding:4px 8px; font-size:8px; flex:none; }
+  .rdo-status-line{ font-family:'Courier Prime',monospace; font-size:9px; color:#7a8a68; min-height:1.4em; }
+  .rdo-note{ font-family:'Courier Prime',monospace; font-size:9px; color:#5a6a48; line-height:1.5; min-height:1.4em; }
+
+  .rdo-playlist-empty{ font-family:'Courier Prime',monospace; font-size:11px; color:#5a6a48; font-style:italic; }
+  .rdo-playlist-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    border-bottom:1px dotted #2a3020; padding:8px 0; font-size:11px;
+  }
+  .rpr-title{ color:#c9d4b8; overflow-wrap:anywhere; font-family:'Courier Prime',monospace; }
+  .rpr-actions{ display:flex; gap:6px; flex-shrink:0; }
+
+  /* ── Channel dial: a dark field-radio console, matching the player-
+     facing Table Radio widget's look. Turned to a fixed 1-5 stop
+     instead of typed -- no more two players landing on "sam" vs "Sam"
+     and never hearing each other. ── */
   .acell-radio-panel{
     background:radial-gradient(circle at 30% 20%,#232a1a,#12160d 75%);
-    border:1px solid #3a4432; border-radius:8px; padding:14px 10px 10px; max-width:200px;
+    border:1px solid #3a4432; border-radius:8px; padding:14px 10px 10px;
     box-shadow:inset 0 0 10px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.25);
   }
   .arp-label{
@@ -423,42 +504,41 @@
       </div>
 
       <div class="tab-panel" id="panel-music">
-        <div class="paper">
-          <div class="paper-rules"></div>
-          <div class="paper-margin"></div>
-          <div class="holes"><div class="hole"></div><div class="hole"></div><div class="hole"></div></div>
-          <div class="paper-content">
-            <div class="paper-header">
-              <div>
-                <div class="paper-title-sub">Table Soundtrack</div>
-                <div class="paper-title">Music</div>
+        <div class="acell-radio-shell-outer">
+          <div class="acell-radio-shell">
+            <div class="acell-radio-header">
+              <span class="arh-title">&#9650; Field Radio // Table Broadcast</span>
+              <span class="arh-status" id="music-air-indicator">Off Air</span>
+            </div>
+            <div class="acell-radio-body">
+              <div class="acell-radio-controls">
+                <div class="rdo-section">
+                  <div class="rdo-section-label">01 // Tune Channel</div>
+                  <div class="acell-radio-panel" id="music-dial-panel">
+                    <div class="arp-label">Channel Select</div>
+                  </div>
+                </div>
+                <div class="rdo-section">
+                  <div class="rdo-section-label">02 // Cue For Cell</div>
+                  <select class="rdo-select" id="music-cell-select"><option value="">-- Select a Cell --</option></select>
+                  <div class="rdo-note" id="music-cell-note"></div>
+                  <button type="button" class="rdo-btn rdo-btn-ghost rdo-btn-full" id="music-cell-assign-btn">Assign CH to Cell</button>
+                </div>
+                <div class="rdo-section">
+                  <div class="rdo-section-label">03 // Broadcast</div>
+                  <input type="text" class="rdo-input" id="music-url-input" placeholder="TRACK URL">
+                  <input type="text" class="rdo-input" id="music-title-input" placeholder="TITLE (OPTIONAL)">
+                  <button type="button" class="rdo-btn rdo-btn-full" id="music-set-btn">Set Now Playing</button>
+                  <button type="button" class="rdo-btn rdo-btn-ghost rdo-btn-full" id="music-add-playlist-btn">+ Add to Playlist</button>
+                  <button type="button" class="rdo-btn rdo-btn-ghost rdo-btn-full" id="music-stop-btn">Stop Broadcast</button>
+                  <div class="rdo-status-line" id="music-status"></div>
+                </div>
+              </div>
+              <div class="acell-radio-display">
+                <div class="rdo-section-label">Cue List</div>
+                <div id="music-playlist"></div>
               </div>
             </div>
-            <p class="music-copy">Broadcast to a channel your players dial their Table Radio to (the small widget on every Hub page). YouTube, SoundCloud, or a direct audio file link — loosely synced, not frame-accurate.</p>
-
-            <div class="music-field">
-              <span>Channel</span>
-              <div class="acell-radio-panel" id="music-dial-panel">
-                <div class="arp-label">Channel Select</div>
-              </div>
-            </div>
-            <div class="music-field">
-              <span>Track URL</span>
-              <input type="text" id="music-url-input" placeholder="https://youtube.com/watch?v=…">
-            </div>
-            <div class="music-field">
-              <span>Title (optional)</span>
-              <input type="text" id="music-title-input" placeholder="What's playing">
-            </div>
-            <div class="paper-actions">
-              <a class="paper-btn primary" id="music-set-btn">Set Now Playing</a>
-              <a class="paper-btn" id="music-add-playlist-btn">+ Add to Playlist</a>
-              <a class="paper-btn" id="music-stop-btn">Stop</a>
-            </div>
-            <div class="music-status" id="music-status"></div>
-
-            <div class="pv-sec-hd">Playlist</div>
-            <div id="music-playlist"></div>
           </div>
         </div>
       </div>
@@ -1235,6 +1315,15 @@
    real GET read-back (which CAN see the actual response) before the
    status line claims success -- "Broadcasting" only appears once
    get_now_playing / get_playlist confirms the change actually landed.
+
+   The whole tab is styled as one field-radio unit (chassis, recessed
+   screen, numbered sections) rather than a form dropped on paper --
+   same tactile approach as the Cover ID Fabricator's tablet in
+   dg-agent-portal.html, in the dial's existing dark olive-green
+   palette. "Cue For Cell" lets a Cell (from the Cells tab) carry its
+   own usual channel (set_cell_channel, same addition file) so tuning
+   to "this table's ambience" is picking a name from a dropdown
+   instead of remembering a number.
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
@@ -1253,8 +1342,13 @@
   var addPlaylistBtn = document.getElementById('music-add-playlist-btn');
   var statusEl = document.getElementById('music-status');
   var playlistEl = document.getElementById('music-playlist');
+  var airEl = document.getElementById('music-air-indicator');
+  var cellSelect = document.getElementById('music-cell-select');
+  var cellNote = document.getElementById('music-cell-note');
+  var cellAssignBtn = document.getElementById('music-cell-assign-btn');
 
   var playlist = [];
+  var cells = [];
 
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -1320,7 +1414,14 @@
         onChange(CHANNELS[idx]);
       });
     });
-    return { get: function () { return CHANNELS[idx]; } };
+    return {
+      get: function () { return CHANNELS[idx]; },
+      set: function (ch) {
+        idx = channelIndex(ch);
+        render();
+        onChange(CHANNELS[idx]);
+      }
+    };
   }
 
   var remembered = '';
@@ -1328,7 +1429,7 @@
   var currentChannel = CHANNELS[channelIndex(remembered)];
 
   dialPanel.insertAdjacentHTML('beforeend', dialHtml());
-  wireDial(dialPanel, currentChannel, function (ch) {
+  var dialApi = wireDial(dialPanel, currentChannel, function (ch) {
     currentChannel = ch;
     try { localStorage.setItem(CHANNEL_KEY, ch); } catch (e) { /* best effort */ }
     checkCurrent();
@@ -1352,13 +1453,20 @@
     document.head.appendChild(s);
   }
 
+  function setAirIndicator(onAir) {
+    airEl.textContent = onAir ? 'On Air' : 'Off Air';
+    airEl.classList.toggle('on-air', !!onAir);
+  }
+
   function checkCurrent() {
     var ch = currentChannel;
     jsonpGet('get_now_playing', { channel: ch }, function (res) {
       if (res && res.status === 'OK' && res.track_url) {
         statusEl.textContent = 'Currently broadcasting to CH ' + ch + ': ' + (res.track_title || res.track_url);
+        setAirIndicator(true);
       } else {
         statusEl.textContent = 'Nothing currently broadcasting to CH ' + ch + '.';
+        setAirIndicator(false);
       }
     });
     loadPlaylist(ch);
@@ -1384,6 +1492,7 @@
         statusEl.textContent = expectedUrl
           ? 'Broadcasting to CH ' + ch + ': ' + (expectedTitle || expectedUrl)
           : 'Stopped broadcasting to CH ' + ch + '.';
+        setAirIndicator(!!expectedUrl);
       } else {
         statusEl.textContent = NOT_DEPLOYED_MSG;
       }
@@ -1396,15 +1505,15 @@
      set_now_playing above. ── */
   function renderPlaylist() {
     if (!playlist.length) {
-      playlistEl.innerHTML = '<div class="music-playlist-empty">No saved tracks yet -- paste a URL above and hit "+ Add to Playlist".</div>';
+      playlistEl.innerHTML = '<div class="rdo-playlist-empty">No saved tracks yet -- paste a URL and hit "+ Playlist".</div>';
       return;
     }
     playlistEl.innerHTML = playlist.map(function (t, i) {
-      return '<div class="music-playlist-row">' +
-        '<span class="mpr-title">' + escapeHtml(t.title || t.url) + '</span>' +
-        '<span class="mpr-actions">' +
-        '<button type="button" class="paper-btn" data-play="' + i + '">Play</button>' +
-        '<button type="button" class="paper-btn" data-remove="' + i + '">Remove</button>' +
+      return '<div class="rdo-playlist-row">' +
+        '<span class="rpr-title">' + escapeHtml(t.title || t.url) + '</span>' +
+        '<span class="rpr-actions">' +
+        '<button type="button" class="rdo-btn rdo-btn-ghost rdo-btn-sm" data-play="' + i + '">Play</button>' +
+        '<button type="button" class="rdo-btn rdo-btn-ghost rdo-btn-sm" data-remove="' + i + '">Remove</button>' +
         '</span></div>';
     }).join('');
     Array.prototype.forEach.call(playlistEl.querySelectorAll('[data-play]'), function (btn) {
@@ -1441,6 +1550,60 @@
     }).catch(function () { /* best effort, same as every other Apps Script write here */ });
   }
 
+  /* ── Cue For Cell: a Cell (from the Cells tab) can carry its own
+     usual channel, so cueing "this table's ambience" is picking a name
+     from a dropdown instead of remembering a number. Reads/writes the
+     same Cells sheet the Cells tab uses (list_cells / a new
+     set_cell_channel action, acell-cell-groups-addition.txt) -- a Cell
+     with no channel set yet just shows a note instead of auto-tuning. ── */
+  function fetchCells() {
+    jsonpGet('list_cells', {}, function (res) {
+      if (!res || res.status !== 'OK' || !Array.isArray(res.cells)) return;
+      cells = res.cells;
+      var prevValue = cellSelect.value;
+      cellSelect.innerHTML = '<option value="">-- Select a Cell --</option>' + cells.map(function (c) {
+        return '<option value="' + escapeHtml(c.cell_id) + '">' + escapeHtml(c.name) + '</option>';
+      }).join('');
+      if (prevValue && cells.some(function (c) { return c.cell_id === prevValue; })) cellSelect.value = prevValue;
+    });
+  }
+
+  cellSelect.addEventListener('change', function () {
+    var cell = cells.filter(function (c) { return c.cell_id === cellSelect.value; })[0];
+    if (!cell) { cellNote.textContent = ''; return; }
+    if (cell.channel && CHANNELS.indexOf(cell.channel) !== -1) {
+      dialApi.set(cell.channel);
+      cellNote.textContent = 'Tuned to ' + cell.name + '\'s channel (CH ' + cell.channel + ').';
+    } else {
+      cellNote.textContent = cell.name + ' has no channel set yet -- tune the dial, then Assign below.';
+    }
+  });
+
+  cellAssignBtn.addEventListener('click', function () {
+    var cell = cells.filter(function (c) { return c.cell_id === cellSelect.value; })[0];
+    if (!cell) { cellNote.textContent = 'Select a Cell first.'; return; }
+    var ch = currentChannel;
+    cellNote.textContent = 'Assigning…';
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors', keepalive: true,
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'set_cell_channel', cell_id: cell.cell_id, channel: ch }),
+    }).then(function () {
+      setTimeout(function () {
+        jsonpGet('list_cells', {}, function (res) {
+          var updated = res && res.status === 'OK' && Array.isArray(res.cells) &&
+            res.cells.some(function (c) { return c.cell_id === cell.cell_id && c.channel === ch; });
+          if (!updated) {
+            cellNote.textContent = 'Sent, but the backend didn\'t confirm it. Check that the Cells addition (set_cell_channel) is pasted into Apps Script and redeployed.';
+            return;
+          }
+          cells = res.cells;
+          cellNote.textContent = cell.name + ' is now cued to CH ' + ch + '.';
+        });
+      }, 900);
+    }).catch(function () { cellNote.textContent = 'Could not reach the backend.'; });
+  });
+
   setBtn.addEventListener('click', function () {
     var url = urlInput.value.trim();
     if (!url) { statusEl.textContent = 'Paste a track URL first.'; return; }
@@ -1457,6 +1620,7 @@
   });
 
   checkCurrent();
+  fetchCells();
 })();
 </script>
 
