@@ -51,7 +51,11 @@
   var MUTED_KEY = 'dg_radio_muted';
   var VOLUME_KEY = 'dg_radio_volume';
   var EXPANDED_KEY = 'dg_radio_expanded';
-  var POLL_MS = 6000;
+  // Was 6000ms -- shortened as a zero-new-infra latency cut (still one
+  // JSONP GET to Apps Script/Sheets per tick, so this is a stopgap, not
+  // real push; a table-sized group's poll traffic is nowhere near
+  // Apps Script's execution quotas at this interval).
+  var POLL_MS = 2000;
   // Fixed numbered channels, picked by turning a dial rather than typing a
   // name -- five slots, no typos, no two players landing on "sam" vs "Sam".
   var CHANNELS = ['1', '2', '3', '4', '5'];
