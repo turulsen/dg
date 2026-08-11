@@ -1223,11 +1223,20 @@ def test_acell_play(p):
         },
     ]
 
+    fake_cells = [
+        {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Gergo", "member_codes": ["OWEN-CS12"]},
+        {"cell_id": "cell_2", "name": "Cell Bravo", "handler": "Gergo", "member_codes": ["PRIY-AN34"]},
+    ]
+
     def fake_apps_script(route):
         url = route.request.url
         if "action=list_characters" in url and "callback=" in url:
             cb = url.split("callback=")[1].split("&")[0]
             body = f'{cb}({json.dumps({"status": "OK", "characters": fake_characters})})'
+            route.fulfill(status=200, content_type="application/javascript", body=body)
+        elif "action=list_cells" in url and "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            body = f'{cb}({json.dumps({"status": "OK", "cells": fake_cells})})'
             route.fulfill(status=200, content_type="application/javascript", body=body)
         else:
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
@@ -1282,6 +1291,33 @@ def test_acell_play(p):
            stat_vals_after == ["12", "13", "14", "15", "10", "99"], str(stat_vals_after))
     record("acell", "Refresh shows an 'Updated' timestamp note",
            "Updated" in page.inner_text("#play-refresh-note"), "")
+
+    # Cell filter: narrows the Play roster to one Cell's members, so a
+    # Handler running a session for one Cell isn't scrolling past every
+    # other Agent on file.
+    filter_options = page.eval_on_selector_all("#play-cell-filter option", "els => els.map(e=>e.textContent)")
+    record("acell", "Play's Cell filter lists every Cell plus an 'All Agents' option",
+           filter_options == ["All Agents", "Cell Alpha", "Cell Bravo"], str(filter_options))
+
+    page.select_option("#play-cell-filter", label="Cell Alpha")
+    page.wait_for_timeout(200)
+    names_alpha = page.eval_on_selector_all("#play-agent-list .pa-name", "els => els.map(e=>e.textContent)")
+    record("acell", "filtering by Cell Alpha shows only that Cell's member",
+           names_alpha == ["Owen Castillo"], str(names_alpha))
+
+    page.select_option("#play-cell-filter", label="Cell Bravo")
+    page.wait_for_timeout(200)
+    names_bravo = page.eval_on_selector_all("#play-agent-list .pa-name", "els => els.map(e=>e.textContent)")
+    record("acell", "switching the Cell filter shows the newly chosen Cell's member",
+           names_bravo == ["Priya Anand"], str(names_bravo))
+    record("acell", "switching Cells clears a selection that's no longer in view rather than leaving a stale dossier",
+           "Select an Agent" in page.inner_text("#play-view"), "")
+
+    page.select_option("#play-cell-filter", label="All Agents")
+    page.wait_for_timeout(200)
+    names_all = page.eval_on_selector_all("#play-agent-list .pa-name", "els => els.map(e=>e.textContent)")
+    record("acell", "'All Agents' clears the filter back to the full roster",
+           names_all == ["Owen Castillo", "Priya Anand"], str(names_all))
 
     page.close()
     return errs
@@ -1373,6 +1409,8 @@ def test_acell_cells(p):
     # includes every NOT-yet-added Agent's name, so a plain "is Owen's
     # name anywhere in this card" check is already true before the add
     # even happens (he's sitting right there as an unselected option).
+    page.select_option('[data-add-select="0"]', "OWEN-CS12")
+    page.click('[data-add-btn="0"]')
     def alpha_members():
         return page.inner_text('.cell-card[data-i="0"] .cell-members')
     alpha_text = wait_for_condition(lambda: alpha_members() if "Owen Castillo" in alpha_members() else None)

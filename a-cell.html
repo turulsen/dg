@@ -76,11 +76,15 @@
     font-family:'Special Elite',monospace; font-weight:400; font-size:clamp(22px,4vw,30px);
     color:#e9e3ce; margin:0 0 8px; letter-spacing:.01em;
   }
-  .hub-header p{ font-size:13px; color:#b7b09a; max-width:62ch; line-height:1.7; margin:0; }
+  .hub-header p{ font-family:'Courier Prime',monospace; font-size:13px; color:#b7b09a; max-width:62ch; line-height:1.7; margin:0; }
   .folder-wrap{ max-width:900px; margin:26px auto 0; padding:0 6px; }
 
   /* ── Play: agent list + simplified read-only view ── */
   .play-toolbar{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+  .play-cell-filter{
+    background:var(--paper); border:1px solid var(--rule); color:var(--ink);
+    padding:6px 9px; font-family:'Source Sans 3',sans-serif; font-size:12px; min-width:160px;
+  }
   .play-refresh-note{
     font-family:'Courier Prime',monospace; font-size:10px; color:var(--ink-3);
   }
@@ -196,7 +200,7 @@
     display:flex; align-items:center; justify-content:space-between; gap:10px;
     font-size:12px; padding:4px 0; border-bottom:1px dotted var(--rule);
   }
-  .cell-member-row .cmr-name{ color:var(--ink); }
+  .cell-member-row .cmr-name{ font-family:'Courier Prime',monospace; color:var(--ink); }
   .cell-add-row{ display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap; }
   .cell-add-row select{
     background:var(--paper); border:1px solid var(--rule); color:var(--ink);
@@ -210,7 +214,7 @@
   }
   .cells-status{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); min-height:1.4em; margin-bottom:10px; }
 
-  .music-copy{ font-size:12px; color:var(--ink-2); line-height:1.85; max-width:52ch; margin-bottom:var(--s4); }
+  .music-copy{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.85; max-width:52ch; margin-bottom:var(--s4); }
   .music-field{ display:flex; flex-direction:column; gap:4px; margin-bottom:14px; max-width:420px; }
   .music-field span{
     font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.12em;
@@ -300,12 +304,12 @@
   }
 
   /* ── Admin: permanent deletion, gated behind a two-step confirm
-     (type the Agent's tagged Handler name, then the A-Cell password)
-     so nobody wipes a Cell by a stray click. Everything here is
+     (type the Agent's own name, then the A-Cell password) so nobody
+     wipes a Cell by a stray click. Everything here is
      styled with --red to read as clearly destructive against the
      rest of the paper-toned UI. ── */
   .admin-toolbar{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
-  .admin-copy{ font-size:12px; color:var(--ink-2); line-height:1.85; max-width:60ch; margin-bottom:var(--s3); }
+  .admin-copy{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.85; max-width:60ch; margin-bottom:var(--s3); }
   .admin-status{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); min-height:1.4em; margin-bottom:10px; }
   .admin-list{ display:flex; flex-direction:column; gap:8px; }
   .admin-row{
@@ -369,6 +373,7 @@
       <div class="tab-panel active" id="panel-play">
         <div class="play-toolbar">
           <button type="button" class="paper-btn" id="play-refresh-btn">Refresh</button>
+          <select id="play-cell-filter" class="play-cell-filter"><option value="">All Agents</option></select>
           <span class="play-refresh-note" id="play-refresh-note"></span>
         </div>
         <div class="play-layout">
@@ -452,7 +457,7 @@
           <button type="button" class="paper-btn" id="admin-refresh-btn">Refresh</button>
           <span class="play-refresh-note" id="admin-refresh-note"></span>
         </div>
-        <p class="admin-copy">Permanently delete an Agent from the Google Sheet -- removes their character sheet AND their Agent File / Cover ID submission. This cannot be undone. Deleting requires typing the Agent's tagged Handler name, then the A-Cell password.</p>
+        <p class="admin-copy">Permanently delete an Agent from the Google Sheet -- removes their character sheet AND their Agent File / Cover ID submission. This cannot be undone. Deleting requires typing the Agent's own name, then the A-Cell password.</p>
         <div class="admin-status" id="admin-status"></div>
         <div class="admin-list" id="admin-list">
           <div class="admin-loading">Loading agents…</div>
@@ -595,7 +600,10 @@
   var viewEl = document.getElementById('play-view');
   var refreshBtn = document.getElementById('play-refresh-btn');
   var refreshNote = document.getElementById('play-refresh-note');
+  var cellFilterEl = document.getElementById('play-cell-filter');
+  var allCharacters = [];
   var characters = [];
+  var cells = [];
   var selectedCode = null;
 
   function escapeHtml(str) {
@@ -623,12 +631,12 @@
         listEl.innerHTML = '<div class="play-error">Could not load the Agent list.</div>';
         return;
       }
-      characters = res.characters.map(function (c) {
+      allCharacters = res.characters.map(function (c) {
         var state = null;
         try { state = JSON.parse(c.character_json); } catch (e) { /* skip unparsable rows */ }
         return { code: c.agent_code, state: state };
       }).filter(function (c) { return c.code && c.state; });
-      renderList();
+      applyFilter();
       refreshNote.textContent = 'Updated ' + new Date().toLocaleTimeString();
     };
     var s = document.createElement('script');
@@ -637,9 +645,54 @@
     document.head.appendChild(s);
   }
 
+  // Cells to filter by -- a lighter fetch than the Cells tab's own (just
+  // enough to populate the dropdown and know which Agent codes belong to
+  // the chosen Cell); doesn't block the Agent list from loading if it's
+  // slow or the addition isn't deployed, it just leaves "All Agents" as
+  // the only option.
+  function fetchCells() {
+    var cbName = '_acellPlayCells_' + Date.now();
+    var timer = setTimeout(function () { delete window[cbName]; }, 7000);
+    window[cbName] = function (res) {
+      clearTimeout(timer);
+      delete window[cbName];
+      var s = document.getElementById('_acell_play_cells_script');
+      if (s) s.remove();
+      if (res && res.status === 'OK' && Array.isArray(res.cells)) {
+        cells = res.cells;
+        renderCellFilterOptions();
+      }
+    };
+    var s = document.createElement('script');
+    s.id = '_acell_play_cells_script';
+    s.src = APPS_SCRIPT_URL + '?action=list_cells&callback=' + cbName;
+    document.head.appendChild(s);
+  }
+
+  function renderCellFilterOptions() {
+    var prevValue = cellFilterEl.value;
+    cellFilterEl.innerHTML = '<option value="">All Agents</option>' + cells.map(function (c) {
+      return '<option value="' + escapeHtml(c.cell_id) + '">' + escapeHtml(c.name) + '</option>';
+    }).join('');
+    if (prevValue && cells.some(function (c) { return c.cell_id === prevValue; })) cellFilterEl.value = prevValue;
+  }
+
+  function applyFilter() {
+    var cellId = cellFilterEl.value;
+    if (!cellId) {
+      characters = allCharacters;
+    } else {
+      var cell = cells.find(function (c) { return c.cell_id === cellId; });
+      var memberSet = {};
+      (cell ? cell.member_codes : []).forEach(function (code) { memberSet[code] = true; });
+      characters = allCharacters.filter(function (c) { return memberSet[c.code]; });
+    }
+    renderList();
+  }
+
   function renderList() {
     if (!characters.length) {
-      listEl.innerHTML = '<div class="play-error">No Agents on file yet.</div>';
+      listEl.innerHTML = '<div class="play-error">' + (cellFilterEl.value ? 'No Agents in this Cell.' : 'No Agents on file yet.') + '</div>';
       viewEl.innerHTML = '<div class="play-view-empty">Select an Agent to view their stats and skills.</div>';
       selectedCode = null;
       return;
@@ -662,12 +715,19 @@
         renderView(c);
       });
     });
-    // Refresh (not a first load): if the previously-selected Agent is
-    // still on the roster, re-render their (possibly updated) view
-    // instead of dropping back to the empty-selection state.
+    // Refresh (not a first load) or a Cell filter change: if the
+    // previously-selected Agent is still in the currently displayed
+    // list, re-render their (possibly updated) view instead of dropping
+    // back to the empty-selection state. If they've been filtered out
+    // by the Cell filter, clear the view instead of leaving it stale.
     if (selectedCode) {
       var stillThere = characters.find(function (c) { return c.code === selectedCode; });
-      if (stillThere) renderView(stillThere);
+      if (stillThere) {
+        renderView(stillThere);
+      } else {
+        selectedCode = null;
+        viewEl.innerHTML = '<div class="play-view-empty">Select an Agent to view their stats and skills.</div>';
+      }
     }
   }
 
@@ -776,8 +836,10 @@
     loadPlayPhoto(c.code, photoId);
   }
 
-  refreshBtn.addEventListener('click', fetchList);
+  refreshBtn.addEventListener('click', function () { fetchList(); fetchCells(); });
+  cellFilterEl.addEventListener('change', applyFilter);
   fetchList();
+  fetchCells();
 })();
 </script>
 
