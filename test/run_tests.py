@@ -1901,8 +1901,9 @@ def test_acell_music(p):
     skip_acell_gate(page)
 
     posts = []
-    backend_state = {"track_url": "", "track_title": ""}
+    backend_state = {"track_url": "", "track_title": "", "track_kind": ""}
     fake_cells = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": [], "channel": "4"}]
+    tracks_state = []
 
     def fake_apps_script(route):
         req = route.request
@@ -1912,10 +1913,20 @@ def test_acell_music(p):
             if body.get("action") == "set_now_playing":
                 backend_state["track_url"] = body.get("track_url", "")
                 backend_state["track_title"] = body.get("track_title", "")
+                backend_state["track_kind"] = body.get("track_kind", "")
             elif body.get("action") == "set_cell_channel":
                 for c in fake_cells:
                     if c["cell_id"] == body.get("cell_id"):
                         c["channel"] = body.get("channel", "")
+            elif body.get("action") == "upload_track":
+                tid = "track_" + str(len(tracks_state) + 1)
+                tracks_state.append({
+                    "track_id": tid, "title": body.get("title", ""),
+                    "url": "https://drive.google.com/uc?export=download&id=fake" + tid,
+                    "uploaded_at": "1000",
+                })
+            elif body.get("action") == "delete_track":
+                tracks_state[:] = [t for t in tracks_state if t["track_id"] != body.get("track_id")]
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         url = req.url
@@ -1924,13 +1935,16 @@ def test_acell_music(p):
             if "action=get_now_playing" in url:
                 if backend_state["track_url"]:
                     res = {"status": "OK", "track_url": backend_state["track_url"],
-                           "track_title": backend_state["track_title"], "started_at": 1700000000000}
+                           "track_title": backend_state["track_title"], "started_at": 1700000000000,
+                           "track_kind": backend_state["track_kind"]}
                 else:
                     res = {"status": "NOT_FOUND"}
             elif "action=get_playlist" in url:
                 res = {"status": "OK", "playlist": []}
             elif "action=list_cells" in url:
                 res = {"status": "OK", "cells": fake_cells}
+            elif "action=list_tracks" in url:
+                res = {"status": "OK", "tracks": tracks_state}
             else:
                 res = {"status": "OK"}
             route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
@@ -2016,6 +2030,54 @@ def test_acell_music(p):
     page.wait_for_timeout(300)
     record("acell", "removing a track clears it from the playlist",
            "Ambient Track" not in page.inner_text("#music-playlist"), "")
+
+    # Track Library: upload a real-sized mp3 (bigger than the 64KiB
+    # keepalive cap that broke Handout photo uploads -- the upload POST
+    # here deliberately has no keepalive for the same reason).
+    record("acell", "the Track Library starts empty with a prompt to upload one",
+           "No tracks uploaded yet" in page.inner_text("#tracklib-list"), "")
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+        f.write(os.urandom(150_000))
+        oversized_mp3_path = f.name
+    page.fill("#tracklib-title-input", "Rain Loop")
+    page.set_input_files("#tracklib-file-input", oversized_mp3_path)
+    page.click("#tracklib-upload-btn")
+    tracklib_text = wait_for_condition(lambda: page.inner_text("#tracklib-list")
+                                       if "Rain Loop" in page.inner_text("#tracklib-list") else None)
+    record("acell", "uploading a real-sized (>64KiB) mp3 still reaches the backend and appears in the library",
+           bool(tracklib_text) and "Rain Loop" in tracklib_text
+           and "Could not reach the backend" not in page.inner_text("#tracklib-status"),
+           page.inner_text("#tracklib-status"))
+    os.unlink(oversized_mp3_path)
+
+    upload_posts = [p_ for p_ in posts if p_.get("action") == "upload_track"]
+    record("acell", "the upload POST does not use keepalive (would silently cap the body at 64KiB)",
+           len(upload_posts) == 1, "")
+
+    # Playing a library track sets track_kind: 'audio' -- a Drive
+    # download link has no .mp3 extension, so the player widget needs
+    # this explicit flag rather than sniffing the URL.
+    page.click('[data-tracklib-play="0"]')
+    play_status = wait_for_condition(lambda: page.inner_text("#music-status")
+                                      if "Rain Loop" in page.inner_text("#music-status") else None)
+    record("acell", "Play on a library track broadcasts it to the current channel",
+           bool(play_status) and "Rain Loop" in play_status, play_status or "")
+    record("acell", "playing a library track sends track_kind: 'audio' so the player doesn't have to guess from the URL",
+           backend_state["track_kind"] == "audio", backend_state["track_kind"])
+
+    # Delete: dismiss then accept.
+    page.once("dialog", lambda d: d.dismiss())
+    page.click('[data-tracklib-delete="0"]')
+    page.wait_for_timeout(300)
+    record("acell", "dismissing the Delete confirm leaves the track in place",
+           page.locator(".rdo-track-row").count() == 1, "")
+
+    page.once("dialog", lambda d: d.accept())
+    page.click('[data-tracklib-delete="0"]')
+    wait_for_condition(lambda: "No tracks uploaded yet" in page.inner_text("#tracklib-list"))
+    record("acell", "accepting Delete removes the track from the library",
+           "No tracks uploaded yet" in page.inner_text("#tracklib-list"), "")
 
     page.close()
     return errs
@@ -2419,6 +2481,58 @@ def test_table_radio_audio_volume(p):
     muted_again = page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.muted")
     record("radio", "re-Muting sets .muted back to true on the same <audio> element (not a new one)",
            muted_again is True, "")
+
+    page.close()
+    return errs
+
+def test_table_radio_library_track_kind(p):
+    """Table Radio Track Library (v1.7): a mp3 uploaded through A-Cell's
+    Music tab is stored in Drive and served back as a direct download
+    link (e.g. drive.google.com/uc?export=download&id=...), which has no
+    .mp3 file extension for the player's usual URL-sniffing
+    (isDirectAudio()) to catch. get_now_playing carries an explicit
+    track_kind: 'audio' for exactly this case -- confirms the widget
+    honors it and renders a real <audio> element rather than falling
+    through to the generic-iframe case (which would just try to load the
+    download link as a webpage, not play it)."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=get_now_playing" in url:
+                res = {"status": "OK", "channel": "3",
+                       "track_url": "https://drive.google.com/uc?export=download&id=fakeFileId123",
+                       "track_title": "Rain Loop", "started_at": 1700000000000, "track_kind": "audio"}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+    page.route("**/uc?export=download*", lambda r: r.fulfill(status=200, content_type="audio/mpeg", body=""))
+
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.evaluate("() => localStorage.setItem('dg_radio_channel', '3')")
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_timeout(800)
+
+    record("radio", "a Drive-hosted library track (track_kind: 'audio') renders as a real <audio> element",
+           page.query_selector("#dg-radio-embed-wrap audio") is not None, "")
+    record("radio", "it does NOT fall through to the generic-iframe case (which can't play a download link)",
+           page.query_selector("#dg-radio-embed-wrap iframe") is None, "")
+    record("radio", "the volume slider is available for it (a controllable <audio> element, unlike generic iframes)",
+           page.eval_on_selector("#dg-radio-volume", "el => getComputedStyle(el).display") != "none", "")
 
     page.close()
     return errs
@@ -3416,6 +3530,8 @@ def main():
         safe(test_table_radio_widget, browser, area="radio")
 
         safe(test_table_radio_audio_volume, browser, area="radio")
+
+        safe(test_table_radio_library_track_kind, browser, area="radio")
 
         safe(test_agent_portal_code_query_param, browser, area="agent-portal")
 

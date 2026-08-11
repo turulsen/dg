@@ -460,7 +460,12 @@
     var elapsed = Math.max(0, Math.floor((Date.now() - (np.started_at || Date.now())) / 1000));
     var muted = isMuted();
     var vol = getVolume();
-    var ytId = extractYouTubeId(np.track_url);
+    // A Track Library pick's Drive download link has no .mp3 extension
+    // for isDirectAudio() to catch -- track_kind says so explicitly
+    // instead of relying on the URL shape, and skips the YouTube/
+    // SoundCloud sniffing entirely rather than risking a false match.
+    var isLibraryAudio = np.track_kind === 'audio';
+    var ytId = isLibraryAudio ? null : extractYouTubeId(np.track_url);
 
     if (ytId) {
       currentEmbedKind = 'yt';
@@ -483,7 +488,7 @@
           }
         });
       });
-    } else if (isSoundCloud(np.track_url)) {
+    } else if (!isLibraryAudio && isSoundCloud(np.track_url)) {
       currentEmbedKind = 'sc';
       if (volSlider) volSlider.style.display = '';
       wrap.innerHTML = '<iframe id="dg-radio-sc-iframe" height="220" src="https://w.soundcloud.com/player/?url=' +
@@ -497,7 +502,7 @@
           try { scWidget.setVolume(muted ? 0 : vol); } catch (e) { /* best effort */ }
         });
       });
-    } else if (isDirectAudio(np.track_url)) {
+    } else if (isLibraryAudio || isDirectAudio(np.track_url)) {
       currentEmbedKind = 'audio';
       if (volSlider) volSlider.style.display = '';
       wrap.innerHTML = '<audio id="dg-radio-audio" src="' + escapeHtml(np.track_url) + '"></audio>';

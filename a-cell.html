@@ -402,6 +402,14 @@
     display:flex; align-items:center; justify-content:space-between; gap:10px;
     border-bottom:1px dotted #2a3020; padding:8px 0; font-size:11px;
   }
+  .rdo-tracklib-label{ margin-top:18px; }
+  .rdo-tracklib-upload{ display:flex; flex-direction:column; gap:6px; margin-bottom:10px; }
+  .rdo-track-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    border-bottom:1px dotted #2a3020; padding:8px 0; font-size:11px;
+  }
+  .rdo-track-title{ color:#c9d4b8; overflow-wrap:anywhere; }
+  .rdo-track-empty{ font-family:'Courier Prime',monospace; font-size:11px; color:#5a6a48; font-style:italic; }
   .rpr-title{ color:#c9d4b8; overflow-wrap:anywhere; font-family:'Courier Prime',monospace; }
   .rpr-actions{ display:flex; gap:6px; flex-shrink:0; }
 
@@ -641,6 +649,15 @@
               <div class="acell-radio-display">
                 <div class="rdo-section-label">Cue List</div>
                 <div id="music-playlist"></div>
+
+                <div class="rdo-section-label rdo-tracklib-label">Track Library</div>
+                <div class="rdo-tracklib-upload">
+                  <input type="text" class="rdo-input" id="tracklib-title-input" placeholder="TRACK TITLE">
+                  <input type="file" accept="audio/mpeg,audio/mp3,.mp3" id="tracklib-file-input">
+                  <button type="button" class="rdo-btn rdo-btn-full" id="tracklib-upload-btn">Upload MP3</button>
+                  <div class="rdo-status-line" id="tracklib-status"></div>
+                </div>
+                <div id="tracklib-list"></div>
               </div>
             </div>
           </div>
@@ -1926,13 +1943,13 @@
     loadPlaylist(ch);
   }
 
-  function setNowPlaying(trackUrl, trackTitle) {
+  function setNowPlaying(trackUrl, trackTitle, trackKind) {
     var ch = currentChannel;
     statusEl.textContent = 'Saving…';
     fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors', keepalive: true,
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'set_now_playing', channel: ch, track_url: trackUrl, track_title: trackTitle }),
+      body: JSON.stringify({ action: 'set_now_playing', channel: ch, track_url: trackUrl, track_title: trackTitle, track_kind: trackKind || '' }),
     }).then(function () {
       statusEl.textContent = 'Saved — checking…';
       setTimeout(function () { verifyNowPlaying(ch, trackUrl, trackTitle); }, 900);
@@ -1976,7 +1993,7 @@
         if (!t) return;
         urlInput.value = t.url;
         titleInput.value = t.title || '';
-        setNowPlaying(t.url, t.title || '');
+        setNowPlaying(t.url, t.title || '', t.kind || '');
       });
     });
     Array.prototype.forEach.call(playlistEl.querySelectorAll('[data-remove]'), function (btn) {
@@ -2073,8 +2090,117 @@
     statusEl.textContent = 'Added to playlist.';
   });
 
+  /* ── Track Library: mp3s the Handler uploads once (stored in Drive via
+     upload_track, table-radio-tracks addition) and can then cue on any
+     channel with one click instead of pasting a link every time. No
+     keepalive on the upload POST -- unlike every other write here, a
+     real mp3's base64 easily blows past the 64KiB cap keepalive
+     requests are held to, which silently drops the request before it
+     ever reaches the network (the exact bug already hit and fixed for
+     Handout photos). ── */
+  var trackLibTitleInput = document.getElementById('tracklib-title-input');
+  var trackLibFileInput = document.getElementById('tracklib-file-input');
+  var trackLibUploadBtn = document.getElementById('tracklib-upload-btn');
+  var trackLibStatus = document.getElementById('tracklib-status');
+  var trackLibListEl = document.getElementById('tracklib-list');
+  var tracks = [];
+
+  function renderTrackLibrary() {
+    if (!tracks.length) {
+      trackLibListEl.innerHTML = '<div class="rdo-track-empty">No tracks uploaded yet.</div>';
+      return;
+    }
+    trackLibListEl.innerHTML = tracks.map(function (t, i) {
+      return '<div class="rdo-track-row">' +
+        '<span class="rdo-track-title">' + escapeHtml(t.title || t.url) + '</span>' +
+        '<span class="rpr-actions">' +
+        '<button type="button" class="rdo-btn rdo-btn-ghost rdo-btn-sm" data-tracklib-play="' + i + '">Play</button>' +
+        '<button type="button" class="rdo-btn rdo-btn-ghost rdo-btn-sm" data-tracklib-delete="' + i + '">Delete</button>' +
+        '</span></div>';
+    }).join('');
+    Array.prototype.forEach.call(trackLibListEl.querySelectorAll('[data-tracklib-play]'), function (btn) {
+      btn.addEventListener('click', function () {
+        var t = tracks[parseInt(btn.dataset.tracklibPlay, 10)];
+        if (!t) return;
+        setNowPlaying(t.url, t.title || '', 'audio');
+      });
+    });
+    Array.prototype.forEach.call(trackLibListEl.querySelectorAll('[data-tracklib-delete]'), function (btn) {
+      btn.addEventListener('click', function () {
+        var t = tracks[parseInt(btn.dataset.tracklibDelete, 10)];
+        if (!t) return;
+        deleteTrack(t);
+      });
+    });
+  }
+
+  function fetchTracks() {
+    jsonpGet('list_tracks', {}, function (res) {
+      if (!res || res.status !== 'OK' || !Array.isArray(res.tracks)) {
+        trackLibListEl.innerHTML = '<div class="rdo-track-empty">Could not load the Track Library. (The Track Library addition may not be deployed yet.)</div>';
+        return;
+      }
+      tracks = res.tracks;
+      renderTrackLibrary();
+    });
+  }
+
+  function deleteTrack(t) {
+    if (!confirm('Delete "' + t.title + '"? This removes it from Drive and cannot be undone.')) return;
+    trackLibStatus.textContent = 'Deleting…';
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'delete_track', track_id: t.track_id }),
+    }).then(function () {
+      setTimeout(function () {
+        jsonpGet('list_tracks', {}, function (res) {
+          var stillThere = res && res.status === 'OK' && Array.isArray(res.tracks) &&
+            res.tracks.some(function (x) { return x.track_id === t.track_id; });
+          if (stillThere) { trackLibStatus.textContent = 'Sent, but the backend didn\'t confirm it. Check that the Track Library addition (delete_track) is pasted into Apps Script and redeployed.'; return; }
+          if (res && res.status === 'OK' && Array.isArray(res.tracks)) tracks = res.tracks;
+          trackLibStatus.textContent = 'Deleted ' + t.title + '.';
+          renderTrackLibrary();
+        });
+      }, 900);
+    }).catch(function () { trackLibStatus.textContent = 'Could not reach the backend.'; });
+  }
+
+  trackLibUploadBtn.addEventListener('click', function () {
+    var title = trackLibTitleInput.value.trim();
+    var file = trackLibFileInput.files[0];
+    if (!title) { trackLibStatus.textContent = 'Give the track a title first.'; return; }
+    if (!file) { trackLibStatus.textContent = 'Choose an mp3 file first.'; return; }
+    trackLibStatus.textContent = 'Reading file…';
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      trackLibStatus.textContent = 'Uploading…';
+      fetch(APPS_SCRIPT_URL, {
+        method: 'POST', mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'upload_track', title: title, mp3_base64: e.target.result }),
+      }).then(function () {
+        trackLibStatus.textContent = 'Uploaded — checking…';
+        setTimeout(function () {
+          jsonpGet('list_tracks', {}, function (res) {
+            var ok = res && res.status === 'OK' && Array.isArray(res.tracks) &&
+              res.tracks.some(function (x) { return x.title === title; });
+            if (!ok) { trackLibStatus.textContent = 'Sent, but the backend didn\'t confirm it. Check that the Track Library addition (upload_track) is pasted into Apps Script and redeployed.'; return; }
+            tracks = res.tracks;
+            trackLibStatus.textContent = '';
+            trackLibTitleInput.value = '';
+            trackLibFileInput.value = '';
+            renderTrackLibrary();
+          });
+        }, 1500); // a real mp3 upload takes longer to land than a small text write
+      }).catch(function () { trackLibStatus.textContent = 'Could not reach the backend.'; });
+    };
+    reader.readAsDataURL(file);
+  });
+
   checkCurrent();
   fetchCells();
+  fetchTracks();
 })();
 </script>
 
