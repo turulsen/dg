@@ -1995,7 +1995,7 @@ def test_acell_music(p):
     skip_acell_gate(page)
 
     posts = []
-    backend_state = {"track_url": "", "track_title": "", "track_kind": ""}
+    backend_state = {"track_url": "", "track_title": "", "track_kind": "", "paused": False, "loop": False}
     fake_cells = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": [], "channel": "4"}]
     tracks_state = []
 
@@ -2008,6 +2008,12 @@ def test_acell_music(p):
                 backend_state["track_url"] = body.get("track_url", "")
                 backend_state["track_title"] = body.get("track_title", "")
                 backend_state["track_kind"] = body.get("track_kind", "")
+                backend_state["loop"] = body.get("loop") == "1"
+                backend_state["paused"] = False
+            elif body.get("action") == "pause_now_playing":
+                backend_state["paused"] = True
+            elif body.get("action") == "resume_now_playing":
+                backend_state["paused"] = False
             elif body.get("action") == "set_cell_channel":
                 for c in fake_cells:
                     if c["cell_id"] == body.get("cell_id"):
@@ -2030,7 +2036,9 @@ def test_acell_music(p):
                 if backend_state["track_url"]:
                     res = {"status": "OK", "track_url": backend_state["track_url"],
                            "track_title": backend_state["track_title"], "started_at": 1700000000000,
-                           "track_kind": backend_state["track_kind"]}
+                           "track_kind": backend_state["track_kind"],
+                           "paused": backend_state["paused"], "paused_at": 1700000000000 if backend_state["paused"] else 0,
+                           "loop": backend_state["loop"]}
                 else:
                     res = {"status": "NOT_FOUND"}
             elif "action=get_playlist" in url:
@@ -2076,6 +2084,52 @@ def test_acell_music(p):
            page.evaluate("() => localStorage.getItem('dg_acell_broadcast_channel')") == "2", "")
     record("acell", "the on-air indicator shows On Air once broadcasting is confirmed",
            page.inner_text("#music-air-indicator").strip().lower() == "on air", page.inner_text("#music-air-indicator"))
+    record("acell", "Set Now Playing defaults to loop off when the checkbox is unchecked",
+           set_posts[0].get("loop") == "0", str(set_posts))
+
+    # Pause/Resume: freezes the current track in place for everyone tuned
+    # in without restarting it from 0:00, unlike a fresh Set Now Playing.
+    page.click("#music-pause-btn")
+    page.wait_for_timeout(1200)
+    pause_posts = [p_ for p_ in posts if p_.get("action") == "pause_now_playing"]
+    record("acell", "Pause posts pause_now_playing for the dialed channel",
+           len(pause_posts) == 1 and pause_posts[0].get("channel") == "2", str(pause_posts))
+    record("acell", "status line confirms Paused once a read-back verifies it",
+           "Paused" in page.inner_text("#music-status"), page.inner_text("#music-status"))
+    record("acell", "the Pause button flips to Resume once paused",
+           page.eval_on_selector("#music-pause-btn", "el => el.textContent") == "Resume", "")
+
+    page.click("#music-pause-btn")
+    page.wait_for_timeout(1200)
+    resume_posts = [p_ for p_ in posts if p_.get("action") == "resume_now_playing"]
+    record("acell", "clicking the same button again (now labeled Resume) posts resume_now_playing",
+           len(resume_posts) == 1 and resume_posts[0].get("channel") == "2", str(resume_posts))
+    record("acell", "the button flips back to Pause once resumed",
+           page.eval_on_selector("#music-pause-btn", "el => el.textContent") == "Pause", "")
+
+    # Restart: re-broadcasts the currently confirmed track from 0:00 even
+    # with the form fields cleared -- it works off the last known
+    # now-playing state, not whatever happens to be typed in the boxes.
+    page.fill("#music-url-input", "")
+    page.fill("#music-title-input", "")
+    page.click("#music-restart-btn")
+    page.wait_for_timeout(1500)
+    restart_posts = [p_ for p_ in posts if p_.get("action") == "set_now_playing"
+                      and p_.get("track_url") == "https://youtube.com/watch?v=dQw4w9WgXcQ"]
+    record("acell", "Restart re-broadcasts the currently playing track with the form fields cleared",
+           len(restart_posts) == 2, str(restart_posts))
+
+    # Loop: checked before Set Now Playing sends loop:'1'.
+    page.check("#music-loop-input")
+    page.fill("#music-url-input", "https://youtube.com/watch?v=anotherid1234")
+    page.fill("#music-title-input", "Looping Ambience")
+    page.click("#music-set-btn")
+    page.wait_for_timeout(1500)
+    loop_posts = [p_ for p_ in posts if p_.get("action") == "set_now_playing"
+                  and p_.get("track_url") == "https://youtube.com/watch?v=anotherid1234"]
+    record("acell", "checking Loop before Set Now Playing sends loop: '1'",
+           len(loop_posts) == 1 and loop_posts[0].get("loop") == "1", str(loop_posts))
+    page.uncheck("#music-loop-input")
 
     page.click("#music-stop-btn")
     page.wait_for_timeout(1500)
@@ -2607,6 +2661,137 @@ def test_table_radio_audio_volume(p):
 
     page.close()
     return errs
+
+def test_table_radio_pause_and_loop(p):
+    """Table Radio: the Handler can Pause/Resume a broadcast in place
+    (set_now_playing always restarts a track from 0:00, which isn't the
+    right tool for "hold on a second") and mark a track to Loop (for
+    ambience tracks that should keep repeating instead of the Handler
+    re-cueing it every time it ends). get_now_playing carries paused/
+    paused_at/loop; the widget must reflect a paused broadcast by NOT
+    autoplaying the <audio> element, and a looping one by setting its
+    real .loop property."""
+    # A real (if tiny) playable WAV, not an empty body -- an empty
+    # response has no decodable audio, so .play() rejects and .paused
+    # snaps back to true regardless of pause state, which would make the
+    # "not paused when playing" assertion below meaningless.
+    import wave, io
+    wav_buf = io.BytesIO()
+    w = wave.open(wav_buf, "wb")
+    w.setnchannels(1); w.setsampwidth(2); w.setframerate(8000)
+    w.writeframes(b"\x00\x00" * 8000)
+    w.close()
+    wav_bytes = wav_buf.getvalue()
+
+    # Headless Chromium's autoplay policy can block .play() even on a
+    # valid, muted <audio> element in this sandbox, which would make
+    # asserting on the real post-decode .paused state flaky regardless of
+    # whether renderEmbed() called .play() at all. Instrument .play()
+    # itself instead -- it's synchronously invoked (or not) the instant
+    # renderEmbed() decides to call it, independent of whether the
+    # browser's autoplay policy then lets that call actually succeed.
+    play_probe = """
+        window.__dgPlayCalls = [];
+        var orig = HTMLMediaElement.prototype.play;
+        HTMLMediaElement.prototype.play = function () {
+            if (this.id === 'dg-radio-audio') window.__dgPlayCalls.push(Date.now());
+            var p = orig.call(this);
+            if (p && p.catch) p.catch(function () { /* autoplay policy, not our bug */ });
+            return p;
+        };
+    """
+
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+    page.add_init_script(play_probe)
+    page.route("**/ambience.mp3", lambda r: r.fulfill(status=200, content_type="audio/wav", body=wav_bytes))
+
+    # Scenario 1: broadcasting normally, with Loop on. started_at is "now"
+    # (not a fixed past timestamp) -- the widget seeks the <audio>
+    # element to the elapsed time since started_at, and seeking past a
+    # short fixture track's actual duration snaps it straight to
+    # "ended" (paused), which would make this scenario's "actually
+    # playing" assertion meaningless.
+    now_ms = int(__import__("time").time() * 1000)
+    def fake_playing_looped(route):
+        req = route.request
+        if req.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=get_now_playing" in url:
+                res = {"status": "OK", "channel": "1", "track_url": "https://example.com/ambience.mp3",
+                       "track_title": "Rain Loop", "started_at": now_ms,
+                       "paused": False, "paused_at": 0, "loop": True}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_playing_looped)
+
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
+    page.reload(wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(700)
+
+    audio_el = page.query_selector("#dg-radio-embed-wrap audio")
+    record("radio", "a Loop-flagged track sets the <audio> element's real .loop",
+           audio_el is not None and page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.loop") is True, "")
+    record("radio", "a normally-playing (not paused) broadcast calls .play() on the <audio> element",
+           page.evaluate("() => (window.__dgPlayCalls || []).length") > 0, "")
+    record("radio", "status shows On air for a playing, non-paused broadcast",
+           page.eval_on_selector("#dg-radio-status", "el => el.textContent") == "On air", "")
+    page.close()
+
+    # Scenario 2: the Handler has paused the broadcast -- a fresh listener
+    # tuning in should see it frozen, not autoplaying.
+    def fake_playing_paused(route):
+        req = route.request
+        if req.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=get_now_playing" in url:
+                res = {"status": "OK", "channel": "1", "track_url": "https://example.com/ambience.mp3",
+                       "track_title": "Rain Loop", "started_at": now_ms,
+                       "paused": True, "paused_at": now_ms, "loop": False}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page2 = p.new_page()
+    page2.set_default_timeout(8000)
+    errs2 = collect_errors(page2)
+    page2.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page2.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page2.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+    page2.add_init_script(play_probe)
+    page2.route("**/ambience.mp3", lambda r: r.fulfill(status=200, content_type="audio/wav", body=wav_bytes))
+    page2.route("**/script.google.com/**", fake_playing_paused)
+
+    page2.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page2.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
+    page2.reload(wait_until="domcontentloaded", timeout=15000)
+    page2.wait_for_timeout(700)
+
+    record("radio", "a Handler-paused broadcast does not call .play() for a listener tuning in",
+           page2.evaluate("() => (window.__dgPlayCalls || []).length") == 0, "")
+    record("radio", "a Handler-paused broadcast leaves the <audio> element paused in the DOM",
+           page2.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.paused") is True, "")
+    record("radio", "status tells the listener the Handler paused it, not that it's dead air",
+           page2.eval_on_selector("#dg-radio-status", "el => el.textContent") == "Paused by the Handler", "")
+    page2.close()
+    return errs + errs2
 
 def test_table_radio_library_track_kind(p):
     """Table Radio Track Library (v1.7): a mp3 uploaded through A-Cell's
@@ -3808,6 +3993,8 @@ def main():
         safe(test_table_radio_widget, browser, area="radio")
 
         safe(test_table_radio_audio_volume, browser, area="radio")
+
+        safe(test_table_radio_pause_and_loop, browser, area="radio")
 
         safe(test_table_radio_library_track_kind, browser, area="radio")
 

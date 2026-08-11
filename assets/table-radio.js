@@ -57,6 +57,7 @@
   var CHANNELS = ['1', '2', '3', '4', '5'];
 
   var lastStartedAt = null;
+  var lastPaused = false;
   var pollTimer = null;
 
   // Which live-controllable player (if any) currently backs the embed --
@@ -340,6 +341,7 @@
     document.getElementById('dg-radio-confirm-tune').addEventListener('click', function () {
       setChannel(dial.get());
       lastStartedAt = null;
+      lastPaused = false;
       renderTuned();
       startPolling();
     });
@@ -410,6 +412,7 @@
         setChannel(newCh);
         ch = newCh;
         lastStartedAt = null;
+        lastPaused = false;
         window._dgRadioLast = null;
         document.getElementById('dg-radio-ch-label').textContent = 'CH ' + newCh;
         document.getElementById('dg-radio-track').textContent = 'No signal yet.';
@@ -468,6 +471,28 @@
     return false;
   }
 
+  // Handler-driven Pause/Resume: pauses or resumes whatever's actually
+  // playing right now WITHOUT tearing down and recreating the embed (a
+  // poll landing mid-pause shouldn't restart the track for every
+  // listener). Returns false if nothing live-controllable is active, so
+  // the caller can fall back to a full renderEmbed() rebuild.
+  function applyLivePauseState(paused) {
+    if (currentEmbedKind === 'yt' && ytPlayer && ytPlayerReady) {
+      try { if (paused) ytPlayer.pauseVideo(); else ytPlayer.playVideo(); return true; } catch (e) { return false; }
+    }
+    if (currentEmbedKind === 'sc' && scWidget) {
+      try { if (paused) scWidget.pause(); else scWidget.play(); return true; } catch (e) { return false; }
+    }
+    if (currentEmbedKind === 'audio') {
+      var audioEl = document.getElementById('dg-radio-audio');
+      if (audioEl) {
+        if (paused) { audioEl.pause(); } else { var p = audioEl.play(); if (p && p.catch) p.catch(function () { /* best effort */ }); }
+        return true;
+      }
+    }
+    return false;
+  }
+
   function renderEmbed(np) {
     var wrap = document.getElementById('dg-radio-embed-wrap');
     var resumeBtn = document.getElementById('dg-radio-resume');
@@ -485,9 +510,14 @@
       return;
     }
 
-    var elapsed = Math.max(0, Math.floor((Date.now() - (np.started_at || Date.now())) / 1000));
+    var isPaused = !!np.paused;
+    var pausedAtMs = np.paused_at || Date.now();
+    var elapsed = isPaused
+      ? Math.max(0, Math.floor((pausedAtMs - (np.started_at || pausedAtMs)) / 1000))
+      : Math.max(0, Math.floor((Date.now() - (np.started_at || Date.now())) / 1000));
     var muted = isMuted();
     var vol = getVolume();
+    var loop = !!np.loop;
     // A Track Library pick's Drive download link has no .mp3 extension
     // for isDirectAudio() to catch -- track_kind says so explicitly
     // instead of relying on the URL shape, and skips the YouTube/
@@ -502,21 +532,30 @@
       resumeBtn.style.display = 'none';
       ensureYouTubeApi(function () {
         if (!document.getElementById('dg-radio-yt-target')) return; // superseded by a later renderEmbed() call
-        ytPlayer = new window.YT.Player('dg-radio-yt-target', {
-          height: '220', width: '100%', videoId: ytId,
+        var playerVars = {
+          // Paused broadcasts cue up at the right timestamp without
+          // visibly flashing into playback first (autoplay 0 + start).
+          autoplay: isPaused ? 0 : 1, start: elapsed, mute: muted ? 1 : 0, playsinline: 1,
           // origin is YouTube's own recommended playerVar for the
           // postMessage-based control channel (setVolume/mute/etc) --
           // without it the video can still play visibly while those
           // calls go nowhere, which is exactly the "sound plays, volume
           // slider does nothing" shape of bug this was chasing.
-          playerVars: { autoplay: 1, start: elapsed, mute: muted ? 1 : 0, playsinline: 1, origin: window.location.origin },
+          origin: window.location.origin
+        };
+        // A single video only loops via the API by also naming itself as
+        // a one-item "playlist" -- loop:1 alone is silently ignored.
+        if (loop) { playerVars.loop = 1; playerVars.playlist = ytId; }
+        ytPlayer = new window.YT.Player('dg-radio-yt-target', {
+          height: '220', width: '100%', videoId: ytId,
+          playerVars: playerVars,
           events: {
             onReady: function (e) {
               ytPlayerReady = true;
               try {
                 e.target.setVolume(getVolume());
                 if (isMuted()) e.target.mute(); else e.target.unMute();
-                e.target.playVideo();
+                if (!isPaused) e.target.playVideo();
               } catch (e2) { /* best effort */ }
             }
           }
@@ -526,7 +565,7 @@
       currentEmbedKind = 'sc';
       if (volSlider) volSlider.style.display = '';
       wrap.innerHTML = '<iframe id="dg-radio-sc-iframe" height="220" src="https://w.soundcloud.com/player/?url=' +
-        encodeURIComponent(np.track_url) + '&auto_play=true' + '" allow="autoplay" title="Table Radio"></iframe>';
+        encodeURIComponent(np.track_url) + '&auto_play=' + (isPaused ? 'false' : 'true') + '" allow="autoplay" title="Table Radio"></iframe>';
       resumeBtn.style.display = 'none';
       ensureSoundCloudApi(function () {
         var iframeEl = document.getElementById('dg-radio-sc-iframe');
@@ -544,9 +583,18 @@
       audioEl.currentTime = elapsed;
       audioEl.muted = muted;
       audioEl.volume = vol / 100;
-      var playPromise = audioEl.play();
-      if (playPromise && playPromise.catch) {
-        playPromise.catch(function () { resumeBtn.style.display = 'block'; });
+      audioEl.loop = loop;
+      // A bad/unreachable src (e.g. a broken Drive hotlink) otherwise
+      // fails completely silently -- no sound, no visible sign why.
+      audioEl.addEventListener('error', function () {
+        var statusEl = document.getElementById('dg-radio-status');
+        if (statusEl) statusEl.textContent = 'Playback failed -- this track isn\'t reachable right now.';
+      });
+      if (!isPaused) {
+        var playPromise = audioEl.play();
+        if (playPromise && playPromise.catch) {
+          playPromise.catch(function () { resumeBtn.style.display = 'block'; });
+        }
       }
     } else {
       // Generic embeddable URL, neither YouTube, SoundCloud, nor direct
@@ -594,16 +642,25 @@
         if (miniTrackEl) miniTrackEl.textContent = 'No signal yet.';
         if (lastStartedAt) { window._dgRadioLast = null; renderEmbed(null); }
         lastStartedAt = null;
+        lastPaused = false;
         return;
       }
       var label = res.track_title || res.track_url;
       if (trackEl) trackEl.textContent = label;
       if (miniTrackEl) miniTrackEl.textContent = label;
-      if (statusEl) statusEl.textContent = 'On air';
+      if (statusEl) statusEl.textContent = res.paused ? 'Paused by the Handler' : 'On air';
       if (res.started_at !== lastStartedAt) {
         lastStartedAt = res.started_at;
+        lastPaused = !!res.paused;
         window._dgRadioLast = res;
         renderEmbed(res);
+      } else if (!!res.paused !== lastPaused) {
+        // Same track, only the pause state flipped -- toggle the live
+        // player in place instead of a full rebuild (which would restart
+        // YouTube/SoundCloud from scratch on every Pause/Resume click).
+        lastPaused = !!res.paused;
+        window._dgRadioLast = res;
+        if (!applyLivePauseState(lastPaused)) renderEmbed(res);
       }
     };
     var s = document.createElement('script');

@@ -413,6 +413,17 @@
   .rdo-btn-sm{ padding:4px 8px; font-size:8px; flex:none; }
   .rdo-status-line{ font-family:'Courier Prime',monospace; font-size:9px; color:#7a8a68; min-height:1.4em; }
   .rdo-note{ font-family:'Courier Prime',monospace; font-size:9px; color:#5a6a48; line-height:1.5; min-height:1.4em; }
+  .rdo-checkbox-row{
+    display:flex; align-items:center; gap:6px; font-family:'Courier Prime',monospace;
+    font-size:9px; letter-spacing:.08em; text-transform:uppercase; color:#7a8a68; cursor:pointer;
+  }
+  .rdo-checkbox-row input{ accent-color:#6a9a40; cursor:pointer; }
+  /* Pause/Restart/Stop live alongside each other once something's
+     actually broadcasting -- Set Now Playing and + Add to Playlist stay
+     full-width above since those are one-shot actions, not an ongoing
+     transport control set. */
+  .rdo-now-playing-row{ display:flex; gap:6px; }
+  .rdo-now-playing-row .rdo-btn{ flex:1; }
 
   .rdo-playlist-empty{ font-family:'Courier Prime',monospace; font-size:11px; color:#5a6a48; font-style:italic; }
   .rdo-playlist-row{
@@ -672,9 +683,14 @@
                   <div class="rdo-section-label">03 // Broadcast</div>
                   <input type="text" class="rdo-input" id="music-url-input" placeholder="TRACK URL">
                   <input type="text" class="rdo-input" id="music-title-input" placeholder="TITLE (OPTIONAL)">
+                  <label class="rdo-checkbox-row"><input type="checkbox" id="music-loop-input"> Loop this track</label>
                   <button type="button" class="rdo-btn rdo-btn-full" id="music-set-btn">Set Now Playing</button>
                   <button type="button" class="rdo-btn rdo-btn-ghost rdo-btn-full" id="music-add-playlist-btn">+ Add to Playlist</button>
-                  <button type="button" class="rdo-btn rdo-btn-ghost rdo-btn-full" id="music-stop-btn">Stop Broadcast</button>
+                  <div class="rdo-now-playing-row">
+                    <button type="button" class="rdo-btn rdo-btn-ghost" id="music-pause-btn">Pause</button>
+                    <button type="button" class="rdo-btn rdo-btn-ghost" id="music-restart-btn">Restart</button>
+                    <button type="button" class="rdo-btn rdo-btn-ghost" id="music-stop-btn">Stop Broadcast</button>
+                  </div>
                   <div class="rdo-status-line" id="music-status"></div>
                 </div>
               </div>
@@ -1866,7 +1882,10 @@
   var dialPanel = document.getElementById('music-dial-panel');
   var urlInput = document.getElementById('music-url-input');
   var titleInput = document.getElementById('music-title-input');
+  var loopInput = document.getElementById('music-loop-input');
   var setBtn = document.getElementById('music-set-btn');
+  var pauseBtn = document.getElementById('music-pause-btn');
+  var restartBtn = document.getElementById('music-restart-btn');
   var stopBtn = document.getElementById('music-stop-btn');
   var addPlaylistBtn = document.getElementById('music-add-playlist-btn');
   var statusEl = document.getElementById('music-status');
@@ -1878,6 +1897,17 @@
 
   var playlist = [];
   var cells = [];
+  // The last known now-playing state for the currently dialed channel --
+  // lets Pause/Resume and Restart act without the Handler having to
+  // re-paste the URL, and lets Pause show "Resume" once it's already
+  // paused instead of the two staying visually identical.
+  var current = { track_url: '', track_title: '', track_kind: '', loop: false, paused: false };
+
+  function setPauseBtnLabel() {
+    pauseBtn.textContent = current.paused ? 'Resume' : 'Pause';
+    pauseBtn.disabled = !current.track_url;
+    restartBtn.disabled = !current.track_url;
+  }
 
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -1991,23 +2021,26 @@
     var ch = currentChannel;
     jsonpGet('get_now_playing', { channel: ch }, function (res) {
       if (res && res.status === 'OK' && res.track_url) {
-        statusEl.textContent = 'Currently broadcasting to CH ' + ch + ': ' + (res.track_title || res.track_url);
+        current = { track_url: res.track_url, track_title: res.track_title || '', track_kind: res.track_kind || '', loop: !!res.loop, paused: !!res.paused };
+        statusEl.textContent = (current.paused ? 'Paused on CH ' : 'Currently broadcasting to CH ') + ch + ': ' + (current.track_title || current.track_url);
         setAirIndicator(true);
       } else {
+        current = { track_url: '', track_title: '', track_kind: '', loop: false, paused: false };
         statusEl.textContent = 'Nothing currently broadcasting to CH ' + ch + '.';
         setAirIndicator(false);
       }
+      setPauseBtnLabel();
     });
     loadPlaylist(ch);
   }
 
-  function setNowPlaying(trackUrl, trackTitle, trackKind) {
+  function setNowPlaying(trackUrl, trackTitle, trackKind, loop) {
     var ch = currentChannel;
     statusEl.textContent = 'Saving…';
     fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors', keepalive: true,
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'set_now_playing', channel: ch, track_url: trackUrl, track_title: trackTitle, track_kind: trackKind || '' }),
+      body: JSON.stringify({ action: 'set_now_playing', channel: ch, track_url: trackUrl, track_title: trackTitle, track_kind: trackKind || '', loop: loop ? '1' : '0' }),
     }).then(function () {
       statusEl.textContent = 'Saved — checking…';
       setTimeout(function () { verifyNowPlaying(ch, trackUrl, trackTitle); }, 900);
@@ -2018,15 +2051,52 @@
     jsonpGet('get_now_playing', { channel: ch }, function (res) {
       var live = res && res.status === 'OK' ? (res.track_url || '') : '';
       if (live === expectedUrl) {
+        current = (res && res.status === 'OK')
+          ? { track_url: res.track_url || '', track_title: res.track_title || '', track_kind: res.track_kind || '', loop: !!res.loop, paused: !!res.paused }
+          : { track_url: '', track_title: '', track_kind: '', loop: false, paused: false };
         statusEl.textContent = expectedUrl
           ? 'Broadcasting to CH ' + ch + ': ' + (expectedTitle || expectedUrl)
           : 'Stopped broadcasting to CH ' + ch + '.';
         setAirIndicator(!!expectedUrl);
+        setPauseBtnLabel();
       } else {
         statusEl.textContent = NOT_DEPLOYED_MSG;
       }
     });
   }
+
+  /* ── Pause/Resume: freezes or continues the current track in place for
+     everyone tuned in, without restarting it from 0:00 (which is what a
+     fresh Set Now Playing always does). Restart deliberately IS a fresh
+     set_now_playing with the same track -- "start this over" is exactly
+     what that already does. ── */
+  pauseBtn.addEventListener('click', function () {
+    var ch = currentChannel;
+    if (!current.track_url) { statusEl.textContent = 'Nothing is broadcasting on CH ' + ch + ' yet.'; return; }
+    var wasPaused = current.paused;
+    var action = wasPaused ? 'resume_now_playing' : 'pause_now_playing';
+    statusEl.textContent = wasPaused ? 'Resuming…' : 'Pausing…';
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: action, channel: ch }),
+    }).then(function () {
+      setTimeout(function () {
+        jsonpGet('get_now_playing', { channel: ch }, function (res) {
+          var ok = res && res.status === 'OK' && res.track_url && !!res.paused !== wasPaused;
+          if (!ok) { statusEl.textContent = NOT_DEPLOYED_MSG; return; }
+          current.paused = !!res.paused;
+          statusEl.textContent = (current.paused ? 'Paused on CH ' : 'Resumed on CH ') + ch + ': ' + (current.track_title || current.track_url);
+          setPauseBtnLabel();
+        });
+      }, 900);
+    }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+  });
+
+  restartBtn.addEventListener('click', function () {
+    if (!current.track_url) { statusEl.textContent = 'Nothing is broadcasting on CH ' + currentChannel + ' yet.'; return; }
+    setNowPlaying(current.track_url, current.track_title, current.track_kind, current.loop);
+  });
 
   /* ── Playlist: a saved list of tracks per channel, so the Handler
      doesn't have to re-paste a URL every time -- click one to make it
@@ -2051,7 +2121,7 @@
         if (!t) return;
         urlInput.value = t.url;
         titleInput.value = t.title || '';
-        setNowPlaying(t.url, t.title || '', t.kind || '');
+        setNowPlaying(t.url, t.title || '', t.kind || '', loopInput.checked);
       });
     });
     Array.prototype.forEach.call(playlistEl.querySelectorAll('[data-remove]'), function (btn) {
@@ -2136,7 +2206,7 @@
   setBtn.addEventListener('click', function () {
     var url = urlInput.value.trim();
     if (!url) { statusEl.textContent = 'Paste a track URL first.'; return; }
-    setNowPlaying(url, titleInput.value.trim());
+    setNowPlaying(url, titleInput.value.trim(), '', loopInput.checked);
   });
   stopBtn.addEventListener('click', function () { setNowPlaying('', ''); });
   addPlaylistBtn.addEventListener('click', function () {
@@ -2180,7 +2250,7 @@
       btn.addEventListener('click', function () {
         var t = tracks[parseInt(btn.dataset.tracklibPlay, 10)];
         if (!t) return;
-        setNowPlaying(t.url, t.title || '', 'audio');
+        setNowPlaying(t.url, t.title || '', 'audio', loopInput.checked);
       });
     });
     Array.prototype.forEach.call(trackLibListEl.querySelectorAll('[data-tracklib-delete]'), function (btn) {
