@@ -1561,8 +1561,16 @@
       var payload = editingHandout
         ? { action: 'update_handout', handout_id: editingHandout.handout_id, title: title, body: body, photo: formPhotoDataUrl || '', cell_id: cellId }
         : { action: 'create_handout', title: title, body: body, photo: formPhotoDataUrl || '', cell_id: cellId };
+      // No keepalive here, unlike every other POST in this file: keepalive
+      // requests are capped at 64KiB by the browser (not this app, not
+      // Apps Script) -- fine for the small JSON payloads every other
+      // action sends, but a real photo's base64 data URI blows past that
+      // easily, and fetch() rejects the whole request before it's even
+      // sent, landing in the catch below with a misleadingly generic
+      // "could not reach the backend" for what's actually an oversized
+      // request. Handouts are the one action here that can carry a photo.
       fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors', keepalive: true,
+        method: 'POST', mode: 'no-cors',
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify(payload),
       }).then(function () {

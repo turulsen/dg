@@ -1747,18 +1747,47 @@ def test_acell_handouts(p):
     record("acell", "editing a handout updates it in place once confirmed",
            "Field Photograph (annotated)" in page.inner_text("#handouts-list"), page.inner_text("#handouts-list"))
 
-    # Delete: dismiss then accept.
+    # A real photo's base64 data URI easily exceeds 64KiB -- the browser
+    # caps keepalive request bodies at exactly that, silently rejecting
+    # the fetch() before it's even sent (not an app or backend failure --
+    # confirmed by reproducing it against this very mock, which never saw
+    # the request at all until keepalive was dropped from this one POST).
+    # Generate an oversized fixture on the fly rather than committing a
+    # binary blob -- the content doesn't need to be a decodable image,
+    # only large enough to exercise the size limit through the real
+    # FileReader -> base64 -> fetch path.
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+        f.write(os.urandom(120_000))
+        oversized_photo_path = f.name
+    page.click("#handouts-create-btn")
+    page.wait_for_timeout(150)
+    page.fill("#handouts-new-title", "Photo Evidence")
+    page.fill("#handouts-new-body", "Attached.")
+    page.set_input_files("#handouts-new-photo", oversized_photo_path)
+    page.wait_for_timeout(300)
+    page.click("#handouts-new-confirm")
+    photo_list_text = wait_for_condition(lambda: page.inner_text("#handouts-list")
+                                          if "Photo Evidence" in page.inner_text("#handouts-list") else None)
+    record("acell", "filing a handout with a real-sized photo (>64KiB base64) still reaches the backend",
+           bool(photo_list_text) and "Photo Evidence" in photo_list_text
+           and "Could not reach the backend" not in page.inner_text("#handouts-status"),
+           page.inner_text("#handouts-status"))
+    os.unlink(oversized_photo_path)
+
+    # Delete: dismiss then accept. Three handouts on the list at this
+    # point (the photo one filed above sorts first, being newest).
     page.once("dialog", lambda d: d.dismiss())
     page.click('[data-delete-handout="0"]')
     page.wait_for_timeout(300)
     record("acell", "dismissing the Delete confirm leaves the handout in place",
-           page.locator(".handout-card").count() == 2, "")
+           page.locator(".handout-card").count() == 3, "")
 
     page.once("dialog", lambda d: d.accept())
     page.click('[data-delete-handout="0"]')
-    wait_for_condition(lambda: page.locator(".handout-card").count() == 1)
+    wait_for_condition(lambda: page.locator(".handout-card").count() == 2)
     record("acell", "accepting Delete removes the handout",
-           page.locator(".handout-card").count() == 1, "")
+           page.locator(".handout-card").count() == 2, "")
 
     page.close()
     return errs
