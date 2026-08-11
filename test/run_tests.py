@@ -2197,7 +2197,11 @@ def test_table_radio_widget(p):
     load is a fresh document, so continuity comes from remembering the
     channel (localStorage) and re-syncing to the server-stamped
     started_at on every page, not from one <audio> element surviving
-    navigation."""
+    navigation. A YouTube track is driven through the real YouTube
+    IFrame Player API now (for volume control -- the plain embed URL
+    has no volume param), so this test fakes that API rather than
+    hitting the real youtube.com, the same way script.google.com is
+    faked -- nothing here should depend on real network access."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -2222,6 +2226,30 @@ def test_table_radio_widget(p):
         else:
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", fake_apps_script)
+
+    # Fake YouTube IFrame Player API -- constructs a real <iframe> (so the
+    # "an embed is created" check still means something) plus stub
+    # setVolume/mute/unMute/playVideo/destroy methods, and fires onReady
+    # asynchronously like the real API does.
+    fake_yt_api = """
+      window.YT = { Player: function (elId, opts) {
+        var el = document.getElementById(elId);
+        if (el) el.innerHTML = '<iframe data-yt-fake="1"></iframe>';
+        this._opts = opts; this._volume = null; this._muted = null;
+        var self = this;
+        setTimeout(function () {
+          if (opts.events && opts.events.onReady) opts.events.onReady({ target: self });
+        }, 0);
+      } };
+      window.YT.Player.prototype.setVolume = function (v) { this._volume = v; };
+      window.YT.Player.prototype.mute = function () { this._muted = true; };
+      window.YT.Player.prototype.unMute = function () { this._muted = false; };
+      window.YT.Player.prototype.playVideo = function () {};
+      window.YT.Player.prototype.destroy = function () {};
+      if (typeof window.onYouTubeIframeAPIReady === 'function') window.onYouTubeIframeAPIReady();
+    """
+    page.route("**/www.youtube.com/iframe_api", lambda r: r.fulfill(
+        status=200, content_type="application/javascript", body=fake_yt_api))
 
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(400)
@@ -2248,19 +2276,62 @@ def test_table_radio_widget(p):
            page.evaluate("() => localStorage.getItem('dg_radio_channel')") == "3", "")
     record("radio", "the current track title is shown",
            "Table Theme" in page.eval_on_selector("#dg-radio-track", "el => el.textContent"), "")
-    record("radio", "a YouTube embed is created for the current track",
+    record("radio", "a YouTube embed (via the real IFrame Player API) is created for the current track",
            page.query_selector("#dg-radio-embed-wrap iframe") is not None, "")
 
+    # A fresh tune-in starts Minimized by default -- the dial/track-status
+    # section is hidden, and the video area is clipped to 0 height, not
+    # display:none (display:none on an ancestor can pause YouTube; a
+    # clipped, zero-height-but-still-rendered wrapper doesn't).
+    record("radio", "a freshly tuned-in panel starts Minimized, not Expanded",
+           not page.eval_on_selector("#dg-radio", "el => el.classList.contains('dgr-is-expanded')")
+           and page.eval_on_selector("#dg-radio-toggle-expand", "el => el.textContent") == "Expand", "")
+    record("radio", "Minimized keeps the embed wrapper in the DOM at zero height (clipped, not display:none, so playback isn't paused)",
+           page.eval_on_selector("#dg-radio-embed-wrap", "el => getComputedStyle(el).display") != "none"
+           and page.eval_on_selector("#dg-radio-embed-wrap", "el => el.getBoundingClientRect().height") == 0, "")
+    record("radio", "Minimized hides the dial/change-channel section",
+           not page.is_visible("#dg-radio-change"), "")
+
+    # Volume slider: present, defaults to 70, and dragging it applies live
+    # (via the fake player's setVolume) without recreating the embed --
+    # the iframe element itself must be the SAME one from before the drag.
+    record("radio", "a volume slider is present next to Mute, defaulting to 70",
+           page.input_value("#dg-radio-volume") == "70", "")
+    iframe_before = page.eval_on_selector("#dg-radio-embed-wrap iframe", "el => el.dataset.ytFake")
+    page.fill("#dg-radio-volume", "40")
+    page.dispatch_event("#dg-radio-volume", "input")
+    page.wait_for_timeout(100)
+    record("radio", "dragging the volume slider persists the value",
+           page.evaluate("() => localStorage.getItem('dg_radio_volume')") == "40", "")
+    record("radio", "dragging the volume slider does not recreate the embed (same iframe, no reload/flicker)",
+           page.eval_on_selector("#dg-radio-embed-wrap iframe", "el => el.dataset.ytFake") == iframe_before, "")
+
+    # Expand reveals the bigger panel + dial/status section, and the
+    # widget visibly grows (per the user's "bigger control panel" ask).
+    narrow_width = page.eval_on_selector("#dg-radio", "el => el.getBoundingClientRect().width")
+    page.click("#dg-radio-toggle-expand")
+    page.wait_for_timeout(150)
+    wide_width = page.eval_on_selector("#dg-radio", "el => el.getBoundingClientRect().width")
+    record("radio", "Expand grows the panel (a real, usable video area, not the old cramped strip)",
+           wide_width > narrow_width, f"narrow={narrow_width} wide={wide_width}")
+    record("radio", "Expand reveals the dial/change-channel section",
+           page.is_visible("#dg-radio-change"), "")
+    record("radio", "Expand gives the video embed real height (was a cramped 70px before this redesign)",
+           page.eval_on_selector("#dg-radio-embed-wrap", "el => el.getBoundingClientRect().height") >= 200, "")
+
     # Navigating to a completely different page keeps the same channel
-    # tuned in (this is the whole point -- "as they go back and forth").
+    # tuned in (this is the whole point -- "as they go back and forth"),
+    # AND remembers the Expanded preference across that navigation.
     page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(600)
     record("radio", "the widget is present and still tuned to the same channel after navigating to a different page",
            page.is_visible("#dg-radio-panel") and "CH 3" in page.inner_text("#dg-radio-panel"), "")
+    record("radio", "the Expanded/Minimized preference survives navigation too",
+           page.eval_on_selector("#dg-radio", "el => el.classList.contains('dgr-is-expanded')"), "")
 
-    # The "Channel" button re-opens the dial inline so a listener can
-    # re-tune to a different channel without leaving and re-choosing --
-    # turning it (via the turn-right button this time) switches live.
+    # The "Change Channel" button re-opens the dial inline so a listener
+    # can re-tune to a different channel without leaving and re-choosing
+    # -- turning it (via the turn-right button this time) switches live.
     page.click("#dg-radio-change")
     page.wait_for_timeout(150)
     page.click('.dgr-turn[data-dir="1"]')
@@ -2275,6 +2346,79 @@ def test_table_radio_widget(p):
     record("radio", "leaving the channel clears localStorage and collapses back to the pill",
            page.evaluate("() => localStorage.getItem('dg_radio_channel')") is None
            and page.is_visible("#dg-radio-pill"), "")
+
+    page.close()
+    return errs
+
+def test_table_radio_audio_volume(p):
+    """assets/table-radio.js: a direct .mp3 track (no external player API
+    involved) is the simplest, most directly verifiable path for real
+    volume control -- native <audio>.volume/.muted, no third-party API
+    or mocking needed. Covers what the YouTube/SoundCloud paths can't be
+    fully verified here (no real network access to those APIs in this
+    environment): that the volume slider and Mute button actually reach
+    the playing element, and that neither recreates it."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=get_now_playing" in url:
+                res = {"status": "OK", "channel": "SAM", "track_url": "https://example.com/ambience.mp3",
+                       "track_title": "Rain Loop", "started_at": 1700000000000}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+    # The <audio> element will try to actually fetch the mp3 -- fake a
+    # tiny response so it doesn't hang on a real network request.
+    page.route("**/ambience.mp3", lambda r: r.fulfill(status=200, content_type="audio/mpeg", body=""))
+
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
+    page.reload(wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(700)
+
+    record("radio", "a direct audio track renders an <audio> element",
+           page.query_selector("#dg-radio-embed-wrap audio") is not None, "")
+
+    page.fill("#dg-radio-volume", "25")
+    page.dispatch_event("#dg-radio-volume", "input")
+    page.wait_for_timeout(100)
+    vol = page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.volume")
+    record("radio", "the volume slider sets the <audio> element's real .volume",
+           abs(vol - 0.25) < 0.01, str(vol))
+
+    # Starts Muted by default (browsers always allow muted autoplay, so
+    # that's the one guaranteed-to-work starting state) -- first click
+    # un-mutes, second click re-mutes.
+    record("radio", "starts Muted by default",
+           page.eval_on_selector("#dg-radio-mute", "el => el.textContent") == "MUTED", "")
+    page.click("#dg-radio-mute")
+    page.wait_for_timeout(100)
+    unmuted = page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.muted")
+    record("radio", "un-Muting sets the <audio> element's real .muted to false",
+           unmuted is False, "")
+    record("radio", "un-Muting updates its own label",
+           page.eval_on_selector("#dg-radio-mute", "el => el.textContent") == "SOUND", "")
+
+    page.click("#dg-radio-mute")
+    page.wait_for_timeout(100)
+    muted_again = page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.muted")
+    record("radio", "re-Muting sets .muted back to true on the same <audio> element (not a new one)",
+           muted_again is True, "")
 
     page.close()
     return errs
@@ -3270,6 +3414,8 @@ def main():
         safe(test_acell_admin, browser, area="acell")
 
         safe(test_table_radio_widget, browser, area="radio")
+
+        safe(test_table_radio_audio_volume, browser, area="radio")
 
         safe(test_agent_portal_code_query_param, browser, area="agent-portal")
 
