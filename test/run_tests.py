@@ -1130,10 +1130,11 @@ def test_agent_hub_handouts(p):
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
+    photo_data_uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
     cells_fixture = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"], "channel": ""}]
     handouts_fixture = [
         {"handout_id": "h1", "title": "Cell Alpha Only Clue", "body": "Only Owen should see this.", "photo": "", "cell_id": "cell_1", "created_at": "2000"},
-        {"handout_id": "h2", "title": "Campaign Wide Notice", "body": "Everyone sees this.", "photo": "", "cell_id": "", "created_at": "1000"},
+        {"handout_id": "h2", "title": "Campaign Wide Notice", "body": "Everyone sees this.", "photo": photo_data_uri, "cell_id": "", "created_at": "1000"},
     ]
 
     def fake_apps_script(route):
@@ -1164,11 +1165,92 @@ def test_agent_hub_handouts(p):
     record("hub", "an Agent who's a Cell member sees both that Cell's handout and the campaign-wide one",
            sorted(owen_titles) == sorted(["Cell Alpha Only Clue", "Campaign Wide Notice"]), str(owen_titles))
 
+    page.click("#ah-handouts-OWEN-CS12 .ah-handout-photo")
+    page.wait_for_timeout(200)
+    record("hub", "clicking a handout photo opens it in a full-size lightbox",
+           page.is_visible(".ah-handout-lightbox"), "")
+    page.click(".ah-handout-lightbox-close")
+    page.wait_for_timeout(200)
+    record("hub", "closing the lightbox hides it again",
+           not page.is_visible(".ah-handout-lightbox"), "")
+
     page.click('.tw[data-tab="PRIY-AN34"]')
     page.wait_for_timeout(150)
     priya_titles = page.eval_on_selector_all("#ah-handouts-PRIY-AN34 .ah-handout-title", "els => els.map(e=>e.textContent)")
     record("hub", "an Agent in no Cell only sees the campaign-wide handout, not the Cell-scoped one",
            priya_titles == ["Campaign Wide Notice"], str(priya_titles))
+
+    page.close()
+    return errs
+
+def test_agent_hub_handout_notes(p):
+    """agent-hub.html: an Agent's private notes on a Handout, synced via
+    the backend (list_handout_notes / save_handout_note) so they survive
+    clearing browser data and follow the Agent across devices. Scoped to
+    (handout_id, agent_code) -- never surfaced to the Handler. A
+    pre-existing note pre-fills the textarea; editing debounce-saves
+    (1200ms) and posts the exact handout_id/agent_code/note."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    handouts_fixture = [
+        {"handout_id": "h1", "title": "Field Photo", "body": "evidence", "photo": "", "cell_id": "", "created_at": "1000"},
+    ]
+    notes_fixture = {"OWEN-CS12": [{"handout_id": "h1", "note": "Existing note text"}]}
+    saved_bodies = []
+
+    def fake_apps_script(route):
+        req = route.request
+        url = req.url
+        if req.method == "POST":
+            body = req.post_data or "{}"
+            saved_bodies.append(json.loads(body))
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        if "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        if "action=list_cells" in url:
+            res = {"status": "OK", "cells": []}
+        elif "action=list_handouts" in url:
+            res = {"status": "OK", "handouts": handouts_fixture}
+        elif "action=list_handout_notes" in url:
+            code = url.split("agent_code=")[1].split("&")[0]
+            res = {"status": "OK", "notes": notes_fixture.get(code, [])}
+        else:
+            res = {"status": "OK"}
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    roster = {"OWEN-CS12": {"code": "OWEN-CS12", "char_name": "Owen Castillo", "codename": "Ferro", "saved_at": 2000}}
+    page.evaluate("(r) => localStorage.setItem('dg_agent_roster', JSON.stringify(r))", roster)
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_timeout(900)
+
+    note_input = page.query_selector('.ah-handout-notes-input[data-note-handout="h1"]')
+    record("hub", "a pre-existing note pre-fills the textarea",
+           note_input is not None and note_input.input_value() == "Existing note text",
+           note_input.input_value() if note_input else "no textarea found")
+
+    note_input.fill("Updated note from the Agent")
+    status_el = page.query_selector('[data-note-status="h1"]')
+    page.wait_for_timeout(200)
+    record("hub", "typing shows a 'Typing…' status before the debounce fires",
+           "Typing" in (status_el.text_content() or ""), status_el.text_content() if status_el else "")
+
+    page.wait_for_timeout(1600)
+    record("hub", "editing a note posts save_handout_note with the right handout_id/agent_code/note",
+           any(b.get("action") == "save_handout_note" and b.get("handout_id") == "h1"
+               and b.get("agent_code") == "OWEN-CS12" and b.get("note") == "Updated note from the Agent"
+               for b in saved_bodies),
+           str(saved_bodies))
+    record("hub", "status flips to 'Saved' after the debounced save resolves",
+           status_el.text_content() == "Saved", status_el.text_content() if status_el else "")
 
     page.close()
     return errs
@@ -1775,6 +1857,18 @@ def test_acell_handouts(p):
            page.inner_text("#handouts-status"))
     os.unlink(oversized_photo_path)
 
+    # A fixed 96x96 thumbnail is fine for "there's a photo here" but
+    # useless for actually reading a filed document -- click it to see
+    # it at real size in a lightbox overlay.
+    page.click(".handout-photo")
+    page.wait_for_timeout(200)
+    record("acell", "clicking a handout photo opens it in a full-size lightbox",
+           page.is_visible(".handout-lightbox"), "")
+    page.click(".handout-lightbox-close")
+    page.wait_for_timeout(200)
+    record("acell", "closing the lightbox hides it again",
+           not page.is_visible(".handout-lightbox"), "")
+
     # Delete: dismiss then accept. Three handouts on the list at this
     # point (the photo one filed above sorts first, being newest).
     page.once("dialog", lambda d: d.dismiss())
@@ -2036,6 +2130,26 @@ def test_acell_music(p):
     # here deliberately has no keepalive for the same reason).
     record("acell", "the Track Library starts empty with a prompt to upload one",
            "No tracks uploaded yet" in page.inner_text("#tracklib-list"), "")
+
+    # Bug: the upload UI used to be nested inside .acell-radio-display,
+    # the second column of a grid that collapses to a single stacked
+    # column on mobile -- burying it 1000px+ down the page below the
+    # whole Tune Channel/Cue For Cell/Broadcast section with no visual
+    # cue. It must be a full-width section immediately after that grid
+    # instead, not a descendant of either of its columns.
+    tracklib_placement = page.evaluate("""() => {
+        const lib = document.querySelector('.acell-radio-tracklib');
+        const display = document.querySelector('.acell-radio-display');
+        const body = document.querySelector('.acell-radio-body');
+        return {
+            nestedInDisplay: !!(lib && display && display.contains(lib)),
+            isSiblingAfterBody: !!(lib && body && lib.previousElementSibling === body),
+        };
+    }""")
+    record("acell", "the Track Library is not buried inside the Cue List column",
+           not tracklib_placement["nestedInDisplay"], str(tracklib_placement))
+    record("acell", "the Track Library is a full-width section directly after the dial/broadcast/cue-list panel",
+           tracklib_placement["isSiblingAfterBody"], str(tracklib_placement))
     import tempfile
     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
         f.write(os.urandom(150_000))
@@ -3672,6 +3786,8 @@ def main():
         safe(test_agent_hub_recruit_flag, browser, area="hub")
 
         safe(test_agent_hub_handouts, browser, area="hub")
+
+        safe(test_agent_hub_handout_notes, browser, area="hub")
 
         safe(test_acell_gate, browser, area="acell")
 

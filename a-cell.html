@@ -293,6 +293,23 @@
   .handout-body-row{ display:flex; gap:14px; }
   .handout-photo{
     width:96px; height:96px; flex-shrink:0; object-fit:cover; border:1px solid var(--rule); display:block;
+    cursor:zoom-in;
+  }
+  /* A 96px thumbnail is fine for "there's a photo here" but useless for
+     actually reading a filed document -- click it to see it at real
+     size instead of squinting. */
+  .handout-lightbox{
+    position:fixed; inset:0; z-index:9999; background:rgba(8,6,2,.92);
+    display:flex; align-items:center; justify-content:center; padding:24px;
+    cursor:zoom-out;
+  }
+  .handout-lightbox img{
+    max-width:92vw; max-height:92vh; object-fit:contain; box-shadow:0 8px 40px rgba(0,0,0,.6);
+  }
+  .handout-lightbox-close{
+    position:absolute; top:16px; right:20px; font-family:'Special Elite',monospace; font-size:13px;
+    letter-spacing:.1em; text-transform:uppercase; color:#e9e3ce; background:rgba(0,0,0,.5);
+    border:1px solid rgba(233,227,206,.4); padding:6px 14px; cursor:pointer;
   }
   .handout-text{
     font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.7;
@@ -402,8 +419,23 @@
     display:flex; align-items:center; justify-content:space-between; gap:10px;
     border-bottom:1px dotted #2a3020; padding:8px 0; font-size:11px;
   }
-  .rdo-tracklib-label{ margin-top:18px; }
-  .rdo-tracklib-upload{ display:flex; flex-direction:column; gap:6px; margin-bottom:10px; }
+  /* Its own full-width section below the dial/Cue List grid, not nested
+     in the narrow "display" column -- on mobile, that grid collapses to
+     a single stacked column with Tune Channel/Cue For Cell/Broadcast
+     all coming first, which pushed the upload form (and the "how do I
+     even get a track in here" answer) well over 1000px down the page
+     with nothing above the fold hinting it existed. */
+  .acell-radio-tracklib{
+    border-top:1px solid #1a2214; padding:14px; background:#0e1209;
+    position:relative; z-index:2;
+  }
+  .rdo-tracklib-upload{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:12px; }
+  .rdo-tracklib-upload .rdo-input{ flex:1; min-width:140px; }
+  .rdo-tracklib-upload input[type="file"]{
+    flex:1; min-width:160px; color:#c9d4b8; font-family:'Courier Prime',monospace; font-size:10px;
+  }
+  .rdo-tracklib-upload .rdo-btn{ flex:none; }
+  #tracklib-list{ display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:2px 20px; }
   .rdo-track-row{
     display:flex; align-items:center; justify-content:space-between; gap:10px;
     border-bottom:1px dotted #2a3020; padding:8px 0; font-size:11px;
@@ -649,16 +681,17 @@
               <div class="acell-radio-display">
                 <div class="rdo-section-label">Cue List</div>
                 <div id="music-playlist"></div>
-
-                <div class="rdo-section-label rdo-tracklib-label">Track Library</div>
-                <div class="rdo-tracklib-upload">
-                  <input type="text" class="rdo-input" id="tracklib-title-input" placeholder="TRACK TITLE">
-                  <input type="file" accept="audio/mpeg,audio/mp3,.mp3" id="tracklib-file-input">
-                  <button type="button" class="rdo-btn rdo-btn-full" id="tracklib-upload-btn">Upload MP3</button>
-                  <div class="rdo-status-line" id="tracklib-status"></div>
-                </div>
-                <div id="tracklib-list"></div>
               </div>
+            </div>
+            <div class="acell-radio-tracklib">
+              <div class="rdo-section-label">Track Library — mp3s uploaded once, cue on any channel</div>
+              <div class="rdo-tracklib-upload">
+                <input type="text" class="rdo-input" id="tracklib-title-input" placeholder="TRACK TITLE">
+                <input type="file" accept="audio/mpeg,audio/mp3,.mp3" id="tracklib-file-input">
+                <button type="button" class="rdo-btn" id="tracklib-upload-btn">Upload MP3</button>
+                <div class="rdo-status-line" id="tracklib-status"></div>
+              </div>
+              <div id="tracklib-list"></div>
             </div>
           </div>
         </div>
@@ -1482,7 +1515,7 @@
     listEl.innerHTML = handouts.map(function (h, i) {
       var scopeClass = h.cell_id ? 'handout-scope' : 'handout-scope all-cells';
       var photoRow = h.photo
-        ? '<img class="handout-photo" src="' + h.photo + '" alt="">'
+        ? '<img class="handout-photo" src="' + h.photo + '" alt="" data-lightbox-photo="' + i + '">'
         : '';
       return '<div class="handout-card" data-i="' + i + '">' +
         '<div class="handout-card-head">' +
@@ -1506,7 +1539,32 @@
     Array.prototype.forEach.call(listEl.querySelectorAll('[data-delete-handout]'), function (btn) {
       btn.addEventListener('click', function () { deleteHandout(handouts[parseInt(btn.dataset.deleteHandout, 10)]); });
     });
+    Array.prototype.forEach.call(listEl.querySelectorAll('[data-lightbox-photo]'), function (img) {
+      img.addEventListener('click', function () {
+        var h = handouts[parseInt(img.dataset.lightboxPhoto, 10)];
+        if (h && h.photo) openLightbox(h.photo);
+      });
+    });
   }
+
+  // A 96px thumbnail is fine for "there's a photo here" but useless for
+  // actually reading a filed document -- opens it at real size instead.
+  function openLightbox(src) {
+    var overlay = document.createElement('div');
+    overlay.className = 'handout-lightbox';
+    overlay.innerHTML = '<button type="button" class="handout-lightbox-close">Close</button><img src="' + src + '" alt="">';
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay || e.target.classList.contains('handout-lightbox-close')) closeLightbox();
+    });
+    document.body.appendChild(overlay);
+    document.addEventListener('keydown', lightboxEscHandler);
+  }
+  function closeLightbox() {
+    var overlay = document.querySelector('.handout-lightbox');
+    if (overlay) overlay.remove();
+    document.removeEventListener('keydown', lightboxEscHandler);
+  }
+  function lightboxEscHandler(e) { if (e.key === 'Escape') closeLightbox(); }
 
   function deleteHandout(h) {
     if (!confirm('Delete "' + h.title + '"? This cannot be undone.')) return;

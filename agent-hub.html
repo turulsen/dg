@@ -68,8 +68,45 @@
   .ah-handout-date{ font-family:'Courier Prime',monospace; font-size:10px; color:var(--ink-3); }
   .ah-handout-title{ font-family:'Special Elite',monospace; font-size:15px; color:var(--ink); margin-bottom:8px; }
   .ah-handout-body-row{ display:flex; gap:14px; }
-  .ah-handout-photo{ width:88px; height:88px; flex-shrink:0; object-fit:cover; border:1px solid var(--rule); display:block; }
+  .ah-handout-photo{
+    width:88px; height:88px; flex-shrink:0; object-fit:cover; border:1px solid var(--rule); display:block;
+    cursor:zoom-in;
+  }
   .ah-handout-text{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.7; flex:1; min-width:0; white-space:pre-wrap; }
+
+  /* A thumbnail is fine for "there's a photo here" but useless for
+     actually reading a filed document -- click it to see it at real size. */
+  .ah-handout-lightbox{
+    position:fixed; inset:0; z-index:9999; background:rgba(8,6,2,.92);
+    display:flex; align-items:center; justify-content:center; padding:24px;
+    cursor:zoom-out;
+  }
+  .ah-handout-lightbox img{
+    max-width:92vw; max-height:92vh; object-fit:contain; box-shadow:0 8px 40px rgba(0,0,0,.6);
+  }
+  .ah-handout-lightbox-close{
+    position:absolute; top:16px; right:20px; font-family:'Special Elite',monospace; font-size:13px;
+    letter-spacing:.1em; text-transform:uppercase; color:#e9e3ce; background:rgba(0,0,0,.5);
+    border:1px solid rgba(233,227,206,.4); padding:6px 14px; cursor:pointer;
+  }
+
+  /* Private per-Agent notes on a Handout -- synced via the backend so they
+     survive clearing browser data, but never surfaced to the Handler. */
+  .ah-handout-notes{ margin-top:10px; padding-top:10px; border-top:1px dashed var(--rule); }
+  .ah-handout-notes-label{
+    display:block; font-family:'Special Elite',monospace; font-size:9px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--ink-3); margin-bottom:5px;
+  }
+  .ah-handout-notes-input{
+    width:100%; min-height:56px; resize:vertical; box-sizing:border-box;
+    font-family:'Courier Prime',monospace; font-size:12px; line-height:1.6; color:var(--ink);
+    background:rgba(255,255,255,.35); border:1px solid var(--rule); padding:8px 10px;
+  }
+  .ah-handout-notes-input:focus{ outline:none; border-color:var(--ink-3); }
+  .ah-handout-notes-status{
+    display:block; font-family:'Courier Prime',monospace; font-size:10px; color:var(--ink-3);
+    margin-top:4px; min-height:1.2em;
+  }
 </style>
 </head>
 <body class="folder-theme">
@@ -324,17 +361,19 @@
     return 'Filed ' + new Date(n).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   }
 
-  function renderHandoutsFor(code, handouts, cellsById) {
+  function renderHandoutsFor(code, handouts, cellsById, notesByHandoutId) {
     const el = document.getElementById('ah-handouts-' + code);
     if (!el) return;
     if (!handouts.length) {
       el.innerHTML = '<div class="ah-handouts-empty">Nothing filed for this Agent yet.</div>';
       return;
     }
+    notesByHandoutId = notesByHandoutId || {};
     el.innerHTML = handouts.map(h => {
       const scopeClass = h.cell_id ? 'ah-handout-scope' : 'ah-handout-scope all-cells';
       const scopeLabel = h.cell_id ? ((cellsById[h.cell_id] && cellsById[h.cell_id].name) || h.cell_id) : 'All Cells';
-      const photo = h.photo ? `<img class="ah-handout-photo" src="${h.photo}" alt="">` : '';
+      const photo = h.photo ? `<img class="ah-handout-photo" src="${h.photo}" alt="" data-lightbox-src="${h.photo}">` : '';
+      const myNote = notesByHandoutId[h.handout_id] || '';
       return `<div class="ah-handout-card">
         <div class="ah-handout-head">
           <span class="${scopeClass}">${escapeHtml(scopeLabel)}</span>
@@ -342,9 +381,70 @@
         </div>
         <div class="ah-handout-title">${escapeHtml(h.title)}</div>
         <div class="ah-handout-body-row">${photo}<div class="ah-handout-text">${escapeHtml(h.body)}</div></div>
+        <div class="ah-handout-notes">
+          <label class="ah-handout-notes-label" for="ah-note-${escapeHtml(code)}-${escapeHtml(h.handout_id)}">Your Notes</label>
+          <textarea class="ah-handout-notes-input" id="ah-note-${escapeHtml(code)}-${escapeHtml(h.handout_id)}"
+            data-note-handout="${escapeHtml(h.handout_id)}" data-note-code="${escapeHtml(code)}"
+            placeholder="Private -- only you see these.">${escapeHtml(myNote)}</textarea>
+          <span class="ah-handout-notes-status" data-note-status="${escapeHtml(h.handout_id)}"></span>
+        </div>
       </div>`;
     }).join('');
+    el.querySelectorAll('[data-lightbox-src]').forEach(img => {
+      img.addEventListener('click', () => openHandoutLightbox(img.dataset.lightboxSrc));
+    });
+    el.querySelectorAll('.ah-handout-notes-input').forEach(ta => {
+      ta.addEventListener('input', () => {
+        const statusEl = el.querySelector(`[data-note-status="${ta.dataset.noteHandout}"]`);
+        scheduleNoteSave(ta.dataset.noteCode, ta.dataset.noteHandout, ta.value, statusEl);
+      });
+    });
   }
+
+  // Private per-Agent notes on a Handout -- debounced auto-save (same
+  // "trust the POST, no read-back verify" weight as Cloud Save's own
+  // background sync, not the heavier verified-write pattern used for
+  // shared campaign state like Handouts/Cells themselves; this is a
+  // low-stakes personal scratchpad, not something other people rely on
+  // seeing land correctly).
+  const noteSaveTimers = {};
+  function scheduleNoteSave(code, handoutId, value, statusEl) {
+    const key = code + '::' + handoutId;
+    clearTimeout(noteSaveTimers[key]);
+    if (statusEl) statusEl.textContent = 'Typing…';
+    noteSaveTimers[key] = setTimeout(() => saveHandoutNote(code, handoutId, value, statusEl), 1200);
+  }
+  function saveHandoutNote(code, handoutId, value, statusEl) {
+    if (statusEl) statusEl.textContent = 'Saving…';
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'save_handout_note', handout_id: handoutId, agent_code: code, note: value }),
+    }).then(() => {
+      if (!statusEl) return;
+      statusEl.textContent = 'Saved';
+      setTimeout(() => { if (statusEl.textContent === 'Saved') statusEl.textContent = ''; }, 2000);
+    }).catch(() => { if (statusEl) statusEl.textContent = 'Could not save (offline?)'; });
+  }
+
+  // A thumbnail is fine for "there's a photo here" but useless for
+  // actually reading a filed document -- opens it at real size.
+  function openHandoutLightbox(src) {
+    const overlay = document.createElement('div');
+    overlay.className = 'ah-handout-lightbox';
+    overlay.innerHTML = `<button type="button" class="ah-handout-lightbox-close">Close</button><img src="${src}" alt="">`;
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay || e.target.classList.contains('ah-handout-lightbox-close')) closeHandoutLightbox();
+    });
+    document.body.appendChild(overlay);
+    document.addEventListener('keydown', handoutLightboxEscHandler);
+  }
+  function closeHandoutLightbox() {
+    const overlay = document.querySelector('.ah-handout-lightbox');
+    if (overlay) overlay.remove();
+    document.removeEventListener('keydown', handoutLightboxEscHandler);
+  }
+  function handoutLightboxEscHandler(e) { if (e.key === 'Escape') closeHandoutLightbox(); }
 
   function loadHandouts() {
     let cellsDone = false, handoutsDone = false, cellsOk = false, handoutsOk = false;
@@ -364,6 +464,12 @@
           .filter(h => !h.cell_id || myCellIds.indexOf(h.cell_id) !== -1)
           .sort((x, y) => Number(y.created_at) - Number(x.created_at));
         renderHandoutsFor(a.code, relevant, cellsById);
+        jsonpGet('list_handout_notes', { agent_code: a.code }, notesRes => {
+          if (!notesRes || notesRes.status !== 'OK' || !Array.isArray(notesRes.notes)) return;
+          const notesByHandoutId = {};
+          notesRes.notes.forEach(n => { notesByHandoutId[n.handout_id] = n.note; });
+          renderHandoutsFor(a.code, relevant, cellsById, notesByHandoutId);
+        });
       });
     }
     jsonpGet('list_cells', {}, res => {
