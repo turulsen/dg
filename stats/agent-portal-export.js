@@ -93,11 +93,11 @@
     return 'Other';
   }
 
+  // Shared with dg-agent-portal.html and stats/cloud-sync.js via
+  // assets/agent-code.js -- only used here as a fallback when this
+  // character has no Cloud Save code yet (see the reuse logic below).
   function genCode(name) {
-    const prefix = (name || 'AGNT').replace(/[^A-Za-z]/g, '').substring(0, 4).toUpperCase() || 'AGNT';
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let s = ''; for (let i = 0; i < 4; i++) s += chars[Math.floor(Math.random() * chars.length)];
-    return prefix + '-' + s;
+    return window.dgAgentCode.gen(name);
   }
 
   function skillLine(state) {

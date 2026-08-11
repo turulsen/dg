@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Delta Green — Clearance</title>
 <link rel="icon" type="image/png" href="assets/mars-tech-seal.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a0d08">
 <meta property="og:title" content="Delta Green Agent Hub">
 <meta property="og:description" content="Character creation, Agent files, and Handler tools for your Delta Green campaign.">
 <meta property="og:image" content="https://turulsen.github.io/dg-campaign/assets/mars-tech-seal.png">
@@ -246,6 +248,11 @@
 </script>
 
 <script src="assets/table-radio.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+</script>
 
 </body>
 </html>

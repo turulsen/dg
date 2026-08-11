@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Delta Green — Agent Portal</title>
 <link rel="icon" type="image/png" href="assets/mars-tech-seal.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a0d08">
 <meta property="og:title" content="Delta Green — Agent Portal">
 <meta property="og:description" content="Your Agent's dossier, cover identity, and After-Action Reports.">
 <meta property="og:image" content="https://turulsen.github.io/dg-campaign/assets/mars-tech-seal.png">
@@ -1976,6 +1978,7 @@ body{
   </div><!-- folder-body -->
 </div><!-- folder -->
 
+<script src="assets/agent-code.js"></script>
 <script>
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
 
@@ -2716,12 +2719,10 @@ document.getElementById('ref-img').addEventListener('change', async function() {
   }
 });
 
-/* ── CODE GENERATION ── */
+/* ── CODE GENERATION -- shared with stats/cloud-sync.js and
+   stats/agent-portal-export.js via assets/agent-code.js ── */
 function genCode(name) {
-  const prefix = (name||'AGNT').replace(/[^A-Za-z]/g,'').substring(0,4).toUpperCase();
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let s=''; for(let i=0;i<4;i++) s+=chars[Math.floor(Math.random()*chars.length)];
-  return prefix+'-'+s;
+  return window.dgAgentCode.gen(name);
 }
 
 /* ── SUBMIT ── */
@@ -5231,6 +5232,11 @@ function rosterClearAll() {
 
 
 <script src="assets/table-radio.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+</script>
 
 </body>
 </html>

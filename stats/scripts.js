@@ -811,6 +811,12 @@ function generateRandomBio() {
     const firstName = getRandomItem(bioData.firstNames[selectedGender]);
     const lastName = getRandomItem(bioData.lastNames);
     document.getElementById('cs-name').value = `${firstName} ${lastName}`;
+    // Setting .value directly doesn't fire 'input', so ensureCloudCode()
+    // never runs on its own here -- without this, Export/Open Agent File
+    // right after Random Bio (before any other manual edit) mints its own
+    // fallback Agent Code instead of reusing a Cloud Save code that was
+    // never actually minted, permanently orphaning the two from each other.
+    window.dgCloudSave?.ensureCloudCode?.();
 
     const genderToSex = { 'male': 'Male', 'female': 'Female', 'non-binary': 'Non-binary' };
     document.getElementById('cs-bio-sex').value = genderToSex[selectedGender] || 'Male';

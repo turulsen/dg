@@ -850,6 +850,52 @@ def test_agent_file_export(p):
     page.close()
     return errs
 
+def test_random_bio_cloud_code_race(p):
+    """v1.7 code-unification fix: Random Bio (and every importer that
+    funnels through save-load.js's applyState()) sets cs-name's .value
+    directly, which -- unlike page.fill()'s real 'input' event, the case
+    test_agent_file_export above already covers -- never used to trigger
+    ensureCloudCode() in cloud-sync.js. Export before any other manual
+    edit would then mint its own fallback Agent Code instead of reusing
+    a Cloud Save code that was never actually minted, permanently
+    orphaning the two from each other for that character. Covers the
+    Random Bio path here; applyState()'s fix covers every importer at
+    the same source, so this stands in for all of them."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+
+    captured = {}
+    def capture(route):
+        if route.request.method == "POST":
+            captured["body"] = route.request.post_data
+        route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", capture)
+
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+
+    before = page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')")
+    record("agent-file-export", "no Cloud Save code exists yet on a fresh sheet",
+           not before, str(before))
+
+    page.click("#random-bio-button")
+    page.wait_for_timeout(300)
+    cloud_code = page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')")
+    record("agent-file-export", "Random Bio mints a Cloud Save code immediately, with no other edit since",
+           bool(cloud_code), str(cloud_code))
+
+    page.click("#export-agent-file-btn")
+    page.wait_for_timeout(400)
+    body = json.loads(captured.get("body") or "{}")
+    record("agent-file-export", "exporting right after Random Bio reuses that same code, not a second unrelated one",
+           bool(cloud_code) and body.get("agent_code") == cloud_code,
+           f"cloud_code={cloud_code} exported={body.get('agent_code')}")
+
+    record("agent-file-export", "no JS exceptions (Random Bio race)", len(errs)==0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_cover_ids_tab(p):
     """The Cover IDs tab is the "Cover ID Fabricator" -- a native, in-page
     tablet UI (agency+era picker, live-rendered credential card, PRINT/
@@ -3044,19 +3090,96 @@ def test_id_creator(p, agent):
         name_input.fill(agent["char_name"])
         record("id-creator", "manual name entry accepted", page.input_value("#card-name") == agent["char_name"], "")
 
-    # code format check: BRAD-K7X2 style code from stat-generator/agent-portal
-    fake_agent_portal_code = "TEST-AB12"
-    code_in = page.locator("#agent-code-in")
-    if code_in.count():
-        code_in.fill(fake_agent_portal_code)
-        page.click(".code-btn")
-        page.wait_for_timeout(200)
-        status = page.text_content("#code-status")
-        record("id-creator", "rejects agent-portal-style code (known schema mismatch)",
-               "Invalid" in (status or ""), status or "")
+    # The "paste a DG- code to prefill" panel was removed (v1.7 code-system
+    # cleanup) -- nothing in the repo ever produced a code its loader could
+    # read, so it could never have worked. Confirm it's actually gone
+    # rather than just silently absent because a selector changed underneath.
+    record("id-creator", "the dead 'load from code' panel is gone",
+           page.locator("#agent-code-in").count() == 0, "")
 
     page.close()
     return errs
+
+def test_pwa_offline(p):
+    """Offline app shell (v1.7): a manifest.json + sw.js precache every
+    page's HTML/CSS/JS/image assets with a stale-while-revalidate
+    strategy, so the hub still opens with zero signal once it's been
+    visited before -- Apps Script calls, Google Fonts, and anything else
+    cross-origin are deliberately left uncached (the service worker's
+    fetch handler only intercepts same-origin requests in its own
+    precache list), so this never risks serving stale Agent/Cell data
+    offline. Registration happens on every page via a small snippet
+    pointing at sw.js (or ../sw.js from stats/)."""
+    errs_all = []
+    context = p.new_context()
+    page = context.new_page()
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    def fake_apps_script(route):
+        url = route.request.url
+        if route.request.method == "POST" or "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
+    page.route("**/script.google.com/**", fake_apps_script)
+    errs = collect_errors(page)
+
+    pages = ["index.html", "agent-hub.html", "a-cell.html", "dg-agent-portal.html", "dg-id-creator.html", "stats/index.html"]
+
+    # Visit every page online first so the service worker (registered
+    # from each one) precaches the whole shell.
+    for path in pages:
+        page.goto(f"{BASE}/{path}", wait_until="load", timeout=15000)
+        page.wait_for_timeout(300)
+
+    manifest = page.evaluate(f"""async () => {{
+        const res = await fetch('{BASE}/manifest.json');
+        return await res.json();
+    }}""")
+    record("pwa", "manifest.json is valid JSON with name/icons/start_url",
+           bool(manifest.get("name")) and bool(manifest.get("icons")) and bool(manifest.get("start_url")),
+           str(manifest)[:200])
+
+    sw_active = wait_for_condition(lambda: page.evaluate("() => !!navigator.serviceWorker.controller"), timeout_ms=15000)
+    record("pwa", "the service worker is registered and controlling the page after a visit",
+           bool(sw_active), "")
+
+    cached_paths = page.evaluate("""async () => {
+        const names = await caches.keys();
+        const out = [];
+        for (const n of names) {
+            const cache = await caches.open(n);
+            const reqs = await cache.keys();
+            out.push(...reqs.map(r => new URL(r.url).pathname));
+        }
+        return out;
+    }""")
+    missing = [p2 for p2 in pages if not any(cp.endswith('/' + p2) for cp in cached_paths)]
+    record("pwa", "every page is precached by the service worker",
+           len(missing) == 0, f"missing={missing} cached={cached_paths}")
+
+    # Now go fully offline and confirm every page still loads with real
+    # content -- not a browser network-error page -- and throws nothing.
+    # (A same-origin favicon request can occasionally lose a timing race
+    # against Chromium's offline flag propagating on the very first
+    # navigation after set_offline() -- confirmed non-reproducible across
+    # repeated clean runs, cosmetic even when it happens (default icon,
+    # no visible error), so it's not asserted on here; "loads" + "no JS
+    # exceptions" below are the signals that actually matter.)
+    context.set_offline(True)
+    offline_errs = []
+    page.on("pageerror", lambda e: offline_errs.append(str(e)))
+    for path in pages:
+        resp = page.goto(f"{BASE}/{path}", wait_until="load", timeout=8000)
+        record("pwa", f"{path} still loads while offline",
+               resp is not None and resp.ok, f"status={resp.status if resp else None}")
+    context.set_offline(False)
+    record("pwa", "no JS exceptions across any page while offline", len(offline_errs) == 0, "; ".join(offline_errs))
+
+    errs_all.extend(errs)
+    context.close()
+    return errs_all
 
 def main():
     with sync_playwright() as p:
@@ -3086,6 +3209,8 @@ def main():
         safe(test_cloud_save, browser, area="stats-terminal")
 
         safe(test_agent_file_export, browser, area="agent-file-export")
+
+        safe(test_random_bio_cloud_code_race, browser, area="agent-file-export")
 
         safe(test_cover_ids_tab, browser, area="cover-ids-tab")
 
@@ -3147,6 +3272,8 @@ def main():
 
         for agent in AGENTS[:2]:
             safe(test_id_creator, browser, agent, area="id-creator")
+
+        safe(test_pwa_offline, browser, area="pwa")
 
         browser.close()
 

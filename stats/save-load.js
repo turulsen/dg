@@ -230,8 +230,9 @@ function matchProfessionKey(profStr) {
     /* =========================================================================
        APPLY
     ========================================================================= */
-    function applyState(state) {
+    function applyState(state, opts) {
         if (!state || state.v !== 1) return;
+        opts = opts || {};
         _restoring = true;
         // Pause the stats MutationObserver so that writing to stat spans in Phase 1
         // does NOT queue a requestAnimationFrame that later calls
@@ -259,6 +260,17 @@ function matchProfessionKey(profStr) {
             set('cs-physical-desc', state.bio.physicalDesc);
             if (state.bio.motivations !== undefined) set('cs-motivations', state.bio.motivations);
             if (state.bio.personalDetails !== undefined) set('cs-personal-details', state.bio.personalDetails);
+            // A named character needs a Cloud Save code minted before
+            // Export/Open Agent File can be clicked -- setting cs-name's
+            // .value here doesn't fire the 'input' event ensureCloudCode()
+            // normally rides in on (scheduleCloudSync(), wired up in
+            // cloud-sync.js), so every importer that funnels through here
+            // (PDF, Sheets, Foundry JSON, local save restore, share links)
+            // would otherwise mint no code at all until the player's next
+            // unrelated manual edit -- and if Export happens before that,
+            // it mints its own fallback code, permanently orphaning this
+            // save from the one the Agent Portal ends up pointing at.
+            if (!opts.skipCloudCodeMint) window.dgCloudSave?.ensureCloudCode?.();
         }
 
         // Misc JSON

@@ -34,11 +34,11 @@
     const CLOUD_CODE_KEY = 'dg_stats_cloud_code';
     const SYNC_DEBOUNCE_MS = 4000;
 
+    // Shared with dg-agent-portal.html and stats/agent-portal-export.js
+    // via assets/agent-code.js -- was its own independent copy of the
+    // same algorithm before this file existed.
     function genCloudCode(name) {
-        const prefix = (name || 'AGNT').replace(/[^A-Za-z]/g, '').substring(0, 4).toUpperCase() || 'AGNT';
-        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-        let s = ''; for (let i = 0; i < 4; i++) s += chars[Math.floor(Math.random() * chars.length)];
-        return prefix + '-' + s;
+        return window.dgAgentCode.gen(name);
     }
 
     function getCloudCode() {
@@ -126,7 +126,13 @@
             try { state = JSON.parse(res.character_json); }
             catch (e) { if (status) status.textContent = 'Could not read that cloud save.'; return; }
 
-            window.dgSaveLoad.applyState(state);
+            // skipCloudCodeMint: this load already knows its own code (the
+            // one just fetched by) -- letting applyState() mint one of its
+            // own from the name it's about to write would race a fresh,
+            // wrong code into place a moment before the line below
+            // overwrites it with the right one, needlessly pushing a
+            // throwaway save under an orphaned code first.
+            window.dgSaveLoad.applyState(state, { skipCloudCodeMint: true });
             setTimeout(() => {
                 window.dgSaveLoad.save?.();
                 if (typeof syncLpFromForm === 'function') syncLpFromForm();
@@ -205,7 +211,7 @@
         document.head.appendChild(script);
     }
 
-    window.dgCloudSave = { loadFromCloud, getCloudCode };
+    window.dgCloudSave = { loadFromCloud, getCloudCode, ensureCloudCode };
     document.addEventListener('DOMContentLoaded', () => renderStatus());
 
     // agent-hub.html's Agent Files "Play" button links here as

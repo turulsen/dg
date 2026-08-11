@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Delta Green — Agent Cover ID Creator</title>
 <link rel="icon" type="image/png" href="assets/mars-tech-seal.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a0d08">
 <meta property="og:title" content="Delta Green — Agent Cover ID Creator">
 <meta property="og:description" content="Fabricate a printable cover identity card for your Agent.">
 <meta property="og:image" content="https://turulsen.github.io/dg-campaign/assets/mars-tech-seal.png">
@@ -81,17 +83,6 @@ body{
 }
 .gen-btn:hover{opacity:.8;}
 
-/* code loader */
-.code-panel{background:var(--paper);border:1px solid var(--rule);box-shadow:0 4px 18px rgba(0,0,0,.35);padding:16px 24px;margin-bottom:20px;grid-column:1/-1;}
-.code-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
-.code-input{
-  flex:1;min-width:160px;background:transparent;border:none;border-bottom:1px solid var(--rule);
-  padding:6px 0;font-family:'Courier Prime',monospace;font-size:13px;color:var(--ink);outline:none;
-}
-.code-input::placeholder{color:var(--ink-placeholder);}
-.code-btn{font-family:'Special Elite',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;background:var(--ink);color:var(--paper);border:none;padding:8px 14px;cursor:pointer;transition:opacity .2s;}
-.code-btn:hover{opacity:.8;}
-
 /* ── RIGHT PANEL ── */
 .right-panel{display:flex;flex-direction:column;gap:20px;}
 
@@ -150,16 +141,6 @@ body{
 </div>
 
 <div class="workspace">
-
-  <!-- Code loader -->
-  <div class="code-panel">
-    <div class="panel-title" style="margin-bottom:10px;">Load Agent from Character Code</div>
-    <div class="code-row">
-      <input class="code-input" id="agent-code-in" placeholder="Paste character brief code to prefill name">
-      <button class="code-btn" onclick="loadFromCode()">Load Agent</button>
-      <span id="code-status" style="font-size:11px;color:#1a4a1a;font-style:italic;"></span>
-    </div>
-  </div>
 
   <!-- Form -->
   <div class="form-panel">
@@ -918,25 +899,6 @@ function restoreHistory(idx) {
   currentCardData = {...item.data};
 }
 
-/* ══════════════════════════════════════════════
-   CODE LOADER
-   ══════════════════════════════════════════════ */
-function loadFromCode() {
-  const raw = (document.getElementById('agent-code-in').value||'').trim();
-  const status = document.getElementById('code-status');
-  if (!raw.startsWith('DG-')) { status.textContent='Invalid code.'; status.style.color='#8b1a1a'; return; }
-  try {
-    const b64 = raw.replace(/^DG-/,'').replace(/-/g,'');
-    const json = decodeURIComponent(escape(atob(b64)));
-    const data = JSON.parse(json);
-    if (data.char_name) {
-      document.getElementById('card-name').value = data.char_name;
-      status.textContent = 'Agent loaded: ' + data.char_name;
-      status.style.color = '#1a4a1a';
-    }
-  } catch(e) { status.textContent='Could not read code.'; status.style.color='#8b1a1a'; }
-}
-
 /* ── Handoff from the Agent Portal, when embedded in its Cover IDs tab ──
    Only prefills what the Agent Portal actually has (name, portrait
    photo) -- everything else (agency, title, badge, clearance, expiry)
@@ -958,5 +920,10 @@ window.addEventListener('message', function(e) {
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="assets/table-radio.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+</script>
 </body>
 </html>

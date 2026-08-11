@@ -63,6 +63,8 @@
     <link rel="stylesheet" href="styles.css">
     <link rel="icon" type="image/svg+xml"
         href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='50,17 95,95 5,95' fill='%2300aa44'/%3E%3C/svg%3E">
+    <link rel="manifest" href="../manifest.json">
+    <meta name="theme-color" content="#0a0d08">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -839,6 +841,7 @@
                     used here under its PolyForm Noncommercial License.</p>
             </div>
         </footer>
+        <script src="../assets/agent-code.js"></script>
         <script src="professions.js"></script>
         <script src="bonds.js"></script>
         <script src="bio.js"></script>
@@ -859,6 +862,11 @@
         <div id="specialty-tooltip-panel" role="tooltip" aria-hidden="true"></div>
 
         <script src="../assets/table-radio.js"></script>
+        <script>
+        if ('serviceWorker' in navigator) {
+          window.addEventListener('load', () => navigator.serviceWorker.register('../sw.js').catch(() => {}));
+        }
+        </script>
 </body>
 
 </html>
