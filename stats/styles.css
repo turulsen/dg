@@ -7748,16 +7748,26 @@ input[type="checkbox"]:checked+label {
        bands above, nothing outside that wrapper is affected by it. */
 
     /* Skills grid: fixed 3 columns + an 80px column-gap were never going
-       to fit a phone. Same underlying issue as the fieldset above --
-       .cs-skill-name has white-space:nowrap, so each 1fr track's implicit
-       minimum was that name's full unwrapped width. Drop to 2 columns
-       with a small gap and reset the chain of min-widths so the
-       already-present text-overflow:ellipsis on .cs-skill-name can
-       finally do its job instead of being overridden by it. */
+       to fit a phone. Dropping the column count alone isn't enough,
+       though -- renderSkillsGrid() in scripts.js places every
+       .cs-skill-pair with an inline style.gridColumn/gridRow computed
+       for a 3-column layout (gridIdx % 3), and an inline style beats
+       any stylesheet rule regardless of selector specificity. Cutting
+       #cs-skills down to fewer columns without also overriding that
+       inline placement just leaves every third skill's column-3
+       assignment landing in a narrow implicit track, stacked on top of
+       another skill's name/value -- exactly what .theme-mobile already
+       had to work around (see its own #cs-skills .cs-skill-pair rule)
+       for its single-column layout. Apply the same override here, for
+       every theme, not just .theme-mobile. */
     #cs-skills {
-        grid-template-columns: repeat(2, 1fr);
-        gap: var(--spacing-xs) 14px;
+        grid-template-columns: 1fr;
+        gap: 2px 0;
         min-width: 0;
+    }
+    #cs-skills .cs-skill-pair {
+        grid-column: 1 !important;
+        grid-row: auto !important;
     }
     .cs-skill-pair,
     .cs-skill-name {

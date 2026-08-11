@@ -2528,6 +2528,36 @@ def test_mobile_no_overflow(p):
         scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
         record("mobile", f"stats/index.html has no horizontal overflow at 390px viewport ({theme} theme)",
                scroll_width <= 390, f"scrollWidth={scroll_width}")
+
+        # renderSkillsGrid() in scripts.js places every .cs-skill-pair with
+        # an inline style.gridColumn/gridRow computed for #cs-skills' full
+        # 3-column desktop layout -- an inline style beats any stylesheet
+        # selector, so narrowing #cs-skills itself to fewer columns at
+        # mobile widths isn't sufficient on its own: skills assigned to
+        # column 3 land in a narrow implicit track. .cs-skill-pair itself
+        # doesn't visually overflow that track (grid items don't overlap
+        # each other), but .cs-skill-name inside it does -- it's a nested
+        # grid's own 1fr child with no min-width:0, so it renders at its
+        # full unwrapped text width regardless of the narrow track its
+        # ancestor was actually assigned, bleeding into the next column's
+        # rendered text. Check the visible name/value elements, not just
+        # their containers, or this doesn't catch anything.
+        skill_overlaps = page.evaluate("""() => {
+            const boxes = Array.from(document.querySelectorAll('#cs-skills .cs-skill-name, #cs-skills .cs-skill-value-wrap'))
+                .map(el => el.getBoundingClientRect());
+            const overlaps = [];
+            for (let i = 0; i < boxes.length; i++) {
+                for (let j = i + 1; j < boxes.length; j++) {
+                    const a = boxes[i], b = boxes[j];
+                    const xOverlap = a.left < b.right && b.left < a.right;
+                    const yOverlap = a.top < b.bottom && b.top < a.bottom;
+                    if (xOverlap && yOverlap) overlaps.push([i, j]);
+                }
+            }
+            return overlaps;
+        }""")
+        record("mobile", f"stats/index.html skill rows don't visually overlap at 390px viewport ({theme} theme)",
+               len(skill_overlaps) == 0, f"overlaps={skill_overlaps}")
     errs_all.extend(errs)
     page.close()
 
