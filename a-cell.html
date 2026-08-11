@@ -241,6 +241,56 @@
   }
   .cells-status{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); min-height:1.4em; margin-bottom:10px; }
 
+  /* ── Handouts: a shared clue/document log, each entry scoped to one
+     Cell or every Cell (a Cell-scoped one only needs to matter to the
+     table it's for; a campaign-wide one -- a citywide news item, a
+     shared briefing -- goes to everyone). Styled like a filed
+     document, matching the classification-stamp language already used
+     elsewhere (Restricted stamp, "Clearance" stamps) rather than the
+     Music tab's device look -- this is paper, not hardware. ── */
+  .handouts-toolbar{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+  .handouts-create-form{
+    background:rgba(28,22,8,.04); border:1px solid var(--rule); padding:14px 16px; margin-bottom:16px;
+    display:flex; flex-direction:column; gap:12px;
+  }
+  .handouts-create-row{ display:flex; gap:14px; flex-wrap:wrap; }
+  .handouts-create-field{ display:flex; flex-direction:column; gap:4px; flex:1; min-width:180px; }
+  .handouts-create-field span{
+    font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--ink-3);
+  }
+  .handouts-create-field input, .handouts-create-field select, .handouts-create-field textarea{
+    background:transparent; border:none; border-bottom:1.5px solid rgba(90,74,16,.4);
+    color:var(--ink); padding:5px 0; font-size:13px; font-family:'Courier Prime',monospace;
+  }
+  .handouts-create-field textarea{ resize:vertical; min-height:64px; font-family:'Courier Prime',monospace; }
+  .handouts-create-field input:focus, .handouts-create-field select:focus, .handouts-create-field textarea:focus{
+    outline:none; border-bottom-color:var(--red);
+  }
+  .handouts-create-actions{ display:flex; gap:8px; align-items:center; }
+  .handouts-create-error{ color:var(--red); font-size:11px; min-height:1.3em; }
+  .handouts-status{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); min-height:1.4em; margin-bottom:10px; }
+  .handouts-list{ display:flex; flex-direction:column; gap:12px; }
+  .handout-card{ background:rgba(28,22,8,.04); border:1px solid var(--rule); padding:16px 18px; }
+  .handout-card-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
+  .handout-scope{
+    font-family:'Special Elite',monospace; font-size:9px; letter-spacing:.14em; text-transform:uppercase;
+    border:1.5px solid var(--red); color:var(--red); padding:3px 10px; opacity:.85; display:inline-block;
+  }
+  .handout-scope.all-cells{ border-color:var(--green); color:var(--green); }
+  .handout-date{ font-family:'Courier Prime',monospace; font-size:10px; color:var(--ink-3); }
+  .handout-title{ font-family:'Special Elite',monospace; font-size:16px; color:var(--ink); margin-bottom:8px; }
+  .handout-body-row{ display:flex; gap:14px; }
+  .handout-photo{
+    width:96px; height:96px; flex-shrink:0; object-fit:cover; border:1px solid var(--rule); display:block;
+  }
+  .handout-text{
+    font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.7;
+    flex:1; min-width:0; white-space:pre-wrap;
+  }
+  .handout-actions{ display:flex; gap:8px; margin-top:12px; }
+  .handouts-empty-note{ font-style:italic; color:var(--ink-3); }
+
   /* ── MUSIC: the whole tab as one field-radio unit (chassis, recessed
      screen, numbered control sections), matching the tactility of the
      Cover ID Fabricator's tablet in dg-agent-portal.html -- but in the
@@ -488,6 +538,7 @@
     <div class="tab-strip" id="acell-tab-strip">
       <div class="tw active" data-tab="play"><span>Play</span></div>
       <div class="tw inactive" data-tab="cells"><span>Cells</span></div>
+      <div class="tw inactive" data-tab="handouts"><span>Handouts</span></div>
       <div class="tw inactive" data-tab="sheet"><span>Sheet</span></div>
       <div class="tw inactive" data-tab="music"><span>Music</span></div>
       <div class="tw inactive" data-tab="admin"><span>Admin</span></div>
@@ -523,6 +574,48 @@
         </div>
         <div class="pv-sec-hd">Unassigned Agents</div>
         <div class="cells-unassigned" id="cells-unassigned"></div>
+      </div>
+
+      <div class="tab-panel" id="panel-handouts">
+        <div class="handouts-toolbar">
+          <button type="button" class="paper-btn primary" id="handouts-create-btn">+ New Handout</button>
+          <button type="button" class="paper-btn" id="handouts-refresh-btn">Refresh</button>
+          <span class="play-refresh-note" id="handouts-refresh-note"></span>
+        </div>
+        <div id="handouts-create-form-slot"></div>
+        <div class="handouts-status" id="handouts-status"></div>
+        <div class="handouts-list" id="handouts-list">
+          <!-- SAMPLE CONTENT for design review -- not live data yet. -->
+          <div class="handout-card">
+            <div class="handout-card-head">
+              <span class="handout-scope">Cell Alpha</span>
+              <span class="handout-date">Filed Aug 11, 2026</span>
+            </div>
+            <div class="handout-title">Field Photograph — Meadowbrook Substation</div>
+            <div class="handout-body-row">
+              <div class="handout-photo" style="background:var(--ink-placeholder);"></div>
+              <div class="handout-text">Recovered from the scene, undeveloped roll found in the victim's coat. Timestamp is corrupted -- lab estimates late October. Subject in frame unidentified; note the burn pattern on the fence line behind them.</div>
+            </div>
+            <div class="handout-actions">
+              <button type="button" class="paper-btn">Edit</button>
+              <button type="button" class="paper-btn cell-delete-btn">Delete</button>
+            </div>
+          </div>
+          <div class="handout-card">
+            <div class="handout-card-head">
+              <span class="handout-scope all-cells">All Cells</span>
+              <span class="handout-date">Filed Aug 9, 2026</span>
+            </div>
+            <div class="handout-title">Wire Service Clipping</div>
+            <div class="handout-body-row">
+              <div class="handout-text">"Three additional livestock deaths reported in the county this week, bringing the total to eleven since July. State agriculture officials cite an undetermined pathogen; local ranchers aren't convinced." -- Meadowbrook Gazette, Aug 7</div>
+            </div>
+            <div class="handout-actions">
+              <button type="button" class="paper-btn">Edit</button>
+              <button type="button" class="paper-btn cell-delete-btn">Delete</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="tab-panel" id="panel-sheet">
