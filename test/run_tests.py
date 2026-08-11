@@ -1340,8 +1340,20 @@ def test_acell_play(p):
     names_bravo = page.eval_on_selector_all("#play-agent-list .pa-name", "els => els.map(e=>e.textContent)")
     record("acell", "switching the Cell filter shows the newly chosen Cell's member",
            names_bravo == ["Priya Anand"], str(names_bravo))
-    record("acell", "switching Cells clears a selection that's no longer in view rather than leaving a stale dossier",
-           "Select an Agent" in page.inner_text("#play-view"), "")
+    record("acell", "switching Cells clears a selection that's no longer in view and shows that Cell's Dashboard instead of a stale dossier",
+           "Cell Bravo Dashboard" in page.inner_text("#play-view") and "Priya Anand" in page.inner_text("#play-view"), "")
+
+    # Cell Dashboard: HP/WP/SAN/BP for every member of the filtered Cell
+    # at a glance, without clicking into each Agent one at a time.
+    dash_vitals = page.eval_on_selector_all("#play-view .cdb-row .cdb-vital .val", "els => els.map(e=>e.textContent)")
+    record("acell", "the Dashboard shows the filtered Cell's member's vitals",
+           dash_vitals == ["9", "13", "65", "52"], str(dash_vitals))
+    page.click('#play-view .cdb-row:has-text("Priya Anand")')
+    page.wait_for_timeout(200)
+    record("acell", "clicking a Dashboard row opens that Agent's full dossier",
+           "Priya Anand" in page.inner_text("#play-view .pv-bio"), "")
+    record("acell", "clicking a Dashboard row highlights that Agent in the left-hand list too",
+           "active" in (page.eval_on_selector('.play-agent-btn:has-text("Priya Anand")', "el => el.className") or ""), "")
 
     page.select_option("#play-cell-filter", label="All Agents")
     page.wait_for_timeout(200)
@@ -1401,6 +1413,8 @@ def test_acell_cells(p):
                 for c in cells_state:
                     if c["cell_id"] == body.get("cell_id"):
                         c["member_codes"] = body.get("member_codes", [])
+            elif body.get("action") == "delete_cell":
+                cells_state[:] = [c for c in cells_state if c["cell_id"] != body.get("cell_id")]
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         url = req.url
@@ -1484,6 +1498,39 @@ def test_acell_cells(p):
            "Owen Castillo" not in alpha_members() and "Owen Castillo" in bravo_members(), "")
     record("acell", "an Agent still in at least one Cell is still not Unassigned",
            "Owen Castillo" not in page.inner_text("#cells-unassigned"), "")
+
+    # Bulk add: Cell Bravo currently only has Owen -- select both Priya
+    # and Marcus at once and confirm one Add Selected click sends both
+    # codes in a single update_cell_members call, not two.
+    add_select = page.locator('[data-add-select="1"]')
+    record("acell", "the Add row is a multi-select, not one Agent at a time",
+           add_select.evaluate("el => el.multiple") is True, "")
+    add_select.select_option(["PRIY-AN34", "MARC-9XQ2"])
+    page.click('[data-add-btn="1"]')
+    wait_for_condition(lambda: "Priya Anand" in bravo_members() and "Marcus Reyes" in bravo_members())
+    record("acell", "selecting more than one Agent and Add Selected adds them all in one action",
+           "Priya Anand" in bravo_members() and "Marcus Reyes" in bravo_members() and "Owen Castillo" in bravo_members(),
+           bravo_members())
+
+    # Delete Cell: dismissing the confirm must not send anything; only
+    # accepting it removes the grouping (the Agents themselves stay on
+    # file -- Cells is a separate tab from Admin's Agent delete).
+    page.once("dialog", lambda d: d.dismiss())
+    page.click('.cell-card[data-i="1"] .cell-delete-btn')
+    page.wait_for_timeout(300)
+    record("acell", "dismissing the Delete Cell confirm leaves the Cell in place",
+           page.locator('.cell-card[data-i="1"]').count() == 1, "")
+
+    page.once("dialog", lambda d: d.accept())
+    page.click('.cell-card[data-i="1"] .cell-delete-btn')
+    wait_for_condition(lambda: "Cell Bravo" not in page.inner_text("#cells-groups"))
+    record("acell", "accepting Delete Cell removes the grouping",
+           "Cell Bravo" not in page.inner_text("#cells-groups"), page.inner_text("#cells-groups"))
+    record("acell", "deleting a Cell doesn't delete its Agents -- they fall back to Unassigned instead",
+           "Owen Castillo" in page.inner_text("#cells-unassigned")
+           and "Priya Anand" in page.inner_text("#cells-unassigned")
+           and "Marcus Reyes" in page.inner_text("#cells-unassigned"),
+           page.inner_text("#cells-unassigned"))
 
     page.close()
     return errs

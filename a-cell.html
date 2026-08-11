@@ -83,7 +83,7 @@
   .play-toolbar{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
   .play-cell-filter{
     background:var(--paper); border:1px solid var(--rule); color:var(--ink);
-    padding:6px 9px; font-family:'Source Sans 3',sans-serif; font-size:12px; min-width:160px;
+    padding:6px 9px; font-family:'Courier Prime',monospace; font-size:12px; min-width:160px;
   }
   .play-refresh-note{
     font-family:'Courier Prime',monospace; font-size:10px; color:var(--ink-3);
@@ -107,6 +107,27 @@
   .play-view-empty, .play-loading, .play-error{
     color:var(--ink-3); font-size:13px; font-style:italic; text-align:center; padding:26px 10px;
   }
+
+  /* ── Cell Dashboard: shown in #play-view in place of the empty state
+     once a Cell filter is picked and no single Agent is open yet -- a
+     single-screen read of that Cell's HP/WP/SAN/BP across every
+     member, instead of clicking into each Agent one at a time. Click
+     a row to open that Agent's full dossier, same as the list. ── */
+  .cdb-head{
+    font-family:'Special Elite',monospace; font-size:15px; color:var(--ink);
+    padding:18px 22px 14px; border-bottom:2px solid var(--ink);
+  }
+  .cdb-rows{ display:flex; flex-direction:column; }
+  .cdb-row{
+    display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap;
+    padding:12px 22px; border-bottom:1px dotted var(--rule); cursor:pointer; transition:background 100ms;
+  }
+  .cdb-row:hover{ background:rgba(28,22,8,.04); }
+  .cdb-name{ font-family:'Special Elite',monospace; font-size:14px; color:var(--ink); }
+  .cdb-vitals{ display:flex; gap:14px; }
+  .cdb-vital{ text-align:center; min-width:34px; }
+  .cdb-vital .lbl{ font-size:9px; color:var(--ink-3); letter-spacing:.1em; font-family:'Courier Prime',monospace; display:block; }
+  .cdb-vital .val{ font-family:'Special Elite',monospace; font-size:15px; color:var(--ink); }
 
   /* ── Sticky header: photo, name, and the vitals that move during
      play (HP/WP/SAN/BP) -- mirrors Live Play's own tracker bar, kept
@@ -193,20 +214,25 @@
   .cells-groups{ display:flex; flex-direction:column; gap:12px; margin-bottom:var(--s5); }
   .cell-card{ background:rgba(28,22,8,.04); border:1px solid var(--rule); padding:14px 16px; }
   .cell-card-head{ display:flex; align-items:baseline; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+  .cell-card-head-info{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
   .cell-card-name{ font-family:'Special Elite',monospace; font-size:15px; color:var(--ink); }
   .cell-card-handler{ font-size:11px; color:var(--ink-3); font-family:'Courier Prime',monospace; }
   .cell-card-handler b{ color:var(--ink); }
+  .cell-delete-btn{ border-color:var(--red); color:var(--red); font-size:9px; padding:5px 9px; }
+  .cell-delete-btn:hover{ background:var(--red); color:var(--paper); }
   .cell-members{ margin-top:10px; display:flex; flex-direction:column; gap:5px; }
   .cell-member-row{
     display:flex; align-items:center; justify-content:space-between; gap:10px;
     font-size:12px; padding:4px 0; border-bottom:1px dotted var(--rule);
   }
   .cell-member-row .cmr-name{ font-family:'Courier Prime',monospace; color:var(--ink); }
-  .cell-add-row{ display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap; }
+  .cell-add-row{ display:flex; gap:8px; align-items:flex-start; margin-top:10px; flex-wrap:wrap; }
   .cell-add-row select{
     background:var(--paper); border:1px solid var(--rule); color:var(--ink);
-    padding:6px 9px; font-family:'Source Sans 3',sans-serif; font-size:12px; min-width:180px;
+    padding:6px 9px; font-family:'Courier Prime',monospace; font-size:12px; min-width:180px;
   }
+  .cell-add-row select[multiple]{ min-height:88px; }
+  .cell-add-note{ font-size:10px; color:var(--ink-3); font-style:italic; width:100%; margin:0; }
   .cells-empty-note{ font-style:italic; color:var(--ink-3); }
   .cells-unassigned{ display:flex; flex-wrap:wrap; gap:8px; }
   .cells-unassigned-chip{
@@ -825,9 +851,57 @@
         renderView(stillThere);
       } else {
         selectedCode = null;
-        viewEl.innerHTML = '<div class="play-view-empty">Select an Agent to view their stats and skills.</div>';
+        renderEmptyOrDashboard();
       }
+    } else {
+      renderEmptyOrDashboard();
     }
+  }
+
+  // With no single Agent open, a Cell filter shows that Cell's
+  // Dashboard (everyone's HP/WP/SAN/BP at a glance) instead of the
+  // generic "Select an Agent" placeholder -- "All Agents" keeps the
+  // plain placeholder, since a dashboard for the whole roster is
+  // already what the Sheet tab is for.
+  function renderEmptyOrDashboard() {
+    if (cellFilterEl.value) {
+      renderDashboard();
+    } else {
+      viewEl.innerHTML = '<div class="play-view-empty">Select an Agent to view their stats and skills.</div>';
+    }
+  }
+
+  function renderDashboard() {
+    var cellObj = cells.filter(function (c) { return c.cell_id === cellFilterEl.value; })[0];
+    var title = cellObj ? cellObj.name : 'Cell';
+    viewEl.innerHTML =
+      '<div class="cdb-head">' + escapeHtml(title) + ' Dashboard</div>' +
+      '<div class="cdb-rows">' +
+      characters.map(function (c, i) {
+        var bio = c.state.bio || {};
+        var derived = c.state.derived || {};
+        var name = bio.name || 'Unknown Agent';
+        var kia = typeof derived.hp === 'number' && derived.hp <= 0;
+        function vital(lbl, v) {
+          return '<div class="cdb-vital"><span class="lbl">' + lbl + '</span><span class="val">' + (v === undefined || v === null ? '&mdash;' : v) + '</span></div>';
+        }
+        return '<div class="cdb-row" data-i="' + i + '">' +
+          '<div class="cdb-name' + (kia ? ' kia-name' : '') + '">' + escapeHtml(name) + (kia ? ' <span class="stamp">KIA</span>' : '') + '</div>' +
+          '<div class="cdb-vitals">' + vital('HP', derived.hp) + vital('WP', derived.wp) + vital('SAN', derived.san) + vital('BP', derived.bp) + '</div>' +
+          '</div>';
+      }).join('') +
+      '</div>';
+    Array.prototype.forEach.call(viewEl.querySelectorAll('.cdb-row'), function (row) {
+      row.addEventListener('click', function () {
+        var c = characters[parseInt(row.dataset.i, 10)];
+        if (!c) return;
+        selectedCode = c.code;
+        Array.prototype.forEach.call(listEl.querySelectorAll('.play-agent-btn'), function (b) {
+          b.classList.toggle('active', b.dataset.i === row.dataset.i);
+        });
+        renderView(c);
+      });
+    });
   }
 
   // Best-effort photo lookup: character_json (Characters sheet, via
@@ -951,18 +1025,21 @@
    CELLS -- real named groups: a Cell has its own name and Handler,
    plus a list of member Agents picked from the full roster (not a
    text tag typed per Agent) -- one Agent can belong to several Cells
-   at once, or none yet. Backed by two new actions, list_cells /
-   create_cell / update_cell_members (acell-cell-groups-addition.txt,
+   at once, or none yet. Backed by list_cells / create_cell /
+   update_cell_members / delete_cell (acell-cell-groups-addition.txt,
    handed over separately) plus the existing list_characters (for
    Agent names to show/pick from). Like every other write in this app,
-   create_cell and update_cell_members are no-cors POSTs, so a Cell
-   only shows a change once a real read-back (list_cells) confirms it
-   landed.
+   these are no-cors POSTs, so a Cell only shows a change once a real
+   read-back (list_cells) confirms it landed.
+
+   The Add row is a multi-select (not one Agent at a time) so adding a
+   whole squad to a Cell is one Add Selected click, not N repeats of
+   pick-one/Add.
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
   var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
-  var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm it. Check that the Cells addition (list_cells / create_cell / update_cell_members) is pasted into Apps Script and redeployed.';
+  var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm it. Check that the Cells addition (list_cells / create_cell / update_cell_members / delete_cell) is pasted into Apps Script and redeployed.';
 
   var groupsEl = document.getElementById('cells-groups');
   var unassignedEl = document.getElementById('cells-unassigned');
@@ -1059,15 +1136,21 @@
           '<button type="button" class="paper-btn" data-remove-cell="' + i + '" data-remove-agent="' + escapeHtml(code) + '">Remove</button></div>';
       }).join('') || '<div class="cells-empty-note">No members yet.</div>';
       var available = agents.filter(function (a) { return c.member_codes.indexOf(a.code) === -1; });
-      var options = '<option value="">Add an Agent…</option>' + available.map(function (a) {
+      var options = available.map(function (a) {
         return '<option value="' + escapeHtml(a.code) + '">' + escapeHtml(a.name) + '</option>';
       }).join('');
       return '<div class="cell-card" data-i="' + i + '">' +
-        '<div class="cell-card-head"><div class="cell-card-name">' + escapeHtml(c.name) + '</div>' +
+        '<div class="cell-card-head">' +
+        '<div class="cell-card-head-info"><div class="cell-card-name">' + escapeHtml(c.name) + '</div>' +
         '<div class="cell-card-handler">Handler: ' + (c.handler ? '<b>' + escapeHtml(c.handler) + '</b>' : '<span class="cells-empty-note">not set</span>') + '</div></div>' +
+        '<button type="button" class="paper-btn cell-delete-btn" data-delete-cell="' + i + '">Delete Cell</button>' +
+        '</div>' +
         '<div class="cell-members">' + members + '</div>' +
-        '<div class="cell-add-row"><select data-add-select="' + i + '">' + options + '</select>' +
-        '<button type="button" class="paper-btn" data-add-btn="' + i + '">Add</button></div>' +
+        (available.length
+          ? '<div class="cell-add-row"><select data-add-select="' + i + '" multiple size="' + Math.min(available.length, 5) + '">' + options + '</select>' +
+            '<button type="button" class="paper-btn" data-add-btn="' + i + '">Add Selected</button>' +
+            '<p class="cell-add-note">Ctrl/Cmd-click (or shift-click a range) to pick more than one before Add Selected.</p></div>'
+          : '') +
         '</div>';
     }).join('');
 
@@ -1075,9 +1158,10 @@
       btn.addEventListener('click', function () {
         var i = parseInt(btn.dataset.addBtn, 10);
         var select = groupsEl.querySelector('[data-add-select="' + i + '"]');
-        var code = select.value;
-        if (!code) return;
-        var newMembers = cells[i].member_codes.concat([code]);
+        var picked = Array.prototype.filter.call(select.options, function (o) { return o.selected; })
+          .map(function (o) { return o.value; });
+        if (!picked.length) return;
+        var newMembers = cells[i].member_codes.concat(picked);
         saveMembers(cells[i], newMembers);
       });
     });
@@ -1087,6 +1171,12 @@
         var code = btn.dataset.removeAgent;
         var newMembers = cells[i].member_codes.filter(function (c) { return c !== code; });
         saveMembers(cells[i], newMembers);
+      });
+    });
+    Array.prototype.forEach.call(groupsEl.querySelectorAll('[data-delete-cell]'), function (btn) {
+      btn.addEventListener('click', function () {
+        var i = parseInt(btn.dataset.deleteCell, 10);
+        deleteCell(cells[i]);
       });
     });
   }
@@ -1114,6 +1204,32 @@
           if (!updated) { statusEl.textContent = NOT_DEPLOYED_MSG; return; }
           cells = res.cells;
           statusEl.textContent = '';
+          renderAll();
+        });
+      }, 900);
+    }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+  }
+
+  // Deleting a Cell only removes the grouping -- the Agents in it stay
+  // on file untouched, just fall back to Unassigned (or whatever other
+  // Cells they're also in). A plain confirm() is enough friction here,
+  // unlike Admin's two-step Agent delete: nothing about an Agent's own
+  // data is at risk.
+  function deleteCell(cellObj) {
+    if (!confirm('Delete "' + cellObj.name + '"? Its Agents stay on file -- this only removes the grouping.')) return;
+    statusEl.textContent = 'Deleting…';
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors', keepalive: true,
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'delete_cell', cell_id: cellObj.cell_id }),
+    }).then(function () {
+      setTimeout(function () {
+        jsonpGet('list_cells', {}, function (res) {
+          var stillThere = res && res.status === 'OK' && Array.isArray(res.cells) &&
+            res.cells.some(function (c) { return c.cell_id === cellObj.cell_id; });
+          if (stillThere) { statusEl.textContent = NOT_DEPLOYED_MSG; return; }
+          if (res && res.status === 'OK' && Array.isArray(res.cells)) cells = res.cells;
+          statusEl.textContent = 'Deleted ' + cellObj.name + '.';
           renderAll();
         });
       }, 900);
