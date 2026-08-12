@@ -80,6 +80,21 @@ Licensed under the **PolyForm Noncommercial License 1.0.0** (© 2024 Brook Morto
 
 Everything else in this repo — the Agent Portal, ID Creator, and hub page — is built fresh; the Delta Green stat/skill rules referenced there are generic game mechanics (not copyrightable), not lifted from anyone's code.
 
+## Apps Script backend
+
+The live backend (Google Apps Script + Sheets) isn't part of this repo --
+it's a separate deployed project this static site talks to over
+`fetch`/JSONP, not something GitHub Pages serves. `apps-script/` holds
+reference copies of the additions that have been handed over for pasting
+into that project (each is purely additive, with its own header comment
+explaining what it adds and how to wire it into the existing
+`doGet`/`doPost`). Having them here means a future change can diff
+against what's actually supposed to be live, rather than relying on
+chat history. Pasting a file in here and redeploying is still a manual,
+separate step -- a file's presence in this directory doesn't mean it's
+live; every feature that depends on one degrades gracefully (fails
+silently/returns not-found) until it actually is.
+
 ## QA
 
 There's an automated smoke-test suite in `test/` that exercises all four

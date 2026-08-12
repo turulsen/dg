@@ -19,13 +19,14 @@
    (see acell-table-radio-addition.txt, handed over separately -- not
    yet deployed on the live backend until pasted in and redeployed).
 
-   Ambient layers (rain/wind/static, playing underneath whatever
-   track is tuned) require a further addition,
-   acell-table-radio-ambient-addition.gs -- also handed over separately.
-   Until it's pasted in, get_now_playing simply won't carry an
-   ambient_layers field and every ambient row silently stays hidden,
-   same graceful-degradation-until-deployed pattern as everything else
-   in this app.
+   Ambient layers (rain/wind/static) and stingers (one-shot SFX,
+   assets/stingers/) both require a further addition -- see
+   apps-script/table-radio-audio-additions.gs in this repo. Until it's
+   pasted into the live Apps Script project and redeployed,
+   get_now_playing simply won't carry the ambient_layers/last_stinger
+   fields and every ambient row/stinger silently stays inert, same
+   graceful-degradation-until-deployed pattern as everything else in
+   this app.
 
    Deliberately styled as its own self-contained floating "device"
    (dark, amber/green field-radio look) rather than trying to match
