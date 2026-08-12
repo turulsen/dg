@@ -19,7 +19,7 @@
    (see acell-table-radio-addition.txt, handed over separately -- not
    yet deployed on the live backend until pasted in and redeployed).
 
-   Ambient layers (rain/wind/hum/static, playing underneath whatever
+   Ambient layers (rain/wind/static, playing underneath whatever
    track is tuned) require a further addition,
    acell-table-radio-ambient-addition.gs -- also handed over separately.
    Until it's pasted in, get_now_playing simply won't carry an
@@ -68,17 +68,38 @@
   // name -- five slots, no typos, no two players landing on "sam" vs "Sam".
   var CHANNELS = ['1', '2', '3', '4', '5'];
   // Ambient loops that can play UNDERNEATH whatever's tuned on a channel
-  // (rain/wind/hum/static, Handler-toggled, one on/off state per channel
-  // -- see get_now_playing's ambient_layers field). Fixed client-side set:
+  // (rain/wind/static, Handler-toggled, one on/off state per channel --
+  // see get_now_playing's ambient_layers field). Fixed client-side set:
   // the backend only ever sends {id, active, started_at}, never a URL, so
   // the client resolves id -> its own bundled asset + label.
   var AMBIENT_LAYERS = [
     { id: 'rain', label: 'Rain', src: 'assets/ambient/rain.mp3' },
     { id: 'wind', label: 'Wind', src: 'assets/ambient/wind.mp3' },
-    { id: 'hum', label: 'Machine Hum', src: 'assets/ambient/hum.mp3' },
     { id: 'static', label: 'Interference', src: 'assets/ambient/static.mp3' }
   ];
   var AMBIENT_MUTED_KEY_PREFIX = 'dg_radio_ambient_muted_'; // + layer id
+  // Stingers -- one-shot sound effects (a gunshot, a scream, a knock),
+  // fundamentally different from ambient layers' persistent on/off
+  // state: there's only ever "the most recently fired stinger" per
+  // channel (see get_now_playing's last_stinger field), stamped fresh on
+  // every single trigger so re-firing the same sound twice in a row
+  // still plays twice. Same fixed client-side id->asset resolution as
+  // AMBIENT_LAYERS -- the backend only ever sends {id, fired_at}.
+  var STINGERS = [
+    { id: 'knock', src: 'assets/stingers/knock.mp3' },
+    { id: 'wood-creak', src: 'assets/stingers/wood-creak.mp3' },
+    { id: 'gunshot-pistol', src: 'assets/stingers/gunshot-pistol.mp3' },
+    { id: 'gunshot-shotgun', src: 'assets/stingers/gunshot-shotgun.mp3' },
+    { id: 'gunshot-rifle-semi', src: 'assets/stingers/gunshot-rifle-semi.mp3' },
+    { id: 'gunshot-rifle-auto', src: 'assets/stingers/gunshot-rifle-auto.mp3' },
+    { id: 'explosion-small', src: 'assets/stingers/explosion-small.mp3' },
+    { id: 'explosion-medium', src: 'assets/stingers/explosion-medium.mp3' },
+    { id: 'explosion-large', src: 'assets/stingers/explosion-large.mp3' },
+    { id: 'scream-woman', src: 'assets/stingers/scream-woman.mp3' },
+    { id: 'scream-man', src: 'assets/stingers/scream-man.mp3' },
+    { id: 'child-laughter', src: 'assets/stingers/child-laughter.mp3' },
+    { id: 'child-crying', src: 'assets/stingers/child-crying.mp3' }
+  ];
 
   var lastStartedAt = null;
   var lastPaused = false;
@@ -88,6 +109,19 @@
   // channel-change/leave point (see below) since a fresh channel means
   // fresh, unknown ambient state.
   var lastAmbientState = {};
+  // The fired_at of the last stinger this tab has actually PLAYED (or, on
+  // the very first poll after tuning in, the fired_at it's chosen to
+  // treat as already-seen -- see stingerPrimed below and applyStinger()).
+  var lastStingerFiredAt = null;
+  // False until the first post-tune-in poll response has been read. A
+  // channel's last-fired stinger might be old news (fired minutes ago,
+  // long before this tab tuned in) -- without this, every fresh tune-in
+  // would immediately replay whatever the last stinger happened to be,
+  // which is exactly the "surprise" a stinger is supposed to be, just
+  // triggered by the wrong thing (joining the channel, not the Handler).
+  // The first response after (re)tuning primes lastStingerFiredAt without
+  // playing anything; only a CHANGE after that counts as a new trigger.
+  var stingerPrimed = false;
   var pollTimer = null;
 
   // Which live-controllable player (if any) currently backs the embed --
@@ -397,6 +431,8 @@
       lastPaused = false;
       lastAmbientState = {};
       window._dgRadioLastAmbient = null;
+      stingerPrimed = false;
+      lastStingerFiredAt = null;
       renderTuned();
       startPolling();
     });
@@ -503,6 +539,51 @@
     });
   }
 
+  // Plays one stinger, once. Unlike ambient layers (one persistent
+  // <audio> per layer id, reused across triggers), a fresh <audio>
+  // element is created per FIRING -- an auto-rifle burst stinger could
+  // in principle be re-triggered again before its first play finishes,
+  // and each firing is its own independent one-shot sound, not a
+  // loop/toggle to reuse or interrupt. Removed from the DOM once
+  // playback ends (or fails) so repeated firings don't accumulate stale
+  // elements. Deliberately reuses the MAIN track's mute/volume prefs,
+  // not a separate per-stinger control -- a stinger is "table audio"
+  // same as the music, and a listener who's muted the widget doesn't
+  // want to suddenly hear an unmuted scream because of a setting they
+  // never got to see, let alone touch.
+  function playStinger(stingerId) {
+    var def = STINGERS.filter(function (s) { return s.id === stingerId; })[0];
+    if (!def) return; // unknown id -- ignore rather than error
+    var el = document.createElement('audio');
+    el.src = def.src;
+    el.muted = isMuted();
+    el.volume = getVolume() / 100;
+    el.addEventListener('ended', function () { el.remove(); });
+    document.body.appendChild(el);
+    var p = el.play();
+    if (p && p.catch) p.catch(function () { el.remove(); /* autoplay-blocked -- best effort, same as every other playback attempt in this widget */ });
+  }
+
+  // Diffs the server's last_stinger against what this tab has already
+  // primed/played -- called on every poll tick, independent of the main
+  // track's and ambient layers' own diff branches (a stinger can fire on
+  // its own, with nothing else changing that tick).
+  function applyStinger(lastStinger) {
+    if (!lastStinger) { stingerPrimed = true; return; }
+    if (!stingerPrimed) {
+      // First response since (re)tuning -- this may be old news from
+      // long before this tab joined the channel; note it without
+      // playing (see stingerPrimed's own comment above for why).
+      lastStingerFiredAt = lastStinger.fired_at;
+      stingerPrimed = true;
+      return;
+    }
+    if (lastStinger.fired_at !== lastStingerFiredAt) {
+      lastStingerFiredAt = lastStinger.fired_at;
+      playStinger(lastStinger.id);
+    }
+  }
+
   function renderTuned() {
     var ch = getChannel();
     root.innerHTML =
@@ -566,6 +647,8 @@
         lastAmbientState = {};
         window._dgRadioLast = null;
         window._dgRadioLastAmbient = null;
+        stingerPrimed = false;
+        lastStingerFiredAt = null;
         document.getElementById('dg-radio-ch-label').textContent = 'CH ' + newCh;
         document.getElementById('dg-radio-track').textContent = 'No signal yet.';
         document.getElementById('dg-radio-mini-track').textContent = 'No signal yet.';
@@ -581,6 +664,8 @@
       window._dgRadioLast = null;
       window._dgRadioLastAmbient = null;
       lastAmbientState = {};
+      stingerPrimed = false;
+      lastStingerFiredAt = null;
       destroyActivePlayers();
       stopAllAmbientAudio();
       renderCollapsed();
@@ -816,6 +901,9 @@
         window._dgRadioLastAmbient = res.ambient_layers;
         applyAmbientLayers(res.ambient_layers);
       }
+      // Same reasoning as ambient_layers just above: independent of
+      // whether a main track is set, and not gated on res.status.
+      if (res) applyStinger(res.last_stinger);
       if (!res || res.status !== 'OK' || !res.track_url) {
         if (statusEl) statusEl.textContent = 'Waiting for the Handler…';
         if (trackEl) trackEl.textContent = 'No signal yet.';

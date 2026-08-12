@@ -2295,7 +2295,7 @@ def test_acell_music_backend_not_deployed(p):
 
 def test_acell_music_ambient_layers(p):
     """a-cell.html's Music tab: the Handler's side of ambient layers
-    (rain/wind/hum/static) -- 4 toggle buttons that reflect the last
+    (rain/wind/static) -- 3 toggle buttons that reflect the last
     CONFIRMED backend state (not just whatever was last clicked) and
     POST set_ambient_layer on click, following the same
     no-cors-POST-then-read-back-confirm discipline as every other write
@@ -2308,7 +2308,7 @@ def test_acell_music_ambient_layers(p):
     skip_acell_gate(page)
 
     posts = []
-    backend_ambient = {"rain": False, "wind": False, "hum": False, "static": False}
+    backend_ambient = {"rain": False, "wind": False, "static": False}
 
     def fake_apps_script(route):
         req = route.request
@@ -2337,9 +2337,9 @@ def test_acell_music_ambient_layers(p):
     page.click('.tw[data-tab="music"]')
     page.wait_for_timeout(400)
 
-    record("acell", "the 4 ambient toggle buttons render, all Off to start",
+    record("acell", "the 3 ambient toggle buttons render, all Off to start",
            page.eval_on_selector_all("#music-ambient-toggles [data-layer]", "els => els.map(e => e.textContent)")
-           == ["Rain — Off", "Wind — Off", "Machine Hum — Off", "Interference — Off"], "")
+           == ["Rain — Off", "Wind — Off", "Interference — Off"], "")
 
     page.click('#music-ambient-toggles [data-layer="rain"]')
     page.wait_for_timeout(1200)
@@ -2350,7 +2350,7 @@ def test_acell_music_ambient_layers(p):
            and layer_posts[0].get("layer_id") == "rain" and layer_posts[0].get("active") == "1", str(layer_posts))
     record("acell", "the button reflects On only once the backend read-back confirms it",
            page.eval_on_selector('#music-ambient-toggles [data-layer="rain"]', "el => el.textContent") == "Rain — On", "")
-    record("acell", "the other 3 toggles are untouched by that one confirmed change",
+    record("acell", "the other toggles are untouched by that one confirmed change",
            page.eval_on_selector('#music-ambient-toggles [data-layer="wind"]', "el => el.textContent") == "Wind — Off", "")
 
     # Click it again -- toggles back off.
@@ -2361,6 +2361,72 @@ def test_acell_music_ambient_layers(p):
            len(layer_posts) == 2 and layer_posts[1].get("active") == "0", str(layer_posts))
     record("acell", "the button reflects Off again once confirmed",
            page.eval_on_selector('#music-ambient-toggles [data-layer="rain"]', "el => el.textContent") == "Rain — Off", "")
+
+    page.close()
+    return errs
+
+def test_acell_music_stingers(p):
+    """a-cell.html's Music tab: the Handler's soundboard -- 13 one-shot
+    SFX buttons grouped into Ambience/Weapons/Explosions/Voices, each
+    firing trigger_stinger on click. Unlike ambient layers there's no
+    on/off state to reflect back (every click is its own independent
+    trigger), so this covers the grid rendering + the POST shape +
+    that repeat-clicking the SAME button fires it again rather than
+    being treated as a no-op toggle."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    skip_acell_gate(page)
+
+    posts = []
+    backend = {"last_stinger": None}
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            body = json.loads(req.post_data or "{}")
+            posts.append(body)
+            if body.get("action") == "trigger_stinger":
+                backend["last_stinger"] = {"id": body.get("stinger_id"), "fired_at": len(posts)}
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            res = {"status": "NOT_FOUND", "last_stinger": backend["last_stinger"]}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.click('.tw[data-tab="music"]')
+    page.wait_for_timeout(400)
+
+    record("acell", "all 13 stinger buttons render across 4 groups",
+           page.eval_on_selector_all("#music-stingers [data-stinger]", "els => els.length") == 13, "")
+    record("acell", "grouped under Ambience/Weapons/Explosions/Voices",
+           page.eval_on_selector_all("#music-stingers .rdo-stinger-group-label", "els => els.map(e => e.textContent)")
+           == ["Ambience", "Weapons", "Explosions", "Voices"], "")
+
+    page.click('#music-stingers [data-stinger="gunshot-pistol"]')
+    page.wait_for_timeout(1200)
+    trigger_posts = [p_ for p_ in posts if p_.get("action") == "trigger_stinger"]
+    record("acell", "clicking a stinger posts trigger_stinger with the dialed channel and stinger id",
+           len(trigger_posts) == 1 and trigger_posts[0].get("channel") == "1"
+           and trigger_posts[0].get("stinger_id") == "gunshot-pistol", str(trigger_posts))
+    record("acell", "status confirms once the backend read-back reflects it as the last-fired stinger",
+           "Fired gunshot-pistol" in page.inner_text("#music-stinger-status"), page.inner_text("#music-stinger-status"))
+
+    # Firing the SAME stinger again is a fresh trigger, not a toggle --
+    # a second click posts a second trigger_stinger, not a no-op.
+    page.click('#music-stingers [data-stinger="gunshot-pistol"]')
+    page.wait_for_timeout(1200)
+    trigger_posts = [p_ for p_ in posts if p_.get("action") == "trigger_stinger"]
+    record("acell", "re-clicking the same stinger fires it again (not treated as an on/off toggle)",
+           len(trigger_posts) == 2, str(trigger_posts))
 
     page.close()
     return errs
@@ -2735,7 +2801,7 @@ def test_table_radio_audio_volume(p):
     return errs
 
 def test_table_radio_ambient_layers(p):
-    """assets/table-radio.js: ambient loops (rain/wind/hum/static) that
+    """assets/table-radio.js: ambient loops (rain/wind/static) that
     play UNDERNEATH whatever's tuned on a channel, Handler-toggled and
     synced via a new ambient_layers field piggybacked on the existing
     get_now_playing poll (see acell-table-radio-ambient-addition.gs).
@@ -2763,14 +2829,13 @@ def test_table_radio_ambient_layers(p):
       HTMLMediaElement.prototype.play = function () { window.__playCalls.push(this.id); return Promise.resolve(); };
       HTMLMediaElement.prototype.pause = function () { window.__pauseCalls.push(this.id); return origPause.apply(this, arguments); };
     """)
-    for name in ("rain", "wind", "hum", "static"):
+    for name in ("rain", "wind", "static"):
         page.route(f"**/assets/ambient/{name}.mp3", lambda r: r.fulfill(status=200, content_type="audio/mpeg", body=""))
 
     backend_ambient = {
         "rain": {"active": True, "started_at": 1700000000000},
         "wind": {"active": False, "started_at": None},
-        "hum": {"active": True, "started_at": 1700000000000},
-        "static": {"active": False, "started_at": None},
+        "static": {"active": True, "started_at": 1700000000000},
     }
 
     def fake_apps_script(route):
@@ -2830,11 +2895,11 @@ def test_table_radio_ambient_layers(p):
            not page.is_visible('.dgr-ambient-row[data-layer="wind"]')
            and "dg-radio-ambient-wind" not in page.evaluate("() => window.__playCalls"), "")
     record("radio", "a second, independently-active ambient layer also plays",
-           "dg-radio-ambient-hum" in page.evaluate("() => window.__playCalls"), "")
+           "dg-radio-ambient-static" in page.evaluate("() => window.__playCalls"), "")
 
     yt_instance_before = page.eval_on_selector("#dg-radio-embed-wrap iframe", "el => el.dataset.instance")
 
-    # Handler turns rain off -- only rain's <audio> should stop; hum and
+    # Handler turns rain off -- only rain's <audio> should stop; static and
     # the main YouTube track must be untouched (same element, still playing).
     backend_ambient["rain"]["active"] = False
     page.wait_for_timeout(2300)  # > POLL_MS
@@ -2843,7 +2908,7 @@ def test_table_radio_ambient_layers(p):
            "dg-radio-ambient-rain" in page.evaluate("() => window.__pauseCalls")
            and not page.is_visible('.dgr-ambient-row[data-layer="rain"]'), "")
     record("radio", "the other active ambient layer is untouched by that change (never paused)",
-           "dg-radio-ambient-hum" not in page.evaluate("() => window.__pauseCalls"), "")
+           "dg-radio-ambient-static" not in page.evaluate("() => window.__pauseCalls"), "")
     record("radio", "the main track's YouTube embed is untouched by an ambient change (same iframe, not recreated)",
            page.eval_on_selector("#dg-radio-embed-wrap iframe", "el => el.dataset.instance") == yt_instance_before, "")
 
@@ -2852,17 +2917,86 @@ def test_table_radio_ambient_layers(p):
     # layers start Muted by default (see above), so the FIRST click here
     # un-mutes -- same "one click flips the default" shape as the main
     # track's own Mute button.
-    page.click('[data-ambient-mute="hum"]')
+    page.click('[data-ambient-mute="static"]')
     page.wait_for_timeout(100)
     record("radio", "un-muting an ambient layer sets its own localStorage key",
-           page.evaluate("() => localStorage.getItem('dg_radio_ambient_muted_hum')") == "0", "")
+           page.evaluate("() => localStorage.getItem('dg_radio_ambient_muted_static')") == "0", "")
     record("radio", "un-muting one layer does not affect another layer's mute state",
            page.evaluate("() => localStorage.getItem('dg_radio_ambient_muted_rain')") != "0", "")
 
     page.reload(wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(700)
     record("radio", "ambient un-mute persists across reload",
-           page.eval_on_selector('[data-ambient-mute="hum"]', "el => el.textContent") == "SOUND", "")
+           page.eval_on_selector('[data-ambient-mute="static"]', "el => el.textContent") == "SOUND", "")
+
+    page.close()
+    return errs
+
+def test_table_radio_stingers(p):
+    """assets/table-radio.js: one-shot stinger SFX (gunshots, screams,
+    knocks), fundamentally different from ambient layers -- there's
+    only ever "the most recently fired stinger" per channel
+    (last_stinger, piggybacked on get_now_playing like ambient_layers),
+    stamped with a fresh fired_at on every trigger so re-firing the same
+    stinger_id twice in a row still plays twice. Covers the priming
+    behavior too: a channel's last-fired stinger might be old news from
+    before this tab tuned in, and must NOT replay just because it's
+    "new" to this tab -- only a CHANGE after the first poll counts."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+    page.add_init_script("""
+      window.__playCalls = [];
+      HTMLMediaElement.prototype.play = function () { window.__playCalls.push(this.src.split('/').pop()); return Promise.resolve(); };
+    """)
+    page.route("**/assets/stingers/*.mp3", lambda r: r.fulfill(status=200, content_type="audio/mpeg", body=""))
+
+    backend = {"last_stinger": {"id": "knock", "fired_at": 1700000000000}}
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            res = {"status": "NOT_FOUND", "last_stinger": backend["last_stinger"]}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
+    page.reload(wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(600)
+
+    record("radio", "a channel's already-existing last_stinger does NOT replay just from freshly tuning in",
+           "knock.mp3" not in page.evaluate("() => window.__playCalls"), str(page.evaluate("() => window.__playCalls")))
+
+    # Handler fires a NEW stinger -- a fresh fired_at, different id.
+    backend["last_stinger"] = {"id": "gunshot-pistol", "fired_at": 1700000005000}
+    page.wait_for_timeout(2300)  # > POLL_MS
+    record("radio", "a genuinely new last_stinger (new fired_at) plays once",
+           "gunshot-pistol.mp3" in page.evaluate("() => window.__playCalls"), "")
+    play_count_after_first = len(page.evaluate("() => window.__playCalls"))
+
+    # Poll again with the SAME fired_at -- must not replay.
+    page.wait_for_timeout(2300)
+    record("radio", "an unchanged last_stinger (same fired_at) does not replay on the next poll tick",
+           len(page.evaluate("() => window.__playCalls")) == play_count_after_first,
+           str(page.evaluate("() => window.__playCalls")))
+
+    # Re-firing the SAME stinger_id with a NEW fired_at plays again --
+    # identity isn't what's tracked, the timestamp is.
+    backend["last_stinger"] = {"id": "gunshot-pistol", "fired_at": 1700000009000}
+    page.wait_for_timeout(2300)
+    record("radio", "re-firing the same stinger_id with a new fired_at plays it again",
+           len(page.evaluate("() => window.__playCalls")) == play_count_after_first + 1, "")
 
     page.close()
     return errs
@@ -4195,6 +4329,8 @@ def main():
 
         safe(test_acell_music_ambient_layers, browser, area="acell")
 
+        safe(test_acell_music_stingers, browser, area="acell")
+
         safe(test_acell_admin, browser, area="acell")
 
         safe(test_table_radio_widget, browser, area="radio")
@@ -4202,6 +4338,8 @@ def main():
         safe(test_table_radio_audio_volume, browser, area="radio")
 
         safe(test_table_radio_ambient_layers, browser, area="radio")
+
+        safe(test_table_radio_stingers, browser, area="radio")
 
         safe(test_table_radio_pause_and_loop, browser, area="radio")
 

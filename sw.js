@@ -16,7 +16,7 @@
    the activate handler below drops the old cache instead of pages
    being stuck on stale JS forever.
    ══════════════════════════════════════════════ */
-const CACHE_NAME = 'dg-hub-shell-v4';
+const CACHE_NAME = 'dg-hub-shell-v5';
 
 const SHELL_FILES = [
   './',
@@ -31,8 +31,20 @@ const SHELL_FILES = [
   'assets/agent-code.js',
   'assets/ambient/rain.mp3',
   'assets/ambient/wind.mp3',
-  'assets/ambient/hum.mp3',
   'assets/ambient/static.mp3',
+  'assets/stingers/knock.mp3',
+  'assets/stingers/wood-creak.mp3',
+  'assets/stingers/gunshot-pistol.mp3',
+  'assets/stingers/gunshot-shotgun.mp3',
+  'assets/stingers/gunshot-rifle-semi.mp3',
+  'assets/stingers/gunshot-rifle-auto.mp3',
+  'assets/stingers/explosion-small.mp3',
+  'assets/stingers/explosion-medium.mp3',
+  'assets/stingers/explosion-large.mp3',
+  'assets/stingers/scream-woman.mp3',
+  'assets/stingers/scream-man.mp3',
+  'assets/stingers/child-laughter.mp3',
+  'assets/stingers/child-crying.mp3',
   'assets/mars-tech-seal.png',
   'assets/restricted-stamp.png',
   'assets/delta-green-triangle.png',

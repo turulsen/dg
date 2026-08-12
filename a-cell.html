@@ -458,6 +458,19 @@
   .rpr-title{ color:#c9d4b8; overflow-wrap:anywhere; font-family:'Courier Prime',monospace; }
   .rpr-actions{ display:flex; gap:6px; flex-shrink:0; }
 
+  /* ── Stingers: grouped one-shot SFX buttons -- a grid, not a list,
+     since there's nothing to read per row (no title/URL), just a label
+     to click. Grouped (Ambience/Weapons/Explosions/Voices) so 13
+     buttons don't read as one undifferentiated wall. ── */
+  .rdo-stinger-group{ margin-bottom:14px; }
+  .rdo-stinger-group:last-child{ margin-bottom:0; }
+  .rdo-stinger-group-label{
+    font-family:'Courier Prime',monospace; font-size:8px; letter-spacing:.16em;
+    text-transform:uppercase; color:#5a6a48; margin-bottom:6px;
+  }
+  .rdo-stinger-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:6px; }
+  .rdo-stinger-btn{ text-align:center; }
+
   /* ── Channel dial: a dark field-radio console, matching the player-
      facing Table Radio widget's look. Turned to a fixed 1-5 stop
      instead of typed -- no more two players landing on "sam" vs "Sam"
@@ -697,7 +710,7 @@
                 </div>
                 <div class="rdo-section">
                   <div class="rdo-section-label">04 // Ambient Layers</div>
-                  <div class="rdo-note">Play underneath the current track -- rain, wind, machine hum, interference. Toggle any combination.</div>
+                  <div class="rdo-note">Play underneath the current track -- rain, wind, interference. Toggle any combination.</div>
                   <div class="rdo-ambient-toggles" id="music-ambient-toggles"></div>
                 </div>
               </div>
@@ -715,6 +728,12 @@
                 <div class="rdo-status-line" id="tracklib-status"></div>
               </div>
               <div id="tracklib-list"></div>
+            </div>
+            <div class="acell-radio-tracklib">
+              <div class="rdo-section-label">Stingers — one-shot sound effects, fire once for the whole table</div>
+              <div class="rdo-note">Not a toggle -- each click fires it fresh, even the same one twice in a row.</div>
+              <div id="music-stingers"></div>
+              <div class="rdo-status-line" id="music-stinger-status"></div>
             </div>
           </div>
         </div>
@@ -1909,7 +1928,7 @@
   // re-paste the URL, and lets Pause show "Resume" once it's already
   // paused instead of the two staying visually identical.
   var current = { track_url: '', track_title: '', track_kind: '', loop: false, paused: false };
-  // Ambient loops (rain/wind/hum/static) that can play underneath the
+  // Ambient loops (rain/wind/static) that can play underneath the
   // current track -- fixed client-side set, matching assets/table-radio.js's
   // own AMBIENT_LAYERS (the backend only ever carries {id, active,
   // started_at}, never a URL or label). One on/off state per channel,
@@ -1918,7 +1937,6 @@
   var AMBIENT_LAYERS = [
     { id: 'rain', label: 'Rain' },
     { id: 'wind', label: 'Wind' },
-    { id: 'hum', label: 'Machine Hum' },
     { id: 'static', label: 'Interference' }
   ];
   var ambientState = {}; // { rain: true/false, ... } for currentChannel
@@ -2110,6 +2128,79 @@
       setPauseBtnLabel();
     });
     loadPlaylist(ch);
+  }
+
+  /* ── Stingers: one-shot SFX, grouped for a 13-button grid that doesn't
+     read as a wall. Unlike ambient layers there's no on/off state to
+     reflect back -- this list is static, rendered once at setup, not
+     re-rendered from checkCurrent(). ── */
+  var STINGER_GROUPS = [
+    { label: 'Ambience', items: [
+      { id: 'knock', label: 'Knock' },
+      { id: 'wood-creak', label: 'Wood Creak' },
+    ] },
+    { label: 'Weapons', items: [
+      { id: 'gunshot-pistol', label: 'Pistol' },
+      { id: 'gunshot-shotgun', label: 'Shotgun' },
+      { id: 'gunshot-rifle-semi', label: 'Rifle (Semi)' },
+      { id: 'gunshot-rifle-auto', label: 'Rifle (Auto)' },
+    ] },
+    { label: 'Explosions', items: [
+      { id: 'explosion-small', label: 'Small' },
+      { id: 'explosion-medium', label: 'Medium' },
+      { id: 'explosion-large', label: 'Large' },
+    ] },
+    { label: 'Voices', items: [
+      { id: 'scream-woman', label: 'Scream (Woman)' },
+      { id: 'scream-man', label: 'Scream (Man)' },
+      { id: 'child-laughter', label: 'Child Laughter' },
+      { id: 'child-crying', label: 'Child Crying' },
+    ] },
+  ];
+  var stingerStatusEl = document.getElementById('music-stinger-status');
+
+  function renderStingerGrid() {
+    document.getElementById('music-stingers').innerHTML = STINGER_GROUPS.map(function (group) {
+      var buttons = group.items.map(function (item) {
+        return '<button type="button" class="rdo-btn rdo-btn-ghost rdo-stinger-btn" data-stinger="' + item.id + '">' + escapeHtml(item.label) + '</button>';
+      }).join('');
+      return '<div class="rdo-stinger-group"><div class="rdo-stinger-group-label">' + escapeHtml(group.label) + '</div>' +
+        '<div class="rdo-stinger-grid">' + buttons + '</div></div>';
+    }).join('');
+  }
+  renderStingerGrid();
+  document.getElementById('music-stingers').addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-stinger]');
+    if (!btn) return;
+    fireStinger(btn.getAttribute('data-stinger'));
+  });
+
+  // Fires a one-shot stinger -- not a toggle, so there's no state to
+  // track locally; every click is its own independent trigger, even a
+  // repeat of the same stinger_id. Same no-cors-POST-then-delayed-
+  // readback-confirm shape as every other write on this tab.
+  function fireStinger(stingerId) {
+    var ch = currentChannel;
+    stingerStatusEl.textContent = 'Firing ' + stingerId + '…';
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors', keepalive: true,
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'trigger_stinger', channel: ch, stinger_id: stingerId }),
+    }).then(function () {
+      setTimeout(function () {
+        jsonpGet('get_now_playing', { channel: ch }, function (res) {
+          // Can't verify THIS exact firing landed (no per-request id
+          // round-trips through a no-cors POST) -- only that some firing
+          // of this stinger_id is now the most recent one on the channel,
+          // which is the same confirmation strength every other no-cors
+          // write on this tab settles for.
+          var confirmed = res && res.last_stinger && res.last_stinger.id === stingerId;
+          stingerStatusEl.textContent = confirmed
+            ? 'Fired ' + stingerId + ' on CH ' + ch + '.'
+            : 'Sent, but the backend didn\'t confirm it. Check that the Stingers addition (trigger_stinger) is pasted into Apps Script and redeployed.';
+        });
+      }, 900);
+    }).catch(function () { stingerStatusEl.textContent = 'Could not reach the backend.'; });
   }
 
   function setNowPlaying(trackUrl, trackTitle, trackKind, loop) {
