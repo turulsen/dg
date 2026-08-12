@@ -2293,6 +2293,78 @@ def test_acell_music_backend_not_deployed(p):
     page.close()
     return errs
 
+def test_acell_music_ambient_layers(p):
+    """a-cell.html's Music tab: the Handler's side of ambient layers
+    (rain/wind/hum/static) -- 4 toggle buttons that reflect the last
+    CONFIRMED backend state (not just whatever was last clicked) and
+    POST set_ambient_layer on click, following the same
+    no-cors-POST-then-read-back-confirm discipline as every other write
+    on this tab (set_now_playing, pause/resume, etc)."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    skip_acell_gate(page)
+
+    posts = []
+    backend_ambient = {"rain": False, "wind": False, "hum": False, "static": False}
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            body = json.loads(req.post_data or "{}")
+            posts.append(body)
+            if body.get("action") == "set_ambient_layer" and body.get("layer_id") in backend_ambient:
+                backend_ambient[body["layer_id"]] = body.get("active") == "1"
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=get_now_playing" in url:
+                res = {"status": "NOT_FOUND",
+                       "ambient_layers": [{"id": k, "active": v, "started_at": 1700000000000 if v else None}
+                                          for k, v in backend_ambient.items()]}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.click('.tw[data-tab="music"]')
+    page.wait_for_timeout(400)
+
+    record("acell", "the 4 ambient toggle buttons render, all Off to start",
+           page.eval_on_selector_all("#music-ambient-toggles [data-layer]", "els => els.map(e => e.textContent)")
+           == ["Rain — Off", "Wind — Off", "Machine Hum — Off", "Interference — Off"], "")
+
+    page.click('#music-ambient-toggles [data-layer="rain"]')
+    page.wait_for_timeout(1200)
+
+    layer_posts = [p_ for p_ in posts if p_.get("action") == "set_ambient_layer"]
+    record("acell", "clicking a toggle posts set_ambient_layer with the dialed channel, layer id, and active=1",
+           len(layer_posts) == 1 and layer_posts[0].get("channel") == "1"
+           and layer_posts[0].get("layer_id") == "rain" and layer_posts[0].get("active") == "1", str(layer_posts))
+    record("acell", "the button reflects On only once the backend read-back confirms it",
+           page.eval_on_selector('#music-ambient-toggles [data-layer="rain"]', "el => el.textContent") == "Rain — On", "")
+    record("acell", "the other 3 toggles are untouched by that one confirmed change",
+           page.eval_on_selector('#music-ambient-toggles [data-layer="wind"]', "el => el.textContent") == "Wind — Off", "")
+
+    # Click it again -- toggles back off.
+    page.click('#music-ambient-toggles [data-layer="rain"]')
+    page.wait_for_timeout(1200)
+    layer_posts = [p_ for p_ in posts if p_.get("action") == "set_ambient_layer"]
+    record("acell", "clicking an already-On toggle posts active=0",
+           len(layer_posts) == 2 and layer_posts[1].get("active") == "0", str(layer_posts))
+    record("acell", "the button reflects Off again once confirmed",
+           page.eval_on_selector('#music-ambient-toggles [data-layer="rain"]', "el => el.textContent") == "Rain — Off", "")
+
+    page.close()
+    return errs
+
 def test_acell_admin(p):
     """a-cell.html's Admin tab: soft-deletes an Agent (Characters row +
     Delta Green Briefs row) via delete_character, gated behind two
@@ -2658,6 +2730,139 @@ def test_table_radio_audio_volume(p):
     unmuted_again = page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.muted")
     record("radio", "un-Muting sets .muted back to false on the same <audio> element (not a new one)",
            unmuted_again is False, "")
+
+    page.close()
+    return errs
+
+def test_table_radio_ambient_layers(p):
+    """assets/table-radio.js: ambient loops (rain/wind/hum/static) that
+    play UNDERNEATH whatever's tuned on a channel, Handler-toggled and
+    synced via a new ambient_layers field piggybacked on the existing
+    get_now_playing poll (see acell-table-radio-ambient-addition.gs).
+    Additive to the single-main-track embed system -- a main YouTube
+    track is tuned alongside the ambient layers here specifically to
+    verify toggling a layer never touches the main track (or any OTHER
+    ambient layer) it wasn't asked to touch."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+    # Playwright's mocked mp3 response bodies are empty (a real network
+    # payload isn't the point here) -- calling the real .play() on that
+    # genuinely rejects with NotSupportedError in a real browser (nothing
+    # decodable), so .paused would never actually flip to false no matter
+    # how correct the app code is. Instrument play()/pause() themselves
+    # instead of depending on real decoding: this verifies the app code
+    # calls the right method on the right element at the right time,
+    # which is the actual thing under test here, not MP3 decoding.
+    page.add_init_script("""
+      window.__playCalls = []; window.__pauseCalls = [];
+      var origPause = HTMLMediaElement.prototype.pause;
+      HTMLMediaElement.prototype.play = function () { window.__playCalls.push(this.id); return Promise.resolve(); };
+      HTMLMediaElement.prototype.pause = function () { window.__pauseCalls.push(this.id); return origPause.apply(this, arguments); };
+    """)
+    for name in ("rain", "wind", "hum", "static"):
+        page.route(f"**/assets/ambient/{name}.mp3", lambda r: r.fulfill(status=200, content_type="audio/mpeg", body=""))
+
+    backend_ambient = {
+        "rain": {"active": True, "started_at": 1700000000000},
+        "wind": {"active": False, "started_at": None},
+        "hum": {"active": True, "started_at": 1700000000000},
+        "static": {"active": False, "started_at": None},
+    }
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=get_now_playing" in url:
+                res = {"status": "OK", "track_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                       "track_title": "Table Theme", "started_at": 1700000000000,
+                       "ambient_layers": [{"id": k, "active": v["active"], "started_at": v["started_at"]}
+                                          for k, v in backend_ambient.items()]}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    fake_yt_api = """
+      window.YT = { Player: function (elId, opts) {
+        var el = document.getElementById(elId);
+        if (el) el.innerHTML = '<iframe data-yt-fake="1" data-instance="' + Math.random() + '"></iframe>';
+        this._opts = opts;
+        var self = this;
+        setTimeout(function () {
+          if (opts.events && opts.events.onReady) opts.events.onReady({ target: self });
+        }, 0);
+      } };
+      window.YT.Player.prototype.setVolume = function () {};
+      window.YT.Player.prototype.mute = function () {};
+      window.YT.Player.prototype.unMute = function () {};
+      window.YT.Player.prototype.playVideo = function () {};
+      window.YT.Player.prototype.destroy = function () {};
+      if (typeof window.onYouTubeIframeAPIReady === 'function') window.onYouTubeIframeAPIReady();
+    """
+    page.route("**/www.youtube.com/iframe_api", lambda r: r.fulfill(
+        status=200, content_type="application/javascript", body=fake_yt_api))
+
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
+    page.reload(wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(600)
+    page.click("#dg-radio-toggle-expand")
+    page.wait_for_timeout(400)
+
+    record("radio", "an active ambient layer renders a looping <audio> element and starts it playing",
+           page.eval_on_selector("#dg-radio-ambient-rain", "el => el.loop") is True
+           and page.is_visible('.dgr-ambient-row[data-layer="rain"]')
+           and "dg-radio-ambient-rain" in page.evaluate("() => window.__playCalls"), "")
+    record("radio", "an active ambient layer starts Muted by default (browsers only reliably autoplay muted media)",
+           page.eval_on_selector("#dg-radio-ambient-rain", "el => el.muted") is True, "")
+    record("radio", "an inactive ambient layer's row stays hidden and is never played",
+           not page.is_visible('.dgr-ambient-row[data-layer="wind"]')
+           and "dg-radio-ambient-wind" not in page.evaluate("() => window.__playCalls"), "")
+    record("radio", "a second, independently-active ambient layer also plays",
+           "dg-radio-ambient-hum" in page.evaluate("() => window.__playCalls"), "")
+
+    yt_instance_before = page.eval_on_selector("#dg-radio-embed-wrap iframe", "el => el.dataset.instance")
+
+    # Handler turns rain off -- only rain's <audio> should stop; hum and
+    # the main YouTube track must be untouched (same element, still playing).
+    backend_ambient["rain"]["active"] = False
+    page.wait_for_timeout(2300)  # > POLL_MS
+
+    record("radio", "toggling a layer off calls .pause() on only that layer's <audio> element",
+           "dg-radio-ambient-rain" in page.evaluate("() => window.__pauseCalls")
+           and not page.is_visible('.dgr-ambient-row[data-layer="rain"]'), "")
+    record("radio", "the other active ambient layer is untouched by that change (never paused)",
+           "dg-radio-ambient-hum" not in page.evaluate("() => window.__pauseCalls"), "")
+    record("radio", "the main track's YouTube embed is untouched by an ambient change (same iframe, not recreated)",
+           page.eval_on_selector("#dg-radio-embed-wrap iframe", "el => el.dataset.instance") == yt_instance_before, "")
+
+    # Local mute: per-layer, persists across reload (a fresh page load /
+    # fresh document, same as the main track's own volume/mute). Ambient
+    # layers start Muted by default (see above), so the FIRST click here
+    # un-mutes -- same "one click flips the default" shape as the main
+    # track's own Mute button.
+    page.click('[data-ambient-mute="hum"]')
+    page.wait_for_timeout(100)
+    record("radio", "un-muting an ambient layer sets its own localStorage key",
+           page.evaluate("() => localStorage.getItem('dg_radio_ambient_muted_hum')") == "0", "")
+    record("radio", "un-muting one layer does not affect another layer's mute state",
+           page.evaluate("() => localStorage.getItem('dg_radio_ambient_muted_rain')") != "0", "")
+
+    page.reload(wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(700)
+    record("radio", "ambient un-mute persists across reload",
+           page.eval_on_selector('[data-ambient-mute="hum"]', "el => el.textContent") == "SOUND", "")
 
     page.close()
     return errs
@@ -3988,11 +4193,15 @@ def main():
 
         safe(test_acell_music_backend_not_deployed, browser, area="acell")
 
+        safe(test_acell_music_ambient_layers, browser, area="acell")
+
         safe(test_acell_admin, browser, area="acell")
 
         safe(test_table_radio_widget, browser, area="radio")
 
         safe(test_table_radio_audio_volume, browser, area="radio")
+
+        safe(test_table_radio_ambient_layers, browser, area="radio")
 
         safe(test_table_radio_pause_and_loop, browser, area="radio")
 

@@ -19,6 +19,14 @@
    (see acell-table-radio-addition.txt, handed over separately -- not
    yet deployed on the live backend until pasted in and redeployed).
 
+   Ambient layers (rain/wind/hum/static, playing underneath whatever
+   track is tuned) require a further addition,
+   acell-table-radio-ambient-addition.gs -- also handed over separately.
+   Until it's pasted in, get_now_playing simply won't carry an
+   ambient_layers field and every ambient row silently stays hidden,
+   same graceful-degradation-until-deployed pattern as everything else
+   in this app.
+
    Deliberately styled as its own self-contained floating "device"
    (dark, amber/green field-radio look) rather than trying to match
    each page's own theme -- this page loads on the dark folder-look
@@ -59,9 +67,27 @@
   // Fixed numbered channels, picked by turning a dial rather than typing a
   // name -- five slots, no typos, no two players landing on "sam" vs "Sam".
   var CHANNELS = ['1', '2', '3', '4', '5'];
+  // Ambient loops that can play UNDERNEATH whatever's tuned on a channel
+  // (rain/wind/hum/static, Handler-toggled, one on/off state per channel
+  // -- see get_now_playing's ambient_layers field). Fixed client-side set:
+  // the backend only ever sends {id, active, started_at}, never a URL, so
+  // the client resolves id -> its own bundled asset + label.
+  var AMBIENT_LAYERS = [
+    { id: 'rain', label: 'Rain', src: 'assets/ambient/rain.mp3' },
+    { id: 'wind', label: 'Wind', src: 'assets/ambient/wind.mp3' },
+    { id: 'hum', label: 'Machine Hum', src: 'assets/ambient/hum.mp3' },
+    { id: 'static', label: 'Interference', src: 'assets/ambient/static.mp3' }
+  ];
+  var AMBIENT_MUTED_KEY_PREFIX = 'dg_radio_ambient_muted_'; // + layer id
 
   var lastStartedAt = null;
   var lastPaused = false;
+  // Last known {active, started_at} per ambient layer id, for the same
+  // "only touch what actually changed" diffing the main track already
+  // does with lastStartedAt/lastPaused -- reset alongside those at every
+  // channel-change/leave point (see below) since a fresh channel means
+  // fresh, unknown ambient state.
+  var lastAmbientState = {};
   var pollTimer = null;
 
   // Which live-controllable player (if any) currently backs the embed --
@@ -116,6 +142,22 @@
   }
   function setExpanded(e) {
     try { localStorage.setItem(EXPANDED_KEY, e ? '1' : '0'); } catch (e) { /* best effort */ }
+  }
+  // Ambient layer mute is per-layer, and -- same as the main track's
+  // MUTED_KEY -- defaults to MUTED, NOT because the Handler's choice is in
+  // question, but because browsers reliably allow autoplay only when
+  // starting muted; an unmuted <audio>.play() call with no prior user
+  // gesture on the page gets silently rejected in most browsers, which
+  // would make an ambient layer the Handler just turned on simply never
+  // start for a listener who hasn't interacted with the page yet. The
+  // existing "Tap to resume audio" button (see #dg-radio-resume's click
+  // handler in renderTuned()) un-mutes the main track AND every ambient
+  // layer together in one tap, rather than needing 4 separate taps.
+  function isAmbientMuted(layerId) {
+    try { return localStorage.getItem(AMBIENT_MUTED_KEY_PREFIX + layerId) !== '0'; } catch (e) { return true; }
+  }
+  function setAmbientMuted(layerId, m) {
+    try { localStorage.setItem(AMBIENT_MUTED_KEY_PREFIX + layerId, m ? '1' : '0'); } catch (e) { /* best effort */ }
   }
 
   function extractYouTubeId(url) {
@@ -223,6 +265,13 @@
     '#dg-radio-embed-wrap{overflow:hidden;height:0;transition:height .15s ease;}',
     '#dg-radio-panel.dgr-panel-expanded #dg-radio-embed-wrap{height:220px;margin-top:8px;}',
     '#dg-radio-embed-wrap iframe, #dg-radio-embed-wrap audio, #dg-radio-embed-wrap>div{width:100%;height:220px;border:0;border-radius:4px;}',
+    /* ── ambient layers: rows are ALWAYS in the DOM (so the <audio>
+       elements persist across Minimize/Expand, same "clipped not
+       removed" principle as the main embed) but individually hidden
+       until their layer is actually active. ── */
+    '.dgr-ambient-label-row{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:#7a8a68;margin:10px 0 4px;}',
+    '.dgr-ambient-row{display:flex;align-items:center;gap:8px;padding:4px 0;}',
+    '.dgr-ambient-label{flex:1;min-width:0;font-size:11px;color:#c9d4b8;}',
     /* ── channel dial: a rotary knob with 5 fixed positions, turned
        instead of typed ── */
     '.dgr-dial-wrap{text-align:center;padding:2px 0 8px;}',
@@ -346,6 +395,8 @@
       setChannel(dial.get());
       lastStartedAt = null;
       lastPaused = false;
+      lastAmbientState = {};
+      window._dgRadioLastAmbient = null;
       renderTuned();
       startPolling();
     });
@@ -358,6 +409,98 @@
     if (panel) panel.classList.toggle('dgr-panel-expanded', expanded);
     var btn = document.getElementById('dg-radio-toggle-expand');
     if (btn) btn.textContent = expanded ? 'Minimize' : 'Expand';
+  }
+
+  // Builds the 4 (always-in-DOM, individually-hidden) ambient layer rows
+  // once, inside renderTuned()'s fresh markup. Additive/parallel to the
+  // main track's embed -- never touches currentEmbedKind/renderEmbed()/
+  // destroyActivePlayers(), which stay exactly as they were for the one
+  // main track (YouTube/SoundCloud/audio/generic iframe).
+  function renderAmbientRows() {
+    var wrap = document.getElementById('dg-radio-ambient-wrap');
+    if (!wrap) return;
+    wrap.innerHTML = '<div class="dgr-ambient-label-row">Ambience</div>' + AMBIENT_LAYERS.map(function (layer) {
+      return '<div class="dgr-ambient-row" data-layer="' + layer.id + '" style="display:none">' +
+        '<span class="dgr-ambient-label">' + escapeHtml(layer.label) + '</span>' +
+        '<button type="button" class="dgr-btn" data-ambient-mute="' + layer.id + '">' +
+        (isAmbientMuted(layer.id) ? 'MUTED' : 'SOUND') + '</button>' +
+        '<audio id="dg-radio-ambient-' + layer.id + '" loop preload="none"></audio>' +
+        '</div>';
+    }).join('');
+    // Delegated (not per-button) since this wrap is only ever built fresh
+    // once per renderTuned() call -- one listener per fresh DOM, no
+    // stacking risk.
+    wrap.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-ambient-mute]');
+      if (!btn) return;
+      var layerId = btn.getAttribute('data-ambient-mute');
+      var muted = !isAmbientMuted(layerId);
+      setAmbientMuted(layerId, muted);
+      btn.textContent = muted ? 'MUTED' : 'SOUND';
+      // Mutes in place without touching playback/src -- same shape as
+      // applyLiveMuteVolume() for the main track, just scoped to one
+      // <audio> element instead of dispatching on currentEmbedKind.
+      var audioEl = document.getElementById('dg-radio-ambient-' + layerId);
+      if (audioEl) audioEl.muted = muted;
+    });
+  }
+
+  // Diffs the server's ambient_layers array against lastAmbientState and
+  // starts/stops only the ONE <audio> element whose active flag actually
+  // flipped -- called on every poll tick (ambient toggles are independent
+  // events from the main track's started_at/paused changes, so this can't
+  // piggyback on those diff branches) and once right after renderTuned()
+  // builds fresh DOM, so an Expand click (or a fresh tune-in) applies
+  // already-known state immediately rather than waiting for the next tick.
+  function applyAmbientLayers(layers) {
+    (layers || []).forEach(function (layer) {
+      var prev = lastAmbientState[layer.id];
+      var audioEl = document.getElementById('dg-radio-ambient-' + layer.id);
+      var row = document.querySelector('.dgr-ambient-row[data-layer="' + layer.id + '"]');
+      if (layer.active) {
+        if (row) row.style.display = '';
+        if (audioEl && (!prev || !prev.active || prev.started_at !== layer.started_at)) {
+          // OFF->ON, or a NEW started_at while still on (Handler
+          // re-triggered it) -- (re)start. Same started_at + still active
+          // falls through untouched -- the common case, true on nearly
+          // every poll tick since Handler state rarely changes tick to
+          // tick, and exactly why a restart-on-every-poll bug would be
+          // so disruptive here (a seamless loop restarting every 2s
+          // reads as very much NOT seamless).
+          var layerDef = AMBIENT_LAYERS.filter(function (l) { return l.id === layer.id; })[0];
+          if (layerDef && !audioEl.src) audioEl.src = layerDef.src;
+          audioEl.currentTime = 0;
+          audioEl.muted = isAmbientMuted(layer.id);
+          var p = audioEl.play();
+          if (p && p.catch) {
+            p.catch(function () { /* autoplay-blocked -- no dedicated
+              per-layer resume button in v1; the main track's own "Tap to
+              resume audio" button, when shown, satisfies the same
+              user-gesture requirement for the whole page's audio context,
+              ambient layers included. */ });
+          }
+        }
+      } else {
+        if (row) row.style.display = 'none';
+        if (audioEl && prev && prev.active) audioEl.pause();
+      }
+      lastAmbientState[layer.id] = { active: layer.active, started_at: layer.started_at };
+    });
+  }
+
+  // Pauses every ambient layer and hides its row -- used on channel
+  // change/leave, where a fresh channel means fresh, unknown ambient
+  // state (the src itself doesn't need clearing: it's a fixed local file
+  // per layer id, not channel-dependent, so it's fine to just pause and
+  // let the next applyAmbientLayers() call decide what SHOULD be playing
+  // for the new channel).
+  function stopAllAmbientAudio() {
+    AMBIENT_LAYERS.forEach(function (layer) {
+      var audioEl = document.getElementById('dg-radio-ambient-' + layer.id);
+      if (audioEl) audioEl.pause();
+      var row = document.querySelector('.dgr-ambient-row[data-layer="' + layer.id + '"]');
+      if (row) row.style.display = 'none';
+    });
   }
 
   function renderTuned() {
@@ -377,11 +520,14 @@
       '<div id="dg-radio-track">No signal yet.</div>' +
       '<div id="dg-radio-status">Waiting for the Handler…</div>' +
       '<button type="button" id="dg-radio-resume">Tap to resume audio</button>' +
+      '<div id="dg-radio-ambient-wrap"></div>' +
       '</div>' +
       '<div id="dg-radio-embed-wrap"></div>' +
       '</div>';
 
     applyExpandedClass();
+    renderAmbientRows();
+    applyAmbientLayers(window._dgRadioLastAmbient);
 
     document.getElementById('dg-radio-mute').addEventListener('click', function () {
       setMuted(!isMuted());
@@ -417,12 +563,15 @@
         ch = newCh;
         lastStartedAt = null;
         lastPaused = false;
+        lastAmbientState = {};
         window._dgRadioLast = null;
+        window._dgRadioLastAmbient = null;
         document.getElementById('dg-radio-ch-label').textContent = 'CH ' + newCh;
         document.getElementById('dg-radio-track').textContent = 'No signal yet.';
         document.getElementById('dg-radio-mini-track').textContent = 'No signal yet.';
         document.getElementById('dg-radio-status').textContent = 'Waiting for the Handler…';
         renderEmbed(null);
+        stopAllAmbientAudio();
         startPolling();
       });
     });
@@ -430,13 +579,27 @@
       stopPolling();
       clearChannel();
       window._dgRadioLast = null;
+      window._dgRadioLastAmbient = null;
+      lastAmbientState = {};
       destroyActivePlayers();
+      stopAllAmbientAudio();
       renderCollapsed();
     });
     document.getElementById('dg-radio-resume').addEventListener('click', function () {
       setMuted(false);
       var muteBtn = document.getElementById('dg-radio-mute');
       if (muteBtn) muteBtn.textContent = 'SOUND';
+      // This tap is a real user gesture -- the one thing that satisfies
+      // browsers' autoplay-with-sound requirement -- so it un-mutes every
+      // currently-playing ambient layer too, not just the main track.
+      // One tap for everything rather than 4 separate per-layer taps.
+      AMBIENT_LAYERS.forEach(function (layer) {
+        setAmbientMuted(layer.id, false);
+        var btn = document.querySelector('[data-ambient-mute="' + layer.id + '"]');
+        if (btn) btn.textContent = 'SOUND';
+        var audioEl = document.getElementById('dg-radio-ambient-' + layer.id);
+        if (audioEl) audioEl.muted = false;
+      });
       renderEmbed(window._dgRadioLast);
     });
   }
@@ -640,6 +803,19 @@
       var statusEl = document.getElementById('dg-radio-status');
       var trackEl = document.getElementById('dg-radio-track');
       var miniTrackEl = document.getElementById('dg-radio-mini-track');
+      // Ambient layers are independent of whether a main track is set --
+      // the Handler might have rain playing with no music cued at all --
+      // so this has to run before the "no track" early-return below, not
+      // gated behind it. Also NOT gated on res.status === 'OK': a channel
+      // with no track set responds status:'NOT_FOUND' (see the early
+      // return just below), and ambient_layers still has to be read from
+      // that response too -- gating on 'OK' would mean ambient layers
+      // could only ever play alongside an actual track, never on their
+      // own.
+      if (res && res.ambient_layers) {
+        window._dgRadioLastAmbient = res.ambient_layers;
+        applyAmbientLayers(res.ambient_layers);
+      }
       if (!res || res.status !== 'OK' || !res.track_url) {
         if (statusEl) statusEl.textContent = 'Waiting for the Handler…';
         if (trackEl) trackEl.textContent = 'No signal yet.';

@@ -424,6 +424,8 @@
      transport control set. */
   .rdo-now-playing-row{ display:flex; gap:6px; }
   .rdo-now-playing-row .rdo-btn{ flex:1; }
+  .rdo-ambient-toggles{ display:flex; flex-direction:column; gap:6px; }
+  .rdo-ambient-toggles .rdo-btn{ text-align:left; }
 
   .rdo-playlist-empty{ font-family:'Courier Prime',monospace; font-size:11px; color:#5a6a48; font-style:italic; }
   .rdo-playlist-row{
@@ -692,6 +694,11 @@
                     <button type="button" class="rdo-btn rdo-btn-ghost" id="music-stop-btn">Stop Broadcast</button>
                   </div>
                   <div class="rdo-status-line" id="music-status"></div>
+                </div>
+                <div class="rdo-section">
+                  <div class="rdo-section-label">04 // Ambient Layers</div>
+                  <div class="rdo-note">Play underneath the current track -- rain, wind, machine hum, interference. Toggle any combination.</div>
+                  <div class="rdo-ambient-toggles" id="music-ambient-toggles"></div>
                 </div>
               </div>
               <div class="acell-radio-display">
@@ -1902,6 +1909,20 @@
   // re-paste the URL, and lets Pause show "Resume" once it's already
   // paused instead of the two staying visually identical.
   var current = { track_url: '', track_title: '', track_kind: '', loop: false, paused: false };
+  // Ambient loops (rain/wind/hum/static) that can play underneath the
+  // current track -- fixed client-side set, matching assets/table-radio.js's
+  // own AMBIENT_LAYERS (the backend only ever carries {id, active,
+  // started_at}, never a URL or label). One on/off state per channel,
+  // synced via get_now_playing's ambient_layers field (see
+  // acell-table-radio-ambient-addition.gs).
+  var AMBIENT_LAYERS = [
+    { id: 'rain', label: 'Rain' },
+    { id: 'wind', label: 'Wind' },
+    { id: 'hum', label: 'Machine Hum' },
+    { id: 'static', label: 'Interference' }
+  ];
+  var ambientState = {}; // { rain: true/false, ... } for currentChannel
+  var ambientToggles = document.getElementById('music-ambient-toggles');
 
   function setPauseBtnLabel() {
     pauseBtn.textContent = current.paused ? 'Resume' : 'Pause';
@@ -2017,9 +2038,66 @@
     airEl.classList.toggle('on-air', !!onAir);
   }
 
+  // Renders the 4 toggle buttons from ambientState -- called after every
+  // checkCurrent() (channel switch or initial load) and after a confirmed
+  // toggle, so the label/style always reflects the last CONFIRMED backend
+  // state, never just the click that was sent.
+  function renderAmbientToggles() {
+    ambientToggles.innerHTML = AMBIENT_LAYERS.map(function (l) {
+      var on = !!ambientState[l.id];
+      return '<button type="button" class="rdo-btn' + (on ? '' : ' rdo-btn-ghost') +
+        '" data-layer="' + l.id + '">' + escapeHtml(l.label) + (on ? ' — On' : ' — Off') + '</button>';
+    }).join('');
+  }
+  ambientToggles.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-layer]');
+    if (!btn) return;
+    toggleAmbientLayer(btn.getAttribute('data-layer'), !ambientState[btn.getAttribute('data-layer')]);
+  });
+
+  // Same no-cors-POST-then-delayed-readback-confirm shape as
+  // setNowPlaying/pause/resume above -- the POST's own response can't be
+  // trusted (mode:'no-cors'), so ambientState/the buttons only update once
+  // get_now_playing's re-fetched ambient_layers actually confirms the flip.
+  function toggleAmbientLayer(layerId, active) {
+    var ch = currentChannel;
+    statusEl.textContent = (active ? 'Starting ' : 'Stopping ') + layerId + '…';
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors', keepalive: true,
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'set_ambient_layer', channel: ch, layer_id: layerId, active: active ? '1' : '0' }),
+    }).then(function () {
+      setTimeout(function () {
+        jsonpGet('get_now_playing', { channel: ch }, function (res) {
+          // NOT gated on res.status === 'OK' -- a channel with no track
+          // set responds status:'NOT_FOUND' (see checkCurrent() below),
+          // and ambient_layers still has to be read from that response
+          // too, since a layer can be toggled with no track playing at all.
+          var layers = (res && Array.isArray(res.ambient_layers)) ? res.ambient_layers : [];
+          var found = layers.filter(function (l) { return l.id === layerId; })[0];
+          if (!found || !!found.active !== active) {
+            statusEl.textContent = 'Sent, but the backend didn\'t confirm it. Check that the Ambient Layers addition (set_ambient_layer) is pasted into Apps Script and redeployed.';
+            return;
+          }
+          layers.forEach(function (l) { ambientState[l.id] = !!l.active; });
+          renderAmbientToggles();
+          statusEl.textContent = (active ? 'Started ' : 'Stopped ') + layerId + ' on CH ' + ch + '.';
+        });
+      }, 900);
+    }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+  }
+
   function checkCurrent() {
     var ch = currentChannel;
     jsonpGet('get_now_playing', { channel: ch }, function (res) {
+      // Ambient layers are independent of whether a track is currently
+      // set -- read them regardless of which branch below fires, and NOT
+      // gated on res.status === 'OK' (a channel with no track responds
+      // status:'NOT_FOUND', and still needs its ambient_layers read).
+      var layers = (res && Array.isArray(res.ambient_layers)) ? res.ambient_layers : [];
+      ambientState = {};
+      layers.forEach(function (l) { ambientState[l.id] = !!l.active; });
+      renderAmbientToggles();
       if (res && res.status === 'OK' && res.track_url) {
         current = { track_url: res.track_url, track_title: res.track_title || '', track_kind: res.track_kind || '', loop: !!res.loop, paused: !!res.paused };
         statusEl.textContent = (current.paused ? 'Paused on CH ' : 'Currently broadcasting to CH ') + ch + ': ' + (current.track_title || current.track_url);
