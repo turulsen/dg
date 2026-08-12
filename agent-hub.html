@@ -148,6 +148,7 @@
   </div>
 </div>
 
+<script src="assets/folder-tabs.js"></script>
 <script>
 /* ══════════════════════════════════════════════
    AGENT HUB -- unified roster view. Reads the same dg_agent_roster
@@ -250,7 +251,12 @@
   function setActiveTab(id) {
     tabStrip.querySelectorAll('.tw').forEach(t => {
       const isNew = t.classList.contains('tw-new');
-      t.className = 'tw' + (isNew ? ' tw-new' : '') + (t.dataset.tab === id ? ' active' : ' inactive');
+      // folder-tabs.js's own dgft-positioned class has to survive this
+      // reassignment -- it's what switches a .tw from the pre-JS fallback
+      // (position:relative, plain rounded corners) to its real clip-path
+      // shape, and a plain className overwrite would silently drop it.
+      const positioned = t.classList.contains('dgft-positioned') ? ' dgft-positioned' : '';
+      t.className = 'tw' + positioned + (isNew ? ' tw-new' : '') + (t.dataset.tab === id ? ' active' : ' inactive');
     });
     folderBody.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + id));
   }
@@ -273,6 +279,7 @@
     </div>`;
     folderBody.appendChild(panel);
     setActiveTab('empty');
+    if (window.dgFolderTabs) window.dgFolderTabs.layout(tabStrip.closest('.folder'));
   } else {
     agents.forEach((a, i) => {
       const tab = document.createElement('div');
@@ -331,6 +338,7 @@
 
     setActiveTab(agents[0].code);
     loadHandouts();
+    if (window.dgFolderTabs) window.dgFolderTabs.layout(tabStrip.closest('.folder'));
   }
 
   // Handouts: one shared fetch of Cells + Handouts, reused across every
@@ -488,6 +496,12 @@
     const tab = e.target.closest('.tw');
     if (!tab) return;
     setActiveTab(tab.dataset.tab);
+    // Scroll by the tab's own <span> (its real visible slot) rather than
+    // the .tw itself -- once folder-tabs.js positions it, .tw spans the
+    // strip's FULL scrollable width (it's windowed down to its own tab
+    // by clip-path alone), so scrollIntoView on .tw sees no work to do.
+    const label = tab.querySelector('span');
+    if (label) label.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   });
 })();
 </script>

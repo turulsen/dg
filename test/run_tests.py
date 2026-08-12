@@ -68,6 +68,20 @@ def skip_acell_gate(page):
     specifically exercising the gate itself should pre-seed past it."""
     page.add_init_script("try { sessionStorage.setItem('dg_acell_unlocked', '1'); } catch (e) {}")
 
+def click_tab(page, selector):
+    """Click a .tw folder tab (assets/folder-tabs.js). Once folder-tabs.js
+    lays a tab out, the element itself spans the tab-strip's full content
+    width (clip-path alone windows it down to its own visible notch), so
+    Playwright's default click -- which targets the center of the full
+    bounding box -- almost always lands outside the tab's actual visible/
+    hit-testable region (clip-path excludes clicks outside the shape, same
+    as a real click would miss there) and times out waiting for
+    actionability. Click the tab's own <span> instead, whose inline
+    left/width folder-tabs.js sets to the tab's real visible slot."""
+    span = page.locator(selector).locator("span")
+    box = span.bounding_box()
+    page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+
 def wait_for_condition(fn, timeout_ms=25000, interval_ms=200):
     """Polls fn() every interval_ms until it returns truthy or timeout_ms
     elapses -- for assertions after a no-cors POST + read-back-to-verify
@@ -911,7 +925,7 @@ def test_cover_ids_tab(p):
     page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
 
-    page.click("#tw-ids")
+    click_tab(page, "#tw-ids")
     page.wait_for_timeout(300)
 
     record("cover-ids-tab", "Cover IDs tab renders the native tablet UI (not an iframe)",
@@ -1107,7 +1121,7 @@ def test_agent_hub(p):
            action_hrefs[2] == "dg-agent-portal.html?code=OWEN-CS12#ids", str(action_hrefs))
 
     # Clicking a tab switches the active panel.
-    page.click('.tw[data-tab="PRIY-AN34"]')
+    click_tab(page, '.tw[data-tab="PRIY-AN34"]')
     page.wait_for_timeout(150)
     record("hub", "clicking a tab activates that Agent's panel and deactivates the others",
            "active" in page.eval_on_selector("#panel-PRIY-AN34", "el => el.className")
@@ -1174,7 +1188,7 @@ def test_agent_hub_handouts(p):
     record("hub", "closing the lightbox hides it again",
            not page.is_visible(".ah-handout-lightbox"), "")
 
-    page.click('.tw[data-tab="PRIY-AN34"]')
+    click_tab(page, '.tw[data-tab="PRIY-AN34"]')
     page.wait_for_timeout(150)
     priya_titles = page.eval_on_selector_all("#ah-handouts-PRIY-AN34 .ah-handout-title", "els => els.map(e=>e.textContent)")
     record("hub", "an Agent in no Cell only sees the campaign-wide handout, not the Cell-scoped one",
@@ -1303,7 +1317,7 @@ def test_agent_hub_recruit_flag(p):
     record("hub", "no 'No Character Sheet Yet' stamp for the Agent that already has one",
            "No Character Sheet Yet" not in page.eval_on_selector("#ah-charstamp-OWEN-CS12", "el => el.textContent"), "")
 
-    page.click('.tw[data-tab="PRIY-AN34"]')
+    click_tab(page, '.tw[data-tab="PRIY-AN34"]')
     page.wait_for_timeout(150)
     priy_btn = page.eval_on_selector('#ah-play-PRIY-AN34', "el => el.textContent.trim()")
     record("hub", "Agent with no character yet flips to Recruit", "Recruit" in priy_btn, priy_btn)
@@ -1631,7 +1645,7 @@ def test_acell_cells(p):
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
     # Cells lives behind its own folder tab now (Play is active by default).
-    page.click('.tw[data-tab="cells"]')
+    click_tab(page, '.tw[data-tab="cells"]')
     page.wait_for_timeout(500)
 
     record("acell", "Cells starts empty with a prompt to create one",
@@ -1788,7 +1802,7 @@ def test_acell_handouts(p):
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
-    page.click('.tw[data-tab="handouts"]')
+    click_tab(page, '.tw[data-tab="handouts"]')
     page.wait_for_timeout(500)
 
     record("acell", "Handouts starts empty with a prompt to file one",
@@ -1940,7 +1954,7 @@ def test_acell_sheet(p):
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(400)
-    page.click('.tw[data-tab="sheet"]')
+    click_tab(page, '.tw[data-tab="sheet"]')
     page.wait_for_timeout(600)
 
     headers = page.eval_on_selector_all("#sheet-wrap th", "els => els.map(e=>e.textContent)")
@@ -2055,7 +2069,7 @@ def test_acell_music(p):
     page.route("**/script.google.com/**", fake_apps_script)
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
-    page.click('.tw[data-tab="music"]')
+    click_tab(page, '.tw[data-tab="music"]')
     page.wait_for_timeout(150)
 
     record("acell", "the channel dial defaults to channel 1 (no free-text channel field anymore)",
@@ -2280,7 +2294,7 @@ def test_acell_music_backend_not_deployed(p):
     page.route("**/script.google.com/**", fake_apps_script)
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
-    page.click('.tw[data-tab="music"]')
+    click_tab(page, '.tw[data-tab="music"]')
     page.wait_for_timeout(150)
     page.fill("#music-url-input", "https://youtube.com/watch?v=dQw4w9WgXcQ")
     page.click("#music-set-btn")
@@ -2356,7 +2370,7 @@ def test_acell_admin(p):
     page.route("**/script.google.com/**", fake_apps_script)
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
-    page.click('.tw[data-tab="admin"]')
+    click_tab(page, '.tw[data-tab="admin"]')
     page.wait_for_timeout(400)
 
     record("acell", "Admin lists every Agent on file",
@@ -3494,7 +3508,7 @@ def test_mobile_no_overflow(p):
     mock_routes(page)
     page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
-    page.click("#tw-ids")
+    click_tab(page, "#tw-ids")
     page.wait_for_timeout(300)
     scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
     record("mobile", "dg-agent-portal.html Cover IDs tab has no horizontal overflow at 390px viewport",
@@ -3594,11 +3608,11 @@ def test_agent_portal_cover(p, agent):
     page.wait_for_timeout(300)
 
     # tabs sanity (regression check)
-    page.click("#tw-agent"); page.wait_for_timeout(150)
+    click_tab(page, "#tw-agent"); page.wait_for_timeout(150)
     agent_visible = page.is_visible("#panel-agent")
-    page.click("#tw-ids"); page.wait_for_timeout(150)
+    click_tab(page, "#tw-ids"); page.wait_for_timeout(150)
     ids_visible = page.is_visible("#panel-ids")
-    page.click("#tw-cover"); page.wait_for_timeout(150)
+    click_tab(page, "#tw-cover"); page.wait_for_timeout(150)
     cover_visible = page.is_visible("#panel-cover")
     record("agent-portal", "tab switching (regression)", agent_visible and ids_visible and cover_visible,
            f"agent={agent_visible} ids={ids_visible} cover={cover_visible}")
@@ -3645,7 +3659,7 @@ def test_agent_portal_agent_file(p, code):
     mock_routes(page)
     page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(200)
-    page.click("#tw-agent")
+    click_tab(page, "#tw-agent")
     page.wait_for_timeout(150)
     gate_input = page.locator("#af-code-input")
     if gate_input.count():
@@ -3700,7 +3714,7 @@ def test_agent_file_kia_stamp(p):
 
     page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
-    page.click("#tw-agent")
+    click_tab(page, "#tw-agent")
     page.wait_for_timeout(150)
 
     page.fill("#af-code-input", "DEAD-0001")
