@@ -67,106 +67,101 @@ body{
   align-items:center;
 }
 
-/* ── FOLDER WRAPPER ──
-   perspective backs the "Lift" hover below (.folder:hover tilts the
-   active tab and the body together, like picking the folder up off
-   the desk) -- matches assets/theme-folder.css's shared treatment. */
+/* ── FOLDER WRAPPER --
+   The manila texture is painted ONCE here, behind everything, rather
+   than separately on .tab-strip/.tw/.folder-body -- those stay
+   background:transparent so this one shared image shows through all of
+   them continuously. Mirrors assets/theme-folder.css's shared treatment
+   (this page predates that extraction and keeps its own copy for its
+   slightly different sizing: 32px tab-strip inset, 860px folder width).
+   No JS measurement needed, unlike the per-tab clip-path system this
+   replaced -- that turned out too fragile across real browsers (WebKit
+   in particular has known issues combining clip-path with filter,
+   exactly the combination that system relied on). ── */
 .folder{
   width:100%;
   max-width:860px;
-  filter:drop-shadow(0 28px 56px rgba(0,0,0,.88)) drop-shadow(0 6px 14px rgba(0,0,0,.55));
-  perspective:1200px;
+  position:relative;
+}
+.folder::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  z-index:0;
+  border-radius:3px;
+  background-image:
+    linear-gradient(180deg, rgba(255,246,220,.08) 0%, rgba(0,0,0,0) 25%, rgba(0,0,0,.12) 100%),
+    url('assets/manila-texture.jpg');
+  background-repeat:no-repeat;
+  background-size:cover;
+  background-position:center;
+  box-shadow:0 28px 56px rgba(0,0,0,.6), 0 6px 14px rgba(0,0,0,.4);
 }
 
-/* ── TAB STRIP -- CSS abstraction of manila folder ear tabs.
-   Each .tw's real shape (the rounded tab notch cut into its own
-   silhouette, not a plain rectangle) is computed by
-   assets/folder-tabs.js from actual measured pixel positions -- mirrors
-   assets/theme-folder.css's shared tab system (this page predates that
-   extraction and keeps its own copy for its slightly different sizing:
-   32px tab-strip inset, 860px folder width). Until that JS runs, .tw's
-   own border-radius below is a plain rounded-rect fallback.
-   nowrap + overflow-x:auto rather than wrapping onto multiple rows: the
-   single shared clip-path coordinate frame folder-tabs.js builds only
-   works for one row. ── */
+/* ── TAB STRIP -- plain flex row, natural per-tab sizing, wraps onto a
+   second row if there are more tabs than fit. ── */
 .tab-strip{
   display:flex;
   align-items:flex-end;
+  flex-wrap:wrap;
   padding-left:32px;
   gap:4px;
   position:relative;
   z-index:2;
   user-select:none;
-  flex-wrap:nowrap;
-  overflow-x:auto;
-  overflow-y:hidden;
-  -webkit-overflow-scrolling:touch;
-  scrollbar-width:none;
-  height:46px;
 }
-.tab-strip::-webkit-scrollbar{ display:none; }
 
 .tw{
   position:relative;
-  height:46px;
-  padding:13px 18px 0;
+  padding:12px 18px 10px;
   cursor:pointer;
   display:flex;
-  align-items:flex-start;
+  align-items:center;
   justify-content:center;
   gap:6px;
-  border-radius:8px 8px 0 0; /* fallback before folder-tabs.js applies the real clip-path */
-  background-image:
-    linear-gradient(180deg, rgba(255,246,220,.1) 0%, rgba(0,0,0,0) 40%, rgba(0,0,0,.12) 100%),
-    url('assets/manila-texture.jpg');
-  background-repeat:no-repeat;
-  background-size:auto, cover; /* fallback before folder-tabs.js sets the real seam-matched size */
-  background-color:#bab3a0;
-  transform:translateY(8px) scale(.99);
-  transition:transform .28s cubic-bezier(.22,.85,.34,1), filter .28s ease;
-  filter:brightness(.74) saturate(.9) drop-shadow(0 4px 5px rgba(0,0,0,.4));
+  border-radius:8px 8px 0 0;
+  overflow:hidden; /* clips the dimming ::after below to these rounded corners */
+  transform:translateY(6px);
+  transition:transform .22s cubic-bezier(.22,.85,.34,1);
   z-index:1;
 }
-
-/* Once folder-tabs.js has measured a tab's natural position, it's
-   switched to this -- sized to the tab-strip's full CONTENT width (set
-   inline by folder-tabs.js), windowed down to its own tab (plus the
-   shared shoulder) by clip-path alone. */
-.tw.dgft-positioned{
+/* Dimming is a plain translucent overlay, not filter:brightness() on the
+   tab itself -- .tw has no background of its own (it's transparent over
+   .folder::before's shared texture), and filter only affects an
+   element's own painted pixels, not whatever shows through it from an
+   ancestor. */
+.tw::after{
+  content:'';
   position:absolute;
-  top:0;
-  left:0;
-  height:100%;
-  padding:0;
-  display:block;
+  inset:0;
+  background:rgba(10,8,2,.34);
+  transition:background .22s ease;
+  pointer-events:none;
 }
-.tw.dgft-positioned span{
-  position:absolute;
-  top:13px;
-  text-align:center;
-}
+.tw.active::after{ background:rgba(10,8,2,0); }
+.tw:hover:not(.active)::after{ background:rgba(10,8,2,.16); }
 
 .tw.active{
-  background-color:#d7d0be;
-  transform:translateY(0) scale(1);
-  filter:brightness(1) drop-shadow(0 8px 12px rgba(0,0,0,.42));
+  transform:translateY(0);
   z-index:4;
+  box-shadow:0 6px 10px -4px rgba(0,0,0,.35);
 }
 
 .tw:hover:not(.active){
-  transform:translateY(2px) scale(.995) rotateX(6deg);
-  filter:brightness(.9) saturate(.96) drop-shadow(0 8px 12px rgba(0,0,0,.46));
+  transform:translateY(2px);
 }
 
 /* The whole folder lifts together on hover -- the active tab leads the
    motion a beat ahead of the body, like picking it up off the desk. */
 .folder:hover .tw.active{
-  transform:translateY(-6px) rotateX(3deg);
-  filter:brightness(1.03) drop-shadow(0 16px 22px rgba(0,0,0,.5));
+  transform:translateY(-5px);
+  box-shadow:0 14px 20px -6px rgba(0,0,0,.45);
 }
 
 /* Tab label text */
 .tw span{
+  position:relative;
+  z-index:1;
   font-family:'Special Elite', monospace;
   font-size:9px;
   letter-spacing:.14em;
@@ -177,24 +172,13 @@ body{
 }
 
 /* ── FOLDER BODY --
-   Texture continues seamlessly from the active tab above it:
-   folder-tabs.js gives both the same background-size (real pixels, not
-   "cover") with the body's position offset by exactly the tab strip's
-   own height. ── */
+   Transparent like .tw, so .folder::before's shared texture continues
+   underneath with no seam against whichever tab is active above it. ── */
 .folder-body{
-  background-image:
-    linear-gradient(180deg, rgba(0,0,0,.06) 0%, rgba(0,0,0,0) 12%, rgba(0,0,0,.1) 100%),
-    url('assets/manila-texture.jpg');
-  background-repeat:no-repeat;
-  background-size:auto, cover;
-  background-color:#d7d0be;
+  position:relative;
   padding:3.5% 4.5% 3.5% 5.5%;
   min-height:480px;
-  position:relative;
-  border-radius:0 0 3px 3px;
-  box-shadow:0 14px 26px rgba(0,0,0,.35);
-  z-index:3;
-  overflow:hidden;
+  z-index:2;
   transition:transform .32s cubic-bezier(.22,.85,.34,1);
 }
 .folder:hover .folder-body{ transform:translateY(-6px); }
@@ -2032,7 +2016,6 @@ body{
 </div><!-- folder -->
 
 <script src="assets/agent-code.js"></script>
-<script src="assets/folder-tabs.js"></script>
 <script>
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
 
@@ -2055,14 +2038,11 @@ function switchTab(tab) {
   TABS.forEach(t => {
     const tw = document.getElementById('tw-'+t);
     const panel = document.getElementById('panel-'+t);
-    // Preserve folder-tabs.js's dgft-positioned class -- without it this
-    // reassignment silently reverts the tab to its pre-JS fallback shape.
-    const positioned = tw.classList.contains('dgft-positioned') ? 'dgft-positioned ' : '';
     if (t === tab) {
-      tw.className = 'tw ' + positioned + 'active';
+      tw.className = 'tw active';
       panel.style.display = 'block';
     } else {
-      tw.className = 'tw ' + positioned + 'inactive';
+      tw.className = 'tw inactive';
       panel.style.display = 'none';
     }
   });

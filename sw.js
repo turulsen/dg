@@ -16,7 +16,7 @@
    the activate handler below drops the old cache instead of pages
    being stuck on stale JS forever.
    ══════════════════════════════════════════════ */
-const CACHE_NAME = 'dg-hub-shell-v4';
+const CACHE_NAME = 'dg-hub-shell-v5';
 
 const SHELL_FILES = [
   './',
@@ -29,7 +29,6 @@ const SHELL_FILES = [
   'assets/theme-folder.css',
   'assets/table-radio.js',
   'assets/agent-code.js',
-  'assets/folder-tabs.js',
   'assets/manila-texture.jpg',
   'assets/mars-tech-seal.png',
   'assets/restricted-stamp.png',

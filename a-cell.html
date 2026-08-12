@@ -106,13 +106,22 @@
     background:rgba(28,22,8,.04); border:1px solid var(--rule); padding:8px;
   }
   .play-agent-btn{
-    text-align:left; background:transparent; border:1px solid var(--rule); color:var(--ink);
-    padding:9px 11px; font-family:inherit; cursor:pointer; transition:border-color .15s, background .15s;
+    text-align:left; border:none; color:var(--ink);
+    padding:10px 12px; font-family:inherit; cursor:pointer;
+    position:relative; overflow:hidden; border-radius:6px;
+    background-image:
+      linear-gradient(180deg, rgba(255,246,220,.08) 0%, rgba(0,0,0,0) 35%, rgba(0,0,0,.16) 100%),
+      url('assets/manila-texture.jpg');
+    background-repeat:no-repeat;
+    background-size:cover;
+    background-position:center;
+    box-shadow:0 3px 8px rgba(0,0,0,.28);
+    transition:transform .15s ease, box-shadow .15s ease;
   }
-  .play-agent-btn:hover{ border-color:var(--ink-2); }
-  .play-agent-btn.active{ border-color:var(--red); background:rgba(139,26,26,.08); }
+  .play-agent-btn:hover{ transform:translateY(-1px); box-shadow:0 6px 12px rgba(0,0,0,.34); }
+  .play-agent-btn.active{ outline:2px solid var(--red); outline-offset:-2px; }
   .play-agent-btn .pa-name{ font-family:'Special Elite',monospace; font-size:13px; color:var(--ink); overflow-wrap:anywhere; }
-  .play-agent-btn .pa-meta{ color:var(--ink-3); font-size:10px; margin-top:3px; font-family:'Courier Prime',monospace; }
+  .play-agent-btn .pa-meta{ color:var(--ink-2); font-size:10px; margin-top:3px; font-family:'Courier Prime',monospace; }
   #play-view.paper{ padding:0; min-height:180px; overflow:visible; }
   .play-view-empty, .play-loading, .play-error{
     color:var(--ink-3); font-size:13px; font-style:italic; text-align:center; padding:26px 10px;
@@ -222,11 +231,20 @@
   .cells-create-field input:focus{ outline:none; border-bottom-color:var(--red); }
   .cells-create-error{ color:var(--red); font-size:11px; width:100%; min-height:1.3em; }
   .cells-groups{ display:flex; flex-direction:column; gap:12px; margin-bottom:var(--s5); }
-  .cell-card{ background:rgba(28,22,8,.04); border:1px solid var(--rule); padding:14px 16px; }
+  .cell-card{
+    position:relative; overflow:hidden; border-radius:8px; padding:14px 16px;
+    background-image:
+      linear-gradient(180deg, rgba(255,246,220,.08) 0%, rgba(0,0,0,0) 30%, rgba(0,0,0,.14) 100%),
+      url('assets/manila-texture.jpg');
+    background-repeat:no-repeat;
+    background-size:cover;
+    background-position:center;
+    box-shadow:0 4px 10px rgba(0,0,0,.3);
+  }
   .cell-card-head{ display:flex; align-items:baseline; justify-content:space-between; gap:14px; flex-wrap:wrap; }
   .cell-card-head-info{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
   .cell-card-name{ font-family:'Special Elite',monospace; font-size:15px; color:var(--ink); }
-  .cell-card-handler{ font-size:11px; color:var(--ink-3); font-family:'Courier Prime',monospace; }
+  .cell-card-handler{ font-size:11px; color:var(--ink-2); font-family:'Courier Prime',monospace; }
   .cell-card-handler b{ color:var(--ink); }
   .cell-delete-btn{ border-color:var(--red); color:var(--red); font-size:9px; padding:5px 9px; }
   .cell-delete-btn:hover{ background:var(--red); color:var(--paper); }
@@ -733,7 +751,6 @@
 
 <footer class="site-footer">Delta Green is a trademark of Arc Dream Publishing. Unofficial fan-made campaign tools.</footer>
 
-<script src="assets/folder-tabs.js"></script>
 <script>
 /* ══════════════════════════════════════════════
    A-CELL CLEARANCE GATE
@@ -831,20 +848,11 @@
     if (!tab) return;
     var id = tab.dataset.tab;
     strip.querySelectorAll('.tw').forEach(function (t) {
-      // Preserve folder-tabs.js's dgft-positioned class -- without it this
-      // reassignment silently reverts the tab to its pre-JS fallback shape.
-      var positioned = t.classList.contains('dgft-positioned') ? 'dgft-positioned ' : '';
-      t.className = 'tw ' + positioned + (t.dataset.tab === id ? 'active' : 'inactive');
+      t.className = 'tw ' + (t.dataset.tab === id ? 'active' : 'inactive');
     });
     document.querySelectorAll('.folder-body > .tab-panel').forEach(function (p) {
       p.classList.toggle('active', p.id === 'panel-' + id);
     });
-    // Scroll by the tab's own <span> (its real visible slot), not .tw
-    // itself -- once positioned, .tw spans the strip's full scrollable
-    // content width and is windowed down to its own tab by clip-path
-    // alone, so scrollIntoView on .tw would see no work to do.
-    var label = tab.querySelector('span');
-    if (label) label.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   });
 })();
 </script>
