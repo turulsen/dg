@@ -726,6 +726,15 @@ def test_cloud_save(p):
     record("stats-terminal", "the auto-minted cloud code is persisted to localStorage",
            bool(code) and save_posts and save_posts[0].get("agent_code") == code, f"code={code!r}")
 
+    # Minting a cloud code (any path into stats/index.html -- typing a name,
+    # or an importer applying state) must also register the agent in
+    # dg_agent_roster, the ONLY key agent-hub.html's player-facing roster
+    # reads. Without this, an imported/typed-in character syncs fine to the
+    # Handler's cloud roster but never appears in the player's own Hub.
+    roster = page.evaluate("JSON.parse(localStorage.getItem('dg_agent_roster') || '{}')")
+    record("stats-terminal", "auto-minting a cloud code also registers the agent in the local Hub roster",
+           code in roster and roster[code].get("char_name") == "Priya Anand", f"roster={roster}")
+
     record("stats-terminal", "there is no Start Cloud Save button -- naming the agent is the only trigger",
            page.locator("#cloud-save-bar button", has_text="Start Cloud Save").count() == 0)
 
@@ -754,6 +763,10 @@ def test_cloud_save(p):
            page.eval_on_selector("#cs-name", "el => el.value") == "Cloud Loaded Character")
     record("stats-terminal", "Load by Code re-activates Cloud Save under the loaded code",
            page.evaluate("window.dgCloudSave.getCloudCode()") == "TESTCODE")
+    roster_after_load = page.evaluate("JSON.parse(localStorage.getItem('dg_agent_roster') || '{}')")
+    record("stats-terminal", "Load by Code also registers the pulled-down agent in the local Hub roster",
+           "TESTCODE" in roster_after_load and roster_after_load["TESTCODE"].get("char_name") == "Cloud Loaded Character",
+           f"roster={roster_after_load}")
 
     page.evaluate("window.dgCloudSave.loadFromCloud('NOPE-CODE')")
     page.wait_for_timeout(400)

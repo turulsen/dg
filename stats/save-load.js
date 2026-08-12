@@ -927,7 +927,21 @@ function matchProfessionKey(profStr) {
     ========================================================================= */
     window.addEventListener('load', () => {
         setTimeout(() => {
-            if (!loadFromURL()) loadLocal();
+            // A `?load=CODE` deep link (agent-hub.html's Play button) means
+            // cloud-sync.js's own DOMContentLoaded handler is already
+            // fetching that exact Agent's cloud save asynchronously (JSONP,
+            // network-timing dependent) and will call applyState() itself --
+            // either with the real character, or via startRecruitFlow()'s
+            // deliberate reset if none exists yet. loadLocal() falling
+            // through here raced that fetch: on a slow connection the local
+            // restore's fixed 200 ms timer could fire, and the cloud
+            // fetch's own save() (300 ms after its applyState()) not yet
+            // have caught up, so this device's *previous* character would
+            // silently clobber the just-loaded Agent -- looking exactly
+            // like the new Agent's stats had been wiped. Cloud-sync.js is
+            // the sole authority whenever ?load= is present.
+            const hasCloudLoad = new URLSearchParams(window.location.search).has('load');
+            if (!loadFromURL() && !hasCloudLoad) loadLocal();
         }, 200);
     });
 

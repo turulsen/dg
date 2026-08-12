@@ -361,9 +361,22 @@
                 const bytes = await file.arrayBuffer();
                 const pdfDoc = await PDFDocument.load(bytes);
                 const form = pdfDoc.getForm();
+                // pdf-lib silently fabricates an empty AcroForm instead of throwing
+                // when a PDF has none at all (e.g. a flattened/rasterized export like
+                // Kappa Black's PDF download) -- every field read below would then
+                // quietly fail and "succeed" with a blank character. Fail loudly here
+                // instead, before any of that happens.
+                if (form.getFields().length === 0) {
+                    throw new Error('NO_FORM_FIELDS');
+                }
 
                 function readField(name) {
-                    try { return form.getTextField(name).getText() || ''; } catch (_) { return ''; }
+                    try { return form.getTextField(name).getText() || ''; } catch (_) { /* fall through */ }
+                    // Some sheet variants (e.g. an Employer picker) use a dropdown
+                    // instead of a plain text field for the same field name --
+                    // getTextField() throws on those, so try a dropdown read too
+                    // before giving up.
+                    try { return form.getDropdown(name).getSelected()[0] || ''; } catch (_) { return ''; }
                 }
                 function readCheck(name) {
                     try { return form.getCheckBox(name).isChecked(); } catch (_) { return false; }
@@ -448,7 +461,10 @@
                 }
             } catch (err) {
                 console.error('[DG PDF Import]', err);
-                if (window.showToast) showToast('PDF import failed \u2014 see console for details.');
+                const msg = err?.message === 'NO_FORM_FIELDS'
+                    ? "This PDF has no fillable form fields \u2014 it looks like a flattened/printed export (e.g. Kappa Black's PDF download), not the fillable DD Form 315. Export from Kappa Black as .toml or .json instead, or use the official fillable DD Form 315 PDF."
+                    : 'PDF import failed \u2014 see console for details.';
+                if (window.showToast) showToast(msg); else alert(msg);
             }
     }
 

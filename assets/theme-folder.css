@@ -71,7 +71,12 @@ body.folder-theme{
   z-index:2;
   user-select:none;
   flex-wrap:wrap;
-  row-gap:0;
+  /* Inactive tabs sit translateY(6px) down to look tucked behind the
+     active one -- fine within a single row, but with enough tabs to
+     wrap (more than a couple agents on a narrow screen) a zero row-gap
+     let that same downward shift drag a tab into the row below it,
+     overlapping instead of stacking. */
+  row-gap:10px;
 }
 
 .tw{

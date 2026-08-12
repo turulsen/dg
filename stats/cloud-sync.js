@@ -33,6 +33,29 @@
     const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
     const CLOUD_CODE_KEY = 'dg_stats_cloud_code';
     const SYNC_DEBOUNCE_MS = 4000;
+    const ROSTER_KEY = 'dg_agent_roster';
+
+    // agent-hub.html's player-facing roster reads only this key, written
+    // only by dg-agent-portal.html's "New Recruit" flow -- a character
+    // built or imported straight here (any importer, or a Cloud Save code
+    // typed in) never touched it, so it existed in the cloud/Handler view
+    // but was invisible in this browser's own Agent Hub. Mirror just
+    // enough of rosterAddAgent()'s shape (dg-agent-portal.html) to show up
+    // there; merge rather than overwrite so a codename/face plate set
+    // later via the Agent Portal's Cover form isn't clobbered.
+    function rosterUpsert(code, name) {
+        if (!code) return;
+        try {
+            const roster = JSON.parse(localStorage.getItem(ROSTER_KEY) || '{}');
+            const existing = roster[code] || {};
+            roster[code] = Object.assign({}, existing, {
+                code: code,
+                char_name: name || existing.char_name || '',
+                saved_at: Date.now(),
+            });
+            localStorage.setItem(ROSTER_KEY, JSON.stringify(roster));
+        } catch (e) { /* best effort, same as every other localStorage write here */ }
+    }
 
     // Shared with dg-agent-portal.html and stats/agent-portal-export.js
     // via assets/agent-code.js -- was its own independent copy of the
@@ -61,6 +84,7 @@
         const code = getCloudCode();
         if (!code || !window.dgSaveLoad?.collectState) return;
         const state = window.dgSaveLoad.collectState();
+        rosterUpsert(code, state.bio?.name);
         fetch(APPS_SCRIPT_URL, {
             method: 'POST', mode: 'no-cors', keepalive: true,
             headers: { 'Content-Type': 'text/plain' },
@@ -85,6 +109,7 @@
         if (!name || name === 'Agent') return '';
         const code = genCloudCode(name);
         setCloudCode(code);
+        rosterUpsert(code, name);
         pushToCloud();
         return code;
     }
@@ -138,6 +163,7 @@
                 if (typeof syncLpFromForm === 'function') syncLpFromForm();
             }, 300);
             setCloudCode(code);
+            rosterUpsert(code, state.bio?.name);
             if (status) status.textContent = 'Loaded!';
         };
 
