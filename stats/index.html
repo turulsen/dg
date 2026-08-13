@@ -96,6 +96,24 @@
 </head>
 
 <body>
+    <script>
+        // A ?load=CODE visit (e.g. agent-hub.html's Play link) always
+        // starts by rendering the blank/default New Recruit UI -- the
+        // real character only appears once the async cloud fetch resolves
+        // and cloud-sync.js applies it -- so every such visit showed a
+        // brief, confusing flash of an empty sheet (Import Agent box,
+        // default stats) before snapping to the real, populated one.
+        // Gate #app-main behind this class as early as possible (before
+        // it's even parsed, let alone painted) so that flash never
+        // renders at all; cloud-sync.js's ?load= handler removes the
+        // class once the load has actually settled (found, not found, or
+        // errored -- see its own safety timeout for the "never settles"
+        // case).
+        if (new URLSearchParams(location.search).get('load')) {
+            document.body.classList.add('dg-agent-loading');
+        }
+    </script>
+    <div id="dg-agent-loading-notice">Loading Agent&hellip;</div>
     <div style="max-width:1400px;margin:0 auto;padding:16px 20px 0;">
         <a href="../agent-hub.html" style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.05em;color:#8a8a8a;text-decoration:none;">&larr; Agent Hub</a>
     </div>

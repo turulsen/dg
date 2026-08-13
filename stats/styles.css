@@ -3493,6 +3493,35 @@ textarea {
     color: #ff8a8a !important;
 }
 
+/* ── ?load=CODE loading gate (see the inline script at the top of
+   stats/index.html's <body>) -- hides the sheet, not just the New
+   Recruit block, since the blank flash this replaces showed default
+   stats too, not only the Import box. visibility:hidden (not
+   display:none) keeps #app-main's layout/size intact so nothing reflows
+   when it reappears. Deliberately theme-agnostic like the cog/toast --
+   this fires before any theme class is even applied. ── */
+body.dg-agent-loading #app-main {
+    visibility: hidden;
+}
+
+#dg-agent-loading-notice {
+    display: none;
+}
+
+body.dg-agent-loading #dg-agent-loading-notice {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    z-index: 500;
+    align-items: center;
+    justify-content: center;
+    background: #0a0a0a;
+    color: #8a8a8a;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    letter-spacing: 0.05em;
+}
+
 #dg-toast {
     position: fixed;
     bottom: 24px;

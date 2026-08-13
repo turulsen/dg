@@ -203,6 +203,10 @@
         const script = document.createElement('script');
         script.id = '_dg_cloud_load_script';
         script.src = APPS_SCRIPT_URL + '?action=load_character&code=' + encodeURIComponent(code) + '&callback=' + cbName;
+        script.onerror = () => {
+            delete window[cbName];
+            if (status) status.textContent = 'Connection error. Try again.';
+        };
         document.head.appendChild(script);
     }
 
@@ -295,8 +299,25 @@
         const loadCode = params.get('load');
         if (!loadCode) return;
         const wantLive = params.get('live') === '1';
+        // Matches the inline script at the top of <body> that gated
+        // #app-main behind body.dg-agent-loading the instant it saw this
+        // same ?load= param -- lift the gate once this load has actually
+        // settled, whichever way it settles, so the sheet only ever
+        // becomes visible already showing its final state (never a blank
+        // flash first). The safety timeout covers a load that never calls
+        // either callback at all (a malformed response that's neither OK
+        // nor NOT_FOUND, a JSON parse failure, or a script tag that never
+        // fires because the connection just hangs) -- without it, a
+        // request stuck in that gap would leave the page gated forever.
+        let revealed = false;
+        const revealGate = () => {
+            if (revealed) return;
+            revealed = true;
+            document.body.classList.remove('dg-agent-loading');
+        };
+        setTimeout(revealGate, 8000);
         loadFromCloud(loadCode, {
-            onNotFound: () => startRecruitFlow(loadCode),
+            onNotFound: () => { revealGate(); startRecruitFlow(loadCode); },
             // Chained to fire only once the loaded state has actually been
             // applied (past the same page-init hazard window
             // applyLoadedState() itself waits out) -- an independent timer
@@ -304,7 +325,7 @@
             // inside that same hazard window, and get its own effects
             // (buildLpSheet() reading stats that are still default 3s)
             // silently stomped right along with it.
-            onApplied: () => { if (wantLive && typeof setLivePlay === 'function') setLivePlay(true); },
+            onApplied: () => { revealGate(); if (wantLive && typeof setLivePlay === 'function') setLivePlay(true); },
         });
     });
 
