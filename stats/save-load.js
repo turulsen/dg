@@ -921,6 +921,13 @@ function matchProfessionKey(profStr) {
        PUBLIC API
     ========================================================================= */
     window.dgSaveLoad = { save, loadLocal, share, clearSave, clearSheet, resetSheet, downloadSheet, uploadSheet, collectState, applyState, importFromSheet };
+    // Every other file's toasts (pdf-export.js, sheets-export.js,
+    // sheets-import.js, scripts.js) are gated behind `if (window.showToast)`
+    // -- this was the only definition of showToast() and it was never
+    // actually attached to window, so all of those calls silently no-op'd
+    // (or fell through to a jarring native alert() on the paths with an
+    // `else`) rather than showing a toast, in every one of those files.
+    window.showToast = showToast;
 
     /* =========================================================================
        INIT — run after scripts.js window.onload (and its 50 ms inner timer)

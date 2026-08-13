@@ -520,6 +520,68 @@ def test_kappablack_toml_import(p):
     page.close()
     return errs
 
+def test_import_agent_paste_text(p):
+    """The primary Import Agent drop zone (stats/index.html) only ever
+    accepted files -- unusable on a phone for Kappa Black exports, since
+    Kappa Black's mobile flow shows the character as on-screen text to
+    copy, not a file a phone can save and hand back to a file input. This
+    covers the "Can't drop a file? Paste text instead" fallback
+    (importAgentText() in scripts.js), reusing the same real Kappa Black
+    .toml fixture as test_kappablack_toml_import, and also a plain JSON
+    paste, without ever touching the Advanced section's own textarea."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+
+    record("stats-terminal", "the paste fallback is collapsed by default (not cluttering the primary drop zone)",
+           page.eval_on_selector("#agent-paste-details", "el => el.open") == False)
+
+    toml_path = os.path.join(HERE, "fixtures", "kappablack-export.toml")
+    toml_text = open(toml_path, encoding="utf-8").read()
+    page.evaluate("document.getElementById('agent-paste-details').open = true")
+    page.fill("#agent-paste-area", toml_text)
+    page.click("#agent-paste-details button")
+    page.wait_for_timeout(600)
+
+    name_val = page.eval_on_selector("#cs-name", "el => el.value")
+    record("stats-terminal", "pasting a Kappa Black .toml into the primary paste box loads the character name",
+           name_val == "Alistair Islay Lagavulin", f"value={name_val!r}")
+    prof_val = page.eval_on_selector("#cs-profession-select", "el => el.value")
+    record("stats-terminal", "pasting a Kappa Black .toml into the primary paste box resolves the profession",
+           prof_val == "pilot_sailor", f"value={prof_val!r}")
+
+    # A plain JSON paste (this site's own native export shape) should also
+    # route correctly, proving the paste box isn't TOML-only.
+    page.evaluate("document.getElementById('cs-name').value = ''")
+    own_json = json.dumps({"v": 1, "bio": {"name": "Pasted JSON Agent"}})
+    page.fill("#agent-paste-area", own_json)
+    page.click("#agent-paste-details button")
+    page.wait_for_timeout(400)
+    name_val2 = page.eval_on_selector("#cs-name", "el => el.value")
+    record("stats-terminal", "pasting this site's own JSON export into the primary paste box also works",
+           name_val2 == "Pasted JSON Agent", f"value={name_val2!r}")
+
+    # Garbage text should fail cleanly with a toast, not a silent no-op or a
+    # thrown exception -- matches importAgentAuto()'s own unrecognized-file
+    # handling, including its deliberate console.error (filtered out of the
+    # exception check below, same as that test does for its own case).
+    page.fill("#agent-paste-area", "not a character export")
+    page.click("#agent-paste-details button")
+    page.wait_for_timeout(300)
+    record("stats-terminal", "unrecognized pasted text fails with a toast, not a silent no-op",
+           "Couldn't recognize" in (page.eval_on_selector("#dg-toast", "el => el.textContent") or ""))
+
+    real_errs = [e for e in errs if "Unrecognized text format" not in e]
+    record("stats-terminal", "no JS exceptions", len(real_errs) == 0, "; ".join(real_errs))
+    page.close()
+    return errs
+
 def test_import_agent_auto_detect(p):
     """The single "Import Agent" drop zone at the top of the page
     (#agent-drop-zone / #agent-import-auto-input) replaces having to pick
@@ -3962,6 +4024,8 @@ def main():
         safe(test_foundry_import_profession_and_outfit, browser, area="stats-terminal")
 
         safe(test_kappablack_toml_import, browser, area="stats-terminal")
+
+        safe(test_import_agent_paste_text, browser, area="stats-terminal")
 
         safe(test_import_agent_auto_detect, browser, area="stats-terminal")
 

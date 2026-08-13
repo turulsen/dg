@@ -2531,6 +2531,31 @@ function importAgentTextByFormat(text, format) {
     applyImportedAgentData(data);
 }
 
+// Paste-text sibling of importAgentAuto() -- for Kappa Black's .toml/.json
+// or this site's own .json, pasted directly rather than dropped as a file.
+// Exists because Kappa Black's mobile export flow shows the character as
+// on-screen text to copy, not a file a mobile browser can easily save and
+// then re-pick from a file input -- the primary Import Agent drop zone was
+// otherwise unusable on a phone for exactly the files it's meant to accept.
+// Reuses the same content-sniffing importAgentAuto() falls back to for an
+// unrecognized/extensionless file, and the same importAgentTextByFormat()
+// every text-based import already funnels through.
+function importAgentText(text) {
+    const trimmed = (text || '').trim();
+    try {
+        if (!trimmed) throw new Error('Paste some character text first.');
+        if (trimmed.startsWith('{')) return void importAgentTextByFormat(trimmed, 'json');
+        if (/^[A-Za-z_][\w]*\s*=/.test(trimmed)) return void importAgentTextByFormat(trimmed, 'toml');
+        throw new Error('Unrecognized text format.');
+    } catch (err) {
+        console.error('[DG Import Agent]', err);
+        const msg = "Couldn't recognize that text. Paste a Kappa Black .toml or .json export, "
+            + "or this site's own exported .json.";
+        if (window.showToast) showToast(msg); else alert(msg);
+    }
+}
+window.importAgentText = importAgentText;
+
 async function importAgentAuto(file) {
     if (!file) return;
     try {

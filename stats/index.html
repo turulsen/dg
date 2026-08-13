@@ -153,6 +153,22 @@
                     accept=".toml,.json,.pdf,.xlsx,.html,.htm,application/json,application/pdf,text/html,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     style="display:none" onchange="agentDropZone.fileSelected(event)">
             </div>
+            <!-- Paste fallback for the drop zone above -- Kappa Black's
+                 mobile export shows the character as on-screen text to
+                 copy, not a file a phone can save and re-pick from a file
+                 input, so dropping/browsing is often not an option there. -->
+            <details id="agent-paste-details"
+                style="max-width:480px;margin:0 auto var(--spacing-lg);font-family:'JetBrains Mono',monospace;font-size:0.85em;text-align:center;">
+                <summary style="cursor:pointer;opacity:.75;">Can't drop a file? Paste text instead</summary>
+                <div style="margin-top:8px;">
+                    <textarea id="agent-paste-area" rows="5"
+                        style="width:100%;box-sizing:border-box;font-family:'JetBrains Mono',monospace;font-size:0.9em;"
+                        placeholder="Paste a Kappa Black .toml or .json export here..."></textarea>
+                    <button type="button"
+                        onclick="importAgentText(document.getElementById('agent-paste-area').value)"
+                        style="margin-top:6px;">Import Pasted Text</button>
+                </div>
+            </details>
             <!-- Cloud Save -- automatic background sync of this character to
                  the Agent Portal backend by Agent Code, so it can be picked up
                  on another device without a file changing hands. Starts on its
