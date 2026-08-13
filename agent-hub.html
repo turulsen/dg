@@ -155,8 +155,11 @@
    Every Agent (plus a pinned "+ New Recruit") is a folder ear-tab;
    the active tab's paper panel shows that Agent's dossier with three
    actions:
-     Play/Recruit -> stats/index.html?load=CODE&theme=field-doc
-                     (label flips to "Recruit" if this Agent has no
+     Play/Recruit -> stats/index.html?load=CODE&live=1
+                     (Live Play switches on over whichever theme this
+                     device last used -- Live Play is a mode, not a
+                     theme of its own, see setLivePlay() in scripts.js.
+                     Label flips to "Recruit" if this Agent has no
                      cloud character yet -- checked async per agent
                      against load_character, see checkCharacterExists)
      Agent File    -> dg-agent-portal.html?code=CODE#agent
@@ -308,7 +311,7 @@
           <div class="stamps" id="${stampId}">${era ? `<div class="stamp">${escapeHtml(era)}</div>` : ''}</div>
           ${meta ? `<div class="dossier-line">${meta}</div>` : ''}
           <div class="paper-actions">
-            <a class="paper-btn primary" id="${playBtnId}" href="stats/index.html?load=${encodeURIComponent(a.code)}&theme=field-doc">Play</a>
+            <a class="paper-btn primary" id="${playBtnId}" href="stats/index.html?load=${encodeURIComponent(a.code)}&live=1">Play</a>
             <a class="paper-btn" href="dg-agent-portal.html?code=${encodeURIComponent(a.code)}#agent">Agent File</a>
             <a class="paper-btn" href="dg-agent-portal.html?code=${encodeURIComponent(a.code)}#ids">Cover ID</a>
           </div>

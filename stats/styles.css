@@ -2965,9 +2965,9 @@ legend {
 }
 
 /* Larger text for these three buttons when visible in field-doc */
-.theme-field-doc #download-sheet-btn,
-.theme-field-doc #upload-sheet-btn,
-.theme-field-doc #clear-sheet-lp-btn {
+.live-play #download-sheet-btn,
+.live-play #upload-sheet-btn,
+.live-play #clear-sheet-lp-btn {
     font-size: 1rem !important;
     letter-spacing: 0.08em;
     padding: 8px 14px;
@@ -3134,6 +3134,198 @@ textarea {
     border-bottom: 1px solid currentColor;
     width: fit-content;
     min-width: 80px;
+}
+
+/* ── Settings cog (top-right) -- houses Theme, Live Play, Load by Code,
+   Export, and Open Agent File, so the main page isn't a wall of controls
+   before you've even built a character. Deliberately theme-agnostic (a
+   dark overlay drawer) rather than re-skinned per theme, same reasoning
+   as #dg-toast below it. ─────────────────────────────────────────────── */
+#settings-cog-btn {
+    position: fixed;
+    top: 14px;
+    right: 14px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #fff;
+    font-size: 18px;
+    cursor: pointer;
+    z-index: 9500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, transform 0.15s;
+}
+
+#settings-cog-btn:hover {
+    background: rgba(0, 0, 0, 0.78);
+    transform: rotate(25deg);
+}
+
+#settings-panel-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 9400;
+    display: none;
+}
+
+#settings-panel-backdrop.open {
+    display: block;
+}
+
+#settings-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100%;
+    width: min(340px, 88vw);
+    background: #1a1a1a;
+    color: #eee;
+    border-left: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: -8px 0 30px rgba(0, 0, 0, 0.5);
+    z-index: 9500;
+    padding: 60px 20px 30px;
+    overflow-y: auto;
+    transform: translateX(100%);
+    transition: transform 0.2s ease;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+}
+
+#settings-panel.open {
+    transform: translateX(0);
+}
+
+#settings-panel-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    background: none;
+    border: none;
+    color: #eee;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+#settings-panel h3 {
+    font-size: 12px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    opacity: .6;
+    margin: 22px 0 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    padding-bottom: 6px;
+}
+
+#settings-panel h3:first-child {
+    margin-top: 0;
+}
+
+#settings-panel .io-option-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+#settings-panel button,
+#settings-panel select {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* ── Live Play / Edit mode toggle ─────────────────────────────────────
+   "In-world" field-radio styled button (dark channel readout + pulsing
+   status dot), not a plain checkbox -- sits where Import Agent does for
+   a new character; dgCharacterMode (scripts.js) shows/hides/relabels it
+   as the character goes from new to existing and Live Play toggles. */
+:root {
+    --dg-mode-toggle-h: 48px;
+}
+
+.dg-mode-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    max-width: 480px;
+    margin: 0 auto var(--spacing-lg);
+    padding: 12px 20px;
+    background: #0d1a0d;
+    border: 1px solid #2a6a2a;
+    border-radius: 4px;
+    color: #8acf8a;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85em;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.dg-mode-toggle:hover {
+    background: #16281a;
+    border-color: #4a9a4a;
+}
+
+.dg-mode-toggle-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #4a9a4a;
+    box-shadow: 0 0 6px #4a9a4a;
+    flex-shrink: 0;
+    animation: dg-mode-toggle-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes dg-mode-toggle-pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.35;
+    }
+}
+
+/* Active (in Live Play): amber/red "on the air" look instead of the
+   green "standby" one. Goes sticky so it stays reachable to exit without
+   scrolling back to the top of a long sheet, stacking right above the
+   sticky #lp-tracker-bar (that bar's own `top` is offset by
+   --dg-mode-toggle-h to make room -- see its rule). */
+.dg-mode-toggle.dg-mode-active {
+    background: #1a0d0d;
+    border-color: #6a2a2a;
+    color: #cf8a8a;
+}
+
+.dg-mode-toggle.dg-mode-active .dg-mode-toggle-dot {
+    background: #cf4a4a;
+    box-shadow: 0 0 6px #cf4a4a;
+}
+
+.dg-mode-toggle.dg-mode-active:hover {
+    background: #281616;
+    border-color: #9a4a4a;
+}
+
+.live-play #character-mode-toggle {
+    position: sticky;
+    top: 0;
+    z-index: 101;
+    max-width: none;
+    height: var(--dg-mode-toggle-h);
+    box-sizing: border-box;
+    border-radius: 0;
+    margin: 0 0 8px;
 }
 
 /* ── Toast notification ─────────────────────────────────────────────── */
@@ -5441,7 +5633,7 @@ input[type="checkbox"]:checked+label {
 }
 
 /* ============================================================================   FIELD DOCUMENT (LIVE PLAY) THEME — DD Form 315 aesthetic   ============================================================================ */
-.theme-field-doc {
+.live-play {
     --primary-color: #1a1408;
     --bg-color: #cac6b8;
     --text-color: #1a1408;
@@ -5454,28 +5646,28 @@ input[type="checkbox"]:checked+label {
 }
 
 /* ── Reveal live-play tracker bar ────────────────────────────────── */
-.theme-field-doc #lp-tracker-bar {
+.live-play #lp-tracker-bar {
     display: flex !important;
 }
 
 /* ── Hide ALL character sheet fieldsets and creation panels ──────── */
-.theme-field-doc #stats-buy-section,
-.theme-field-doc #stats-buy-section+.button-container,
-.theme-field-doc #character-sheet>fieldset,
-.theme-field-doc #cs-json,
-.theme-field-doc .advanced-options-hints,
-.theme-field-doc .page-title,
-.theme-field-doc .site-intro {
+.live-play #stats-buy-section,
+.live-play #stats-buy-section+.button-container,
+.live-play #character-sheet>fieldset,
+.live-play #cs-json,
+.live-play .advanced-options-hints,
+.live-play .page-title,
+.live-play .site-intro {
     display: none !important;
 }
 
 /* ── Show the full LP sheet view ─────────────────────────────────── */
-.theme-field-doc #lp-sheet {
+.live-play #lp-sheet {
     display: block !important;
 }
 
 /* ── Page title ──────────────────────────────────────────────────── */
-.theme-field-doc .page-title {
+.live-play .page-title {
     color: #1a1408;
     font-family: 'Courier New', Courier, monospace;
     font-weight: 900;
@@ -5485,18 +5677,18 @@ input[type="checkbox"]:checked+label {
     -webkit-text-fill-color: #1a1408;
 }
 
-.theme-field-doc .site-intro {
+.live-play .site-intro {
     color: #3a3020;
     font-size: 0.78rem;
 }
 
-.theme-field-doc .site-intro strong {
+.live-play .site-intro strong {
     color: #1a1408;
     -webkit-text-fill-color: #1a1408;
 }
 
 /* ── Advanced options ────────────────────────────────────────────── */
-.theme-field-doc #advanced-options-details summary {
+.live-play #advanced-options-details summary {
     color: #f5f0e0;
     font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
     letter-spacing: 0.12em;
@@ -5504,42 +5696,42 @@ input[type="checkbox"]:checked+label {
     font-size: 1rem;
 }
 
-.theme-field-doc #advanced-options-details summary::before {
+.live-play #advanced-options-details summary::before {
     color: #008a2a;
 }
 
-.theme-field-doc .advanced-options-body {
+.live-play .advanced-options-body {
     background: #f5f0e0;
     border: 1px solid #1a1408;
 }
 
-.theme-field-doc .json-drop-zone {
+.live-play .json-drop-zone {
     border: 2px dashed #1a1408;
     background: #ebe6d4;
 }
 
-.theme-field-doc .json-drop-zone:hover {
+.live-play .json-drop-zone:hover {
     background: #e0dac8;
 }
 
 /* ── Save/share bar ──────────────────────────────────────────────── */
-.theme-field-doc .save-share-bar {
+.live-play .save-share-bar {
     background: transparent;
     border: none;
 }
 
-.theme-field-doc #theme-selector {
+.live-play #theme-selector {
     color: #1a1408;
 }
 
-.theme-field-doc .github-link-container a,
-.theme-field-doc .github-link-container svg {
+.live-play .github-link-container a,
+.live-play .github-link-container svg {
     color: #1a1408;
     stroke: #1a1408;
 }
 
 /* ── Save/share buttons in field-doc ────────────────────────────── */
-.theme-field-doc .section-buttons button {
+.live-play .section-buttons button {
     background: #1a1408;
     color: #f5f0e0;
     border: 1px solid #1a1408;
@@ -5551,55 +5743,55 @@ input[type="checkbox"]:checked+label {
     text-transform: uppercase;
 }
 
-.theme-field-doc .section-buttons button:hover {
+.live-play .section-buttons button:hover {
     background: #3a3020;
 }
 
 /* ── Dice roller panel ───────────────────────────────────────────── */
-.theme-field-doc #dr-panel {
+.live-play #dr-panel {
     background: #1a1408;
     border: 2px solid #f5f0e0;
     color: #f5f0e0;
 }
 
-.theme-field-doc #dr-handle {
+.live-play #dr-handle {
     background: #1a1408;
     color: #f5f0e0;
 }
 
-.theme-field-doc .dr-die-btn {
+.live-play .dr-die-btn {
     background: #2e2810;
     color: #f5f0e0;
     border-color: #f5f0e0;
 }
 
-.theme-field-doc .dr-die-btn-active,
-.theme-field-doc .dr-die-btn:hover {
+.live-play .dr-die-btn-active,
+.live-play .dr-die-btn:hover {
     background: #f5f0e0;
     color: #1a1408;
 }
 
-.theme-field-doc .dr-die-face,
-.theme-field-doc .dr-face-num {
+.live-play .dr-die-face,
+.live-play .dr-face-num {
     color: #f5f0e0;
 }
 
-.theme-field-doc #dr-roll-btn {
+.live-play #dr-roll-btn {
     background: #f5f0e0;
     color: #1a1408;
     border: 1px solid #f5f0e0;
 }
 
-.theme-field-doc #dr-manual-target {
+.live-play #dr-manual-target {
     background: #2e2810;
     color: #f5f0e0;
     border: 1px solid #6a6040;
 }
 
 /* ── Sigil / pyramid: hidden ─────────────────────────────────────── */
-.theme-field-doc #bond-pyramid-canvas,
-.theme-field-doc #sos-bond-sigil,
-.theme-field-doc #sos-sigil {
+.live-play #bond-pyramid-canvas,
+.live-play #sos-bond-sigil,
+.live-play #sos-sigil {
     display: none !important;
 }
 
@@ -5611,7 +5803,9 @@ input[type="checkbox"]:checked+label {
     border-bottom: 2px solid #4a4030;
     margin-bottom: 8px;
     position: sticky;
-    top: 0;
+    /* Stacks right below the sticky #character-mode-toggle (Edit button)
+       above it, rather than both trying to occupy top:0 at once. */
+    top: var(--dg-mode-toggle-h);
     z-index: 100;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
 }
@@ -7040,13 +7234,20 @@ input[type="checkbox"]:checked+label {
     border: 1.5px solid rgba(26, 20, 8, 0.3);
 }
 
-/* ── Hide LP-only elements ──────────────────────────────────────────── */
-.theme-mobile #lp-tracker-bar,
-.theme-mobile #lp-sheet {
-    display: none !important;
-}
+/* Note: no ".theme-mobile #lp-tracker-bar/#lp-sheet { display:none }" rule
+   here (deliberately removed) -- it was harmless defensive dead code back
+   when Live Play WAS its own theme ('field-doc'), mutually exclusive with
+   Mobile, but now that Live Play is an orthogonal mode (.live-play class,
+   see setLivePlay() in scripts.js) that can layer on ANY theme including
+   Mobile, an equal-specificity !important rule here would win the
+   cascade tie against .live-play's own !important rule by source order
+   and silently break Live Play whenever the Mobile theme is active --
+   which happens automatically on narrow viewports. .lp-only's own
+   default `display:none !important` (unscoped, applies to every theme
+   until .live-play overrides it) already covers "hidden when not in
+   Live Play" without needing a per-theme copy.
 
-/* ── Hide canvas-heavy decoration ───────────────────────────────────── */
+   ── Hide canvas-heavy decoration ───────────────────────────────────── */
 .theme-mobile #bond-pyramid-canvas,
 .theme-mobile #sos-bond-sigil,
 .theme-mobile #sos-sigil {
@@ -7160,15 +7361,15 @@ input[type="checkbox"]:checked+label {
 }
 
 /* ── LP theme: clickable x5 stat values ─────────────────────────────── */
-.theme-field-doc #stats .x5-value,
-.theme-field-doc #lp-sheet span[id^="lp-stat-"][id$="-x5"] {
+.live-play #stats .x5-value,
+.live-play #lp-sheet span[id^="lp-stat-"][id$="-x5"] {
     cursor: pointer;
     border-bottom: 1px dashed rgba(180, 160, 100, 0.4);
     transition: color 0.1s, border-bottom-color 0.1s;
 }
 
-.theme-field-doc #stats .x5-value:hover,
-.theme-field-doc #lp-sheet span[id^="lp-stat-"][id$="-x5"]:hover {
+.live-play #stats .x5-value:hover,
+.live-play #lp-sheet span[id^="lp-stat-"][id$="-x5"]:hover {
     color: #f5c542;
     border-bottom-color: #f5c542;
 }
@@ -7230,7 +7431,7 @@ input[type="checkbox"]:checked+label {
 }
 
 /* Hide in Live Play and Mobile themes */
-.theme-field-doc .wiz-promo,
+.live-play .wiz-promo,
 .theme-mobile .wiz-promo {
     display: none;
 }

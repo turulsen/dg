@@ -2502,6 +2502,57 @@ window.agentDropZone = {
     }
 };
 
+/* ── Settings cog panel (Theme, Live Play, Load by Code, Export,
+   Open Agent File) -- a slide-in drawer so those controls exist off the
+   main page flow, which now opens straight on Import/Wizard. ── */
+window.dgSettingsPanel = {
+    open() {
+        document.getElementById('settings-panel')?.classList.add('open');
+        document.getElementById('settings-panel-backdrop')?.classList.add('open');
+    },
+    close() {
+        document.getElementById('settings-panel')?.classList.remove('open');
+        document.getElementById('settings-panel-backdrop')?.classList.remove('open');
+    }
+};
+
+/* ── New vs existing character mode ──────────────────────────────────
+   Import Agent + the Wizard promo only make sense before a character
+   exists; the moment a real name is present they'd rather live in the
+   settings cog's New Recruit section (still reachable -- e.g. to
+   re-import onto this sheet) than clutter the top of an existing
+   character's sheet, which shows the Live Play/Edit toggle instead.
+   "Real name" uses the same check cloud-sync.js's ensureCloudCode()
+   already established (empty or the literal placeholder "Agent" both
+   count as "nothing here yet"). Called after every state-applying path
+   (typing a name, any importer, cloud/local/share-link restore, Clear
+   Sheet) -- see the call sites in save-load.js and this file. */
+window.dgCharacterMode = {
+    isNew() {
+        const name = (document.getElementById('cs-name')?.value || '').trim();
+        return !name || name === 'Agent';
+    },
+    update() {
+        const block = document.getElementById('new-recruit-block');
+        const cogSlot = document.getElementById('cog-new-recruit-section');
+        const toggle = document.getElementById('character-mode-toggle');
+        if (!block || !cogSlot || !toggle) return;
+        if (this.isNew()) {
+            if (block.parentElement !== toggle.parentElement) {
+                toggle.insertAdjacentElement('beforebegin', block);
+            }
+            block.style.display = '';
+            toggle.style.display = 'none';
+        } else {
+            if (block.parentElement !== cogSlot) cogSlot.appendChild(block);
+            toggle.style.display = 'flex';
+        }
+    },
+    toggleLivePlay() {
+        setLivePlay(!document.body.classList.contains('live-play'));
+    }
+};
+
 function importAgentTextByFormat(text, format) {
     const trimmed = text.trim();
     if (format === 'toml') {
@@ -2837,6 +2888,12 @@ function applyImportedAgentData(data) {
         if (statsEl) observer.observe(statsEl, { childList: true, subtree: true, characterData: true });
     }
 
+    // This import just set cs-name directly (not through applyState(), so
+    // that hook doesn't fire) -- may be the first time a real name is
+    // present, which is also what flips Import/Wizard into the settings
+    // cog and reveals the Live Play toggle in their place.
+    window.dgCharacterMode?.update?.();
+
     // Apply button states after the observer is back and any pending repaints have settled.
     setTimeout(() => {
         const prepBtn = document.getElementById('prepare-bonus-button');
@@ -3120,10 +3177,21 @@ window.onload = function () {
     try {
         const stored = localStorage.getItem('dg_theme');
         const isMobile = window.matchMedia('(max-width: 768px)').matches;
-        const savedTheme = stored || (isMobile ? 'mobile' : 'xfiles');
+        let savedTheme = stored || (isMobile ? 'mobile' : 'xfiles');
+        // Migrate anyone whose last theme was the old 'field-doc' -- Live
+        // Play is no longer a theme of its own, it's the mode that theme
+        // used to force on. Land them on Field Notes (the closest visual
+        // match) with Live Play switched on, rather than silently losing
+        // their Live Play habit the next time this runs.
+        let forceLivePlay = false;
+        if (savedTheme === 'field-doc') { savedTheme = 'field-notes'; forceLivePlay = true; }
         setTheme(savedTheme, { skipSave: true });
+        const wantLivePlay = forceLivePlay || localStorage.getItem('dg_live_play') === '1';
+        if (wantLivePlay) setLivePlay(true, { skipSave: true });
         const sel = document.getElementById('cs-theme-select');
         if (sel) sel.addEventListener('change', (e) => setTheme(e.target.value));
+        const nameEl = document.getElementById('cs-name');
+        if (nameEl) nameEl.addEventListener('input', () => window.dgCharacterMode?.update?.());
     } catch (e) { }
 
     initBondPyramid();
@@ -3254,22 +3322,6 @@ function sosPlaceholder(text) {
  */
 function setTheme(theme, { skipSave = false } = {}) {
     try {
-        // Flush any LP skill % values the user edited back to the underlying form
-        // inputs before saving — but ONLY when we are leaving the LP theme.
-        // Running this flush when switching TO the LP theme would overwrite
-        // fresher form values with the stale values last shown in the LP grid.
-        const currentTheme = document.getElementById('cs-theme-select')?.value
-            || (document.body.classList.contains('theme-field-doc') ? 'field-doc' : '');
-        if (currentTheme === 'field-doc' && theme !== 'field-doc') {
-            document.querySelectorAll('#lp-sheet .lp-skill-val[data-skill-src]').forEach(inp => {
-                const raw = parseInt(inp.value);
-                if (!isNaN(raw)) {
-                    const srcEl = document.getElementById(inp.dataset.skillSrc);
-                    if (srcEl) srcEl.value = raw;
-                }
-            });
-        }
-
         // Save current state synchronously before switching so no form values are
         // lost through the debounce window.
         // Skip this during initial page load — character state hasn't been restored
@@ -3283,7 +3335,7 @@ function setTheme(theme, { skipSave = false } = {}) {
         const _wizStep = _wizActive ? (window.dgWizard?._currentStep?.() ?? 0) : null;
         window.dgWizard?.deactivate();
 
-        body.classList.remove('theme-xfiles', 'theme-modern', 'theme-son-of-sam', 'theme-field-notes', 'theme-field-doc', 'theme-mobile');
+        body.classList.remove('theme-xfiles', 'theme-modern', 'theme-son-of-sam', 'theme-field-notes', 'theme-mobile');
         body.classList.add('theme-' + theme);
         localStorage.setItem('dg_theme', theme);
         const sel = document.getElementById('cs-theme-select');
@@ -3309,26 +3361,83 @@ function setTheme(theme, { skipSave = false } = {}) {
             localStorage.setItem('dg-wiz-step', String(_wizStep));
             window.dgWizard.activate();
         }
-        // Show download/upload buttons only in field-doc; show copy/clear in all other themes
+        // Swap BMC badge colour to match theme
+        const BMC_SRC = {
+            'xfiles': 'https://cdn.buymeacoffee.com/buttons/v2/default-black.png',
+            'modern': 'https://cdn.buymeacoffee.com/buttons/v2/default-violet.png',
+            'son-of-sam': 'https://cdn.buymeacoffee.com/buttons/v2/default-red.png',
+            'field-notes': 'https://cdn.buymeacoffee.com/buttons/v2/default-orange.png',
+        };
+        const bmcImg = document.getElementById('bmc-img');
+        if (bmcImg && BMC_SRC[theme]) bmcImg.src = BMC_SRC[theme];
+        // Live Play (the sticky tracker bar + single-page LP sheet) is an
+        // orthogonal mode layered on top of whichever theme is active, not
+        // a theme of its own -- if it's currently on, resync it so it
+        // reflects anything the theme swap just changed (populateCharacter
+        // SheetForm() above can rebuild stat/skill DOM the LP sheet's
+        // proxies point at by id).
+        if (body.classList.contains('live-play') && typeof syncLpFromForm === 'function') {
+            syncLpFromForm();
+            _populateLpGear();
+            lpSyncBar();
+            if (typeof renderLpBonds === 'function') renderLpBonds();
+        }
+    } catch (e) { }
+}
+
+/**
+ * Toggles Live Play mode: a compact, at-the-table view (sticky HP/WP/SAN
+ * tracker bar, quick-roll buttons, single-page LP sheet) that now layers on
+ * top of whichever visual theme (setTheme() above) is active, rather than
+ * being a theme of its own -- it used to BE the 'field-doc' theme, which
+ * meant picking Live Play meant losing whatever theme you'd actually
+ * chosen. Persisted separately from theme so "Play" can restore both
+ * independently: your last theme, with Live Play switched on.
+ */
+function setLivePlay(on, { skipSave = false } = {}) {
+    try {
+        if (!skipSave) window.dgSaveLoad?.save?.();
+
+        // Flush any LP skill % values the user edited back to the underlying
+        // form inputs before leaving Live Play -- otherwise values only
+        // ever shown in the LP grid would be lost rather than carried back
+        // to the full form.
+        if (!on) {
+            document.querySelectorAll('#lp-sheet .lp-skill-val[data-skill-src]').forEach(inp => {
+                const raw = parseInt(inp.value);
+                if (!isNaN(raw)) {
+                    const srcEl = document.getElementById(inp.dataset.skillSrc);
+                    if (srcEl) srcEl.value = raw;
+                }
+            });
+        }
+
+        document.body.classList.toggle('live-play', on);
+        localStorage.setItem('dg_live_play', on ? '1' : '0');
+        const toggle = document.getElementById('character-mode-toggle');
+        const toggleLabel = document.getElementById('character-mode-toggle-label');
+        if (toggle) toggle.classList.toggle('dg-mode-active', on);
+        if (toggleLabel) toggleLabel.textContent = on ? '✎ RETURN TO SHEET' : '▶ ENTER LIVE PLAY';
+
+        // Show download/upload buttons only in Live Play; show copy/clear in the full form
         const dlBtn = document.getElementById('download-sheet-btn');
         const ulBtn = document.getElementById('upload-sheet-btn');
         const clearLpBtn = document.getElementById('clear-sheet-lp-btn');
         const copyBtn = document.getElementById('copy-link-btn');
         const clearBtn = document.getElementById('clear-save-btn');
-        const isLivePlay = theme === 'field-doc';
-        if (dlBtn) dlBtn.style.display = isLivePlay ? 'inline-block' : 'none';
-        if (ulBtn) ulBtn.style.display = isLivePlay ? 'inline-block' : 'none';
-        if (clearLpBtn) clearLpBtn.style.display = isLivePlay ? 'inline-block' : 'none';
-        if (copyBtn) copyBtn.style.display = isLivePlay ? 'none' : 'inline-block';
-        if (clearBtn) clearBtn.style.display = isLivePlay ? 'none' : 'inline-block';
+        if (dlBtn) dlBtn.style.display = on ? 'inline-block' : 'none';
+        if (ulBtn) ulBtn.style.display = on ? 'inline-block' : 'none';
+        if (clearLpBtn) clearLpBtn.style.display = on ? 'inline-block' : 'none';
+        if (copyBtn) copyBtn.style.display = on ? 'none' : 'inline-block';
+        if (clearBtn) clearBtn.style.display = on ? 'none' : 'inline-block';
         const lpIoGroup = document.getElementById('lp-sheet-io-group');
-        if (lpIoGroup) lpIoGroup.style.display = isLivePlay ? 'none' : '';
-        // Field Document (Live Play): build/sync LP sheet, sync tracker bar, auto-expand dice roller
-        if (theme === 'field-doc') {
+        if (lpIoGroup) lpIoGroup.style.display = on ? 'none' : '';
+
+        if (on) {
             // Only do a full build if the LP sheet hasn't been built yet.
-            // Skipping the rebuild on subsequent theme switches preserves any
+            // Skipping the rebuild on subsequent toggles preserves any
             // notes, wounds, session remarks and manually-added weapon rows
-            // the player entered while on the field-doc theme.
+            // the player entered while in Live Play.
             if (!document.getElementById('lp-weapons-tbody')) {
                 buildLpSheet();
             } else {
@@ -3347,18 +3456,9 @@ function setTheme(theme, { skipSave = false } = {}) {
                 window.dgDice?._toggle?.();
             }
         }
-        // Swap BMC badge colour to match theme
-        const BMC_SRC = {
-            'xfiles': 'https://cdn.buymeacoffee.com/buttons/v2/default-black.png',
-            'modern': 'https://cdn.buymeacoffee.com/buttons/v2/default-violet.png',
-            'son-of-sam': 'https://cdn.buymeacoffee.com/buttons/v2/default-red.png',
-            'field-doc': 'https://cdn.buymeacoffee.com/buttons/v2/default-blue.png',
-            'field-notes': 'https://cdn.buymeacoffee.com/buttons/v2/default-orange.png',
-        };
-        const bmcImg = document.getElementById('bmc-img');
-        if (bmcImg && BMC_SRC[theme]) bmcImg.src = BMC_SRC[theme];
     } catch (e) { }
 }
+window.setLivePlay = setLivePlay;
 
 /* ============================================================
    LIVE PLAY FUNCTIONS
@@ -3698,6 +3798,11 @@ function buildLpSheet() {
     }).join('');
 
     // ── Full HTML ──────────────────────────────────────────────────
+    // Edit button lives in the static #lp-tracker-bar markup (index.html),
+    // not here -- it needs to be part of that sticky bar's own layout, not
+    // a second independently-fixed element competing for the same screen
+    // region (an earlier position:fixed version visually overlapped the
+    // SANITY ROLL button).
     container.innerHTML = `
     <div class="lp-dg-title">DELTA GREEN</div>
 

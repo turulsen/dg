@@ -271,6 +271,11 @@ function matchProfessionKey(profStr) {
             // it mints its own fallback code, permanently orphaning this
             // save from the one the Agent Portal ends up pointing at.
             if (!opts.skipCloudCodeMint) window.dgCloudSave?.ensureCloudCode?.();
+            // Same reasoning as the code mint above: this may be the first
+            // time a real name is present, which is also what flips
+            // Import/Wizard out of the way (into the settings cog) and
+            // reveals the Live Play toggle in their place.
+            window.dgCharacterMode?.update?.();
         }
 
         // Misc JSON
@@ -498,8 +503,8 @@ function matchProfessionKey(profStr) {
             // stats, skills and equipment are all correct.  Clearing the container
             // removes lp-weapons-tbody so buildLpSheet() treats it as a first build.
             const _lpContainer = document.getElementById('lp-sheet');
-            const _isFieldDoc = document.getElementById('cs-theme-select')?.value === 'field-doc';
-            if (_isFieldDoc && _lpContainer && typeof buildLpSheet === 'function') {
+            const _isLivePlay = document.body.classList.contains('live-play');
+            if (_isLivePlay && _lpContainer && typeof buildLpSheet === 'function') {
                 _lpContainer.innerHTML = '';
                 buildLpSheet(); // reads restored stat spans + skill inputs, calls syncLpFromForm internally
             } else {
@@ -689,6 +694,13 @@ function matchProfessionKey(profStr) {
         // Clear bonds
         window.bondsOnSheet = [];
         if (typeof renderBondsOnSheet === 'function') renderBondsOnSheet();
+
+        // cs-name is now blank -- this is a "new" character again, which
+        // moves Import/Wizard back out of the settings cog and hides the
+        // Live Play toggle (also leave Live Play itself, if it was on --
+        // nothing left to play).
+        if (document.body.classList.contains('live-play') && typeof setLivePlay === 'function') setLivePlay(false);
+        window.dgCharacterMode?.update?.();
     }
 
     function clearSheet() {

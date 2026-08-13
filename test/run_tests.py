@@ -133,19 +133,28 @@ def test_stat_generator(p):
     page.wait_for_timeout(500)
     record("stats-terminal", "page loads with no JS exceptions", len(errs)==0, "; ".join(errs))
 
-    hub_link = page.get_attribute("a[href='../index.html']", "href") if page.locator("a[href='../index.html']").count() else None
-    record("stats-terminal", "Agent Hub nav link present", hub_link == "../index.html", str(hub_link))
+    hub_link = page.get_attribute("a[href='../agent-hub.html']", "href") if page.locator("a[href='../agent-hub.html']").count() else None
+    record("stats-terminal", "Agent Hub nav link goes to the player's own agent list, not the clearance chooser",
+           hub_link == "../agent-hub.html", str(hub_link))
 
-    # All six themes must switch without throwing
+    # Theme, Live Play, Load by Code, and Export now live in the settings
+    # cog (top-right) rather than inline on the page.
+    page.click("#settings-cog-btn")
+    page.wait_for_timeout(200)
+
+    # All five themes must switch without throwing (field-doc retired --
+    # Live Play is now a mode layered on any theme, not a theme itself)
     theme_options = page.eval_on_selector_all("#cs-theme-select option", "els => els.map(e=>e.value)")
-    record("stats-terminal", "theme selector has all 6 themes",
-           set(theme_options) == {"xfiles","modern","son-of-sam","field-notes","field-doc","mobile"}, str(theme_options))
+    record("stats-terminal", "theme selector has all 5 themes",
+           set(theme_options) == {"xfiles","modern","son-of-sam","field-notes","mobile"}, str(theme_options))
     for t in theme_options:
         page.select_option("#cs-theme-select", t)
         page.wait_for_timeout(200)
     record("stats-terminal", "cycling through every theme throws no JS exceptions", len(errs)==0, "; ".join(errs))
     page.select_option("#cs-theme-select", "xfiles")
     page.wait_for_timeout(200)
+    page.click("#settings-panel-close")
+    page.wait_for_timeout(150)
 
     # Manual stat adjustment
     page.click("#STR-value ~ button, .stat-container:has(#STR-value) button:has-text('+')")
@@ -187,13 +196,19 @@ def test_stat_generator(p):
     page.wait_for_timeout(150)
 
     # Dice roller widget: toggled via #dr-arrow. It starts collapsed on a
-    # fresh load, but switching to the "field-doc" (Live Play) theme -- as
-    # the theme cycle above just did -- auto-opens it and that state
-    # persists across switching back, so check current state rather than
-    # assuming collapsed.
+    # fresh load, but switching Live Play mode on auto-opens it and that
+    # state can persist across switching back, so check current state
+    # rather than assuming collapsed.
     d20 = page.locator("button[data-die='d20']")
     if not d20.is_visible():
-        page.click("#dr-arrow")
+        # Call the toggle directly rather than clicking #dr-arrow: moving
+        # Import/Wizard to the top of the page pushed it to a scroll
+        # position that can land under the position:fixed Table Radio
+        # "Tune In" pill -- both are legitimately visible/clickable
+        # widgets, just momentarily co-located after scrollIntoView at
+        # this viewport size, and a force-click there doesn't reliably
+        # land on the actual button underneath.
+        page.evaluate("window.dgDice?._toggle?.()")
         page.wait_for_timeout(150)
     d20_visible = d20.is_visible()
     if d20_visible:
@@ -204,8 +219,12 @@ def test_stat_generator(p):
 
     # Mobile theme: verify no horizontal overflow specifically (see test_mobile_no_overflow
     # for why the other 5 themes are excluded from that general sweep)
+    page.click("#settings-cog-btn")
+    page.wait_for_timeout(200)
     page.select_option("#cs-theme-select", "mobile")
     page.wait_for_timeout(200)
+    page.click("#settings-panel-close")
+    page.wait_for_timeout(150)
     record("stats-terminal", "no JS exceptions across the whole run", len(errs)==0, "; ".join(errs))
 
     page.close()
@@ -256,7 +275,7 @@ def test_stat_generator_agent_file_nav(p):
 
     record("stats-terminal", "old Foundry-VTT intro paragraph is gone",
            page.locator("p.site-intro").count() == 0, "")
-    record("stats-terminal", "Open Agent File button is present above the theme selector",
+    record("stats-terminal", "Open Agent File button is present in the settings cog",
            page.locator("#site-intro-agent-file-btn").count() == 1, "")
 
     page.fill("#cs-name", "Priya Anand")
@@ -269,6 +288,8 @@ def test_stat_generator_agent_file_nav(p):
     # destination page may still be loading/running its scripts), then
     # separately for the destination page's own JS to actually run and mark
     # the Agent File tab active.
+    page.click("#settings-cog-btn")
+    page.wait_for_timeout(200)
     page.click("#site-intro-agent-file-btn")
     for _ in range(20):
         if page.url.endswith("dg-agent-portal.html#agent"):
@@ -345,6 +366,8 @@ def test_stat_generator_sheets_roundtrip(p):
 
     page.evaluate("document.getElementById('advanced-options-details').open = true")
     page.wait_for_timeout(200)
+    page.click("#settings-cog-btn")
+    page.wait_for_timeout(200)
 
     with page.expect_download(timeout=15000) as dl_info:
         page.click("#export-sheets")
@@ -353,6 +376,8 @@ def test_stat_generator_sheets_roundtrip(p):
            dl.suggested_filename.endswith(".xlsx"), dl.suggested_filename)
     xlsx_path = os.path.join(HERE, "results-tmp-exported.xlsx")
     dl.save_as(xlsx_path)
+    page.click("#settings-panel-close")
+    page.wait_for_timeout(150)
 
     # Blank the form, then import the just-exported file back
     page.evaluate("""() => {
@@ -555,6 +580,13 @@ def test_import_agent_paste_text(p):
     prof_val = page.eval_on_selector("#cs-profession-select", "el => el.value")
     record("stats-terminal", "pasting a Kappa Black .toml into the primary paste box resolves the profession",
            prof_val == "pilot_sailor", f"value={prof_val!r}")
+
+    # A real name is now on the sheet, which relocates #new-recruit-block
+    # (and #agent-paste-details inside it) from the top of the page into
+    # the settings cog's New Recruit section -- see dgCharacterMode
+    # (scripts.js). Open the cog to keep using it for the rest of this test.
+    page.click("#settings-cog-btn")
+    page.wait_for_timeout(200)
 
     # A plain JSON paste (this site's own native export shape) should also
     # route correctly, proving the paste box isn't TOML-only.
@@ -1175,7 +1207,7 @@ def test_agent_hub(p):
     action_hrefs = page.eval_on_selector_all(
         "#panel-OWEN-CS12 .paper-btn", "els => els.map(e => e.getAttribute('href'))")
     record("hub", "Play links to stats/ with load+theme query params for that exact agent",
-           action_hrefs[0] == "stats/index.html?load=OWEN-CS12&theme=field-doc", str(action_hrefs))
+           action_hrefs[0] == "stats/index.html?load=OWEN-CS12&live=1", str(action_hrefs))
     record("hub", "Agent File links to the Agent Portal's Agent File tab for that exact agent",
            action_hrefs[1] == "dg-agent-portal.html?code=OWEN-CS12#agent", str(action_hrefs))
     record("hub", "Cover ID links to the Agent Portal's Cover IDs tab for that exact agent",
@@ -3125,10 +3157,17 @@ def test_agent_portal_code_query_param(p):
 
 def test_stats_load_by_code_query_param(p):
     """agent-hub.html's Agent Files "Play" button links to
-    stats/index.html?load=XXXX&theme=field-doc -- loads that exact agent
-    from the Cloud Save backend (dgCloudSave.loadFromCloud(), see
-    stats/cloud-sync.js) and jumps straight to the Live Play theme,
-    rather than leaving whatever this browser last auto-saved showing."""
+    stats/index.html?load=XXXX&live=1 -- loads that exact agent from the
+    Cloud Save backend (dgCloudSave.loadFromCloud(), see
+    stats/cloud-sync.js) and switches Live Play mode on over whichever
+    theme this device last used, rather than leaving whatever this
+    browser last auto-saved showing. Also covers a real, previously-
+    undiscovered race: scripts.js builds the stat/skill DOM (and has its
+    own defensive "reset stats again 50ms later" timer) inside its own
+    window.onload handler -- a cloud response landing before or during
+    that window used to have its writes silently dropped or immediately
+    reset back to defaults (see the onApplied-chained deferral in
+    cloud-sync.js's loadFromCloud())."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -3139,19 +3178,24 @@ def test_stats_load_by_code_query_param(p):
         url = route.request.url
         if "action=load_character" in url and "callback=" in url:
             cb = url.split("callback=")[1].split("&")[0]
-            char_state = {"v": 1, "bio": {"name": "Owen Castillo", "profession": ""}}
+            char_state = {"v": 1, "bio": {"name": "Owen Castillo", "profession": ""},
+                          "stats": {"STR": 14, "CON": 12, "DEX": 10, "INT": 16, "POW": 13, "CHA": 11},
+                          "csStats": {"STR": 14, "CON": 12, "DEX": 10, "INT": 16, "POW": 13, "CHA": 11}}
             body = f'{cb}({json.dumps({"status": "OK", "agent_code": "OWEN-CS12", "character_json": json.dumps(char_state)})})'
             route.fulfill(status=200, content_type="application/javascript", body=body)
         else:
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", fake_apps_script)
 
-    page.goto(f"{BASE}/stats/index.html?load=OWEN-CS12&theme=field-doc", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(1000)
+    page.goto(f"{BASE}/stats/index.html?load=OWEN-CS12&live=1", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(1800)
     record("stats-terminal", "?load=... loads that exact agent's name from the cloud",
            page.eval_on_selector("#cs-name", "el => el.value") == "Owen Castillo", "")
-    record("stats-terminal", "?theme=field-doc jumps straight to the Live Play theme",
-           "theme-field-doc" in page.eval_on_selector("body", "el => el.className"), "")
+    record("stats-terminal", "?live=1 switches Live Play mode on",
+           "live-play" in page.eval_on_selector("body", "el => el.className"), "")
+    str_val = page.eval_on_selector("#STR-value", "el => el.textContent")
+    record("stats-terminal", "the loaded agent's stats survive scripts.js's window.onload + defensive 50ms reset timer",
+           str_val == "14", f"STR={str_val!r}")
     record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
     page.close()
     return errs
@@ -3215,7 +3259,7 @@ def test_stats_recruit_flow_on_missing_character(p):
         d.accept()
     page.on("dialog", handle_dialog)
 
-    page.goto(f"{BASE}/stats/index.html?load=DANI-U8BM&theme=field-doc", wait_until="domcontentloaded", timeout=15000)
+    page.goto(f"{BASE}/stats/index.html?load=DANI-U8BM&live=1", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(1500)
 
     record("stats-terminal", "a not-found Play link warns before overwriting, in case the Agent's real sheet just hasn't synced",
@@ -3259,7 +3303,7 @@ def test_stats_recruit_flow_cancel_protects_existing_character(p):
     page.route("**/script.google.com/**", fake_apps_script)
     page.on("dialog", lambda d: d.dismiss())
 
-    page.goto(f"{BASE}/stats/index.html?load=PATR-EQ9A&theme=field-doc", wait_until="domcontentloaded", timeout=15000)
+    page.goto(f"{BASE}/stats/index.html?load=PATR-EQ9A&live=1", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(1000)
 
     record("stats-terminal", "choosing Cancel does not adopt the Agent Code for Cloud Save",
@@ -3382,7 +3426,7 @@ def test_mobile_no_overflow(p):
     # the fieldset/grid/table min-width fixes added for this are
     # theme-agnostic (gated on viewport width, not theme class), covering
     # X-Files, Modern, Son of Sam, and Field Notes the same as Mobile.
-    # Live Play (field-doc) is checked separately below with actual filled
+    # Live Play mode is checked separately below with actual filled
     # content, since its full character sheet is the one deliberate
     # exception (it scrolls horizontally within its own box by design --
     # see that check for detail).
@@ -3391,6 +3435,8 @@ def test_mobile_no_overflow(p):
     errs = collect_errors(page)
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
+    page.click("#settings-cog-btn")
+    page.wait_for_timeout(200)
     for theme in ["xfiles", "modern", "son-of-sam", "field-notes", "mobile"]:
         page.select_option("#cs-theme-select", theme)
         page.wait_for_timeout(400)
@@ -3430,7 +3476,7 @@ def test_mobile_no_overflow(p):
     errs_all.extend(errs)
     page.close()
 
-    # Live Play (field-doc): the full character sheet reflows to a single
+    # Live Play mode: the full character sheet reflows to a single
     # column below 700px (buildLpSheet()'s Personal Data table and the
     # Stats+Bonds/Derived+Motivations/Physical Desc+Incidents side-by-side
     # pairs all stack) instead of the earlier approach of widening the
@@ -3463,7 +3509,7 @@ def test_mobile_no_overflow(p):
             btn.click()
     page.wait_for_timeout(200)
 
-    page.select_option("#cs-theme-select", "field-doc")
+    page.evaluate("setLivePlay(true)")
     page.wait_for_timeout(600)
     scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
     record("mobile", "stats/index.html has no horizontal overflow at 390px viewport (Live Play theme, filled)",

@@ -151,17 +151,45 @@
             try { state = JSON.parse(res.character_json); }
             catch (e) { if (status) status.textContent = 'Could not read that cloud save.'; return; }
 
-            // skipCloudCodeMint: this load already knows its own code (the
-            // one just fetched by) -- letting applyState() mint one of its
-            // own from the name it's about to write would race a fresh,
-            // wrong code into place a moment before the line below
-            // overwrites it with the right one, needlessly pushing a
-            // throwaway save under an orphaned code first.
-            window.dgSaveLoad.applyState(state, { skipCloudCodeMint: true });
-            setTimeout(() => {
-                window.dgSaveLoad.save?.();
-                if (typeof syncLpFromForm === 'function') syncLpFromForm();
-            }, 300);
+            const applyLoadedState = () => {
+                // skipCloudCodeMint: this load already knows its own code (the
+                // one just fetched by) -- letting applyState() mint one of its
+                // own from the name it's about to write would race a fresh,
+                // wrong code into place a moment before the line below
+                // overwrites it with the right one, needlessly pushing a
+                // throwaway save under an orphaned code first.
+                window.dgSaveLoad.applyState(state, { skipCloudCodeMint: true });
+                setTimeout(() => {
+                    window.dgSaveLoad.save?.();
+                    if (typeof syncLpFromForm === 'function') syncLpFromForm();
+                }, 300);
+                // Only now is it safe for a caller to act on the applied
+                // state (e.g. switching on Live Play) -- an independent
+                // timer of its own could still land inside the same init
+                // hazard window this just waited out, or run before this
+                // state was actually applied at all.
+                if (typeof opts.onApplied === 'function') opts.onApplied();
+            };
+            // scripts.js builds the stat/skill DOM (#STR-value etc.) inside
+            // its own window.onload handler -- much later than the
+            // DOMContentLoaded this JSONP fetch started on -- and that same
+            // handler has its own defensive "reset stats again 50ms later
+            // to override any DOM mutations" timer (see the setTimeout
+            // right after resetStats() in scripts.js's window.onload). A
+            // fast cloud response landing in either gap (before the DOM
+            // exists at all, or in that 50ms window) gets silently
+            // stomped: applyState()'s writes land on nothing or get reset
+            // right back to defaults a moment later. save-load.js's own
+            // local-restore already knows to wait "window.load + 200ms" to
+            // clear both hazards (see its own INIT comment) -- match that
+            // exact convention here instead of only checking readyState,
+            // which is satisfied at window.load, before the 50ms timer.
+            const runPastInitHazards = () => setTimeout(applyLoadedState, 250);
+            if (document.readyState === 'complete') {
+                runPastInitHazards();
+            } else {
+                window.addEventListener('load', runPastInitHazards, { once: true });
+            }
             setCloudCode(code);
             rosterUpsert(code, state.bio?.name);
             if (status) status.textContent = 'Loaded!';
@@ -241,24 +269,29 @@
     document.addEventListener('DOMContentLoaded', () => renderStatus());
 
     // agent-hub.html's Agent Files "Play" button links here as
-    // `?load=XXXX-YYYY&theme=field-doc` -- load that exact agent from
-    // the cloud and jump straight to Live Play, rather than leaving
-    // whatever was last auto-saved in this browser showing. If that Agent
-    // Code has no cloud character yet, startRecruitFlow() takes over
-    // instead (see above) rather than silently leaving a stale character
-    // on screen.
+    // `?load=XXXX-YYYY&live=1` -- load that exact agent from the cloud and
+    // jump straight to Live Play (over whichever theme this device last
+    // used -- Live Play is a mode, not a theme of its own), rather than
+    // leaving whatever was last auto-saved in this browser showing. If
+    // that Agent Code has no cloud character yet, startRecruitFlow() takes
+    // over instead (see above) rather than silently leaving a stale
+    // character on screen.
     document.addEventListener('DOMContentLoaded', () => {
         const params = new URLSearchParams(window.location.search);
         const loadCode = params.get('load');
         if (!loadCode) return;
-        let notFound = false;
+        const wantLive = params.get('live') === '1';
         loadFromCloud(loadCode, {
-            onNotFound: () => { notFound = true; startRecruitFlow(loadCode); },
+            onNotFound: () => startRecruitFlow(loadCode),
+            // Chained to fire only once the loaded state has actually been
+            // applied (past the same page-init hazard window
+            // applyLoadedState() itself waits out) -- an independent timer
+            // here could still land before the state was applied, or
+            // inside that same hazard window, and get its own effects
+            // (buildLpSheet() reading stats that are still default 3s)
+            // silently stomped right along with it.
+            onApplied: () => { if (wantLive && typeof setLivePlay === 'function') setLivePlay(true); },
         });
-        const theme = params.get('theme');
-        if (theme && typeof setTheme === 'function') {
-            setTimeout(() => { if (!notFound) setTheme(theme); }, 400);
-        }
     });
 
     // agent-hub.html's "New Recruit" card links here as `?new=1` -- a

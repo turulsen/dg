@@ -97,7 +97,78 @@
 
 <body>
     <div style="max-width:1400px;margin:0 auto;padding:16px 20px 0;">
-        <a href="../index.html" style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.05em;color:#8a8a8a;text-decoration:none;">&larr; Agent Hub</a>
+        <a href="../agent-hub.html" style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.05em;color:#8a8a8a;text-decoration:none;">&larr; Agent Hub</a>
+    </div>
+    <!-- Settings cog -- houses Theme, Live Play, Load by Code, Export, and
+         Open Agent File so the main page opens on Import/Wizard instead of
+         a wall of controls a brand-new recruit doesn't need yet. -->
+    <button type="button" id="settings-cog-btn" onclick="dgSettingsPanel.open()"
+        title="Theme, Live Play, Load by Code, Export">&#9881;</button>
+    <div id="settings-panel-backdrop" onclick="dgSettingsPanel.close()"></div>
+    <div id="settings-panel">
+        <button type="button" id="settings-panel-close" onclick="dgSettingsPanel.close()"
+            aria-label="Close settings">&times;</button>
+
+        <h3>Theme &amp; Live Play</h3>
+        <div id="theme-selector">
+            <label>Theme:</label>
+            <select id="cs-theme-select" aria-label="Theme selector">
+                <option value="xfiles">X-Files</option>
+                <option value="modern">Modern</option>
+                <option value="son-of-sam">Son of Sam</option>
+                <option value="field-notes">Field Notes</option>
+                <option value="mobile">Mobile</option>
+            </select>
+        </div>
+        <h3>New Recruit</h3>
+        <!-- Home for #new-recruit-block (Import Agent + paste + Wizard promo)
+             once this is an existing, named character -- dgCharacterMode.update()
+             (scripts.js) moves that block here so it's still reachable (e.g. to
+             re-import onto this sheet, or start the wizard again) without
+             cluttering the top of the page for a character that already exists.
+             Empty by default; JS fills it in. -->
+        <div id="cog-new-recruit-section"></div>
+
+        <h3>Open Agent File</h3>
+        <button type="button" id="site-intro-agent-file-btn" onclick="dgGoToAgentFile()"
+            title="Sends this character to the Agent Portal as an Agent File (name, stats-derived build/outfit, notes) and opens it there.">
+            &#8594; Open Agent File</button>
+
+        <h3>Cloud Save</h3>
+        <!-- Automatic background sync of this character to the Agent
+             Portal backend by Agent Code, so it can be picked up on
+             another device without a file changing hands. Starts on its
+             own the first time you edit anything after entering a real
+             name -- not a toggle, so there's no Start or Stop button,
+             only Load (pulling a character down inherently needs a code
+             from the player). See stats/cloud-sync.js for the code
+             lifecycle. -->
+        <div id="cloud-save-bar" style="font-family:'JetBrains Mono',monospace;font-size:0.9em;">
+            <button type="button" onclick="dgCloudSave.loadFromCloud()"
+                title="Load a character previously cloud-saved from any device, by its Agent Code.">
+                Load by Code</button>
+            <div id="cloud-save-status" style="margin-top:4px;opacity:.75;"></div>
+            <div id="cloud-load-status" style="opacity:.75;"></div>
+            <div style="margin-top:2px;opacity:.55;font-size:0.9em;">Starts automatically once you've named your agent and made a change.</div>
+        </div>
+
+        <h3>Export</h3>
+        <div class="io-option-list">
+            <div class="io-option">
+                <button type="button" id="export-printable" onclick="exportPrintable()">&#9099; Export Printable Sheet</button>
+                <p class="io-option-desc">A printer-friendly HTML file -- <em>Print &rarr; Save as PDF</em>. Also
+                    embeds your full character state for a perfect round-trip back in via Advanced &rarr; Import
+                    from Sheet HTML.</p>
+            </div>
+            <div class="io-option">
+                <button type="button" id="export-pdf" onclick="exportToPDF()">&#11015; Export PDF Character Sheet</button>
+                <p class="io-option-desc">Fills and downloads the official DD Form 315 as a PDF.</p>
+            </div>
+            <div class="io-option">
+                <button type="button" id="export-sheets" onclick="exportToSheets()">&#8862; Export Google Sheet</button>
+                <p class="io-option-desc">Downloads a filled .xlsx spreadsheet.</p>
+            </div>
+        </div>
     </div>
     <div class="content">
         <noscript>
@@ -129,84 +200,76 @@
                 </svg>
                 <span class="page-title-text">DELTA GREEN STATS<span class="blinking-cursor">_</span></span>
             </h1>
-            <button type="button" id="site-intro-agent-file-btn" onclick="dgGoToAgentFile()"
-                style="display:block;margin:0 auto var(--spacing-lg);padding:10px 20px;font-family:'JetBrains Mono',monospace;"
-                title="Sends this character to the Agent Portal as an Agent File (name, stats-derived build/outfit, notes) and opens it there.">
-                &#8594; Open Agent File <span style="opacity:.7;">— exports this character first</span>
+            <!-- dgCharacterMode (scripts.js) shows exactly one of these two
+                 siblings at the top of the page, depending on whether this is
+                 a brand-new (unnamed) character or an existing one:
+                 #new-recruit-block for new, #character-mode-toggle for
+                 existing. For a new character, #new-recruit-block sits here;
+                 dgCharacterMode.update() relocates it into the settings cog's
+                 New Recruit section the moment a real name is present (typing
+                 one, or any importer applying state), and #character-mode-toggle
+                 takes its place instead. -->
+            <div id="new-recruit-block">
+                <!-- One-button, format-agnostic import -- drop or pick a file and
+                     the page figures out whether it's a Kappa Black .toml, a
+                     Foundry VTT (or this site's own) .json, an exported .html
+                     sheet, a DD Form 315 .pdf, or a Google Sheet .xlsx, then
+                     routes it to the matching importer. Existing format-specific
+                     buttons still live in Advanced below for pasting text or
+                     troubleshooting a file this doesn't recognize. -->
+                <div id="agent-drop-zone" class="json-drop-zone agent-drop-zone-primary"
+                    style="max-width:480px;margin:0 auto var(--spacing-lg);"
+                    ondragover="agentDropZone.over(event)" ondragleave="agentDropZone.leave(event)"
+                    ondrop="agentDropZone.drop(event)"
+                    onclick="document.getElementById('agent-import-auto-input').click()"
+                    title="Drop a character file here, or click to browse. Recognizes Kappa Black .toml/.json, Foundry VTT .json, this site's exported .html/.json, DD Form 315 .pdf, and the Google Sheet .xlsx template automatically.">
+                    <span class="json-drop-label" id="agent-drop-label">&#8593; Import Agent
+                        <br><span style="opacity:.7;">drop a file here, or click to browse — any format</span></span>
+                    <input type="file" id="agent-import-auto-input"
+                        accept=".toml,.json,.pdf,.xlsx,.html,.htm,application/json,application/pdf,text/html,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        style="display:none" onchange="agentDropZone.fileSelected(event)">
+                </div>
+                <!-- Paste fallback for the drop zone above -- Kappa Black's
+                     mobile export shows the character as on-screen text to
+                     copy, not a file a phone can save and re-pick from a file
+                     input, so dropping/browsing is often not an option there. -->
+                <details id="agent-paste-details"
+                    style="max-width:480px;margin:0 auto var(--spacing-lg);font-family:'JetBrains Mono',monospace;font-size:0.85em;text-align:center;">
+                    <summary style="cursor:pointer;opacity:.75;">Can't drop a file? Paste text instead</summary>
+                    <div style="margin-top:8px;">
+                        <textarea id="agent-paste-area" rows="5"
+                            style="width:100%;box-sizing:border-box;font-family:'JetBrains Mono',monospace;font-size:0.9em;"
+                            placeholder="Paste a Kappa Black .toml or .json export here..."></textarea>
+                        <button type="button"
+                            onclick="importAgentText(document.getElementById('agent-paste-area').value)"
+                            style="margin-top:6px;">Import Pasted Text</button>
+                    </div>
+                </details>
+                <!-- ── Character Creation Wizard promo block ── -->
+                <div id="wiz-promo" class="wiz-promo">
+                    <div class="wiz-promo-text">
+                        <strong>Character Creation Wizard</strong>
+                        <span>New to Delta Green or this site? The wizard walks you through each step in order — statistics,
+                            profession, biography, skills, bonds, and gear — with explanations and tips along the way.
+                            Recommended for new players and new users. Already familiar with the system? Skip the wizard and
+                            fill in the fields below from top to bottom.</span>
+                    </div>
+                    <button type="button" id="wiz-toggle-btn" onclick="window.dgWizard?.toggle()">&#10022; Character
+                        Creation Wizard</button>
+                </div>
+            </div>
+            <!-- Live Play / Edit toggle for an existing character -- one
+                 control, label and action flip with mode. Not hidden by
+                 Live Play's own CSS (unlike .page-title/.site-intro/etc)
+                 and goes position:sticky while in Live Play (see
+                 .live-play #character-mode-toggle), stacking right above
+                 the sticky #lp-tracker-bar so it's always reachable to
+                 get back out, not just on first load. -->
+            <button type="button" id="character-mode-toggle" class="dg-mode-toggle" style="display:none;"
+                onclick="dgCharacterMode.toggleLivePlay()">
+                <span class="dg-mode-toggle-dot"></span>
+                <span id="character-mode-toggle-label">&#9654; ENTER LIVE PLAY</span>
             </button>
-            <!-- One-button, format-agnostic import -- drop or pick a file and the
-                 page figures out whether it's a Kappa Black .toml, a Foundry VTT
-                 (or this site's own) .json, an exported .html sheet, a DD Form 315
-                 .pdf, or a Google Sheet .xlsx, then routes it to the matching
-                 importer. Existing format-specific buttons still live in Advanced
-                 below for pasting text or troubleshooting a file this doesn't
-                 recognize. -->
-            <div id="agent-drop-zone" class="json-drop-zone agent-drop-zone-primary"
-                style="max-width:480px;margin:0 auto var(--spacing-lg);"
-                ondragover="agentDropZone.over(event)" ondragleave="agentDropZone.leave(event)"
-                ondrop="agentDropZone.drop(event)"
-                onclick="document.getElementById('agent-import-auto-input').click()"
-                title="Drop a character file here, or click to browse. Recognizes Kappa Black .toml/.json, Foundry VTT .json, this site's exported .html/.json, DD Form 315 .pdf, and the Google Sheet .xlsx template automatically.">
-                <span class="json-drop-label" id="agent-drop-label">&#8593; Import Agent
-                    <br><span style="opacity:.7;">drop a file here, or click to browse — any format</span></span>
-                <input type="file" id="agent-import-auto-input"
-                    accept=".toml,.json,.pdf,.xlsx,.html,.htm,application/json,application/pdf,text/html,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    style="display:none" onchange="agentDropZone.fileSelected(event)">
-            </div>
-            <!-- Paste fallback for the drop zone above -- Kappa Black's
-                 mobile export shows the character as on-screen text to
-                 copy, not a file a phone can save and re-pick from a file
-                 input, so dropping/browsing is often not an option there. -->
-            <details id="agent-paste-details"
-                style="max-width:480px;margin:0 auto var(--spacing-lg);font-family:'JetBrains Mono',monospace;font-size:0.85em;text-align:center;">
-                <summary style="cursor:pointer;opacity:.75;">Can't drop a file? Paste text instead</summary>
-                <div style="margin-top:8px;">
-                    <textarea id="agent-paste-area" rows="5"
-                        style="width:100%;box-sizing:border-box;font-family:'JetBrains Mono',monospace;font-size:0.9em;"
-                        placeholder="Paste a Kappa Black .toml or .json export here..."></textarea>
-                    <button type="button"
-                        onclick="importAgentText(document.getElementById('agent-paste-area').value)"
-                        style="margin-top:6px;">Import Pasted Text</button>
-                </div>
-            </details>
-            <!-- Cloud Save -- automatic background sync of this character to
-                 the Agent Portal backend by Agent Code, so it can be picked up
-                 on another device without a file changing hands. Starts on its
-                 own the first time you edit anything after entering a real
-                 name -- not a toggle, so there's no Start or Stop button, only
-                 Load (pulling a character down inherently needs a code from
-                 the player). See stats/cloud-sync.js for the code lifecycle. -->
-            <div id="cloud-save-bar" style="text-align:center;margin:0 auto var(--spacing-lg);font-family:'JetBrains Mono',monospace;font-size:0.85em;">
-                <button type="button" onclick="dgCloudSave.loadFromCloud()"
-                    title="Load a character previously cloud-saved from any device, by its Agent Code.">
-                    Load by Code</button>
-                <div id="cloud-save-status" style="margin-top:4px;opacity:.75;"></div>
-                <div id="cloud-load-status" style="opacity:.75;"></div>
-                <div style="margin-top:2px;opacity:.55;font-size:0.9em;">Starts automatically once you've named your agent and made a change.</div>
-            </div>
-            <div id="theme-selector">
-                <label>Theme:</label>
-                <select id="cs-theme-select" aria-label="Theme selector">
-                    <option value="xfiles">X-Files</option>
-                    <option value="modern">Modern</option>
-                    <option value="son-of-sam">Son of Sam</option>
-                    <option value="field-notes">Field Notes</option>
-                    <option value="field-doc">Live Play (Field Notes)</option>
-                    <option value="mobile">Mobile</option>
-                </select>
-            </div>
-            <!-- ── Character Creation Wizard promo block ── -->
-            <div id="wiz-promo" class="wiz-promo">
-                <div class="wiz-promo-text">
-                    <strong>Character Creation Wizard</strong>
-                    <span>New to Delta Green or this site? The wizard walks you through each step in order — statistics,
-                        profession, biography, skills, bonds, and gear — with explanations and tips along the way.
-                        Recommended for new players and new users. Already familiar with the system? Skip the wizard and
-                        fill in the fields below from top to bottom.</span>
-                </div>
-                <button type="button" id="wiz-toggle-btn" onclick="window.dgWizard?.toggle()">&#10022; Character
-                    Creation Wizard</button>
-            </div>
             <div class="stats-section" id="stats-buy-section">
                 <h2>STATISTICS:</h2>
                 <div id="stats"></div>
@@ -626,44 +689,9 @@
                         <summary>Advanced — Export &amp; Import</summary>
                         <div class="advanced-options-body">
 
+                            <!-- Export options moved to the settings cog (top-right) --
+                                 see #settings-panel above. Only Import stays here. -->
                             <div class="export-actions-grid">
-                                <div class="export-action-group">
-                                    <div class="export-action-group-label">Export</div>
-                                    <div class="io-option-list">
-                                        <div class="io-option">
-                                            <button type="button" id="export-printable" onclick="exportPrintable()"
-                                                style="display:flex;flex-direction:column;align-items:center;gap:4px;"><span
-                                                    style="font-size:2.4em;line-height:1;">⎙</span>Export
-                                                Printable<br>Sheet</button>
-                                            <p class="io-option-desc">Generates a printer-friendly HTML file. Open it in
-                                                your browser and use <em>Print &rarr; Save as PDF</em>. The file also
-                                                embeds your full character state, so it can be loaded back into the
-                                                editor using <strong>Import from Sheet HTML</strong> &mdash; a perfect
-                                                round-trip.</p>
-                                        </div>
-                                        <div class="io-option">
-                                            <button type="button" id="export-pdf" onclick="exportToPDF()"
-                                                style="display:flex;flex-direction:column;align-items:center;gap:4px;"><span
-                                                    style="font-size:2.4em;line-height:1;">⬇</span>Export
-                                                PDF<br>Character Sheet</button>
-                                            <p class="io-option-desc">Fills and downloads the official <strong>DD Form
-                                                    315</strong> as a PDF. Stats, skills, biography, bonds, and gear are
-                                                all written into the form fields. This PDF can be imported back using
-                                                <strong>Import from PDF Sheet</strong>.
-                                            </p>
-                                        </div>
-                                        <div class="io-option">
-                                            <button type="button" id="export-sheets" onclick="exportToSheets()"
-                                                style="display:flex;flex-direction:column;align-items:center;gap:4px;"><span
-                                                    style="font-size:2.4em;line-height:1;">⊞</span>Export
-                                                Google<br>Sheet</button>
-                                            <p class="io-option-desc">Downloads a filled <strong>.xlsx</strong>
-                                                spreadsheet. Upload to Google Drive and open as a Google Sheet for easy
-                                                viewing or sharing.</p>
-                                        </div>
-                                    </div>
-                                </div>
-
                                 <div class="export-action-group">
                                     <div class="export-action-group-label">Import</div>
                                     <div class="io-option-list">
@@ -783,19 +811,19 @@
                                     <div class="export-action-group-label">Live Play Sheet <span
                                             style="font-size:0.7em;font-weight:normal;opacity:0.7;">(Beta)</span></div>
                                     <p class="description-text">
-                                        <strong>Live Play</strong> is a purpose-built session theme designed for use at
-                                        the
-                                        table.
+                                        <strong>Live Play</strong> is a purpose-built mode designed for use at the
+                                        table, layered on top of whichever theme you're using -- not a theme of its
+                                        own.
                                         It presents your agent's stats, skills, bonds, gear, and wounds on a single
                                         streamlined sheet
                                         with quick-roll buttons and a sticky tracker bar for HP, WP, and Sanity — no
                                         scrolling required mid-session.
                                     </p>
                                     <p class="description-text">
-                                        To use it, build your character on any theme as normal, then switch to <em>Live
-                                            Play
-                                            (Field Notes)</em>
-                                        from the theme selector. Your stats, skills, and equipment will carry over
+                                        To use it, build your character on any theme as normal, then switch on
+                                        <em>Live Play mode</em> from the settings cog (top right). An <em>Edit</em>
+                                        button at the top of the Live Play sheet takes you back to the full form,
+                                        same theme, any time. Your stats, skills, and equipment carry over
                                         automatically.
                                     </p>
                                     <p class="description-text reminder-text"
