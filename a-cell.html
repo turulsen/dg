@@ -773,15 +773,55 @@
 
   // Native type="password" masks with the browser's own round dots --
   // this is a plain type="text" field instead, so the mask character can
-  // be an X. On every edit, input.value briefly holds whatever the
-  // browser just applied (insert/delete/paste, already correctly
-  // resolved) -- read that into realValue synchronously, before it ever
-  // paints, then overwrite the field with a same-length run of X's.
+  // be an X, matching the terminal aesthetic. realValue is the source of
+  // truth for what was actually typed; the field itself only ever shows
+  // X's.
+  //
+  // This used to just read input.value straight into realValue on
+  // 'input' -- broken, because by the time that event fires the field
+  // has ALREADY been overwritten with X's from the previous keystroke
+  // (see the reassignment below), so every 'input' event after the
+  // first one was reading "old X's + this one new real character", not
+  // the real cumulative value. Typing landed on access_denied every
+  // time no matter how carefully the password was typed, since realValue
+  // was never anything but junk past the first character -- while a
+  // paste worked fine, since it inserts the whole real string in one
+  // atomic edit before any masking has happened yet. Fixed by computing
+  // the edit itself (what was inserted/deleted, and where) on
+  // 'beforeinput' -- while input.value is still whatever the field
+  // showed BEFORE this edit (all X's, but same length/positions as
+  // realValue) -- and applying that same edit to realValue directly,
+  // instead of ever trying to read the real characters back out of the
+  // display value.
   var realValue = '';
+  input.addEventListener('beforeinput', function (e) {
+    var start = input.selectionStart;
+    var end = input.selectionEnd;
+    var data = e.data;
+    if (e.inputType === 'insertFromPaste' && e.clipboardData) {
+      data = e.clipboardData.getData('text');
+    }
+    if (data) {
+      realValue = realValue.slice(0, start) + data + realValue.slice(end);
+    } else if (start !== end) {
+      // A selection is being replaced/removed (covers deleteByCut and a
+      // Backspace/Delete with an active selection) -- start/end already
+      // bracket exactly what goes away.
+      realValue = realValue.slice(0, start) + realValue.slice(end);
+    } else if (e.inputType === 'deleteContentForward') {
+      // Delete key, cursor collapsed -- removes the character AFTER it.
+      realValue = realValue.slice(0, start) + realValue.slice(start + 1);
+    } else {
+      // deleteContentBackward (plain Backspace), cursor collapsed --
+      // removes the character BEFORE it. start === end here, so without
+      // the -1 this would slice the string apart and rejoin it unchanged.
+      realValue = realValue.slice(0, start - 1) + realValue.slice(end);
+    }
+  });
   input.addEventListener('input', function () {
-    realValue = input.value;
+    var caret = Math.min(input.selectionStart, realValue.length);
     input.value = 'X'.repeat(realValue.length);
-    input.setSelectionRange(input.value.length, input.value.length);
+    input.setSelectionRange(caret, caret);
   });
 
   function grantAccess() {

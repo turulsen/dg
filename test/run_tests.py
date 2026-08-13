@@ -1474,6 +1474,52 @@ def test_acell_gate(p):
     errs_all.extend(errs)
     page.close()
 
+    # Real character-by-character typing (not page.fill(), which sets the
+    # whole value in one shot like a paste and would not have caught this)
+    # -- regression test for a real bug where the X-masking handler read
+    # input.value AFTER it had already been overwritten with X's from the
+    # previous keystroke, so every keystroke past the first corrupted the
+    # tracked real value. Typing the password character by character
+    # always denied access; only pasting it worked. See a-cell.html's
+    # beforeinput handler for the fix.
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    page.locator("#acell-pw-input").press_sequentially("MASTICATE", delay=30)
+    page.press("#acell-pw-input", "Enter")
+    page.wait_for_timeout(200)
+    record("acell", "typing the password character-by-character (not pasting) still grants access",
+           "acces_granted" in page.inner_text("#acell-term-log"), page.inner_text("#acell-term-log"))
+    errs_all.extend(errs)
+    page.close()
+
+    # Mid-string backspace while typing -- the beforeinput fix tracks edits
+    # by selection position, not just appends at the end, so this needs its
+    # own check: type "MASTICATT", backspace out the wrong "TT" and the
+    # correct char before it, then finish with the right ending.
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    pw_input = page.locator("#acell-pw-input")
+    pw_input.press_sequentially("MASTICATT", delay=20)
+    for _ in range(3):
+        page.press("#acell-pw-input", "Backspace")
+    pw_input.press_sequentially("ATE", delay=20)
+    page.press("#acell-pw-input", "Enter")
+    page.wait_for_timeout(200)
+    record("acell", "typing with a mid-entry correction (backspace) still resolves to the right value",
+           "acces_granted" in page.inner_text("#acell-term-log"), page.inner_text("#acell-term-log"))
+    errs_all.extend(errs)
+    page.close()
+
     # Same-tab reload -> gate skipped (sessionStorage-gated, like the boot splash).
     page = p.new_page()
     page.set_default_timeout(8000)
