@@ -3256,7 +3256,8 @@ textarea {
 }
 
 #settings-panel select,
-#settings-panel button {
+#settings-panel button,
+#settings-panel input[type="text"] {
     background: #262626;
     color: #eee;
     border: 1px solid rgba(255, 255, 255, 0.25);
@@ -3270,6 +3271,10 @@ textarea {
     background: #333;
     color: #fff;
     border-color: rgba(255, 255, 255, 0.4);
+}
+
+#settings-panel input[type="text"]::placeholder {
+    color: #888;
 }
 
 #settings-panel #agent-drop-zone,
@@ -3425,6 +3430,69 @@ textarea {
 }
 
 /* ── Toast notification ─────────────────────────────────────────────── */
+/* ── In-page confirm dialog (dgConfirm, save-load.js) -- replaces
+   window.confirm(), which is silently disabled in an iOS standalone PWA.
+   Deliberately theme-agnostic, same reasoning as #dg-toast below it. ── */
+#dg-confirm-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 9700;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+#dg-confirm-backdrop.dg-confirm-open {
+    display: flex;
+}
+
+#dg-confirm-box {
+    background: #1a1a1a;
+    color: #eee;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    padding: 20px;
+    max-width: 420px;
+    width: 100%;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+
+#dg-confirm-message {
+    white-space: pre-wrap;
+    margin-bottom: 18px;
+}
+
+#dg-confirm-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+#dg-confirm-actions button {
+    background: #262626;
+    color: #eee;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    padding: 9px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+}
+
+#dg-confirm-actions button:hover {
+    background: #333;
+}
+
+#dg-confirm-ok {
+    border-color: #cf4a4a !important;
+    color: #ff8a8a !important;
+}
+
 #dg-toast {
     position: fixed;
     bottom: 24px;
@@ -4995,9 +5063,9 @@ input[type="checkbox"]:checked+label {
    descendants of body.theme-field-notes, squaring off e.g. the radio
    dial's round knob into a rectangle even though it never re-skins for
    any other theme either. */
-.theme-field-notes *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast),
-.theme-field-notes *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast)::before,
-.theme-field-notes *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast)::after {
+.theme-field-notes *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *),
+.theme-field-notes *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *)::before,
+.theme-field-notes *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *)::after {
     border-radius: 0 !important;
     font-weight: 400;
 }

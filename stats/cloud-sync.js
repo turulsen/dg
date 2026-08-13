@@ -126,9 +126,12 @@
 
     function loadFromCloud(codeArg, opts) {
         opts = opts || {};
-        const code = (codeArg || prompt('Enter the Agent Code to load:') || '').trim().toUpperCase();
-        if (!code) return;
+        const code = (codeArg || '').trim().toUpperCase();
         const status = document.getElementById('cloud-load-status');
+        if (!code) {
+            if (status) status.textContent = 'Enter an Agent Code above, then press Load.';
+            return;
+        }
         if (status) status.textContent = 'Loading…';
 
         const cbName = '_dgCloudLoadCb' + Date.now();
@@ -193,6 +196,8 @@
             setCloudCode(code);
             rosterUpsert(code, state.bio?.name);
             if (status) status.textContent = 'Loaded!';
+            const codeInput = document.getElementById('cloud-load-code-input');
+            if (codeInput) codeInput.value = '';
         };
 
         const script = document.createElement('script');
@@ -225,12 +230,21 @@
     // before doing anything destructive, the same way clearSheet() (the
     // manual "Clear Sheet" button) already does -- this path just reaches
     // the same wipe automatically instead of via a button click.
-    function startRecruitFlow(code) {
-        const proceed = confirm(
-            'No cloud-saved character sheet was found for Agent Code ' + code + '.\n\n' +
-            'If this Agent already HAS a character sheet, continuing will start a BLANK one under the same code -- and every change you make from here will overwrite the real one as you go, with no undo.\n\n' +
-            'Only continue if you\'re sure this Agent has never been through Character Creation yet. Choose Cancel if you\'re not sure -- check with your Handler first.'
-        );
+    async function startRecruitFlow(code) {
+        // dgConfirm (save-load.js), not window.confirm() -- confirm() is
+        // silently disabled in an iOS standalone PWA, which made this whole
+        // flow look like a dead end (no dialog, sheet just stays blank).
+        const proceed = window.dgConfirm
+            ? await window.dgConfirm(
+                'No cloud-saved character sheet was found for Agent Code ' + code + '.\n\n' +
+                'If this Agent already HAS a character sheet, continuing will start a BLANK one under the same code -- and every change you make from here will overwrite the real one as you go, with no undo.\n\n' +
+                'Only continue if you\'re sure this Agent has never been through Character Creation yet. Choose Cancel if you\'re not sure -- check with your Handler first.'
+            )
+            : confirm(
+                'No cloud-saved character sheet was found for Agent Code ' + code + '.\n\n' +
+                'If this Agent already HAS a character sheet, continuing will start a BLANK one under the same code -- and every change you make from here will overwrite the real one as you go, with no undo.\n\n' +
+                'Only continue if you\'re sure this Agent has never been through Character Creation yet. Choose Cancel if you\'re not sure -- check with your Handler first.'
+            );
         if (!proceed) {
             const status = document.getElementById('cloud-load-status');
             if (status) status.textContent = 'Not loaded -- no cloud character was found, and you chose not to start a blank one.';

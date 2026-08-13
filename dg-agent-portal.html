@@ -1675,17 +1675,19 @@ body{
           <button class="af-small-btn" onclick="showAfGate()">Load Different Agent</button>
         </div>
 
-        <!-- Jump to the Character Creator -- there's no real link between an
-             Agent File and a stats/ character (see the root README's
-             roadmap item #1: three separate identity systems), so this is
-             honest about what it does: stats/ auto-saves and auto-loads on
-             its own, so if a character is already there this resumes it,
-             and if nothing is saved there it's a blank sheet ready to fill
-             in -- exactly the "no character sheet linked -> create new"
-             fallback, without pretending a real link exists. -->
+        <!-- Jump to the Character Creator. Both pages' Agent Codes share
+             the same format and backend (see the root README's roadmap
+             item #1 on the three identity systems, and genCode() being
+             unified across them) -- so if this Agent File has a known
+             code, pass it through as ?load=CODE and let stats/'s own
+             cloud lookup try to resume that exact character, instead of
+             blindly opening whatever was last saved locally on this
+             device (which could be a different Agent entirely, or
+             nothing). Falls back to a bare open (resume local / blank)
+             only when no code is known at all. -->
         <div style="margin:12px 0;">
-          <button class="af-small-btn" onclick="location.href='stats/index.html'"
-            title="Opens the Character Creator. Resumes whatever character is already saved there in this browser, or starts a blank one if none is.">
+          <button class="af-small-btn" id="open-character-sheet-btn" onclick="dgOpenCharacterSheet()"
+            title="Opens the Character Creator. If this Agent File has a known code, tries to load that exact character sheet from the cloud; otherwise resumes whatever's already saved on this device, or starts a blank one.">
             &rarr; Open Character Sheet</button>
         </div>
 
@@ -3361,6 +3363,11 @@ function loadAgentCode(){
   s.src=APPS_SCRIPT_URL+'?code='+encodeURIComponent(code)+'&callback=_agentLookupCallback';
   s.onerror=()=>{status.textContent='Connection error. Try again.';};
   document.head.appendChild(s);
+}
+
+function dgOpenCharacterSheet() {
+  var code = afCode || (loadPersistedAgent() || {}).code || '';
+  location.href = code ? ('stats/index.html?load=' + encodeURIComponent(code)) : 'stats/index.html';
 }
 
 /* ── OPEN IN AGENT FILE ── */

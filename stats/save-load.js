@@ -823,6 +823,48 @@ function matchProfessionKey(profStr) {
         toast._t = setTimeout(() => toast.classList.remove('dg-toast-visible'), 3000);
     }
 
+    // A real in-page confirm dialog, not window.confirm() -- confirm()
+    // (like prompt() and alert()) is silently disabled in an iOS
+    // home-screen-installed (standalone) PWA: it never shows anything and
+    // just returns immediately, which reads as "nothing happens" when a
+    // gated action (like cloud-sync.js's startRecruitFlow) tries to use it.
+    // Returns a Promise<boolean> so callers can `await` it the same way
+    // they'd branch on confirm()'s return value.
+    function dgConfirm(message) {
+        return new Promise((resolve) => {
+            let backdrop = document.getElementById('dg-confirm-backdrop');
+            if (!backdrop) {
+                backdrop = document.createElement('div');
+                backdrop.id = 'dg-confirm-backdrop';
+                backdrop.innerHTML =
+                    '<div id="dg-confirm-box">' +
+                    '<div id="dg-confirm-message"></div>' +
+                    '<div id="dg-confirm-actions">' +
+                    '<button type="button" id="dg-confirm-cancel">Cancel</button>' +
+                    '<button type="button" id="dg-confirm-ok">Continue</button>' +
+                    '</div></div>';
+                document.body.appendChild(backdrop);
+            }
+            document.getElementById('dg-confirm-message').textContent = message;
+            const okBtn = document.getElementById('dg-confirm-ok');
+            const cancelBtn = document.getElementById('dg-confirm-cancel');
+            const cleanup = (result) => {
+                backdrop.classList.remove('dg-confirm-open');
+                okBtn.removeEventListener('click', onOk);
+                cancelBtn.removeEventListener('click', onCancel);
+                backdrop.removeEventListener('click', onBackdrop);
+                resolve(result);
+            };
+            const onOk = () => cleanup(true);
+            const onCancel = () => cleanup(false);
+            const onBackdrop = (e) => { if (e.target === backdrop) cleanup(false); };
+            okBtn.addEventListener('click', onOk);
+            cancelBtn.addEventListener('click', onCancel);
+            backdrop.addEventListener('click', onBackdrop);
+            backdrop.classList.add('dg-confirm-open');
+        });
+    }
+
     /* =========================================================================
        AUTO-SAVE
     ========================================================================= */
@@ -940,6 +982,7 @@ function matchProfessionKey(profStr) {
     // (or fell through to a jarring native alert() on the paths with an
     // `else`) rather than showing a toast, in every one of those files.
     window.showToast = showToast;
+    window.dgConfirm = dgConfirm;
 
     /* =========================================================================
        INIT — run after scripts.js window.onload (and its 50 ms inner timer)

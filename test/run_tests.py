@@ -3253,18 +3253,21 @@ def test_stats_recruit_flow_on_missing_character(p):
                            body=f'{cb}({json.dumps({"status": "OK", "data": {"char_name": "Dani Uribe"}})})')
     page.route("**/script.google.com/**", fake_apps_script)
 
-    dialog_messages = []
-    def handle_dialog(d):
-        dialog_messages.append(d.message)
-        d.accept()
-    page.on("dialog", handle_dialog)
-
     page.goto(f"{BASE}/stats/index.html?load=DANI-U8BM&live=1", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(1500)
 
+    # startRecruitFlow() now gates behind dgConfirm() (save-load.js), an
+    # in-page dialog, not window.confirm() -- confirm() is silently
+    # disabled in an iOS standalone PWA, so this is the real, working
+    # equivalent of what a player actually sees.
+    dialog_text = page.eval_on_selector("#dg-confirm-message", "el => el.textContent") \
+        if page.query_selector("#dg-confirm-message") else ""
     record("stats-terminal", "a not-found Play link warns before overwriting, in case the Agent's real sheet just hasn't synced",
-           len(dialog_messages) == 1 and "DANI-U8BM" in dialog_messages[0] and "overwrite" in dialog_messages[0].lower(),
-           str(dialog_messages))
+           "DANI-U8BM" in dialog_text and "overwrite" in dialog_text.lower(),
+           dialog_text)
+
+    page.click("#dg-confirm-ok")
+    page.wait_for_timeout(500)
 
     name_val = page.eval_on_selector("#cs-name", "el => el.value")
     record("stats-terminal", "a not-found Play link does not leave the previous Agent's name on screen",
@@ -3301,10 +3304,11 @@ def test_stats_recruit_flow_cancel_protects_existing_character(p):
         route.fulfill(status=200, content_type="application/javascript",
                        body=f'{cb}({json.dumps({"status": "NOT_FOUND"})})')
     page.route("**/script.google.com/**", fake_apps_script)
-    page.on("dialog", lambda d: d.dismiss())
 
     page.goto(f"{BASE}/stats/index.html?load=PATR-EQ9A&live=1", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(1000)
+    page.wait_for_timeout(1500)
+    page.click("#dg-confirm-cancel")
+    page.wait_for_timeout(500)
 
     record("stats-terminal", "choosing Cancel does not adopt the Agent Code for Cloud Save",
            page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')") != "PATR-EQ9A", "")
@@ -3682,7 +3686,7 @@ def test_agent_file_open_character_sheet_btn(p):
     # agent is loaded -- so it's present in the DOM but must not be
     # visible yet, not merely absent.
     record("agent-portal", "Open Character Sheet button is not visible on the Agent File code gate",
-           not page.is_visible("button[onclick*='stats/index.html']"), "")
+           not page.is_visible("#open-character-sheet-btn"), "")
 
     page.fill("#dg-form [name=char_name]", "Marcus Reyes")
     page.click("#submit-btn")
@@ -3690,17 +3694,24 @@ def test_agent_file_open_character_sheet_btn(p):
     page.click("#open-agent-file-btn")
     page.wait_for_timeout(400)
 
-    btn = page.locator("button[onclick*='stats/index.html']")
+    btn = page.locator("#open-character-sheet-btn")
     record("agent-portal", "Open Character Sheet button appears once an agent is loaded",
            btn.count() == 1, "")
 
+    # Submitting the Cover form mints an Agent Code (afCode) -- the button
+    # now carries that code through as ?load=, so stats/'s own cloud
+    # lookup can try to resume this exact Agent instead of blindly
+    # opening whatever was last saved locally on this device (see
+    # dgOpenCharacterSheet() in dg-agent-portal.html).
     btn.click()
     for _ in range(20):
-        if page.url.endswith("stats/index.html"):
+        if "stats/index.html" in page.url:
             break
         page.wait_for_timeout(300)
     record("agent-portal", "Open Character Sheet button navigates to stats/index.html",
-           page.url.endswith("stats/index.html"), page.url)
+           "stats/index.html" in page.url, page.url)
+    record("agent-portal", "Open Character Sheet carries the Agent's known code through as ?load=",
+           "load=" in page.url, page.url)
 
     record("agent-portal", "no JS exceptions", len(errs)==0, "; ".join(errs))
     page.close()
