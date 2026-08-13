@@ -79,6 +79,49 @@ body.folder-theme{
   row-gap:10px;
 }
 
+/* Wrapping-only treatment: once there are enough tabs to spill onto a
+   second row (agent-hub.html adds .many past 3 agents), a wrapped row
+   otherwise floats directly over the dark page background with nothing
+   tying it to the folder below, and the active tab can land anywhere in
+   the wrap order instead of next to .folder-body. On a single row (few
+   agents, or desktop's wider strip) neither problem exists, so this is
+   scoped to the same narrow-viewport breakpoint the rest of the file
+   uses for mobile -- applying it unconditionally made the plain,
+   already-fine single-row case look gratuitously different. */
+@media (max-width:560px){
+  .tab-strip.many{
+    /* Fills the gaps around/between wrapped tabs so they read as one
+       continuous surface leading into .folder-body. Matches
+       --tab-active (.folder-body's own color), not --tab-inactive (the
+       individual tabs' own color): using the tabs' shade here left a
+       visible two-tone seam where the strip met the folder-body, since
+       those are two different tans. Individual inactive tabs still
+       render a shade darker than this background (still --tab-inactive,
+       per .tw below) for their own "tucked behind" depth cue -- only
+       the strip's own fill needed to change.
+       No border-radius here (deliberately square) -- the strip's fill
+       sits BEHIND every tab, and rounding its own corners exposed the
+       dark page background showing through the rounded-off cutouts at
+       the top-left/top-right, i.e. real black notches. A square fill
+       behind a rounded tab just shows a little more of the *same* tan
+       at that tab's corner, an invisible seam instead of a visible
+       one. */
+    background:var(--tab-active);
+  }
+
+  /* The active tab is the one with an open paper panel below it -- it
+     needs to sit in the LAST wrapped row, immediately above
+     .folder-body, not wherever its natural (chronological) position in
+     the tab order happens to land it. order pushes it to the very end
+     of the flex sequence, which (with flex-wrap) is the final row.
+     Excludes the pinned "+ New Recruit" tab, which stays first even
+     when active -- it has no roster-below-it relationship to
+     preserve. */
+  .tab-strip.many .tw.active:not(.tw-new){
+    order:999;
+  }
+}
+
 .tw{
   position:relative;
   height:38px;
@@ -101,8 +144,18 @@ body.folder-theme{
 .tw.active{
   background:var(--tab-active);
   transform:translateY(0);
-  border:1px solid #b8b0a0;
-  border-bottom:none;
+  /* No border at all (inactive tabs keep theirs) -- the active tab and
+     .folder-body already share the exact same fill color, so an outline
+     here is the only thing left drawing a line between them. Dropped,
+     the tab reads as the top edge of the same sheet of paper poking up
+     out of the folder, rather than a separate chip sitting above it.
+     border-width:0 (not the border:none shorthand) so it only zeroes
+     the width -- .tw.tw-new's own border-style:dashed still applies at
+     equal specificity for the pinned "+ New Recruit" tab, and leaving
+     style/color alone here means that combination stays invisible
+     (0-width) instead of resolving to a stray medium-width dashed
+     line in the shorthand's reset color. */
+  border-width:0;
   box-shadow:none;
   z-index:4;
 }

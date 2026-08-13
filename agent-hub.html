@@ -244,6 +244,12 @@
 
   const tabStrip = document.getElementById('tab-strip');
   const folderBody = document.getElementById('folder-body');
+  // The strip-fill + active-tab-reorder look (see .tab-strip.many in
+  // theme-folder.css) is only needed once tabs actually wrap to a second
+  // row -- on desktop, or with few enough agents to fit one row, the plain
+  // floating tabs already look right and this extra treatment would just
+  // be a gratuitous difference for no reason.
+  if (agents.length > 3) tabStrip.classList.add('many');
 
   // Sets exactly one tab/panel active by id, mirroring dg-agent-portal.html's
   // switchTab() -- a full class replace (not classList.toggle), since 'tw

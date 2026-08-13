@@ -3238,6 +3238,102 @@ textarea {
     box-sizing: border-box;
 }
 
+/* Every theme reskins buttons/selects/text via body-level CSS custom
+   properties and inherited color/font-family (--primary-color,
+   --input-bg, .theme-field-notes's cursive font, etc.), meant for
+   controls sitting on that theme's own paper background. #settings-panel
+   is a permanently dark drawer regardless of theme, so those inherited
+   values landed here as low-contrast (often near-black-on-near-black)
+   or the wrong font instead of the plain readable look the drawer was
+   always meant to have. Each selector below is ID-anchored on
+   #settings-panel specifically so it outranks every theme's own
+   class-based rule regardless of source order or which theme is
+   active. */
+#settings-panel #theme-selector,
+#settings-panel #theme-selector label {
+    color: #eee;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+#settings-panel select,
+#settings-panel button {
+    background: #262626;
+    color: #eee;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: normal;
+    padding: 9px 12px;
+}
+
+#settings-panel select:hover,
+#settings-panel button:hover {
+    background: #333;
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
+#settings-panel #agent-drop-zone,
+#settings-panel .json-drop-zone {
+    background: transparent;
+    border-color: rgba(255, 255, 255, 0.4);
+    color: #eee;
+    opacity: 1;
+}
+
+#settings-panel #agent-drop-zone:hover,
+#settings-panel .json-drop-zone:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+#settings-panel #agent-paste-details,
+#settings-panel #agent-paste-details summary,
+#settings-panel #wiz-promo,
+#settings-panel #wiz-promo .wiz-promo-text,
+#settings-panel .io-option-desc {
+    color: #ccc;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+#settings-panel #wiz-toggle-btn {
+    background: #262626;
+    color: #eee;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+/* The Export rows' side-by-side button + description layout (.io-option)
+   assumes the wide main page -- inside the narrow ~300px drawer it
+   squeezed the description into a barely-there right-hand sliver that
+   wrapped almost one word per line. Stacking them fixes that; the
+   button no longer needs its page-layout fixed width once it's full
+   width on its own row. */
+#settings-panel .io-option {
+    flex-direction: column;
+    gap: 6px;
+}
+
+#settings-panel .io-option>button {
+    width: 100%;
+    min-width: 0;
+}
+
+/* Modern theme reskins #export-printable by ID (.theme-modern
+   #export-printable), which outranks the plain #settings-panel button
+   rule above (a matching ID beats a matching class at equal ID count).
+   Re-anchored on #settings-panel's own ID here to win that specifically. */
+#settings-panel #export-printable,
+#settings-panel #export-printable:hover {
+    background: #262626;
+    color: #eee;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    box-shadow: none;
+    filter: none;
+}
+
+#settings-panel #export-printable:hover {
+    background: #333;
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
 /* ── Live Play / Edit mode toggle ─────────────────────────────────────
    "In-world" field-radio styled button (dark channel readout + pulsing
    status dot), not a plain checkbox -- sits where Import Agent does for
@@ -4889,10 +4985,19 @@ input[type="checkbox"]:checked+label {
     background: radial-gradient(ellipse at 50% 35%, transparent 20%, rgba(0, 0, 0, 0.68) 80%);
 }
 
-/* Hard right-angles — no soft edges anywhere on a field notes page */
-.theme-field-notes *,
-.theme-field-notes *::before,
-.theme-field-notes *::after {
+/* Hard right-angles — no soft edges anywhere on a field notes page.
+   Excludes the handful of overlay widgets that are deliberately
+   theme-agnostic regardless of which of the 5 themes is active
+   (#dg-radio's round channel dial, #settings-cog-btn's circular gear,
+   #settings-panel, #dg-toast -- see the settings-cog comment above,
+   which already calls these out as one group): without the exclusion
+   this blanket selector reached them too since they're still DOM
+   descendants of body.theme-field-notes, squaring off e.g. the radio
+   dial's round knob into a rectangle even though it never re-skins for
+   any other theme either. */
+.theme-field-notes *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast),
+.theme-field-notes *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast)::before,
+.theme-field-notes *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast)::after {
     border-radius: 0 !important;
     font-weight: 400;
 }
