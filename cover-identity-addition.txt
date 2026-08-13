@@ -1,0 +1,177 @@
+══════════════════════════════════════════════════════════════════════
+COVER IDENTITY — Apps Script backend addition
+══════════════════════════════════════════════════════════════════════
+
+What this adds: a way to look up every Agent (character sheet and/or
+Agent File) belonging to a given real-world player by name — "Cover
+Identity" in the app's UI, reusing the player_name concept that already
+exists on the character sheet's Biography, now used as a real lookup
+key instead of just descriptive text for the Handler.
+
+Two client-side changes already shipped ahead of this (same
+graceful-degradation pattern as every other addition below — they just
+silently find nothing until this is pasted in and redeployed):
+  - stats/cloud-sync.js's save_character POST now also sends a
+    top-level `player_name` field (not just buried inside
+    character_json), so it can be written to its own column instead of
+    requiring a JSON-parse scan of every row on every lookup.
+  - dg-agent-portal.html's Cover form has a new "Your Name (Cover
+    Identity)" input, name="player_name" — since the whole form already
+    POSTs via `new FormData(form).forEach(...)` with no fixed field
+    whitelist client-side, this field reaches your backend automatically
+    on both a fresh brief submission and any edit, AS LONG AS your brief
+    upsert logic itself writes whatever keys it receives generically
+    (matching every other Cover-form field) rather than a fixed column
+    whitelist. If your Delta Green Briefs handler DOES use a whitelist,
+    add player_name to it — that's the only required change on that
+    side.
+
+──────────────────────────────────────────────────────────────────────
+1. Sheet changes
+──────────────────────────────────────────────────────────────────────
+
+Add a `player_name` column to BOTH sheets (nullable — existing rows
+just read blank until re-saved, or the Handler fills it in via A-Cell's
+Sheet tab, which now supports editing it inline):
+
+  - `Characters` tab (the Cloud Save sheet `save_character` writes to,
+    one row per Agent Code) — add a `player_name` column alongside the
+    existing `agent_code` / `character_json` / `updated_at` columns.
+  - `Delta Green Briefs` tab (the Cover-form/Agent-File sheet) — add a
+    `player_name` column alongside its existing per-field columns
+    (char_name, codename, age_range, etc.), same shape as every other
+    field already stored there.
+
+──────────────────────────────────────────────────────────────────────
+2. Extend save_character to also write player_name
+──────────────────────────────────────────────────────────────────────
+
+Wherever your `save_character` action currently upserts a Characters
+row by `agent_code` (writing `character_json` and touching
+`updated_at`), also write the request's `player_name` field into the
+new column on that same row. This is the ONLY change needed on the
+Characters-sheet side — A-Cell's inline Player Name editor and the
+original stats/ save path both already go through this exact same
+action, no new action required for that sheet.
+
+Example (adjust column/variable names to match your actual
+implementation — this assumes a helper that finds-or-creates a row by
+agent_code and returns its row index):
+
+  function handleSaveCharacter(payload) {
+    var sheet = SpreadsheetApp.getActive().getSheetByName('Characters');
+    var row = findOrCreateCharacterRow(sheet, payload.agent_code);
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    setCellByHeader(sheet, row, headers, 'character_json', payload.character_json);
+    setCellByHeader(sheet, row, headers, 'player_name', payload.player_name || '');
+    setCellByHeader(sheet, row, headers, 'updated_at', Date.now());
+    return { status: 'OK' };
+  }
+
+  function setCellByHeader(sheet, row, headers, name, value) {
+    var col = headers.indexOf(name) + 1;
+    if (col > 0) sheet.getRange(row, col).setValue(value);
+  }
+
+──────────────────────────────────────────────────────────────────────
+3. New action: find_by_player_name
+──────────────────────────────────────────────────────────────────────
+
+Add this action to your doGet dispatcher (agent-hub.html calls it as a
+JSONP GET, same pattern as every other read action in this app:
+`?action=find_by_player_name&name=...&callback=...`).
+
+Case-insensitive, trimmed exact match (no fuzzy matching, no auth check
+— this app's "Cover Identity" feature is explicitly scoped to a plain
+name lookup for now; access control is tracked as its own separate,
+later roadmap item, not part of this addition). Scans BOTH sheets and
+returns a de-duplicated, merged list keyed by agent_code — an Agent
+that has both a Characters row AND a Briefs row appears once, with the
+Characters row's fields preferred (it's the fuller, more current
+record once a character sheet exists).
+
+  function findByPlayerName(name) {
+    var needle = String(name || '').trim().toLowerCase();
+    if (!needle) return { status: 'OK', agents: [] };
+
+    var byCode = {};
+
+    // Delta Green Briefs -- Agent File fields, used as a base so an
+    // Agent-File-only player (no character sheet yet) is still found.
+    var briefs = SpreadsheetApp.getActive().getSheetByName('Delta Green Briefs');
+    var briefRows = briefs.getDataRange().getValues();
+    var briefHeaders = briefRows[0];
+    var pnCol = briefHeaders.indexOf('player_name');
+    var codeCol = briefHeaders.indexOf('agent_code');
+    for (var i = 1; i < briefRows.length; i++) {
+      var r = briefRows[i];
+      if (pnCol < 0 || codeCol < 0) continue;
+      if (String(r[pnCol] || '').trim().toLowerCase() !== needle) continue;
+      var code = r[codeCol];
+      if (!code) continue;
+      byCode[code] = {
+        code: code,
+        char_name: r[briefHeaders.indexOf('char_name')] || '',
+        codename: r[briefHeaders.indexOf('codename')] || '',
+        sex: r[briefHeaders.indexOf('sex')] || '',
+        age_range: r[briefHeaders.indexOf('age_range')] || '',
+        nationality: r[briefHeaders.indexOf('nationality')] || '',
+        campaign_era: '', active_eras: '', face_plate_url: '',
+        saved_at: Date.now(),
+      };
+    }
+
+    // Characters -- overrides/adds on top of the Briefs pass, since this
+    // is the fuller record once a character sheet exists. character_json
+    // is parsed only for the handful of display fields agent-hub.html's
+    // roster needs (name, sex, age, nationality) -- not re-sent whole.
+    var chars = SpreadsheetApp.getActive().getSheetByName('Characters');
+    var charRows = chars.getDataRange().getValues();
+    var charHeaders = charRows[0];
+    var cPnCol = charHeaders.indexOf('player_name');
+    var cCodeCol = charHeaders.indexOf('agent_code');
+    var cJsonCol = charHeaders.indexOf('character_json');
+    var cUpdatedCol = charHeaders.indexOf('updated_at');
+    for (var j = 1; j < charRows.length; j++) {
+      var cr = charRows[j];
+      if (cPnCol < 0 || cCodeCol < 0) continue;
+      if (String(cr[cPnCol] || '').trim().toLowerCase() !== needle) continue;
+      var ccode = cr[cCodeCol];
+      if (!ccode) continue;
+      var bio = {};
+      try { bio = JSON.parse(cr[cJsonCol] || '{}').bio || {}; } catch (e) { /* skip unparsable */ }
+      byCode[ccode] = {
+        code: ccode,
+        char_name: bio.name || (byCode[ccode] || {}).char_name || '',
+        codename: (byCode[ccode] || {}).codename || '',
+        sex: bio.sex || (byCode[ccode] || {}).sex || '',
+        age_range: bio.age || (byCode[ccode] || {}).age_range || '',
+        nationality: bio.nationality || (byCode[ccode] || {}).nationality || '',
+        campaign_era: '', active_eras: '', face_plate_url: '',
+        saved_at: Number(cr[cUpdatedCol]) || Date.now(),
+      };
+    }
+
+    return { status: 'OK', agents: Object.keys(byCode).map(function (k) { return byCode[k]; }) };
+  }
+
+Wire it into your existing doGet action switch:
+
+  if (action === 'find_by_player_name') {
+    return jsonpResponse(findByPlayerName(e.parameter.name), e.parameter.callback);
+  }
+
+(`jsonpResponse` / equivalent — reuse whatever helper every other JSONP
+GET action in this project already uses to wrap its JSON in the
+callback function call.)
+
+──────────────────────────────────────────────────────────────────────
+Deploy
+──────────────────────────────────────────────────────────────────────
+
+Paste the above into your Apps Script project, add the two columns,
+redeploy. Until then, agent-hub.html's Cover Identity lookup fails
+silently (shows "No Agents found") and A-Cell's Sheet tab's inline
+Player Name edits fail to persist past a refresh — same
+fails-safely-closed behavior every other addition in this project has
+before its backend half lands.

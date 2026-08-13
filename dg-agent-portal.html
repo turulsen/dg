@@ -8,7 +8,7 @@
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0a0d08">
 <meta property="og:title" content="Delta Green — Agent Portal">
-<meta property="og:description" content="Your Agent's dossier, cover identity, and After-Action Reports.">
+<meta property="og:description" content="Your Agent's dossier, field ID, and After-Action Reports.">
 <meta property="og:image" content="https://turulsen.github.io/dg-campaign/assets/mars-tech-seal.png">
 <meta property="og:url" content="https://turulsen.github.io/dg-campaign/dg-agent-portal.html">
 <meta property="og:type" content="website">
@@ -1474,7 +1474,7 @@ body{
 
     <!-- ── TAB STRIP ── -->
   <div class="tab-strip">
-    <div class="tw inactive" id="tw-ids"   onclick="switchTab('ids')"><span>Cover IDs</span></div>
+    <div class="tw inactive" id="tw-ids"   onclick="switchTab('ids')"><span>Field IDs</span></div>
     <div class="tw inactive" id="tw-agent" onclick="switchTab('agent')"><span>Agent File</span></div>
     <div class="tw active"   id="tw-cover" onclick="switchTab('cover')"><span>Cover</span></div>
   </div>
@@ -1545,6 +1545,7 @@ body{
                 <div class="fg"><label>Character name</label><input type="text" name="char_name" class="fi" placeholder="Full name" required></div>
                 <div class="fg"><label>Codename <span class="opt">(if any)</span></label><input type="text" name="codename" class="fi" placeholder="—"></div>
               </div>
+              <div class="fg"><label>Your Name <span class="opt">(Cover Identity — lets you pull this Agent up on any device later)</span></label><input type="text" name="player_name" class="fi" placeholder="Your own real name, or whatever your Handler knows you by"></div>
               <div class="two">
                 <div class="fg"><label>Age range</label>
                   <select name="age_range" class="fs" required>
@@ -2652,7 +2653,7 @@ function idsPrint() {
   // or exported card, never while the Handler is still working on it.
   const cardHtml = preview.innerHTML + IDS_WATERMARK_HTML;
   const win = window.open('', '_blank', 'width=600,height=500');
-  win.document.write('<html><head><title>Delta Green Cover ID</title><style>'
+  win.document.write('<html><head><title>Delta Green Field ID</title><style>'
     + 'body{margin:20px;background:#111;display:flex;align-items:center;justify-content:center;}'
     + '.ids-card-wrap,.ids-card-cr80,.ids-card-credential{max-width:340px;width:100%;}'
     + '.ids-card-cr80{aspect-ratio:85.6/54;border-radius:6px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.8);}'

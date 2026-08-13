@@ -512,6 +512,12 @@
   .sheet-table td{ border:1px solid var(--paper-line); padding:7px 10px; color:var(--ink); white-space:nowrap; }
   .sheet-table tr:nth-child(even) td{ background:rgba(28,22,8,.035); }
   .sheet-table td.sheet-empty-cell{ color:var(--ink-3); font-style:italic; }
+  .sheet-pn-display{ cursor:pointer; border-bottom:1px dashed var(--rule); }
+  .sheet-pn-display:hover{ border-bottom-color:var(--ink-2); }
+  .sheet-pn-input{
+    font-family:'Courier Prime',monospace; font-size:12px; width:120px;
+    padding:2px 5px; border:1px solid var(--ink-2); background:var(--paper);
+  }
   .sheet-online{ display:inline-flex; align-items:center; gap:5px; }
   .sheet-dot{ width:8px; height:8px; border-radius:50%; display:inline-block; }
   .sheet-dot.on{ background:#2f8f3a; }
@@ -718,7 +724,7 @@
           <button type="button" class="paper-btn" id="admin-refresh-btn">Refresh</button>
           <span class="play-refresh-note" id="admin-refresh-note"></span>
         </div>
-        <p class="admin-copy">Remove an Agent from the Google Sheet -- moves their character sheet AND their Agent File / Cover ID submission to a recoverable archive (restore it below any time). Deleting requires typing the Agent's own name, then the A-Cell password.</p>
+        <p class="admin-copy">Remove an Agent from the Google Sheet -- moves their character sheet AND their Agent File / Field ID submission to a recoverable archive (restore it below any time). Deleting requires typing the Agent's own name, then the A-Cell password.</p>
         <div class="admin-status" id="admin-status"></div>
         <div class="admin-list" id="admin-list">
           <div class="admin-loading">Loading agents…</div>
@@ -1749,6 +1755,14 @@
   var wrap = document.getElementById('sheet-wrap');
   var refreshBtn = document.getElementById('sheet-refresh-btn');
   var refreshNote = document.getElementById('sheet-refresh-note');
+  // Player Name is the Cover Identity lookup key (agent-hub.html) -- an
+  // Agent saved before that field existed, or by a player who skipped
+  // it, has no way to be found by name later. This is the fallback the
+  // Handler uses to fill it in by hand. Keyed by agent_code so an edit
+  // can re-save that exact row's full character_json (not just the one
+  // field) through the same save_character action stats/ already uses --
+  // there's no separate single-field write for the Characters sheet.
+  var currentRowsByCode = {};
 
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -1776,6 +1790,15 @@
   // where it matters most.
   function numCell(v) {
     return (typeof v === 'number') ? escapeHtml(String(v)) : '<span class="sheet-empty-cell">&mdash;</span>';
+  }
+
+  // Click-to-edit, not a plain cell -- the only field in this table a
+  // Handler can fix directly, since it's also the Cover Identity lookup
+  // key (agent-hub.html) and an Agent saved before that field existed
+  // has no other way to become findable by name.
+  function playerNameCell(name, code) {
+    return '<span class="sheet-pn-display" data-code="' + escapeHtml(code) + '" title="Click to edit">' +
+      (name ? escapeHtml(name) : '<span class="sheet-empty-cell">&mdash; click to set</span>') + '</span>';
   }
 
   function jsonpGet(action, params, cb) {
@@ -1830,6 +1853,8 @@
           handlers: Array.from(new Set(memberOf.map(function (m) { return m.handler; }).filter(Boolean))).join(', '),
         };
       }).filter(function (r) { return r.code && r.state; });
+      currentRowsByCode = {};
+      rows.forEach(function (r) { currentRowsByCode[r.code] = r; });
       renderSheet(rows);
       refreshNote.textContent = 'Updated ' + new Date().toLocaleTimeString();
     }
@@ -1862,7 +1887,7 @@
         '<td>' + cell(r.cellNames) + '</td>' +
         '<td>' + cell(r.handlers) + '</td>' +
         '<td>' + (kia ? '<span class="kia-name">' + cell(bio.name) + '</span>' : cell(bio.name)) + (kia ? ' <span class="sheet-kia-badge">KIA</span>' : '') + '</td>' +
-        '<td>' + cell(bio.player_name) + '</td>' +
+        '<td>' + playerNameCell(bio.player_name, r.code) + '</td>' +
         '<td>' + numCell(derived.hp) + '</td>' +
         '<td>' + numCell(derived.san) + '</td>' +
         '<td>' + onlineCell(r.updated_at) + '</td>' +
@@ -1872,6 +1897,60 @@
       '<table class="sheet-table"><thead><tr>' +
       '<th>Cell</th><th>Handler</th><th>Agent Name</th><th>Player Name</th><th>HP</th><th>SAN</th><th>Online</th>' +
       '</tr></thead><tbody>' + body + '</tbody></table>';
+    Array.prototype.forEach.call(wrap.querySelectorAll('.sheet-pn-display'), function (span) {
+      span.addEventListener('click', function () { startEditPlayerName(span); });
+    });
+  }
+
+  function startEditPlayerName(span) {
+    var code = span.dataset.code;
+    var row = currentRowsByCode[code];
+    if (!row || !row.state) return;
+    var current = (row.state.bio || {}).player_name || '';
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'sheet-pn-input';
+    input.value = current;
+    input.placeholder = 'Player name';
+    span.replaceWith(input);
+    input.focus();
+    input.select();
+    var settled = false;
+    function commit() {
+      if (settled) return;
+      settled = true;
+      savePlayerName(code, input.value.trim());
+    }
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      else if (e.key === 'Escape') { settled = true; fetchSheet(); }
+    });
+  }
+
+  // Re-saves this Agent's full character_json (with only player_name
+  // changed) through the same save_character action stats/cloud-sync.js
+  // already uses -- there's no separate single-field write for the
+  // Characters sheet, and the row's state here is already a full,
+  // recently-fetched copy (list_characters), so nothing else is lost.
+  // Same "trust the POST, refresh to confirm" weight as everything else
+  // in this Sheet tab, not the heavier verified-write pattern used for
+  // shared campaign state like Cells/Handouts.
+  function savePlayerName(code, value) {
+    var row = currentRowsByCode[code];
+    if (!row || !row.state) { fetchSheet(); return; }
+    row.state.bio = row.state.bio || {};
+    row.state.bio.player_name = value;
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors', keepalive: true,
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({
+        action: 'save_character',
+        agent_code: code,
+        character_json: JSON.stringify(row.state),
+        player_name: value,
+      }),
+    }).then(function () { fetchSheet(); }).catch(function () { fetchSheet(); });
   }
 
   refreshBtn.addEventListener('click', fetchSheet);

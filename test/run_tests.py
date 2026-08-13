@@ -1018,6 +1018,12 @@ def test_cover_ids_tab(p):
     page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
 
+    # textContent, not inner_text() -- .tw span is CSS text-transform:uppercase,
+    # so inner_text() would return the rendered "FIELD IDS", not the markup.
+    tw_ids_text = page.eval_on_selector("#tw-ids span", "el => el.textContent")
+    record("cover-ids-tab", "the tab reads Field IDs, not the old Cover IDs name (now Cover Identity means something else)",
+           tw_ids_text == "Field IDs", repr(tw_ids_text))
+
     page.click("#tw-ids")
     page.wait_for_timeout(300)
 
@@ -1210,8 +1216,12 @@ def test_agent_hub(p):
            action_hrefs[0] == "stats/index.html?load=OWEN-CS12&live=1", str(action_hrefs))
     record("hub", "Agent File links to the Agent Portal's Agent File tab for that exact agent",
            action_hrefs[1] == "dg-agent-portal.html?code=OWEN-CS12#agent", str(action_hrefs))
-    record("hub", "Cover ID links to the Agent Portal's Cover IDs tab for that exact agent",
+    record("hub", "Field ID links to the Agent Portal's Field IDs tab for that exact agent",
            action_hrefs[2] == "dg-agent-portal.html?code=OWEN-CS12#ids", str(action_hrefs))
+    action_labels = page.eval_on_selector_all(
+        "#panel-OWEN-CS12 .paper-btn", "els => els.map(e => e.textContent)")
+    record("hub", "the button reads Field ID, not the old Cover ID name (now Cover Identity means something else)",
+           action_labels[2] == "Field ID", str(action_labels))
 
     # Clicking a tab switches the active panel.
     page.click('.tw[data-tab="PRIY-AN34"]')
@@ -1220,6 +1230,105 @@ def test_agent_hub(p):
            "active" in page.eval_on_selector("#panel-PRIY-AN34", "el => el.className")
            and "active" not in page.eval_on_selector("#panel-OWEN-CS12", "el => el.className"), "")
 
+    errs_all.extend(errs)
+    page.close()
+    return errs_all
+
+def test_agent_hub_cover_identity(p):
+    """Cover Identity (the ci-row in agent-hub.html's header): a player's
+    real name, not the Agent's -- looks up every Agent tied to that name
+    via the find_by_player_name backend action and merges them into this
+    browser's local roster, so a fresh device/cleared browser isn't a
+    dead end. See lookupCoverIdentity()/renderRoster() in agent-hub.html."""
+    errs_all = []
+
+    def mock_lookup(agents_response):
+        def handler(route):
+            url = route.request.url
+            if "action=find_by_player_name" not in url:
+                route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+                return
+            cb = url.split("callback=")[1].split("&")[0]
+            body = json.dumps({"status": "OK", "agents": agents_response})
+            route.fulfill(status=200, content_type="application/javascript", body=f"{cb}({body})")
+        return handler
+
+    # Entering a name and finding 2 Agents merges both into the roster
+    # (starting from a genuinely empty one) and re-renders the tabs.
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", mock_lookup([
+        {"code": "GERG-P001", "char_name": "Patrick Montgomery", "codename": "", "sex": "Male",
+         "age_range": "Mid 30s", "nationality": "American", "saved_at": 1000},
+        {"code": "GERG-D002", "char_name": "Danielle Mitchell", "codename": "", "sex": "Female",
+         "age_range": "Late 20s", "nationality": "American", "saved_at": 2000},
+    ]))
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    record("hub", "starts with only New Recruit before any Cover Identity lookup",
+           page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)") == ["+ New Recruit"], "")
+
+    page.fill("#cover-identity-input", "Gergo")
+    page.click("#cover-identity-btn")
+    page.wait_for_timeout(500)
+    tab_labels = page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)")
+    record("hub", "a Cover Identity lookup with matches adds every returned Agent as a tab",
+           set(tab_labels) == {"+ New Recruit", "Patrick Montgomery", "Danielle Mitchell"}, str(tab_labels))
+    record("hub", "the status line confirms how many Agents were loaded",
+           "2" in page.inner_text("#ci-status"), page.inner_text("#ci-status"))
+    record("hub", "the looked-up Agents are actually persisted to the local roster, not just rendered once",
+           page.evaluate("() => Object.keys(JSON.parse(localStorage.getItem('dg_agent_roster')||'{}')).length") == 2, "")
+    record("hub", "the entered Cover Identity is remembered for next time",
+           page.evaluate("() => localStorage.getItem('dg_cover_identity')") == "Gergo", "")
+    errs_all.extend(errs)
+    page.close()
+
+    # A name with no matches shows a clear status, not a silent no-op.
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", mock_lookup([]))
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    page.fill("#cover-identity-input", "Nobody Real")
+    page.click("#cover-identity-btn")
+    page.wait_for_timeout(500)
+    record("hub", "a Cover Identity lookup with no matches shows a clear status instead of doing nothing",
+           "No Agents found" in page.inner_text("#ci-status"), page.inner_text("#ci-status"))
+    record("hub", "a no-match lookup leaves the roster empty, not a phantom entry",
+           page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)") == ["+ New Recruit"], "")
+    errs_all.extend(errs)
+    page.close()
+
+    # A returning visit with a stored Cover Identity re-runs the lookup
+    # automatically, silently, with no user input at all.
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    lookup_calls = []
+    def counting_mock(route):
+        url = route.request.url
+        if "action=find_by_player_name" in url:
+            lookup_calls.append(url)
+        mock_lookup([{"code": "GERG-P001", "char_name": "Patrick Montgomery", "codename": "", "sex": "Male",
+                       "age_range": "Mid 30s", "nationality": "American", "saved_at": 1000}])(route)
+    page.route("**/script.google.com/**", counting_mock)
+    page.add_init_script("localStorage.setItem('dg_cover_identity', 'Gergo');")
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+    record("hub", "a stored Cover Identity re-runs the lookup on its own, no click needed",
+           len(lookup_calls) >= 1, str(lookup_calls))
+    record("hub", "the returning player's Agent shows up without any input",
+           "Patrick Montgomery" in page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)"), "")
+    record("hub", "the input is pre-filled with the remembered Cover Identity",
+           page.input_value("#cover-identity-input") == "Gergo", "")
     errs_all.extend(errs)
     page.close()
     return errs_all
@@ -2071,9 +2180,25 @@ def test_acell_sheet(p):
         {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12", "PRIY-AN34"]},
     ]
 
+    posts = []
+
     def fake_apps_script(route):
         req = route.request
         if req.method == "POST":
+            try:
+                body = json.loads(req.post_data or "{}")
+            except Exception:
+                body = {}
+            posts.append(body)
+            # Stateful for save_character -- so a Player Name edit posted
+            # here is actually reflected in the NEXT list_characters
+            # re-fetch the Sheet tab does after saving, the same way a
+            # real backend would persist it.
+            if body.get("action") == "save_character":
+                for c in fake_characters:
+                    if c["agent_code"] == body.get("agent_code"):
+                        c["character_json"] = body.get("character_json", c["character_json"])
+                        break
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         url = req.url
@@ -2125,6 +2250,30 @@ def test_acell_sheet(p):
     dots = page.eval_on_selector_all("#sheet-wrap .sheet-dot", "els => els.map(e=>e.className)")
     record("acell", "Online status reflects how recently each Agent's sheet last synced (just now / 20 min ago / 2 hours ago)",
            dots == ["sheet-dot on", "sheet-dot recent", "sheet-dot off"], str(dots))
+
+    # Player Name is click-to-edit -- the Handler's fallback for an Agent
+    # saved before that field existed (Priya has none set, per
+    # fake_characters above), since it's also the Cover Identity lookup
+    # key (agent-hub.html) an Agent with no player_name can't be found by.
+    priya_row = page.locator("#sheet-wrap tbody tr").nth(1)
+    record("acell", "an Agent with no Player Name shows a click-to-set placeholder",
+           "click to set" in priya_row.locator(".sheet-pn-display").inner_text(), "")
+    priya_row.locator(".sheet-pn-display").click()
+    page.wait_for_timeout(100)
+    record("acell", "clicking the Player Name cell swaps in an editable input",
+           priya_row.locator(".sheet-pn-input").count() == 1, "")
+    priya_row.locator(".sheet-pn-input").fill("Alex R")
+    priya_row.locator(".sheet-pn-input").press("Enter")
+    page.wait_for_timeout(400)
+    save_posts = [p for p in posts if p.get("action") == "save_character" and p.get("agent_code") == "PRIY-AN34"]
+    record("acell", "committing the edit posts save_character for the right Agent with the new player_name",
+           len(save_posts) == 1 and save_posts[0].get("player_name") == "Alex R", str(save_posts))
+    record("acell", "the re-saved character_json actually carries the new player_name too, not just the top-level field",
+           len(save_posts) == 1 and json.loads(save_posts[0].get("character_json", "{}")).get("bio", {}).get("player_name") == "Alex R",
+           save_posts[0].get("character_json") if save_posts else "")
+    page.wait_for_timeout(300)
+    record("acell", "the cell reflects the new Player Name after the Sheet re-fetches",
+           "Alex R" in page.locator("#sheet-wrap tbody tr").nth(1).inner_text(), "")
 
     page.close()
     return errs
@@ -4147,6 +4296,8 @@ def main():
         safe(test_hub_clearance_branches, browser, area="hub")
 
         safe(test_agent_hub, browser, area="hub")
+
+        safe(test_agent_hub_cover_identity, browser, area="hub")
 
         safe(test_agent_hub_recruit_flag, browser, area="hub")
 

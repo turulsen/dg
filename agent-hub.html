@@ -37,6 +37,26 @@
   .hub-header p{ font-family:'Courier Prime',monospace; font-size:13px; color:#b7b09a; max-width:62ch; line-height:1.7; margin:0; }
   .folder-wrap{ max-width:900px; margin:26px auto 0; padding:0 6px; }
 
+  .ci-row{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    margin-top:14px; font-family:'Courier Prime',monospace; font-size:12px;
+  }
+  .ci-label{ color:#8a9878; letter-spacing:.05em; }
+  .ci-input{
+    font-family:'Courier Prime',monospace; font-size:12px; color:#e9e3ce;
+    background:rgba(255,255,255,.06); border:1px solid rgba(233,227,206,.25);
+    padding:6px 10px; border-radius:3px; min-width:160px;
+  }
+  .ci-input::placeholder{ color:#6a6a5a; }
+  .ci-input:focus{ outline:none; border-color:#8a9878; }
+  .ci-btn{
+    font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase;
+    color:#c8c1a8; background:rgba(255,255,255,.06); border:1px solid rgba(233,227,206,.25);
+    padding:7px 14px; border-radius:3px; cursor:pointer;
+  }
+  .ci-btn:hover{ border-color:#8a9878; color:#e9e3ce; }
+  .ci-status{ color:#8a9878; font-size:11px; }
+
   .paper-header .lead{ display:flex; align-items:center; gap:14px; }
   .paper-photo{
     width:56px; height:56px; flex-shrink:0; border-radius:2px; overflow:hidden;
@@ -116,6 +136,18 @@
   <div class="restricted-stamp"><img src="assets/restricted-stamp.png" alt="Restricted -- Top Secret // Orcon // Special Access Required - Delta Green"></div>
   <h1>Agent Hub</h1>
   <p>Build a cover identity, roll or point-buy a new Agent, and keep dossiers up to date between sessions. Each tab below is one of your Agents.</p>
+  <!-- Cover Identity: your real name, not the Agent's -- looks up every
+       Agent (character sheet and/or Agent File) tied to that name and
+       pulls them into this browser's roster below, so a new device or a
+       cleared browser isn't a dead end. Always visible, not just on an
+       empty roster, so a second device's Agents can be pulled onto one
+       that already has some. See the IIFE below for lookupCoverIdentity(). -->
+  <div class="ci-row">
+    <label class="ci-label" for="cover-identity-input">Cover Identity:</label>
+    <input type="text" id="cover-identity-input" class="ci-input" placeholder="Your real name" autocomplete="off">
+    <button type="button" id="cover-identity-btn" class="ci-btn">Load My Agents</button>
+    <span class="ci-status" id="ci-status"></span>
+  </div>
 </div>
 
 <div class="folder-wrap">
@@ -163,7 +195,7 @@
                      cloud character yet -- checked async per agent
                      against load_character, see checkCharacterExists)
      Agent File    -> dg-agent-portal.html?code=CODE#agent
-     Cover ID      -> dg-agent-portal.html?code=CODE#ids
+     Field ID      -> dg-agent-portal.html?code=CODE#ids
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
@@ -239,17 +271,9 @@
     return a.codename ? `${first} "${a.codename}"` : (a.char_name || 'Unknown Agent');
   }
 
-  const roster = rosterLoad();
-  const agents = Object.values(roster).sort((a, b) => (b.saved_at || 0) - (a.saved_at || 0));
-
   const tabStrip = document.getElementById('tab-strip');
   const folderBody = document.getElementById('folder-body');
-  // The strip-fill + active-tab-reorder look (see .tab-strip.many in
-  // theme-folder.css) is only needed once tabs actually wrap to a second
-  // row -- on desktop, or with few enough agents to fit one row, the plain
-  // floating tabs already look right and this extra treatment would just
-  // be a gratuitous difference for no reason.
-  if (agents.length > 3) tabStrip.classList.add('many');
+  let agents = [];
 
   // Sets exactly one tab/panel active by id, mirroring dg-agent-portal.html's
   // switchTab() -- a full class replace (not classList.toggle), since 'tw
@@ -264,25 +288,47 @@
     folderBody.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + id));
   }
 
-  if (!agents.length) {
-    const panel = document.createElement('div');
-    panel.className = 'tab-panel empty-panel';
-    panel.id = 'panel-empty';
-    panel.innerHTML = `<div class="paper">
-      <div class="paper-rules"></div>
-      <div class="paper-margin"></div>
-      <div class="holes"><div class="hole"></div><div class="hole"></div><div class="hole"></div></div>
-      <div class="paper-content">
-        <div class="paper-header"><div>
-          <div class="paper-title-sub">Delta Green — Agent Roster</div>
-          <div class="paper-title">No Agents on File</div>
-        </div></div>
-        <p class="empty-copy">Nothing here yet. Build a new Agent via the New Recruit tab, then submit or export it to add it to this roster.</p>
-      </div>
-    </div>`;
-    folderBody.appendChild(panel);
-    setActiveTab('empty');
-  } else {
+  // Builds (or rebuilds) the roster tabs/panels from local storage --
+  // pulled out of the old one-shot top-level code so a Cover Identity
+  // lookup landing new Agents into dg_agent_roster can re-render without
+  // a full page reload. preserveActiveCode keeps whatever tab was open
+  // (e.g. the one a returning player was already looking at) selected
+  // after a re-render, falling back to the most recent Agent only if
+  // that tab no longer exists.
+  function renderRoster(preserveActiveCode) {
+    tabStrip.querySelectorAll('.tw:not(.tw-new)').forEach(el => el.remove());
+    folderBody.querySelectorAll('.tab-panel:not(#panel-new)').forEach(el => el.remove());
+
+    const roster = rosterLoad();
+    agents = Object.values(roster).sort((a, b) => (b.saved_at || 0) - (a.saved_at || 0));
+    // The strip-fill + active-tab-reorder look (see .tab-strip.many in
+    // theme-folder.css) is only needed once tabs actually wrap to a
+    // second row -- on desktop, or with few enough agents to fit one
+    // row, the plain floating tabs already look right and this extra
+    // treatment would just be a gratuitous difference for no reason.
+    tabStrip.classList.toggle('many', agents.length > 3);
+
+    if (!agents.length) {
+      const panel = document.createElement('div');
+      panel.className = 'tab-panel empty-panel';
+      panel.id = 'panel-empty';
+      panel.innerHTML = `<div class="paper">
+        <div class="paper-rules"></div>
+        <div class="paper-margin"></div>
+        <div class="holes"><div class="hole"></div><div class="hole"></div><div class="hole"></div></div>
+        <div class="paper-content">
+          <div class="paper-header"><div>
+            <div class="paper-title-sub">Delta Green — Agent Roster</div>
+            <div class="paper-title">No Agents on File</div>
+          </div></div>
+          <p class="empty-copy">Nothing here yet. Build a new Agent via the New Recruit tab, then submit or export it to add it to this roster -- or enter your Cover Identity above if you've already made one on another device.</p>
+        </div>
+      </div>`;
+      folderBody.appendChild(panel);
+      setActiveTab('empty');
+      return;
+    }
+
     agents.forEach((a, i) => {
       const tab = document.createElement('div');
       tab.className = 'tw';
@@ -319,7 +365,7 @@
           <div class="paper-actions">
             <a class="paper-btn primary" id="${playBtnId}" href="stats/index.html?load=${encodeURIComponent(a.code)}&live=1">Play</a>
             <a class="paper-btn" href="dg-agent-portal.html?code=${encodeURIComponent(a.code)}#agent">Agent File</a>
-            <a class="paper-btn" href="dg-agent-portal.html?code=${encodeURIComponent(a.code)}#ids">Cover ID</a>
+            <a class="paper-btn" href="dg-agent-portal.html?code=${encodeURIComponent(a.code)}#ids">Field ID</a>
           </div>
           <div class="ah-section-divider">Handouts</div>
           <div class="ah-handouts" id="ah-handouts-${a.code}"><div class="ah-handouts-empty">Loading&hellip;</div></div>
@@ -338,8 +384,90 @@
       });
     });
 
-    setActiveTab(agents[0].code);
+    const activeCode = (preserveActiveCode && agents.some(a => a.code === preserveActiveCode))
+      ? preserveActiveCode : agents[0].code;
+    setActiveTab(activeCode);
     loadHandouts();
+  }
+
+  renderRoster();
+
+  // ── Cover Identity: your real name, not the Agent's -- looks up every
+  // Agent tied to that name (character sheet and/or Agent File) and
+  // merges them into this browser's roster, so a fresh device or a
+  // cleared browser isn't a dead end the way it used to be (the only
+  // recovery path before this was knowing an exact Agent Code). Stored
+  // locally once entered so a returning visit refreshes automatically --
+  // silently, so it never fights with whatever's already showing.
+  const COVER_IDENTITY_KEY = 'dg_cover_identity';
+  const ciInput = document.getElementById('cover-identity-input');
+  const ciStatus = document.getElementById('ci-status');
+
+  function setCiStatus(msg) { if (ciStatus) ciStatus.textContent = msg; }
+
+  function lookupCoverIdentity(name, opts) {
+    opts = opts || {};
+    name = (name || '').trim();
+    if (!name) { if (!opts.silent) setCiStatus('Enter your name first.'); return; }
+    if (!opts.silent) setCiStatus('Looking up Agents for "' + name + '"…');
+    const cbName = '_ciLookup_' + Date.now();
+    const timer = setTimeout(() => {
+      delete window[cbName];
+      if (!opts.silent) setCiStatus('Connection timed out. Try again.');
+    }, 8000);
+    window[cbName] = function (res) {
+      clearTimeout(timer);
+      delete window[cbName];
+      const s = document.getElementById('s-' + cbName);
+      if (s) s.remove();
+      if (!res || res.status !== 'OK' || !Array.isArray(res.agents) || !res.agents.length) {
+        if (!opts.silent) setCiStatus('No Agents found for "' + name + '".');
+        return;
+      }
+      const roster = rosterLoad();
+      res.agents.forEach(a => {
+        if (!a.code) return;
+        roster[a.code] = {
+          code: a.code,
+          char_name: a.char_name || '',
+          codename: a.codename || '',
+          sex: a.sex || '',
+          age_range: a.age_range || '',
+          nationality: a.nationality || '',
+          active_eras: a.active_eras || '',
+          face_plate_url: a.face_plate_url || '',
+          campaign_era: a.campaign_era || '',
+          saved_at: a.saved_at || Date.now(),
+        };
+      });
+      try { localStorage.setItem(ROSTER_KEY, JSON.stringify(roster)); } catch (e) { /* best effort */ }
+      try { localStorage.setItem(COVER_IDENTITY_KEY, name); } catch (e) { /* best effort */ }
+      if (!opts.silent) setCiStatus('Loaded ' + res.agents.length + ' Agent' + (res.agents.length === 1 ? '' : 's') + '.');
+      const stillActive = document.querySelector('.tw.active');
+      renderRoster(stillActive ? stillActive.dataset.tab : undefined);
+    };
+    const s = document.createElement('script');
+    s.id = 's-' + cbName;
+    s.src = APPS_SCRIPT_URL + '?action=find_by_player_name&name=' + encodeURIComponent(name) + '&callback=' + cbName;
+    document.head.appendChild(s);
+  }
+
+  const ciBtn = document.getElementById('cover-identity-btn');
+  if (ciBtn) ciBtn.addEventListener('click', () => lookupCoverIdentity(ciInput ? ciInput.value : ''));
+  if (ciInput) {
+    ciInput.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      lookupCoverIdentity(ciInput.value);
+    });
+  }
+
+  const storedIdentity = (function () {
+    try { return localStorage.getItem(COVER_IDENTITY_KEY) || ''; } catch (e) { return ''; }
+  })();
+  if (storedIdentity) {
+    if (ciInput) ciInput.value = storedIdentity;
+    lookupCoverIdentity(storedIdentity, { silent: true });
   }
 
   // Handouts: one shared fetch of Cells + Handouts, reused across every

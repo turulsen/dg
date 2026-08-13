@@ -11,11 +11,11 @@ Player- and Handler-facing tools for a Delta Green campaign, published as a stat
 | Page | Purpose |
 |---|---|
 | `index.html` | Clearance chooser (boot splash → Agent / A-Cell cards). Entry point for everyone. |
-| `agent-hub.html` | The player's own hub. Reads this browser's local Agent roster (`localStorage`'s `dg_agent_roster`) as folder ear-tabs, one per Agent, plus a pinned "+ New Recruit" tab. Each Agent's panel has **Play** (opens the character sheet already loaded and in Live Play), **Agent File**, and **Cover ID** buttons, plus a read-only mirror of any Handouts filed for that Agent (with private per-Agent notes). |
-| `dg-agent-portal.html` | An individual Agent's dossier. Three tabs: **Cover** (physical description brief + AI portrait prompt + printable dossier), **Agent File** (load an existing agent by its Character Code across sessions/devices), and **Cover IDs** — a native in-page "Cover ID Fabricator": pick a cover agency and era and it renders a historically-styled credential card live, watermarked "PROP — NOT A GOVERNMENT DOCUMENT" so it's unmistakably a game prop anywhere outside the game. A slide-up **Agent Roster** remembers every agent submitted or loaded in this browser. Backed by a Google Apps Script + Sheet. |
+| `agent-hub.html` | The player's own hub. Reads this browser's local Agent roster (`localStorage`'s `dg_agent_roster`) as folder ear-tabs, one per Agent, plus a pinned "+ New Recruit" tab. Each Agent's panel has **Play** (opens the character sheet already loaded and in Live Play), **Agent File**, and **Field ID** buttons, plus a read-only mirror of any Handouts filed for that Agent (with private per-Agent notes). |
+| `dg-agent-portal.html` | An individual Agent's dossier. Three tabs: **Cover** (physical description brief + AI portrait prompt + printable dossier), **Agent File** (load an existing agent by its Character Code across sessions/devices), and **Field IDs** — a native in-page "Field ID Fabricator": pick a cover agency and era and it renders a historically-styled credential card live, watermarked "PROP — NOT A GOVERNMENT DOCUMENT" so it's unmistakably a game prop anywhere outside the game. A slide-up **Agent Roster** remembers every agent submitted or loaded in this browser. Backed by a Google Apps Script + Sheet. |
 | `stats/index.html` | Full Delta Green character creator — point-buy or dice-roll stats, 18 professions with contextual skills, bonus skill points, random bio generation, Bonds, equipment loadout, a dice-roller widget, save/share, and printable/Foundry VTT export. **Five visual themes** (all mobile-friendly, see Mobile below) plus **Live Play**, an orthogonal mode — not a theme of its own — layered on top of whichever theme is active, with a sticky HP/WP/SAN/BP tracker bar for use at the table. A top-right settings cog holds Theme, cloud Load by Code, and Export, keeping the page itself uncluttered for a brand-new recruit. Ported wholesale from [pigeon-labs-stack's DELTA-GREEN-STATS](https://pigeon-labs-stack.github.io/DELTA-GREEN-STATS/) — see Attribution below. |
 | `a-cell.html` | The Handler's dashboard, password-gated. Five tabs: **Play** (a simplified view of every Agent on file for running the table), **Cells** (group Agents into named Cells with their own Handler), **Handouts** (file campaign-wide or Cell-scoped documents, with photos, that mirror into each Agent's own hub view), **Sheet** (a dense, Excel-style roster table across every Agent), and **Music** (broadcast a track, ambient layers, and stinger sound effects to every player's Table Radio widget at once). |
-| `dg-id-creator.html` | A simpler, standalone paper/dossier-styled cover-ID card generator with its own `DG-` base64 save codes, superseded by the Cover IDs tab's native Fabricator and no longer linked from anywhere. Kept in the repo rather than deleted. |
+| `dg-id-creator.html` | A simpler, standalone paper/dossier-styled field-ID card generator with its own `DG-` base64 save codes, superseded by the Field IDs tab's native Fabricator and no longer linked from anywhere. Kept in the repo rather than deleted. |
 
 All pages are static HTML/CSS/JS with no build step. `stats/` is the one exception to "single self-contained file" — it's a direct, unminified copy of pigeon-labs-stack's own multi-file layout (one HTML file, one stylesheet, thirteen `.js` files), kept that way deliberately so it stays diffable against upstream.
 
@@ -68,6 +68,16 @@ Needed a small, purely additive change on the Apps Script side: a `Characters` t
 
 `dg-agent-portal.html` and `agent-hub.html` share the same **persistent, multi-agent roster** in this browser (`localStorage`'s `dg_agent_roster`) — every agent that's been submitted via the Cover form, loaded by code, or played, with photo/name/code/codename/demographics/era. `agent-hub.html` renders this roster as its own folder tabs; the Portal's own slide-up drawer lets you switch between agents, delete entries, or export/import the whole roster as a `.json` file.
 
+### Cover Identity
+
+The roster above is purely local to one browser — until now, a fresh device or a cleared browser had no way to find a player's existing Agents at all beyond knowing their exact Agent Code by heart. **Cover Identity** (your real name, not the Agent's — reuses the `player_name` field already on the character sheet's Biography, now doubling as a lookup key) fixes that: enter it once in the field at the top of `agent-hub.html` and every Agent tied to that name — character sheet, Agent File, or both — gets pulled into this browser's roster. Remembered locally afterward, so a returning visit refreshes automatically with no retyping.
+
+A bare name match, deliberately — no PIN, no auth. Real access control (so players can't pull down agents that aren't theirs just by guessing a name) is tracked as its own separate, later roadmap item below, not bundled into this. If an Agent has no `player_name` set (created before this existed, or the player skipped it), a Handler can fill it in directly from A-Cell's Sheet tab — click the Player Name cell for that Agent and type it in.
+
+Needed the same kind of small, additive Apps Script change as Cloud Save: a `player_name` column on both the `Characters` and `Delta Green Briefs` sheets, and a new `find_by_player_name` lookup action — see `cover-identity-addition.txt` (handed over separately). Degrades gracefully (shows "No Agents found") until that's pasted in and redeployed, same as every other backend addition here.
+
+Also: the Agent's own printable fake-ID-card feature used to be called "Cover ID" — renamed to **Field ID** throughout (buttons, tabs, `dg-id-creator.html`) to free up "Cover Identity" for this, since the two are unrelated concepts (one's the Agent's in-fiction alias, the other is the real player behind the keyboard).
+
 ## Attribution
 
 `stats/` is a copy of [pigeon-labs-stack/DELTA-GREEN-STATS](https://github.com/pigeon-labs-stack/DELTA-GREEN-STATS) — **not** the archived `PigeonFX/DELTA-GREEN-STATS` this hub's stat generator was based on earlier. Both exist; `PigeonFX`'s is a much smaller, single-page point-buy/dice-roll/Bond-generator tool with no skills, professions, or themes, and is archived. `pigeon-labs-stack`'s is a separate, actively developed, far more complete fork/continuation — professions, skills, bio generation, equipment, Foundry VTT export, and the theme system — and is what's actually live at the pigeon-labs-stack.github.io URL this hub links out to.
@@ -78,7 +88,7 @@ Everything else in this repo — the Agent Hub, Agent Portal, A-Cell, ID Creator
 
 ## QA
 
-There's an automated smoke-test suite in `test/` (380+ checks) that exercises every page — `index.html`, `agent-hub.html`, `dg-agent-portal.html`, `stats/`, `a-cell.html`, `dg-id-creator.html` — including the Cover IDs Fabricator, Export to Agent File, the Agent Roster, Handouts, Table Radio (main track, ambient layers, stingers), Cloud Save/Load by Code, and full offline/PWA behavior, with the Google Apps Script backend faked out so it never touches real data. See `test/README.md`.
+There's an automated smoke-test suite in `test/` (380+ checks) that exercises every page — `index.html`, `agent-hub.html`, `dg-agent-portal.html`, `stats/`, `a-cell.html`, `dg-id-creator.html` — including the Field IDs Fabricator, Export to Agent File, the Agent Roster, Handouts, Table Radio (main track, ambient layers, stingers), Cloud Save/Load by Code, and full offline/PWA behavior, with the Google Apps Script backend faked out so it never touches real data. See `test/README.md`.
 
 ## Roadmap ideas for a fuller Agent Hub
 
@@ -90,7 +100,7 @@ Rough priority order, cheapest/highest-value first:
 4. ~~Live-play HP/SAN tracking.~~ Done — Live Play's sticky tracker bar, now decoupled from theme so it layers over any of the five.
 5. ~~Handout/clue log.~~ Done — A-Cell's Handouts tab, mirrored read-only into each Agent's hub view with private per-Agent notes.
 6. ~~Offline/PWA support.~~ Done — see Offline support above.
-7. **Access control.** A-Cell is gated behind a shared password; individual Agent dossiers/character sheets are still reachable by anyone who has the code, not tied to real per-player auth.
+7. **Access control.** A-Cell is gated behind a shared password; individual Agent dossiers/character sheets are still reachable by anyone who has the code, and Cover Identity (above) is a bare name match with no PIN or auth — none of this is tied to real per-player identity yet.
 8. ~~Multi-source character sheet import + a roster to browse them.~~ Done — see Import Agent and Agent Roster above.
 9. ~~Deploy the Cloud Save Apps Script addition.~~ Done — deployed and confirmed working.
 

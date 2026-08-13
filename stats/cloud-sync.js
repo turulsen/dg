@@ -92,6 +92,12 @@
                 action: 'save_character',
                 agent_code: code,
                 character_json: JSON.stringify(state),
+                // Also sent as its own top-level field (not just buried in
+                // character_json) so the backend can write it to its own
+                // queryable column -- see the Cover Identity addition,
+                // which looks characters up by this field directly rather
+                // than scanning and JSON-parsing every row's blob.
+                player_name: state.bio?.player_name || '',
             }),
         }).then(() => renderStatus('☁ Synced — code ' + code))
           .catch(() => { /* silent, same as every other Apps Script call in this app */ });
