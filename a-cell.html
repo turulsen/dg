@@ -2551,47 +2551,30 @@
     var slot = document.getElementById('admin-confirm-slot-' + i);
     if (!agent || !slot) return;
     if (slot.childNodes.length) { slot.innerHTML = ''; return; } // toggle closed
-    renderStep1(slot, agent, i);
+    renderDeleteConfirm(slot, agent, i);
   }
 
-  function renderStep1(slot, agent, i) {
+  // Single confirmation, not two -- the A-Cell password gate already
+  // establishes this is the Handler (the same gate the whole page sits
+  // behind), so a second "type this Agent's own name" step on top of it
+  // was redundant friction, not real extra safety. The password prompt
+  // still names the Agent being deleted, and the delete itself is a
+  // soft-delete (Recently Deleted, restorable) either way.
+  function renderDeleteConfirm(slot, agent, i) {
     var name = (agent.state.bio || {}).name || agent.code;
     slot.innerHTML =
       '<div class="admin-confirm">' +
-      '<p>Step 1 of 2 -- type this Agent\'s name (<b>' + escapeHtml(name) + '</b>) to continue:</p>' +
-      '<div class="admin-confirm-error" id="admin-err1-' + i + '"></div>' +
-      '<input type="text" id="admin-handler-input-' + i + '" placeholder="Agent name" autocomplete="off">' +
-      '<div class="admin-confirm-actions">' +
-      '<button type="button" class="paper-btn admin-delete-btn" id="admin-step1-btn-' + i + '">Continue</button>' +
-      '<button type="button" class="paper-btn" id="admin-cancel1-' + i + '">Cancel</button>' +
-      '</div></div>';
-    document.getElementById('admin-cancel1-' + i).addEventListener('click', function () { slot.innerHTML = ''; });
-    document.getElementById('admin-step1-btn-' + i).addEventListener('click', function () {
-      var input = document.getElementById('admin-handler-input-' + i);
-      var errEl = document.getElementById('admin-err1-' + i);
-      if (input.value.trim().toLowerCase() !== name.trim().toLowerCase()) {
-        errEl.textContent = 'That doesn\'t match this Agent\'s name -- check the spelling above.';
-        return;
-      }
-      renderStep2(slot, agent, i);
-    });
-  }
-
-  function renderStep2(slot, agent, i) {
-    var name = (agent.state.bio || {}).name || agent.code;
-    slot.innerHTML =
-      '<div class="admin-confirm">' +
-      '<p>Step 2 of 2 -- enter the A-Cell password to delete <b>' + escapeHtml(name) + '</b> (moves to Recently Deleted, can be restored):</p>' +
-      '<div class="admin-confirm-error" id="admin-err2-' + i + '"></div>' +
+      '<p>Enter the A-Cell password to delete <b>' + escapeHtml(name) + '</b> (moves to Recently Deleted, can be restored):</p>' +
+      '<div class="admin-confirm-error" id="admin-confirm-err-' + i + '"></div>' +
       '<input type="password" id="admin-pw-input-' + i + '" placeholder="A-Cell password" autocomplete="off">' +
       '<div class="admin-confirm-actions">' +
-      '<button type="button" class="paper-btn admin-delete-btn" id="admin-step2-btn-' + i + '">Delete Agent</button>' +
-      '<button type="button" class="paper-btn" id="admin-cancel2-' + i + '">Cancel</button>' +
+      '<button type="button" class="paper-btn admin-delete-btn" id="admin-delete-confirm-btn-' + i + '">Delete Agent</button>' +
+      '<button type="button" class="paper-btn" id="admin-confirm-cancel-' + i + '">Cancel</button>' +
       '</div></div>';
-    document.getElementById('admin-cancel2-' + i).addEventListener('click', function () { slot.innerHTML = ''; });
-    document.getElementById('admin-step2-btn-' + i).addEventListener('click', function () {
+    document.getElementById('admin-confirm-cancel-' + i).addEventListener('click', function () { slot.innerHTML = ''; });
+    document.getElementById('admin-delete-confirm-btn-' + i).addEventListener('click', function () {
       var input = document.getElementById('admin-pw-input-' + i);
-      var errEl = document.getElementById('admin-err2-' + i);
+      var errEl = document.getElementById('admin-confirm-err-' + i);
       if (input.value !== ACELL_PASSWORD) {
         errEl.textContent = 'Wrong password.';
         return;

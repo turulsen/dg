@@ -2668,30 +2668,20 @@ def test_acell_admin(p):
     owen_row.locator(".admin-delete-btn").click()
     page.wait_for_timeout(150)
 
-    owen_row.locator('input[id^="admin-handler-input-"]').fill("Wrong Name")
-    owen_row.locator('button[id^="admin-step1-btn-"]').click()
-    page.wait_for_timeout(150)
-    record("acell", "step 1 rejects a name that doesn't match the Agent's own name",
-           owen_row.locator('[id^="admin-err1-"]').inner_text() != "", "")
-    record("acell", "no delete was sent while step 1 is still unconfirmed",
-           len(posts) == 0, str(posts))
-
-    owen_row.locator('input[id^="admin-handler-input-"]').fill("owen castillo")
-    owen_row.locator('button[id^="admin-step1-btn-"]').click()
-    page.wait_for_timeout(150)
-    record("acell", "step 1 accepts the Agent's own name case-insensitively and advances to step 2",
-           owen_row.locator('input[id^="admin-pw-input-"]').count() == 1, "")
+    record("acell", "the delete confirmation asks only for the A-Cell password, not the Agent's own name",
+           owen_row.locator('input[id^="admin-handler-input-"]').count() == 0
+           and owen_row.locator('input[id^="admin-pw-input-"]').count() == 1, "")
 
     owen_row.locator('input[id^="admin-pw-input-"]').fill("wrong")
-    owen_row.locator('button[id^="admin-step2-btn-"]').click()
+    owen_row.locator('button[id^="admin-delete-confirm-btn-"]').click()
     page.wait_for_timeout(150)
-    record("acell", "step 2 rejects the wrong A-Cell password",
-           owen_row.locator('[id^="admin-err2-"]').inner_text() != "", "")
-    record("acell", "no delete was sent while step 2 is still unconfirmed",
+    record("acell", "the wrong A-Cell password is rejected",
+           owen_row.locator('[id^="admin-confirm-err-"]').inner_text() != "", "")
+    record("acell", "no delete was sent while the password is still unconfirmed",
            len(posts) == 0, str(posts))
 
     owen_row.locator('input[id^="admin-pw-input-"]').fill("MASTICATE")
-    owen_row.locator('button[id^="admin-step2-btn-"]').click()
+    owen_row.locator('button[id^="admin-delete-confirm-btn-"]').click()
     page.wait_for_timeout(1500)
 
     delete_posts = [p_ for p_ in posts if p_.get("action") == "delete_character"]

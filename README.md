@@ -62,7 +62,7 @@ Every import above is still a file changing hands — fine for a one-time move, 
 - **Load by Code**, in the settings cog, is the only manual control left — a real text input, not `window.prompt()` (which is silently disabled in a standalone PWA — see Offline support above). Pulls a previously cloud-saved character back down by its code on any device/browser and re-activates syncing under that code going forward.
 - **No Start or Stop button.** Once a character is named, syncing it is just how the page behaves now, the same way local autosave already always has been.
 
-Needed a small, purely additive change on the Apps Script side: a `Characters` tab (one row per Agent Code, upserted rather than appended) alongside the existing `Delta Green Briefs` tab — see `character-cloud-save-addition.gs` (handed over separately). **Deployed and confirmed working.**
+Needed a small, purely additive change on the Apps Script side: a `Characters` tab (one row per Agent Code, upserted rather than appended) alongside the existing `Delta Green Briefs` tab — see `backend/Code.gs` (the full backend source, kept here for reference — see "Backend" below). **Deployed and confirmed working.**
 
 ### Agent Roster
 
@@ -74,9 +74,13 @@ The roster above is purely local to one browser — until now, a fresh device or
 
 A bare name match, deliberately — no PIN, no auth. Real access control (so players can't pull down agents that aren't theirs just by guessing a name) is tracked as its own separate, later roadmap item below, not bundled into this. If an Agent has no `player_name` set (created before this existed, or the player skipped it), a Handler can fill it in directly from A-Cell's Sheet tab — click the Player Name cell for that Agent and type it in.
 
-Needed the same kind of small, additive Apps Script change as Cloud Save: a `player_name` column on both the `Characters` and `Delta Green Briefs` sheets, and a new `find_by_player_name` lookup action — see `cover-identity-addition.txt` (handed over separately). Degrades gracefully (shows "No Agents found") until that's pasted in and redeployed, same as every other backend addition here.
+Needed the same kind of small, additive Apps Script change as Cloud Save: a `player_name` column on both the `Characters` and `Delta Green Briefs` sheets, and a new `find_by_player_name` lookup action — see `backend/Code.gs`. Degrades gracefully (shows "No Agents found") until that's pasted in and redeployed, same as every other backend addition here.
 
 Also: the Agent's own printable fake-ID-card feature used to be called "Cover ID" — renamed to **Field ID** throughout (buttons, tabs, `dg-id-creator.html`) to free up "Cover Identity" for this, since the two are unrelated concepts (one's the Agent's in-fiction alias, the other is the real player behind the keyboard).
+
+### Backend
+
+The Google Apps Script + Sheets project behind every `script.google.com` call in this app lives outside this repo (Apps Script has no git integration of its own) — `backend/Code.gs` is a checked-in mirror of its full source, kept in sync by hand: edit it here, then paste the whole file over the live project's `Code.gs` in the Apps Script web editor and redeploy. Every page degrades gracefully when a given action isn't live yet (JSONP calls just fail silently), so this repo's frontend can stay ahead of the deployed backend without breaking anything.
 
 ## Attribution
 

@@ -1,0 +1,1729 @@
+// ════════════════════════════════════════════════════════════════
+// DELTA GREEN — Character Brief Collector + Agent File
+// Google Apps Script backend v7 — Phase 2 + image proxy + Cloud Save
+// + A-Cell (Play/Cells/Sheet/Admin) + Cell groups + Table Radio
+// + Cover Identity (find a player's Agents by real name)
+//
+// This file is NOT deployed from here -- this repo is a static
+// GitHub Pages site with no server-side execution. It's kept here as
+// the canonical, always-current mirror of the real Google Apps
+// Script project (a separate, non-versioned target reachable only
+// through the Apps Script web editor), so future backend changes can
+// be written and reviewed as a diff against known-good production
+// code instead of guessed blind. When this file changes, copy its
+// full contents over the live project's Code.gs and redeploy.
+// ════════════════════════════════════════════════════════════════
+
+const SHEET_NAME = 'Delta Green Briefs';
+const CHARACTERS_SHEET_NAME = 'Characters';
+
+// Optional but recommended: paste your spreadsheet's ID here (from its
+// URL, the part between /d/ and /edit) to look it up directly instead
+// of by searching Drive for a file named "Delta Green Briefs" --
+// removes any chance of that search ever resolving to the wrong file.
+// Leave blank to keep the current Drive-search behavior.
+const SPREADSHEET_ID = '';
+
+const COLUMNS = [
+  'agent_code',
+  'submitted_at',
+  'char_name',
+  'codename',
+  'age_range',
+  'sex',
+  'nationality',
+  'face_shape',
+  'eye_color',
+  'eye_shape',
+  'nose',
+  'lips',
+  'skin',
+  'facial_hair',
+  'face_scars',
+  'hair_color',
+  'hair_style',
+  'hair_texture',
+  'build',
+  'posture',
+  'body_markers',
+  'jacket',
+  'shirt',
+  'trousers',
+  'footwear',
+  'accessories',
+  'jewelry',
+  'expression',
+  'vibe',
+  'reference_person',
+  'notes',
+  'ref_image_name',
+  'ref_image_link',
+  'medical_log',
+  'aar_log',
+  'active_eras',
+  'banana_prompt',
+  'face_plate_url',
+  'outfit_plate_url',
+  'mode0_prompt',
+  'mode1_prompt',
+  // Cover Identity: the player's real name, doubling the existing
+  // Biography field on the character sheet as a lookup key. Appended
+  // at the END, not inserted among the existing columns -- the "new
+  // agent submission" path below (COLUMNS.map(...) -> sheet.appendRow())
+  // writes positionally, so this position must match wherever
+  // ensureBriefsPlayerNameColumn() puts the actual header on the live
+  // sheet (also always the end).
+  'player_name'
+];
+
+function generateAgentCode(name) {
+  const prefix = (name || 'AGNT').replace(/[^A-Za-z]/g, '').substring(0, 4).toUpperCase();
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let suffix = '';
+  for (let i = 0; i < 4; i++) suffix += chars[Math.floor(Math.random() * chars.length)];
+  return prefix + '-' + suffix;
+}
+
+function doGet(e) {
+  // e is undefined if this is run manually from the Apps Script editor
+  // (the "Run" button) instead of a real web request -- guard so that
+  // doesn't show up as a false "Failed" execution.
+  e = e || {};
+  e.parameter = e.parameter || {};
+  const callback = e.parameter && e.parameter.callback;
+
+  // ── Image proxy ──────────────────────────────────────────────
+  // Called as ?action=img&id=FILE_ID
+  // Fetches the Drive file and returns it as image bytes.
+  // This bypasses Safari's blocking of uc?export=view cross-origin requests.
+  if (e.parameter && e.parameter.action === 'img' && e.parameter.id) {
+    try {
+      const file = DriveApp.getFileById(e.parameter.id);
+      const blob = file.getBlob();
+      return ContentService
+        .createTextOutput('') // not used — see note below
+        .setMimeType(ContentService.MimeType.TEXT); // placeholder; actual blob returned below
+      // NOTE: ContentService can't return binary blobs directly.
+      // Use HtmlService to wrap the image as a data URI instead.
+    } catch(err) {
+      return ContentService
+        .createTextOutput('error: ' + err.message)
+        .setMimeType(ContentService.MimeType.TEXT);
+    }
+  }
+
+  // ── Image proxy (data URI approach) ─────────────────────────
+  // ?action=imgdata&id=FILE_ID&callback=CALLBACK
+  // Returns JSONP with base64 data URI so portal can set img.src
+  if (e.parameter && e.parameter.action === 'imgdata' && e.parameter.id) {
+    try {
+      const file = DriveApp.getFileById(e.parameter.id);
+      const blob = file.getBlob();
+      const mimeType = blob.getContentType();
+      const base64 = Utilities.base64Encode(blob.getBytes());
+      const dataUri = 'data:' + mimeType + ';base64,' + base64;
+      const json = JSON.stringify({ status: 'OK', dataUri: dataUri });
+      if (e.parameter.callback) {
+        return ContentService
+          .createTextOutput(e.parameter.callback + '(' + json + ')')
+          .setMimeType(ContentService.MimeType.JAVASCRIPT);
+      }
+      return ContentService
+        .createTextOutput(json)
+        .setMimeType(ContentService.MimeType.JSON);
+    } catch(err) {
+      const json = JSON.stringify({ status: 'ERROR', message: err.message });
+      if (e.parameter.callback) {
+        return ContentService
+          .createTextOutput(e.parameter.callback + '(' + json + ')')
+          .setMimeType(ContentService.MimeType.JAVASCRIPT);
+      }
+      return ContentService
+        .createTextOutput(json)
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
+  // ── Character cloud load ─────────────────────────────────────
+  // ?action=load_character&code=AGENT-CODE&callback=CALLBACK
+  if (e.parameter && e.parameter.action === 'load_character' && e.parameter.code) {
+    const result = doLookupCharacter(e.parameter.code);
+    const json = result.getContent();
+    if (e.parameter.callback) {
+      return ContentService
+        .createTextOutput(e.parameter.callback + '(' + json + ')')
+        .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    }
+    return result;
+  }
+
+  // ── A-Cell: every saved character, for Play/Cells/Sheet/Admin ──
+  // ?action=list_characters&callback=CALLBACK
+  if (e.parameter && e.parameter.action === 'list_characters') {
+    return listCharacters(callback);
+  }
+
+  // ── A-Cell: every Cell group, for the Cells tab ───────────────
+  // ?action=list_cells&callback=CALLBACK
+  if (e.parameter && e.parameter.action === 'list_cells') {
+    return listCells(callback);
+  }
+
+  // ── A-Cell Admin: every soft-deleted Agent, for Recently Deleted ──
+  // ?action=list_deleted_characters&callback=CALLBACK
+  if (e.parameter && e.parameter.action === 'list_deleted_characters') {
+    return listDeletedCharacters(callback);
+  }
+
+  // ── A-Cell Handouts + the player-facing Agent Hub: every filed
+  // handout/clue. ──
+  // ?action=list_handouts&callback=CALLBACK
+  if (e.parameter && e.parameter.action === 'list_handouts') {
+    return listHandouts(callback);
+  }
+
+  // ── Table Radio: current track for a channel ─────────────────
+  // ?action=get_now_playing&channel=CH&callback=CALLBACK
+  if (e.parameter && e.parameter.action === 'get_now_playing') {
+    return getNowPlaying(e.parameter.channel, callback);
+  }
+
+  // ── Table Radio: saved playlist for a channel ─────────────────
+  // ?action=get_playlist&channel=CH&callback=CALLBACK
+  if (e.parameter && e.parameter.action === 'get_playlist') {
+    return getPlaylist(e.parameter.channel, callback);
+  }
+
+  // ── A-Cell Music: every uploaded Track Library mp3 ─────────────
+  // ?action=list_tracks&callback=CALLBACK
+  if (e.parameter && e.parameter.action === 'list_tracks') {
+    return listTracks(callback);
+  }
+
+  // ── Agent Hub: a player's private notes on Handouts ─────────────
+  // ?action=list_handout_notes&agent_code=CODE&callback=CALLBACK
+  if (e.parameter && e.parameter.action === 'list_handout_notes') {
+    return listHandoutNotes(e.parameter.agent_code, callback);
+  }
+
+  // ── Cover Identity: find every Agent (character sheet and/or Agent
+  // File) belonging to a real-world player by name. Case-insensitive,
+  // trimmed exact match -- no auth/PIN, deliberately: a bare name
+  // lookup for now, with real access control tracked as its own
+  // separate, later piece of work rather than bundled into this. ──
+  // ?action=find_by_player_name&name=NAME&callback=CALLBACK
+  if (e.parameter && e.parameter.action === 'find_by_player_name') {
+    return findByPlayerName(e.parameter.name, callback);
+  }
+
+  // ── Agent lookup ─────────────────────────────────────────────
+  if (e.parameter && e.parameter.code) {
+    const result = doLookup(e.parameter.code);
+    const json = result.getContent();
+    if (e.parameter.callback) {
+      return ContentService
+        .createTextOutput(e.parameter.callback + '(' + json + ')')
+        .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    }
+    return result;
+  }
+
+  return ContentService
+    .createTextOutput('Delta Green Brief Collector is running.')
+    .setMimeType(ContentService.MimeType.TEXT);
+}
+
+function doPost(e) {
+  try {
+    let rawData = '';
+    if (e.postData && e.postData.contents) rawData = e.postData.contents;
+    else if (e.parameter) rawData = JSON.stringify(e.parameter);
+
+    const data = JSON.parse(rawData);
+
+    if (data.action === 'update_medical' || data.action === 'update_aar' || data.action === 'update_field') {
+      return updateAgentField(data);
+    }
+
+    if (data.action === 'save_plate') {
+      return savePlateImage(data);
+    }
+
+    if (data.action === 'save_character') {
+      return saveCharacter(data);
+    }
+
+    // A-Cell (legacy): Handler edits a Cell's handler/operation tag.
+    // Superseded by real Cell groups (create_cell/update_cell_members
+    // below) -- kept for backward compatibility, unused by the current
+    // frontend.
+    if (data.action === 'update_character_field') {
+      return updateCharacterField(data.agent_code, data.field, data.value);
+    }
+
+    // A-Cell: create a new Cell group.
+    if (data.action === 'create_cell') {
+      return createCell(data.name, data.handler);
+    }
+
+    // A-Cell: overwrite a Cell's full member list (add/remove).
+    if (data.action === 'update_cell_members') {
+      return updateCellMembers(data.cell_id, data.member_codes);
+    }
+
+    // A-Cell: delete a Cell grouping (its Agents stay on file).
+    if (data.action === 'delete_cell') {
+      return deleteCell(data.cell_id);
+    }
+
+    // A-Cell Music: set a Cell's usual Table Radio channel ("Cue For Cell").
+    if (data.action === 'set_cell_channel') {
+      return setCellChannel(data.cell_id, data.channel);
+    }
+
+    // A-Cell Handouts: create/edit/delete a filed handout.
+    if (data.action === 'create_handout') {
+      return createHandout(data);
+    }
+    if (data.action === 'update_handout') {
+      return updateHandout(data);
+    }
+    if (data.action === 'delete_handout') {
+      return deleteHandout(data.handout_id);
+    }
+
+    // A-Cell Admin: soft-delete an Agent (archives Characters + Briefs
+    // rows so they can be restored, rather than removing them).
+    if (data.action === 'delete_character') {
+      return deleteCharacter(data.agent_code);
+    }
+
+    // A-Cell Admin: undo a soft-delete.
+    if (data.action === 'restore_character') {
+      return restoreCharacter(data.agent_code);
+    }
+
+    // Table Radio: Handler sets (or clears) the current track for a channel.
+    if (data.action === 'set_now_playing') {
+      return setNowPlaying(data.channel, data.track_url, data.track_title, data.track_kind, data.loop);
+    }
+
+    // Table Radio: Handler pauses/resumes the current track for a channel
+    // without restarting it (set_now_playing always restarts from 0:00).
+    if (data.action === 'pause_now_playing') {
+      return pauseNowPlaying(data.channel);
+    }
+    if (data.action === 'resume_now_playing') {
+      return resumeNowPlaying(data.channel);
+    }
+
+    // Table Radio: Handler saves the playlist for a channel.
+    if (data.action === 'save_playlist') {
+      return savePlaylist(data.channel, data.playlist_json);
+    }
+
+    // A-Cell Music: upload/delete a Track Library mp3.
+    if (data.action === 'upload_track') {
+      return uploadTrack(data);
+    }
+    if (data.action === 'delete_track') {
+      return deleteTrack(data.track_id);
+    }
+
+    // Agent Hub: save a player's private note on a Handout.
+    if (data.action === 'save_handout_note') {
+      return saveHandoutNote(data);
+    }
+
+    // New agent submission
+    const ss = getOrCreateSheet();
+    const sheet = ss.getSheetByName(SHEET_NAME);
+    const agentCode = data.agent_code || generateAgentCode(data.char_name);
+
+    let imageLink = '';
+    if (data.ref_image_base64 && data.ref_image_name) {
+      imageLink = saveImageToDrive(data.ref_image_base64, data.ref_image_name, data.char_name);
+    }
+
+    const row = COLUMNS.map(col => {
+      if (col === 'agent_code') return agentCode;
+      if (col === 'ref_image_link') return imageLink;
+      if (col === 'ref_image_base64') return '';
+      return data[col] || '';
+    });
+
+    sheet.appendRow(row);
+
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'OK', agent_code: agentCode }))
+      .setMimeType(ContentService.MimeType.JSON);
+
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'ERROR', message: err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function updateAgentField(data) {
+  try {
+    const ss = getOrCreateSheet();
+    const sheet = ss.getSheetByName(SHEET_NAME);
+    const rows = sheet.getDataRange().getValues();
+    const headers = rows[0];
+    const codeCol = headers.indexOf('Agent Code');
+
+    const FIELD_MAP = {
+      'medical_log':    'Medical Log',
+      'aar_log':        'Aar Log',
+      'active_eras':    'Active Eras',
+      'banana_prompt':  'Banana Prompt',
+      'face_plate_url': 'face_plate_url',
+      'outfit_plate_url': 'outfit_plate_url',
+      'mode0_prompt':   'mode0_prompt',
+      'mode1_prompt':   'mode1_prompt',
+      'ref_image_link': 'Ref Image Link',
+      // Cover Identity: explicit, even though the generic fallback below
+      // (field.split('_').map(capitalize).join(' ')) already produces
+      // the same 'Player Name' -- spelled out so it's not relying on
+      // that fallback matching by coincidence if this map is ever
+      // consulted elsewhere.
+      'player_name':    'Player Name'
+    };
+
+    let fieldName;
+    if (data.action === 'update_medical') fieldName = 'Medical Log';
+    else if (data.action === 'update_aar') fieldName = 'Aar Log';
+    else if (data.action === 'update_field') {
+      fieldName = FIELD_MAP[data.field] || data.field
+        .split('_')
+        .map(function(w){ return w.charAt(0).toUpperCase() + w.slice(1); })
+        .join(' ');
+    }
+
+    const fieldCol = headers.indexOf(fieldName);
+
+    if (fieldCol === -1) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'ERROR', message: fieldName + ' column not found. Add it to the Sheet.' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i][codeCol] === data.agent_code) {
+        const value = data.action === 'update_medical' ? data.medical_log
+          : data.action === 'update_aar' ? data.aar_log
+          : data.value;
+        sheet.getRange(i + 1, fieldCol + 1).setValue(value);
+        return ContentService
+          .createTextOutput(JSON.stringify({ status: 'OK' }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'NOT_FOUND' }))
+      .setMimeType(ContentService.MimeType.JSON);
+
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'ERROR', message: err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function doLookup(code) {
+  try {
+    const ss = getOrCreateSheet();
+    const sheet = ss.getSheetByName(SHEET_NAME);
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const codeCol = headers.indexOf('Agent Code');
+
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][codeCol] === code) {
+        const row = {};
+        headers.forEach((h, idx) => {
+          const key = h.toLowerCase().replace(/\s+/g, '_');
+          row[key] = data[i][idx];
+        });
+        return ContentService
+          .createTextOutput(JSON.stringify({ status: 'OK', data: row }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'NOT_FOUND' }))
+      .setMimeType(ContentService.MimeType.JSON);
+
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'ERROR', message: err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ── Character cloud save (Characters tab, upserted by agent_code) ──
+// NOTE: this sheet's headers are Title Case ('Agent Code', 'Updated
+// At', 'Character JSON', 'Player Name') -- the A-Cell functions below
+// (listCharacters etc.) look up columns by these exact header strings,
+// not by the snake_case keys used elsewhere in this file, so they stay
+// in sync with what this function actually writes.
+
+function getOrCreateCharactersSheet() {
+  const ss = getOrCreateSheet(); // same spreadsheet file as the Briefs tab
+  let sheet = ss.getSheetByName(CHARACTERS_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(CHARACTERS_SHEET_NAME);
+    const headers = ['Agent Code', 'Updated At', 'Character JSON', 'Player Name'];
+    sheet.appendRow(headers);
+    const headerRange = sheet.getRange(1, 1, 1, headers.length);
+    headerRange.setBackground('#1a1a18');
+    headerRange.setFontColor('#e8e2d4');
+    headerRange.setFontWeight('bold');
+    headerRange.setFontSize(10);
+    sheet.setFrozenRows(1);
+  } else {
+    // Migration-safe: adds Player Name to a Characters sheet that
+    // predates Cover Identity, so an existing deployment self-heals
+    // instead of needing a manual one-time migration run -- same
+    // pattern as getOrCreateCellsSheet()'s 'channel' column and
+    // getOrCreateRadioSheet()'s track_kind/paused/paused_at/loop
+    // columns further down this file.
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    if (headers.indexOf('Player Name') === -1) {
+      sheet.getRange(1, sheet.getLastColumn() + 1).setValue('Player Name');
+    }
+  }
+  return sheet;
+}
+
+function saveCharacter(data) {
+  try {
+    if (!data.agent_code) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'ERROR', message: 'agent_code is required.' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    const sheet = getOrCreateCharactersSheet();
+    const values = sheet.getDataRange().getValues();
+    const headers = values[0];
+    // Header-based lookups, not hardcoded column positions -- Player
+    // Name was added after this sheet already had rows in production,
+    // so writes here can't assume a fixed 3-column layout any more.
+    const codeCol = headers.indexOf('Agent Code');
+    const updatedCol = headers.indexOf('Updated At');
+    const jsonCol = headers.indexOf('Character JSON');
+    const playerNameCol = headers.indexOf('Player Name');
+    const now = new Date().toISOString();
+    const characterJson = typeof data.character_json === 'string'
+      ? data.character_json
+      : JSON.stringify(data.character_json || {});
+    const playerName = data.player_name || '';
+
+    for (let i = 1; i < values.length; i++) {
+      if (values[i][codeCol] === data.agent_code) {
+        // Existing row for this code -- overwrite in place (the upsert).
+        sheet.getRange(i + 1, updatedCol + 1).setValue(now);
+        sheet.getRange(i + 1, jsonCol + 1).setValue(characterJson);
+        if (playerNameCol !== -1) sheet.getRange(i + 1, playerNameCol + 1).setValue(playerName);
+        return ContentService
+          .createTextOutput(JSON.stringify({ status: 'OK', agent_code: data.agent_code, updated_at: now }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+
+    // No existing row -- first save for this code. Built by header
+    // position (like setNowPlaying() further down), not array-literal
+    // order, so this stays correct regardless of where Player Name
+    // ended up relative to any other future column.
+    const newRow = new Array(headers.length).fill('');
+    newRow[codeCol] = data.agent_code;
+    newRow[updatedCol] = now;
+    newRow[jsonCol] = characterJson;
+    if (playerNameCol !== -1) newRow[playerNameCol] = playerName;
+    sheet.appendRow(newRow);
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'OK', agent_code: data.agent_code, updated_at: now }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'ERROR', message: err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function doLookupCharacter(code) {
+  try {
+    const ss = getOrCreateSheet();
+    const sheet = ss.getSheetByName(CHARACTERS_SHEET_NAME);
+    if (!sheet) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'NOT_FOUND' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    const values = sheet.getDataRange().getValues();
+    for (let i = 1; i < values.length; i++) {
+      if (values[i][0] === code) {
+        return ContentService
+          .createTextOutput(JSON.stringify({
+            status: 'OK',
+            agent_code: code,
+            updated_at: values[i][1],
+            character_json: values[i][2]
+          }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'NOT_FOUND' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'ERROR', message: err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ── Cover Identity: find every Agent belonging to a real-world player
+// by name, across BOTH sheets -- a Delta Green Briefs row (Agent File
+// only, no character sheet yet) and a Characters row (has a character
+// sheet) are merged by agent_code, with the Characters row's fields
+// winning where both exist (it's the fuller, more current record).
+// Case-insensitive, trimmed exact match; no fuzzy matching, no auth --
+// deliberately a bare name lookup for now (see the doGet comment above
+// this action). ──
+function findByPlayerName(name, callback) {
+  const needle = String(name || '').trim().toLowerCase();
+  if (!needle) {
+    const body = callback + '(' + JSON.stringify({ status: 'OK', agents: [] }) + ')';
+    return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+
+  const byCode = {};
+
+  // Pass 1: Delta Green Briefs (Agent File fields) -- used as a base so
+  // an Agent-File-only player (no character sheet yet) is still found.
+  const briefsSheet = getOrCreateSheet().getSheetByName(SHEET_NAME);
+  if (briefsSheet) {
+    const briefRows = briefsSheet.getDataRange().getValues();
+    const briefHeaders = briefRows[0];
+    const pnCol = briefHeaders.indexOf('Player Name');
+    const codeCol = briefHeaders.indexOf('Agent Code');
+    const nameCol = briefHeaders.indexOf('Char Name');
+    const codenameCol = briefHeaders.indexOf('Codename');
+    const sexCol = briefHeaders.indexOf('Sex');
+    const ageCol = briefHeaders.indexOf('Age Range');
+    const natCol = briefHeaders.indexOf('Nationality');
+    if (pnCol !== -1 && codeCol !== -1) {
+      for (let i = 1; i < briefRows.length; i++) {
+        const row = briefRows[i];
+        if (String(row[pnCol] || '').trim().toLowerCase() !== needle) continue;
+        const code = row[codeCol];
+        if (!code) continue;
+        byCode[code] = {
+          code: code,
+          char_name: nameCol !== -1 ? (row[nameCol] || '') : '',
+          codename: codenameCol !== -1 ? (row[codenameCol] || '') : '',
+          sex: sexCol !== -1 ? (row[sexCol] || '') : '',
+          age_range: ageCol !== -1 ? (row[ageCol] || '') : '',
+          nationality: natCol !== -1 ? (row[natCol] || '') : '',
+          saved_at: Date.now(),
+        };
+      }
+    }
+  }
+
+  // Pass 2: Characters -- overrides/adds on top of the Briefs pass,
+  // since this is the fuller record once a character sheet exists.
+  // character_json is parsed only for the handful of display fields
+  // agent-hub.html's roster needs, not re-sent whole.
+  const charSheet = getOrCreateCharactersSheet();
+  const charRows = charSheet.getDataRange().getValues();
+  const charHeaders = charRows[0];
+  const cPnCol = charHeaders.indexOf('Player Name');
+  const cCodeCol = charHeaders.indexOf('Agent Code');
+  const cJsonCol = charHeaders.indexOf('Character JSON');
+  const cUpdatedCol = charHeaders.indexOf('Updated At');
+  if (cPnCol !== -1 && cCodeCol !== -1) {
+    for (let j = 1; j < charRows.length; j++) {
+      const row = charRows[j];
+      if (String(row[cPnCol] || '').trim().toLowerCase() !== needle) continue;
+      const code = row[cCodeCol];
+      if (!code) continue;
+      let bio = {};
+      try { bio = JSON.parse(row[cJsonCol] || '{}').bio || {}; } catch (e) { /* skip unparsable */ }
+      const existing = byCode[code] || {};
+      // Updated At is stored as an ISO string (see saveCharacter()
+      // above, new Date().toISOString()), not epoch millis -- parse it
+      // properly rather than Number(...), which would just silently
+      // produce NaN on a string like that.
+      const updatedRaw = cUpdatedCol !== -1 ? row[cUpdatedCol] : null;
+      const parsedUpdated = updatedRaw ? new Date(updatedRaw).getTime() : NaN;
+      byCode[code] = {
+        code: code,
+        char_name: bio.name || existing.char_name || '',
+        codename: existing.codename || '',
+        sex: bio.sex || existing.sex || '',
+        age_range: bio.age || existing.age_range || '',
+        nationality: bio.nationality || existing.nationality || '',
+        saved_at: isNaN(parsedUpdated) ? Date.now() : parsedUpdated,
+      };
+    }
+  }
+
+  const result = { status: 'OK', agents: Object.keys(byCode).map(function (k) { return byCode[k]; }) };
+  const body = callback + '(' + JSON.stringify(result) + ')';
+  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+// ── A-Cell: Play/Cells/Sheet/Admin read every saved character. Column
+// lookups use the SAME Title Case headers getOrCreateCharactersSheet()
+// creates above ('Agent Code', 'Updated At', 'Character JSON', 'Player
+// Name'). ──
+
+function listCharacters(callback) {
+  const sheet = getOrCreateCharactersSheet();
+  const result = { status: 'OK', characters: [] };
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const codeCol = headers.indexOf('Agent Code');
+  const jsonCol = headers.indexOf('Character JSON');
+  const updatedCol = headers.indexOf('Updated At');
+  const handlerCol = headers.indexOf('Handler');
+  const operationCol = headers.indexOf('Operation');
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const code = codeCol >= 0 ? row[codeCol] : '';
+    if (!code) continue;
+    result.characters.push({
+      agent_code: code,
+      character_json: jsonCol >= 0 ? row[jsonCol] : '',
+      updated_at: updatedCol >= 0 ? row[updatedCol] : '',
+      // legacy fields -- empty unless addCellsTagColumns() was run in
+      // the past; the current frontend no longer reads these, real
+      // groups live in the Cells sheet below instead.
+      handler: handlerCol >= 0 ? row[handlerCol] : '',
+      operation: operationCol >= 0 ? row[operationCol] : ''
+    });
+  }
+
+  const body = callback + '(' + JSON.stringify(result) + ')';
+  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+// Legacy: writes a single handler/operation tag for one Agent's row.
+// Superseded by Cell groups below -- kept only so an old deployment
+// that still calls update_character_field doesn't hard-error.
+function updateCharacterField(agentCode, field, value) {
+  const allowed = { handler: 'Handler', operation: 'Operation' };
+  const headerName = allowed[field];
+  if (!headerName) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'Field not allowed: ' + field }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const sheet = getOrCreateCharactersSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const codeCol = headers.indexOf('Agent Code');
+  const fieldCol = headers.indexOf(headerName);
+  if (fieldCol === -1) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: headerName + ' column missing' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][codeCol] === agentCode) {
+      sheet.getRange(i + 1, fieldCol + 1).setValue(value);
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'NOT_FOUND' })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ── A-Cell Admin: soft-delete an Agent -- moves their Characters row
+// (character sheet) AND their Delta Green Briefs row (Agent File /
+// Field ID submission) to matching "Deleted" archive sheets, instead
+// of removing them outright, so a double-confirmed delete is still
+// recoverable via Restore in the Admin tab's Recently Deleted list.
+// Gated client-side behind two confirmations (the Agent's own name,
+// then the A-Cell password) before this ever gets called. ──
+function getOrCreateDeletedSheet(name, liveHeaders) {
+  const ss = getOrCreateSheet();
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    sheet.appendRow(liveHeaders.concat(['Deleted At']));
+  }
+  return sheet;
+}
+
+function deleteCharacter(agentCode) {
+  if (!agentCode) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'agent_code is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const deletedAt = new Date().getTime();
+
+  const charSheet = getOrCreateCharactersSheet();
+  const charData = charSheet.getDataRange().getValues();
+  const charHeaders = charData[0];
+  const charCodeCol = charHeaders.indexOf('Agent Code');
+  const deletedChars = getOrCreateDeletedSheet('DeletedCharacters', charHeaders);
+  for (let i = charData.length - 1; i >= 1; i--) {
+    if (charData[i][charCodeCol] === agentCode) {
+      deletedChars.appendRow(charData[i].concat([deletedAt]));
+      charSheet.deleteRow(i + 1);
+      break;
+    }
+  }
+
+  const briefsSs = getOrCreateSheet();
+  const briefsSheet = briefsSs.getSheetByName(SHEET_NAME);
+  const briefsData = briefsSheet.getDataRange().getValues();
+  const briefsHeaders = briefsData[0];
+  const briefsCodeCol = briefsHeaders.indexOf('Agent Code');
+  const deletedBriefs = getOrCreateDeletedSheet('DeletedBriefs', briefsHeaders);
+  for (let j = briefsData.length - 1; j >= 1; j--) {
+    if (briefsData[j][briefsCodeCol] === agentCode) {
+      deletedBriefs.appendRow(briefsData[j].concat([deletedAt]));
+      briefsSheet.deleteRow(j + 1);
+      break;
+    }
+  }
+
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK', agent_code: agentCode }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ── A-Cell Admin: list every soft-deleted Agent, for the Admin tab's
+// Recently Deleted section. Keyed off DeletedCharacters (the
+// character-sheet half) since a delete always archives both halves
+// together via deleteCharacter() above. ──
+function listDeletedCharacters(callback) {
+  const ss = getOrCreateSheet();
+  const sheet = ss.getSheetByName('DeletedCharacters');
+  const result = { status: 'OK', characters: [] };
+  if (sheet) {
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const codeCol = headers.indexOf('Agent Code');
+    const jsonCol = headers.indexOf('Character JSON');
+    const deletedAtCol = headers.indexOf('Deleted At');
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const code = codeCol >= 0 ? row[codeCol] : '';
+      if (!code) continue;
+      result.characters.push({
+        agent_code: code,
+        character_json: jsonCol >= 0 ? row[jsonCol] : '',
+        deleted_at: deletedAtCol >= 0 ? row[deletedAtCol] : ''
+      });
+    }
+  }
+  const body = callback + '(' + JSON.stringify(result) + ')';
+  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+// ── A-Cell Admin: undo a soft-delete -- moves the row back from
+// DeletedCharacters/DeletedBriefs to the live Characters/Briefs
+// sheets. Mirror image of deleteCharacter() above. ──
+function restoreCharacter(agentCode) {
+  if (!agentCode) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'agent_code is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const ss = getOrCreateSheet();
+
+  const deletedChars = ss.getSheetByName('DeletedCharacters');
+  if (deletedChars) {
+    const data = deletedChars.getDataRange().getValues();
+    const codeCol = data[0].indexOf('Agent Code');
+    for (let i = data.length - 1; i >= 1; i--) {
+      if (data[i][codeCol] === agentCode) {
+        // Drop the trailing "Deleted At" column when moving back.
+        getOrCreateCharactersSheet().appendRow(data[i].slice(0, data[0].length - 1));
+        deletedChars.deleteRow(i + 1);
+        break;
+      }
+    }
+  }
+
+  const deletedBriefs = ss.getSheetByName('DeletedBriefs');
+  if (deletedBriefs) {
+    const data = deletedBriefs.getDataRange().getValues();
+    const codeCol = data[0].indexOf('Agent Code');
+    const briefsSheet = ss.getSheetByName(SHEET_NAME);
+    for (let j = data.length - 1; j >= 1; j--) {
+      if (data[j][codeCol] === agentCode) {
+        briefsSheet.appendRow(data[j].slice(0, data[0].length - 1));
+        deletedBriefs.deleteRow(j + 1);
+        break;
+      }
+    }
+  }
+
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK', agent_code: agentCode }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ── A-Cell Cells: real named groups -- a Cell has its own name and
+// Handler, and a list of member Agents picked from the full roster.
+// One Agent can belong to several Cells at once, or none yet.
+// Self-provisions its own "Cells" sheet. ──
+
+function getOrCreateCellsSheet() {
+  const ss = getOrCreateSheet(); // same spreadsheet file as the Briefs tab
+  let sheet = ss.getSheetByName('Cells');
+  if (!sheet) {
+    sheet = ss.insertSheet('Cells');
+    sheet.getRange(1, 1, 1, 6).setValues([['cell_id', 'name', 'handler', 'member_codes', 'created_at', 'channel']]);
+  } else {
+    // Migration: a Cells sheet created before "Cue For Cell" (Music tab)
+    // won't have this column yet -- add it rather than requiring the
+    // sheet be recreated.
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    if (headers.indexOf('channel') === -1) {
+      sheet.getRange(1, headers.length + 1).setValue('channel');
+    }
+  }
+  return sheet;
+}
+
+function listCells(callback) {
+  const sheet = getOrCreateCellsSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idCol = headers.indexOf('cell_id');
+  const nameCol = headers.indexOf('name');
+  const handlerCol = headers.indexOf('handler');
+  const membersCol = headers.indexOf('member_codes');
+  const channelCol = headers.indexOf('channel');
+
+  const cells = [];
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (!row[idCol]) continue;
+    let members = [];
+    try { members = JSON.parse(row[membersCol] || '[]'); } catch (e) { members = []; }
+    cells.push({
+      cell_id: row[idCol],
+      name: row[nameCol] || '',
+      handler: row[handlerCol] || '',
+      member_codes: members,
+      channel: channelCol >= 0 ? String(row[channelCol] || '') : ''
+    });
+  }
+
+  const body = callback + '(' + JSON.stringify({ status: 'OK', cells: cells }) + ')';
+  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+function createCell(name, handler) {
+  name = (name || '').trim();
+  if (!name) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'name is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const sheet = getOrCreateCellsSheet();
+  const cellId = 'cell_' + new Date().getTime() + '_' + Math.floor(Math.random() * 100000).toString(36);
+  sheet.appendRow([cellId, name, (handler || '').trim(), '[]', new Date().getTime()]);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK', cell_id: cellId })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Overwrites the full member list for a Cell -- the client sends the
+// complete new list (after an add or a remove), rather than this
+// function doing incremental add/remove itself.
+function updateCellMembers(cellId, memberCodes) {
+  if (!cellId) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'cell_id is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const sheet = getOrCreateCellsSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idCol = headers.indexOf('cell_id');
+  const membersCol = headers.indexOf('member_codes');
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][idCol] === cellId) {
+      sheet.getRange(i + 1, membersCol + 1).setValue(JSON.stringify(memberCodes || []));
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'NOT_FOUND' })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Deletes only the Cell grouping -- the member Agents' own rows in the
+// Characters/Briefs sheets are untouched, they just fall back to
+// Unassigned (or whatever other Cells they're also in).
+function deleteCell(cellId) {
+  if (!cellId) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'cell_id is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const sheet = getOrCreateCellsSheet();
+  const data = sheet.getDataRange().getValues();
+  const idCol = data[0].indexOf('cell_id');
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (data[i][idCol] === cellId) {
+      sheet.deleteRow(i + 1);
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'NOT_FOUND' })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ── A-Cell Handouts: a shared clue/document log the Handler files from
+// the Handouts tab. Each entry is scoped to one Cell (cell_id set) or
+// every Cell (cell_id blank) -- the player-facing Agent Hub reads the
+// same list_handouts action and shows each Agent only the ones scoped
+// to a Cell they're actually in, plus the campaign-wide ones. Photos
+// are stored as a data URI directly in the cell, same as the AAR log's
+// photos in the Agent Portal -- no separate Drive upload needed at
+// this size. Self-provisions its own "Handouts" sheet. ──
+function getOrCreateHandoutsSheet() {
+  const ss = getOrCreateSheet();
+  let sheet = ss.getSheetByName('Handouts');
+  if (!sheet) {
+    sheet = ss.insertSheet('Handouts');
+    sheet.getRange(1, 1, 1, 6).setValues([['handout_id', 'title', 'body', 'photo', 'cell_id', 'created_at']]);
+  }
+  return sheet;
+}
+
+function listHandouts(callback) {
+  const sheet = getOrCreateHandoutsSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idCol = headers.indexOf('handout_id');
+  const titleCol = headers.indexOf('title');
+  const bodyCol = headers.indexOf('body');
+  const photoCol = headers.indexOf('photo');
+  const cellCol = headers.indexOf('cell_id');
+  const createdCol = headers.indexOf('created_at');
+
+  const handouts = [];
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (!row[idCol]) continue;
+    handouts.push({
+      handout_id: row[idCol],
+      title: row[titleCol] || '',
+      body: row[bodyCol] || '',
+      photo: row[photoCol] || '',
+      cell_id: row[cellCol] || '',
+      created_at: row[createdCol] || ''
+    });
+  }
+  const body = callback + '(' + JSON.stringify({ status: 'OK', handouts: handouts }) + ')';
+  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+function createHandout(data) {
+  const title = (data.title || '').trim();
+  if (!title) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'title is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const sheet = getOrCreateHandoutsSheet();
+  const handoutId = 'handout_' + new Date().getTime() + '_' + Math.floor(Math.random() * 100000).toString(36);
+  sheet.appendRow([handoutId, title, data.body || '', data.photo || '', data.cell_id || '', new Date().getTime()]);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK', handout_id: handoutId })).setMimeType(ContentService.MimeType.JSON);
+}
+
+function updateHandout(data) {
+  if (!data.handout_id) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'handout_id is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const sheet = getOrCreateHandoutsSheet();
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0];
+  const idCol = headers.indexOf('handout_id');
+  const titleCol = headers.indexOf('title');
+  const bodyCol = headers.indexOf('body');
+  const photoCol = headers.indexOf('photo');
+  const cellCol = headers.indexOf('cell_id');
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][idCol] === data.handout_id) {
+      sheet.getRange(i + 1, titleCol + 1).setValue(data.title || '');
+      sheet.getRange(i + 1, bodyCol + 1).setValue(data.body || '');
+      sheet.getRange(i + 1, photoCol + 1).setValue(data.photo || '');
+      sheet.getRange(i + 1, cellCol + 1).setValue(data.cell_id || '');
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'NOT_FOUND' })).setMimeType(ContentService.MimeType.JSON);
+}
+
+function deleteHandout(handoutId) {
+  if (!handoutId) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'handout_id is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const sheet = getOrCreateHandoutsSheet();
+  const data = sheet.getDataRange().getValues();
+  const idCol = data[0].indexOf('handout_id');
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (data[i][idCol] === handoutId) {
+      sheet.deleteRow(i + 1);
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'NOT_FOUND' })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ── A-Cell Music: a persistent Track Library of mp3s the Handler
+// uploads once and can then cue on any channel with one click, instead
+// of pasting a link every time. A raw mp3's base64 easily blows past a
+// Sheets cell's ~50,000-character limit (fine for the small reference-
+// image data URIs elsewhere in this app, not for audio), so tracks are
+// stored in Drive instead and served back as a direct download link --
+// the browser streams straight from Drive, rather than being fully
+// buffered through one Apps Script response first the way the
+// gdrive:-prefixed reference images are (saveImageToDrive() below),
+// which would mean no playback could start until the whole file had
+// round-tripped through a single JSONP call. Self-provisions its own
+// "Tracks" sheet. ──
+function getOrCreateTracksSheet() {
+  const ss = getOrCreateSheet();
+  let sheet = ss.getSheetByName('Tracks');
+  if (!sheet) {
+    sheet = ss.insertSheet('Tracks');
+    sheet.getRange(1, 1, 1, 5).setValues([['track_id', 'title', 'drive_file_id', 'url', 'uploaded_at']]);
+  }
+  return sheet;
+}
+
+// The stable, reliable direct-media link for a public Drive file. Both
+// drive.google.com/uc?export=download AND drive.usercontent.google.com/
+// download were tried first and both failed in practice (Google serving
+// something other than raw bytes for cross-origin hotlinking regardless
+// of which legacy URL trick is used -- same class of breakage that
+// already forced the imgdata proxy for reference images, just not
+// fixable this time by another URL variant). The Drive API v3 media
+// endpoint is the actual documented, supported way to serve a public
+// file's raw bytes with correct headers and Range support -- it just
+// needs an API key. This key is restricted (API restrictions: Google
+// Drive API only) in Google Cloud Console, so it's safe to ship in a
+// public static site -- it can't be used for anything but reading files
+// this app already made public via ANYONE_WITH_LINK sharing.
+var DRIVE_API_KEY = 'AIzaSyC36Z6iunko5YB-MPBBMpIOvDr7nUOYKAE';
+function driveDirectAudioUrl(fileId) {
+  return 'https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media&key=' + DRIVE_API_KEY;
+}
+
+function listTracks(callback) {
+  const sheet = getOrCreateTracksSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idCol = headers.indexOf('track_id');
+  const titleCol = headers.indexOf('title');
+  const fileIdCol = headers.indexOf('drive_file_id');
+  const urlCol = headers.indexOf('url');
+  const uploadedCol = headers.indexOf('uploaded_at');
+
+  const tracks = [];
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (!row[idCol]) continue;
+    // Rebuilt from drive_file_id on every read, not read from the stored
+    // url column -- so a track uploaded before driveDirectAudioUrl()'s
+    // URL format changed self-heals the next time the library loads,
+    // with no separate migration step needed.
+    const fileId = fileIdCol !== -1 ? row[fileIdCol] : '';
+    tracks.push({
+      track_id: row[idCol],
+      title: row[titleCol] || '',
+      url: fileId ? driveDirectAudioUrl(fileId) : (row[urlCol] || ''),
+      uploaded_at: row[uploadedCol] || ''
+    });
+  }
+  const body = callback + '(' + JSON.stringify({ status: 'OK', tracks: tracks }) + ')';
+  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+// data.mp3_base64 may be a bare base64 string or a full data: URL --
+// accepts either so the frontend doesn't need to strip the prefix
+// itself.
+function uploadTrack(data) {
+  const title = (data.title || '').trim();
+  if (!title) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'title is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  if (!data.mp3_base64) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'mp3_base64 is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  try {
+    const base64 = data.mp3_base64.indexOf(',') !== -1 ? data.mp3_base64.split(',')[1] : data.mp3_base64;
+    const blob = Utilities.newBlob(Utilities.base64Decode(base64), 'audio/mpeg', title + '.mp3');
+
+    let folder;
+    const folders = DriveApp.getFoldersByName('Delta Green — Table Radio Tracks');
+    folder = folders.hasNext() ? folders.next() : DriveApp.createFolder('Delta Green — Table Radio Tracks');
+
+    const file = folder.createFile(blob);
+    file.setName(title);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+    const url = driveDirectAudioUrl(file.getId());
+    const trackId = 'track_' + new Date().getTime() + '_' + Math.floor(Math.random() * 100000).toString(36);
+    const sheet = getOrCreateTracksSheet();
+    sheet.appendRow([trackId, title, file.getId(), url, new Date().getTime()]);
+
+    return ContentService.createTextOutput(JSON.stringify({ status: 'OK', track_id: trackId, url: url }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function deleteTrack(trackId) {
+  if (!trackId) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'track_id is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const sheet = getOrCreateTracksSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idCol = headers.indexOf('track_id');
+  const driveCol = headers.indexOf('drive_file_id');
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (data[i][idCol] === trackId) {
+      const fileId = data[i][driveCol];
+      if (fileId) {
+        try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e) { /* already gone */ }
+      }
+      sheet.deleteRow(i + 1);
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'NOT_FOUND' })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ── Agent Hub: a player's private notes on a Handout, synced so they
+// survive clearing browser data and follow the Agent across devices --
+// scoped to (handout_id, agent_code), so two Agents each see only their
+// own annotations on the same shared Handout, and the Handler never
+// sees them at all (nothing in A-Cell reads this sheet). Self-
+// provisions its own "HandoutNotes" sheet. ──
+function getOrCreateHandoutNotesSheet() {
+  const ss = getOrCreateSheet();
+  let sheet = ss.getSheetByName('HandoutNotes');
+  if (!sheet) {
+    sheet = ss.insertSheet('HandoutNotes');
+    sheet.getRange(1, 1, 1, 4).setValues([['handout_id', 'agent_code', 'note', 'updated_at']]);
+  }
+  return sheet;
+}
+
+// Returns every note a given Agent has written, across all Handouts, in
+// one call -- the Agent Hub renders one Handouts section per Agent tab,
+// so this is fetched once per Agent rather than once per Handout shown.
+function listHandoutNotes(agentCode, callback) {
+  const sheet = getOrCreateHandoutNotesSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idCol = headers.indexOf('handout_id');
+  const codeCol = headers.indexOf('agent_code');
+  const noteCol = headers.indexOf('note');
+
+  const notes = [];
+  const code = (agentCode || '').trim().toUpperCase();
+  if (code) {
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][codeCol]).trim().toUpperCase() === code && data[i][noteCol]) {
+        notes.push({ handout_id: data[i][idCol], note: data[i][noteCol] });
+      }
+    }
+  }
+  const body = callback + '(' + JSON.stringify({ status: 'OK', notes: notes }) + ')';
+  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+// Upserts by (handout_id, agent_code). An empty note is a valid save
+// (clearing a note the Agent had written before), not an error.
+function saveHandoutNote(data) {
+  const handoutId = data.handout_id;
+  const agentCode = (data.agent_code || '').trim().toUpperCase();
+  if (!handoutId || !agentCode) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'handout_id and agent_code are required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const sheet = getOrCreateHandoutNotesSheet();
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0];
+  const idCol = headers.indexOf('handout_id');
+  const codeCol = headers.indexOf('agent_code');
+  const noteCol = headers.indexOf('note');
+  const updatedCol = headers.indexOf('updated_at');
+  const now = new Date().getTime();
+
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][idCol] === handoutId && String(values[i][codeCol]).trim().toUpperCase() === agentCode) {
+      sheet.getRange(i + 1, noteCol + 1).setValue(data.note || '');
+      sheet.getRange(i + 1, updatedCol + 1).setValue(now);
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  sheet.appendRow([handoutId, agentCode, data.note || '', now]);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// A Cell's usual Table Radio channel -- lets the Music tab's "Cue For
+// Cell" tune straight to a Cell's number instead of the Handler
+// remembering it. Independent of member_codes; set separately.
+function setCellChannel(cellId, channel) {
+  if (!cellId) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'cell_id is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const sheet = getOrCreateCellsSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idCol = headers.indexOf('cell_id');
+  const channelCol = headers.indexOf('channel');
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][idCol] === cellId) {
+      sheet.getRange(i + 1, channelCol + 1).setValue(channel || '');
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'NOT_FOUND' })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ── Table Radio: A-Cell's Music tab broadcasts a "now playing" track
+// (and a saved playlist) per channel; any player tuned to that channel
+// (assets/table-radio.js on every Hub page) polls and roughly syncs to
+// it. A "channel" is one of five fixed numbers (1-5), picked from a
+// dial on both sides rather than typed -- no login system, so whoever
+// dials in a channel can read or set it, same trust model as an
+// Agent Code. Self-provisions its own "RadioChannels" sheet. ──
+
+function getOrCreateRadioSheet() {
+  const ss = getOrCreateSheet(); // same spreadsheet file as the Briefs tab
+  let sheet = ss.getSheetByName('RadioChannels');
+  if (!sheet) {
+    sheet = ss.insertSheet('RadioChannels');
+    sheet.getRange(1, 1, 1, 5).setValues([['channel', 'track_url', 'track_title', 'started_at', 'updated_at']]);
+  }
+  // Migration-safe: adds track_kind to a RadioChannels sheet that
+  // predates the Track Library (uploaded mp3s) without needing a manual
+  // migration -- Drive-hosted download links don't end in .mp3 like a
+  // pasted URL would, so the player needs an explicit "this is direct
+  // audio" flag instead of sniffing the URL's file extension.
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  if (headers.indexOf('track_kind') === -1) {
+    sheet.getRange(1, sheet.getLastColumn() + 1).setValue('track_kind');
+  }
+  // Migration-safe: paused/paused_at/loop let the Handler pause, resume,
+  // and loop a broadcast in place -- set_now_playing always restarts a
+  // track from 0:00, which isn't the right tool for "pause this for a
+  // moment" or "keep this ambience track looping."
+  ['paused', 'paused_at', 'loop'].forEach(function (col) {
+    const hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    if (hdrs.indexOf(col) === -1) {
+      sheet.getRange(1, sheet.getLastColumn() + 1).setValue(col);
+    }
+  });
+  return sheet;
+}
+
+// Reads the current track for a channel. Server-stamped started_at
+// means every player computes elapsed time against the same clock,
+// regardless of the Handler's or their own device's clock skew.
+function getNowPlaying(channel, callback) {
+  let result = { status: 'NOT_FOUND' };
+  channel = (channel || '').trim();
+  if (channel) {
+    const sheet = getOrCreateRadioSheet();
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const chCol = headers.indexOf('channel');
+    const urlCol = headers.indexOf('track_url');
+    const titleCol = headers.indexOf('track_title');
+    const startedCol = headers.indexOf('started_at');
+    const kindCol = headers.indexOf('track_kind');
+    const pausedCol = headers.indexOf('paused');
+    const pausedAtCol = headers.indexOf('paused_at');
+    const loopCol = headers.indexOf('loop');
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
+        const trackUrl = data[i][urlCol] || '';
+        if (trackUrl) {
+          result = {
+            status: 'OK',
+            channel: data[i][chCol],
+            track_url: trackUrl,
+            track_title: data[i][titleCol] || '',
+            started_at: data[i][startedCol] || 0,
+            track_kind: (kindCol !== -1 && data[i][kindCol]) || '',
+            paused: pausedCol !== -1 && data[i][pausedCol] === 1,
+            paused_at: (pausedAtCol !== -1 && data[i][pausedAtCol]) || 0,
+            loop: loopCol !== -1 && data[i][loopCol] === 1
+          };
+        }
+        break;
+      }
+    }
+  }
+  const body = callback + '(' + JSON.stringify(result) + ')';
+  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+// Sets (or clears, if track_url is empty) the current track for a
+// channel. Upserts by channel, case-insensitive (the dial only ever
+// sends "1".."5", but this doesn't hardcode that). trackKind is '' for
+// a pasted URL (the player sniffs YouTube/SoundCloud/direct-audio from
+// the URL itself, same as always) or 'audio' for a Track Library pick,
+// whose Drive download link has no .mp3 extension for that sniffing to
+// catch.
+function setNowPlaying(channel, trackUrl, trackTitle, trackKind, loop) {
+  channel = (channel || '').trim();
+  if (!channel) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const sheet = getOrCreateRadioSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const chCol = headers.indexOf('channel');
+  const urlCol = headers.indexOf('track_url');
+  const titleCol = headers.indexOf('track_title');
+  const startedCol = headers.indexOf('started_at');
+  const updatedCol = headers.indexOf('updated_at');
+  const kindCol = headers.indexOf('track_kind');
+  const pausedCol = headers.indexOf('paused');
+  const pausedAtCol = headers.indexOf('paused_at');
+  const loopCol = headers.indexOf('loop');
+  const now = new Date().getTime();
+  const loopVal = loop === '1' || loop === true ? 1 : 0;
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
+      sheet.getRange(i + 1, urlCol + 1).setValue(trackUrl || '');
+      sheet.getRange(i + 1, titleCol + 1).setValue(trackTitle || '');
+      sheet.getRange(i + 1, startedCol + 1).setValue(now);
+      sheet.getRange(i + 1, updatedCol + 1).setValue(now);
+      if (kindCol !== -1) sheet.getRange(i + 1, kindCol + 1).setValue(trackKind || '');
+      // A fresh set_now_playing always restarts the track for everyone --
+      // any Pause left over from the previous track shouldn't carry
+      // forward onto this new one.
+      if (pausedCol !== -1) sheet.getRange(i + 1, pausedCol + 1).setValue(0);
+      if (pausedAtCol !== -1) sheet.getRange(i + 1, pausedAtCol + 1).setValue('');
+      if (loopCol !== -1) sheet.getRange(i + 1, loopCol + 1).setValue(loopVal);
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  // Built by header position, not array-literal order -- a sheet that
+  // already picked up the playlist_json migration column before this
+  // track_kind one would otherwise leave a gap between them.
+  const newRow = new Array(headers.length).fill('');
+  newRow[chCol] = channel;
+  newRow[urlCol] = trackUrl || '';
+  newRow[titleCol] = trackTitle || '';
+  newRow[startedCol] = now;
+  newRow[updatedCol] = now;
+  if (kindCol !== -1) newRow[kindCol] = trackKind || '';
+  if (pausedCol !== -1) newRow[pausedCol] = 0;
+  if (loopCol !== -1) newRow[loopCol] = loopVal;
+  sheet.appendRow(newRow);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Pause/resume the CURRENT track in place for a channel, without
+// restarting it (set_now_playing always resets started_at to now, which
+// would jump the track back to 0:00). Resuming shifts started_at forward
+// by however long the pause lasted, so every listener's elapsed-time
+// calculation (now - started_at) keeps landing on the same spot the track
+// was paused at, rather than skipping ahead by the pause duration.
+function pauseNowPlaying(channel) {
+  channel = (channel || '').trim();
+  if (!channel) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const sheet = getOrCreateRadioSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const chCol = headers.indexOf('channel');
+  const pausedCol = headers.indexOf('paused');
+  const pausedAtCol = headers.indexOf('paused_at');
+  const updatedCol = headers.indexOf('updated_at');
+  const now = new Date().getTime();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
+      if (pausedCol !== -1) sheet.getRange(i + 1, pausedCol + 1).setValue(1);
+      if (pausedAtCol !== -1) sheet.getRange(i + 1, pausedAtCol + 1).setValue(now);
+      if (updatedCol !== -1) sheet.getRange(i + 1, updatedCol + 1).setValue(now);
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'no track for that channel' }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function resumeNowPlaying(channel) {
+  channel = (channel || '').trim();
+  if (!channel) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const sheet = getOrCreateRadioSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const chCol = headers.indexOf('channel');
+  const startedCol = headers.indexOf('started_at');
+  const pausedCol = headers.indexOf('paused');
+  const pausedAtCol = headers.indexOf('paused_at');
+  const updatedCol = headers.indexOf('updated_at');
+  const now = new Date().getTime();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
+      const pausedAt = (pausedAtCol !== -1 && data[i][pausedAtCol]) || now;
+      const startedAt = (startedCol !== -1 && data[i][startedCol]) || now;
+      const shiftedStart = startedAt + (now - pausedAt);
+      if (startedCol !== -1) sheet.getRange(i + 1, startedCol + 1).setValue(shiftedStart);
+      if (pausedCol !== -1) sheet.getRange(i + 1, pausedCol + 1).setValue(0);
+      if (pausedAtCol !== -1) sheet.getRange(i + 1, pausedAtCol + 1).setValue('');
+      if (updatedCol !== -1) sheet.getRange(i + 1, updatedCol + 1).setValue(now);
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'no track for that channel' }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// One-time migration -- run this once by hand from the Apps Script
+// editor (pick "addPlaylistColumn" from the function dropdown at the
+// top, click Run). Adds a playlist_json column to the RadioChannels
+// sheet if it's not already there.
+function addPlaylistColumn() {
+  const sheet = getOrCreateRadioSheet();
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  if (headers.indexOf('playlist_json') === -1) {
+    sheet.getRange(1, sheet.getLastColumn() + 1).setValue('playlist_json');
+  }
+}
+
+// Reads the saved playlist (an array of {url, title}) for a channel.
+// Empty array if the channel has no saved tracks yet.
+function getPlaylist(channel, callback) {
+  const result = { status: 'OK', playlist: [] };
+  channel = (channel || '').trim();
+  if (channel) {
+    const sheet = getOrCreateRadioSheet();
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const chCol = headers.indexOf('channel');
+    const plCol = headers.indexOf('playlist_json');
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
+        if (plCol >= 0 && data[i][plCol]) {
+          try { result.playlist = JSON.parse(data[i][plCol]); } catch (e) { result.playlist = []; }
+        }
+        break;
+      }
+    }
+  }
+  const body = callback + '(' + JSON.stringify(result) + ')';
+  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+// Overwrites the saved playlist for a channel with the given JSON
+// array. Creates a row for the channel (with no current track yet) if
+// one doesn't already exist.
+function savePlaylist(channel, playlistJson) {
+  channel = (channel || '').trim();
+  if (!channel) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const sheet = getOrCreateRadioSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const chCol = headers.indexOf('channel');
+  const plCol = headers.indexOf('playlist_json');
+  if (plCol === -1) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'playlist_json column missing -- run addPlaylistColumn() first' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
+      sheet.getRange(i + 1, plCol + 1).setValue(playlistJson || '[]');
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  const row = new Array(headers.length).fill('');
+  row[chCol] = channel;
+  row[plCol] = playlistJson || '[]';
+  const updatedCol = headers.indexOf('updated_at');
+  if (updatedCol >= 0) row[updatedCol] = new Date().getTime();
+  sheet.appendRow(row);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+}
+
+function getOrCreateSheet() {
+  if (SPREADSHEET_ID) {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    ensureBriefsPlayerNameColumn(ss);
+    return ss;
+  }
+
+  const files = DriveApp.getFilesByName(SHEET_NAME);
+  if (files.hasNext()) {
+    const ss = SpreadsheetApp.open(files.next());
+    ensureBriefsPlayerNameColumn(ss);
+    return ss;
+  }
+
+  const ss = SpreadsheetApp.create(SHEET_NAME);
+  const sheet = ss.getActiveSheet();
+  sheet.setName(SHEET_NAME);
+
+  const headers = COLUMNS.map(c =>
+    c.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+  );
+  sheet.appendRow(headers);
+
+  const headerRange = sheet.getRange(1, 1, 1, COLUMNS.length);
+  headerRange.setBackground('#1a1a18');
+  headerRange.setFontColor('#e8e2d4');
+  headerRange.setFontWeight('bold');
+  headerRange.setFontSize(10);
+  sheet.setFrozenRows(1);
+
+  return ss;
+}
+
+// Cover Identity migration -- self-healing, same pattern as
+// getOrCreateCellsSheet()'s 'channel' column and getOrCreateRadioSheet()'s
+// track_kind/paused/paused_at/loop columns above: adds Player Name to a
+// Delta Green Briefs sheet that predates Cover Identity, so an existing
+// deployment doesn't need a manual one-time migration run. Appended at
+// the END of the header row (not inserted among the existing columns) --
+// this must match where 'player_name' sits in COLUMNS above (also the
+// end), since the new-agent-submission row builder in doPost
+// (COLUMNS.map(...) -> sheet.appendRow()) writes positionally.
+function ensureBriefsPlayerNameColumn(ss) {
+  const sheet = ss.getSheetByName(SHEET_NAME);
+  if (!sheet) return; // brand-new spreadsheet -- getOrCreateSheet()'s creation path below already includes it via COLUMNS
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  if (headers.indexOf('Player Name') === -1) {
+    sheet.getRange(1, sheet.getLastColumn() + 1).setValue('Player Name');
+  }
+}
+
+function saveImageToDrive(base64DataUrl, filename, charName) {
+  try {
+    const base64 = base64DataUrl.split(',')[1];
+    const mimeType = base64DataUrl.split(';')[0].split(':')[1];
+
+    const blob = Utilities.newBlob(
+      Utilities.base64Decode(base64),
+      mimeType,
+      filename
+    );
+
+    let folder;
+    const folders = DriveApp.getFoldersByName('Delta Green — Character References');
+    if (folders.hasNext()) {
+      folder = folders.next();
+    } else {
+      folder = DriveApp.createFolder('Delta Green — Character References');
+    }
+
+    const file = folder.createFile(blob);
+    file.setName((charName || 'unknown') + ' — ' + filename);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+    // Store the file ID so the portal can use the image proxy endpoint
+    // Format: gdrive:FILE_ID  — portal detects this prefix and calls ?action=imgdata&id=
+    return 'gdrive:' + file.getId();
+  } catch (err) {
+    return 'Image upload failed: ' + err.message;
+  }
+}
+
+function savePlateImage(data) {
+  try {
+    const url = saveImageToDrive(data.image_base64, data.image_name, data.char_name);
+    return updateAgentField({
+      action: 'update_field',
+      agent_code: data.agent_code,
+      field: data.field,
+      value: url
+    });
+  } catch(err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'ERROR', message: err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function backfillCodes() {
+  const ss = getOrCreateSheet();
+  const sheet = ss.getSheetByName(SHEET_NAME);
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const codeCol = headers.indexOf('Agent Code');
+  const nameCol = headers.indexOf('Char Name');
+
+  if (codeCol < 0) { Logger.log('Agent Code column not found'); return; }
+
+  for (let i = 1; i < data.length; i++) {
+    if (!data[i][codeCol]) {
+      const code = generateAgentCode(data[i][nameCol]);
+      sheet.getRange(i + 1, codeCol + 1).setValue(code);
+      Logger.log('Row ' + (i+1) + ': ' + code);
+    }
+  }
+  Logger.log('Backfill complete');
+}
+
+// ── Housekeeping: a daily snapshot of the Characters sheet, so a
+// destructive mistake (a bad manual edit, a bug -- the kind of thing
+// that already happened once with this project) has a same-day
+// fallback beyond Google Sheets' own version history.
+//
+// ONE-TIME SETUP: after pasting this file in and deploying, run
+// installDailyBackupTrigger() ONCE from this editor (select it in the
+// function dropdown above, then press Run) -- it'll ask you to
+// authorize it the first time, then it schedules backupCharactersSheet()
+// to run automatically every day after that. You never need to run
+// either function manually again.
+function installDailyBackupTrigger() {
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'backupCharactersSheet') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('backupCharactersSheet').timeBased().everyDays(1).atHour(4).create();
+  Logger.log('Daily backup trigger installed -- runs around 4am your script timezone.');
+}
+
+function backupCharactersSheet() {
+  const ss = getOrCreateSheet();
+  const live = ss.getSheetByName(CHARACTERS_SHEET_NAME);
+  if (!live) return;
+
+  const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const backupName = 'Backup_Characters_' + stamp;
+  const existing = ss.getSheetByName(backupName);
+  if (existing) ss.deleteSheet(existing); // re-running same day replaces, doesn't pile up
+
+  const copy = live.copyTo(ss);
+  copy.setName(backupName).hideSheet();
+
+  // Keep the last 14 daily backups so the spreadsheet doesn't grow an
+  // unbounded number of hidden sheet tabs over a long campaign.
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 14);
+  ss.getSheets().forEach(s => {
+    const m = s.getName().match(/^Backup_Characters_(\d{4}-\d{2}-\d{2})$/);
+    if (m && new Date(m[1]) < cutoff) ss.deleteSheet(s);
+  });
+}
