@@ -479,10 +479,16 @@
     cursor: crosshair;
 }
 
-/* Zero out every border-radius — strict 90° angles throughout */
-.theme-son-of-sam *,
-.theme-son-of-sam *::before,
-.theme-son-of-sam *::after {
+/* Zero out every border-radius — strict 90° angles throughout.
+   Excludes the same handful of theme-agnostic overlay widgets as the
+   Field Notes version of this rule below (#dg-radio's round channel
+   dial, #settings-cog-btn's circular gear, #settings-panel, #dg-toast,
+   #dg-confirm-backdrop) -- this rule predates that fix and was missed
+   when it landed, so Son of Sam had the identical squared-off-dial bug
+   Field Notes did. */
+.theme-son-of-sam *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *),
+.theme-son-of-sam *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *)::before,
+.theme-son-of-sam *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *)::after {
     border-radius: 0 !important;
 }
 
@@ -6976,10 +6982,14 @@ input[type="checkbox"]:checked+label {
     font-size: 15px;
 }
 
-/* Hard right-angles like field-notes */
-.theme-mobile *,
-.theme-mobile *::before,
-.theme-mobile *::after {
+/* Hard right-angles like field-notes -- same exclusions as that rule
+   (and the Son of Sam one above it) for the same reason: #dg-radio's
+   round dial, #settings-cog-btn's circular gear, #settings-panel,
+   #dg-toast, and #dg-confirm-backdrop are theme-agnostic overlay
+   widgets that were getting squared off here too. */
+.theme-mobile *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *),
+.theme-mobile *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *)::before,
+.theme-mobile *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *)::after {
     border-radius: 0 !important;
     font-weight: 400;
 }
