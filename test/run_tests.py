@@ -4274,6 +4274,50 @@ def test_id_creator(p, agent):
     page.close()
     return errs
 
+def test_noindex(p):
+    """The site is meant to be link-only, not search-indexable -- every
+    top-level page carries <meta name="robots" content="noindex,
+    nofollow"> and the repo root has a robots.txt disallowing everything.
+    Not an access-control mechanism (no auth behind either signal, and
+    a page already linked from elsewhere can still be crawled/indexed
+    despite robots.txt) -- just an opt-out of search engines listing
+    the site on their own."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    # JSONP-aware, not a plain JSON body -- these pages request Apps
+    # Script data via <script src=...&callback=NAME>, so the response has
+    # to come back as NAME({...}) or the browser trying to execute a bare
+    # {"status":"OK"} as a <script> tag's JS throws "Unexpected token ':'"
+    # (same mock shape as fake_apps_script in test_pwa_offline below).
+    def fake_apps_script(route):
+        url = route.request.url
+        if route.request.method == "POST" or "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    pages = ["index.html", "agent-hub.html", "a-cell.html", "dg-agent-portal.html", "dg-id-creator.html", "stats/index.html"]
+    for path in pages:
+        page.goto(f"{BASE}/{path}", wait_until="domcontentloaded", timeout=15000)
+        content = page.eval_on_selector('meta[name="robots"]', "el => el && el.getAttribute('content')")
+        record("noindex", f"{path} carries a noindex robots meta tag",
+               content is not None and "noindex" in content, repr(content))
+
+    robots_txt = page.evaluate(f"""async () => {{
+        const res = await fetch('{BASE}/robots.txt');
+        return await res.text();
+    }}""")
+    record("noindex", "robots.txt disallows crawling the whole site",
+           "Disallow: /" in robots_txt, repr(robots_txt))
+    record("noindex", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_pwa_offline(p):
     """Offline app shell (v1.7): a manifest.json + sw.js precache every
     page's HTML/CSS/JS/image assets with a stale-while-revalidate
@@ -4466,6 +4510,8 @@ def main():
 
         for agent in AGENTS[:2]:
             safe(test_id_creator, browser, agent, area="id-creator")
+
+        safe(test_noindex, browser, area="noindex")
 
         safe(test_pwa_offline, browser, area="pwa")
 
