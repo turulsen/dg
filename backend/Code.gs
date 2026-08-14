@@ -73,9 +73,17 @@ const COLUMNS = [
   // at the END, not inserted among the existing columns -- the "new
   // agent submission" path below (COLUMNS.map(...) -> sheet.appendRow())
   // writes positionally, so this position must match wherever
-  // ensureBriefsPlayerNameColumn() puts the actual header on the live
-  // sheet (also always the end).
-  'player_name'
+  // ensureBriefsColumns() puts the actual header on the live sheet
+  // (also always the end).
+  'player_name',
+  // The agent's profession -- typed directly on the Profiling form, or
+  // auto-filled by stats/agent-portal-export.js from the character
+  // sheet's own profession dropdown. Was collected and sent by both of
+  // those clients already but silently dropped here (missing from
+  // COLUMNS means COLUMNS.map() below never wrote it to any column), so
+  // it never actually reached the Sheet -- same append-at-the-end
+  // discipline as player_name above.
+  'profession'
 ];
 
 function generateAgentCode(name) {
@@ -354,14 +362,41 @@ function doPost(e) {
       return saveHandoutNote(data);
     }
 
-    // New agent submission
+    // New agent submission -- also handles a returning Agent's "Update
+    // Brief" resubmission. Upsert by agent_code: an existing row is
+    // overwritten in place rather than appended alongside a duplicate.
+    // Before this, EVERY resubmission appended a fresh row, and
+    // doLookup()/doGet() both return the FIRST row matching a code --
+    // so a corrected/completed resubmission was silently invisible,
+    // permanently shadowed by whatever row for that code existed first.
+    // (This is very likely why "the Agent File still won't open even
+    // though Profiling was resubmitted" reports happen: the fix landed
+    // in a row nobody ever reads back.)
     const ss = getOrCreateSheet();
     const sheet = ss.getSheetByName(SHEET_NAME);
     const agentCode = data.agent_code || generateAgentCode(data.char_name);
 
+    const existingValues = sheet.getDataRange().getValues();
+    const existingHeaders = existingValues[0];
+    const codeCol = existingHeaders.indexOf('Agent Code');
+    const refImageLinkCol = existingHeaders.indexOf('Ref Image Link');
+    let existingRowIndex = -1;
+    if (codeCol !== -1) {
+      for (let i = 1; i < existingValues.length; i++) {
+        if (existingValues[i][codeCol] === agentCode) { existingRowIndex = i; break; }
+      }
+    }
+
     let imageLink = '';
     if (data.ref_image_base64 && data.ref_image_name) {
       imageLink = saveImageToDrive(data.ref_image_base64, data.ref_image_name, data.char_name);
+    } else if (existingRowIndex !== -1 && refImageLinkCol !== -1) {
+      // Resubmitting without picking a new file (the normal case --
+      // <input type=file> can't be pre-filled from a previous session,
+      // so it's empty on every resubmit unless the player deliberately
+      // re-attaches) keeps whatever reference image was already on file
+      // instead of wiping it out.
+      imageLink = existingValues[existingRowIndex][refImageLinkCol] || '';
     }
 
     const row = COLUMNS.map(col => {
@@ -371,7 +406,11 @@ function doPost(e) {
       return data[col] || '';
     });
 
-    sheet.appendRow(row);
+    if (existingRowIndex !== -1) {
+      sheet.getRange(existingRowIndex + 1, 1, 1, row.length).setValues([row]);
+    } else {
+      sheet.appendRow(row);
+    }
 
     return ContentService
       .createTextOutput(JSON.stringify({ status: 'OK', agent_code: agentCode }))
@@ -1628,14 +1667,14 @@ function savePlaylist(channel, playlistJson) {
 function getOrCreateSheet() {
   if (SPREADSHEET_ID) {
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    ensureBriefsPlayerNameColumn(ss);
+    ensureBriefsColumns(ss);
     return ss;
   }
 
   const files = DriveApp.getFilesByName(SHEET_NAME);
   if (files.hasNext()) {
     const ss = SpreadsheetApp.open(files.next());
-    ensureBriefsPlayerNameColumn(ss);
+    ensureBriefsColumns(ss);
     return ss;
   }
 
@@ -1658,22 +1697,24 @@ function getOrCreateSheet() {
   return ss;
 }
 
-// Cover Identity migration -- self-healing, same pattern as
+// Delta Green Briefs header migrations -- self-healing, same pattern as
 // getOrCreateCellsSheet()'s 'channel' column and getOrCreateRadioSheet()'s
-// track_kind/paused/paused_at/loop columns above: adds Player Name to a
-// Delta Green Briefs sheet that predates Cover Identity, so an existing
-// deployment doesn't need a manual one-time migration run. Appended at
-// the END of the header row (not inserted among the existing columns) --
-// this must match where 'player_name' sits in COLUMNS above (also the
-// end), since the new-agent-submission row builder in doPost
-// (COLUMNS.map(...) -> sheet.appendRow()) writes positionally.
-function ensureBriefsPlayerNameColumn(ss) {
+// track_kind/paused/paused_at/loop columns above: adds any column below
+// that's missing from a live sheet created before that column existed,
+// so an existing deployment doesn't need a manual one-time migration
+// run. Each is appended at the END of the header row (never inserted
+// among the existing columns) -- this must match where each column sits
+// in COLUMNS above (also always the end), since the new-agent-submission
+// row builder in doPost (COLUMNS.map(...)) writes positionally.
+function ensureBriefsColumns(ss) {
   const sheet = ss.getSheetByName(SHEET_NAME);
-  if (!sheet) return; // brand-new spreadsheet -- getOrCreateSheet()'s creation path below already includes it via COLUMNS
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  if (headers.indexOf('Player Name') === -1) {
-    sheet.getRange(1, sheet.getLastColumn() + 1).setValue('Player Name');
-  }
+  if (!sheet) return; // brand-new spreadsheet -- getOrCreateSheet()'s creation path below already includes every column via COLUMNS
+  ['Player Name', 'Profession'].forEach(function (name) {
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    if (headers.indexOf(name) === -1) {
+      sheet.getRange(1, sheet.getLastColumn() + 1).setValue(name);
+    }
+  });
 }
 
 function saveImageToDrive(base64DataUrl, filename, charName) {
