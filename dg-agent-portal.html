@@ -2786,17 +2786,31 @@ async function handleSubmit() {
     payload.ref_image_base64 = photoDataUrl;
     payload.ref_image_name = document.getElementById('ref-img').files[0]?.name||'photo.jpg';
   }
-  const agentCode = genCode(payload.char_name);
+  // Reuse this Agent's existing code only if the form is actually still
+  // describing THAT Agent (same char_name) -- afCode alone isn't a safe
+  // signal, since autoRestore() silently loads the last-active Agent's
+  // code into memory on every fresh page visit, "Update Brief" stays on
+  // the button from that restore, and a player who then types up a
+  // second, different character and submits would otherwise have that
+  // brand new Agent silently merged into the previous one's row instead
+  // of getting its own code. Matching char_name is what actually
+  // distinguishes "editing the loaded Agent" from "describing a new one."
+  const sameAgent = afCode && afData
+    && (afData.char_name || '').trim().toLowerCase() === (payload.char_name || '').trim().toLowerCase();
+  const agentCode = sameAgent ? afCode : genCode(payload.char_name);
   payload.agent_code = agentCode;
   persistAgent(agentCode, payload);
   afCode = agentCode;
   afData = payload;
-  renderDossier(payload, agentCode);
   status.className='ok'; status.textContent='Brief received. Stand by for orders.';
   btn.textContent='Submitted';
   try {
     await fetch(APPS_SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
   } catch(e){ console.error(e); }
+  // reportValidity() above guarantees a complete brief, so the Agent
+  // File is unlocked -- go straight there instead of showing the old
+  // inline printable dossier card underneath the Profiling form.
+  openInAgentFile();
 }
 
 /* ── DOSSIER ── */

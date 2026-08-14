@@ -4150,7 +4150,9 @@ def test_agent_file_open_character_sheet_btn(p):
     # gates the Agent File tab behind every #dg-form [required] field
     # actually being filled in, so a name-only submission (as this used
     # to be) wouldn't even get past that gate to reach the button this
-    # test is actually about.
+    # test is actually about. A complete submit now opens the Agent File
+    # tab directly (no more "click Open Agent File on the dossier card"
+    # step in between).
     fill_cover_form(page, {
         "char_name": "Marcus Reyes", "nationality": "American", "face_shape": "square",
         "eye_color": "brown", "eye_shape": "narrow", "nose": "broad", "lips": "thin",
@@ -4160,8 +4162,6 @@ def test_agent_file_open_character_sheet_btn(p):
         "vibe": "coiled and watchful",
     }, "#dg-form")
     page.click("#submit-btn")
-    page.wait_for_timeout(400)
-    page.click("#open-agent-file-btn")
     page.wait_for_timeout(400)
 
     btn = page.locator("#open-character-sheet-btn")
@@ -4220,14 +4220,17 @@ def test_agent_portal_cover(p, agent):
         rand_bar_visible = page.is_visible("#rand-result-bar")
         record("agent-portal", f"random agent generator for profession '{prof_id}'", rand_bar_visible, "")
 
-    # fill + submit cover form
+    # fill + submit cover form -- a complete submission now opens
+    # straight into the Agent File tab instead of showing the old
+    # inline printable dossier card underneath Profiling.
     fill_cover_form(page, agent, "#dg-form")
     page.click("#submit-btn")
     page.wait_for_timeout(400)
     status = page.text_content("#form-status")
-    dossier_html = page.inner_html("#dossier-wrap")
-    ok = agent["char_name"] in dossier_html
-    record("agent-portal", "cover submit renders dossier", ok, status or "")
+    agent_tab_active = "active" in page.eval_on_selector("#tw-agent", "el => el.className")
+    af_name = page.text_content("#af-agent-name") or ""
+    ok = agent_tab_active and agent["char_name"] in af_name
+    record("agent-portal", "cover submit opens straight into the Agent File tab", ok, status or "")
 
     # grab the generated code from local storage for downstream tests
     saved = page.evaluate("() => { try { return JSON.parse(localStorage.getItem('dg_last_agent')); } catch(e){ return null; } }")
