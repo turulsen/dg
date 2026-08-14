@@ -796,10 +796,29 @@ function populateProfessionDropdown() {
  * already selected; generic pools fill in otherwise.
  * Results are written directly to the biography form fields.
  */
-function generateRandomBio() {
+async function generateRandomBio() {
     if (!bioData) {
         alert('Biography data is still loading. Please try again in a moment.');
         return;
+    }
+
+    // A character with a real name already set is "in use" -- this used
+    // to overwrite cs-name (and every field below) in place with no
+    // warning at all, silently replacing an actual, already-saved
+    // character's identity under whatever Cloud Save code it already
+    // had. 'Agent' is this app's own placeholder for "no name set yet"
+    // (agent-portal-export.js's own export gate checks the same
+    // sentinel), so only a real, player-given name trips this gate.
+    const nameInput = document.getElementById('cs-name');
+    const currentName = (nameInput?.value || '').trim();
+    if (currentName && currentName !== 'Agent') {
+        const proceed = window.dgConfirm
+            ? await window.dgConfirm(
+                'This character already has a name: ' + currentName + '.\n\n' +
+                'Random Bio will overwrite their name and other biography details with a brand new random identity, in place -- there is no undo.\n\n' +
+                'Continue only if you actually want to replace ' + currentName + '.')
+            : confirm('Random Bio will overwrite ' + currentName + '\'s name and bio details. Continue?');
+        if (!proceed) return;
     }
 
     const getRandomItem = (arr) => arr[Math.floor(Math.random() * arr.length)];

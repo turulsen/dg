@@ -733,6 +733,10 @@
         <div class="admin-list" id="admin-list">
           <div class="admin-loading">Loading agents…</div>
         </div>
+        <div class="pv-sec-hd">Agent File Only <span class="admin-deleted-hint">(no character sheet -- not shown above)</span></div>
+        <div class="admin-list" id="admin-briefs-list">
+          <div class="admin-loading">Loading…</div>
+        </div>
         <div class="pv-sec-hd">Recently Deleted <span class="admin-deleted-hint">(purged after 24 hours)</span></div>
         <div class="admin-deleted-list" id="admin-deleted-list"></div>
       </div>
@@ -2485,11 +2489,13 @@
   var RESTORE_NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm the restore. Check that the Admin addition (restore_character / list_deleted_characters) is pasted into Apps Script and redeployed.';
 
   var listEl = document.getElementById('admin-list');
+  var briefsListEl = document.getElementById('admin-briefs-list');
   var deletedListEl = document.getElementById('admin-deleted-list');
   var statusEl = document.getElementById('admin-status');
   var refreshBtn = document.getElementById('admin-refresh-btn');
   var refreshNote = document.getElementById('admin-refresh-note');
   var agents = [];
+  var briefsOnlyAgents = [];
   var deletedAgents = [];
 
   function escapeHtml(str) {
@@ -2622,6 +2628,99 @@
     });
   }
 
+  // ── Agent File / Profiling briefs with no character sheet yet --
+  // invisible to list_characters above, so they need their own fetch/
+  // render/delete-confirm flow (parallel to, not sharing, the one above
+  // -- these entries have a plain char_name, not a character.state.bio
+  // to read one out of). delete_character already handles a code with
+  // no Characters row correctly; it just had no list to point it at. ──
+  function fetchBriefsOnly() {
+    jsonpGet('list_agent_file_only', {}, function (res) {
+      if (!res || res.status !== 'OK' || !Array.isArray(res.agents)) {
+        briefsListEl.innerHTML = '<div class="admin-error">Could not load Agent File-only entries.</div>';
+        return;
+      }
+      briefsOnlyAgents = res.agents.map(function (a) {
+        return { code: a.agent_code, name: a.char_name || a.agent_code, codename: a.codename || '' };
+      }).filter(function (a) { return a.code; });
+      renderBriefsOnlyList();
+    });
+  }
+
+  function renderBriefsOnlyList() {
+    if (!briefsOnlyAgents.length) {
+      briefsListEl.innerHTML = '<div class="cells-empty-note">None -- every Agent File on record already has a character sheet.</div>';
+      return;
+    }
+    briefsListEl.innerHTML = briefsOnlyAgents.map(function (a, i) {
+      var meta = [a.code, a.codename].filter(Boolean).map(escapeHtml).join(' &middot; ');
+      return '<div class="admin-row" data-i="' + i + '">' +
+        '<div class="admin-row-top">' +
+        '<div class="admin-row-info"><div class="name">' + escapeHtml(a.name) + '</div><div class="meta">' + meta + '</div></div>' +
+        '<button type="button" class="paper-btn admin-delete-btn" data-i="' + i + '">Delete</button>' +
+        '</div>' +
+        '<div class="admin-confirm-slot" id="admin-briefs-confirm-slot-' + i + '"></div>' +
+        '</div>';
+    }).join('');
+    Array.prototype.forEach.call(briefsListEl.querySelectorAll('.admin-delete-btn'), function (btn) {
+      btn.addEventListener('click', function () { openBriefsConfirm(parseInt(btn.dataset.i, 10)); });
+    });
+  }
+
+  function openBriefsConfirm(i) {
+    var agent = briefsOnlyAgents[i];
+    var slot = document.getElementById('admin-briefs-confirm-slot-' + i);
+    if (!agent || !slot) return;
+    if (slot.childNodes.length) { slot.innerHTML = ''; return; } // toggle closed
+    slot.innerHTML =
+      '<div class="admin-confirm">' +
+      '<p>Enter the A-Cell password to delete <b>' + escapeHtml(agent.name) + '</b> (moves to Recently Deleted, restorable for 24 hours):</p>' +
+      '<div class="admin-confirm-error" id="admin-briefs-confirm-err-' + i + '"></div>' +
+      '<input type="password" id="admin-briefs-pw-input-' + i + '" placeholder="A-Cell password" autocomplete="off">' +
+      '<div class="admin-confirm-actions">' +
+      '<button type="button" class="paper-btn admin-delete-btn" id="admin-briefs-delete-confirm-btn-' + i + '">Delete Agent</button>' +
+      '<button type="button" class="paper-btn" id="admin-briefs-confirm-cancel-' + i + '">Cancel</button>' +
+      '</div></div>';
+    document.getElementById('admin-briefs-confirm-cancel-' + i).addEventListener('click', function () { slot.innerHTML = ''; });
+    document.getElementById('admin-briefs-delete-confirm-btn-' + i).addEventListener('click', function () {
+      var input = document.getElementById('admin-briefs-pw-input-' + i);
+      var errEl = document.getElementById('admin-briefs-confirm-err-' + i);
+      if (input.value !== ACELL_PASSWORD) {
+        errEl.textContent = 'Wrong password.';
+        return;
+      }
+      doBriefsDelete(agent, slot);
+    });
+  }
+
+  function doBriefsDelete(agent, slot) {
+    slot.innerHTML = '<div class="admin-confirm"><p>Deleting…</p></div>';
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors', keepalive: true,
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'delete_character', agent_code: agent.code }),
+    }).then(function () {
+      setTimeout(function () { verifyBriefsDelete(agent, slot); }, 900);
+    }).catch(function () {
+      slot.innerHTML = '<div class="admin-confirm"><p class="admin-confirm-error">Could not reach the backend.</p></div>';
+    });
+  }
+
+  function verifyBriefsDelete(agent, slot) {
+    jsonpGet('list_agent_file_only', {}, function (res) {
+      var stillThere = res && res.status === 'OK' && Array.isArray(res.agents) &&
+        res.agents.some(function (a) { return a.agent_code === agent.code; });
+      if (stillThere) {
+        slot.innerHTML = '<div class="admin-confirm"><p class="admin-confirm-error">' + NOT_DEPLOYED_MSG + '</p></div>';
+        return;
+      }
+      briefsOnlyAgents = briefsOnlyAgents.filter(function (a) { return a.code !== agent.code; });
+      statusEl.textContent = 'Deleted ' + agent.name + '. Restore it within 24 hours from Recently Deleted below.';
+      renderBriefsOnlyList();
+      fetchDeleted();
+    });
+  }
+
   function fetchDeleted() {
     jsonpGet('list_deleted_characters', {}, function (res) {
       if (!res || res.status !== 'OK' || !Array.isArray(res.characters)) {
@@ -2631,7 +2730,10 @@
       deletedAgents = res.characters.map(function (c) {
         var state = null;
         try { state = JSON.parse(c.character_json); } catch (e) { /* skip unparsable rows */ }
-        return { code: c.agent_code, state: state, deleted_at: c.deleted_at };
+        // char_name is only present for an Agent-File-only delete (no
+        // character sheet, so no character_json to read a name out of
+        // -- see listDeletedCharacters()'s DeletedBriefs half).
+        return { code: c.agent_code, state: state, char_name: c.char_name || '', deleted_at: c.deleted_at };
       }).filter(function (c) { return c.code; });
       renderDeletedList();
     });
@@ -2644,7 +2746,7 @@
     }
     deletedListEl.innerHTML = deletedAgents.map(function (a, i) {
       var bio = (a.state && a.state.bio) || {};
-      var name = bio.name || a.code;
+      var name = bio.name || a.char_name || a.code;
       var when = a.deleted_at ? new Date(Number(a.deleted_at)).toLocaleString() : '';
       return '<div class="admin-deleted-row" data-i="' + i + '">' +
         '<div><div class="name">' + escapeHtml(name) + '</div><div class="meta">' + escapeHtml(a.code) + (when ? ' &middot; deleted ' + escapeHtml(when) : '') + '</div></div>' +
@@ -2672,23 +2774,30 @@
   }
 
   function verifyRestore(agent) {
-    jsonpGet('list_characters', {}, function (res) {
-      var backInRoster = res && res.status === 'OK' && Array.isArray(res.characters) &&
-        res.characters.some(function (c) { return c.agent_code === agent.code; });
+    // An Agent-File-only delete (agent.state is null -- see fetchDeleted()
+    // above) never had a Characters row to restore, so list_characters
+    // would never confirm it -- check list_agent_file_only instead.
+    var action = agent.state ? 'list_characters' : 'list_agent_file_only';
+    var listKey = agent.state ? 'characters' : 'agents';
+    jsonpGet(action, {}, function (res) {
+      var backInRoster = res && res.status === 'OK' && Array.isArray(res[listKey]) &&
+        res[listKey].some(function (c) { return c.agent_code === agent.code; });
       if (!backInRoster) {
         statusEl.textContent = RESTORE_NOT_DEPLOYED_MSG;
         return;
       }
-      var name = (agent.state && agent.state.bio || {}).name || agent.code;
+      var name = (agent.state && agent.state.bio || {}).name || agent.char_name || agent.code;
       statusEl.textContent = 'Restored ' + name + '.';
       fetchList();
       fetchDeleted();
+      fetchBriefsOnly();
     });
   }
 
-  refreshBtn.addEventListener('click', function () { fetchList(true); fetchDeleted(); });
+  refreshBtn.addEventListener('click', function () { fetchList(true); fetchDeleted(); fetchBriefsOnly(); });
   fetchList(false);
   fetchDeleted();
+  fetchBriefsOnly();
 })();
 </script>
 

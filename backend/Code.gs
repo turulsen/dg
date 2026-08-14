@@ -185,6 +185,17 @@ function doGet(e) {
     return listDeletedCharacters(callback);
   }
 
+  // ── A-Cell Admin: every Agent that has an Agent File / Profiling
+  // brief but no character sheet yet -- list_characters above only ever
+  // sees the Characters sheet, so these were invisible to Admin's
+  // delete list (and to Recently Deleted -- see listDeletedCharacters())
+  // with no way to clean up a duplicate/test entry short of editing the
+  // Delta Green Briefs sheet by hand. ──
+  // ?action=list_agent_file_only&callback=CALLBACK
+  if (e.parameter && e.parameter.action === 'list_agent_file_only') {
+    return listAgentFileOnly(callback);
+  }
+
   // ── A-Cell Handouts + the player-facing Agent Hub: every filed
   // handout/clue. ──
   // ?action=list_handouts&callback=CALLBACK
@@ -773,6 +784,50 @@ function listCharacters(callback) {
   return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
 }
 
+// ── A-Cell Admin: every Agent File / Profiling brief with no matching
+// Characters-sheet row -- listCharacters() above can't see these at
+// all, which made them undeletable through Admin (delete_character
+// itself already handles a code with no Characters row fine, it just
+// had no list to surface one from). ──
+function listAgentFileOnly(callback) {
+  const result = { status: 'OK', agents: [] };
+
+  const charSheet = getOrCreateCharactersSheet();
+  const charValues = charSheet.getDataRange().getValues();
+  const charHeaders = charValues[0];
+  const charCodeCol = charHeaders.indexOf('Agent Code');
+  const charCodes = {};
+  if (charCodeCol !== -1) {
+    for (let i = 1; i < charValues.length; i++) {
+      const code = charValues[i][charCodeCol];
+      if (code) charCodes[code] = true;
+    }
+  }
+
+  const briefsSheet = getOrCreateSheet().getSheetByName(SHEET_NAME);
+  const briefsValues = briefsSheet.getDataRange().getValues();
+  const briefsHeaders = briefsValues[0];
+  const codeCol = briefsHeaders.indexOf('Agent Code');
+  const nameCol = briefsHeaders.indexOf('Char Name');
+  const codenameCol = briefsHeaders.indexOf('Codename');
+  const submittedCol = briefsHeaders.indexOf('Submitted At');
+
+  for (let i = 1; i < briefsValues.length; i++) {
+    const row = briefsValues[i];
+    const code = codeCol !== -1 ? row[codeCol] : '';
+    if (!code || charCodes[code]) continue; // has a character sheet -- listCharacters() already covers it
+    result.agents.push({
+      agent_code: code,
+      char_name: nameCol !== -1 ? (row[nameCol] || '') : '',
+      codename: codenameCol !== -1 ? (row[codenameCol] || '') : '',
+      submitted_at: submittedCol !== -1 ? (row[submittedCol] || '') : ''
+    });
+  }
+
+  const body = callback + '(' + JSON.stringify(result) + ')';
+  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
 // Legacy: writes a single handler/operation tag for one Agent's row.
 // Superseded by Cell groups below -- kept only so an old deployment
 // that still calls update_character_field doesn't hard-error.
@@ -892,18 +947,24 @@ function deleteCharacter(agentCode) {
 }
 
 // ── A-Cell Admin: list every soft-deleted Agent, for the Admin tab's
-// Recently Deleted section. Keyed off DeletedCharacters (the
-// character-sheet half) since a delete always archives both halves
-// together via deleteCharacter() above. Purges anything past its
-// 24-hour retention window first, so a stale entry never briefly
+// Recently Deleted section. Reads DeletedCharacters (the character-
+// sheet half) same as always, PLUS DeletedBriefs entries that have no
+// matching DeletedCharacters row -- an Agent-File-only delete (no
+// character sheet, see deleteCharacter()/listAgentFileOnly() above)
+// only ever wrote to DeletedBriefs, so it used to be invisible here too
+// and the 24h undo window didn't actually cover it. Those entries carry
+// char_name directly (there's no character_json to read a name out of).
+// Purges anything past retention first, so a stale entry never briefly
 // flashes in the list only to fail Restore a moment later. ──
 function listDeletedCharacters(callback) {
   purgeOldDeleted();
   const ss = getOrCreateSheet();
-  const sheet = ss.getSheetByName('DeletedCharacters');
   const result = { status: 'OK', characters: [] };
-  if (sheet) {
-    const data = sheet.getDataRange().getValues();
+  const seenCodes = {};
+
+  const charSheet = ss.getSheetByName('DeletedCharacters');
+  if (charSheet) {
+    const data = charSheet.getDataRange().getValues();
     const headers = data[0];
     const codeCol = headers.indexOf('Agent Code');
     const jsonCol = headers.indexOf('Character JSON');
@@ -912,6 +973,7 @@ function listDeletedCharacters(callback) {
       const row = data[i];
       const code = codeCol >= 0 ? row[codeCol] : '';
       if (!code) continue;
+      seenCodes[code] = true;
       result.characters.push({
         agent_code: code,
         character_json: jsonCol >= 0 ? row[jsonCol] : '',
@@ -919,6 +981,27 @@ function listDeletedCharacters(callback) {
       });
     }
   }
+
+  const briefsSheet = ss.getSheetByName('DeletedBriefs');
+  if (briefsSheet) {
+    const data = briefsSheet.getDataRange().getValues();
+    const headers = data[0];
+    const codeCol = headers.indexOf('Agent Code');
+    const nameCol = headers.indexOf('Char Name');
+    const deletedAtCol = headers.indexOf('Deleted At');
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const code = codeCol >= 0 ? row[codeCol] : '';
+      if (!code || seenCodes[code]) continue; // already listed via its character sheet half above
+      result.characters.push({
+        agent_code: code,
+        char_name: nameCol >= 0 ? (row[nameCol] || '') : '',
+        character_json: '',
+        deleted_at: deletedAtCol >= 0 ? row[deletedAtCol] : ''
+      });
+    }
+  }
+
   const body = callback + '(' + JSON.stringify(result) + ')';
   return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
 }

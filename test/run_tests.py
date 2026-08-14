@@ -199,6 +199,31 @@ def test_stat_generator(p):
     bio_name = page.input_value("#cs-name")
     record("stats-terminal", "Random Bio fills the name field", bool(bio_name) and bio_name != "Agent", bio_name)
 
+    # Regression: Random Bio used to silently overwrite an already-named,
+    # in-use character's whole identity in place, under the same Cloud
+    # Save code, with zero warning -- a real report (a player's actual
+    # character got replaced by a fresh random one). Clicking it again
+    # now that cs-name holds a real name (from the click above) must
+    # gate behind dgConfirm() instead of overwriting immediately.
+    page.click("#random-bio-button")
+    page.wait_for_timeout(200)
+    record("stats-terminal", "Random Bio on an already-named character asks for confirmation instead of overwriting immediately",
+           page.eval_on_selector("#dg-confirm-backdrop", "el => el.classList.contains('dg-confirm-open')")
+           and bio_name in page.inner_text("#dg-confirm-message"), "")
+
+    page.click("#dg-confirm-cancel")
+    page.wait_for_timeout(150)
+    record("stats-terminal", "Cancelling the confirmation leaves the existing name untouched",
+           page.input_value("#cs-name") == bio_name, page.input_value("#cs-name"))
+
+    page.click("#random-bio-button")
+    page.wait_for_timeout(200)
+    page.click("#dg-confirm-ok")
+    page.wait_for_timeout(200)
+    bio_name_2 = page.input_value("#cs-name")
+    record("stats-terminal", "Confirming proceeds and actually generates a new name",
+           bool(bio_name_2) and bio_name_2 != "Agent" and bio_name_2 != bio_name, bio_name_2)
+
     # Wizard opens to step 1
     page.click("#wiz-toggle-btn")
     page.wait_for_timeout(200)
@@ -2761,6 +2786,113 @@ def test_acell_admin(p):
     page.close()
     return errs
 
+def test_acell_admin_briefs_only(p):
+    """a-cell.html's Admin tab, "Agent File Only" section: an Agent File /
+    Profiling brief with no character sheet yet (e.g. never exported to
+    stats/) is invisible to list_characters, which every other part of
+    Admin (and the main Admin list) is built on -- so it used to be
+    undeletable through the UI even though delete_character itself
+    already handles a code with no Characters row correctly. Exercises
+    the parallel list_agent_file_only-backed list end to end: delete,
+    confirm it lands in Recently Deleted (via the DeletedBriefs half of
+    list_deleted_characters, since there's no character_json to read a
+    name out of -- char_name is used directly), then restore."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    skip_acell_gate(page)
+
+    briefs_only = [
+        {"agent_code": "DEMO-Q5MD", "char_name": 'DeMore, "Mastery", André', "codename": "Mastery"},
+    ]
+    deleted_briefs_only = []
+    posts = []
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            body = json.loads(req.post_data or "{}")
+            posts.append(body)
+            if body.get("action") == "delete_character":
+                code = body.get("agent_code")
+                idx = next((i for i, c in enumerate(briefs_only) if c["agent_code"] == code), None)
+                if idx is not None:
+                    row = briefs_only.pop(idx)
+                    deleted_briefs_only.append({**row, "deleted_at": 1700000001000})
+            elif body.get("action") == "restore_character":
+                code = body.get("agent_code")
+                idx = next((i for i, c in enumerate(deleted_briefs_only) if c["agent_code"] == code), None)
+                if idx is not None:
+                    row = deleted_briefs_only.pop(idx)
+                    briefs_only.append({k: v for k, v in row.items() if k != "deleted_at"})
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=list_characters" in url:
+                res = {"status": "OK", "characters": []}
+            elif "action=list_agent_file_only" in url:
+                res = {"status": "OK", "agents": briefs_only}
+            elif "action=list_deleted_characters" in url:
+                # deleted_briefs_only entries carry char_name, not
+                # character_json -- matches listDeletedCharacters()'s
+                # DeletedBriefs half in backend/Code.gs.
+                chars = [{"agent_code": d["agent_code"], "char_name": d["char_name"],
+                          "character_json": "", "deleted_at": d["deleted_at"]} for d in deleted_briefs_only]
+                res = {"status": "OK", "characters": chars}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.click('.tw[data-tab="admin"]')
+    page.wait_for_timeout(400)
+
+    record("acell", "Agent File Only section lists a brief with no character sheet",
+           "Mastery" in page.inner_text("#admin-briefs-list")
+           and page.locator("#admin-briefs-list .admin-row").count() == 1, "")
+    record("acell", "that Agent does NOT also appear in the main (character-sheet) Admin list",
+           page.locator("#admin-list .admin-row").count() == 0, "")
+
+    row = page.locator("#admin-briefs-list .admin-row")
+    row.locator(".admin-delete-btn").click()
+    page.wait_for_timeout(150)
+    row.locator('input[id^="admin-briefs-pw-input-"]').fill("MASTICATE")
+    row.locator('button[id^="admin-briefs-delete-confirm-btn-"]').click()
+    page.wait_for_timeout(1500)
+
+    delete_posts = [p_ for p_ in posts if p_.get("action") == "delete_character"]
+    record("acell", "the correct password sends delete_character for the Agent File-only entry",
+           len(delete_posts) == 1 and delete_posts[0].get("agent_code") == "DEMO-Q5MD", str(delete_posts))
+    record("acell", "the Agent File Only section is empty once the delete is confirmed",
+           page.locator("#admin-briefs-list .admin-row").count() == 0, "")
+
+    deleted_text = wait_for_condition(lambda: page.inner_text("#admin-deleted-list")
+                                       if "Mastery" in page.inner_text("#admin-deleted-list") else None)
+    record("acell", "an Agent File-only delete shows up in Recently Deleted too (by char_name, no character sheet)",
+           bool(deleted_text) and "Mastery" in deleted_text, deleted_text or "")
+
+    page.click("#admin-deleted-list .admin-restore-btn")
+    page.wait_for_timeout(1500)
+
+    restore_posts = [p_ for p_ in posts if p_.get("action") == "restore_character"]
+    record("acell", "Restore sends restore_character for the Agent File-only entry",
+           len(restore_posts) == 1 and restore_posts[0].get("agent_code") == "DEMO-Q5MD", str(restore_posts))
+    record("acell", "a restored Agent File-only entry reappears in Agent File Only, not the main list",
+           "Mastery" in page.inner_text("#admin-briefs-list")
+           and page.locator("#admin-list .admin-row").count() == 0, "")
+    record("acell", "a restored Agent File-only entry drops out of Recently Deleted",
+           "Mastery" not in page.inner_text("#admin-deleted-list"), "")
+
+    page.close()
+    return errs
+
 def test_table_radio_widget(p):
     """assets/table-radio.js: a small persistent widget on every Hub
     page, so a player stays "tuned in" to the Handler's music channel
@@ -4705,6 +4837,8 @@ def main():
         safe(test_acell_music_backend_not_deployed, browser, area="acell")
 
         safe(test_acell_admin, browser, area="acell")
+
+        safe(test_acell_admin_briefs_only, browser, area="acell")
 
         safe(test_table_radio_widget, browser, area="radio")
 
