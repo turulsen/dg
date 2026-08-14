@@ -29,10 +29,22 @@ def mock_routes(page):
         url = route.request.url
         if "callback=" in url:
             cb = url.split("callback=")[1].split("&")[0]
+            # Every field #dg-form itself marks required, not just a
+            # handful -- isProfilingComplete() (dg-agent-portal.html)
+            # gates the Agent File tab on all of them being non-empty,
+            # so a fixture missing any of these would silently redirect
+            # every test below expecting to land on Agent File back to
+            # Profiling instead.
             fake_data = {
                 "char_name": "Mock Loaded Agent", "codename": "TESTCASE",
-                "age_range": "30s", "sex": "Female", "build": "average",
-                "expression": "neutral", "jacket": "coat", "shirt": "shirt",
+                "age_range": "30s", "sex": "Female", "nationality": "American",
+                "face_shape": "oval", "eye_color": "brown", "eye_shape": "almond",
+                "nose": "straight", "lips": "thin", "skin": "tan",
+                "facial_hair": "clean-shaven", "hair_color": "brown",
+                "hair_style": "short", "hair_texture": "straight",
+                "build": "average", "posture": "upright",
+                "expression": "neutral", "vibe": "unremarkable",
+                "jacket": "coat", "shirt": "shirt",
                 "trousers": "trousers", "footwear": "boots"
             }
             body = f'{cb}({json.dumps({"status": "OK", "data": fake_data})})'
@@ -233,10 +245,15 @@ def test_stat_generator(p):
 def test_stat_generator_agent_file_nav(p):
     """The "Open Agent File" button above the theme selector on
     stats/index.html (replacing the old Foundry-VTT-mentioning intro
-    paragraph -- this hub doesn't use Foundry). One click should export the
+    paragraph -- this hub doesn't use Foundry). One click exports the
     current character (same path as the Export to Agent File button
-    further down the page) and land directly on the Agent Portal's Agent
-    File tab showing that agent, not just the Portal's default Cover tab."""
+    further down the page) and lands on the Agent Portal. With only a
+    name typed in here, that auto-export is real but partial (see
+    agent-portal-export.js's run() -- name/sex/nationality/profession/
+    build/outfit only, everything else #dg-form marks required is still
+    blank), so isProfilingComplete() keeps this on the Profiling tab
+    rather than the Agent File tab -- there's nothing worth showing on
+    the Agent File side yet."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -295,25 +312,28 @@ def test_stat_generator_agent_file_nav(p):
         if page.url.endswith("dg-agent-portal.html#agent"):
             break
         page.wait_for_timeout(300)
-    agent_tab_active = False
+
+    cover_tab_active = False
     for _ in range(20):
-        agent_tab_active = "active" in (page.eval_on_selector("#tw-agent", "el => el.className") or "")
-        if agent_tab_active:
+        cover_tab_active = "active" in (page.eval_on_selector("#tw-cover", "el => el.className") or "")
+        if cover_tab_active:
             break
         page.wait_for_timeout(300)
 
-    record("stats-terminal", "Open Agent File button navigates straight to the Agent File tab",
-           page.url.endswith("dg-agent-portal.html#agent") and agent_tab_active,
+    record("stats-terminal", "Open Agent File button navigates to the Portal, landing on Profiling (name-only export is incomplete)",
+           page.url.endswith("dg-agent-portal.html#agent") and cover_tab_active,
            page.url)
+    record("stats-terminal", "the Agent File tab is NOT shown for this still-incomplete export",
+           not page.eval_on_selector("#tw-agent", "el => el.classList.contains('active')"), "")
 
-    af_html = ""
+    char_name_val = ""
     for _ in range(15):
-        af_html = page.inner_html("#panel-agent") if page.locator("#panel-agent").count() else ""
-        if "Priya Anand" in af_html:
+        char_name_val = page.eval_on_selector("#dg-form [name=char_name]", "el => el.value") if page.locator("#dg-form [name=char_name]").count() else ""
+        if char_name_val == "Priya Anand":
             break
         page.wait_for_timeout(300)
-    record("stats-terminal", "Agent File tab shows the just-exported character",
-           "Priya Anand" in af_html, "")
+    record("stats-terminal", "the just-exported character's name is already on the Profiling form",
+           char_name_val == "Priya Anand", char_name_val)
 
     body = json.loads(captured.get("body") or "{}")
     record("stats-terminal", "the nav button's export used the real char_name",
@@ -3387,8 +3407,20 @@ def test_agent_portal_code_query_param(p):
         url = route.request.url
         if "callback=" in url:
             cb = url.split("callback=")[1].split("&")[0]
-            fake_data = {"char_name": "Owen Castillo", "codename": "Ferro", "age_range": "Late 30s",
-                         "sex": "Male", "profession": "Pilot"}
+            # Every #dg-form [required] field, not just a few -- a
+            # partial profile (see the dedicated incomplete-profile test
+            # below) is exactly the case isProfilingComplete() bounces
+            # back to Profiling instead of showing the Agent File tab.
+            fake_data = {
+                "char_name": "Owen Castillo", "codename": "Ferro", "age_range": "Late 30s",
+                "sex": "Male", "profession": "Pilot", "nationality": "American",
+                "face_shape": "square", "eye_color": "hazel", "eye_shape": "narrow",
+                "nose": "broad", "lips": "full", "skin": "olive",
+                "facial_hair": "goatee", "hair_color": "black", "hair_style": "buzzed",
+                "hair_texture": "coarse", "build": "athletic", "posture": "alert",
+                "jacket": "flight jacket", "shirt": "uniform shirt", "trousers": "uniform trousers",
+                "footwear": "deck shoes", "expression": "focused", "vibe": "quietly capable",
+            }
             body = f'{cb}({json.dumps({"status": "OK", "data": fake_data})})'
             route.fulfill(status=200, content_type="application/javascript", body=body)
         else:
@@ -3402,19 +3434,19 @@ def test_agent_portal_code_query_param(p):
     page.route("**/script.google.com/**", fake_apps_script)
     page.goto(f"{BASE}/dg-agent-portal.html?code=OWEN-CS12#agent", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(600)
-    record("agent-portal", "?code=...#agent opens straight to the Agent File tab",
+    record("agent-portal", "?code=...#agent opens straight to the Agent File tab (Profiling is complete)",
            "active" in page.eval_on_selector("#tw-agent", "el => el.className"), "")
     record("agent-portal", "?code=...#agent loads that exact agent's name",
            page.eval_on_selector("#af-agent-name", "el => el.textContent") == "Owen Castillo", "")
 
     # Bug fix: loadAgentFile() (the ?code=...#agent path) used to only
     # render the read-only Agent File dossier -- switching over to the
-    # Cover tab afterward showed a blank form instead of this same
+    # Profiling tab afterward showed a blank form instead of this same
     # Agent's data, since only the separate "Restore by code" flow
     # (loadAgentCode()) populated it. Both now share populateCoverForm().
     page.click("#tw-cover")
     page.wait_for_timeout(200)
-    record("agent-portal", "switching to the Cover tab after ?code=...#agent shows that Agent's name, not a blank form",
+    record("agent-portal", "switching to the Profiling tab after ?code=...#agent shows that Agent's name, not a blank form",
            page.eval_on_selector("#dg-form [name=char_name]", "el => el.value") == "Owen Castillo", "")
     record("agent-portal", "switching to the Cover tab after ?code=...#agent shows that Agent's profession too",
            page.eval_on_selector("#dg-form [name=profession]", "el => el.value") == "Pilot", "")
@@ -3433,6 +3465,79 @@ def test_agent_portal_code_query_param(p):
            "active" in page.eval_on_selector("#tw-ids", "el => el.className"), "")
     record("agent-portal", "?code=...#ids pre-fills the agent-code importer with that code",
            page.eval_on_selector("#ids-agent-code", "el => el.value") == "OWEN-CS12", "")
+    errs_all.extend(errs)
+    page.close()
+    return errs_all
+
+def test_agent_portal_profiling_gate(p):
+    """The Agent File tab (dg-agent-portal.html) is gated behind Profiling
+    actually being "filled out totally and submitted" -- defined as every
+    #dg-form [required] field having a real value (isProfilingComplete()),
+    not just "a Delta Green Briefs row exists for this code". That
+    distinction matters because stats/'s "Open Agent File" button
+    auto-exports a real but partial row (name/sex/nationality/profession/
+    build/outfit only -- see agent-portal-export.js's run()) straight to
+    the backend, bypassing this form's own required-field validation
+    entirely. Covers both directions: an incomplete profile bounces the
+    Agent File tab back to Profiling (whether reached via ?code=...#agent
+    or a direct tab click), and the Random Agent Generator on Profiling
+    skips rerolling fields that already carry real Agent data instead of
+    clobbering them."""
+    errs_all = []
+
+    def partial_fake_apps_script(route):
+        url = route.request.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            # Deliberately shaped like stats/'s auto-export payload --
+            # only the handful of fields it actually sets, everything
+            # else #dg-form marks required is missing.
+            fake_data = {"char_name": "Mark Delacroix", "age_range": "30s", "sex": "Male",
+                         "nationality": "American", "profession": "Federal Agent", "build": "muscular",
+                         "jacket": "dark suit jacket", "shirt": "white dress shirt",
+                         "trousers": "dark slacks", "footwear": "polished oxfords"}
+            body = f'{cb}({json.dumps({"status": "OK", "data": fake_data})})'
+            route.fulfill(status=200, content_type="application/javascript", body=body)
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", partial_fake_apps_script)
+    page.goto(f"{BASE}/dg-agent-portal.html?code=MARK-DL01#agent", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(600)
+    record("agent-portal", "an incomplete profile (auto-export shape) bounces ?code=...#agent back to Profiling",
+           "active" in page.eval_on_selector("#tw-cover", "el => el.className"), "")
+    record("agent-portal", "the Agent File tab is NOT shown for an incomplete profile",
+           not page.eval_on_selector("#tw-agent", "el => el.classList.contains('active')"), "")
+    record("agent-portal", "the already-known fields carry over into Profiling despite the bounce",
+           page.eval_on_selector("#dg-form [name=char_name]", "el => el.value") == "Mark Delacroix"
+           and page.eval_on_selector("#dg-form [name=build]", "el => el.value") == "muscular"
+           and page.eval_on_selector("#dg-form [name=profession]", "el => el.value") == "Federal Agent", "")
+
+    # Clicking the Agent File tab directly (not just the ?code= route)
+    # bounces back too, for the same still-incomplete Agent.
+    page.click("#tw-agent")
+    page.wait_for_timeout(200)
+    record("agent-portal", "clicking the Agent File tab directly also bounces back to Profiling while incomplete",
+           "active" in page.eval_on_selector("#tw-cover", "el => el.className"), "")
+
+    # Random Generate must not reroll the fields the (auto-)export
+    # already established -- only fill in the rest of the blank brief.
+    page.evaluate("randomizeAgent(null)")
+    page.wait_for_timeout(200)
+    record("agent-portal", "Random Generate leaves the already-known name untouched",
+           page.eval_on_selector("#dg-form [name=char_name]", "el => el.value") == "Mark Delacroix", "")
+    record("agent-portal", "Random Generate leaves the already-known build (from STR) untouched",
+           page.eval_on_selector("#dg-form [name=build]", "el => el.value") == "muscular", "")
+    record("agent-portal", "Random Generate leaves the already-known sex untouched",
+           page.eval_on_selector("#dg-form [name=sex]", "el => el.value") == "Male", "")
+    record("agent-portal", "Random Generate DOES fill in a field that was genuinely still blank (face_shape)",
+           page.eval_on_selector("#dg-form [name=face_shape]", "el => el.value") != "", "")
+
     errs_all.extend(errs)
     page.close()
     return errs_all
@@ -4035,7 +4140,19 @@ def test_agent_file_open_character_sheet_btn(p):
     record("agent-portal", "Open Character Sheet button is not visible on the Agent File code gate",
            not page.is_visible("#open-character-sheet-btn"), "")
 
-    page.fill("#dg-form [name=char_name]", "Marcus Reyes")
+    # A complete brief, not just a name -- isProfilingComplete() now
+    # gates the Agent File tab behind every #dg-form [required] field
+    # actually being filled in, so a name-only submission (as this used
+    # to be) wouldn't even get past that gate to reach the button this
+    # test is actually about.
+    fill_cover_form(page, {
+        "char_name": "Marcus Reyes", "nationality": "American", "face_shape": "square",
+        "eye_color": "brown", "eye_shape": "narrow", "nose": "broad", "lips": "thin",
+        "skin": "tan", "facial_hair": "goatee", "hair_color": "black", "hair_style": "short",
+        "hair_texture": "coarse", "build": "stocky", "posture": "alert", "jacket": "windbreaker",
+        "shirt": "t-shirt", "trousers": "jeans", "footwear": "boots", "expression": "wary",
+        "vibe": "coiled and watchful",
+    }, "#dg-form")
     page.click("#submit-btn")
     page.wait_for_timeout(400)
     page.click("#open-agent-file-btn")
@@ -4154,7 +4271,21 @@ def test_agent_file_kia_stamp(p):
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
-    briefs = {"DEAD-0001": {"char_name": "Owen Castillo"}, "ALIV-0002": {"char_name": "Priya Anand"}}
+    # Complete profiles (every #dg-form [required] field set) -- this
+    # test is about the KIA stamp on the Agent File tab, which only
+    # renders once isProfilingComplete() lets the gate through.
+    complete_extra = {
+        "age_range": "30s", "sex": "Male", "nationality": "American",
+        "face_shape": "oval", "eye_color": "brown", "eye_shape": "round",
+        "nose": "straight", "lips": "thin", "skin": "tan", "facial_hair": "none",
+        "hair_color": "brown", "hair_style": "short", "hair_texture": "straight",
+        "build": "average", "posture": "upright", "jacket": "coat", "shirt": "shirt",
+        "trousers": "trousers", "footwear": "boots", "expression": "neutral", "vibe": "calm",
+    }
+    briefs = {
+        "DEAD-0001": {"char_name": "Owen Castillo", **complete_extra},
+        "ALIV-0002": {"char_name": "Priya Anand", **complete_extra},
+    }
     characters = {
         "DEAD-0001": json.dumps({"derived": {"hp": 0}}),
         "ALIV-0002": json.dumps({"derived": {"hp": 9}}),
@@ -4238,10 +4369,23 @@ def test_agent_roster(p):
     # Handler checking multiple players' briefs in the same browser --
     # tracking each one's real generated code so later steps can address
     # a specific agent rather than "whichever happens to be first".
+    # Complete profiles, not just a name -- isProfilingComplete() now
+    # gates the Agent File view behind every #dg-form [required] field
+    # actually being filled in, so a name-only submission would bounce
+    # rosterSelectAgent()'s "fetch by code" lookup (below) back to
+    # Profiling instead of the roster-switching behavior this test is
+    # actually about.
     for name in ["Marcus Reyes", "Priya Anand", "Owen Castillo"]:
         page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
         page.wait_for_timeout(300)
-        page.fill("#dg-form [name=char_name]", name)
+        fill_cover_form(page, {
+            "char_name": name, "nationality": "American", "face_shape": "oval",
+            "eye_color": "brown", "eye_shape": "round", "nose": "straight", "lips": "thin",
+            "skin": "tan", "facial_hair": "clean-shaven", "hair_color": "brown",
+            "hair_style": "short", "hair_texture": "straight", "build": "average",
+            "posture": "upright", "jacket": "coat", "shirt": "shirt", "trousers": "trousers",
+            "footwear": "boots", "expression": "neutral", "vibe": "unremarkable",
+        }, "#dg-form")
         page.click("#submit-btn")
         page.wait_for_timeout(400)
         saved = page.evaluate("JSON.parse(localStorage.getItem('dg_last_agent'))")
@@ -4532,6 +4676,8 @@ def main():
         safe(test_table_radio_theme_consistent_style, browser, area="radio")
 
         safe(test_agent_portal_code_query_param, browser, area="agent-portal")
+
+        safe(test_agent_portal_profiling_gate, browser, area="agent-portal")
 
         safe(test_agent_portal_autorestore_prefills_cover, browser, area="agent-portal")
 

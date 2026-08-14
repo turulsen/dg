@@ -435,6 +435,12 @@ body{
 }
 .fi::placeholder,.ft::placeholder{color:var(--ink-placeholder);font-style:italic;font-size:11px;}
 .fi:focus,.fs:focus,.ft:focus{border-bottom-color:var(--ink);}
+/* Already-known Agent data (a prior submission, restore, or the linked
+   character sheet's name/sex/profession/build) -- Random Generate skips
+   these (see fillFormFromAgent()), so the faint fill marks them as
+   settled rather than still-blank fields waiting to be rolled. */
+.cover-field-locked{background:rgba(120,150,90,.08);}
+.cover-field-locked:focus{border-bottom-color:var(--ink);}
 .fs{
   cursor:pointer;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23b8a878'/%3E%3C/svg%3E");
@@ -1476,8 +1482,8 @@ body{
     <!-- ── TAB STRIP ── -->
   <div class="tab-strip">
     <div class="tw inactive" id="tw-ids"   onclick="switchTab('ids')"><span>Field IDs</span></div>
-    <div class="tw inactive" id="tw-agent" onclick="switchTab('agent')"><span>Agent File</span></div>
-    <div class="tw active"   id="tw-cover" onclick="switchTab('cover')"><span>Cover</span></div>
+    <div class="tw inactive" id="tw-agent" onclick="tryOpenAgentTab()"><span>Agent File</span></div>
+    <div class="tw active"   id="tw-cover" onclick="switchTab('cover')"><span>Profiling</span></div>
   </div>
 
   <!-- ── FOLDER BODY ── -->
@@ -2013,6 +2019,41 @@ function switchTab(tab) {
       panel.style.display = 'none';
     }
   });
+}
+
+// "Filled out totally and submitted", not just "a Delta Green Briefs
+// row exists" -- stats/'s "Open Agent File" button (goToAgentFile() in
+// agent-portal-export.js) auto-exports a real row with only name / age
+// range / sex / nationality / profession / build / outfit set, POSTed
+// directly rather than through this form's own required-field
+// validation, so a freshly-auto-exported Agent can have a row on the
+// backend while still being nowhere near a finished Profiling brief.
+// Reads #dg-form's own [required] fields rather than a hardcoded list,
+// so this stays correct if the form's required fields ever change.
+function isProfilingComplete(data) {
+  if (!data) return false;
+  const form = document.getElementById('dg-form');
+  if (!form) return false;
+  return Array.from(form.querySelectorAll('[required]')).every(el => {
+    const v = data[el.name];
+    return v !== undefined && v !== null && String(v).trim().length > 0;
+  });
+}
+
+// The Agent File tab's onclick -- an incomplete Profiling has nothing
+// real to show on the Agent File side yet, so clicking it bounces back
+// to Profiling instead of a half-empty (or NOT_FOUND) Agent File view.
+// Only bounces when an Agent is actually identified (afCode set) and
+// THAT Agent's Profiling is incomplete -- with no Agent identified at
+// all yet (a first-time visitor with nothing loaded), the Agent File
+// tab's own code-entry gate is a perfectly valid thing to show, not
+// something this check should get in the way of.
+function tryOpenAgentTab() {
+  if (afCode && afData && !isProfilingComplete(afData)) {
+    switchTab('cover');
+  } else {
+    switchTab('agent');
+  }
 }
 
 const IDS_SEALS = {
@@ -2823,7 +2864,7 @@ function renderDossier(d, agentCode, restored) {
         <span class="code-val">${agentCode}</span>
         <button class="copy-btn" onclick="copyCode('${agentCode}')">Copy</button>
       </div>
-      <p class="code-note">Save this code. Your Handler will confirm it after verifying your brief. Use it on the Cover tab to restore your dossier at any time.</p>
+      <p class="code-note">Save this code. Your Handler will confirm it after verifying your brief. Use it on the Profiling tab to restore your dossier at any time.</p>
     </div>`;
   wrap.scrollIntoView({behavior:'smooth'});
   // Show Open Agent File button now that we have a code
@@ -3349,7 +3390,19 @@ function populateCoverForm(data){
     const el=form.elements[key];
     // Belt-and-suspenders against any *other* file input this form
     // gains later under a name skipKeys doesn't yet know about.
-    if(el && el.type !== 'file') el.value=data[key]||'';
+    if(!el || el.type === 'file') return;
+    const val = data[key] || '';
+    el.value = val;
+    // Locks this field against the Random Agent Generator (see
+    // fillFormFromAgent()) -- a field with real, already-known Agent
+    // data (a prior submission, a restore, or -- via stats/'s
+    // "Open Agent File" auto-export -- the linked character sheet's own
+    // name/sex/profession/build) shouldn't get silently rerolled into
+    // something else just because the player clicked Random Generate to
+    // fill in the rest. An empty value un-locks the field, so clearing
+    // it by hand still leaves it randomizable.
+    el.classList.toggle('cover-field-locked', !!val);
+    if (val) el.dataset.locked = '1'; else delete el.dataset.locked;
   });
   document.getElementById('submit-btn').textContent='Update Brief';
   document.getElementById('submit-btn').disabled=false;
@@ -3395,13 +3448,18 @@ function dgOpenCharacterSheet() {
 
 /* ── OPEN IN AGENT FILE ── */
 function openInAgentFile() {
-  switchTab('agent');
   // If agent data already loaded (from restore or prior session), render directly
   if (afCode && afData) {
-    renderAgentFile(afData);
     populateCoverForm(afData);
+    if (isProfilingComplete(afData)) {
+      switchTab('agent');
+      renderAgentFile(afData);
+    } else {
+      switchTab('cover');
+    }
     return;
   }
+  switchTab('agent');
   // Otherwise use whatever code is in the dossier code block
   setTimeout(() => {
     const codeEl = document.querySelector('.code-val');
@@ -3586,10 +3644,19 @@ function loadAgentFile() {
       afData = json.data;
       afCode = code;
       persistAgent(code, json.data);
-      renderAgentFile(json.data);
       populateCoverForm(json.data);
+      // Only actually show the Agent File once Profiling is done --
+      // see isProfilingComplete()'s own comment for why "a row exists"
+      // isn't the same thing (stats/'s auto-export creates a real but
+      // partial row).
+      if (isProfilingComplete(json.data)) {
+        renderAgentFile(json.data);
+      } else {
+        switchTab('cover');
+      }
     } else if (json.status === 'NOT_FOUND') {
       status.textContent = 'Clearance code not recognised. Contact your Handler.';
+      switchTab('cover');
     } else {
       status.textContent = 'Access denied. Try again.';
     }
@@ -4886,7 +4953,10 @@ function fillFormFromAgent(agent) {
   const form = document.getElementById('dg-form');
   Object.keys(agent).forEach(key => {
     const el = form.elements[key];
-    if (!el) return;
+    // Skip fields populateCoverForm() locked as already-known Agent
+    // data (see its own comment) -- Random Generate fills in the rest
+    // of the brief, it doesn't reroll what's already decided.
+    if (!el || el.dataset.locked === '1') return;
     el.value = agent[key];
   });
 }
@@ -5129,8 +5199,11 @@ function rosterSelectAgent(code) {
 
   // If this agent is already loaded in memory, use it directly
   if (typeof afCode !== 'undefined' && afCode === code && typeof afData !== 'undefined' && afData) {
-    switchTab('agent');
-    setTimeout(function() { renderAgentFile(afData); populateCoverForm(afData); }, 80);
+    setTimeout(function() {
+      populateCoverForm(afData);
+      if (isProfilingComplete(afData)) { switchTab('agent'); renderAgentFile(afData); }
+      else { switchTab('cover'); }
+    }, 80);
     return;
   }
 
