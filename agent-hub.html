@@ -394,11 +394,13 @@
 
   // ── Cover Identity: your real name, not the Agent's -- looks up every
   // Agent tied to that name (character sheet and/or Agent File) and
-  // merges them into this browser's roster, so a fresh device or a
-  // cleared browser isn't a dead end the way it used to be (the only
-  // recovery path before this was knowing an exact Agent Code). Stored
-  // locally once entered so a returning visit refreshes automatically --
-  // silently, so it never fights with whatever's already showing.
+  // REPLACES this browser's roster with exactly that set, so a fresh
+  // device or a cleared browser isn't a dead end the way it used to be
+  // (the only recovery path before this was knowing an exact Agent
+  // Code), and so the roster always matches "whichever identity is
+  // currently entered" rather than silently accumulating whatever this
+  // device has ever touched. Stored locally once entered so a returning
+  // visit refreshes automatically without retyping.
   const COVER_IDENTITY_KEY = 'dg_cover_identity';
   const ciInput = document.getElementById('cover-identity-input');
   const ciStatus = document.getElementById('ci-status');
@@ -424,7 +426,15 @@
         if (!opts.silent) setCiStatus('No Agents found for "' + name + '".');
         return;
       }
-      const roster = rosterLoad();
+      // Replaces the roster rather than merging into it -- this browser's
+      // roster is scoped to whichever Cover Identity is currently entered,
+      // not a running accumulation of every Agent this device has ever
+      // touched. Anything shown after a search is provably tied to that
+      // name (via Player Name on the sheet and/or Agent File); a stray
+      // locally-added Agent that was never given a Player Name won't
+      // survive a search -- give it one (via Cloud Save's Bio field, or
+      // the Handler can set it in A-Cell's Sheet tab) so it stays found.
+      const roster = {};
       res.agents.forEach(a => {
         if (!a.code) return;
         roster[a.code] = {

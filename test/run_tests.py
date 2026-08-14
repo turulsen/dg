@@ -1237,9 +1237,12 @@ def test_agent_hub(p):
 def test_agent_hub_cover_identity(p):
     """Cover Identity (the ci-row in agent-hub.html's header): a player's
     real name, not the Agent's -- looks up every Agent tied to that name
-    via the find_by_player_name backend action and merges them into this
-    browser's local roster, so a fresh device/cleared browser isn't a
-    dead end. See lookupCoverIdentity()/renderRoster() in agent-hub.html."""
+    via the find_by_player_name backend action and REPLACES this
+    browser's local roster with exactly that set (not a merge -- an
+    Agent this device touched before but that isn't tied to the
+    searched name should not survive the search), so a fresh
+    device/cleared browser isn't a dead end. See
+    lookupCoverIdentity()/renderRoster() in agent-hub.html."""
     errs_all = []
 
     def mock_lookup(agents_response):
@@ -1253,8 +1256,10 @@ def test_agent_hub_cover_identity(p):
             route.fulfill(status=200, content_type="application/javascript", body=f"{cb}({body})")
         return handler
 
-    # Entering a name and finding 2 Agents merges both into the roster
-    # (starting from a genuinely empty one) and re-renders the tabs.
+    # Entering a name and finding 2 Agents REPLACES the roster (which
+    # starts out seeded with an unrelated stray Agent this device
+    # touched before but that isn't tied to "Gergo") and re-renders the
+    # tabs -- the stray Agent must not survive the search.
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -1266,17 +1271,23 @@ def test_agent_hub_cover_identity(p):
         {"code": "GERG-D002", "char_name": "Danielle Mitchell", "codename": "", "sex": "Female",
          "age_range": "Late 20s", "nationality": "American", "saved_at": 2000},
     ]))
+    stray_roster = json.dumps({"STRY-X001": {"code": "STRY-X001", "char_name": "Unrelated Stray",
+                                              "saved_at": 500}})
+    page.add_init_script(f"localStorage.setItem('dg_agent_roster', '{stray_roster}');")
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
-    record("hub", "starts with only New Recruit before any Cover Identity lookup",
-           page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)") == ["+ New Recruit"], "")
+    record("hub", "starts with a stray locally-added Agent already in the roster before any lookup",
+           page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)")
+           == ["+ New Recruit", "Unrelated Stray"], "")
 
     page.fill("#cover-identity-input", "Gergo")
     page.click("#cover-identity-btn")
     page.wait_for_timeout(500)
     tab_labels = page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)")
-    record("hub", "a Cover Identity lookup with matches adds every returned Agent as a tab",
+    record("hub", "a Cover Identity lookup with matches replaces the roster with exactly the returned Agents",
            set(tab_labels) == {"+ New Recruit", "Patrick Montgomery", "Danielle Mitchell"}, str(tab_labels))
+    record("hub", "the stray Agent that isn't tied to the searched name is gone, not merged alongside",
+           "Unrelated Stray" not in tab_labels, str(tab_labels))
     record("hub", "the status line confirms how many Agents were loaded",
            "2" in page.inner_text("#ci-status"), page.inner_text("#ci-status"))
     record("hub", "the looked-up Agents are actually persisted to the local roster, not just rendered once",
