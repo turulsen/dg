@@ -1776,7 +1776,13 @@
   }
 
   function onlineCell(updatedAt) {
-    var ts = Number(updatedAt) || 0;
+    // Updated At is an ISO string (see saveCharacter() in
+    // backend/Code.gs, new Date().toISOString()), not epoch millis --
+    // Number(...) on a string like that is always NaN, which silently
+    // fell through to the "off" branch below every time regardless of
+    // how recently the Agent actually synced. Same bug class already
+    // fixed once in findByPlayerName() -- missed here.
+    var ts = new Date(updatedAt).getTime() || 0;
     if (!ts) return '<span class="sheet-online"><span class="sheet-dot off"></span>&mdash;</span>';
     var age = Date.now() - ts;
     if (age <= ONLINE_MS) return '<span class="sheet-online"><span class="sheet-dot on"></span>Online</span>';

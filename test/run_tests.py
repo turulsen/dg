@@ -2181,17 +2181,26 @@ def test_acell_sheet(p):
     skip_acell_gate(page)
 
     now_ms = 1700000000000
+    # Deliberately ISO strings, not raw epoch millis -- that's what the
+    # real backend actually sends (saveCharacter() in backend/Code.gs
+    # writes new Date().toISOString()). A raw-epoch-millis fixture here
+    # would silently mask the exact bug this test exists to catch:
+    # onlineCell() used to do Number(updatedAt), which is always NaN on
+    # a real ISO string, so every Agent showed as permanently offline
+    # regardless of how recently they'd actually synced.
+    def iso(ms):
+        return page.evaluate(f"new Date({ms}).toISOString()")
     fake_characters = [
         {"agent_code": "OWEN-CS12",
          "character_json": json.dumps({"bio": {"name": "Owen Castillo", "player_name": "Gergo P"},
                                         "derived": {"hp": 13, "san": 50}}),
-         "updated_at": now_ms},
+         "updated_at": iso(now_ms)},
         {"agent_code": "PRIY-AN34",
          "character_json": json.dumps({"bio": {"name": "Priya Anand"}, "derived": {"hp": 9, "san": 65}}),
-         "updated_at": now_ms - 20 * 60 * 1000},
+         "updated_at": iso(now_ms - 20 * 60 * 1000)},
         {"agent_code": "MARC-9XQ2",
          "character_json": json.dumps({"bio": {"name": "Marcus Reyes"}, "derived": {"hp": 0, "san": 40}}),
-         "updated_at": now_ms - 2 * 60 * 60 * 1000},
+         "updated_at": iso(now_ms - 2 * 60 * 60 * 1000)},
     ]
     fake_cells = [
         {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12", "PRIY-AN34"]},
@@ -3378,7 +3387,8 @@ def test_agent_portal_code_query_param(p):
         url = route.request.url
         if "callback=" in url:
             cb = url.split("callback=")[1].split("&")[0]
-            fake_data = {"char_name": "Owen Castillo", "codename": "Ferro", "age_range": "Late 30s", "sex": "Male"}
+            fake_data = {"char_name": "Owen Castillo", "codename": "Ferro", "age_range": "Late 30s",
+                         "sex": "Male", "profession": "Pilot"}
             body = f'{cb}({json.dumps({"status": "OK", "data": fake_data})})'
             route.fulfill(status=200, content_type="application/javascript", body=body)
         else:
@@ -3396,6 +3406,18 @@ def test_agent_portal_code_query_param(p):
            "active" in page.eval_on_selector("#tw-agent", "el => el.className"), "")
     record("agent-portal", "?code=...#agent loads that exact agent's name",
            page.eval_on_selector("#af-agent-name", "el => el.textContent") == "Owen Castillo", "")
+
+    # Bug fix: loadAgentFile() (the ?code=...#agent path) used to only
+    # render the read-only Agent File dossier -- switching over to the
+    # Cover tab afterward showed a blank form instead of this same
+    # Agent's data, since only the separate "Restore by code" flow
+    # (loadAgentCode()) populated it. Both now share populateCoverForm().
+    page.click("#tw-cover")
+    page.wait_for_timeout(200)
+    record("agent-portal", "switching to the Cover tab after ?code=...#agent shows that Agent's name, not a blank form",
+           page.eval_on_selector("#dg-form [name=char_name]", "el => el.value") == "Owen Castillo", "")
+    record("agent-portal", "switching to the Cover tab after ?code=...#agent shows that Agent's profession too",
+           page.eval_on_selector("#dg-form [name=profession]", "el => el.value") == "Pilot", "")
     errs_all.extend(errs)
     page.close()
 
@@ -3946,6 +3968,37 @@ def test_agent_portal_restore_dossier(p, agent):
     page.close()
     return errs
 
+def test_agent_portal_autorestore_prefills_cover(p):
+    """Bug fix: a bare visit to dg-agent-portal.html (no ?code=, no
+    #agent/#ids hash -- e.g. a bookmark, or a generic "Agent File" nav
+    link) lands on the Cover tab by default (panel-cover is the markup's
+    default-active panel). autoRestore() picked up the last-active Agent
+    from dg_last_agent into afData/afCode, but only pushed it into the
+    Cover form when the hash happened to be #agent (which calls
+    openInAgentFile() -> populateCoverForm()) -- the far more common
+    plain-visit case left the Cover form blank even though this browser
+    already knew this Agent's data. populateCoverForm() is now called
+    unconditionally in autoRestore()."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    saved = {"code": "OWEN-CS12", "data": {"char_name": "Owen Castillo", "profession": "Pilot", "codename": "Ferro"}}
+    page.add_init_script(f"localStorage.setItem('dg_last_agent', '{json.dumps(saved)}');")
+    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(400)
+    record("agent-portal", "a bare visit lands on the Cover tab by default",
+           "active" in page.eval_on_selector("#tw-cover", "el => el.className"), "")
+    record("agent-portal", "the last-active Agent's name is already in the Cover form, not blank",
+           page.eval_on_selector("#dg-form [name=char_name]", "el => el.value") == "Owen Castillo", "")
+    record("agent-portal", "the last-active Agent's profession is already in the Cover form too",
+           page.eval_on_selector("#dg-form [name=profession]", "el => el.value") == "Pilot", "")
+    record("agent-portal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_agent_file_open_character_sheet_btn(p):
     """The "Open Character Sheet" button above the era grid on the Agent
     File tab. There's no real link between an Agent File and a stats/
@@ -4479,6 +4532,8 @@ def main():
         safe(test_table_radio_theme_consistent_style, browser, area="radio")
 
         safe(test_agent_portal_code_query_param, browser, area="agent-portal")
+
+        safe(test_agent_portal_autorestore_prefills_cover, browser, area="agent-portal")
 
         safe(test_stats_load_by_code_query_param, browser, area="stats-terminal")
 
