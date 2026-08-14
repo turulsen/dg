@@ -38,25 +38,49 @@
   .hub-header p{ font-family:'Courier Prime',monospace; font-size:13px; color:#b7b09a; max-width:62ch; line-height:1.7; margin:0; }
   .folder-wrap{ max-width:900px; margin:26px auto 0; padding:0 6px; }
 
+  /* Cover Identity — sticky note, same design as the Agent File's
+     Returning Agent code loader on dg-agent-portal.html. */
   .ci-row{
-    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
-    margin-top:14px; font-family:'Courier Prime',monospace; font-size:12px;
+    background:#f0e87a;
+    box-shadow:1px 3px 8px rgba(0,0,0,.35);
+    padding:var(--s3) var(--s4);
+    margin-top:18px;
+    position:relative;
+    transform:rotate(-.4deg);
+    display:block;
+    max-width:420px;
   }
-  .ci-label{ color:#8a9878; letter-spacing:.05em; }
+  .ci-row::before{
+    content:'';
+    position:absolute;
+    top:-6px; left:50%; transform:translateX(-50%);
+    width:48px; height:12px;
+    background:rgba(255,255,255,.55);
+    border-radius:1px;
+    box-shadow:0 1px 3px rgba(0,0,0,.12);
+  }
+  .ci-label{
+    font-family:'Special Elite',monospace; font-size:8px; letter-spacing:.16em;
+    text-transform:uppercase; color:#5a4a10; margin-bottom:var(--s2); display:block;
+  }
+  .ci-fields{ display:flex; align-items:center; gap:var(--s2); flex-wrap:wrap; }
   .ci-input{
-    font-family:'Courier Prime',monospace; font-size:12px; color:#e9e3ce;
-    background:rgba(255,255,255,.06); border:1px solid rgba(233,227,206,.25);
-    padding:6px 10px; border-radius:3px; min-width:160px;
+    flex:1; min-width:110px;
+    background:transparent; border:none; border-bottom:1.5px solid rgba(90,74,16,.4);
+    padding:4px 0; font-family:'Courier Prime',monospace; font-size:13px;
+    color:#1c1405; outline:none; border-radius:0; -webkit-appearance:none;
   }
-  .ci-input::placeholder{ color:#6a6a5a; }
-  .ci-input:focus{ outline:none; border-color:#8a9878; }
+  .ci-input::placeholder{ color:rgba(90,74,16,.45); font-style:italic; }
   .ci-btn{
-    font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase;
-    color:#c8c1a8; background:rgba(255,255,255,.06); border:1px solid rgba(233,227,206,.25);
-    padding:7px 14px; border-radius:3px; cursor:pointer;
+    font-family:'Special Elite',monospace; font-size:8px; letter-spacing:.1em; text-transform:uppercase;
+    background:#3a2a04; color:#f0e87a; border:none; padding:6px 12px; cursor:pointer;
+    border-radius:1px; box-shadow:0 1px 3px rgba(0,0,0,.3); transition:opacity 120ms;
   }
-  .ci-btn:hover{ border-color:#8a9878; color:#e9e3ce; }
-  .ci-status{ color:#8a9878; font-size:11px; }
+  .ci-btn:hover{ opacity:.85; }
+  .ci-status{
+    font-family:'Courier Prime',monospace; font-size:10px; color:#5a4a10;
+    font-style:italic; width:100%; margin-top:var(--s1);
+  }
 
   .paper-header .lead{ display:flex; align-items:center; gap:14px; }
   .paper-photo{
@@ -145,9 +169,11 @@
        empty roster, so a second device's Agents can be pulled onto one
        that already has some. See the IIFE below for lookupCoverIdentity(). -->
   <div class="ci-row">
-    <label class="ci-label" for="cover-identity-input">Cover Identity:</label>
-    <input type="text" id="cover-identity-input" class="ci-input" placeholder="Your real name" autocomplete="off">
-    <button type="button" id="cover-identity-btn" class="ci-btn">Load My Agents</button>
+    <label class="ci-label" for="cover-identity-input">Cover Identity — Your Real Name</label>
+    <div class="ci-fields">
+      <input type="text" id="cover-identity-input" class="ci-input" placeholder="e.g. Gergo" autocomplete="off">
+      <button type="button" id="cover-identity-btn" class="ci-btn">Load My Agents</button>
+    </div>
     <span class="ci-status" id="ci-status"></span>
   </div>
 </div>
