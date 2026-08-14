@@ -394,13 +394,19 @@
 
   // ── Cover Identity: your real name, not the Agent's -- looks up every
   // Agent tied to that name (character sheet and/or Agent File) and
-  // REPLACES this browser's roster with exactly that set, so a fresh
-  // device or a cleared browser isn't a dead end the way it used to be
-  // (the only recovery path before this was knowing an exact Agent
-  // Code), and so the roster always matches "whichever identity is
-  // currently entered" rather than silently accumulating whatever this
-  // device has ever touched. Stored locally once entered so a returning
-  // visit refreshes automatically without retyping.
+  // replaces this browser's CLAIMED roster entries with exactly that
+  // set, so a fresh device or a cleared browser isn't a dead end the
+  // way it used to be (the only recovery path before this was knowing
+  // an exact Agent Code), and so the roster reflects "whichever
+  // identity is currently entered" rather than silently accumulating
+  // whatever this device has ever touched. An Agent this device already
+  // knows about but that has no Player Name at all -- given neither by
+  // a player nor a Handler yet -- is the one exception: it's kept
+  // regardless of what's searched, since nothing yet distinguishes it
+  // from "belongs to this identity" and dropping it would just be
+  // silent local data loss for something nobody's claimed either way.
+  // Stored locally once entered so a returning visit refreshes
+  // automatically without retyping.
   const COVER_IDENTITY_KEY = 'dg_cover_identity';
   const ciInput = document.getElementById('cover-identity-input');
   const ciStatus = document.getElementById('ci-status');
@@ -429,12 +435,21 @@
       // Replaces the roster rather than merging into it -- this browser's
       // roster is scoped to whichever Cover Identity is currently entered,
       // not a running accumulation of every Agent this device has ever
-      // touched. Anything shown after a search is provably tied to that
-      // name (via Player Name on the sheet and/or Agent File); a stray
-      // locally-added Agent that was never given a Player Name won't
-      // survive a search -- give it one (via Cloud Save's Bio field, or
-      // the Handler can set it in A-Cell's Sheet tab) so it stays found.
+      // touched. The one exception: an Agent nobody's claimed yet (no
+      // Player Name given by the player, and none assigned by a Handler
+      // in A-Cell's Sheet tab) is kept regardless of what's searched --
+      // there's nothing yet to tell it apart from "belongs to this
+      // identity", so dropping it would just be silent local data loss
+      // for a brand-new Agent that hasn't been claimed either way. Once
+      // it IS given a name (by either path), the next search either
+      // finds it as a match (kept) or, if the name doesn't match, drops
+      // it like any other claimed-by-someone-else Agent.
+      const prior = rosterLoad();
       const roster = {};
+      Object.keys(prior).forEach(code => {
+        if (!prior[code].player_name) roster[code] = prior[code];
+      });
+      const needle = name.trim().toLowerCase();
       res.agents.forEach(a => {
         if (!a.code) return;
         roster[a.code] = {
@@ -447,6 +462,7 @@
           active_eras: a.active_eras || '',
           face_plate_url: a.face_plate_url || '',
           campaign_era: a.campaign_era || '',
+          player_name: a.player_name || needle,
           saved_at: a.saved_at || Date.now(),
         };
       });

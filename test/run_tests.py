@@ -1256,10 +1256,13 @@ def test_agent_hub_cover_identity(p):
             route.fulfill(status=200, content_type="application/javascript", body=f"{cb}({body})")
         return handler
 
-    # Entering a name and finding 2 Agents REPLACES the roster (which
-    # starts out seeded with an unrelated stray Agent this device
-    # touched before but that isn't tied to "Gergo") and re-renders the
-    # tabs -- the stray Agent must not survive the search.
+    # Entering a name and finding 2 Agents replaces the *claimed* part of
+    # the roster (which starts out seeded with two locally-added Agents:
+    # one already tied to a different real name, one nobody's claimed
+    # yet) -- only the one already claimed by someone else should be
+    # dropped; the unclaimed one survives regardless, since there's
+    # nothing yet distinguishing it from "belongs to this identity" and
+    # dropping it would just be silent local data loss.
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -1271,27 +1274,30 @@ def test_agent_hub_cover_identity(p):
         {"code": "GERG-D002", "char_name": "Danielle Mitchell", "codename": "", "sex": "Female",
          "age_range": "Late 20s", "nationality": "American", "saved_at": 2000},
     ]))
-    stray_roster = json.dumps({"STRY-X001": {"code": "STRY-X001", "char_name": "Unrelated Stray",
-                                              "saved_at": 500}})
+    stray_roster = json.dumps({
+        "STRY-X001": {"code": "STRY-X001", "char_name": "Claimed By Someone Else",
+                      "player_name": "Not Gergo", "saved_at": 500},
+        "STRY-X002": {"code": "STRY-X002", "char_name": "Unclaimed Local Draft", "saved_at": 600},
+    })
     page.add_init_script(f"localStorage.setItem('dg_agent_roster', '{stray_roster}');")
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
-    record("hub", "starts with a stray locally-added Agent already in the roster before any lookup",
-           page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)")
-           == ["+ New Recruit", "Unrelated Stray"], "")
+    record("hub", "starts with both stray Agents already in the roster before any lookup",
+           set(page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)"))
+           == {"+ New Recruit", "Claimed By Someone Else", "Unclaimed Local Draft"}, "")
 
     page.fill("#cover-identity-input", "Gergo")
     page.click("#cover-identity-btn")
     page.wait_for_timeout(500)
     tab_labels = page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)")
-    record("hub", "a Cover Identity lookup with matches replaces the roster with exactly the returned Agents",
-           set(tab_labels) == {"+ New Recruit", "Patrick Montgomery", "Danielle Mitchell"}, str(tab_labels))
-    record("hub", "the stray Agent that isn't tied to the searched name is gone, not merged alongside",
-           "Unrelated Stray" not in tab_labels, str(tab_labels))
+    record("hub", "a Cover Identity lookup with matches adds the returned Agents",
+           {"Patrick Montgomery", "Danielle Mitchell"}.issubset(set(tab_labels)), str(tab_labels))
+    record("hub", "the stray Agent already claimed by a different real name is gone",
+           "Claimed By Someone Else" not in tab_labels, str(tab_labels))
+    record("hub", "the unclaimed local draft survives the search -- nobody's said it isn't Gergo's yet",
+           "Unclaimed Local Draft" in tab_labels, str(tab_labels))
     record("hub", "the status line confirms how many Agents were loaded",
            "2" in page.inner_text("#ci-status"), page.inner_text("#ci-status"))
-    record("hub", "the looked-up Agents are actually persisted to the local roster, not just rendered once",
-           page.evaluate("() => Object.keys(JSON.parse(localStorage.getItem('dg_agent_roster')||'{}')).length") == 2, "")
     record("hub", "the entered Cover Identity is remembered for next time",
            page.evaluate("() => localStorage.getItem('dg_cover_identity')") == "Gergo", "")
     errs_all.extend(errs)

@@ -43,7 +43,7 @@
     // enough of rosterAddAgent()'s shape (dg-agent-portal.html) to show up
     // there; merge rather than overwrite so a codename/face plate set
     // later via the Agent Portal's Cover form isn't clobbered.
-    function rosterUpsert(code, name) {
+    function rosterUpsert(code, name, playerName) {
         if (!code) return;
         try {
             const roster = JSON.parse(localStorage.getItem(ROSTER_KEY) || '{}');
@@ -51,6 +51,11 @@
             roster[code] = Object.assign({}, existing, {
                 code: code,
                 char_name: name || existing.char_name || '',
+                // See rosterAddAgent()'s matching comment in
+                // dg-agent-portal.html -- lets a Cover Identity search
+                // there tell an unclaimed Agent from one already tied to
+                // a different real name.
+                player_name: (playerName || existing.player_name || '').trim(),
                 saved_at: Date.now(),
             });
             localStorage.setItem(ROSTER_KEY, JSON.stringify(roster));
@@ -84,7 +89,7 @@
         const code = getCloudCode();
         if (!code || !window.dgSaveLoad?.collectState) return;
         const state = window.dgSaveLoad.collectState();
-        rosterUpsert(code, state.bio?.name);
+        rosterUpsert(code, state.bio?.name, state.bio?.player_name);
         fetch(APPS_SCRIPT_URL, {
             method: 'POST', mode: 'no-cors', keepalive: true,
             headers: { 'Content-Type': 'text/plain' },
@@ -200,7 +205,7 @@
                 window.addEventListener('load', runPastInitHazards, { once: true });
             }
             setCloudCode(code);
-            rosterUpsert(code, state.bio?.name);
+            rosterUpsert(code, state.bio?.name, state.bio?.player_name);
             if (status) status.textContent = 'Loaded!';
             const codeInput = document.getElementById('cloud-load-code-input');
             if (codeInput) codeInput.value = '';

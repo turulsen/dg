@@ -4992,6 +4992,12 @@ function rosterAddAgent(code, data) {
     active_eras: data.active_eras || '',
     face_plate_url: data.face_plate_url || '',
     campaign_era: data.campaign_era || '',
+    // Not shown anywhere in this roster's own UI -- read only by
+    // agent-hub.html's Cover Identity search, to tell an Agent nobody's
+    // claimed yet (safe to always keep locally) apart from one already
+    // tied to a *different* real name (safe to drop on a search for a
+    // name that isn't this one).
+    player_name: (data.player_name || '').trim(),
     saved_at: Date.now()
   };
   try {
