@@ -3878,6 +3878,7 @@ function renderEraStack(eras, data) {
       + '<div style="display:flex;gap:8px;margin-top:4px;">'
       + '<button data-era="' + era + '" data-mode="mode0" onclick="saveEraPrompt(this)" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:#1c1608;color:#f4eed8;border:none;padding:4px 10px;cursor:pointer;">Save</button>'
       + '<button data-target="prompt-mode0-' + era + '" onclick="copyPrompt(this.dataset.target)" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:transparent;color:#4a3f28;border:1px solid rgba(160,130,70,.35);padding:4px 10px;cursor:pointer;">Copy</button>'
+      + '<button data-era="' + era + '" data-mode="mode0" onclick="generatePlateImage(this.dataset.era,this.dataset.mode)" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:transparent;color:#8b1a1a;border:1px solid rgba(139,26,26,.4);padding:4px 10px;cursor:pointer;">Generate Image</button>'
       + '<span id="prompt-mode0-status-' + era + '" style="font-family:Courier Prime,monospace;font-size:9px;font-style:italic;color:#8a7a5a;align-self:center;"></span>'
       + '</div>'
       + '</div>'
@@ -3887,6 +3888,7 @@ function renderEraStack(eras, data) {
       + '<div style="display:flex;gap:8px;margin-top:4px;">'
       + '<button data-era="' + era + '" data-mode="mode1" onclick="saveEraPrompt(this)" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:#1c1608;color:#f4eed8;border:none;padding:4px 10px;cursor:pointer;">Save</button>'
       + '<button data-target="prompt-mode1-' + era + '" onclick="copyPrompt(this.dataset.target)" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:transparent;color:#4a3f28;border:1px solid rgba(160,130,70,.35);padding:4px 10px;cursor:pointer;">Copy</button>'
+      + '<button data-era="' + era + '" data-mode="mode1" onclick="generatePlateImage(this.dataset.era,this.dataset.mode)" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:transparent;color:#8b1a1a;border:1px solid rgba(139,26,26,.4);padding:4px 10px;cursor:pointer;">Generate Image</button>'
       + '<span id="prompt-mode1-status-' + era + '" style="font-family:Courier Prime,monospace;font-size:9px;font-style:italic;color:#8a7a5a;align-self:center;"></span>'
       + '</div>'
       + '</div>'
@@ -3947,29 +3949,77 @@ function handlePlateUpload(input, era, type) {
   const file = input.files[0];
   const r = new FileReader();
   r.onload = e => {
-    const dataUrl = e.target.result;
-    // Show image immediately
-    const box = document.getElementById('plate-' + type + '-' + era);
-    if (box) box.innerHTML = '<img src="' + dataUrl + '" style="width:100%;display:block;object-fit:cover;object-position:top center;">';
     const lbl = input.previousElementSibling;
     if (lbl) lbl.textContent = type === 'face' ? 'Replace Face Plate' : 'Replace Outfit Plate';
-    // Save to Drive via Apps Script, write URL back to Sheet
-    const fieldKey = type === 'face' ? 'face_plate_url' : 'outfit_plate_url';
-    const charName = afData ? afData.char_name || afCode : afCode;
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors',
-      headers: {'Content-Type':'text/plain'},
-      body: JSON.stringify({
-        action: 'save_plate',
-        agent_code: afCode,
-        field: fieldKey,
-        image_base64: dataUrl,
-        image_name: type + '_' + era + '_' + file.name,
-        char_name: charName
-      })
-    }).catch(e => console.error('Plate save:', e));
+    saveGeneratedPlate(e.target.result, era, type, type + '_' + era + '_' + file.name);
   };
   r.readAsDataURL(file);
+}
+
+// Shared by both a manual upload (above) and a Gemini-generated image
+// (generatePlateImage() below) -- shows the image immediately, then
+// saves it through the one existing save_plate action so there's a
+// single Drive-upload/Sheet-write code path regardless of where the
+// image came from.
+function saveGeneratedPlate(dataUrl, era, type, imageName) {
+  const box = document.getElementById('plate-' + type + '-' + era);
+  if (box) box.innerHTML = '<img src="' + dataUrl + '" style="width:100%;display:block;object-fit:cover;object-position:top center;">';
+  const fieldKey = type === 'face' ? 'face_plate_url' : 'outfit_plate_url';
+  const charName = afData ? afData.char_name || afCode : afCode;
+  fetch(APPS_SCRIPT_URL, {
+    method: 'POST', mode: 'no-cors',
+    headers: {'Content-Type':'text/plain'},
+    body: JSON.stringify({
+      action: 'save_plate',
+      agent_code: afCode,
+      field: fieldKey,
+      image_base64: dataUrl,
+      image_name: imageName || (type + '_' + era + '_generated.png'),
+      char_name: charName
+    })
+  }).catch(e => console.error('Plate save:', e));
+}
+
+// Renders a Face/Outfit Plate image server-side (Gemini) from whatever's
+// currently in the prompt textarea, then saves it exactly like a manual
+// upload via saveGeneratedPlate() above.
+function generatePlateImage(era, mode) {
+  const type = mode === 'mode0' ? 'face' : 'outfit';
+  const ta = document.getElementById('prompt-' + mode + '-' + era);
+  const st = document.getElementById('prompt-' + mode + '-status-' + era);
+  if (!ta || !afCode) return;
+  const prompt = ta.value.trim();
+  if (!prompt) { if (st) st.textContent = 'Write or generate a prompt first.'; return; }
+
+  if (st) st.textContent = 'Generating image…';
+
+  const payload = { action: 'generate_plate_image', agent_code: afCode, prompt: prompt };
+
+  // Outfit Plate: pass the existing Face Plate image as a reference (if
+  // it's already loaded as a data URI this session) so the generated
+  // full-body shot keeps the same face instead of Gemini inventing one.
+  if (type === 'outfit') {
+    const faceImg = document.getElementById('img-face-' + era);
+    if (faceImg && faceImg.src && faceImg.src.indexOf('data:') === 0) {
+      payload.reference_image_base64 = faceImg.src;
+    }
+  }
+
+  fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: {'Content-Type': 'text/plain'},
+    body: JSON.stringify(payload)
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(json) {
+    if (json.status === 'OK' && json.image_base64) {
+      saveGeneratedPlate(json.image_base64, era, type);
+      if (st) { st.textContent = 'Image generated.'; setTimeout(function(){ st.textContent=''; }, 3000); }
+    } else if (st) {
+      st.textContent = 'Error: ' + (json.message || 'generation failed');
+    }
+  })
+  .catch(function() { if (st) st.textContent = 'Error.'; });
 }
 
 /* ── AUTO-GENERATE ERA PROMPTS ── */

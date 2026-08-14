@@ -258,6 +258,16 @@ function doPost(e) {
       return generateAppearancePrompt(data);
     }
 
+    // Agent File: actually render a Face/Outfit Plate image from a
+    // (previously drafted) prompt, via Gemini on the server. Returns the
+    // image back to the client rather than saving it directly, so the
+    // client can reuse the existing save_plate action unchanged -- one
+    // Drive-upload/Sheet-write code path for both a manual upload and a
+    // generated image. See generatePlateImage() below.
+    if (data.action === 'generate_plate_image') {
+      return generatePlateImage(data);
+    }
+
     if (data.action === 'save_character') {
       return saveCharacter(data);
     }
@@ -1869,6 +1879,105 @@ function generateAppearancePrompt(data) {
       .setMimeType(ContentService.MimeType.JSON);
 
   } catch(err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'ERROR', message: err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ── Agent File: actually render a Face/Outfit Plate image from a drafted
+// prompt, via Gemini (Nano Banana 2) on the server -- same "key stays in
+// Script Properties, never touches the browser" pattern as
+// generateAppearancePrompt() above. Set GEMINI_API_KEY under Project
+// Settings > Script Properties; never hardcode a real key here.
+//
+// safetySettings below turn DOWN sensitivity on violence/gore only
+// (BLOCK_ONLY_HIGH) -- this is a tabletop-horror game where injury/scar/
+// weapon descriptions in a character's own medical record are routine,
+// not something that should trip a generic filter tuned for a general
+// consumer app. Sexual-content and hate-speech thresholds are left at
+// Google's default (BLOCK_MEDIUM_AND_ABOVE) -- there's no legitimate
+// reason for this feature to need those loosened, and the API enforces a
+// floor on some categories regardless. ──
+function generatePlateImage(data) {
+  try {
+    const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+    if (!apiKey) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'ERROR', message: 'GEMINI_API_KEY not set in Script Properties.' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    const prompt = (data.prompt || '').trim();
+    if (!prompt) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'ERROR', message: 'prompt is required.' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    const parts = [{ text: prompt }];
+
+    // Outfit Plate generation can optionally pass the existing Face Plate
+    // image as a reference, so the same face carries over into the
+    // full-body shot instead of Gemini inventing a new one from the text
+    // description alone.
+    if (data.reference_image_base64 && data.reference_image_base64.indexOf(',') !== -1) {
+      const refMime = data.reference_image_base64.split(';')[0].split(':')[1];
+      const refData = data.reference_image_base64.split(',')[1];
+      parts.push({ inlineData: { mimeType: refMime, data: refData } });
+    }
+
+    const model = 'gemini-3.1-flash-image';
+    const options = {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'x-goog-api-key': apiKey },
+      payload: JSON.stringify({
+        contents: [{ parts: parts }],
+        generationConfig: { responseModalities: ['IMAGE'] },
+        safetySettings: [
+          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
+          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' }
+        ]
+      }),
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent',
+      options
+    );
+    const result = JSON.parse(response.getContentText());
+
+    const candidate = result.candidates && result.candidates[0];
+    const resultParts = candidate && candidate.content && candidate.content.parts;
+    const imagePart = resultParts && resultParts.filter(function (p) { return p.inlineData; })[0];
+
+    if (imagePart) {
+      const dataUri = 'data:' + imagePart.inlineData.mimeType + ';base64,' + imagePart.inlineData.data;
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'OK', image_base64: dataUri }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // No image back -- almost always a safety block (blockReason on the
+    // prompt itself, or finishReason on the one candidate) or a bad/
+    // unavailable model id. Surface whichever the response actually gives
+    // us instead of a generic failure.
+    const blockReason = result.promptFeedback && result.promptFeedback.blockReason;
+    const finishReason = candidate && candidate.finishReason;
+    const apiError = result.error && result.error.message;
+    const message = apiError || (blockReason ? 'Blocked: ' + blockReason
+      : finishReason && finishReason !== 'STOP' ? 'Generation stopped: ' + finishReason
+      : 'No image returned.');
+
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'ERROR', message: message }))
+      .setMimeType(ContentService.MimeType.JSON);
+
+  } catch (err) {
     return ContentService
       .createTextOutput(JSON.stringify({ status: 'ERROR', message: err.message }))
       .setMimeType(ContentService.MimeType.JSON);
