@@ -208,7 +208,11 @@
     '.dgr-mini-bar{display:flex;align-items:center;gap:6px;}',
     '.dgr-mini-info{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e6ecd8;}',
     '.dgr-mini-info b{color:#a8c890;}',
-    '.dgr-volume{width:52px;flex-shrink:0;accent-color:#6a9a40;}',
+    // #dg-radio-prefixed for the same reason as .dgr-turn/.dgr-confirm
+    // above -- stats/index.html's Modern theme has a bare "input,
+    // textarea" rule (background/border/border-radius/box-shadow) that
+    // would otherwise reskin this range slider's track per theme too.
+    '#dg-radio .dgr-volume{width:52px;flex-shrink:0;accent-color:#6a9a40;}',
     '#dg-radio-panel:not(.dgr-panel-expanded) .dgr-expand-section{display:none;}',
     '.dgr-expand-section{margin-top:8px;}',
     '#dg-radio-track{font-size:12px;color:#e6ecd8;margin-bottom:4px;overflow-wrap:anywhere;}',
@@ -246,17 +250,24 @@
     'position:absolute;top:4px;left:50%;width:2px;height:14px;',
     'background:#d8f0c0;margin-left:-1px;border-radius:1px;}',
     '.dgr-dial-controls{display:flex;align-items:center;justify-content:center;gap:10px;}',
-    '.dgr-turn{',
+    // #dg-radio-prefixed, not bare .dgr-turn -- same reasoning as
+    // .dgr-btn's #dg-radio-panel prefix above: stats/index.html's theme
+    // stylesheets each carry their own blanket ".theme-x button" rule
+    // (background/border/color reset for every <button> on the page),
+    // which at bare-class specificity would otherwise win over this
+    // widget's own styling and make the dial's </> buttons quietly
+    // reskin per theme instead of keeping one consistent look everywhere.
+    '#dg-radio .dgr-turn{',
     'background:#20261a;border:1px solid #3a4432;color:#c9d4b8;border-radius:50%;',
     'width:26px;height:26px;font-size:13px;cursor:pointer;line-height:1;padding:0;}',
-    '.dgr-turn:hover{border-color:#5a6a48;}',
+    '#dg-radio .dgr-turn:hover{border-color:#5a6a48;}',
     '.dgr-dial-readout{font-size:12px;color:#e6ecd8;min-width:44px;}',
     '.dgr-dial-readout b{color:#a8c890;}',
-    '.dgr-confirm{',
+    '#dg-radio .dgr-confirm{',
     'display:block;width:100%;background:#2a3a1c;color:#d8f0c0;',
     'border:1px solid #4a6a30;border-radius:4px;padding:7px;font-family:inherit;',
     'font-size:11px;letter-spacing:.05em;cursor:pointer;margin-top:2px;}',
-    '.dgr-confirm:hover{border-color:#6a9a40;}',
+    '#dg-radio .dgr-confirm:hover{border-color:#6a9a40;}',
   ].join('');
   document.head.appendChild(style);
 

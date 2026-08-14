@@ -2614,15 +2614,18 @@ def test_acell_music_backend_not_deployed(p):
 
 def test_acell_admin(p):
     """a-cell.html's Admin tab: soft-deletes an Agent (Characters row +
-    Delta Green Briefs row) via delete_character, gated behind two
-    client-side confirmations -- typing the Agent's own name, then the
-    A-Cell password (MASTICATE) -- so a stray click can't wipe an
-    Agent. Like every other write in this app, delete_character is a
-    no-cors POST, so the row is only removed from view once a real
-    read-back (list_characters) confirms the Agent's code is actually
-    gone. Unlike a hard delete, the Agent lands in Recently Deleted
-    (list_deleted_characters) and can be brought back with Restore
-    (restore_character), verified the same way."""
+    Delta Green Briefs row) via delete_character, gated behind the
+    A-Cell password (MASTICATE) -- the page already sits behind that
+    same password, so this is one confirmation, not two -- so a stray
+    click can't wipe an Agent. Like every other write in this app,
+    delete_character is a no-cors POST, so the row is only removed from
+    view once a real read-back (list_characters) confirms the Agent's
+    code is actually gone. Unlike a hard delete, the Agent lands in
+    Recently Deleted (list_deleted_characters) and can be brought back
+    with Restore (restore_character), verified the same way -- unless
+    24 hours pass first, at which point the backend permanently purges
+    it (see purgeOldDeleted() in backend/Code.gs; not exercised here
+    since it can't be driven by this frontend-only test suite)."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -3307,6 +3310,61 @@ def test_table_radio_mobile_buttons_not_stretched(p):
     page.close()
     return errs
 
+def test_table_radio_theme_consistent_style(p):
+    """Bug report (screenshots): the Tune In panel's dial arrows and
+    Confirm button looked different across themes -- a plain border box
+    in Modern, nearly invisible (flat, theme-primary-colored fill) in
+    Son of Sam. Root cause: .dgr-turn/.dgr-confirm/.dgr-volume were bare
+    class selectors in table-radio.js's injected CSS, losing on
+    specificity to each theme's own blanket `button`/`input` rules in
+    stats/styles.css (e.g. .theme-son-of-sam button, .theme-modern
+    input) -- same class of bug .dgr-btn was already protected against
+    (see its #dg-radio-panel prefix and comment). Confirms the dial's
+    computed border/background now stay identical across two themes
+    with very different generic button treatments."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+
+    def dial_styles(theme):
+        page.evaluate(f"() => window.setTheme && window.setTheme('{theme}')")
+        page.wait_for_timeout(200)
+        page.click("#dg-radio-pill")
+        page.wait_for_timeout(300)
+        styles = page.evaluate("""() => {
+            var turn = document.querySelector('.dgr-turn');
+            var confirm = document.getElementById('dg-radio-confirm-tune');
+            var cs1 = getComputedStyle(turn), cs2 = getComputedStyle(confirm);
+            return {
+                turnBorder: cs1.borderColor, turnBg: cs1.backgroundColor,
+                confirmBorder: cs2.borderColor, confirmBg: cs2.backgroundColor,
+            };
+        }""")
+        page.click("#dg-radio-cancel")
+        page.wait_for_timeout(150)
+        return styles
+
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+    modern_styles = dial_styles("modern")
+    sam_styles = dial_styles("son-of-sam")
+
+    record("radio", "the dial turn buttons keep the same border color across Modern and Son of Sam themes",
+           modern_styles["turnBorder"] == sam_styles["turnBorder"], f"{modern_styles} vs {sam_styles}")
+    record("radio", "the dial turn buttons keep the same background across Modern and Son of Sam themes",
+           modern_styles["turnBg"] == sam_styles["turnBg"], f"{modern_styles} vs {sam_styles}")
+    record("radio", "the Tune In confirm button keeps the same border color across Modern and Son of Sam themes",
+           modern_styles["confirmBorder"] == sam_styles["confirmBorder"], f"{modern_styles} vs {sam_styles}")
+    record("radio", "the Tune In confirm button keeps the same background across Modern and Son of Sam themes",
+           modern_styles["confirmBg"] == sam_styles["confirmBg"], f"{modern_styles} vs {sam_styles}")
+    record("radio", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_agent_portal_code_query_param(p):
     """agent-hub.html's Agent Files "Files" and "ID Creator" buttons link
     to dg-agent-portal.html?code=XXXX#agent / #ids -- a new
@@ -3399,6 +3457,40 @@ def test_stats_load_by_code_query_param(p):
     record("stats-terminal", "the loaded agent's stats survive scripts.js's window.onload + defensive 50ms reset timer",
            str_val == "14", f"STR={str_val!r}")
     record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
+    page.close()
+    return errs
+
+def test_stats_loading_terminal(p):
+    """The ?load=CODE gate (body.dg-agent-loading, see the inline script
+    at the top of stats/index.html's <body>) used to show plain gray
+    "Loading Agent..." text -- replaced with a typed green-terminal
+    sequence matching index.html's boot splash. The mock here never
+    fulfills the load_character route, so the gate stays up for the
+    whole test and the typing animation can be inspected mid-flight."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", lambda route: None)  # never fulfilled -- load hangs
+
+    page.goto(f"{BASE}/stats/index.html?load=OWEN-CS12&live=1", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    record("stats-terminal", "the loading gate is up while the cloud fetch is still pending",
+           "dg-agent-loading" in page.eval_on_selector("body", "el => el.className"), "")
+    record("stats-terminal", "the sheet underneath stays hidden while gated",
+           page.eval_on_selector("#app-main", "el => getComputedStyle(el).visibility") == "hidden", "")
+    term_text = page.eval_on_selector("#dg-loading-term", "el => el.textContent")
+    record("stats-terminal", "a green terminal line is typing, not the old plain 'Loading Agent...' text",
+           term_text.startswith(">") and "Loading Agent" not in term_text, repr(term_text))
+    record("stats-terminal", "a blinking terminal cursor is rendered",
+           page.locator(".dg-loading-cursor").count() == 1, "")
+
+    page.wait_for_timeout(3000)
+    final_text = page.eval_on_selector("#dg-loading-term", "el => el.textContent")
+    record("stats-terminal", "the full sequence has typed out and settled on its last line",
+           final_text.startswith(">decrypting_dossier"), repr(final_text))
+    record("stats-terminal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
     return errs
 
@@ -4340,9 +4432,13 @@ def main():
 
         safe(test_table_radio_mobile_buttons_not_stretched, browser, area="radio")
 
+        safe(test_table_radio_theme_consistent_style, browser, area="radio")
+
         safe(test_agent_portal_code_query_param, browser, area="agent-portal")
 
         safe(test_stats_load_by_code_query_param, browser, area="stats-terminal")
+
+        safe(test_stats_loading_terminal, browser, area="stats-terminal")
 
         safe(test_stats_recruit_flow_on_missing_character, browser, area="stats-terminal")
 

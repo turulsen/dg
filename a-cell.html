@@ -533,15 +533,18 @@
     background:var(--paper); box-shadow:var(--paper-shadow);
   }
 
-  /* ── Admin: soft deletion, gated behind a two-step confirm (type the
-     Agent's own name, then the A-Cell password) so nobody wipes an
-     Agent by a stray click -- and even past that gate, deleting only
-     archives the Agent's rows rather than removing them, so a mistake
-     is still recoverable via Recently Deleted below. Everything here
-     is styled with --red to read as clearly destructive against the
-     rest of the paper-toned UI. ── */
+  /* ── Admin: soft deletion, gated behind the A-Cell password (the page
+     already sits behind that same password, so this is one
+     confirmation, not a second one on top) so nobody wipes an Agent by
+     a stray click -- and even past that gate, deleting only archives
+     the Agent's rows rather than removing them, so a mistake is still
+     recoverable via Recently Deleted below, for 24 hours -- after that
+     the backend permanently purges it (see purgeOldDeleted() in
+     backend/Code.gs). Everything here is styled with --red to read as
+     clearly destructive against the rest of the paper-toned UI. ── */
   .admin-toolbar{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
   .admin-copy{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.85; max-width:60ch; margin-bottom:var(--s3); }
+  .admin-deleted-hint{ text-transform:none; letter-spacing:normal; font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); }
   .admin-status{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); min-height:1.4em; margin-bottom:10px; }
   .admin-list{ display:flex; flex-direction:column; gap:8px; }
   .admin-row{
@@ -724,12 +727,12 @@
           <button type="button" class="paper-btn" id="admin-refresh-btn">Refresh</button>
           <span class="play-refresh-note" id="admin-refresh-note"></span>
         </div>
-        <p class="admin-copy">Remove an Agent from the Google Sheet -- moves their character sheet AND their Agent File / Field ID submission to a recoverable archive (restore it below any time). Deleting requires typing the Agent's own name, then the A-Cell password.</p>
+        <p class="admin-copy">Remove an Agent from the Google Sheet -- moves their character sheet AND their Agent File / Field ID submission to a recoverable archive below, restorable for 24 hours before it's permanently purged. Deleting requires the A-Cell password.</p>
         <div class="admin-status" id="admin-status"></div>
         <div class="admin-list" id="admin-list">
           <div class="admin-loading">Loading agents…</div>
         </div>
-        <div class="pv-sec-hd">Recently Deleted</div>
+        <div class="pv-sec-hd">Recently Deleted <span class="admin-deleted-hint">(purged after 24 hours)</span></div>
         <div class="admin-deleted-list" id="admin-deleted-list"></div>
       </div>
 
@@ -2564,7 +2567,7 @@
     var name = (agent.state.bio || {}).name || agent.code;
     slot.innerHTML =
       '<div class="admin-confirm">' +
-      '<p>Enter the A-Cell password to delete <b>' + escapeHtml(name) + '</b> (moves to Recently Deleted, can be restored):</p>' +
+      '<p>Enter the A-Cell password to delete <b>' + escapeHtml(name) + '</b> (moves to Recently Deleted, restorable for 24 hours):</p>' +
       '<div class="admin-confirm-error" id="admin-confirm-err-' + i + '"></div>' +
       '<input type="password" id="admin-pw-input-' + i + '" placeholder="A-Cell password" autocomplete="off">' +
       '<div class="admin-confirm-actions">' +
@@ -2606,7 +2609,7 @@
       }
       var name = (agent.state.bio || {}).name || agent.code;
       agents = agents.filter(function (a) { return a.code !== agent.code; });
-      statusEl.textContent = 'Deleted ' + name + '. Restore it any time from Recently Deleted below.';
+      statusEl.textContent = 'Deleted ' + name + '. Restore it within 24 hours from Recently Deleted below.';
       renderList();
       fetchDeleted();
     });

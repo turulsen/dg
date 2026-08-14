@@ -113,7 +113,37 @@
             document.body.classList.add('dg-agent-loading');
         }
     </script>
-    <div id="dg-agent-loading-notice">Loading Agent&hellip;</div>
+    <div id="dg-agent-loading-notice"><span id="dg-loading-term"></span></div>
+    <script>
+        // Types out a short green-terminal sequence (same CRT-text
+        // treatment as index.html's boot splash) for as long as the
+        // #dg-agent-loading gate above is actually up -- runs once here,
+        // synchronously, rather than waiting for DOMContentLoaded, so
+        // typing starts the instant this element exists rather than
+        // after the rest of the page finishes parsing. Leaves the last
+        // line's cursor blinking indefinitely once typed (via CSS, no
+        // further JS needed) -- the real load can take anywhere up to
+        // the ?load= handler's own 8s safety timeout in cloud-sync.js,
+        // so there's no fixed "done" moment to animate toward here.
+        if (document.body.classList.contains('dg-agent-loading')) (function () {
+            var term = document.getElementById('dg-loading-term');
+            var LINES = ['access_requested', 'agent_file.exe', 'decrypting_dossier'];
+            function typeLine(line, cb) {
+                var i = 0, typed = '';
+                var iv = setInterval(function () {
+                    typed += line.charAt(i);
+                    term.innerHTML = '&gt;' + typed + '<span class="dg-loading-cursor"></span>';
+                    i++;
+                    if (i >= line.length) { clearInterval(iv); setTimeout(cb, 400); }
+                }, 45);
+            }
+            function typeSequence(lines) {
+                if (!lines.length) return;
+                typeLine(lines[0], function () { typeSequence(lines.slice(1)); });
+            }
+            typeSequence(LINES);
+        })();
+    </script>
     <div style="max-width:1400px;margin:0 auto;padding:16px 20px 0;">
         <a href="../agent-hub.html" style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.05em;color:#8a8a8a;text-decoration:none;">&larr; Agent Hub</a>
     </div>

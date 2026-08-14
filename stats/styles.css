@@ -3261,7 +3261,19 @@ textarea {
     font-family: 'JetBrains Mono', monospace;
 }
 
+/* #settings-panel #theme-selector select (not just #settings-panel
+   select) -- #theme-selector itself only exists inside this drawer now
+   (it moved here from an old inline placement pre-dating the settings
+   cog), but a leftover "#theme-selector select { background:
+   transparent; color:var(--primary-color); }" rule further down this
+   file is the exact same ID+type specificity as a plain "#settings-panel
+   select", so it was winning that tie by sitting later in the file --
+   the dropdown rendered near-invisible (theme-primary-color text on a
+   background that had gone transparent to the dark drawer behind it).
+   The extra #theme-selector segment here breaks that tie for good,
+   regardless of source order. */
 #settings-panel select,
+#settings-panel #theme-selector select,
 #settings-panel button,
 #settings-panel input[type="text"] {
     background: #262626;
@@ -3522,10 +3534,32 @@ body.dg-agent-loading #dg-agent-loading-notice {
     align-items: center;
     justify-content: center;
     background: #0a0a0a;
-    color: #8a8a8a;
     font-family: 'JetBrains Mono', monospace;
     font-size: 14px;
     letter-spacing: 0.05em;
+}
+
+/* Green CRT-terminal text, matching index.html's boot splash (#boot-term)
+   -- kept as its own copy rather than a shared stylesheet since the two
+   pages don't otherwise share CSS. */
+#dg-loading-term {
+    color: #3ef07a;
+    text-shadow: 0 0 8px rgba(62, 240, 122, .55);
+    white-space: pre;
+}
+
+#dg-loading-term .dg-loading-cursor {
+    display: inline-block;
+    width: .55em;
+    height: 1em;
+    background: #3ef07a;
+    vertical-align: text-bottom;
+    margin-left: 2px;
+    animation: dg-loading-blink 1s step-end infinite;
+}
+
+@keyframes dg-loading-blink {
+    50% { opacity: 0; }
 }
 
 #dg-toast {

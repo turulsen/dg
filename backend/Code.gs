@@ -3,6 +3,7 @@
 // Google Apps Script backend v7 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Sheet/Admin) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
+// + 24h auto-purge for Recently Deleted
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -746,10 +747,12 @@ function updateCharacterField(agentCode, field, value) {
 // ── A-Cell Admin: soft-delete an Agent -- moves their Characters row
 // (character sheet) AND their Delta Green Briefs row (Agent File /
 // Field ID submission) to matching "Deleted" archive sheets, instead
-// of removing them outright, so a double-confirmed delete is still
-// recoverable via Restore in the Admin tab's Recently Deleted list.
-// Gated client-side behind two confirmations (the Agent's own name,
-// then the A-Cell password) before this ever gets called. ──
+// of removing them outright, so a delete is still recoverable via
+// Restore in the Admin tab's Recently Deleted list. Gated client-side
+// behind the A-Cell password (the page already sits behind that same
+// password, so this is one confirmation, not a second one on top)
+// before this ever gets called. Recovery isn't indefinite, though --
+// see purgeOldDeleted() below. ──
 function getOrCreateDeletedSheet(name, liveHeaders) {
   const ss = getOrCreateSheet();
   let sheet = ss.getSheetByName(name);
@@ -760,11 +763,44 @@ function getOrCreateDeletedSheet(name, liveHeaders) {
   return sheet;
 }
 
+// A soft-deleted Agent older than this is gone for good -- "Recently
+// Deleted" is meant as an undo window for an accidental delete, not a
+// second permanent archive alongside the live sheets. Purged
+// opportunistically (called from listDeletedCharacters() and
+// deleteCharacter() below) rather than off a separate time-driven
+// Apps Script trigger, which would need a one-time manual setup step
+// in the Apps Script UI on top of just pasting this file in -- this
+// way the retention policy is self-contained in the code, and
+// "Recently Deleted" prunes itself the next time anyone actually
+// looks at or touches the Admin tab.
+const DELETED_RETENTION_MS = 24 * 60 * 60 * 1000;
+
+function purgeOldDeleted() {
+  const ss = getOrCreateSheet();
+  const cutoff = new Date().getTime() - DELETED_RETENTION_MS;
+  ['DeletedCharacters', 'DeletedBriefs'].forEach(function (name) {
+    const sheet = ss.getSheetByName(name);
+    if (!sheet) return;
+    const data = sheet.getDataRange().getValues();
+    if (data.length < 2) return;
+    const deletedAtCol = data[0].indexOf('Deleted At');
+    if (deletedAtCol === -1) return;
+    // Bottom-up, same as every other in-place row delete in this file --
+    // deleting row i shifts every row below it up, so walking forward
+    // would skip a row right after deleting its predecessor.
+    for (let i = data.length - 1; i >= 1; i--) {
+      const deletedAt = Number(data[i][deletedAtCol]);
+      if (deletedAt && deletedAt < cutoff) sheet.deleteRow(i + 1);
+    }
+  });
+}
+
 function deleteCharacter(agentCode) {
   if (!agentCode) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'agent_code is required' }))
       .setMimeType(ContentService.MimeType.JSON);
   }
+  purgeOldDeleted();
   const deletedAt = new Date().getTime();
 
   const charSheet = getOrCreateCharactersSheet();
@@ -801,8 +837,11 @@ function deleteCharacter(agentCode) {
 // ── A-Cell Admin: list every soft-deleted Agent, for the Admin tab's
 // Recently Deleted section. Keyed off DeletedCharacters (the
 // character-sheet half) since a delete always archives both halves
-// together via deleteCharacter() above. ──
+// together via deleteCharacter() above. Purges anything past its
+// 24-hour retention window first, so a stale entry never briefly
+// flashes in the list only to fail Restore a moment later. ──
 function listDeletedCharacters(callback) {
+  purgeOldDeleted();
   const ss = getOrCreateSheet();
   const sheet = ss.getSheetByName('DeletedCharacters');
   const result = { status: 'OK', characters: [] };
