@@ -1,9 +1,10 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v7 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v8 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Sheet/Admin) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
+// + AI appearance prompt generation (Face/Outfit Plate, via Claude)
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -248,6 +249,13 @@ function doPost(e) {
 
     if (data.action === 'save_plate') {
       return savePlateImage(data);
+    }
+
+    // Agent File: AI-drafted appearance prompt (Face Plate / Outfit Plate /
+    // surveillance / post-injury), via Claude on the server so the API key
+    // never touches the browser. See generateAppearancePrompt() below.
+    if (data.action === 'generate_prompt') {
+      return generateAppearancePrompt(data);
     }
 
     if (data.action === 'save_character') {
@@ -1698,6 +1706,168 @@ function savePlateImage(data) {
       field: data.field,
       value: url
     });
+  } catch(err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'ERROR', message: err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ── Agent File: AI-drafted appearance prompts (Face Plate / Outfit Plate /
+// surveillance / post-injury). Server-side only -- reads the key from
+// Script Properties so it's never exposed to the browser (same pattern as
+// every other secret in this file, e.g. DRIVE_API_KEY above, which is
+// restricted rather than secret for a different reason -- see its own
+// comment). Set ANTHROPIC_API_KEY under Project Settings > Script
+// Properties in the Apps Script editor; never hardcode a real key here. ──
+function generateAppearancePrompt(data) {
+  try {
+    const apiKey = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY');
+    if (!apiKey) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'ERROR', message: 'ANTHROPIC_API_KEY not set in Script Properties.' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    const char = data.character || {};
+    const injuries = data.injuries || [];
+    const era = data.era || '';
+    const eraLabels = {'90s':'1990s Cold War Aftermath','00s':'2000s War on Terror','10s':'2010s Digital Age','20s':'2020s Present Day'};
+    const eraLabel = eraLabels[era] || '';
+    const eraOutfitContext = {
+      '90s': 'Era is the 1990s. Clothing should reflect early-to-mid 1990s fashion — heavier fabrics, baggier cuts, muted earth tones and neutrals, practical field-ready styling of the Cold War aftermath period.',
+      '00s': 'Era is the 2000s. Clothing should reflect early-to-mid 2000s fashion — slightly slimmer cuts than the 90s, tactical-influenced civilian wear, post-9/11 federal agency aesthetic.',
+      '10s': 'Era is the 2010s. Clothing should reflect 2010s fashion — fitted contemporary cuts, smart-casual federal professional register, modern tactical civilian crossover.',
+      '20s': 'Era is the 2020s. Clothing should reflect current contemporary fashion — clean modern cuts, technical fabrics, present-day federal professional or civilian register.'
+    };
+    const eraNote = eraOutfitContext[era] || '';
+
+    const isBase = data.mode === 'base' || injuries.length === 0;
+    const isOutfit = data.mode === 'outfit';
+    const isSurveillance = data.mode === 'surveillance';
+
+    const baseDesc = [
+      char.age_range, char.sex, char.nationality,
+      'Build: ' + char.build,
+      'Face: ' + [char.face_shape, char.eye_color + ' ' + char.eye_shape + ' eyes', char.nose, char.lips, char.skin].filter(Boolean).join(', '),
+      'Hair: ' + [char.hair_color, char.hair_style, char.hair_texture].filter(Boolean).join(', '),
+      char.facial_hair,
+      char.face_scars ? 'Scars: ' + char.face_scars : '',
+      char.body_markers ? 'Body markers: ' + char.body_markers : '',
+      char.posture ? 'Posture: ' + char.posture : ''
+    ].filter(Boolean).join('. ');
+
+    const outfitDesc = isBase ? [char.jacket, char.shirt, char.trousers, char.footwear, char.accessories, char.jewelry].filter(Boolean).join(', ') : '';
+
+    const injuryDesc = injuries.map(function(inj, i) {
+      return (i + 1) + '. ' + inj.body_part + ' — ' + inj.injury + (inj.appearance ? '. Appearance impact: ' + inj.appearance : '');
+    }).join('\n');
+
+    let userPrompt;
+    if (isBase) {
+      // Mode 0 — Face lock. Canonical structure from Banana Pro Director 2.0 skill.
+      userPrompt = 'You are a Higgsfield / Banana Pro image prompt writer. '
+        + 'Write a Mode 0 FACE LOCK prompt using the canonical Banana Pro Director structure. '
+        + 'This is a 3:4 HEADSHOT from forehead to upper chest only. Face fills most of the frame. '
+        + 'The character wears a plain black ' + (char.sex === 'Female' ? 'thin-strap camisole' : 'ribbed tank') + ', no jewelry, no logos. '
+        + 'Background is mid-gray seamless studio. Soft soft lighting from camera-left. '
+        + 'No outfit styling. Identity only.\n\n'
+        + 'CHARACTER SPEC:\n' + baseDesc + '\n'
+        + (char.facial_hair ? 'Facial hair: ' + char.facial_hair + '\n' : '')
+        + (char.face_scars ? 'Identity markers: ' + char.face_scars + '\n' : '')
+        + (char.expression ? 'Expression: ' + char.expression + '\n' : '')
+        + (eraNote ? '\nERA CONTEXT: ' + eraNote + '\n' : '')
+        + '\nWrite the prompt using this EXACT structure — two paragraphs, no preamble, no labels:\n\n'
+        + 'PARAGRAPH 1: Open with "A clean cinema-character-reference 3:4 headshot, framed from forehead to upper chest with the face filling most of the frame." '
+        + 'Then: full identity description — heritage/nationality, build, skin tone and finish, hair (color, length, texture), face register (jaw, cheekbones, brow, eye shape and color, nose, lips), all identity markers. '
+        + 'Then: wardrobe baseline ("She wears a plain black thin-strap camisole" or "He wears a plain black ribbed tank, no jewelry, no logos, no graphics"). '
+        + 'Then: "Body squared to camera, head level, neutral relaxed expression, eyes to camera, lips closed and relaxed, subtle controlled energy."\n\n'
+        + 'PARAGRAPH 2: Open with "Mid-gray seamless studio background — even neutral mid-gray, no seam line, no gradient, no falloff to black or white." '
+        + 'Then lighting: "Relight from scratch overriding any reference lighting: one broad diffused source from camera-left and slightly above, a soft triangle of light on the shadow cheek, gentle wrap onto the face, no hard shadow edges, no rim light, no hair light, no kicker." '
+        + 'Then skin: "Skin reads matte and velvety — zero shine on forehead, nose bridge, cheekbones, temples, and chin, no oily T-zone — in a low-contrast milky look. Real peach fuzz at the jaw and hairline, real soft fine even pore texture, subsurface scattering reading as semi-translucent biology, never plastic, never waxy AI render, never glass-skin, never harsh — fine flattering texture that keeps the face looking good, no acne, no blemishes, no rough pores." '
+        + 'Close with: "Photographed on a 50mm prime at a wide aperture, natural round bokeh, even sharpness, soft natural film grain. Photographed not generated."';
+
+    } else if (isOutfit) {
+      // Mode 1A — Single-image character outfit, Banana Pro path. Canonical structure from Banana Pro Director 2.0 skill.
+      userPrompt = 'You are a Higgsfield / Banana Pro image prompt writer. '
+        + 'Write a Mode 1A FULL-BODY OUTFIT REFERENCE prompt using the canonical Banana Pro Director structure. '
+        + 'THIS IS A FULL-BODY SHOT — the ENTIRE figure must be visible from crown of head to soles of feet. '
+        + 'DO NOT write a headshot. DO NOT crop at waist or chest. Feet and shoes must be visible. '
+        + 'The character is in a model stance (weight on one hip, body angled 15-30 degrees from camera, eyes to camera). '
+        + 'Background is mid-gray seamless studio. Soft soft lighting from camera-left.\n\n'
+        + 'CHARACTER:\n' + baseDesc + '\n\n'
+        + 'OUTFIT (document every item precisely — this is a wardrobe reference):\n'
+        + [char.jacket, char.shirt, char.trousers, char.footwear, char.accessories, char.jewelry].filter(Boolean).join('\n') + '\n\n'
+        + (eraNote ? 'ERA CONTEXT: ' + eraNote + '\n\n' : '')
+        + (char.expression ? 'Expression/stance: ' + char.expression + '\n\n' : '')
+        + 'Write the prompt using this EXACT structure — two paragraphs, no preamble, no labels:\n\n'
+        + 'PARAGRAPH 1: Full visual description of the character — hair, face briefly, then COMPLETE OUTFIT head-to-toe in order: '
+        + 'jacket/outerwear, shirt/top, trousers/skirt, footwear, accessories, jewelry. '
+        + 'Then pose: "Standing in a cocked-hip model stance, body angled [15-30] degrees from camera, weight shifted onto one hip, chin slightly tucked, eyes to camera, [expression]." '
+        + 'NEVER mention headshot, portrait, chest-up, or upper body framing in this paragraph.\n\n'
+        + 'PARAGRAPH 2: Open with "Mid-gray seamless studio background — even neutral mid-gray, no seam line, no gradient, no falloff to black or white." '
+        + 'Lighting: "Relight from scratch overriding any reference lighting: one broad diffused source from camera-left and slightly above, gentle wrap onto the figure, no harsh shadows, no rim light, no hair light, no kicker, only the gentlest lifted shadow on the off-light side." '
+        + 'Skin/fabric: "Skin and fabric read matte and velvety in a low-contrast milky look, no shine. Real fine even pore texture, subsurface scattering, real fabric weave and drape, never plastic, never waxy, never harsh." '
+        + 'Close with: "Photographed on a 50mm prime at a wide aperture, natural round bokeh, even sharpness, soft natural film grain. Full body visible head to sole. Photographed not generated."';
+    } else if (isSurveillance) {
+      const scene = data.scene || '';
+      const operation = data.operation || '';
+      const location = data.location || '';
+      const charCtx = data.char_context || '';
+      userPrompt = 'You are a Banana Pro / Higgsfield AI cinematic prompt writer specialising in photorealistic surveillance and field photography.\n\n'
+        + 'Write a cinematic surveillance photo prompt based on this after-action report scene.\n\n'
+        + (operation ? 'OPERATION: ' + operation + '\n' : '')
+        + (location ? 'LOCATION: ' + location + '\n' : '')
+        + (charCtx ? 'AGENT: ' + charCtx + '\n' : '')
+        + '\nSCENE DESCRIPTION:\n' + scene + '\n\n'
+        + 'Write only the image prompt. 2-3 paragraphs. '
+        + 'Focus on: environment and setting, lighting conditions (time of day, artificial/natural), camera angle and distance, atmospheric mood, grain and film aesthetic. '
+        + 'If the agent is in the scene describe their positioning and body language. '
+        + 'This should read like a surveillance photo or field documentation still — gritty, real, not staged.';
+    } else {
+      userPrompt = 'You are a Banana Pro / Higgsfield AI cinematic prompt writer specialising in photorealistic character references.\n\n'
+        + 'Write a Mode 3 full-body appearance prompt for this Delta Green agent as they look RIGHT NOW, after their injuries. '
+        + 'They are in a hospital or medical facility, wearing plain hospital clothes (hospital gown or scrubs — no tactical gear, no mission outfit). '
+        + 'The prompt must incorporate all appearance impact notes from the medical record.\n\n'
+        + 'BASE CHARACTER:\n' + baseDesc + '\n\n'
+        + 'MEDICAL RECORD — APPEARANCE IMPACTS:\n' + (injuryDesc || 'None on file.') + '\n\n'
+        + 'Write only the image prompt. 2-3 paragraphs. Photorealistic, clinical lighting, full body visible. '
+        + 'Begin with the physical description, end with lighting and camera notes.';
+    }
+
+    const options = {
+      method: 'post',
+      contentType: 'application/json',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      payload: JSON.stringify({
+        model: 'claude-sonnet-5',
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: userPrompt }]
+      }),
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', options);
+    const result = JSON.parse(response.getContentText());
+
+    if (result.content && result.content[0] && result.content[0].text) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'OK', prompt: result.content[0].text }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Anthropic returns errors as {type:'error', error:{type, message}}
+    // with no `content` key -- surface that message instead of a bare
+    // "No content returned", since it's almost always the actionable part
+    // (bad/retired model id, invalid key, rate limit, etc).
+    const errMsg = result.error && result.error.message ? result.error.message : 'No content returned.';
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'ERROR', message: errMsg }))
+      .setMimeType(ContentService.MimeType.JSON);
+
   } catch(err) {
     return ContentService
       .createTextOutput(JSON.stringify({ status: 'ERROR', message: err.message }))
