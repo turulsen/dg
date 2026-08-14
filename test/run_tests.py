@@ -3448,8 +3448,12 @@ def test_agent_portal_code_query_param(p):
     page.wait_for_timeout(200)
     record("agent-portal", "switching to the Profiling tab after ?code=...#agent shows that Agent's name, not a blank form",
            page.eval_on_selector("#dg-form [name=char_name]", "el => el.value") == "Owen Castillo", "")
-    record("agent-portal", "switching to the Cover tab after ?code=...#agent shows that Agent's profession too",
-           page.eval_on_selector("#dg-form [name=profession]", "el => el.value") == "Pilot", "")
+    # profession has no form field on Profiling (removed -- the character
+    # sheet's own profession dropdown is the real source of this data),
+    # so check the underlying restored data carries it rather than a
+    # form value.
+    record("agent-portal", "switching to the Cover tab after ?code=...#agent still has that Agent's profession in afData",
+           page.evaluate("() => afData && afData.profession") == "Pilot", "")
     errs_all.extend(errs)
     page.close()
 
@@ -3513,10 +3517,12 @@ def test_agent_portal_profiling_gate(p):
            "active" in page.eval_on_selector("#tw-cover", "el => el.className"), "")
     record("agent-portal", "the Agent File tab is NOT shown for an incomplete profile",
            not page.eval_on_selector("#tw-agent", "el => el.classList.contains('active')"), "")
+    # profession has no form field on Profiling (removed) -- checked via
+    # afData instead, same as the other two occurrences below.
     record("agent-portal", "the already-known fields carry over into Profiling despite the bounce",
            page.eval_on_selector("#dg-form [name=char_name]", "el => el.value") == "Mark Delacroix"
            and page.eval_on_selector("#dg-form [name=build]", "el => el.value") == "muscular"
-           and page.eval_on_selector("#dg-form [name=profession]", "el => el.value") == "Federal Agent", "")
+           and page.evaluate("() => afData && afData.profession") == "Federal Agent", "")
 
     # Clicking the Agent File tab directly (not just the ?code= route)
     # bounces back too, for the same still-incomplete Agent.
@@ -4098,8 +4104,8 @@ def test_agent_portal_autorestore_prefills_cover(p):
            "active" in page.eval_on_selector("#tw-cover", "el => el.className"), "")
     record("agent-portal", "the last-active Agent's name is already in the Cover form, not blank",
            page.eval_on_selector("#dg-form [name=char_name]", "el => el.value") == "Owen Castillo", "")
-    record("agent-portal", "the last-active Agent's profession is already in the Cover form too",
-           page.eval_on_selector("#dg-form [name=profession]", "el => el.value") == "Pilot", "")
+    record("agent-portal", "the last-active Agent's profession is still in afData (no form field for it anymore)",
+           page.evaluate("() => afData && afData.profession") == "Pilot", "")
     record("agent-portal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
     return errs

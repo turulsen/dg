@@ -1469,6 +1469,8 @@ body{
 }
 
 #roster-backdrop.open { display: block; }
+
+footer.site-footer{ font-family:'Courier Prime',monospace; text-align:center; color:#6a6250; font-size:11px; margin-top:56px; }
 </style>
 </head>
 <body>
@@ -1572,7 +1574,6 @@ body{
                 </div>
               </div>
               <div class="fg"><label>Nationality / ethnic background</label><input type="text" name="nationality" class="fi" placeholder="e.g. White American, Nigerian-British" required></div>
-              <div class="fg"><label>Profession <span class="opt">(if any)</span></label><input type="text" name="profession" class="fi" placeholder="e.g. Federal Agent, Pilot"></div>
 
               <div class="section-head">Face</div>
               <div class="fg"><label>Face shape</label><input type="text" name="face_shape" class="fi" placeholder="e.g. sharp and angular, round, gaunt" required></div>
@@ -1987,6 +1988,8 @@ body{
 
   </div><!-- folder-body -->
 </div><!-- folder -->
+
+<footer class="site-footer">Delta Green is a trademark of Arc Dream Publishing. Unofficial fan-made campaign tools.</footer>
 
 <script src="assets/agent-code.js"></script>
 <script>
@@ -3997,6 +4000,31 @@ function saveGeneratedPlate(dataUrl, era, type, imageName) {
 // Renders a Face/Outfit Plate image server-side (Gemini) from whatever's
 // currently in the prompt textarea, then saves it exactly like a manual
 // upload via saveGeneratedPlate() above.
+// Fetches a gdrive:-prefixed (or share-link) image through the same
+// imgdata JSONP proxy loadDriveImage() uses for on-page previews, but as
+// a Promise resolving to a data URI (or null) instead of setting an
+// <img>'s src -- so it can be attached to a generate_plate_image request
+// as a reference image rather than just displayed.
+function fetchDriveImageAsDataUri(url) {
+  return new Promise(function(resolve) {
+    const id = extractDriveId(url);
+    if (!id) { resolve(null); return; }
+    const cbName = '_refImg_' + id.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
+    const scriptId = '_ds_' + cbName;
+    window[cbName] = function(json) {
+      delete window[cbName];
+      const s = document.getElementById(scriptId);
+      if (s) s.remove();
+      resolve(json.status === 'OK' && json.dataUri ? json.dataUri : null);
+    };
+    const s = document.createElement('script');
+    s.id = scriptId;
+    s.src = APPS_SCRIPT_URL + '?action=imgdata&id=' + encodeURIComponent(id) + '&callback=' + cbName;
+    s.onerror = function() { delete window[cbName]; resolve(null); };
+    document.head.appendChild(s);
+  });
+}
+
 function generatePlateImage(era, mode) {
   const type = mode === 'mode0' ? 'face' : 'outfit';
   const ta = document.getElementById('prompt-' + mode + '-' + era);
@@ -4009,31 +4037,45 @@ function generatePlateImage(era, mode) {
 
   const payload = { action: 'generate_plate_image', agent_code: afCode, prompt: prompt };
 
-  // Outfit Plate: pass the existing Face Plate image as a reference (if
-  // it's already loaded as a data URI this session) so the generated
-  // full-body shot keeps the same face instead of Gemini inventing one.
+  function send() {
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'text/plain'},
+      body: JSON.stringify(payload)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(json) {
+      if (json.status === 'OK' && json.image_base64) {
+        saveGeneratedPlate(json.image_base64, era, type);
+        if (st) { st.textContent = 'Image generated.'; setTimeout(function(){ st.textContent=''; }, 3000); }
+      } else if (st) {
+        st.textContent = 'Error: ' + (json.message || 'generation failed');
+      }
+    })
+    .catch(function() { if (st) st.textContent = 'Error.'; });
+  }
+
   if (type === 'outfit') {
+    // Outfit Plate: pass the existing Face Plate image as a reference (if
+    // it's already loaded as a data URI this session) so the generated
+    // full-body shot keeps the same face instead of Gemini inventing one.
     const faceImg = document.getElementById('img-face-' + era);
     if (faceImg && faceImg.src && faceImg.src.indexOf('data:') === 0) {
       payload.reference_image_base64 = faceImg.src;
     }
+    send();
+  } else if (type === 'face' && afData && afData.ref_image_link) {
+    // Face Plate: the player's own optional "Resembles" reference photo
+    // from Profiling (ref_image_link) is exactly what that field is
+    // for -- give Gemini the actual likeness reference alongside the
+    // text description instead of working from the description alone.
+    fetchDriveImageAsDataUri(afData.ref_image_link).then(function(dataUri) {
+      if (dataUri) payload.reference_image_base64 = dataUri;
+      send();
+    });
+  } else {
+    send();
   }
-
-  fetch(APPS_SCRIPT_URL, {
-    method: 'POST',
-    headers: {'Content-Type': 'text/plain'},
-    body: JSON.stringify(payload)
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(json) {
-    if (json.status === 'OK' && json.image_base64) {
-      saveGeneratedPlate(json.image_base64, era, type);
-      if (st) { st.textContent = 'Image generated.'; setTimeout(function(){ st.textContent=''; }, 3000); }
-    } else if (st) {
-      st.textContent = 'Error: ' + (json.message || 'generation failed');
-    }
-  })
-  .catch(function() { if (st) st.textContent = 'Error.'; });
 }
 
 /* ── AUTO-GENERATE ERA PROMPTS ── */
