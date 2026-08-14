@@ -2772,6 +2772,20 @@ function genCode(name) {
 
 /* ── SUBMIT ── */
 async function handleSubmit() {
+  // The form's [required] attributes were purely decorative until now --
+  // this button is type="submit" inside a form with onsubmit="return
+  // false", so the browser's own constraint validation never actually
+  // blocked a submission, it just fired handleSubmit() unconditionally on
+  // click. isProfilingComplete() (used to gate the Agent File tab) reads
+  // those same [required] fields as its source of truth, so a brief that
+  // slipped through with some left blank could submit successfully here
+  // and then permanently fail that gate later, with no indication to the
+  // player of what's actually missing. Enforce it for real at the one
+  // place data leaves this form, so a blocked submission always comes
+  // with the browser's own "please fill this out" pointer at the field.
+  const form = document.getElementById('dg-form');
+  if (!form.reportValidity()) return;
+
   const btn = document.getElementById('submit-btn');
   const status = document.getElementById('form-status');
   btn.disabled=true; status.className=''; status.textContent='Transmitting...';

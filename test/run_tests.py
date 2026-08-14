@@ -4231,6 +4231,42 @@ def test_agent_portal_cover(p, agent):
     page.close()
     return errs, code
 
+def test_agent_portal_incomplete_submit_blocked(p):
+    """Regression test for a real bug: #dg-form's [required] attributes
+    were purely decorative -- the submit button is type="submit" inside a
+    form with onsubmit="return false", so handleSubmit() fired
+    unconditionally on click regardless of which required fields were
+    still blank. A brief could submit successfully that way and then
+    permanently fail isProfilingComplete()'s gate on the Agent File tab
+    later, with no indication to the player of what was actually missing
+    (a real report: 'agent file won't open even though it's been
+    created'). handleSubmit() now calls form.reportValidity() first and
+    bails out if the form is invalid, so a blocked submission always
+    comes with the browser's own pointer at the empty field."""
+    page = p.new_page()
+    page.set_default_timeout(5000)
+    errs = collect_errors(page)
+    mock_routes(page)
+    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+
+    # Fill only char_name -- every other [required] field left blank.
+    page.fill("#dg-form [name=char_name]", "Incomplete Ivy")
+    page.click("#submit-btn")
+    page.wait_for_timeout(300)
+
+    saved = page.evaluate("() => { try { return JSON.parse(localStorage.getItem('dg_last_agent')); } catch(e){ return null; } }")
+    record("agent-portal", "submitting with required fields blank does not submit (no code minted)",
+           saved is None, str(saved))
+
+    invalid_count = page.eval_on_selector_all("#dg-form [required]:invalid", "els => els.length")
+    record("agent-portal", "the browser flags at least one blank required field as invalid",
+           invalid_count > 0, f"invalid_count={invalid_count}")
+
+    record("agent-portal", "no JS exceptions", len(errs)==0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_agent_portal_agent_file(p, code):
     if not code:
         record("agent-portal", "agent file gate (skipped, no code)", False, "no code from cover test")
@@ -4704,6 +4740,8 @@ def main():
 
         if codes and codes[0]:
             safe(test_agent_portal_agent_file, browser, codes[0], area="agent-portal")
+
+        safe(test_agent_portal_incomplete_submit_blocked, browser, area="agent-portal")
 
         safe(test_agent_file_kia_stamp, browser, area="agent-portal")
 
