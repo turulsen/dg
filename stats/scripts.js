@@ -2812,14 +2812,31 @@ function applyImportedAgentData(data) {
         // Profession -- real Foundry VTT exports write a human-readable
         // title ("Pilot"), not the <select>'s option value ("pilot_sailor"),
         // so it has to be resolved first or it silently leaves whatever
-        // profession was selected before this import in place.
+        // profession was selected before this import in place. Kappa
+        // Black in particular allows any free-text profession with no
+        // fixed list behind it ("Prosecutor" has no matching title or "X
+        // or Y" synonym on this sheet at all) -- when nothing matches,
+        // profSelect.value = <the raw string> silently fails (it isn't a
+        // valid <option>, so the select just keeps whatever was chosen
+        // before), which reads as "profession didn't load." Fall back to
+        // the built-in "Building a New Profession" catch-all (a real,
+        // valid option with no fixed skill package) instead of leaving
+        // it unresolved, and keep the actual imported title in Personal
+        // Details so it isn't lost outright -- unmatchedProfessionNote is
+        // applied further down, AFTER Personal Details' own assignment
+        // from sys.biography.notes, since that line unconditionally
+        // overwrites the field and would otherwise wipe this right out.
+        let unmatchedProfessionNote = '';
         if (bio.profession) {
             const profSelect = document.getElementById('cs-profession-select');
             if (profSelect) {
-                const profKey = (typeof matchProfessionKey === 'function' && matchProfessionKey(bio.profession))
-                    || bio.profession;
+                const matched = typeof matchProfessionKey === 'function' && matchProfessionKey(bio.profession);
+                const profKey = matched || 'new_profession';
                 profSelect.value = profKey;
                 if (typeof selectProfession === 'function') selectProfession(profKey);
+                if (!matched) {
+                    unmatchedProfessionNote = 'Imported profession (no exact match on this sheet): ' + bio.profession;
+                }
             }
         }
 
@@ -2848,7 +2865,14 @@ function applyImportedAgentData(data) {
 
         // Personal details — stored in sys.biography.notes
         const personalDetailsEl = document.getElementById('cs-personal-details');
-        if (personalDetailsEl) personalDetailsEl.value = sys.biography?.notes || '';
+        if (personalDetailsEl) {
+            personalDetailsEl.value = sys.biography?.notes || '';
+            if (unmatchedProfessionNote) {
+                personalDetailsEl.value = personalDetailsEl.value
+                    ? unmatchedProfessionNote + '\n' + personalDetailsEl.value
+                    : unmatchedProfessionNote;
+            }
+        }
 
         // Sanity adaptation checkboxes
         const adaptations = sys.sanity?.adaptations || {};

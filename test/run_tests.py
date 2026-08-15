@@ -590,6 +590,49 @@ def test_kappablack_toml_import(p):
     page.close()
     return errs
 
+def test_kappablack_toml_import_unmatched_profession(p):
+    """Regression test for a real bug: Kappa Black lets a player type ANY
+    free-text profession, with no fixed list behind it -- a real report
+    used "Prosecutor", which has no matching title or "X or Y" synonym
+    anywhere in professions.js. Before this fix, matchProfessionKey()
+    correctly returned null, but applyImportedAgentData() then set
+    profSelect.value to the raw unmatched string, which silently failed
+    (not a valid <option>) and left the dropdown on whatever was
+    selected before -- reading as "profession didn't load" with the
+    actual imported title lost entirely. Now falls back to the built-in
+    "Building a New Profession" catch-all and keeps the original title
+    visible in Personal Details instead of dropping it."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+    page.evaluate("document.getElementById('advanced-options-details').open = true")
+    page.wait_for_timeout(200)
+
+    toml_path = os.path.join(HERE, "fixtures", "kappablack-export.toml")
+    toml_text = open(toml_path, encoding="utf-8").read().replace('profession = "Pilot"', 'profession = "Prosecutor"')
+    assert 'profession = "Prosecutor"' in toml_text, "fixture's profession line didn't match the expected format to substitute"
+    page.fill("#kappablack-import-area", toml_text)
+    page.click("#kappablack-to-editor-button")
+    page.wait_for_timeout(600)
+
+    prof_val = page.eval_on_selector("#cs-profession-select", "el => el.value")
+    record("stats-terminal", "an unmatched profession ('Prosecutor') falls back to 'Building a New Profession' instead of failing to select anything",
+           prof_val == "new_profession", f"value={prof_val!r}")
+
+    notes_val = page.eval_on_selector("#cs-personal-details", "el => el.value")
+    record("stats-terminal", "the original unmatched profession title is preserved in Personal Details, not silently dropped",
+           "Prosecutor" in notes_val, f"value={notes_val!r}")
+
+    record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_import_agent_paste_text(p):
     """The primary Import Agent drop zone (stats/index.html) only ever
     accepted files -- unusable on a phone for Kappa Black exports, since
@@ -4858,6 +4901,8 @@ def main():
         safe(test_foundry_import_profession_and_outfit, browser, area="stats-terminal")
 
         safe(test_kappablack_toml_import, browser, area="stats-terminal")
+
+        safe(test_kappablack_toml_import_unmatched_profession, browser, area="stats-terminal")
 
         safe(test_import_agent_paste_text, browser, area="stats-terminal")
 
