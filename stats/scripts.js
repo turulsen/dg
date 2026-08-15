@@ -2937,6 +2937,18 @@ function applyImportedAgentData(data) {
     // cog and reveals the Live Play toggle in their place.
     window.dgCharacterMode?.update?.();
 
+    // Every field above was set via el.value = ..., which never fires
+    // 'input'/'change' -- so cloud-sync.js's own document-level listeners
+    // (the only thing that ever calls ensureCloudCode()/pushToCloud() or
+    // save-load.js's local save) never see this import at all. A real
+    // report: an imported character showed up fine in this browser's own
+    // roster, but never reached the Characters sheet -- invisible to
+    // A-Cell Admin/Sheet -- until some unrelated later edit happened to
+    // trigger a real sync. Dispatch one synthetic change event so this
+    // goes through the exact same save pipeline as any manual edit,
+    // instead of duplicating that logic here.
+    document.getElementById('cs-name')?.dispatchEvent(new Event('change', { bubbles: true }));
+
     // Apply button states after the observer is back and any pending repaints have settled.
     setTimeout(() => {
         const prepBtn = document.getElementById('prepare-bonus-button');

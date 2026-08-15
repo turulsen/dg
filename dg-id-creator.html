@@ -921,10 +921,6 @@ window.addEventListener('message', function(e) {
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="assets/table-radio.js"></script>
-<script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
-}
-</script>
+<script src="assets/sw-update.js" data-sw="sw.js"></script>
 </body>
 </html>

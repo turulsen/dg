@@ -633,6 +633,57 @@ def test_kappablack_toml_import_unmatched_profession(p):
     page.close()
     return errs
 
+def test_kappablack_toml_import_triggers_cloud_save(p):
+    """Regression test for a real bug: applyImportedAgentData() sets
+    every field via el.value = ... directly, which never fires 'input'
+    or 'change' -- so cloud-sync.js's own document-level listeners (the
+    only thing that ever calls ensureCloudCode()/pushToCloud()) never
+    saw an import at all. A real report: an imported character showed
+    up fine in this browser's own local roster but never reached the
+    Characters sheet -- invisible to A-Cell Admin/Sheet -- until some
+    unrelated later edit happened to trigger a real sync. Now dispatches
+    a synthetic change event at the end of the import so it goes
+    through the normal save pipeline immediately."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    posts = []
+    def capture(route):
+        req = route.request
+        if req.method == "POST":
+            try:
+                posts.append(json.loads(req.post_data or "{}"))
+            except Exception:
+                pass
+        route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", capture)
+
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+    page.evaluate("document.getElementById('advanced-options-details').open = true")
+    page.wait_for_timeout(200)
+
+    toml_path = os.path.join(HERE, "fixtures", "kappablack-export.toml")
+    toml_text = open(toml_path, encoding="utf-8").read()
+    page.fill("#kappablack-import-area", toml_text)
+    page.click("#kappablack-to-editor-button")
+    page.wait_for_timeout(1000)
+
+    save_posts = [p_ for p_ in posts if p_.get("action") == "save_character"]
+    record("stats-terminal", "importing a Kappa Black .toml triggers a Cloud Save (save_character) without any further manual edit",
+           len(save_posts) >= 1, str(save_posts))
+    if save_posts:
+        char_json = json.loads(save_posts[0].get("character_json") or "{}")
+        record("stats-terminal", "the auto-triggered save actually carries the imported character's name, not a blank/default one",
+               char_json.get("bio", {}).get("name") == "Alistair Islay Lagavulin",
+               char_json.get("bio", {}).get("name"))
+
+    record("stats-terminal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_import_agent_paste_text(p):
     """The primary Import Agent drop zone (stats/index.html) only ever
     accepted files -- unusable on a phone for Kappa Black exports, since
@@ -1434,6 +1485,40 @@ def test_agent_hub_cover_identity(p):
            "Patrick Montgomery" in page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)"), "")
     record("hub", "the input is pre-filled with the remembered Cover Identity",
            page.input_value("#cover-identity-input") == "Gergo", "")
+    errs_all.extend(errs)
+    page.close()
+
+    # A returned Agent that has a Face Plate on file (findByPlayerName on
+    # the backend must actually include face_plate_url -- it silently
+    # dropped this field for a while, so an Agent with a generated plate
+    # showed up in Agent File but never in the Agent Hub roster card)
+    # should load and render that image via the imgdata proxy.
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    def mock_with_face_plate(route):
+        url = route.request.url
+        if "action=imgdata" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            body = json.dumps({"status": "OK", "dataUri": "data:image/png;base64,ZmFrZQ=="})
+            route.fulfill(status=200, content_type="application/javascript", body=f"{cb}({body})")
+            return
+        mock_lookup([
+            {"code": "DEMO-Q5MD", "char_name": "DeMore, \"Mastery\", André", "codename": "", "sex": "Male",
+             "age_range": "50s", "nationality": "American", "saved_at": 1000,
+             "face_plate_url": "gdrive:fake-drive-id"},
+        ])(route)
+    page.route("**/script.google.com/**", mock_with_face_plate)
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    page.fill("#cover-identity-input", "Gergo")
+    page.click("#cover-identity-btn")
+    page.wait_for_timeout(600)
+    photo_html = page.eval_on_selector("#ah-photo-DEMO-Q5MD", "el => el.innerHTML")
+    record("hub", "an Agent's Face Plate (face_plate_url from the Cover Identity lookup) renders in the roster panel",
+           "<img" in photo_html and "data:image/png" in photo_html, photo_html)
     errs_all.extend(errs)
     page.close()
     return errs_all
@@ -4881,6 +4966,52 @@ def test_pwa_offline(p):
     context.close()
     return errs_all
 
+def test_pwa_update_banner(p):
+    """Update-available banner (assets/sw-update.js): sw.js activates a
+    new version immediately (skipWaiting + clients.claim), but a tab left
+    open across a deploy keeps running the JS already in memory until it
+    reloads. sw-update.js listens for the service worker's
+    'controllerchange' event -- the reliable signal that a new worker has
+    taken control of this tab -- and shows a dismissible banner with a
+    Reload button, instead of silently running stale code. A real
+    cross-deploy service worker update can't be forced within a single
+    Playwright run, so this dispatches that event directly and asserts
+    the banner logic reacts correctly."""
+    context = p.new_context()
+    page = context.new_page()
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    errs = collect_errors(page)
+
+    page.goto(f"{BASE}/index.html", wait_until="load", timeout=15000)
+    wait_for_condition(lambda: page.evaluate("() => !!navigator.serviceWorker.controller"), timeout_ms=15000)
+
+    record("pwa", "no update banner present before any controllerchange",
+           page.query_selector("#dg-update-banner") is None, "")
+
+    page.evaluate("() => navigator.serviceWorker.dispatchEvent(new Event('controllerchange'))")
+    page.wait_for_timeout(200)
+
+    banner = page.query_selector("#dg-update-banner")
+    record("pwa", "update banner appears after a controllerchange event", banner is not None, "")
+
+    reload_btn = page.query_selector("#dg-update-banner button")
+    record("pwa", "banner has a visible Reload button",
+           reload_btn is not None and "Reload" in (reload_btn.inner_text() or ""), "")
+
+    page.evaluate("""() => {
+        const btns = document.querySelectorAll('#dg-update-banner button');
+        btns[btns.length - 1].click();
+    }""")
+    page.wait_for_timeout(100)
+    record("pwa", "dismiss button removes the banner",
+           page.query_selector("#dg-update-banner") is None, "")
+
+    record("pwa", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    context.close()
+    return errs
+
 def main():
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path="/opt/pw-browsers/chromium")
@@ -4903,6 +5034,8 @@ def main():
         safe(test_kappablack_toml_import, browser, area="stats-terminal")
 
         safe(test_kappablack_toml_import_unmatched_profession, browser, area="stats-terminal")
+
+        safe(test_kappablack_toml_import_triggers_cloud_save, browser, area="stats-terminal")
 
         safe(test_import_agent_paste_text, browser, area="stats-terminal")
 
@@ -5008,6 +5141,8 @@ def main():
         safe(test_noindex, browser, area="noindex")
 
         safe(test_pwa_offline, browser, area="pwa")
+
+        safe(test_pwa_update_banner, browser, area="pwa")
 
         browser.close()
 

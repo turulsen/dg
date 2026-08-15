@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v9 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v10 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Sheet/Admin) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -687,6 +687,12 @@ function findByPlayerName(name, callback) {
     const sexCol = briefHeaders.indexOf('Sex');
     const ageCol = briefHeaders.indexOf('Age Range');
     const natCol = briefHeaders.indexOf('Nationality');
+    // Face Plate (and the eras it was generated for) only ever lives on
+    // this sheet -- Characters has no such column -- so this is the only
+    // pass that can populate it. Read by header name, not COLUMNS
+    // position, same as every other column above.
+    const faceCol = briefHeaders.indexOf('face_plate_url');
+    const erasCol = briefHeaders.indexOf('Active Eras');
     if (pnCol !== -1 && codeCol !== -1) {
       for (let i = 1; i < briefRows.length; i++) {
         const row = briefRows[i];
@@ -700,6 +706,8 @@ function findByPlayerName(name, callback) {
           sex: sexCol !== -1 ? (row[sexCol] || '') : '',
           age_range: ageCol !== -1 ? (row[ageCol] || '') : '',
           nationality: natCol !== -1 ? (row[natCol] || '') : '',
+          face_plate_url: faceCol !== -1 ? (row[faceCol] || '') : '',
+          active_eras: erasCol !== -1 ? (row[erasCol] || '') : '',
           saved_at: Date.now(),
         };
       }
@@ -739,6 +747,10 @@ function findByPlayerName(name, callback) {
         sex: bio.sex || existing.sex || '',
         age_range: bio.age || existing.age_range || '',
         nationality: bio.nationality || existing.nationality || '',
+        // Neither lives on the Characters sheet -- carry forward whatever
+        // Pass 1 found on Briefs instead of dropping it here.
+        face_plate_url: existing.face_plate_url || '',
+        active_eras: existing.active_eras || '',
         saved_at: isNaN(parsedUpdated) ? Date.now() : parsedUpdated,
       };
     }
