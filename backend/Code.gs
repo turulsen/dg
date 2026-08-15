@@ -1,10 +1,12 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v8 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v9 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Sheet/Admin) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
 // + AI appearance prompt generation (Face/Outfit Plate, via Claude)
+// + AI appearance IMAGE generation (Face/Outfit Plate, via Gemini)
+// + Agent File Only listing (A-Cell Admin, for briefs with no sheet)
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
