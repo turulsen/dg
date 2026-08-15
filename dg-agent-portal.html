@@ -4109,12 +4109,19 @@ function autoGenerateEraPrompts(era) {
   if (needsPortrait && st0) st0.textContent = 'Generating\u2026';
   if (needsReference && st1) st1.textContent = 'Generating\u2026';
 
+  // era wasn't actually being sent here despite the backend already
+  // having per-era wardrobe styling logic (eraOutfitContext in
+  // generateAppearancePrompt(), backend/Code.gs) waiting for it -- every
+  // era's prompt was generated with no period cue at all, which read as
+  // "always styled like whichever era the AI defaults to" instead of
+  // actually matching the era tab it was generated for.
+
   // Generate Field Portrait (mode: base = headshot)
   if (needsPortrait) {
     fetch(APPS_SCRIPT_URL, {
       method: 'POST',
       headers: {'Content-Type': 'text/plain'},
-      body: JSON.stringify({ action: 'generate_prompt', agent_code: afCode, character: character, injuries: [], mode: 'base' })
+      body: JSON.stringify({ action: 'generate_prompt', agent_code: afCode, character: character, injuries: [], mode: 'base', era: era })
     })
     .then(function(r) { return r.json(); })
     .then(function(json) {
@@ -4139,7 +4146,7 @@ function autoGenerateEraPrompts(era) {
     fetch(APPS_SCRIPT_URL, {
       method: 'POST',
       headers: {'Content-Type': 'text/plain'},
-      body: JSON.stringify({ action: 'generate_prompt', agent_code: afCode, character: character, injuries: [], mode: 'outfit' })
+      body: JSON.stringify({ action: 'generate_prompt', agent_code: afCode, character: character, injuries: [], mode: 'outfit', era: era })
     })
     .then(function(r) { return r.json(); })
     .then(function(json) {

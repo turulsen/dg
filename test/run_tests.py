@@ -4436,6 +4436,71 @@ def test_agent_portal_agent_file(p, code):
     page.close()
     return errs
 
+def test_agent_file_era_prompt_includes_era(p):
+    """Regression test for a real bug: autoGenerateEraPrompts(era) built
+    its generate_prompt POST payload without ever including era, even
+    though the backend's generateAppearancePrompt() already has era-
+    specific wardrobe styling logic (eraOutfitContext) waiting for it --
+    so every era's Field Portrait/Field Reference prompt was generated
+    with no period cue at all, and adding a new era later never actually
+    changed the described clothing's styling. Confirms the actual POST
+    body for both mode: base and mode: outfit carries the right era."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    complete_extra = {
+        "age_range": "40s", "sex": "Female", "nationality": "Hispanic American",
+        "face_shape": "oval", "eye_color": "brown", "eye_shape": "round",
+        "nose": "straight", "lips": "thin", "skin": "tan", "facial_hair": "none",
+        "hair_color": "black", "hair_style": "short", "hair_texture": "straight",
+        "build": "average", "posture": "upright", "jacket": "coat", "shirt": "shirt",
+        "trousers": "trousers", "footwear": "boots", "expression": "neutral", "vibe": "calm",
+        "active_eras": json.dumps(["00s"]), "mode0_prompt": "", "mode1_prompt": "",
+    }
+    briefs = {"DANI-U8BM": {"char_name": "Daniela Martinez", **complete_extra}}
+    prompt_posts = []
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            body = json.loads(req.post_data or "{}")
+            if body.get("action") == "generate_prompt":
+                prompt_posts.append(body)
+                route.fulfill(status=200, content_type="application/json",
+                               body=json.dumps({"status": "OK", "prompt": "[mock prompt]"}))
+            else:
+                route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        if "code=" in url:
+            code = url.split("code=")[1].split("&")[0]
+            res = {"status": "OK", "data": briefs[code]} if code in briefs else {"status": "NOT_FOUND"}
+        else:
+            res = {"status": "OK"}
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/dg-agent-portal.html?code=DANI-U8BM#agent", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(1200)
+
+    base_posts = [p_ for p_ in prompt_posts if p_.get("mode") == "base"]
+    outfit_posts = [p_ for p_ in prompt_posts if p_.get("mode") == "outfit"]
+    record("agent-portal", "the Field Portrait (mode: base) prompt request carries the Agent's actual era",
+           len(base_posts) >= 1 and base_posts[0].get("era") == "00s", str(base_posts))
+    record("agent-portal", "the Field Reference (mode: outfit) prompt request carries the Agent's actual era too",
+           len(outfit_posts) >= 1 and outfit_posts[0].get("era") == "00s", str(outfit_posts))
+
+    record("agent-portal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_agent_file_kia_stamp(p):
     """The Agent File tab shows a KIA stamp when the Agent's saved
     character sheet (load_character -- the same Cloud Save record
@@ -4887,6 +4952,8 @@ def main():
         safe(test_agent_portal_incomplete_submit_blocked, browser, area="agent-portal")
 
         safe(test_agent_file_kia_stamp, browser, area="agent-portal")
+
+        safe(test_agent_file_era_prompt_includes_era, browser, area="agent-portal")
 
         safe(test_agent_roster, browser, area="agent-roster")
 
