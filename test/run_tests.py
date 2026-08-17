@@ -4500,6 +4500,72 @@ def test_agent_portal_cover(p, agent):
     page.close()
     return errs, code
 
+def test_agent_portal_random_generator_matches_sex(p):
+    """Regression test for an older request: the Profiling page's Random
+    Agent Generator (generateAgent() in dg-agent-portal.html) rolls a
+    random sex but drew facial_hair and hair_style from flat, unisex
+    tables regardless of it -- a Female agent could be randomly assigned
+    a handlebar mustache or a buzzcut. facial_hair/hair_style are now
+    drawn from sex-specific tables. Forces Math.random() to a fixed value
+    for the whole call (not just the sex roll) so the result is
+    deterministic without caring which exact array index gets picked --
+    only that it lands in the correct list for whichever sex the same
+    forced roll produced."""
+    FACIAL_HAIR_FEMALE = {'none', 'none, meticulous about it', 'faint, barely visible — never remarked on'}
+    FACIAL_HAIR_MALE = {
+        'clean-shaven, always', 'heavy five-o-clock shadow, never fully shaved',
+        'full beard, unkempt', 'neat mustache', 'handlebar mustache, well-maintained',
+        'thin goatee', 'stubble that never grows into a beard',
+        'clean-shaven with a visible nick scar', 'mutton chops', 'week-old stubble',
+    }
+    HAIR_STYLE_FEMALE = {
+        'shoulder-length, worn loose', 'long, tied back in a practical braid',
+        'chin-length bob, no-nonsense', 'pulled back in a tight, functional bun',
+        'short and practical, choppy layers', 'high ponytail, functional',
+        'pixie cut, easy to maintain', 'long, usually pinned up out of the way',
+        'undercut, longer on top', 'natural curls, kept short for practicality',
+    }
+    HAIR_STYLE_MALE = {
+        'short back and sides, slightly grown out', 'military cut, fading at sides',
+        'side-swept, needs cutting', 'close-cropped, nearly shaved',
+        'slicked back with something greasy',
+        'thinning on top, compensated for', 'short and practical, no styling',
+        'buzzcut', 'mid-length, pushed behind the ears',
+    }
+
+    errs_all = []
+    for forced_roll, expected_sex, facial_set, hair_set in [
+        (0.1, 'Female', FACIAL_HAIR_FEMALE, HAIR_STYLE_FEMALE),
+        (0.9, 'Male', FACIAL_HAIR_MALE, HAIR_STYLE_MALE),
+    ]:
+        page = p.new_page()
+        page.set_default_timeout(8000)
+        errs = collect_errors(page)
+        page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+        page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+        page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+        page.add_init_script(f"Math.random = () => {forced_roll};")
+        page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_timeout(300)
+
+        page.click("button:has-text('Generate')")
+        page.wait_for_timeout(200)
+
+        sex_val = page.input_value('#dg-form [name="sex"]')
+        facial_val = page.input_value('#dg-form [name="facial_hair"]')
+        hair_val = page.input_value('#dg-form [name="hair_style"]')
+        record("agent-portal", f"forced roll {forced_roll} produces sex={expected_sex}",
+               sex_val == expected_sex, sex_val)
+        record("agent-portal", f"a {expected_sex} agent's facial hair comes from the {expected_sex.lower()} table",
+               facial_val in facial_set, facial_val)
+        record("agent-portal", f"a {expected_sex} agent's hair style comes from the {expected_sex.lower()} table",
+               hair_val in hair_set, hair_val)
+
+        record("agent-portal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+        errs_all.extend(errs)
+        page.close()
+    return errs_all
+
 def test_agent_portal_incomplete_submit_blocked(p):
     """Regression test for a real bug: #dg-form's [required] attributes
     were purely decorative -- the submit button is type="submit" inside a
@@ -4624,6 +4690,95 @@ def test_agent_file_era_prompt_includes_era(p):
            len(base_posts) >= 1 and base_posts[0].get("era") == "00s", str(base_posts))
     record("agent-portal", "the Field Reference (mode: outfit) prompt request carries the Agent's actual era too",
            len(outfit_posts) >= 1 and outfit_posts[0].get("era") == "00s", str(outfit_posts))
+
+    record("agent-portal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
+def test_agent_file_outfit_plate_requires_face_first(p):
+    """Regression test for a real bug: generating an Outfit Plate image
+    read whatever the in-page <img id="img-face-ERA"> happened to hold as
+    its Face Plate reference -- but saveGeneratedPlate() replaces that
+    element wholesale (dropping its id) every time a Face Plate is
+    generated or uploaded, so the very first Outfit Plate generated right
+    after generating a Face Plate in the same session (the normal order
+    of operations) silently went out with NO reference at all, producing
+    a different-looking face. generatePlateImage() now (a) refuses to
+    generate an Outfit Plate until a Face Plate exists, and (b) sources
+    the reference from an in-memory cache of the just-generated Face
+    Plate data URI (afRecentFacePlateDataUri) rather than DOM state."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    complete_extra = {
+        "age_range": "30s", "sex": "Male", "nationality": "American",
+        "face_shape": "oval", "eye_color": "brown", "eye_shape": "round",
+        "nose": "straight", "lips": "thin", "skin": "tan", "facial_hair": "none",
+        "hair_color": "brown", "hair_style": "short", "hair_texture": "straight",
+        "build": "average", "posture": "upright", "jacket": "coat", "shirt": "shirt",
+        "trousers": "trousers", "footwear": "boots", "expression": "neutral", "vibe": "calm",
+        "active_eras": json.dumps(["00s"]), "mode0_prompt": "portrait prompt", "mode1_prompt": "outfit prompt",
+    }
+    briefs = {"NOFA-CE01": {"char_name": "No Face Yet", **complete_extra}}
+    plate_posts = []
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            body = json.loads(req.post_data or "{}")
+            if body.get("action") == "generate_plate_image":
+                plate_posts.append(body)
+                is_face = body.get("prompt") == "portrait prompt"
+                img = "data:image/png;base64,RkFDRURBVEE=" if is_face else "data:image/png;base64,T1VURklUREFUQQ=="
+                route.fulfill(status=200, content_type="application/json",
+                               body=json.dumps({"status": "OK", "image_base64": img}))
+            else:
+                route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        if "code=" in url:
+            code = url.split("code=")[1].split("&")[0]
+            res = {"status": "OK", "data": briefs[code]} if code in briefs else {"status": "NOT_FOUND"}
+        else:
+            res = {"status": "OK"}
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/dg-agent-portal.html?code=NOFA-CE01#agent", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(800)
+
+    # Outfit Plate button should refuse before any Face Plate exists.
+    page.click('button[data-mode="mode1"]:has-text("Generate Image")')
+    page.wait_for_timeout(300)
+    record("agent-portal", "generating an Outfit Plate before any Face Plate exists is blocked with a clear message",
+           "Face Plate first" in page.inner_text("#prompt-mode1-status-00s"), page.inner_text("#prompt-mode1-status-00s"))
+    record("agent-portal", "no generate_plate_image request was sent for the blocked Outfit Plate attempt",
+           len(plate_posts) == 0, str(plate_posts))
+
+    # Generate the Face Plate.
+    page.click('button[data-mode="mode0"]:has-text("Generate Image")')
+    page.wait_for_timeout(500)
+    face_posts = [p_ for p_ in plate_posts if p_.get("prompt") == "portrait prompt"]
+    record("agent-portal", "generating the Face Plate sends a generate_plate_image request",
+           len(face_posts) == 1, str(face_posts))
+
+    # Now Outfit Plate generation should go through, referencing the
+    # just-generated Face Plate -- no reload, no round trip to Drive.
+    page.click('button[data-mode="mode1"]:has-text("Generate Image")')
+    page.wait_for_timeout(500)
+    outfit_posts = [p_ for p_ in plate_posts if p_.get("prompt") == "outfit prompt"]
+    record("agent-portal", "generating the Outfit Plate after the Face Plate exists sends a generate_plate_image request",
+           len(outfit_posts) == 1, str(outfit_posts))
+    record("agent-portal", "the Outfit Plate request carries the just-generated Face Plate as its reference image",
+           len(outfit_posts) == 1 and outfit_posts[0].get("reference_image_base64") == "data:image/png;base64,RkFDRURBVEE=",
+           str(outfit_posts))
 
     record("agent-portal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
@@ -5127,11 +5282,15 @@ def main():
         if codes and codes[0]:
             safe(test_agent_portal_agent_file, browser, codes[0], area="agent-portal")
 
+        safe(test_agent_portal_random_generator_matches_sex, browser, area="agent-portal")
+
         safe(test_agent_portal_incomplete_submit_blocked, browser, area="agent-portal")
 
         safe(test_agent_file_kia_stamp, browser, area="agent-portal")
 
         safe(test_agent_file_era_prompt_includes_era, browser, area="agent-portal")
+
+        safe(test_agent_file_outfit_plate_requires_face_first, browser, area="agent-portal")
 
         safe(test_agent_roster, browser, area="agent-roster")
 

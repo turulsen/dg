@@ -3639,6 +3639,13 @@ let afData = null;       // current agent data
 let afCode = null;       // current agent code
 let afEraPages = [];     // rendered era pages
 let afActiveEra = null;  // currently front era
+// A just-generated/uploaded Face Plate's data URI, kept in memory so an
+// Outfit Plate generated in the same session can reuse it immediately as
+// a reference without round-tripping through Drive -- saveGeneratedPlate()
+// never updates afData.face_plate_url itself (that write is a fire-and-
+// forget no-cors POST with no response to read back), so afData would
+// otherwise stay stale until the next full page load.
+let afRecentFacePlateDataUri = {};
 let afMedPhotos = {};    // temp photo store for medical entries
 let afAarPhotos = {};    // temp photo store for AAR
 
@@ -3906,7 +3913,7 @@ function renderEraStack(eras, data) {
       + '<div style="display:flex;gap:8px;margin-top:4px;">'
       + '<button data-era="' + era + '" data-mode="mode1" onclick="saveEraPrompt(this)" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:#1c1608;color:#f4eed8;border:none;padding:4px 10px;cursor:pointer;">Save</button>'
       + '<button data-target="prompt-mode1-' + era + '" onclick="copyPrompt(this.dataset.target)" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:transparent;color:#4a3f28;border:1px solid rgba(160,130,70,.35);padding:4px 10px;cursor:pointer;">Copy</button>'
-      + '<button data-era="' + era + '" data-mode="mode1" onclick="generatePlateImage(this.dataset.era,this.dataset.mode)" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:transparent;color:#8b1a1a;border:1px solid rgba(139,26,26,.4);padding:4px 10px;cursor:pointer;">Generate Image</button>'
+      + '<button data-era="' + era + '" data-mode="mode1" onclick="generatePlateImage(this.dataset.era,this.dataset.mode)" title="' + (faceUrl ? 'Uses the Face Plate as a reference for character consistency' : 'Generate a Face Plate first -- the Outfit Plate uses it as a reference') + '" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:transparent;color:#8b1a1a;border:1px solid rgba(139,26,26,.4);padding:4px 10px;cursor:pointer;' + (faceUrl ? '' : 'opacity:.5;') + '">Generate Image</button>'
       + '<span id="prompt-mode1-status-' + era + '" style="font-family:Courier Prime,monospace;font-size:9px;font-style:italic;color:#8a7a5a;align-self:center;"></span>'
       + '</div>'
       + '</div>'
@@ -3982,6 +3989,7 @@ function handlePlateUpload(input, era, type) {
 function saveGeneratedPlate(dataUrl, era, type, imageName) {
   const box = document.getElementById('plate-' + type + '-' + era);
   if (box) box.innerHTML = '<img src="' + dataUrl + '" style="width:100%;display:block;object-fit:cover;object-position:top center;">';
+  if (type === 'face') afRecentFacePlateDataUri[era] = dataUrl;
   const fieldKey = type === 'face' ? 'face_plate_url' : 'outfit_plate_url';
   const charName = afData ? afData.char_name || afCode : afCode;
   fetch(APPS_SCRIPT_URL, {
@@ -4034,6 +4042,17 @@ function generatePlateImage(era, mode) {
   const prompt = ta.value.trim();
   if (!prompt) { if (st) st.textContent = 'Write or generate a prompt first.'; return; }
 
+  const faceUrl = afData ? (afData['era_' + era + '_face_url'] || afData.face_plate_url || '') : '';
+  const recentFaceDataUri = afRecentFacePlateDataUri[era];
+
+  // Outfit Plate depends on the Face Plate for likeness -- require it to
+  // exist first rather than silently generating a face-less (and
+  // therefore inconsistent) full-body shot.
+  if (type === 'outfit' && !faceUrl && !recentFaceDataUri) {
+    if (st) st.textContent = 'Generate a Face Plate first, so the Outfit Plate can match it.';
+    return;
+  }
+
   if (st) st.textContent = 'Generating image…';
 
   const payload = { action: 'generate_plate_image', agent_code: afCode, prompt: prompt };
@@ -4057,14 +4076,20 @@ function generatePlateImage(era, mode) {
   }
 
   if (type === 'outfit') {
-    // Outfit Plate: pass the existing Face Plate image as a reference (if
-    // it's already loaded as a data URI this session) so the generated
-    // full-body shot keeps the same face instead of Gemini inventing one.
-    const faceImg = document.getElementById('img-face-' + era);
-    if (faceImg && faceImg.src && faceImg.src.indexOf('data:') === 0) {
-      payload.reference_image_base64 = faceImg.src;
-    }
-    send();
+    // Outfit Plate: pass the existing Face Plate image as a reference so
+    // the generated full-body shot keeps the same face instead of Gemini
+    // inventing one. Prefer a Face Plate generated/uploaded earlier this
+    // session (afRecentFacePlateDataUri) -- saveGeneratedPlate() is a
+    // fire-and-forget no-cors POST with no response to read back, so
+    // afData.face_plate_url stays stale until the next full page load,
+    // and relying on whatever <img id="img-face-ERA"> happens to hold
+    // broke too (that element gets replaced, dropping its id, every time
+    // a Face Plate is generated or uploaded). Falling back to a fresh
+    // Drive fetch covers a Face Plate from an earlier session instead.
+    (recentFaceDataUri ? Promise.resolve(recentFaceDataUri) : fetchDriveImageAsDataUri(faceUrl)).then(function(dataUri) {
+      if (dataUri) payload.reference_image_base64 = dataUri;
+      send();
+    });
   } else if (type === 'face' && afData && afData.ref_image_link) {
     // Face Plate: the player's own optional "Resembles" reference photo
     // from Profiling (ref_image_link) is exactly what that field is
@@ -4729,12 +4754,19 @@ const RAND_TABLES = {
     'leathery from years outdoors','sallow, unhealthy yellow cast',
   ],
 
-  /* ── FACIAL HAIR ── */
-  facial_hair: [
+  /* ── FACIAL HAIR (male) ── */
+  facial_hair_male: [
     'clean-shaven, always','heavy five-o-clock shadow, never fully shaved',
     'full beard, unkempt','neat mustache','handlebar mustache, well-maintained',
     'thin goatee','stubble that never grows into a beard',
     'clean-shaven with a visible nick scar','mutton chops','week-old stubble',
+  ],
+
+  /* ── FACIAL HAIR (female) ── */
+  facial_hair_female: [
+    'none', 'none', 'none', 'none',
+    'none, meticulous about it',
+    'faint, barely visible — never remarked on',
   ],
 
   /* ── HAIR COLOR ── */
@@ -4745,13 +4777,22 @@ const RAND_TABLES = {
     'dishwater blond','brown shot through with premature gray',
   ],
 
-  /* ── HAIR STYLE ── */
-  hair_style: [
+  /* ── HAIR STYLE (male) ── */
+  hair_style_male: [
     'short back and sides, slightly grown out','military cut, fading at sides',
     'side-swept, needs cutting','close-cropped, nearly shaved',
-    'shoulder-length, worn loose','slicked back with something greasy',
+    'slicked back with something greasy',
     'thinning on top, compensated for','short and practical, no styling',
     'buzzcut','mid-length, pushed behind the ears',
+  ],
+
+  /* ── HAIR STYLE (female) ── */
+  hair_style_female: [
+    'shoulder-length, worn loose','long, tied back in a practical braid',
+    'chin-length bob, no-nonsense','pulled back in a tight, functional bun',
+    'short and practical, choppy layers','high ponytail, functional',
+    'pixie cut, easy to maintain','long, usually pinned up out of the way',
+    'undercut, longer on top','natural curls, kept short for practicality',
   ],
 
   /* ── HAIR TEXTURE ── */
@@ -4888,7 +4929,7 @@ const RAND_TABLES = {
 
     criminal: {
       jacket: ['oversized Carhartt, stained','track jacket, wrong brand','hoodie under a vest','puffer jacket, logo removed'],
-      shirt:  ['graphic tee, reference obscure','wife-beater under the jacket','flannel, half-buttoned','plain white v-neck'],
+      shirt:  ['graphic tee, reference obscure','ribbed tank top under the jacket','flannel, half-buttoned','plain white v-neck'],
       trousers:['dark jeans, belted low','cargo shorts or pants','track pants'],
       footwear:['fresh sneakers — only thing that is','work boots','scuffed leather shoes, expensive once'],
       accessories:['phone always visible','prepaid burner plus personal phone','cash only, rubber-banded'],
@@ -5044,10 +5085,10 @@ function generateAgent(archetypeId) {
     nose:        rnd(RAND_TABLES.nose),
     lips:        rnd(RAND_TABLES.lips),
     skin:        rnd(RAND_TABLES.skin),
-    facial_hair: rnd(RAND_TABLES.facial_hair),
+    facial_hair: rnd(sex === 'Female' ? RAND_TABLES.facial_hair_female : RAND_TABLES.facial_hair_male),
     face_scars:  rnd(RAND_TABLES.face_scars),
     hair_color:  rnd(RAND_TABLES.hair_color),
-    hair_style:  rnd(RAND_TABLES.hair_style),
+    hair_style:  rnd(sex === 'Female' ? RAND_TABLES.hair_style_female : RAND_TABLES.hair_style_male),
     hair_texture:rnd(RAND_TABLES.hair_texture),
     build:       rnd(RAND_TABLES.build),
     posture:     rnd(RAND_TABLES.posture),
