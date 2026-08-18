@@ -151,6 +151,15 @@
             delete window[cbName];
             const s = document.getElementById('_dg_cloud_load_script');
             if (s) s.remove();
+            // Fired the instant the JSONP response actually arrives, before
+            // any JSON.parse/applyState work -- lets a caller (the ?load=
+            // deep-link handler below) tell "the network round trip was
+            // slow" apart from "the response came back fast but applying
+            // it took a while", which otherwise isn't distinguishable from
+            // the outside (a real report of an unexplained multi-second
+            // load with no visible cause in Apps Script's own Executions
+            // log -- this makes it visible without needing DevTools).
+            if (typeof opts.onResponseReceived === 'function') opts.onResponseReceived();
 
             if (!res || res.status !== 'OK' || !res.character_json) {
                 if (res && res.status === 'NOT_FOUND' && opts.onNotFound) {
@@ -349,9 +358,47 @@
             revealed = true;
             document.body.classList.remove('dg-agent-loading');
         };
-        setTimeout(revealGate, 8000);
+        // On-screen load-timing badge. Added after two shipped fixes (a
+        // backend read-speed fix, then this same gate's error-handling)
+        // were each individually reported as NOT fixing a real "8-10s
+        // before the sheet appears" lag -- with no DevTools available
+        // (iPad Safari) there was no way to see WHERE the time was
+        // actually going. This makes that visible directly on the
+        // device that's slow, no tooling required. Deliberately built
+        // as its own fixed-position element, outside
+        // #dg-agent-loading-notice -- that overlay is entirely gated by
+        // body.dg-agent-loading (see stats/styles.css) and disappears
+        // the instant revealGate() fires, which would erase the numbers
+        // before they could be read. Left on screen (not
+        // auto-dismissed) so there's time to read and report it back.
+        const loadStart = performance.now();
+        const badge = document.createElement('div');
+        badge.id = 'dg-load-timing-badge';
+        badge.style.cssText = 'position:fixed;bottom:10px;right:10px;z-index:9999;' +
+            'font-family:"JetBrains Mono",monospace;font-size:11px;color:#3ef07a;' +
+            'background:rgba(10,10,10,.85);border:1px solid #1f3d2a;border-radius:4px;' +
+            'padding:5px 8px;pointer-events:none;white-space:pre;';
+        badge.textContent = 'load: 0.0s';
+        document.body.appendChild(badge);
+        const tick = setInterval(() => {
+            badge.textContent = 'load: ' + ((performance.now() - loadStart) / 1000).toFixed(1) + 's';
+        }, 100);
+        let responseAt = null;
+        const onResponseReceived = () => {
+            responseAt = performance.now() - loadStart;
+        };
+        const finishBadge = () => {
+            clearInterval(tick);
+            const total = (performance.now() - loadStart) / 1000;
+            badge.textContent = responseAt !== null
+                ? 'response: ' + (responseAt / 1000).toFixed(1) + 's · total: ' + total.toFixed(1) + 's'
+                : 'total: ' + total.toFixed(1) + 's (no response)';
+        };
+        setTimeout(() => { revealGate(); finishBadge(); }, 8000);
+
         loadFromCloud(loadCode, {
-            onNotFound: () => { revealGate(); startRecruitFlow(loadCode); },
+            onResponseReceived,
+            onNotFound: () => { revealGate(); finishBadge(); startRecruitFlow(loadCode); },
             // Chained to fire only once the loaded state has actually been
             // applied (past the same page-init hazard window
             // applyLoadedState() itself waits out) -- an independent timer
@@ -359,8 +406,8 @@
             // inside that same hazard window, and get its own effects
             // (buildLpSheet() reading stats that are still default 3s)
             // silently stomped right along with it.
-            onApplied: () => { revealGate(); if (wantLive && typeof setLivePlay === 'function') setLivePlay(true); },
-            onSettled: revealGate,
+            onApplied: () => { revealGate(); finishBadge(); if (wantLive && typeof setLivePlay === 'function') setLivePlay(true); },
+            onSettled: () => { revealGate(); finishBadge(); },
         });
     });
 
