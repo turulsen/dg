@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v12 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v13 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Sheet/Admin) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -12,6 +12,9 @@
 //   (fixes A-Cell going unresponsive under several simultaneous players)
 // + Fixed 24h purge silently never running on a DeletedCharacters/
 //   DeletedBriefs sheet that predates that feature (missing header)
+// + doLookupCharacter() (Play button / ?load=) now reads a targeted
+//   single row instead of every Agent's full Character JSON blob
+//   (fixes a reported ~8-10s wait before a character sheet appeared)
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -669,15 +672,32 @@ function doLookupCharacter(code) {
         .createTextOutput(JSON.stringify({ status: 'NOT_FOUND' }))
         .setMimeType(ContentService.MimeType.JSON);
     }
-    const values = sheet.getDataRange().getValues();
-    for (let i = 1; i < values.length; i++) {
-      if (values[i][0] === code) {
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'NOT_FOUND' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    // Read only the Agent Code column first to find the row -- every
+    // single "Play" click (agent-hub.html's ?load= flow) used to pull
+    // this whole sheet across the wire, including every OTHER agent's
+    // full Character JSON blob (usually the single largest thing on
+    // this sheet), just to find one row by code. That scales worse the
+    // more Agents the campaign accumulates, and was very likely the
+    // real cause of a reported ~8-10s wait on the loading screen before
+    // a character actually appeared. A targeted single-row read after
+    // this only ever transfers the one JSON blob that's actually needed.
+    const codes = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < codes.length; i++) {
+      if (codes[i][0] === code) {
+        const row = i + 2; // header is row 1; codes[0] is sheet row 2
+        const rowValues = sheet.getRange(row, 1, 1, 3).getValues()[0]; // Agent Code, Updated At, Character JSON
         return ContentService
           .createTextOutput(JSON.stringify({
             status: 'OK',
             agent_code: code,
-            updated_at: values[i][1],
-            character_json: values[i][2]
+            updated_at: rowValues[1],
+            character_json: rowValues[2]
           }))
           .setMimeType(ContentService.MimeType.JSON);
       }
