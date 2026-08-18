@@ -468,5 +468,20 @@
     window.dgDice = { roll: rollPercent, rollManual, _toggle: togglePanel, _select: selectDie };
 
     /* ── Init ─────────────────────────────────────────────────────── */
-    window.addEventListener('load', () => { buildPanel(); wireSkillInputs(); });
+    // Was window's 'load' event -- but buildPanel() only creates its own
+    // fresh DOM nodes and appends them to <body>, and wireSkillInputs()
+    // only wires a document-level click listener (matched by selector at
+    // click time, not by looking anything up now) -- neither needs
+    // external resources loaded, just the DOM itself. 'load' doesn't
+    // fire until every subresource on the page finishes, including
+    // whatever Table Radio (on every page) is currently streaming into
+    // an iframe, which is what made this panel visibly take as long to
+    // appear as the character-load lag fixed elsewhere on this same
+    // page (see stats/scripts.js's dgInitStatsSheet() comment).
+    const dgInitDiceRoller = () => { buildPanel(); wireSkillInputs(); };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', dgInitDiceRoller);
+    } else {
+        dgInitDiceRoller();
+    }
 })();

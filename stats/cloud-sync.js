@@ -378,29 +378,50 @@
         // the instant revealGate() fires, which would erase the numbers
         // before they could be read. Left on screen (not
         // auto-dismissed) so there's time to read and report it back.
+        // It already did its job (traced a real lag to scripts.js/
+        // save-load.js/cloud-sync.js all waiting on window.load) --
+        // switched off for now rather than removed, since the exact
+        // same visibility is useful the next time something like this
+        // comes up. Flip DG_SHOW_LOAD_TIMING back to true to re-enable.
+        const DG_SHOW_LOAD_TIMING = false;
         const loadStart = performance.now();
-        const badge = document.createElement('div');
-        badge.id = 'dg-load-timing-badge';
-        badge.style.cssText = 'position:fixed;bottom:10px;right:10px;z-index:9999;' +
-            'font-family:"JetBrains Mono",monospace;font-size:11px;color:#3ef07a;' +
-            'background:rgba(10,10,10,.85);border:1px solid #1f3d2a;border-radius:4px;' +
-            'padding:5px 8px;pointer-events:none;white-space:pre;';
-        badge.textContent = 'load: 0.0s';
-        document.body.appendChild(badge);
-        const tick = setInterval(() => {
-            badge.textContent = 'load: ' + ((performance.now() - loadStart) / 1000).toFixed(1) + 's';
-        }, 100);
-        let responseAt = null;
-        const onResponseReceived = () => {
-            responseAt = performance.now() - loadStart;
-        };
-        const finishBadge = () => {
-            clearInterval(tick);
-            const total = (performance.now() - loadStart) / 1000;
-            badge.textContent = responseAt !== null
-                ? 'response: ' + (responseAt / 1000).toFixed(1) + 's · total: ' + total.toFixed(1) + 's'
-                : 'total: ' + total.toFixed(1) + 's (no response)';
-        };
+        let onResponseReceived = () => { };
+        let finishBadge = () => { };
+        if (DG_SHOW_LOAD_TIMING) {
+            const badge = document.createElement('div');
+            badge.id = 'dg-load-timing-badge';
+            badge.style.cssText = 'position:fixed;bottom:10px;right:10px;z-index:9999;' +
+                'font-family:"JetBrains Mono",monospace;font-size:11px;color:#3ef07a;' +
+                'background:rgba(10,10,10,.85);border:1px solid #1f3d2a;border-radius:4px;' +
+                'padding:5px 8px;pointer-events:none;white-space:pre;';
+            badge.textContent = 'load: 0.0s';
+            document.body.appendChild(badge);
+            const tick = setInterval(() => {
+                badge.textContent = 'load: ' + ((performance.now() - loadStart) / 1000).toFixed(1) + 's';
+            }, 100);
+            let responseAt = null;
+            onResponseReceived = () => {
+                responseAt = performance.now() - loadStart;
+            };
+            // Every settle path below (found, not-found, error/onSettled, AND
+            // the 8s safety timeout) calls this -- but only the first one to
+            // actually fire should touch the badge. Without this guard, a
+            // fast real load (say 2s) would show the right numbers briefly,
+            // then get silently overwritten 6 seconds later when the
+            // never-cancelled 8s safety timeout also fired and rewrote the
+            // badge with a stale ~8s reading -- exactly a load that had
+            // already finished looking, on screen, like it took 8s.
+            let settled = false;
+            finishBadge = () => {
+                if (settled) return;
+                settled = true;
+                clearInterval(tick);
+                const total = (performance.now() - loadStart) / 1000;
+                badge.textContent = responseAt !== null
+                    ? 'response: ' + (responseAt / 1000).toFixed(1) + 's · total: ' + total.toFixed(1) + 's'
+                    : 'total: ' + total.toFixed(1) + 's (no response)';
+            };
+        }
         setTimeout(() => { revealGate(); finishBadge(); }, 8000);
 
         loadFromCloud(loadCode, {
