@@ -117,6 +117,7 @@
   #play-view.paper{ padding:0; min-height:180px; overflow:visible; }
   .play-view-empty, .play-loading, .play-error{
     color:var(--ink-3); font-size:13px; font-style:italic; text-align:center; padding:26px 10px;
+    font-family:'Courier Prime',monospace;
   }
 
   /* ── Cell Dashboard: shown in #play-view in place of the empty state
@@ -197,7 +198,7 @@
   }
   .pv-bond-row .bn{ font-family:'Special Elite',monospace; color:var(--ink); }
   .pv-bond-row .bs{ font-family:'Courier Prime',monospace; color:var(--ink-3); flex-shrink:0; }
-  .pv-empty-note{ font-size:11px; color:var(--ink-3); font-style:italic; }
+  .pv-empty-note{ font-size:11px; color:var(--ink-3); font-style:italic; font-family:'Courier Prime',monospace; }
   .pv-motivations{ font-size:12px; color:var(--ink-2); line-height:1.7; white-space:pre-wrap; }
   .pv-adapt-row{ display:flex; align-items:center; gap:10px; font-size:12px; color:var(--ink-2); margin-bottom:6px; }
   .pv-adapt-row .lbl{ width:110px; flex-shrink:0; font-family:'Courier Prime',monospace; font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-3); }
@@ -243,8 +244,8 @@
     padding:6px 9px; font-family:'Courier Prime',monospace; font-size:12px; min-width:180px;
   }
   .cell-add-row select[multiple]{ min-height:88px; }
-  .cell-add-note{ font-size:10px; color:var(--ink-3); font-style:italic; width:100%; margin:0; }
-  .cells-empty-note{ font-style:italic; color:var(--ink-3); }
+  .cell-add-note{ font-size:10px; color:var(--ink-3); font-style:italic; width:100%; margin:0; font-family:'Courier Prime',monospace; }
+  .cells-empty-note{ font-style:italic; color:var(--ink-3); font-family:'Courier Prime',monospace; }
   .cells-unassigned{ display:flex; flex-wrap:wrap; gap:8px; }
   .cells-unassigned-chip{
     background:rgba(28,22,8,.04); border:1px solid var(--rule); color:var(--ink-2);
@@ -317,7 +318,7 @@
     flex:1; min-width:0; white-space:pre-wrap;
   }
   .handout-actions{ display:flex; gap:8px; margin-top:12px; }
-  .handouts-empty-note{ font-style:italic; color:var(--ink-3); }
+  .handouts-empty-note{ font-style:italic; color:var(--ink-3); font-family:'Courier Prime',monospace; }
 
   /* ── MUSIC: the whole tab as one field-radio unit (chassis, recessed
      screen, numbered control sections), matching the tactility of the
@@ -531,7 +532,7 @@
   }
   .sheet-loading, .sheet-error{
     color:var(--ink-3); font-size:13px; font-style:italic; text-align:center; padding:26px 10px;
-    background:var(--paper); box-shadow:var(--paper-shadow);
+    background:var(--paper); box-shadow:var(--paper-shadow); font-family:'Courier Prime',monospace;
   }
 
   /* ── Admin: soft deletion, gated behind the A-Cell password (the page
@@ -569,7 +570,7 @@
   .admin-confirm-error{ color:var(--red); font-size:11px; margin:0 0 8px; min-height:1.3em; }
   .admin-loading, .admin-error{
     color:var(--ink-3); font-size:13px; font-style:italic; text-align:center; padding:26px 10px;
-    background:var(--paper); box-shadow:var(--paper-shadow);
+    background:var(--paper); box-shadow:var(--paper-shadow); font-family:'Courier Prime',monospace;
   }
   .admin-deleted-list{ display:flex; flex-direction:column; gap:8px; }
   .admin-deleted-row{
