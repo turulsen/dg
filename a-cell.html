@@ -2371,9 +2371,17 @@
       trackLibListEl.innerHTML = '<div class="rdo-track-empty">No tracks uploaded yet.</div>';
       return;
     }
+    // Its own per-row checkbox, not the shared "Loop this track" one up
+    // in section 03 -- that one lives next to the paste-a-URL flow's Set
+    // Now Playing button, far enough from this list that a Handler
+    // clicking Play here had no reason to expect it applied. Play here
+    // already read loopInput.checked under the hood, so looping an
+    // uploaded track technically worked -- just not from anywhere near
+    // where you'd click Play for one.
     trackLibListEl.innerHTML = tracks.map(function (t, i) {
       return '<div class="rdo-track-row">' +
         '<span class="rdo-track-title">' + escapeHtml(t.title || t.url) + '</span>' +
+        '<label class="rdo-checkbox-row" style="flex:none;"><input type="checkbox" data-tracklib-loop="' + i + '"> Loop</label>' +
         '<span class="rpr-actions">' +
         '<button type="button" class="rdo-btn rdo-btn-ghost rdo-btn-sm" data-tracklib-play="' + i + '">Play</button>' +
         '<button type="button" class="rdo-btn rdo-btn-ghost rdo-btn-sm" data-tracklib-delete="' + i + '">Delete</button>' +
@@ -2383,7 +2391,8 @@
       btn.addEventListener('click', function () {
         var t = tracks[parseInt(btn.dataset.tracklibPlay, 10)];
         if (!t) return;
-        setNowPlaying(t.url, t.title || '', 'audio', loopInput.checked);
+        var loopBox = trackLibListEl.querySelector('[data-tracklib-loop="' + btn.dataset.tracklibPlay + '"]');
+        setNowPlaying(t.url, t.title || '', 'audio', loopBox ? loopBox.checked : loopInput.checked);
       });
     });
     Array.prototype.forEach.call(trackLibListEl.querySelectorAll('[data-tracklib-delete]'), function (btn) {

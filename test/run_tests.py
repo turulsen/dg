@@ -2861,6 +2861,19 @@ def test_acell_music(p):
            bool(play_status) and "Rain Loop" in play_status, play_status or "")
     record("acell", "playing a library track sends track_kind: 'audio' so the player doesn't have to guess from the URL",
            backend_state["track_kind"] == "audio", backend_state["track_kind"])
+    record("acell", "Play on a library track defaults to loop off",
+           backend_state["loop"] is False, backend_state["loop"])
+
+    # Regression test: looping an uploaded track technically worked
+    # before this (Play already read the shared #music-loop-input
+    # checkbox), but that checkbox lives in section 03's paste-a-URL
+    # flow, nowhere near this list's own Play button -- a per-row
+    # checkbox here is what a Handler would actually expect to find.
+    page.check('[data-tracklib-loop="0"]')
+    page.click('[data-tracklib-play="0"]')
+    page.wait_for_timeout(300)
+    record("acell", "checking a library track's own Loop box before Play sends loop: '1'",
+           backend_state["loop"] is True, backend_state["loop"])
 
     # Delete: dismiss then accept.
     page.once("dialog", lambda d: d.dismiss())
@@ -4010,6 +4023,49 @@ def test_stats_loading_terminal(p):
     final_text = page.eval_on_selector("#dg-loading-term", "el => el.textContent")
     record("stats-terminal", "the full sequence has typed out and settled on its last line",
            final_text.startswith(">decrypting_dossier"), repr(final_text))
+    record("stats-terminal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
+def test_stats_load_error_reveals_gate_quickly(p):
+    """Regression test for a real report: the ?load=CODE loading gate
+    consistently sat for the full 8-10s -- matching setTimeout(revealGate,
+    8000)'s safety timeout to the second, not variable network/backend
+    latency. Root cause: loadFromCloud()'s JSONP callback (cloud-sync.js)
+    only ever notified the caller on a clean success or a clean
+    NOT_FOUND -- a genuine backend error (status: 'ERROR'), an empty
+    response, or a JSON parse failure all fell through with no callback
+    at all, so the ?load= handler's gate had no way to hear the load had
+    settled and just sat there until the safety timeout finally fired.
+    Fixes it via a new onSettled callback that fires on every outcome.
+    This mocks load_character returning a backend error and confirms the
+    gate lifts almost immediately, not after ~8 seconds."""
+    page = p.new_page()
+    page.set_default_timeout(10000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    def fake_apps_script(route):
+        url = route.request.url
+        if "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        body = json.dumps({"status": "ERROR", "message": "Something went wrong server-side"})
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({body})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    import time
+    start = time.monotonic()
+    page.goto(f"{BASE}/stats/index.html?load=BROK-EN01&live=1", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: "dg-agent-loading" not in (page.eval_on_selector("body", "el => el.className") or ""),
+                        timeout_ms=6000)
+    elapsed = time.monotonic() - start
+    record("stats-terminal", "a backend error lifts the loading gate quickly, not after the full 8s safety timeout",
+           elapsed < 6, f"elapsed={elapsed:.1f}s")
+    record("stats-terminal", "the sheet is visible again once the gate lifts",
+           page.eval_on_selector("#app-main", "el => getComputedStyle(el).visibility") != "hidden", "")
+
     record("stats-terminal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
     return errs
@@ -5523,6 +5579,8 @@ def main():
         safe(test_stats_load_by_code_query_param, browser, area="stats-terminal")
 
         safe(test_stats_loading_terminal, browser, area="stats-terminal")
+
+        safe(test_stats_load_error_reveals_gate_quickly, browser, area="stats-terminal")
 
         safe(test_stats_recruit_flow_on_missing_character, browser, area="stats-terminal")
 

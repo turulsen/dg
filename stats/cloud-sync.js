@@ -141,6 +141,7 @@
         const status = document.getElementById('cloud-load-status');
         if (!code) {
             if (status) status.textContent = 'Enter an Agent Code above, then press Load.';
+            if (typeof opts.onSettled === 'function') opts.onSettled();
             return;
         }
         if (status) status.textContent = 'Loading…';
@@ -159,11 +160,26 @@
                 if (status) status.textContent = (res && res.status === 'NOT_FOUND')
                     ? 'No cloud save found for that code.'
                     : 'Could not load that character.';
+                // Every other outcome here -- a genuinely empty response, or
+                // a real backend error (status: 'ERROR', or an OK row with
+                // somehow no character_json) -- used to just return with no
+                // callback at all. A caller with its own "reveal once
+                // settled, whichever way" gate (the ?load= deep-link handler
+                // below) had no way to hear about it, so that gate sat stuck
+                // until its own hardcoded safety timeout finally fired --
+                // which, on a consistently-erroring code, looked exactly
+                // like a consistent multi-second lag on every single load,
+                // regardless of how fast the backend actually responded.
+                if (typeof opts.onSettled === 'function') opts.onSettled();
                 return;
             }
             let state;
             try { state = JSON.parse(res.character_json); }
-            catch (e) { if (status) status.textContent = 'Could not read that cloud save.'; return; }
+            catch (e) {
+                if (status) status.textContent = 'Could not read that cloud save.';
+                if (typeof opts.onSettled === 'function') opts.onSettled();
+                return;
+            }
 
             const applyLoadedState = () => {
                 // skipCloudCodeMint: this load already knows its own code (the
@@ -217,6 +233,7 @@
         script.onerror = () => {
             delete window[cbName];
             if (status) status.textContent = 'Connection error. Try again.';
+            if (typeof opts.onSettled === 'function') opts.onSettled();
         };
         document.head.appendChild(script);
     }
@@ -315,11 +332,17 @@
         // same ?load= param -- lift the gate once this load has actually
         // settled, whichever way it settles, so the sheet only ever
         // becomes visible already showing its final state (never a blank
-        // flash first). The safety timeout covers a load that never calls
-        // either callback at all (a malformed response that's neither OK
-        // nor NOT_FOUND, a JSON parse failure, or a script tag that never
-        // fires because the connection just hangs) -- without it, a
-        // request stuck in that gap would leave the page gated forever.
+        // flash first). onSettled is loadFromCloud()'s catch-all -- covers
+        // every outcome that isn't a clean success or a clean NOT_FOUND (a
+        // backend error, an empty/malformed response, a JSON parse
+        // failure, a network error). Before onSettled existed, none of
+        // those called back at all, so this gate sat stuck until the 8s
+        // safety timeout below -- on a code that consistently errored,
+        // that looked exactly like a consistent multi-second lag on every
+        // single load, no matter how fast the backend actually responded
+        // (a real report). The safety timeout is now a true last resort,
+        // for a request that never resolves at all (connection just hangs
+        // with no error event).
         let revealed = false;
         const revealGate = () => {
             if (revealed) return;
@@ -337,6 +360,7 @@
             // (buildLpSheet() reading stats that are still default 3s)
             // silently stomped right along with it.
             onApplied: () => { revealGate(); if (wantLive && typeof setLivePlay === 'function') setLivePlay(true); },
+            onSettled: revealGate,
         });
     });
 
