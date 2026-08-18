@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v11 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v12 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Sheet/Admin) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -10,6 +10,8 @@
 // + Concurrency hardening: cached spreadsheet lookup + migration checks,
 //   short-lived get_now_playing cache, LockService on hot write paths
 //   (fixes A-Cell going unresponsive under several simultaneous players)
+// + Fixed 24h purge silently never running on a DeletedCharacters/
+//   DeletedBriefs sheet that predates that feature (missing header)
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -912,13 +914,39 @@ function updateCharacterField(agentCode, field, value) {
 // password, so this is one confirmation, not a second one on top)
 // before this ever gets called. Recovery isn't indefinite, though --
 // see purgeOldDeleted() below. ──
+// Migration-safe: a DeletedCharacters/DeletedBriefs sheet that already
+// existed before the 24h purge feature was added has no "Deleted At"
+// header at all -- deleteCharacter() below still appends the timestamp
+// as an extra value past the end of every row regardless of whether a
+// header names that column, so the data has been sitting there
+// correctly all along. Without the header, though, purgeOldDeleted()'s
+// data[0].indexOf('Deleted At') always returns -1 and it silently
+// no-ops for that sheet, forever -- this is very likely why "Recently
+// Deleted" reportedly never purges even on an up-to-date deploy.
+// Labeling the column now (getLastColumn() already reflects where that
+// data actually lives, since appendRow extended the sheet out to it)
+// unblocks purging immediately, including the already-overdue backlog.
+// Called from both getOrCreateDeletedSheet() (a fresh delete) and
+// purgeOldDeleted() (viewing Admin's Recently Deleted, or restoring)
+// so either path self-heals it, not just whichever happens first.
+function ensureDeletedAtColumn(sheet) {
+  const lastCol = sheet.getLastColumn();
+  if (lastCol === 0) return;
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  if (headers.indexOf('Deleted At') === -1) {
+    sheet.getRange(1, lastCol + 1).setValue('Deleted At');
+  }
+}
+
 function getOrCreateDeletedSheet(name, liveHeaders) {
   const ss = getOrCreateSheet();
   let sheet = ss.getSheetByName(name);
   if (!sheet) {
     sheet = ss.insertSheet(name);
     sheet.appendRow(liveHeaders.concat(['Deleted At']));
+    return sheet;
   }
+  ensureDeletedAtColumn(sheet);
   return sheet;
 }
 
@@ -940,6 +968,7 @@ function purgeOldDeleted() {
   ['DeletedCharacters', 'DeletedBriefs'].forEach(function (name) {
     const sheet = ss.getSheetByName(name);
     if (!sheet) return;
+    ensureDeletedAtColumn(sheet);
     const data = sheet.getDataRange().getValues();
     if (data.length < 2) return;
     const deletedAtCol = data[0].indexOf('Deleted At');
