@@ -210,24 +210,31 @@
                 if (typeof opts.onApplied === 'function') opts.onApplied();
             };
             // scripts.js builds the stat/skill DOM (#STR-value etc.) inside
-            // its own window.onload handler -- much later than the
-            // DOMContentLoaded this JSONP fetch started on -- and that same
-            // handler has its own defensive "reset stats again 50ms later
-            // to override any DOM mutations" timer (see the setTimeout
-            // right after resetStats() in scripts.js's window.onload). A
-            // fast cloud response landing in either gap (before the DOM
-            // exists at all, or in that 50ms window) gets silently
-            // stomped: applyState()'s writes land on nothing or get reset
-            // right back to defaults a moment later. save-load.js's own
-            // local-restore already knows to wait "window.load + 200ms" to
-            // clear both hazards (see its own INIT comment) -- match that
-            // exact convention here instead of only checking readyState,
-            // which is satisfied at window.load, before the 50ms timer.
+            // its own DOMContentLoaded init (dgInitStatsSheet -- registered
+            // on the same event as this fetch, and earlier in the page's
+            // script tag order, so it always runs first), which has its own
+            // defensive "reset stats again 50ms later to override any DOM
+            // mutations" timer (the setTimeout right after resetStats() in
+            // that same function). A cloud response landing in either gap
+            // (before that DOM exists at all, or in that 50ms window) gets
+            // silently stomped: applyState()'s writes land on nothing or
+            // get reset right back to defaults a moment later. This used to
+            // wait for the browser's 'load' event to clear both hazards --
+            // but 'load' doesn't fire until every subresource on the page
+            // (images, fonts, and whatever Table Radio is currently
+            // streaming into an iframe) finishes, which on a slow
+            // connection can take far longer than either hazard actually
+            // lasts, and was the real cause of a reported 8-10s wait before
+            // a loaded character appeared. readyState is already past
+            // 'loading' by the time a network response can possibly land
+            // here, so the 250ms buffer alone is enough to clear both
+            // hazards -- the readyState check is just defensive parity with
+            // scripts.js/save-load.js's own init pattern.
             const runPastInitHazards = () => setTimeout(applyLoadedState, 250);
-            if (document.readyState === 'complete') {
-                runPastInitHazards();
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', runPastInitHazards, { once: true });
             } else {
-                window.addEventListener('load', runPastInitHazards, { once: true });
+                runPastInitHazards();
             }
             setCloudCode(code);
             rosterUpsert(code, state.bio?.name, state.bio?.player_name);

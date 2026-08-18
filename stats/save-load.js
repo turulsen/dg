@@ -985,9 +985,14 @@ function matchProfessionKey(profStr) {
     window.dgConfirm = dgConfirm;
 
     /* =========================================================================
-       INIT — run after scripts.js window.onload (and its 50 ms inner timer)
+       INIT — run after scripts.js's DOMContentLoaded init (and its 50 ms
+       inner timer). Was keyed off the browser's 'load' event (every image/
+       font/iframe on the page finished) -- scripts.js's own init switched
+       away from that same false dependency, see its dgInitStatsSheet()
+       comment; this follows suit so a local restore doesn't keep paying
+       for however long Table Radio's embed takes to finish loading.
     ========================================================================= */
-    window.addEventListener('load', () => {
+    const dgRunLocalRestore = () => {
         setTimeout(() => {
             // A `?load=CODE` deep link (agent-hub.html's Play button) means
             // cloud-sync.js's own DOMContentLoaded handler is already
@@ -1005,7 +1010,12 @@ function matchProfessionKey(profStr) {
             const hasCloudLoad = new URLSearchParams(window.location.search).has('load');
             if (!loadFromURL() && !hasCloudLoad) loadLocal();
         }, 200);
-    });
+    };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', dgRunLocalRestore);
+    } else {
+        dgRunLocalRestore();
+    }
 
     // Flush save immediately when the page is about to unload (tab close, refresh, navigate).
     // This ensures in-progress state (checked skills, edits within the 1.5 s debounce window)

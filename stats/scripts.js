@@ -3185,7 +3185,21 @@ const observer = new MutationObserver(() => {
 // Expose so save-load.js can pause the observer during state restore
 window._dgStatsObserver = observer;
 
-window.onload = function () {
+// Was `window.onload` -- but nothing in here (DOM generation, dropdown
+// population, event wiring, canvas setup) actually needs the browser's
+// full 'load' event (every image/font/iframe on the page finished).
+// That false dependency chained forward through cloud-sync.js and
+// save-load.js, which both wait for THIS to have run before applying a
+// loaded character -- and on a page carrying Table Radio (wired into
+// every stats/index.html load, auto-embedding a YouTube/SoundCloud
+// iframe for whatever channel was last tuned), that iframe's own load
+// time became this sheet's load time. A real report ("empty sheet
+// loads in, then 8-10s later the real one appears") and the on-screen
+// timing badge's own numbers (backend response back in ~1.5s, but the
+// sheet not applying until ~8s -- matching a slow third-party embed,
+// not a slow character or backend) trace directly to this. DOMContentLoaded
+// only needs the DOM itself parsed, not external resources fetched.
+function dgInitStatsSheet() {
     generateStatContainers();
     resetStats();
     populateProfessionDropdown();
@@ -3250,7 +3264,12 @@ window.onload = function () {
     } catch (e) { }
 
     initBondPyramid();
-};
+}
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', dgInitStatsSheet);
+} else {
+    dgInitStatsSheet();
+}
 
 /**
  * Initialises the rotating wireframe pyramid inside the bond text box.

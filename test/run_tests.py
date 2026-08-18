@@ -4019,10 +4019,23 @@ def test_stats_loading_terminal(p):
     record("stats-terminal", "a blinking terminal cursor is rendered",
            page.locator(".dg-loading-cursor").count() == 1, "")
 
-    page.wait_for_timeout(3000)
-    final_text = page.eval_on_selector("#dg-loading-term", "el => el.textContent")
+    # A fixed sleep here used to have only ~250ms of slack over the
+    # animation's own ~3050ms nominal duration -- fine in isolation, but
+    # dgInitStatsSheet() (stats/scripts.js) now runs its DOM construction
+    # on DOMContentLoaded instead of the much-later window.onload (see
+    # its own comment for why), so it now shares the main thread with
+    # this typing loop's early setInterval ticks instead of running
+    # well after they've finished. That's a real product improvement
+    # (it's what fixed a reported 8-10s character-load lag), but it
+    # means this animation can now visibly land a beat later under CPU
+    # load. Poll instead of a fixed sleep so the test tracks actual
+    # completion rather than a margin that any future timing shift can
+    # silently eat into again.
+    final_text = wait_for_condition(
+        lambda: (page.eval_on_selector("#dg-loading-term", "el => el.textContent") or "").startswith(">decrypting_dossier"),
+        timeout_ms=6000)
     record("stats-terminal", "the full sequence has typed out and settled on its last line",
-           final_text.startswith(">decrypting_dossier"), repr(final_text))
+           bool(final_text), repr(page.eval_on_selector("#dg-loading-term", "el => el.textContent")))
     record("stats-terminal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
     return errs
