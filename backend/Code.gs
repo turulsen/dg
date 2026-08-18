@@ -1,12 +1,15 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v10 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v11 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Sheet/Admin) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
 // + AI appearance prompt generation (Face/Outfit Plate, via Claude)
 // + AI appearance IMAGE generation (Face/Outfit Plate, via Gemini)
 // + Agent File Only listing (A-Cell Admin, for briefs with no sheet)
+// + Concurrency hardening: cached spreadsheet lookup + migration checks,
+//   short-lived get_now_playing cache, LockService on hot write paths
+//   (fixes A-Cell going unresponsive under several simultaneous players)
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -26,7 +29,7 @@ const CHARACTERS_SHEET_NAME = 'Characters';
 // of by searching Drive for a file named "Delta Green Briefs" --
 // removes any chance of that search ever resolving to the wrong file.
 // Leave blank to keep the current Drive-search behavior.
-const SPREADSHEET_ID = '';
+const SPREADSHEET_ID = '1Xj386xUgKqFXQxHMKFwRENn11sJtcHHHA_lZPUE0AYo';
 
 const COLUMNS = [
   'agent_code',
@@ -87,6 +90,24 @@ const COLUMNS = [
   // discipline as player_name above.
   'profession'
 ];
+
+// Serializes a read-modify-write against a Sheet (scan for an existing
+// row, then write) so concurrent requests -- e.g. several players
+// importing/saving characters within the same few seconds during a live
+// session -- can't race each other's scans and clobber or duplicate a
+// row. Falls back to running unlocked rather than failing the request if
+// the lock can't be acquired in time (a rare miss under contention is
+// far better than turning a working save into a hard error).
+function withScriptLock(fn) {
+  const lock = LockService.getScriptLock();
+  let locked = false;
+  try { locked = lock.tryLock(5000); } catch (e) { /* proceed unlocked */ }
+  try {
+    return fn();
+  } finally {
+    if (locked) { try { lock.releaseLock(); } catch (e) { /* already released/expired */ } }
+  }
+}
 
 function generateAgentCode(name) {
   const prefix = (name || 'AGNT').replace(/[^A-Za-z]/g, '').substring(0, 4).toUpperCase();
@@ -389,45 +410,50 @@ function doPost(e) {
     const sheet = ss.getSheetByName(SHEET_NAME);
     const agentCode = data.agent_code || generateAgentCode(data.char_name);
 
-    const existingValues = sheet.getDataRange().getValues();
-    const existingHeaders = existingValues[0];
-    const codeCol = existingHeaders.indexOf('Agent Code');
-    const refImageLinkCol = existingHeaders.indexOf('Ref Image Link');
-    let existingRowIndex = -1;
-    if (codeCol !== -1) {
-      for (let i = 1; i < existingValues.length; i++) {
-        if (existingValues[i][codeCol] === agentCode) { existingRowIndex = i; break; }
+    // Locked: several players submitting/resubmitting Profiling briefs
+    // within the same couple of seconds during a live session is exactly
+    // when an unlocked scan-then-write can race.
+    return withScriptLock(function () {
+      const existingValues = sheet.getDataRange().getValues();
+      const existingHeaders = existingValues[0];
+      const codeCol = existingHeaders.indexOf('Agent Code');
+      const refImageLinkCol = existingHeaders.indexOf('Ref Image Link');
+      let existingRowIndex = -1;
+      if (codeCol !== -1) {
+        for (let i = 1; i < existingValues.length; i++) {
+          if (existingValues[i][codeCol] === agentCode) { existingRowIndex = i; break; }
+        }
       }
-    }
 
-    let imageLink = '';
-    if (data.ref_image_base64 && data.ref_image_name) {
-      imageLink = saveImageToDrive(data.ref_image_base64, data.ref_image_name, data.char_name);
-    } else if (existingRowIndex !== -1 && refImageLinkCol !== -1) {
-      // Resubmitting without picking a new file (the normal case --
-      // <input type=file> can't be pre-filled from a previous session,
-      // so it's empty on every resubmit unless the player deliberately
-      // re-attaches) keeps whatever reference image was already on file
-      // instead of wiping it out.
-      imageLink = existingValues[existingRowIndex][refImageLinkCol] || '';
-    }
+      let imageLink = '';
+      if (data.ref_image_base64 && data.ref_image_name) {
+        imageLink = saveImageToDrive(data.ref_image_base64, data.ref_image_name, data.char_name);
+      } else if (existingRowIndex !== -1 && refImageLinkCol !== -1) {
+        // Resubmitting without picking a new file (the normal case --
+        // <input type=file> can't be pre-filled from a previous session,
+        // so it's empty on every resubmit unless the player deliberately
+        // re-attaches) keeps whatever reference image was already on file
+        // instead of wiping it out.
+        imageLink = existingValues[existingRowIndex][refImageLinkCol] || '';
+      }
 
-    const row = COLUMNS.map(col => {
-      if (col === 'agent_code') return agentCode;
-      if (col === 'ref_image_link') return imageLink;
-      if (col === 'ref_image_base64') return '';
-      return data[col] || '';
+      const row = COLUMNS.map(col => {
+        if (col === 'agent_code') return agentCode;
+        if (col === 'ref_image_link') return imageLink;
+        if (col === 'ref_image_base64') return '';
+        return data[col] || '';
+      });
+
+      if (existingRowIndex !== -1) {
+        sheet.getRange(existingRowIndex + 1, 1, 1, row.length).setValues([row]);
+      } else {
+        sheet.appendRow(row);
+      }
+
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'OK', agent_code: agentCode }))
+        .setMimeType(ContentService.MimeType.JSON);
     });
-
-    if (existingRowIndex !== -1) {
-      sheet.getRange(existingRowIndex + 1, 1, 1, row.length).setValues([row]);
-    } else {
-      sheet.appendRow(row);
-    }
-
-    return ContentService
-      .createTextOutput(JSON.stringify({ status: 'OK', agent_code: agentCode }))
-      .setMimeType(ContentService.MimeType.JSON);
 
   } catch (err) {
     return ContentService
@@ -577,47 +603,54 @@ function saveCharacter(data) {
         .createTextOutput(JSON.stringify({ status: 'ERROR', message: 'agent_code is required.' }))
         .setMimeType(ContentService.MimeType.JSON);
     }
-    const sheet = getOrCreateCharactersSheet();
-    const values = sheet.getDataRange().getValues();
-    const headers = values[0];
-    // Header-based lookups, not hardcoded column positions -- Player
-    // Name was added after this sheet already had rows in production,
-    // so writes here can't assume a fixed 3-column layout any more.
-    const codeCol = headers.indexOf('Agent Code');
-    const updatedCol = headers.indexOf('Updated At');
-    const jsonCol = headers.indexOf('Character JSON');
-    const playerNameCol = headers.indexOf('Player Name');
-    const now = new Date().toISOString();
-    const characterJson = typeof data.character_json === 'string'
-      ? data.character_json
-      : JSON.stringify(data.character_json || {});
-    const playerName = data.player_name || '';
+    // Locked: several players can save/import within the same couple of
+    // seconds during a live session, and this is a scan-for-existing-row
+    // then write -- without a lock, two concurrent saves for two
+    // different (or, worse, the same) codes can interleave their scans
+    // against a mid-write sheet.
+    return withScriptLock(function () {
+      const sheet = getOrCreateCharactersSheet();
+      const values = sheet.getDataRange().getValues();
+      const headers = values[0];
+      // Header-based lookups, not hardcoded column positions -- Player
+      // Name was added after this sheet already had rows in production,
+      // so writes here can't assume a fixed 3-column layout any more.
+      const codeCol = headers.indexOf('Agent Code');
+      const updatedCol = headers.indexOf('Updated At');
+      const jsonCol = headers.indexOf('Character JSON');
+      const playerNameCol = headers.indexOf('Player Name');
+      const now = new Date().toISOString();
+      const characterJson = typeof data.character_json === 'string'
+        ? data.character_json
+        : JSON.stringify(data.character_json || {});
+      const playerName = data.player_name || '';
 
-    for (let i = 1; i < values.length; i++) {
-      if (values[i][codeCol] === data.agent_code) {
-        // Existing row for this code -- overwrite in place (the upsert).
-        sheet.getRange(i + 1, updatedCol + 1).setValue(now);
-        sheet.getRange(i + 1, jsonCol + 1).setValue(characterJson);
-        if (playerNameCol !== -1) sheet.getRange(i + 1, playerNameCol + 1).setValue(playerName);
-        return ContentService
-          .createTextOutput(JSON.stringify({ status: 'OK', agent_code: data.agent_code, updated_at: now }))
-          .setMimeType(ContentService.MimeType.JSON);
+      for (let i = 1; i < values.length; i++) {
+        if (values[i][codeCol] === data.agent_code) {
+          // Existing row for this code -- overwrite in place (the upsert).
+          sheet.getRange(i + 1, updatedCol + 1).setValue(now);
+          sheet.getRange(i + 1, jsonCol + 1).setValue(characterJson);
+          if (playerNameCol !== -1) sheet.getRange(i + 1, playerNameCol + 1).setValue(playerName);
+          return ContentService
+            .createTextOutput(JSON.stringify({ status: 'OK', agent_code: data.agent_code, updated_at: now }))
+            .setMimeType(ContentService.MimeType.JSON);
+        }
       }
-    }
 
-    // No existing row -- first save for this code. Built by header
-    // position (like setNowPlaying() further down), not array-literal
-    // order, so this stays correct regardless of where Player Name
-    // ended up relative to any other future column.
-    const newRow = new Array(headers.length).fill('');
-    newRow[codeCol] = data.agent_code;
-    newRow[updatedCol] = now;
-    newRow[jsonCol] = characterJson;
-    if (playerNameCol !== -1) newRow[playerNameCol] = playerName;
-    sheet.appendRow(newRow);
-    return ContentService
-      .createTextOutput(JSON.stringify({ status: 'OK', agent_code: data.agent_code, updated_at: now }))
-      .setMimeType(ContentService.MimeType.JSON);
+      // No existing row -- first save for this code. Built by header
+      // position (like setNowPlaying() further down), not array-literal
+      // order, so this stays correct regardless of where Player Name
+      // ended up relative to any other future column.
+      const newRow = new Array(headers.length).fill('');
+      newRow[codeCol] = data.agent_code;
+      newRow[updatedCol] = now;
+      newRow[jsonCol] = characterJson;
+      if (playerNameCol !== -1) newRow[playerNameCol] = playerName;
+      sheet.appendRow(newRow);
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'OK', agent_code: data.agent_code, updated_at: now }))
+        .setMimeType(ContentService.MimeType.JSON);
+    });
   } catch (err) {
     return ContentService
       .createTextOutput(JSON.stringify({ status: 'ERROR', message: err.message }))
@@ -1505,25 +1538,34 @@ function getOrCreateRadioSheet() {
     sheet = ss.insertSheet('RadioChannels');
     sheet.getRange(1, 1, 1, 5).setValues([['channel', 'track_url', 'track_title', 'started_at', 'updated_at']]);
   }
-  // Migration-safe: adds track_kind to a RadioChannels sheet that
-  // predates the Track Library (uploaded mp3s) without needing a manual
-  // migration -- Drive-hosted download links don't end in .mp3 like a
-  // pasted URL would, so the player needs an explicit "this is direct
-  // audio" flag instead of sniffing the URL's file extension.
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  if (headers.indexOf('track_kind') === -1) {
-    sheet.getRange(1, sheet.getLastColumn() + 1).setValue('track_kind');
+  // This function is called by getNowPlaying(), which every open tab on
+  // every page polls every 2 seconds -- re-verifying 4 migration columns
+  // with a fresh read each (5 reads total per poll, before this fix) on
+  // every single one of those ticks was a large, entirely avoidable chunk
+  // of the load a live session with several players puts on this
+  // backend. A cache flag skips the checks entirely once confirmed
+  // clean, same reasoning as the SPREADSHEET_ID/Briefs-columns caches
+  // above.
+  const cache = CacheService.getScriptCache();
+  if (cache.get('radio_columns_ensured') !== '1') {
+    let lastCol = sheet.getLastColumn();
+    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    // track_kind: added for the Track Library (uploaded mp3s) -- Drive
+    // download links don't end in .mp3 like a pasted URL would, so the
+    // player needs an explicit "this is direct audio" flag instead of
+    // sniffing the URL's file extension.
+    // paused/paused_at/loop: let the Handler pause, resume, and loop a
+    // broadcast in place -- set_now_playing always restarts a track from
+    // 0:00, which isn't the right tool for either of those.
+    ['track_kind', 'paused', 'paused_at', 'loop'].forEach(function (col) {
+      if (headers.indexOf(col) === -1) {
+        lastCol++;
+        sheet.getRange(1, lastCol).setValue(col);
+        headers.push(col);
+      }
+    });
+    cache.put('radio_columns_ensured', '1', 21600);
   }
-  // Migration-safe: paused/paused_at/loop let the Handler pause, resume,
-  // and loop a broadcast in place -- set_now_playing always restarts a
-  // track from 0:00, which isn't the right tool for "pause this for a
-  // moment" or "keep this ambience track looping."
-  ['paused', 'paused_at', 'loop'].forEach(function (col) {
-    const hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    if (hdrs.indexOf(col) === -1) {
-      sheet.getRange(1, sheet.getLastColumn() + 1).setValue(col);
-    }
-  });
   return sheet;
 }
 
@@ -1534,6 +1576,19 @@ function getNowPlaying(channel, callback) {
   let result = { status: 'NOT_FOUND' };
   channel = (channel || '').trim();
   if (channel) {
+    // Every open tab on every page polls this every 2 seconds -- caching
+    // the response per channel for a couple of seconds means a burst of
+    // simultaneous polls from several players' browsers (the exact
+    // situation during a live session) shares one Sheets read instead of
+    // each triggering its own, without ever serving anything staler than
+    // the poll interval itself already tolerates.
+    const cache = CacheService.getScriptCache();
+    const cacheKey = 'now_playing_' + channel.toLowerCase();
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return ContentService.createTextOutput(callback + '(' + cached + ')').setMimeType(ContentService.MimeType.JAVASCRIPT);
+    }
+
     const sheet = getOrCreateRadioSheet();
     const data = sheet.getDataRange().getValues();
     const headers = data[0];
@@ -1564,6 +1619,7 @@ function getNowPlaying(channel, callback) {
         break;
       }
     }
+    cache.put(cacheKey, JSON.stringify(result), 2);
   }
   const body = callback + '(' + JSON.stringify(result) + ')';
   return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
@@ -1582,6 +1638,11 @@ function setNowPlaying(channel, trackUrl, trackTitle, trackKind, loop) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
       .setMimeType(ContentService.MimeType.JSON);
   }
+  // Invalidate getNowPlaying()'s short-lived read cache for this channel
+  // so listeners get the new track on their very next poll instead of
+  // possibly waiting out the rest of that cache window.
+  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
+
   const sheet = getOrCreateRadioSheet();
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
@@ -1641,6 +1702,8 @@ function pauseNowPlaying(channel) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
       .setMimeType(ContentService.MimeType.JSON);
   }
+  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
+
   const sheet = getOrCreateRadioSheet();
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
@@ -1667,6 +1730,8 @@ function resumeNowPlaying(channel) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
       .setMimeType(ContentService.MimeType.JSON);
   }
+  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
+
   const sheet = getOrCreateRadioSheet();
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
@@ -1768,14 +1833,42 @@ function getOrCreateSheet() {
     return ss;
   }
 
+  // SPREADSHEET_ID isn't set, so without this cache EVERY single request
+  // -- every 2-second radio poll from every open tab, every A-Cell load,
+  // every save -- pays for a Drive-wide filename search just to find the
+  // spreadsheet, before it can read or write anything. That's the single
+  // most expensive thing this backend does, and it compounds badly the
+  // moment several people are using the site at once (confirmed: this is
+  // very likely what made A-Cell unusable during a live session with 5+
+  // players). Caching the resolved ID means only the first request in a
+  // cache window pays for the search; everything after opens directly.
+  // This is a stopgap, not a substitute for actually setting
+  // SPREADSHEET_ID above (paste it in from the Sheet's URL) -- that
+  // removes this search entirely instead of just caching around it.
+  const cache = CacheService.getScriptCache();
+  const cachedId = cache.get('resolved_spreadsheet_id');
+  if (cachedId) {
+    try {
+      const ss = SpreadsheetApp.openById(cachedId);
+      ensureBriefsColumns(ss);
+      return ss;
+    } catch (e) {
+      // Cached ID no longer valid (sheet moved/deleted/renamed) -- fall
+      // through to the real search below instead of failing outright.
+    }
+  }
+
   const files = DriveApp.getFilesByName(SHEET_NAME);
   if (files.hasNext()) {
-    const ss = SpreadsheetApp.open(files.next());
+    const file = files.next();
+    cache.put('resolved_spreadsheet_id', file.getId(), 21600);
+    const ss = SpreadsheetApp.open(file);
     ensureBriefsColumns(ss);
     return ss;
   }
 
   const ss = SpreadsheetApp.create(SHEET_NAME);
+  cache.put('resolved_spreadsheet_id', ss.getId(), 21600);
   const sheet = ss.getActiveSheet();
   sheet.setName(SHEET_NAME);
 
@@ -1804,14 +1897,25 @@ function getOrCreateSheet() {
 // in COLUMNS above (also always the end), since the new-agent-submission
 // row builder in doPost (COLUMNS.map(...)) writes positionally.
 function ensureBriefsColumns(ss) {
+  // This used to re-verify both columns with a fresh read on every single
+  // call -- and getOrCreateSheet() calls this on nearly every request --
+  // even though the migration only ever needs to actually run once. A
+  // cache flag skips the check entirely once it's confirmed clean, same
+  // reasoning as the SPREADSHEET_ID cache right above.
+  const cache = CacheService.getScriptCache();
+  if (cache.get('briefs_columns_ensured') === '1') return;
   const sheet = ss.getSheetByName(SHEET_NAME);
   if (!sheet) return; // brand-new spreadsheet -- getOrCreateSheet()'s creation path below already includes every column via COLUMNS
+  let lastCol = sheet.getLastColumn();
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   ['Player Name', 'Profession'].forEach(function (name) {
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
     if (headers.indexOf(name) === -1) {
-      sheet.getRange(1, sheet.getLastColumn() + 1).setValue(name);
+      lastCol++;
+      sheet.getRange(1, lastCol).setValue(name);
+      headers.push(name);
     }
   });
+  cache.put('briefs_columns_ensured', '1', 21600);
 }
 
 function saveImageToDrive(base64DataUrl, filename, charName) {
