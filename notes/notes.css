@@ -1,0 +1,124 @@
+/* ══════════════════════════════════════════════
+   PLAYER NOTES -- v1 styles.
+
+   Every selector below is prefixed with #dg-notes-panel on purpose,
+   even in this standalone page where it's the only thing on screen --
+   the same defensive-specificity trick assets/table-radio.js uses
+   (its own header comment explains why: a page's blanket button{}/
+   input{} theme rules would otherwise silently reskin this widget).
+   Building it this way from v1 means a later phase can drop this
+   panel into stats/index.html's five very different themes without
+   any retrofit.
+   ══════════════════════════════════════════════ */
+
+#dg-notes-panel{
+  font-family:'Courier Prime',monospace;
+  color:var(--ink);
+  background:var(--paper);
+  box-shadow:var(--paper-shadow);
+  max-width:1100px;
+  margin:0 auto;
+  padding:var(--s4);
+  border-radius:2px;
+}
+
+#dg-notes-panel .dg-notes-toolbar{
+  display:flex; justify-content:flex-end; margin-bottom:var(--s3);
+}
+#dg-notes-panel .dg-notes-search{
+  font-family:'Courier Prime',monospace; font-size:12px;
+  background:transparent; border:1px solid var(--rule); border-radius:3px;
+  padding:6px 10px; min-width:220px; color:var(--ink);
+}
+#dg-notes-panel .dg-notes-search::placeholder{ color:var(--ink-3); }
+
+#dg-notes-panel .dg-notes-body{
+  display:flex; gap:var(--s5); align-items:flex-start;
+}
+
+#dg-notes-panel .dg-notes-toc{
+  flex:0 0 200px; position:sticky; top:var(--s4);
+  border-right:1px solid var(--paper-line); padding-right:var(--s4);
+}
+#dg-notes-panel .dg-notes-toc-label{
+  font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--ink-3); margin-bottom:var(--s3);
+}
+#dg-notes-panel .dg-notes-toc-item{
+  display:block; font-size:12px; color:var(--ink-2); text-decoration:none;
+  padding:4px 0; border-bottom:1px dotted var(--paper-line);
+}
+#dg-notes-panel .dg-notes-toc-item:hover{ color:var(--ink); }
+#dg-notes-panel .dg-notes-toc-empty{ font-size:11px; color:var(--ink-3); font-style:italic; }
+
+#dg-notes-panel .dg-notes-main{ flex:1; min-width:0; }
+
+#dg-notes-panel .dg-notes-tabs{
+  display:flex; flex-wrap:wrap; gap:4px; margin-bottom:var(--s4);
+}
+#dg-notes-panel .dg-notes-tab{
+  font-family:'Courier Prime',monospace; font-size:11px; letter-spacing:.03em;
+  background:var(--tab-inactive); color:var(--ink-2); border:1px solid var(--rule);
+  border-bottom:none; border-radius:4px 4px 0 0; padding:6px 12px; cursor:pointer;
+}
+#dg-notes-panel .dg-notes-tab.active{ background:var(--tab-active); color:var(--ink); font-weight:700; }
+
+#dg-notes-panel .dg-notes-blocks{
+  display:flex; flex-direction:column; gap:var(--s3); margin-bottom:var(--s4);
+}
+#dg-notes-panel .dg-notes-empty{
+  font-size:13px; color:var(--ink-3); font-style:italic; text-align:center; padding:26px 10px;
+}
+
+#dg-notes-panel .dg-notes-block{
+  display:flex; align-items:flex-start; gap:var(--s3);
+  border:1px solid var(--paper-line); border-radius:3px; padding:var(--s3);
+  background:rgba(28,22,8,.02);
+}
+#dg-notes-panel .dg-notes-block-heading .dg-notes-block-text{
+  font-family:'Special Elite',monospace; font-size:15px; font-weight:400;
+}
+#dg-notes-panel .dg-notes-block-bullet .dg-notes-block-field::before{
+  content:'•'; margin-right:6px; color:var(--ink-3);
+}
+#dg-notes-panel .dg-notes-block-field{ flex:1; min-width:0; display:flex; }
+#dg-notes-panel .dg-notes-block-text{
+  flex:1; width:100%; font-family:inherit; font-size:13px; color:var(--ink);
+  background:transparent; border:none; resize:vertical; min-height:1.6em;
+  padding:2px 0;
+}
+#dg-notes-panel .dg-notes-block-text:focus{ outline:none; border-bottom:1px solid var(--ink-3); }
+#dg-notes-panel .dg-notes-block-text[readonly]{ color:var(--ink-2); }
+
+#dg-notes-panel .dg-notes-block-controls{
+  display:flex; align-items:center; gap:var(--s2); flex-shrink:0;
+}
+#dg-notes-panel .dg-notes-shared-toggle{
+  font-size:10px; letter-spacing:.04em; color:var(--ink-3);
+  display:flex; align-items:center; gap:4px; white-space:nowrap; cursor:pointer;
+}
+#dg-notes-panel .dg-notes-shared-badge{
+  font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3);
+  border:1px solid var(--rule); border-radius:3px; padding:2px 6px; white-space:nowrap;
+}
+#dg-notes-panel .dg-notes-block-del{
+  background:transparent; border:none; color:var(--red); font-size:16px;
+  line-height:1; cursor:pointer; padding:0 4px;
+}
+#dg-notes-panel .dg-notes-block-del:hover{ opacity:.7; }
+
+#dg-notes-panel .dg-notes-add-row{ display:flex; gap:8px; flex-wrap:wrap; }
+#dg-notes-panel .dg-notes-add-btn{
+  font-family:'Courier Prime',monospace; font-size:11px;
+  background:transparent; border:1px solid var(--rule); border-radius:3px;
+  color:var(--ink-2); padding:6px 12px; cursor:pointer;
+}
+#dg-notes-panel .dg-notes-add-btn:hover{ border-color:var(--ink-3); color:var(--ink); }
+
+@media (max-width: 720px){
+  #dg-notes-panel .dg-notes-body{ flex-direction:column; }
+  #dg-notes-panel .dg-notes-toc{
+    flex:none; width:100%; border-right:none; border-bottom:1px solid var(--paper-line);
+    padding-right:0; padding-bottom:var(--s3); position:static;
+  }
+}

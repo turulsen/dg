@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Delta Green — Notes (v1 preview)</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/png" href="../assets/mars-tech-seal.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/theme-folder.css">
+<link rel="stylesheet" href="notes.css">
+<style>
+  *{box-sizing:border-box;}
+  .notes-header{ max-width:1100px; margin:0 auto; padding:6px 6px 22px; }
+  .notes-header .back-link{
+    font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.15em;
+    text-transform:uppercase; color:#8a9878; text-decoration:none;
+  }
+  .notes-header .back-link:hover{ color:#c8c1a8; }
+  .notes-header h1{
+    font-family:'Special Elite',monospace; font-weight:400; font-size:clamp(20px,4vw,28px);
+    color:#e9e3ce; margin:14px 0 8px; letter-spacing:.01em;
+  }
+  .notes-header p{ font-family:'Courier Prime',monospace; font-size:13px; color:#b7b09a; max-width:70ch; line-height:1.7; margin:0; }
+  .notes-header .preview-flag{
+    display:inline-block; margin-top:10px; font-family:'Courier Prime',monospace;
+    font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#d8c46a;
+    border:1px solid rgba(216,196,106,.4); border-radius:3px; padding:3px 8px;
+  }
+
+  .picker-wrap{ max-width:1100px; margin:0 auto; padding:0 6px; }
+  .picker{
+    background:var(--paper); box-shadow:var(--paper-shadow); border-radius:2px;
+    padding:var(--s4); font-family:'Courier Prime',monospace;
+  }
+  .picker-label{ font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-3); display:block; margin-bottom:4px; }
+  .picker-row{ display:flex; gap:var(--s3); flex-wrap:wrap; align-items:flex-end; margin-bottom:var(--s3); }
+  .picker-field{ flex:1; min-width:200px; }
+  .picker-field input, .picker-field select{
+    width:100%; font-family:'Courier Prime',monospace; font-size:13px; color:var(--ink);
+    background:transparent; border:none; border-bottom:1.5px solid var(--rule); padding:6px 0;
+  }
+  .picker-field input:focus, .picker-field select:focus{ outline:none; border-bottom-color:var(--ink-2); }
+  .picker-btn{
+    font-family:'Courier Prime',monospace; font-size:12px; background:var(--ink); color:var(--paper);
+    border:none; border-radius:3px; padding:9px 18px; cursor:pointer;
+  }
+  .picker-btn:hover{ opacity:.85; }
+  .picker-status{ font-size:11px; color:var(--ink-3); min-height:1.4em; }
+
+  .notes-mount{ max-width:1100px; margin:var(--s5) auto 0; padding:0 6px; }
+  .notes-mount.hidden{ display:none; }
+  .picker-wrap.hidden{ display:none; }
+  .change-context{
+    max-width:1100px; margin:0 auto var(--s3); padding:0 6px; text-align:right;
+  }
+  .change-context button{
+    font-family:'Courier Prime',monospace; font-size:11px; background:transparent;
+    border:1px solid rgba(216,196,106,.4); color:#c8c1a8; border-radius:3px;
+    padding:5px 10px; cursor:pointer;
+  }
+
+  footer.site-footer{ font-family:'Courier Prime',monospace; text-align:center; color:#6a6250; font-size:11px; margin-top:56px; }
+</style>
+</head>
+<body class="folder-theme">
+
+<div class="notes-header">
+  <a class="back-link" href="../agent-hub.html">&larr; Agent Hub</a>
+  <h1>Player Notes</h1>
+  <p>Shared and private session notes for your Cell. Anything you mark
+     Shared is visible to every other member of the same Cell; everything
+     else stays yours alone.</p>
+  <span class="preview-flag">v1 preview -- not yet linked into the app</span>
+</div>
+
+<div class="picker-wrap" id="picker-wrap">
+  <div class="picker">
+    <div class="picker-row">
+      <div class="picker-field">
+        <label class="picker-label" for="picker-agent-code">Your Agent Code</label>
+        <input type="text" id="picker-agent-code" placeholder="e.g. ALFR-1234" autocomplete="off">
+      </div>
+      <div class="picker-field">
+        <label class="picker-label" for="picker-cell">Cell</label>
+        <select id="picker-cell"><option value="">Loading Cells…</option></select>
+      </div>
+      <button type="button" class="picker-btn" id="picker-open-btn">Open Notes</button>
+    </div>
+    <div class="picker-status" id="picker-status"></div>
+  </div>
+</div>
+
+<div class="change-context hidden" id="change-context-row">
+  <button type="button" id="change-context-btn">Change Agent / Cell</button>
+</div>
+
+<div class="notes-mount hidden" id="notes-mount"></div>
+
+<footer class="site-footer">Delta Green is a trademark of Arc Dream Publishing. Unofficial fan-made campaign tools.</footer>
+
+<script src="notes.js"></script>
+<script>
+  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
+  const PICKER_KEY = 'dg_notes_last_picker';
+
+  const pickerWrap = document.getElementById('picker-wrap');
+  const changeRow = document.getElementById('change-context-row');
+  const mount = document.getElementById('notes-mount');
+  const codeInput = document.getElementById('picker-agent-code');
+  const cellSelect = document.getElementById('picker-cell');
+  const statusEl = document.getElementById('picker-status');
+  const openBtn = document.getElementById('picker-open-btn');
+  const changeBtn = document.getElementById('change-context-btn');
+
+  let cellsById = {};
+  let panelHandle = null;
+
+  function jsonpGet(action, params, cb) {
+    const cbName = '_dgNotesIdx_' + action + '_' + Date.now();
+    const timer = setTimeout(() => { delete window[cbName]; cb(null); }, 7000);
+    window[cbName] = function (res) {
+      clearTimeout(timer);
+      delete window[cbName];
+      cb(res);
+    };
+    const s = document.createElement('script');
+    let qs = 'action=' + action + '&callback=' + cbName;
+    Object.keys(params || {}).forEach(k => { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
+    s.src = APPS_SCRIPT_URL + '?' + qs;
+    document.head.appendChild(s);
+  }
+
+  function loadCells() {
+    jsonpGet('list_cells', {}, res => {
+      if (!res || res.status !== 'OK') {
+        cellSelect.innerHTML = '<option value="">Could not load Cells</option>';
+        return;
+      }
+      cellsById = {};
+      (res.cells || []).forEach(c => { cellsById[c.cell_id] = c; });
+      cellSelect.innerHTML = '<option value="">Choose a Cell…</option>' +
+        (res.cells || []).map(c => `<option value="${c.cell_id}">${c.name}</option>`).join('');
+      restoreLastPicker();
+    });
+  }
+
+  function restoreLastPicker() {
+    let saved;
+    try { saved = JSON.parse(localStorage.getItem(PICKER_KEY) || 'null'); } catch (e) { saved = null; }
+    if (!saved) return;
+    if (saved.agentCode) codeInput.value = saved.agentCode;
+    if (saved.cellId && cellsById[saved.cellId]) cellSelect.value = saved.cellId;
+  }
+
+  function openNotes() {
+    const agentCode = codeInput.value.trim().toUpperCase();
+    const cellId = cellSelect.value;
+    if (!agentCode) { statusEl.textContent = 'Enter your Agent Code first.'; return; }
+    if (!cellId || !cellsById[cellId]) { statusEl.textContent = 'Pick a Cell first.'; return; }
+
+    try { localStorage.setItem(PICKER_KEY, JSON.stringify({ agentCode, cellId })); } catch (e) { }
+
+    const cell = cellsById[cellId];
+    pickerWrap.classList.add('hidden');
+    changeRow.classList.remove('hidden');
+    mount.classList.remove('hidden');
+
+    if (panelHandle && panelHandle.destroy) panelHandle.destroy();
+    panelHandle = window.dgNotesPanel.init(mount, {
+      cellId: cellId,
+      agentCode: agentCode,
+      memberCodes: cell.member_codes || [],
+    });
+  }
+
+  openBtn.addEventListener('click', openNotes);
+  codeInput.addEventListener('keydown', e => { if (e.key === 'Enter') openNotes(); });
+  changeBtn.addEventListener('click', () => {
+    if (panelHandle && panelHandle.destroy) panelHandle.destroy();
+    mount.classList.add('hidden');
+    changeRow.classList.add('hidden');
+    pickerWrap.classList.remove('hidden');
+    statusEl.textContent = '';
+  });
+
+  loadCells();
+</script>
+
+</body>
+</html>

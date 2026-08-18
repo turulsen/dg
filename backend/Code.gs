@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v13 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v14 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Sheet/Admin) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -15,6 +15,10 @@
 // + doLookupCharacter() (Play button / ?load=) now reads a targeted
 //   single row instead of every Agent's full Character JSON blob
 //   (fixes a reported ~8-10s wait before a character sheet appeared)
+// + Player Notes v1 (list_cell_notes/save_note_block/delete_note_block):
+//   shared/private note blocks scoped to a Cell, server-side privacy
+//   filtering, short-lived per-Cell read cache + write lock -- new
+//   notes/ frontend, unlinked from nav until tested
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -207,6 +211,15 @@ function doGet(e) {
     return listCells(callback);
   }
 
+  // ── Player Notes: a Cell's shared/private note blocks, filtered for
+  // the requesting Agent. agent_code here is the requester (used only
+  // to decide what's visible), not a filter on which cell's data is
+  // read. ──
+  // ?action=list_cell_notes&cell_id=ID&agent_code=CODE&callback=CALLBACK
+  if (e.parameter && e.parameter.action === 'list_cell_notes') {
+    return listCellNotes(e.parameter.cell_id, e.parameter.agent_code, callback);
+  }
+
   // ── A-Cell Admin: every soft-deleted Agent, for Recently Deleted ──
   // ?action=list_deleted_characters&callback=CALLBACK
   if (e.parameter && e.parameter.action === 'list_deleted_characters') {
@@ -340,6 +353,15 @@ function doPost(e) {
     // A-Cell: delete a Cell grouping (its Agents stay on file).
     if (data.action === 'delete_cell') {
       return deleteCell(data.cell_id);
+    }
+
+    // Player Notes: save (create or update) one note block.
+    if (data.action === 'save_note_block') {
+      return saveNoteBlock(data);
+    }
+
+    if (data.action === 'delete_note_block') {
+      return deleteNoteBlock(data);
     }
 
     // A-Cell Music: set a Cell's usual Table Radio channel ("Cue For Cell").
@@ -1244,6 +1266,168 @@ function deleteCell(cellId) {
   for (let i = data.length - 1; i >= 1; i--) {
     if (data[i][idCol] === cellId) {
       sheet.deleteRow(i + 1);
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'NOT_FOUND' })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ── Player Notes: shared/private block notes scoped to a Cell. Each
+// block (heading/paragraph/bullet) belongs to one Agent and is either
+// private (only that Agent sees it) or shared (every member of the
+// Cell sees it). Privacy is enforced HERE, server-side, in the object
+// literal that gets serialized in listCellNotes() below -- never by
+// omitting fields client-side, since that would mean a private
+// block's text already left the server. Self-provisions its own
+// "CellNotes" sheet. ──
+function getOrCreateCellNotesSheet() {
+  const ss = getOrCreateSheet();
+  let sheet = ss.getSheetByName('CellNotes');
+  if (!sheet) {
+    sheet = ss.insertSheet('CellNotes');
+    sheet.getRange(1, 1, 1, 9).setValues([[
+      'block_id', 'cell_id', 'agent_code', 'block_type', 'text',
+      'shared', 'sort_order', 'created_at', 'updated_at'
+    ]]);
+  }
+  return sheet;
+}
+
+// Every open notes panel polls this every ~5s. Caches the RAW
+// (unfiltered) row set per Cell for a few seconds so a burst of
+// simultaneous polls from several players' browsers shares one Sheets
+// read -- same reasoning as getNowPlaying()'s cache -- then filters on
+// every single call, cached or not: the requester's own blocks come
+// back in full, every other Agent's blocks are filtered to shared
+// blocks only. The raw cache is never itself sent to a browser, so
+// caching can never leak a stale filtered view to the wrong requester.
+function listCellNotes(cellId, agentCode, callback) {
+  cellId = (cellId || '').trim();
+  const requester = (agentCode || '').trim().toUpperCase();
+  const result = { status: 'OK', notes: {} };
+  if (!cellId) {
+    const body = callback + '(' + JSON.stringify(result) + ')';
+    return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'cell_notes_raw_' + cellId;
+  let rows;
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    rows = JSON.parse(cached);
+  } else {
+    const sheet = getOrCreateCellNotesSheet();
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const cellCol = headers.indexOf('cell_id');
+    const idCol = headers.indexOf('block_id');
+    const codeCol = headers.indexOf('agent_code');
+    const typeCol = headers.indexOf('block_type');
+    const textCol = headers.indexOf('text');
+    const sharedCol = headers.indexOf('shared');
+    const sortCol = headers.indexOf('sort_order');
+    const updatedCol = headers.indexOf('updated_at');
+    rows = [];
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][cellCol]).trim() !== cellId) continue;
+      rows.push({
+        block_id: data[i][idCol],
+        agent_code: String(data[i][codeCol] || '').trim().toUpperCase(),
+        block_type: data[i][typeCol] || 'paragraph',
+        text: data[i][textCol] || '',
+        shared: data[i][sharedCol] === 1,
+        sort_order: Number(data[i][sortCol]) || 0,
+        updated_at: data[i][updatedCol] || 0
+      });
+    }
+    cache.put(cacheKey, JSON.stringify(rows), 3);
+  }
+
+  rows.forEach(function (row) {
+    if (row.agent_code !== requester && !row.shared) return; // private, not yours -- never included
+    const list = result.notes[row.agent_code] || (result.notes[row.agent_code] = []);
+    list.push({
+      block_id: row.block_id, block_type: row.block_type, text: row.text,
+      shared: row.shared, sort_order: row.sort_order, updated_at: row.updated_at
+    });
+  });
+
+  const body = callback + '(' + JSON.stringify(result) + ')';
+  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+// Upserts by block_id (blank/unknown -> mints a new one). Wrapped in
+// withScriptLock() since several players can be editing different
+// blocks in the same Cell within the same few seconds during a live
+// session -- the same class of concurrent-write race saveCharacter()
+// already guards against.
+function saveNoteBlock(data) {
+  const cellId = (data.cell_id || '').trim();
+  const agentCode = (data.agent_code || '').trim().toUpperCase();
+  if (!cellId || !agentCode) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'cell_id and agent_code are required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  return withScriptLock(function () {
+    const sheet = getOrCreateCellNotesSheet();
+    const values = sheet.getDataRange().getValues();
+    const headers = values[0];
+    const idCol = headers.indexOf('block_id');
+    const typeCol = headers.indexOf('block_type');
+    const textCol = headers.indexOf('text');
+    const sharedCol = headers.indexOf('shared');
+    const sortCol = headers.indexOf('sort_order');
+    const updatedCol = headers.indexOf('updated_at');
+    const now = new Date().getTime();
+    const blockType = data.block_type || 'paragraph';
+    const shared = data.shared ? 1 : 0;
+    const sortOrder = Number(data.sort_order) || 0;
+
+    let blockId = (data.block_id || '').trim();
+    if (blockId) {
+      for (let i = 1; i < values.length; i++) {
+        if (values[i][idCol] === blockId) {
+          sheet.getRange(i + 1, typeCol + 1).setValue(blockType);
+          sheet.getRange(i + 1, textCol + 1).setValue(data.text || '');
+          sheet.getRange(i + 1, sharedCol + 1).setValue(shared);
+          sheet.getRange(i + 1, sortCol + 1).setValue(sortOrder);
+          sheet.getRange(i + 1, updatedCol + 1).setValue(now);
+          CacheService.getScriptCache().remove('cell_notes_raw_' + cellId);
+          return ContentService.createTextOutput(JSON.stringify({ status: 'OK', block_id: blockId })).setMimeType(ContentService.MimeType.JSON);
+        }
+      }
+    }
+    // No existing row matched -- this is a brand-new block. If the
+    // client already minted an id (notes.js always does, so a poll
+    // landing before this write is confirmed echoes back the exact
+    // same id the client is already showing, instead of a second,
+    // server-minted one the client would never learn about under
+    // no-cors), keep it; only mint a fresh one if none was sent.
+    if (!blockId) blockId = 'block_' + now + '_' + Math.floor(Math.random() * 100000).toString(36);
+    sheet.appendRow([blockId, cellId, agentCode, blockType, data.text || '', shared, sortOrder, now, now]);
+    CacheService.getScriptCache().remove('cell_notes_raw_' + cellId);
+    return ContentService.createTextOutput(JSON.stringify({ status: 'OK', block_id: blockId })).setMimeType(ContentService.MimeType.JSON);
+  });
+}
+
+// No server-side ownership check -- same trust model as every other
+// write in this app (no auth exists anywhere). The client only shows
+// the delete control on a player's own blocks.
+function deleteNoteBlock(data) {
+  const blockId = (data.block_id || '').trim();
+  const cellId = (data.cell_id || '').trim();
+  if (!blockId) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'block_id is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const sheet = getOrCreateCellNotesSheet();
+  const values = sheet.getDataRange().getValues();
+  const idCol = values[0].indexOf('block_id');
+  for (let i = values.length - 1; i >= 1; i--) {
+    if (values[i][idCol] === blockId) {
+      sheet.deleteRow(i + 1);
+      if (cellId) CacheService.getScriptCache().remove('cell_notes_raw_' + cellId);
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }

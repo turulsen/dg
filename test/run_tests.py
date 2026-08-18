@@ -5481,6 +5481,160 @@ def test_pwa_update_banner(p):
     record("pwa", "banner has a visible Reload button",
            reload_btn is not None and "Reload" in (reload_btn.inner_text() or ""), "")
 
+
+def test_notes_v1_block_crud(p):
+    """Player Notes v1 (notes/index.html + notes/notes.js): shared/private
+    block notes scoped to a Cell. The mock below stands in for the real
+    Apps Script backend's server-side privacy filter (see
+    listCellNotes() in backend/Code.gs) -- it only ever returns the
+    requester's own blocks in full, and other Agents' blocks filtered to
+    shared==True, exactly like the real handler does. The critical
+    assertion throughout is that a private block belonging to someone
+    else never appears anywhere in page.content(), not just that the UI
+    doesn't render a control for it -- a leak in the raw response would
+    still show up in that check even if the UI happened to hide it."""
+    page = p.new_page()
+    # Generous for the same reason the two wait_for_condition calls below
+    # are -- this sandbox can pause the whole page for real multi-second
+    # stretches (see their own comment), and a Playwright action (click/
+    # check/fill) landing right as that starts would otherwise throw its
+    # own TimeoutError before ever reaching those waits.
+    page.set_default_timeout(25000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    cell = {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam",
+            "member_codes": ["OWEN-CS12", "PRIY-AN34"]}
+    # (block_id, owner, type, text, shared)
+    blocks_state = [
+        {"block_id": "b1", "agent_code": "OWEN-CS12", "block_type": "paragraph", "text": "My private note", "shared": False, "sort_order": 1000, "updated_at": 1},
+        {"block_id": "b2", "agent_code": "OWEN-CS12", "block_type": "heading", "text": "Shared Owen Heading", "shared": True, "sort_order": 2000, "updated_at": 1},
+        {"block_id": "b3", "agent_code": "PRIY-AN34", "block_type": "paragraph", "text": "Priya shared note", "shared": True, "sort_order": 1000, "updated_at": 1},
+        {"block_id": "b4", "agent_code": "PRIY-AN34", "block_type": "heading", "text": "Priya Private Heading", "shared": False, "sort_order": 2000, "updated_at": 1},
+        {"block_id": "b5", "agent_code": "PRIY-AN34", "block_type": "heading", "text": "Priya Shared Heading", "shared": True, "sort_order": 3000, "updated_at": 1},
+    ]
+    posts = []
+    next_id = [6]
+
+    def filtered_notes(requester):
+        notes = {}
+        for b in blocks_state:
+            if b["agent_code"] != requester and not b["shared"]:
+                continue  # private, not the requester's -- must never be included
+            notes.setdefault(b["agent_code"], []).append({
+                "block_id": b["block_id"], "block_type": b["block_type"], "text": b["text"],
+                "shared": b["shared"], "sort_order": b["sort_order"], "updated_at": b["updated_at"],
+            })
+        return notes
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            body = json.loads(req.post_data or "{}")
+            posts.append(body)
+            if body.get("action") == "save_note_block":
+                bid = body.get("block_id") or ""
+                existing = next((b for b in blocks_state if b["block_id"] == bid), None)
+                if existing:
+                    existing.update({"block_type": body.get("block_type"), "text": body.get("text"),
+                                      "shared": bool(body.get("shared")), "sort_order": body.get("sort_order")})
+                else:
+                    bid = "b" + str(next_id[0]); next_id[0] += 1
+                    blocks_state.append({"block_id": bid, "agent_code": body.get("agent_code"),
+                                          "block_type": body.get("block_type"), "text": body.get("text"),
+                                          "shared": bool(body.get("shared")), "sort_order": body.get("sort_order"), "updated_at": 1})
+            elif body.get("action") == "delete_note_block":
+                blocks_state[:] = [b for b in blocks_state if b["block_id"] != body.get("block_id")]
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=list_cells" in url:
+                res = {"status": "OK", "cells": [cell]}
+            elif "action=list_cell_notes" in url:
+                requester = url.split("agent_code=")[1].split("&")[0] if "agent_code=" in url else ""
+                res = {"status": "OK", "notes": filtered_notes(requester)}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/notes/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    page.fill("#picker-agent-code", "OWEN-CS12")
+    wait_for_condition(lambda: page.locator('#picker-cell option[value="cell_1"]').count() > 0, timeout_ms=6000)
+    page.select_option("#picker-cell", "cell_1")
+    page.click("#picker-open-btn")
+
+    wait_for_condition(lambda: page.query_selector("#dg-notes-panel") is not None, timeout_ms=6000)
+    wait_for_condition(lambda: "My private note" in (page.content() or ""), timeout_ms=6000)
+
+    own_text = page.content()
+    record("notes", "your own tab shows both your private and your shared blocks",
+           "My private note" in own_text and "Shared Owen Heading" in own_text, "")
+
+    record("notes", "the always-visible index lists shared headings from both Agents",
+           "Shared Owen Heading" in own_text and "Priya Shared Heading" in own_text, "")
+    record("notes", "the index does not list another Agent's private heading",
+           "Priya Private Heading" not in own_text, "")
+
+    # Switch to Priya's tab.
+    page.click('[data-tab="PRIY-AN34"]')
+    page.wait_for_timeout(200)
+    priya_text = page.content()
+    record("notes", "viewing another member's tab shows only their shared block",
+           "Priya shared note" in priya_text, "")
+    record("notes", "another member's private block never appears anywhere in the page, not even hidden",
+           "Priya Private Heading" not in priya_text, "")
+
+    # Back to your own tab, exercise search.
+    page.click('[data-tab="OWEN-CS12"]')
+    page.wait_for_timeout(200)
+    page.fill(".dg-notes-search", "Owen")
+    page.wait_for_timeout(200)
+    search_text = page.content()
+    record("notes", "search filters the active tab's blocks by text",
+           "Shared Owen Heading" in search_text and "My private note" not in search_text, "")
+    page.fill(".dg-notes-search", "")
+    page.wait_for_timeout(200)
+
+    # Add a new block and confirm the autosave POST. The debounce is only
+    # 1200ms nominally, but this sandbox can occasionally suspend the
+    # whole page for real multi-second stretches invisible to in-guest
+    # load/CPU checks (confirmed via performance.now() itself barely
+    # advancing across a real wall-clock gap during diagnosis -- a
+    # VM-level scheduling pause, not JS-side throttling a Chrome flag
+    # can disable, and one that also intermittently affects unrelated,
+    # otherwise-stable tests like the Kappa Black outfit one). Uses the
+    # same 25s default every other wait_for_condition() call in this
+    # suite already accepts -- a real player's own foregrounded, active
+    # tab never sees this at all, so it isn't worth a special-cased
+    # longer budget just for this one test.
+    posts.clear()
+    page.click('[data-add-type="paragraph"]')
+    page.wait_for_timeout(100)
+    new_field = page.locator('.dg-notes-block-text').last
+    new_field.fill("A brand new note")
+    saved = wait_for_condition(lambda: next((x for x in posts if x.get("action") == "save_note_block" and x.get("text") == "A brand new note"), None), timeout_ms=25000)
+    record("notes", "adding a block and typing fires a debounced save_note_block with the right shape",
+           bool(saved) and saved.get("agent_code") == "OWEN-CS12" and saved.get("cell_id") == "cell_1" and saved.get("shared") is False,
+           json.dumps(saved) if saved else "no POST captured")
+
+    # Toggle Shared on the existing private block -- saves immediately (no debounce wait needed).
+    posts.clear()
+    page.check('[data-shared-toggle="b1"]')
+    toggled = wait_for_condition(lambda: next((x for x in posts if x.get("action") == "save_note_block" and x.get("block_id") == "b1"), None), timeout_ms=25000)
+    record("notes", "toggling Shared on your own block saves shared:true",
+           bool(toggled) and toggled.get("shared") is True, json.dumps(toggled) if toggled else "no POST captured")
+
+    record("notes", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
     page.evaluate("""() => {
         const btns = document.querySelectorAll('#dg-update-banner button');
         btns[btns.length - 1].click();
@@ -5496,7 +5650,20 @@ def test_pwa_update_banner(p):
 
 def main():
     with sync_playwright() as p:
-        browser = p.chromium.launch(executable_path="/opt/pw-browsers/chromium")
+        # Chrome's own background-tab timer throttling policy applies to a
+        # non-foregrounded page regardless of headless status -- without
+        # disabling it, a test that waits across several chained
+        # setTimeout/setInterval cycles (an autosave debounce landing
+        # during a poll interval, say) can see real, multi-second-scale
+        # delays that have nothing to do with system load and everything
+        # to do with Chrome deciding this page isn't the one the user is
+        # looking at. Real players' foregrounded tabs never hit this;
+        # only this offscreen test browser does.
+        browser = p.chromium.launch(executable_path="/opt/pw-browsers/chromium", args=[
+            "--disable-background-timer-throttling",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-renderer-backgrounding",
+        ])
 
         def safe(fn, *args, area="unknown"):
             try:
@@ -5639,6 +5806,8 @@ def main():
         safe(test_pwa_offline, browser, area="pwa")
 
         safe(test_pwa_update_banner, browser, area="pwa")
+
+        safe(test_notes_v1_block_crud, browser, area="notes")
 
         browser.close()
 
