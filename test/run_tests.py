@@ -1523,6 +1523,76 @@ def test_agent_hub_cover_identity(p):
     page.close()
     return errs_all
 
+def test_agent_hub_erase_agent(p):
+    """Erase Agent: a player self-service delete for accidental duplicate
+    Agents (previously only a Handler could clean these up via A-Cell
+    Admin). Gated on typing the Agent's own Cover Identity back in --
+    the Confirm button must stay disabled for a wrong/blank name and
+    only enable for a correct (case-insensitive) match, and the actual
+    delete_character POST must only fire after that."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    delete_posts = []
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            try:
+                body = json.loads(req.post_data or "{}")
+            except Exception:
+                body = {}
+            if body.get("action") == "delete_character":
+                delete_posts.append(body)
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"OK"}})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    roster = json.dumps({
+        "GERG-E001": {"code": "GERG-E001", "char_name": "Duplicate Owen",
+                      "player_name": "Gergo", "saved_at": 1000},
+    })
+    page.add_init_script(f"localStorage.setItem('dg_agent_roster', '{roster}');")
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+
+    page.click('.ah-erase-link')
+    page.wait_for_timeout(150)
+    record("hub", "the Erase Agent overlay opens and names the Agent",
+           page.is_visible("#ah-erase-overlay") and "Duplicate Owen" in page.inner_text("#ah-erase-name"), "")
+    record("hub", "the Confirm button starts disabled",
+           page.eval_on_selector("#ah-erase-confirm-btn", "el => el.disabled"), "")
+
+    page.fill("#ah-erase-input", "Not Gergo")
+    page.wait_for_timeout(100)
+    record("hub", "a wrong Cover Identity leaves Confirm disabled",
+           page.eval_on_selector("#ah-erase-confirm-btn", "el => el.disabled"), "")
+
+    page.fill("#ah-erase-input", "gergo")
+    page.wait_for_timeout(100)
+    record("hub", "the correct Cover Identity (case-insensitive) enables Confirm",
+           not page.eval_on_selector("#ah-erase-confirm-btn", "el => el.disabled"), "")
+
+    page.click("#ah-erase-confirm-btn")
+    page.wait_for_timeout(400)
+    record("hub", "confirming sends a delete_character request for the right Agent",
+           len(delete_posts) == 1 and delete_posts[0].get("agent_code") == "GERG-E001", str(delete_posts))
+    record("hub", "the overlay closes after confirming",
+           not page.is_visible("#ah-erase-overlay"), "")
+    record("hub", "the erased Agent is gone from the roster/tab strip",
+           "Duplicate Owen" not in page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)"), "")
+
+    record("hub", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_agent_hub_handouts(p):
     """agent-hub.html's per-Agent Handouts section: a read-only mirror
     of A-Cell's Handouts tab, filtered per Agent -- campaign-wide
@@ -4602,6 +4672,59 @@ def test_agent_portal_incomplete_submit_blocked(p):
     page.close()
     return errs
 
+def test_agent_portal_submit_reuses_roster_code(p):
+    """Regression test for a real report: a character built or imported
+    on stats/index.html mints and stores its own Agent Code independently
+    (dg_agent_roster, written by stats/cloud-sync.js) before this page
+    ever sees it. Submitting a Profiling brief for that same Agent from a
+    fresh visit here (no ?code= in the URL, so afCode is never restored)
+    used to only check the in-memory afCode for a same-name match, never
+    the roster -- so it minted a brand new, disconnected code instead of
+    reusing the one the character sheet already had: two separate files
+    (a Characters row and a Briefs row) for what should have been one
+    Agent. handleSubmit() now also checks the roster by char_name."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    submit_posts = []
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            try:
+                body = json.loads(req.post_data or "{}")
+            except Exception:
+                body = {}
+            if body.get("char_name"):
+                submit_posts.append(body)
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"NOT_FOUND"}})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    agent = AGENTS[0]
+    roster = json.dumps({"ROST-X001": {"code": "ROST-X001", "char_name": agent["char_name"], "saved_at": 1000}})
+    page.add_init_script(f"localStorage.setItem('dg_agent_roster', '{roster}');")
+    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+
+    fill_cover_form(page, agent, "#dg-form")
+    page.click("#submit-btn")
+    page.wait_for_timeout(400)
+
+    record("agent-portal", "a fresh Profiling submission for an Agent the roster already knows by name reuses its code",
+           len(submit_posts) == 1 and submit_posts[0].get("agent_code") == "ROST-X001", str(submit_posts))
+
+    record("agent-portal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_agent_portal_agent_file(p, code):
     if not code:
         record("agent-portal", "agent file gate (skipped, no code)", False, "no code from cover test")
@@ -4852,6 +4975,84 @@ def test_agent_file_kia_stamp(p):
     record("agent-portal", "Agent File shows no KIA stamp for an Agent above 0 HP",
            not page.is_visible("#af-kia-stamp"), "")
 
+    page.close()
+    return errs
+
+def test_agent_file_vitals_and_bonds(p):
+    """Vitals (HP/WP/SAN/BP) and Bond scores -- previously only visible
+    to a Handler in A-Cell's Play view -- now also show on the Agent
+    File tab, read from the same load_character record the KIA stamp
+    already uses. Also regression-tests a bug caught while building
+    this: reusing eraDataField() for Bond rows would have hidden any
+    Bond whose score is legitimately 0, since that helper treats a
+    falsy value as "nothing to show"."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    complete_extra = {
+        "age_range": "30s", "sex": "Male", "nationality": "American",
+        "face_shape": "oval", "eye_color": "brown", "eye_shape": "round",
+        "nose": "straight", "lips": "thin", "skin": "tan", "facial_hair": "none",
+        "hair_color": "brown", "hair_style": "short", "hair_texture": "straight",
+        "build": "average", "posture": "upright", "jacket": "coat", "shirt": "shirt",
+        "trousers": "trousers", "footwear": "boots", "expression": "neutral", "vibe": "calm",
+    }
+    briefs = {"VITL-0001": {"char_name": "Nora Kessler", **complete_extra}}
+    characters = {
+        "VITL-0001": json.dumps({
+            "derived": {"hp": 11, "wp": 9, "san": 55, "bp": 20},
+            "bonds": [
+                {"name": "Marcus Webb", "relationship": "Partner", "score": 0},
+                {"name": "Delta Green", "relationship": "Handler", "score": 12},
+            ],
+        }),
+    }
+
+    def fake_apps_script(route):
+        url = route.request.url
+        if route.request.method == "POST" or "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        if "action=load_character" in url:
+            code = url.split("code=")[1].split("&")[0]
+            res = {"status": "OK", "character_json": characters[code]} if code in characters else {"status": "NOT_FOUND"}
+        elif "code=" in url:
+            code = url.split("code=")[1].split("&")[0]
+            res = {"status": "OK", "data": briefs[code]} if code in briefs else {"status": "NOT_FOUND"}
+        else:
+            res = {"status": "OK"}
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    page.click("#tw-agent")
+    page.wait_for_timeout(150)
+    page.fill("#af-code-input", "VITL-0001")
+    page.click("#af-gate .af-gate-btn")
+    page.wait_for_timeout(800)
+
+    record("agent-portal", "the Vitals section becomes visible once the Agent's saved sheet loads",
+           page.is_visible("#af-vitals-section"), "")
+    record("agent-portal", "HP/WP/SAN/BP all show the saved sheet's actual values",
+           (page.inner_text("#af-vital-hp"), page.inner_text("#af-vital-wp"),
+            page.inner_text("#af-vital-san"), page.inner_text("#af-vital-bp")) == ("11", "9", "55", "20"),
+           str((page.inner_text("#af-vital-hp"), page.inner_text("#af-vital-wp"),
+                page.inner_text("#af-vital-san"), page.inner_text("#af-vital-bp"))))
+
+    bonds_text = page.inner_text("#af-bonds-list")
+    record("agent-portal", "both Bonds show up with their names",
+           "Marcus Webb" in bonds_text and "Delta Green" in bonds_text, bonds_text)
+    record("agent-portal", "a Bond with a legitimate score of 0 still shows 0, not hidden as if it had no score",
+           "0" in bonds_text, bonds_text)
+    record("agent-portal", "the other Bond's non-zero score also shows",
+           "12" in bonds_text, bonds_text)
+
+    record("agent-portal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
     return errs
 
@@ -5214,6 +5415,8 @@ def main():
 
         safe(test_agent_hub_cover_identity, browser, area="hub")
 
+        safe(test_agent_hub_erase_agent, browser, area="hub")
+
         safe(test_agent_hub_recruit_flag, browser, area="hub")
 
         safe(test_agent_hub_handouts, browser, area="hub")
@@ -5286,7 +5489,11 @@ def main():
 
         safe(test_agent_portal_incomplete_submit_blocked, browser, area="agent-portal")
 
+        safe(test_agent_portal_submit_reuses_roster_code, browser, area="agent-portal")
+
         safe(test_agent_file_kia_stamp, browser, area="agent-portal")
+
+        safe(test_agent_file_vitals_and_bonds, browser, area="agent-portal")
 
         safe(test_agent_file_era_prompt_includes_era, browser, area="agent-portal")
 

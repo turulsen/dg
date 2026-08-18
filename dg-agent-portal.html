@@ -1671,6 +1671,34 @@ footer.site-footer{ font-family:'Courier Prime',monospace; text-align:center; co
           <button class="af-small-btn" onclick="showAfGate()">Load Different Agent</button>
         </div>
 
+        <!-- Vitals + Bonds -- the same scores A-Cell's Handler-only Play
+             view already shows (HP/WP/SAN/BP, Bond scores), surfaced here
+             too so a player can see them without a Handler. Populated by
+             checkAgentKia()'s existing load_character fetch -- best-effort,
+             same graceful-degradation as the KIA stamp above (hidden if
+             no cloud character exists yet or the backend's unreachable). -->
+        <div id="af-vitals-section" style="display:none;margin:12px 0;">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;">
+            <div style="text-align:center;border:1px solid rgba(160,130,70,.35);padding:6px 4px;">
+              <div style="font-family:Courier Prime,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;color:#8a7a5a;">HP</div>
+              <div style="font-family:'Special Elite',monospace;font-size:16px;color:#1c1608;" id="af-vital-hp">&mdash;</div>
+            </div>
+            <div style="text-align:center;border:1px solid rgba(160,130,70,.35);padding:6px 4px;">
+              <div style="font-family:Courier Prime,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;color:#8a7a5a;">WP</div>
+              <div style="font-family:'Special Elite',monospace;font-size:16px;color:#1c1608;" id="af-vital-wp">&mdash;</div>
+            </div>
+            <div style="text-align:center;border:1px solid rgba(160,130,70,.35);padding:6px 4px;">
+              <div style="font-family:Courier Prime,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;color:#8a7a5a;">SAN</div>
+              <div style="font-family:'Special Elite',monospace;font-size:16px;color:#1c1608;" id="af-vital-san">&mdash;</div>
+            </div>
+            <div style="text-align:center;border:1px solid rgba(160,130,70,.35);padding:6px 4px;">
+              <div style="font-family:Courier Prime,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;color:#8a7a5a;">BP</div>
+              <div style="font-family:'Special Elite',monospace;font-size:16px;color:#1c1608;" id="af-vital-bp">&mdash;</div>
+            </div>
+          </div>
+          <div id="af-bonds-list"></div>
+        </div>
+
         <!-- Jump to the Character Creator. Both pages' Agent Codes share
              the same format and backend (see the root README's roadmap
              item #1 on the three identity systems, and genCode() being
@@ -2760,6 +2788,22 @@ function genCode(name) {
   return window.dgAgentCode.gen(name);
 }
 
+// Looks up the local Agent Roster (dg_agent_roster -- shared with
+// stats/cloud-sync.js, which writes to it directly on every character
+// sheet sync) for an Agent whose char_name matches, so a Profiling
+// submission can find and reuse a code a character sheet already minted
+// even when this page has no afCode of its own yet (a fresh visit, no
+// ?code= in the URL). Defined ahead of rosterLoad() further down this
+// file -- safe, since this is only ever called from a click handler,
+// well after the whole script (including that const/function) has run.
+function findRosterCodeByName(name) {
+  const needle = (name || '').trim().toLowerCase();
+  if (!needle) return null;
+  const roster = rosterLoad();
+  const match = Object.values(roster).find(a => (a.char_name || '').trim().toLowerCase() === needle);
+  return match ? match.code : null;
+}
+
 /* ── SUBMIT ── */
 async function handleSubmit() {
   // The form's [required] attributes were purely decorative until now --
@@ -2797,7 +2841,17 @@ async function handleSubmit() {
   // distinguishes "editing the loaded Agent" from "describing a new one."
   const sameAgent = afCode && afData
     && (afData.char_name || '').trim().toLowerCase() === (payload.char_name || '').trim().toLowerCase();
-  const agentCode = sameAgent ? afCode : genCode(payload.char_name);
+  // Not just afCode -- a character built or imported on stats/index.html
+  // mints and stores its own code independently (dg_agent_roster,
+  // written by stats/cloud-sync.js) before this page ever sees it.
+  // Without also checking the roster, submitting a Profiling brief for
+  // that same Agent by name from a fresh visit here (no ?code= in the
+  // URL, no prior afCode restored) minted a brand new, disconnected code
+  // instead of reusing the one the character sheet already has -- a real
+  // report: two separate files (a Characters row and a Briefs row) for
+  // what should have been one Agent.
+  const rosterCode = sameAgent ? null : findRosterCodeByName(payload.char_name);
+  const agentCode = sameAgent ? afCode : (rosterCode || genCode(payload.char_name));
   payload.agent_code = agentCode;
   persistAgent(agentCode, payload);
   afCode = agentCode;
@@ -3739,20 +3793,32 @@ function renderAgentFile(data) {
   renderAarEntries(data);
 }
 
-/* ── KIA stamp: a live read of this Agent's saved character sheet (the
-   Cloud Save record stats/ writes to, not this file's own Briefs
-   data), so it reflects whatever HP was last synced -- heal the Agent
-   back above 0 and the stamp clears on its own next time this loads,
-   same as it appeared. Best-effort: no cloud character yet (never
-   built one) or an unreachable backend both just leave the stamp
-   hidden, same graceful-degradation every other Apps Script call here
-   already has. ── */
+function afEscapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
+}
+
+/* ── KIA stamp + Vitals/Bonds: a live read of this Agent's saved
+   character sheet (the Cloud Save record stats/ writes to, not this
+   file's own Briefs data), so it reflects whatever was last synced --
+   heal the Agent back above 0 and the KIA stamp clears on its own next
+   time this loads, same as it appeared. The HP/WP/SAN/BP scores and
+   Bond list mirror what A-Cell's Handler-only Play view already shows
+   (renderView() in a-cell.html) -- surfaced here too so a player can
+   see their own scoring without needing a Handler to look it up.
+   Best-effort throughout: no cloud character yet (never built one) or
+   an unreachable backend both just leave everything hidden, same
+   graceful-degradation every other Apps Script call here already has. ── */
 function checkAgentKia(code) {
   const stamp = document.getElementById('af-kia-stamp');
   const nameEl = document.getElementById('af-agent-name');
+  const vitalsSection = document.getElementById('af-vitals-section');
   if (!stamp || !code) return;
   stamp.style.display = 'none';
   if (nameEl) nameEl.classList.remove('kia-name');
+  if (vitalsSection) vitalsSection.style.display = 'none';
 
   const cbName = '_afKiaCb' + Date.now();
   const timer = setTimeout(() => { delete window[cbName]; }, 7000);
@@ -3764,10 +3830,41 @@ function checkAgentKia(code) {
     if (!res || res.status !== 'OK' || !res.character_json) return;
     let state;
     try { state = JSON.parse(res.character_json); } catch (e) { return; }
-    const hp = state && state.derived && state.derived.hp;
+    const derived = (state && state.derived) || {};
+    const hp = derived.hp;
     if (typeof hp === 'number' && hp <= 0) {
       stamp.style.display = 'inline-block';
       if (nameEl) nameEl.classList.add('kia-name');
+    }
+
+    if (vitalsSection) {
+      const hpEl = document.getElementById('af-vital-hp');
+      const wpEl = document.getElementById('af-vital-wp');
+      const sanEl = document.getElementById('af-vital-san');
+      const bpEl = document.getElementById('af-vital-bp');
+      if (hpEl) hpEl.textContent = derived.hp ?? '—';
+      if (wpEl) wpEl.textContent = derived.wp ?? '—';
+      if (sanEl) sanEl.textContent = derived.san ?? '—';
+      if (bpEl) bpEl.textContent = derived.bp ?? '—';
+
+      // Not eraDataField() -- it hides a row whose value is falsy, which
+      // would wrongly hide a legitimate Bond score of 0.
+      const bonds = Array.isArray(state.bonds) ? state.bonds : [];
+      const bondsList = document.getElementById('af-bonds-list');
+      if (bondsList) {
+        bondsList.innerHTML = bonds.length
+          ? bonds.map(function (b) {
+              const label = [b.name, b.relationship].filter(Boolean).map(afEscapeHtml).join(' &middot; ');
+              const score = typeof b.score === 'number' ? b.score : '—';
+              return '<div style="display:flex;border-bottom:1px solid rgba(180,150,72,.2);padding:6px 0;align-items:baseline;gap:8px;">'
+                + '<span style="font-family:Courier Prime,monospace;font-size:11px;color:#1c1608;line-height:1.5;flex:1;">' + (label || 'Unnamed Bond') + '</span>'
+                + '<span style="font-family:\'Special Elite\',monospace;font-size:13px;color:#1c1608;">' + score + '</span>'
+                + '</div>';
+            }).join('')
+          : '';
+      }
+
+      vitalsSection.style.display = 'block';
     }
   };
   const s = document.createElement('script');

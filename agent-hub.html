@@ -94,6 +94,52 @@
   .recruit-copy, .empty-copy{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.85; max-width:52ch; margin-bottom:var(--s5); }
   .empty-panel .paper-title{ font-size:20px; }
 
+  /* ── Erase Agent: understated on purpose (small text link, not a
+     button) -- this is a real, backend delete_character call, not the
+     local-only roster removal dg-agent-portal.html's own roster tray
+     does, so it shouldn't invite an accidental tap the way a full-size
+     button would. ── */
+  .ah-erase-link{
+    background:none; border:none; padding:0; cursor:pointer;
+    font-family:'Courier Prime',monospace; font-size:10px; font-style:italic;
+    color:var(--ink-3); text-decoration:underline; text-underline-offset:2px;
+  }
+  .ah-erase-link:hover{ color:#8b1a1a; }
+
+  .ah-erase-overlay{
+    position:fixed; inset:0; background:rgba(10,8,4,.7); z-index:9999;
+    display:none; align-items:center; justify-content:center; padding:20px;
+  }
+  .ah-erase-overlay.open{ display:flex; }
+  .ah-erase-box{
+    background:var(--paper,#f4eed8); border:1px solid var(--rule,#c8b888); max-width:420px; width:100%;
+    padding:24px; box-shadow:0 8px 30px rgba(0,0,0,.5);
+  }
+  .ah-erase-title{
+    font-family:'Special Elite',monospace; font-size:15px; letter-spacing:.04em; color:#8b1a1a; margin-bottom:12px;
+  }
+  .ah-erase-msg{
+    font-family:'Courier Prime',monospace; font-size:12px; line-height:1.6; color:var(--ink,#1c1608); margin-bottom:16px;
+  }
+  .ah-erase-label{
+    font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); display:block; margin-bottom:4px;
+  }
+  .ah-erase-input{
+    width:100%; box-sizing:border-box; font-family:'Courier Prime',monospace; font-size:13px; padding:8px 10px;
+    border:1px solid var(--rule,#c8b888); background:#fff; margin-bottom:6px;
+  }
+  .ah-erase-hint{ font-family:'Courier Prime',monospace; font-size:10px; color:var(--ink-3); font-style:italic; margin-bottom:16px; min-height:14px; }
+  .ah-erase-actions{ display:flex; gap:10px; justify-content:flex-end; }
+  .ah-erase-cancel{
+    font-family:'Special Elite',monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase;
+    background:transparent; color:var(--ink-2); border:1px solid var(--rule,#c8b888); padding:8px 16px; cursor:pointer;
+  }
+  .ah-erase-confirm{
+    font-family:'Special Elite',monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase;
+    background:#8b1a1a; color:#f4eed8; border:1px solid #8b1a1a; padding:8px 16px; cursor:pointer;
+  }
+  .ah-erase-confirm:disabled{ background:#a89a78; border-color:#a89a78; cursor:not-allowed; opacity:.6; }
+
   /* ── Handouts: whatever the Handler has filed that's relevant to this
      Agent -- campaign-wide entries, plus anything scoped to a Cell this
      Agent belongs to. Read-only mirror of A-Cell's Handouts tab. ── */
@@ -209,6 +255,26 @@
 </div>
 
 <footer class="site-footer">Delta Green is a trademark of Arc Dream Publishing. Unofficial fan-made campaign tools.</footer>
+
+<!-- Erase Agent confirm -- one shared overlay for every panel's erase
+     link, targeting whichever code openEraseModal() was last called
+     with. Requires typing the Cover Identity name back in (not just a
+     click) before the Confirm button unlocks -- a real backend delete,
+     not the local-only roster removal dg-agent-portal.html's own roster
+     tray does, so it needs more friction than that one. -->
+<div class="ah-erase-overlay" id="ah-erase-overlay">
+  <div class="ah-erase-box">
+    <div class="ah-erase-title">Burn This Agent's File?</div>
+    <div class="ah-erase-msg">Are you sure you want to burn every trace of evidence, passport, ID, and data belonging to <b id="ah-erase-name">this Agent</b> — as if they never existed?<br><br>This can be undone by a Handler within 24 hours, but not by you.</div>
+    <label class="ah-erase-label" for="ah-erase-input">Type your Cover Identity to confirm</label>
+    <input class="ah-erase-input" id="ah-erase-input" autocomplete="off">
+    <div class="ah-erase-hint" id="ah-erase-hint"></div>
+    <div class="ah-erase-actions">
+      <button type="button" class="ah-erase-cancel" id="ah-erase-cancel-btn">Cancel</button>
+      <button type="button" class="ah-erase-confirm" id="ah-erase-confirm-btn" disabled>Burn It</button>
+    </div>
+  </div>
+</div>
 
 <script>
 /* ══════════════════════════════════════════════
@@ -397,11 +463,22 @@
             <a class="paper-btn" href="dg-agent-portal.html?code=${encodeURIComponent(a.code)}#agent">Agent File</a>
             <a class="paper-btn" href="dg-agent-portal.html?code=${encodeURIComponent(a.code)}#ids">Field ID</a>
           </div>
+          <div style="text-align:right;margin-top:2px;">
+            <button type="button" class="ah-erase-link">Erase Agent&hellip;</button>
+          </div>
           <div class="ah-section-divider">Handouts</div>
           <div class="ah-handouts" id="ah-handouts-${a.code}"><div class="ah-handouts-empty">Loading&hellip;</div></div>
         </div>
       </div>`;
       folderBody.appendChild(panel);
+
+      // Not an inline onclick -- this whole script is IIFE-wrapped (see
+      // the closing "})();" at the bottom of this file), so functions
+      // declared in it are never real window globals an inline HTML
+      // attribute could look up. Wired here instead, same as
+      // checkCharacterExists()'s post-append handling right below.
+      const eraseBtn = panel.querySelector('.ah-erase-link');
+      if (eraseBtn) eraseBtn.addEventListener('click', () => openEraseModal(a.code));
 
       if (a.face_plate_url) loadFacePlate(a.code, a.face_plate_url, photoId);
 
@@ -421,6 +498,79 @@
   }
 
   renderRoster();
+
+  // ── Erase Agent: a real backend delete_character call (soft-delete --
+  // recoverable by a Handler within 24h via A-Cell Admin's Recently
+  // Deleted, same as every other delete in this app), for players who
+  // end up with accidental duplicate Agents and don't want to wait on a
+  // Handler to clean it up. Gated on typing back the Cover Identity that
+  // claims this Agent (its own player_name if it has one, otherwise
+  // whichever identity is currently active in this browser) so it's not
+  // a single misplaced tap. ──
+  const ERASE_KEY = 'dg_cover_identity';
+  let eraseTargetCode = null;
+  let eraseExpectedName = '';
+
+  function openEraseModal(code) {
+    const agent = agents.find(a => a.code === code);
+    if (!agent) return;
+    eraseTargetCode = code;
+    eraseExpectedName = (agent.player_name || (function () {
+      try { return localStorage.getItem(ERASE_KEY) || ''; } catch (e) { return ''; }
+    })()).trim();
+
+    const nameEl = document.getElementById('ah-erase-name');
+    if (nameEl) nameEl.textContent = agent.char_name || 'this Agent';
+    const input = document.getElementById('ah-erase-input');
+    if (input) input.value = '';
+    const hint = document.getElementById('ah-erase-hint');
+    if (hint) {
+      hint.textContent = eraseExpectedName
+        ? ''
+        : 'No Cover Identity is on file for this Agent yet -- enter one in the box above the roster first.';
+    }
+    checkEraseInput();
+    document.getElementById('ah-erase-overlay').classList.add('open');
+  }
+
+  function closeEraseModal() {
+    document.getElementById('ah-erase-overlay').classList.remove('open');
+    eraseTargetCode = null;
+  }
+
+  function checkEraseInput() {
+    const input = document.getElementById('ah-erase-input');
+    const btn = document.getElementById('ah-erase-confirm-btn');
+    if (!input || !btn) return;
+    const typed = input.value.trim().toLowerCase();
+    const matches = eraseExpectedName && typed === eraseExpectedName.toLowerCase();
+    btn.disabled = !matches;
+  }
+
+  function confirmErase() {
+    const code = eraseTargetCode;
+    if (!code) return;
+    const btn = document.getElementById('ah-erase-confirm-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Burning…'; }
+
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'delete_character', agent_code: code })
+    }).catch(() => {}).finally(() => {
+      const roster = rosterLoad();
+      delete roster[code];
+      try { localStorage.setItem(ROSTER_KEY, JSON.stringify(roster)); } catch (e) { /* best effort */ }
+      closeEraseModal();
+      if (btn) { btn.disabled = false; btn.textContent = 'Burn It'; }
+      const stillActive = document.querySelector('.tw.active');
+      renderRoster(stillActive && stillActive.dataset.tab !== code ? stillActive.dataset.tab : undefined);
+    });
+  }
+
+  document.getElementById('ah-erase-input')?.addEventListener('input', checkEraseInput);
+  document.getElementById('ah-erase-cancel-btn')?.addEventListener('click', closeEraseModal);
+  document.getElementById('ah-erase-confirm-btn')?.addEventListener('click', confirmErase);
 
   // ── Cover Identity: your real name, not the Agent's -- looks up every
   // Agent tied to that name (character sheet and/or Agent File) and
