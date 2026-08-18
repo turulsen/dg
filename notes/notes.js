@@ -100,6 +100,16 @@
     let activeCode = agentCode;
     let searchTerm = '';
     let pollTimer = null;
+    // A poll's own render() does a full innerHTML rebuild -- doing that
+    // while a field has focus destroys and recreates that DOM node,
+    // which drops focus (and with it, on mobile, the keyboard) even
+    // though the block's own text is fine. A real report: "every 2-3
+    // seconds my keyboard disappears, or the text disappears or
+    // reappears" -- that's this, landing right on POLL_MS's cadence.
+    // Deferred instead of dropped: the poll's data still updates
+    // notesByCode normally, just the re-render waits for the field to
+    // blur, so nothing you're actively typing ever gets interrupted.
+    let deferredRenderPending = false;
     const saveTimers = {}; // block_id -> setTimeout handle
     // A no-cors POST's own response can't be read, so there's no way to
     // know a save/delete has actually landed except by seeing it (or
@@ -114,6 +124,24 @@
 
     function memberLabel(code) {
       return memberNames[code] ? memberNames[code] + ' (' + code + ')' : code;
+    }
+
+    function isTypingInField() {
+      const el = document.activeElement;
+      return !!(el && container.contains(el) && el.classList &&
+        (el.classList.contains('dg-notes-block-text') || el.classList.contains('dg-notes-search')));
+    }
+
+    // Only the poll's own render should ever be deferred -- a user-driven
+    // render (adding/deleting a block, switching tabs, searching) should
+    // always happen immediately, since those are the user's own action
+    // and typically re-focus something right after anyway.
+    function renderFromPoll() {
+      if (isTypingInField()) {
+        deferredRenderPending = true;
+        return;
+      }
+      render();
     }
 
     function allVisibleBlocks() {
@@ -203,6 +231,9 @@
       const search = container.querySelector('.dg-notes-search');
       if (search) {
         search.addEventListener('input', () => { searchTerm = search.value; render(); search.focus(); search.selectionStart = search.selectionEnd = search.value.length; });
+        search.addEventListener('blur', () => {
+          if (deferredRenderPending) { deferredRenderPending = false; render(); }
+        });
       }
       container.querySelectorAll('[data-scroll-to]').forEach(a => {
         a.addEventListener('click', e => {
@@ -217,6 +248,9 @@
       });
       container.querySelectorAll('.dg-notes-block-text').forEach(field => {
         field.addEventListener('input', () => scheduleSave(field.dataset.blockId));
+        field.addEventListener('blur', () => {
+          if (deferredRenderPending) { deferredRenderPending = false; render(); }
+        });
       });
       container.querySelectorAll('[data-shared-toggle]').forEach(cb => {
         cb.addEventListener('change', () => scheduleSave(cb.dataset.sharedToggle, { immediate: true }));
@@ -300,7 +334,7 @@
           !incomingOwnIds.has(b.block_id) && touchedAt[b.block_id] && (now - touchedAt[b.block_id]) < RECENT_TOUCH_MS);
         incoming[agentCode] = incomingOwn.concat(stillPending);
         notesByCode = incoming;
-        render();
+        renderFromPoll();
       });
     }
 
