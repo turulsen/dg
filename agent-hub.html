@@ -140,6 +140,15 @@
   }
   .ah-erase-confirm:disabled{ background:#a89a78; border-color:#a89a78; cursor:not-allowed; opacity:.6; }
 
+  /* ── KIA: a live read of the Agent's saved character sheet (same
+     signal dg-agent-portal.html's Agent File tab already shows via
+     #af-kia-stamp), surfaced here too so it's visible on the roster tab
+     strip and panel without clicking through -- see checkAgentKia()
+     below. .stamp is already red by default (theme-folder.css), so the
+     "KIA" stamp itself needs no extra styling; this covers the
+     struck-through name on both the tab label and the panel title. ── */
+  .kia-name{ color:var(--red); text-decoration:line-through; text-decoration-thickness:2px; text-decoration-color:var(--red); }
+
   /* ── Handouts: whatever the Handler has filed that's relevant to this
      Agent -- campaign-wide entries, plus anything scoped to a Cell this
      Agent belongs to. Read-only mirror of A-Cell's Handouts tab. ── */
@@ -355,6 +364,35 @@
     });
   }
 
+  // Async, per agent: a live read of the same saved character sheet
+  // checkCharacterExists() above already fetches -- mirrors
+  // dg-agent-portal.html's checkAgentKia(), which Agent File already
+  // shows this same signal via. Not a separate persisted flag: heal the
+  // Agent back above 0 and this clears on its own next time the roster
+  // renders. Best-effort, same as everything else here -- a check that
+  // errors or times out just leaves the name unmarked.
+  function checkAgentKia(code) {
+    return new Promise(resolve => {
+      const cbName = '_ahKiaCheck_' + code.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
+      const timer = setTimeout(() => { delete window[cbName]; resolve(false); }, 6000);
+      window[cbName] = function (res) {
+        clearTimeout(timer);
+        delete window[cbName];
+        const s = document.getElementById('s-' + cbName);
+        if (s) s.remove();
+        if (!res || res.status !== 'OK' || !res.character_json) { resolve(false); return; }
+        let state;
+        try { state = JSON.parse(res.character_json); } catch (e) { resolve(false); return; }
+        const hp = state && state.derived && state.derived.hp;
+        resolve(typeof hp === 'number' && hp <= 0);
+      };
+      const s = document.createElement('script');
+      s.id = 's-' + cbName;
+      s.src = APPS_SCRIPT_URL + '?action=load_character&code=' + encodeURIComponent(code) + '&callback=' + cbName;
+      document.head.appendChild(s);
+    });
+  }
+
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
     return String(str)
@@ -426,10 +464,11 @@
     }
 
     agents.forEach((a, i) => {
+      const tabLabelId = 'ah-tablabel-' + a.code;
       const tab = document.createElement('div');
       tab.className = 'tw';
       tab.dataset.tab = a.code;
-      tab.innerHTML = `<span>${escapeHtml(tabLabel(a))}</span>`;
+      tab.innerHTML = `<span id="${tabLabelId}">${escapeHtml(tabLabel(a))}</span>`;
       tabStrip.appendChild(tab);
 
       const meta = [a.age_range, a.sex, a.nationality].filter(Boolean).map(escapeHtml).join(' &middot; ');
@@ -437,6 +476,7 @@
       const photoId = 'ah-photo-' + a.code;
       const playBtnId = 'ah-play-' + a.code;
       const stampId = 'ah-charstamp-' + a.code;
+      const titleId = 'ah-title-' + a.code;
 
       const panel = document.createElement('div');
       panel.className = 'tab-panel';
@@ -451,7 +491,7 @@
               <div class="paper-photo" id="${photoId}">${(a.char_name || '?').charAt(0).toUpperCase()}</div>
               <div>
                 <div class="paper-title-sub">Delta Green — Agent Roster</div>
-                <div class="paper-title">${escapeHtml(a.char_name || 'Unknown Agent')}</div>
+                <div class="paper-title" id="${titleId}">${escapeHtml(a.char_name || 'Unknown Agent')}</div>
               </div>
             </div>
             <div class="paper-meta">CODE: ${escapeHtml(a.code)}<br>COVER: ${a.codename ? escapeHtml(a.codename) : '&mdash;'}<br>SAVED: ${a.saved_at ? new Date(a.saved_at).toLocaleDateString() : '&mdash;'}</div>
@@ -488,6 +528,16 @@
         if (btn) { btn.textContent = 'Recruit'; btn.title = 'No character sheet on file yet for this Agent -- starts the Character Creation Wizard.'; }
         const stamps = document.getElementById(stampId);
         if (stamps) stamps.insertAdjacentHTML('beforeend', '<div class="stamp">No Character Sheet Yet</div>');
+      });
+
+      checkAgentKia(a.code).then(kia => {
+        if (!kia) return;
+        const stamps = document.getElementById(stampId);
+        if (stamps) stamps.insertAdjacentHTML('afterbegin', '<div class="stamp">KIA</div>');
+        const tabSpan = document.getElementById(tabLabelId);
+        if (tabSpan) tabSpan.classList.add('kia-name');
+        const title = document.getElementById(titleId);
+        if (title) title.classList.add('kia-name');
       });
     });
 

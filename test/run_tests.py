@@ -1593,6 +1593,63 @@ def test_agent_hub_erase_agent(p):
     page.close()
     return errs
 
+def test_agent_hub_kia_stamp(p):
+    """Regression test for a real report: 'Kia and scoring should also be
+    on Agent file, not just in A-Cell' -- clarified to mean KIA status
+    specifically, visible right on the Agent Hub roster (tab strip and
+    panel), not only after clicking through to Agent File. checkAgentKia()
+    does the same load_character read dg-agent-portal.html's own KIA
+    stamp already uses, then marks both the tab label and panel title
+    struck-through and adds a KIA stamp -- purely a live read, not a
+    persisted flag."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    characters = {
+        "DEAD-0001": json.dumps({"derived": {"hp": 0}}),
+        "ALIV-0002": json.dumps({"derived": {"hp": 9}}),
+    }
+    def fake_apps_script(route):
+        url = route.request.url
+        if route.request.method == "POST" or "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        if "action=load_character" in url:
+            code = url.split("code=")[1].split("&")[0]
+            res = {"status": "OK", "character_json": characters[code]} if code in characters else {"status": "NOT_FOUND"}
+        else:
+            res = {"status": "OK"}
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    roster = json.dumps({
+        "DEAD-0001": {"code": "DEAD-0001", "char_name": "Owen Castillo", "saved_at": 1000},
+        "ALIV-0002": {"code": "ALIV-0002", "char_name": "Priya Anand", "saved_at": 2000},
+    })
+    page.add_init_script(f"localStorage.setItem('dg_agent_roster', '{roster}');")
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(800)
+
+    record("hub", "the dead Agent's tab label is struck through",
+           "kia-name" in page.eval_on_selector("#ah-tablabel-DEAD-0001", "el => el.className"), "")
+    record("hub", "the dead Agent's panel title is struck through",
+           "kia-name" in page.eval_on_selector("#ah-title-DEAD-0001", "el => el.className"), "")
+    record("hub", "the dead Agent's panel shows a KIA stamp",
+           "KIA" in page.inner_text("#ah-charstamp-DEAD-0001"), page.inner_text("#ah-charstamp-DEAD-0001"))
+
+    record("hub", "the living Agent's tab label is not struck through",
+           "kia-name" not in page.eval_on_selector("#ah-tablabel-ALIV-0002", "el => el.className"), "")
+    record("hub", "the living Agent's panel does not show a KIA stamp",
+           "KIA" not in page.inner_text("#ah-charstamp-ALIV-0002"), page.inner_text("#ah-charstamp-ALIV-0002"))
+
+    record("hub", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_agent_hub_handouts(p):
     """agent-hub.html's per-Agent Handouts section: a read-only mirror
     of A-Cell's Handouts tab, filtered per Agent -- campaign-wide
@@ -5416,6 +5473,8 @@ def main():
         safe(test_agent_hub_cover_identity, browser, area="hub")
 
         safe(test_agent_hub_erase_agent, browser, area="hub")
+
+        safe(test_agent_hub_kia_stamp, browser, area="hub")
 
         safe(test_agent_hub_recruit_flag, browser, area="hub")
 
