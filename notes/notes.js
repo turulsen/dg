@@ -149,6 +149,15 @@
     let searchTerm = '';
     let pollTimer = null;
     let editingBlockId = null; // the one block currently swapped into its raw-text edit field, or null
+    // Set on mousedown (which always fires before blur) when the click
+    // lands on an in-block control -- the format toolbar, the Shared
+    // checkbox, Delete -- so the field's own blur handler can tell
+    // "focus is moving to a sibling control in this same block" apart
+    // from "the user actually left the block", WITHOUT relying on
+    // blur's e.relatedTarget (unreliable on Safari, frequently null even
+    // for a same-block focus change -- that flaw was making every single
+    // in-block control click misread as "left the block").
+    let blurGuardBlockId = null;
     // A poll's own render() does a full innerHTML rebuild -- doing that
     // while a field has focus destroys and recreates that DOM node,
     // which drops focus (and with it, on mobile, the keyboard) even
@@ -375,9 +384,14 @@
 
       let fieldHtml;
       if (isEditing) {
+        // The author's ink (color + handwriting font) needs to render
+        // in the LIVE editing field too, not just the settled view --
+        // previously this style was only ever applied to
+        // .dg-notes-block-view, so it never appeared while you were
+        // actually typing.
         fieldHtml = (type === 'paragraph')
-          ? '<textarea class="dg-notes-block-text" data-block-id="' + escapeHtml(b.block_id) + '" rows="3">' + escapeHtml(b.text) + '</textarea>'
-          : '<input type="text" class="dg-notes-block-text" data-block-id="' + escapeHtml(b.block_id) + '" value="' + escapeHtml(b.text) + '">';
+          ? '<textarea class="dg-notes-block-text" style="' + inkStyle + '" data-block-id="' + escapeHtml(b.block_id) + '" rows="3">' + escapeHtml(b.text) + '</textarea>'
+          : '<input type="text" class="dg-notes-block-text" style="' + inkStyle + '" data-block-id="' + escapeHtml(b.block_id) + '" value="' + escapeHtml(b.text) + '">';
       } else {
         const rendered = b.text ? renderInline(b.text) : '<span class="dg-notes-block-placeholder">' + (ctx.canEdit ? 'Tap to write…' : '(empty)') + '</span>';
         fieldHtml = '<div class="dg-notes-block-view" style="' + inkStyle + '" data-block-id="' + escapeHtml(b.block_id) + '"' +
@@ -461,16 +475,49 @@
       container.querySelectorAll('.dg-notes-block-text').forEach(field => {
         const blockId = field.dataset.blockId;
         field.addEventListener('input', () => scheduleSave(blockId));
-        field.addEventListener('blur', e => {
-          // Focus moving to a control within this SAME block (the format
-          // toolbar, the Shared checkbox, Delete) shouldn't exit edit
-          // mode -- only actually leaving the block should swap it back
-          // to its rendered view.
-          const next = e.relatedTarget;
-          if (next && next.closest && next.closest('[data-block-id="' + blockId + '"]')) return;
-          editingBlockId = null;
-          deferredRenderPending = false;
-          render();
+        field.addEventListener('keydown', e => {
+          if (e.key !== 'Enter') return;
+          const block = findBlockAnywhere(blockId);
+          if (!block) return;
+          const t = normalizedType(block.block_type);
+          if (t !== 'bullet' && t !== 'numbered') return; // paragraph/h1/h2 keep default Enter behavior
+          e.preventDefault();
+          scheduleSave(blockId, { immediate: true });
+          addBlock(block.block_type, { shared: !!block.shared });
+        });
+        field.addEventListener('blur', () => {
+          // blurGuardBlockId is set by the mousedown listener below,
+          // BEFORE this blur even fires -- unlike e.relatedTarget (often
+          // null on Safari, especially for touch-initiated focus
+          // changes), mousedown-before-blur ordering is reliable, so
+          // this is the one check that actually catches "focus is
+          // moving to a sibling control in this same block."
+          const guarded = blurGuardBlockId === blockId;
+          blurGuardBlockId = null;
+          if (guarded) return; // stay in edit mode; no DOM mutation at all
+          // Deferred a tick: if this blur was instead caused by a click
+          // OUTSIDE this block (a tab, an Add-row button, another
+          // block's view), rendering synchronously here would destroy
+          // that very element before its own click event could fire --
+          // "click disappearing, no formatting happening." Deferring
+          // lets that click's own handler run first, against intact DOM.
+          setTimeout(() => {
+            if (editingBlockId !== blockId) return; // something else already moved us on; don't clobber it
+            editingBlockId = null;
+            deferredRenderPending = false;
+            render();
+          }, 0);
+        });
+      });
+      // Fires before blur (mousedown always precedes blur), so this is
+      // the reliable way to know "the user is interacting with a
+      // control inside the currently-editing block" -- see the blur
+      // handler above.
+      container.querySelectorAll('.dg-notes-block').forEach(blockEl => {
+        blockEl.addEventListener('mousedown', e => {
+          if (editingBlockId && blockEl.dataset.blockId === editingBlockId && !e.target.classList.contains('dg-notes-block-text')) {
+            blurGuardBlockId = editingBlockId;
+          }
         });
       });
       container.querySelectorAll('[data-fmt]').forEach(btn => {
@@ -560,8 +607,13 @@
       const list = notesByCode[agentCode] || (notesByCode[agentCode] = []);
       const maxSort = list.reduce((m, b) => Math.max(m, b.sort_order), 0);
       const now = Date.now();
+      // agent_code set locally too, not just on the server row -- the
+      // server round-trip that would otherwise be the only source of it
+      // takes a full poll cycle, and identityFor()/canEdit checks (ink
+      // color/font, combined-Shared-tab editability) both key off this
+      // field being present on the block object itself.
       const block = {
-        block_id: mintBlockId(), block_type: blockType, text: '', shared: shared,
+        block_id: mintBlockId(), agent_code: agentCode, block_type: blockType, text: '', shared: shared,
         sort_order: maxSort + 1000, created_at: now, updated_at: now,
       };
       list.push(block);
@@ -594,10 +646,30 @@
         const incomingOwn = incoming[agentCode] || [];
         const incomingOwnIds = new Set(incomingOwn.map(b => b.block_id));
         const localOwn = notesByCode[agentCode] || [];
+        const localById = {};
+        localOwn.forEach(b => { localById[b.block_id] = b; });
         const now = Date.now();
-        const stillPending = localOwn.filter(b =>
-          !incomingOwnIds.has(b.block_id) && touchedAt[b.block_id] && (now - touchedAt[b.block_id]) < RECENT_TOUCH_MS);
-        incoming[agentCode] = incomingOwn.concat(stillPending);
+        const isProtected = id => editingBlockId === id || !!saveTimers[id] ||
+          (touchedAt[id] && (now - touchedAt[id]) < RECENT_TOUCH_MS);
+        // A no-cors save is fire-and-forget with no read-back, so
+        // list_cell_notes can legitimately still reflect an OLDER text
+        // for a block whose newer edit hasn't landed (or hasn't been
+        // reflected past the ~3s cache TTL) yet -- that's true even for
+        // blocks the server already has a row for, not just brand-new
+        // ones. Blindly trusting the server's copy here was clobbering
+        // in-progress or just-sent text with a stale version on every
+        // single 5s poll: "I write something, it disappears... then
+        // overwritten with the first text. Then the second." This is
+        // that race. Any block we're actively editing, have a save
+        // pending for, or touched within the last poll-or-two keeps its
+        // LOCAL text instead of the server's, until enough time has
+        // passed that the save has almost certainly landed.
+        const mergedOwn = incomingOwn.map(b => {
+          const local = localById[b.block_id];
+          return (local && isProtected(b.block_id)) ? local : b;
+        });
+        const stillPending = localOwn.filter(b => !incomingOwnIds.has(b.block_id) && isProtected(b.block_id));
+        incoming[agentCode] = mergedOwn.concat(stillPending);
         notesByCode = incoming;
         identities = res.identities || identities;
         renderFromPoll();

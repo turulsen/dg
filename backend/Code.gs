@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v15 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v16 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Sheet/Admin) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -23,6 +23,11 @@
 //   (save_agent_identity, bundled into list_cell_notes as
 //   `identities`) for attributing contributions in the combined
 //   Shared tab; created_at now also returned per block
+// + Fixed listCellNotes() never actually returning agent_code on each
+//   note object (only as the notes{} dict key) -- broke ink
+//   color/font attribution entirely (identityFor(b.agent_code) was
+//   always identityFor(undefined)) and made every block in the
+//   combined Shared tab uneditable by its own author
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -1359,7 +1364,7 @@ function listCellNotes(cellId, agentCode, callback) {
     if (row.agent_code !== requester && !row.shared) return; // private, not yours -- never included
     const list = result.notes[row.agent_code] || (result.notes[row.agent_code] = []);
     list.push({
-      block_id: row.block_id, block_type: row.block_type, text: row.text,
+      block_id: row.block_id, agent_code: row.agent_code, block_type: row.block_type, text: row.text,
       shared: row.shared, sort_order: row.sort_order, created_at: row.created_at, updated_at: row.updated_at
     });
   });
