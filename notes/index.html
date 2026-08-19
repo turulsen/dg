@@ -168,6 +168,25 @@
     return a.char_name ? (a.char_name + ' (' + a.code + ')') : a.code;
   }
 
+  // Backend hardening: list_cell_notes/save_note_block/delete_note_block/
+  // save_agent_identity now need this Agent's own secret token (see
+  // requireAgentToken_() in Code.gs). Mints and persists one into the
+  // same dg_agent_roster entry the Cover Identity auto-load above just
+  // read, the first time this browser needs one for a given code -- see
+  // the matching agentToken() in dg-agent-portal.html for the fuller
+  // rationale.
+  function agentToken(code) {
+    if (!code) return '';
+    let roster;
+    try { roster = JSON.parse(localStorage.getItem(ROSTER_KEY) || '{}'); } catch (e) { roster = {}; }
+    if (roster[code] && roster[code].token) return roster[code].token;
+    const token = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+      : 'tok_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2);
+    roster[code] = Object.assign({ code: code }, roster[code] || {}, { token: token });
+    try { localStorage.setItem(ROSTER_KEY, JSON.stringify(roster)); } catch (e) { /* best effort */ }
+    return token;
+  }
+
   function init() {
     myAgents = rosterAgentsSorted();
     jsonpGet('list_cells', {}, res => {
@@ -209,6 +228,7 @@
     panelHandle = window.dgNotesPanel.init(mount, {
       cellId: cell.cell_id,
       agentCode: agentCode,
+      agentToken: agentToken(agentCode),
       memberCodes: cell.member_codes || [],
     });
   }

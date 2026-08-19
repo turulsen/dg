@@ -3604,6 +3604,7 @@ function savePromptToDossier(agentCode) {
     body: JSON.stringify({
       action: 'update_field',
       agent_code: agentCode,
+      token: agentToken(agentCode),
       field: 'banana_prompt',
       value: prompt
     })
@@ -3920,6 +3921,7 @@ function initEra(era) {
     body: JSON.stringify({
       action: 'update_field',
       agent_code: afCode,
+      token: agentToken(afCode),
       field: 'active_eras',
       value: afData.active_eras
     })
@@ -4095,6 +4097,7 @@ function saveGeneratedPlate(dataUrl, era, type, imageName) {
     body: JSON.stringify({
       action: 'save_plate',
       agent_code: afCode,
+      token: agentToken(afCode),
       field: fieldKey,
       image_base64: dataUrl,
       image_name: imageName || (type + '_' + era + '_generated.png'),
@@ -4152,7 +4155,7 @@ function generatePlateImage(era, mode) {
 
   if (st) st.textContent = 'Generating image…';
 
-  const payload = { action: 'generate_plate_image', agent_code: afCode, prompt: prompt };
+  const payload = { action: 'generate_plate_image', agent_code: afCode, token: agentToken(afCode), prompt: prompt };
 
   function send() {
     fetch(APPS_SCRIPT_URL, {
@@ -4243,7 +4246,7 @@ function autoGenerateEraPrompts(era) {
     fetch(APPS_SCRIPT_URL, {
       method: 'POST',
       headers: {'Content-Type': 'text/plain'},
-      body: JSON.stringify({ action: 'generate_prompt', agent_code: afCode, character: character, injuries: [], mode: 'base', era: era })
+      body: JSON.stringify({ action: 'generate_prompt', agent_code: afCode, token: agentToken(afCode), character: character, injuries: [], mode: 'base', era: era })
     })
     .then(function(r) { return r.json(); })
     .then(function(json) {
@@ -4252,7 +4255,7 @@ function autoGenerateEraPrompts(era) {
         if (st0) { st0.textContent = 'Generated.'; setTimeout(function(){ st0.textContent=''; }, 3000); }
         // Save to Sheet
         fetch(APPS_SCRIPT_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'},
-          body: JSON.stringify({ action:'update_field', agent_code: afCode, field:'mode0_prompt', value: json.prompt })
+          body: JSON.stringify({ action:'update_field', agent_code: afCode, token: agentToken(afCode), field:'mode0_prompt', value: json.prompt })
         }).catch(function(e){ console.error(e); });
         if (afData) afData.mode0_prompt = json.prompt;
         persistAgent(afCode, afData);
@@ -4268,7 +4271,7 @@ function autoGenerateEraPrompts(era) {
     fetch(APPS_SCRIPT_URL, {
       method: 'POST',
       headers: {'Content-Type': 'text/plain'},
-      body: JSON.stringify({ action: 'generate_prompt', agent_code: afCode, character: character, injuries: [], mode: 'outfit', era: era })
+      body: JSON.stringify({ action: 'generate_prompt', agent_code: afCode, token: agentToken(afCode), character: character, injuries: [], mode: 'outfit', era: era })
     })
     .then(function(r) { return r.json(); })
     .then(function(json) {
@@ -4276,7 +4279,7 @@ function autoGenerateEraPrompts(era) {
         ta1.value = json.prompt;
         if (st1) { st1.textContent = 'Generated.'; setTimeout(function(){ st1.textContent=''; }, 3000); }
         fetch(APPS_SCRIPT_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'},
-          body: JSON.stringify({ action:'update_field', agent_code: afCode, field:'mode1_prompt', value: json.prompt })
+          body: JSON.stringify({ action:'update_field', agent_code: afCode, token: agentToken(afCode), field:'mode1_prompt', value: json.prompt })
         }).catch(function(e){ console.error(e); });
         if (afData) afData.mode1_prompt = json.prompt;
         persistAgent(afCode, afData);
@@ -4303,7 +4306,7 @@ function saveEraPrompt(btn) {
   fetch(APPS_SCRIPT_URL, {
     method: 'POST', mode: 'no-cors',
     headers: {'Content-Type':'text/plain'},
-    body: JSON.stringify({ action: 'update_field', agent_code: afCode, field: field, value: val })
+    body: JSON.stringify({ action: 'update_field', agent_code: afCode, token: agentToken(afCode), field: field, value: val })
   }).then(() => {
     if (status) { status.textContent = 'Saved.'; setTimeout(() => status.textContent = '', 2500); }
     if (afData) afData[field] = val;
@@ -4406,7 +4409,7 @@ function generateMedPrompt(btn) {
   fetch(APPS_SCRIPT_URL, {
     method: 'POST',
     headers: {'Content-Type': 'text/plain'},
-    body: JSON.stringify({ action: 'generate_prompt', agent_code: afCode, character: character, injuries: injuries })
+    body: JSON.stringify({ action: 'generate_prompt', agent_code: afCode, token: agentToken(afCode), character: character, injuries: injuries })
   })
   .then(function(r) { return r.json(); })
   .then(function(json) {
@@ -4422,7 +4425,7 @@ function generateMedPrompt(btn) {
       fetch(APPS_SCRIPT_URL, {
         method: 'POST', mode: 'no-cors',
         headers: {'Content-Type':'text/plain'},
-        body: JSON.stringify({ action: 'update_medical', agent_code: afCode, medical_log: afData.medical_log })
+        body: JSON.stringify({ action: 'update_medical', agent_code: afCode, token: agentToken(afCode), medical_log: afData.medical_log })
       }).catch(function(e) { console.error(e); });
     } else {
       box.innerHTML = '<span style="color:#8b1a1a;font-style:italic;">Error: ' + (json.message || 'Unknown') + '</span>';
@@ -4494,7 +4497,7 @@ function generateMedFormPrompt() {
   fetch(APPS_SCRIPT_URL, {
     method: 'POST',
     headers: {'Content-Type': 'text/plain'},
-    body: JSON.stringify({ action: 'generate_prompt', agent_code: afCode, character: character, injuries: allInjuries })
+    body: JSON.stringify({ action: 'generate_prompt', agent_code: afCode, token: agentToken(afCode), character: character, injuries: allInjuries })
   })
   .then(function(r) { return r.json(); })
   .then(function(json) {
@@ -4576,6 +4579,7 @@ function saveMedEntry() {
   const payload = {
     action: 'update_medical',
     agent_code: afCode,
+    token: agentToken(afCode),
     medical_log: JSON.stringify(existing)
   };
 
@@ -4743,6 +4747,7 @@ function saveAarEntry() {
   const payload = {
     action: 'update_aar',
     agent_code: afCode,
+    token: agentToken(afCode),
     aar_log: JSON.stringify(existing)
   };
 
@@ -5330,9 +5335,34 @@ function rosterSave(roster) {
   try { localStorage.setItem(ROSTER_KEY, JSON.stringify(roster)); } catch(e) {}
 }
 
+// Backend hardening: every player-owned write now needs a per-Agent
+// secret token (see requireAgentToken_() in Code.gs). Rather than
+// having the server mint one and hand it back -- unreliable, since
+// most writes here are fire-and-forget `mode:'no-cors'` POSTs whose
+// response can never be read -- each browser mints its own the first
+// time it needs one for a given Agent Code and just starts sending it.
+// The server's first sight of a token for a code with none on file
+// yet is treated as that code's claim, so this "just works" with no
+// round trip: an existing player's browser already holds the same
+// token it's been sending all along, which is what lets their saved
+// data keep working with zero action from them, even much later.
+function agentToken(code) {
+  if (!code) return '';
+  var roster = rosterLoad();
+  var existing = roster[code] && roster[code].token;
+  if (existing) return existing;
+  var token = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+    : 'tok_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2);
+  if (!roster[code]) roster[code] = { code: code };
+  roster[code].token = token;
+  rosterSave(roster);
+  return token;
+}
+
 function rosterAddAgent(code, data) {
   if (!code || !data) return;
   var roster = rosterLoad();
+  var existingToken = (roster[code] && roster[code].token) || '';
   // Store only slim fields — no base64 images which can exceed localStorage quota
   roster[code] = {
     code: code,
@@ -5350,6 +5380,11 @@ function rosterAddAgent(code, data) {
     // tied to a *different* real name (safe to drop on a search for a
     // name that isn't this one).
     player_name: (data.player_name || '').trim(),
+    // Preserve whatever token this Agent Code already had -- this
+    // function overwrites the whole roster entry on every save, and a
+    // token minted by agentToken() on an earlier write must survive
+    // that overwrite rather than being silently dropped.
+    token: data.token || existingToken,
     saved_at: Date.now()
   };
   try {

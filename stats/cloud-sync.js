@@ -69,6 +69,27 @@
         return window.dgAgentCode.gen(name);
     }
 
+    // Backend hardening: save_character now needs a per-Agent secret
+    // token (see requireAgentToken_() in Code.gs) -- mints and persists
+    // one into the same dg_agent_roster entry rosterUpsert() writes to,
+    // the first time this browser needs one for a given code. See the
+    // matching agentToken() in dg-agent-portal.html for the fuller
+    // rationale (no server round trip needed, since every write here is
+    // a fire-and-forget mode:'no-cors' POST that can't read a response
+    // body to learn a server-issued token anyway).
+    function agentToken(code) {
+        if (!code) return '';
+        try {
+            const roster = JSON.parse(localStorage.getItem(ROSTER_KEY) || '{}');
+            if (roster[code] && roster[code].token) return roster[code].token;
+            const token = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+                : 'tok_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2);
+            roster[code] = Object.assign({ code: code }, roster[code] || {}, { token: token });
+            localStorage.setItem(ROSTER_KEY, JSON.stringify(roster));
+            return token;
+        } catch (e) { return ''; }
+    }
+
     function getCloudCode() {
         try { return localStorage.getItem(CLOUD_CODE_KEY) || ''; } catch (e) { return ''; }
     }
@@ -90,12 +111,21 @@
         if (!code || !window.dgSaveLoad?.collectState) return;
         const state = window.dgSaveLoad.collectState();
         rosterUpsert(code, state.bio?.name, state.bio?.player_name);
+        // Deliberately NOT mode:'no-cors' (unlike most fire-and-forget
+        // POSTs in this app) -- this is the one write where a rejected
+        // Agent token needs to be visible rather than silently reported
+        // as "Synced": typing an existing code into a brand-new browser
+        // (this feature's own documented "pick up on another device"
+        // use) now needs that device's own claimed token, same as every
+        // other player-owned write, so a mismatch here is the expected
+        // shape of "this device hasn't been recovered yet," not a bug.
         fetch(APPS_SCRIPT_URL, {
-            method: 'POST', mode: 'no-cors', keepalive: true,
+            method: 'POST', keepalive: true,
             headers: { 'Content-Type': 'text/plain' },
             body: JSON.stringify({
                 action: 'save_character',
                 agent_code: code,
+                token: agentToken(code),
                 character_json: JSON.stringify(state),
                 // Also sent as its own top-level field (not just buried in
                 // character_json) so the backend can write it to its own
@@ -104,8 +134,13 @@
                 // than scanning and JSON-parsing every row's blob.
                 player_name: state.bio?.player_name || '',
             }),
-        }).then(() => renderStatus('☁ Synced — code ' + code))
-          .catch(() => { /* silent, same as every other Apps Script call in this app */ });
+        }).then(r => r.json()).then(res => {
+            if (res && res.status === 'OK') {
+                renderStatus('☁ Synced — code ' + code);
+            } else {
+                renderStatus('☁ Not synced — this code is claimed on a different device. Ask your Handler to reset its token.');
+            }
+        }).catch(() => { /* network error -- silent, same as every other Apps Script call in this app */ });
     }
 
     // Mints a code on first meaningful edit (a real name present) if one

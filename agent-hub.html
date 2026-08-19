@@ -231,6 +231,20 @@
     </div>
     <span class="ci-status" id="ci-status"></span>
   </div>
+
+  <!-- Recover Access: once "Load My Agents" above finds an Agent on
+       this new/cleared device, saving still won't work until this
+       device holds that Agent's own secret token -- ask your Handler
+       (they can find it in A-Cell Admin) and paste it in here. -->
+  <div class="ci-row" id="recover-access-row">
+    <label class="ci-label" for="recover-token-value">Recover Access — Handler Gave You a Token?</label>
+    <div class="ci-fields">
+      <input type="text" id="recover-token-code" class="ci-input" placeholder="Agent Code, e.g. ALFR-1234" autocomplete="off" style="max-width:170px;">
+      <input type="text" id="recover-token-value" class="ci-input" placeholder="Token" autocomplete="off">
+      <button type="button" id="recover-token-btn" class="ci-btn">Save Access</button>
+    </div>
+    <span class="ci-status" id="recover-token-status"></span>
+  </div>
 </div>
 
 <div class="folder-wrap">
@@ -310,6 +324,26 @@
 
   function rosterLoad() {
     try { return JSON.parse(localStorage.getItem(ROSTER_KEY) || '{}'); } catch (e) { return {}; }
+  }
+
+  function rosterSave(roster) {
+    try { localStorage.setItem(ROSTER_KEY, JSON.stringify(roster)); } catch (e) { /* best effort */ }
+  }
+
+  // Backend hardening: save_handout_note/list_handout_notes now need a
+  // per-Agent secret token (see requireAgentToken_() in Code.gs). See
+  // the matching agentToken() in dg-agent-portal.html for the fuller
+  // rationale -- mints and persists one into this same dg_agent_roster
+  // entry the first time it's needed, no server round trip required.
+  function agentToken(code) {
+    if (!code) return '';
+    const roster = rosterLoad();
+    if (roster[code] && roster[code].token) return roster[code].token;
+    const token = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+      : 'tok_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2);
+    roster[code] = Object.assign({ code: code }, roster[code] || {}, { token: token });
+    rosterSave(roster);
+    return token;
   }
 
   function eraLabel(a) {
@@ -718,6 +752,35 @@
     });
   }
 
+  // Recover Access: writes a Handler-relayed token straight into this
+  // browser's roster entry for that Agent Code (creating the entry if
+  // Cover Identity search above hasn't been run yet), overwriting
+  // whatever token (if any) was already there. This is the other half
+  // of Handler-mediated recovery -- Cover Identity search finds WHICH
+  // Agent Code is yours, this is what actually lets this device write
+  // to it again.
+  const rtCodeInput = document.getElementById('recover-token-code');
+  const rtTokenInput = document.getElementById('recover-token-value');
+  const rtBtn = document.getElementById('recover-token-btn');
+  const rtStatus = document.getElementById('recover-token-status');
+  if (rtBtn) {
+    rtBtn.addEventListener('click', () => {
+      const code = (rtCodeInput.value || '').trim().toUpperCase();
+      const token = (rtTokenInput.value || '').trim();
+      if (!code || !token) {
+        if (rtStatus) rtStatus.textContent = 'Enter both the Agent Code and the token.';
+        return;
+      }
+      const roster = rosterLoad();
+      roster[code] = Object.assign({ code: code }, roster[code] || {}, { token: token, saved_at: Date.now() });
+      try { localStorage.setItem(ROSTER_KEY, JSON.stringify(roster)); } catch (e) { /* best effort */ }
+      if (rtStatus) rtStatus.textContent = 'Access saved for ' + code + ' — try saving again.';
+      rtTokenInput.value = '';
+      const stillActive = document.querySelector('.tw.active');
+      renderRoster(stillActive ? stillActive.dataset.tab : undefined);
+    });
+  }
+
   const storedIdentity = (function () {
     try { return localStorage.getItem(COVER_IDENTITY_KEY) || ''; } catch (e) { return ''; }
   })();
@@ -812,7 +875,7 @@
     fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'save_handout_note', handout_id: handoutId, agent_code: code, note: value }),
+      body: JSON.stringify({ action: 'save_handout_note', handout_id: handoutId, agent_code: code, token: agentToken(code), note: value }),
     }).then(() => {
       if (!statusEl) return;
       statusEl.textContent = 'Saved';
@@ -857,7 +920,7 @@
           .filter(h => !h.cell_id || myCellIds.indexOf(h.cell_id) !== -1)
           .sort((x, y) => Number(y.created_at) - Number(x.created_at));
         renderHandoutsFor(a.code, relevant, cellsById);
-        jsonpGet('list_handout_notes', { agent_code: a.code }, notesRes => {
+        jsonpGet('list_handout_notes', { agent_code: a.code, token: agentToken(a.code) }, notesRes => {
           if (!notesRes || notesRes.status !== 'OK' || !Array.isArray(notesRes.notes)) return;
           const notesByHandoutId = {};
           notesRes.notes.forEach(n => { notesByHandoutId[n.handout_id] = n.note; });

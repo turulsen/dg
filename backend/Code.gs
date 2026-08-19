@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v19 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v20 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Sheet/Admin) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -54,15 +54,46 @@
 // + Backend hardening, stage 2 (auth infrastructure -- not wired to
 //   any existing action yet, that's stage 3): new AgentAuth sheet
 //   (agent_code/token/created_at/claimed_at); requireAgentToken_()
-//   validates a per-Agent secret token, lazy-claiming (minting) one on
-//   first use for a code that doesn't have one yet, so an existing
-//   player's saved data keeps working on their own device with zero
-//   action from them; requireHandlerAuth_() checks a handler_password
-//   against a new HANDLER_PASSWORD Script Property (fails closed if
-//   unset); new reset_agent_token action + resetAgentToken_(), gated by
-//   requireHandlerAuth_() from the moment it exists, for Handler-
-//   mediated recovery on a new device/cleared storage (after locating
-//   the Agent Code via the existing find_by_player_name search)
+//   validates a per-Agent secret token; requireHandlerAuth_() checks a
+//   handler_password against a new HANDLER_PASSWORD Script Property
+//   (fails closed if unset); new reset_agent_token action +
+//   resetAgentToken_(), gated by requireHandlerAuth_() from the moment
+//   it exists, for Handler-mediated recovery on a new device/cleared
+//   storage (after locating the Agent Code via the existing
+//   find_by_player_name search)
+// + Backend hardening, stage 3 (the guard rollout + client plumbing):
+//   requireAgentToken_()'s lazy-claim revised from stage 2's own
+//   description -- it now accepts whatever token the CLIENT already
+//   generated and sent, rather than minting one server-side and
+//   handing it back, since most writes in this app are fire-and-forget
+//   `fetch(...,{mode:'no-cors'})` POSTs whose response can never be
+//   read to learn a server-issued token at all. Every client file
+//   mints and persists its own per-Agent token locally on first use
+//   instead (see agentToken() in dg-agent-portal.html,
+//   stats/cloud-sync.js, agent-hub.html, notes/index.html). Every
+//   player-owned write (update_medical/update_aar/update_field,
+//   save_plate, generate_prompt, generate_plate_image, save_note_block,
+//   delete_note_block, save_agent_identity, save_handout_note) and the
+//   two requester-spoofable reads (list_cell_notes, list_handout_notes)
+//   now call requireAgentToken_(); save_character accepts EITHER the
+//   Agent's own token or the Handler password (requireAgentOrHandlerAuth_)
+//   since A-Cell's Sheet tab also edits it directly; every Handler/admin
+//   write (create/update/delete_cell, update_cell_members,
+//   create/update/delete_handout, delete_character, restore_character,
+//   set/pause/resume_now_playing, save_playlist, upload_track,
+//   delete_track, set_cell_channel, update_character_field) now calls
+//   requireHandlerAuth_(). deleteNoteBlock()/saveNoteBlock() also gained
+//   a real ownership check against the block's own agent_code -- a
+//   valid token only proves who's asking, not that the named block_id
+//   is theirs, which mattered once Circulate made every shared block_id
+//   visible to the whole Cell. list_characters/list_agent_file_only/
+//   list_deleted_characters/list_handouts/load_character/list_cells/
+//   get_now_playing/get_playlist/list_tracks/imgdata/find_by_player_name
+//   deliberately stay open -- some because players legitimately need
+//   them unauthenticated (find_by_player_name IS the recovery
+//   mechanism), others (the A-Cell listing reads) because gating a
+//   GET/JSONP read would mean putting the Handler password in a URL
+//   query string; a real fix there is a later, separate piece of work.
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -233,13 +264,22 @@ function getOrCreateAgentAuthSheet() {
 }
 
 // Validates data.agent_code + data.token against AgentAuth. An Agent
-// Code with no AgentAuth row yet is lazily claimed: a token is minted
-// and stored right now, with no separate migration step, and handed
-// back via data._issuedToken so the calling action can echo it into its
-// own OK response for the client to save silently -- this is what lets
-// an existing player's saved data keep working on their own device
-// with zero action from them the next time they open the app, even
-// long after this rollout ships.
+// Code with no AgentAuth row yet is lazily claimed using whatever token
+// the CLIENT already generated and sent -- not a server-minted one
+// handed back in the response. That's a deliberate change from how
+// stage 2 first described this: most writes in this app are
+// fire-and-forget `fetch(..., {mode:'no-cors'})` POSTs (keepalive,
+// used precisely so a page navigation doesn't cancel an in-flight
+// save) whose response body can never be read at all, so a
+// server-issued token would have no reliable way back to the client
+// that needs to store it. A client-generated token sidesteps that
+// entirely: every frontend mints and persists one locally the first
+// time it needs one for a given Agent Code (see agentToken() in each
+// client file) and simply starts sending it, no round trip required.
+// This is what lets an existing player's saved data keep working on
+// their own device with zero action from them, even long after this
+// rollout ships -- their browser already holds the same token it's
+// been quietly sending all along.
 //
 // Returns null on success (a fresh claim counts as success), or a
 // ContentService error response the caller should return immediately.
@@ -249,6 +289,7 @@ function requireAgentToken_(data) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'agent_code is required' }))
       .setMimeType(ContentService.MimeType.JSON);
   }
+  const providedToken = String((data && data.token) || '').trim();
   return withScriptLock(function () {
     const sheet = getOrCreateAgentAuthSheet();
     const rows = sheet.getDataRange().getValues();
@@ -257,15 +298,17 @@ function requireAgentToken_(data) {
     const tokenCol = headers.indexOf('token');
     for (let i = 1; i < rows.length; i++) {
       if (rows[i][codeCol] === agentCode) {
-        if (rows[i][tokenCol] && rows[i][tokenCol] === data.token) return null;
+        if (rows[i][tokenCol] && rows[i][tokenCol] === providedToken) return null;
         return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'invalid or missing Agent token' }))
           .setMimeType(ContentService.MimeType.JSON);
       }
     }
-    const token = Utilities.getUuid();
+    if (!providedToken) {
+      return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'token is required' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
     const now = new Date().getTime();
-    sheet.appendRow([agentCode, token, now, now]);
-    data._issuedToken = token;
+    sheet.appendRow([agentCode, providedToken, now, now]);
     return null;
   });
 }
@@ -285,6 +328,24 @@ function requireHandlerAuth_(data) {
       .setMimeType(ContentService.MimeType.JSON);
   }
   return null;
+}
+
+// A handful of player-owned writes (e.g. save_character) are ALSO
+// legitimately editable directly by the Handler -- A-Cell's Sheet tab
+// lets the Handler correct any Agent's Player Name inline, which has
+// no way to carry that Agent's own token since the Handler isn't that
+// player. Either credential is accepted: the Handler password (checked
+// first, but only when the caller actually sent one, so a normal
+// player request with no handler_password field at all goes straight
+// to the token check instead of failing on a "wrong Handler password"
+// it never claimed to have) or the Agent's own token.
+function requireAgentOrHandlerAuth_(data) {
+  if (data && data.handler_password) {
+    const handlerErr = requireHandlerAuth_(data);
+    if (!handlerErr) return null;
+    return handlerErr;
+  }
+  return requireAgentToken_(data);
 }
 
 // Handler-only: mints a fresh token for an Agent Code, overwriting
@@ -371,9 +432,13 @@ function doGet(e) {
   // ── Player Notes: a Cell's shared/private note blocks, filtered for
   // the requesting Agent. agent_code here is the requester (used only
   // to decide what's visible), not a filter on which cell's data is
-  // read. ──
-  // ?action=list_cell_notes&cell_id=ID&agent_code=CODE&callback=CALLBACK
+  // read. Gated by the Agent's own token -- agent_code was otherwise a
+  // spoofable requester parameter: sending someone else's code would
+  // have returned THEIR private blocks, not just shared ones. ──
+  // ?action=list_cell_notes&cell_id=ID&agent_code=CODE&token=TOKEN&callback=CALLBACK
   if (e.parameter && e.parameter.action === 'list_cell_notes') {
+    const authErr = requireAgentToken_(e.parameter);
+    if (authErr) return authErr;
     return listCellNotes(e.parameter.cell_id, e.parameter.agent_code, callback);
   }
 
@@ -419,9 +484,13 @@ function doGet(e) {
     return listTracks(callback);
   }
 
-  // ── Agent Hub: a player's private notes on Handouts ─────────────
-  // ?action=list_handout_notes&agent_code=CODE&callback=CALLBACK
+  // ── Agent Hub: a player's private notes on Handouts. Gated by the
+  // Agent's own token -- agent_code was otherwise a spoofable requester
+  // parameter, same issue as list_cell_notes above. ──
+  // ?action=list_handout_notes&agent_code=CODE&token=TOKEN&callback=CALLBACK
   if (e.parameter && e.parameter.action === 'list_handout_notes') {
+    const authErr = requireAgentToken_(e.parameter);
+    if (authErr) return authErr;
     return listHandoutNotes(e.parameter.agent_code, callback);
   }
 
@@ -455,10 +524,14 @@ function doPost(e) {
     const data = JSON.parse(rawData);
 
     if (data.action === 'update_medical' || data.action === 'update_aar' || data.action === 'update_field') {
+      const authErr = requireAgentToken_(data);
+      if (authErr) return authErr;
       return updateAgentField(data);
     }
 
     if (data.action === 'save_plate') {
+      const authErr = requireAgentToken_(data);
+      if (authErr) return authErr;
       return savePlateImage(data);
     }
 
@@ -466,6 +539,8 @@ function doPost(e) {
     // surveillance / post-injury), via Claude on the server so the API key
     // never touches the browser. See generateAppearancePrompt() below.
     if (data.action === 'generate_prompt') {
+      const authErr = requireAgentToken_(data);
+      if (authErr) return authErr;
       return generateAppearancePrompt(data);
     }
 
@@ -476,10 +551,18 @@ function doPost(e) {
     // Drive-upload/Sheet-write code path for both a manual upload and a
     // generated image. See generatePlateImage() below.
     if (data.action === 'generate_plate_image') {
+      const authErr = requireAgentToken_(data);
+      if (authErr) return authErr;
       return generatePlateImage(data);
     }
 
+    // Either credential works here -- the Agent's own token (the normal
+    // case, stats/cloud-sync.js saving the player's own sheet) or the
+    // Handler password (A-Cell's Sheet tab editing any Agent's Player
+    // Name field directly). See requireAgentOrHandlerAuth_().
     if (data.action === 'save_character') {
+      const authErr = requireAgentOrHandlerAuth_(data);
+      if (authErr) return authErr;
       return saveCharacter(data);
     }
 
@@ -488,62 +571,88 @@ function doPost(e) {
     // below) -- kept for backward compatibility, unused by the current
     // frontend.
     if (data.action === 'update_character_field') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
       return updateCharacterField(data.agent_code, data.field, data.value);
     }
 
     // A-Cell: create a new Cell group.
     if (data.action === 'create_cell') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
       return createCell(data.name, data.handler);
     }
 
     // A-Cell: overwrite a Cell's full member list (add/remove).
     if (data.action === 'update_cell_members') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
       return updateCellMembers(data.cell_id, data.member_codes);
     }
 
     // A-Cell: delete a Cell grouping (its Agents stay on file).
     if (data.action === 'delete_cell') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
       return deleteCell(data.cell_id);
     }
 
     // Player Notes: save (create or update) one note block.
     if (data.action === 'save_note_block') {
+      const authErr = requireAgentToken_(data);
+      if (authErr) return authErr;
       return saveNoteBlock(data);
     }
 
     if (data.action === 'delete_note_block') {
+      const authErr = requireAgentToken_(data);
+      if (authErr) return authErr;
       return deleteNoteBlock(data);
     }
 
     // Player Notes: save an Agent's chosen color/handwriting font.
     if (data.action === 'save_agent_identity') {
+      const authErr = requireAgentToken_(data);
+      if (authErr) return authErr;
       return saveAgentIdentity(data);
     }
 
     // A-Cell Music: set a Cell's usual Table Radio channel ("Cue For Cell").
     if (data.action === 'set_cell_channel') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
       return setCellChannel(data.cell_id, data.channel);
     }
 
     // A-Cell Handouts: create/edit/delete a filed handout.
     if (data.action === 'create_handout') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
       return createHandout(data);
     }
     if (data.action === 'update_handout') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
       return updateHandout(data);
     }
     if (data.action === 'delete_handout') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
       return deleteHandout(data.handout_id);
     }
 
     // A-Cell Admin: soft-delete an Agent (archives Characters + Briefs
     // rows so they can be restored, rather than removing them).
     if (data.action === 'delete_character') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
       return deleteCharacter(data.agent_code);
     }
 
     // A-Cell Admin: undo a soft-delete.
     if (data.action === 'restore_character') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
       return restoreCharacter(data.agent_code);
     }
 
@@ -562,33 +671,47 @@ function doPost(e) {
 
     // Table Radio: Handler sets (or clears) the current track for a channel.
     if (data.action === 'set_now_playing') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
       return setNowPlaying(data.channel, data.track_url, data.track_title, data.track_kind, data.loop);
     }
 
     // Table Radio: Handler pauses/resumes the current track for a channel
     // without restarting it (set_now_playing always restarts from 0:00).
     if (data.action === 'pause_now_playing') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
       return pauseNowPlaying(data.channel);
     }
     if (data.action === 'resume_now_playing') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
       return resumeNowPlaying(data.channel);
     }
 
     // Table Radio: Handler saves the playlist for a channel.
     if (data.action === 'save_playlist') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
       return savePlaylist(data.channel, data.playlist_json);
     }
 
     // A-Cell Music: upload/delete a Track Library mp3.
     if (data.action === 'upload_track') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
       return uploadTrack(data);
     }
     if (data.action === 'delete_track') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
       return deleteTrack(data.track_id);
     }
 
     // Agent Hub: save a player's private note on a Handout.
     if (data.action === 'save_handout_note') {
+      const authErr = requireAgentToken_(data);
+      if (authErr) return authErr;
       return saveHandoutNote(data);
     }
 
@@ -1592,10 +1715,20 @@ function saveNoteBlock(data) {
     const shared = data.shared ? 1 : 0;
     const sortOrder = Number(data.sort_order) || 0;
 
+    const codeCol = headers.indexOf('agent_code');
     let blockId = (data.block_id || '').trim();
     if (blockId) {
       for (let i = 1; i < values.length; i++) {
         if (values[i][idCol] === blockId) {
+          // A valid token only proves who the requester is, not that
+          // this block is theirs -- without this check, any Cell member
+          // could overwrite anyone else's SHARED block by reusing its
+          // block_id (visible to the whole Cell in the combined Shared
+          // feed). See the matching check in deleteNoteBlock().
+          if (codeCol !== -1 && String(values[i][codeCol] || '').trim().toUpperCase() !== agentCode) {
+            return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'not your block' }))
+              .setMimeType(ContentService.MimeType.JSON);
+          }
           sheet.getRange(i + 1, typeCol + 1).setValue(blockType);
           sheet.getRange(i + 1, textCol + 1).setValue(data.text || '');
           sheet.getRange(i + 1, sharedCol + 1).setValue(shared);
@@ -1619,21 +1752,30 @@ function saveNoteBlock(data) {
   });
 }
 
-// No server-side ownership check -- same trust model as every other
-// write in this app (no auth exists anywhere). The client only shows
-// the delete control on a player's own blocks.
+// Now that requireAgentToken_() gates this action, deletion is also
+// checked against the block's own agent_code -- a valid token only
+// proves who the requester IS, not that the block they named is
+// theirs. Without this, any Cell member could delete anyone else's
+// SHARED block just by reusing its block_id (visible to the whole Cell
+// in the combined Shared feed).
 function deleteNoteBlock(data) {
   const blockId = (data.block_id || '').trim();
   const cellId = (data.cell_id || '').trim();
-  if (!blockId) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'block_id is required' }))
+  const agentCode = (data.agent_code || '').trim().toUpperCase();
+  if (!blockId || !agentCode) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'block_id and agent_code are required' }))
       .setMimeType(ContentService.MimeType.JSON);
   }
   const sheet = getOrCreateCellNotesSheet();
   const values = sheet.getDataRange().getValues();
   const idCol = values[0].indexOf('block_id');
+  const codeCol = values[0].indexOf('agent_code');
   for (let i = values.length - 1; i >= 1; i--) {
     if (values[i][idCol] === blockId) {
+      if (codeCol !== -1 && String(values[i][codeCol] || '').trim().toUpperCase() !== agentCode) {
+        return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'not your block' }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
       sheet.deleteRow(i + 1);
       if (cellId) CacheService.getScriptCache().remove('cell_notes_raw_' + cellId);
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);

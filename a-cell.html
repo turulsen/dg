@@ -844,6 +844,12 @@
     inputLine.style.display = 'none';
     addLine('acces_granted');
     try { sessionStorage.setItem('dg_acell_unlocked', '1'); } catch (e) { /* best effort */ }
+    // Backend hardening: every Handler/admin write now needs this same
+    // password server-side too (see requireHandlerAuth_() in Code.gs),
+    // so the raw value that just passed this gate is kept for the rest
+    // of the tab's session -- see acellHandlerPassword() below, used by
+    // every admin fetch this page makes.
+    try { sessionStorage.setItem('dg_acell_pw', realValue); } catch (e) { /* best effort */ }
     setTimeout(function () {
       logo.classList.add('acell-logo-in');
       setTimeout(unlock, 1400);
@@ -1402,7 +1408,7 @@
     fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors', keepalive: true,
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'update_cell_members', cell_id: cellObj.cell_id, member_codes: newMembers }),
+      body: JSON.stringify({ action: 'update_cell_members', cell_id: cellObj.cell_id, member_codes: newMembers, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
     }).then(function () {
       setTimeout(function () {
         jsonpGet('list_cells', {}, function (res) {
@@ -1428,7 +1434,7 @@
     fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors', keepalive: true,
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'delete_cell', cell_id: cellObj.cell_id }),
+      body: JSON.stringify({ action: 'delete_cell', cell_id: cellObj.cell_id, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
     }).then(function () {
       setTimeout(function () {
         jsonpGet('list_cells', {}, function (res) {
@@ -1463,7 +1469,7 @@
       fetch(APPS_SCRIPT_URL, {
         method: 'POST', mode: 'no-cors', keepalive: true,
         headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'create_cell', name: name, handler: handler }),
+        body: JSON.stringify({ action: 'create_cell', name: name, handler: handler, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
       }).then(function () {
         setTimeout(function () {
           jsonpGet('list_cells', {}, function (res) {
@@ -1643,7 +1649,7 @@
     fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors', keepalive: true,
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'delete_handout', handout_id: h.handout_id }),
+      body: JSON.stringify({ action: 'delete_handout', handout_id: h.handout_id, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
     }).then(function () {
       setTimeout(function () {
         jsonpGet('list_handouts', {}, function (res) {
@@ -1704,9 +1710,10 @@
       var errEl = document.getElementById('handouts-new-error');
       if (!title) { errEl.textContent = 'Give the handout a title first.'; return; }
       statusEl.textContent = editingHandout ? 'Saving…' : 'Creating…';
+      var handlerPw = sessionStorage.getItem('dg_acell_pw') || '';
       var payload = editingHandout
-        ? { action: 'update_handout', handout_id: editingHandout.handout_id, title: title, body: body, photo: formPhotoDataUrl || '', cell_id: cellId }
-        : { action: 'create_handout', title: title, body: body, photo: formPhotoDataUrl || '', cell_id: cellId };
+        ? { action: 'update_handout', handout_id: editingHandout.handout_id, title: title, body: body, photo: formPhotoDataUrl || '', cell_id: cellId, handler_password: handlerPw }
+        : { action: 'create_handout', title: title, body: body, photo: formPhotoDataUrl || '', cell_id: cellId, handler_password: handlerPw };
       // No keepalive here, unlike every other POST in this file: keepalive
       // requests are capped at 64KiB by the browser (not this app, not
       // Apps Script) -- fine for the small JSON payloads every other
@@ -1964,6 +1971,7 @@
         agent_code: code,
         character_json: JSON.stringify(row.state),
         player_name: value,
+        handler_password: sessionStorage.getItem('dg_acell_pw') || '',
       }),
     }).then(function () { fetchSheet(); }).catch(function () { fetchSheet(); });
   }
@@ -2174,7 +2182,7 @@
     fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors', keepalive: true,
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'set_now_playing', channel: ch, track_url: trackUrl, track_title: trackTitle, track_kind: trackKind || '', loop: loop ? '1' : '0' }),
+      body: JSON.stringify({ action: 'set_now_playing', channel: ch, track_url: trackUrl, track_title: trackTitle, track_kind: trackKind || '', loop: loop ? '1' : '0', handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
     }).then(function () {
       statusEl.textContent = 'Saved — checking…';
       setTimeout(function () { verifyNowPlaying(ch, trackUrl, trackTitle); }, 900);
@@ -2213,7 +2221,7 @@
     fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: action, channel: ch }),
+      body: JSON.stringify({ action: action, channel: ch, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
     }).then(function () {
       setTimeout(function () {
         jsonpGet('get_now_playing', { channel: ch }, function (res) {
@@ -2279,7 +2287,7 @@
     fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors', keepalive: true,
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'save_playlist', channel: ch, playlist_json: JSON.stringify(playlist) }),
+      body: JSON.stringify({ action: 'save_playlist', channel: ch, playlist_json: JSON.stringify(playlist), handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
     }).catch(function () { /* best effort, same as every other Apps Script write here */ });
   }
 
@@ -2320,7 +2328,7 @@
     fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors', keepalive: true,
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'set_cell_channel', cell_id: cell.cell_id, channel: ch }),
+      body: JSON.stringify({ action: 'set_cell_channel', cell_id: cell.cell_id, channel: ch, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
     }).then(function () {
       setTimeout(function () {
         jsonpGet('list_cells', {}, function (res) {
@@ -2422,7 +2430,7 @@
     fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'delete_track', track_id: t.track_id }),
+      body: JSON.stringify({ action: 'delete_track', track_id: t.track_id, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
     }).then(function () {
       setTimeout(function () {
         jsonpGet('list_tracks', {}, function (res) {
@@ -2449,7 +2457,7 @@
       fetch(APPS_SCRIPT_URL, {
         method: 'POST', mode: 'no-cors',
         headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'upload_track', title: title, mp3_base64: e.target.result }),
+        body: JSON.stringify({ action: 'upload_track', title: title, mp3_base64: e.target.result, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
       }).then(function () {
         trackLibStatus.textContent = 'Uploaded — checking…';
         setTimeout(function () {
@@ -2561,14 +2569,19 @@
       return '<div class="admin-row" data-i="' + i + '">' +
         '<div class="admin-row-top">' +
         '<div class="admin-row-info"><div class="name">' + escapeHtml(name) + '</div><div class="meta">' + meta + '</div></div>' +
+        '<button type="button" class="paper-btn admin-reset-token-btn" data-i="' + i + '" title="Mint a fresh access token -- for a player on a new device or cleared storage">Reset Token</button>' +
         '<button type="button" class="paper-btn admin-delete-btn" data-i="' + i + '">Delete</button>' +
         '</div>' +
         '<div class="admin-confirm-slot" id="admin-confirm-slot-' + i + '"></div>' +
+        '<div class="admin-confirm-slot" id="admin-reset-slot-' + i + '"></div>' +
         '</div>';
     }).join('');
 
     Array.prototype.forEach.call(listEl.querySelectorAll('.admin-delete-btn'), function (btn) {
       btn.addEventListener('click', function () { openConfirm(parseInt(btn.dataset.i, 10)); });
+    });
+    Array.prototype.forEach.call(listEl.querySelectorAll('.admin-reset-token-btn'), function (btn) {
+      btn.addEventListener('click', function () { openResetConfirm(parseInt(btn.dataset.i, 10)); });
     });
   }
 
@@ -2578,6 +2591,66 @@
     if (!agent || !slot) return;
     if (slot.childNodes.length) { slot.innerHTML = ''; return; } // toggle closed
     renderDeleteConfirm(slot, agent, i);
+  }
+
+  // Handler-mediated recovery (the "Anders finds his character again in
+  // two weeks" case): a player on a new device or with cleared storage
+  // finds their Agent Code via the Agent Hub's Cover Identity search,
+  // then asks the Handler to run this. Mints a brand-new token
+  // (overwriting whatever the old device had) and displays it once for
+  // the Handler to relay -- there's no other channel this app has for
+  // getting it to the player, same as every other "ask your Handler"
+  // flow already built here.
+  function openResetConfirm(i) {
+    var agent = agents[i];
+    var slot = document.getElementById('admin-reset-slot-' + i);
+    if (!agent || !slot) return;
+    if (slot.childNodes.length) { slot.innerHTML = ''; return; } // toggle closed
+    renderResetConfirm(slot, agent, i);
+  }
+
+  function renderResetConfirm(slot, agent, i) {
+    var name = (agent.state.bio || {}).name || agent.code;
+    slot.innerHTML =
+      '<div class="admin-confirm">' +
+      '<p>Mint a fresh access token for <b>' + escapeHtml(name) + '</b> (' + escapeHtml(agent.code) + ')? ' +
+      'Their old device (if any) stops being able to save the moment this runs.</p>' +
+      '<div class="admin-confirm-error" id="admin-reset-err-' + i + '"></div>' +
+      '<div class="admin-confirm-actions">' +
+      '<button type="button" class="paper-btn admin-delete-btn" id="admin-reset-confirm-btn-' + i + '">Reset Token</button>' +
+      '<button type="button" class="paper-btn" id="admin-reset-cancel-' + i + '">Cancel</button>' +
+      '</div></div>';
+    document.getElementById('admin-reset-cancel-' + i).addEventListener('click', function () { slot.innerHTML = ''; });
+    document.getElementById('admin-reset-confirm-btn-' + i).addEventListener('click', function () {
+      doResetToken(agent, i, slot);
+    });
+  }
+
+  // Not mode:'no-cors' -- unlike almost every other write in this file,
+  // the whole point here is reading the freshly-minted token back out
+  // of the response so it can be shown to the Handler.
+  function doResetToken(agent, i, slot) {
+    slot.innerHTML = '<div class="admin-confirm"><p>Resetting…</p></div>';
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', keepalive: true,
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'reset_agent_token', agent_code: agent.code, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      if (res && res.status === 'OK' && res.token) {
+        slot.innerHTML =
+          '<div class="admin-confirm"><p>New token for <b>' + escapeHtml(agent.code) + '</b>:</p>' +
+          '<input type="text" readonly value="' + escapeHtml(res.token) + '" onclick="this.select()" style="width:100%;font-family:monospace;font-size:12px;">' +
+          '<p style="margin-top:8px;">Relay this (and the Agent Code) to the player -- they paste both into the Agent Hub’s "Recover Access" box.</p>' +
+          '<div class="admin-confirm-actions"><button type="button" class="paper-btn" id="admin-reset-done-' + i + '">Done</button></div></div>';
+        var doneBtn = document.getElementById('admin-reset-done-' + i);
+        if (doneBtn) doneBtn.addEventListener('click', function () { slot.innerHTML = ''; });
+      } else {
+        slot.innerHTML = '<div class="admin-confirm"><p class="admin-confirm-error">' +
+          escapeHtml((res && res.message) || 'Could not reset the token.') + '</p></div>';
+      }
+    }).catch(function () {
+      slot.innerHTML = '<div class="admin-confirm"><p class="admin-confirm-error">Could not reach the backend.</p></div>';
+    });
   }
 
   // Single confirmation, not two -- the A-Cell password gate already
@@ -2614,7 +2687,7 @@
     fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors', keepalive: true,
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'delete_character', agent_code: agent.code }),
+      body: JSON.stringify({ action: 'delete_character', agent_code: agent.code, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
     }).then(function () {
       setTimeout(function () { verifyDelete(agent, i, slot); }, 900);
     }).catch(function () {
@@ -2708,7 +2781,7 @@
     fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors', keepalive: true,
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'delete_character', agent_code: agent.code }),
+      body: JSON.stringify({ action: 'delete_character', agent_code: agent.code, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
     }).then(function () {
       setTimeout(function () { verifyBriefsDelete(agent, slot); }, 900);
     }).catch(function () {
@@ -2775,7 +2848,7 @@
     fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors', keepalive: true,
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'restore_character', agent_code: agent.code }),
+      body: JSON.stringify({ action: 'restore_character', agent_code: agent.code, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
     }).then(function () {
       setTimeout(function () { verifyRestore(agent); }, 900);
     }).catch(function () {

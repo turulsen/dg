@@ -173,6 +173,15 @@
     opts = opts || {};
     const cellId = opts.cellId;
     const agentCode = (opts.agentCode || '').trim().toUpperCase();
+    // Backend hardening: list_cell_notes/save_note_block/
+    // delete_note_block/save_agent_identity now need this Agent's own
+    // secret token (see requireAgentToken_() in Code.gs). Sourced from
+    // opts rather than minted in here -- notes/index.html already reads
+    // the same dg_agent_roster entry to auto-load the Cover Identity in
+    // the first place, so it mints/persists the token there and just
+    // passes it through, one place per browser tab that owns the
+    // roster instead of two.
+    const agentToken = (opts.agentToken || '').trim();
     const memberCodes = (opts.memberCodes || []).slice();
     if (memberCodes.indexOf(agentCode) === -1) memberCodes.unshift(agentCode);
     const memberNames = opts.memberNames || {};
@@ -277,7 +286,7 @@
         if (!chosenColor) return;
         myIdentity = { color: chosenColor, font: chosenFont };
         saveLocalIdentity(myIdentity);
-        postAction({ action: 'save_agent_identity', agent_code: agentCode, color: chosenColor, font: chosenFont }).catch(() => { });
+        postAction({ action: 'save_agent_identity', agent_code: agentCode, token: agentToken, color: chosenColor, font: chosenFont }).catch(() => { });
         modal.remove();
         applyOwnInkStyle();
         refreshChrome();
@@ -625,7 +634,7 @@
       const shared = !!sharedByBlockId[blockId];
       const meta = upsertLocalMeta(agentCode, blockId, { type: b.type, data: b.data, shared, sort_order: idx * 1000 });
       postAction({
-        action: 'save_note_block', block_id: blockId, cell_id: cellId, agent_code: agentCode,
+        action: 'save_note_block', block_id: blockId, cell_id: cellId, agent_code: agentCode, token: agentToken,
         block_type: b.type, text: JSON.stringify(b.data), shared, sort_order: meta.sort_order,
       }).catch(() => { });
     }
@@ -655,7 +664,7 @@
       removeLocalMeta(agentCode, blockId);
       delete sharedByBlockId[blockId];
       clearTimeout(saveTimers[blockId]);
-      postAction({ action: 'delete_note_block', block_id: blockId, cell_id: cellId }).catch(() => { });
+      postAction({ action: 'delete_note_block', block_id: blockId, cell_id: cellId, agent_code: agentCode, token: agentToken }).catch(() => { });
       refreshChrome();
     }
 
@@ -669,7 +678,7 @@
        never fed back into the one place you could be actively typing. ── */
     function fetchNotes() {
       if (!cellId) return;
-      jsonpGet('list_cell_notes', { cell_id: cellId, agent_code: agentCode }, res => {
+      jsonpGet('list_cell_notes', { cell_id: cellId, agent_code: agentCode, token: agentToken }, res => {
         if (!res || res.status !== 'OK') return;
         const incoming = res.notes || {};
         const parsed = {};
