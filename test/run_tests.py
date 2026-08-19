@@ -5640,9 +5640,16 @@ def test_notes_v2_editorjs(p):
     record("notes", "the combined Shared feed never leaks another member's private block",
            "must never leak" not in shared_html, "")
 
-    # Back to your own tab -- the live editor remounts from stored state
-    # and still shows what you typed before switching away.
-    page.click('[data-tab="OWEN-CS12"]')
+    # The Shared feed is read-only with no controls of its own (see the
+    # notes.js file header comment) -- without an explicit way out of
+    # it, tapping over to look at Shared was a total dead end that read
+    # as "totally buggy, can't do anything" to a real user, even though
+    # the own-tab editor worked fine the whole time one tab over. This
+    # button is that way out, always shown (not just on the empty
+    # state) -- also doubles as the "back to your own tab" step here.
+    record("notes", "the Shared feed always offers a way back to your own (writable) tab",
+           page.locator(".dg-notes-goto-own-btn").count() > 0, "")
+    page.click(".dg-notes-goto-own-btn")
     wait_for_condition(lambda: page.query_selector("#dg-notes-editor-mount .ce-block") is not None, timeout_ms=6000)
     record("notes", "your own tab still shows what you typed after switching away and back",
            "Session 3 Notes" in page.content(), "")

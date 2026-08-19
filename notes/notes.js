@@ -201,7 +201,8 @@
     const saveTimers = {}; // block_id -> debounce handle
 
     function memberLabel(code) {
-      return memberNames[code] ? memberNames[code] + ' (' + code + ')' : code;
+      const base = memberNames[code] ? memberNames[code] + ' (' + code + ')' : code;
+      return code === agentCode ? base + ' (You)' : base;
     }
     function identityFor(code) {
       if (code === agentCode && myIdentity) return myIdentity;
@@ -410,23 +411,35 @@
       const mount = container.querySelector('#dg-notes-readonly-feed');
       if (!mount) return;
       let blocks, emptyLabel, showAuthor;
-      if (activeCode === SHARED_TAB) {
+      const isShared = activeCode === SHARED_TAB;
+      if (isShared) {
         blocks = sharedBlocksSorted().filter(matchesSearch);
         showAuthor = true;
-        emptyLabel = searchTerm ? 'No shared blocks match your search.' : 'Nothing shared yet -- write on your own tab and tap Circulate on a block.';
+        emptyLabel = searchTerm ? 'No shared blocks match your search.' : 'Nothing shared yet.';
       } else {
         blocks = (notesByCode[activeCode] || []).slice().sort((a, b) => a.sort_order - b.sort_order).filter(matchesSearch);
         showAuthor = false;
         emptyLabel = searchTerm ? 'No blocks match your search.' : 'Nothing shared here yet.';
       }
-      mount.innerHTML = blocks.length
+      // This whole feed is read-only (see the file header comment for
+      // why) -- without this, the Shared tab is a total dead end with
+      // no controls at all, which read as "totally buggy, can't do
+      // anything" the moment someone tapped over to look at it. Always
+      // visible here, not just in the empty state, since it's the one
+      // way off this tab into somewhere you can actually write.
+      const composeHint = isShared
+        ? '<button type="button" class="dg-notes-goto-own-btn" data-goto-own="1">Write on your own tab, then tap Circulate to add it here &rarr;</button>'
+        : '';
+      mount.innerHTML = composeHint + (blocks.length
         ? blocks.map(b => {
           const authorBadge = showAuthor
             ? '<span class="dg-notes-author-badge" style="background:' + (identityFor(b.agent_code) ? identityFor(b.agent_code).color : '#4a5568') + '">' + escapeHtml(memberLabel(b.agent_code)) + '</span>'
             : '<span class="dg-notes-shared-badge">' + (b.shared ? 'Circulated' : 'Private') + '</span>';
           return '<div class="dg-notes-ro-block" id="block-' + escapeHtml(b.block_id) + '" style="' + inkStyleFor(b.agent_code) + '">' + authorBadge + renderReadOnlyBlock(b.type, b.data) + '</div>';
         }).join('')
-        : '<div class="dg-notes-empty">' + emptyLabel + '</div>';
+        : '<div class="dg-notes-empty">' + emptyLabel + '</div>');
+      const gotoBtn = mount.querySelector('[data-goto-own]');
+      if (gotoBtn) gotoBtn.addEventListener('click', () => { activeCode = agentCode; render(); });
     }
 
     function wireShellEvents() {

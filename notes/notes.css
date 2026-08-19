@@ -117,6 +117,16 @@
 #dg-notes-panel .dg-notes-empty{
   font-size:13px; color:rgba(43,36,22,.55); font-style:italic; text-align:center; padding:26px 10px;
 }
+
+/* The one way off the read-only Shared feed into somewhere you can
+   actually write -- always shown at the top of that feed, not just on
+   its empty state. */
+#dg-notes-panel .dg-notes-goto-own-btn{
+  display:block; width:100%; text-align:left; font-family:'Courier Prime',monospace; font-size:12px;
+  background:rgba(58,110,196,.1); border:1px solid rgba(58,110,196,.35); border-radius:3px;
+  color:#1a3a6e; padding:9px 12px; margin-bottom:var(--s3); cursor:pointer;
+}
+#dg-notes-panel .dg-notes-goto-own-btn:hover{ background:rgba(58,110,196,.18); }
 #dg-notes-panel .dg-notes-author-badge{
   display:inline-block; font-size:9px; letter-spacing:.06em; color:#fff;
   padding:2px 7px; border-radius:3px; margin-bottom:4px; background:#4a5568;
