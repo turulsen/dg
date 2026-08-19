@@ -5570,6 +5570,17 @@ def test_notes_v1_block_crud(p):
     page.select_option("#picker-cell", "cell_1")
     page.click("#picker-open-btn")
 
+    # A first-time-here Agent (this mock never returns `identities`, so
+    # every viewer is "first-time") is prompted to pick a color +
+    # handwriting font before anything else -- go through that flow
+    # like a real new player would, rather than special-casing it away.
+    wait_for_condition(lambda: page.query_selector(".dg-notes-identity-modal") is not None, timeout_ms=6000)
+    record("notes", "a first-time viewer is prompted to pick an identity color/font",
+           page.query_selector(".dg-notes-identity-modal") is not None, "")
+    page.click(".dg-notes-color-swatch")
+    page.click(".dg-notes-identity-confirm")
+    wait_for_condition(lambda: page.query_selector(".dg-notes-identity-modal") is None, timeout_ms=6000)
+
     wait_for_condition(lambda: page.query_selector("#dg-notes-panel") is not None, timeout_ms=6000)
     wait_for_condition(lambda: "My private note" in (page.content() or ""), timeout_ms=6000)
 

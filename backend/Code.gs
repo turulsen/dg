@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v14 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v15 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Sheet/Admin) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -19,6 +19,10 @@
 //   shared/private note blocks scoped to a Cell, server-side privacy
 //   filtering, short-lived per-Cell read cache + write lock -- new
 //   notes/ frontend, unlinked from nav until tested
+// + Player Notes: per-Agent color/handwriting-font identity
+//   (save_agent_identity, bundled into list_cell_notes as
+//   `identities`) for attributing contributions in the combined
+//   Shared tab; created_at now also returned per block
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -362,6 +366,11 @@ function doPost(e) {
 
     if (data.action === 'delete_note_block') {
       return deleteNoteBlock(data);
+    }
+
+    // Player Notes: save an Agent's chosen color/handwriting font.
+    if (data.action === 'save_agent_identity') {
+      return saveAgentIdentity(data);
     }
 
     // A-Cell Music: set a Cell's usual Table Radio channel ("Cue For Cell").
@@ -1327,6 +1336,7 @@ function listCellNotes(cellId, agentCode, callback) {
     const textCol = headers.indexOf('text');
     const sharedCol = headers.indexOf('shared');
     const sortCol = headers.indexOf('sort_order');
+    const createdCol = headers.indexOf('created_at');
     const updatedCol = headers.indexOf('updated_at');
     rows = [];
     for (let i = 1; i < data.length; i++) {
@@ -1338,6 +1348,7 @@ function listCellNotes(cellId, agentCode, callback) {
         text: data[i][textCol] || '',
         shared: data[i][sharedCol] === 1,
         sort_order: Number(data[i][sortCol]) || 0,
+        created_at: (createdCol !== -1 && data[i][createdCol]) || 0,
         updated_at: data[i][updatedCol] || 0
       });
     }
@@ -1349,9 +1360,14 @@ function listCellNotes(cellId, agentCode, callback) {
     const list = result.notes[row.agent_code] || (result.notes[row.agent_code] = []);
     list.push({
       block_id: row.block_id, block_type: row.block_type, text: row.text,
-      shared: row.shared, sort_order: row.sort_order, updated_at: row.updated_at
+      shared: row.shared, sort_order: row.sort_order, created_at: row.created_at, updated_at: row.updated_at
     });
   });
+
+  // Bundled into the same response rather than a separate round trip --
+  // the panel needs both together to render the combined Shared tab
+  // (every visible block, attributed to its author's chosen color/font).
+  result.identities = getAgentIdentitiesMap();
 
   const body = callback + '(' + JSON.stringify(result) + ')';
   return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
@@ -1432,6 +1448,65 @@ function deleteNoteBlock(data) {
     }
   }
   return ContentService.createTextOutput(JSON.stringify({ status: 'NOT_FOUND' })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ── Player Notes identity: each Agent picks a color (and a handwriting
+// font) once, the first time they open Notes -- used to attribute their
+// contributions in the combined Shared tab, and stored server-side
+// (not just localStorage) so it's remembered across devices for that
+// Agent Code. Self-provisions its own "AgentIdentity" sheet, upserted
+// by agent_code. ──
+function getOrCreateAgentIdentitySheet() {
+  const ss = getOrCreateSheet();
+  let sheet = ss.getSheetByName('AgentIdentity');
+  if (!sheet) {
+    sheet = ss.insertSheet('AgentIdentity');
+    sheet.getRange(1, 1, 1, 4).setValues([['agent_code', 'color', 'font', 'updated_at']]);
+  }
+  return sheet;
+}
+
+function saveAgentIdentity(data) {
+  const agentCode = (data.agent_code || '').trim().toUpperCase();
+  if (!agentCode) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'agent_code is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const sheet = getOrCreateAgentIdentitySheet();
+  const values = sheet.getDataRange().getValues();
+  const codeCol = values[0].indexOf('agent_code');
+  const colorCol = values[0].indexOf('color');
+  const fontCol = values[0].indexOf('font');
+  const updatedCol = values[0].indexOf('updated_at');
+  const now = new Date().getTime();
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][codeCol]).trim().toUpperCase() === agentCode) {
+      sheet.getRange(i + 1, colorCol + 1).setValue(data.color || '');
+      sheet.getRange(i + 1, fontCol + 1).setValue(data.font || '');
+      sheet.getRange(i + 1, updatedCol + 1).setValue(now);
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  sheet.appendRow([agentCode, data.color || '', data.font || '', now]);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Small enough (one row per Agent who's ever opened Notes) to just read
+// in full on every list_cell_notes call -- no caching needed on top of
+// that action's own existing cache.
+function getAgentIdentitiesMap() {
+  const sheet = getOrCreateAgentIdentitySheet();
+  const values = sheet.getDataRange().getValues();
+  const codeCol = values[0].indexOf('agent_code');
+  const colorCol = values[0].indexOf('color');
+  const fontCol = values[0].indexOf('font');
+  const map = {};
+  for (let i = 1; i < values.length; i++) {
+    const code = String(values[i][codeCol] || '').trim().toUpperCase();
+    if (!code) continue;
+    map[code] = { color: values[i][colorCol] || '', font: values[i][fontCol] || '' };
+  }
+  return map;
 }
 
 // ── A-Cell Handouts: a shared clue/document log the Handler files from

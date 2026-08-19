@@ -1,55 +1,89 @@
 /* ══════════════════════════════════════════════
-   PLAYER NOTES -- v1 styles.
-
-   Every selector below is prefixed with #dg-notes-panel on purpose,
-   even in this standalone page where it's the only thing on screen --
-   the same defensive-specificity trick assets/table-radio.js uses
-   (its own header comment explains why: a page's blanket button{}/
-   input{} theme rules would otherwise silently reskin this widget).
-   Building it this way from v1 means a later phase can drop this
+   PLAYER NOTES -- analog-notebook styling: a spiral-bound sheet of
+   blue graph paper, with a little grain so it doesn't read as flat
+   digital UI. Every selector here is prefixed with #dg-notes-panel on
+   purpose, even in this standalone page where it's the only thing on
+   screen -- the same defensive-specificity trick assets/table-radio.js
+   uses (its own header comment explains why: a page's blanket
+   button{}/input{} theme rules would otherwise silently reskin this
+   widget). Building it this way means a later phase can drop this
    panel into stats/index.html's five very different themes without
    any retrofit.
    ══════════════════════════════════════════════ */
 
 #dg-notes-panel{
+  position:relative;
   font-family:'Courier Prime',monospace;
-  color:var(--ink);
-  background:var(--paper);
-  box-shadow:var(--paper-shadow);
+  color:#2b2416;
+  background-color:#fdf9ec;
+  background-image:
+    linear-gradient(rgba(58,110,196,.16) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(58,110,196,.16) 1px, transparent 1px),
+    radial-gradient(rgba(90,72,40,.05) 1px, transparent 1px);
+  background-size:22px 22px, 22px 22px, 3px 3px;
+  box-shadow:0 6px 22px rgba(0,0,0,.28), 0 1px 4px rgba(0,0,0,.14);
   max-width:1100px;
   margin:0 auto;
-  padding:var(--s4);
-  border-radius:2px;
+  padding:38px var(--s4) var(--s4);
+  border-radius:3px;
+}
+
+/* Spiral binding along the top edge -- two layered radial-gradients
+   (a dark ring + a soft drop shadow behind it) repeated across the
+   width, no image asset needed. */
+#dg-notes-panel::before{
+  content:'';
+  position:absolute;
+  top:0; left:0; right:0; height:28px;
+  background-image:
+    radial-gradient(circle at center, #6b7280 0 4px, rgba(107,114,128,.35) 4.5px, transparent 6px),
+    radial-gradient(circle at center, rgba(0,0,0,.18) 0 6px, transparent 6.5px);
+  background-size:28px 28px, 28px 28px;
+  background-position:14px 12px, 14px 14px;
+  background-repeat:repeat-x;
+  border-bottom:1px dashed rgba(58,40,10,.18);
+  pointer-events:none;
+}
+/* A punched-hole shadow just under each ring, like paper torn from a
+   real spiral pad. */
+#dg-notes-panel::after{
+  content:'';
+  position:absolute;
+  top:22px; left:0; right:0; height:6px;
+  background:linear-gradient(rgba(0,0,0,.08), transparent);
+  pointer-events:none;
 }
 
 #dg-notes-panel .dg-notes-toolbar{
-  display:flex; justify-content:flex-end; margin-bottom:var(--s3);
+  display:flex; justify-content:flex-end; margin-bottom:var(--s3); position:relative; z-index:1;
 }
 #dg-notes-panel .dg-notes-search{
   font-family:'Courier Prime',monospace; font-size:12px;
-  background:transparent; border:1px solid var(--rule); border-radius:3px;
-  padding:6px 10px; min-width:220px; color:var(--ink);
+  background:rgba(255,255,255,.5); border:1px solid rgba(58,40,10,.25); border-radius:3px;
+  padding:6px 10px; min-width:220px; color:#2b2416;
 }
-#dg-notes-panel .dg-notes-search::placeholder{ color:var(--ink-3); }
+#dg-notes-panel .dg-notes-search::placeholder{ color:rgba(43,36,22,.45); }
 
 #dg-notes-panel .dg-notes-body{
-  display:flex; gap:var(--s5); align-items:flex-start;
+  display:flex; gap:var(--s5); align-items:flex-start; position:relative; z-index:1;
 }
 
 #dg-notes-panel .dg-notes-toc{
-  flex:0 0 200px; position:sticky; top:var(--s4);
-  border-right:1px solid var(--paper-line); padding-right:var(--s4);
+  flex:0 0 210px; position:sticky; top:var(--s4);
+  border-right:1px dashed rgba(58,40,10,.25); padding-right:var(--s4);
 }
 #dg-notes-panel .dg-notes-toc-label{
   font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.12em;
-  text-transform:uppercase; color:var(--ink-3); margin-bottom:var(--s3);
+  text-transform:uppercase; color:rgba(43,36,22,.6); margin-bottom:var(--s3);
 }
 #dg-notes-panel .dg-notes-toc-item{
-  display:block; font-size:12px; color:var(--ink-2); text-decoration:none;
-  padding:4px 0; border-bottom:1px dotted var(--paper-line);
+  display:flex; align-items:center; gap:6px; font-size:12px; color:#3a3220; text-decoration:none;
+  padding:4px 0; border-bottom:1px dotted rgba(58,40,10,.15);
 }
-#dg-notes-panel .dg-notes-toc-item:hover{ color:var(--ink); }
-#dg-notes-panel .dg-notes-toc-empty{ font-size:11px; color:var(--ink-3); font-style:italic; }
+#dg-notes-panel .dg-notes-toc-item.dg-notes-toc-h2{ padding-left:14px; font-size:11px; opacity:.85; }
+#dg-notes-panel .dg-notes-toc-item:hover{ color:#1a1508; }
+#dg-notes-panel .dg-notes-toc-dot{ width:8px; height:8px; border-radius:50%; flex-shrink:0; box-shadow:0 0 0 1px rgba(0,0,0,.15); }
+#dg-notes-panel .dg-notes-toc-empty{ font-size:11px; color:rgba(43,36,22,.5); font-style:italic; }
 
 #dg-notes-panel .dg-notes-main{ flex:1; min-width:0; }
 
@@ -58,67 +92,131 @@
 }
 #dg-notes-panel .dg-notes-tab{
   font-family:'Courier Prime',monospace; font-size:11px; letter-spacing:.03em;
-  background:var(--tab-inactive); color:var(--ink-2); border:1px solid var(--rule);
+  background:rgba(58,40,10,.08); color:#3a3220; border:1px solid rgba(58,40,10,.2);
   border-bottom:none; border-radius:4px 4px 0 0; padding:6px 12px; cursor:pointer;
+  display:flex; align-items:center; gap:6px;
 }
-#dg-notes-panel .dg-notes-tab.active{ background:var(--tab-active); color:var(--ink); font-weight:700; }
+#dg-notes-panel .dg-notes-tab.active{ background:#fdf9ec; color:#1a1508; font-weight:700; }
+#dg-notes-panel .dg-notes-tab-dot{ width:8px; height:8px; border-radius:50%; box-shadow:0 0 0 1px rgba(0,0,0,.15); }
+#dg-notes-panel .dg-notes-tab-shared{ font-weight:700; }
+#dg-notes-panel .dg-notes-tab-shared.active{ background:#eef4ff; }
 
 #dg-notes-panel .dg-notes-blocks{
   display:flex; flex-direction:column; gap:var(--s3); margin-bottom:var(--s4);
 }
 #dg-notes-panel .dg-notes-empty{
-  font-size:13px; color:var(--ink-3); font-style:italic; text-align:center; padding:26px 10px;
+  font-size:13px; color:rgba(43,36,22,.55); font-style:italic; text-align:center; padding:26px 10px;
 }
 
-#dg-notes-panel .dg-notes-block{
+#dg-notes-panel .dg-notes-block{ position:relative; }
+#dg-notes-panel .dg-notes-block-row{
   display:flex; align-items:flex-start; gap:var(--s3);
-  border:1px solid var(--paper-line); border-radius:3px; padding:var(--s3);
-  background:rgba(28,22,8,.02);
+  border:1px solid rgba(58,40,10,.15); border-radius:3px; padding:var(--s2) var(--s3);
+  background:rgba(255,255,255,.4);
 }
-#dg-notes-panel .dg-notes-block-heading .dg-notes-block-text{
-  font-family:'Special Elite',monospace; font-size:15px; font-weight:400;
+#dg-notes-panel .dg-notes-author-badge{
+  display:inline-block; font-size:9px; letter-spacing:.06em; color:#fff;
+  padding:2px 7px; border-radius:3px; margin-bottom:4px; background:#4a5568;
 }
-#dg-notes-panel .dg-notes-block-bullet .dg-notes-block-field::before{
-  content:'•'; margin-right:6px; color:var(--ink-3);
-}
-#dg-notes-panel .dg-notes-block-field{ flex:1; min-width:0; display:flex; }
+
+#dg-notes-panel .dg-notes-block-h1 .dg-notes-block-text,
+#dg-notes-panel .dg-notes-block-h1 .dg-notes-block-view{ font-size:22px; font-weight:700; }
+#dg-notes-panel .dg-notes-block-h2 .dg-notes-block-text,
+#dg-notes-panel .dg-notes-block-h2 .dg-notes-block-view{ font-size:17px; font-weight:700; }
+
+#dg-notes-panel .dg-notes-block-field{ flex:1; min-width:0; display:flex; align-items:baseline; gap:6px; }
+#dg-notes-panel .dg-notes-num,
+#dg-notes-panel .dg-notes-bullet{ color:rgba(43,36,22,.55); flex-shrink:0; }
+
 #dg-notes-panel .dg-notes-block-text{
-  flex:1; width:100%; font-family:inherit; font-size:13px; color:var(--ink);
+  flex:1; width:100%; font-family:inherit; font-size:14px; color:#2b2416;
   background:transparent; border:none; resize:vertical; min-height:1.6em;
   padding:2px 0;
 }
-#dg-notes-panel .dg-notes-block-text:focus{ outline:none; border-bottom:1px solid var(--ink-3); }
-#dg-notes-panel .dg-notes-block-text[readonly]{ color:var(--ink-2); }
+#dg-notes-panel .dg-notes-block-text:focus{ outline:none; border-bottom:1px solid rgba(58,40,10,.4); }
+
+#dg-notes-panel .dg-notes-block-view{
+  flex:1; min-width:0; font-size:14px; line-height:1.55; cursor:default; word-break:break-word;
+}
+#dg-notes-panel .dg-notes-block-view[data-editable]{ cursor:text; }
+#dg-notes-panel .dg-notes-block-placeholder{ color:rgba(43,36,22,.4); font-style:italic; }
+#dg-notes-panel .dg-notes-block-view mark{ background:#fff1a8; color:inherit; padding:0 2px; }
 
 #dg-notes-panel .dg-notes-block-controls{
   display:flex; align-items:center; gap:var(--s2); flex-shrink:0;
 }
 #dg-notes-panel .dg-notes-shared-toggle{
-  font-size:10px; letter-spacing:.04em; color:var(--ink-3);
+  font-size:10px; letter-spacing:.04em; color:rgba(43,36,22,.6);
   display:flex; align-items:center; gap:4px; white-space:nowrap; cursor:pointer;
 }
 #dg-notes-panel .dg-notes-shared-badge{
-  font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3);
-  border:1px solid var(--rule); border-radius:3px; padding:2px 6px; white-space:nowrap;
+  font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:rgba(43,36,22,.6);
+  border:1px solid rgba(58,40,10,.25); border-radius:3px; padding:2px 6px; white-space:nowrap;
 }
 #dg-notes-panel .dg-notes-block-del{
-  background:transparent; border:none; color:var(--red); font-size:16px;
+  background:transparent; border:none; color:#8b1a1a; font-size:16px;
   line-height:1; cursor:pointer; padding:0 4px;
 }
 #dg-notes-panel .dg-notes-block-del:hover{ opacity:.7; }
 
+#dg-notes-panel .dg-notes-format-bar{
+  display:flex; gap:4px; margin-top:6px; padding-left:2px;
+}
+#dg-notes-panel .dg-notes-format-bar button{
+  font-family:'Courier Prime',monospace; font-size:11px; width:24px; height:22px;
+  background:rgba(58,40,10,.08); border:1px solid rgba(58,40,10,.2); border-radius:3px;
+  color:#3a3220; cursor:pointer; padding:0;
+}
+#dg-notes-panel .dg-notes-format-bar button:hover{ background:rgba(58,40,10,.16); }
+#dg-notes-panel .dg-notes-fmt-color{ width:18px !important; height:18px !important; margin-top:2px; border-radius:50% !important; }
+
+#dg-notes-panel .dg-notes-block-divider{ padding:6px 0; display:flex; align-items:center; gap:8px; }
+#dg-notes-panel .dg-notes-divider-rule{
+  flex:1; border:none; border-top:2px dashed rgba(58,40,10,.3); margin:0;
+}
+
 #dg-notes-panel .dg-notes-add-row{ display:flex; gap:8px; flex-wrap:wrap; }
 #dg-notes-panel .dg-notes-add-btn{
   font-family:'Courier Prime',monospace; font-size:11px;
-  background:transparent; border:1px solid var(--rule); border-radius:3px;
-  color:var(--ink-2); padding:6px 12px; cursor:pointer;
+  background:rgba(255,255,255,.5); border:1px solid rgba(58,40,10,.25); border-radius:3px;
+  color:#3a3220; padding:6px 12px; cursor:pointer;
 }
-#dg-notes-panel .dg-notes-add-btn:hover{ border-color:var(--ink-3); color:var(--ink); }
+#dg-notes-panel .dg-notes-add-btn:hover{ border-color:rgba(58,40,10,.5); color:#1a1508; }
+
+/* ── Identity picker: appended to document.body, not #dg-notes-panel,
+   so a poll's render() (which rebuilds the panel's entire innerHTML)
+   can never wipe it out mid-choice. ── */
+.dg-notes-identity-modal{
+  position:fixed; inset:0; z-index:2000; display:flex; align-items:center; justify-content:center;
+  background:rgba(10,8,4,.6); padding:var(--s4);
+}
+.dg-notes-identity-card{
+  background:#fdf9ec; border-radius:6px; padding:var(--s5); max-width:360px; width:100%;
+  box-shadow:0 12px 40px rgba(0,0,0,.4); font-family:'Courier Prime',monospace;
+}
+.dg-notes-identity-title{ font-family:'Special Elite',monospace; font-size:18px; color:#1a1508; margin-bottom:6px; }
+.dg-notes-identity-sub{ font-size:12px; color:rgba(43,36,22,.75); line-height:1.6; margin:0 0 var(--s4); }
+.dg-notes-identity-colors{ display:flex; flex-wrap:wrap; gap:10px; margin-bottom:var(--s4); }
+.dg-notes-color-swatch{
+  width:32px; height:32px; border-radius:50%; border:2px solid transparent; cursor:pointer; padding:0;
+}
+.dg-notes-color-swatch.selected{ border-color:#1a1508; box-shadow:0 0 0 2px #fdf9ec, 0 0 0 4px #1a1508; }
+.dg-notes-identity-fonts{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:var(--s4); }
+.dg-notes-font-choice{
+  font-size:16px; padding:8px 14px; background:rgba(58,40,10,.06); border:1px solid rgba(58,40,10,.25);
+  border-radius:4px; cursor:pointer; color:#2b2416;
+}
+.dg-notes-font-choice.selected{ background:#eef4ff; border-color:#3a6ec4; }
+.dg-notes-identity-confirm{
+  width:100%; font-family:'Courier Prime',monospace; font-size:13px; background:#1a1508; color:#fdf9ec;
+  border:none; border-radius:4px; padding:11px; cursor:pointer;
+}
+.dg-notes-identity-confirm:disabled{ opacity:.4; cursor:not-allowed; }
 
 @media (max-width: 720px){
   #dg-notes-panel .dg-notes-body{ flex-direction:column; }
   #dg-notes-panel .dg-notes-toc{
-    flex:none; width:100%; border-right:none; border-bottom:1px solid var(--paper-line);
+    flex:none; width:100%; border-right:none; border-bottom:1px dashed rgba(58,40,10,.25);
     padding-right:0; padding-bottom:var(--s3); position:static;
   }
 }
