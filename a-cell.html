@@ -771,8 +771,31 @@
     setTimeout(function () { if (gate.parentNode) gate.remove(); }, 550);
   }
 
+  // Exchanges the stored Handler password for a fresh session token
+  // (see handler_login/requireHandlerSession_() in Code.gs) -- run on
+  // every page load that starts (or already is) unlocked, not just the
+  // first time the password gate is passed, since the server-side
+  // session expires after 6h but this tab's own "already unlocked"
+  // flag doesn't. A stale/missing dg_acell_pw (an unlock from before
+  // this existed) just means the Admin listing reads 401 until the
+  // Handler re-enters the password once.
+  function refreshHandlerSession() {
+    var pw = sessionStorage.getItem('dg_acell_pw');
+    if (!pw) return;
+    fetch('https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'handler_login', handler_password: pw }),
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      if (res && res.status === 'OK' && res.session) {
+        try { sessionStorage.setItem('dg_acell_session', res.session); } catch (e) { /* best effort */ }
+      }
+    }).catch(function () { /* best effort -- Admin listing reads will just 401 and can be retried by reloading */ });
+  }
+
   if (sessionStorage.getItem('dg_acell_unlocked')) {
     unlock(true);
+    refreshHandlerSession();
     return;
   }
 
@@ -847,9 +870,10 @@
     // Backend hardening: every Handler/admin write now needs this same
     // password server-side too (see requireHandlerAuth_() in Code.gs),
     // so the raw value that just passed this gate is kept for the rest
-    // of the tab's session -- see acellHandlerPassword() below, used by
-    // every admin fetch this page makes.
+    // of the tab's session -- read back via sessionStorage by every
+    // admin fetch this page makes.
     try { sessionStorage.setItem('dg_acell_pw', realValue); } catch (e) { /* best effort */ }
+    refreshHandlerSession();
     setTimeout(function () {
       logo.classList.add('acell-logo-in');
       setTimeout(unlock, 1400);
@@ -1286,6 +1310,14 @@
     var s = document.createElement('script');
     s.id = 's-' + cbName;
     var qs = 'action=' + action + '&callback=' + cbName;
+    // Admin listing reads (list_characters/list_agent_file_only/
+    // list_deleted_characters) need a Handler session -- see
+    // requireHandlerSession_() in Code.gs. Attached to every GET here
+    // rather than special-cased per action: harmless extra param for
+    // the ones that don't check it, one less thing to keep in sync
+    // across this file's several independent jsonpGet() copies.
+    var acellSession = sessionStorage.getItem('dg_acell_session');
+    if (acellSession) qs += '&handler_session=' + encodeURIComponent(acellSession);
     Object.keys(params || {}).forEach(function (k) { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
     s.src = APPS_SCRIPT_URL + '?' + qs;
     document.head.appendChild(s);
@@ -1536,6 +1568,14 @@
     var s = document.createElement('script');
     s.id = 's-' + cbName;
     var qs = 'action=' + action + '&callback=' + cbName;
+    // Admin listing reads (list_characters/list_agent_file_only/
+    // list_deleted_characters) need a Handler session -- see
+    // requireHandlerSession_() in Code.gs. Attached to every GET here
+    // rather than special-cased per action: harmless extra param for
+    // the ones that don't check it, one less thing to keep in sync
+    // across this file's several independent jsonpGet() copies.
+    var acellSession = sessionStorage.getItem('dg_acell_session');
+    if (acellSession) qs += '&handler_session=' + encodeURIComponent(acellSession);
     Object.keys(params || {}).forEach(function (k) { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
     s.src = APPS_SCRIPT_URL + '?' + qs;
     document.head.appendChild(s);
@@ -1836,6 +1876,14 @@
     var s = document.createElement('script');
     s.id = 's-' + cbName;
     var qs = 'action=' + action + '&callback=' + cbName;
+    // Admin listing reads (list_characters/list_agent_file_only/
+    // list_deleted_characters) need a Handler session -- see
+    // requireHandlerSession_() in Code.gs. Attached to every GET here
+    // rather than special-cased per action: harmless extra param for
+    // the ones that don't check it, one less thing to keep in sync
+    // across this file's several independent jsonpGet() copies.
+    var acellSession = sessionStorage.getItem('dg_acell_session');
+    if (acellSession) qs += '&handler_session=' + encodeURIComponent(acellSession);
     Object.keys(params || {}).forEach(function (k) { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
     s.src = APPS_SCRIPT_URL + '?' + qs;
     document.head.appendChild(s);
@@ -2149,6 +2197,14 @@
     var s = document.createElement('script');
     s.id = 's-' + cbName;
     var qs = 'action=' + action + '&callback=' + cbName;
+    // Admin listing reads (list_characters/list_agent_file_only/
+    // list_deleted_characters) need a Handler session -- see
+    // requireHandlerSession_() in Code.gs. Attached to every GET here
+    // rather than special-cased per action: harmless extra param for
+    // the ones that don't check it, one less thing to keep in sync
+    // across this file's several independent jsonpGet() copies.
+    var acellSession = sessionStorage.getItem('dg_acell_session');
+    if (acellSession) qs += '&handler_session=' + encodeURIComponent(acellSession);
     Object.keys(params || {}).forEach(function (k) { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
     s.src = APPS_SCRIPT_URL + '?' + qs;
     document.head.appendChild(s);
@@ -2536,6 +2592,14 @@
     var s = document.createElement('script');
     s.id = 's-' + cbName;
     var qs = 'action=' + action + '&callback=' + cbName;
+    // Admin listing reads (list_characters/list_agent_file_only/
+    // list_deleted_characters) need a Handler session -- see
+    // requireHandlerSession_() in Code.gs. Attached to every GET here
+    // rather than special-cased per action: harmless extra param for
+    // the ones that don't check it, one less thing to keep in sync
+    // across this file's several independent jsonpGet() copies.
+    var acellSession = sessionStorage.getItem('dg_acell_session');
+    if (acellSession) qs += '&handler_session=' + encodeURIComponent(acellSession);
     Object.keys(params || {}).forEach(function (k) { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
     s.src = APPS_SCRIPT_URL + '?' + qs;
     document.head.appendChild(s);

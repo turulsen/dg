@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v20 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v21 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Sheet/Admin) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -86,14 +86,24 @@
 //   a real ownership check against the block's own agent_code -- a
 //   valid token only proves who's asking, not that the named block_id
 //   is theirs, which mattered once Circulate made every shared block_id
-//   visible to the whole Cell. list_characters/list_agent_file_only/
-//   list_deleted_characters/list_handouts/load_character/list_cells/
+//   visible to the whole Cell. list_handouts/load_character/list_cells/
 //   get_now_playing/get_playlist/list_tracks/imgdata/find_by_player_name
-//   deliberately stay open -- some because players legitimately need
-//   them unauthenticated (find_by_player_name IS the recovery
-//   mechanism), others (the A-Cell listing reads) because gating a
-//   GET/JSONP read would mean putting the Handler password in a URL
-//   query string; a real fix there is a later, separate piece of work.
+//   deliberately stay open, since players legitimately need them
+//   unauthenticated (find_by_player_name IS the recovery mechanism).
+// + Backend hardening, stage 4 (Handler sessions): list_characters/
+//   list_agent_file_only/list_deleted_characters were the one gap left
+//   after stage 3 -- full Admin-only data, still readable with no auth
+//   at all, but GET/JSONP requests, where the only fix stage 3's
+//   requireHandlerAuth_() offered would mean putting the real Handler
+//   password in a URL query string (browser history, server logs) --
+//   worse than the problem. New handler_login action (POST-only, the
+//   one place the real password is still ever sent) exchanges it for
+//   an opaque session token cached server-side for up to 6h
+//   (CacheService -- self-expiring, no sheet to maintain);
+//   requireHandlerSession_() gates the three listing reads on that
+//   token instead. a-cell.html logs in once right after its own
+//   password gate passes and sends the session on every listing GET
+//   from then on.
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -348,6 +358,47 @@ function requireAgentOrHandlerAuth_(data) {
   return requireAgentToken_(data);
 }
 
+// ── Handler sessions (stage 4): a handful of A-Cell Admin reads --
+// list_characters, list_agent_file_only, list_deleted_characters --
+// return every Agent's full data with no auth at all, but they're
+// GET/JSONP (a <script src=...> tag), and the only credential this app
+// has is the Handler password. Putting that raw password in a URL
+// query string would land it in browser history and any server access
+// log -- worse than the problem it's fixing. A short-lived, revocable
+// session token sidesteps that: the password is only ever POSTed once
+// (handler_login below), and everything after that trades in an opaque
+// token that's useless once it expires. CacheService is a natural fit
+// -- it already expires entries on its own, so there's no separate
+// sheet or cleanup job to maintain. ──
+
+const HANDLER_SESSION_TTL_SECONDS = 21600; // 6h -- CacheService's own max
+
+// POST-only: the one place the real Handler password is ever sent.
+// Mints an opaque session token good for HANDLER_SESSION_TTL_SECONDS
+// and returns it; the client stores it for the rest of the tab's
+// session and sends it on every subsequent Admin listing GET instead
+// of the password itself.
+function handlerLogin_(data) {
+  const authErr = requireHandlerAuth_(data);
+  if (authErr) return authErr;
+  const session = Utilities.getUuid();
+  CacheService.getScriptCache().put('handler_session_' + session, '1', HANDLER_SESSION_TTL_SECONDS);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK', session: session, expires_in: HANDLER_SESSION_TTL_SECONDS }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// Validates params.handler_session against the cache. Works for both a
+// POST body (data) and GET query params (e.parameter) -- same shape
+// either way, just a field to read.
+function requireHandlerSession_(params) {
+  const session = String((params && params.handler_session) || '').trim();
+  if (!session || !CacheService.getScriptCache().get('handler_session_' + session)) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'invalid or expired Handler session -- reload A-Cell' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  return null;
+}
+
 // Handler-only: mints a fresh token for an Agent Code, overwriting
 // whatever token (if any) it had before. This is the recovery path for
 // a player on a new device or with cleared storage -- they find their
@@ -420,6 +471,8 @@ function doGet(e) {
   // ── A-Cell: every saved character, for Play/Cells/Sheet/Admin ──
   // ?action=list_characters&callback=CALLBACK
   if (e.parameter && e.parameter.action === 'list_characters') {
+    const authErr = requireHandlerSession_(e.parameter);
+    if (authErr) return authErr;
     return listCharacters(callback);
   }
 
@@ -445,6 +498,8 @@ function doGet(e) {
   // ── A-Cell Admin: every soft-deleted Agent, for Recently Deleted ──
   // ?action=list_deleted_characters&callback=CALLBACK
   if (e.parameter && e.parameter.action === 'list_deleted_characters') {
+    const authErr = requireHandlerSession_(e.parameter);
+    if (authErr) return authErr;
     return listDeletedCharacters(callback);
   }
 
@@ -456,6 +511,8 @@ function doGet(e) {
   // Delta Green Briefs sheet by hand. ──
   // ?action=list_agent_file_only&callback=CALLBACK
   if (e.parameter && e.parameter.action === 'list_agent_file_only') {
+    const authErr = requireHandlerSession_(e.parameter);
+    if (authErr) return authErr;
     return listAgentFileOnly(callback);
   }
 
@@ -522,6 +579,14 @@ function doPost(e) {
     else if (e.parameter) rawData = JSON.stringify(e.parameter);
 
     const data = JSON.parse(rawData);
+
+    // A-Cell: exchange the Handler password for a short-lived session
+    // token (see the "Handler sessions" block above) -- the one action
+    // that ever sees the real password, so every Admin listing read can
+    // trade in the opaque token instead.
+    if (data.action === 'handler_login') {
+      return handlerLogin_(data);
+    }
 
     if (data.action === 'update_medical' || data.action === 'update_aar' || data.action === 'update_field') {
       const authErr = requireAgentToken_(data);
