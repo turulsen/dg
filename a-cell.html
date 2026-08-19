@@ -990,7 +990,8 @@
       var script = document.getElementById('_acell_play_list_script');
       if (script) script.remove();
       if (!res || res.status !== 'OK' || !Array.isArray(res.characters)) {
-        listEl.innerHTML = '<div class="play-error">Could not load the Agent list.</div>';
+        listEl.innerHTML = '<div class="play-error">Could not load the Agent list.' +
+          (res && res.message ? ' (' + escapeHtml(res.message) + ')' : '') + '</div>';
         return;
       }
       allCharacters = res.characters.map(function (c) {
@@ -2670,7 +2671,8 @@
   function fetchList(isRefresh) {
     jsonpGet('list_characters', {}, function (res) {
       if (!res || res.status !== 'OK' || !Array.isArray(res.characters)) {
-        listEl.innerHTML = '<div class="admin-error">Could not load the Agent list.</div>';
+        listEl.innerHTML = '<div class="admin-error">Could not load the Agent list.' +
+          (res && res.message ? ' (' + escapeHtml(res.message) + ')' : '') + '</div>';
         return;
       }
       agents = res.characters.map(function (c) {

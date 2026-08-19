@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v22 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v23 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Sheet/Admin) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -138,6 +138,19 @@
 //   actual concurrent-write problem already hit was a locking issue,
 //   already fixed) and a full input-sanitization/XSS audit (deserves
 //   its own focused pass, not a bolt-on here).
+// + Hotfix: requireAgentToken_()/requireHandlerSession_() now route
+//   their error responses through respond_() with the request's own
+//   callback instead of always returning bare JSON. Both are called
+//   from GET/JSONP actions (list_cell_notes/list_handout_notes, and
+//   the three Admin listing reads) as well as POST ones -- bare JSON
+//   handed to a `<script src=...>` tag is invalid as a JS statement,
+//   so on a GET the tag failed to execute, the JSONP callback never
+//   fired, and the caller just saw its own generic connection-timeout
+//   message after ~7s ("could not load the Agent list... may not be
+//   deployed yet") instead of the real reason (most likely: no
+//   Handler session yet, e.g. HANDLER_PASSWORD not set in Script
+//   Properties). Confirmed live: A-Cell's Play/Admin tabs now surface
+//   the actual res.message instead of a generic string.
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -327,11 +340,19 @@ function getOrCreateAgentAuthSheet() {
 //
 // Returns null on success (a fresh claim counts as success), or a
 // ContentService error response the caller should return immediately.
+//
+// data.callback (present when this runs from a GET/JSONP action --
+// e.parameter always carries it as a real request param; a POST body
+// never has one) routes the error through respond_() so it's still a
+// valid JSONP response. Without this, a rejected GET (list_cell_notes,
+// list_handout_notes) returned bare JSON to a <script src=...> tag,
+// which is invalid as a JS statement -- the tag fails to execute, the
+// JSONP callback never fires, and the caller just sees its own
+// generic "connection timed out" after ~7s instead of the real reason.
 function requireAgentToken_(data) {
   const agentCode = String((data && data.agent_code) || '').trim().toUpperCase();
   if (!agentCode) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'agent_code is required' }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return respond_({ status: 'ERROR', message: 'agent_code is required' }, data && data.callback);
   }
   const providedToken = String((data && data.token) || '').trim();
   return withScriptLock(function () {
@@ -340,17 +361,15 @@ function requireAgentToken_(data) {
     const headers = rows[0];
     const cols = headerMap_(headers);
     const missing = requireColumns_(cols, ['agent_code', 'token', 'created_at', 'claimed_at']);
-    if (missing) return missing;
+    if (missing) return respond_(JSON.parse(missing.getContent()), data && data.callback);
     for (let i = 1; i < rows.length; i++) {
       if (rows[i][cols.agent_code] === agentCode) {
         if (rows[i][cols.token] && rows[i][cols.token] === providedToken) return null;
-        return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'invalid or missing Agent token' }))
-          .setMimeType(ContentService.MimeType.JSON);
+        return respond_({ status: 'ERROR', message: 'invalid or missing Agent token' }, data && data.callback);
       }
     }
     if (!providedToken) {
-      return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'token is required' }))
-        .setMimeType(ContentService.MimeType.JSON);
+      return respond_({ status: 'ERROR', message: 'token is required' }, data && data.callback);
     }
     const now = new Date().getTime();
     const row = new Array(headers.length).fill('');
@@ -429,12 +448,16 @@ function handlerLogin_(data) {
 
 // Validates params.handler_session against the cache. Works for both a
 // POST body (data) and GET query params (e.parameter) -- same shape
-// either way, just a field to read.
+// either way, just a field to read. All three current callers are
+// GET/JSONP, so an error routes through respond_() with params.callback
+// (e.parameter always carries the real one) -- bare JSON handed to a
+// <script src=...> tag is invalid as a JS statement, so the tag fails
+// silently and the caller just sees its own generic connection-timeout
+// message after ~7s instead of the real "session expired" reason.
 function requireHandlerSession_(params) {
   const session = String((params && params.handler_session) || '').trim();
   if (!session || !CacheService.getScriptCache().get('handler_session_' + session)) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'invalid or expired Handler session -- reload A-Cell' }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return respond_({ status: 'ERROR', message: 'invalid or expired Handler session -- reload A-Cell' }, params && params.callback);
   }
   return null;
 }
