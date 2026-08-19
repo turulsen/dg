@@ -151,6 +151,49 @@
 //   Handler session yet, e.g. HANDLER_PASSWORD not set in Script
 //   Properties). Confirmed live: A-Cell's Play/Admin tabs now surface
 //   the actual res.message instead of a generic string.
+// + Player Notes: listCells() now also returns a member_names map
+//   (Briefs+Characters two-pass name lookup, same precedence as
+//   findByPlayerName()) so Notes tabs can show "Jones" instead of
+//   "JONE-E7FB".
+// + Security/correctness pass (external review, largely confirmed
+//   against live code rather than accepted at face value):
+//   withScriptLock() no longer silently runs its callback UNLOCKED if
+//   the lock couldn't be acquired -- it now fails closed with a "server
+//   busy" response, since falling through defeated the entire point of
+//   every scan-then-write lock in this file under exactly the
+//   concurrent load they exist to guard against; update_field's column
+//   name is now a strict allowlist lookup, no fallback deriving an
+//   arbitrary column name from whatever `field` a caller sends (a valid
+//   Agent token only proves who's asking, not that they should be able
+//   to target any column by guessing its header); saveImageToDrive()
+//   now throws instead of returning its own error message AS the URL
+//   string, which used to let a failed Drive upload save as a
+//   "successful" face_plate_url/Handout photo literally containing the
+//   error text -- every caller (savePlateImage, createHandout,
+//   updateHandout, the brief-submission reference photo) now handles
+//   the failure explicitly instead; generate_prompt/generate_plate_image
+//   gained a per-Agent CacheService rate limit (10/10min, 3/10min) and
+//   generate_plate_image gained basic input-size caps, since both call
+//   paid external APIs and a valid-but-leaked token previously had no
+//   limit on how many requests it could place. Deliberately NOT done in
+//   this pass, and why: the Agent-token lazy-claim race (first token
+//   presented for a not-yet-claimed code wins) is real, but every
+//   write in this app is a fire-and-forget `no-cors` POST whose
+//   response the client can never read -- properly closing this means
+//   switching brief submission's transport off no-cors so a
+//   server-minted token can actually be returned to it, which touches
+//   the single most heavily-used write in the app and deserves its own
+//   careful, separately-tested pass rather than bundling a transport
+//   change in here. doLookup() (bare ?code=) staying unauthenticated
+//   was also reviewed and NOT changed: it's actively used throughout
+//   dg-agent-portal.html as this app's whole "code = your key, no
+//   accounts" access model already works everywhere else (?load=,
+//   Cover Identity, etc.), and the fields it returns are fictional
+//   character content (medical log, AAR, appearance), not real PII,
+//   with player_name the one field that's already visible to the
+//   Handler elsewhere too -- requiring real auth here would break the
+//   core "load my Agent by code" flow for a small privacy gain that
+//   doesn't match the actual sensitivity of this sheet's contents.
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -236,17 +279,27 @@ const COLUMNS = [
 // row, then write) so concurrent requests -- e.g. several players
 // importing/saving characters within the same few seconds during a live
 // session -- can't race each other's scans and clobber or duplicate a
-// row. Falls back to running unlocked rather than failing the request if
-// the lock can't be acquired in time (a rare miss under contention is
-// far better than turning a working save into a hard error).
-function withScriptLock(fn) {
+// row. Used to fall back to running unlocked if the lock couldn't be
+// acquired in time -- defeating the entire point under exactly the
+// contention this exists to guard against (a miss meant two unlocked
+// scan-then-write calls could still race each other). Fails closed
+// instead: no lock, no write, just a "busy, retry" response the caller
+// already treats as its own final return value. callback is optional --
+// pass data.callback (or e.parameter.callback) for a caller reachable
+// from a GET/JSONP context so a busy response still reaches the page
+// instead of failing a <script> tag silently; omit it for POST-only
+// callers, where respond_() already degrades to plain JSON.
+function withScriptLock(fn, callback) {
   const lock = LockService.getScriptLock();
   let locked = false;
-  try { locked = lock.tryLock(5000); } catch (e) { /* proceed unlocked */ }
+  try { locked = lock.tryLock(10000); } catch (e) { /* locked stays false, same busy response below */ }
+  if (!locked) {
+    return respond_({ status: 'ERROR', message: 'Server is busy -- please try again in a moment' }, callback);
+  }
   try {
     return fn();
   } finally {
-    if (locked) { try { lock.releaseLock(); } catch (e) { /* already released/expired */ } }
+    try { lock.releaseLock(); } catch (e) { /* already released/expired */ }
   }
 }
 
@@ -379,7 +432,29 @@ function requireAgentToken_(data) {
     row[cols.claimed_at] = now;
     sheet.appendRow(row);
     return null;
-  });
+  }, data && data.callback);
+}
+
+// Per-Agent rate limit for the two AI actions (generate_prompt calls
+// Anthropic, generate_plate_image calls Gemini -- both paid, external
+// APIs). A valid Agent token only proves who's asking, not that they
+// haven't leaked/shared it -- without this, a compromised token could
+// run up real API costs with unlimited requests. CacheService counter,
+// same reasoning as every other short-lived cache in this file: it
+// already expires on its own, no sheet or cleanup job to maintain.
+// Simple fixed-window counter (not sliding) -- proportionate to this
+// campaign's actual scale (a handful of players), not meant to survive
+// a determined attacker, just to cap accidental/leaked-token cost.
+function checkRateLimit_(agentCode, bucket, maxCalls, windowSeconds) {
+  const cache = CacheService.getScriptCache();
+  const key = 'rl_' + bucket + '_' + String(agentCode || '').trim().toUpperCase();
+  const count = Number(cache.get(key)) || 0;
+  if (count >= maxCalls) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'Rate limit reached for this Agent -- please wait a few minutes and try again.' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  cache.put(key, String(count + 1), windowSeconds);
+  return null;
 }
 
 // Validates data.handler_password against the HANDLER_PASSWORD Script
@@ -705,6 +780,8 @@ function doPost(e) {
     if (data.action === 'generate_prompt') {
       const authErr = requireAgentToken_(data);
       if (authErr) return authErr;
+      const rateErr = checkRateLimit_(data.agent_code, 'prompt', 10, 600);
+      if (rateErr) return rateErr;
       return generateAppearancePrompt(data);
     }
 
@@ -717,6 +794,8 @@ function doPost(e) {
     if (data.action === 'generate_plate_image') {
       const authErr = requireAgentToken_(data);
       if (authErr) return authErr;
+      const rateErr = checkRateLimit_(data.agent_code, 'plate_image', 3, 600);
+      if (rateErr) return rateErr;
       return generatePlateImage(data);
     }
 
@@ -928,7 +1007,17 @@ function doPost(e) {
 
       let imageLink = '';
       if (data.ref_image_base64 && data.ref_image_name) {
-        imageLink = saveImageToDrive(data.ref_image_base64, data.ref_image_name, data.char_name);
+        // This whole submission is a fire-and-forget POST the client
+        // never reads a response from -- a failed upload here shouldn't
+        // fail the ENTIRE brief (medical log, appearance, everything
+        // else typed in) just because the reference photo didn't make
+        // it to Drive, so this is caught and simply leaves imageLink
+        // blank rather than letting saveImageToDrive()'s exception blow
+        // up the whole submission (or, as before, silently store its
+        // error message as if it were a real Drive link).
+        try {
+          imageLink = saveImageToDrive(data.ref_image_base64, data.ref_image_name, data.char_name);
+        } catch (err) { imageLink = ''; }
       } else if (existingRowIndex !== -1 && refImageLinkCol !== -1) {
         // Resubmitting without picking a new file (the normal case --
         // <input type=file> can't be pre-filled from a previous session,
@@ -993,10 +1082,17 @@ function updateAgentField(data) {
     if (data.action === 'update_medical') fieldName = 'Medical Log';
     else if (data.action === 'update_aar') fieldName = 'Aar Log';
     else if (data.action === 'update_field') {
-      fieldName = FIELD_MAP[data.field] || data.field
-        .split('_')
-        .map(function(w){ return w.charAt(0).toUpperCase() + w.slice(1); })
-        .join(' ');
+      // Explicit allowlist ONLY -- no fallback that derives a column
+      // name from data.field. A valid Agent token only proves who's
+      // asking, not that they should be able to target ANY column by
+      // guessing/spelling its header (e.g. field: "submitted_at" or
+      // "agent_code" used to resolve and silently overwrite those too).
+      fieldName = FIELD_MAP[data.field];
+      if (!fieldName) {
+        return ContentService
+          .createTextOutput(JSON.stringify({ status: 'ERROR', message: 'Field not allowed: ' + data.field }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
     }
 
     const fieldCol = headers.indexOf(fieldName);
@@ -2189,11 +2285,16 @@ function createHandout(data) {
   const missing = requireColumns_(cols, ['handout_id', 'title', 'body', 'photo', 'cell_id', 'created_at']);
   if (missing) return missing;
   const handoutId = 'handout_' + new Date().getTime() + '_' + Math.floor(Math.random() * 100000).toString(36);
+  let photo;
+  try { photo = resolveHandoutPhoto_(data.photo, title); } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'Image upload failed: ' + err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
   const row = new Array(headers.length).fill('');
   row[cols.handout_id] = handoutId;
   row[cols.title] = title;
   row[cols.body] = data.body || '';
-  row[cols.photo] = resolveHandoutPhoto_(data.photo, title);
+  row[cols.photo] = photo;
   row[cols.cell_id] = data.cell_id || '';
   row[cols.created_at] = new Date().getTime();
   sheet.appendRow(row);
@@ -2220,7 +2321,10 @@ function updateHandout(data) {
       // fresh raw data URI (a new photo picked this edit) -- an
       // unchanged gdrive: link or empty string passes straight through,
       // see resolveHandoutPhoto_().
-      row[cols.photo] = resolveHandoutPhoto_(data.photo, data.title);
+      try { row[cols.photo] = resolveHandoutPhoto_(data.photo, data.title); } catch (err) {
+        return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'Image upload failed: ' + err.message }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
       row[cols.cell_id] = data.cell_id || '';
       sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
@@ -2895,35 +2999,39 @@ function ensureBriefsColumns(ss) {
   cache.put('briefs_columns_ensured', '1', 21600);
 }
 
+// Throws on failure -- used to catch its own error and return the
+// message AS THE URL STRING, so a failed upload silently became a
+// "successful" save with face_plate_url (or a Handout's photo) literally
+// set to the text "Image upload failed: ...". Every caller already
+// wraps this (or now does, see resolveHandoutPhoto_()/createHandout()/
+// updateHandout() below) in its own try/catch and returns a real ERROR
+// response instead, so a failure can never again be mistaken for a
+// valid gdrive: link.
 function saveImageToDrive(base64DataUrl, filename, charName) {
-  try {
-    const base64 = base64DataUrl.split(',')[1];
-    const mimeType = base64DataUrl.split(';')[0].split(':')[1];
+  const base64 = base64DataUrl.split(',')[1];
+  const mimeType = base64DataUrl.split(';')[0].split(':')[1];
 
-    const blob = Utilities.newBlob(
-      Utilities.base64Decode(base64),
-      mimeType,
-      filename
-    );
+  const blob = Utilities.newBlob(
+    Utilities.base64Decode(base64),
+    mimeType,
+    filename
+  );
 
-    let folder;
-    const folders = DriveApp.getFoldersByName('Delta Green — Character References');
-    if (folders.hasNext()) {
-      folder = folders.next();
-    } else {
-      folder = DriveApp.createFolder('Delta Green — Character References');
-    }
-
-    const file = folder.createFile(blob);
-    file.setName((charName || 'unknown') + ' — ' + filename);
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-
-    // Store the file ID so the portal can use the image proxy endpoint
-    // Format: gdrive:FILE_ID  — portal detects this prefix and calls ?action=imgdata&id=
-    return 'gdrive:' + file.getId();
-  } catch (err) {
-    return 'Image upload failed: ' + err.message;
+  let folder;
+  const folders = DriveApp.getFoldersByName('Delta Green — Character References');
+  if (folders.hasNext()) {
+    folder = folders.next();
+  } else {
+    folder = DriveApp.createFolder('Delta Green — Character References');
   }
+
+  const file = folder.createFile(blob);
+  file.setName((charName || 'unknown') + ' — ' + filename);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+  // Store the file ID so the portal can use the image proxy endpoint
+  // Format: gdrive:FILE_ID  — portal detects this prefix and calls ?action=imgdata&id=
+  return 'gdrive:' + file.getId();
 }
 
 function savePlateImage(data) {
@@ -2937,7 +3045,7 @@ function savePlateImage(data) {
     });
   } catch(err) {
     return ContentService
-      .createTextOutput(JSON.stringify({ status: 'ERROR', message: err.message }))
+      .createTextOutput(JSON.stringify({ status: 'ERROR', message: 'Image upload failed: ' + err.message }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 }
@@ -3131,6 +3239,20 @@ function generatePlateImage(data) {
     if (!prompt) {
       return ContentService
         .createTextOutput(JSON.stringify({ status: 'ERROR', message: 'prompt is required.' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    // A malicious/broken caller sending a huge prompt or reference image
+    // would still get charged to this account's Gemini quota and burn
+    // real Apps Script execution time even on an eventual rejection --
+    // reject obviously-oversized input before ever calling out.
+    if (prompt.length > 4000) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'ERROR', message: 'prompt is too long.' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    if (data.reference_image_base64 && data.reference_image_base64.length > 8 * 1024 * 1024) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'ERROR', message: 'reference image is too large.' }))
         .setMimeType(ContentService.MimeType.JSON);
     }
 
