@@ -5641,7 +5641,11 @@ def test_notes_v1_block_crud(p):
 
     # Toggle Shared on the existing private block -- saves immediately (no debounce wait needed).
     posts.clear()
-    page.check('[data-shared-toggle="b1"]')
+    # The checkbox itself is visually hidden (custom toggle-switch look,
+    # see notes.css .dg-notes-toggle-input) -- click the visible track,
+    # exactly like a real user would, same as native <label> click
+    # delegation does regardless of the input's own visibility.
+    page.click('[data-shared-toggle="b1"] + .dg-notes-toggle-track')
     toggled = wait_for_condition(lambda: (page.evaluate("1"), next((x for x in posts if x.get("action") == "save_note_block" and x.get("block_id") == "b1"), None))[1], timeout_ms=25000)
     record("notes", "toggling Shared on your own block saves shared:true",
            bool(toggled) and toggled.get("shared") is True, json.dumps(toggled) if toggled else "no POST captured")
@@ -5748,24 +5752,38 @@ def test_notes_v1_bugfix_stability(p):
     record("notes", "the live editing field carries the author's chosen ink color (not just the settled view)",
            "color:#2b6cb0" in (field.get_attribute("style") or ""), field.get_attribute("style") or "")
 
-    # Mid-edit toolbar click: should apply formatting AND must not kick the
-    # block out of edit mode -- the old e.relatedTarget-based blur guard
-    # failed open here on Safari, destroying the field before the button's
-    # own click could even register ("click disappearing, no formatting
-    # happening").
+    # Toolbar click: applies the formatting AND commits + drops back to
+    # the rendered view immediately, so you actually SEE the real
+    # color/bold right away instead of the raw {markup}/**markup**
+    # sitting in the field until some later blur -- "when I choose color
+    # for the block, this html color code comes up, instead of changing
+    # color." The old e.relatedTarget-based blur guard also used to
+    # fail open here on Safari and destroy the field before the button's
+    # own click could even register at all ("click disappearing, no
+    # formatting happening") -- the click landing and actually being
+    # honored is itself part of what this checks.
     field.select_text()
     page.click('.dg-notes-format-bar [data-fmt="bold"]')
-    page.wait_for_timeout(150)
-    still_editing = page.query_selector('.dg-notes-block-text[data-block-id="b1"]') is not None
-    bolded = "**" in (field.input_value() if still_editing else "")
-    record("notes", "clicking a format toolbar button mid-edit applies formatting without exiting edit mode",
-           still_editing and bolded, field.input_value() if still_editing else "(edit mode was destroyed)")
+    wait_for_condition(lambda: page.query_selector('.dg-notes-block-text[data-block-id="b1"]') is None, timeout_ms=6000)
+    view_html = page.evaluate("""() => {
+        const el = document.querySelector('.dg-notes-block-view[data-block-id="b1"]');
+        return el ? el.innerHTML : null;
+    }""")
+    record("notes", "clicking a format toolbar button renders real formatting immediately, not raw markup",
+           bool(view_html) and "<b>" in view_html and "**" not in view_html, view_html or "(view never reappeared)")
 
-    # Mid-edit Shared checkbox: a single click/check must register and
-    # save -- previously needed several clicks because the same blur bug
-    # destroyed the checkbox before its own click/change could fire.
+    # Re-enter edit mode to cover the Shared checkbox mid-edit -- a
+    # single click/check must register and save -- previously needed
+    # several clicks because the same blur bug destroyed the checkbox
+    # before its own click/change could fire.
+    page.click('.dg-notes-block-view[data-block-id="b1"]')
+    wait_for_condition(lambda: page.query_selector('.dg-notes-block-text[data-block-id="b1"]') is not None, timeout_ms=6000)
     posts.clear()
-    page.check('[data-shared-toggle="b1"]')
+    # The checkbox itself is visually hidden (custom toggle-switch look,
+    # see notes.css .dg-notes-toggle-input) -- click the visible track,
+    # exactly like a real user would, same as native <label> click
+    # delegation does regardless of the input's own visibility.
+    page.click('[data-shared-toggle="b1"] + .dg-notes-toggle-track')
     # Generous, AND nudges the renderer each poll (a trivial evaluate()
     # round trip) rather than just sleeping in Python -- this sandbox can
     # leave an already zero-delay-scheduled callback queued for real

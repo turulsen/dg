@@ -415,9 +415,13 @@
         : '';
 
       const controls = ctx.canEdit
-        ? '<label class="dg-notes-shared-toggle"><input type="checkbox" data-shared-toggle="' + escapeHtml(b.block_id) + '" ' + (b.shared ? 'checked' : '') + '> Shared</label>' +
+        ? '<label class="dg-notes-shared-toggle" title="Circulate this entry to the whole Cell">' +
+          '<input type="checkbox" class="dg-notes-toggle-input" data-shared-toggle="' + escapeHtml(b.block_id) + '" ' + (b.shared ? 'checked' : '') + '>' +
+          '<span class="dg-notes-toggle-track"><span class="dg-notes-toggle-thumb"></span></span>' +
+          '<span class="dg-notes-toggle-label">Circulate</span>' +
+          '</label>' +
         '<button type="button" class="dg-notes-block-del" data-delete="' + escapeHtml(b.block_id) + '" title="Delete block">&times;</button>'
-        : (ctx.showAuthor ? '' : '<span class="dg-notes-shared-badge">' + (b.shared ? 'Shared' : 'Private') + '</span>');
+        : (ctx.showAuthor ? '' : '<span class="dg-notes-shared-badge">' + (b.shared ? 'Circulated' : 'Private') + '</span>');
 
       return '<div class="dg-notes-block dg-notes-block-' + type + '" id="block-' + escapeHtml(b.block_id) + '" data-block-id="' + escapeHtml(b.block_id) + '">' +
         authorBadge +
@@ -529,6 +533,7 @@
           if (kind === 'bold') wrapSelection(field, '**', '**');
           else if (kind === 'italic') wrapSelection(field, '_', '_');
           else if (kind === 'highlight') wrapSelection(field, '==', '==');
+          commitAndPreview(blockId);
         });
       });
       container.querySelectorAll('[data-fmt-color]').forEach(btn => {
@@ -537,6 +542,7 @@
           const field = container.querySelector('[data-block-id="' + blockId + '"].dg-notes-block-text');
           if (!field) return;
           wrapSelection(field, '{color:' + btn.dataset.fmtColor + '}', '{/color}');
+          commitAndPreview(blockId);
         });
       });
       container.querySelectorAll('[data-shared-toggle]').forEach(cb => {
@@ -554,16 +560,29 @@
     // (textarea/input's selectionStart/End is well-supported even on
     // mobile Safari, unlike contenteditable's Selection/Range API --
     // deliberately avoided here for the same reason a plain field was
-    // kept for editing at all).
+    // kept for editing at all). Only ever called right before
+    // commitAndPreview() swaps the block back to its rendered view, so
+    // it doesn't bother re-focusing the field -- that field is about to
+    // be destroyed.
     function wrapSelection(fieldEl, before, after) {
       const start = fieldEl.selectionStart, end = fieldEl.selectionEnd;
       const val = fieldEl.value;
       const selected = val.slice(start, end) || 'text';
       fieldEl.value = val.slice(0, start) + before + selected + after + val.slice(end);
-      fieldEl.focus();
-      fieldEl.selectionStart = start + before.length;
-      fieldEl.selectionEnd = start + before.length + selected.length;
       fieldEl.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    // Saves immediately and drops out of edit mode so a toolbar action
+    // shows its actual result (real color/bold) right away, instead of
+    // leaving the raw {markup} sitting in the field until some later
+    // blur: "when I choose color for the block, this html color code
+    // comes up, instead of changing color." Tap the block again to keep
+    // writing.
+    function commitAndPreview(blockId) {
+      scheduleSave(blockId, { immediate: true });
+      editingBlockId = null;
+      deferredRenderPending = false;
+      render();
     }
 
     function findBlockAnywhere(blockId) {
