@@ -5577,12 +5577,23 @@ def test_notes_v2_editorjs(p):
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", fake_apps_script)
 
+    # Seeds the same localStorage roster agent-hub.html's own Cover
+    # Identity flow writes to -- Notes should auto-load this Agent and
+    # auto-resolve their Cell with zero manual entry, no Cell picker
+    # ever shown (players don't choose Cells; a Handler assigns them).
+    page.add_init_script("""
+        try {
+            localStorage.setItem('dg_agent_roster', JSON.stringify({
+                'OWEN-CS12': { code: 'OWEN-CS12', char_name: 'Owen Castillo', saved_at: Date.now() }
+            }));
+        } catch (e) {}
+    """)
     page.goto(f"{BASE}/notes/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(300)
-    page.fill("#picker-agent-code", "OWEN-CS12")
-    wait_for_condition(lambda: page.locator('#picker-cell option[value="cell_1"]').count() > 0, timeout_ms=6000)
-    page.select_option("#picker-cell", "cell_1")
-    page.click("#picker-open-btn")
+    wait_for_condition(lambda: page.query_selector(".dg-notes-identity-modal") is not None or page.query_selector("#dg-notes-editor-mount") is not None, timeout_ms=6000)
+    record("notes", "a Cover Identity on this device auto-opens Notes with no manual Agent Code or Cell entry",
+           page.query_selector("#picker-wrap.hidden") is not None, "")
+    record("notes", "no Cell picker is ever shown to players",
+           page.query_selector("#picker-cell") is None, "")
 
     # A first-time-here Agent is prompted to pick a color + handwriting
     # font before anything else.
@@ -5708,6 +5719,22 @@ def test_notes_v2_editorjs(p):
 
     record("notes", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
+
+    # Fallback: a device/browser with no Cover Identity roster yet
+    # (fresh install, cleared storage) still gets a manual Agent Code
+    # entry -- Notes shouldn't be unreachable just because Cover
+    # Identity hasn't been used on this device before -- but still
+    # never a Cell picker.
+    page2 = p.new_page()
+    page2.set_default_timeout(10000)
+    page2.route("**/script.google.com/**", fake_apps_script)
+    page2.goto(f"{BASE}/notes/index.html", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: page2.query_selector("#picker-agent-code") is not None and page2.query_selector("#picker-fallback-row.hidden") is None, timeout_ms=6000)
+    record("notes", "with no Cover Identity on this device, a manual Agent Code fallback is offered instead of blocking Notes",
+           page2.query_selector("#picker-agent-code") is not None, "")
+    record("notes", "the fallback never offers a Cell picker either",
+           page2.query_selector("#picker-cell") is None, "")
+    page2.close()
     return errs
 
 

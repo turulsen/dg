@@ -77,23 +77,26 @@
 
 <div class="picker-wrap" id="picker-wrap">
   <div class="picker">
-    <div class="picker-row">
+    <div class="picker-row" id="picker-agent-row">
+      <div class="picker-field">
+        <label class="picker-label" for="picker-agent-select">Which Agent</label>
+        <select id="picker-agent-select"></select>
+      </div>
+      <button type="button" class="picker-btn" id="picker-open-btn">Open Notes</button>
+    </div>
+    <div class="picker-row hidden" id="picker-fallback-row">
       <div class="picker-field">
         <label class="picker-label" for="picker-agent-code">Your Agent Code</label>
         <input type="text" id="picker-agent-code" placeholder="e.g. ALFR-1234" autocomplete="off">
       </div>
-      <div class="picker-field">
-        <label class="picker-label" for="picker-cell">Cell</label>
-        <select id="picker-cell"><option value="">Loading Cells…</option></select>
-      </div>
-      <button type="button" class="picker-btn" id="picker-open-btn">Open Notes</button>
+      <button type="button" class="picker-btn" id="picker-fallback-open-btn">Open Notes</button>
     </div>
-    <div class="picker-status" id="picker-status"></div>
+    <div class="picker-status" id="picker-status">Loading your Cover Identity…</div>
   </div>
 </div>
 
 <div class="change-context hidden" id="change-context-row">
-  <button type="button" id="change-context-btn">Change Agent / Cell</button>
+  <button type="button" id="change-context-btn">Change Agent</button>
 </div>
 
 <div class="notes-mount hidden" id="notes-mount"></div>
@@ -108,18 +111,29 @@
 <script src="notes.js"></script>
 <script>
   const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
-  const PICKER_KEY = 'dg_notes_last_picker';
+  // Same key agent-hub.html's own Cover Identity roster writes to --
+  // reading it here means a player's Agent auto-loads in Notes exactly
+  // like it does on their own hub tab, with no manual code entry.
+  // Cells are never player-chosen (a Handler assigns Cell membership
+  // in A-Cell, players never see the roster of Cells) -- the Cell is
+  // always resolved automatically from list_cells' member_codes, never
+  // offered as a picker.
+  const ROSTER_KEY = 'dg_agent_roster';
 
   const pickerWrap = document.getElementById('picker-wrap');
+  const agentRow = document.getElementById('picker-agent-row');
+  const fallbackRow = document.getElementById('picker-fallback-row');
   const changeRow = document.getElementById('change-context-row');
   const mount = document.getElementById('notes-mount');
+  const agentSelect = document.getElementById('picker-agent-select');
   const codeInput = document.getElementById('picker-agent-code');
-  const cellSelect = document.getElementById('picker-cell');
   const statusEl = document.getElementById('picker-status');
   const openBtn = document.getElementById('picker-open-btn');
+  const fallbackOpenBtn = document.getElementById('picker-fallback-open-btn');
   const changeBtn = document.getElementById('change-context-btn');
 
-  let cellsById = {};
+  let cellsList = [];
+  let myAgents = [];
   let panelHandle = null;
 
   function jsonpGet(action, params, cb) {
@@ -137,60 +151,84 @@
     document.head.appendChild(s);
   }
 
-  function loadCells() {
+  function rosterAgentsSorted() {
+    let roster;
+    try { roster = JSON.parse(localStorage.getItem(ROSTER_KEY) || '{}'); } catch (e) { roster = {}; }
+    // Most-recently-active first -- same "which Agent is my Cover
+    // Identity right now" rule agent-hub.html itself uses to pick its
+    // own default active tab.
+    return Object.values(roster).sort((a, b) => (b.saved_at || 0) - (a.saved_at || 0));
+  }
+
+  function findCellForAgent(agentCode) {
+    return cellsList.find(c => (c.member_codes || []).indexOf(agentCode) !== -1) || null;
+  }
+
+  function agentLabel(a) {
+    return a.char_name ? (a.char_name + ' (' + a.code + ')') : a.code;
+  }
+
+  function init() {
+    myAgents = rosterAgentsSorted();
     jsonpGet('list_cells', {}, res => {
-      if (!res || res.status !== 'OK') {
-        cellSelect.innerHTML = '<option value="">Could not load Cells</option>';
-        return;
-      }
-      cellsById = {};
-      (res.cells || []).forEach(c => { cellsById[c.cell_id] = c; });
-      cellSelect.innerHTML = '<option value="">Choose a Cell…</option>' +
-        (res.cells || []).map(c => `<option value="${c.cell_id}">${c.name}</option>`).join('');
-      restoreLastPicker();
+      cellsList = (res && res.status === 'OK') ? (res.cells || []) : [];
+      proceed();
     });
   }
 
-  function restoreLastPicker() {
-    let saved;
-    try { saved = JSON.parse(localStorage.getItem(PICKER_KEY) || 'null'); } catch (e) { saved = null; }
-    if (!saved) return;
-    if (saved.agentCode) codeInput.value = saved.agentCode;
-    if (saved.cellId && cellsById[saved.cellId]) cellSelect.value = saved.cellId;
+  function proceed() {
+    if (myAgents.length === 0) {
+      // No Cover Identity saved on this device/browser yet -- fall
+      // back to manual entry rather than blocking Notes entirely (a
+      // shared/Handler device, or a cleared browser).
+      agentRow.classList.add('hidden');
+      fallbackRow.classList.remove('hidden');
+      statusEl.textContent = 'No Cover Identity found on this device -- enter your Agent Code, or visit the Agent Hub first.';
+      return;
+    }
+    fallbackRow.classList.add('hidden');
+    agentRow.classList.remove('hidden');
+    agentSelect.innerHTML = myAgents.map(a => `<option value="${a.code}">${agentLabel(a)}</option>`).join('');
+    statusEl.textContent = myAgents.length > 1 ? 'Choose which Agent’s notes to open.' : '';
+    if (myAgents.length === 1) {
+      openFor(myAgents[0].code);
+    }
   }
 
-  function openNotes() {
-    const agentCode = codeInput.value.trim().toUpperCase();
-    const cellId = cellSelect.value;
-    if (!agentCode) { statusEl.textContent = 'Enter your Agent Code first.'; return; }
-    if (!cellId || !cellsById[cellId]) { statusEl.textContent = 'Pick a Cell first.'; return; }
-
-    try { localStorage.setItem(PICKER_KEY, JSON.stringify({ agentCode, cellId })); } catch (e) { }
-
-    const cell = cellsById[cellId];
+  function openFor(agentCode) {
+    const cell = findCellForAgent(agentCode);
+    if (!cell) {
+      statusEl.textContent = 'Your Agent (' + agentCode + ') isn’t assigned to a Cell yet -- ask your Handler.';
+      return;
+    }
     pickerWrap.classList.add('hidden');
     changeRow.classList.remove('hidden');
     mount.classList.remove('hidden');
 
     if (panelHandle && panelHandle.destroy) panelHandle.destroy();
     panelHandle = window.dgNotesPanel.init(mount, {
-      cellId: cellId,
+      cellId: cell.cell_id,
       agentCode: agentCode,
       memberCodes: cell.member_codes || [],
     });
   }
 
-  openBtn.addEventListener('click', openNotes);
-  codeInput.addEventListener('keydown', e => { if (e.key === 'Enter') openNotes(); });
+  openBtn.addEventListener('click', () => openFor(agentSelect.value));
+  fallbackOpenBtn.addEventListener('click', () => {
+    const agentCode = codeInput.value.trim().toUpperCase();
+    if (!agentCode) { statusEl.textContent = 'Enter your Agent Code first.'; return; }
+    openFor(agentCode);
+  });
+  codeInput.addEventListener('keydown', e => { if (e.key === 'Enter') fallbackOpenBtn.click(); });
   changeBtn.addEventListener('click', () => {
     if (panelHandle && panelHandle.destroy) panelHandle.destroy();
     mount.classList.add('hidden');
     changeRow.classList.add('hidden');
     pickerWrap.classList.remove('hidden');
-    statusEl.textContent = '';
+    proceed();
   });
 
-  loadCells();
+  init();
 </script>
 
 </body>
