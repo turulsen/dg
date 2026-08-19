@@ -1546,13 +1546,46 @@
   var handouts = [];
   var cells = [];
   var cellsById = {};
+  // formPhotoDataUrl: the data URI of a NEWLY picked file this edit
+  // session, or null if none picked. formPhotoExisting: the original
+  // stored photo value (a gdrive: link, a legacy pre-migration data
+  // URI, or ''), used as the save fallback so re-saving without
+  // changing the photo sends the existing link back unchanged instead
+  // of a freshly-decoded, freshly-re-uploaded data URI.
   var formPhotoDataUrl = null;
+  var formPhotoExisting = null;
 
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
     return String(str)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
+  }
+
+  // Same gdrive:-link convention already used for Face/Outfit Plates
+  // (see agent-hub.html/dg-agent-portal.html) -- resolveHandoutPhoto_()
+  // in Code.gs stores photos this way now instead of a raw data URI.
+  function extractDriveId(url) {
+    if (!url) return null;
+    var m = url.match(/^gdrive:(.+)$/);
+    return m ? m[1] : null;
+  }
+
+  // Resolves a gdrive: link to a data URI via the imgdata JSONP proxy
+  // and hands it to onReady -- used for both the thumbnail grid and the
+  // edit-form preview.
+  function loadHandoutPhotoDataUri(photoUrl, onReady) {
+    var id = extractDriveId(photoUrl);
+    if (!id) return;
+    var cbName = '_acellHandoutPhoto_' + id.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
+    var s = document.createElement('script');
+    window[cbName] = function (json) {
+      delete window[cbName];
+      if (s.parentNode) s.remove();
+      if (json && json.status === 'OK' && json.dataUri) onReady(json.dataUri);
+    };
+    s.src = APPS_SCRIPT_URL + '?action=imgdata&id=' + encodeURIComponent(id) + '&callback=' + cbName;
+    document.head.appendChild(s);
   }
 
   function jsonpGet(action, params, cb) {
@@ -1631,8 +1664,13 @@
     }
     listEl.innerHTML = handouts.map(function (h, i) {
       var scopeClass = h.cell_id ? 'handout-scope' : 'handout-scope all-cells';
+      // A gdrive:-backed photo (the normal case now) resolves async
+      // below into this placeholder; a legacy pre-migration handout
+      // with a raw data URI still on file renders directly.
+      var driveId = extractDriveId(h.photo);
       var photoRow = h.photo
-        ? '<img class="handout-photo" src="' + h.photo + '" alt="" data-lightbox-photo="' + i + '">'
+        ? (driveId ? '<div class="handout-photo-wrap" id="handout-photo-' + i + '"></div>'
+                   : '<img class="handout-photo" src="' + h.photo + '" alt="" data-lightbox-photo="' + i + '">')
         : '';
       return '<div class="handout-card" data-i="' + i + '">' +
         '<div class="handout-card-head">' +
@@ -1660,6 +1698,15 @@
       img.addEventListener('click', function () {
         var h = handouts[parseInt(img.dataset.lightboxPhoto, 10)];
         if (h && h.photo) openLightbox(h.photo);
+      });
+    });
+    handouts.forEach(function (h, i) {
+      if (!extractDriveId(h.photo)) return;
+      loadHandoutPhotoDataUri(h.photo, function (dataUri) {
+        var wrap = document.getElementById('handout-photo-' + i);
+        if (!wrap) return;
+        wrap.innerHTML = '<img class="handout-photo" src="' + dataUri + '" alt="">';
+        wrap.querySelector('img').addEventListener('click', function () { openLightbox(dataUri); });
       });
     });
   }
@@ -1719,7 +1766,12 @@
 
   function showForm(editingHandout) {
     if (!editingHandout && createFormSlot.childNodes.length) { createFormSlot.innerHTML = ''; return; }
-    formPhotoDataUrl = editingHandout ? (editingHandout.photo || null) : null;
+    formPhotoDataUrl = null;
+    formPhotoExisting = editingHandout ? (editingHandout.photo || null) : null;
+    // A legacy pre-migration handout still holding a raw data URI can
+    // preview directly; a gdrive: link resolves async below, once the
+    // form (and its preview <img>) actually exists in the DOM.
+    var previewSrc = (formPhotoExisting && !extractDriveId(formPhotoExisting)) ? formPhotoExisting : null;
     var scopeOptions = '<option value="">All Cells</option>' + cells.map(function (c) {
       var sel = editingHandout && editingHandout.cell_id === c.cell_id ? ' selected' : '';
       return '<option value="' + escapeHtml(c.cell_id) + '"' + sel + '>' + escapeHtml(c.name) + '</option>';
@@ -1732,7 +1784,7 @@
       '</div>' +
       '<label class="handouts-create-field"><span>Body</span><textarea id="handouts-new-body" placeholder="What the Agents see...">' + (editingHandout ? escapeHtml(editingHandout.body) : '') + '</textarea></label>' +
       '<label class="handouts-create-field"><span>Photo (optional)</span><input type="file" accept="image/*" id="handouts-new-photo"></label>' +
-      (formPhotoDataUrl ? '<img id="handouts-new-photo-prev" class="handout-photo" src="' + formPhotoDataUrl + '" style="display:block;">' : '<img id="handouts-new-photo-prev" class="handout-photo" style="display:none;">') +
+      (previewSrc ? '<img id="handouts-new-photo-prev" class="handout-photo" src="' + previewSrc + '" style="display:block;">' : '<img id="handouts-new-photo-prev" class="handout-photo" style="display:none;">') +
       '<div class="handouts-create-actions">' +
       '<button type="button" class="paper-btn primary" id="handouts-new-confirm">' + (editingHandout ? 'Save' : 'Create') + '</button>' +
       '<button type="button" class="paper-btn" id="handouts-new-cancel">Cancel</button>' +
@@ -1751,9 +1803,13 @@
       if (!title) { errEl.textContent = 'Give the handout a title first.'; return; }
       statusEl.textContent = editingHandout ? 'Saving…' : 'Creating…';
       var handlerPw = sessionStorage.getItem('dg_acell_pw') || '';
+      // A freshly picked file wins; otherwise send the existing stored
+      // value back unchanged (a gdrive: link, a legacy data URI, or
+      // nothing) rather than re-uploading a photo that didn't change.
+      var photoToSave = formPhotoDataUrl || formPhotoExisting || '';
       var payload = editingHandout
-        ? { action: 'update_handout', handout_id: editingHandout.handout_id, title: title, body: body, photo: formPhotoDataUrl || '', cell_id: cellId, handler_password: handlerPw }
-        : { action: 'create_handout', title: title, body: body, photo: formPhotoDataUrl || '', cell_id: cellId, handler_password: handlerPw };
+        ? { action: 'update_handout', handout_id: editingHandout.handout_id, title: title, body: body, photo: photoToSave, cell_id: cellId, handler_password: handlerPw }
+        : { action: 'create_handout', title: title, body: body, photo: photoToSave, cell_id: cellId, handler_password: handlerPw };
       // No keepalive here, unlike every other POST in this file: keepalive
       // requests are capped at 64KiB by the browser (not this app, not
       // Apps Script) -- fine for the small JSON payloads every other
@@ -1780,6 +1836,12 @@
         }, 900);
       }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
     });
+    if (formPhotoExisting && extractDriveId(formPhotoExisting)) {
+      loadHandoutPhotoDataUri(formPhotoExisting, function (dataUri) {
+        var prev = document.getElementById('handouts-new-photo-prev');
+        if (prev) { prev.src = dataUri; prev.style.display = 'block'; }
+      });
+    }
   }
 
   createBtn.addEventListener('click', function () { showForm(null); });
