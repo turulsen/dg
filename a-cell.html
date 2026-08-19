@@ -88,6 +88,23 @@
     color:#e9e3ce; margin:0 0 8px; letter-spacing:.01em;
   }
   .hub-header p{ font-family:'Courier Prime',monospace; font-size:13px; color:#b7b09a; max-width:62ch; line-height:1.7; margin:0; }
+
+  /* Handler Password -- the real HANDLER_PASSWORD Script Property
+     credential (see the a-cell.html header comment above the clearance
+     gate script for why this is deliberately separate from that gate).
+     Compact and out of the way once unlocked; a plain inline form until
+     then. */
+  .acell-handler-auth{
+    display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:14px;
+    font-family:'Courier Prime',monospace; font-size:12px;
+  }
+  .acell-handler-auth-label{ color:#b7b09a; }
+  .acell-handler-auth.acell-handler-auth-ok .acell-handler-auth-label{ color:#7fbf8a; }
+  .acell-handler-auth #acell-handler-pw-input{
+    background:var(--paper); border:1px solid var(--rule); color:var(--ink);
+    padding:5px 9px; font-family:'Courier Prime',monospace; font-size:12px; width:170px;
+  }
+  .acell-handler-auth-err{ color:#c96a6a; font-size:11px; }
   .folder-wrap{ max-width:900px; margin:26px auto 0; padding:0 6px; }
 
   /* ── Play: agent list + simplified read-only view ── */
@@ -603,6 +620,12 @@
   <div class="stamp">Clearance: A-Cell</div>
   <h1>A-Cell</h1>
   <p>Handler tools — run Play from a simplified agent view, organize every Agent on file into Cells, and curate the table's music.</p>
+  <div class="acell-handler-auth" id="acell-handler-auth">
+    <span class="acell-handler-auth-label" id="acell-handler-auth-label">Handler session: not set</span>
+    <input type="password" id="acell-handler-pw-input" placeholder="Handler password" autocomplete="off">
+    <button type="button" class="paper-btn" id="acell-handler-pw-btn">Unlock</button>
+    <span class="acell-handler-auth-err" id="acell-handler-auth-err"></span>
+  </div>
 </div>
 
 <div class="folder-wrap">
@@ -752,9 +775,21 @@
 /* ══════════════════════════════════════════════
    A-CELL CLEARANCE GATE
    Client-side only -- a flavor gate for in-fiction "clearance", not
-   real security. Password: MASTICATE (case-insensitive). Session-gated
-   via sessionStorage, matching index.html's boot splash: unlocks once
-   per tab, not on every repeat visit within the same session.
+   real security. Password: MASTICATE (case-insensitive), hardcoded and
+   public (it's sitting right here in a public repo) on purpose --
+   session-gated via sessionStorage, matching index.html's boot splash:
+   unlocks once per tab, not on every repeat visit within the same
+   session.
+
+   Deliberately NOT the same secret as the real HANDLER_PASSWORD Script
+   Property that Code.gs's requireHandlerAuth_()/requireHandlerSession_()
+   check -- that one's private, set by the campaign owner, and gates the
+   actual writes/Admin listing reads. An earlier version of this gate
+   fed its own MASTICATE value on as that credential, which meant every
+   Handler action silently 401'd the moment HANDLER_PASSWORD was set to
+   anything other than the literal string "MASTICATE" -- see the
+   separate Handler Password control below the header instead, which is
+   the only thing that ever sends a value on to handler_login.
    ══════════════════════════════════════════════ */
 (function () {
   var PASSWORD = 'MASTICATE';
@@ -771,31 +806,8 @@
     setTimeout(function () { if (gate.parentNode) gate.remove(); }, 550);
   }
 
-  // Exchanges the stored Handler password for a fresh session token
-  // (see handler_login/requireHandlerSession_() in Code.gs) -- run on
-  // every page load that starts (or already is) unlocked, not just the
-  // first time the password gate is passed, since the server-side
-  // session expires after 6h but this tab's own "already unlocked"
-  // flag doesn't. A stale/missing dg_acell_pw (an unlock from before
-  // this existed) just means the Admin listing reads 401 until the
-  // Handler re-enters the password once.
-  function refreshHandlerSession() {
-    var pw = sessionStorage.getItem('dg_acell_pw');
-    if (!pw) return;
-    fetch('https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec', {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'handler_login', handler_password: pw }),
-    }).then(function (r) { return r.json(); }).then(function (res) {
-      if (res && res.status === 'OK' && res.session) {
-        try { sessionStorage.setItem('dg_acell_session', res.session); } catch (e) { /* best effort */ }
-      }
-    }).catch(function () { /* best effort -- Admin listing reads will just 401 and can be retried by reloading */ });
-  }
-
   if (sessionStorage.getItem('dg_acell_unlocked')) {
     unlock(true);
-    refreshHandlerSession();
     return;
   }
 
@@ -867,13 +879,6 @@
     inputLine.style.display = 'none';
     addLine('acces_granted');
     try { sessionStorage.setItem('dg_acell_unlocked', '1'); } catch (e) { /* best effort */ }
-    // Backend hardening: every Handler/admin write now needs this same
-    // password server-side too (see requireHandlerAuth_() in Code.gs),
-    // so the raw value that just passed this gate is kept for the rest
-    // of the tab's session -- read back via sessionStorage by every
-    // admin fetch this page makes.
-    try { sessionStorage.setItem('dg_acell_pw', realValue); } catch (e) { /* best effort */ }
-    refreshHandlerSession();
     setTimeout(function () {
       logo.classList.add('acell-logo-in');
       setTimeout(unlock, 1400);
@@ -899,6 +904,81 @@
   document.addEventListener('click', function () {
     if (!input.disabled) input.focus();
   });
+})();
+</script>
+
+<script>
+/* ══════════════════════════════════════════════
+   HANDLER PASSWORD -- the real credential (HANDLER_PASSWORD Script
+   Property, set privately by the campaign owner), exchanged once per
+   tab for a short-lived session token via handler_login (see
+   requireHandlerAuth_()/requireHandlerSession_()/handlerLogin_() in
+   Code.gs). Every Handler write and the three Admin-only listing reads
+   need this; nothing here needs the clearance gate's own MASTICATE
+   value, which is a separate, hardcoded, public flavor password (see
+   that script block's header comment). Session-cached in sessionStorage
+   (dg_acell_pw / dg_acell_session) so it's typed at most once per tab,
+   silently re-exchanged for a fresh session on reload since the server
+   session expires after 6h but the saved password doesn't.
+   ══════════════════════════════════════════════ */
+(function () {
+  var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
+  var wrap = document.getElementById('acell-handler-auth');
+  var label = document.getElementById('acell-handler-auth-label');
+  var input = document.getElementById('acell-handler-pw-input');
+  var btn = document.getElementById('acell-handler-pw-btn');
+  var errEl = document.getElementById('acell-handler-auth-err');
+
+  function setUnlocked() {
+    wrap.classList.add('acell-handler-auth-ok');
+    label.textContent = 'Handler session active';
+    input.style.display = 'none';
+    btn.style.display = 'none';
+    errEl.textContent = '';
+  }
+
+  function setLocked(msg) {
+    wrap.classList.remove('acell-handler-auth-ok');
+    label.textContent = 'Handler session: not set';
+    input.style.display = '';
+    btn.style.display = '';
+    errEl.textContent = msg || '';
+  }
+
+  // silent=true is used for the on-load retry of a previously-saved
+  // password -- a stale/expired one there shouldn't flash an error the
+  // Handler never asked to see, just fall back to the normal locked
+  // state until they type it again.
+  function attempt(pw, silent) {
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'handler_login', handler_password: pw }),
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      if (res && res.status === 'OK' && res.session) {
+        try {
+          sessionStorage.setItem('dg_acell_session', res.session);
+          sessionStorage.setItem('dg_acell_pw', pw);
+        } catch (e) { /* best effort */ }
+        setUnlocked();
+      } else if (!silent) {
+        setLocked((res && res.message) || 'invalid Handler password');
+      }
+    }).catch(function () {
+      if (!silent) setLocked('Could not reach the backend.');
+    });
+  }
+
+  btn.addEventListener('click', function () {
+    var pw = input.value;
+    if (!pw) return;
+    attempt(pw, false);
+  });
+  input.addEventListener('keydown', function (e) { if (e.key === 'Enter') btn.click(); });
+
+  var savedPw = sessionStorage.getItem('dg_acell_pw');
+  if (savedPw) attempt(savedPw, true);
+  else setLocked();
 })();
 </script>
 
@@ -1004,7 +1084,16 @@
     };
     var s = document.createElement('script');
     s.id = '_acell_play_list_script';
-    s.src = APPS_SCRIPT_URL + '?action=list_characters&callback=' + cbName;
+    // list_characters needs a Handler session -- see
+    // requireHandlerSession_() in Code.gs. Every other tab's own
+    // jsonpGet() attaches this on every GET automatically; this one
+    // built its URL by hand and was missed when that Stage 4 hardening
+    // landed, so the Play tab's own Agent list 401'd unconditionally --
+    // regardless of password or session state -- until now.
+    var qs = 'action=list_characters&callback=' + cbName;
+    var acellSession = sessionStorage.getItem('dg_acell_session');
+    if (acellSession) qs += '&handler_session=' + encodeURIComponent(acellSession);
+    s.src = APPS_SCRIPT_URL + '?' + qs;
     document.head.appendChild(s);
   }
 

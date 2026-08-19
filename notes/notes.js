@@ -210,7 +210,7 @@
     const saveTimers = {}; // block_id -> debounce handle
 
     function memberLabel(code) {
-      const base = memberNames[code] ? memberNames[code] + ' (' + code + ')' : code;
+      const base = memberNames[code] || code;
       return code === agentCode ? base + ' (You)' : base;
     }
     function identityFor(code) {
@@ -341,12 +341,16 @@
       // already-replaced tree. A no-op if nothing is currently mounted.
       unmountEditor();
 
+      // Each tab's own identity color becomes its border/text color (a
+      // muted default for Shared, since it has no one author) -- the
+      // same "whose ink is this" cue the read-only feed's author badges
+      // already use, just on the tab itself now too.
       const tabsHtml = '<button type="button" class="dg-notes-tab dg-notes-tab-shared' + (activeCode === SHARED_TAB ? ' active' : '') + '" data-tab="' + SHARED_TAB + '">Shared</button>' +
         memberCodes.map(code => {
           const cls = code === activeCode ? 'dg-notes-tab active' : 'dg-notes-tab';
           const id = identityFor(code);
-          const dot = id ? '<span class="dg-notes-tab-dot" style="background:' + id.color + '"></span>' : '';
-          return '<button type="button" class="' + cls + '" data-tab="' + escapeHtml(code) + '">' + dot + escapeHtml(memberLabel(code)) + '</button>';
+          const inkStyle = id ? ' style="--tab-ink:' + id.color + '"' : '';
+          return '<button type="button" class="' + cls + '" data-tab="' + escapeHtml(code) + '"' + inkStyle + '>' + escapeHtml(memberLabel(code)) + '</button>';
         }).join('');
 
       const isOwnTab = activeCode === agentCode;
@@ -359,16 +363,32 @@
           '<span class="dg-notes-toggle-label">Circulate</span></button>'
         : '';
 
+      // Same folder/tab-strip/paper nesting as the rest of the site
+      // (assets/theme-folder.css: .tab-strip sits ABOVE .folder-body as
+      // a sibling, not inside it) -- #dg-notes-panel is now that outer
+      // folder wrapper, not the paper itself. .dg-notes-folder-body is
+      // the tan "grey" layer every folder tab strip sits on top of;
+      // .dg-notes-paper is the actual cream sheet (ruled lines, red
+      // margin, hole punches, same as .paper elsewhere) nested inside
+      // it, with a couple of faint offset sheets behind it suggesting
+      // more pages underneath.
       container.innerHTML =
         '<div id="dg-notes-panel">' +
+        '<div class="dg-notes-tab-strip">' + tabsHtml + '</div>' +
+        '<div class="dg-notes-folder-body">' +
+        '<div class="dg-notes-paper">' +
+        '<div class="dg-notes-paper-rules"></div>' +
+        '<div class="dg-notes-paper-margin"></div>' +
+        '<div class="dg-notes-holes"><div class="dg-notes-hole"></div><div class="dg-notes-hole"></div><div class="dg-notes-hole"></div></div>' +
+        '<div class="dg-notes-paper-content">' +
         '<div class="dg-notes-toolbar">' + circulateBtnHtml +
         '<input type="search" class="dg-notes-search" placeholder="Search notes…" value="' + escapeHtml(searchTerm) + '"></div>' +
         '<div class="dg-notes-body">' +
         '<aside class="dg-notes-toc"><div class="dg-notes-toc-label">Index</div><div id="dg-notes-toc-mount"></div></aside>' +
         '<main class="dg-notes-main">' +
-        '<div class="dg-notes-tabs">' + tabsHtml + '</div>' +
         bodyHtml +
-        '</main></div></div>';
+        '</main></div>' +
+        '</div></div></div></div>';
 
       wireShellEvents();
       if (isOwnTab) {
@@ -379,7 +399,7 @@
       refreshToc();
     }
 
-    // Updates just the TOC and tab-dot colors in place, without
+    // Updates just the TOC and tab ink colors in place, without
     // touching the editor mount or the read-only feed's own content --
     // safe to call after every poll and every debounced save.
     function refreshChrome() {
@@ -388,13 +408,7 @@
         const code = btn.dataset.tab;
         if (code === SHARED_TAB) return;
         const id = identityFor(code);
-        let dot = btn.querySelector('.dg-notes-tab-dot');
-        if (id && !dot) {
-          dot = document.createElement('span');
-          dot.className = 'dg-notes-tab-dot';
-          btn.insertBefore(dot, btn.firstChild);
-        }
-        if (dot) dot.style.background = id ? id.color : '';
+        if (id) btn.style.setProperty('--tab-ink', id.color);
       });
     }
 

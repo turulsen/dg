@@ -1713,6 +1713,53 @@ function getOrCreateCellsSheet() {
   return sheet;
 }
 
+// Resolves char_name for a set of Agent Codes -- same two-pass
+// Briefs-then-Characters precedence findByPlayerName() uses (Briefs as
+// a base so an Agent-File-only player still resolves, Characters' own
+// bio.name overriding it once a character sheet exists), just keyed by
+// Agent Code directly since the caller already has codes, not a name
+// to search by. Used by listCells() so Notes' tab strip can show
+// "Jones" instead of "JONE-E7FB" -- Cell membership (and therefore
+// these codes) is already visible to every member via member_codes, so
+// resolving the same players' own display names alongside it exposes
+// nothing new.
+function buildCharNameMap_(codes) {
+  const wanted = {};
+  (codes || []).forEach(function (c) { if (c) wanted[c] = true; });
+  const map = {};
+  if (Object.keys(wanted).length === 0) return map;
+
+  const briefsSheet = getOrCreateSheet().getSheetByName(SHEET_NAME);
+  if (briefsSheet) {
+    const rows = briefsSheet.getDataRange().getValues();
+    const headers = rows[0];
+    const codeCol = headers.indexOf('Agent Code');
+    const nameCol = headers.indexOf('Char Name');
+    if (codeCol !== -1 && nameCol !== -1) {
+      for (let i = 1; i < rows.length; i++) {
+        const code = rows[i][codeCol];
+        if (code && wanted[code] && rows[i][nameCol]) map[code] = rows[i][nameCol];
+      }
+    }
+  }
+
+  const charSheet = getOrCreateCharactersSheet();
+  const charRows = charSheet.getDataRange().getValues();
+  const charHeaders = charRows[0];
+  const cCodeCol = charHeaders.indexOf('Agent Code');
+  const cJsonCol = charHeaders.indexOf('Character JSON');
+  if (cCodeCol !== -1 && cJsonCol !== -1) {
+    for (let i = 1; i < charRows.length; i++) {
+      const code = charRows[i][cCodeCol];
+      if (!code || !wanted[code]) continue;
+      let bio = {};
+      try { bio = JSON.parse(charRows[i][cJsonCol] || '{}').bio || {}; } catch (e) { /* skip unparsable */ }
+      if (bio.name) map[code] = bio.name;
+    }
+  }
+  return map;
+}
+
 function listCells(callback) {
   const sheet = getOrCreateCellsSheet();
   const data = sheet.getDataRange().getValues();
@@ -1724,11 +1771,13 @@ function listCells(callback) {
   const channelCol = headers.indexOf('channel');
 
   const cells = [];
+  const allCodes = [];
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
     if (!row[idCol]) continue;
     let members = [];
     try { members = JSON.parse(row[membersCol] || '[]'); } catch (e) { members = []; }
+    allCodes.push.apply(allCodes, members);
     cells.push({
       cell_id: row[idCol],
       name: row[nameCol] || '',
@@ -1737,6 +1786,13 @@ function listCells(callback) {
       channel: channelCol >= 0 ? String(row[channelCol] || '') : ''
     });
   }
+
+  const nameMap = buildCharNameMap_(allCodes);
+  cells.forEach(function (c) {
+    const memberNames = {};
+    c.member_codes.forEach(function (code) { if (nameMap[code]) memberNames[code] = nameMap[code]; });
+    c.member_names = memberNames;
+  });
 
   return respond_({ status: 'OK', cells: cells }, callback);
 }

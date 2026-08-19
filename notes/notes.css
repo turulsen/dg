@@ -18,24 +18,113 @@
   position:relative;
   font-family:'Courier Prime',monospace;
   color:var(--ink);
-  background-color:var(--paper);
-  background-image:radial-gradient(rgba(90,72,40,.05) 1px, transparent 1px);
-  background-size:3px 3px;
-  box-shadow:var(--paper-shadow);
   max-width:1100px;
   margin:0 auto;
-  padding:var(--s5) var(--s4) var(--s4);
-  border-radius:1px;
 }
 
+/* Tab strip -- a sibling of .dg-notes-folder-body, not inside it, same
+   nesting as assets/theme-folder.css's .tab-strip/.folder-body. Each
+   member tab's border/text color is that Agent's own chosen ink color
+   (--tab-ink, set inline per button in notes.js). Shared has no single
+   author to color it by, so it's left plain black with no colored
+   outline instead (see .dg-notes-tab-shared below). Inactive tabs are
+   tucked a few pixels below the active one, reading as sheets stacked
+   behind it --
+   deliberately no z-index on the strip itself, so each .dg-notes-tab
+   (already its own stacking context via transform) stacks against
+   .dg-notes-folder-body individually instead of as one block: the
+   active tab sits above the folder body, inactive ones sit behind it,
+   so the folder's tan edge visually swallows an inactive tab's bottom
+   border instead of letting it float on top. */
+#dg-notes-panel .dg-notes-tab-strip{
+  display:flex; flex-wrap:wrap; align-items:flex-end; gap:4px;
+  padding-left:20px; position:relative;
+}
+#dg-notes-panel .dg-notes-tab{
+  --tab-ink:var(--ink-2);
+  font-family:'Courier Prime',monospace; font-size:11px; letter-spacing:.08em;
+  text-transform:uppercase; font-weight:400;
+  background:var(--tab-inactive); color:var(--tab-ink);
+  border:1px solid var(--tab-ink); border-bottom:3px solid var(--tab-ink);
+  border-radius:6px 6px 0 0; padding:8px 14px; cursor:pointer;
+  display:flex; align-items:center; gap:6px;
+  position:relative; z-index:1;
+  transform:translateY(6px);
+  transition:transform 120ms ease, background 120ms ease;
+  box-shadow:inset 0 6px 8px rgba(0,0,0,.1);
+}
+#dg-notes-panel .dg-notes-tab:hover:not(.active){ background:#c8c1ae; transform:translateY(3px); }
+#dg-notes-panel .dg-notes-tab.active{
+  background:var(--tab-active); transform:translateY(0); box-shadow:none;
+  z-index:3;
+}
+/* Shared -- everyone's, not any one Agent's, so it skips the identity
+   color treatment entirely: plain --ink (black) text, no colored
+   outline (transparent border, same width/shape as every other tab so
+   spacing doesn't jump). */
+#dg-notes-panel .dg-notes-tab-shared{
+  --tab-ink:var(--ink);
+  border-color:transparent;
+}
+/* Folder body -- the tan layer every folder tab strip sits above
+   elsewhere on the site (same --tab-active as assets/theme-folder.css's
+   own .folder-body). .dg-notes-paper is the actual cream sheet inside
+   it (ruled lines, red margin, hole punches -- identical to .paper);
+   the extra box-shadow layers behind it suggest a couple more pages
+   stacked underneath, since this one folder can hold several tabs
+   (one per Cell member) instead of just one. Sits between the active
+   tab (z-index:3) and inactive tabs (z-index:1) so it visually cuts
+   off an inactive tab's bottom edge -- see .dg-notes-tab-strip's
+   comment above. */
+#dg-notes-panel .dg-notes-folder-body{
+  background:var(--tab-active);
+  padding:14px;
+  border-radius:0 6px 6px 6px;
+  position:relative; z-index:2;
+}
+#dg-notes-panel .dg-notes-paper{
+  background:var(--paper);
+  box-shadow:var(--paper-shadow), 6px 8px 0 -2px var(--tab-inactive), 12px 16px 0 -4px var(--tab-active);
+  border-radius:1px;
+  position:relative;
+  padding:var(--s5) var(--s4) var(--s4) 52px;
+  overflow:hidden;
+}
+#dg-notes-panel .dg-notes-paper-rules{
+  position:absolute; inset:0;
+  background:repeating-linear-gradient(
+    180deg,
+    transparent 0px,
+    transparent calc(var(--line) - 1px),
+    var(--paper-line) calc(var(--line) - 1px),
+    var(--paper-line) var(--line)
+  );
+  pointer-events:none; z-index:1;
+}
+#dg-notes-panel .dg-notes-paper-margin{
+  position:absolute; top:0; left:44px; bottom:0; width:1.5px;
+  background:var(--paper-margin); pointer-events:none; z-index:2;
+}
+#dg-notes-panel .dg-notes-holes{
+  position:absolute; left:10px; top:0; bottom:0;
+  display:flex; flex-direction:column; justify-content:space-around;
+  padding:var(--s7) 0; z-index:4;
+}
+#dg-notes-panel .dg-notes-hole{
+  width:16px; height:16px; border-radius:50%;
+  background:color-mix(in srgb, var(--paper) 60%, transparent);
+  box-shadow:inset 0 1px 4px rgba(0,0,0,.35), inset 0 0 0 1px rgba(0,0,0,.1);
+}
+#dg-notes-panel .dg-notes-paper-content{ position:relative; z-index:5; }
+
 #dg-notes-panel .dg-notes-toolbar{
-  display:flex; justify-content:space-between; align-items:center; gap:var(--s3);
+  display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:var(--s3);
   margin-bottom:var(--s3); position:relative; z-index:1;
 }
 #dg-notes-panel .dg-notes-search{
   font-family:'Courier Prime',monospace; font-size:12px;
   background:rgba(255,255,255,.5); border:1px solid rgba(58,40,10,.25); border-radius:3px;
-  padding:6px 10px; min-width:220px; color:#2b2416;
+  padding:6px 10px; flex:1 1 180px; min-width:0; max-width:100%; color:var(--ink);
 }
 #dg-notes-panel .dg-notes-search::placeholder{ color:rgba(43,36,22,.45); }
 
@@ -61,7 +150,7 @@
 }
 #dg-notes-panel .dg-notes-toc-label{
   font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.12em;
-  text-transform:uppercase; color:rgba(43,36,22,.6); margin-bottom:var(--s3);
+  text-transform:uppercase; color:var(--red); margin-bottom:var(--s3);
 }
 #dg-notes-panel .dg-notes-toc-item{
   display:flex; align-items:center; gap:6px; font-size:12px; color:#3a3220; text-decoration:none;
@@ -73,34 +162,6 @@
 #dg-notes-panel .dg-notes-toc-empty{ font-size:11px; color:rgba(43,36,22,.5); font-style:italic; }
 
 #dg-notes-panel .dg-notes-main{ flex:1; min-width:0; }
-
-/* Same ear-tab language as the site's shared .tw folder tabs (see
-   assets/theme-folder.css) -- tan, rounded top corners only, an
-   inactive tab tucked a few pixels below the active one to read as
-   "behind" it. The active tab fills with the same --paper the content
-   below it sits on (not --tab-active, the shared system's darker
-   folder-body tan) since here the tab sits directly above the paper
-   sheet itself, with no separate folder-body layer between them. */
-#dg-notes-panel .dg-notes-tabs{
-  display:flex; flex-wrap:wrap; align-items:flex-end; gap:4px; margin-bottom:var(--s4);
-}
-#dg-notes-panel .dg-notes-tab{
-  font-family:'Courier Prime',monospace; font-size:11px; letter-spacing:.03em;
-  background:var(--tab-inactive); color:#6a6050; border:1px solid #a8a090;
-  border-bottom:none; border-radius:6px 6px 0 0; padding:8px 14px; cursor:pointer;
-  display:flex; align-items:center; gap:6px;
-  transform:translateY(4px);
-  transition:transform 120ms ease, background 120ms ease, color 120ms ease;
-  box-shadow:inset 0 6px 8px rgba(0,0,0,.12);
-}
-#dg-notes-panel .dg-notes-tab:hover:not(.active){ background:#c8c1ae; color:var(--ink-2); transform:translateY(2px); }
-#dg-notes-panel .dg-notes-tab.active{
-  background:var(--paper); color:var(--ink); font-weight:700;
-  border-color:var(--rule); transform:translateY(0); box-shadow:none;
-}
-#dg-notes-panel .dg-notes-tab-dot{ width:8px; height:8px; border-radius:50%; box-shadow:0 0 0 1px rgba(0,0,0,.15); }
-#dg-notes-panel .dg-notes-tab-shared{ font-weight:700; }
-#dg-notes-panel .dg-notes-tab-shared.active{ background:var(--paper); border-color:var(--red); }
 
 #dg-notes-panel .dg-notes-empty{
   font-size:13px; color:rgba(43,36,22,.55); font-style:italic; text-align:center; padding:26px 10px;
@@ -132,7 +193,7 @@
    .ce-header/.ce-paragraph/.cdx-list produce below, so switching
    between your own live tab and a read-only one doesn't visually jump. ── */
 #dg-notes-panel .dg-notes-readonly-feed{ display:flex; flex-direction:column; gap:var(--s3); }
-#dg-notes-panel .dg-notes-ro-block{ font-size:14px; line-height:1.55; }
+#dg-notes-panel .dg-notes-ro-block{ font-size:14px; line-height:1.55; color:var(--ink); }
 #dg-notes-panel .dg-notes-ro-block h1{ font-size:22px; font-weight:700; margin:0; }
 #dg-notes-panel .dg-notes-ro-block h2{ font-size:17px; font-weight:700; margin:0; }
 #dg-notes-panel .dg-notes-ro-block p{ margin:0; }
@@ -150,8 +211,8 @@
 #dg-notes-panel .codex-editor{ font-family:inherit; }
 #dg-notes-panel .ce-block__content,
 #dg-notes-panel .ce-toolbar__content{ max-width:none; margin:0; }
-#dg-notes-panel .ce-paragraph{ font-family:inherit; }
-#dg-notes-panel .ce-header{ font-family:inherit; font-weight:700; }
+#dg-notes-panel .ce-paragraph{ font-family:inherit; color:var(--ink); }
+#dg-notes-panel .ce-header{ font-family:inherit; font-weight:700; color:var(--ink); }
 #dg-notes-panel [data-placeholder]:empty::before{ color:rgba(43,36,22,.4); font-style:italic; }
 
 /* Plus-button + drag/settings handle: Editor.js already hides these
@@ -249,4 +310,9 @@
     flex:none; width:100%; border-right:none; border-bottom:1px dashed rgba(58,40,10,.25);
     padding-right:0; padding-bottom:var(--s3); position:static;
   }
+}
+
+@media (max-width: 560px){
+  #dg-notes-panel .dg-notes-paper{ padding:var(--s5) var(--s3) var(--s5) 40px; }
+  #dg-notes-panel .dg-notes-search{ flex-basis:100%; }
 }
