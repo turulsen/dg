@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v17 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v18 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Sheet/Admin) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -36,6 +36,21 @@
 //   color/font attribution entirely (identityFor(b.agent_code) was
 //   always identityFor(undefined)) and made every block in the
 //   combined Shared tab uneditable by its own author
+// + Backend hardening, stage 1 (standalone fixes ahead of an
+//   authentication pass -- see stage 2/3 for that): deleted the dead
+//   action=img branch; added respond_()/safeCallback_() as the one
+//   place every JSONP/JSON response gets built, replacing ~17 manual
+//   `callback + '(' + json + ')'` sites (fixed the unvalidated-callback
+//   injection risk and the missing-callback `undefined(...)` bug in the
+//   same pass); added asBoolean_() and applied it to shared/paused/loop
+//   instead of the old `=== 1` checks; fixed createCell() writing 5
+//   values into its 6-column schema (channel was always silently
+//   blank); added a duplicate-guard to restoreCharacter() so restoring
+//   an already-live Agent can no longer create a second row; moved
+//   generateAgentCode() for a brand-new Agent inside the existing
+//   withScriptLock() callback in the Brief-submission handler, with a
+//   collision retry against the already-scanned rows instead of
+//   trusting Math.random() alone
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -143,6 +158,39 @@ function generateAgentCode(name) {
   return prefix + '-' + suffix;
 }
 
+// Only a bare identifier (what every real caller -- our own JSONP
+// helpers -- ever sends) is echoed back as a callback wrapper. Anything
+// else (missing, or containing characters that could break out of a
+// <script> response) falls back to plain JSON instead of being
+// concatenated into the response unescaped.
+function safeCallback_(callback) {
+  const cb = String(callback || '');
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(cb) ? cb : null;
+}
+
+// Single place building every JSONP/JSON response. Replaces the old
+// per-call-site `callback + '(' + json + ')'` concatenation, which had
+// no callback validation (injection risk) and, at most call sites, no
+// missing-callback guard either (silently returned invalid `undefined(...)`
+// JavaScript when a caller forgot ?callback=).
+function respond_(payload, callback) {
+  const json = JSON.stringify(payload);
+  const cb = safeCallback_(callback);
+  if (cb) {
+    return ContentService.createTextOutput(cb + '(' + json + ')')
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Normalizes a Sheets cell into a real boolean regardless of whether it
+// was ever written as 1, '1', true, or (an untouched/legacy cell) '' --
+// the old `=== 1` checks scattered across shared/paused/loop only ever
+// matched the exact numeric case.
+function asBoolean_(value) {
+  return value === 1 || value === '1' || value === true || value === 'true';
+}
+
 function doGet(e) {
   // e is undefined if this is run manually from the Apps Script editor
   // (the "Run" button) instead of a real web request -- guard so that
@@ -150,26 +198,6 @@ function doGet(e) {
   e = e || {};
   e.parameter = e.parameter || {};
   const callback = e.parameter && e.parameter.callback;
-
-  // ── Image proxy ──────────────────────────────────────────────
-  // Called as ?action=img&id=FILE_ID
-  // Fetches the Drive file and returns it as image bytes.
-  // This bypasses Safari's blocking of uc?export=view cross-origin requests.
-  if (e.parameter && e.parameter.action === 'img' && e.parameter.id) {
-    try {
-      const file = DriveApp.getFileById(e.parameter.id);
-      const blob = file.getBlob();
-      return ContentService
-        .createTextOutput('') // not used — see note below
-        .setMimeType(ContentService.MimeType.TEXT); // placeholder; actual blob returned below
-      // NOTE: ContentService can't return binary blobs directly.
-      // Use HtmlService to wrap the image as a data URI instead.
-    } catch(err) {
-      return ContentService
-        .createTextOutput('error: ' + err.message)
-        .setMimeType(ContentService.MimeType.TEXT);
-    }
-  }
 
   // ── Image proxy (data URI approach) ─────────────────────────
   // ?action=imgdata&id=FILE_ID&callback=CALLBACK
@@ -181,25 +209,9 @@ function doGet(e) {
       const mimeType = blob.getContentType();
       const base64 = Utilities.base64Encode(blob.getBytes());
       const dataUri = 'data:' + mimeType + ';base64,' + base64;
-      const json = JSON.stringify({ status: 'OK', dataUri: dataUri });
-      if (e.parameter.callback) {
-        return ContentService
-          .createTextOutput(e.parameter.callback + '(' + json + ')')
-          .setMimeType(ContentService.MimeType.JAVASCRIPT);
-      }
-      return ContentService
-        .createTextOutput(json)
-        .setMimeType(ContentService.MimeType.JSON);
+      return respond_({ status: 'OK', dataUri: dataUri }, e.parameter.callback);
     } catch(err) {
-      const json = JSON.stringify({ status: 'ERROR', message: err.message });
-      if (e.parameter.callback) {
-        return ContentService
-          .createTextOutput(e.parameter.callback + '(' + json + ')')
-          .setMimeType(ContentService.MimeType.JAVASCRIPT);
-      }
-      return ContentService
-        .createTextOutput(json)
-        .setMimeType(ContentService.MimeType.JSON);
+      return respond_({ status: 'ERROR', message: err.message }, e.parameter.callback);
     }
   }
 
@@ -207,13 +219,7 @@ function doGet(e) {
   // ?action=load_character&code=AGENT-CODE&callback=CALLBACK
   if (e.parameter && e.parameter.action === 'load_character' && e.parameter.code) {
     const result = doLookupCharacter(e.parameter.code);
-    const json = result.getContent();
-    if (e.parameter.callback) {
-      return ContentService
-        .createTextOutput(e.parameter.callback + '(' + json + ')')
-        .setMimeType(ContentService.MimeType.JAVASCRIPT);
-    }
-    return result;
+    return respond_(JSON.parse(result.getContent()), e.parameter.callback);
   }
 
   // ── A-Cell: every saved character, for Play/Cells/Sheet/Admin ──
@@ -298,13 +304,7 @@ function doGet(e) {
   // ── Agent lookup ─────────────────────────────────────────────
   if (e.parameter && e.parameter.code) {
     const result = doLookup(e.parameter.code);
-    const json = result.getContent();
-    if (e.parameter.callback) {
-      return ContentService
-        .createTextOutput(e.parameter.callback + '(' + json + ')')
-        .setMimeType(ContentService.MimeType.JAVASCRIPT);
-    }
-    return result;
+    return respond_(JSON.parse(result.getContent()), e.parameter.callback);
   }
 
   return ContentService
@@ -457,7 +457,6 @@ function doPost(e) {
     // in a row nobody ever reads back.)
     const ss = getOrCreateSheet();
     const sheet = ss.getSheetByName(SHEET_NAME);
-    const agentCode = data.agent_code || generateAgentCode(data.char_name);
 
     // Locked: several players submitting/resubmitting Profiling briefs
     // within the same couple of seconds during a live session is exactly
@@ -467,6 +466,25 @@ function doPost(e) {
       const existingHeaders = existingValues[0];
       const codeCol = existingHeaders.indexOf('Agent Code');
       const refImageLinkCol = existingHeaders.indexOf('Ref Image Link');
+
+      // Brand-new Agent: generate the code inside the lock, against the
+      // same row scan used for the upsert check below, and retry on a
+      // collision rather than trusting Math.random() alone -- previously
+      // generated entirely outside the lock, so a colliding fresh code
+      // would have silently upserted into a stranger's existing row.
+      let agentCode = data.agent_code;
+      if (!agentCode && codeCol !== -1) {
+        const existingCodes = {};
+        for (let i = 1; i < existingValues.length; i++) {
+          if (existingValues[i][codeCol]) existingCodes[existingValues[i][codeCol]] = true;
+        }
+        do {
+          agentCode = generateAgentCode(data.char_name);
+        } while (existingCodes[agentCode]);
+      } else if (!agentCode) {
+        agentCode = generateAgentCode(data.char_name);
+      }
+
       let existingRowIndex = -1;
       if (codeCol !== -1) {
         for (let i = 1; i < existingValues.length; i++) {
@@ -767,8 +785,7 @@ function doLookupCharacter(code) {
 function findByPlayerName(name, callback) {
   const needle = String(name || '').trim().toLowerCase();
   if (!needle) {
-    const body = callback + '(' + JSON.stringify({ status: 'OK', agents: [] }) + ')';
-    return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+    return respond_({ status: 'OK', agents: [] }, callback);
   }
 
   const byCode = {};
@@ -856,8 +873,7 @@ function findByPlayerName(name, callback) {
   }
 
   const result = { status: 'OK', agents: Object.keys(byCode).map(function (k) { return byCode[k]; }) };
-  const body = callback + '(' + JSON.stringify(result) + ')';
-  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+  return respond_(result, callback);
 }
 
 // ── A-Cell: Play/Cells/Sheet/Admin read every saved character. Column
@@ -893,8 +909,7 @@ function listCharacters(callback) {
     });
   }
 
-  const body = callback + '(' + JSON.stringify(result) + ')';
-  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+  return respond_(result, callback);
 }
 
 // ── A-Cell Admin: every Agent File / Profiling brief with no matching
@@ -937,8 +952,7 @@ function listAgentFileOnly(callback) {
     });
   }
 
-  const body = callback + '(' + JSON.stringify(result) + ')';
-  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+  return respond_(result, callback);
 }
 
 // Legacy: writes a single handler/operation tag for one Agent's row.
@@ -1142,8 +1156,7 @@ function listDeletedCharacters(callback) {
     }
   }
 
-  const body = callback + '(' + JSON.stringify(result) + ')';
-  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+  return respond_(result, callback);
 }
 
 // ── A-Cell Admin: undo a soft-delete -- moves the row back from
@@ -1158,28 +1171,47 @@ function restoreCharacter(agentCode) {
 
   const deletedChars = ss.getSheetByName('DeletedCharacters');
   if (deletedChars) {
-    const data = deletedChars.getDataRange().getValues();
-    const codeCol = data[0].indexOf('Agent Code');
-    for (let i = data.length - 1; i >= 1; i--) {
-      if (data[i][codeCol] === agentCode) {
-        // Drop the trailing "Deleted At" column when moving back.
-        getOrCreateCharactersSheet().appendRow(data[i].slice(0, data[0].length - 1));
-        deletedChars.deleteRow(i + 1);
-        break;
+    const charSheet = getOrCreateCharactersSheet();
+    const charValues = charSheet.getDataRange().getValues();
+    const charCodeCol = charValues[0].indexOf('Agent Code');
+    const alreadyLive = charCodeCol !== -1 && charValues.some(function (row, i) {
+      return i > 0 && row[charCodeCol] === agentCode;
+    });
+    // A live row already exists for this code (e.g. the Agent resubmitted
+    // a fresh Brief after being deleted, or Restore was clicked twice) --
+    // skip appending a duplicate. The archived row stays put rather than
+    // being silently discarded.
+    if (!alreadyLive) {
+      const data = deletedChars.getDataRange().getValues();
+      const codeCol = data[0].indexOf('Agent Code');
+      for (let i = data.length - 1; i >= 1; i--) {
+        if (data[i][codeCol] === agentCode) {
+          // Drop the trailing "Deleted At" column when moving back.
+          charSheet.appendRow(data[i].slice(0, data[0].length - 1));
+          deletedChars.deleteRow(i + 1);
+          break;
+        }
       }
     }
   }
 
   const deletedBriefs = ss.getSheetByName('DeletedBriefs');
   if (deletedBriefs) {
-    const data = deletedBriefs.getDataRange().getValues();
-    const codeCol = data[0].indexOf('Agent Code');
     const briefsSheet = ss.getSheetByName(SHEET_NAME);
-    for (let j = data.length - 1; j >= 1; j--) {
-      if (data[j][codeCol] === agentCode) {
-        briefsSheet.appendRow(data[j].slice(0, data[0].length - 1));
-        deletedBriefs.deleteRow(j + 1);
-        break;
+    const briefsValues = briefsSheet.getDataRange().getValues();
+    const briefsCodeCol = briefsValues[0].indexOf('Agent Code');
+    const alreadyLive = briefsCodeCol !== -1 && briefsValues.some(function (row, i) {
+      return i > 0 && row[briefsCodeCol] === agentCode;
+    });
+    if (!alreadyLive) {
+      const data = deletedBriefs.getDataRange().getValues();
+      const codeCol = data[0].indexOf('Agent Code');
+      for (let j = data.length - 1; j >= 1; j--) {
+        if (data[j][codeCol] === agentCode) {
+          briefsSheet.appendRow(data[j].slice(0, data[0].length - 1));
+          deletedBriefs.deleteRow(j + 1);
+          break;
+        }
       }
     }
   }
@@ -1236,8 +1268,7 @@ function listCells(callback) {
     });
   }
 
-  const body = callback + '(' + JSON.stringify({ status: 'OK', cells: cells }) + ')';
-  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+  return respond_({ status: 'OK', cells: cells }, callback);
 }
 
 function createCell(name, handler) {
@@ -1248,7 +1279,10 @@ function createCell(name, handler) {
   }
   const sheet = getOrCreateCellsSheet();
   const cellId = 'cell_' + new Date().getTime() + '_' + Math.floor(Math.random() * 100000).toString(36);
-  sheet.appendRow([cellId, name, (handler || '').trim(), '[]', new Date().getTime()]);
+  // Explicit 6th value for 'channel' -- appendRow() with fewer values
+  // than columns silently leaves the trailing cell blank rather than
+  // erroring, so a short array here was an easy, invisible mismatch.
+  sheet.appendRow([cellId, name, (handler || '').trim(), '[]', new Date().getTime(), '']);
   return ContentService.createTextOutput(JSON.stringify({ status: 'OK', cell_id: cellId })).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -1328,8 +1362,7 @@ function listCellNotes(cellId, agentCode, callback) {
   const requester = (agentCode || '').trim().toUpperCase();
   const result = { status: 'OK', notes: {} };
   if (!cellId) {
-    const body = callback + '(' + JSON.stringify(result) + ')';
-    return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+    return respond_(result, callback);
   }
 
   const cache = CacheService.getScriptCache();
@@ -1359,7 +1392,7 @@ function listCellNotes(cellId, agentCode, callback) {
         agent_code: String(data[i][codeCol] || '').trim().toUpperCase(),
         block_type: data[i][typeCol] || 'paragraph',
         text: data[i][textCol] || '',
-        shared: data[i][sharedCol] === 1,
+        shared: asBoolean_(data[i][sharedCol]),
         sort_order: Number(data[i][sortCol]) || 0,
         created_at: (createdCol !== -1 && data[i][createdCol]) || 0,
         updated_at: data[i][updatedCol] || 0
@@ -1382,8 +1415,7 @@ function listCellNotes(cellId, agentCode, callback) {
   // (every visible block, attributed to its author's chosen color/font).
   result.identities = getAgentIdentitiesMap();
 
-  const body = callback + '(' + JSON.stringify(result) + ')';
-  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+  return respond_(result, callback);
 }
 
 // Upserts by block_id (blank/unknown -> mints a new one). Wrapped in
@@ -1564,7 +1596,7 @@ function listHandouts(callback) {
       created_at: row[createdCol] || ''
     });
   }
-  const body = callback + '(' + JSON.stringify({ status: 'OK', handouts: handouts }) + ')';
+  return respond_({ status: 'OK', handouts: handouts }, callback);
   return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
 }
 
@@ -1688,8 +1720,7 @@ function listTracks(callback) {
       uploaded_at: row[uploadedCol] || ''
     });
   }
-  const body = callback + '(' + JSON.stringify({ status: 'OK', tracks: tracks }) + ')';
-  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+  return respond_({ status: 'OK', tracks: tracks }, callback);
 }
 
 // data.mp3_base64 may be a bare base64 string or a full data: URL --
@@ -1789,7 +1820,7 @@ function listHandoutNotes(agentCode, callback) {
       }
     }
   }
-  const body = callback + '(' + JSON.stringify({ status: 'OK', notes: notes }) + ')';
+  return respond_({ status: 'OK', notes: notes }, callback);
   return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
 }
 
@@ -1907,7 +1938,7 @@ function getNowPlaying(channel, callback) {
     const cacheKey = 'now_playing_' + channel.toLowerCase();
     const cached = cache.get(cacheKey);
     if (cached) {
-      return ContentService.createTextOutput(callback + '(' + cached + ')').setMimeType(ContentService.MimeType.JAVASCRIPT);
+      return respond_(JSON.parse(cached), callback);
     }
 
     const sheet = getOrCreateRadioSheet();
@@ -1932,9 +1963,9 @@ function getNowPlaying(channel, callback) {
             track_title: data[i][titleCol] || '',
             started_at: data[i][startedCol] || 0,
             track_kind: (kindCol !== -1 && data[i][kindCol]) || '',
-            paused: pausedCol !== -1 && data[i][pausedCol] === 1,
+            paused: pausedCol !== -1 && asBoolean_(data[i][pausedCol]),
             paused_at: (pausedAtCol !== -1 && data[i][pausedAtCol]) || 0,
-            loop: loopCol !== -1 && data[i][loopCol] === 1
+            loop: loopCol !== -1 && asBoolean_(data[i][loopCol])
           };
         }
         break;
@@ -1942,8 +1973,7 @@ function getNowPlaying(channel, callback) {
     }
     cache.put(cacheKey, JSON.stringify(result), 2);
   }
-  const body = callback + '(' + JSON.stringify(result) + ')';
-  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+  return respond_(result, callback);
 }
 
 // Sets (or clears, if track_url is empty) the current track for a
@@ -2110,8 +2140,7 @@ function getPlaylist(channel, callback) {
       }
     }
   }
-  const body = callback + '(' + JSON.stringify(result) + ')';
-  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
+  return respond_(result, callback);
 }
 
 // Overwrites the saved playlist for a channel with the given JSON
