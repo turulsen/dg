@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v18 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v19 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Sheet/Admin) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -51,6 +51,18 @@
 //   withScriptLock() callback in the Brief-submission handler, with a
 //   collision retry against the already-scanned rows instead of
 //   trusting Math.random() alone
+// + Backend hardening, stage 2 (auth infrastructure -- not wired to
+//   any existing action yet, that's stage 3): new AgentAuth sheet
+//   (agent_code/token/created_at/claimed_at); requireAgentToken_()
+//   validates a per-Agent secret token, lazy-claiming (minting) one on
+//   first use for a code that doesn't have one yet, so an existing
+//   player's saved data keeps working on their own device with zero
+//   action from them; requireHandlerAuth_() checks a handler_password
+//   against a new HANDLER_PASSWORD Script Property (fails closed if
+//   unset); new reset_agent_token action + resetAgentToken_(), gated by
+//   requireHandlerAuth_() from the moment it exists, for Handler-
+//   mediated recovery on a new device/cleared storage (after locating
+//   the Agent Code via the existing find_by_player_name search)
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -189,6 +201,128 @@ function respond_(payload, callback) {
 // matched the exact numeric case.
 function asBoolean_(value) {
   return value === 1 || value === '1' || value === true || value === 'true';
+}
+
+// ════════════════════════════════════════════════════════════════
+// Auth infrastructure (stage 2 of the backend hardening pass). These
+// helpers exist and are self-contained, but nothing calls
+// requireAgentToken_()/requireHandlerAuth_() from an existing action
+// yet -- that guard rollout, plus the client-side plumbing to actually
+// send a token/password, is stage 3, done deliberately separately so
+// each stage stays small enough to review and redeploy on its own.
+// reset_agent_token is the one exception: it's a brand-new action, so
+// it ships gated from the moment it exists rather than sitting open
+// until stage 3 gets to it.
+// ════════════════════════════════════════════════════════════════
+
+// Self-provisions a sheet holding one secret token per Agent Code --
+// deliberately separate from the Agent Code itself (which stays the
+// public identifier used in URLs/lookups everywhere else). claimed_at
+// is set the moment a token is minted (lazy-claim and Handler-reset
+// both mint+claim in the same step), so it's currently redundant with
+// created_at, but kept as its own column for a future where a token
+// could be pre-provisioned without being claimed yet.
+function getOrCreateAgentAuthSheet() {
+  const ss = getOrCreateSheet();
+  let sheet = ss.getSheetByName('AgentAuth');
+  if (!sheet) {
+    sheet = ss.insertSheet('AgentAuth');
+    sheet.getRange(1, 1, 1, 4).setValues([['agent_code', 'token', 'created_at', 'claimed_at']]);
+  }
+  return sheet;
+}
+
+// Validates data.agent_code + data.token against AgentAuth. An Agent
+// Code with no AgentAuth row yet is lazily claimed: a token is minted
+// and stored right now, with no separate migration step, and handed
+// back via data._issuedToken so the calling action can echo it into its
+// own OK response for the client to save silently -- this is what lets
+// an existing player's saved data keep working on their own device
+// with zero action from them the next time they open the app, even
+// long after this rollout ships.
+//
+// Returns null on success (a fresh claim counts as success), or a
+// ContentService error response the caller should return immediately.
+function requireAgentToken_(data) {
+  const agentCode = String((data && data.agent_code) || '').trim().toUpperCase();
+  if (!agentCode) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'agent_code is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  return withScriptLock(function () {
+    const sheet = getOrCreateAgentAuthSheet();
+    const rows = sheet.getDataRange().getValues();
+    const headers = rows[0];
+    const codeCol = headers.indexOf('agent_code');
+    const tokenCol = headers.indexOf('token');
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i][codeCol] === agentCode) {
+        if (rows[i][tokenCol] && rows[i][tokenCol] === data.token) return null;
+        return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'invalid or missing Agent token' }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+    const token = Utilities.getUuid();
+    const now = new Date().getTime();
+    sheet.appendRow([agentCode, token, now, now]);
+    data._issuedToken = token;
+    return null;
+  });
+}
+
+// Validates data.handler_password against the HANDLER_PASSWORD Script
+// Property. Fails closed (rejects) if the property was never set,
+// rather than leaving every Handler/admin action open by accident from
+// a forgotten setup step.
+function requireHandlerAuth_(data) {
+  const expected = PropertiesService.getScriptProperties().getProperty('HANDLER_PASSWORD');
+  if (!expected) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'Handler auth is not configured on the server' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  if (String((data && data.handler_password) || '') !== expected) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'invalid Handler password' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  return null;
+}
+
+// Handler-only: mints a fresh token for an Agent Code, overwriting
+// whatever token (if any) it had before. This is the recovery path for
+// a player on a new device or with cleared storage -- they find their
+// Agent Code via Cover Identity search (find_by_player_name, which
+// stays deliberately open since it's the actual discovery mechanism
+// this depends on), then ask their Handler, who runs this and relays
+// the token back. Same social "ask your Handler" flow the app already
+// assumes everywhere else -- no separate account system.
+function resetAgentToken_(agentCode) {
+  agentCode = String(agentCode || '').trim().toUpperCase();
+  if (!agentCode) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'agent_code is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  return withScriptLock(function () {
+    const sheet = getOrCreateAgentAuthSheet();
+    const rows = sheet.getDataRange().getValues();
+    const headers = rows[0];
+    const codeCol = headers.indexOf('agent_code');
+    const tokenCol = headers.indexOf('token');
+    const claimedCol = headers.indexOf('claimed_at');
+    const token = Utilities.getUuid();
+    const now = new Date().getTime();
+    let rowIndex = -1;
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i][codeCol] === agentCode) { rowIndex = i; break; }
+    }
+    if (rowIndex !== -1) {
+      sheet.getRange(rowIndex + 1, tokenCol + 1).setValue(token);
+      sheet.getRange(rowIndex + 1, claimedCol + 1).setValue(now);
+    } else {
+      sheet.appendRow([agentCode, token, now, now]);
+    }
+    return ContentService.createTextOutput(JSON.stringify({ status: 'OK', agent_code: agentCode, token: token }))
+      .setMimeType(ContentService.MimeType.JSON);
+  });
 }
 
 function doGet(e) {
@@ -411,6 +545,19 @@ function doPost(e) {
     // A-Cell Admin: undo a soft-delete.
     if (data.action === 'restore_character') {
       return restoreCharacter(data.agent_code);
+    }
+
+    // A-Cell Admin: Handler-mediated recovery -- mint a fresh Agent
+    // token for a player on a new device / cleared storage, after the
+    // Handler has located their Agent Code via Cover Identity search.
+    // Gated from the moment it exists (unlike the pre-existing actions
+    // above, which don't get their requireAgentToken_()/
+    // requireHandlerAuth_() guards until a later, separate stage) --
+    // an ungated token-reset would be a standing account-takeover hole.
+    if (data.action === 'reset_agent_token') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
+      return resetAgentToken_(data.agent_code);
     }
 
     // Table Radio: Handler sets (or clears) the current track for a channel.
