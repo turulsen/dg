@@ -55,7 +55,8 @@
 }
 
 #dg-notes-panel .dg-notes-toolbar{
-  display:flex; justify-content:flex-end; margin-bottom:var(--s3); position:relative; z-index:1;
+  display:flex; justify-content:space-between; align-items:center; gap:var(--s3);
+  margin-bottom:var(--s3); position:relative; z-index:1;
 }
 #dg-notes-panel .dg-notes-search{
   font-family:'Courier Prime',monospace; font-size:12px;
@@ -63,6 +64,18 @@
   padding:6px 10px; min-width:220px; color:#2b2416;
 }
 #dg-notes-panel .dg-notes-search::placeholder{ color:rgba(43,36,22,.45); }
+
+/* Circulate: acts on whichever block your cursor is currently in
+   (see notes.js's mountEditor() comment for why this isn't an
+   Editor.js Block Tune) -- reuses the same toggle-switch look as the
+   rest of this app's on/off controls. */
+#dg-notes-panel .dg-notes-circulate-btn{
+  display:flex; align-items:center; gap:8px; font-family:'Courier Prime',monospace; font-size:12px;
+  color:#2b2416; background:rgba(255,255,255,.5); border:1px solid rgba(58,40,10,.25);
+  border-radius:3px; padding:6px 10px; cursor:pointer;
+}
+#dg-notes-panel .dg-notes-circulate-btn:disabled{ opacity:.45; cursor:default; }
+#dg-notes-panel .dg-notes-circulate-btn:not(:disabled):hover{ border-color:rgba(58,40,10,.5); }
 
 #dg-notes-panel .dg-notes-body{
   display:flex; gap:var(--s5); align-items:flex-start; position:relative; z-index:1;
@@ -101,74 +114,87 @@
 #dg-notes-panel .dg-notes-tab-shared{ font-weight:700; }
 #dg-notes-panel .dg-notes-tab-shared.active{ background:#eef4ff; }
 
-#dg-notes-panel .dg-notes-blocks{
-  display:flex; flex-direction:column; gap:var(--s3); margin-bottom:var(--s4);
-}
 #dg-notes-panel .dg-notes-empty{
   font-size:13px; color:rgba(43,36,22,.55); font-style:italic; text-align:center; padding:26px 10px;
 }
-
-#dg-notes-panel .dg-notes-block{ position:relative; }
-/* Invisible until you actually touch it -- flows like plain notebook
-   text at rest, and only reveals its card frame + controls (Circulate,
-   Delete) on hover, or on tap/focus while editing (:focus-within
-   catches that on mobile, where :hover doesn't really exist). */
-#dg-notes-panel .dg-notes-block-row{
-  display:flex; align-items:flex-start; gap:var(--s3);
-  border:1px solid transparent; border-radius:3px; padding:var(--s2) var(--s3);
-  background:transparent;
-  transition:border-color .15s ease, background-color .15s ease;
-}
-#dg-notes-panel .dg-notes-block-row:hover,
-#dg-notes-panel .dg-notes-block-row:focus-within{
-  border-color:rgba(58,40,10,.15);
-  background:rgba(255,255,255,.4);
-}
-#dg-notes-panel .dg-notes-block-controls{ opacity:0; transition:opacity .15s ease; }
-#dg-notes-panel .dg-notes-block-row:hover .dg-notes-block-controls,
-#dg-notes-panel .dg-notes-block-row:focus-within .dg-notes-block-controls{ opacity:1; }
 #dg-notes-panel .dg-notes-author-badge{
   display:inline-block; font-size:9px; letter-spacing:.06em; color:#fff;
   padding:2px 7px; border-radius:3px; margin-bottom:4px; background:#4a5568;
 }
-
-#dg-notes-panel .dg-notes-block-h1 .dg-notes-block-text,
-#dg-notes-panel .dg-notes-block-h1 .dg-notes-block-view{ font-size:22px; font-weight:700; }
-#dg-notes-panel .dg-notes-block-h2 .dg-notes-block-text,
-#dg-notes-panel .dg-notes-block-h2 .dg-notes-block-view{ font-size:17px; font-weight:700; }
-
-#dg-notes-panel .dg-notes-block-field{ flex:1; min-width:0; display:flex; align-items:baseline; gap:6px; }
-#dg-notes-panel .dg-notes-num,
-#dg-notes-panel .dg-notes-bullet{ color:rgba(43,36,22,.55); flex-shrink:0; }
-
-#dg-notes-panel .dg-notes-block-text{
-  flex:1; width:100%; font-family:inherit; font-size:14px; color:#2b2416;
-  background:transparent; border:none; resize:vertical; min-height:1.6em;
-  padding:2px 0;
+#dg-notes-panel .dg-notes-shared-badge{
+  display:inline-block; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:rgba(43,36,22,.6);
+  border:1px solid rgba(58,40,10,.25); border-radius:3px; padding:2px 6px; margin-bottom:4px; white-space:nowrap;
 }
-#dg-notes-panel .dg-notes-block-text:focus{ outline:none; border-bottom:1px solid rgba(58,40,10,.4); }
-
-#dg-notes-panel .dg-notes-block-view{
-  flex:1; min-width:0; font-size:14px; line-height:1.55; cursor:default; word-break:break-word;
-}
-#dg-notes-panel .dg-notes-block-view[data-editable]{ cursor:text; }
 #dg-notes-panel .dg-notes-block-placeholder{ color:rgba(43,36,22,.4); font-style:italic; }
-#dg-notes-panel .dg-notes-block-view mark{ background:#fff1a8; color:inherit; padding:0 2px; }
 
-#dg-notes-panel .dg-notes-block-controls{
-  display:flex; align-items:center; gap:var(--s2); flex-shrink:0;
+/* ── Read-only feed: another member's tab (never editable by you), or
+   the combined Shared feed. Hand-rendered HTML, not a second Editor.js
+   instance -- see the notes.js header comment for why. Its heading/
+   paragraph/list/hr sizing intentionally mirrors what Editor.js's own
+   .ce-header/.ce-paragraph/.cdx-list produce below, so switching
+   between your own live tab and a read-only one doesn't visually jump. ── */
+#dg-notes-panel .dg-notes-readonly-feed{ display:flex; flex-direction:column; gap:var(--s3); }
+#dg-notes-panel .dg-notes-ro-block{ font-size:14px; line-height:1.55; }
+#dg-notes-panel .dg-notes-ro-block h1{ font-size:22px; font-weight:700; margin:0; }
+#dg-notes-panel .dg-notes-ro-block h2{ font-size:17px; font-weight:700; margin:0; }
+#dg-notes-panel .dg-notes-ro-block p{ margin:0; }
+#dg-notes-panel .dg-notes-ro-block ul,
+#dg-notes-panel .dg-notes-ro-block ol{ margin:0; padding-left:1.4em; }
+#dg-notes-panel .dg-notes-ro-block hr{ border:none; border-top:2px dashed rgba(58,40,10,.3); margin:6px 0; }
+#dg-notes-panel .dg-notes-ro-block mark{ background:#fff1a8; color:inherit; padding:0 2px; }
+
+/* ── The live editor (your own tab only) -- Editor.js's own chrome
+   (block plus-button, drag/settings handle, tunes popover, inline
+   toolbar) reskinned to read as the same analog notebook rather than a
+   generic modern block editor, using its real class names (pinned
+   version's own CSS, not guessed). ── */
+#dg-notes-editor-mount{ font-size:14px; line-height:1.55; }
+#dg-notes-panel .codex-editor{ font-family:inherit; }
+#dg-notes-panel .ce-block__content,
+#dg-notes-panel .ce-toolbar__content{ max-width:none; margin:0; }
+#dg-notes-panel .ce-paragraph{ font-family:inherit; }
+#dg-notes-panel .ce-header{ font-family:inherit; font-weight:700; }
+#dg-notes-panel [data-placeholder]:empty::before{ color:rgba(43,36,22,.4); font-style:italic; }
+
+/* Plus-button + drag/settings handle: Editor.js already hides these
+   until you hover/focus a block (its own --hidden/opacity behavior),
+   this just restyles their look to muted ink instead of default blue. */
+#dg-notes-panel .ce-toolbar__plus,
+#dg-notes-panel .ce-toolbar__settings-btn{
+  color:rgba(43,36,22,.5); background:rgba(255,255,255,.5); border:1px solid rgba(58,40,10,.2); border-radius:50%;
 }
-#dg-notes-panel .dg-notes-shared-toggle{
-  font-size:10px; letter-spacing:.04em; color:rgba(43,36,22,.6);
-  display:flex; align-items:center; gap:6px; white-space:nowrap; cursor:pointer;
+#dg-notes-panel .ce-toolbar__plus:hover,
+#dg-notes-panel .ce-toolbar__settings-btn:hover{ background:rgba(255,255,255,.85); color:#1a1508; }
+
+/* Block-type picker + block settings/tunes popover -- restyled as a
+   small paper card rather than the default white dropdown. */
+#dg-notes-panel .ce-popover,
+#dg-notes-panel .ce-popover__container{
+  background:#fdf9ec; border:1px solid rgba(58,40,10,.2); box-shadow:0 8px 24px rgba(0,0,0,.25);
 }
-/* Visually hidden but still focusable/keyboard-operable -- the actual
-   toggle look comes from the track+thumb spans that follow it in the
-   label, styled off :checked via the sibling combinator. */
-#dg-notes-panel .dg-notes-toggle-input{
-  position:absolute; width:1px; height:1px; padding:0; margin:-1px;
-  overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;
+#dg-notes-panel .ce-popover-item{ font-family:'Courier Prime',monospace; color:#2b2416; }
+#dg-notes-panel .ce-popover-item:hover,
+#dg-notes-panel .ce-popover-item--focused{ background:rgba(58,40,10,.08); }
+#dg-notes-panel .ce-popover-item__icon{ background:rgba(58,40,10,.06); border-color:rgba(58,40,10,.15); }
+
+/* Inline toolbar (Bold/Italic/Highlight/Link on text selection). */
+#dg-notes-panel .ce-inline-toolbar{
+  background:#fdf9ec; border:1px solid rgba(58,40,10,.25); box-shadow:0 8px 24px rgba(0,0,0,.25);
 }
+#dg-notes-panel .ce-inline-tool{ color:#2b2416; }
+#dg-notes-panel .ce-inline-tool--active,
+#dg-notes-panel .ce-inline-tool:hover{ background:rgba(58,40,10,.1); }
+
+/* @editorjs/list */
+#dg-notes-panel .cdx-list{ font-family:inherit; }
+
+/* @editorjs/delimiter -- swap the default "***" glyph for the same
+   dashed rule the read-only feed's <hr> uses, so a divider looks
+   identical whether you're viewing it live or in a read-only feed. */
+#dg-notes-panel .ce-delimiter:before{ content:'' !important; display:block; border-top:2px dashed rgba(58,40,10,.3); }
+
+/* The Circulate toggle's track/thumb (see .dg-notes-circulate-btn
+   above, near the toolbar). */
 #dg-notes-panel .dg-notes-toggle-track{
   position:relative; width:26px; height:15px; border-radius:8px; flex-shrink:0;
   background:rgba(58,40,10,.28); transition:background-color .15s ease;
@@ -177,44 +203,17 @@
   position:absolute; top:2px; left:2px; width:11px; height:11px; border-radius:50%;
   background:#fdf9ec; box-shadow:0 1px 2px rgba(0,0,0,.3); transition:left .15s ease;
 }
-#dg-notes-panel .dg-notes-toggle-input:checked + .dg-notes-toggle-track{ background:#2f855a; }
-#dg-notes-panel .dg-notes-toggle-input:checked + .dg-notes-toggle-track .dg-notes-toggle-thumb{ left:13px; }
-#dg-notes-panel .dg-notes-toggle-input:focus-visible + .dg-notes-toggle-track{
-  outline:2px solid #3a6ec4; outline-offset:2px;
-}
-#dg-notes-panel .dg-notes-shared-badge{
-  font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:rgba(43,36,22,.6);
-  border:1px solid rgba(58,40,10,.25); border-radius:3px; padding:2px 6px; white-space:nowrap;
-}
-#dg-notes-panel .dg-notes-block-del{
-  background:transparent; border:none; color:#8b1a1a; font-size:16px;
-  line-height:1; cursor:pointer; padding:0 4px;
-}
-#dg-notes-panel .dg-notes-block-del:hover{ opacity:.7; }
+#dg-notes-panel .dg-notes-circulate-btn.active .dg-notes-toggle-track{ background:#2f855a; }
+#dg-notes-panel .dg-notes-circulate-btn.active .dg-notes-toggle-track .dg-notes-toggle-thumb{ left:13px; }
 
-#dg-notes-panel .dg-notes-format-bar{
-  display:flex; gap:4px; margin-top:6px; padding-left:2px;
+/* Brief flash for "jump to search match" on your own live tab. */
+#dg-notes-panel .ce-block.dg-notes-search-hit .ce-block__content{
+  animation:dg-notes-search-flash 1.2s ease;
 }
-#dg-notes-panel .dg-notes-format-bar button{
-  font-family:'Courier Prime',monospace; font-size:11px; width:24px; height:22px;
-  background:rgba(58,40,10,.08); border:1px solid rgba(58,40,10,.2); border-radius:3px;
-  color:#3a3220; cursor:pointer; padding:0;
+@keyframes dg-notes-search-flash{
+  0%{ background:rgba(58,110,196,.25); }
+  100%{ background:transparent; }
 }
-#dg-notes-panel .dg-notes-format-bar button:hover{ background:rgba(58,40,10,.16); }
-#dg-notes-panel .dg-notes-fmt-color{ width:18px !important; height:18px !important; margin-top:2px; border-radius:50% !important; }
-
-#dg-notes-panel .dg-notes-block-divider{ padding:6px 0; display:flex; align-items:center; gap:8px; }
-#dg-notes-panel .dg-notes-divider-rule{
-  flex:1; border:none; border-top:2px dashed rgba(58,40,10,.3); margin:0;
-}
-
-#dg-notes-panel .dg-notes-add-row{ display:flex; gap:8px; flex-wrap:wrap; }
-#dg-notes-panel .dg-notes-add-btn{
-  font-family:'Courier Prime',monospace; font-size:11px;
-  background:rgba(255,255,255,.5); border:1px solid rgba(58,40,10,.25); border-radius:3px;
-  color:#3a3220; padding:6px 12px; cursor:pointer;
-}
-#dg-notes-panel .dg-notes-add-btn:hover{ border-color:rgba(58,40,10,.5); color:#1a1508; }
 
 /* ── Identity picker: appended to document.body, not #dg-notes-panel,
    so a poll's render() (which rebuilds the panel's entire innerHTML)

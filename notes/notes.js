@@ -1,14 +1,23 @@
 /* ══════════════════════════════════════════════
    PLAYER NOTES -- shared/private block notes scoped to a Cell, plus a
-   combined Shared tab any Cell member can contribute to directly.
+   combined Shared feed any Cell member can contribute to (by writing
+   in their own tab and toggling Circulate on a block).
+
+   v2: the editing surface is Editor.js (vendored under notes/vendor/,
+   no bundler -- see that directory's files) instead of a hand-rolled
+   textarea + custom markup syntax. Real WYSIWYG (native contenteditable
+   Bold/Italic/Highlight, real Header/List/Paragraph/Delimiter blocks)
+   and Editor.js's own paste handling, which auto-splits rich clipboard
+   content (Google Docs, Notion) into proper blocks -- the actual
+   motivation for this migration was "easy import from other note
+   apps," and this is genuinely good at that (verified against
+   representative Docs/Notion/Apple-Notes-shaped paste content before
+   this was built, not assumed).
 
    Built as a self-mounting module (window.dgNotesPanel.init(el, opts))
-   rather than a page-specific script, on purpose: v1 mounts it into
-   notes/index.html's own standalone shell, but a later phase mounts
-   the exact same module into a side panel on stats/index.html during
-   Live Play -- that phase becomes "add a container + call init()",
-   not a rewrite, as long as this file never assumes it owns the whole
-   page.
+   rather than a page-specific script, for the same reason as v1: a
+   later phase can mount this exact module into a side panel on
+   stats/index.html during Live Play without a rewrite.
 
    opts = {
      cellId: string,
@@ -17,10 +26,31 @@
      memberNames: {code: name} -- optional, for nicer tab labels
    }
 
-   Every CSS class here is authored under the #dg-notes-panel prefix
-   (see notes.css) so this survives being dropped onto a themed page
-   later without a retrofit -- same defensive-specificity trick
-   assets/table-radio.js already uses for the exact same reason.
+   Architecture note (the central decision of this rewrite): Editor.js
+   is fundamentally ONE EDITABLE DOCUMENT per instance -- it has no
+   supported way to mix "my own editable blocks" with "someone else's
+   read-only blocks" in the same instance. So only YOUR OWN tab ever
+   mounts a live Editor.js instance; every other view (another member's
+   tab, the combined Shared feed) is a small hand-rendered read-only
+   HTML feed built directly from the same stored block data. This also
+   means privacy/Circulate is now per-BLOCK, and a whole bulleted/
+   numbered list counts as one block (Editor.js's List tool groups every
+   item into one block -- there's no per-line privacy flag anymore, a
+   confirmed, accepted trade-off for native lists + paste-splitting).
+
+   The Circulate flag is deliberately never stored inside Editor.js's
+   own block `data` or persisted through its Tunes save mechanism --
+   it's tracked in this module's own `sharedByBlockId` map and synced
+   through the exact same save_note_block action as everything else,
+   as a plain top-level field. That's what keeps the backend's
+   server-side privacy filter (listCellNotes() in Code.gs) completely
+   unaffected by this migration -- it was never reading anything out
+   of the block's own data to begin with.
+
+   Every CSS class here (including the ones for Editor.js's own chrome,
+   reskinned in notes.css) is authored/overridden under the
+   #dg-notes-panel prefix -- same defensive-specificity trick
+   assets/table-radio.js uses.
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
@@ -29,26 +59,10 @@
   const POLL_MS = 5000; // slower than Table Radio's 2s -- note content changes far less often than "what's playing"
   const SAVE_DEBOUNCE_MS = 1200; // matches agent-hub.html's scheduleNoteSave() convention
   const SHARED_TAB = '__shared__'; // pseudo agent_code, never a real one -- selects the combined tab
-
-  const BLOCK_TYPES = [
-    { id: 'h1', label: 'H1' },
-    { id: 'h2', label: 'H2' },
-    { id: 'paragraph', label: 'Text' },
-    { id: 'bullet', label: 'Bullet' },
-    { id: 'numbered', label: 'Numbered' },
-    { id: 'divider', label: 'Divider' },
-  ];
-  // v1 shipped a single generic 'heading' type before H1/H2 existed --
-  // treat any block still carrying that old value as an H1 rather than
-  // requiring a data migration.
-  function normalizedType(t) { return t === 'heading' ? 'h1' : t; }
-  function isHeadingType(t) { const n = normalizedType(t); return n === 'h1' || n === 'h2'; }
+  const HEADER_LEVELS = [1, 2]; // keeps the existing H1/H2-only vocabulary rather than Editor.js's default 1-6
 
   // Each Agent picks one of these once -- their "ink" -- to mark their
-  // contributions in the combined Shared tab. Picked for legibility on
-  // both light paper and as a left-edge accent bar, not matched to any
-  // existing semantic color in this app (--red etc.) since this is a
-  // pure identity marker, not a status.
+  // contributions in the combined Shared feed and on their own tab.
   const AGENT_COLORS = ['#2b6cb0', '#2f855a', '#b7791f', '#805ad5', '#c53030', '#d53f8c', '#2c7a7b', '#4a5568'];
   const AGENT_FONTS = [
     { id: 'caveat', label: 'Caveat', family: "'Caveat', cursive" },
@@ -63,24 +77,65 @@
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
+  function stripTags(html) {
+    const d = document.createElement('div');
+    d.innerHTML = html || '';
+    return d.textContent || '';
+  }
+  // @editorjs/list items are {content, meta, items} objects (nested
+  // sublists live in .items) -- content is the one thing TOC/search
+  // and the read-only renderer below actually need.
+  function listItemContent(it) {
+    return (it && typeof it === 'object') ? (it.content || '') : String(it || '');
+  }
 
-  // A deliberately small, custom syntax -- not full Markdown -- typed
-  // directly into the plain <textarea>/<input> editing surface (kept
-  // as plain text fields on purpose: contenteditable's mobile Safari
-  // quirks are exactly the class of bug that just broke typing here
-  // once already). Rendered to HTML only once a block leaves edit mode
-  // (see editingBlockId), so what you type is what you see while
-  // actively writing, and it "settles into ink" once you look away.
-  // Escaped first, so the formatting markers themselves can't be used
-  // to inject markup; the color value is restricted to hex/word chars
-  // by its own capture group, so it can't break out of the style attr.
-  function renderInline(text) {
-    let html = escapeHtml(text);
-    html = html.replace(/\{color:([#a-zA-Z0-9]+)\}([\s\S]*?)\{\/color\}/g, (m, c, inner) => '<span style="color:' + c + '">' + inner + '</span>');
-    html = html.replace(/==([^=]+)==/g, '<mark>$1</mark>');
-    html = html.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
-    html = html.replace(/_([^_]+)_/g, '<i>$1</i>');
-    return html;
+  // A flat, matchable text label for one stored block -- used by
+  // search and the TOC (which only needs heading text). Deliberately
+  // ignorant of block-specific meaning beyond "what text is in here."
+  function plainTextOf(type, data) {
+    data = data || {};
+    if (type === 'header' || type === 'paragraph') return stripTags(data.text || '');
+    if (type === 'list') return (data.items || []).map(it => stripTags(listItemContent(it))).join(' ');
+    return '';
+  }
+
+  // Renders one stored block (type+data) as read-only HTML -- used for
+  // a member's tab other than your own (never editable by you) and the
+  // combined Shared feed. Editor.js's own tools sanitize `data.text`/
+  // item content on save, so trusting it as HTML here is the same
+  // trust level Editor.js itself gives its own saved data on reload.
+  function renderReadOnlyBlock(type, data) {
+    data = data || {};
+    if (type === 'header') {
+      const lvl = Number(data.level) === 2 ? 'h2' : 'h1';
+      return '<' + lvl + '>' + (data.text || '') + '</' + lvl + '>';
+    }
+    if (type === 'paragraph') {
+      return '<p>' + (data.text || '<span class="dg-notes-block-placeholder">(empty)</span>') + '</p>';
+    }
+    if (type === 'list') {
+      const tag = data.style === 'ordered' ? 'ol' : 'ul';
+      const items = (data.items || []).map(it => '<li>' + listItemContent(it) + '</li>').join('');
+      return '<' + tag + '>' + items + '</' + tag + '>';
+    }
+    if (type === 'delimiter') return '<hr class="dg-notes-divider-rule">';
+    // Unknown tool (or a future one this build doesn't have wired up
+    // yet) -- show something rather than silently eating the block.
+    return '<p class="dg-notes-block-placeholder">(' + escapeHtml(type) + ' block)</p>';
+  }
+
+  // Parses a CellNotes row's raw `text` column back into {type, data}.
+  // `text` is a JSON string of the block's own Editor.js `data` object
+  // as of this v2 rewrite -- a row whose text ISN'T valid JSON is a
+  // leftover from before this migration (the old custom-markup plain
+  // string), rendered as a plain paragraph with that raw text rather
+  // than silently dropped.
+  function parseStoredBlock(blockType, rawText) {
+    try {
+      return { type: blockType, data: JSON.parse(rawText) };
+    } catch (e) {
+      return { type: 'paragraph', data: { text: escapeHtml(rawText || '') } };
+    }
   }
 
   // Same "remove the previous cycle's leftover script tag, then inject a
@@ -90,12 +145,6 @@
     const cbName = '_dgNotes_' + action + '_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
     const prevScript = document.getElementById('_dg_notes_jsonp_script');
     if (prevScript) prevScript.remove();
-    // Generous on purpose, well beyond POLL_MS: a tight timeout here
-    // raced a real (if slow) response under load during testing -- the
-    // timeout fired and deleted window[cbName] first, then the response
-    // that was already in flight arrived and tried to call the
-    // now-deleted callback, throwing a ReferenceError. This only needs
-    // to catch a genuinely hung/dead request, not bound normal latency.
     const timer = setTimeout(() => { delete window[cbName]; cb(null); }, 20000);
     window[cbName] = function (res) {
       clearTimeout(timer);
@@ -111,25 +160,13 @@
   }
 
   // Fire-and-forget, no read-back -- same weight as saveHandoutNote()'s
-  // "low-stakes personal scratchpad" write, not the heavier verified-write
-  // pattern used for shared campaign state elsewhere in this app.
+  // "low-stakes personal scratchpad" write.
   function postAction(payload) {
     return fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify(payload),
     });
-  }
-
-  // Mints the block's real, permanent id up front, in the same shape
-  // the backend itself mints one server-side (see saveNoteBlock() in
-  // Code.gs). Sending this on the very first save means the backend
-  // uses it as the new row's id instead of minting its own -- so a
-  // poll landing before that write is confirmed (no-cors hides the
-  // POST's own response) echoes back the exact id already on screen,
-  // rather than a second, server-only id the client would never learn.
-  function mintBlockId() {
-    return 'block_' + Date.now() + '_' + Math.floor(Math.random() * 1e5).toString(36);
   }
 
   function init(container, opts) {
@@ -141,63 +178,49 @@
     const memberNames = opts.memberNames || {};
     const IDENTITY_KEY = 'dg_notes_identity_' + agentCode;
 
-    let notesByCode = {}; // agent_code -> [{block_id, block_type, text, shared, sort_order, created_at, updated_at}]
+    // agent_code -> [{block_id, agent_code, type, data, shared, sort_order, created_at, updated_at}]
+    let notesByCode = {};
     let identities = {}; // agent_code -> {color, font}, from the server
-    let myIdentity = null; // {color, font} once known or chosen
+    let myIdentity = null;
     let identityPromptShown = false;
     let activeCode = agentCode; // an Agent Code, or SHARED_TAB
     let searchTerm = '';
     let pollTimer = null;
-    let editingBlockId = null; // the one block currently swapped into its raw-text edit field, or null
-    // Set on mousedown (which always fires before blur) when the click
-    // lands on an in-block control -- the format toolbar, the Shared
-    // checkbox, Delete -- so the field's own blur handler can tell
-    // "focus is moving to a sibling control in this same block" apart
-    // from "the user actually left the block", WITHOUT relying on
-    // blur's e.relatedTarget (unreliable on Safari, frequently null even
-    // for a same-block focus change -- that flaw was making every single
-    // in-block control click misread as "left the block").
-    let blurGuardBlockId = null;
-    // A poll's own render() does a full innerHTML rebuild -- doing that
-    // while a field has focus destroys and recreates that DOM node,
-    // which drops focus (and with it, on mobile, the keyboard) even
-    // though the block's own text is fine. A real report: "every 2-3
-    // seconds my keyboard disappears, or the text disappears or
-    // reappears" -- that's this, landing right on POLL_MS's cadence.
-    // Deferred instead of dropped: the poll's data still updates
-    // notesByCode normally, just the re-render waits for the field to
-    // blur, so nothing you're actively typing ever gets interrupted.
-    let deferredRenderPending = false;
-    const saveTimers = {}; // block_id -> setTimeout handle
-    // A no-cors POST's own response can't be read, so there's no way to
-    // know a save/delete has actually landed except by seeing it (or
-    // its absence) reflected in a later poll. touchedAt bridges that
-    // gap: a block edited/added in roughly the last poll interval is
-    // kept exactly as shown locally rather than reset to whatever
-    // list_cell_notes returns, so a poll landing mid-edit (or between
-    // "you typed a new note" and the write actually landing) can't
-    // make it flicker away out from under you.
-    const touchedAt = {}; // block_id -> Date.now() of the last local edit
-    const RECENT_TOUCH_MS = POLL_MS + 2000;
+    // The one live, editable Editor.js instance -- only ever mounted
+    // while activeCode === agentCode (your own tab). A background poll
+    // NEVER touches this instance or re-renders its container: Editor.js
+    // owns its own DOM incrementally, so there's nothing left to defend
+    // against here the way v1 had to (no destroy-mid-typing risk,
+    // because nothing ever calls container.innerHTML on the mount point
+    // while it's live).
+    let editorInstance = null;
+    // Circulate state per block, deliberately tracked here rather than
+    // through Editor.js's own Tunes persistence -- see the file header
+    // comment for why.
+    const sharedByBlockId = {};
+    const saveTimers = {}; // block_id -> debounce handle
 
     function memberLabel(code) {
       return memberNames[code] ? memberNames[code] + ' (' + code + ')' : code;
     }
-
     function identityFor(code) {
       if (code === agentCode && myIdentity) return myIdentity;
       return identities[code] || null;
     }
+    function inkStyleFor(code) {
+      const id = identityFor(code);
+      return id ? 'color:' + id.color + ';font-family:' + fontFamilyFor(id.font) + ';' : '';
+    }
 
     /* ── Identity: pick once, remembered per Agent Code both locally and
-       server-side (so it follows the same Agent to another device). ── */
+       server-side (so it follows the same Agent to another device).
+       Unchanged from v1. ── */
     function loadLocalIdentity() {
       try { return JSON.parse(localStorage.getItem(IDENTITY_KEY) || 'null'); } catch (e) { return null; }
     }
     function saveLocalIdentity(id) {
       try { localStorage.setItem(IDENTITY_KEY, JSON.stringify(id)); } catch (e) { /* best effort */ }
     }
-
     function ensureIdentity() {
       if (myIdentity) return;
       const local = loadLocalIdentity();
@@ -212,10 +235,9 @@
         showIdentityPicker();
       }
     }
-
     // Appended to document.body (not `container`) and removed
     // explicitly on confirm -- render() replaces container's entire
-    // innerHTML on every poll, which would otherwise wipe this out
+    // innerHTML on tab switches, which would otherwise wipe this out
     // mid-choice.
     function showIdentityPicker() {
       const modal = document.createElement('div');
@@ -256,63 +278,58 @@
         saveLocalIdentity(myIdentity);
         postAction({ action: 'save_agent_identity', agent_code: agentCode, color: chosenColor, font: chosenFont }).catch(() => { });
         modal.remove();
-        render();
+        applyOwnInkStyle();
+        refreshChrome();
       });
-    }
-
-    function isTypingInField() {
-      const el = document.activeElement;
-      return !!(el && container.contains(el) && el.classList &&
-        (el.classList.contains('dg-notes-block-text') || el.classList.contains('dg-notes-search')));
-    }
-
-    // Only the poll's own render should ever be deferred -- a user-driven
-    // render (adding/deleting a block, switching tabs, searching) should
-    // always happen immediately, since those are the user's own action
-    // and typically re-focus something right after anyway.
-    function renderFromPoll() {
-      if (isTypingInField()) {
-        deferredRenderPending = true;
-        return;
-      }
-      render();
     }
 
     function allVisibleBlocks() {
       const out = [];
       Object.keys(notesByCode).forEach(code => {
-        (notesByCode[code] || []).forEach(b => out.push(Object.assign({ owner: code }, b)));
+        (notesByCode[code] || []).forEach(b => out.push(b));
       });
       return out;
     }
-
     function sharedBlocksSorted() {
       return allVisibleBlocks()
         .filter(b => b.shared)
         .sort((a, b) => (a.created_at || a.updated_at || 0) - (b.created_at || b.updated_at || 0));
     }
-
     function matchesSearch(block) {
       if (!searchTerm) return true;
-      const t = searchTerm.toLowerCase();
-      return (block.text || '').toLowerCase().includes(t);
+      return plainTextOf(block.type, block.data).toLowerCase().includes(searchTerm.toLowerCase());
     }
 
-    // Numbers only run within an unbroken streak of 'numbered' blocks in
-    // rendering order -- a non-numbered block resets the count, so
-    // reordering/deleting never leaves a stale number baked into stored
-    // data (nothing numeric is stored at all; this runs fresh every render).
-    function withNumbering(blocks) {
-      let n = 0;
-      return blocks.map(b => {
-        if (normalizedType(b.block_type) === 'numbered') { n++; return Object.assign({}, b, { _num: n }); }
-        n = 0;
-        return b;
-      });
+    function upsertLocalMeta(ownerCode, blockId, patch) {
+      const list = notesByCode[ownerCode] || (notesByCode[ownerCode] = []);
+      let entry = list.find(b => b.block_id === blockId);
+      const now = Date.now();
+      if (!entry) {
+        entry = { block_id: blockId, agent_code: ownerCode, created_at: now, sort_order: list.length * 1000 };
+        list.push(entry);
+      }
+      Object.assign(entry, patch, { updated_at: now });
+      return entry;
+    }
+    function removeLocalMeta(ownerCode, blockId) {
+      const list = notesByCode[ownerCode] || [];
+      const idx = list.findIndex(b => b.block_id === blockId);
+      if (idx !== -1) list.splice(idx, 1);
     }
 
+    /* ── The shell: tabs, TOC, search bar, and either the live editor
+       mount point (your own tab) or a read-only feed container
+       (everything else). Rebuilt on tab switches, search-term changes,
+       and initial load -- NOT on every poll/save, so it never tears
+       down a live Editor.js instance out from under you. ── */
     function render() {
       ensureIdentity();
+      // Unmount (flushing any pending debounced save first) BEFORE
+      // touching container.innerHTML below -- unmountEditor()'s flush
+      // needs the current DOM/instance intact to read from; doing this
+      // after the innerHTML reassignment would try to read from an
+      // already-replaced tree. A no-op if nothing is currently mounted.
+      unmountEditor();
 
       const tabsHtml = '<button type="button" class="dg-notes-tab dg-notes-tab-shared' + (activeCode === SHARED_TAB ? ' active' : '') + '" data-tab="' + SHARED_TAB + '">Shared</button>' +
         memberCodes.map(code => {
@@ -322,376 +339,345 @@
           return '<button type="button" class="' + cls + '" data-tab="' + escapeHtml(code) + '">' + dot + escapeHtml(memberLabel(code)) + '</button>';
         }).join('');
 
-      const tocBlocks = allVisibleBlocks()
-        .filter(b => isHeadingType(b.block_type))
-        .sort((a, b) => (a.created_at || a.updated_at || 0) - (b.created_at || b.updated_at || 0));
-      const tocHtml = tocBlocks.length
-        ? tocBlocks.map(b => {
-          const id = identityFor(b.agent_code);
-          const dot = id ? '<span class="dg-notes-toc-dot" style="background:' + id.color + '"></span>' : '';
-          const lvlCls = normalizedType(b.block_type) === 'h2' ? ' dg-notes-toc-h2' : '';
-          return '<a href="#" class="dg-notes-toc-item' + lvlCls + '" data-scroll-to="' + escapeHtml(b.block_id) + '">' + dot + escapeHtml(b.text || '(untitled)') + '</a>';
-        }).join('')
-        : '<div class="dg-notes-toc-empty">No headings yet.</div>';
-
-      let blocksHtml, showAddRow, emptyLabel;
-      if (activeCode === SHARED_TAB) {
-        const blocks = withNumbering(sharedBlocksSorted().filter(matchesSearch));
-        blocksHtml = blocks.length
-          ? blocks.map(b => renderBlock(b, { canEdit: b.agent_code === agentCode, showAuthor: true })).join('')
-          : '';
-        showAddRow = true;
-        emptyLabel = searchTerm ? 'No shared blocks match your search.' : 'Nothing shared yet -- start the table’s notes below.';
-      } else {
-        const isOwnTab = activeCode === agentCode;
-        const blocks = withNumbering((notesByCode[activeCode] || []).slice()
-          .sort((a, b) => a.sort_order - b.sort_order).filter(matchesSearch));
-        blocksHtml = blocks.length
-          ? blocks.map(b => renderBlock(b, { canEdit: isOwnTab, showAuthor: false })).join('')
-          : '';
-        showAddRow = isOwnTab;
-        emptyLabel = searchTerm ? 'No blocks match your search.' : (isOwnTab ? 'Nothing here yet -- add a block below.' : 'Nothing shared here yet.');
-      }
-      if (!blocksHtml) blocksHtml = '<div class="dg-notes-empty">' + emptyLabel + '</div>';
+      const isOwnTab = activeCode === agentCode;
+      const bodyHtml = isOwnTab
+        ? '<div id="dg-notes-editor-mount"></div>'
+        : '<div class="dg-notes-readonly-feed" id="dg-notes-readonly-feed"></div>';
+      const circulateBtnHtml = isOwnTab
+        ? '<button type="button" class="dg-notes-circulate-btn" disabled>' +
+          '<span class="dg-notes-toggle-track"><span class="dg-notes-toggle-thumb"></span></span>' +
+          '<span class="dg-notes-toggle-label">Circulate</span></button>'
+        : '';
 
       container.innerHTML =
         '<div id="dg-notes-panel">' +
-        '<div class="dg-notes-toolbar"><input type="search" class="dg-notes-search" placeholder="Search notes…" value="' + escapeHtml(searchTerm) + '"></div>' +
+        '<div class="dg-notes-toolbar">' + circulateBtnHtml +
+        '<input type="search" class="dg-notes-search" placeholder="Search notes…" value="' + escapeHtml(searchTerm) + '"></div>' +
         '<div class="dg-notes-body">' +
-        '<aside class="dg-notes-toc"><div class="dg-notes-toc-label">Index</div>' + tocHtml + '</aside>' +
+        '<aside class="dg-notes-toc"><div class="dg-notes-toc-label">Index</div><div id="dg-notes-toc-mount"></div></aside>' +
         '<main class="dg-notes-main">' +
         '<div class="dg-notes-tabs">' + tabsHtml + '</div>' +
-        '<div class="dg-notes-blocks">' + blocksHtml + '</div>' +
-        (showAddRow ? renderAddRow() : '') +
+        bodyHtml +
         '</main></div></div>';
 
-      wireEvents();
-    }
-
-    function renderBlock(b, ctx) {
-      const type = normalizedType(b.block_type);
-
-      if (type === 'divider') {
-        return '<div class="dg-notes-block dg-notes-block-divider" id="block-' + escapeHtml(b.block_id) + '" data-block-id="' + escapeHtml(b.block_id) + '">' +
-          '<hr class="dg-notes-divider-rule">' +
-          (ctx.canEdit ? '<button type="button" class="dg-notes-block-del" data-delete="' + escapeHtml(b.block_id) + '" title="Delete">&times;</button>' : '') +
-          '</div>';
-      }
-
-      const id = identityFor(b.agent_code);
-      const inkStyle = id ? 'color:' + id.color + ';font-family:' + fontFamilyFor(id.font) + ';' : '';
-      const isEditing = ctx.canEdit && editingBlockId === b.block_id;
-
-      let fieldHtml;
-      if (isEditing) {
-        // The author's ink (color + handwriting font) needs to render
-        // in the LIVE editing field too, not just the settled view --
-        // previously this style was only ever applied to
-        // .dg-notes-block-view, so it never appeared while you were
-        // actually typing.
-        fieldHtml = (type === 'paragraph')
-          ? '<textarea class="dg-notes-block-text" style="' + inkStyle + '" data-block-id="' + escapeHtml(b.block_id) + '" rows="3">' + escapeHtml(b.text) + '</textarea>'
-          : '<input type="text" class="dg-notes-block-text" style="' + inkStyle + '" data-block-id="' + escapeHtml(b.block_id) + '" value="' + escapeHtml(b.text) + '">';
+      wireShellEvents();
+      if (isOwnTab) {
+        mountEditor();
       } else {
-        const rendered = b.text ? renderInline(b.text) : '<span class="dg-notes-block-placeholder">' + (ctx.canEdit ? 'Tap to write…' : '(empty)') + '</span>';
-        fieldHtml = '<div class="dg-notes-block-view" style="' + inkStyle + '" data-block-id="' + escapeHtml(b.block_id) + '"' +
-          (ctx.canEdit ? ' data-editable="1"' : '') + '>' + rendered + '</div>';
+        refreshReadOnlyFeed();
       }
-
-      const prefix = type === 'numbered' ? '<span class="dg-notes-num">' + b._num + '.</span>'
-        : type === 'bullet' ? '<span class="dg-notes-bullet">•</span>' : '';
-
-      const toolbar = isEditing ? (
-        '<div class="dg-notes-format-bar">' +
-        '<button type="button" data-fmt="bold" title="Bold"><b>B</b></button>' +
-        '<button type="button" data-fmt="italic" title="Italic"><i>I</i></button>' +
-        '<button type="button" data-fmt="highlight" title="Highlight">HL</button>' +
-        AGENT_COLORS.slice(0, 5).map(c => '<button type="button" class="dg-notes-fmt-color" data-fmt-color="' + c + '" style="background:' + c + '" title="Text color"></button>').join('') +
-        '</div>'
-      ) : '';
-
-      const authorBadge = ctx.showAuthor
-        ? '<span class="dg-notes-author-badge" style="' + (id ? 'background:' + id.color : '') + '">' + escapeHtml(memberLabel(b.agent_code)) + '</span>'
-        : '';
-
-      const controls = ctx.canEdit
-        ? '<label class="dg-notes-shared-toggle" title="Circulate this entry to the whole Cell">' +
-          '<input type="checkbox" class="dg-notes-toggle-input" data-shared-toggle="' + escapeHtml(b.block_id) + '" ' + (b.shared ? 'checked' : '') + '>' +
-          '<span class="dg-notes-toggle-track"><span class="dg-notes-toggle-thumb"></span></span>' +
-          '<span class="dg-notes-toggle-label">Circulate</span>' +
-          '</label>' +
-        '<button type="button" class="dg-notes-block-del" data-delete="' + escapeHtml(b.block_id) + '" title="Delete block">&times;</button>'
-        : (ctx.showAuthor ? '' : '<span class="dg-notes-shared-badge">' + (b.shared ? 'Circulated' : 'Private') + '</span>');
-
-      return '<div class="dg-notes-block dg-notes-block-' + type + '" id="block-' + escapeHtml(b.block_id) + '" data-block-id="' + escapeHtml(b.block_id) + '">' +
-        authorBadge +
-        '<div class="dg-notes-block-row"><div class="dg-notes-block-field">' + prefix + fieldHtml + '</div>' +
-        '<div class="dg-notes-block-controls">' + controls + '</div></div>' +
-        toolbar +
-        '</div>';
+      refreshToc();
     }
 
-    function renderAddRow() {
-      return '<div class="dg-notes-add-row">' +
-        BLOCK_TYPES.map(t => '<button type="button" class="dg-notes-add-btn" data-add-type="' + t.id + '">+ ' + t.label + '</button>').join('') +
-        '</div>';
-    }
-
-    function wireEvents() {
+    // Updates just the TOC and tab-dot colors in place, without
+    // touching the editor mount or the read-only feed's own content --
+    // safe to call after every poll and every debounced save.
+    function refreshChrome() {
+      refreshToc();
       container.querySelectorAll('[data-tab]').forEach(btn => {
-        btn.addEventListener('click', () => { activeCode = btn.dataset.tab; editingBlockId = null; render(); });
+        const code = btn.dataset.tab;
+        if (code === SHARED_TAB) return;
+        const id = identityFor(code);
+        let dot = btn.querySelector('.dg-notes-tab-dot');
+        if (id && !dot) {
+          dot = document.createElement('span');
+          dot.className = 'dg-notes-tab-dot';
+          btn.insertBefore(dot, btn.firstChild);
+        }
+        if (dot) dot.style.background = id ? id.color : '';
+      });
+    }
+
+    function refreshToc() {
+      const mount = container.querySelector('#dg-notes-toc-mount');
+      if (!mount) return;
+      const tocBlocks = allVisibleBlocks()
+        .filter(b => b.type === 'header')
+        .sort((a, b) => (a.created_at || a.updated_at || 0) - (b.created_at || b.updated_at || 0));
+      mount.innerHTML = tocBlocks.length
+        ? tocBlocks.map(b => {
+          const id = identityFor(b.agent_code);
+          const dot = id ? '<span class="dg-notes-toc-dot" style="background:' + id.color + '"></span>' : '';
+          const lvlCls = Number(b.data && b.data.level) === 2 ? ' dg-notes-toc-h2' : '';
+          const label = plainTextOf('header', b.data) || '(untitled)';
+          return '<a href="#" class="dg-notes-toc-item' + lvlCls + '" data-scroll-to="' + escapeHtml(b.block_id) + '" data-owner="' + escapeHtml(b.agent_code) + '">' + dot + escapeHtml(label) + '</a>';
+        }).join('')
+        : '<div class="dg-notes-toc-empty">No headings yet.</div>';
+      wireTocEvents();
+    }
+
+    function refreshReadOnlyFeed() {
+      const mount = container.querySelector('#dg-notes-readonly-feed');
+      if (!mount) return;
+      let blocks, emptyLabel, showAuthor;
+      if (activeCode === SHARED_TAB) {
+        blocks = sharedBlocksSorted().filter(matchesSearch);
+        showAuthor = true;
+        emptyLabel = searchTerm ? 'No shared blocks match your search.' : 'Nothing shared yet -- write on your own tab and tap Circulate on a block.';
+      } else {
+        blocks = (notesByCode[activeCode] || []).slice().sort((a, b) => a.sort_order - b.sort_order).filter(matchesSearch);
+        showAuthor = false;
+        emptyLabel = searchTerm ? 'No blocks match your search.' : 'Nothing shared here yet.';
+      }
+      mount.innerHTML = blocks.length
+        ? blocks.map(b => {
+          const authorBadge = showAuthor
+            ? '<span class="dg-notes-author-badge" style="background:' + (identityFor(b.agent_code) ? identityFor(b.agent_code).color : '#4a5568') + '">' + escapeHtml(memberLabel(b.agent_code)) + '</span>'
+            : '<span class="dg-notes-shared-badge">' + (b.shared ? 'Circulated' : 'Private') + '</span>';
+          return '<div class="dg-notes-ro-block" id="block-' + escapeHtml(b.block_id) + '" style="' + inkStyleFor(b.agent_code) + '">' + authorBadge + renderReadOnlyBlock(b.type, b.data) + '</div>';
+        }).join('')
+        : '<div class="dg-notes-empty">' + emptyLabel + '</div>';
+    }
+
+    function wireShellEvents() {
+      container.querySelectorAll('[data-tab]').forEach(btn => {
+        btn.addEventListener('click', () => { activeCode = btn.dataset.tab; render(); });
       });
       const search = container.querySelector('.dg-notes-search');
       if (search) {
-        search.addEventListener('input', () => { searchTerm = search.value; render(); search.focus(); search.selectionStart = search.selectionEnd = search.value.length; });
-        search.addEventListener('blur', () => {
-          if (deferredRenderPending) { deferredRenderPending = false; render(); }
+        search.addEventListener('input', () => {
+          searchTerm = search.value;
+          if (activeCode === agentCode) {
+            jumpToFirstMatch();
+          } else {
+            refreshReadOnlyFeed();
+          }
         });
       }
+      const circulateBtn = container.querySelector('.dg-notes-circulate-btn');
+      if (circulateBtn) {
+        circulateBtn.addEventListener('click', () => {
+          if (!currentBlockId) return;
+          const next = !sharedByBlockId[currentBlockId];
+          sharedByBlockId[currentBlockId] = next;
+          updateCirculateButton();
+          scheduleSave(currentBlockId);
+        });
+      }
+    }
+    function wireTocEvents() {
       container.querySelectorAll('[data-scroll-to]').forEach(a => {
         a.addEventListener('click', e => {
           e.preventDefault();
-          const target = allVisibleBlocks().find(b => b.block_id === a.dataset.scrollTo);
-          if (target) {
-            const dest = target.shared ? SHARED_TAB : agentCode;
-            if (dest !== activeCode) { activeCode = dest; render(); }
-          }
+          const blockId = a.dataset.scrollTo;
+          const owner = a.dataset.owner;
+          const dest = owner === agentCode ? agentCode : (allVisibleBlocks().find(b => b.block_id === blockId && b.shared) ? SHARED_TAB : owner);
+          if (dest !== activeCode) { activeCode = dest; render(); }
           requestAnimationFrame(() => {
-            const el = document.getElementById('block-' + a.dataset.scrollTo);
+            const el = document.getElementById('block-' + blockId) || (editorInstance && document.querySelector('[data-id="' + blockId + '"]'));
             if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
           });
         });
       });
-      container.querySelectorAll('.dg-notes-block-view[data-editable]').forEach(view => {
-        view.addEventListener('click', () => {
-          const blockId = view.dataset.blockId;
-          // Deferred a tick so any blur this click also triggers (leaving
-          // whatever block was previously being edited) fully settles
-          // first -- avoids two renders racing over the same DOM mutation.
-          setTimeout(() => {
-            editingBlockId = blockId;
-            render();
-            const field = container.querySelector('[data-block-id="' + blockId + '"].dg-notes-block-text');
-            if (field) { field.focus(); if (field.setSelectionRange) field.setSelectionRange(field.value.length, field.value.length); }
-          }, 0);
-        });
-      });
-      container.querySelectorAll('.dg-notes-block-text').forEach(field => {
-        const blockId = field.dataset.blockId;
-        field.addEventListener('input', () => scheduleSave(blockId));
-        field.addEventListener('keydown', e => {
-          if (e.key !== 'Enter') return;
-          const block = findBlockAnywhere(blockId);
-          if (!block) return;
-          const t = normalizedType(block.block_type);
-          if (t !== 'bullet' && t !== 'numbered') return; // paragraph/h1/h2 keep default Enter behavior
-          e.preventDefault();
-          scheduleSave(blockId, { immediate: true });
-          addBlock(block.block_type, { shared: !!block.shared });
-        });
-        field.addEventListener('blur', () => {
-          // blurGuardBlockId is set by the mousedown listener below,
-          // BEFORE this blur even fires -- unlike e.relatedTarget (often
-          // null on Safari, especially for touch-initiated focus
-          // changes), mousedown-before-blur ordering is reliable, so
-          // this is the one check that actually catches "focus is
-          // moving to a sibling control in this same block."
-          const guarded = blurGuardBlockId === blockId;
-          blurGuardBlockId = null;
-          if (guarded) return; // stay in edit mode; no DOM mutation at all
-          // Deferred a tick: if this blur was instead caused by a click
-          // OUTSIDE this block (a tab, an Add-row button, another
-          // block's view), rendering synchronously here would destroy
-          // that very element before its own click event could fire --
-          // "click disappearing, no formatting happening." Deferring
-          // lets that click's own handler run first, against intact DOM.
-          setTimeout(() => {
-            if (editingBlockId !== blockId) return; // something else already moved us on; don't clobber it
-            editingBlockId = null;
-            deferredRenderPending = false;
-            render();
-          }, 0);
-        });
-      });
-      // Fires before blur (mousedown always precedes blur), so this is
-      // the reliable way to know "the user is interacting with a
-      // control inside the currently-editing block" -- see the blur
-      // handler above.
-      container.querySelectorAll('.dg-notes-block').forEach(blockEl => {
-        blockEl.addEventListener('mousedown', e => {
-          if (editingBlockId && blockEl.dataset.blockId === editingBlockId && !e.target.classList.contains('dg-notes-block-text')) {
-            blurGuardBlockId = editingBlockId;
-          }
-        });
-      });
-      container.querySelectorAll('[data-fmt]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const blockId = btn.closest('[data-block-id]').dataset.blockId;
-          const field = container.querySelector('[data-block-id="' + blockId + '"].dg-notes-block-text');
-          if (!field) return;
-          const kind = btn.dataset.fmt;
-          if (kind === 'bold') wrapSelection(field, '**', '**');
-          else if (kind === 'italic') wrapSelection(field, '_', '_');
-          else if (kind === 'highlight') wrapSelection(field, '==', '==');
-          commitAndPreview(blockId);
-        });
-      });
-      container.querySelectorAll('[data-fmt-color]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const blockId = btn.closest('[data-block-id]').dataset.blockId;
-          const field = container.querySelector('[data-block-id="' + blockId + '"].dg-notes-block-text');
-          if (!field) return;
-          wrapSelection(field, '{color:' + btn.dataset.fmtColor + '}', '{/color}');
-          commitAndPreview(blockId);
-        });
-      });
-      container.querySelectorAll('[data-shared-toggle]').forEach(cb => {
-        cb.addEventListener('change', () => scheduleSave(cb.dataset.sharedToggle, { immediate: true }));
-      });
-      container.querySelectorAll('[data-delete]').forEach(btn => {
-        btn.addEventListener('click', () => deleteBlock(btn.dataset.delete));
-      });
-      container.querySelectorAll('[data-add-type]').forEach(btn => {
-        btn.addEventListener('click', () => addBlock(btn.dataset.addType, { shared: activeCode === SHARED_TAB }));
+    }
+
+    // On your own tab, search jumps to (and briefly highlights) the
+    // first matching block instead of hiding non-matches -- Editor.js
+    // doesn't support hiding individual blocks cleanly while a live
+    // instance is mounted, and "jump to it" is standard behavior for
+    // search-in-a-real-editor anyway (this is what Notion's own search
+    // does, for instance).
+    function jumpToFirstMatch() {
+      if (!editorInstance || !searchTerm) return;
+      editorInstance.save().then(out => {
+        const idx = out.blocks.findIndex(b => plainTextOf(b.type, b.data).toLowerCase().includes(searchTerm.toLowerCase()));
+        if (idx === -1) return;
+        const el = container.querySelectorAll('.ce-block')[idx];
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.classList.add('dg-notes-search-hit');
+          setTimeout(() => el.classList.remove('dg-notes-search-hit'), 1200);
+        }
       });
     }
 
-    // Wraps the field's current text selection with formatting markers
-    // (textarea/input's selectionStart/End is well-supported even on
-    // mobile Safari, unlike contenteditable's Selection/Range API --
-    // deliberately avoided here for the same reason a plain field was
-    // kept for editing at all). Only ever called right before
-    // commitAndPreview() swaps the block back to its rendered view, so
-    // it doesn't bother re-focusing the field -- that field is about to
-    // be destroyed.
-    function wrapSelection(fieldEl, before, after) {
-      const start = fieldEl.selectionStart, end = fieldEl.selectionEnd;
-      const val = fieldEl.value;
-      const selected = val.slice(start, end) || 'text';
-      fieldEl.value = val.slice(0, start) + before + selected + after + val.slice(end);
-      fieldEl.dispatchEvent(new Event('input', { bubbles: true }));
+    // Applies your own ink to the whole editor's writing surface --
+    // simpler than a per-block Tune, since every block in your own
+    // live document is authored by you (a per-author decorator only
+    // matters for the read-only feeds, which mix multiple authors).
+    function applyOwnInkStyle() {
+      const mount = container.querySelector('#dg-notes-editor-mount');
+      if (mount) mount.setAttribute('style', inkStyleFor(agentCode));
     }
 
-    // Saves immediately and drops out of edit mode so a toolbar action
-    // shows its actual result (real color/bold) right away, instead of
-    // leaving the raw {markup} sitting in the field until some later
-    // blur: "when I choose color for the block, this html color code
-    // comes up, instead of changing color." Tap the block again to keep
-    // writing.
-    function commitAndPreview(blockId) {
-      scheduleSave(blockId, { immediate: true });
-      editingBlockId = null;
-      deferredRenderPending = false;
-      render();
+    /* ── The live editor: mounted only for your own tab.
+
+       Circulate is NOT implemented via Editor.js's own Block Tunes API,
+       despite that being the "obvious" fit -- verified hands-on
+       (matching isTune/render() exactly as documented, registered both
+       as a top-level global tune AND per-tool) that a custom tune's
+       render() output never actually reaches this pinned version's
+       settings popover; codex-team/editor.js discussion #2819 confirms
+       "apply a tune to every tool" is a known, still-open rough edge in
+       Editor.js itself. Circulate is instead a single toolbar button
+       that always acts on "whichever block your cursor is currently
+       in" (tracked via focusin on the editor mount) -- still true
+       per-block granularity, just triggered from outside Editor.js's
+       own UI instead of fighting an unreliable API for it. ── */
+
+    let currentBlockId = null;
+
+    function updateCirculateButton() {
+      const btn = container.querySelector('.dg-notes-circulate-btn');
+      if (!btn) return;
+      const known = !!currentBlockId;
+      btn.disabled = !known;
+      btn.classList.toggle('active', known && !!sharedByBlockId[currentBlockId]);
+      btn.title = known ? 'Circulate this block to the whole Cell' : 'Click into a block first';
     }
 
-    function findBlockAnywhere(blockId) {
-      for (const code of Object.keys(notesByCode)) {
-        const found = (notesByCode[code] || []).find(b => b.block_id === blockId);
-        if (found) return found;
+    function mountEditor() {
+      if (editorInstance) return; // never remounted while already live (a poll must not trigger this)
+      currentBlockId = null;
+      const initialBlocks = (notesByCode[agentCode] || []).slice()
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map(b => {
+          sharedByBlockId[b.block_id] = !!b.shared;
+          return { id: b.block_id, type: b.type, data: b.data };
+        });
+      editorInstance = new EditorJS({
+        holder: 'dg-notes-editor-mount',
+        placeholder: 'Start writing…',
+        data: { blocks: initialBlocks },
+        // Bold/Italic/Highlight consistently on every block type,
+        // rather than hand-tuning per tool.
+        inlineToolbar: true,
+        tools: {
+          header: { class: Header, config: { levels: HEADER_LEVELS, defaultLevel: HEADER_LEVELS[0] } },
+          list: EditorjsList,
+          delimiter: Delimiter,
+          marker: Marker,
+        },
+        onReady: () => {
+          applyOwnInkStyle();
+          const mount = container.querySelector('#dg-notes-editor-mount');
+          if (mount) mount.addEventListener('focusin', () => {
+            const blockEl = document.activeElement && document.activeElement.closest('.ce-block');
+            currentBlockId = blockEl ? blockEl.dataset.id : currentBlockId;
+            updateCirculateButton();
+          });
+        },
+        onChange: handleEditorChange,
+      });
+    }
+    // Flushes any still-debounced saves (in ONE final save() call, so
+    // it can't race the destroy() that follows) before tearing the
+    // instance down -- otherwise switching tabs within SAVE_DEBOUNCE_MS
+    // of your last keystroke would silently drop that edit: the pending
+    // setTimeout would still fire later, but syncBlock() bails out the
+    // moment editorInstance is null.
+    function unmountEditor() {
+      if (!editorInstance) return;
+      const pending = Object.keys(saveTimers);
+      pending.forEach(id => { clearTimeout(saveTimers[id]); delete saveTimers[id]; });
+      const inst = editorInstance;
+      editorInstance = null;
+      const finish = () => inst.destroy();
+      if (pending.length) {
+        inst.save().then(out => pending.forEach(id => persistBlockFromSaved(out, id))).catch(() => { }).then(finish);
+      } else {
+        finish();
       }
-      return null;
     }
 
-    function scheduleSave(blockId, opts2) {
-      const block = findBlockAnywhere(blockId);
-      if (!block) return;
-      const fieldEl = container.querySelector('[data-block-id="' + blockId + '"].dg-notes-block-text');
-      if (fieldEl) block.text = fieldEl.value;
-      const toggleEl = container.querySelector('[data-shared-toggle="' + blockId + '"]');
-      if (toggleEl) block.shared = toggleEl.checked;
-      block.updated_at = Date.now();
-      touchedAt[blockId] = Date.now();
+    function handleEditorChange(api, event) {
+      const events = Array.isArray(event) ? event : [event];
+      let moved = false;
+      events.forEach(e => {
+        const blockId = e.detail && e.detail.target && e.detail.target.id;
+        if (e.type === 'block-moved') { moved = true; return; }
+        if (!blockId) return;
+        if (e.type === 'block-removed') { deleteBlockRemote(blockId); return; }
+        scheduleSave(blockId);
+      });
+      // A drag-reorder (or move-up/down) shifts every sibling's
+      // effective position, not just the moved block's -- resync every
+      // block's sort_order rather than just the one event reported.
+      if (moved) resyncOrder();
+    }
+
+    function scheduleSave(blockId) {
       clearTimeout(saveTimers[blockId]);
-      const delay = (opts2 && opts2.immediate) ? 0 : SAVE_DEBOUNCE_MS;
-      saveTimers[blockId] = setTimeout(() => saveBlock(block), delay);
+      saveTimers[blockId] = setTimeout(() => syncBlock(blockId), SAVE_DEBOUNCE_MS);
     }
 
-    function saveBlock(block) {
-      touchedAt[block.block_id] = Date.now();
+    // Shared by syncBlock(), resyncOrder(), and unmountEditor()'s final
+    // flush -- given an already-fetched editor.save() result, updates
+    // local bookkeeping and fires the actual save_note_block POST for
+    // one block. A no-op if the block was deleted before this ran.
+    function persistBlockFromSaved(out, blockId) {
+      const b = out.blocks.find(x => x.id === blockId);
+      if (!b) return;
+      const idx = out.blocks.indexOf(b);
+      const shared = !!sharedByBlockId[blockId];
+      const meta = upsertLocalMeta(agentCode, blockId, { type: b.type, data: b.data, shared, sort_order: idx * 1000 });
       postAction({
-        action: 'save_note_block',
-        block_id: block.block_id,
-        cell_id: cellId,
-        agent_code: agentCode,
-        block_type: block.block_type,
-        text: block.text,
-        shared: !!block.shared,
-        sort_order: block.sort_order,
-      }).catch(() => { /* best-effort, matches saveHandoutNote()'s weight */ });
+        action: 'save_note_block', block_id: blockId, cell_id: cellId, agent_code: agentCode,
+        block_type: b.type, text: JSON.stringify(b.data), shared, sort_order: meta.sort_order,
+      }).catch(() => { });
     }
 
-    function addBlock(blockType, addOpts) {
-      const shared = !!(addOpts && addOpts.shared);
-      const list = notesByCode[agentCode] || (notesByCode[agentCode] = []);
-      const maxSort = list.reduce((m, b) => Math.max(m, b.sort_order), 0);
-      const now = Date.now();
-      // agent_code set locally too, not just on the server row -- the
-      // server round-trip that would otherwise be the only source of it
-      // takes a full poll cycle, and identityFor()/canEdit checks (ink
-      // color/font, combined-Shared-tab editability) both key off this
-      // field being present on the block object itself.
-      const block = {
-        block_id: mintBlockId(), agent_code: agentCode, block_type: blockType, text: '', shared: shared,
-        sort_order: maxSort + 1000, created_at: now, updated_at: now,
-      };
-      list.push(block);
-      activeCode = shared ? SHARED_TAB : agentCode;
-      editingBlockId = blockType === 'divider' ? null : block.block_id;
-      render();
-      if (blockType !== 'divider') {
-        const fieldEl = container.querySelector('[data-block-id="' + block.block_id + '"].dg-notes-block-text');
-        if (fieldEl) fieldEl.focus();
-      }
-      saveBlock(block);
+    function syncBlock(blockId) {
+      delete saveTimers[blockId];
+      if (!editorInstance) return;
+      editorInstance.save().then(out => { persistBlockFromSaved(out, blockId); refreshChrome(); });
     }
 
-    function deleteBlock(blockId) {
-      const list = notesByCode[agentCode] || [];
-      const idx = list.findIndex(b => b.block_id === blockId);
-      if (idx === -1) return;
-      list.splice(idx, 1);
-      delete touchedAt[blockId];
-      if (editingBlockId === blockId) editingBlockId = null;
-      render();
+    // Renumbers every block's stored sort_order to match the editor's
+    // current visual order after a drag/move -- only actually posts an
+    // update for the blocks whose sort_order changed.
+    function resyncOrder() {
+      if (!editorInstance) return;
+      editorInstance.save().then(out => {
+        out.blocks.forEach((b, idx) => {
+          const existing = (notesByCode[agentCode] || []).find(x => x.block_id === b.id);
+          if (existing && existing.sort_order === idx * 1000) return;
+          persistBlockFromSaved(out, b.id);
+        });
+        refreshChrome();
+      });
+    }
+
+    function deleteBlockRemote(blockId) {
+      removeLocalMeta(agentCode, blockId);
+      delete sharedByBlockId[blockId];
+      clearTimeout(saveTimers[blockId]);
       postAction({ action: 'delete_note_block', block_id: blockId, cell_id: cellId }).catch(() => { });
+      refreshChrome();
     }
 
+    /* ── Polling: refreshes everyone else's data (and your own row's
+       server-echoed metadata, harmlessly) every 5s. Never touches the
+       live editor instance or re-renders the shell -- only the TOC/
+       tab-dot chrome and, if you're not on your own tab, the read-only
+       feed. Your own tab's actual content is only ever written by
+       YOU, through the editor's own onChange -- there's no merge race
+       to defend against anymore, because a background poll's data is
+       never fed back into the one place you could be actively typing. ── */
     function fetchNotes() {
       if (!cellId) return;
       jsonpGet('list_cell_notes', { cell_id: cellId, agent_code: agentCode }, res => {
         if (!res || res.status !== 'OK') return;
         const incoming = res.notes || {};
-        const incomingOwn = incoming[agentCode] || [];
-        const incomingOwnIds = new Set(incomingOwn.map(b => b.block_id));
-        const localOwn = notesByCode[agentCode] || [];
-        const localById = {};
-        localOwn.forEach(b => { localById[b.block_id] = b; });
-        const now = Date.now();
-        const isProtected = id => editingBlockId === id || !!saveTimers[id] ||
-          (touchedAt[id] && (now - touchedAt[id]) < RECENT_TOUCH_MS);
-        // A no-cors save is fire-and-forget with no read-back, so
-        // list_cell_notes can legitimately still reflect an OLDER text
-        // for a block whose newer edit hasn't landed (or hasn't been
-        // reflected past the ~3s cache TTL) yet -- that's true even for
-        // blocks the server already has a row for, not just brand-new
-        // ones. Blindly trusting the server's copy here was clobbering
-        // in-progress or just-sent text with a stale version on every
-        // single 5s poll: "I write something, it disappears... then
-        // overwritten with the first text. Then the second." This is
-        // that race. Any block we're actively editing, have a save
-        // pending for, or touched within the last poll-or-two keeps its
-        // LOCAL text instead of the server's, until enough time has
-        // passed that the save has almost certainly landed.
-        const mergedOwn = incomingOwn.map(b => {
-          const local = localById[b.block_id];
-          return (local && isProtected(b.block_id)) ? local : b;
+        const parsed = {};
+        Object.keys(incoming).forEach(code => {
+          parsed[code] = (incoming[code] || []).map(row => {
+            const b = parseStoredBlock(row.block_type, row.text);
+            return {
+              block_id: row.block_id, agent_code: row.agent_code, type: b.type, data: b.data,
+              shared: !!row.shared, sort_order: row.sort_order, created_at: row.created_at, updated_at: row.updated_at,
+            };
+          });
         });
-        const stillPending = localOwn.filter(b => !incomingOwnIds.has(b.block_id) && isProtected(b.block_id));
-        incoming[agentCode] = mergedOwn.concat(stillPending);
-        notesByCode = incoming;
+        // Your own tab's live document is the source of truth while
+        // you're on it -- don't let a poll's (possibly-lagging) echo of
+        // your own writes overwrite notesByCode[agentCode] out from
+        // under the editor's own bookkeeping.
+        if (activeCode === agentCode && editorInstance) delete parsed[agentCode];
+        Object.assign(notesByCode, parsed);
         identities = res.identities || identities;
-        renderFromPoll();
+        refreshChrome();
+        if (activeCode !== agentCode) refreshReadOnlyFeed();
       });
     }
 
@@ -708,7 +694,10 @@
     fetchNotes();
     startPolling();
 
-    return { refresh: fetchNotes, destroy: stopPolling };
+    return {
+      refresh: fetchNotes,
+      destroy: () => { stopPolling(); unmountEditor(); },
+    };
   }
 
   window.dgNotesPanel = { init };

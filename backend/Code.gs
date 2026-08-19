@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v16 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v17 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Sheet/Admin) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -23,6 +23,14 @@
 //   (save_agent_identity, bundled into list_cell_notes as
 //   `identities`) for attributing contributions in the combined
 //   Shared tab; created_at now also returned per block
+// + Player Notes editing engine swapped to Editor.js client-side --
+//   block_type/text vocabulary changed (Editor.js tool names, text is
+//   now a JSON-stringified block data object) but saveNoteBlock()/
+//   deleteNoteBlock()/listCellNotes() already treated both columns as
+//   opaque strings, so NO backend logic changed for this migration --
+//   only this header comment. `shared` deliberately stays a plain
+//   top-level column, outside the JSON blob, so the server-side
+//   privacy filter below is completely unaffected either.
 // + Fixed listCellNotes() never actually returning agent_code on each
 //   note object (only as the notes{} dict key) -- broke ink
 //   color/font attribution entirely (identityFor(b.agent_code) was

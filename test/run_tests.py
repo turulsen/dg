@@ -5482,23 +5482,37 @@ def test_pwa_update_banner(p):
            reload_btn is not None and "Reload" in (reload_btn.inner_text() or ""), "")
 
 
-def test_notes_v1_block_crud(p):
-    """Player Notes v1 (notes/index.html + notes/notes.js): shared/private
-    block notes scoped to a Cell. The mock below stands in for the real
-    Apps Script backend's server-side privacy filter (see
-    listCellNotes() in backend/Code.gs) -- it only ever returns the
-    requester's own blocks in full, and other Agents' blocks filtered to
-    shared==True, exactly like the real handler does. The critical
-    assertion throughout is that a private block belonging to someone
-    else never appears anywhere in page.content(), not just that the UI
-    doesn't render a control for it -- a leak in the raw response would
-    still show up in that check even if the UI happened to hide it."""
+def test_notes_v2_editorjs(p):
+    """Player Notes v2: the editing engine was swapped from a hand-rolled
+    textarea + custom markup syntax to Editor.js (vendored under
+    notes/vendor/), motivated by two things the user asked for that the
+    old engine couldn't give: real WYSIWYG (no more raw **markup** while
+    typing) and easy paste-import from other note apps (Google Docs,
+    Notion, Apple Notes -- none of which offer an API path suitable for
+    this unauthenticated fan tool, so paste is the actual mechanism, and
+    Editor.js's per-tool pasteConfig auto-splitting rich clipboard HTML
+    into real Header/Paragraph/List blocks is what makes that good).
+
+    Architecture note this test exists to verify: Editor.js is one
+    editable document per instance, with no supported way to mix "my
+    own editable blocks" with "someone else's read-only blocks" in one
+    instance. So only your own tab ever mounts a live Editor.js
+    instance; every other view (another member's tab, the combined
+    Shared feed) is a hand-rendered read-only HTML feed built straight
+    from the same stored block data -- see notes.js's file header
+    comment. That split is exactly what the privacy-leak check below
+    exercises: it must hold on BOTH kinds of view, not just the live one.
+
+    The mock below stands in for the real Apps Script backend's
+    server-side privacy filter (see listCellNotes() in backend/Code.gs)
+    -- it only ever returns the requester's own blocks in full, others'
+    filtered to shared==True, exactly like the real handler does. The
+    critical assertion throughout is that a private block belonging to
+    someone else never appears anywhere in page.content(), not just
+    that the UI hides it -- a leak in the raw response would still show
+    up in that check even if the UI happened to hide it.
+    """
     page = p.new_page()
-    # Generous for the same reason the two wait_for_condition calls below
-    # are -- this sandbox can pause the whole page for real multi-second
-    # stretches (see their own comment), and a Playwright action (click/
-    # check/fill) landing right as that starts would otherwise throw its
-    # own TimeoutError before ever reaching those waits.
     page.set_default_timeout(25000)
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
@@ -5506,27 +5520,17 @@ def test_notes_v1_block_crud(p):
 
     cell = {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam",
             "member_codes": ["OWEN-CS12", "PRIY-AN34"]}
-    # (block_id, owner, type, text, shared)
+    # (block_id, owner, type, data, shared) -- `text` on the wire is a
+    # JSON-stringified Editor.js block `data` object as of this v2 schema.
     blocks_state = [
-        {"block_id": "b1", "agent_code": "OWEN-CS12", "block_type": "paragraph", "text": "My private note", "shared": False, "sort_order": 1000, "updated_at": 1},
-        {"block_id": "b2", "agent_code": "OWEN-CS12", "block_type": "heading", "text": "Shared Owen Heading", "shared": True, "sort_order": 2000, "updated_at": 1},
-        {"block_id": "b3", "agent_code": "PRIY-AN34", "block_type": "paragraph", "text": "Priya shared note", "shared": True, "sort_order": 1000, "updated_at": 1},
-        {"block_id": "b4", "agent_code": "PRIY-AN34", "block_type": "heading", "text": "Priya Private Heading", "shared": False, "sort_order": 2000, "updated_at": 1},
-        {"block_id": "b5", "agent_code": "PRIY-AN34", "block_type": "heading", "text": "Priya Shared Heading", "shared": True, "sort_order": 3000, "updated_at": 1},
+        {"block_id": "b1", "agent_code": "PRIY-AN34", "block_type": "paragraph",
+         "text": json.dumps({"text": "Priya's shared note"}), "shared": True, "sort_order": 1000, "created_at": 1, "updated_at": 1},
+        {"block_id": "b2", "agent_code": "PRIY-AN34", "block_type": "paragraph",
+         "text": json.dumps({"text": "Priya's PRIVATE note -- must never leak"}), "shared": False, "sort_order": 2000, "created_at": 1, "updated_at": 1},
     ]
+    identities = {"PRIY-AN34": {"color": "#2f855a", "font": "kalam"}}
     posts = []
-    next_id = [6]
-
-    def filtered_notes(requester):
-        notes = {}
-        for b in blocks_state:
-            if b["agent_code"] != requester and not b["shared"]:
-                continue  # private, not the requester's -- must never be included
-            notes.setdefault(b["agent_code"], []).append({
-                "block_id": b["block_id"], "agent_code": b["agent_code"], "block_type": b["block_type"], "text": b["text"],
-                "shared": b["shared"], "sort_order": b["sort_order"], "updated_at": b["updated_at"],
-            })
-        return notes
+    next_id = [3]
 
     def fake_apps_script(route):
         req = route.request
@@ -5540,12 +5544,13 @@ def test_notes_v1_block_crud(p):
                     existing.update({"block_type": body.get("block_type"), "text": body.get("text"),
                                       "shared": bool(body.get("shared")), "sort_order": body.get("sort_order")})
                 else:
-                    bid = "b" + str(next_id[0]); next_id[0] += 1
+                    bid = bid or ("b" + str(next_id[0])); next_id[0] += 1
                     blocks_state.append({"block_id": bid, "agent_code": body.get("agent_code"),
                                           "block_type": body.get("block_type"), "text": body.get("text"),
-                                          "shared": bool(body.get("shared")), "sort_order": body.get("sort_order"), "updated_at": 1})
-            elif body.get("action") == "delete_note_block":
-                blocks_state[:] = [b for b in blocks_state if b["block_id"] != body.get("block_id")]
+                                          "shared": bool(body.get("shared")), "sort_order": body.get("sort_order"),
+                                          "created_at": 1, "updated_at": 1})
+            elif body.get("action") == "save_agent_identity":
+                identities[body.get("agent_code")] = {"color": body.get("color"), "font": body.get("font")}
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         url = req.url
@@ -5555,7 +5560,16 @@ def test_notes_v1_block_crud(p):
                 res = {"status": "OK", "cells": [cell]}
             elif "action=list_cell_notes" in url:
                 requester = url.split("agent_code=")[1].split("&")[0] if "agent_code=" in url else ""
-                res = {"status": "OK", "notes": filtered_notes(requester)}
+                notes = {}
+                for b in blocks_state:
+                    if b["agent_code"] != requester and not b["shared"]:
+                        continue  # private, not the requester's -- must never be included
+                    notes.setdefault(b["agent_code"], []).append({
+                        "block_id": b["block_id"], "agent_code": b["agent_code"], "block_type": b["block_type"],
+                        "text": b["text"], "shared": b["shared"], "sort_order": b["sort_order"],
+                        "created_at": b["created_at"], "updated_at": b["updated_at"],
+                    })
+                res = {"status": "OK", "notes": notes, "identities": identities}
             else:
                 res = {"status": "OK"}
             route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
@@ -5570,10 +5584,8 @@ def test_notes_v1_block_crud(p):
     page.select_option("#picker-cell", "cell_1")
     page.click("#picker-open-btn")
 
-    # A first-time-here Agent (this mock never returns `identities`, so
-    # every viewer is "first-time") is prompted to pick a color +
-    # handwriting font before anything else -- go through that flow
-    # like a real new player would, rather than special-casing it away.
+    # A first-time-here Agent is prompted to pick a color + handwriting
+    # font before anything else.
     wait_for_condition(lambda: page.query_selector(".dg-notes-identity-modal") is not None, timeout_ms=6000)
     record("notes", "a first-time viewer is prompted to pick an identity color/font",
            page.query_selector(".dg-notes-identity-modal") is not None, "")
@@ -5581,258 +5593,118 @@ def test_notes_v1_block_crud(p):
     page.click(".dg-notes-identity-confirm")
     wait_for_condition(lambda: page.query_selector(".dg-notes-identity-modal") is None, timeout_ms=6000)
 
-    wait_for_condition(lambda: page.query_selector("#dg-notes-panel") is not None, timeout_ms=6000)
-    wait_for_condition(lambda: "My private note" in (page.content() or ""), timeout_ms=6000)
+    wait_for_condition(lambda: page.query_selector("#dg-notes-editor-mount .ce-block") is not None, timeout_ms=6000)
+    record("notes", "your own tab mounts a live Editor.js instance", page.query_selector("#dg-notes-editor-mount") is not None, "")
 
-    own_text = page.content()
-    record("notes", "your own tab shows both your private and your shared blocks",
-           "My private note" in own_text and "Shared Owen Heading" in own_text, "")
-
-    record("notes", "the always-visible index lists shared headings from both Agents",
-           "Shared Owen Heading" in own_text and "Priya Shared Heading" in own_text, "")
-    record("notes", "the index does not list another Agent's private heading",
-           "Priya Private Heading" not in own_text, "")
-
-    # Switch to Priya's tab.
-    page.click('[data-tab="PRIY-AN34"]')
-    page.wait_for_timeout(200)
-    priya_text = page.content()
-    record("notes", "viewing another member's tab shows only their shared block",
-           "Priya shared note" in priya_text, "")
-    record("notes", "another member's private block never appears anywhere in the page, not even hidden",
-           "Priya Private Heading" not in priya_text, "")
-
-    # Back to your own tab, exercise search.
-    page.click('[data-tab="OWEN-CS12"]')
-    page.wait_for_timeout(200)
-    page.fill(".dg-notes-search", "Owen")
-    page.wait_for_timeout(200)
-    search_text = page.content()
-    record("notes", "search filters the active tab's blocks by text",
-           "Shared Owen Heading" in search_text and "My private note" not in search_text, "")
-    page.fill(".dg-notes-search", "")
-    page.wait_for_timeout(200)
-
-    # Add a new block and confirm the autosave POST. The debounce is only
-    # 1200ms nominally, but this sandbox can occasionally suspend the
-    # whole page for real multi-second stretches invisible to in-guest
-    # load/CPU checks (confirmed via performance.now() itself barely
-    # advancing across a real wall-clock gap during diagnosis -- a
-    # VM-level scheduling pause, not JS-side throttling a Chrome flag
-    # can disable, and one that also intermittently affects unrelated,
-    # otherwise-stable tests like the Kappa Black outfit one). Uses the
-    # same 25s default every other wait_for_condition() call in this
-    # suite already accepts -- a real player's own foregrounded, active
-    # tab never sees this at all, so it isn't worth a special-cased
-    # longer budget just for this one test. Also nudges the renderer each
-    # poll via a trivial evaluate() round trip rather than sleeping in
-    # pure Python -- a follow-up diagnosis found this sandbox can leave
-    # an already zero-delay-scheduled callback queued for real seconds
-    # until something forces the JS engine to tick.
-    posts.clear()
-    page.click('[data-add-type="paragraph"]')
-    page.wait_for_timeout(100)
-    new_field = page.locator('.dg-notes-block-text').last
-    new_field.fill("A brand new note")
-    saved = wait_for_condition(lambda: (page.evaluate("1"), next((x for x in posts if x.get("action") == "save_note_block" and x.get("text") == "A brand new note"), None))[1], timeout_ms=25000)
-    record("notes", "adding a block and typing fires a debounced save_note_block with the right shape",
-           bool(saved) and saved.get("agent_code") == "OWEN-CS12" and saved.get("cell_id") == "cell_1" and saved.get("shared") is False,
+    # Type a paragraph and confirm the debounced save posts the right
+    # per-block JSON shape (block_type is Editor.js's own tool name;
+    # text is a JSON-stringified block data object, not our old custom
+    # markup string).
+    page.click(".ce-block [contenteditable]")
+    page.keyboard.type("Session 3 Notes")
+    saved = wait_for_condition(lambda: (page.evaluate("1"), next((x for x in posts if x.get("action") == "save_note_block" and x.get("agent_code") == "OWEN-CS12"), None))[1], timeout_ms=25000)
+    record("notes", "typing fires a debounced save_note_block with the right per-block JSON shape",
+           bool(saved) and saved.get("cell_id") == "cell_1" and saved.get("block_type") == "paragraph"
+           and json.loads(saved.get("text") or "{}").get("text") == "Session 3 Notes" and saved.get("shared") is False,
            json.dumps(saved) if saved else "no POST captured")
 
-    # Toggle Shared on the existing private block -- saves immediately (no debounce wait needed).
-    posts.clear()
-    # The checkbox itself is visually hidden (custom toggle-switch look,
-    # see notes.css .dg-notes-toggle-input) -- click the visible track,
-    # exactly like a real user would, same as native <label> click
-    # delegation does regardless of the input's own visibility.
-    page.click('[data-shared-toggle="b1"] + .dg-notes-toggle-track')
-    toggled = wait_for_condition(lambda: (page.evaluate("1"), next((x for x in posts if x.get("action") == "save_note_block" and x.get("block_id") == "b1"), None))[1], timeout_ms=25000)
-    record("notes", "toggling Shared on your own block saves shared:true",
-           bool(toggled) and toggled.get("shared") is True, json.dumps(toggled) if toggled else "no POST captured")
-
-    record("notes", "no JS exceptions", len(errs) == 0, "; ".join(errs))
-    page.close()
-    return errs
-
-
-def test_notes_v1_bugfix_stability(p):
-    """Regression coverage for the "writing is very buggy" bug report
-    against notes/notes.js's edit/view-mode system. Targets the actual
-    root causes that were diagnosed and fixed:
-      - the blur handler used to trust e.relatedTarget to tell "focus
-        moved to a sibling in-block control" apart from "the user left
-        the block" -- unreliable on Safari (often null), so it failed
-        open and destroyed the whole panel's DOM on nearly every click
-        inside a block (toolbar, Shared checkbox), before that click's
-        own handler could even fire. Replaced with a mousedown-set flag,
-        which always fires before blur.
-      - fetchNotes()'s merge logic used to let the server's copy of an
-        already-existing block silently overwrite locally in-progress or
-        just-saved text on every poll tick, because its "protect from
-        clobber" check only covered blocks the server didn't have a row
-        for yet.
-      - the author's ink (color/font) was only ever applied to the
-        settled view, never the live editing field.
-      - Enter-to-continue-the-list on bullet/numbered blocks didn't
-        exist at all.
-    """
-    page = p.new_page()
-    page.set_default_timeout(25000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-
-    cell = {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam",
-            "member_codes": ["OWEN-CS12"]}
-    blocks_state = [
-        {"block_id": "b1", "agent_code": "OWEN-CS12", "block_type": "numbered", "text": "One", "shared": False, "sort_order": 1000, "updated_at": 1},
-    ]
-    posts = []
-    next_id = [2]
-
-    def fake_apps_script(route):
-        req = route.request
-        if req.method == "POST":
-            body = json.loads(req.post_data or "{}")
-            posts.append(body)
-            if body.get("action") == "save_note_block":
-                bid = body.get("block_id") or ""
-                existing = next((b for b in blocks_state if b["block_id"] == bid), None)
-                if existing:
-                    # Deliberately does NOT update b1's stored `text` past
-                    # this point, standing in for a save that landed but
-                    # hasn't been reflected by list_cell_notes yet by the
-                    # time the next poll runs -- a real, common race given
-                    # the save is debounced + fire-and-forget and the poll
-                    # runs on its own 5s cadence. Every other field still
-                    # updates normally.
-                    existing.update({"block_type": body.get("block_type"),
-                                      "shared": bool(body.get("shared")), "sort_order": body.get("sort_order")})
-                else:
-                    bid = "b" + str(next_id[0]); next_id[0] += 1
-                    blocks_state.append({"block_id": bid, "agent_code": body.get("agent_code"),
-                                          "block_type": body.get("block_type"), "text": body.get("text"),
-                                          "shared": bool(body.get("shared")), "sort_order": body.get("sort_order"), "updated_at": 1})
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        url = req.url
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            if "action=list_cells" in url:
-                res = {"status": "OK", "cells": [cell]}
-            elif "action=list_cell_notes" in url:
-                notes = {"OWEN-CS12": [{"block_id": b["block_id"], "agent_code": b["agent_code"], "block_type": b["block_type"], "text": b["text"],
-                                         "shared": b["shared"], "sort_order": b["sort_order"], "updated_at": b["updated_at"]} for b in blocks_state]}
-                res = {"status": "OK", "notes": notes}
-            else:
-                res = {"status": "OK"}
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-        else:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", fake_apps_script)
-
-    page.goto(f"{BASE}/notes/index.html", wait_until="domcontentloaded", timeout=15000)
+    # Switch to Priya's tab -- a read-only feed (not a second live
+    # editor), showing only her shared block.
+    page.click('[data-tab="PRIY-AN34"]')
     page.wait_for_timeout(300)
-    page.fill("#picker-agent-code", "OWEN-CS12")
-    wait_for_condition(lambda: page.locator('#picker-cell option[value="cell_1"]').count() > 0, timeout_ms=6000)
-    page.select_option("#picker-cell", "cell_1")
-    page.click("#picker-open-btn")
+    priya_html = page.content()
+    record("notes", "another member's tab is a read-only feed, not a second live editor",
+           page.query_selector("#dg-notes-editor-mount") is None, "")
+    record("notes", "viewing another member's tab shows only their shared block",
+           "Priya's shared note" in priya_html, "")
+    record("notes", "another member's private block never appears anywhere in the page, not even hidden",
+           "must never leak" not in priya_html, "")
 
-    wait_for_condition(lambda: page.query_selector(".dg-notes-identity-modal") is not None, timeout_ms=6000)
-    page.click(".dg-notes-color-swatch")
-    page.click(".dg-notes-identity-confirm")
-    wait_for_condition(lambda: page.query_selector(".dg-notes-identity-modal") is None, timeout_ms=6000)
-    wait_for_condition(lambda: "One" in (page.content() or ""), timeout_ms=6000)
+    # The combined Shared feed: same privacy rule applies there too.
+    page.click('[data-tab="__shared__"]')
+    page.wait_for_timeout(300)
+    shared_html = page.content()
+    record("notes", "the combined Shared feed shows another member's shared block",
+           "Priya's shared note" in shared_html, "")
+    record("notes", "the combined Shared feed never leaks another member's private block",
+           "must never leak" not in shared_html, "")
 
-    # Enter edit mode on the numbered block.
-    page.click('.dg-notes-block-view[data-block-id="b1"]')
-    wait_for_condition(lambda: page.query_selector('.dg-notes-block-text[data-block-id="b1"]') is not None, timeout_ms=6000)
+    # Back to your own tab -- the live editor remounts from stored state
+    # and still shows what you typed before switching away.
+    page.click('[data-tab="OWEN-CS12"]')
+    wait_for_condition(lambda: page.query_selector("#dg-notes-editor-mount .ce-block") is not None, timeout_ms=6000)
+    record("notes", "your own tab still shows what you typed after switching away and back",
+           "Session 3 Notes" in page.content(), "")
 
-    field = page.locator('.dg-notes-block-text[data-block-id="b1"]')
-    record("notes", "the live editing field carries the author's chosen ink color (not just the settled view)",
-           "color:#2b6cb0" in (field.get_attribute("style") or ""), field.get_attribute("style") or "")
-
-    # Toolbar click: applies the formatting AND commits + drops back to
-    # the rendered view immediately, so you actually SEE the real
-    # color/bold right away instead of the raw {markup}/**markup**
-    # sitting in the field until some later blur -- "when I choose color
-    # for the block, this html color code comes up, instead of changing
-    # color." The old e.relatedTarget-based blur guard also used to
-    # fail open here on Safari and destroy the field before the button's
-    # own click could even register at all ("click disappearing, no
-    # formatting happening") -- the click landing and actually being
-    # honored is itself part of what this checks.
-    field.select_text()
-    page.click('.dg-notes-format-bar [data-fmt="bold"]')
-    wait_for_condition(lambda: page.query_selector('.dg-notes-block-text[data-block-id="b1"]') is None, timeout_ms=6000)
-    view_html = page.evaluate("""() => {
-        const el = document.querySelector('.dg-notes-block-view[data-block-id="b1"]');
-        return el ? el.innerHTML : null;
-    }""")
-    record("notes", "clicking a format toolbar button renders real formatting immediately, not raw markup",
-           bool(view_html) and "<b>" in view_html and "**" not in view_html, view_html or "(view never reappeared)")
-
-    # Re-enter edit mode to cover the Shared checkbox mid-edit -- a
-    # single click/check must register and save -- previously needed
-    # several clicks because the same blur bug destroyed the checkbox
-    # before its own click/change could fire.
-    page.click('.dg-notes-block-view[data-block-id="b1"]')
-    wait_for_condition(lambda: page.query_selector('.dg-notes-block-text[data-block-id="b1"]') is not None, timeout_ms=6000)
+    # Circulate: a toolbar button that acts on whichever block your
+    # cursor is in (not an Editor.js Block Tune -- see notes.js's
+    # mountEditor() comment for why: verified hands-on that a custom
+    # tune's render() output never reaches this pinned version's
+    # settings popover, a confirmed still-open rough edge in Editor.js
+    # itself, not a bug in this app). Disabled until you've clicked into
+    # a block; a single click toggles and saves shared:true immediately.
+    circulate = page.locator(".dg-notes-circulate-btn")
+    record("notes", "the Circulate button starts disabled (no block focused yet)",
+           circulate.get_attribute("disabled") is not None, "")
+    page.click(".ce-block [contenteditable]")
+    # Nudged the same way every other post-event wait in this suite is:
+    # this sandbox can leave an already-fired event's handler (here,
+    # the focusin listener that enables the button) unprocessed for
+    # real seconds until something forces the renderer to tick.
+    wait_for_condition(lambda: (page.evaluate("1"), circulate.get_attribute("disabled") is None)[1], timeout_ms=8000)
+    record("notes", "clicking into a block enables the Circulate button",
+           circulate.get_attribute("disabled") is None, "")
     posts.clear()
-    # The checkbox itself is visually hidden (custom toggle-switch look,
-    # see notes.css .dg-notes-toggle-input) -- click the visible track,
-    # exactly like a real user would, same as native <label> click
-    # delegation does regardless of the input's own visibility.
-    page.click('[data-shared-toggle="b1"] + .dg-notes-toggle-track')
-    # Generous, AND nudges the renderer each poll (a trivial evaluate()
-    # round trip) rather than just sleeping in Python -- this sandbox can
-    # leave an already zero-delay-scheduled callback queued for real
-    # seconds until something forces the JS engine to tick (confirmed via
-    # a debug harness: the exact same fetch fired within ~1s once
-    # anything kept issuing CDP calls, but sat queued for 5+ seconds
-    # under a pure-Python sleep loop). The change handler itself still
-    # fires synchronously; only the browser's own execution of the
-    # already-queued task was delayed.
-    toggled = wait_for_condition(lambda: (page.evaluate("1"), next((x for x in posts if x.get("action") == "save_note_block" and x.get("block_id") == "b1"), None))[1], timeout_ms=25000)
-    record("notes", "a single click on the Shared checkbox mid-edit registers and saves (no multi-click needed)",
-           bool(toggled) and toggled.get("shared") is True, json.dumps(toggled) if toggled else "no POST captured after one click")
+    circulate.click()
+    toggled = wait_for_condition(lambda: (page.evaluate("1"), next((x for x in posts if x.get("action") == "save_note_block" and x.get("agent_code") == "OWEN-CS12"), None))[1], timeout_ms=25000)
+    record("notes", "toggling Circulate on the focused block saves shared:true",
+           bool(toggled) and toggled.get("shared") is True, json.dumps(toggled) if toggled else "no POST captured")
+    record("notes", "the Circulate button shows an active state once toggled on",
+           "active" in (circulate.get_attribute("class") or ""), "")
 
-    # Enter-to-continue on a numbered block: should append and focus a new
-    # numbered block, incrementing the visible number -- previously
-    # entirely unimplemented ("Pressing return doesnt yield more numbers.
-    # Cannot add new number block.").
-    field = page.locator('.dg-notes-block-text[data-block-id="b1"]')
-    field.click()
-    field.press("End")
-    field.press("Enter")
-    wait_for_condition(lambda: page.locator(".dg-notes-block-numbered").count() >= 2, timeout_ms=6000)
-    nums = page.locator(".dg-notes-num").all_inner_texts()
-    record("notes", "pressing Enter in a numbered block adds a second numbered block",
-           page.locator(".dg-notes-block-numbered").count() == 2 and "2." in nums, json.dumps(nums))
-    new_block_id = page.evaluate("""() => {
-        const el = document.activeElement;
-        return (el && el.classList.contains('dg-notes-block-text') && el.dataset.blockId !== 'b1') ? el.dataset.blockId : null;
+    # Paste import -- the actual motivation for this migration. A
+    # synthetic paste shaped like Google Docs' clipboard HTML (real
+    # <h1>/<p>/<ul><li> tags) should auto-split into real Header/
+    # Paragraph/List blocks via Editor.js's own per-tool pasteConfig,
+    # not land as one undifferentiated blob.
+    page.evaluate("""() => {
+        const dt = new DataTransfer();
+        dt.setData('text/html', '<h1>Investigation Log</h1><p>Found a torn photograph.</p><ul><li>Shows a lighthouse</li><li>Dated 1987</li></ul>');
+        dt.setData('text/plain', 'Investigation Log\\nFound a torn photograph.\\nShows a lighthouse\\nDated 1987');
+        const evt = new ClipboardEvent('paste', {clipboardData: dt, bubbles: true, cancelable: true});
+        const target = document.querySelector('#dg-notes-editor-mount [contenteditable]');
+        target.focus();
+        target.dispatchEvent(evt);
     }""")
-    record("notes", "the new block created by Enter is focused and ready to type",
-           bool(new_block_id), "")
+    wait_for_condition(lambda: page.locator(".ce-header").count() > 0 and page.locator(".cdx-list").count() > 0, timeout_ms=6000)
+    record("notes", "pasting Docs-shaped HTML auto-splits into a real Header block",
+           page.locator(".ce-header").count() > 0 and "Investigation Log" in page.content(), "")
+    record("notes", "pasting Docs-shaped HTML auto-splits into a real List block",
+           page.locator(".cdx-list").count() > 0 and "Shows a lighthouse" in page.content(), "")
 
-    # Stale-poll race: type fresh text into the newly-created block (still
-    # focused/in edit mode -- b1 itself reverted to its settled view the
-    # moment Enter moved editingBlockId onto the new block, which is
-    # correct: only one block is ever in edit mode at a time), then let a
-    # full poll cycle (5s) pass while the mock keeps echoing that block's
-    # OLD text from list_cell_notes (see fake_apps_script's save_note_block
-    # handler above). Real report: "I write something, it disappears...
-    # then overwritten with the first text." Generous timeout for the same
-    # documented reason every other wait in this suite is: this sandbox
-    # can pause the whole page for real multi-second stretches.
-    new_field = page.locator('.dg-notes-block-text[data-block-id="' + (new_block_id or "__none__") + '"]')
-    new_field.click()
-    new_field.fill("Freshly typed, must survive a poll")
-    page.wait_for_timeout(5600)
-    survived = new_field.input_value() if new_block_id else "(no new block was focused)"
-    record("notes", "text you're actively editing survives a poll cycle even when the server still echoes older text",
-           survived == "Freshly typed, must survive a poll", survived)
+    # Native Enter-to-continue on the pasted list -- this is Editor.js's
+    # own List tool behavior (no custom code in this app implements it),
+    # replacing v1's "Pressing return doesnt yield more numbers" gap.
+    list_item = page.locator(".cdx-list [contenteditable]").last
+    list_item.click()
+    page.keyboard.press("End")
+    page.keyboard.press("Enter")
+    page.keyboard.type("Third clue")
+    page.wait_for_timeout(300)
+    record("notes", "pressing Enter inside a list continues it with a new item",
+           "Third clue" in page.content(), "")
+
+    # TOC reflects header blocks -- only refreshed once the pasted
+    # header's own debounced save lands (refreshChrome() runs after
+    # syncBlock()), so give it a moment, nudging each poll the same way
+    # every other post-debounce wait in this suite does.
+    def toc_has_heading():
+        page.evaluate("1")
+        text = page.locator("#dg-notes-toc-mount").inner_text() or ""
+        return text if "Investigation Log" in text else None
+    toc_text = wait_for_condition(toc_has_heading, timeout_ms=8000) or ""
+    record("notes", "the index lists heading blocks from your own tab",
+           "Investigation Log" in toc_text, toc_text)
 
     record("notes", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
@@ -5998,9 +5870,7 @@ def main():
 
         safe(test_pwa_update_banner, browser, area="pwa")
 
-        safe(test_notes_v1_block_crud, browser, area="notes")
-
-        safe(test_notes_v1_bugfix_stability, browser, area="notes")
+        safe(test_notes_v2_editorjs, browser, area="notes")
 
         browser.close()
 
