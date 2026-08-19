@@ -1,57 +1,31 @@
 /* ══════════════════════════════════════════════
-   PLAYER NOTES -- analog-notebook styling: a spiral-bound sheet of
-   blue graph paper, with a little grain so it doesn't read as flat
-   digital UI. Every selector here is prefixed with #dg-notes-panel on
-   purpose, even in this standalone page where it's the only thing on
-   screen -- the same defensive-specificity trick assets/table-radio.js
-   uses (its own header comment explains why: a page's blanket
-   button{}/input{} theme rules would otherwise silently reskin this
-   widget). Building it this way means a later phase can drop this
-   panel into stats/index.html's five very different themes without
-   any retrofit.
+   PLAYER NOTES -- shares the site's one folder/paper visual language
+   (assets/theme-folder.css: the same --paper cream, the same ear-tab
+   strip used everywhere else a folder has more than one tab) instead
+   of its own distinct look, so Notes doesn't read as a different app
+   bolted onto the Hub. A faint grain is all that's kept of the
+   original notebook texture. Every selector here is prefixed with
+   #dg-notes-panel on purpose, even in this standalone page where it's
+   the only thing on screen -- the same defensive-specificity trick
+   assets/table-radio.js uses (its own header comment explains why: a
+   page's blanket button{}/input{} theme rules would otherwise silently
+   reskin this widget). Building it this way means a later phase can
+   drop this panel into stats/index.html's five very different themes
+   without any retrofit.
    ══════════════════════════════════════════════ */
 
 #dg-notes-panel{
   position:relative;
   font-family:'Courier Prime',monospace;
-  color:#2b2416;
-  background-color:#fdf9ec;
-  background-image:
-    linear-gradient(rgba(58,110,196,.16) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(58,110,196,.16) 1px, transparent 1px),
-    radial-gradient(rgba(90,72,40,.05) 1px, transparent 1px);
-  background-size:22px 22px, 22px 22px, 3px 3px;
-  box-shadow:0 6px 22px rgba(0,0,0,.28), 0 1px 4px rgba(0,0,0,.14);
+  color:var(--ink);
+  background-color:var(--paper);
+  background-image:radial-gradient(rgba(90,72,40,.05) 1px, transparent 1px);
+  background-size:3px 3px;
+  box-shadow:var(--paper-shadow);
   max-width:1100px;
   margin:0 auto;
-  padding:38px var(--s4) var(--s4);
-  border-radius:3px;
-}
-
-/* Spiral binding along the top edge -- two layered radial-gradients
-   (a dark ring + a soft drop shadow behind it) repeated across the
-   width, no image asset needed. */
-#dg-notes-panel::before{
-  content:'';
-  position:absolute;
-  top:0; left:0; right:0; height:28px;
-  background-image:
-    radial-gradient(circle at center, #6b7280 0 4px, rgba(107,114,128,.35) 4.5px, transparent 6px),
-    radial-gradient(circle at center, rgba(0,0,0,.18) 0 6px, transparent 6.5px);
-  background-size:28px 28px, 28px 28px;
-  background-position:14px 12px, 14px 14px;
-  background-repeat:repeat-x;
-  border-bottom:1px dashed rgba(58,40,10,.18);
-  pointer-events:none;
-}
-/* A punched-hole shadow just under each ring, like paper torn from a
-   real spiral pad. */
-#dg-notes-panel::after{
-  content:'';
-  position:absolute;
-  top:22px; left:0; right:0; height:6px;
-  background:linear-gradient(rgba(0,0,0,.08), transparent);
-  pointer-events:none;
+  padding:var(--s5) var(--s4) var(--s4);
+  border-radius:1px;
 }
 
 #dg-notes-panel .dg-notes-toolbar{
@@ -100,19 +74,33 @@
 
 #dg-notes-panel .dg-notes-main{ flex:1; min-width:0; }
 
+/* Same ear-tab language as the site's shared .tw folder tabs (see
+   assets/theme-folder.css) -- tan, rounded top corners only, an
+   inactive tab tucked a few pixels below the active one to read as
+   "behind" it. The active tab fills with the same --paper the content
+   below it sits on (not --tab-active, the shared system's darker
+   folder-body tan) since here the tab sits directly above the paper
+   sheet itself, with no separate folder-body layer between them. */
 #dg-notes-panel .dg-notes-tabs{
-  display:flex; flex-wrap:wrap; gap:4px; margin-bottom:var(--s4);
+  display:flex; flex-wrap:wrap; align-items:flex-end; gap:4px; margin-bottom:var(--s4);
 }
 #dg-notes-panel .dg-notes-tab{
   font-family:'Courier Prime',monospace; font-size:11px; letter-spacing:.03em;
-  background:rgba(58,40,10,.08); color:#3a3220; border:1px solid rgba(58,40,10,.2);
-  border-bottom:none; border-radius:4px 4px 0 0; padding:6px 12px; cursor:pointer;
+  background:var(--tab-inactive); color:#6a6050; border:1px solid #a8a090;
+  border-bottom:none; border-radius:6px 6px 0 0; padding:8px 14px; cursor:pointer;
   display:flex; align-items:center; gap:6px;
+  transform:translateY(4px);
+  transition:transform 120ms ease, background 120ms ease, color 120ms ease;
+  box-shadow:inset 0 6px 8px rgba(0,0,0,.12);
 }
-#dg-notes-panel .dg-notes-tab.active{ background:#fdf9ec; color:#1a1508; font-weight:700; }
+#dg-notes-panel .dg-notes-tab:hover:not(.active){ background:#c8c1ae; color:var(--ink-2); transform:translateY(2px); }
+#dg-notes-panel .dg-notes-tab.active{
+  background:var(--paper); color:var(--ink); font-weight:700;
+  border-color:var(--rule); transform:translateY(0); box-shadow:none;
+}
 #dg-notes-panel .dg-notes-tab-dot{ width:8px; height:8px; border-radius:50%; box-shadow:0 0 0 1px rgba(0,0,0,.15); }
 #dg-notes-panel .dg-notes-tab-shared{ font-weight:700; }
-#dg-notes-panel .dg-notes-tab-shared.active{ background:#eef4ff; }
+#dg-notes-panel .dg-notes-tab-shared.active{ background:var(--paper); border-color:var(--red); }
 
 #dg-notes-panel .dg-notes-empty{
   font-size:13px; color:rgba(43,36,22,.55); font-style:italic; text-align:center; padding:26px 10px;
@@ -180,7 +168,7 @@
    small paper card rather than the default white dropdown. */
 #dg-notes-panel .ce-popover,
 #dg-notes-panel .ce-popover__container{
-  background:#fdf9ec; border:1px solid rgba(58,40,10,.2); box-shadow:0 8px 24px rgba(0,0,0,.25);
+  background:var(--paper); border:1px solid rgba(58,40,10,.2); box-shadow:0 8px 24px rgba(0,0,0,.25);
 }
 #dg-notes-panel .ce-popover-item{ font-family:'Courier Prime',monospace; color:#2b2416; }
 #dg-notes-panel .ce-popover-item:hover,
@@ -189,7 +177,7 @@
 
 /* Inline toolbar (Bold/Italic/Highlight/Link on text selection). */
 #dg-notes-panel .ce-inline-toolbar{
-  background:#fdf9ec; border:1px solid rgba(58,40,10,.25); box-shadow:0 8px 24px rgba(0,0,0,.25);
+  background:var(--paper); border:1px solid rgba(58,40,10,.25); box-shadow:0 8px 24px rgba(0,0,0,.25);
 }
 #dg-notes-panel .ce-inline-tool{ color:#2b2416; }
 #dg-notes-panel .ce-inline-tool--active,
@@ -211,7 +199,7 @@
 }
 #dg-notes-panel .dg-notes-toggle-thumb{
   position:absolute; top:2px; left:2px; width:11px; height:11px; border-radius:50%;
-  background:#fdf9ec; box-shadow:0 1px 2px rgba(0,0,0,.3); transition:left .15s ease;
+  background:var(--paper); box-shadow:0 1px 2px rgba(0,0,0,.3); transition:left .15s ease;
 }
 #dg-notes-panel .dg-notes-circulate-btn.active .dg-notes-toggle-track{ background:#2f855a; }
 #dg-notes-panel .dg-notes-circulate-btn.active .dg-notes-toggle-track .dg-notes-toggle-thumb{ left:13px; }
@@ -233,7 +221,7 @@
   background:rgba(10,8,4,.6); padding:var(--s4);
 }
 .dg-notes-identity-card{
-  background:#fdf9ec; border-radius:6px; padding:var(--s5); max-width:360px; width:100%;
+  background:var(--paper); border-radius:6px; padding:var(--s5); max-width:360px; width:100%;
   box-shadow:0 12px 40px rgba(0,0,0,.4); font-family:'Courier Prime',monospace;
 }
 .dg-notes-identity-title{ font-family:'Special Elite',monospace; font-size:18px; color:#1a1508; margin-bottom:6px; }
@@ -242,7 +230,7 @@
 .dg-notes-color-swatch{
   width:32px; height:32px; border-radius:50%; border:2px solid transparent; cursor:pointer; padding:0;
 }
-.dg-notes-color-swatch.selected{ border-color:#1a1508; box-shadow:0 0 0 2px #fdf9ec, 0 0 0 4px #1a1508; }
+.dg-notes-color-swatch.selected{ border-color:#1a1508; box-shadow:0 0 0 2px var(--paper), 0 0 0 4px #1a1508; }
 .dg-notes-identity-fonts{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:var(--s4); }
 .dg-notes-font-choice{
   font-size:16px; padding:8px 14px; background:rgba(58,40,10,.06); border:1px solid rgba(58,40,10,.25);
@@ -250,7 +238,7 @@
 }
 .dg-notes-font-choice.selected{ background:#eef4ff; border-color:#3a6ec4; }
 .dg-notes-identity-confirm{
-  width:100%; font-family:'Courier Prime',monospace; font-size:13px; background:#1a1508; color:#fdf9ec;
+  width:100%; font-family:'Courier Prime',monospace; font-size:13px; background:#1a1508; color:var(--paper);
   border:none; border-radius:4px; padding:11px; cursor:pointer;
 }
 .dg-notes-identity-confirm:disabled{ opacity:.4; cursor:not-allowed; }
