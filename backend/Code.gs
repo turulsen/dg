@@ -1,7 +1,7 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v23 — Phase 2 + image proxy + Cloud Save
-// + A-Cell (Play/Cells/Sheet/Admin) + Cell groups + Table Radio
+// Google Apps Script backend v24 — Phase 2 + image proxy + Cloud Save
+// + A-Cell (Play/Cells/Sheet/Handouts/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
 // + AI appearance prompt generation (Face/Outfit Plate, via Claude)
