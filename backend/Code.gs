@@ -194,6 +194,19 @@
 //   Handler elsewhere too -- requiring real auth here would break the
 //   core "load my Agent by code" flow for a small privacy gain that
 //   doesn't match the actual sensitivity of this sheet's contents.
+// + Agent-token auth removed (revisited the decision from the prior
+//   pass, this time actually removing it rather than deferring): the
+//   lazy-claim race was real, but so was the actual stake it protected
+//   -- one player editing another's fictional character notes, nothing
+//   resembling real personal data. requireAgentToken_() is now a no-op
+//   (see its own comment); the AgentAuth sheet, reset_agent_token
+//   action, resetAgentToken_(), A-Cell Admin's "Reset Token" button,
+//   and agent-hub.html's "Recover Access" box are all gone with it --
+//   keeping them around, still LOOKING functional while quietly
+//   checking nothing, would have been worse than removing them
+//   outright. DRIVE_API_KEY moved to a Script Property instead of
+//   hardcoded in this file, matching ANTHROPIC_API_KEY/GEMINI_API_KEY
+//   (rotatable without a redeploy, not sitting in this public repo).
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -345,94 +358,31 @@ function asBoolean_(value) {
 }
 
 // ════════════════════════════════════════════════════════════════
-// Auth infrastructure (stage 2 of the backend hardening pass). These
-// helpers exist and are self-contained, but nothing calls
-// requireAgentToken_()/requireHandlerAuth_() from an existing action
-// yet -- that guard rollout, plus the client-side plumbing to actually
-// send a token/password, is stage 3, done deliberately separately so
-// each stage stays small enough to review and redeploy on its own.
-// reset_agent_token is the one exception: it's a brand-new action, so
-// it ships gated from the moment it exists rather than sitting open
-// until stage 3 gets to it.
+// Agent-token auth: REMOVED (was stage 2/3 of the backend hardening
+// pass -- an AgentAuth sheet + a per-Agent secret token, checked here
+// on every player-owned write). Decided against keeping it, after
+// actually weighing what it bought: the only thing it ever protected
+// against was one player editing another's notes/medical log/AAR --
+// there's no real personal data in this app to leak (player_name, a
+// first name, is the one real-world field, and it's already visible to
+// the Handler elsewhere regardless -- see doLookup()'s own comment).
+// Against that near-zero stake, the token system's own design cost was
+// real: the only claim mechanism that could ever work with this app's
+// fire-and-forget `no-cors` writes was "whoever presents a token for a
+// not-yet-claimed Agent Code first, wins" -- not actually authentication,
+// just a race with a confusing recovery flow (a Handler mediated
+// "Reset Token" hand-off, since removed) bolted on top. Properly closing
+// that race would have meant switching this app's single most-used
+// write (brief submission) off `no-cors` so a server-minted token could
+// be read back -- a real transport change to a live, working submission
+// path, for a security property this app doesn't actually need. Kept
+// as a no-op (rather than deleted at every one of its ~10 call sites)
+// so re-enabling it later, if the campaign's risk profile ever changes,
+// is a one-line revert here instead of re-threading auth through every
+// action again.
 // ════════════════════════════════════════════════════════════════
-
-// Self-provisions a sheet holding one secret token per Agent Code --
-// deliberately separate from the Agent Code itself (which stays the
-// public identifier used in URLs/lookups everywhere else). claimed_at
-// is set the moment a token is minted (lazy-claim and Handler-reset
-// both mint+claim in the same step), so it's currently redundant with
-// created_at, but kept as its own column for a future where a token
-// could be pre-provisioned without being claimed yet.
-function getOrCreateAgentAuthSheet() {
-  const ss = getOrCreateSheet();
-  let sheet = ss.getSheetByName('AgentAuth');
-  if (!sheet) {
-    sheet = ss.insertSheet('AgentAuth');
-    sheet.getRange(1, 1, 1, 4).setValues([['agent_code', 'token', 'created_at', 'claimed_at']]);
-  }
-  return sheet;
-}
-
-// Validates data.agent_code + data.token against AgentAuth. An Agent
-// Code with no AgentAuth row yet is lazily claimed using whatever token
-// the CLIENT already generated and sent -- not a server-minted one
-// handed back in the response. That's a deliberate change from how
-// stage 2 first described this: most writes in this app are
-// fire-and-forget `fetch(..., {mode:'no-cors'})` POSTs (keepalive,
-// used precisely so a page navigation doesn't cancel an in-flight
-// save) whose response body can never be read at all, so a
-// server-issued token would have no reliable way back to the client
-// that needs to store it. A client-generated token sidesteps that
-// entirely: every frontend mints and persists one locally the first
-// time it needs one for a given Agent Code (see agentToken() in each
-// client file) and simply starts sending it, no round trip required.
-// This is what lets an existing player's saved data keep working on
-// their own device with zero action from them, even long after this
-// rollout ships -- their browser already holds the same token it's
-// been quietly sending all along.
-//
-// Returns null on success (a fresh claim counts as success), or a
-// ContentService error response the caller should return immediately.
-//
-// data.callback (present when this runs from a GET/JSONP action --
-// e.parameter always carries it as a real request param; a POST body
-// never has one) routes the error through respond_() so it's still a
-// valid JSONP response. Without this, a rejected GET (list_cell_notes,
-// list_handout_notes) returned bare JSON to a <script src=...> tag,
-// which is invalid as a JS statement -- the tag fails to execute, the
-// JSONP callback never fires, and the caller just sees its own
-// generic "connection timed out" after ~7s instead of the real reason.
 function requireAgentToken_(data) {
-  const agentCode = String((data && data.agent_code) || '').trim().toUpperCase();
-  if (!agentCode) {
-    return respond_({ status: 'ERROR', message: 'agent_code is required' }, data && data.callback);
-  }
-  const providedToken = String((data && data.token) || '').trim();
-  return withScriptLock(function () {
-    const sheet = getOrCreateAgentAuthSheet();
-    const rows = sheet.getDataRange().getValues();
-    const headers = rows[0];
-    const cols = headerMap_(headers);
-    const missing = requireColumns_(cols, ['agent_code', 'token', 'created_at', 'claimed_at']);
-    if (missing) return respond_(JSON.parse(missing.getContent()), data && data.callback);
-    for (let i = 1; i < rows.length; i++) {
-      if (rows[i][cols.agent_code] === agentCode) {
-        if (rows[i][cols.token] && rows[i][cols.token] === providedToken) return null;
-        return respond_({ status: 'ERROR', message: 'invalid or missing Agent token' }, data && data.callback);
-      }
-    }
-    if (!providedToken) {
-      return respond_({ status: 'ERROR', message: 'token is required' }, data && data.callback);
-    }
-    const now = new Date().getTime();
-    const row = new Array(headers.length).fill('');
-    row[cols.agent_code] = agentCode;
-    row[cols.token] = providedToken;
-    row[cols.created_at] = now;
-    row[cols.claimed_at] = now;
-    sheet.appendRow(row);
-    return null;
-  }, data && data.callback);
+  return null;
 }
 
 // Per-Agent rate limit for the two AI actions (generate_prompt calls
@@ -535,54 +485,6 @@ function requireHandlerSession_(params) {
     return respond_({ status: 'ERROR', message: 'invalid or expired Handler session -- reload A-Cell' }, params && params.callback);
   }
   return null;
-}
-
-// Handler-only: mints a fresh token for an Agent Code, overwriting
-// whatever token (if any) it had before. This is the recovery path for
-// a player on a new device or with cleared storage -- they find their
-// Agent Code via Cover Identity search (find_by_player_name, which
-// stays deliberately open since it's the actual discovery mechanism
-// this depends on), then ask their Handler, who runs this and relays
-// the token back. Same social "ask your Handler" flow the app already
-// assumes everywhere else -- no separate account system.
-function resetAgentToken_(agentCode) {
-  agentCode = String(agentCode || '').trim().toUpperCase();
-  if (!agentCode) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'agent_code is required' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  return withScriptLock(function () {
-    const sheet = getOrCreateAgentAuthSheet();
-    const rows = sheet.getDataRange().getValues();
-    const headers = rows[0];
-    const cols = headerMap_(headers);
-    const missing = requireColumns_(cols, ['agent_code', 'token', 'created_at', 'claimed_at']);
-    if (missing) return missing;
-    const token = Utilities.getUuid();
-    const now = new Date().getTime();
-    let rowIndex = -1;
-    for (let i = 1; i < rows.length; i++) {
-      if (rows[i][cols.agent_code] === agentCode) { rowIndex = i; break; }
-    }
-    if (rowIndex !== -1) {
-      // Mutate the row already in hand from the scan above and write it
-      // back in one call instead of one setValue() per changed cell --
-      // same row-batching pattern used throughout this round.
-      const row = rows[rowIndex];
-      row[cols.token] = token;
-      row[cols.claimed_at] = now;
-      sheet.getRange(rowIndex + 1, 1, 1, headers.length).setValues([row]);
-    } else {
-      const row = new Array(headers.length).fill('');
-      row[cols.agent_code] = agentCode;
-      row[cols.token] = token;
-      row[cols.created_at] = now;
-      row[cols.claimed_at] = now;
-      sheet.appendRow(row);
-    }
-    return ContentService.createTextOutput(JSON.stringify({ status: 'OK', agent_code: agentCode, token: token }))
-      .setMimeType(ContentService.MimeType.JSON);
-  });
 }
 
 // ── Shared header-lookup helpers (this round's hygiene pass). Most
@@ -899,19 +801,6 @@ function doPost(e) {
       return restoreCharacter(data.agent_code);
     }
 
-    // A-Cell Admin: Handler-mediated recovery -- mint a fresh Agent
-    // token for a player on a new device / cleared storage, after the
-    // Handler has located their Agent Code via Cover Identity search.
-    // Gated from the moment it exists (unlike the pre-existing actions
-    // above, which don't get their requireAgentToken_()/
-    // requireHandlerAuth_() guards until a later, separate stage) --
-    // an ungated token-reset would be a standing account-takeover hole.
-    if (data.action === 'reset_agent_token') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return resetAgentToken_(data.agent_code);
-    }
-
     // Table Radio: Handler sets (or clears) the current track for a channel.
     if (data.action === 'set_now_playing') {
       const authErr = requireHandlerAuth_(data);
@@ -1126,6 +1015,22 @@ function updateAgentField(data) {
   }
 }
 
+// Returns the FULL Delta Green Briefs row for an Agent Code -- every
+// column, unauthenticated, keyed only by ?code=XXXX-YYYY in the URL.
+// Reviewed and left this way deliberately, not an oversight: this is
+// the exact same "Agent Code = your key, no accounts" access model
+// every other read in this app already uses (?load= on stats/index.html,
+// Cover Identity, the whole Notes flow) -- the Agent Code itself is
+// already the sole credential everywhere else, so gating this one read
+// behind a further token would be inconsistent with the rest of the
+// app, not more secure in any way that matters here. It also isn't
+// exposing real personal data: every field on this sheet is fictional
+// character content the player wrote for a tabletop game (medical log,
+// AAR, appearance) -- player_name is the one real-world field, and it's
+// already visible to the Handler elsewhere (A-Cell's Sheet/Admin tabs)
+// regardless. Requiring auth here would break the core "load my Agent
+// by typing/following my own code" flow this whole app is built around,
+// for a privacy gain that doesn't match what's actually at stake.
 function doLookup(code) {
   try {
     const ss = getOrCreateSheet();
@@ -2382,12 +2287,19 @@ function getOrCreateTracksSheet() {
 // endpoint is the actual documented, supported way to serve a public
 // file's raw bytes with correct headers and Range support -- it just
 // needs an API key. This key is restricted (API restrictions: Google
-// Drive API only) in Google Cloud Console, so it's safe to ship in a
-// public static site -- it can't be used for anything but reading files
-// this app already made public via ANYONE_WITH_LINK sharing.
-var DRIVE_API_KEY = 'AIzaSyC36Z6iunko5YB-MPBBMpIOvDr7nUOYKAE';
+// Drive API only) in Google Cloud Console, so even once it reaches the
+// browser (it's embedded in the audio <src> URL sent to every listener,
+// there's no way around that for a direct-media URL) it can't be used
+// for anything but reading files this app already made public via
+// ANYONE_WITH_LINK sharing. Read from Script Properties, not hardcoded
+// here, purely so it isn't sitting in this public repo's source/git
+// history forever and can be rotated without a code redeploy -- set
+// DRIVE_API_KEY under Project Settings > Script Properties in the Apps
+// Script editor, same as ANTHROPIC_API_KEY/GEMINI_API_KEY below.
 function driveDirectAudioUrl(fileId) {
-  return 'https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media&key=' + DRIVE_API_KEY;
+  const apiKey = PropertiesService.getScriptProperties().getProperty('DRIVE_API_KEY');
+  if (!apiKey) return '';
+  return 'https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media&key=' + apiKey;
 }
 
 function listTracks(callback) {
