@@ -529,6 +529,7 @@
     background:var(--tab-inactive); border:1px solid var(--rule); padding:8px 10px; white-space:nowrap;
   }
   .sheet-table td{ border:1px solid var(--paper-line); padding:7px 10px; color:var(--ink); white-space:nowrap; }
+  .sheet-table td:last-child{ white-space:normal; }
   .sheet-table tr:nth-child(even) td{ background:rgba(28,22,8,.035); }
   .sheet-table td.sheet-empty-cell{ color:var(--ink-3); font-style:italic; }
   .sheet-pn-display{ cursor:pointer; border-bottom:1px dashed var(--rule); }
@@ -561,18 +562,8 @@
      the backend permanently purges it (see purgeOldDeleted() in
      backend/Code.gs). Everything here is styled with --red to read as
      clearly destructive against the rest of the paper-toned UI. ── */
-  .admin-toolbar{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
-  .admin-copy{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.85; max-width:60ch; margin-bottom:var(--s3); }
   .admin-deleted-hint{ text-transform:none; letter-spacing:normal; font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); }
   .admin-status{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); min-height:1.4em; margin-bottom:10px; }
-  .admin-list{ display:flex; flex-direction:column; gap:8px; }
-  .admin-row{
-    background:rgba(28,22,8,.04); border:1px solid var(--rule); border-left:3px solid var(--red);
-    padding:12px 16px;
-  }
-  .admin-row-top{ display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
-  .admin-row-info .name{ font-family:'Special Elite',monospace; font-size:14px; color:var(--ink); }
-  .admin-row-info .meta{ font-size:11px; color:var(--ink-3); margin-top:2px; font-family:'Courier Prime',monospace; }
   .admin-delete-btn{ border-color:var(--red); color:var(--red); }
   .admin-delete-btn:hover{ background:var(--red); color:var(--paper); }
   .admin-confirm{ margin-top:12px; padding-top:12px; border-top:1px dotted var(--rule); }
@@ -585,10 +576,6 @@
   .admin-confirm input:focus{ outline:none; }
   .admin-confirm-actions{ display:flex; gap:8px; flex-wrap:wrap; }
   .admin-confirm-error{ color:var(--red); font-size:11px; margin:0 0 8px; min-height:1.3em; }
-  .admin-loading, .admin-error{
-    color:var(--ink-3); font-size:13px; font-style:italic; text-align:center; padding:26px 10px;
-    background:var(--paper); box-shadow:var(--paper-shadow); font-family:'Courier Prime',monospace;
-  }
   .admin-deleted-list{ display:flex; flex-direction:column; gap:8px; }
   .admin-deleted-row{
     display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap;
@@ -636,7 +623,6 @@
       <div class="tw inactive" data-tab="handouts"><span>Handouts</span></div>
       <div class="tw inactive" data-tab="sheet"><span>Sheet</span></div>
       <div class="tw inactive" data-tab="music"><span>Music</span></div>
-      <div class="tw inactive" data-tab="admin"><span>Admin</span></div>
     </div>
     <div class="folder-body">
 
@@ -687,9 +673,12 @@
           <button type="button" class="paper-btn" id="sheet-refresh-btn">Refresh</button>
           <span class="play-refresh-note" id="sheet-refresh-note"></span>
         </div>
+        <div class="admin-status" id="sheet-status"></div>
         <div class="sheet-wrap" id="sheet-wrap">
           <div class="play-loading">Loading agents…</div>
         </div>
+        <div class="pv-sec-hd">Recently Deleted <span class="admin-deleted-hint">(purged after 24 hours)</span></div>
+        <div class="admin-deleted-list" id="admin-deleted-list"></div>
       </div>
 
       <div class="tab-panel" id="panel-music">
@@ -745,24 +734,6 @@
             </div>
           </div>
         </div>
-      </div>
-
-      <div class="tab-panel" id="panel-admin">
-        <div class="admin-toolbar">
-          <button type="button" class="paper-btn" id="admin-refresh-btn">Refresh</button>
-          <span class="play-refresh-note" id="admin-refresh-note"></span>
-        </div>
-        <p class="admin-copy">Remove an Agent from the Google Sheet -- moves their character sheet AND their Agent File / Field ID submission to a recoverable archive below, restorable for 24 hours before it's permanently purged. Deleting requires the A-Cell password.</p>
-        <div class="admin-status" id="admin-status"></div>
-        <div class="admin-list" id="admin-list">
-          <div class="admin-loading">Loading agents…</div>
-        </div>
-        <div class="pv-sec-hd">Agent File Only <span class="admin-deleted-hint">(no character sheet -- not shown above)</span></div>
-        <div class="admin-list" id="admin-briefs-list">
-          <div class="admin-loading">Loading…</div>
-        </div>
-        <div class="pv-sec-hd">Recently Deleted <span class="admin-deleted-hint">(purged after 24 hours)</span></div>
-        <div class="admin-deleted-list" id="admin-deleted-list"></div>
       </div>
 
     </div>
@@ -1047,6 +1018,13 @@
   var characters = [];
   var cells = [];
   var selectedCode = null;
+  // Full character JSON (skills/equipment/bonds/etc.) for whichever
+  // Agents have actually been opened this session -- list_characters
+  // only ever sends the summary fields renderList()/renderDashboard()
+  // need (see its own comment in Code.gs); renderView()'s full detail
+  // is fetched on demand via load_character and cached here so
+  // re-selecting the same Agent doesn't refetch it.
+  var fullStateCache = {};
 
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -1074,11 +1052,24 @@
           (res && res.message ? ' (' + escapeHtml(res.message) + ')' : '') + '</div>';
         return;
       }
+      // list_characters now sends a flat summary, not the full
+      // character_json -- reshaped into the same {bio, derived} state
+      // shape the old full blob had so renderList()/renderDashboard()
+      // (which only ever read bio.name/profession and derived vitals)
+      // work completely unchanged. renderView()'s full-detail view is
+      // the one place that needs more than this and fetches it
+      // separately -- see fullStateCache above.
       allCharacters = res.characters.map(function (c) {
-        var state = null;
-        try { state = JSON.parse(c.character_json); } catch (e) { /* skip unparsable rows */ }
-        return { code: c.agent_code, state: state };
-      }).filter(function (c) { return c.code && c.state; });
+        if (!c.agent_code) return null;
+        return {
+          code: c.agent_code,
+          updatedAt: c.updated_at,
+          state: {
+            bio: { name: c.name, profession: c.profession, nationality: c.nationality, player_name: c.player_name },
+            derived: { hp: c.hp, wp: c.wp, san: c.san, bp: c.bp }
+          }
+        };
+      }).filter(Boolean);
       applyFilter();
       refreshNote.textContent = 'Updated ' + new Date().toLocaleTimeString();
     };
@@ -1163,8 +1154,7 @@
         Array.prototype.forEach.call(listEl.querySelectorAll('.play-agent-btn'), function (b) { b.classList.remove('active'); });
         btn.classList.add('active');
         var c = characters[parseInt(btn.dataset.i, 10)];
-        selectedCode = c.code;
-        renderView(c);
+        openAgent(c);
       });
     });
     // Refresh (not a first load) or a Cell filter change: if the
@@ -1175,7 +1165,11 @@
     if (selectedCode) {
       var stillThere = characters.find(function (c) { return c.code === selectedCode; });
       if (stillThere) {
-        renderView(stillThere);
+        // A Refresh may mean their vitals changed -- drop any cached
+        // full sheet so this re-open re-fetches instead of showing
+        // stale HP/skills under freshly-updated summary vitals.
+        delete fullStateCache[stillThere.code];
+        openAgent(stillThere);
       } else {
         selectedCode = null;
         renderEmptyOrDashboard();
@@ -1222,13 +1216,53 @@
       row.addEventListener('click', function () {
         var c = characters[parseInt(row.dataset.i, 10)];
         if (!c) return;
-        selectedCode = c.code;
         Array.prototype.forEach.call(listEl.querySelectorAll('.play-agent-btn'), function (b) {
           b.classList.toggle('active', b.dataset.i === row.dataset.i);
         });
-        renderView(c);
+        openAgent(c);
       });
     });
+  }
+
+  // Opens one Agent's full detail view. list_characters only ever sent
+  // the summary fields (see its own comment in Code.gs) -- the full
+  // character sheet (skills/equipment/bonds/etc.) is fetched here via
+  // the existing load_character action, the same targeted single-row
+  // read that already fixed the ?load= 8-10s lag elsewhere in this app.
+  // Cached per Agent Code so switching back to someone already opened
+  // this session is instant, no re-fetch.
+  function openAgent(c) {
+    selectedCode = c.code;
+    if (fullStateCache[c.code]) {
+      renderView(c.code, fullStateCache[c.code]);
+      return;
+    }
+    viewEl.innerHTML = '<div class="play-view-empty">Loading…</div>';
+    var cbName = '_acellPlayFull_' + c.code.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
+    var timer = setTimeout(function () {
+      delete window[cbName];
+      if (selectedCode === c.code) viewEl.innerHTML = '<div class="play-view-empty">Could not load this Agent’s full sheet.</div>';
+    }, 7000);
+    window[cbName] = function (res) {
+      clearTimeout(timer);
+      delete window[cbName];
+      var s = document.getElementById('s-' + cbName);
+      if (s) s.remove();
+      if (selectedCode !== c.code) return; // a different Agent was opened while this was in flight
+      var full = null;
+      try { full = (res && res.status === 'OK') ? JSON.parse(res.character_json) : null; } catch (e) { full = null; }
+      if (!full) {
+        viewEl.innerHTML = '<div class="play-view-empty">Could not load this Agent’s full sheet.' +
+          (res && res.message ? ' (' + escapeHtml(res.message) + ')' : '') + '</div>';
+        return;
+      }
+      fullStateCache[c.code] = full;
+      renderView(c.code, full);
+    };
+    var s = document.createElement('script');
+    s.id = 's-' + cbName;
+    s.src = APPS_SCRIPT_URL + '?action=load_character&code=' + encodeURIComponent(c.code) + '&callback=' + cbName;
+    document.head.appendChild(s);
   }
 
   // Best-effort photo lookup: character_json (Characters sheet, via
@@ -1263,8 +1297,7 @@
     document.head.appendChild(s);
   }
 
-  function renderView(c) {
-    var st = c.state;
+  function renderView(code, st) {
     var bio = st.bio || {};
     var stats = st.csStats || st.stats || {};
     var derived = st.derived || {};
@@ -1300,8 +1333,8 @@
       return arr.map(function (checked) { return checked ? '[X]' : '[ ]'; }).join(' ');
     }
 
-    var photoId = 'pv-photo-' + c.code;
-    var subParts = [c.code, bio.profession, bio.nationality].filter(Boolean).map(escapeHtml);
+    var photoId = 'pv-photo-' + code;
+    var subParts = [code, bio.profession, bio.nationality].filter(Boolean).map(escapeHtml);
     // KIA: a live read of the last-saved HP, not a separate persisted
     // flag -- heal the Agent back above 0 and this clears on its own
     // next time this view renders.
@@ -1337,7 +1370,7 @@
       '<div class="pv-adapt-row"><span class="lbl">Helplessness</span><span class="pv-adapt-boxes">' + adaptBoxes(sanity.helplessness) + '</span></div>' +
       '</details>';
 
-    loadPlayPhoto(c.code, photoId);
+    loadPlayPhoto(code, photoId);
   }
 
   refreshBtn.addEventListener('click', function () { fetchList(); fetchCells(); });
@@ -1441,11 +1474,11 @@
     jsonpGet('list_characters', {}, function (res) {
       agentsDone = true;
       if (res && res.status === 'OK' && Array.isArray(res.characters)) {
+        // list_characters sends a flat summary (name/etc.), not each
+        // Agent's full character_json -- see listCharacters()'s own
+        // comment in Code.gs. This tab only ever needed the name.
         agents = res.characters.map(function (c) {
-          var state = null;
-          try { state = JSON.parse(c.character_json); } catch (e) { /* skip unparsable rows */ }
-          var bio = (state && state.bio) || {};
-          return { code: c.agent_code, name: bio.name || c.agent_code };
+          return { code: c.agent_code, name: c.name || c.agent_code };
         }).filter(function (a) { return a.code; });
         agentsByCode = {};
         agents.forEach(function (a) { agentsByCode[a.code] = a; });
@@ -1942,14 +1975,29 @@
 
 <script>
 /* ══════════════════════════════════════════════
-   SHEET -- a dense, spreadsheet-style read-only roster table: Cell,
-   Handler, Agent Name, Player Name, HP, SAN, and a rough "Online"
-   presence indicator. Cell/Handler now come from real Cell group
-   membership (list_cells) rather than a per-Agent tag -- an Agent in
-   more than one Cell shows all of them, comma-separated; an Agent in
-   none shows an em dash, same as any other empty cell. "Online" isn't
-   a real presence system (no heartbeat/websocket) -- it's a proxy
-   from how recently Cloud Save last pushed for that Agent
+   SHEET -- merged with the former Admin tab: one dense, spreadsheet-
+   style roster table (Cell, Handler, Agent Name, Player Name, HP, SAN,
+   Online) that's ALSO where an Agent gets deleted, right on their own
+   row, instead of a separate Admin tab re-fetching the same roster a
+   second time just to list it again with a Delete button. An Agent
+   File / Profiling brief with no character sheet yet (list_agent_file_
+   only -- invisible to list_characters) shows as its own row here too,
+   with dashes for the columns it has no data for, rather than a
+   separate section. Recently Deleted lives below the table, restorable
+   for 24 hours before the backend permanently purges it
+   (purgeOldDeleted() in Code.gs).
+
+   Four fetches (list_characters, list_cells, list_agent_file_only,
+   list_deleted_characters) render together, once -- one wait, not the
+   old Sheet tab's two plus Admin's separate three (one of which,
+   list_characters, both tabs used to fetch independently on every
+   visit to either). list_characters itself is now a summary
+   (name/player name/HP/SAN), not each Agent's entire character sheet
+   -- see its own comment in Code.gs for why that was the real cause of
+   this tab feeling slow as the roster grows.
+
+   "Online" isn't a real presence system (no heartbeat/websocket) --
+   it's a proxy from how recently Cloud Save last pushed for that Agent
    (updated_at): a player actively editing their sheet pushes every
    ~4s, so a fresh updated_at is a reasonable stand-in for "at the
    table right now."
@@ -1957,20 +2005,20 @@
 (function () {
   "use strict";
   var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
+  var ACELL_PASSWORD = 'MASTICATE';
   var ONLINE_MS = 5 * 60 * 1000;
   var RECENT_MS = 30 * 60 * 1000;
+  var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm the delete. Check that Code.gs is pasted into Apps Script and redeployed.';
+  var RESTORE_NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm the restore. Check that Code.gs is pasted into Apps Script and redeployed.';
 
   var wrap = document.getElementById('sheet-wrap');
   var refreshBtn = document.getElementById('sheet-refresh-btn');
   var refreshNote = document.getElementById('sheet-refresh-note');
-  // Player Name is the Cover Identity lookup key (agent-hub.html) -- an
-  // Agent saved before that field existed, or by a player who skipped
-  // it, has no way to be found by name later. This is the fallback the
-  // Handler uses to fill it in by hand. Keyed by agent_code so an edit
-  // can re-save that exact row's full character_json (not just the one
-  // field) through the same save_character action stats/ already uses --
-  // there's no separate single-field write for the Characters sheet.
-  var currentRowsByCode = {};
+  var statusEl = document.getElementById('sheet-status');
+  var deletedListEl = document.getElementById('admin-deleted-list');
+
+  var rows = []; // live rows: Characters-backed + Agent-File-only, merged
+  var deletedAgents = [];
 
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -2041,13 +2089,14 @@
     document.head.appendChild(s);
   }
 
-  function fetchSheet() {
+  function fetchAll(isRefresh) {
     refreshBtn.disabled = true;
-    var charsDone = false, cellsDone = false, charsOk = false, cellsOk = false;
-    var characters = [], cellGroups = [];
+    var charsDone = false, cellsDone = false, briefsDone = false;
+    var charsOk = false, cellsOk = false, briefsOk = false;
+    var characters = [], cellGroups = [], briefsOnly = [];
 
     function maybeRender() {
-      if (!charsDone || !cellsDone) return;
+      if (!charsDone || !cellsDone || !briefsDone) return;
       refreshBtn.disabled = false;
       if (!charsOk) {
         wrap.innerHTML = '<div class="sheet-error">Could not load the roster. (The A-Cell backend addition may not be deployed yet.)</div>';
@@ -2065,20 +2114,25 @@
           });
         });
       }
-      var rows = characters.map(function (c) {
-        var state = null;
-        try { state = JSON.parse(c.character_json); } catch (e) { /* skip unparsable rows */ }
+      var charRows = characters.map(function (c) {
         var memberOf = cellsByAgent[c.agent_code] || [];
         return {
-          code: c.agent_code, state: state, updated_at: c.updated_at,
+          code: c.agent_code, isBriefsOnly: false,
+          name: c.name, playerName: c.player_name, hp: c.hp, san: c.san, updatedAt: c.updated_at,
           cellNames: memberOf.map(function (m) { return m.name; }).join(', '),
-          handlers: Array.from(new Set(memberOf.map(function (m) { return m.handler; }).filter(Boolean))).join(', '),
+          handlers: Array.from(new Set(memberOf.map(function (m) { return m.handler; }).filter(Boolean))).join(', ')
         };
-      }).filter(function (r) { return r.code && r.state; });
-      currentRowsByCode = {};
-      rows.forEach(function (r) { currentRowsByCode[r.code] = r; });
-      renderSheet(rows);
-      refreshNote.textContent = 'Updated ' + new Date().toLocaleTimeString();
+      });
+      var briefsRows = briefsOk ? briefsOnly.map(function (a) {
+        return {
+          code: a.agent_code, isBriefsOnly: true,
+          name: a.char_name || a.agent_code, playerName: '', hp: null, san: null, updatedAt: '',
+          cellNames: '', handlers: ''
+        };
+      }) : [];
+      rows = charRows.concat(briefsRows);
+      renderSheet();
+      if (isRefresh) refreshNote.textContent = 'Updated ' + new Date().toLocaleTimeString();
     }
 
     jsonpGet('list_characters', {}, function (res) {
@@ -2091,44 +2145,49 @@
       if (res && res.status === 'OK' && Array.isArray(res.cells)) { cellGroups = res.cells; cellsOk = true; }
       maybeRender();
     });
+    jsonpGet('list_agent_file_only', {}, function (res) {
+      briefsDone = true;
+      if (res && res.status === 'OK' && Array.isArray(res.agents)) { briefsOnly = res.agents; briefsOk = true; }
+      maybeRender();
+    });
   }
 
-  function renderSheet(rows) {
+  function renderSheet() {
     if (!rows.length) {
       wrap.innerHTML = '<div class="sheet-error">No Agents on file yet.</div>';
       return;
     }
-    var body = rows.map(function (r) {
-      var bio = r.state.bio || {};
-      var derived = r.state.derived || {};
-      // KIA: a live read of the last-saved HP, not a separate persisted
-      // flag -- heal the Agent back above 0 and this clears on its own
-      // next Refresh.
-      var kia = typeof derived.hp === 'number' && derived.hp <= 0;
+    var body = rows.map(function (r, i) {
+      var kia = typeof r.hp === 'number' && r.hp <= 0;
       return '<tr>' +
         '<td>' + cell(r.cellNames) + '</td>' +
         '<td>' + cell(r.handlers) + '</td>' +
-        '<td>' + (kia ? '<span class="kia-name">' + cell(bio.name) + '</span>' : cell(bio.name)) + (kia ? ' <span class="sheet-kia-badge">KIA</span>' : '') + '</td>' +
-        '<td>' + playerNameCell(bio.player_name, r.code) + '</td>' +
-        '<td>' + numCell(derived.hp) + '</td>' +
-        '<td>' + numCell(derived.san) + '</td>' +
-        '<td>' + onlineCell(r.updated_at) + '</td>' +
+        '<td>' + (kia ? '<span class="kia-name">' + cell(r.name) + '</span>' : cell(r.name)) + (kia ? ' <span class="sheet-kia-badge">KIA</span>' : '') + '</td>' +
+        '<td>' + playerNameCell(r.playerName, r.code) + '</td>' +
+        '<td>' + numCell(r.hp) + '</td>' +
+        '<td>' + numCell(r.san) + '</td>' +
+        '<td>' + (r.isBriefsOnly ? '<span class="sheet-empty-cell" title="No character sheet yet">&mdash;</span>' : onlineCell(r.updatedAt)) + '</td>' +
+        '<td><button type="button" class="paper-btn sheet-delete-btn" data-i="' + i + '">Delete</button>' +
+        '<div class="admin-confirm-slot" id="sheet-confirm-slot-' + i + '"></div></td>' +
         '</tr>';
     }).join('');
     wrap.innerHTML =
       '<table class="sheet-table"><thead><tr>' +
-      '<th>Cell</th><th>Handler</th><th>Agent Name</th><th>Player Name</th><th>HP</th><th>SAN</th><th>Online</th>' +
+      '<th>Cell</th><th>Handler</th><th>Agent Name</th><th>Player Name</th><th>HP</th><th>SAN</th><th>Online</th><th></th>' +
       '</tr></thead><tbody>' + body + '</tbody></table>';
     Array.prototype.forEach.call(wrap.querySelectorAll('.sheet-pn-display'), function (span) {
       span.addEventListener('click', function () { startEditPlayerName(span); });
+    });
+    Array.prototype.forEach.call(wrap.querySelectorAll('.sheet-delete-btn'), function (btn) {
+      btn.addEventListener('click', function () { openConfirm(parseInt(btn.dataset.i, 10)); });
     });
   }
 
   function startEditPlayerName(span) {
     var code = span.dataset.code;
-    var row = currentRowsByCode[code];
-    if (!row || !row.state) return;
-    var current = (row.state.bio || {}).player_name || '';
+    var row = rows.find(function (r) { return r.code === code; });
+    if (!row) return;
+    var current = row.playerName || '';
     var input = document.createElement('input');
     input.type = 'text';
     input.className = 'sheet-pn-input';
@@ -2141,43 +2200,176 @@
     function commit() {
       if (settled) return;
       settled = true;
-      savePlayerName(code, input.value.trim());
+      savePlayerName(row, input.value.trim());
     }
     input.addEventListener('blur', commit);
     input.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
-      else if (e.key === 'Escape') { settled = true; fetchSheet(); }
+      else if (e.key === 'Escape') { settled = true; fetchAll(); }
     });
   }
 
-  // Re-saves this Agent's full character_json (with only player_name
-  // changed) through the same save_character action stats/cloud-sync.js
-  // already uses -- there's no separate single-field write for the
-  // Characters sheet, and the row's state here is already a full,
-  // recently-fetched copy (list_characters), so nothing else is lost.
-  // Same "trust the POST, refresh to confirm" weight as everything else
-  // in this Sheet tab, not the heavier verified-write pattern used for
-  // shared campaign state like Cells/Handouts.
-  function savePlayerName(code, value) {
-    var row = currentRowsByCode[code];
-    if (!row || !row.state) { fetchSheet(); return; }
-    row.state.bio = row.state.bio || {};
-    row.state.bio.player_name = value;
+  // A single targeted column write (update_character_field for a
+  // Characters row, or update_field for an Agent-File-only row -- those
+  // have no Characters row yet, Player Name only lives on the Briefs
+  // sheet for them) instead of the old approach, which had to re-send
+  // the Agent's ENTIRE character_json just to change this one field --
+  // see updateCharacterField()'s own comment in Code.gs.
+  function savePlayerName(row, value) {
+    row.playerName = value;
+    var body = row.isBriefsOnly
+      ? { action: 'update_field', agent_code: row.code, field: 'player_name', value: value }
+      : { action: 'update_character_field', agent_code: row.code, field: 'player_name', value: value, handler_password: sessionStorage.getItem('dg_acell_pw') || '' };
     fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors', keepalive: true,
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        action: 'save_character',
-        agent_code: code,
-        character_json: JSON.stringify(row.state),
-        player_name: value,
-        handler_password: sessionStorage.getItem('dg_acell_pw') || '',
-      }),
-    }).then(function () { fetchSheet(); }).catch(function () { fetchSheet(); });
+      body: JSON.stringify(body),
+    }).then(function () { fetchAll(); }).catch(function () { fetchAll(); });
   }
 
-  refreshBtn.addEventListener('click', fetchSheet);
-  fetchSheet();
+  function openConfirm(i) {
+    var row = rows[i];
+    var slot = document.getElementById('sheet-confirm-slot-' + i);
+    if (!row || !slot) return;
+    if (slot.childNodes.length) { slot.innerHTML = ''; return; } // toggle closed
+    renderDeleteConfirm(slot, row, i);
+  }
+
+  // Single confirmation, not two -- the A-Cell password gate already
+  // establishes this is the Handler (the same gate the whole page sits
+  // behind), so a second "type this Agent's own name" step on top of it
+  // was redundant friction, not real extra safety. The password prompt
+  // still names the Agent being deleted, and the delete itself is a
+  // soft-delete (Recently Deleted, restorable) either way.
+  function renderDeleteConfirm(slot, row, i) {
+    slot.innerHTML =
+      '<div class="admin-confirm">' +
+      '<p>Enter the A-Cell password to delete <b>' + escapeHtml(row.name) + '</b> (moves to Recently Deleted, restorable for 24 hours):</p>' +
+      '<div class="admin-confirm-error" id="sheet-confirm-err-' + i + '"></div>' +
+      '<input type="password" id="sheet-pw-input-' + i + '" placeholder="A-Cell password" autocomplete="off">' +
+      '<div class="admin-confirm-actions">' +
+      '<button type="button" class="paper-btn admin-delete-btn" id="sheet-delete-confirm-btn-' + i + '">Delete Agent</button>' +
+      '<button type="button" class="paper-btn" id="sheet-confirm-cancel-' + i + '">Cancel</button>' +
+      '</div></div>';
+    document.getElementById('sheet-confirm-cancel-' + i).addEventListener('click', function () { slot.innerHTML = ''; });
+    document.getElementById('sheet-delete-confirm-btn-' + i).addEventListener('click', function () {
+      var input = document.getElementById('sheet-pw-input-' + i);
+      var errEl = document.getElementById('sheet-confirm-err-' + i);
+      if (input.value !== ACELL_PASSWORD) {
+        errEl.textContent = 'Wrong password.';
+        return;
+      }
+      doDelete(row, slot);
+    });
+  }
+
+  function doDelete(row, slot) {
+    slot.innerHTML = '<div class="admin-confirm"><p>Deleting…</p></div>';
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors', keepalive: true,
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'delete_character', agent_code: row.code, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+    }).then(function () {
+      setTimeout(function () { verifyDelete(row, slot); }, 900);
+    }).catch(function () {
+      slot.innerHTML = '<div class="admin-confirm"><p class="admin-confirm-error">Could not reach the backend.</p></div>';
+    });
+  }
+
+  function verifyDelete(row, slot) {
+    var action = row.isBriefsOnly ? 'list_agent_file_only' : 'list_characters';
+    var listKey = row.isBriefsOnly ? 'agents' : 'characters';
+    jsonpGet(action, {}, function (res) {
+      var stillThere = res && res.status === 'OK' && Array.isArray(res[listKey]) &&
+        res[listKey].some(function (c) { return c.agent_code === row.code; });
+      if (stillThere) {
+        slot.innerHTML = '<div class="admin-confirm"><p class="admin-confirm-error">' + NOT_DEPLOYED_MSG + '</p></div>';
+        return;
+      }
+      statusEl.textContent = 'Deleted ' + row.name + '. Restore it within 24 hours from Recently Deleted below.';
+      fetchAll();
+      fetchDeleted();
+    });
+  }
+
+  // ── Recently Deleted -- lists both delete paths (a Characters row,
+  // via DeletedCharacters, or an Agent-File-only row, via DeletedBriefs
+  // -- see listDeletedCharacters() in Code.gs) in one feed. ──
+  function fetchDeleted() {
+    jsonpGet('list_deleted_characters', {}, function (res) {
+      if (!res || res.status !== 'OK' || !Array.isArray(res.characters)) {
+        deletedListEl.innerHTML = '';
+        return;
+      }
+      deletedAgents = res.characters.map(function (c) {
+        var state = null;
+        try { state = JSON.parse(c.character_json); } catch (e) { /* skip unparsable rows */ }
+        // char_name is only present for an Agent-File-only delete (no
+        // character sheet, so no character_json to read a name out of
+        // -- see listDeletedCharacters()'s DeletedBriefs half).
+        return { code: c.agent_code, state: state, char_name: c.char_name || '', deleted_at: c.deleted_at };
+      }).filter(function (c) { return c.code; });
+      renderDeletedList();
+    });
+  }
+
+  function renderDeletedList() {
+    if (!deletedAgents.length) {
+      deletedListEl.innerHTML = '<div class="cells-empty-note">Nothing deleted yet.</div>';
+      return;
+    }
+    deletedListEl.innerHTML = deletedAgents.map(function (a, i) {
+      var bio = (a.state && a.state.bio) || {};
+      var name = bio.name || a.char_name || a.code;
+      var when = a.deleted_at ? new Date(Number(a.deleted_at)).toLocaleString() : '';
+      return '<div class="admin-deleted-row" data-i="' + i + '">' +
+        '<div><div class="name">' + escapeHtml(name) + '</div><div class="meta">' + escapeHtml(a.code) + (when ? ' &middot; deleted ' + escapeHtml(when) : '') + '</div></div>' +
+        '<button type="button" class="paper-btn admin-restore-btn" data-i="' + i + '">Restore</button>' +
+        '</div>';
+    }).join('');
+    Array.prototype.forEach.call(deletedListEl.querySelectorAll('.admin-restore-btn'), function (btn) {
+      btn.addEventListener('click', function () { doRestore(parseInt(btn.dataset.i, 10)); });
+    });
+  }
+
+  function doRestore(i) {
+    var agent = deletedAgents[i];
+    if (!agent) return;
+    statusEl.textContent = 'Restoring…';
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors', keepalive: true,
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'restore_character', agent_code: agent.code, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+    }).then(function () {
+      setTimeout(function () { verifyRestore(agent); }, 900);
+    }).catch(function () {
+      statusEl.textContent = 'Could not reach the backend.';
+    });
+  }
+
+  function verifyRestore(agent) {
+    // An Agent-File-only delete (agent.state is null -- see fetchDeleted()
+    // above) never had a Characters row to restore, so list_characters
+    // would never confirm it -- check list_agent_file_only instead.
+    var action = agent.state ? 'list_characters' : 'list_agent_file_only';
+    var listKey = agent.state ? 'characters' : 'agents';
+    jsonpGet(action, {}, function (res) {
+      var backInRoster = res && res.status === 'OK' && Array.isArray(res[listKey]) &&
+        res[listKey].some(function (c) { return c.agent_code === agent.code; });
+      if (!backInRoster) {
+        statusEl.textContent = RESTORE_NOT_DEPLOYED_MSG;
+        return;
+      }
+      var name = (agent.state && agent.state.bio || {}).name || agent.char_name || agent.code;
+      statusEl.textContent = 'Restored ' + name + '.';
+      fetchAll();
+      fetchDeleted();
+    });
+  }
+
+  refreshBtn.addEventListener('click', function () { fetchAll(true); fetchDeleted(); });
+  fetchAll(false);
+  fetchDeleted();
 })();
 </script>
 
@@ -2688,351 +2880,6 @@
   checkCurrent();
   fetchCells();
   fetchTracks();
-})();
-</script>
-
-<script>
-/* ══════════════════════════════════════════════
-   ADMIN -- permanently delete an Agent from the Google Sheet: their
-   Characters row (character sheet) AND their Delta Green Briefs row
-   (Agent File / Cover ID submission). Gated behind two confirmations
-   so a stray click can't wipe an Agent -- first typing the Agent's
-   own name, then the A-Cell password. Both checks are client-side,
-   same "flavor gate, not real security" model as the A-Cell password
-   gate itself.
-
-   delete_character is a NEW backend action (acell-admin-delete-
-   addition.txt, handed over separately) -- like every other write in
-   this app it's a no-cors POST, so the client can't see whether it
-   actually landed; the row is only removed from view once a real
-   read-back (list_characters) confirms the Agent's code is gone.
-   ══════════════════════════════════════════════ */
-(function () {
-  "use strict";
-  var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
-  var ACELL_PASSWORD = 'MASTICATE';
-  var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm the delete. Check that the Admin addition (delete_character) is pasted into Apps Script and redeployed.';
-  var RESTORE_NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm the restore. Check that the Admin addition (restore_character / list_deleted_characters) is pasted into Apps Script and redeployed.';
-
-  var listEl = document.getElementById('admin-list');
-  var briefsListEl = document.getElementById('admin-briefs-list');
-  var deletedListEl = document.getElementById('admin-deleted-list');
-  var statusEl = document.getElementById('admin-status');
-  var refreshBtn = document.getElementById('admin-refresh-btn');
-  var refreshNote = document.getElementById('admin-refresh-note');
-  var agents = [];
-  var briefsOnlyAgents = [];
-  var deletedAgents = [];
-
-  function escapeHtml(str) {
-    if (str === null || str === undefined) return '';
-    return String(str)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
-  }
-
-  function jsonpGet(action, params, cb) {
-    var cbName = '_acellAdmin_' + action + '_' + Date.now();
-    var timer = setTimeout(function () { delete window[cbName]; cb(null); }, 7000);
-    window[cbName] = function (res) {
-      clearTimeout(timer);
-      delete window[cbName];
-      var s = document.getElementById('s-' + cbName);
-      if (s) s.remove();
-      cb(res);
-    };
-    var s = document.createElement('script');
-    s.id = 's-' + cbName;
-    var qs = 'action=' + action + '&callback=' + cbName;
-    // Admin listing reads (list_characters/list_agent_file_only/
-    // list_deleted_characters) need a Handler session -- see
-    // requireHandlerSession_() in Code.gs. Attached to every GET here
-    // rather than special-cased per action: harmless extra param for
-    // the ones that don't check it, one less thing to keep in sync
-    // across this file's several independent jsonpGet() copies.
-    var acellSession = sessionStorage.getItem('dg_acell_session');
-    if (acellSession) qs += '&handler_session=' + encodeURIComponent(acellSession);
-    Object.keys(params || {}).forEach(function (k) { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
-    s.src = APPS_SCRIPT_URL + '?' + qs;
-    document.head.appendChild(s);
-  }
-
-  function fetchList(isRefresh) {
-    jsonpGet('list_characters', {}, function (res) {
-      if (!res || res.status !== 'OK' || !Array.isArray(res.characters)) {
-        listEl.innerHTML = '<div class="admin-error">Could not load the Agent list.' +
-          (res && res.message ? ' (' + escapeHtml(res.message) + ')' : '') + '</div>';
-        return;
-      }
-      agents = res.characters.map(function (c) {
-        var state = null;
-        try { state = JSON.parse(c.character_json); } catch (e) { /* skip unparsable rows */ }
-        return { code: c.agent_code, state: state };
-      }).filter(function (c) { return c.code && c.state; });
-      renderList();
-      if (isRefresh) refreshNote.textContent = 'Updated ' + new Date().toLocaleTimeString();
-    });
-  }
-
-  function renderList() {
-    if (!agents.length) {
-      listEl.innerHTML = '<div class="admin-error">No Agents on file yet.</div>';
-      return;
-    }
-    listEl.innerHTML = agents.map(function (a, i) {
-      var bio = a.state.bio || {};
-      var name = bio.name || 'Unknown Agent';
-      var meta = [a.code, bio.profession].filter(Boolean).map(escapeHtml).join(' &middot; ');
-      return '<div class="admin-row" data-i="' + i + '">' +
-        '<div class="admin-row-top">' +
-        '<div class="admin-row-info"><div class="name">' + escapeHtml(name) + '</div><div class="meta">' + meta + '</div></div>' +
-        '<button type="button" class="paper-btn admin-delete-btn" data-i="' + i + '">Delete</button>' +
-        '</div>' +
-        '<div class="admin-confirm-slot" id="admin-confirm-slot-' + i + '"></div>' +
-        '</div>';
-    }).join('');
-
-    Array.prototype.forEach.call(listEl.querySelectorAll('.admin-delete-btn'), function (btn) {
-      btn.addEventListener('click', function () { openConfirm(parseInt(btn.dataset.i, 10)); });
-    });
-  }
-
-  function openConfirm(i) {
-    var agent = agents[i];
-    var slot = document.getElementById('admin-confirm-slot-' + i);
-    if (!agent || !slot) return;
-    if (slot.childNodes.length) { slot.innerHTML = ''; return; } // toggle closed
-    renderDeleteConfirm(slot, agent, i);
-  }
-
-  // Single confirmation, not two -- the A-Cell password gate already
-  // establishes this is the Handler (the same gate the whole page sits
-  // behind), so a second "type this Agent's own name" step on top of it
-  // was redundant friction, not real extra safety. The password prompt
-  // still names the Agent being deleted, and the delete itself is a
-  // soft-delete (Recently Deleted, restorable) either way.
-  function renderDeleteConfirm(slot, agent, i) {
-    var name = (agent.state.bio || {}).name || agent.code;
-    slot.innerHTML =
-      '<div class="admin-confirm">' +
-      '<p>Enter the A-Cell password to delete <b>' + escapeHtml(name) + '</b> (moves to Recently Deleted, restorable for 24 hours):</p>' +
-      '<div class="admin-confirm-error" id="admin-confirm-err-' + i + '"></div>' +
-      '<input type="password" id="admin-pw-input-' + i + '" placeholder="A-Cell password" autocomplete="off">' +
-      '<div class="admin-confirm-actions">' +
-      '<button type="button" class="paper-btn admin-delete-btn" id="admin-delete-confirm-btn-' + i + '">Delete Agent</button>' +
-      '<button type="button" class="paper-btn" id="admin-confirm-cancel-' + i + '">Cancel</button>' +
-      '</div></div>';
-    document.getElementById('admin-confirm-cancel-' + i).addEventListener('click', function () { slot.innerHTML = ''; });
-    document.getElementById('admin-delete-confirm-btn-' + i).addEventListener('click', function () {
-      var input = document.getElementById('admin-pw-input-' + i);
-      var errEl = document.getElementById('admin-confirm-err-' + i);
-      if (input.value !== ACELL_PASSWORD) {
-        errEl.textContent = 'Wrong password.';
-        return;
-      }
-      doDelete(agent, i, slot);
-    });
-  }
-
-  function doDelete(agent, i, slot) {
-    slot.innerHTML = '<div class="admin-confirm"><p>Deleting…</p></div>';
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors', keepalive: true,
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'delete_character', agent_code: agent.code, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
-    }).then(function () {
-      setTimeout(function () { verifyDelete(agent, i, slot); }, 900);
-    }).catch(function () {
-      slot.innerHTML = '<div class="admin-confirm"><p class="admin-confirm-error">Could not reach the backend.</p></div>';
-    });
-  }
-
-  function verifyDelete(agent, i, slot) {
-    jsonpGet('list_characters', {}, function (res) {
-      var stillThere = res && res.status === 'OK' && Array.isArray(res.characters) &&
-        res.characters.some(function (c) { return c.agent_code === agent.code; });
-      if (stillThere) {
-        slot.innerHTML = '<div class="admin-confirm"><p class="admin-confirm-error">' + NOT_DEPLOYED_MSG + '</p></div>';
-        return;
-      }
-      var name = (agent.state.bio || {}).name || agent.code;
-      agents = agents.filter(function (a) { return a.code !== agent.code; });
-      statusEl.textContent = 'Deleted ' + name + '. Restore it within 24 hours from Recently Deleted below.';
-      renderList();
-      fetchDeleted();
-    });
-  }
-
-  // ── Agent File / Profiling briefs with no character sheet yet --
-  // invisible to list_characters above, so they need their own fetch/
-  // render/delete-confirm flow (parallel to, not sharing, the one above
-  // -- these entries have a plain char_name, not a character.state.bio
-  // to read one out of). delete_character already handles a code with
-  // no Characters row correctly; it just had no list to point it at. ──
-  function fetchBriefsOnly() {
-    jsonpGet('list_agent_file_only', {}, function (res) {
-      if (!res || res.status !== 'OK' || !Array.isArray(res.agents)) {
-        briefsListEl.innerHTML = '<div class="admin-error">Could not load Agent File-only entries.</div>';
-        return;
-      }
-      briefsOnlyAgents = res.agents.map(function (a) {
-        return { code: a.agent_code, name: a.char_name || a.agent_code, codename: a.codename || '' };
-      }).filter(function (a) { return a.code; });
-      renderBriefsOnlyList();
-    });
-  }
-
-  function renderBriefsOnlyList() {
-    if (!briefsOnlyAgents.length) {
-      briefsListEl.innerHTML = '<div class="cells-empty-note">None -- every Agent File on record already has a character sheet.</div>';
-      return;
-    }
-    briefsListEl.innerHTML = briefsOnlyAgents.map(function (a, i) {
-      var meta = [a.code, a.codename].filter(Boolean).map(escapeHtml).join(' &middot; ');
-      return '<div class="admin-row" data-i="' + i + '">' +
-        '<div class="admin-row-top">' +
-        '<div class="admin-row-info"><div class="name">' + escapeHtml(a.name) + '</div><div class="meta">' + meta + '</div></div>' +
-        '<button type="button" class="paper-btn admin-delete-btn" data-i="' + i + '">Delete</button>' +
-        '</div>' +
-        '<div class="admin-confirm-slot" id="admin-briefs-confirm-slot-' + i + '"></div>' +
-        '</div>';
-    }).join('');
-    Array.prototype.forEach.call(briefsListEl.querySelectorAll('.admin-delete-btn'), function (btn) {
-      btn.addEventListener('click', function () { openBriefsConfirm(parseInt(btn.dataset.i, 10)); });
-    });
-  }
-
-  function openBriefsConfirm(i) {
-    var agent = briefsOnlyAgents[i];
-    var slot = document.getElementById('admin-briefs-confirm-slot-' + i);
-    if (!agent || !slot) return;
-    if (slot.childNodes.length) { slot.innerHTML = ''; return; } // toggle closed
-    slot.innerHTML =
-      '<div class="admin-confirm">' +
-      '<p>Enter the A-Cell password to delete <b>' + escapeHtml(agent.name) + '</b> (moves to Recently Deleted, restorable for 24 hours):</p>' +
-      '<div class="admin-confirm-error" id="admin-briefs-confirm-err-' + i + '"></div>' +
-      '<input type="password" id="admin-briefs-pw-input-' + i + '" placeholder="A-Cell password" autocomplete="off">' +
-      '<div class="admin-confirm-actions">' +
-      '<button type="button" class="paper-btn admin-delete-btn" id="admin-briefs-delete-confirm-btn-' + i + '">Delete Agent</button>' +
-      '<button type="button" class="paper-btn" id="admin-briefs-confirm-cancel-' + i + '">Cancel</button>' +
-      '</div></div>';
-    document.getElementById('admin-briefs-confirm-cancel-' + i).addEventListener('click', function () { slot.innerHTML = ''; });
-    document.getElementById('admin-briefs-delete-confirm-btn-' + i).addEventListener('click', function () {
-      var input = document.getElementById('admin-briefs-pw-input-' + i);
-      var errEl = document.getElementById('admin-briefs-confirm-err-' + i);
-      if (input.value !== ACELL_PASSWORD) {
-        errEl.textContent = 'Wrong password.';
-        return;
-      }
-      doBriefsDelete(agent, slot);
-    });
-  }
-
-  function doBriefsDelete(agent, slot) {
-    slot.innerHTML = '<div class="admin-confirm"><p>Deleting…</p></div>';
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors', keepalive: true,
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'delete_character', agent_code: agent.code, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
-    }).then(function () {
-      setTimeout(function () { verifyBriefsDelete(agent, slot); }, 900);
-    }).catch(function () {
-      slot.innerHTML = '<div class="admin-confirm"><p class="admin-confirm-error">Could not reach the backend.</p></div>';
-    });
-  }
-
-  function verifyBriefsDelete(agent, slot) {
-    jsonpGet('list_agent_file_only', {}, function (res) {
-      var stillThere = res && res.status === 'OK' && Array.isArray(res.agents) &&
-        res.agents.some(function (a) { return a.agent_code === agent.code; });
-      if (stillThere) {
-        slot.innerHTML = '<div class="admin-confirm"><p class="admin-confirm-error">' + NOT_DEPLOYED_MSG + '</p></div>';
-        return;
-      }
-      briefsOnlyAgents = briefsOnlyAgents.filter(function (a) { return a.code !== agent.code; });
-      statusEl.textContent = 'Deleted ' + agent.name + '. Restore it within 24 hours from Recently Deleted below.';
-      renderBriefsOnlyList();
-      fetchDeleted();
-    });
-  }
-
-  function fetchDeleted() {
-    jsonpGet('list_deleted_characters', {}, function (res) {
-      if (!res || res.status !== 'OK' || !Array.isArray(res.characters)) {
-        deletedListEl.innerHTML = '';
-        return;
-      }
-      deletedAgents = res.characters.map(function (c) {
-        var state = null;
-        try { state = JSON.parse(c.character_json); } catch (e) { /* skip unparsable rows */ }
-        // char_name is only present for an Agent-File-only delete (no
-        // character sheet, so no character_json to read a name out of
-        // -- see listDeletedCharacters()'s DeletedBriefs half).
-        return { code: c.agent_code, state: state, char_name: c.char_name || '', deleted_at: c.deleted_at };
-      }).filter(function (c) { return c.code; });
-      renderDeletedList();
-    });
-  }
-
-  function renderDeletedList() {
-    if (!deletedAgents.length) {
-      deletedListEl.innerHTML = '<div class="cells-empty-note">Nothing deleted yet.</div>';
-      return;
-    }
-    deletedListEl.innerHTML = deletedAgents.map(function (a, i) {
-      var bio = (a.state && a.state.bio) || {};
-      var name = bio.name || a.char_name || a.code;
-      var when = a.deleted_at ? new Date(Number(a.deleted_at)).toLocaleString() : '';
-      return '<div class="admin-deleted-row" data-i="' + i + '">' +
-        '<div><div class="name">' + escapeHtml(name) + '</div><div class="meta">' + escapeHtml(a.code) + (when ? ' &middot; deleted ' + escapeHtml(when) : '') + '</div></div>' +
-        '<button type="button" class="paper-btn admin-restore-btn" data-i="' + i + '">Restore</button>' +
-        '</div>';
-    }).join('');
-    Array.prototype.forEach.call(deletedListEl.querySelectorAll('.admin-restore-btn'), function (btn) {
-      btn.addEventListener('click', function () { doRestore(parseInt(btn.dataset.i, 10)); });
-    });
-  }
-
-  function doRestore(i) {
-    var agent = deletedAgents[i];
-    if (!agent) return;
-    statusEl.textContent = 'Restoring…';
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors', keepalive: true,
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'restore_character', agent_code: agent.code, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
-    }).then(function () {
-      setTimeout(function () { verifyRestore(agent); }, 900);
-    }).catch(function () {
-      statusEl.textContent = 'Could not reach the backend.';
-    });
-  }
-
-  function verifyRestore(agent) {
-    // An Agent-File-only delete (agent.state is null -- see fetchDeleted()
-    // above) never had a Characters row to restore, so list_characters
-    // would never confirm it -- check list_agent_file_only instead.
-    var action = agent.state ? 'list_characters' : 'list_agent_file_only';
-    var listKey = agent.state ? 'characters' : 'agents';
-    jsonpGet(action, {}, function (res) {
-      var backInRoster = res && res.status === 'OK' && Array.isArray(res[listKey]) &&
-        res[listKey].some(function (c) { return c.agent_code === agent.code; });
-      if (!backInRoster) {
-        statusEl.textContent = RESTORE_NOT_DEPLOYED_MSG;
-        return;
-      }
-      var name = (agent.state && agent.state.bio || {}).name || agent.char_name || agent.code;
-      statusEl.textContent = 'Restored ' + name + '.';
-      fetchList();
-      fetchDeleted();
-      fetchBriefsOnly();
-    });
-  }
-
-  refreshBtn.addEventListener('click', function () { fetchList(true); fetchDeleted(); fetchBriefsOnly(); });
-  fetchList(false);
-  fetchDeleted();
-  fetchBriefsOnly();
 })();
 </script>
 

@@ -1968,14 +1968,15 @@ def test_acell_gate(p):
 
 def test_acell_play(p):
     """a-cell.html's Play section: every Agent on file (not just the
-    ones in this browser's own dg_agent_roster), pulled from a new
-    list_characters Apps Script action (see
-    acell-play-list-characters-addition.txt, handed over separately --
-    not yet deployed on the live backend, same as every other .gs
-    addition this project needs pasted in manually) that returns every
-    row of the same Characters sheet Cloud Save already writes to.
-    Picking an Agent renders a simplified read-only view: name, the six
-    stats, HP/WP/SAN/BP, and skills."""
+    ones in this browser's own dg_agent_roster), pulled from
+    list_characters. That action now sends a flat summary per Agent
+    (name/profession/player_name/vitals), not each one's entire
+    character sheet -- see listCharacters()'s own comment in
+    backend/Code.gs. Picking an Agent (or a Cell Dashboard row) fetches
+    that one Agent's full character sheet on demand via load_character
+    (a targeted single-row read, the same one that already fixed the
+    ?load= 8-10s lag elsewhere) and renders the full simplified view:
+    name, the six stats, HP/WP/SAN/BP, and skills."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -1983,43 +1984,46 @@ def test_acell_play(p):
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     skip_acell_gate(page)
 
-    fake_characters = [
-        {
-            "agent_code": "OWEN-CS12",
-            "character_json": json.dumps({
-                "bio": {"name": "Owen Castillo", "profession": "Federal Agent", "nationality": "American",
-                        "player_name": "Gergo P",
-                        "motivations": "Protect my sister at any cost.\n[Disorder: Paranoia]"},
-                "csStats": {"STR": 12, "CON": 13, "DEX": 14, "INT": 15, "POW": 10, "CHA": 11},
-                "derived": {"hp": 13, "wp": 10, "san": 50, "bp": 40},
-                "skills": {"firearms": 60, "alertness": 50, "drive": 40},
-                "customSkills": [{"name": "Forgery", "value": 35}],
-                "bonds": [{"name": "Maria Castillo", "relationship": "Sister", "score": 8},
-                          {"name": "Delta Green", "relationship": "Handler", "score": 12}],
-                "sanity": {"violence": [True, True, False], "helplessness": [False, False, False]},
-            }),
+    fake_order = ["OWEN-CS12", "PRIY-AN34", "MARC-9XQ2"]
+    fake_full = {
+        "OWEN-CS12": {
+            "bio": {"name": "Owen Castillo", "profession": "Federal Agent", "nationality": "American",
+                    "player_name": "Gergo P",
+                    "motivations": "Protect my sister at any cost.\n[Disorder: Paranoia]"},
+            "csStats": {"STR": 12, "CON": 13, "DEX": 14, "INT": 15, "POW": 10, "CHA": 11},
+            "derived": {"hp": 13, "wp": 10, "san": 50, "bp": 40},
+            "skills": {"firearms": 60, "alertness": 50, "drive": 40},
+            "customSkills": [{"name": "Forgery", "value": 35}],
+            "bonds": [{"name": "Maria Castillo", "relationship": "Sister", "score": 8},
+                      {"name": "Delta Green", "relationship": "Handler", "score": 12}],
+            "sanity": {"violence": [True, True, False], "helplessness": [False, False, False]},
         },
-        {
-            "agent_code": "PRIY-AN34",
-            "character_json": json.dumps({
-                "bio": {"name": "Priya Anand", "profession": "Forensic Accountant"},
-                "csStats": {"STR": 8, "CON": 9, "DEX": 10, "INT": 17, "POW": 13, "CHA": 12},
-                "derived": {"hp": 9, "wp": 13, "san": 65, "bp": 52},
-                "skills": {"accounting": 70, "bureaucracy": 40},
-                "customSkills": [],
-            }),
+        "PRIY-AN34": {
+            "bio": {"name": "Priya Anand", "profession": "Forensic Accountant"},
+            "csStats": {"STR": 8, "CON": 9, "DEX": 10, "INT": 17, "POW": 13, "CHA": 12},
+            "derived": {"hp": 9, "wp": 13, "san": 65, "bp": 52},
+            "skills": {"accounting": 70, "bureaucracy": 40},
+            "customSkills": [],
         },
-        {
-            "agent_code": "MARC-9XQ2",
-            "character_json": json.dumps({
-                "bio": {"name": "Marcus Reyes", "profession": "Pilot"},
-                "csStats": {"STR": 10, "CON": 10, "DEX": 10, "INT": 10, "POW": 10, "CHA": 10},
-                "derived": {"hp": 0, "wp": 8, "san": 30, "bp": 25},
-                "skills": {},
-                "customSkills": [],
-            }),
+        "MARC-9XQ2": {
+            "bio": {"name": "Marcus Reyes", "profession": "Pilot"},
+            "csStats": {"STR": 10, "CON": 10, "DEX": 10, "INT": 10, "POW": 10, "CHA": 10},
+            "derived": {"hp": 0, "wp": 8, "san": 30, "bp": 25},
+            "skills": {},
+            "customSkills": [],
         },
-    ]
+    }
+
+    def summary_for(code):
+        st = fake_full[code]
+        bio = st.get("bio", {})
+        derived = st.get("derived", {})
+        return {
+            "agent_code": code, "name": bio.get("name", ""), "profession": bio.get("profession", ""),
+            "nationality": bio.get("nationality", ""), "player_name": bio.get("player_name", ""),
+            "hp": derived.get("hp"), "wp": derived.get("wp"), "san": derived.get("san"), "bp": derived.get("bp"),
+            "updated_at": "",
+        }
 
     fake_cells = [
         {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Gergo", "member_codes": ["OWEN-CS12"]},
@@ -2030,18 +2034,28 @@ def test_acell_play(p):
         url = route.request.url
         if "action=list_characters" in url and "callback=" in url:
             cb = url.split("callback=")[1].split("&")[0]
-            body = f'{cb}({json.dumps({"status": "OK", "characters": fake_characters})})'
+            chars = [summary_for(c) for c in fake_order]
+            body = f'{cb}({json.dumps({"status": "OK", "characters": chars})})'
+            route.fulfill(status=200, content_type="application/javascript", body=body)
+        elif "action=load_character" in url and "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            code = url.split("code=")[1].split("&")[0]
+            st = fake_full.get(code)
+            if st:
+                body = f'{cb}({json.dumps({"status": "OK", "agent_code": code, "character_json": json.dumps(st)})})'
+            else:
+                body = f'{cb}({json.dumps({"status": "NOT_FOUND"})})'
             route.fulfill(status=200, content_type="application/javascript", body=body)
         elif "action=list_cells" in url and "callback=" in url:
             cb = url.split("callback=")[1].split("&")[0]
             body = f'{cb}({json.dumps({"status": "OK", "cells": fake_cells})})'
             route.fulfill(status=200, content_type="application/javascript", body=body)
         elif "callback=" in url:
-            # Other tab modules (Music, Admin, Sheet) fetch unconditionally
-            # on page load regardless of which tab is visible -- their
-            # calls need a real JSONP-wrapped response too, or the browser
-            # tries to execute a raw JSON object as a <script> and throws
-            # a syntax error on the object literal's ':'.
+            # Other tab modules (Music, Sheet) fetch unconditionally on
+            # page load regardless of which tab is visible -- their
+            # calls need a real JSONP-wrapped response too, or the
+            # browser tries to execute a raw JSON object as a <script>
+            # and throws a syntax error on the object literal's ':'.
             cb = url.split("callback=")[1].split("&")[0]
             route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"OK"}})')
         else:
@@ -2056,7 +2070,7 @@ def test_acell_play(p):
            names == ["Owen Castillo", "Priya Anand", "Marcus Reyes"], str(names))
 
     page.click("#play-agent-list .play-agent-btn:first-child")
-    page.wait_for_timeout(200)
+    page.wait_for_timeout(300)
     record("acell", "selecting an Agent shows their name in the simplified view",
            "Owen Castillo" in page.inner_text("#play-view .pv-bio"), "")
     stat_vals = page.eval_on_selector_all("#play-view .pv-stat .val", "els => els.map(e=>e.textContent)")
@@ -2080,18 +2094,14 @@ def test_acell_play(p):
     record("acell", "sticky header shows the Player Name so the Handler knows who made this Agent",
            "Gergo P" in page.inner_text("#play-view .pv-player"), "")
 
-    # Refresh re-fetches the roster and keeps the selected Agent's panel
-    # showing their (possibly updated) view, instead of dropping the
-    # selection.
-    fake_characters[0]["character_json"] = json.dumps({
-        "bio": {"name": "Owen Castillo", "profession": "Federal Agent", "nationality": "American"},
-        "csStats": {"STR": 12, "CON": 13, "DEX": 14, "INT": 15, "POW": 10, "CHA": 99},
-        "derived": {"hp": 13, "wp": 10, "san": 50, "bp": 40},
-        "skills": {"firearms": 60, "alertness": 50, "drive": 40},
-        "customSkills": [{"name": "Forgery", "value": 35}],
-    })
+    # Refresh re-fetches the roster (and, since the selected Agent's full
+    # sheet is now fetched on demand rather than sitting in the initial
+    # list payload, drops the cached copy so it re-fetches too) and
+    # keeps the selected Agent's panel showing their updated view,
+    # instead of dropping the selection.
+    fake_full["OWEN-CS12"]["csStats"]["CHA"] = 99
     page.click("#play-refresh-btn")
-    page.wait_for_timeout(400)
+    page.wait_for_timeout(500)
     stat_vals_after = page.eval_on_selector_all("#play-view .pv-stat .val", "els => els.map(e=>e.textContent)")
     record("acell", "Refresh pulls updated stats and keeps the same Agent's view open",
            stat_vals_after == ["12", "13", "14", "15", "10", "99"], str(stat_vals_after))
@@ -2120,12 +2130,14 @@ def test_acell_play(p):
            "Cell Bravo Dashboard" in page.inner_text("#play-view") and "Priya Anand" in page.inner_text("#play-view"), "")
 
     # Cell Dashboard: HP/WP/SAN/BP for every member of the filtered Cell
-    # at a glance, without clicking into each Agent one at a time.
+    # at a glance, without clicking into each Agent one at a time --
+    # comes straight from the list_characters summary, no per-Agent
+    # full-sheet fetch needed just to show the Dashboard.
     dash_vitals = page.eval_on_selector_all("#play-view .cdb-row .cdb-vital .val", "els => els.map(e=>e.textContent)")
     record("acell", "the Dashboard shows the filtered Cell's member's vitals",
            dash_vitals == ["9", "13", "65", "52"], str(dash_vitals))
     page.click('#play-view .cdb-row:has-text("Priya Anand")')
-    page.wait_for_timeout(200)
+    page.wait_for_timeout(300)
     record("acell", "clicking a Dashboard row opens that Agent's full dossier",
            "Priya Anand" in page.inner_text("#play-view .pv-bio"), "")
     record("acell", "clicking a Dashboard row highlights that Agent in the left-hand list too",
@@ -2141,11 +2153,11 @@ def test_acell_play(p):
     # flag -- Marcus is at 0 HP and should carry the stamp; Owen (13 HP)
     # should not.
     page.click('.play-agent-btn:has-text("Owen Castillo")')
-    page.wait_for_timeout(200)
+    page.wait_for_timeout(300)
     record("acell", "an Agent above 0 HP shows no KIA stamp",
            "KIA" not in page.inner_text("#play-view .pv-bio"), "")
     page.click('.play-agent-btn:has-text("Marcus Reyes")')
-    page.wait_for_timeout(200)
+    page.wait_for_timeout(300)
     record("acell", "an Agent at 0 HP shows a KIA stamp next to their name",
            "KIA" in page.inner_text("#play-view .pv-bio"), page.inner_text("#play-view .pv-bio"))
 
@@ -2169,12 +2181,9 @@ def test_acell_cells(p):
     skip_acell_gate(page)
 
     fake_characters = [
-        {"agent_code": "OWEN-CS12",
-         "character_json": json.dumps({"bio": {"name": "Owen Castillo", "profession": "Federal Agent"}})},
-        {"agent_code": "PRIY-AN34",
-         "character_json": json.dumps({"bio": {"name": "Priya Anand", "profession": "Forensic Accountant"}})},
-        {"agent_code": "MARC-9XQ2",
-         "character_json": json.dumps({"bio": {"name": "Marcus Reyes", "profession": "Pilot"}})},
+        {"agent_code": "OWEN-CS12", "name": "Owen Castillo", "profession": "Federal Agent"},
+        {"agent_code": "PRIY-AN34", "name": "Priya Anand", "profession": "Forensic Accountant"},
+        {"agent_code": "MARC-9XQ2", "name": "Marcus Reyes", "profession": "Pilot"},
     ]
     cells_state = []
 
@@ -2466,13 +2475,17 @@ def test_acell_handouts(p):
     return errs
 
 def test_acell_sheet(p):
-    """a-cell.html's Sheet tab: a dense, spreadsheet-style read-only
-    roster table -- Cell, Handler, Agent Name, Player Name, HP, SAN,
-    and a rough Online presence indicator derived from how recently
-    Cloud Save last pushed for that Agent (updated_at). Cell/Handler
-    now come from real Cell group membership (list_cells) -- an Agent
-    in a Cell shows that Cell's name/Handler, one not in any Cell
-    shows the same empty-cell dash as any other missing value."""
+    """a-cell.html's Sheet tab: merged with the former separate Admin tab
+    -- one dense, spreadsheet-style roster table (Cell, Handler, Agent
+    Name, Player Name, HP, SAN, Online) that also deletes an Agent right
+    from its own row, plus an Agent File / Profiling brief with no
+    character sheet yet (list_agent_file_only) as its own row, plus
+    Recently Deleted underneath, restorable for 24 hours before the
+    backend permanently purges it. list_characters itself is now a flat
+    summary (name/player_name/hp/san), not each Agent's entire
+    character_json -- see listCharacters()'s own comment in
+    backend/Code.gs for why sending that in full was the real cause of
+    this tab feeling slow as the roster grows."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -2491,21 +2504,21 @@ def test_acell_sheet(p):
     def iso(ms):
         return page.evaluate(f"new Date({ms}).toISOString()")
     fake_characters = [
-        {"agent_code": "OWEN-CS12",
-         "character_json": json.dumps({"bio": {"name": "Owen Castillo", "player_name": "Gergo P"},
-                                        "derived": {"hp": 13, "san": 50}}),
-         "updated_at": iso(now_ms)},
-        {"agent_code": "PRIY-AN34",
-         "character_json": json.dumps({"bio": {"name": "Priya Anand"}, "derived": {"hp": 9, "san": 65}}),
-         "updated_at": iso(now_ms - 20 * 60 * 1000)},
-        {"agent_code": "MARC-9XQ2",
-         "character_json": json.dumps({"bio": {"name": "Marcus Reyes"}, "derived": {"hp": 0, "san": 40}}),
-         "updated_at": iso(now_ms - 2 * 60 * 60 * 1000)},
+        {"agent_code": "OWEN-CS12", "name": "Owen Castillo", "player_name": "Gergo P",
+         "hp": 13, "san": 50, "updated_at": iso(now_ms)},
+        {"agent_code": "PRIY-AN34", "name": "Priya Anand", "player_name": "",
+         "hp": 9, "san": 65, "updated_at": iso(now_ms - 20 * 60 * 1000)},
+        {"agent_code": "MARC-9XQ2", "name": "Marcus Reyes", "player_name": "",
+         "hp": 0, "san": 40, "updated_at": iso(now_ms - 2 * 60 * 60 * 1000)},
     ]
     fake_cells = [
         {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12", "PRIY-AN34"]},
     ]
-
+    briefs_only = [
+        {"agent_code": "DEMO-Q5MD", "char_name": 'DeMore, "Mastery", André', "codename": "Mastery"},
+    ]
+    deleted_characters = []
+    deleted_briefs_only = []
     posts = []
 
     def fake_apps_script(route):
@@ -2516,15 +2529,38 @@ def test_acell_sheet(p):
             except Exception:
                 body = {}
             posts.append(body)
-            # Stateful for save_character -- so a Player Name edit posted
-            # here is actually reflected in the NEXT list_characters
-            # re-fetch the Sheet tab does after saving, the same way a
-            # real backend would persist it.
-            if body.get("action") == "save_character":
+            if body.get("action") == "update_character_field" and body.get("field") == "player_name":
                 for c in fake_characters:
                     if c["agent_code"] == body.get("agent_code"):
-                        c["character_json"] = body.get("character_json", c["character_json"])
+                        c["player_name"] = body.get("value", "")
                         break
+            elif body.get("action") == "update_field" and body.get("field") == "player_name":
+                pass  # briefs-only Player Name edit isn't exercised here
+            elif body.get("action") == "delete_character":
+                code = body.get("agent_code")
+                idx = next((i for i, c in enumerate(fake_characters) if c["agent_code"] == code), None)
+                if idx is not None:
+                    row = fake_characters.pop(idx)
+                    deleted_characters.append({"agent_code": row["agent_code"],
+                                                "character_json": json.dumps({"bio": {"name": row["name"]}}),
+                                                "deleted_at": 1700000001000})
+                idx2 = next((i for i, a in enumerate(briefs_only) if a["agent_code"] == code), None)
+                if idx2 is not None:
+                    row = briefs_only.pop(idx2)
+                    deleted_briefs_only.append({"agent_code": row["agent_code"], "char_name": row["char_name"],
+                                                 "deleted_at": 1700000001000})
+            elif body.get("action") == "restore_character":
+                code = body.get("agent_code")
+                idx = next((i for i, c in enumerate(deleted_characters) if c["agent_code"] == code), None)
+                if idx is not None:
+                    row = deleted_characters.pop(idx)
+                    bio = json.loads(row["character_json"]).get("bio", {})
+                    fake_characters.append({"agent_code": row["agent_code"], "name": bio.get("name", ""),
+                                             "player_name": "", "hp": None, "san": None, "updated_at": iso(now_ms)})
+                idx2 = next((i for i, a in enumerate(deleted_briefs_only) if a["agent_code"] == code), None)
+                if idx2 is not None:
+                    row = deleted_briefs_only.pop(idx2)
+                    briefs_only.append({"agent_code": row["agent_code"], "char_name": row["char_name"], "codename": ""})
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         url = req.url
@@ -2534,6 +2570,11 @@ def test_acell_sheet(p):
                 res = {"status": "OK", "characters": fake_characters}
             elif "action=list_cells" in url:
                 res = {"status": "OK", "cells": fake_cells}
+            elif "action=list_agent_file_only" in url:
+                res = {"status": "OK", "agents": briefs_only}
+            elif "action=list_deleted_characters" in url:
+                chars = deleted_characters + deleted_briefs_only
+                res = {"status": "OK", "characters": chars}
             else:
                 res = {"status": "OK"}
             route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
@@ -2545,23 +2586,21 @@ def test_acell_sheet(p):
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(400)
     page.click('.tw[data-tab="sheet"]')
-    page.wait_for_timeout(600)
+    page.wait_for_timeout(700)
 
     headers = page.eval_on_selector_all("#sheet-wrap th", "els => els.map(e=>e.textContent)")
     record("acell", "Sheet table has the requested columns in order",
-           headers == ["Cell", "Handler", "Agent Name", "Player Name", "HP", "SAN", "Online"], str(headers))
+           headers[:7] == ["Cell", "Handler", "Agent Name", "Player Name", "HP", "SAN", "Online"], str(headers))
 
     row_texts = page.eval_on_selector_all("#sheet-wrap tbody tr", "els => els.map(e=>e.textContent)")
-    record("acell", "Sheet lists every Agent on file as a table row",
-           len(row_texts) == 3, str(row_texts))
+    record("acell", "Sheet lists every Agent on file plus every Agent-File-only entry as rows",
+           len(row_texts) == 4, str(row_texts))
     record("acell", "a row shows the Agent's Cell, Handler, player name, HP, and SAN together",
            "Cell Alpha" in row_texts[0] and "Sam" in row_texts[0]
            and "Owen Castillo" in row_texts[0] and "Gergo P" in row_texts[0]
            and "13" in row_texts[0] and "50" in row_texts[0], row_texts[0])
-    record("acell", "a different Agent in the same Cell shows that Cell too",
-           "Cell Alpha" in row_texts[1] and "Sam" in row_texts[1], row_texts[1])
-    record("acell", "an Agent in no Cell shows a clear placeholder, not blank",
-           "—" in row_texts[2], row_texts[2])
+    record("acell", "an Agent File-only entry (no character sheet) shows as its own row in the same table",
+           any("Mastery" in t for t in row_texts), str(row_texts))
 
     # KIA: a live read of last-saved HP, not a separate flag. Marcus is
     # at 0 HP and should carry the badge; Owen/Priya (13, 9 HP) should not.
@@ -2575,7 +2614,7 @@ def test_acell_sheet(p):
 
     dots = page.eval_on_selector_all("#sheet-wrap .sheet-dot", "els => els.map(e=>e.className)")
     record("acell", "Online status reflects how recently each Agent's sheet last synced (just now / 20 min ago / 2 hours ago)",
-           dots == ["sheet-dot on", "sheet-dot recent", "sheet-dot off"], str(dots))
+           dots[:3] == ["sheet-dot on", "sheet-dot recent", "sheet-dot off"], str(dots))
 
     # Player Name is click-to-edit -- the Handler's fallback for an Agent
     # saved before that field existed (Priya has none set, per
@@ -2591,15 +2630,83 @@ def test_acell_sheet(p):
     priya_row.locator(".sheet-pn-input").fill("Alex R")
     priya_row.locator(".sheet-pn-input").press("Enter")
     page.wait_for_timeout(400)
-    save_posts = [p for p in posts if p.get("action") == "save_character" and p.get("agent_code") == "PRIY-AN34"]
-    record("acell", "committing the edit posts save_character for the right Agent with the new player_name",
-           len(save_posts) == 1 and save_posts[0].get("player_name") == "Alex R", str(save_posts))
-    record("acell", "the re-saved character_json actually carries the new player_name too, not just the top-level field",
-           len(save_posts) == 1 and json.loads(save_posts[0].get("character_json", "{}")).get("bio", {}).get("player_name") == "Alex R",
-           save_posts[0].get("character_json") if save_posts else "")
+    save_posts = [pp for pp in posts if pp.get("action") == "update_character_field" and pp.get("agent_code") == "PRIY-AN34"]
+    record("acell", "committing the edit posts a single targeted update_character_field, not the whole character_json",
+           len(save_posts) == 1 and save_posts[0].get("field") == "player_name" and save_posts[0].get("value") == "Alex R",
+           str(save_posts))
     page.wait_for_timeout(300)
     record("acell", "the cell reflects the new Player Name after the Sheet re-fetches",
            "Alex R" in page.locator("#sheet-wrap tbody tr").nth(1).inner_text(), "")
+
+    # Delete -- now lives on the Agent's own Sheet row instead of a
+    # separate Admin tab, gated behind the same single A-Cell password
+    # confirmation as before.
+    owen_row = page.locator('#sheet-wrap tbody tr:has-text("Owen Castillo")')
+    owen_row.locator(".sheet-delete-btn").click()
+    page.wait_for_timeout(150)
+    owen_row.locator('input[id^="sheet-pw-input-"]').fill("wrong")
+    owen_row.locator('button[id^="sheet-delete-confirm-btn-"]').click()
+    page.wait_for_timeout(150)
+    record("acell", "the wrong A-Cell password is rejected on delete",
+           owen_row.locator('[id^="sheet-confirm-err-"]').inner_text() != "", "")
+    record("acell", "no delete was sent while the password is still unconfirmed",
+           len([pp for pp in posts if pp.get("action") == "delete_character"]) == 0, str(posts))
+
+    owen_row.locator('input[id^="sheet-pw-input-"]').fill("MASTICATE")
+    owen_row.locator('button[id^="sheet-delete-confirm-btn-"]').click()
+    page.wait_for_timeout(1500)
+    delete_posts = [pp for pp in posts if pp.get("action") == "delete_character"]
+    record("acell", "the correct password sends delete_character for the right Agent",
+           len(delete_posts) == 1 and delete_posts[0].get("agent_code") == "OWEN-CS12", str(delete_posts))
+    row_texts_after = page.eval_on_selector_all("#sheet-wrap tbody tr", "els => els.map(e=>e.textContent)")
+    record("acell", "the deleted Agent's row disappears only after a real read-back confirms it's gone",
+           not any("Owen Castillo" in t for t in row_texts_after) and len(row_texts_after) == 3, str(row_texts_after))
+
+    deleted_text = wait_for_condition(lambda: page.inner_text("#admin-deleted-list")
+                                       if "Owen Castillo" in page.inner_text("#admin-deleted-list") else None)
+    record("acell", "a deleted Agent shows up in Recently Deleted below the table, not just vanishing",
+           bool(deleted_text) and "Owen Castillo" in deleted_text, deleted_text or "")
+
+    page.click("#admin-deleted-list .admin-restore-btn >> nth=0")
+    page.wait_for_timeout(1500)
+    restore_posts = [pp for pp in posts if pp.get("action") == "restore_character"]
+    record("acell", "Restore sends restore_character for the right Agent",
+           len(restore_posts) == 1 and restore_posts[0].get("agent_code") == "OWEN-CS12", str(restore_posts))
+    row_texts_restored = page.eval_on_selector_all("#sheet-wrap tbody tr", "els => els.map(e=>e.textContent)")
+    record("acell", "a restored Agent reappears in the Sheet table",
+           any("Owen Castillo" in t for t in row_texts_restored), str(row_texts_restored))
+    record("acell", "a restored Agent drops out of Recently Deleted",
+           "Owen Castillo" not in page.inner_text("#admin-deleted-list"), "")
+
+    # Agent File Only delete/restore -- exercises the parallel
+    # list_agent_file_only-backed row end to end: delete, confirm it
+    # lands in Recently Deleted (via char_name, since there's no
+    # character_json to read a name out of), then restore.
+    demo_row = page.locator('#sheet-wrap tbody tr:has-text("Mastery")')
+    demo_row.locator(".sheet-delete-btn").click()
+    page.wait_for_timeout(150)
+    demo_row.locator('input[id^="sheet-pw-input-"]').fill("MASTICATE")
+    demo_row.locator('button[id^="sheet-delete-confirm-btn-"]').click()
+    page.wait_for_timeout(1500)
+    demo_delete_posts = [pp for pp in posts if pp.get("action") == "delete_character" and pp.get("agent_code") == "DEMO-Q5MD"]
+    record("acell", "deleting an Agent-File-only row sends delete_character for the right code",
+           len(demo_delete_posts) == 1, str(demo_delete_posts))
+    row_texts_after_demo = page.eval_on_selector_all("#sheet-wrap tbody tr", "els => els.map(e=>e.textContent)")
+    record("acell", "the deleted Agent-File-only row disappears after a real read-back confirms it",
+           not any("Mastery" in t for t in row_texts_after_demo), str(row_texts_after_demo))
+
+    demo_deleted_text = wait_for_condition(lambda: page.inner_text("#admin-deleted-list")
+                                            if "Mastery" in page.inner_text("#admin-deleted-list") else None)
+    record("acell", "a deleted Agent-File-only entry shows up in Recently Deleted too",
+           bool(demo_deleted_text) and "Mastery" in demo_deleted_text, demo_deleted_text or "")
+
+    # Restore whichever Recently Deleted row is the Agent-File-only one --
+    # by this point it's the only entry left.
+    page.click("#admin-deleted-list .admin-restore-btn")
+    page.wait_for_timeout(1500)
+    demo_restore_posts = [pp for pp in posts if pp.get("action") == "restore_character" and pp.get("agent_code") == "DEMO-Q5MD"]
+    record("acell", "restoring an Agent-File-only entry sends restore_character for the right code",
+           len(demo_restore_posts) == 1, str(demo_restore_posts))
 
     page.close()
     return errs
@@ -2934,232 +3041,6 @@ def test_acell_music_backend_not_deployed(p):
     page.close()
     return errs
 
-def test_acell_admin(p):
-    """a-cell.html's Admin tab: soft-deletes an Agent (Characters row +
-    Delta Green Briefs row) via delete_character, gated behind the
-    A-Cell password (MASTICATE) -- the page already sits behind that
-    same password, so this is one confirmation, not two -- so a stray
-    click can't wipe an Agent. Like every other write in this app,
-    delete_character is a no-cors POST, so the row is only removed from
-    view once a real read-back (list_characters) confirms the Agent's
-    code is actually gone. Unlike a hard delete, the Agent lands in
-    Recently Deleted (list_deleted_characters) and can be brought back
-    with Restore (restore_character), verified the same way -- unless
-    24 hours pass first, at which point the backend permanently purges
-    it (see purgeOldDeleted() in backend/Code.gs; not exercised here
-    since it can't be driven by this frontend-only test suite)."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    skip_acell_gate(page)
-
-    characters = [
-        {"agent_code": "OWEN-CS12",
-         "character_json": json.dumps({"bio": {"name": "Owen Castillo", "profession": "soldier"}}),
-         "updated_at": 1700000000000},
-        {"agent_code": "PRIY-AN34",
-         "character_json": json.dumps({"bio": {"name": "Priya Anand"}}),
-         "updated_at": 1700000000000},
-    ]
-    deleted_characters = []
-    posts = []
-
-    def fake_apps_script(route):
-        req = route.request
-        if req.method == "POST":
-            body = json.loads(req.post_data or "{}")
-            posts.append(body)
-            if body.get("action") == "delete_character":
-                code = body.get("agent_code")
-                idx = next((i for i, c in enumerate(characters) if c["agent_code"] == code), None)
-                if idx is not None:
-                    row = characters.pop(idx)
-                    deleted_characters.append({**row, "deleted_at": 1700000001000})
-            elif body.get("action") == "restore_character":
-                code = body.get("agent_code")
-                idx = next((i for i, c in enumerate(deleted_characters) if c["agent_code"] == code), None)
-                if idx is not None:
-                    row = deleted_characters.pop(idx)
-                    characters.append({k: v for k, v in row.items() if k != "deleted_at"})
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        url = req.url
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            if "action=list_characters" in url:
-                res = {"status": "OK", "characters": characters}
-            elif "action=list_deleted_characters" in url:
-                res = {"status": "OK", "characters": deleted_characters}
-            else:
-                res = {"status": "OK"}
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-        else:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", fake_apps_script)
-
-    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
-    page.click('.tw[data-tab="admin"]')
-    page.wait_for_timeout(400)
-
-    record("acell", "Admin lists every Agent on file",
-           page.locator("#admin-list .admin-row").count() == 2, "")
-
-    owen_row = page.locator('.admin-row:has-text("Owen Castillo")')
-    owen_row.locator(".admin-delete-btn").click()
-    page.wait_for_timeout(150)
-
-    record("acell", "the delete confirmation asks only for the A-Cell password, not the Agent's own name",
-           owen_row.locator('input[id^="admin-handler-input-"]').count() == 0
-           and owen_row.locator('input[id^="admin-pw-input-"]').count() == 1, "")
-
-    owen_row.locator('input[id^="admin-pw-input-"]').fill("wrong")
-    owen_row.locator('button[id^="admin-delete-confirm-btn-"]').click()
-    page.wait_for_timeout(150)
-    record("acell", "the wrong A-Cell password is rejected",
-           owen_row.locator('[id^="admin-confirm-err-"]').inner_text() != "", "")
-    record("acell", "no delete was sent while the password is still unconfirmed",
-           len(posts) == 0, str(posts))
-
-    owen_row.locator('input[id^="admin-pw-input-"]').fill("MASTICATE")
-    owen_row.locator('button[id^="admin-delete-confirm-btn-"]').click()
-    page.wait_for_timeout(1500)
-
-    delete_posts = [p_ for p_ in posts if p_.get("action") == "delete_character"]
-    record("acell", "the correct password sends delete_character for the right Agent",
-           len(delete_posts) == 1 and delete_posts[0].get("agent_code") == "OWEN-CS12", str(delete_posts))
-    record("acell", "the deleted Agent's row disappears only after a real read-back confirms it's gone",
-           "Deleted Owen Castillo" in page.inner_text("#admin-status")
-           and page.locator("#admin-list .admin-row").count() == 1
-           and "Priya Anand" in page.inner_text("#admin-list"), "")
-
-    deleted_text = wait_for_condition(lambda: page.inner_text("#admin-deleted-list")
-                                       if "Owen Castillo" in page.inner_text("#admin-deleted-list") else None)
-    record("acell", "a deleted Agent shows up in Recently Deleted, not just vanishing",
-           bool(deleted_text) and "Owen Castillo" in deleted_text, deleted_text or "")
-
-    page.click("#admin-deleted-list .admin-restore-btn")
-    page.wait_for_timeout(1500)
-
-    restore_posts = [p_ for p_ in posts if p_.get("action") == "restore_character"]
-    record("acell", "Restore sends restore_character for the right Agent",
-           len(restore_posts) == 1 and restore_posts[0].get("agent_code") == "OWEN-CS12", str(restore_posts))
-    record("acell", "a restored Agent reappears in the main Admin list",
-           "Owen Castillo" in page.inner_text("#admin-list")
-           and page.locator("#admin-list .admin-row").count() == 2, "")
-    record("acell", "a restored Agent drops out of Recently Deleted",
-           "Owen Castillo" not in page.inner_text("#admin-deleted-list"), "")
-
-    page.close()
-    return errs
-
-def test_acell_admin_briefs_only(p):
-    """a-cell.html's Admin tab, "Agent File Only" section: an Agent File /
-    Profiling brief with no character sheet yet (e.g. never exported to
-    stats/) is invisible to list_characters, which every other part of
-    Admin (and the main Admin list) is built on -- so it used to be
-    undeletable through the UI even though delete_character itself
-    already handles a code with no Characters row correctly. Exercises
-    the parallel list_agent_file_only-backed list end to end: delete,
-    confirm it lands in Recently Deleted (via the DeletedBriefs half of
-    list_deleted_characters, since there's no character_json to read a
-    name out of -- char_name is used directly), then restore."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    skip_acell_gate(page)
-
-    briefs_only = [
-        {"agent_code": "DEMO-Q5MD", "char_name": 'DeMore, "Mastery", André', "codename": "Mastery"},
-    ]
-    deleted_briefs_only = []
-    posts = []
-
-    def fake_apps_script(route):
-        req = route.request
-        if req.method == "POST":
-            body = json.loads(req.post_data or "{}")
-            posts.append(body)
-            if body.get("action") == "delete_character":
-                code = body.get("agent_code")
-                idx = next((i for i, c in enumerate(briefs_only) if c["agent_code"] == code), None)
-                if idx is not None:
-                    row = briefs_only.pop(idx)
-                    deleted_briefs_only.append({**row, "deleted_at": 1700000001000})
-            elif body.get("action") == "restore_character":
-                code = body.get("agent_code")
-                idx = next((i for i, c in enumerate(deleted_briefs_only) if c["agent_code"] == code), None)
-                if idx is not None:
-                    row = deleted_briefs_only.pop(idx)
-                    briefs_only.append({k: v for k, v in row.items() if k != "deleted_at"})
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        url = req.url
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            if "action=list_characters" in url:
-                res = {"status": "OK", "characters": []}
-            elif "action=list_agent_file_only" in url:
-                res = {"status": "OK", "agents": briefs_only}
-            elif "action=list_deleted_characters" in url:
-                # deleted_briefs_only entries carry char_name, not
-                # character_json -- matches listDeletedCharacters()'s
-                # DeletedBriefs half in backend/Code.gs.
-                chars = [{"agent_code": d["agent_code"], "char_name": d["char_name"],
-                          "character_json": "", "deleted_at": d["deleted_at"]} for d in deleted_briefs_only]
-                res = {"status": "OK", "characters": chars}
-            else:
-                res = {"status": "OK"}
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-        else:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", fake_apps_script)
-
-    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
-    page.click('.tw[data-tab="admin"]')
-    page.wait_for_timeout(400)
-
-    record("acell", "Agent File Only section lists a brief with no character sheet",
-           "Mastery" in page.inner_text("#admin-briefs-list")
-           and page.locator("#admin-briefs-list .admin-row").count() == 1, "")
-    record("acell", "that Agent does NOT also appear in the main (character-sheet) Admin list",
-           page.locator("#admin-list .admin-row").count() == 0, "")
-
-    row = page.locator("#admin-briefs-list .admin-row")
-    row.locator(".admin-delete-btn").click()
-    page.wait_for_timeout(150)
-    row.locator('input[id^="admin-briefs-pw-input-"]').fill("MASTICATE")
-    row.locator('button[id^="admin-briefs-delete-confirm-btn-"]').click()
-    page.wait_for_timeout(1500)
-
-    delete_posts = [p_ for p_ in posts if p_.get("action") == "delete_character"]
-    record("acell", "the correct password sends delete_character for the Agent File-only entry",
-           len(delete_posts) == 1 and delete_posts[0].get("agent_code") == "DEMO-Q5MD", str(delete_posts))
-    record("acell", "the Agent File Only section is empty once the delete is confirmed",
-           page.locator("#admin-briefs-list .admin-row").count() == 0, "")
-
-    deleted_text = wait_for_condition(lambda: page.inner_text("#admin-deleted-list")
-                                       if "Mastery" in page.inner_text("#admin-deleted-list") else None)
-    record("acell", "an Agent File-only delete shows up in Recently Deleted too (by char_name, no character sheet)",
-           bool(deleted_text) and "Mastery" in deleted_text, deleted_text or "")
-
-    page.click("#admin-deleted-list .admin-restore-btn")
-    page.wait_for_timeout(1500)
-
-    restore_posts = [p_ for p_ in posts if p_.get("action") == "restore_character"]
-    record("acell", "Restore sends restore_character for the Agent File-only entry",
-           len(restore_posts) == 1 and restore_posts[0].get("agent_code") == "DEMO-Q5MD", str(restore_posts))
-    record("acell", "a restored Agent File-only entry reappears in Agent File Only, not the main list",
-           "Mastery" in page.inner_text("#admin-briefs-list")
-           and page.locator("#admin-list .admin-row").count() == 0, "")
-    record("acell", "a restored Agent File-only entry drops out of Recently Deleted",
-           "Mastery" not in page.inner_text("#admin-deleted-list"), "")
-
-    page.close()
-    return errs
 
 def test_table_radio_widget(p):
     """assets/table-radio.js: a small persistent widget on every Hub
@@ -5828,10 +5709,6 @@ def main():
         safe(test_acell_music, browser, area="acell")
 
         safe(test_acell_music_backend_not_deployed, browser, area="acell")
-
-        safe(test_acell_admin, browser, area="acell")
-
-        safe(test_acell_admin_briefs_only, browser, area="acell")
 
         safe(test_table_radio_widget, browser, area="radio")
 

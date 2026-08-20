@@ -207,6 +207,31 @@
 //   outright. DRIVE_API_KEY moved to a Script Property instead of
 //   hardcoded in this file, matching ANTHROPIC_API_KEY/GEMINI_API_KEY
 //   (rotatable without a redeploy, not sitting in this public repo).
+// + Sheet+Admin merge + real performance win (the "lazy open taking
+//   ages" complaint): listCharacters() now sends a flat per-Agent
+//   summary (name/profession/nationality/player_name/hp/wp/san/bp)
+//   instead of every Agent's entire character_json blob -- the sheet
+//   read cost is about the same, but the response payload sent to the
+//   browser shrinks drastically as the roster grows, which is what was
+//   actually slow. updateCharacterField() is now a targeted single-
+//   column write (find the row, write one cell) instead of a full-
+//   sheet scan-and-rewrite, and its allowlist now includes player_name
+//   so A-Cell's Sheet tab can rename an Agent without resending their
+//   whole character sheet. Client-side: A-Cell's Admin tab is gone,
+//   folded into a rebuilt Sheet tab (one table, Characters-backed AND
+//   Agent-File-only rows together, a Delete column, Recently Deleted
+//   below it) so deletion happens where the data already is instead of
+//   a separate tab; Play now fetches each Agent's full sheet on demand
+//   via the existing load_character/doLookupCharacter() targeted read
+//   (cached client-side per Agent, invalidated on Refresh) instead of
+//   needing every Agent's full data up front just to show a name list.
+//   Considered narrowing list_cells/list_handouts to a Handler session
+//   (like list_characters/list_agent_file_only/list_deleted_characters
+//   already are) but rejected it -- see the comments above each in
+//   doGet(): both are load-bearing for player-facing, unauthenticated
+//   flows (Notes' Cell auto-detection; agent-hub.html's Handouts
+//   section), and neither exposes anything more sensitive than Cell/
+//   Handler names or in-fiction clue text.
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -553,6 +578,14 @@ function doGet(e) {
   }
 
   // ── A-Cell: every Cell group, for the Cells tab ───────────────
+  // Deliberately unauthenticated, same reasoning as doLookup() above:
+  // Notes' cell-membership auto-detection (finding which Cell an Agent
+  // belongs to, so it can offer that Cell's shared feed without the
+  // player having to pick it manually) depends on this being readable
+  // without a Handler session. Narrowing it to Handler-only would break
+  // that for every player, to protect data that isn't sensitive in the
+  // first place -- Cell names, Handler names, and Agent Codes, no real
+  // PII. Considered and rejected; not an oversight.
   // ?action=list_cells&callback=CALLBACK
   if (e.parameter && e.parameter.action === 'list_cells') {
     return listCells(callback);
@@ -593,7 +626,13 @@ function doGet(e) {
   }
 
   // ── A-Cell Handouts + the player-facing Agent Hub: every filed
-  // handout/clue. ──
+  // handout/clue. Also deliberately unauthenticated, same reasoning as
+  // list_cells and doLookup() above: agent-hub.html's Handouts section
+  // needs to read this with no Handler session, and each handout is
+  // already scoped/filtered client-side to what that Agent's Cell can
+  // see. The underlying content is in-fiction clue text, not real-world
+  // data -- narrowing this to a Handler-only endpoint was considered
+  // and rejected as friction with no real security upside. ──
   // ?action=list_handouts&callback=CALLBACK
   if (e.parameter && e.parameter.action === 'list_handouts') {
     return listHandouts(callback);
@@ -711,10 +750,9 @@ function doPost(e) {
       return saveCharacter(data);
     }
 
-    // A-Cell (legacy): Handler edits a Cell's handler/operation tag.
-    // Superseded by real Cell groups (create_cell/update_cell_members
-    // below) -- kept for backward compatibility, unused by the current
-    // frontend.
+    // A-Cell Sheet tab: a single targeted column write on one Agent's
+    // Characters row (Player Name; handler/operation are unused legacy
+    // fields kept for backward compatibility -- see updateCharacterField()).
     if (data.action === 'update_character_field') {
       const authErr = requireHandlerAuth_(data);
       if (authErr) return authErr;
@@ -1337,6 +1375,18 @@ function findByPlayerName(name, callback) {
 // creates above ('Agent Code', 'Updated At', 'Character JSON', 'Player
 // Name'). ──
 
+// A-Cell's Play/Sheet tabs used to get every Agent's ENTIRE character
+// sheet here (character_json -- skills, equipment, appearance, all of
+// it) just to render a name/vitals list. That's usually the single
+// largest thing on the Characters sheet, multiplied by every Agent on
+// file, sent on every tab load -- the real cause of Play/Sheet feeling
+// slow as the roster grows, not the Apps Script read itself (still one
+// cheap getDataRange() call either way). Parsed server-side and reduced
+// to exactly what a list/dashboard view needs; the one place that still
+// needs a full character sheet (Play's own single-Agent detail view)
+// fetches it on demand via the existing, already-fast load_character
+// action (doLookupCharacter() below -- a targeted single-row read, not
+// a full-sheet scan, same one that already fixed the ?load= 8-10s lag).
 function listCharacters(callback) {
   const sheet = getOrCreateCharactersSheet();
   const result = { status: 'OK', characters: [] };
@@ -1346,22 +1396,30 @@ function listCharacters(callback) {
   const codeCol = headers.indexOf('Agent Code');
   const jsonCol = headers.indexOf('Character JSON');
   const updatedCol = headers.indexOf('Updated At');
-  const handlerCol = headers.indexOf('Handler');
-  const operationCol = headers.indexOf('Operation');
+  const playerNameCol = headers.indexOf('Player Name');
 
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
     const code = codeCol >= 0 ? row[codeCol] : '';
     if (!code) continue;
+    let bio = {}, derived = {};
+    try {
+      const parsed = JSON.parse((jsonCol >= 0 ? row[jsonCol] : '') || '{}');
+      bio = parsed.bio || {};
+      derived = parsed.derived || {};
+    } catch (e) { /* skip unparsable rows */ }
+    if (jsonCol >= 0 && !row[jsonCol]) continue; // no character data at all yet
     result.characters.push({
       agent_code: code,
-      character_json: jsonCol >= 0 ? row[jsonCol] : '',
       updated_at: updatedCol >= 0 ? row[updatedCol] : '',
-      // legacy fields -- empty unless addCellsTagColumns() was run in
-      // the past; the current frontend no longer reads these, real
-      // groups live in the Cells sheet below instead.
-      handler: handlerCol >= 0 ? row[handlerCol] : '',
-      operation: operationCol >= 0 ? row[operationCol] : ''
+      name: bio.name || '',
+      profession: bio.profession || '',
+      nationality: bio.nationality || '',
+      // The dedicated Player Name column (kept in sync by saveCharacter())
+      // is authoritative -- bio.player_name is only a fallback for a row
+      // saved before that column existed.
+      player_name: (playerNameCol >= 0 && row[playerNameCol]) || bio.player_name || '',
+      hp: derived.hp, wp: derived.wp, san: derived.san, bp: derived.bp
     });
   }
 
@@ -1411,28 +1469,39 @@ function listAgentFileOnly(callback) {
   return respond_(result, callback);
 }
 
-// Legacy: writes a single handler/operation tag for one Agent's row.
-// Superseded by Cell groups below -- kept only so an old deployment
-// that still calls update_character_field doesn't hard-error.
+// Writes a single column on one Agent's Characters row, without pulling
+// the rest of that row (in particular the Character JSON blob, usually
+// the biggest thing on the sheet) across the wire at all -- the row is
+// found via a targeted single-column read (Agent Code only, same
+// pattern as doLookupCharacter()'s own targeted lookup), and only the
+// one target cell is ever read or written. Originally a legacy
+// handler/operation-tag writer superseded by Cell groups; player_name
+// added so the merged Sheet tab can edit that one field inline without
+// resending the Agent's entire character_json the way it used to (see
+// the Sheet tab's own comment in a-cell.html).
 function updateCharacterField(agentCode, field, value) {
-  const allowed = { handler: 'Handler', operation: 'Operation' };
+  const allowed = { handler: 'Handler', operation: 'Operation', player_name: 'Player Name' };
   const headerName = allowed[field];
   if (!headerName) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'Field not allowed: ' + field }))
       .setMimeType(ContentService.MimeType.JSON);
   }
   const sheet = getOrCreateCharactersSheet();
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'NOT_FOUND' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const codeCol = headers.indexOf('Agent Code');
   const fieldCol = headers.indexOf(headerName);
   if (fieldCol === -1) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: headerName + ' column missing' }))
       .setMimeType(ContentService.MimeType.JSON);
   }
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][codeCol] === agentCode) {
-      sheet.getRange(i + 1, fieldCol + 1).setValue(value);
+  const codes = sheet.getRange(2, codeCol + 1, lastRow - 1, 1).getValues();
+  for (let i = 0; i < codes.length; i++) {
+    if (codes[i][0] === agentCode) {
+      sheet.getRange(i + 2, fieldCol + 1).setValue(value);
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
@@ -2294,10 +2363,10 @@ function getOrCreateTracksSheet() {
 // ANYONE_WITH_LINK sharing. Read from Script Properties, not hardcoded
 // here, purely so it isn't sitting in this public repo's source/git
 // history forever and can be rotated without a code redeploy -- set
-// DRIVE_API_KEY under Project Settings > Script Properties in the Apps
-// Script editor, same as ANTHROPIC_API_KEY/GEMINI_API_KEY below.
+// GOOGLE_DRIVE_API_KEY under Project Settings > Script Properties in
+// the Apps Script editor, same as ANTHROPIC_API_KEY/GEMINI_API_KEY below.
 function driveDirectAudioUrl(fileId) {
-  const apiKey = PropertiesService.getScriptProperties().getProperty('DRIVE_API_KEY');
+  const apiKey = PropertiesService.getScriptProperties().getProperty('GOOGLE_DRIVE_API_KEY');
   if (!apiKey) return '';
   return 'https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media&key=' + apiKey;
 }
