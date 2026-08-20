@@ -5408,6 +5408,12 @@ def test_notes_v2_editorjs(p):
          "text": json.dumps({"text": "Priya's shared note"}), "shared": True, "sort_order": 1000, "created_at": 1, "updated_at": 1},
         {"block_id": "b2", "agent_code": "PRIY-AN34", "block_type": "paragraph",
          "text": json.dumps({"text": "Priya's PRIVATE note -- must never leak"}), "shared": False, "sort_order": 2000, "created_at": 1, "updated_at": 1},
+        # A second shared block from a wildly different calendar date
+        # (not just a different time same day) -- Timeline grouping
+        # should split these two into separate date sections regardless
+        # of the test runner's local timezone.
+        {"block_id": "b3", "agent_code": "PRIY-AN34", "block_type": "paragraph",
+         "text": json.dumps({"text": "Priya's second-day update"}), "shared": True, "sort_order": 3000, "created_at": 1700000000000, "updated_at": 1700000000000},
     ]
     identities = {"PRIY-AN34": {"color": "#2f855a", "font": "kalam"}}
     posts = []
@@ -5521,6 +5527,26 @@ def test_notes_v2_editorjs(p):
     record("notes", "the combined Shared feed never leaks another member's private block",
            "must never leak" not in shared_html, "")
 
+    # Timeline: regroups the same Shared feed by calendar date instead
+    # of one flat chronological list -- only ever offered on the Shared
+    # tab (a single member's own tab is already their personal
+    # chronological view, grouping it wouldn't add anything).
+    record("notes", "the Timeline toggle only appears on the Shared tab",
+           page.locator(".dg-notes-timeline-btn").count() == 1, "")
+    page.click(".dg-notes-timeline-btn")
+    page.wait_for_timeout(200)
+    record("notes", "Group by date splits shared blocks from different days into separate date sections",
+           page.locator(".dg-notes-timeline-group").count() == 2, str(page.locator(".dg-notes-timeline-group").count()))
+    record("notes", "each Timeline date section shows a date header",
+           page.locator(".dg-notes-timeline-date").count() == 2, "")
+    timeline_html = page.content()
+    record("notes", "Timeline view still shows every shared block's content, just regrouped",
+           "Priya's shared note" in timeline_html and "Priya's second-day update" in timeline_html, "")
+    page.click(".dg-notes-timeline-btn")
+    page.wait_for_timeout(200)
+    record("notes", "toggling back to flat view removes the date grouping",
+           page.locator(".dg-notes-timeline-group").count() == 0, "")
+
     # The Shared feed is read-only with no controls of its own (see the
     # notes.js file header comment) -- without an explicit way out of
     # it, tapping over to look at Shared was a total dead end that read
@@ -5623,6 +5649,82 @@ def test_notes_v2_editorjs(p):
     record("notes", "the fallback never offers a Cell picker either",
            page2.query_selector("#picker-cell") is None, "")
     page2.close()
+    return errs
+
+
+def test_notes_reload_shows_own_previous_blocks(p):
+    """Regression test for a bug caught while building the Timeline
+    view: mountEditor() necessarily mounts your own tab's live Editor.js
+    instance BEFORE the first list_cell_notes fetch can possibly have
+    returned (render() runs synchronously in init(), the fetch is
+    async) -- so on every fresh page load, the editor briefly exists
+    empty. fetchNotes()'s "don't let a poll overwrite what you're
+    actively typing" guard used to fire on that very first fetch too,
+    silently discarding the real fetched data for your own agent_code
+    and leaving your own tab empty for the rest of the session -- your
+    already-saved notes were still safe server-side (and still visible
+    to every OTHER Cell member's own client), just never shown again on
+    the one screen a returning player actually looks at. Separate,
+    small standalone test rather than folded into test_notes_v2_editorjs
+    above, since that test's later steps depend on starting from a
+    single default empty block; seeding a pre-existing block into that
+    same fixture would collide with its typing-into-the-first-block
+    assertions."""
+    page = p.new_page()
+    page.set_default_timeout(15000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    cell = {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"]}
+    blocks_state = [
+        {"block_id": "b0", "agent_code": "OWEN-CS12", "block_type": "paragraph",
+         "text": json.dumps({"text": "Notes from last session, saved before this page ever loaded"}),
+         "shared": False, "sort_order": 500, "created_at": 1, "updated_at": 1},
+    ]
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=list_cells" in url:
+                res = {"status": "OK", "cells": [cell]}
+            elif "action=list_cell_notes" in url:
+                requester = url.split("agent_code=")[1].split("&")[0] if "agent_code=" in url else ""
+                notes = {}
+                for b in blocks_state:
+                    if b["agent_code"] != requester and not b["shared"]:
+                        continue
+                    notes.setdefault(b["agent_code"], []).append(b)
+                res = {"status": "OK", "notes": notes, "identities": {"OWEN-CS12": {"color": "#2b6cb0", "font": "caveat"}}}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.add_init_script("""
+        try {
+            localStorage.setItem('dg_agent_roster', JSON.stringify({
+                'OWEN-CS12': { code: 'OWEN-CS12', char_name: 'Owen Castillo', saved_at: Date.now() }
+            }));
+        } catch (e) {}
+    """)
+    page.goto(f"{BASE}/notes/index.html", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: page.query_selector(".dg-notes-identity-modal") is not None, timeout_ms=6000)
+    page.click(".dg-notes-color-swatch")
+    page.click(".dg-notes-identity-confirm")
+
+    wait_for_condition(lambda: "Notes from last session" in page.content(), timeout_ms=8000)
+    record("notes", "a block saved before this page load reappears in your own tab on a fresh open",
+           "Notes from last session, saved before this page ever loaded" in page.content(), page.content()[:2000])
+
+    page.close()
     return errs
 
 
@@ -5782,6 +5884,8 @@ def main():
         safe(test_pwa_update_banner, browser, area="pwa")
 
         safe(test_notes_v2_editorjs, browser, area="notes")
+
+        safe(test_notes_reload_shows_own_previous_blocks, browser, area="notes")
 
         browser.close()
 

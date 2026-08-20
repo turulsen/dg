@@ -194,6 +194,14 @@
     let identityPromptShown = false;
     let activeCode = agentCode; // an Agent Code, or SHARED_TAB
     let searchTerm = '';
+    // Regroups the Shared tab's normally-flat chronological feed into
+    // date-headed sections, so a Handler/player can reconstruct what
+    // happened when across the whole Cell without hunting through each
+    // member's own tab -- same data as the flat view (shared blocks
+    // only), just a different grouping. Only meaningful on SHARED_TAB;
+    // left on when switching away and back is fine, matches how a
+    // Cell filter or search term would persist too.
+    let timelineMode = false;
     let pollTimer = null;
     // The one live, editable Editor.js instance -- only ever mounted
     // while activeCode === agentCode (your own tab). A background poll
@@ -362,6 +370,13 @@
           '<span class="dg-notes-toggle-track"><span class="dg-notes-toggle-thumb"></span></span>' +
           '<span class="dg-notes-toggle-label">Circulate</span></button>'
         : '';
+      // Only meaningful on the combined Shared feed -- a single
+      // member's own tab is already their personal chronological view,
+      // grouping it by date wouldn't add anything.
+      const timelineBtnHtml = activeCode === SHARED_TAB
+        ? '<button type="button" class="dg-notes-timeline-btn' + (timelineMode ? ' active' : '') + '">' +
+          (timelineMode ? 'Flat view' : 'Group by date') + '</button>'
+        : '';
 
       // Same folder/tab-strip/paper nesting as the rest of the site
       // (assets/theme-folder.css: .tab-strip sits ABOVE .folder-body as
@@ -381,7 +396,7 @@
         '<div class="dg-notes-paper-margin"></div>' +
         '<div class="dg-notes-holes"><div class="dg-notes-hole"></div><div class="dg-notes-hole"></div><div class="dg-notes-hole"></div></div>' +
         '<div class="dg-notes-paper-content">' +
-        '<div class="dg-notes-toolbar">' + circulateBtnHtml +
+        '<div class="dg-notes-toolbar">' + circulateBtnHtml + timelineBtnHtml +
         '<input type="search" class="dg-notes-search" placeholder="Search notes…" value="' + escapeHtml(searchTerm) + '"></div>' +
         '<div class="dg-notes-body">' +
         '<aside class="dg-notes-toc"><div class="dg-notes-toc-label">Index</div><div id="dg-notes-toc-mount"></div></aside>' +
@@ -430,6 +445,43 @@
       wireTocEvents();
     }
 
+    // Shared by the flat read-only feed and the grouped Timeline view
+    // below -- one block's author badge + rendered content, identical
+    // either way.
+    function renderRoBlock(b, showAuthor) {
+      const authorBadge = showAuthor
+        ? '<span class="dg-notes-author-badge" style="background:' + (identityFor(b.agent_code) ? identityFor(b.agent_code).color : '#4a5568') + '">' + escapeHtml(memberLabel(b.agent_code)) + '</span>'
+        : '<span class="dg-notes-shared-badge">' + (b.shared ? 'Circulated' : 'Private') + '</span>';
+      return '<div class="dg-notes-ro-block" id="block-' + escapeHtml(b.block_id) + '" style="' + inkStyleFor(b.agent_code) + '">' + authorBadge + renderReadOnlyBlock(b.type, b.data) + '</div>';
+    }
+
+    // Regroups an already-chronologically-sorted block list into
+    // date-headed sections ("Session -- Aug 20, 2026"). Only ever
+    // called with sharedBlocksSorted()'s output, so blocks are already
+    // in ascending created_at order -- a run of same-day blocks is
+    // always contiguous, no separate sort/bucket-then-reorder needed.
+    function renderTimelineGroups(blocks) {
+      const groups = [];
+      let current = null;
+      blocks.forEach(b => {
+        const ts = b.created_at || b.updated_at || 0;
+        const label = ts
+          ? new Date(ts).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+          : 'Undated';
+        if (!current || current.label !== label) {
+          current = { label, blocks: [] };
+          groups.push(current);
+        }
+        current.blocks.push(b);
+      });
+      return groups.map(g =>
+        '<div class="dg-notes-timeline-group">' +
+        '<div class="dg-notes-timeline-date">' + escapeHtml(g.label) + '</div>' +
+        g.blocks.map(b => renderRoBlock(b, true)).join('') +
+        '</div>'
+      ).join('');
+    }
+
     function refreshReadOnlyFeed() {
       const mount = container.querySelector('#dg-notes-readonly-feed');
       if (!mount) return;
@@ -453,14 +505,12 @@
       const composeHint = isShared
         ? '<button type="button" class="dg-notes-goto-own-btn" data-goto-own="1">Write on your own tab, then tap Circulate to add it here &rarr;</button>'
         : '';
-      mount.innerHTML = composeHint + (blocks.length
-        ? blocks.map(b => {
-          const authorBadge = showAuthor
-            ? '<span class="dg-notes-author-badge" style="background:' + (identityFor(b.agent_code) ? identityFor(b.agent_code).color : '#4a5568') + '">' + escapeHtml(memberLabel(b.agent_code)) + '</span>'
-            : '<span class="dg-notes-shared-badge">' + (b.shared ? 'Circulated' : 'Private') + '</span>';
-          return '<div class="dg-notes-ro-block" id="block-' + escapeHtml(b.block_id) + '" style="' + inkStyleFor(b.agent_code) + '">' + authorBadge + renderReadOnlyBlock(b.type, b.data) + '</div>';
-        }).join('')
-        : '<div class="dg-notes-empty">' + emptyLabel + '</div>');
+      const bodyHtml = blocks.length
+        ? (isShared && timelineMode
+          ? renderTimelineGroups(blocks)
+          : blocks.map(b => renderRoBlock(b, showAuthor)).join(''))
+        : '<div class="dg-notes-empty">' + emptyLabel + '</div>';
+      mount.innerHTML = composeHint + bodyHtml;
       const gotoBtn = mount.querySelector('[data-goto-own]');
       if (gotoBtn) gotoBtn.addEventListener('click', () => { activeCode = agentCode; render(); });
     }
@@ -488,6 +538,15 @@
           sharedByBlockId[currentBlockId] = next;
           updateCirculateButton();
           scheduleSave(currentBlockId);
+        });
+      }
+      const timelineBtn = container.querySelector('.dg-notes-timeline-btn');
+      if (timelineBtn) {
+        timelineBtn.addEventListener('click', () => {
+          timelineMode = !timelineMode;
+          timelineBtn.classList.toggle('active', timelineMode);
+          timelineBtn.textContent = timelineMode ? 'Flat view' : 'Group by date';
+          refreshReadOnlyFeed();
         });
       }
     }
@@ -690,6 +749,16 @@
        YOU, through the editor's own onChange -- there's no merge race
        to defend against anymore, because a background poll's data is
        never fed back into the one place you could be actively typing. ── */
+    // mountEditor() necessarily mounts your own tab's live editor
+    // BEFORE the first fetchNotes() has ever resolved (render() runs
+    // synchronously in init(), fetchNotes() is async) -- so the very
+    // first time it mounts, it's always empty, regardless of whatever
+    // you'd already saved in a previous session. Tracks whether that
+    // first fetch has landed yet, so fetchNotes() below can tell "the
+    // editor is empty because nothing's loaded yet" apart from "the
+    // editor already has your real, possibly-just-typed content."
+    let ownDataLoaded = false;
+
     function fetchNotes() {
       if (!cellId) return;
       jsonpGet('list_cell_notes', { cell_id: cellId, agent_code: agentCode, token: agentToken }, res => {
@@ -705,15 +774,59 @@
             };
           });
         });
-        // Your own tab's live document is the source of truth while
-        // you're on it -- don't let a poll's (possibly-lagging) echo of
-        // your own writes overwrite notesByCode[agentCode] out from
-        // under the editor's own bookkeeping.
-        if (activeCode === agentCode && editorInstance) delete parsed[agentCode];
+        const isFirstLoad = !ownDataLoaded;
+        ownDataLoaded = true;
+        // Your own tab's live document is the source of truth once
+        // it's actually holding your real data -- don't let a LATER
+        // poll's (possibly-lagging) echo of your own writes overwrite
+        // notesByCode[agentCode] out from under the editor's own
+        // bookkeeping. The very first fetch is different: the editor
+        // was necessarily mounted empty (see ownDataLoaded's own
+        // comment above), so this one time the server's copy IS what
+        // needs to end up on screen -- skipping it here silently made
+        // every previously-saved note vanish from its own author's
+        // view the moment they reopened Notes (still safe server-side,
+        // and still visible to every other Cell member's own client,
+        // just gone from the one screen a returning player actually
+        // looks at, effectively a false "did I lose everything?" scare).
+        if (!isFirstLoad && activeCode === agentCode && editorInstance) delete parsed[agentCode];
         Object.assign(notesByCode, parsed);
         identities = res.identities || identities;
+        if (isFirstLoad && activeCode === agentCode && editorInstance) loadOwnBlocksIntoEditor();
         refreshChrome();
         if (activeCode !== agentCode) refreshReadOnlyFeed();
+      });
+    }
+
+    // Pushes your own just-fetched blocks into the live editor -- only
+    // ever needed once, right after the first fetchNotes() resolves
+    // (see its call site's comment for why). A narrow, accepted race:
+    // if you'd already started typing a brand-new block in the second
+    // or two before this fetch resolved, that in-progress block gets
+    // replaced along with everything else -- same trade-off class as
+    // every other fire-and-forget write in this app already accepts,
+    // and far narrower than the bug this fixes.
+    function loadOwnBlocksIntoEditor() {
+      if (!editorInstance) return;
+      const initialBlocks = (notesByCode[agentCode] || []).slice()
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map(b => {
+          sharedByBlockId[b.block_id] = !!b.shared;
+          return { id: b.block_id, type: b.type, data: b.data };
+        });
+      if (!initialBlocks.length) return;
+      // .blocks (and every other public API method) isn't attached to
+      // the instance until Editor.js's own internal async init
+      // finishes -- calling .blocks.render() right after `new
+      // EditorJS(...)` returns, with no wait, hits it while still
+      // undefined, since this can run as early as the very first
+      // fetchNotes() resolving, which races ahead of Editor.js's own
+      // readiness in practice. isReady is Editor.js's own documented
+      // signal for this.
+      const inst = editorInstance;
+      inst.isReady.then(() => {
+        if (editorInstance !== inst) return; // tab switched away/unmounted before this resolved
+        inst.blocks.render({ blocks: initialBlocks });
       });
     }
 

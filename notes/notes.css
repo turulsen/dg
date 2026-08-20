@@ -140,6 +140,26 @@
 #dg-notes-panel .dg-notes-circulate-btn:disabled{ opacity:.45; cursor:default; }
 #dg-notes-panel .dg-notes-circulate-btn:not(:disabled):hover{ border-color:rgba(58,40,10,.5); }
 
+/* Timeline: regroups the Shared feed by date instead of one flat list
+   -- same toolbar-button look as Circulate, only ever shown on the
+   Shared tab. */
+#dg-notes-panel .dg-notes-timeline-btn{
+  font-family:'Courier Prime',monospace; font-size:12px; color:#2b2416;
+  background:rgba(255,255,255,.5); border:1px solid rgba(58,40,10,.25);
+  border-radius:3px; padding:6px 10px; cursor:pointer;
+}
+#dg-notes-panel .dg-notes-timeline-btn:hover{ border-color:rgba(58,40,10,.5); }
+#dg-notes-panel .dg-notes-timeline-btn.active{ background:rgba(58,110,196,.15); border-color:rgba(58,110,196,.4); color:#1a3a6e; }
+/* .dg-notes-readonly-feed's own flex gap spaces sibling groups apart;
+   each group needs the same column+gap treatment internally, since its
+   .dg-notes-ro-block children are no longer direct children of that
+   flex container once grouped. */
+#dg-notes-panel .dg-notes-timeline-group{ display:flex; flex-direction:column; gap:var(--s3); }
+#dg-notes-panel .dg-notes-timeline-date{
+  font-family:'Special Elite',monospace; font-size:11px; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--red); border-bottom:1px solid rgba(58,40,10,.2); padding-bottom:5px; margin-bottom:var(--s3);
+}
+
 #dg-notes-panel .dg-notes-body{
   display:flex; gap:var(--s5); align-items:flex-start; position:relative; z-index:1;
 }
