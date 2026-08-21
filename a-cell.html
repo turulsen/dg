@@ -270,72 +270,127 @@
   }
   .cells-status{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); min-height:1.4em; margin-bottom:10px; }
 
-  /* ── Handouts: a shared clue/document log, each entry scoped to one
-     Cell or every Cell (a Cell-scoped one only needs to matter to the
-     table it's for; a campaign-wide one -- a citywide news item, a
-     shared briefing -- goes to everyone). Styled like a filed
-     document, matching the classification-stamp language already used
-     elsewhere (Restricted stamp, "Clearance" stamps) rather than the
-     Music tab's device look -- this is paper, not hardware. ── */
-  .handouts-toolbar{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
-  .handouts-create-form{
-    background:rgba(28,22,8,.04); border:1px solid var(--rule); padding:14px 16px; margin-bottom:16px;
-    display:flex; flex-direction:column; gap:12px;
-  }
-  .handouts-create-row{ display:flex; gap:14px; flex-wrap:wrap; }
-  .handouts-create-field{ display:flex; flex-direction:column; gap:4px; flex:1; min-width:180px; }
-  .handouts-create-field span{
+  /* ── Evidence: a shared clue/document locker, each item filed under
+     one Cell (or every Cell) and, within that Cell, an optional
+     Operation folder. A Handler stages items before release (a
+     Released toggle, independent of when it was filed) and can
+     restrict a released item to specific Agents rather than the whole
+     Cell. Styled like a filed document, matching the classification-
+     stamp language already used elsewhere (Restricted stamp,
+     "Clearance" stamps) rather than the Music tab's device look --
+     this is paper, not hardware. ── */
+  .evidence-toolbar{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+  .evidence-layout{ display:flex; gap:20px; align-items:flex-start; }
+  .evidence-sidebar{ width:200px; flex-shrink:0; display:flex; flex-direction:column; gap:10px; }
+  .evidence-main{ flex:1; min-width:0; }
+  .evidence-cell-select-row{ display:flex; flex-direction:column; gap:4px; }
+  .evidence-cell-select-row span{
     font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.1em;
     text-transform:uppercase; color:var(--ink-3);
   }
-  .handouts-create-field input, .handouts-create-field select, .handouts-create-field textarea{
+  .evidence-cell-select-row select{
+    background:var(--paper); border:1px solid var(--rule); color:var(--ink);
+    padding:6px 9px; font-family:'Courier Prime',monospace; font-size:12px;
+  }
+  .evidence-folders{ display:flex; flex-direction:column; gap:2px; }
+  .evidence-folder-item{
+    display:flex; align-items:center; justify-content:space-between; gap:6px;
+    padding:6px 9px; font-family:'Courier Prime',monospace; font-size:11.5px; color:var(--ink-2);
+    border:1px solid transparent; cursor:pointer;
+  }
+  .evidence-folder-item:hover{ background:rgba(28,22,8,.05); }
+  .evidence-folder-item.active{ background:rgba(28,22,8,.08); border-color:var(--rule); color:var(--ink); }
+  .evidence-folder-name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .evidence-folder-del{
+    flex-shrink:0; color:var(--ink-3); font-size:13px; line-height:1; cursor:pointer; opacity:.6;
+  }
+  .evidence-folder-del:hover{ opacity:1; color:var(--red); }
+  .evidence-new-op-form{
+    background:rgba(28,22,8,.04); border:1px solid var(--rule); padding:8px 10px;
+    display:flex; flex-direction:column; gap:6px;
+  }
+  .evidence-new-op-form input{
+    background:transparent; border:none; border-bottom:1.5px solid rgba(90,74,16,.4);
+    color:var(--ink); padding:4px 0; font-size:12px; font-family:'Courier Prime',monospace;
+  }
+  .evidence-new-op-form input:focus{ outline:none; border-bottom-color:var(--red); }
+  .evidence-new-op-actions{ display:flex; gap:6px; }
+  .evidence-new-op-actions .paper-btn{ font-size:10px; padding:5px 9px; }
+  .evidence-create-form{
+    background:rgba(28,22,8,.04); border:1px solid var(--rule); padding:14px 16px; margin-bottom:16px;
+    display:flex; flex-direction:column; gap:12px;
+  }
+  .evidence-create-row{ display:flex; gap:14px; flex-wrap:wrap; }
+  .evidence-create-field{ display:flex; flex-direction:column; gap:4px; flex:1; min-width:180px; }
+  .evidence-create-field span{
+    font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--ink-3);
+  }
+  .evidence-create-field input, .evidence-create-field select, .evidence-create-field textarea{
     background:transparent; border:none; border-bottom:1.5px solid rgba(90,74,16,.4);
     color:var(--ink); padding:5px 0; font-size:13px; font-family:'Courier Prime',monospace;
   }
-  .handouts-create-field textarea{ resize:vertical; min-height:64px; font-family:'Courier Prime',monospace; }
-  .handouts-create-field input:focus, .handouts-create-field select:focus, .handouts-create-field textarea:focus{
+  .evidence-create-field textarea{ resize:vertical; min-height:64px; font-family:'Courier Prime',monospace; }
+  .evidence-create-field input:focus, .evidence-create-field select:focus, .evidence-create-field textarea:focus{
     outline:none; border-bottom-color:var(--red);
   }
-  .handouts-create-actions{ display:flex; gap:8px; align-items:center; }
-  .handouts-create-error{ color:var(--red); font-size:11px; min-height:1.3em; }
-  .handouts-status{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); min-height:1.4em; margin-bottom:10px; }
-  .handouts-list{ display:flex; flex-direction:column; gap:12px; }
-  .handout-card{ background:rgba(28,22,8,.04); border:1px solid var(--rule); padding:16px 18px; }
-  .handout-card-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
-  .handout-scope{
+  .evidence-restrict-list{
+    display:flex; flex-wrap:wrap; gap:6px 14px; background:transparent;
+    border:1px solid var(--rule); padding:8px 10px; max-height:110px; overflow-y:auto;
+  }
+  .evidence-restrict-item{ display:flex; align-items:center; gap:5px; font-size:11.5px; font-family:'Courier Prime',monospace; color:var(--ink-2); }
+  .evidence-restrict-note{ font-size:10px; color:var(--ink-3); font-style:italic; margin:0; font-family:'Courier Prime',monospace; }
+  .evidence-released-row{ display:flex; align-items:center; gap:8px; font-size:12px; font-family:'Courier Prime',monospace; color:var(--ink-2); }
+  .evidence-create-actions{ display:flex; gap:8px; align-items:center; }
+  .evidence-create-error{ color:var(--red); font-size:11px; min-height:1.3em; }
+  .evidence-status{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); min-height:1.4em; margin-bottom:10px; }
+  .evidence-list{ display:flex; flex-direction:column; gap:12px; }
+  .evidence-card{ background:rgba(28,22,8,.04); border:1px solid var(--rule); padding:16px 18px; }
+  .evidence-card.unreleased{ border-style:dashed; opacity:.85; }
+  .evidence-card-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
+  .evidence-card-tags{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .evidence-scope{
     font-family:'Special Elite',monospace; font-size:9px; letter-spacing:.14em; text-transform:uppercase;
     border:1.5px solid var(--red); color:var(--red); padding:3px 10px; opacity:.85; display:inline-block;
   }
-  .handout-scope.all-cells{ border-color:var(--green); color:var(--green); }
-  .handout-date{ font-family:'Courier Prime',monospace; font-size:10px; color:var(--ink-3); }
-  .handout-title{ font-family:'Special Elite',monospace; font-size:16px; color:var(--ink); margin-bottom:8px; }
-  .handout-body-row{ display:flex; gap:14px; }
-  .handout-photo{
+  .evidence-scope.all-cells{ border-color:var(--green); color:var(--green); }
+  .evidence-op-tag{
+    font-family:'Courier Prime',monospace; font-size:10px; letter-spacing:.05em;
+    border:1px solid var(--rule); color:var(--ink-3); padding:3px 9px; display:inline-block;
+  }
+  .evidence-date{ font-family:'Courier Prime',monospace; font-size:10px; color:var(--ink-3); }
+  .evidence-title{ font-family:'Special Elite',monospace; font-size:16px; color:var(--ink); margin-bottom:8px; }
+  .evidence-body-row{ display:flex; gap:14px; }
+  .evidence-photo{
     width:96px; height:96px; flex-shrink:0; object-fit:cover; border:1px solid var(--rule); display:block;
     cursor:zoom-in;
   }
   /* A 96px thumbnail is fine for "there's a photo here" but useless for
      actually reading a filed document -- click it to see it at real
      size instead of squinting. */
-  .handout-lightbox{
+  .evidence-lightbox{
     position:fixed; inset:0; z-index:9999; background:rgba(8,6,2,.92);
     display:flex; align-items:center; justify-content:center; padding:24px;
     cursor:zoom-out;
   }
-  .handout-lightbox img{
+  .evidence-lightbox img{
     max-width:92vw; max-height:92vh; object-fit:contain; box-shadow:0 8px 40px rgba(0,0,0,.6);
   }
-  .handout-lightbox-close{
+  .evidence-lightbox-close{
     position:absolute; top:16px; right:20px; font-family:'Special Elite',monospace; font-size:13px;
     letter-spacing:.1em; text-transform:uppercase; color:#e9e3ce; background:rgba(0,0,0,.5);
     border:1px solid rgba(233,227,206,.4); padding:6px 14px; cursor:pointer;
   }
-  .handout-text{
+  .evidence-text{
     font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.7;
     flex:1; min-width:0; white-space:pre-wrap;
   }
-  .handout-actions{ display:flex; gap:8px; margin-top:12px; }
-  .handouts-empty-note{ font-style:italic; color:var(--ink-3); font-family:'Courier Prime',monospace; }
+  .evidence-restricted-note{
+    font-family:'Courier Prime',monospace; font-size:10.5px; color:var(--ink-3); margin-top:8px; font-style:italic;
+  }
+  .evidence-actions{ display:flex; gap:8px; align-items:center; margin-top:12px; flex-wrap:wrap; }
+  .evidence-release-toggle{ display:flex; align-items:center; gap:6px; font-size:11px; font-family:'Courier Prime',monospace; color:var(--ink-2); margin-right:auto; }
+  .evidence-empty-note{ font-style:italic; color:var(--ink-3); font-family:'Courier Prime',monospace; }
 
   /* ── MUSIC: the whole tab as one field-radio unit (chassis, recessed
      screen, numbered control sections), matching the tactility of the
@@ -620,7 +675,7 @@
     <div class="tab-strip" id="acell-tab-strip">
       <div class="tw active" data-tab="play"><span>Play</span></div>
       <div class="tw inactive" data-tab="cells"><span>Cells</span></div>
-      <div class="tw inactive" data-tab="handouts"><span>Handouts</span></div>
+      <div class="tw inactive" data-tab="evidence"><span>Evidence</span></div>
       <div class="tw inactive" data-tab="sheet"><span>Sheet</span></div>
       <div class="tw inactive" data-tab="music"><span>Music</span></div>
     </div>
@@ -657,15 +712,28 @@
         <div class="cells-unassigned" id="cells-unassigned"></div>
       </div>
 
-      <div class="tab-panel" id="panel-handouts">
-        <div class="handouts-toolbar">
-          <button type="button" class="paper-btn primary" id="handouts-create-btn">+ New Handout</button>
-          <button type="button" class="paper-btn" id="handouts-refresh-btn">Refresh</button>
-          <span class="play-refresh-note" id="handouts-refresh-note"></span>
+      <div class="tab-panel" id="panel-evidence">
+        <div class="evidence-toolbar">
+          <button type="button" class="paper-btn primary" id="evidence-create-btn">+ New Evidence</button>
+          <button type="button" class="paper-btn" id="evidence-refresh-btn">Refresh</button>
+          <span class="play-refresh-note" id="evidence-refresh-note"></span>
         </div>
-        <div id="handouts-create-form-slot"></div>
-        <div class="handouts-status" id="handouts-status"></div>
-        <div class="handouts-list" id="handouts-list"></div>
+        <div class="evidence-layout">
+          <div class="evidence-sidebar">
+            <div class="evidence-cell-select-row">
+              <span>Cell</span>
+              <select id="evidence-cell-filter"><option value="">All Cells</option></select>
+            </div>
+            <div class="evidence-folders" id="evidence-folders"></div>
+            <div id="evidence-op-form-slot"></div>
+            <button type="button" class="paper-btn" id="evidence-new-op-btn" style="display:none;">+ New Operation</button>
+          </div>
+          <div class="evidence-main">
+            <div id="evidence-create-form-slot"></div>
+            <div class="evidence-status" id="evidence-status"></div>
+            <div class="evidence-list" id="evidence-list"></div>
+          </div>
+        </div>
       </div>
 
       <div class="tab-panel" id="panel-sheet">
@@ -1649,26 +1717,41 @@
 
 <script>
 /* ══════════════════════════════════════════════
-   HANDOUTS -- a shared clue/document log the Handler files, each entry
-   scoped to one Cell or every Cell. Player-facing agent-hub.html reads
-   the same list_handouts action and filters to what a given Agent's
-   Cell(s) can see.
+   EVIDENCE -- an evidence locker the Handler files, each item scoped to
+   one Cell (or every Cell) and, within that Cell, an optional Operation
+   folder. Staged with a Released toggle and an optional per-Agent
+   restriction; player-facing agent-hub.html and notes/ read the same
+   list_evidence action, which filters server-side to what a given
+   Agent can actually see.
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
   var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
-  var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm it. Check that the Handouts addition (list_handouts / create_handout / update_handout / delete_handout) is pasted into Apps Script and redeployed.';
+  var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm it. Check that the Evidence addition (list_evidence / create_evidence / update_evidence / delete_evidence / list_operations / create_operation / update_operation / delete_operation) is pasted into Apps Script and redeployed.';
 
-  var listEl = document.getElementById('handouts-list');
-  var statusEl = document.getElementById('handouts-status');
-  var createBtn = document.getElementById('handouts-create-btn');
-  var createFormSlot = document.getElementById('handouts-create-form-slot');
-  var refreshBtn = document.getElementById('handouts-refresh-btn');
-  var refreshNote = document.getElementById('handouts-refresh-note');
+  var listEl = document.getElementById('evidence-list');
+  var statusEl = document.getElementById('evidence-status');
+  var createBtn = document.getElementById('evidence-create-btn');
+  var createFormSlot = document.getElementById('evidence-create-form-slot');
+  var refreshBtn = document.getElementById('evidence-refresh-btn');
+  var refreshNote = document.getElementById('evidence-refresh-note');
+  var cellFilterEl = document.getElementById('evidence-cell-filter');
+  var foldersEl = document.getElementById('evidence-folders');
+  var opFormSlot = document.getElementById('evidence-op-form-slot');
+  var newOpBtn = document.getElementById('evidence-new-op-btn');
 
-  var handouts = [];
+  var evidenceItems = [];
   var cells = [];
   var cellsById = {};
+  var operations = [];
+  var operationsByCell = {};
+  var operationsById = {};
+  // '' = All Cells (no folder browsing across Cells -- Operations are
+  // each scoped to one Cell, so folders only make sense once a Cell is
+  // picked). filterOpId: '' = All (within the picked Cell), 'UNFILED'
+  // = items with no operation_id, or an actual operation_id.
+  var filterCellId = '';
+  var filterOpId = '';
   // formPhotoDataUrl: the data URI of a NEWLY picked file this edit
   // session, or null if none picked. formPhotoExisting: the original
   // stored photo value (a gdrive: link, a legacy pre-migration data
@@ -1686,7 +1769,7 @@
   }
 
   // Same gdrive:-link convention already used for Face/Outfit Plates
-  // (see agent-hub.html/dg-agent-portal.html) -- resolveHandoutPhoto_()
+  // (see agent-hub.html/dg-agent-portal.html) -- resolveEvidencePhoto_()
   // in Code.gs stores photos this way now instead of a raw data URI.
   function extractDriveId(url) {
     if (!url) return null;
@@ -1697,10 +1780,10 @@
   // Resolves a gdrive: link to a data URI via the imgdata JSONP proxy
   // and hands it to onReady -- used for both the thumbnail grid and the
   // edit-form preview.
-  function loadHandoutPhotoDataUri(photoUrl, onReady) {
+  function loadEvidencePhotoDataUri(photoUrl, onReady) {
     var id = extractDriveId(photoUrl);
     if (!id) return;
-    var cbName = '_acellHandoutPhoto_' + id.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
+    var cbName = '_acellEvidencePhoto_' + id.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
     var s = document.createElement('script');
     window[cbName] = function (json) {
       delete window[cbName];
@@ -1712,7 +1795,7 @@
   }
 
   function jsonpGet(action, params, cb) {
-    var cbName = '_acellHandouts_' + action + '_' + Date.now();
+    var cbName = '_acellEvidence_' + action + '_' + Date.now();
     var timer = setTimeout(function () { delete window[cbName]; cb(null); }, 7000);
     window[cbName] = function (res) {
       clearTimeout(timer);
@@ -1743,6 +1826,11 @@
     return c ? c.name : cellId;
   }
 
+  function opName(opId) {
+    var o = operationsById[opId];
+    return o ? o.name : opId;
+  }
+
   function formatDate(ts) {
     var n = Number(ts);
     if (!n) return '';
@@ -1750,21 +1838,22 @@
   }
 
   function fetchAll(isRefresh) {
-    var handoutsDone = false, cellsDone = false, handoutsOk = false, cellsOk = false;
+    var evDone = false, cellsDone = false, opsDone = false, evOk = false, cellsOk = false;
     function maybeRender() {
-      if (!handoutsDone || !cellsDone) return;
-      if (!handoutsOk) {
-        listEl.innerHTML = '<div class="handouts-empty-note">Could not load Handouts. (The A-Cell Handouts addition may not be deployed yet.)</div>';
+      if (!evDone || !cellsDone || !opsDone) return;
+      if (!evOk) {
+        listEl.innerHTML = '<div class="evidence-empty-note">Could not load Evidence. (The A-Cell Evidence addition may not be deployed yet.)</div>';
         return;
       }
+      renderFolders();
       renderList();
       if (isRefresh) refreshNote.textContent = 'Updated ' + new Date().toLocaleTimeString();
     }
-    jsonpGet('list_handouts', {}, function (res) {
-      handoutsDone = true;
-      if (res && res.status === 'OK' && Array.isArray(res.handouts)) {
-        handouts = res.handouts.slice().sort(function (a, b) { return Number(b.created_at) - Number(a.created_at); });
-        handoutsOk = true;
+    jsonpGet('list_evidence', {}, function (res) {
+      evDone = true;
+      if (res && res.status === 'OK' && Array.isArray(res.evidence)) {
+        evidenceItems = res.evidence.slice().sort(function (a, b) { return Number(b.created_at) - Number(a.created_at); });
+        evOk = true;
       }
       maybeRender();
     });
@@ -1778,96 +1867,224 @@
       }
       maybeRender();
     });
+    jsonpGet('list_operations', {}, function (res) {
+      opsDone = true;
+      if (res && res.status === 'OK' && Array.isArray(res.operations)) {
+        operations = res.operations;
+        operationsById = {};
+        operationsByCell = {};
+        operations.forEach(function (o) {
+          operationsById[o.operation_id] = o;
+          (operationsByCell[o.cell_id] = operationsByCell[o.cell_id] || []).push(o);
+        });
+      }
+      maybeRender();
+    });
+  }
+
+  function renderCellFilterOptions() {
+    var opts = '<option value="">All Cells</option>' + cells.map(function (c) {
+      var sel = filterCellId === c.cell_id ? ' selected' : '';
+      return '<option value="' + escapeHtml(c.cell_id) + '"' + sel + '>' + escapeHtml(c.name) + '</option>';
+    }).join('');
+    if (cellFilterEl.innerHTML !== opts) cellFilterEl.innerHTML = opts;
+    cellFilterEl.value = filterCellId;
+  }
+
+  function renderFolders() {
+    renderCellFilterOptions();
+    opFormSlot.innerHTML = '';
+    if (!filterCellId) {
+      foldersEl.innerHTML = '';
+      newOpBtn.style.display = 'none';
+      return;
+    }
+    newOpBtn.style.display = '';
+    var ops = operationsByCell[filterCellId] || [];
+    var rows = [{ id: '', label: 'All' }, { id: 'UNFILED', label: 'Unfiled' }]
+      .concat(ops.map(function (o) { return { id: o.operation_id, label: o.name, del: true }; }));
+    foldersEl.innerHTML = rows.map(function (r) {
+      var active = filterOpId === r.id ? ' active' : '';
+      var del = r.del ? '<span class="evidence-folder-del" data-del-op="' + escapeHtml(r.id) + '" title="Delete Operation">&times;</span>' : '';
+      return '<div class="evidence-folder-item' + active + '" data-op="' + escapeHtml(r.id) + '">' +
+        '<span class="evidence-folder-name">' + escapeHtml(r.label) + '</span>' + del + '</div>';
+    }).join('');
+    Array.prototype.forEach.call(foldersEl.querySelectorAll('[data-op]'), function (row) {
+      row.addEventListener('click', function (e) {
+        if (e.target.hasAttribute('data-del-op')) return;
+        filterOpId = row.dataset.op;
+        renderFolders();
+        renderList();
+      });
+    });
+    Array.prototype.forEach.call(foldersEl.querySelectorAll('[data-del-op]'), function (x) {
+      x.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var opId = x.dataset.delOp;
+        var o = operationsById[opId];
+        if (!o || !confirm('Delete Operation "' + o.name + '"? Evidence filed under it becomes Unfiled, not deleted.')) return;
+        statusEl.textContent = 'Deleting Operation…';
+        fetch(APPS_SCRIPT_URL, {
+          method: 'POST', mode: 'no-cors', keepalive: true,
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({ action: 'delete_operation', operation_id: opId, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+        }).then(function () {
+          setTimeout(function () {
+            jsonpGet('list_operations', {}, function (res) {
+              if (res && res.status === 'OK' && Array.isArray(res.operations)) {
+                operations = res.operations;
+                operationsById = {}; operationsByCell = {};
+                operations.forEach(function (o2) {
+                  operationsById[o2.operation_id] = o2;
+                  (operationsByCell[o2.cell_id] = operationsByCell[o2.cell_id] || []).push(o2);
+                });
+              }
+              if (filterOpId === opId) filterOpId = '';
+              statusEl.textContent = 'Deleted ' + o.name + '.';
+              renderFolders();
+              renderList();
+            });
+          }, 900);
+        }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+      });
+    });
+  }
+
+  function visibleEvidence() {
+    return evidenceItems.filter(function (h) {
+      if (!filterCellId) return true;
+      if (h.cell_id !== filterCellId) return false;
+      if (filterOpId === 'UNFILED') return !h.operation_id;
+      if (filterOpId) return h.operation_id === filterOpId;
+      return true;
+    });
   }
 
   function renderList() {
-    if (!handouts.length) {
-      listEl.innerHTML = '<div class="handouts-empty-note">No handouts filed yet -- click "+ New Handout" to add one.</div>';
+    var shown = visibleEvidence();
+    if (!shown.length) {
+      listEl.innerHTML = '<div class="evidence-empty-note">No evidence filed here yet -- click "+ New Evidence" to add one.</div>';
       return;
     }
-    listEl.innerHTML = handouts.map(function (h, i) {
-      var scopeClass = h.cell_id ? 'handout-scope' : 'handout-scope all-cells';
+    listEl.innerHTML = shown.map(function (h) {
+      var i = evidenceItems.indexOf(h);
+      var scopeClass = h.cell_id ? 'evidence-scope' : 'evidence-scope all-cells';
+      var opTag = h.operation_id ? '<span class="evidence-op-tag">' + escapeHtml(opName(h.operation_id)) + '</span>' : '';
       // A gdrive:-backed photo (the normal case now) resolves async
-      // below into this placeholder; a legacy pre-migration handout
-      // with a raw data URI still on file renders directly.
+      // below into this placeholder; a legacy pre-migration item with
+      // a raw data URI still on file renders directly.
       var driveId = extractDriveId(h.photo);
       var photoRow = h.photo
-        ? (driveId ? '<div class="handout-photo-wrap" id="handout-photo-' + i + '"></div>'
-                   : '<img class="handout-photo" src="' + h.photo + '" alt="" data-lightbox-photo="' + i + '">')
+        ? (driveId ? '<div class="evidence-photo-wrap" id="evidence-photo-' + i + '"></div>'
+                   : '<img class="evidence-photo" src="' + h.photo + '" alt="" data-lightbox-photo="' + i + '">')
         : '';
-      return '<div class="handout-card" data-i="' + i + '">' +
-        '<div class="handout-card-head">' +
-        '<span class="' + scopeClass + '">' + escapeHtml(cellName(h.cell_id)) + '</span>' +
-        '<span class="handout-date">' + escapeHtml(formatDate(h.created_at)) + '</span>' +
+      var restrictedNote = (h.restricted_to && h.restricted_to.length)
+        ? '<div class="evidence-restricted-note">Restricted to: ' + h.restricted_to.map(escapeHtml).join(', ') + '</div>' : '';
+      return '<div class="evidence-card' + (h.released ? '' : ' unreleased') + '" data-i="' + i + '">' +
+        '<div class="evidence-card-head">' +
+        '<div class="evidence-card-tags"><span class="' + scopeClass + '">' + escapeHtml(cellName(h.cell_id)) + '</span>' + opTag + '</div>' +
+        '<span class="evidence-date">' + escapeHtml(formatDate(h.created_at)) + '</span>' +
         '</div>' +
-        '<div class="handout-title">' + escapeHtml(h.title) + '</div>' +
-        '<div class="handout-body-row">' + photoRow +
-        '<div class="handout-text">' + escapeHtml(h.body) + '</div>' +
-        '</div>' +
-        '<div class="handout-actions">' +
-        '<button type="button" class="paper-btn" data-edit-handout="' + i + '">Edit</button>' +
-        '<button type="button" class="paper-btn cell-delete-btn" data-delete-handout="' + i + '">Delete</button>' +
+        '<div class="evidence-title">' + escapeHtml(h.title) + '</div>' +
+        '<div class="evidence-body-row">' + photoRow +
+        '<div class="evidence-text">' + escapeHtml(h.body) + '</div>' +
+        '</div>' + restrictedNote +
+        '<div class="evidence-actions">' +
+        '<label class="evidence-release-toggle"><input type="checkbox" data-toggle-released="' + i + '"' + (h.released ? ' checked' : '') + '> Released</label>' +
+        '<button type="button" class="paper-btn" data-edit-evidence="' + i + '">Edit</button>' +
+        '<button type="button" class="paper-btn cell-delete-btn" data-delete-evidence="' + i + '">Delete</button>' +
         '</div>' +
         '</div>';
     }).join('');
 
-    Array.prototype.forEach.call(listEl.querySelectorAll('[data-edit-handout]'), function (btn) {
-      btn.addEventListener('click', function () { showForm(handouts[parseInt(btn.dataset.editHandout, 10)]); });
+    Array.prototype.forEach.call(listEl.querySelectorAll('[data-edit-evidence]'), function (btn) {
+      btn.addEventListener('click', function () { showForm(evidenceItems[parseInt(btn.dataset.editEvidence, 10)]); });
     });
-    Array.prototype.forEach.call(listEl.querySelectorAll('[data-delete-handout]'), function (btn) {
-      btn.addEventListener('click', function () { deleteHandout(handouts[parseInt(btn.dataset.deleteHandout, 10)]); });
+    Array.prototype.forEach.call(listEl.querySelectorAll('[data-delete-evidence]'), function (btn) {
+      btn.addEventListener('click', function () { deleteEvidence(evidenceItems[parseInt(btn.dataset.deleteEvidence, 10)]); });
+    });
+    Array.prototype.forEach.call(listEl.querySelectorAll('[data-toggle-released]'), function (cb) {
+      cb.addEventListener('change', function () { toggleReleased(evidenceItems[parseInt(cb.dataset.toggleReleased, 10)], cb); });
     });
     Array.prototype.forEach.call(listEl.querySelectorAll('[data-lightbox-photo]'), function (img) {
       img.addEventListener('click', function () {
-        var h = handouts[parseInt(img.dataset.lightboxPhoto, 10)];
+        var h = evidenceItems[parseInt(img.dataset.lightboxPhoto, 10)];
         if (h && h.photo) openLightbox(h.photo);
       });
     });
-    handouts.forEach(function (h, i) {
+    shown.forEach(function (h) {
+      var i = evidenceItems.indexOf(h);
       if (!extractDriveId(h.photo)) return;
-      loadHandoutPhotoDataUri(h.photo, function (dataUri) {
-        var wrap = document.getElementById('handout-photo-' + i);
+      loadEvidencePhotoDataUri(h.photo, function (dataUri) {
+        var wrap = document.getElementById('evidence-photo-' + i);
         if (!wrap) return;
-        wrap.innerHTML = '<img class="handout-photo" src="' + dataUri + '" alt="">';
+        wrap.innerHTML = '<img class="evidence-photo" src="' + dataUri + '" alt="">';
         wrap.querySelector('img').addEventListener('click', function () { openLightbox(dataUri); });
       });
     });
+  }
+
+  function toggleReleased(h, cb) {
+    var next = cb.checked;
+    cb.disabled = true;
+    statusEl.textContent = 'Saving…';
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors', keepalive: true,
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({
+        action: 'update_evidence', evidence_id: h.evidence_id, title: h.title, body: h.body,
+        photo: h.photo || '', cell_id: h.cell_id || '', operation_id: h.operation_id || '',
+        released: next, restricted_to: JSON.stringify(h.restricted_to || []),
+        handler_password: sessionStorage.getItem('dg_acell_pw') || '',
+      }),
+    }).then(function () {
+      setTimeout(function () {
+        jsonpGet('list_evidence', {}, function (res) {
+          cb.disabled = false;
+          if (res && res.status === 'OK' && Array.isArray(res.evidence)) {
+            evidenceItems = res.evidence.slice().sort(function (a, b) { return Number(b.created_at) - Number(a.created_at); });
+          }
+          statusEl.textContent = '';
+          renderList();
+        });
+      }, 900);
+    }).catch(function () { cb.disabled = false; statusEl.textContent = 'Could not reach the backend.'; });
   }
 
   // A 96px thumbnail is fine for "there's a photo here" but useless for
   // actually reading a filed document -- opens it at real size instead.
   function openLightbox(src) {
     var overlay = document.createElement('div');
-    overlay.className = 'handout-lightbox';
-    overlay.innerHTML = '<button type="button" class="handout-lightbox-close">Close</button><img src="' + src + '" alt="">';
+    overlay.className = 'evidence-lightbox';
+    overlay.innerHTML = '<button type="button" class="evidence-lightbox-close">Close</button><img src="' + src + '" alt="">';
     overlay.addEventListener('click', function (e) {
-      if (e.target === overlay || e.target.classList.contains('handout-lightbox-close')) closeLightbox();
+      if (e.target === overlay || e.target.classList.contains('evidence-lightbox-close')) closeLightbox();
     });
     document.body.appendChild(overlay);
     document.addEventListener('keydown', lightboxEscHandler);
   }
   function closeLightbox() {
-    var overlay = document.querySelector('.handout-lightbox');
+    var overlay = document.querySelector('.evidence-lightbox');
     if (overlay) overlay.remove();
     document.removeEventListener('keydown', lightboxEscHandler);
   }
   function lightboxEscHandler(e) { if (e.key === 'Escape') closeLightbox(); }
 
-  function deleteHandout(h) {
+  function deleteEvidence(h) {
     if (!confirm('Delete "' + h.title + '"? This cannot be undone.')) return;
     statusEl.textContent = 'Deleting…';
     fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors', keepalive: true,
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'delete_handout', handout_id: h.handout_id, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+      body: JSON.stringify({ action: 'delete_evidence', evidence_id: h.evidence_id, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
     }).then(function () {
       setTimeout(function () {
-        jsonpGet('list_handouts', {}, function (res) {
-          var stillThere = res && res.status === 'OK' && Array.isArray(res.handouts) &&
-            res.handouts.some(function (x) { return x.handout_id === h.handout_id; });
+        jsonpGet('list_evidence', {}, function (res) {
+          var stillThere = res && res.status === 'OK' && Array.isArray(res.evidence) &&
+            res.evidence.some(function (x) { return x.evidence_id === h.evidence_id; });
           if (stillThere) { statusEl.textContent = NOT_DEPLOYED_MSG; return; }
-          if (res && res.status === 'OK' && Array.isArray(res.handouts)) {
-            handouts = res.handouts.slice().sort(function (a, b) { return Number(b.created_at) - Number(a.created_at); });
+          if (res && res.status === 'OK' && Array.isArray(res.evidence)) {
+            evidenceItems = res.evidence.slice().sort(function (a, b) { return Number(b.created_at) - Number(a.created_at); });
           }
           statusEl.textContent = 'Deleted ' + h.title + '.';
           renderList();
@@ -1887,52 +2104,102 @@
     r.readAsDataURL(input.files[0]);
   }
 
-  function showForm(editingHandout) {
-    if (!editingHandout && createFormSlot.childNodes.length) { createFormSlot.innerHTML = ''; return; }
+  // Rebuilds the Operation dropdown for whichever Cell is picked in the
+  // form's own Scope select -- an Operation belongs to one Cell, so the
+  // list has to follow the form's scope, not the sidebar's filter.
+  function refreshFormOperationOptions(selectedCellId, keepOpId) {
+    var opSel = document.getElementById('evidence-new-op');
+    if (!opSel) return;
+    var ops = operationsByCell[selectedCellId] || [];
+    opSel.innerHTML = '<option value="">Unfiled</option>' + ops.map(function (o) {
+      var sel = keepOpId === o.operation_id ? ' selected' : '';
+      return '<option value="' + escapeHtml(o.operation_id) + '"' + sel + '>' + escapeHtml(o.name) + '</option>';
+    }).join('');
+  }
+
+  // Rebuilds the per-Agent restriction checklist for whichever Cell is
+  // picked in the form's Scope select -- restricting to specific Agents
+  // only makes sense once a Cell (and therefore a member roster) is
+  // chosen; "All Cells" scope has no fixed roster to restrict from.
+  function refreshFormRestrictList(selectedCellId, checkedCodes) {
+    var wrap = document.getElementById('evidence-new-restrict-wrap');
+    if (!wrap) return;
+    var cell = cellsById[selectedCellId];
+    var codes = (cell && cell.member_codes) || [];
+    if (!selectedCellId || !codes.length) {
+      wrap.innerHTML = '<p class="evidence-restrict-note">' +
+        (selectedCellId ? 'This Cell has no members yet.' : 'Pick a Cell above to restrict to specific Agents.') + '</p>';
+      return;
+    }
+    wrap.innerHTML = '<div class="evidence-restrict-list">' + codes.map(function (code) {
+      var checked = checkedCodes.indexOf(code) !== -1 ? ' checked' : '';
+      return '<label class="evidence-restrict-item"><input type="checkbox" value="' + escapeHtml(code) + '"' + checked + '> ' + escapeHtml(code) + '</label>';
+    }).join('') + '</div><p class="evidence-restrict-note">Leave all unchecked to share with the whole Cell once released.</p>';
+  }
+
+  function showForm(editingEvidence) {
+    if (!editingEvidence && createFormSlot.childNodes.length) { createFormSlot.innerHTML = ''; return; }
     formPhotoDataUrl = null;
-    formPhotoExisting = editingHandout ? (editingHandout.photo || null) : null;
-    // A legacy pre-migration handout still holding a raw data URI can
+    formPhotoExisting = editingEvidence ? (editingEvidence.photo || null) : null;
+    var initialCellId = editingEvidence ? (editingEvidence.cell_id || '') : filterCellId;
+    var initialOpId = editingEvidence ? (editingEvidence.operation_id || '') : (filterOpId === 'UNFILED' ? '' : filterOpId);
+    var initialRestricted = editingEvidence ? (editingEvidence.restricted_to || []) : [];
+    // A legacy pre-migration item still holding a raw data URI can
     // preview directly; a gdrive: link resolves async below, once the
     // form (and its preview <img>) actually exists in the DOM.
     var previewSrc = (formPhotoExisting && !extractDriveId(formPhotoExisting)) ? formPhotoExisting : null;
     var scopeOptions = '<option value="">All Cells</option>' + cells.map(function (c) {
-      var sel = editingHandout && editingHandout.cell_id === c.cell_id ? ' selected' : '';
+      var sel = initialCellId === c.cell_id ? ' selected' : '';
       return '<option value="' + escapeHtml(c.cell_id) + '"' + sel + '>' + escapeHtml(c.name) + '</option>';
     }).join('');
     createFormSlot.innerHTML =
-      '<div class="handouts-create-form">' +
-      '<div class="handouts-create-row">' +
-      '<label class="handouts-create-field"><span>Title</span><input type="text" id="handouts-new-title" placeholder="e.g. Field Photograph" value="' + (editingHandout ? escapeHtml(editingHandout.title) : '') + '"></label>' +
-      '<label class="handouts-create-field"><span>Scope</span><select id="handouts-new-scope">' + scopeOptions + '</select></label>' +
+      '<div class="evidence-create-form">' +
+      '<div class="evidence-create-row">' +
+      '<label class="evidence-create-field"><span>Title</span><input type="text" id="evidence-new-title" placeholder="e.g. Field Photograph" value="' + (editingEvidence ? escapeHtml(editingEvidence.title) : '') + '"></label>' +
+      '<label class="evidence-create-field"><span>Scope</span><select id="evidence-new-scope">' + scopeOptions + '</select></label>' +
+      '<label class="evidence-create-field"><span>Operation</span><select id="evidence-new-op"></select></label>' +
       '</div>' +
-      '<label class="handouts-create-field"><span>Body</span><textarea id="handouts-new-body" placeholder="What the Agents see...">' + (editingHandout ? escapeHtml(editingHandout.body) : '') + '</textarea></label>' +
-      '<label class="handouts-create-field"><span>Photo (optional)</span><input type="file" accept="image/*" id="handouts-new-photo"></label>' +
-      (previewSrc ? '<img id="handouts-new-photo-prev" class="handout-photo" src="' + previewSrc + '" style="display:block;">' : '<img id="handouts-new-photo-prev" class="handout-photo" style="display:none;">') +
-      '<div class="handouts-create-actions">' +
-      '<button type="button" class="paper-btn primary" id="handouts-new-confirm">' + (editingHandout ? 'Save' : 'Create') + '</button>' +
-      '<button type="button" class="paper-btn" id="handouts-new-cancel">Cancel</button>' +
+      '<label class="evidence-create-field"><span>Body</span><textarea id="evidence-new-body" placeholder="What the Agents see...">' + (editingEvidence ? escapeHtml(editingEvidence.body) : '') + '</textarea></label>' +
+      '<label class="evidence-create-field"><span>Photo (optional)</span><input type="file" accept="image/*" id="evidence-new-photo"></label>' +
+      (previewSrc ? '<img id="evidence-new-photo-prev" class="evidence-photo" src="' + previewSrc + '" style="display:block;">' : '<img id="evidence-new-photo-prev" class="evidence-photo" style="display:none;">') +
+      '<label class="evidence-released-row"><input type="checkbox" id="evidence-new-released"' + (editingEvidence && editingEvidence.released ? ' checked' : '') + '> Released -- visible to Agents who can see this Cell/Operation</label>' +
+      '<label class="evidence-create-field"><span>Restrict to specific Agents (optional)</span></label>' +
+      '<div id="evidence-new-restrict-wrap"></div>' +
+      '<div class="evidence-create-actions">' +
+      '<button type="button" class="paper-btn primary" id="evidence-new-confirm">' + (editingEvidence ? 'Save' : 'Create') + '</button>' +
+      '<button type="button" class="paper-btn" id="evidence-new-cancel">Cancel</button>' +
       '</div>' +
-      '<div class="handouts-create-error" id="handouts-new-error"></div>' +
+      '<div class="evidence-create-error" id="evidence-new-error"></div>' +
       '</div>';
-    document.getElementById('handouts-new-photo').addEventListener('change', function () {
-      handlePhoto(this, 'handouts-new-photo-prev');
+    refreshFormOperationOptions(initialCellId, initialOpId);
+    refreshFormRestrictList(initialCellId, initialRestricted);
+    document.getElementById('evidence-new-scope').addEventListener('change', function () {
+      refreshFormOperationOptions(this.value, '');
+      refreshFormRestrictList(this.value, []);
     });
-    document.getElementById('handouts-new-cancel').addEventListener('click', function () { createFormSlot.innerHTML = ''; });
-    document.getElementById('handouts-new-confirm').addEventListener('click', function () {
-      var title = document.getElementById('handouts-new-title').value.trim();
-      var body = document.getElementById('handouts-new-body').value.trim();
-      var cellId = document.getElementById('handouts-new-scope').value;
-      var errEl = document.getElementById('handouts-new-error');
-      if (!title) { errEl.textContent = 'Give the handout a title first.'; return; }
-      statusEl.textContent = editingHandout ? 'Saving…' : 'Creating…';
+    document.getElementById('evidence-new-photo').addEventListener('change', function () {
+      handlePhoto(this, 'evidence-new-photo-prev');
+    });
+    document.getElementById('evidence-new-cancel').addEventListener('click', function () { createFormSlot.innerHTML = ''; });
+    document.getElementById('evidence-new-confirm').addEventListener('click', function () {
+      var title = document.getElementById('evidence-new-title').value.trim();
+      var body = document.getElementById('evidence-new-body').value.trim();
+      var cellId = document.getElementById('evidence-new-scope').value;
+      var opId = document.getElementById('evidence-new-op').value;
+      var released = document.getElementById('evidence-new-released').checked;
+      var restrictedTo = Array.prototype.map.call(
+        document.querySelectorAll('#evidence-new-restrict-wrap input:checked'), function (cb) { return cb.value; });
+      var errEl = document.getElementById('evidence-new-error');
+      if (!title) { errEl.textContent = 'Give the evidence a title first.'; return; }
+      statusEl.textContent = editingEvidence ? 'Saving…' : 'Creating…';
       var handlerPw = sessionStorage.getItem('dg_acell_pw') || '';
       // A freshly picked file wins; otherwise send the existing stored
       // value back unchanged (a gdrive: link, a legacy data URI, or
       // nothing) rather than re-uploading a photo that didn't change.
       var photoToSave = formPhotoDataUrl || formPhotoExisting || '';
-      var payload = editingHandout
-        ? { action: 'update_handout', handout_id: editingHandout.handout_id, title: title, body: body, photo: photoToSave, cell_id: cellId, handler_password: handlerPw }
-        : { action: 'create_handout', title: title, body: body, photo: photoToSave, cell_id: cellId, handler_password: handlerPw };
+      var payload = editingEvidence
+        ? { action: 'update_evidence', evidence_id: editingEvidence.evidence_id, title: title, body: body, photo: photoToSave, cell_id: cellId, operation_id: opId, released: released, restricted_to: JSON.stringify(restrictedTo), handler_password: handlerPw }
+        : { action: 'create_evidence', title: title, body: body, photo: photoToSave, cell_id: cellId, operation_id: opId, released: released, restricted_to: JSON.stringify(restrictedTo), handler_password: handlerPw };
       // No keepalive here, unlike every other POST in this file: keepalive
       // requests are capped at 64KiB by the browser (not this app, not
       // Apps Script) -- fine for the small JSON payloads every other
@@ -1940,18 +2207,18 @@
       // easily, and fetch() rejects the whole request before it's even
       // sent, landing in the catch below with a misleadingly generic
       // "could not reach the backend" for what's actually an oversized
-      // request. Handouts are the one action here that can carry a photo.
+      // request. Evidence is the one action here that can carry a photo.
       fetch(APPS_SCRIPT_URL, {
         method: 'POST', mode: 'no-cors',
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify(payload),
       }).then(function () {
         setTimeout(function () {
-          jsonpGet('list_handouts', {}, function (res) {
-            var ok = res && res.status === 'OK' && Array.isArray(res.handouts) &&
-              res.handouts.some(function (x) { return x.title === title && x.cell_id === cellId; });
+          jsonpGet('list_evidence', {}, function (res) {
+            var ok = res && res.status === 'OK' && Array.isArray(res.evidence) &&
+              res.evidence.some(function (x) { return x.title === title && x.cell_id === cellId; });
             if (!ok) { statusEl.textContent = NOT_DEPLOYED_MSG; return; }
-            handouts = res.handouts.slice().sort(function (a, b) { return Number(b.created_at) - Number(a.created_at); });
+            evidenceItems = res.evidence.slice().sort(function (a, b) { return Number(b.created_at) - Number(a.created_at); });
             statusEl.textContent = '';
             createFormSlot.innerHTML = '';
             renderList();
@@ -1960,15 +2227,60 @@
       }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
     });
     if (formPhotoExisting && extractDriveId(formPhotoExisting)) {
-      loadHandoutPhotoDataUri(formPhotoExisting, function (dataUri) {
-        var prev = document.getElementById('handouts-new-photo-prev');
+      loadEvidencePhotoDataUri(formPhotoExisting, function (dataUri) {
+        var prev = document.getElementById('evidence-new-photo-prev');
         if (prev) { prev.src = dataUri; prev.style.display = 'block'; }
       });
     }
   }
 
+  function showOpForm() {
+    if (opFormSlot.childNodes.length) { opFormSlot.innerHTML = ''; return; }
+    opFormSlot.innerHTML =
+      '<div class="evidence-new-op-form">' +
+      '<input type="text" id="evidence-op-new-name" placeholder="Operation name">' +
+      '<div class="evidence-new-op-actions">' +
+      '<button type="button" class="paper-btn primary" id="evidence-op-new-confirm">Create</button>' +
+      '<button type="button" class="paper-btn" id="evidence-op-new-cancel">Cancel</button>' +
+      '</div></div>';
+    document.getElementById('evidence-op-new-cancel').addEventListener('click', function () { opFormSlot.innerHTML = ''; });
+    document.getElementById('evidence-op-new-confirm').addEventListener('click', function () {
+      var name = document.getElementById('evidence-op-new-name').value.trim();
+      if (!name || !filterCellId) return;
+      statusEl.textContent = 'Creating Operation…';
+      fetch(APPS_SCRIPT_URL, {
+        method: 'POST', mode: 'no-cors', keepalive: true,
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'create_operation', name: name, cell_id: filterCellId, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+      }).then(function () {
+        setTimeout(function () {
+          jsonpGet('list_operations', {}, function (res) {
+            if (res && res.status === 'OK' && Array.isArray(res.operations)) {
+              operations = res.operations;
+              operationsById = {}; operationsByCell = {};
+              operations.forEach(function (o) {
+                operationsById[o.operation_id] = o;
+                (operationsByCell[o.cell_id] = operationsByCell[o.cell_id] || []).push(o);
+              });
+            }
+            statusEl.textContent = '';
+            opFormSlot.innerHTML = '';
+            renderFolders();
+          });
+        }, 900);
+      }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+    });
+  }
+
   createBtn.addEventListener('click', function () { showForm(null); });
   refreshBtn.addEventListener('click', function () { fetchAll(true); });
+  newOpBtn.addEventListener('click', showOpForm);
+  cellFilterEl.addEventListener('change', function () {
+    filterCellId = this.value;
+    filterOpId = '';
+    renderFolders();
+    renderList();
+  });
   fetchAll(false);
 })();
 </script>
@@ -2767,7 +3079,7 @@
      real mp3's base64 easily blows past the 64KiB cap keepalive
      requests are held to, which silently drops the request before it
      ever reaches the network (the exact bug already hit and fixed for
-     Handout photos). ── */
+     Evidence photos). ── */
   var trackLibTitleInput = document.getElementById('tracklib-title-input');
   var trackLibFileInput = document.getElementById('tracklib-file-input');
   var trackLibUploadBtn = document.getElementById('tracklib-upload-btn');

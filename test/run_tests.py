@@ -2322,13 +2322,17 @@ def test_acell_cells(p):
     page.close()
     return errs
 
-def test_acell_handouts(p):
-    """a-cell.html's Handouts tab: a shared clue/document log the
-    Handler files, each entry scoped to one Cell (cell_id set) or
-    every Cell (cell_id blank, shown as "All Cells"). Backed by
-    list_handouts/create_handout/update_handout/delete_handout. Like
-    every other write in this app, the no-cors POSTs are verified by a
-    real list_handouts read-back before the UI shows the change."""
+def test_acell_evidence(p):
+    """a-cell.html's Evidence tab (evolved from the former Handouts tab):
+    a shared evidence locker the Handler files, each item scoped to one
+    Cell (cell_id set) or every Cell (blank, shown as "All Cells") and,
+    within that Cell, an optional Operation folder. Backed by
+    list_evidence/create_evidence/update_evidence/delete_evidence plus
+    list_operations/create_operation/delete_operation. Like every other
+    write in this app, the no-cors POSTs are verified by a real
+    list_evidence/list_operations read-back before the UI shows the
+    change. Also covers the Released toggle and the per-Agent
+    restricted_to checklist added this round."""
     page = p.new_page()
     page.set_default_timeout(30000)
     errs = collect_errors(page)
@@ -2336,28 +2340,38 @@ def test_acell_handouts(p):
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     skip_acell_gate(page)
 
-    cells_fixture = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"], "channel": ""}]
-    handouts_state = []
+    cells_fixture = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12", "PRIY-AN34"], "channel": ""}]
+    evidence_state = []
+    operations_state = []
 
     def fake_apps_script(route):
         req = route.request
         if req.method == "POST":
             body = json.loads(req.post_data or "{}")
             action = body.get("action")
-            if action == "create_handout":
-                hid = "handout_" + str(len(handouts_state) + 1)
-                handouts_state.append({
-                    "handout_id": hid, "title": body.get("title", ""), "body": body.get("body", ""),
+            if action == "create_evidence":
+                eid = "evidence_" + str(len(evidence_state) + 1)
+                evidence_state.append({
+                    "evidence_id": eid, "title": body.get("title", ""), "body": body.get("body", ""),
                     "photo": body.get("photo", ""), "cell_id": body.get("cell_id", ""),
-                    "created_at": str(1000 + len(handouts_state)),
+                    "operation_id": body.get("operation_id", ""), "released": bool(body.get("released")),
+                    "restricted_to": json.loads(body.get("restricted_to") or "[]"),
+                    "created_at": str(1000 + len(evidence_state)),
                 })
-            elif action == "update_handout":
-                for h in handouts_state:
-                    if h["handout_id"] == body.get("handout_id"):
+            elif action == "update_evidence":
+                for h in evidence_state:
+                    if h["evidence_id"] == body.get("evidence_id"):
                         h["title"] = body.get("title", ""); h["body"] = body.get("body", "")
                         h["photo"] = body.get("photo", ""); h["cell_id"] = body.get("cell_id", "")
-            elif action == "delete_handout":
-                handouts_state[:] = [h for h in handouts_state if h["handout_id"] != body.get("handout_id")]
+                        h["operation_id"] = body.get("operation_id", ""); h["released"] = bool(body.get("released"))
+                        h["restricted_to"] = json.loads(body.get("restricted_to") or "[]")
+            elif action == "delete_evidence":
+                evidence_state[:] = [h for h in evidence_state if h["evidence_id"] != body.get("evidence_id")]
+            elif action == "create_operation":
+                oid = "op_" + str(len(operations_state) + 1)
+                operations_state.append({"operation_id": oid, "cell_id": body.get("cell_id", ""), "name": body.get("name", ""), "created_at": str(len(operations_state))})
+            elif action == "delete_operation":
+                operations_state[:] = [o for o in operations_state if o["operation_id"] != body.get("operation_id")]
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         url = req.url
@@ -2365,8 +2379,10 @@ def test_acell_handouts(p):
             cb = url.split("callback=")[1].split("&")[0]
             if "action=list_cells" in url:
                 res = {"status": "OK", "cells": cells_fixture}
-            elif "action=list_handouts" in url:
-                res = {"status": "OK", "handouts": handouts_state}
+            elif "action=list_evidence" in url:
+                res = {"status": "OK", "evidence": evidence_state}
+            elif "action=list_operations" in url:
+                res = {"status": "OK", "operations": operations_state}
             elif "action=list_characters" in url:
                 res = {"status": "OK", "characters": []}
             else:
@@ -2378,46 +2394,99 @@ def test_acell_handouts(p):
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
-    page.click('.tw[data-tab="handouts"]')
+    page.click('.tw[data-tab="evidence"]')
     page.wait_for_timeout(500)
 
-    record("acell", "Handouts starts empty with a prompt to file one",
-           "No handouts filed yet" in page.inner_text("#handouts-list"), "")
+    record("acell", "Evidence starts empty with a prompt to file one",
+           "No evidence filed here yet" in page.inner_text("#evidence-list"), "")
+    record("acell", "the folder sidebar is empty until a Cell is picked",
+           page.inner_text("#evidence-folders").strip() == "", page.inner_text("#evidence-folders"))
 
-    # File a Cell-scoped handout.
-    page.click("#handouts-create-btn")
-    page.wait_for_timeout(150)
-    page.fill("#handouts-new-title", "Field Photograph")
-    page.select_option("#handouts-new-scope", label="Cell Alpha")
-    page.fill("#handouts-new-body", "Recovered from the scene.")
-    page.click("#handouts-new-confirm")
-    list_text = wait_for_condition(lambda: page.inner_text("#handouts-list")
-                                    if "Field Photograph" in page.inner_text("#handouts-list") else None)
-    record("acell", "filing a handout shows it once the backend confirms it",
-           bool(list_text) and "Field Photograph" in list_text and "cell alpha" in list_text.lower(), list_text or "")
-
-    # File an All Cells handout.
-    page.click("#handouts-create-btn")
-    page.wait_for_timeout(150)
-    page.fill("#handouts-new-title", "Wire Service Clipping")
-    page.fill("#handouts-new-body", "Three additional livestock deaths reported.")
-    page.click("#handouts-new-confirm")
-    wait_for_condition(lambda: "Wire Service Clipping" in page.inner_text("#handouts-list"))
-    record("acell", "a blank Scope files as All Cells",
-           "all cells" in page.inner_text("#handouts-list").lower(), page.inner_text("#handouts-list"))
-    record("acell", "both a Cell-scoped and an All Cells handout can coexist in the list",
-           page.locator(".handout-card").count() == 2, "")
-
-    # Edit the first one.
-    page.click('[data-edit-handout="1"]')
+    # Pick Cell Alpha in the sidebar -- folders (All/Unfiled) should
+    # appear and "+ New Operation" should become available.
+    page.select_option("#evidence-cell-filter", label="Cell Alpha")
     page.wait_for_timeout(200)
-    record("acell", "Edit opens the form pre-filled with that handout's title",
-           page.input_value("#handouts-new-title") == "Field Photograph", page.input_value("#handouts-new-title"))
-    page.fill("#handouts-new-title", "Field Photograph (annotated)")
-    page.click("#handouts-new-confirm")
-    wait_for_condition(lambda: "Field Photograph (annotated)" in page.inner_text("#handouts-list"))
-    record("acell", "editing a handout updates it in place once confirmed",
-           "Field Photograph (annotated)" in page.inner_text("#handouts-list"), page.inner_text("#handouts-list"))
+    record("acell", "picking a Cell reveals the All/Unfiled pseudo-folders",
+           "All" in page.inner_text("#evidence-folders") and "Unfiled" in page.inner_text("#evidence-folders"),
+           page.inner_text("#evidence-folders"))
+    record("acell", "picking a Cell reveals + New Operation",
+           page.is_visible("#evidence-new-op-btn"), "")
+
+    # Create an Operation folder.
+    page.click("#evidence-new-op-btn")
+    page.wait_for_timeout(150)
+    page.fill("#evidence-op-new-name", "Operation Nightshade")
+    page.click("#evidence-op-new-confirm")
+    wait_for_condition(lambda: "Operation Nightshade" in page.inner_text("#evidence-folders"))
+    record("acell", "creating an Operation adds it to the folder list",
+           "Operation Nightshade" in page.inner_text("#evidence-folders"), page.inner_text("#evidence-folders"))
+
+    # File evidence into that Operation, released, restricted to one Agent.
+    page.click("#evidence-create-btn")
+    page.wait_for_timeout(150)
+    page.fill("#evidence-new-title", "Field Photograph")
+    page.select_option("#evidence-new-scope", label="Cell Alpha")
+    page.select_option("#evidence-new-op", label="Operation Nightshade")
+    page.fill("#evidence-new-body", "Recovered from the scene.")
+    page.check("#evidence-new-released")
+    page.check('#evidence-new-restrict-wrap input[value="OWEN-CS12"]')
+    page.click("#evidence-new-confirm")
+    list_text = wait_for_condition(lambda: page.inner_text("#evidence-list")
+                                    if "Field Photograph" in page.inner_text("#evidence-list") else None)
+    record("acell", "filing evidence into an Operation, released and restricted, shows it once confirmed",
+           bool(list_text) and "Field Photograph" in list_text and "cell alpha" in list_text.lower()
+           and "operation nightshade" in list_text.lower() and "restricted to: owen-cs12" in list_text.lower(),
+           list_text or "")
+    record("acell", "a released item's card doesn't carry the unreleased (staged) styling",
+           "unreleased" not in (page.get_attribute(".evidence-card", "class") or ""), "")
+
+    # File a second, unfiled, unreleased, unrestricted item in the same Cell.
+    page.click("#evidence-create-btn")
+    page.wait_for_timeout(150)
+    page.fill("#evidence-new-title", "Wire Service Clipping")
+    page.select_option("#evidence-new-scope", label="Cell Alpha")
+    page.fill("#evidence-new-body", "Three additional livestock deaths reported.")
+    page.click("#evidence-new-confirm")
+    wait_for_condition(lambda: "Wire Service Clipping" in page.inner_text("#evidence-list"))
+    record("acell", "an unfiled, unreleased item shows the staged (unreleased) styling",
+           page.locator(".evidence-card.unreleased").count() == 1, "")
+
+    # Folder filtering: "Unfiled" should show only the second item.
+    page.click('[data-op="UNFILED"]')
+    page.wait_for_timeout(200)
+    record("acell", "the Unfiled folder filters to only items with no Operation",
+           "Wire Service Clipping" in page.inner_text("#evidence-list")
+           and "Field Photograph" not in page.inner_text("#evidence-list"), page.inner_text("#evidence-list"))
+    page.click('[data-op=""]')
+    page.wait_for_timeout(200)
+    record("acell", "the All folder shows every item filed under this Cell again",
+           page.locator(".evidence-card").count() == 2, "")
+
+    # Toggle Released off on the Field Photograph card specifically --
+    # it sorts second (Wire Service Clipping is newer and renders first,
+    # already unreleased by default).
+    fp_card = page.locator(".evidence-card", has_text="Field Photograph")
+    fp_card.locator('[data-toggle-released]').uncheck()
+    wait_for_condition(lambda: page.locator(".evidence-card.unreleased").count() == 2)
+    record("acell", "unchecking the Released toggle on a card marks it staged again",
+           page.locator(".evidence-card.unreleased").count() == 2, "")
+
+    # Edit the Field Photograph item (index 1 -- Wire Service Clipping is
+    # newer and sorts at index 0), confirm the Operation dropdown and
+    # restriction checklist come back pre-filled from what was saved.
+    page.click('[data-edit-evidence="1"]')
+    page.wait_for_timeout(200)
+    record("acell", "Edit opens the form pre-filled with that item's title",
+           page.input_value("#evidence-new-title") == "Field Photograph", page.input_value("#evidence-new-title"))
+    record("acell", "Edit pre-fills the Operation dropdown",
+           page.eval_on_selector("#evidence-new-op", "el => el.options[el.selectedIndex].text") == "Operation Nightshade", "")
+    record("acell", "Edit pre-checks the previously restricted Agent",
+           page.is_checked('#evidence-new-restrict-wrap input[value="OWEN-CS12"]'), "")
+    page.fill("#evidence-new-title", "Field Photograph (annotated)")
+    page.click("#evidence-new-confirm")
+    wait_for_condition(lambda: "Field Photograph (annotated)" in page.inner_text("#evidence-list"))
+    record("acell", "editing evidence updates it in place once confirmed",
+           "Field Photograph (annotated)" in page.inner_text("#evidence-list"), page.inner_text("#evidence-list"))
 
     # A real photo's base64 data URI easily exceeds 64KiB -- the browser
     # caps keepalive request bodies at exactly that, silently rejecting
@@ -2432,46 +2501,58 @@ def test_acell_handouts(p):
     with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
         f.write(os.urandom(120_000))
         oversized_photo_path = f.name
-    page.click("#handouts-create-btn")
+    page.click("#evidence-create-btn")
     page.wait_for_timeout(150)
-    page.fill("#handouts-new-title", "Photo Evidence")
-    page.fill("#handouts-new-body", "Attached.")
-    page.set_input_files("#handouts-new-photo", oversized_photo_path)
+    page.fill("#evidence-new-title", "Photo Evidence")
+    page.fill("#evidence-new-body", "Attached.")
+    page.set_input_files("#evidence-new-photo", oversized_photo_path)
     page.wait_for_timeout(300)
-    page.click("#handouts-new-confirm")
-    photo_list_text = wait_for_condition(lambda: page.inner_text("#handouts-list")
-                                          if "Photo Evidence" in page.inner_text("#handouts-list") else None)
-    record("acell", "filing a handout with a real-sized photo (>64KiB base64) still reaches the backend",
+    page.click("#evidence-new-confirm")
+    photo_list_text = wait_for_condition(lambda: page.inner_text("#evidence-list")
+                                          if "Photo Evidence" in page.inner_text("#evidence-list") else None)
+    record("acell", "filing evidence with a real-sized photo (>64KiB base64) still reaches the backend",
            bool(photo_list_text) and "Photo Evidence" in photo_list_text
-           and "Could not reach the backend" not in page.inner_text("#handouts-status"),
-           page.inner_text("#handouts-status"))
+           and "Could not reach the backend" not in page.inner_text("#evidence-status"),
+           page.inner_text("#evidence-status"))
     os.unlink(oversized_photo_path)
 
     # A fixed 96x96 thumbnail is fine for "there's a photo here" but
     # useless for actually reading a filed document -- click it to see
     # it at real size in a lightbox overlay.
-    page.click(".handout-photo")
+    page.click(".evidence-photo")
     page.wait_for_timeout(200)
-    record("acell", "clicking a handout photo opens it in a full-size lightbox",
-           page.is_visible(".handout-lightbox"), "")
-    page.click(".handout-lightbox-close")
+    record("acell", "clicking an evidence photo opens it in a full-size lightbox",
+           page.is_visible(".evidence-lightbox"), "")
+    page.click(".evidence-lightbox-close")
     page.wait_for_timeout(200)
     record("acell", "closing the lightbox hides it again",
-           not page.is_visible(".handout-lightbox"), "")
+           not page.is_visible(".evidence-lightbox"), "")
 
-    # Delete: dismiss then accept. Three handouts on the list at this
+    # Delete: dismiss then accept. Three items on the list at this
     # point (the photo one filed above sorts first, being newest).
     page.once("dialog", lambda d: d.dismiss())
-    page.click('[data-delete-handout="0"]')
+    page.click('[data-delete-evidence="0"]')
     page.wait_for_timeout(300)
-    record("acell", "dismissing the Delete confirm leaves the handout in place",
-           page.locator(".handout-card").count() == 3, "")
+    record("acell", "dismissing the Delete confirm leaves the item in place",
+           page.locator(".evidence-card").count() == 3, "")
 
     page.once("dialog", lambda d: d.accept())
-    page.click('[data-delete-handout="0"]')
-    wait_for_condition(lambda: page.locator(".handout-card").count() == 2)
-    record("acell", "accepting Delete removes the handout",
-           page.locator(".handout-card").count() == 2, "")
+    page.click('[data-delete-evidence="0"]')
+    wait_for_condition(lambda: page.locator(".evidence-card").count() == 2)
+    record("acell", "accepting Delete removes the item",
+           page.locator(".evidence-card").count() == 2, "")
+
+    # Deleting an Operation folder doesn't delete evidence filed under
+    # it -- it just becomes Unfiled (no cascade, per the backend design).
+    page.once("dialog", lambda d: d.accept())
+    page.click('[data-del-op="op_1"]')
+    wait_for_condition(lambda: "Operation Nightshade" not in page.inner_text("#evidence-folders"))
+    record("acell", "deleting an Operation removes it from the folder list",
+           "Operation Nightshade" not in page.inner_text("#evidence-folders"), page.inner_text("#evidence-folders"))
+    page.click('[data-op=""]')
+    page.wait_for_timeout(200)
+    record("acell", "evidence that was filed under a deleted Operation is not itself deleted",
+           page.locator(".evidence-card").count() == 2, "")
 
     page.close()
     return errs
@@ -5947,7 +6028,7 @@ def main():
 
         safe(test_acell_cells, browser, area="acell")
 
-        safe(test_acell_handouts, browser, area="acell")
+        safe(test_acell_evidence, browser, area="acell")
 
         safe(test_acell_sheet, browser, area="acell")
 
