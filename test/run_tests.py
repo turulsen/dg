@@ -1667,9 +1667,9 @@ def test_agent_hub_handouts(p):
 
     photo_data_uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
     cells_fixture = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"], "channel": ""}]
-    handouts_fixture = [
-        {"handout_id": "h1", "title": "Cell Alpha Only Clue", "body": "Only Owen should see this.", "photo": "", "cell_id": "cell_1", "created_at": "2000"},
-        {"handout_id": "h2", "title": "Campaign Wide Notice", "body": "Everyone sees this.", "photo": photo_data_uri, "cell_id": "", "created_at": "1000"},
+    evidence_fixture = [
+        {"evidence_id": "ev1", "title": "Cell Alpha Only Clue", "body": "Only Owen should see this.", "photo": "", "cell_id": "cell_1", "created_at": "2000"},
+        {"evidence_id": "ev2", "title": "Campaign Wide Notice", "body": "Everyone sees this.", "photo": photo_data_uri, "cell_id": "", "created_at": "1000"},
     ]
 
     def fake_apps_script(route):
@@ -1680,8 +1680,8 @@ def test_agent_hub_handouts(p):
         cb = url.split("callback=")[1].split("&")[0]
         if "action=list_cells" in url:
             res = {"status": "OK", "cells": cells_fixture}
-        elif "action=list_handouts" in url:
-            res = {"status": "OK", "handouts": handouts_fixture}
+        elif "action=list_evidence" in url:
+            res = {"status": "OK", "evidence": evidence_fixture}
         else:
             res = {"status": "OK"}
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
@@ -1731,8 +1731,8 @@ def test_agent_hub_handout_notes(p):
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
-    handouts_fixture = [
-        {"handout_id": "h1", "title": "Field Photo", "body": "evidence", "photo": "", "cell_id": "", "created_at": "1000"},
+    evidence_fixture = [
+        {"evidence_id": "h1", "title": "Field Photo", "body": "evidence", "photo": "", "cell_id": "", "created_at": "1000"},
     ]
     notes_fixture = {"OWEN-CS12": [{"handout_id": "h1", "note": "Existing note text"}]}
     saved_bodies = []
@@ -1751,8 +1751,8 @@ def test_agent_hub_handout_notes(p):
         cb = url.split("callback=")[1].split("&")[0]
         if "action=list_cells" in url:
             res = {"status": "OK", "cells": []}
-        elif "action=list_handouts" in url:
-            res = {"status": "OK", "handouts": handouts_fixture}
+        elif "action=list_evidence" in url:
+            res = {"status": "OK", "evidence": evidence_fixture}
         elif "action=list_handout_notes" in url:
             code = url.split("agent_code=")[1].split("&")[0]
             res = {"status": "OK", "notes": notes_fixture.get(code, [])}

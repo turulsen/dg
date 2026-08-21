@@ -769,10 +769,15 @@
     lookupCoverIdentity(storedIdentity, { silent: true });
   }
 
-  // Handouts: one shared fetch of Cells + Handouts, reused across every
-  // Agent's panel (rather than one fetch per Agent) -- a handout is
+  // Handouts: one shared fetch of Cells + Evidence, reused across every
+  // Agent's panel (rather than one fetch per Agent) -- an item is
   // relevant to an Agent if it's campaign-wide (no cell_id) or scoped to
-  // a Cell that Agent is a member of.
+  // a Cell that Agent is a member of. list_evidence (formerly
+  // list_handouts) already filters server-side to released items with
+  // no agent_code passed in, this fetch only ever sees fully-unrestricted
+  // + released items -- a Handler-restricted-to-specific-Agents item
+  // never shows here, by design: this stays the simple read-only mirror,
+  // the richer per-Agent restricted/unseen-aware view lives in notes/.
   function jsonpGet(action, params, cb) {
     const cbName = '_ahHandouts_' + action + '_' + Date.now();
     const timer = setTimeout(() => { delete window[cbName]; cb(null); }, 7000);
@@ -809,16 +814,16 @@
       const scopeClass = h.cell_id ? 'ah-handout-scope' : 'ah-handout-scope all-cells';
       const scopeLabel = h.cell_id ? ((cellsById[h.cell_id] && cellsById[h.cell_id].name) || h.cell_id) : 'All Cells';
       // A gdrive:-backed photo (the normal case now -- see
-      // resolveHandoutPhoto_() in Code.gs) resolves async below, same
+      // resolveEvidencePhoto_() in Code.gs) resolves async below, same
       // pattern loadFacePlate() already uses; a legacy pre-migration
-      // handout with a raw data URI still on file renders directly.
+      // item with a raw data URI still on file renders directly.
       const photoDriveId = extractDriveId(h.photo);
-      const photoElId = 'ah-handout-photo-' + code + '-' + h.handout_id;
+      const photoElId = 'ah-handout-photo-' + code + '-' + h.evidence_id;
       const photo = h.photo
         ? (photoDriveId ? `<div class="ah-handout-photo-wrap" id="${photoElId}"></div>`
                         : `<img class="ah-handout-photo" src="${h.photo}" alt="" data-lightbox-src="${h.photo}">`)
         : '';
-      const myNote = notesByHandoutId[h.handout_id] || '';
+      const myNote = notesByHandoutId[h.evidence_id] || '';
       return `<div class="ah-handout-card">
         <div class="ah-handout-head">
           <span class="${scopeClass}">${escapeHtml(scopeLabel)}</span>
@@ -827,11 +832,11 @@
         <div class="ah-handout-title">${escapeHtml(h.title)}</div>
         <div class="ah-handout-body-row">${photo}<div class="ah-handout-text">${escapeHtml(h.body)}</div></div>
         <div class="ah-handout-notes">
-          <label class="ah-handout-notes-label" for="ah-note-${escapeHtml(code)}-${escapeHtml(h.handout_id)}">Your Notes</label>
-          <textarea class="ah-handout-notes-input" id="ah-note-${escapeHtml(code)}-${escapeHtml(h.handout_id)}"
-            data-note-handout="${escapeHtml(h.handout_id)}" data-note-code="${escapeHtml(code)}"
+          <label class="ah-handout-notes-label" for="ah-note-${escapeHtml(code)}-${escapeHtml(h.evidence_id)}">Your Notes</label>
+          <textarea class="ah-handout-notes-input" id="ah-note-${escapeHtml(code)}-${escapeHtml(h.evidence_id)}"
+            data-note-handout="${escapeHtml(h.evidence_id)}" data-note-code="${escapeHtml(code)}"
             placeholder="Private -- only you see these.">${escapeHtml(myNote)}</textarea>
-          <span class="ah-handout-notes-status" data-note-status="${escapeHtml(h.handout_id)}"></span>
+          <span class="ah-handout-notes-status" data-note-status="${escapeHtml(h.evidence_id)}"></span>
         </div>
       </div>`;
     }).join('');
@@ -839,7 +844,7 @@
       img.addEventListener('click', () => openHandoutLightbox(img.dataset.lightboxSrc));
     });
     handouts.forEach(h => {
-      if (extractDriveId(h.photo)) loadHandoutPhoto(h.handout_id, h.photo, 'ah-handout-photo-' + code + '-' + h.handout_id);
+      if (extractDriveId(h.photo)) loadHandoutPhoto(h.evidence_id, h.photo, 'ah-handout-photo-' + code + '-' + h.evidence_id);
     });
     el.querySelectorAll('.ah-handout-notes-input').forEach(ta => {
       ta.addEventListener('input', () => {
@@ -925,9 +930,9 @@
       if (res && res.status === 'OK' && Array.isArray(res.cells)) { cells = res.cells; cellsOk = true; }
       maybeRender();
     });
-    jsonpGet('list_handouts', {}, res => {
+    jsonpGet('list_evidence', {}, res => {
       handoutsDone = true;
-      if (res && res.status === 'OK' && Array.isArray(res.handouts)) { handouts = res.handouts; handoutsOk = true; }
+      if (res && res.status === 'OK' && Array.isArray(res.evidence)) { handouts = res.evidence; handoutsOk = true; }
       maybeRender();
     });
   }
