@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v26 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v27 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -266,6 +266,13 @@
 //   this round -- flagged to the user as a separate decision (rename
 //   for consistency, fold into the new remarks system, or leave as
 //   its own thing) rather than assumed.
+// + Fixed resolveEvidencePhoto_() always uploading to Drive as
+//   "<title>.png" regardless of the real attachment type -- a PDF
+//   picked as Evidence's photo already uploaded correctly (Drive's
+//   Blob mimeType is derived from the data URI itself, not the
+//   filename), just under the wrong extension. New
+//   extensionForDataUri_() picks .pdf/.png/.jpg/etc. from the data
+//   URI's own mime type.
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
