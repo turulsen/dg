@@ -22,8 +22,7 @@
    opts = {
      cellId: string,
      agentCode: string,        -- the viewer's own Agent Code (identity)
-     memberCodes: string[],    -- every Agent Code in this Cell
-     memberNames: {code: name} -- optional, for nicer tab labels
+     memberNames: {code: name} -- optional, for nicer author-badge labels
    }
 
    Architecture note (the central decision of this rewrite): Editor.js
@@ -182,8 +181,6 @@
     // passes it through, one place per browser tab that owns the
     // roster instead of two.
     const agentToken = (opts.agentToken || '').trim();
-    const memberCodes = (opts.memberCodes || []).slice();
-    if (memberCodes.indexOf(agentCode) === -1) memberCodes.unshift(agentCode);
     const memberNames = opts.memberNames || {};
     const IDENTITY_KEY = 'dg_notes_identity_' + agentCode;
 
@@ -389,17 +386,20 @@
       // already-replaced tree. A no-op if nothing is currently mounted.
       unmountEditor();
 
-      // Each tab's own identity color becomes its border/text color (a
-      // muted default for Shared, since it has no one author) -- the
-      // same "whose ink is this" cue the read-only feed's author badges
-      // already use, just on the tab itself now too.
+      // Only two tabs: your own (live, editable) and the combined Shared
+      // feed -- no per-member tabs. Earlier versions gave every Cell
+      // member their own read-only tab, but a member's tab only ever
+      // showed their SHARED blocks anyway (their private ones are never
+      // sent to anyone else), which is exactly the Shared feed's own
+      // content, just split per-author for no real benefit -- and it
+      // meant clicking around the Cell's other members before finding
+      // anything worth reading. Their contributions still show up (and
+      // are still individually attributed via the author badge) on the
+      // Shared tab.
+      const myId = identityFor(agentCode);
+      const myInkStyle = myId ? ' style="--tab-ink:' + myId.color + '"' : '';
       const tabsHtml = '<button type="button" class="dg-notes-tab dg-notes-tab-shared' + (activeCode === SHARED_TAB ? ' active' : '') + '" data-tab="' + SHARED_TAB + '">Shared</button>' +
-        memberCodes.map(code => {
-          const cls = code === activeCode ? 'dg-notes-tab active' : 'dg-notes-tab';
-          const id = identityFor(code);
-          const inkStyle = id ? ' style="--tab-ink:' + id.color + '"' : '';
-          return '<button type="button" class="' + cls + '" data-tab="' + escapeHtml(code) + '"' + inkStyle + '>' + escapeHtml(memberLabel(code)) + '</button>';
-        }).join('');
+        '<button type="button" class="dg-notes-tab' + (activeCode === agentCode ? ' active' : '') + '" data-tab="' + escapeHtml(agentCode) + '"' + myInkStyle + '>' + escapeHtml(memberLabel(agentCode)) + '</button>';
 
       const isOwnTab = activeCode === agentCode;
       const bodyHtml = isOwnTab
@@ -522,9 +522,15 @@
       }
       if (label) label.textContent = 'Index';
 
-      const pinnedBlocks = allVisibleBlocks().filter(b => b.pinned)
+      // Scoped to whatever's actually on screen in the active tab --
+      // the Shared tab's Index only lists shared blocks, not your own
+      // private ones bleeding through from a tab you're not even
+      // looking at. ("Search everywhere" above is the one intentional,
+      // explicitly-opted-into exception to this, already returned by then.)
+      const scopeBlocks = activeCode === SHARED_TAB ? sharedBlocksSorted() : (notesByCode[agentCode] || []);
+      const pinnedBlocks = scopeBlocks.filter(b => b.pinned)
         .sort((a, b) => (a.created_at || a.updated_at || 0) - (b.created_at || b.updated_at || 0));
-      const tocBlocks = allVisibleBlocks()
+      const tocBlocks = scopeBlocks
         .filter(b => b.type === 'header')
         .sort((a, b) => (a.created_at || a.updated_at || 0) - (b.created_at || b.updated_at || 0));
       const pinnedHtml = pinnedBlocks.length
@@ -591,33 +597,23 @@
       ).join('');
     }
 
+    // Only ever called for the combined Shared tab now -- your own tab
+    // always mounts the live editor instead (see isOwnTab in render()),
+    // and there's no other read-only tab left to render.
     function refreshReadOnlyFeed() {
       const mount = container.querySelector('#dg-notes-readonly-feed');
       if (!mount) return;
-      let blocks, emptyLabel, showAuthor;
-      const isShared = activeCode === SHARED_TAB;
-      if (isShared) {
-        blocks = sharedBlocksSorted().filter(matchesSearch);
-        showAuthor = true;
-        emptyLabel = searchTerm ? 'No shared blocks match your search.' : 'Nothing shared yet.';
-      } else {
-        blocks = (notesByCode[activeCode] || []).slice().sort((a, b) => a.sort_order - b.sort_order).filter(matchesSearch);
-        showAuthor = false;
-        emptyLabel = searchTerm ? 'No blocks match your search.' : 'Nothing shared here yet.';
-      }
+      const blocks = sharedBlocksSorted().filter(matchesSearch);
+      const emptyLabel = searchTerm ? 'No shared blocks match your search.' : 'Nothing shared yet.';
       // This whole feed is read-only (see the file header comment for
       // why) -- without this, the Shared tab is a total dead end with
       // no controls at all, which read as "totally buggy, can't do
       // anything" the moment someone tapped over to look at it. Always
       // visible here, not just in the empty state, since it's the one
       // way off this tab into somewhere you can actually write.
-      const composeHint = isShared
-        ? '<button type="button" class="dg-notes-goto-own-btn" data-goto-own="1">Write on your own tab, then tap Circulate to add it here &rarr;</button>'
-        : '';
+      const composeHint = '<button type="button" class="dg-notes-goto-own-btn" data-goto-own="1">Write on your own tab, then tap Circulate to add it here &rarr;</button>';
       const bodyHtml = blocks.length
-        ? (isShared && timelineMode
-          ? renderTimelineGroups(blocks)
-          : pinnedFirst(blocks).map(b => renderRoBlock(b, showAuthor)).join(''))
+        ? (timelineMode ? renderTimelineGroups(blocks) : pinnedFirst(blocks).map(b => renderRoBlock(b, true)).join(''))
         : '<div class="dg-notes-empty">' + emptyLabel + '</div>';
       mount.innerHTML = composeHint + bodyHtml;
       const gotoBtn = mount.querySelector('[data-goto-own]');
@@ -702,7 +698,10 @@
           e.preventDefault();
           const blockId = a.dataset.scrollTo;
           const owner = a.dataset.owner;
-          const dest = owner === agentCode ? agentCode : (allVisibleBlocks().find(b => b.block_id === blockId && b.shared) ? SHARED_TAB : owner);
+          // No per-member tabs anymore -- anything not yours is
+          // necessarily on the Shared tab (the only other place a
+          // block belonging to someone else could ever be visible).
+          const dest = owner === agentCode ? agentCode : SHARED_TAB;
           if (dest !== activeCode) { activeCode = dest; render(); }
           requestAnimationFrame(() => {
             const el = document.getElementById('block-' + blockId) || (editorInstance && document.querySelector('[data-id="' + blockId + '"]'));
@@ -757,6 +756,40 @@
        own UI instead of fighting an unreliable API for it. ── */
 
     let currentBlockId = null;
+    let popoverScrollLockObserver = null;
+    let bodyOverflowBeforeLock = '';
+
+    // Mobile Safari's block-type/settings popover is a position:fixed
+    // bottom sheet (Editor.js's own CSS, see notes.css's big comment on
+    // the .ce-popover__container media rule) -- those are notoriously
+    // liable to render in the wrong place on iOS Safari if the page can
+    // still scroll while the sheet is open (a long-documented WebKit
+    // quirk: a position:fixed element inserted mid-scroll, or while the
+    // visual/layout viewport disagree, gets pinned to a stale offset
+    // instead of the real viewport). Freezing body scroll for exactly as
+    // long as a popover is open is the standard fix every mobile sheet/
+    // modal library uses for this. Editor.js toggles `.ce-popover--opened`
+    // on the popover's own wrapper when it opens/closes -- a
+    // MutationObserver on that class is the only hook available, since
+    // Editor.js doesn't expose a popover-open/close event of its own.
+    function lockBodyScrollWhilePopoverOpen(mount) {
+      if (!mount || !window.MutationObserver) return;
+      const sync = () => {
+        const open = !!mount.querySelector('.ce-popover--opened');
+        if (open && document.body.style.overflow !== 'hidden') {
+          bodyOverflowBeforeLock = document.body.style.overflow;
+          document.body.style.overflow = 'hidden';
+        } else if (!open && document.body.style.overflow === 'hidden') {
+          document.body.style.overflow = bodyOverflowBeforeLock;
+        }
+      };
+      popoverScrollLockObserver = new MutationObserver(sync);
+      popoverScrollLockObserver.observe(mount, { attributes: true, attributeFilter: ['class'], subtree: true });
+    }
+    function unlockBodyScrollForPopover() {
+      if (popoverScrollLockObserver) { popoverScrollLockObserver.disconnect(); popoverScrollLockObserver = null; }
+      if (document.body.style.overflow === 'hidden') document.body.style.overflow = bodyOverflowBeforeLock;
+    }
 
     function updateCirculateButton() {
       const btn = container.querySelector('.dg-notes-circulate-btn');
@@ -886,6 +919,7 @@
             updatePinButton();
             updateTagButton();
           });
+          lockBodyScrollWhilePopoverOpen(mount);
         },
         onChange: handleEditorChange,
       });
@@ -898,6 +932,7 @@
     // moment editorInstance is null.
     function unmountEditor() {
       if (!editorInstance) return;
+      unlockBodyScrollForPopover();
       const pending = Object.keys(saveTimers);
       pending.forEach(id => { clearTimeout(saveTimers[id]); delete saveTimers[id]; });
       const inst = editorInstance;

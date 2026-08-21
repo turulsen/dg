@@ -16,7 +16,7 @@
    the activate handler below drops the old cache instead of pages
    being stuck on stale JS forever.
    ══════════════════════════════════════════════ */
-const CACHE_NAME = 'dg-hub-shell-v38';
+const CACHE_NAME = 'dg-hub-shell-v39';
 
 const SHELL_FILES = [
   './',
@@ -56,6 +56,22 @@ const SHELL_FILES = [
   'stats/equipment-data.js',
   'stats/equipment-picker.js',
   'stats/wizard.js',
+  // Notes was never actually added to this list -- isShellRequest()'s
+  // own basename fallback (matching 'index.html' against the root
+  // entry above) accidentally pulled notes/index.html into the
+  // stale-while-revalidate path anyway, while notes/notes.js and
+  // notes/notes.css matched nothing and got no offline caching or
+  // version-bump discipline at all. Listed properly now so all three
+  // (and Editor.js's own vendored bundles) get real offline support
+  // and get refreshed on the same CACHE_NAME bump as everything else.
+  'notes/index.html',
+  'notes/notes.js',
+  'notes/notes.css',
+  'notes/vendor/editorjs.umd.js',
+  'notes/vendor/editorjs-header.umd.js',
+  'notes/vendor/editorjs-list.umd.js',
+  'notes/vendor/editorjs-delimiter.umd.js',
+  'notes/vendor/editorjs-marker.umd.js',
 ];
 
 self.addEventListener('install', (event) => {

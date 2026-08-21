@@ -69,7 +69,7 @@
      else stays yours alone.</p>
 </div>
 
-<div class="picker-wrap" id="picker-wrap">
+<div class="picker-wrap hidden" id="picker-wrap">
   <div class="picker">
     <div class="picker-row" id="picker-agent-row">
       <div class="picker-field">
@@ -213,24 +213,36 @@
     if (myAgents.length === 0) {
       // No Cover Identity saved on this device/browser yet -- fall
       // back to manual entry rather than blocking Notes entirely (a
-      // shared/Handler device, or a cleared browser).
+      // shared/Handler device, or a cleared browser). This is a real
+      // choice the player has to make, so (unlike the auto-opened
+      // paths below) the picker actually needs to be visible here.
+      pickerWrap.classList.remove('hidden');
       agentRow.classList.add('hidden');
       fallbackRow.classList.remove('hidden');
       statusEl.textContent = 'No Cover Identity found on this device -- enter your Agent Code, or visit the Agent Hub first.';
       return;
     }
+    if (myAgents.length === 1) {
+      // The one common case (a single Cover Identity on this device,
+      // or a ?code= link from the Hub) -- straight into Notes with no
+      // picker ever shown, not even a flash of it while list_cells was
+      // still loading.
+      openFor(myAgents[0].code);
+      return;
+    }
+    // More than one Agent on this device and no ?code= told us which
+    // one -- this is the other real choice the picker exists for.
+    pickerWrap.classList.remove('hidden');
     fallbackRow.classList.add('hidden');
     agentRow.classList.remove('hidden');
     agentSelect.innerHTML = myAgents.map(a => `<option value="${a.code}">${agentLabel(a)}</option>`).join('');
-    statusEl.textContent = myAgents.length > 1 ? 'Choose which Agent’s notes to open.' : '';
-    if (myAgents.length === 1) {
-      openFor(myAgents[0].code);
-    }
+    statusEl.textContent = 'Choose which Agent’s notes to open.';
   }
 
   function openFor(agentCode) {
     const cell = findCellForAgent(agentCode);
     if (!cell) {
+      pickerWrap.classList.remove('hidden');
       statusEl.textContent = 'Your Agent (' + agentCode + ') isn’t assigned to a Cell yet -- ask your Handler.';
       return;
     }
@@ -243,7 +255,6 @@
       cellId: cell.cell_id,
       agentCode: agentCode,
       agentToken: agentToken(agentCode),
-      memberCodes: cell.member_codes || [],
       memberNames: cell.member_names || {},
     });
   }

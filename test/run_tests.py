@@ -5811,11 +5811,13 @@ def test_notes_v2_editorjs(p):
     editable document per instance, with no supported way to mix "my
     own editable blocks" with "someone else's read-only blocks" in one
     instance. So only your own tab ever mounts a live Editor.js
-    instance; every other view (another member's tab, the combined
-    Shared feed) is a hand-rendered read-only HTML feed built straight
-    from the same stored block data -- see notes.js's file header
-    comment. That split is exactly what the privacy-leak check below
-    exercises: it must hold on BOTH kinds of view, not just the live one.
+    instance; the combined Shared feed is a hand-rendered read-only HTML
+    feed built straight from the same stored block data -- see notes.js's
+    file header comment. There used to be a third kind of view (a
+    per-member read-only tab for every other Cell member) but it was
+    removed: it only ever showed that member's SHARED blocks, which is
+    exactly the Shared feed's own content, just split per-author with
+    an extra click to get to. Only Shared and your own tab remain now.
 
     The mock below stands in for the real Apps Script backend's
     server-side privacy filter (see listCellNotes() in backend/Code.gs)
@@ -5939,21 +5941,23 @@ def test_notes_v2_editorjs(p):
            and json.loads(saved.get("text") or "{}").get("text") == "Session 3 Notes" and saved.get("shared") is False,
            json.dumps(saved) if saved else "no POST captured")
 
-    # Switch to Priya's tab -- a read-only feed (not a second live
-    # editor), showing only her shared block.
-    page.click('[data-tab="PRIY-AN34"]')
-    page.wait_for_timeout(300)
-    priya_html = page.content()
-    record("notes", "another member's tab is a read-only feed, not a second live editor",
-           page.query_selector("#dg-notes-editor-mount") is None, "")
-    record("notes", "viewing another member's tab shows only their shared block",
-           "Priya's shared note" in priya_html, "")
-    record("notes", "another member's private block never appears anywhere in the page, not even hidden",
-           "must never leak" not in priya_html, "")
+    # No per-member tabs -- only Shared and your own. A member's own
+    # tab only ever showed their SHARED blocks anyway (their private
+    # ones are never sent to anyone else), which is exactly the Shared
+    # feed's content, just split per-author for no real benefit; it
+    # also meant clicking around the whole Cell before finding anything
+    # worth reading. Their contributions still show up on Shared,
+    # individually attributed via the author badge.
+    record("notes", "no per-member tabs are rendered, only Shared and your own",
+           page.locator('[data-tab="PRIY-AN34"]').count() == 0, "")
 
-    # The combined Shared feed: same privacy rule applies there too.
-    page.click('[data-tab="__shared__"]')
+    # The combined Shared feed: read-only (not a second live editor),
+    # shows another member's shared block,
+    # never leaks their private one.
+    page.click('.dg-notes-tab-shared')
     page.wait_for_timeout(300)
+    record("notes", "the Shared tab is a read-only feed, not a second live editor",
+           page.query_selector("#dg-notes-editor-mount") is None, "")
     shared_html = page.content()
     record("notes", "the combined Shared feed shows another member's shared block",
            "Priya's shared note" in shared_html, "")
@@ -6134,6 +6138,17 @@ def test_notes_v2_editorjs(p):
     toc_text = wait_for_condition(toc_has_heading, timeout_ms=8000) or ""
     record("notes", "the index lists heading blocks from your own tab",
            "Investigation Log" in toc_text, toc_text)
+
+    # The Shared tab's own Index is scoped to what's actually shown
+    # there -- "Investigation Log" is a private header on your own tab
+    # (never circulated), so it must NOT bleed into the Shared tab's
+    # sidebar just because allVisibleBlocks() would technically include
+    # it too.
+    page.click('.dg-notes-tab-shared')
+    page.wait_for_timeout(300)
+    shared_toc_text = page.locator("#dg-notes-toc-mount").inner_text() or ""
+    record("notes", "the Shared tab's Index only lists shared headings, not your own private ones",
+           "Investigation Log" not in shared_toc_text, shared_toc_text)
 
     record("notes", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
