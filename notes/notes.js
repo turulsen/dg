@@ -65,9 +65,9 @@
   // contributions in the combined Shared feed and on their own tab.
   const AGENT_COLORS = ['#2b6cb0', '#2f855a', '#b7791f', '#805ad5', '#c53030', '#d53f8c', '#2c7a7b', '#4a5568'];
   const AGENT_FONTS = [
-    { id: 'caveat', label: 'Caveat', family: "'Caveat', cursive" },
-    { id: 'kalam', label: 'Kalam', family: "'Kalam', cursive" },
-    { id: 'patrick', label: 'Patrick Hand', family: "'Patrick Hand', cursive" },
+    { id: 'nycd', label: 'Nothing You Could Do', family: "'Nothing You Could Do', cursive" },
+    { id: 'shadows', label: 'Shadows Into Light', family: "'Shadows Into Light', cursive" },
+    { id: 'reenie', label: 'Reenie Beanie', family: "'Reenie Beanie', cursive" },
   ];
   function fontFamilyFor(fontId) {
     const f = AGENT_FONTS.find(x => x.id === fontId);
@@ -202,6 +202,25 @@
     // left on when switching away and back is fine, matches how a
     // Cell filter or search term would persist too.
     let timelineMode = false;
+    // A per-viewer reading preference (not per-Agent identity, so it's
+    // keyed by browser/localStorage only, no server round trip): when
+    // on, every author's chosen cursive "ink" font is ignored in favor
+    // of the site's own plain Special Elite (headers) / Courier Prime
+    // (body) look, everywhere ink normally shows -- your own tab, every
+    // read-only feed, the combined Shared feed. Author COLOR still
+    // applies either way; only the handwriting font toggles off, for
+    // anyone who finds the cursive fonts harder to read.
+    const PLAIN_FONTS_KEY = 'dg_notes_plain_fonts';
+    let plainFonts = false;
+    try { plainFonts = localStorage.getItem(PLAIN_FONTS_KEY) === '1'; } catch (e) { /* best effort */ }
+    // Cross-tab search: normally the search box only filters whichever
+    // tab is currently active (own tab jumps to the first live match;
+    // a read-only feed hides non-matches). This widens the sidebar
+    // Index into a combined Search Results list across every block
+    // actually visible to you (your own, any privacy, plus everyone
+    // else's shared blocks) -- not a second search mode, the same
+    // searchTerm, just a wider net.
+    let searchEverywhere = false;
     let pollTimer = null;
     // The one live, editable Editor.js instance -- only ever mounted
     // while activeCode === agentCode (your own tab). A background poll
@@ -211,11 +230,23 @@
     // because nothing ever calls container.innerHTML on the mount point
     // while it's live).
     let editorInstance = null;
-    // Circulate state per block, deliberately tracked here rather than
-    // through Editor.js's own Tunes persistence -- see the file header
-    // comment for why.
+    // Circulate/Pin state per block, deliberately tracked here rather
+    // than through Editor.js's own Tunes persistence -- see the file
+    // header comment for why. Tags follows the same pattern (an array
+    // of {type, label} per block_id, not stored in Editor.js's own
+    // block `data`).
     const sharedByBlockId = {};
+    const pinnedByBlockId = {};
+    const tagsByBlockId = {};
     const saveTimers = {}; // block_id -> debounce handle
+
+    const TAG_TYPES = [
+      { id: 'npc', label: 'NPC' },
+      { id: 'location', label: 'Location' },
+      { id: 'clue', label: 'Clue' },
+    ];
+    let tagPopoverOpen = false;
+    let tagPopoverType = TAG_TYPES[0].id;
 
     function memberLabel(code) {
       const base = memberNames[code] || code;
@@ -227,7 +258,16 @@
     }
     function inkStyleFor(code) {
       const id = identityFor(code);
-      return id ? 'color:' + id.color + ';font-family:' + fontFamilyFor(id.font) + ';' : '';
+      if (!id) return '';
+      // Plain-fonts mode keeps the author's color (still a useful
+      // at-a-glance cue) but drops their cursive font, falling back to
+      // this panel's own default type -- Special Elite for headers,
+      // Courier Prime for everything else. --ink-font is a CSS custom
+      // property, not a plain font-family, so headers/body/lists can
+      // each keep their OWN default when it's unset -- see the matching
+      // comment in notes.css above .dg-notes-ro-block h1 for why a
+      // plain inherited font-family can't do that.
+      return plainFonts ? 'color:' + id.color + ';' : 'color:' + id.color + ';--ink-font:' + fontFamilyFor(id.font) + ';';
     }
 
     /* ── Identity: pick once, remembered per Agent Code both locally and
@@ -370,6 +410,20 @@
           '<span class="dg-notes-toggle-track"><span class="dg-notes-toggle-thumb"></span></span>' +
           '<span class="dg-notes-toggle-label">Circulate</span></button>'
         : '';
+      // Pin/Tag: same "acts on whichever block your cursor is in"
+      // mechanism as Circulate (see the big comment above mountEditor()
+      // for why this isn't an Editor.js Block Tune).
+      const pinBtnHtml = isOwnTab
+        ? '<button type="button" class="dg-notes-pin-btn" disabled>' +
+          '<span class="dg-notes-toggle-track"><span class="dg-notes-toggle-thumb"></span></span>' +
+          '<span class="dg-notes-toggle-label">Pin</span></button>'
+        : '';
+      const tagBtnHtml = isOwnTab
+        ? '<div class="dg-notes-tag-wrap">' +
+          '<button type="button" class="dg-notes-tag-btn" disabled>Tag</button>' +
+          '<div class="dg-notes-tag-popover" id="dg-notes-tag-popover" hidden></div>' +
+          '</div>'
+        : '';
       // Only meaningful on the combined Shared feed -- a single
       // member's own tab is already their personal chronological view,
       // grouping it by date wouldn't add anything.
@@ -396,8 +450,11 @@
         '<div class="dg-notes-paper-margin"></div>' +
         '<div class="dg-notes-holes"><div class="dg-notes-hole"></div><div class="dg-notes-hole"></div><div class="dg-notes-hole"></div></div>' +
         '<div class="dg-notes-paper-content">' +
-        '<div class="dg-notes-toolbar">' + circulateBtnHtml + timelineBtnHtml +
-        '<input type="search" class="dg-notes-search" placeholder="Search notes…" value="' + escapeHtml(searchTerm) + '"></div>' +
+        '<div class="dg-notes-toolbar">' + circulateBtnHtml + pinBtnHtml + tagBtnHtml + timelineBtnHtml +
+        '<input type="search" class="dg-notes-search" placeholder="Search notes…" value="' + escapeHtml(searchTerm) + '">' +
+        '<label class="dg-notes-toggle-label-inline"><input type="checkbox" class="dg-notes-search-everywhere"' + (searchEverywhere ? ' checked' : '') + '> Search everywhere</label>' +
+        '<label class="dg-notes-toggle-label-inline"><input type="checkbox" class="dg-notes-plain-fonts"' + (plainFonts ? ' checked' : '') + '> Plain fonts</label>' +
+        '</div>' +
         '<div class="dg-notes-body">' +
         '<aside class="dg-notes-toc"><div class="dg-notes-toc-label">Index</div><div id="dg-notes-toc-mount"></div></aside>' +
         '<main class="dg-notes-main">' +
@@ -427,32 +484,84 @@
       });
     }
 
+    function tocItemHtml(b, label, fromLabel) {
+      const id = identityFor(b.agent_code);
+      const dot = id ? '<span class="dg-notes-toc-dot" style="background:' + id.color + '"></span>' : '';
+      const lvlCls = Number(b.data && b.data.level) === 2 ? ' dg-notes-toc-h2' : '';
+      const from = fromLabel ? '<span class="dg-notes-toc-from">' + escapeHtml(fromLabel) + '</span>' : '';
+      return '<a href="#" class="dg-notes-toc-item' + lvlCls + '" data-scroll-to="' + escapeHtml(b.block_id) + '" data-owner="' + escapeHtml(b.agent_code) + '">' +
+        dot + '<span class="dg-notes-toc-item-text">' + escapeHtml(label) + '</span>' + from + '</a>';
+    }
+
     function refreshToc() {
       const mount = container.querySelector('#dg-notes-toc-mount');
+      const label = container.querySelector('.dg-notes-toc-label');
       if (!mount) return;
+
+      // Search everywhere replaces the normal Index with a combined
+      // results list spanning every block actually visible to you --
+      // your own (any privacy) plus everyone else's shared blocks,
+      // i.e. exactly what's already visible somewhere, just normally
+      // split across tabs. A private block belonging to someone else
+      // was never even in notesByCode to begin with (server-side
+      // filter), so there's nothing extra to guard against here.
+      if (searchEverywhere && searchTerm) {
+        if (label) label.textContent = 'Search Results';
+        const hits = allVisibleBlocks()
+          .filter(b => (b.agent_code === agentCode || b.shared) && matchesSearch(b))
+          .sort((a, b) => (a.created_at || a.updated_at || 0) - (b.created_at || b.updated_at || 0));
+        mount.innerHTML = hits.length
+          ? hits.map(b => {
+            const snippet = (plainTextOf(b.type, b.data) || '(' + b.type + ')').slice(0, 60);
+            const from = b.agent_code === agentCode ? 'your tab' : memberLabel(b.agent_code);
+            return tocItemHtml(b, snippet, from);
+          }).join('')
+          : '<div class="dg-notes-toc-empty">No matches.</div>';
+        wireTocEvents();
+        return;
+      }
+      if (label) label.textContent = 'Index';
+
+      const pinnedBlocks = allVisibleBlocks().filter(b => b.pinned)
+        .sort((a, b) => (a.created_at || a.updated_at || 0) - (b.created_at || b.updated_at || 0));
       const tocBlocks = allVisibleBlocks()
         .filter(b => b.type === 'header')
         .sort((a, b) => (a.created_at || a.updated_at || 0) - (b.created_at || b.updated_at || 0));
-      mount.innerHTML = tocBlocks.length
-        ? tocBlocks.map(b => {
-          const id = identityFor(b.agent_code);
-          const dot = id ? '<span class="dg-notes-toc-dot" style="background:' + id.color + '"></span>' : '';
-          const lvlCls = Number(b.data && b.data.level) === 2 ? ' dg-notes-toc-h2' : '';
-          const label = plainTextOf('header', b.data) || '(untitled)';
-          return '<a href="#" class="dg-notes-toc-item' + lvlCls + '" data-scroll-to="' + escapeHtml(b.block_id) + '" data-owner="' + escapeHtml(b.agent_code) + '">' + dot + escapeHtml(label) + '</a>';
-        }).join('')
+      const pinnedHtml = pinnedBlocks.length
+        ? '<div class="dg-notes-toc-subhead">Pinned</div>' + pinnedBlocks.map(b => tocItemHtml(b, plainTextOf(b.type, b.data) || '(' + b.type + ')')).join('')
+        : '';
+      const indexHtml = tocBlocks.length
+        ? tocBlocks.map(b => tocItemHtml(b, plainTextOf('header', b.data) || '(untitled)')).join('')
         : '<div class="dg-notes-toc-empty">No headings yet.</div>';
+      mount.innerHTML = pinnedHtml + indexHtml;
       wireTocEvents();
     }
 
     // Shared by the flat read-only feed and the grouped Timeline view
-    // below -- one block's author badge + rendered content, identical
-    // either way.
+    // below -- one block's author/pin badges, tag chips, and rendered
+    // content, identical either way.
     function renderRoBlock(b, showAuthor) {
       const authorBadge = showAuthor
         ? '<span class="dg-notes-author-badge" style="background:' + (identityFor(b.agent_code) ? identityFor(b.agent_code).color : '#4a5568') + '">' + escapeHtml(memberLabel(b.agent_code)) + '</span>'
         : '<span class="dg-notes-shared-badge">' + (b.shared ? 'Circulated' : 'Private') + '</span>';
-      return '<div class="dg-notes-ro-block" id="block-' + escapeHtml(b.block_id) + '" style="' + inkStyleFor(b.agent_code) + '">' + authorBadge + renderReadOnlyBlock(b.type, b.data) + '</div>';
+      const pinBadge = b.pinned ? '<span class="dg-notes-pin-badge">Pinned</span>' : '';
+      const tags = b.tags || [];
+      const tagChips = tags.length
+        ? '<div class="dg-notes-tag-chips">' + tags.map(t => '<span class="dg-notes-tag-chip dg-notes-tag-chip-' + escapeHtml(t.type) + '">' + escapeHtml(t.label) + '</span>').join('') + '</div>'
+        : '';
+      return '<div class="dg-notes-ro-block' + (b.pinned ? ' dg-notes-ro-block-pinned' : '') + '" id="block-' + escapeHtml(b.block_id) + '" style="' + inkStyleFor(b.agent_code) + '">' +
+        authorBadge + pinBadge + renderReadOnlyBlock(b.type, b.data) + tagChips + '</div>';
+    }
+
+    // Pinned-first, otherwise unchanged relative order -- only for the
+    // flat feed. Timeline view stays strictly chronological within each
+    // date group (see renderTimelineGroups() above): reordering for
+    // pins there would fight the "what happened when" point of
+    // Timeline itself. Pin's own "always findable" value already comes
+    // from the sidebar's Pinned section, which shows regardless of
+    // which view mode you're in.
+    function pinnedFirst(blocks) {
+      return blocks.slice().sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
     }
 
     // Regroups an already-chronologically-sorted block list into
@@ -508,7 +617,7 @@
       const bodyHtml = blocks.length
         ? (isShared && timelineMode
           ? renderTimelineGroups(blocks)
-          : blocks.map(b => renderRoBlock(b, showAuthor)).join(''))
+          : pinnedFirst(blocks).map(b => renderRoBlock(b, showAuthor)).join(''))
         : '<div class="dg-notes-empty">' + emptyLabel + '</div>';
       mount.innerHTML = composeHint + bodyHtml;
       const gotoBtn = mount.querySelector('[data-goto-own]');
@@ -528,6 +637,7 @@
           } else {
             refreshReadOnlyFeed();
           }
+          refreshToc(); // Search Results (if searchEverywhere) lives in the sidebar
         });
       }
       const circulateBtn = container.querySelector('.dg-notes-circulate-btn');
@@ -540,6 +650,23 @@
           scheduleSave(currentBlockId);
         });
       }
+      const pinBtn = container.querySelector('.dg-notes-pin-btn');
+      if (pinBtn) {
+        pinBtn.addEventListener('click', () => {
+          if (!currentBlockId) return;
+          pinnedByBlockId[currentBlockId] = !pinnedByBlockId[currentBlockId];
+          updatePinButton();
+          scheduleSave(currentBlockId);
+        });
+      }
+      const tagBtn = container.querySelector('.dg-notes-tag-btn');
+      if (tagBtn) {
+        tagBtn.addEventListener('click', () => {
+          if (!currentBlockId) return;
+          tagPopoverOpen = !tagPopoverOpen;
+          refreshTagPopover();
+        });
+      }
       const timelineBtn = container.querySelector('.dg-notes-timeline-btn');
       if (timelineBtn) {
         timelineBtn.addEventListener('click', () => {
@@ -547,6 +674,25 @@
           timelineBtn.classList.toggle('active', timelineMode);
           timelineBtn.textContent = timelineMode ? 'Flat view' : 'Group by date';
           refreshReadOnlyFeed();
+        });
+      }
+      const searchEverywhereBox = container.querySelector('.dg-notes-search-everywhere');
+      if (searchEverywhereBox) {
+        searchEverywhereBox.addEventListener('change', () => {
+          searchEverywhere = searchEverywhereBox.checked;
+          refreshToc();
+        });
+      }
+      const plainFontsBox = container.querySelector('.dg-notes-plain-fonts');
+      if (plainFontsBox) {
+        plainFontsBox.addEventListener('change', () => {
+          plainFonts = plainFontsBox.checked;
+          try { localStorage.setItem(PLAIN_FONTS_KEY, plainFonts ? '1' : '0'); } catch (e) { /* best effort */ }
+          // Re-applies ink everywhere it currently shows -- your own
+          // tab's editor mount (a no-op if you're not on it) and
+          // whichever read-only feed is on screen (if any).
+          applyOwnInkStyle();
+          if (activeCode !== agentCode) refreshReadOnlyFeed();
         });
       }
     }
@@ -621,13 +767,100 @@
       btn.title = known ? 'Circulate this block to the whole Cell' : 'Click into a block first';
     }
 
+    function updatePinButton() {
+      const btn = container.querySelector('.dg-notes-pin-btn');
+      if (!btn) return;
+      const known = !!currentBlockId;
+      btn.disabled = !known;
+      btn.classList.toggle('active', known && !!pinnedByBlockId[currentBlockId]);
+      btn.title = known ? 'Pin this block to the top of the Index' : 'Click into a block first';
+    }
+
+    function updateTagButton() {
+      const btn = container.querySelector('.dg-notes-tag-btn');
+      if (!btn) return;
+      const known = !!currentBlockId;
+      btn.disabled = !known;
+      if (!known) tagPopoverOpen = false;
+      const tags = known ? (tagsByBlockId[currentBlockId] || []) : [];
+      btn.classList.toggle('active', known && tags.length > 0);
+      btn.title = known ? 'Tag NPCs, locations, or clues in this block' : 'Click into a block first';
+      refreshTagPopover();
+    }
+
+    // Popover content for the block your cursor is currently in --
+    // three type chips (NPC/Location/Clue) plus a text field to add a
+    // tag of that type, and the block's already-added tags as
+    // removable chips. Rebuilt (not just shown/hidden) on every open
+    // and every add/remove, same "small hand-rendered surface, no
+    // framework" approach as the rest of this file.
+    function refreshTagPopover() {
+      const pop = container.querySelector('#dg-notes-tag-popover');
+      if (!pop) return;
+      if (!tagPopoverOpen || !currentBlockId) { pop.hidden = true; return; }
+      pop.hidden = false;
+      const tags = tagsByBlockId[currentBlockId] || [];
+      pop.innerHTML =
+        '<div class="dg-notes-tag-types">' +
+        TAG_TYPES.map(t => '<button type="button" class="dg-notes-tag-type-chip' + (t.id === tagPopoverType ? ' selected' : '') + '" data-type="' + t.id + '">' + t.label + '</button>').join('') +
+        '</div>' +
+        '<div class="dg-notes-tag-add-row">' +
+        '<input type="text" class="dg-notes-tag-input" placeholder="Name…">' +
+        '<button type="button" class="dg-notes-tag-add-btn">Add</button>' +
+        '</div>' +
+        '<div class="dg-notes-tag-current">' +
+        (tags.length
+          ? tags.map((t, i) => '<span class="dg-notes-tag-chip dg-notes-tag-chip-' + escapeHtml(t.type) + '">' + escapeHtml(t.label) + '<button type="button" class="dg-notes-tag-remove" data-idx="' + i + '">&times;</button></span>').join('')
+          : '<span class="dg-notes-tag-current-empty">No tags on this block yet.</span>') +
+        '</div>';
+      pop.querySelectorAll('[data-type]').forEach(btn => {
+        btn.addEventListener('click', () => { tagPopoverType = btn.dataset.type; refreshTagPopover(); });
+      });
+      const addBtn = pop.querySelector('.dg-notes-tag-add-btn');
+      const input = pop.querySelector('.dg-notes-tag-input');
+      function commitAdd() {
+        const label = (input.value || '').trim();
+        if (!label || !currentBlockId) return;
+        const list = tagsByBlockId[currentBlockId] || (tagsByBlockId[currentBlockId] = []);
+        list.push({ type: tagPopoverType, label });
+        scheduleSave(currentBlockId);
+        refreshTagPopover();
+        updateTagButtonActiveOnly();
+      }
+      addBtn.addEventListener('click', commitAdd);
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commitAdd(); } });
+      pop.querySelectorAll('.dg-notes-tag-remove').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = Number(btn.dataset.idx);
+          const list = tagsByBlockId[currentBlockId] || [];
+          list.splice(idx, 1);
+          scheduleSave(currentBlockId);
+          refreshTagPopover();
+          updateTagButtonActiveOnly();
+        });
+      });
+    }
+    // A trimmed version of updateTagButton() that only refreshes the
+    // button's active/disabled state, not the popover it would
+    // otherwise recurse into rebuilding mid-interaction (refreshTagPopover()
+    // itself calls this after every add/remove).
+    function updateTagButtonActiveOnly() {
+      const btn = container.querySelector('.dg-notes-tag-btn');
+      if (!btn || !currentBlockId) return;
+      const tags = tagsByBlockId[currentBlockId] || [];
+      btn.classList.toggle('active', tags.length > 0);
+    }
+
     function mountEditor() {
       if (editorInstance) return; // never remounted while already live (a poll must not trigger this)
       currentBlockId = null;
+      tagPopoverOpen = false;
       const initialBlocks = (notesByCode[agentCode] || []).slice()
         .sort((a, b) => a.sort_order - b.sort_order)
         .map(b => {
           sharedByBlockId[b.block_id] = !!b.shared;
+          pinnedByBlockId[b.block_id] = !!b.pinned;
+          tagsByBlockId[b.block_id] = b.tags || [];
           return { id: b.block_id, type: b.type, data: b.data };
         });
       editorInstance = new EditorJS({
@@ -650,6 +883,8 @@
             const blockEl = document.activeElement && document.activeElement.closest('.ce-block');
             currentBlockId = blockEl ? blockEl.dataset.id : currentBlockId;
             updateCirculateButton();
+            updatePinButton();
+            updateTagButton();
           });
         },
         onChange: handleEditorChange,
@@ -705,10 +940,12 @@
       if (!b) return;
       const idx = out.blocks.indexOf(b);
       const shared = !!sharedByBlockId[blockId];
-      const meta = upsertLocalMeta(agentCode, blockId, { type: b.type, data: b.data, shared, sort_order: idx * 1000 });
+      const pinned = !!pinnedByBlockId[blockId];
+      const tags = tagsByBlockId[blockId] || [];
+      const meta = upsertLocalMeta(agentCode, blockId, { type: b.type, data: b.data, shared, pinned, tags, sort_order: idx * 1000 });
       postAction({
         action: 'save_note_block', block_id: blockId, cell_id: cellId, agent_code: agentCode, token: agentToken,
-        block_type: b.type, text: JSON.stringify(b.data), shared, sort_order: meta.sort_order,
+        block_type: b.type, text: JSON.stringify(b.data), shared, pinned, tags: JSON.stringify(tags), sort_order: meta.sort_order,
       }).catch(() => { });
     }
 
@@ -736,6 +973,8 @@
     function deleteBlockRemote(blockId) {
       removeLocalMeta(agentCode, blockId);
       delete sharedByBlockId[blockId];
+      delete pinnedByBlockId[blockId];
+      delete tagsByBlockId[blockId];
       clearTimeout(saveTimers[blockId]);
       postAction({ action: 'delete_note_block', block_id: blockId, cell_id: cellId, agent_code: agentCode, token: agentToken }).catch(() => { });
       refreshChrome();
@@ -768,9 +1007,12 @@
         Object.keys(incoming).forEach(code => {
           parsed[code] = (incoming[code] || []).map(row => {
             const b = parseStoredBlock(row.block_type, row.text);
+            let tags = [];
+            try { tags = JSON.parse(row.tags || '[]'); } catch (e) { tags = []; }
             return {
               block_id: row.block_id, agent_code: row.agent_code, type: b.type, data: b.data,
-              shared: !!row.shared, sort_order: row.sort_order, created_at: row.created_at, updated_at: row.updated_at,
+              shared: !!row.shared, pinned: !!row.pinned, tags: tags,
+              sort_order: row.sort_order, created_at: row.created_at, updated_at: row.updated_at,
             };
           });
         });
@@ -812,6 +1054,8 @@
         .sort((a, b) => a.sort_order - b.sort_order)
         .map(b => {
           sharedByBlockId[b.block_id] = !!b.shared;
+          pinnedByBlockId[b.block_id] = !!b.pinned;
+          tagsByBlockId[b.block_id] = b.tags || [];
           return { id: b.block_id, type: b.type, data: b.data };
         });
       if (!initialBlocks.length) return;

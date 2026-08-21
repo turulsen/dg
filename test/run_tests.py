@@ -5587,6 +5587,77 @@ def test_notes_v2_editorjs(p):
     record("notes", "the Circulate button shows an active state once toggled on",
            "active" in (circulate.get_attribute("class") or ""), "")
 
+    # Pin: same "acts on the focused block" toggle mechanism as
+    # Circulate. Pinned blocks get their own section in the sidebar,
+    # above the normal Index.
+    pin_btn = page.locator(".dg-notes-pin-btn")
+    record("notes", "the Pin button is enabled once a block is focused",
+           pin_btn.get_attribute("disabled") is None, "")
+    posts.clear()
+    pin_btn.click()
+    pinned_post = wait_for_condition(lambda: (page.evaluate("1"), next((x for x in posts if x.get("action") == "save_note_block" and x.get("agent_code") == "OWEN-CS12"), None))[1], timeout_ms=25000)
+    record("notes", "toggling Pin on the focused block saves pinned:true",
+           bool(pinned_post) and pinned_post.get("pinned") is True, json.dumps(pinned_post) if pinned_post else "no POST captured")
+    record("notes", "the Pin button shows an active state once toggled on",
+           "active" in (pin_btn.get_attribute("class") or ""), "")
+    # .dg-notes-toc-subhead is CSS-uppercased, same as .dg-notes-toc-label.
+    toc_pinned = wait_for_condition(lambda: (page.evaluate("1"), "pinned" in (page.locator("#dg-notes-toc-mount").inner_text() or "").lower())[1], timeout_ms=8000)
+    record("notes", "a pinned block gets its own Pinned section in the Index sidebar",
+           bool(toc_pinned), page.locator("#dg-notes-toc-mount").inner_text())
+
+    # Tag: opens a popover on the focused block instead of a plain
+    # toggle -- three type chips (NPC/Location/Clue) plus a text field.
+    tag_btn = page.locator(".dg-notes-tag-btn")
+    record("notes", "the Tag button is enabled once a block is focused",
+           tag_btn.get_attribute("disabled") is None, "")
+    tag_btn.click()
+    page.wait_for_timeout(200)
+    record("notes", "the Tag popover offers NPC/Location/Clue type chips",
+           page.locator(".dg-notes-tag-type-chip").count() == 3, "")
+    page.click('.dg-notes-tag-type-chip[data-type="location"]')
+    page.fill(".dg-notes-tag-input", "Old Lighthouse")
+    posts.clear()
+    page.click(".dg-notes-tag-add-btn")
+    tag_post = wait_for_condition(lambda: (page.evaluate("1"), next((x for x in posts if x.get("action") == "save_note_block" and x.get("agent_code") == "OWEN-CS12"), None))[1], timeout_ms=25000)
+    record("notes", "adding a tag saves it as {type, label} in the block's tags field",
+           bool(tag_post) and json.loads(tag_post.get("tags") or "[]") == [{"type": "location", "label": "Old Lighthouse"}],
+           json.dumps(tag_post) if tag_post else "no POST captured")
+    record("notes", "the added tag shows as a chip in the popover",
+           "Old Lighthouse" in (page.locator(".dg-notes-tag-current").inner_text() or ""), "")
+    record("notes", "the Tag button shows an active state once the block has a tag",
+           "active" in (tag_btn.get_attribute("class") or ""), "")
+    tag_btn.click()  # close the popover -- same as a real user tapping Tag again when done
+    page.wait_for_timeout(150)
+
+    # Cross-tab search: normally the search box only filters whichever
+    # tab is active -- "Search everywhere" widens the sidebar into a
+    # combined Search Results list spanning your own blocks (any
+    # privacy) plus everyone else's shared blocks, each tagged with
+    # which tab it came from.
+    page.fill(".dg-notes-search", "shared note")
+    page.check(".dg-notes-search-everywhere")
+    page.wait_for_timeout(300)
+    record("notes", "'Search everywhere' relabels the sidebar to Search Results",
+           page.inner_text(".dg-notes-toc-label").lower() == "search results", page.inner_text(".dg-notes-toc-label"))
+    record("notes", "Search Results includes a match from another member's shared block",
+           "PRIY-AN34" in (page.locator("#dg-notes-toc-mount").inner_text() or ""), page.locator("#dg-notes-toc-mount").inner_text())
+    page.click('#dg-notes-toc-mount .dg-notes-toc-item')
+    page.wait_for_timeout(300)
+    # The matched hit (b1) is a SHARED block -- the existing TOC-jump
+    # logic (wireTocEvents()) already routes any shared block to the
+    # combined Shared tab rather than the author's own individual tab,
+    # matching how it's normally viewed; Search Results reuses that
+    # same jump mechanism unchanged, not its own new routing rule.
+    record("notes", "clicking a Search Results hit for a shared block jumps to the Shared tab",
+           page.locator('[data-tab="__shared__"].active').count() == 1, "")
+    page.fill(".dg-notes-search", "")
+    page.uncheck(".dg-notes-search-everywhere")
+    page.wait_for_timeout(200)
+    record("notes", "clearing the search and unchecking 'Search everywhere' restores the normal Index",
+           page.inner_text(".dg-notes-toc-label").lower() == "index", page.inner_text(".dg-notes-toc-label"))
+    page.click('[data-tab="OWEN-CS12"]')
+    page.wait_for_timeout(300)
+
     # Paste import -- the actual motivation for this migration. A
     # synthetic paste shaped like Google Docs' clipboard HTML (real
     # <h1>/<p>/<ul><li> tags) should auto-split into real Header/

@@ -119,7 +119,17 @@
 
 #dg-notes-panel .dg-notes-toolbar{
   display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:var(--s3);
-  margin-bottom:var(--s3); position:relative; z-index:1;
+  margin-bottom:var(--s3); position:relative;
+  /* Higher than .dg-notes-body's own z-index:1 -- both are positioned
+     siblings inside the same .dg-notes-paper-content stacking context,
+     so equal z-index would fall back to DOM order (toolbar first,
+     losing to body/editor content painted after it). The Tag popover
+     lives inside this toolbar as a descendant, and its own z-index is
+     powerless to fix this on its own -- it's trapped inside whatever
+     stacking level ITS ancestor (this element) gets from outside,
+     confirmed by literally clicking through the popover into the
+     editor underneath it before this was added. */
+  z-index:2;
 }
 #dg-notes-panel .dg-notes-search{
   font-family:'Courier Prime',monospace; font-size:12px;
@@ -139,6 +149,103 @@
 }
 #dg-notes-panel .dg-notes-circulate-btn:disabled{ opacity:.45; cursor:default; }
 #dg-notes-panel .dg-notes-circulate-btn:not(:disabled):hover{ border-color:rgba(58,40,10,.5); }
+
+/* Pin: same toggle-switch look and "acts on the focused block"
+   mechanism as Circulate. */
+#dg-notes-panel .dg-notes-pin-btn{
+  display:flex; align-items:center; gap:8px; font-family:'Courier Prime',monospace; font-size:12px;
+  color:#2b2416; background:rgba(255,255,255,.5); border:1px solid rgba(58,40,10,.25);
+  border-radius:3px; padding:6px 10px; cursor:pointer;
+}
+#dg-notes-panel .dg-notes-pin-btn:disabled{ opacity:.45; cursor:default; }
+#dg-notes-panel .dg-notes-pin-btn:not(:disabled):hover{ border-color:rgba(58,40,10,.5); }
+#dg-notes-panel .dg-notes-pin-btn.active .dg-notes-toggle-track{ background:#b7791f; }
+#dg-notes-panel .dg-notes-pin-btn.active .dg-notes-toggle-track .dg-notes-toggle-thumb{ left:13px; }
+
+/* Tag: opens a small popover instead of a plain toggle -- three type
+   chips (NPC/Location/Clue) plus a name field. .dg-notes-tag-wrap is
+   the positioning anchor; the popover is position:absolute against
+   it, z-index high enough to sit above the editor/feed content below
+   it (verified -- without this it silently sat BEHIND that content,
+   making its own buttons unclickable despite looking fine). */
+#dg-notes-panel .dg-notes-tag-wrap{ position:relative; }
+#dg-notes-panel .dg-notes-tag-btn{
+  font-family:'Courier Prime',monospace; font-size:12px; color:#2b2416;
+  background:rgba(255,255,255,.5); border:1px solid rgba(58,40,10,.25);
+  border-radius:3px; padding:6px 10px; cursor:pointer;
+}
+#dg-notes-panel .dg-notes-tag-btn:disabled{ opacity:.45; cursor:default; }
+#dg-notes-panel .dg-notes-tag-btn:not(:disabled):hover{ border-color:rgba(58,40,10,.5); }
+#dg-notes-panel .dg-notes-tag-btn.active{ background:rgba(183,121,31,.15); border-color:rgba(183,121,31,.45); color:#7a4f10; }
+#dg-notes-panel .dg-notes-tag-popover{
+  position:absolute; top:calc(100% + 6px); left:0; z-index:20; width:220px;
+  background:var(--paper); border:1px solid rgba(58,40,10,.3); border-radius:4px;
+  box-shadow:0 8px 20px rgba(0,0,0,.25); padding:10px;
+}
+#dg-notes-panel .dg-notes-tag-types{ display:flex; gap:4px; margin-bottom:8px; }
+#dg-notes-panel .dg-notes-tag-type-chip{
+  flex:1; font-family:'Courier Prime',monospace; font-size:10px; letter-spacing:.04em;
+  background:rgba(255,255,255,.6); border:1px solid rgba(58,40,10,.25); border-radius:3px;
+  padding:5px 4px; cursor:pointer; color:#2b2416;
+}
+#dg-notes-panel .dg-notes-tag-type-chip.selected{ background:#1a1508; color:var(--paper); border-color:#1a1508; }
+#dg-notes-panel .dg-notes-tag-add-row{ display:flex; gap:4px; margin-bottom:8px; }
+#dg-notes-panel .dg-notes-tag-input{
+  flex:1; min-width:0; font-family:'Courier Prime',monospace; font-size:12px;
+  background:rgba(255,255,255,.7); border:1px solid rgba(58,40,10,.25); border-radius:3px; padding:5px 7px;
+}
+#dg-notes-panel .dg-notes-tag-add-btn{
+  font-family:'Courier Prime',monospace; font-size:11px; background:#1a1508; color:var(--paper);
+  border:none; border-radius:3px; padding:5px 10px; cursor:pointer;
+}
+#dg-notes-panel .dg-notes-tag-current{ display:flex; flex-wrap:wrap; gap:4px; }
+#dg-notes-panel .dg-notes-tag-current-empty{ font-size:11px; color:rgba(43,36,22,.5); font-style:italic; }
+
+/* Tag chips -- shown in the popover (removable) and on every block
+   that has tags, in both the live editor's decorator and every
+   read-only feed. One background color per type, distinct from the
+   per-Agent identity colors so the two systems never get confused
+   for each other at a glance. */
+#dg-notes-panel .dg-notes-tag-chip{
+  display:inline-flex; align-items:center; gap:4px; font-family:'Courier Prime',monospace; font-size:10px;
+  letter-spacing:.02em; border-radius:10px; padding:2px 9px; color:#2b2416;
+}
+#dg-notes-panel .dg-notes-tag-chip-npc{ background:#cfe0f7; }
+#dg-notes-panel .dg-notes-tag-chip-location{ background:#d6ecd9; }
+#dg-notes-panel .dg-notes-tag-chip-clue{ background:#f7ddb8; }
+#dg-notes-panel .dg-notes-tag-remove{
+  font-family:'Courier Prime',monospace; font-size:12px; line-height:1; background:none; border:none;
+  color:inherit; opacity:.6; cursor:pointer; padding:0;
+}
+#dg-notes-panel .dg-notes-tag-remove:hover{ opacity:1; }
+#dg-notes-panel .dg-notes-tag-chips{ display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+
+/* Search everywhere / Plain fonts -- always-visible toolbar checkboxes,
+   not tab-conditional like Circulate/Pin/Tag. */
+#dg-notes-panel .dg-notes-toggle-label-inline{
+  display:flex; align-items:center; gap:5px; font-family:'Courier Prime',monospace; font-size:11px;
+  color:#3a3220; white-space:nowrap; cursor:pointer;
+}
+
+/* Pin badge (read-only feeds) + a subtle left accent marking a pinned
+   block's whole row, so it reads as "pinned" even before you notice
+   the badge text. */
+#dg-notes-panel .dg-notes-pin-badge{
+  display:inline-block; font-size:9px; letter-spacing:.08em; text-transform:uppercase; color:#7a4f10;
+  background:#f7ddb8; padding:2px 7px; border-radius:3px; margin-bottom:4px; margin-left:4px;
+}
+#dg-notes-panel .dg-notes-ro-block-pinned{ border-left:3px solid #b7791f; padding-left:10px; margin-left:-13px; }
+
+/* Pinned section in the sidebar, and the "which tab this hit is from"
+   label in Search Results -- same micro-label treatment as the Index
+   heading itself (.dg-notes-toc-label). */
+#dg-notes-panel .dg-notes-toc-subhead{
+  font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase;
+  color:rgba(43,36,22,.5); margin:10px 0 4px;
+}
+#dg-notes-panel .dg-notes-toc-from{
+  margin-left:auto; flex-shrink:0; font-size:9px; letter-spacing:.04em; color:rgba(43,36,22,.5);
+}
 
 /* Timeline: regroups the Shared feed by date instead of one flat list
    -- same toolbar-button look as Circulate, only ever shown on the
@@ -173,12 +280,13 @@
   text-transform:uppercase; color:var(--red); margin-bottom:var(--s3);
 }
 #dg-notes-panel .dg-notes-toc-item{
-  display:flex; align-items:center; gap:6px; font-size:12px; color:#3a3220; text-decoration:none;
+  display:flex; align-items:flex-start; flex-wrap:wrap; gap:2px 6px; font-size:12px; color:#3a3220; text-decoration:none;
   padding:4px 0; border-bottom:1px dotted rgba(58,40,10,.15);
 }
 #dg-notes-panel .dg-notes-toc-item.dg-notes-toc-h2{ padding-left:14px; font-size:11px; opacity:.85; }
 #dg-notes-panel .dg-notes-toc-item:hover{ color:#1a1508; }
-#dg-notes-panel .dg-notes-toc-dot{ width:8px; height:8px; border-radius:50%; flex-shrink:0; box-shadow:0 0 0 1px rgba(0,0,0,.15); }
+#dg-notes-panel .dg-notes-toc-dot{ width:8px; height:8px; border-radius:50%; flex-shrink:0; box-shadow:0 0 0 1px rgba(0,0,0,.15); margin-top:3px; }
+#dg-notes-panel .dg-notes-toc-item-text{ flex:1 1 auto; min-width:0; }
 #dg-notes-panel .dg-notes-toc-empty{ font-size:11px; color:rgba(43,36,22,.5); font-style:italic; }
 
 #dg-notes-panel .dg-notes-main{ flex:1; min-width:0; }
@@ -213,12 +321,22 @@
    .ce-header/.ce-paragraph/.cdx-list produce below, so switching
    between your own live tab and a read-only one doesn't visually jump. ── */
 #dg-notes-panel .dg-notes-readonly-feed{ display:flex; flex-direction:column; gap:var(--s3); }
+/* --ink-font is set inline (inkStyleFor()) only when an author's
+   chosen cursive font applies -- a CSS custom property rather than a
+   plain font-family so each element type below can still fall back to
+   ITS OWN default (Special Elite for headers, Courier Prime for body)
+   when it's unset (Plain fonts mode, or no identity yet), while still
+   uniformly overriding every element type the same way real ink would
+   when it IS set. A plain `font-family` on the wrapper couldn't do
+   both at once: descendant rules for h1/h2 would always beat a
+   parent's own inherited value, so headers would never pick up
+   Plain-fonts' Special Elite fallback at all. */
 #dg-notes-panel .dg-notes-ro-block{ font-size:14px; line-height:1.55; color:var(--ink); }
-#dg-notes-panel .dg-notes-ro-block h1{ font-size:22px; font-weight:700; margin:0; }
-#dg-notes-panel .dg-notes-ro-block h2{ font-size:17px; font-weight:700; margin:0; }
-#dg-notes-panel .dg-notes-ro-block p{ margin:0; }
+#dg-notes-panel .dg-notes-ro-block h1{ font-family:var(--ink-font, 'Special Elite', monospace); font-size:22px; font-weight:400; margin:0; }
+#dg-notes-panel .dg-notes-ro-block h2{ font-family:var(--ink-font, 'Special Elite', monospace); font-size:17px; font-weight:400; margin:0; }
+#dg-notes-panel .dg-notes-ro-block p{ font-family:var(--ink-font, 'Courier Prime', monospace); margin:0; }
 #dg-notes-panel .dg-notes-ro-block ul,
-#dg-notes-panel .dg-notes-ro-block ol{ margin:0; padding-left:1.4em; }
+#dg-notes-panel .dg-notes-ro-block ol{ font-family:var(--ink-font, 'Courier Prime', monospace); margin:0; padding-left:1.4em; }
 #dg-notes-panel .dg-notes-ro-block hr{ border:none; border-top:2px dashed rgba(58,40,10,.3); margin:6px 0; }
 #dg-notes-panel .dg-notes-ro-block mark{ background:#fff1a8; color:inherit; padding:0 2px; }
 
@@ -231,8 +349,13 @@
 #dg-notes-panel .codex-editor{ font-family:inherit; }
 #dg-notes-panel .ce-block__content,
 #dg-notes-panel .ce-toolbar__content{ max-width:none; margin:0; }
-#dg-notes-panel .ce-paragraph{ font-family:inherit; color:var(--ink); }
-#dg-notes-panel .ce-header{ font-family:inherit; font-weight:700; color:var(--ink); }
+/* Same --ink-font custom-property fallback pattern as the read-only
+   feed's h1/h2/p rules above -- see that comment for why a plain
+   inherited font-family can't give headers their own Special-Elite
+   default while still letting real cursive ink override them too. */
+#dg-notes-panel .ce-paragraph{ font-family:var(--ink-font, 'Courier Prime', monospace); color:var(--ink); }
+#dg-notes-panel .ce-header{ font-family:var(--ink-font, 'Special Elite', monospace); font-weight:400; color:var(--ink); }
+#dg-notes-panel .cdx-list{ font-family:var(--ink-font, 'Courier Prime', monospace); }
 #dg-notes-panel [data-placeholder]:empty::before{ color:rgba(43,36,22,.4); font-style:italic; }
 
 /* Plus-button + drag/settings handle: Editor.js already hides these
@@ -263,9 +386,6 @@
 #dg-notes-panel .ce-inline-tool{ color:#2b2416; }
 #dg-notes-panel .ce-inline-tool--active,
 #dg-notes-panel .ce-inline-tool:hover{ background:rgba(58,40,10,.1); }
-
-/* @editorjs/list */
-#dg-notes-panel .cdx-list{ font-family:inherit; }
 
 /* @editorjs/delimiter -- swap the default "***" glyph for the same
    dashed rule the read-only feed's <hr> uses, so a divider looks

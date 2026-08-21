@@ -1937,10 +1937,28 @@ function getOrCreateCellNotesSheet() {
   let sheet = ss.getSheetByName('CellNotes');
   if (!sheet) {
     sheet = ss.insertSheet('CellNotes');
-    sheet.getRange(1, 1, 1, 9).setValues([[
+    sheet.getRange(1, 1, 1, 11).setValues([[
       'block_id', 'cell_id', 'agent_code', 'block_type', 'text',
-      'shared', 'sort_order', 'created_at', 'updated_at'
+      'shared', 'sort_order', 'created_at', 'updated_at', 'pinned', 'tags'
     ]]);
+  } else {
+    // Migration-safe: adds pinned/tags to a CellNotes sheet that
+    // predates Notes v2's Pin/Tag features, same self-healing pattern
+    // getOrCreateCharactersSheet() uses for Player Name -- an existing
+    // deployment shouldn't need a manual sheet edit. Cache-gated so
+    // this doesn't re-read the header row on every one of the ~5s
+    // polls every open Notes panel already makes.
+    const cache = CacheService.getScriptCache();
+    if (cache.get('cell_notes_columns_ensured') !== '1') {
+      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      ['pinned', 'tags'].forEach(function (col) {
+        if (headers.indexOf(col) === -1) {
+          sheet.getRange(1, sheet.getLastColumn() + 1).setValue(col);
+          headers.push(col);
+        }
+      });
+      cache.put('cell_notes_columns_ensured', '1', 21600);
+    }
   }
   return sheet;
 }
@@ -1980,6 +1998,8 @@ function listCellNotes(cellId, agentCode, callback) {
     const sortCol = headers.indexOf('sort_order');
     const createdCol = headers.indexOf('created_at');
     const updatedCol = headers.indexOf('updated_at');
+    const pinnedCol = headers.indexOf('pinned');
+    const tagsCol = headers.indexOf('tags');
     rows = [];
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][cellCol]).trim() !== cellId) continue;
@@ -1991,7 +2011,9 @@ function listCellNotes(cellId, agentCode, callback) {
         shared: asBoolean_(data[i][sharedCol]),
         sort_order: Number(data[i][sortCol]) || 0,
         created_at: (createdCol !== -1 && data[i][createdCol]) || 0,
-        updated_at: data[i][updatedCol] || 0
+        updated_at: data[i][updatedCol] || 0,
+        pinned: pinnedCol !== -1 && asBoolean_(data[i][pinnedCol]),
+        tags: (tagsCol !== -1 && data[i][tagsCol]) || '[]'
       });
     }
     cache.put(cacheKey, JSON.stringify(rows), 3);
@@ -2002,7 +2024,8 @@ function listCellNotes(cellId, agentCode, callback) {
     const list = result.notes[row.agent_code] || (result.notes[row.agent_code] = []);
     list.push({
       block_id: row.block_id, agent_code: row.agent_code, block_type: row.block_type, text: row.text,
-      shared: row.shared, sort_order: row.sort_order, created_at: row.created_at, updated_at: row.updated_at
+      shared: row.shared, sort_order: row.sort_order, created_at: row.created_at, updated_at: row.updated_at,
+      pinned: row.pinned, tags: row.tags
     });
   });
 
@@ -2036,6 +2059,11 @@ function saveNoteBlock(data) {
     const now = new Date().getTime();
     const blockType = data.block_type || 'paragraph';
     const shared = data.shared ? 1 : 0;
+    const pinned = data.pinned ? 1 : 0;
+    // tags arrives as an already-JSON-stringified array from the
+    // client -- stored as opaque text here, same treatment as `text`
+    // itself (parsed/interpreted client-side only).
+    const tags = typeof data.tags === 'string' ? data.tags : '[]';
     const sortOrder = Number(data.sort_order) || 0;
 
     let blockId = (data.block_id || '').trim();
@@ -2057,6 +2085,8 @@ function saveNoteBlock(data) {
           row[cols.shared] = shared;
           row[cols.sort_order] = sortOrder;
           row[cols.updated_at] = now;
+          if (cols.pinned !== undefined) row[cols.pinned] = pinned;
+          if (cols.tags !== undefined) row[cols.tags] = tags;
           sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
           CacheService.getScriptCache().remove('cell_notes_raw_' + cellId);
           return ContentService.createTextOutput(JSON.stringify({ status: 'OK', block_id: blockId })).setMimeType(ContentService.MimeType.JSON);
@@ -2080,6 +2110,8 @@ function saveNoteBlock(data) {
     newRow[cols.sort_order] = sortOrder;
     newRow[cols.created_at] = now;
     newRow[cols.updated_at] = now;
+    if (cols.pinned !== undefined) newRow[cols.pinned] = pinned;
+    if (cols.tags !== undefined) newRow[cols.tags] = tags;
     sheet.appendRow(newRow);
     CacheService.getScriptCache().remove('cell_notes_raw_' + cellId);
     return ContentService.createTextOutput(JSON.stringify({ status: 'OK', block_id: blockId })).setMimeType(ContentService.MimeType.JSON);
