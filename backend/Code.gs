@@ -1664,6 +1664,20 @@ function getOrCreateDeletedSheet(name, liveHeaders) {
 // looks at or touches the Admin tab.
 const DELETED_RETENTION_MS = 24 * 60 * 60 * 1000;
 
+// Sheets can hand back a cell written with a plain epoch-ms number as a
+// JS Date object instead (inherited column number-formatting, e.g. if
+// that column was ever formatted as a date) -- Number(aDateObject)
+// still resolves correctly via valueOf(), but JSON.stringify(aDateObject)
+// serializes it as an ISO string, which is why the Admin tab was showing
+// "deleted Invalid Date" for otherwise-recent deletes (client does
+// Number('2026-...T...Z') -> NaN). Centralized here so purge and the
+// list endpoint can't disagree about what a cell's value means.
+function normalizedDeletedAt_(raw) {
+  if (raw instanceof Date) return raw.getTime();
+  const n = Number(raw);
+  return n || 0;
+}
+
 function purgeOldDeleted() {
   const ss = getOrCreateSheet();
   const cutoff = new Date().getTime() - DELETED_RETENTION_MS;
@@ -1679,8 +1693,15 @@ function purgeOldDeleted() {
     // deleting row i shifts every row below it up, so walking forward
     // would skip a row right after deleting its predecessor.
     for (let i = data.length - 1; i >= 1; i--) {
-      const deletedAt = Number(data[i][deletedAtCol]);
-      if (deletedAt && deletedAt < cutoff) sheet.deleteRow(i + 1);
+      const deletedAt = normalizedDeletedAt_(data[i][deletedAtCol]);
+      // A row with no parseable Deleted At at all (blank cell) predates
+      // this column being added -- there's no way to know its real age,
+      // but the only way it could exist without one is if it was deleted
+      // before the 24h-purge feature shipped, which makes it older than
+      // the retention window by definition. Treating "no timestamp" as
+      // "keep forever" (the previous behavior) is exactly why Recently
+      // Deleted was accumulating years-old test rows that never left.
+      if (!deletedAt || deletedAt < cutoff) sheet.deleteRow(i + 1);
     }
   });
 }
@@ -1760,7 +1781,7 @@ function listDeletedCharacters(callback) {
       result.characters.push({
         agent_code: code,
         character_json: jsonCol >= 0 ? row[jsonCol] : '',
-        deleted_at: deletedAtCol >= 0 ? row[deletedAtCol] : ''
+        deleted_at: deletedAtCol >= 0 ? (normalizedDeletedAt_(row[deletedAtCol]) || '') : ''
       });
     }
   }
@@ -1780,7 +1801,7 @@ function listDeletedCharacters(callback) {
         agent_code: code,
         char_name: nameCol >= 0 ? (row[nameCol] || '') : '',
         character_json: '',
-        deleted_at: deletedAtCol >= 0 ? row[deletedAtCol] : ''
+        deleted_at: deletedAtCol >= 0 ? (normalizedDeletedAt_(row[deletedAtCol]) || '') : ''
       });
     }
   }

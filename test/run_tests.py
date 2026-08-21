@@ -1398,18 +1398,16 @@ def test_agent_hub_cover_identity(p):
         return handler
 
     # Entering a name and finding 2 Agents replaces the *claimed* part of
-    # the roster (which starts out seeded with three locally-added
-    # Agents: one already tied to a different real name, one nobody's
-    # claimed yet but was added recently, one nobody's claimed but has
-    # been sitting untouched for days) -- the one already claimed by
-    # someone else is dropped, the recent unclaimed one survives (there's
-    # nothing yet distinguishing it from "belongs to this identity", so
-    # dropping it right away would be silent local data loss for a
-    # brand-new Agent), and the STALE unclaimed one is also dropped --
-    # a real live bug report traced several Agents nobody had claimed
-    # permanently reappearing in the tab strip, no matter how many times
-    # Cover Identity search was re-run, back to this "unclaimed" grace
-    # period never actually expiring at all.
+    # the roster (which starts out seeded with two locally-added Agents:
+    # one already tied to a different real name, one nobody's claimed
+    # yet) -- the one already claimed by someone else is dropped, and the
+    # unclaimed one survives regardless of how long it's been sitting
+    # there: there's nothing yet distinguishing it from "belongs to this
+    # identity", and this campaign plays roughly every 3-5 weeks, so a
+    # player rolling a new Agent and not getting to Cover Identity right
+    # away is the normal case -- any fixed expiry short enough to matter
+    # would risk that same player coming back next session to find their
+    # own not-yet-named Agent gone.
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -1426,15 +1424,14 @@ def test_agent_hub_cover_identity(p):
         localStorage.setItem('dg_agent_roster', JSON.stringify({
             'STRY-X001': { code: 'STRY-X001', char_name: 'Claimed By Someone Else',
                            player_name: 'Not Gergo', saved_at: 500 },
-            'STRY-X002': { code: 'STRY-X002', char_name: 'Unclaimed Local Draft', saved_at: now - 60000 },
-            'STRY-X003': { code: 'STRY-X003', char_name: 'Stale Unclaimed Ghost', saved_at: now - 40 * 60 * 60 * 1000 },
+            'STRY-X002': { code: 'STRY-X002', char_name: 'Unclaimed Local Draft', saved_at: now - 40 * 60 * 60 * 1000 },
         }));
     """)
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
-    record("hub", "starts with all three stray Agents already in the roster before any lookup",
+    record("hub", "starts with both stray Agents already in the roster before any lookup",
            set(page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)"))
-           == {"+ New Recruit", "Claimed By Someone Else", "Unclaimed Local Draft", "Stale Unclaimed Ghost"}, "")
+           == {"+ New Recruit", "Claimed By Someone Else", "Unclaimed Local Draft"}, "")
 
     page.fill("#cover-identity-input", "Gergo")
     page.click("#cover-identity-btn")
@@ -1444,10 +1441,8 @@ def test_agent_hub_cover_identity(p):
            {"Patrick Montgomery", "Danielle Mitchell"}.issubset(set(tab_labels)), str(tab_labels))
     record("hub", "the stray Agent already claimed by a different real name is gone",
            "Claimed By Someone Else" not in tab_labels, str(tab_labels))
-    record("hub", "the unclaimed local draft survives the search -- nobody's said it isn't Gergo's yet",
+    record("hub", "the unclaimed local draft survives the search even after sitting untouched for days",
            "Unclaimed Local Draft" in tab_labels, str(tab_labels))
-    record("hub", "an unclaimed Agent that's been sitting untouched for days is dropped, not kept forever",
-           "Stale Unclaimed Ghost" not in tab_labels, str(tab_labels))
     record("hub", "the status line confirms how many Agents were loaded",
            "2" in page.inner_text("#ci-status"), page.inner_text("#ci-status"))
     record("hub", "the entered Cover Identity is remembered for next time",
