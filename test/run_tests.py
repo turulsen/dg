@@ -1361,6 +1361,8 @@ def test_agent_hub(p):
         "#panel-OWEN-CS12 .paper-btn", "els => els.map(e => e.textContent)")
     record("hub", "the button reads Field ID, not the old Cover ID name (now Cover Identity means something else)",
            action_labels[2] == "Field ID", str(action_labels))
+    record("hub", "Notes links to the Notes app with ?code= for that exact agent",
+           action_hrefs[3] == "notes/index.html?code=OWEN-CS12", str(action_hrefs))
 
     # Clicking a tab switches the active panel.
     page.click('.tw[data-tab="PRIY-AN34"]')
@@ -5799,6 +5801,76 @@ def test_notes_reload_shows_own_previous_blocks(p):
     return errs
 
 
+def test_notes_code_url_param(p):
+    """agent-hub.html's per-Agent Notes button links to
+    notes/index.html?code=AGENT-CODE (same convention dg-agent-portal.html
+    already uses for Agent File/Field ID) so it opens straight into that
+    specific Agent's notes -- not just whichever Agent this browser's
+    roster last had active -- since a roster can hold more than one
+    Agent and the player picked a specific one from the Hub. Also
+    checks that "Change Agent" isn't defeated by the URL forcing the
+    same Agent back open every time it's clicked."""
+    page = p.new_page()
+    page.set_default_timeout(15000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    cells = [
+        {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"]},
+        {"cell_id": "cell_2", "name": "Cell Bravo", "handler": "Sam", "member_codes": ["PRIY-AN34"]},
+    ]
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=list_cells" in url:
+                res = {"status": "OK", "cells": cells}
+            elif "action=list_cell_notes" in url:
+                res = {"status": "OK", "notes": {}, "identities": {}}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    # Two Agents in this browser's roster, OWEN-CS12 the more recently
+    # active one (would normally auto-open by default) -- ?code= should
+    # still force PRIY-AN34 open instead.
+    page.add_init_script("""
+        try {
+            localStorage.setItem('dg_agent_roster', JSON.stringify({
+                'OWEN-CS12': { code: 'OWEN-CS12', char_name: 'Owen Castillo', saved_at: Date.now() },
+                'PRIY-AN34': { code: 'PRIY-AN34', char_name: 'Priya Anand', saved_at: Date.now() - 60000 }
+            }));
+        } catch (e) {}
+    """)
+    page.goto(f"{BASE}/notes/index.html?code=PRIY-AN34", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: page.query_selector(".dg-notes-identity-modal") is not None, timeout_ms=6000)
+    page.click(".dg-notes-color-swatch")
+    page.click(".dg-notes-identity-confirm")
+    wait_for_condition(lambda: page.query_selector('[data-tab="PRIY-AN34"].active') is not None, timeout_ms=6000)
+    record("notes", "?code= opens that specific Agent's notes, not the roster's most-recently-active one",
+           page.locator('[data-tab="PRIY-AN34"].active').count() == 1, "")
+
+    # Change Agent should still work afterward -- the URL forcing PRIY-AN34
+    # open once must not turn every subsequent proceed() call into a
+    # loop back to the same Agent.
+    page.click("#change-context-btn")
+    page.wait_for_timeout(300)
+    record("notes", "Change Agent still returns to the picker instead of re-forcing the URL's Agent open again",
+           page.locator("#picker-wrap:not(.hidden)").count() == 1, "")
+
+    page.close()
+    return errs
+
+
 def main():
     with sync_playwright() as p:
         # Chrome's own background-tab timer throttling policy applies to a
@@ -5957,6 +6029,7 @@ def main():
         safe(test_notes_v2_editorjs, browser, area="notes")
 
         safe(test_notes_reload_shows_own_previous_blocks, browser, area="notes")
+        safe(test_notes_code_url_param, browser, area="notes")
 
         browser.close()
 

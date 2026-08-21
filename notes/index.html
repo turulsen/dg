@@ -195,7 +195,27 @@
     });
   }
 
+  // agent-hub.html's per-Agent "Notes" button links here with
+  // ?code=AGENT-CODE (same convention dg-agent-portal.html already
+  // uses for Agent File/Field ID) so it opens straight into that
+  // specific Agent's notes instead of falling back to "most recently
+  // active" -- matters once a browser's roster holds more than one
+  // Agent and the player picked a specific one from the Hub. Only
+  // honored on the very first proceed() call (from init()) -- letting
+  // it re-fire on every proceed() would make "Change Agent" a no-op
+  // loop back to the same URL-forced Agent instead of actually
+  // returning to the picker.
+  function codeFromUrl() {
+    try { return new URLSearchParams(location.search).get('code') || ''; } catch (e) { return ''; }
+  }
+  let urlCodeConsumed = false;
+
   function proceed() {
+    if (!urlCodeConsumed) {
+      urlCodeConsumed = true;
+      const urlCode = codeFromUrl();
+      if (urlCode) { openFor(urlCode.trim().toUpperCase()); return; }
+    }
     if (myAgents.length === 0) {
       // No Cover Identity saved on this device/browser yet -- fall
       // back to manual entry rather than blocking Notes entirely (a

@@ -1,7 +1,7 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v24 — Phase 2 + image proxy + Cloud Save
-// + A-Cell (Play/Cells/Sheet/Handouts/Music) + Cell groups + Table Radio
+// Google Apps Script backend v25 — Phase 2 + image proxy + Cloud Save
+// + A-Cell (Play/Cells/Sheet/Evidence/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
 // + AI appearance prompt generation (Face/Outfit Plate, via Claude)
@@ -232,6 +232,40 @@
 //   flows (Notes' Cell auto-detection; agent-hub.html's Handouts
 //   section), and neither exposes anything more sensitive than Cell/
 //   Handler names or in-fiction clue text.
+// + Evidence Locker stage 1 (backend foundation): Handouts evolves
+//   into a full evidence-management system, backend-only this round
+//   (client changes land in later stages). The Handouts sheet is
+//   renamed to Evidence in place (existing rows carry over; a legacy
+//   deploy's sheet gets renamed automatically, see
+//   getOrCreateEvidenceSheet()), gaining operation_id (per-Cell
+//   folder), released (Handler toggle -- every pre-existing row starts
+//   unreleased by design, needs one manual click each after upgrade),
+//   and restricted_to (optional per-Agent allowlist within the Cell).
+//   list_handouts/create_handout/update_handout/delete_handout renamed
+//   to list_evidence/create_evidence/update_evidence/delete_evidence
+//   (no back-compat alias -- client+backend always redeploy together
+//   in this app). list_evidence is now two-tier like listCellNotes():
+//   a Handler session sees everything including unreleased items and
+//   full restricted_to lists; a player (agent_code only) sees only
+//   released items scoped to a Cell they're actually in (or
+//   campaign-wide) and not restricted away from them, bundled with
+//   which evidence_ids they've already seen. New Operations sheet
+//   (one Cell per Operation, by design -- no shared/cross-Cell
+//   folders) with its own create/update/delete actions. New
+//   EvidenceSeen sheet + mark_evidence_seen action tracks per-Agent
+//   seen state server-side (synced across devices, per the user's own
+//   call) rather than a local-only flag. Evidence remarks (players
+//   annotating a piece of evidence, privately or shared, several
+//   Agents each leaving several) deliberately reuse the existing
+//   CellNotes table via a new evidence_remark block_type instead of a
+//   new sheet -- saveNoteBlock()/listCellNotes() already treat
+//   block_type/text as opaque, so this needed no backend change at
+//   all; the client-side compose/display work lands in a later stage.
+//   Pre-existing, unrelated HandoutNotes feature (agent-hub.html's
+//   private per-Handout scratch note) intentionally left untouched
+//   this round -- flagged to the user as a separate decision (rename
+//   for consistency, fold into the new remarks system, or leave as
+//   its own thing) rather than assumed.
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -625,17 +659,30 @@ function doGet(e) {
     return listAgentFileOnly(callback);
   }
 
-  // ── A-Cell Handouts + the player-facing Agent Hub: every filed
-  // handout/clue. Also deliberately unauthenticated, same reasoning as
-  // list_cells and doLookup() above: agent-hub.html's Handouts section
-  // needs to read this with no Handler session, and each handout is
-  // already scoped/filtered client-side to what that Agent's Cell can
-  // see. The underlying content is in-fiction clue text, not real-world
-  // data -- narrowing this to a Handler-only endpoint was considered
-  // and rejected as friction with no real security upside. ──
-  // ?action=list_handouts&callback=CALLBACK
-  if (e.parameter && e.parameter.action === 'list_handouts') {
-    return listHandouts(callback);
+  // ── A-Cell Evidence Locker + the player-facing Agent Hub: every
+  // filed evidence item (formerly "Handouts"). Two-tier like
+  // listCellNotes(): a valid Handler session sees everything --
+  // including still-unreleased items and each item's full
+  // restricted_to list -- for the management UI in A-Cell; anyone
+  // else (a player, via Notes or agent-hub.html, agent_code only, no
+  // session) sees only items that are actually released and visible
+  // to that specific Agent Code. Deliberately still reachable with no
+  // auth at all when no agent_code is sent either (matches
+  // list_cells/doLookup's existing reasoning -- see their own
+  // comments), it just then only returns already-released,
+  // unrestricted items. ──
+  // ?action=list_evidence&agent_code=CODE&handler_session=TOKEN&callback=CALLBACK
+  if (e.parameter && e.parameter.action === 'list_evidence') {
+    return listEvidence(e.parameter, callback);
+  }
+
+  // ── A-Cell Evidence Locker: every Operation (folder) filed under a
+  // Cell. Same openness as list_cells/list_evidence -- Operation names
+  // aren't sensitive, and Notes/agent-hub need to show folder names to
+  // players without a Handler session. ──
+  // ?action=list_operations&callback=CALLBACK
+  if (e.parameter && e.parameter.action === 'list_operations') {
+    return listOperations(callback);
   }
 
   // ── Table Radio: current track for a channel ─────────────────
@@ -807,21 +854,53 @@ function doPost(e) {
       return setCellChannel(data.cell_id, data.channel);
     }
 
-    // A-Cell Handouts: create/edit/delete a filed handout.
-    if (data.action === 'create_handout') {
+    // A-Cell Evidence Locker: create/edit/delete a filed evidence item
+    // (formerly "Handouts" -- create_handout/update_handout/
+    // delete_handout renamed to match; this app's client+backend are
+    // always redeployed together, so no back-compat alias is needed).
+    if (data.action === 'create_evidence') {
       const authErr = requireHandlerAuth_(data);
       if (authErr) return authErr;
-      return createHandout(data);
+      return createEvidence(data);
     }
-    if (data.action === 'update_handout') {
+    if (data.action === 'update_evidence') {
       const authErr = requireHandlerAuth_(data);
       if (authErr) return authErr;
-      return updateHandout(data);
+      return updateEvidence(data);
     }
-    if (data.action === 'delete_handout') {
+    if (data.action === 'delete_evidence') {
       const authErr = requireHandlerAuth_(data);
       if (authErr) return authErr;
-      return deleteHandout(data.handout_id);
+      return deleteEvidence(data.evidence_id);
+    }
+
+    // A-Cell Evidence Locker: create/rename/delete an Operation
+    // (folder). One Cell per Operation -- see getOrCreateOperationsSheet()'s
+    // own comment for why.
+    if (data.action === 'create_operation') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
+      return createOperation(data);
+    }
+    if (data.action === 'update_operation') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
+      return updateOperation(data);
+    }
+    if (data.action === 'delete_operation') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
+      return deleteOperation(data.operation_id);
+    }
+
+    // A-Cell Evidence Locker: an Agent opened a piece of evidence --
+    // clears their own "unseen" flag for it. Deliberately unauthenticated,
+    // same reasoning as every other player-owned write in this app
+    // (Agent-token auth was removed entirely earlier this project --
+    // see requireAgentToken_()'s own comment): the only thing at stake
+    // is a cosmetic unseen dot, not real data.
+    if (data.action === 'mark_evidence_seen') {
+      return markEvidenceSeen(data.agent_code, data.evidence_id);
     }
 
     // A-Cell Admin: soft-delete an Agent (archives Characters + Briefs
@@ -2225,22 +2304,57 @@ function getAgentIdentitiesMap() {
   return map;
 }
 
-// ── A-Cell Handouts: a shared clue/document log the Handler files from
-// the Handouts tab. Each entry is scoped to one Cell (cell_id set) or
-// every Cell (cell_id blank) -- the player-facing Agent Hub reads the
-// same list_handouts action and shows each Agent only the ones scoped
-// to a Cell they're actually in, plus the campaign-wide ones. A photo
-// sent as a raw data URI gets uploaded to Drive and only the gdrive:
-// link is stored (see resolveHandoutPhoto_() below) -- same pattern
-// already used for Face/Outfit Plates and Track Library uploads, to
-// stay well clear of Sheets' ~50,000-char cell limit. Self-provisions
-// its own "Handouts" sheet. ──
-function getOrCreateHandoutsSheet() {
+// ── A-Cell Evidence Locker (formerly "Handouts"): a shared clue/
+// document log the Handler files, now organized into per-Operation
+// folders within a Cell, gated by a Released toggle (filed doesn't
+// mean visible -- the Handler flips this on when ready) and an
+// optional per-Agent restricted_to allowlist (empty = every member of
+// cell_id once released). A photo sent as a raw data URI gets
+// uploaded to Drive and only the gdrive: link is stored (see
+// resolveEvidencePhoto_() below) -- same pattern already used for
+// Face/Outfit Plates and Track Library uploads, to stay well clear of
+// Sheets' ~50,000-char cell limit.
+//
+// Self-provisions its sheet by renaming a pre-existing "Handouts"
+// sheet to "Evidence" in place (existing rows carry over untouched --
+// same self-healing-migration spirit as every column migration in
+// this file, just for the sheet's own name) rather than requiring a
+// manual re-file of every already-filed handout. Every row created
+// before this migration has released left blank (falsy) by design --
+// nothing already-filed suddenly becomes visible to players the
+// moment this deploys; each needs one manual Release click in the new
+// Evidence Locker UI, same as any newly-filed item.
+function getOrCreateEvidenceSheet() {
   const ss = getOrCreateSheet();
-  let sheet = ss.getSheetByName('Handouts');
+  let sheet = ss.getSheetByName('Evidence');
   if (!sheet) {
-    sheet = ss.insertSheet('Handouts');
-    sheet.getRange(1, 1, 1, 6).setValues([['handout_id', 'title', 'body', 'photo', 'cell_id', 'created_at']]);
+    const legacy = ss.getSheetByName('Handouts');
+    if (legacy) {
+      legacy.setName('Evidence');
+      sheet = legacy;
+    } else {
+      sheet = ss.insertSheet('Evidence');
+      sheet.getRange(1, 1, 1, 9).setValues([[
+        'evidence_id', 'title', 'body', 'photo', 'cell_id', 'created_at',
+        'operation_id', 'released', 'restricted_to'
+      ]]);
+      return sheet;
+    }
+  }
+  // Migration-safe column additions, same cache-gated pattern
+  // getOrCreateCellNotesSheet() uses for pinned/tags -- covers both a
+  // freshly-renamed legacy Handouts sheet and one from an even older
+  // deploy that predates this whole feature.
+  const cache = CacheService.getScriptCache();
+  if (cache.get('evidence_columns_ensured') !== '1') {
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    ['operation_id', 'released', 'restricted_to'].forEach(function (col) {
+      if (headers.indexOf(col) === -1) {
+        sheet.getRange(1, sheet.getLastColumn() + 1).setValue(col);
+        headers.push(col);
+      }
+    });
+    cache.put('evidence_columns_ensured', '1', 21600);
   }
   return sheet;
 }
@@ -2250,88 +2364,172 @@ function getOrCreateHandoutsSheet() {
 // uses) and only the gdrive: link is persisted. An already-resolved
 // gdrive: link, a pre-migration legacy data URI already on file that
 // wasn't touched this save, or an empty string all pass through
-// unchanged -- so re-saving a handout without picking a new photo
-// doesn't re-upload it.
-function resolveHandoutPhoto_(photo, title) {
+// unchanged -- so re-saving an evidence item without picking a new
+// photo doesn't re-upload it.
+function resolveEvidencePhoto_(photo, title) {
   photo = photo || '';
   if (!photo || photo.indexOf('data:') !== 0) return photo;
-  return saveImageToDrive(photo, (title || 'handout') + '.png', 'Handout');
+  return saveImageToDrive(photo, (title || 'evidence') + '.png', 'Evidence');
 }
 
-function listHandouts(callback) {
-  const sheet = getOrCreateHandoutsSheet();
+// Every Agent Code this Cells sheet lists as a member of at least one
+// Cell, mapped to the set of cell_ids they're in. Used by listEvidence()'s
+// player-mode filtering below -- an Agent only ever sees evidence
+// scoped to a Cell they actually belong to (or campaign-wide,
+// cell_id blank).
+function cellIdsForAgent_(agentCode) {
+  const code = String(agentCode || '').trim().toUpperCase();
+  const out = {};
+  if (!code) return out;
+  const sheet = getOrCreateCellsSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idCol = headers.indexOf('cell_id');
+  const membersCol = headers.indexOf('member_codes');
+  for (let i = 1; i < data.length; i++) {
+    let members = [];
+    try { members = JSON.parse(data[i][membersCol] || '[]'); } catch (e) { members = []; }
+    if (members.indexOf(code) !== -1) out[data[i][idCol]] = true;
+  }
+  return out;
+}
+
+function listOperations(callback) {
+  const sheet = getOrCreateOperationsSheet();
+  const data = sheet.getDataRange().getValues();
+  const cols = headerMap_(data[0]);
+  const operations = [];
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (!row[cols.operation_id]) continue;
+    operations.push({
+      operation_id: row[cols.operation_id],
+      cell_id: row[cols.cell_id] || '',
+      name: row[cols.name] || '',
+      created_at: row[cols.created_at] || ''
+    });
+  }
+  return respond_({ status: 'OK', operations: operations }, callback);
+}
+
+// A-Cell Evidence Locker: two-tier read, same shape listCellNotes()
+// established. A valid Handler session (params.handler_session) sees
+// every item, including still-unreleased ones and each item's full
+// restricted_to list -- needed for the management UI to actually let
+// the Handler toggle those things. Without one, this filters to
+// released items scoped to a Cell the requesting agent_code actually
+// belongs to (or campaign-wide) and not restricted away from them --
+// or, with no agent_code at all, just released + fully-unrestricted
+// items (matches how list_cells/list_handouts already stayed reachable
+// with zero identifying info, see this action's own doGet comment).
+function listEvidence(params, callback) {
+  const sheet = getOrCreateEvidenceSheet();
   const data = sheet.getDataRange().getValues();
   const cols = headerMap_(data[0]);
 
-  const handouts = [];
+  const session = String((params && params.handler_session) || '').trim();
+  const isHandler = !!(session && CacheService.getScriptCache().get('handler_session_' + session));
+  const requesterCode = String((params && params.agent_code) || '').trim().toUpperCase();
+  const requesterCells = isHandler ? null : cellIdsForAgent_(requesterCode);
+
+  const evidence = [];
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
-    if (!row[cols.handout_id]) continue;
-    handouts.push({
-      handout_id: row[cols.handout_id],
-      title: (cols.title !== undefined && row[cols.title]) || '',
-      body: (cols.body !== undefined && row[cols.body]) || '',
-      photo: (cols.photo !== undefined && row[cols.photo]) || '',
-      cell_id: (cols.cell_id !== undefined && row[cols.cell_id]) || '',
-      created_at: (cols.created_at !== undefined && row[cols.created_at]) || ''
+    if (!row[cols.evidence_id]) continue;
+    const released = asBoolean_(row[cols.released]);
+    let restrictedTo = [];
+    try { restrictedTo = JSON.parse(row[cols.restricted_to] || '[]'); } catch (e) { restrictedTo = []; }
+    const cellId = row[cols.cell_id] || '';
+
+    if (!isHandler) {
+      if (!released) continue;
+      if (cellId && !(requesterCells && requesterCells[cellId])) continue;
+      if (restrictedTo.length && requesterCode && restrictedTo.indexOf(requesterCode) === -1) continue;
+      if (restrictedTo.length && !requesterCode) continue;
+    }
+
+    evidence.push({
+      evidence_id: row[cols.evidence_id],
+      title: row[cols.title] || '',
+      body: row[cols.body] || '',
+      photo: row[cols.photo] || '',
+      cell_id: cellId,
+      operation_id: row[cols.operation_id] || '',
+      created_at: row[cols.created_at] || '',
+      released: released,
+      // Only the Handler view needs the actual allowlist (to edit it);
+      // a player already implicitly passed this check above just by
+      // being in the response at all.
+      restricted_to: isHandler ? restrictedTo : undefined
     });
   }
-  return respond_({ status: 'OK', handouts: handouts }, callback);
+
+  const result = { status: 'OK', evidence: evidence };
+  if (!isHandler && requesterCode) {
+    result.seen = seenEvidenceIdsFor_(requesterCode);
+  }
+  return respond_(result, callback);
 }
 
-function createHandout(data) {
+function createEvidence(data) {
   const title = (data.title || '').trim();
   if (!title) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'title is required' }))
       .setMimeType(ContentService.MimeType.JSON);
   }
-  const sheet = getOrCreateHandoutsSheet();
+  const sheet = getOrCreateEvidenceSheet();
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const cols = headerMap_(headers);
-  const missing = requireColumns_(cols, ['handout_id', 'title', 'body', 'photo', 'cell_id', 'created_at']);
+  const missing = requireColumns_(cols, ['evidence_id', 'title', 'body', 'photo', 'cell_id', 'created_at', 'operation_id', 'released', 'restricted_to']);
   if (missing) return missing;
-  const handoutId = 'handout_' + new Date().getTime() + '_' + Math.floor(Math.random() * 100000).toString(36);
+  const evidenceId = 'evidence_' + new Date().getTime() + '_' + Math.floor(Math.random() * 100000).toString(36);
   let photo;
-  try { photo = resolveHandoutPhoto_(data.photo, title); } catch (err) {
+  try { photo = resolveEvidencePhoto_(data.photo, title); } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'Image upload failed: ' + err.message }))
       .setMimeType(ContentService.MimeType.JSON);
   }
   const row = new Array(headers.length).fill('');
-  row[cols.handout_id] = handoutId;
+  row[cols.evidence_id] = evidenceId;
   row[cols.title] = title;
   row[cols.body] = data.body || '';
   row[cols.photo] = photo;
   row[cols.cell_id] = data.cell_id || '';
   row[cols.created_at] = new Date().getTime();
+  row[cols.operation_id] = data.operation_id || '';
+  row[cols.released] = data.released ? 1 : 0;
+  row[cols.restricted_to] = typeof data.restricted_to === 'string' ? data.restricted_to : '[]';
   sheet.appendRow(row);
-  return ContentService.createTextOutput(JSON.stringify({ status: 'OK', handout_id: handoutId })).setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK', evidence_id: evidenceId })).setMimeType(ContentService.MimeType.JSON);
 }
 
-function updateHandout(data) {
-  if (!data.handout_id) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'handout_id is required' }))
+function updateEvidence(data) {
+  if (!data.evidence_id) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'evidence_id is required' }))
       .setMimeType(ContentService.MimeType.JSON);
   }
-  const sheet = getOrCreateHandoutsSheet();
+  const sheet = getOrCreateEvidenceSheet();
   const values = sheet.getDataRange().getValues();
   const headers = values[0];
   const cols = headerMap_(headers);
-  const missing = requireColumns_(cols, ['handout_id', 'title', 'body', 'photo', 'cell_id']);
+  const missing = requireColumns_(cols, ['evidence_id', 'title', 'body', 'photo', 'cell_id', 'operation_id', 'released', 'restricted_to']);
   if (missing) return missing;
   for (let i = 1; i < values.length; i++) {
-    if (values[i][cols.handout_id] === data.handout_id) {
+    if (values[i][cols.evidence_id] === data.evidence_id) {
       const row = values[i];
       row[cols.title] = data.title || '';
       row[cols.body] = data.body || '';
       // Only re-resolves through Drive if the client actually sent a
       // fresh raw data URI (a new photo picked this edit) -- an
       // unchanged gdrive: link or empty string passes straight through,
-      // see resolveHandoutPhoto_().
-      try { row[cols.photo] = resolveHandoutPhoto_(data.photo, data.title); } catch (err) {
+      // see resolveEvidencePhoto_().
+      try { row[cols.photo] = resolveEvidencePhoto_(data.photo, data.title); } catch (err) {
         return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'Image upload failed: ' + err.message }))
           .setMimeType(ContentService.MimeType.JSON);
       }
       row[cols.cell_id] = data.cell_id || '';
+      row[cols.operation_id] = data.operation_id || '';
+      row[cols.released] = data.released ? 1 : 0;
+      row[cols.restricted_to] = typeof data.restricted_to === 'string' ? data.restricted_to : '[]';
       sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
@@ -2339,21 +2537,145 @@ function updateHandout(data) {
   return ContentService.createTextOutput(JSON.stringify({ status: 'NOT_FOUND' })).setMimeType(ContentService.MimeType.JSON);
 }
 
-function deleteHandout(handoutId) {
-  if (!handoutId) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'handout_id is required' }))
+function deleteEvidence(evidenceId) {
+  if (!evidenceId) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'evidence_id is required' }))
       .setMimeType(ContentService.MimeType.JSON);
   }
-  const sheet = getOrCreateHandoutsSheet();
+  const sheet = getOrCreateEvidenceSheet();
   const data = sheet.getDataRange().getValues();
-  const idCol = data[0].indexOf('handout_id');
+  const idCol = data[0].indexOf('evidence_id');
   for (let i = data.length - 1; i >= 1; i--) {
-    if (data[i][idCol] === handoutId) {
+    if (data[i][idCol] === evidenceId) {
       sheet.deleteRow(i + 1);
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
   return ContentService.createTextOutput(JSON.stringify({ status: 'NOT_FOUND' })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ── A-Cell Evidence Locker: Operations are the per-Cell folders
+// evidence gets filed under. One Cell per Operation, deliberately --
+// no shared/cross-Cell Operations, matching the user's own actual
+// campaign structure (each Cell runs its own case load). ──
+function getOrCreateOperationsSheet() {
+  const ss = getOrCreateSheet();
+  let sheet = ss.getSheetByName('Operations');
+  if (!sheet) {
+    sheet = ss.insertSheet('Operations');
+    sheet.getRange(1, 1, 1, 4).setValues([['operation_id', 'cell_id', 'name', 'created_at']]);
+  }
+  return sheet;
+}
+
+function createOperation(data) {
+  const name = (data.name || '').trim();
+  const cellId = (data.cell_id || '').trim();
+  if (!name || !cellId) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'name and cell_id are required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const sheet = getOrCreateOperationsSheet();
+  const operationId = 'operation_' + new Date().getTime() + '_' + Math.floor(Math.random() * 100000).toString(36);
+  sheet.appendRow([operationId, cellId, name, new Date().getTime()]);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK', operation_id: operationId })).setMimeType(ContentService.MimeType.JSON);
+}
+
+function updateOperation(data) {
+  if (!data.operation_id) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'operation_id is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const sheet = getOrCreateOperationsSheet();
+  const values = sheet.getDataRange().getValues();
+  const cols = headerMap_(values[0]);
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][cols.operation_id] === data.operation_id) {
+      sheet.getRange(i + 1, cols.name + 1).setValue((data.name || '').trim());
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'NOT_FOUND' })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Deleting an Operation does NOT delete or hide the evidence filed
+// under it -- those rows just keep a now-dangling operation_id, which
+// listEvidence()/the A-Cell UI already treat the same as "unfiled"
+// (only an exact operation_id match puts an item in a folder; a
+// stale/unknown one simply won't match any folder shown). Simpler and
+// safer than a cascading delete that could silently take evidence
+// down with its folder.
+function deleteOperation(operationId) {
+  if (!operationId) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'operation_id is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const sheet = getOrCreateOperationsSheet();
+  const data = sheet.getDataRange().getValues();
+  const idCol = data[0].indexOf('operation_id');
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (data[i][idCol] === operationId) {
+      sheet.deleteRow(i + 1);
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'NOT_FOUND' })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ── A-Cell Evidence Locker: which evidence each Agent has actually
+// opened, so Notes can show an unseen dot only for items they truly
+// haven't looked at yet, kept in sync across every device that Agent
+// uses (the one place in this feature worth a small server-tracked
+// table over a purely local flag, per the user's own call). ──
+function getOrCreateEvidenceSeenSheet() {
+  const ss = getOrCreateSheet();
+  let sheet = ss.getSheetByName('EvidenceSeen');
+  if (!sheet) {
+    sheet = ss.insertSheet('EvidenceSeen');
+    sheet.getRange(1, 1, 1, 3).setValues([['agent_code', 'evidence_id', 'seen_at']]);
+  }
+  return sheet;
+}
+
+// Every evidence_id one Agent has ever opened, as a lookup map --
+// used by listEvidence() to bundle each item's own seen:bool without
+// a per-item extra read.
+function seenEvidenceIdsFor_(agentCode) {
+  const code = String(agentCode || '').trim().toUpperCase();
+  const out = {};
+  if (!code) return out;
+  const sheet = getOrCreateEvidenceSeenSheet();
+  const data = sheet.getDataRange().getValues();
+  const cols = headerMap_(data[0]);
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][cols.agent_code] || '').trim().toUpperCase() === code) {
+      out[data[i][cols.evidence_id]] = true;
+    }
+  }
+  return out;
+}
+
+function markEvidenceSeen(agentCode, evidenceId) {
+  const code = String(agentCode || '').trim().toUpperCase();
+  const evId = String(evidenceId || '').trim();
+  if (!code || !evId) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'agent_code and evidence_id are required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  return withScriptLock(function () {
+    const sheet = getOrCreateEvidenceSeenSheet();
+    const data = sheet.getDataRange().getValues();
+    const cols = headerMap_(data[0]);
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][cols.agent_code] || '').trim().toUpperCase() === code && data[i][cols.evidence_id] === evId) {
+        // Already marked seen -- a no-op re-post (e.g. reopening it
+        // later) shouldn't grow a duplicate row.
+        return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+    sheet.appendRow([code, evId, new Date().getTime()]);
+    return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+  });
 }
 
 // ── A-Cell Music: a persistent Track Library of mp3s the Handler
