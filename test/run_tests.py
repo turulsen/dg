@@ -2166,6 +2166,89 @@ def test_acell_play(p):
     page.close()
     return errs
 
+def test_acell_handler_session_race(p):
+    """Regression test for a real race: if a Handler already has
+    dg_acell_pw saved from a previous visit, the Handler-password
+    module's silent re-login (attempt(savedPw, true)) is still an
+    in-flight fetch when Play's own <script> block runs moments later in
+    the same page load and fires its first fetchList() using whatever
+    (possibly stale/expired) dg_acell_session is already in
+    sessionStorage. Play used to just show the resulting 'invalid or
+    expired Handler session' error and sit there forever, even after the
+    silent re-login landed a valid new session a moment later -- fixed
+    by having the Handler-password module dispatch a
+    'dg-acell-handler-ready' event once it lands a session, which Play
+    now listens for to retry. (Deliberately checks only the end state,
+    not an intermediate 'still showing the stale error' snapshot -- this
+    app's Playwright route mocking runs on a single dispatch thread, so
+    an artificial delay meant to widen the race window ends up
+    serializing every in-flight request behind it instead, making any
+    fixed-timeout snapshot of the intermediate state inherently
+    unreliable. The property that actually matters -- and that a
+    regression here would break -- is that it recovers at all.)"""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    skip_acell_gate(page)
+    # Seed a saved Handler password + a stale session, exactly like a
+    # returning tab whose 6h server-side session has since expired.
+    page.add_init_script("""
+        try {
+          sessionStorage.setItem('dg_acell_pw', 'letmein');
+          sessionStorage.setItem('dg_acell_session', 'stale-session-token');
+        } catch (e) {}
+    """)
+
+    chars_fixture = [{"agent_code": "OWEN-CS12", "name": "Owen Castillo", "profession": "Federal Agent",
+                       "nationality": "", "player_name": "", "hp": 10, "wp": 10, "san": 50, "bp": 40, "updated_at": ""}]
+    login_calls = []
+
+    def fake_apps_script(route):
+        req = route.request
+        url = req.url
+        if req.method == "POST":
+            body = json.loads(req.post_data or "{}")
+            if body.get("action") == "handler_login":
+                login_calls.append(body)
+                route.fulfill(status=200, content_type="application/json",
+                               body=json.dumps({"status": "OK", "session": "fresh-session-token"}))
+                return
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        if "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        if "action=list_characters" in url:
+            session = url.split("handler_session=")[1].split("&")[0] if "handler_session=" in url else ""
+            if session == "fresh-session-token":
+                res = {"status": "OK", "characters": chars_fixture}
+            else:
+                res = {"status": "ERROR", "message": "invalid or expired Handler session -- reload A-Cell"}
+        elif "action=list_cells" in url:
+            res = {"status": "OK", "cells": []}
+        else:
+            res = {"status": "OK"}
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+
+    wait_for_condition(lambda: any(c.get("handler_password") == "letmein" for c in login_calls), timeout_ms=6000)
+    record("acell", "a saved Handler password silently re-logs in on page load",
+           any(c.get("handler_password") == "letmein" for c in login_calls), str(login_calls))
+
+    names = wait_for_condition(lambda: page.eval_on_selector_all("#play-agent-list .pa-name", "els => els.map(e=>e.textContent)")
+                                if "Owen Castillo" in page.inner_text("#play-agent-list") else None)
+    record("acell", "Play recovers and shows the roster once a fresh session lands, "
+                    "instead of getting stuck on whatever (possibly stale) session was already saved",
+           names == ["Owen Castillo"], page.inner_text("#play-agent-list"))
+
+    page.close()
+    return errs
+
 def test_acell_cells(p):
     """a-cell.html's Cells tab: real named Cell groups (a Handler + a
     set of member Agents picked from the full roster), not a per-Agent
@@ -4273,6 +4356,31 @@ def test_mobile_no_overflow(p):
     errs_all.extend(errs)
     page.close()
 
+    # a-cell.html's Evidence tab: the general sweep above never opens the
+    # sidebar+form layout (.evidence-layout is a flex ROW with a fixed-
+    # width sidebar, unwrapped below 720px until its own media query --
+    # a real bug once reported live: the create form got pushed off the
+    # right edge of a phone screen). Check with the Evidence tab active
+    # and its create form open, since that's the widest state.
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    skip_acell_gate(page)
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(400)
+    page.click('.tw[data-tab="evidence"]')
+    page.wait_for_timeout(300)
+    page.click("#evidence-create-btn")
+    page.wait_for_timeout(300)
+    scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
+    record("mobile", "a-cell.html's Evidence tab (sidebar + open create form) has no horizontal overflow at 390px viewport",
+           scroll_width <= 390, f"scrollWidth={scroll_width}")
+    errs_all.extend(errs)
+    page.close()
+
     # All six stats/ themes are expected to be overflow-free at 390px --
     # the fieldset/grid/table min-width fixes added for this are
     # theme-agnostic (gated on viewport width, not theme class), covering
@@ -6025,6 +6133,7 @@ def main():
         safe(test_acell_gate, browser, area="acell")
 
         safe(test_acell_play, browser, area="acell")
+        safe(test_acell_handler_session_race, browser, area="acell")
 
         safe(test_acell_cells, browser, area="acell")
 

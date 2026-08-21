@@ -315,7 +315,9 @@
      this is paper, not hardware. ── */
   .evidence-toolbar{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
   .evidence-layout{ display:flex; gap:20px; align-items:flex-start; }
+  @media (max-width:720px){ .evidence-layout{ flex-direction:column; } }
   .evidence-sidebar{ width:200px; flex-shrink:0; display:flex; flex-direction:column; gap:10px; }
+  @media (max-width:720px){ .evidence-sidebar{ width:100%; } }
   .evidence-main{ flex:1; min-width:0; }
   .evidence-cell-select-row{ display:flex; flex-direction:column; gap:4px; }
   .evidence-cell-select-row span{
@@ -1036,6 +1038,14 @@
           sessionStorage.setItem('dg_acell_pw', pw);
         } catch (e) { /* best effort */ }
         setUnlocked();
+        // Play/Sheet's own fetchAll(false) fires synchronously as soon as
+        // their own <script> block runs, further down this same page load
+        // -- if a saved password exists, this attempt() call is still an
+        // in-flight fetch at that moment, so their first fetch goes out
+        // carrying whatever (possibly stale/expired) session was already
+        // in sessionStorage, and neither tab retries on its own once a
+        // fresh session lands here a moment later. Let them know.
+        window.dispatchEvent(new Event('dg-acell-handler-ready'));
       } else if (!silent) {
         setLocked((res && res.message) || 'invalid Handler password');
       }
@@ -1481,6 +1491,13 @@
   cellFilterEl.addEventListener('change', applyFilter);
   fetchList();
   fetchCells();
+  // fetchList() needs a valid Handler session (list_characters is one of
+  // the Admin-gated reads) -- if a saved password exists, the call just
+  // above can go out carrying an already-expired session, since the
+  // Handler-password module's own silent re-login is still an in-flight
+  // fetch at this point in page load (see its own comment). Retry once a
+  // fresh session actually lands rather than leaving the error up.
+  window.addEventListener('dg-acell-handler-ready', function () { fetchList(); });
 })();
 </script>
 
@@ -2718,6 +2735,11 @@
   refreshBtn.addEventListener('click', function () { fetchAll(true); fetchDeleted(); });
   fetchAll(false);
   fetchDeleted();
+  // Same Handler-session race as the Play tab -- see its own comment.
+  // list_characters/list_agent_file_only/list_deleted_characters all
+  // need a valid session, which may still be an in-flight silent
+  // re-login at this point in page load if a saved password exists.
+  window.addEventListener('dg-acell-handler-ready', function () { fetchAll(true); fetchDeleted(); });
 })();
 </script>
 
