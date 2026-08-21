@@ -2366,10 +2366,23 @@ function getOrCreateEvidenceSheet() {
 // wasn't touched this save, or an empty string all pass through
 // unchanged -- so re-saving an evidence item without picking a new
 // photo doesn't re-upload it.
+// The evidence photo field can carry a PDF as well as an image now --
+// saveImageToDrive() already derives the real Blob mimeType from the data
+// URI itself (a PDF uploads and opens correctly regardless of filename),
+// but the filename it's given still needs a matching extension rather
+// than a hardcoded ".png", or a real PDF ends up named "Case File.png" in
+// Drive -- confusing/wrong if a Handler ever downloads it directly.
+function extensionForDataUri_(dataUri) {
+  var mime = dataUri.split(';')[0].split(':')[1] || '';
+  if (mime === 'application/pdf') return '.pdf';
+  if (mime.indexOf('image/') === 0) return '.' + mime.slice('image/'.length);
+  return '';
+}
+
 function resolveEvidencePhoto_(photo, title) {
   photo = photo || '';
   if (!photo || photo.indexOf('data:') !== 0) return photo;
-  return saveImageToDrive(photo, (title || 'evidence') + '.png', 'Evidence');
+  return saveImageToDrive(photo, (title || 'evidence') + extensionForDataUri_(photo), 'Evidence');
 }
 
 // Every Agent Code this Cells sheet lists as a member of at least one

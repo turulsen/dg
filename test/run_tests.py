@@ -2680,6 +2680,208 @@ def test_acell_evidence(p):
     page.close()
     return errs
 
+def test_acell_evidence_pdf(p):
+    """Regression coverage for a real live report: the Evidence photo
+    field's accept="image/*" only labels the file picker, it doesn't
+    stop a browser from actually letting a PDF through -- handlePhoto()
+    then set an <img>'s src to a data:application/pdf URI, which never
+    renders (a silently broken preview), and the same unrecognized-type
+    data URI still got sent to create_evidence. Fixed by properly
+    detecting a PDF and giving it its own preview/card treatment (a
+    small labeled box that opens the PDF in a new tab, since a PDF can't
+    be an <img> and this app's photo lightbox only knows how to display
+    one) instead of pretending it's a photo. Also covers the file-size
+    guard added alongside this -- a picked file over 8MB is rejected
+    with a clear message before FileReader even starts, converting what
+    was a silent hang/failure risk on a large file into a visible one."""
+    page = p.new_page()
+    page.set_default_timeout(15000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    skip_acell_gate(page)
+    # Recording window.open calls -- clicking a PDF box opens it in a new
+    # tab via window.open() rather than this app's own photo lightbox;
+    # patched before any page script runs so the real call is captured.
+    page.add_init_script("""
+        window.__openCalls = [];
+        window.open = function (url) { window.__openCalls.push(url); return null; };
+    """)
+
+    evidence_state = []
+    posts = []
+
+    def fake_apps_script(route):
+        req = route.request
+        url = req.url
+        if req.method == "POST":
+            body = json.loads(req.post_data or "{}")
+            posts.append(body)
+            if body.get("action") == "create_evidence":
+                evidence_state.append({
+                    "evidence_id": "ev1", "title": body.get("title", ""), "body": body.get("body", ""),
+                    "photo": body.get("photo", ""), "cell_id": "", "operation_id": "",
+                    "released": False, "restricted_to": [], "created_at": "1000",
+                })
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=list_evidence" in url:
+                res = {"status": "OK", "evidence": evidence_state}
+            elif "action=list_cells" in url:
+                res = {"status": "OK", "cells": []}
+            elif "action=list_operations" in url:
+                res = {"status": "OK", "operations": []}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(400)
+    page.click('.tw[data-tab="evidence"]')
+    page.wait_for_timeout(300)
+    page.click("#evidence-create-btn")
+    page.wait_for_timeout(300)
+    page.fill("#evidence-new-title", "Case File 12")
+
+    # A too-large file is rejected before FileReader even starts, with a
+    # clear message -- not a silent hang.
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+        f.write(os.urandom(9 * 1024 * 1024))
+        oversized_path = f.name
+    page.set_input_files("#evidence-new-photo", oversized_path)
+    page.wait_for_timeout(200)
+    record("acell", "a file over the 8MB cap is rejected with a clear error instead of silently attempted",
+           "too large" in page.inner_text("#evidence-new-error").lower(), page.inner_text("#evidence-new-error"))
+    os.unlink(oversized_path)
+
+    # A real PDF under the cap: preview shows a labeled box, not a broken <img>.
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+        f.write(b"%PDF-1.4\n%test pdf content\n" + os.urandom(2000))
+        pdf_path = f.name
+    page.set_input_files("#evidence-new-photo", pdf_path)
+    page.wait_for_timeout(200)
+    record("acell", "attaching a PDF under the cap shows a labeled preview box, not a broken image",
+           "evidence-photo-pdf-note" in page.inner_html("#evidence-new-photo-prev-wrap"),
+           page.inner_html("#evidence-new-photo-prev-wrap"))
+    record("acell", "picking a valid PDF clears any earlier error",
+           page.inner_text("#evidence-new-error").strip() == "", page.inner_text("#evidence-new-error"))
+
+    page.click("#evidence-new-confirm")
+    wait_for_condition(lambda: "Case File 12" in page.inner_text("#evidence-list"))
+    record("acell", "creating evidence with a PDF attached sends its data URI to create_evidence",
+           any(b.get("action") == "create_evidence" and str(b.get("photo", "")).startswith("data:application/pdf")
+               for b in posts), str([{k: v for k, v in b.items() if k != "photo"} for b in posts]))
+    record("acell", "the card shows a PDF box (not a broken <img>) once created",
+           "evidence-photo-pdf-note" in page.inner_html("#evidence-list"), page.inner_html("#evidence-list"))
+
+    page.click(".evidence-photo-pdf-note")
+    page.wait_for_timeout(200)
+    open_calls = page.evaluate("() => window.__openCalls")
+    record("acell", "clicking the PDF box opens it in a new tab (window.open), not this app's photo lightbox",
+           len(open_calls) == 1 and open_calls[0].startswith("data:application/pdf"), str(open_calls))
+    record("acell", "clicking a PDF box never opens the photo lightbox",
+           not page.is_visible(".evidence-lightbox"), "")
+
+    os.unlink(pdf_path)
+    page.close()
+    return errs
+
+def test_acell_evidence_create_verify_retries(p):
+    """Regression test for a real live report: 'Evidence will not create'.
+    Root cause -- create_evidence's read-back verification checked
+    list_evidence exactly once, 900ms after the POST. resolveEvidencePhoto_()
+    has to actually upload the photo/PDF to Google Drive server-side before
+    the new row exists, which for anything beyond a tiny image can genuinely
+    take longer than 900ms -- so the fixed-delay check saw the item wasn't
+    there YET and showed a false 'Sent, but the backend didn't confirm it',
+    even though the write would have landed a moment later. Fixed by
+    polling list_evidence over several increasing delays (verifyEvidenceWrite_)
+    instead of checking once. This mock simulates exactly that: the create
+    POST lands immediately, but list_evidence doesn't actually include the
+    new item until its second read after the POST -- proving the retry,
+    not just the create, is what's under test here."""
+    page = p.new_page()
+    page.set_default_timeout(20000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    skip_acell_gate(page)
+
+    evidence_state = []
+    created = {"flag": False}
+    reads_since_create = {"n": 0}
+
+    def fake_apps_script(route):
+        req = route.request
+        url = req.url
+        if req.method == "POST":
+            body = json.loads(req.post_data or "{}")
+            if body.get("action") == "create_evidence":
+                evidence_state.append({
+                    "evidence_id": "ev1", "title": body.get("title", ""), "body": body.get("body", ""),
+                    "photo": body.get("photo", ""), "cell_id": "", "operation_id": "",
+                    "released": False, "restricted_to": [], "created_at": "1000",
+                })
+                created["flag"] = True
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=list_evidence" in url:
+                if created["flag"]:
+                    reads_since_create["n"] += 1
+                # The very first list_evidence read after the create POST
+                # simulates the Drive upload not having landed yet -- an
+                # empty list even though evidence_state already has the row,
+                # exactly like the backend's own row not existing yet mid-
+                # upload. Every read after that (and every read before any
+                # create happened) reflects the real state.
+                if created["flag"] and reads_since_create["n"] == 1:
+                    res = {"status": "OK", "evidence": []}
+                else:
+                    res = {"status": "OK", "evidence": evidence_state}
+            elif action_from(url) == "list_cells":
+                res = {"status": "OK", "cells": []}
+            elif action_from(url) == "list_operations":
+                res = {"status": "OK", "operations": []}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+
+    def action_from(url):
+        return url.split("action=")[1].split("&")[0] if "action=" in url else ""
+
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(400)
+    page.click('.tw[data-tab="evidence"]')
+    page.wait_for_timeout(300)
+    page.click("#evidence-create-btn")
+    page.wait_for_timeout(300)
+    page.fill("#evidence-new-title", "Slow Upload Memo")
+    page.click("#evidence-new-confirm")
+
+    # The first poll (900ms) sees the simulated empty read and must not
+    # give up -- it should retry and pick the item up on a later poll
+    # instead of showing NOT_DEPLOYED_MSG.
+    result = wait_for_condition(lambda: "Slow Upload Memo" in page.inner_text("#evidence-list") or "backend didn't confirm" in page.inner_text("#evidence-status"), timeout_ms=12000)
+    record("acell", "a create whose first read-back comes back empty still succeeds via retry, instead of a false 'backend didn't confirm'",
+           "Slow Upload Memo" in page.inner_text("#evidence-list"), page.inner_text("#evidence-list") + " | status: " + page.inner_text("#evidence-status"))
+    record("acell", "the retry actually polled more than once before succeeding",
+           reads_since_create["n"] >= 2, str(reads_since_create["n"]))
+
+    page.close()
+    return errs
+
 def test_acell_sheet(p):
     """a-cell.html's Sheet tab: merged with the former separate Admin tab
     -- one dense, spreadsheet-style roster table (Cell, Handler, Agent
@@ -6178,6 +6380,8 @@ def main():
         safe(test_acell_cells, browser, area="acell")
 
         safe(test_acell_evidence, browser, area="acell")
+        safe(test_acell_evidence_pdf, browser, area="acell")
+        safe(test_acell_evidence_create_verify_retries, browser, area="acell")
 
         safe(test_acell_sheet, browser, area="acell")
 

@@ -401,6 +401,20 @@
     width:96px; height:96px; flex-shrink:0; object-fit:cover; border:1px solid var(--rule); display:block;
     cursor:zoom-in;
   }
+  /* A PDF can't render as an <img> thumbnail -- shown as a small labeled
+     box instead, opening the PDF in a new tab (the browser's own native
+     viewer) rather than this app's photo lightbox, which only knows how
+     to display an <img>. */
+  .evidence-photo-pdf-note{
+    width:96px; height:96px; flex-shrink:0; border:1px solid var(--rule); display:flex;
+    flex-direction:column; align-items:center; justify-content:center; gap:4px; text-align:center;
+    cursor:pointer; background:rgba(28,22,8,.04); padding:6px; overflow:hidden;
+  }
+  .evidence-photo-pdf-note .icon{ font-size:22px; line-height:1; }
+  .evidence-photo-pdf-note .name{
+    font-family:'Courier Prime',monospace; font-size:8px; color:var(--ink-3); word-break:break-word;
+    max-height:2.6em; overflow:hidden;
+  }
   /* A 96px thumbnail is fine for "there's a photo here" but useless for
      actually reading a filed document -- click it to see it at real
      size instead of squinting. */
@@ -2067,11 +2081,16 @@
       var opTag = h.operation_id ? '<span class="evidence-op-tag">' + escapeHtml(opName(h.operation_id)) + '</span>' : '';
       // A gdrive:-backed photo (the normal case now) resolves async
       // below into this placeholder; a legacy pre-migration item with
-      // a raw data URI still on file renders directly.
+      // a raw data URI still on file renders directly. Either way, a
+      // PDF can't be an <img> src -- shown as a small labeled box that
+      // opens the PDF in a new tab instead of this app's photo lightbox.
       var driveId = extractDriveId(h.photo);
+      var isLegacyPdf = !driveId && h.photo && h.photo.indexOf('data:application/pdf') === 0;
       var photoRow = h.photo
         ? (driveId ? '<div class="evidence-photo-wrap" id="evidence-photo-' + i + '"></div>'
-                   : '<img class="evidence-photo" src="' + h.photo + '" alt="" data-lightbox-photo="' + i + '">')
+                   : (isLegacyPdf
+                      ? '<div class="evidence-photo-pdf-note" data-lightbox-pdf="' + i + '"><span class="icon">📄</span><span class="name">View PDF</span></div>'
+                      : '<img class="evidence-photo" src="' + h.photo + '" alt="" data-lightbox-photo="' + i + '">'))
         : '';
       var restrictedNote = (h.restricted_to && h.restricted_to.length)
         ? '<div class="evidence-restricted-note">Restricted to: ' + h.restricted_to.map(escapeHtml).join(', ') + '</div>' : '';
@@ -2107,16 +2126,62 @@
         if (h && h.photo) openLightbox(h.photo);
       });
     });
+    Array.prototype.forEach.call(listEl.querySelectorAll('[data-lightbox-pdf]'), function (box) {
+      box.addEventListener('click', function () {
+        var h = evidenceItems[parseInt(box.dataset.lightboxPdf, 10)];
+        if (h && h.photo) openPdfInNewTab(h.photo);
+      });
+    });
     shown.forEach(function (h) {
       var i = evidenceItems.indexOf(h);
       if (!extractDriveId(h.photo)) return;
       loadEvidencePhotoDataUri(h.photo, function (dataUri) {
         var wrap = document.getElementById('evidence-photo-' + i);
         if (!wrap) return;
-        wrap.innerHTML = '<img class="evidence-photo" src="' + dataUri + '" alt="">';
-        wrap.querySelector('img').addEventListener('click', function () { openLightbox(dataUri); });
+        if (dataUri.indexOf('data:application/pdf') === 0) {
+          wrap.innerHTML = '<div class="evidence-photo-pdf-note"><span class="icon">📄</span><span class="name">View PDF</span></div>';
+          wrap.querySelector('.evidence-photo-pdf-note').addEventListener('click', function () { openPdfInNewTab(dataUri); });
+        } else {
+          wrap.innerHTML = '<img class="evidence-photo" src="' + dataUri + '" alt="">';
+          wrap.querySelector('img').addEventListener('click', function () { openLightbox(dataUri); });
+        }
       });
     });
+  }
+
+  // PDFs open in a new tab (the browser's own native viewer) rather than
+  // this app's photo lightbox, which only knows how to display an <img>.
+  function openPdfInNewTab(dataUri) {
+    window.open(dataUri, '_blank');
+  }
+
+  // Verifies a create/update actually landed by polling list_evidence
+  // over increasing delays, rather than checking once at a fixed 900ms --
+  // a write that includes a freshly picked photo/PDF has to wait on
+  // resolveEvidencePhoto_()'s real Google Drive upload server-side first,
+  // which for anything beyond a tiny image can genuinely take longer than
+  // a single fixed delay tuned for the no-photo case. A too-early check
+  // showed a false "Sent, but the backend didn't confirm it" for exactly
+  // the uploads this feature exists to support, even though the write
+  // would have actually landed moments later -- a real live report traced
+  // back to this.
+  function verifyEvidenceWrite_(checkFn, onFound, onGiveUp) {
+    var delays = [900, 1500, 3000, 4000];
+    var attempt = 0;
+    function tryOnce() {
+      setTimeout(function () {
+        jsonpGet('list_evidence', {}, function (res) {
+          if (res && res.status === 'OK' && Array.isArray(res.evidence)) {
+            evidenceItems = res.evidence.slice().sort(function (a, b) { return Number(b.created_at) - Number(a.created_at); });
+            if (checkFn(res.evidence)) { onFound(); return; }
+          }
+          attempt++;
+          if (attempt < delays.length) tryOnce();
+          else onGiveUp();
+        });
+      }, delays[attempt]);
+    }
+    tryOnce();
   }
 
   function toggleReleased(h, cb) {
@@ -2188,15 +2253,49 @@
     }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
   }
 
-  function handlePhoto(input, prevImgId) {
-    if (!input.files[0]) return;
+  // Generous for a scan/photo, small enough that the FileReader -> base64
+  // -> fetch() path (no keepalive cap, but still one big string built and
+  // sent in one go) doesn't risk hanging or silently failing on a mobile
+  // browser for a much larger file -- checked before FileReader even
+  // starts, so a file that's too big fails with a clear message instead
+  // of a "Create" that just seems to do nothing.
+  var MAX_PHOTO_BYTES = 8 * 1024 * 1024;
+
+  // Renders either an <img> (photo) or a small labeled PDF box into wrapId
+  // -- shared by the live preview (handlePhoto below) and by restoring an
+  // existing item's preview when editing (showForm's own resolve callback).
+  function renderPhotoPreview(wrapId, src, isPdf, filename) {
+    var wrap = document.getElementById(wrapId);
+    if (!wrap) return;
+    if (!src) { wrap.innerHTML = ''; return; }
+    if (isPdf) {
+      wrap.innerHTML = '<div class="evidence-photo-pdf-note"><span class="icon">📄</span><span class="name">' +
+        escapeHtml(filename || 'PDF attached') + '</span></div>';
+    } else {
+      wrap.innerHTML = '<img class="evidence-photo" src="' + src + '" alt="">';
+    }
+  }
+
+  function handlePhoto(input, prevWrapId) {
+    var file = input.files[0];
+    if (!file) return;
+    var errEl = document.getElementById('evidence-new-error');
+    if (errEl) errEl.textContent = '';
+    if (file.size > MAX_PHOTO_BYTES) {
+      if (errEl) errEl.textContent = 'That file is too large (max 8MB) -- try a smaller or compressed version.';
+      input.value = '';
+      return;
+    }
+    var isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
     var r = new FileReader();
+    r.onerror = function () {
+      if (errEl) errEl.textContent = 'Could not read that file -- try again or pick a different one.';
+    };
     r.onload = function (e) {
       formPhotoDataUrl = e.target.result;
-      var prev = document.getElementById(prevImgId);
-      if (prev) { prev.src = e.target.result; prev.style.display = 'block'; }
+      renderPhotoPreview(prevWrapId, e.target.result, isPdf, file.name);
     };
-    r.readAsDataURL(input.files[0]);
+    r.readAsDataURL(file);
   }
 
   // Rebuilds the Operation dropdown for whichever Cell is picked in the
@@ -2241,7 +2340,7 @@
     var initialRestricted = editingEvidence ? (editingEvidence.restricted_to || []) : [];
     // A legacy pre-migration item still holding a raw data URI can
     // preview directly; a gdrive: link resolves async below, once the
-    // form (and its preview <img>) actually exists in the DOM.
+    // form (and its preview wrap) actually exists in the DOM.
     var previewSrc = (formPhotoExisting && !extractDriveId(formPhotoExisting)) ? formPhotoExisting : null;
     var scopeOptions = '<option value="">All Cells</option>' + cells.map(function (c) {
       var sel = initialCellId === c.cell_id ? ' selected' : '';
@@ -2255,8 +2354,8 @@
       '<label class="evidence-create-field"><span>Operation</span><select id="evidence-new-op"></select></label>' +
       '</div>' +
       '<label class="evidence-create-field"><span>Body</span><textarea id="evidence-new-body" placeholder="What the Agents see...">' + (editingEvidence ? escapeHtml(editingEvidence.body) : '') + '</textarea></label>' +
-      '<label class="evidence-create-field"><span>Photo (optional)</span><input type="file" accept="image/*" id="evidence-new-photo"></label>' +
-      (previewSrc ? '<img id="evidence-new-photo-prev" class="evidence-photo" src="' + previewSrc + '" style="display:block;">' : '<img id="evidence-new-photo-prev" class="evidence-photo" style="display:none;">') +
+      '<label class="evidence-create-field"><span>Photo or PDF (optional)</span><input type="file" accept="image/*,application/pdf" id="evidence-new-photo"></label>' +
+      '<div id="evidence-new-photo-prev-wrap"></div>' +
       '<label class="evidence-released-row"><input type="checkbox" id="evidence-new-released"' + (editingEvidence && editingEvidence.released ? ' checked' : '') + '> Released -- visible to Agents who can see this Cell/Operation</label>' +
       '<label class="evidence-create-field"><span>Restrict to specific Agents (optional)</span></label>' +
       '<div id="evidence-new-restrict-wrap"></div>' +
@@ -2268,12 +2367,15 @@
       '</div>';
     refreshFormOperationOptions(initialCellId, initialOpId);
     refreshFormRestrictList(initialCellId, initialRestricted);
+    if (previewSrc) {
+      renderPhotoPreview('evidence-new-photo-prev-wrap', previewSrc, previewSrc.indexOf('data:application/pdf') === 0, 'existing file');
+    }
     document.getElementById('evidence-new-scope').addEventListener('change', function () {
       refreshFormOperationOptions(this.value, '');
       refreshFormRestrictList(this.value, []);
     });
     document.getElementById('evidence-new-photo').addEventListener('change', function () {
-      handlePhoto(this, 'evidence-new-photo-prev');
+      handlePhoto(this, 'evidence-new-photo-prev-wrap');
     });
     document.getElementById('evidence-new-cancel').addEventListener('click', function () { createFormSlot.innerHTML = ''; });
     document.getElementById('evidence-new-confirm').addEventListener('click', function () {
@@ -2308,23 +2410,16 @@
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify(payload),
       }).then(function () {
-        setTimeout(function () {
-          jsonpGet('list_evidence', {}, function (res) {
-            var ok = res && res.status === 'OK' && Array.isArray(res.evidence) &&
-              res.evidence.some(function (x) { return x.title === title && x.cell_id === cellId; });
-            if (!ok) { statusEl.textContent = NOT_DEPLOYED_MSG; return; }
-            evidenceItems = res.evidence.slice().sort(function (a, b) { return Number(b.created_at) - Number(a.created_at); });
-            statusEl.textContent = '';
-            createFormSlot.innerHTML = '';
-            renderList();
-          });
-        }, 900);
+        verifyEvidenceWrite_(
+          function (list) { return list.some(function (x) { return x.title === title && x.cell_id === cellId; }); },
+          function () { statusEl.textContent = ''; createFormSlot.innerHTML = ''; renderList(); },
+          function () { statusEl.textContent = NOT_DEPLOYED_MSG; }
+        );
       }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
     });
     if (formPhotoExisting && extractDriveId(formPhotoExisting)) {
       loadEvidencePhotoDataUri(formPhotoExisting, function (dataUri) {
-        var prev = document.getElementById('evidence-new-photo-prev');
-        if (prev) { prev.src = dataUri; prev.style.display = 'block'; }
+        renderPhotoPreview('evidence-new-photo-prev-wrap', dataUri, dataUri.indexOf('data:application/pdf') === 0, 'existing file');
       });
     }
   }
