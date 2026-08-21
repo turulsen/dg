@@ -1139,6 +1139,14 @@
   // is fetched on demand via load_character and cached here so
   // re-selecting the same Agent doesn't refetch it.
   var fullStateCache = {};
+  // Bumped at the start of every fetchList() call; a callback checks it's
+  // still current before touching allCharacters/re-rendering, so a slower
+  // superseded call (e.g. the stale-session attempt that fires immediately
+  // on load, racing the fresh-session retry once a saved password's
+  // silent re-login lands -- see the Handler-password module's own
+  // comment) can't land after a newer call already rendered and stomp
+  // good data back into an error, or vice versa.
+  var listFetchGen = 0;
 
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -1149,18 +1157,21 @@
 
   function fetchList() {
     refreshBtn.disabled = true;
+    var myGen = ++listFetchGen;
     var cbName = '_acellPlayList_' + Date.now();
     var timer = setTimeout(function () {
       delete window[cbName];
+      if (myGen !== listFetchGen) return;
       refreshBtn.disabled = false;
       listEl.innerHTML = '<div class="play-error">Could not load the Agent list. (The A-Cell backend addition may not be deployed yet.)</div>';
     }, 7000);
     window[cbName] = function (res) {
       clearTimeout(timer);
       delete window[cbName];
-      refreshBtn.disabled = false;
       var script = document.getElementById('_acell_play_list_script');
       if (script) script.remove();
+      if (myGen !== listFetchGen) return;
+      refreshBtn.disabled = false;
       if (!res || res.status !== 'OK' || !Array.isArray(res.characters)) {
         listEl.innerHTML = '<div class="play-error">Could not load the Agent list.' +
           (res && res.message ? ' (' + escapeHtml(res.message) + ')' : '') + '</div>';
@@ -1533,6 +1544,12 @@
   var cells = [];
   var agents = []; // { code, name }
   var agentsByCode = {};
+  // Bumped at the start of every fetchAll() call -- see Play's own
+  // listFetchGen comment for why: without it, a superseded call's
+  // callbacks can still mutate the shared cells/agents arrays and
+  // render after a newer call already completed, showing stale or
+  // mixed data.
+  var fetchGen = 0;
 
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -1573,8 +1590,10 @@
   }
 
   function fetchAll(isRefresh) {
+    var myGen = ++fetchGen;
     var cellsDone = false, agentsDone = false, cellsOk = false, agentsOk = false;
     function maybeRender() {
+      if (myGen !== fetchGen) return;
       if (!cellsDone || !agentsDone) return;
       if (!cellsOk || !agentsOk) {
         groupsEl.innerHTML = '<div class="cells-empty-note">Could not load Cells. (The A-Cell Cells addition may not be deployed yet.)</div>';
@@ -1585,6 +1604,7 @@
       if (isRefresh) refreshNote.textContent = 'Updated ' + new Date().toLocaleTimeString();
     }
     jsonpGet('list_cells', {}, function (res) {
+      if (myGen !== fetchGen) return;
       cellsDone = true;
       if (res && res.status === 'OK' && Array.isArray(res.cells)) {
         cells = res.cells;
@@ -1593,6 +1613,7 @@
       maybeRender();
     });
     jsonpGet('list_characters', {}, function (res) {
+      if (myGen !== fetchGen) return;
       agentsDone = true;
       if (res && res.status === 'OK' && Array.isArray(res.characters)) {
         // list_characters sends a flat summary (name/etc.), not each
@@ -1811,6 +1832,16 @@
   // = items with no operation_id, or an actual operation_id.
   var filterCellId = '';
   var filterOpId = '';
+  // Bumped at the start of every fetchAll() call -- see Play's own
+  // listFetchGen comment. Matters more here than for an open/unauthenticated
+  // read: listEvidence() in Code.gs silently degrades to the filtered
+  // player view (no error) when the Handler session it's given is
+  // invalid, so without this guard a stale-session call landing after a
+  // fresh-session one wouldn't even show an error -- it would silently
+  // replace a correct, fully-authenticated render with an incomplete one
+  // (unreleased/restricted items missing) and give no indication anything
+  // is wrong.
+  var fetchGen = 0;
   // formPhotoDataUrl: the data URI of a NEWLY picked file this edit
   // session, or null if none picked. formPhotoExisting: the original
   // stored photo value (a gdrive: link, a legacy pre-migration data
@@ -1897,8 +1928,10 @@
   }
 
   function fetchAll(isRefresh) {
+    var myGen = ++fetchGen;
     var evDone = false, cellsDone = false, opsDone = false, evOk = false, cellsOk = false;
     function maybeRender() {
+      if (myGen !== fetchGen) return;
       if (!evDone || !cellsDone || !opsDone) return;
       if (!evOk) {
         listEl.innerHTML = '<div class="evidence-empty-note">Could not load Evidence. (The A-Cell Evidence addition may not be deployed yet.)</div>';
@@ -1909,6 +1942,7 @@
       if (isRefresh) refreshNote.textContent = 'Updated ' + new Date().toLocaleTimeString();
     }
     jsonpGet('list_evidence', {}, function (res) {
+      if (myGen !== fetchGen) return;
       evDone = true;
       if (res && res.status === 'OK' && Array.isArray(res.evidence)) {
         evidenceItems = res.evidence.slice().sort(function (a, b) { return Number(b.created_at) - Number(a.created_at); });
@@ -1917,6 +1951,7 @@
       maybeRender();
     });
     jsonpGet('list_cells', {}, function (res) {
+      if (myGen !== fetchGen) return;
       cellsDone = true;
       if (res && res.status === 'OK' && Array.isArray(res.cells)) {
         cells = res.cells;
@@ -1927,6 +1962,7 @@
       maybeRender();
     });
     jsonpGet('list_operations', {}, function (res) {
+      if (myGen !== fetchGen) return;
       opsDone = true;
       if (res && res.status === 'OK' && Array.isArray(res.operations)) {
         operations = res.operations;
@@ -2341,6 +2377,15 @@
     renderList();
   });
   fetchAll(false);
+  // Same Handler-session race as Play/Cells/Sheet -- see the Handler-
+  // password module's own comment. list_evidence's isHandler flag needs a
+  // valid session too, which may still be an in-flight silent re-login at
+  // this point in page load if a saved password exists -- and unlike
+  // Play/Cells/Sheet's gated reads, listEvidence() doesn't error on an
+  // invalid session, it silently falls back to the filtered player view,
+  // so without this retry the Handler would see an incomplete Locker with
+  // no indication anything's missing.
+  window.addEventListener('dg-acell-handler-ready', function () { fetchAll(true); });
 })();
 </script>
 
@@ -2390,6 +2435,14 @@
 
   var rows = []; // live rows: Characters-backed + Agent-File-only, merged
   var deletedAgents = [];
+  // Bumped at the start of every fetchAll() call -- see Play's own
+  // listFetchGen comment for why.
+  var fetchGen = 0;
+  // Same idea, separately, for fetchDeleted() -- a distinct fetch/render
+  // target (deletedListEl, not wrap), so it gets its own counter rather
+  // than sharing fetchGen and spuriously superseding an unrelated
+  // in-flight fetchAll().
+  var deletedFetchGen = 0;
 
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -2462,11 +2515,13 @@
 
   function fetchAll(isRefresh) {
     refreshBtn.disabled = true;
+    var myGen = ++fetchGen;
     var charsDone = false, cellsDone = false, briefsDone = false;
     var charsOk = false, cellsOk = false, briefsOk = false;
     var characters = [], cellGroups = [], briefsOnly = [];
 
     function maybeRender() {
+      if (myGen !== fetchGen) return;
       if (!charsDone || !cellsDone || !briefsDone) return;
       refreshBtn.disabled = false;
       if (!charsOk) {
@@ -2507,16 +2562,19 @@
     }
 
     jsonpGet('list_characters', {}, function (res) {
+      if (myGen !== fetchGen) return;
       charsDone = true;
       if (res && res.status === 'OK' && Array.isArray(res.characters)) { characters = res.characters; charsOk = true; }
       maybeRender();
     });
     jsonpGet('list_cells', {}, function (res) {
+      if (myGen !== fetchGen) return;
       cellsDone = true;
       if (res && res.status === 'OK' && Array.isArray(res.cells)) { cellGroups = res.cells; cellsOk = true; }
       maybeRender();
     });
     jsonpGet('list_agent_file_only', {}, function (res) {
+      if (myGen !== fetchGen) return;
       briefsDone = true;
       if (res && res.status === 'OK' && Array.isArray(res.agents)) { briefsOnly = res.agents; briefsOk = true; }
       maybeRender();
@@ -2667,7 +2725,9 @@
   // via DeletedCharacters, or an Agent-File-only row, via DeletedBriefs
   // -- see listDeletedCharacters() in Code.gs) in one feed. ──
   function fetchDeleted() {
+    var myGen = ++deletedFetchGen;
     jsonpGet('list_deleted_characters', {}, function (res) {
+      if (myGen !== deletedFetchGen) return;
       if (!res || res.status !== 'OK' || !Array.isArray(res.characters)) {
         deletedListEl.innerHTML = '';
         return;

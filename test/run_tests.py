@@ -2170,16 +2170,19 @@ def test_acell_handler_session_race(p):
     """Regression test for a real race: if a Handler already has
     dg_acell_pw saved from a previous visit, the Handler-password
     module's silent re-login (attempt(savedPw, true)) is still an
-    in-flight fetch when Play's own <script> block runs moments later in
-    the same page load and fires its first fetchList() using whatever
-    (possibly stale/expired) dg_acell_session is already in
-    sessionStorage. Play used to just show the resulting 'invalid or
+    in-flight fetch when Play/Cells/Evidence's own <script> blocks run
+    moments later in the same page load and fire their first data fetch
+    using whatever (possibly stale/expired) dg_acell_session is already in
+    sessionStorage. Play/Cells used to just show the resulting 'invalid or
     expired Handler session' error and sit there forever, even after the
-    silent re-login landed a valid new session a moment later -- fixed
-    by having the Handler-password module dispatch a
-    'dg-acell-handler-ready' event once it lands a session, which Play
-    now listens for to retry. (Deliberately checks only the end state,
-    not an intermediate 'still showing the stale error' snapshot -- this
+    silent re-login landed a valid new session a moment later; Evidence's
+    listEvidence() doesn't even error on an invalid session, it silently
+    degrades to the released-only player view, which is worse -- no
+    indication anything's missing. Fixed by having the Handler-password
+    module dispatch a 'dg-acell-handler-ready' event once it lands a
+    session, which Play/Cells/Evidence (and Sheet, covered by its own
+    render path) now listen for to retry. (Deliberately checks only the
+    end state, not an intermediate 'still showing the stale error' snapshot -- this
     app's Playwright route mocking runs on a single dispatch thread, so
     an artificial delay meant to widen the race window ends up
     serializing every in-flight request behind it instead, making any
@@ -2204,6 +2207,14 @@ def test_acell_handler_session_race(p):
     chars_fixture = [{"agent_code": "OWEN-CS12", "name": "Owen Castillo", "profession": "Federal Agent",
                        "nationality": "", "player_name": "", "hp": 10, "wp": 10, "san": 50, "bp": 40, "updated_at": ""}]
     cells_fixture = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": [], "channel": ""}]
+    # Unreleased -- only visible to an authenticated Handler (isHandler in
+    # listEvidence()), same as the real backend. A stale/invalid session
+    # doesn't error like list_characters does; it silently degrades to the
+    # released-only player view, which for this one unreleased item means
+    # an empty list -- exactly the "no error, just quietly wrong" gap
+    # Evidence's own retry-on-ready listener exists to close.
+    evidence_fixture = [{"evidence_id": "ev1", "title": "Confidential Photo", "body": "", "photo": "",
+                          "cell_id": "", "operation_id": "", "released": False, "restricted_to": [], "created_at": "1000"}]
     login_calls = []
 
     def fake_apps_script(route):
@@ -2230,6 +2241,11 @@ def test_acell_handler_session_race(p):
                 res = {"status": "ERROR", "message": "invalid or expired Handler session -- reload A-Cell"}
         elif "action=list_cells" in url:
             res = {"status": "OK", "cells": cells_fixture}
+        elif "action=list_evidence" in url:
+            session = url.split("handler_session=")[1].split("&")[0] if "handler_session=" in url else ""
+            res = {"status": "OK", "evidence": evidence_fixture if session == "fresh-session-token" else []}
+        elif "action=list_operations" in url:
+            res = {"status": "OK", "operations": []}
         else:
             res = {"status": "OK"}
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
@@ -2256,6 +2272,19 @@ def test_acell_handler_session_race(p):
                                      if "Cell Alpha" in page.inner_text("#cells-groups") else None)
     record("acell", "Cells recovers and shows the roster too, instead of 'Could not load Cells' forever",
            bool(cells_text) and "Cell Alpha" in cells_text, page.inner_text("#cells-groups"))
+
+    # Evidence's list_evidence doesn't error on an invalid session like
+    # list_characters does -- it silently degrades to the released-only
+    # player view, which for an unreleased item means it's simply missing,
+    # no error shown at all. Without its own retry-on-ready listener the
+    # Handler would be stuck looking at an incomplete Locker with nothing
+    # telling them so.
+    page.click('.tw[data-tab="evidence"]')
+    evidence_text = wait_for_condition(lambda: page.inner_text("#evidence-list")
+                                        if "Confidential Photo" in page.inner_text("#evidence-list") else None)
+    record("acell", "Evidence recovers and shows an unreleased item once the fresh (Handler) session lands, "
+                    "instead of silently sitting on the released-only player view forever",
+           bool(evidence_text) and "Confidential Photo" in evidence_text, page.inner_text("#evidence-list"))
 
     page.close()
     return errs
