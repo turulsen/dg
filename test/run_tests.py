@@ -2203,6 +2203,7 @@ def test_acell_handler_session_race(p):
 
     chars_fixture = [{"agent_code": "OWEN-CS12", "name": "Owen Castillo", "profession": "Federal Agent",
                        "nationality": "", "player_name": "", "hp": 10, "wp": 10, "san": 50, "bp": 40, "updated_at": ""}]
+    cells_fixture = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": [], "channel": ""}]
     login_calls = []
 
     def fake_apps_script(route):
@@ -2228,7 +2229,7 @@ def test_acell_handler_session_race(p):
             else:
                 res = {"status": "ERROR", "message": "invalid or expired Handler session -- reload A-Cell"}
         elif "action=list_cells" in url:
-            res = {"status": "OK", "cells": []}
+            res = {"status": "OK", "cells": cells_fixture}
         else:
             res = {"status": "OK"}
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
@@ -2245,6 +2246,16 @@ def test_acell_handler_session_race(p):
     record("acell", "Play recovers and shows the roster once a fresh session lands, "
                     "instead of getting stuck on whatever (possibly stale) session was already saved",
            names == ["Owen Castillo"], page.inner_text("#play-agent-list"))
+
+    # Cells' own list_characters call (for the "add Agent" picker) needs
+    # the same valid session -- it's a second, independent tab module
+    # racing the same silent re-login, and was missed the first time
+    # this fix went in.
+    page.click('.tw[data-tab="cells"]')
+    cells_text = wait_for_condition(lambda: page.inner_text("#cells-groups")
+                                     if "Cell Alpha" in page.inner_text("#cells-groups") else None)
+    record("acell", "Cells recovers and shows the roster too, instead of 'Could not load Cells' forever",
+           bool(cells_text) and "Cell Alpha" in cells_text, page.inner_text("#cells-groups"))
 
     page.close()
     return errs

@@ -1765,6 +1765,12 @@
   createBtn.addEventListener('click', showCreateForm);
   refreshBtn.addEventListener('click', function () { fetchAll(true); });
   fetchAll(false);
+  // Same Handler-session race as Play/Sheet -- see the Handler-password
+  // module's own comment. fetchAll() here also needs a valid session
+  // (list_characters, for the "add Agent to Cell" picker), which may
+  // still be an in-flight silent re-login at this point in page load if
+  // a saved password exists.
+  window.addEventListener('dg-acell-handler-ready', function () { fetchAll(true); });
 })();
 </script>
 
