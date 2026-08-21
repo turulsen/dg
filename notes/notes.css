@@ -379,6 +379,23 @@
 #dg-notes-panel .ce-popover-item--focused{ background:rgba(58,40,10,.08); }
 #dg-notes-panel .ce-popover-item__icon{ background:rgba(58,40,10,.06); border-color:rgba(58,40,10,.15); }
 
+/* Mobile Safari has a long-documented bug where position:fixed elements
+   inserted into an already-scrolled page get "stuck" at the scroll
+   offset they were created at, instead of tracking the true viewport --
+   Editor.js's own mobile block-picker overlay/sheet (editorjs.umd.js's
+   own @media (max-width:650px) rules, not ours) is exactly this kind of
+   element, dynamically inserted on tap. Forcing each onto its own GPU
+   compositing layer is the standard fix: it makes WebKit re-evaluate
+   position:fixed against the real viewport instead of a stale scroll
+   snapshot. No visual change on browsers that don't have the bug. */
+@media (max-width: 650px){
+  #dg-notes-panel .ce-popover__overlay,
+  #dg-notes-panel .ce-popover__container{
+    -webkit-transform:translateZ(0);
+    transform:translateZ(0);
+  }
+}
+
 /* Inline toolbar (Bold/Italic/Highlight/Link on text selection). */
 #dg-notes-panel .ce-inline-toolbar{
   background:var(--paper); border:1px solid rgba(58,40,10,.25); box-shadow:0 8px 24px rgba(0,0,0,.25);
