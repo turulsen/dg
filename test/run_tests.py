@@ -1653,12 +1653,23 @@ def test_agent_hub_kia_stamp(p):
     return errs
 
 def test_agent_hub_handouts(p):
-    """agent-hub.html's per-Agent Handouts section: a read-only mirror
-    of A-Cell's Handouts tab, filtered per Agent -- campaign-wide
-    entries (blank cell_id) show for everyone, Cell-scoped ones only
-    show for an Agent who's actually a member of that Cell. Cells and
-    Handouts are each fetched once and reused across every Agent's
-    panel rather than once per Agent."""
+    """agent-hub.html's per-Agent Handouts section (visible label:
+    "Evidence"): a read-only mirror of A-Cell's Evidence tab, filtered
+    per Agent -- campaign-wide entries (blank cell_id) show for
+    everyone, Cell-scoped ones only show for an Agent who's actually a
+    member of that Cell, and an item restricted to specific Agents only
+    shows for those Agents. Cells is fetched once; Evidence is fetched
+    ONCE PER AGENT (not one shared fetch reused for everyone) -- a real
+    live bug report traced restricted items never showing up on the one
+    Agent they were restricted to back to the old shared, anonymous
+    fetch: listEvidence() in Code.gs filters restricted items out
+    entirely when no agent_code is on the request at all, regardless of
+    who they're restricted to, so every restricted item was invisible
+    to everyone via that path. The mock's own list_evidence handler
+    below re-implements that same real server-side filter (cell
+    membership + restricted_to, keyed off the request's own
+    agent_code) rather than trusting the client to filter -- exactly
+    the thing that was broken."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -1668,8 +1679,9 @@ def test_agent_hub_handouts(p):
     photo_data_uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
     cells_fixture = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"], "channel": ""}]
     evidence_fixture = [
-        {"evidence_id": "ev1", "title": "Cell Alpha Only Clue", "body": "Only Owen should see this.", "photo": "", "cell_id": "cell_1", "created_at": "2000"},
-        {"evidence_id": "ev2", "title": "Campaign Wide Notice", "body": "Everyone sees this.", "photo": photo_data_uri, "cell_id": "", "created_at": "1000"},
+        {"evidence_id": "ev1", "title": "Cell Alpha Only Clue", "body": "Only Owen should see this.", "photo": "", "cell_id": "cell_1", "restricted_to": [], "created_at": "2000"},
+        {"evidence_id": "ev2", "title": "Campaign Wide Notice", "body": "Everyone sees this.", "photo": photo_data_uri, "cell_id": "", "restricted_to": [], "created_at": "1000"},
+        {"evidence_id": "ev3", "title": "Priya Eyes Only", "body": "Restricted to Priya specifically.", "photo": "", "cell_id": "", "restricted_to": ["PRIY-AN34"], "created_at": "1500"},
     ]
 
     def fake_apps_script(route):
@@ -1681,7 +1693,17 @@ def test_agent_hub_handouts(p):
         if "action=list_cells" in url:
             res = {"status": "OK", "cells": cells_fixture}
         elif "action=list_evidence" in url:
-            res = {"status": "OK", "evidence": evidence_fixture}
+            requester = url.split("agent_code=")[1].split("&")[0] if "agent_code=" in url else ""
+            my_cells = [c["cell_id"] for c in cells_fixture if requester in c["member_codes"]]
+            visible = []
+            for h in evidence_fixture:
+                if h["cell_id"] and h["cell_id"] not in my_cells:
+                    continue
+                restricted = h.get("restricted_to") or []
+                if restricted and requester not in restricted:
+                    continue
+                visible.append(h)
+            res = {"status": "OK", "evidence": visible}
         else:
             res = {"status": "OK"}
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
@@ -1696,9 +1718,14 @@ def test_agent_hub_handouts(p):
     page.reload(wait_until="domcontentloaded")
     page.wait_for_timeout(900)
 
+    record("hub", "the section label reads Evidence, not Handouts",
+           page.locator(".ah-section-divider").first.inner_text().strip().upper() == "EVIDENCE", "")
+
     owen_titles = page.eval_on_selector_all("#ah-handouts-OWEN-CS12 .ah-handout-title", "els => els.map(e=>e.textContent)")
-    record("hub", "an Agent who's a Cell member sees both that Cell's handout and the campaign-wide one",
+    record("hub", "an Agent who's a Cell member sees both that Cell's evidence and the campaign-wide one",
            sorted(owen_titles) == sorted(["Cell Alpha Only Clue", "Campaign Wide Notice"]), str(owen_titles))
+    record("hub", "an item restricted to a different Agent never shows for this Agent",
+           "Priya Eyes Only" not in owen_titles, str(owen_titles))
 
     page.click("#ah-handouts-OWEN-CS12 .ah-handout-photo")
     page.wait_for_timeout(200)
@@ -1712,8 +1739,10 @@ def test_agent_hub_handouts(p):
     page.click('.tw[data-tab="PRIY-AN34"]')
     page.wait_for_timeout(150)
     priya_titles = page.eval_on_selector_all("#ah-handouts-PRIY-AN34 .ah-handout-title", "els => els.map(e=>e.textContent)")
-    record("hub", "an Agent in no Cell only sees the campaign-wide handout, not the Cell-scoped one",
-           priya_titles == ["Campaign Wide Notice"], str(priya_titles))
+    record("hub", "an Agent in no Cell only sees the campaign-wide evidence, not the Cell-scoped one",
+           "Cell Alpha Only Clue" not in priya_titles and "Campaign Wide Notice" in priya_titles, str(priya_titles))
+    record("hub", "an item restricted specifically to this Agent DOES show up on their own page",
+           "Priya Eyes Only" in priya_titles, str(priya_titles))
 
     page.close()
     return errs

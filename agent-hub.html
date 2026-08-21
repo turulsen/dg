@@ -149,12 +149,11 @@
      struck-through name on both the tab label and the panel title. ── */
   .kia-name{ color:var(--red); text-decoration:line-through; text-decoration-thickness:2px; text-decoration-color:var(--red); }
 
-  /* ── Handouts: whatever the Handler has filed and released (evolved
-     into A-Cell's Evidence Locker, but this player-facing section keeps
-     its original "Handouts" name and simple read-only display) that's
-     relevant to this Agent -- campaign-wide entries, plus anything
-     scoped to a Cell this Agent belongs to. Read-only mirror of
-     A-Cell's Evidence tab. ── */
+  /* ── Handouts (internal name; the visible label is "Evidence", matching
+     A-Cell's Evidence Locker tab it mirrors): whatever the Handler has
+     filed and released for this Agent -- campaign-wide entries, plus
+     anything scoped to a Cell this Agent belongs to, or restricted
+     specifically to them. Read-only mirror of A-Cell's Evidence tab. ── */
   .ah-section-divider{
     font-family:'Special Elite',monospace; font-size:11px; letter-spacing:.14em; text-transform:uppercase;
     color:var(--ink-3); border-top:1px solid var(--rule); margin-top:var(--s5); padding-top:14px; margin-bottom:10px;
@@ -366,8 +365,8 @@
     document.head.appendChild(s);
   }
 
-  // Same gdrive:-link resolution as loadFacePlate() above, for a
-  // Handout's photo (see resolveHandoutPhoto_() in Code.gs).
+  // Same gdrive:-link resolution as loadFacePlate() above, for an
+  // Evidence item's photo (see resolveEvidencePhoto_() in Code.gs).
   function loadHandoutPhoto(handoutId, photoUrl, wrapElId) {
     const id = extractDriveId(photoUrl);
     if (!id) return;
@@ -552,7 +551,7 @@
           <div style="text-align:right;margin-top:2px;">
             <button type="button" class="ah-erase-link">Erase Agent&hellip;</button>
           </div>
-          <div class="ah-section-divider">Handouts</div>
+          <div class="ah-section-divider">Evidence</div>
           <div class="ah-handouts" id="ah-handouts-${a.code}"><div class="ah-handouts-empty">Loading&hellip;</div></div>
         </div>
       </div>`;
@@ -772,17 +771,23 @@
     lookupCoverIdentity(storedIdentity, { silent: true });
   }
 
-  // Handouts: one shared fetch of Cells + Evidence, reused across every
-  // Agent's panel (rather than one fetch per Agent) -- an item is
-  // relevant to an Agent if it's campaign-wide (no cell_id) or scoped to
-  // a Cell that Agent is a member of. list_evidence (formerly
-  // list_handouts) already filters server-side to released items with
-  // no agent_code passed in, this fetch only ever sees fully-unrestricted
-  // + released items -- a Handler-restricted-to-specific-Agents item
-  // never shows here, by design: this stays the simple read-only mirror,
-  // the richer per-Agent restricted/unseen-aware view lives in notes/.
+  // Handouts: one list_cells fetch (for Cell display names) plus one
+  // list_evidence fetch PER Agent -- see loadHandouts() below for why
+  // this has to be per-Agent rather than one shared fetch reused for
+  // everyone (a Handler-restricted-to-specific-Agents item needs that
+  // Agent's own agent_code on the request to ever come back at all).
+  // The richer unseen-aware view is still meant to live in notes/ too,
+  // this stays the simpler read-only mirror.
   function jsonpGet(action, params, cb) {
-    const cbName = '_ahHandouts_' + action + '_' + Date.now();
+    // Date.now() alone collided once this fetch went per-Agent instead
+    // of one shared call -- several list_evidence/list_handout_notes
+    // requests can now fire synchronously in the same millisecond
+    // (agents.forEach), two landing on the identical callback name and
+    // the first response's cleanup deleting window[cbName] out from
+    // under the second one's still-in-flight <script> tag ("X is not
+    // defined" the moment it tried to call it). Same random-suffix fix
+    // notes.js's own jsonpGet() already uses for this exact reason.
+    const cbName = '_ahHandouts_' + action + '_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
     const timer = setTimeout(() => { delete window[cbName]; cb(null); }, 7000);
     window[cbName] = function (res) {
       clearTimeout(timer);
@@ -902,41 +907,42 @@
   }
   function handoutLightboxEscHandler(e) { if (e.key === 'Escape') closeHandoutLightbox(); }
 
+  // One list_evidence fetch per Agent (not one shared fetch reused for
+  // everyone) -- listEvidence() in Code.gs applies BOTH the Cell-
+  // membership filter and the restricted-to-specific-Agents filter
+  // server-side, keyed off whichever agent_code the request itself
+  // carries. A single anonymous fetch (no agent_code at all) used to
+  // get every restricted item filtered out entirely, for every Agent,
+  // regardless of who it was actually restricted to -- an item the
+  // Handler filed and explicitly restricted to one Agent never showed
+  // up on that Agent's own Hub page, the one place it was supposed to.
   function loadHandouts() {
-    let cellsDone = false, handoutsDone = false, cellsOk = false, handoutsOk = false;
-    let cells = [], handouts = [];
-    function maybeRender() {
-      if (!cellsDone || !handoutsDone) return;
-      const cellsById = {};
-      cells.forEach(c => { cellsById[c.cell_id] = c; });
-      agents.forEach(a => {
-        if (!handoutsOk) {
-          const el = document.getElementById('ah-handouts-' + a.code);
+    let cells = [];
+    function cellsByIdMap() {
+      const map = {};
+      cells.forEach(c => { map[c.cell_id] = c; });
+      return map;
+    }
+    function loadForAgent(a) {
+      jsonpGet('list_evidence', { agent_code: a.code, token: agentToken(a.code) }, res => {
+        const el = document.getElementById('ah-handouts-' + a.code);
+        if (!res || res.status !== 'OK' || !Array.isArray(res.evidence)) {
           if (el) el.innerHTML = '<div class="ah-handouts-empty">Could not load handouts.</div>';
           return;
         }
-        const myCellIds = cellsOk ? cells.filter(c => c.member_codes.indexOf(a.code) !== -1).map(c => c.cell_id) : [];
-        const relevant = handouts
-          .filter(h => !h.cell_id || myCellIds.indexOf(h.cell_id) !== -1)
-          .sort((x, y) => Number(y.created_at) - Number(x.created_at));
-        renderHandoutsFor(a.code, relevant, cellsById);
+        const relevant = res.evidence.slice().sort((x, y) => Number(y.created_at) - Number(x.created_at));
+        renderHandoutsFor(a.code, relevant, cellsByIdMap());
         jsonpGet('list_handout_notes', { agent_code: a.code, token: agentToken(a.code) }, notesRes => {
           if (!notesRes || notesRes.status !== 'OK' || !Array.isArray(notesRes.notes)) return;
           const notesByHandoutId = {};
           notesRes.notes.forEach(n => { notesByHandoutId[n.handout_id] = n.note; });
-          renderHandoutsFor(a.code, relevant, cellsById, notesByHandoutId);
+          renderHandoutsFor(a.code, relevant, cellsByIdMap(), notesByHandoutId);
         });
       });
     }
     jsonpGet('list_cells', {}, res => {
-      cellsDone = true;
-      if (res && res.status === 'OK' && Array.isArray(res.cells)) { cells = res.cells; cellsOk = true; }
-      maybeRender();
-    });
-    jsonpGet('list_evidence', {}, res => {
-      handoutsDone = true;
-      if (res && res.status === 'OK' && Array.isArray(res.evidence)) { handouts = res.evidence; handoutsOk = true; }
-      maybeRender();
+      if (res && res.status === 'OK' && Array.isArray(res.cells)) cells = res.cells;
+      agents.forEach(loadForAgent);
     });
   }
 
