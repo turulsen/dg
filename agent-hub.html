@@ -712,17 +712,31 @@
       // not a running accumulation of every Agent this device has ever
       // touched. The one exception: an Agent nobody's claimed yet (no
       // Player Name given by the player, and none assigned by a Handler
-      // in A-Cell's Sheet tab) is kept regardless of what's searched --
-      // there's nothing yet to tell it apart from "belongs to this
-      // identity", so dropping it would just be silent local data loss
-      // for a brand-new Agent that hasn't been claimed either way. Once
-      // it IS given a name (by either path), the next search either
-      // finds it as a match (kept) or, if the name doesn't match, drops
-      // it like any other claimed-by-someone-else Agent.
+      // in A-Cell's Sheet tab) is kept for a short grace window regardless
+      // of what's searched -- there's nothing yet to tell it apart from
+      // "belongs to this identity", so dropping it immediately would be
+      // silent local data loss for a brand-new Agent that hasn't been
+      // claimed yet either way. Originally this had no time limit at all,
+      // which turned out to make it permanently sticky: an Agent's code
+      // picked up locally some other way (e.g. following a bare Notes/
+      // Portal ?code= link for someone else's Agent) with no player_name
+      // ever recorded would then survive every future search forever,
+      // confirmed against a real live report -- a Cover Identity search
+      // correctly told the player "Loaded 1 Agent" while several unrelated
+      // Agents nobody had claimed kept reappearing in the tab strip no
+      // matter how many times they re-ran it. A day is generous enough to
+      // cover "rolled a new Agent, will set Cover Identity shortly" while
+      // no longer preserving something that's just been sitting untouched
+      // for days. Once it IS given a name (by either path), the next
+      // search either finds it as a match (kept) or, if the name doesn't
+      // match, drops it like any other claimed-by-someone-else Agent.
+      const UNCLAIMED_GRACE_MS = 24 * 60 * 60 * 1000;
       const prior = rosterLoad();
       const roster = {};
       Object.keys(prior).forEach(code => {
-        if (!prior[code].player_name) roster[code] = prior[code];
+        if (!prior[code].player_name && (Date.now() - (prior[code].saved_at || 0)) < UNCLAIMED_GRACE_MS) {
+          roster[code] = prior[code];
+        }
       });
       const needle = name.trim().toLowerCase();
       res.agents.forEach(a => {

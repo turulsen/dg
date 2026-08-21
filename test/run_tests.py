@@ -1398,12 +1398,18 @@ def test_agent_hub_cover_identity(p):
         return handler
 
     # Entering a name and finding 2 Agents replaces the *claimed* part of
-    # the roster (which starts out seeded with two locally-added Agents:
-    # one already tied to a different real name, one nobody's claimed
-    # yet) -- only the one already claimed by someone else should be
-    # dropped; the unclaimed one survives regardless, since there's
-    # nothing yet distinguishing it from "belongs to this identity" and
-    # dropping it would just be silent local data loss.
+    # the roster (which starts out seeded with three locally-added
+    # Agents: one already tied to a different real name, one nobody's
+    # claimed yet but was added recently, one nobody's claimed but has
+    # been sitting untouched for days) -- the one already claimed by
+    # someone else is dropped, the recent unclaimed one survives (there's
+    # nothing yet distinguishing it from "belongs to this identity", so
+    # dropping it right away would be silent local data loss for a
+    # brand-new Agent), and the STALE unclaimed one is also dropped --
+    # a real live bug report traced several Agents nobody had claimed
+    # permanently reappearing in the tab strip, no matter how many times
+    # Cover Identity search was re-run, back to this "unclaimed" grace
+    # period never actually expiring at all.
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -1415,17 +1421,20 @@ def test_agent_hub_cover_identity(p):
         {"code": "GERG-D002", "char_name": "Danielle Mitchell", "codename": "", "sex": "Female",
          "age_range": "Late 20s", "nationality": "American", "saved_at": 2000},
     ]))
-    stray_roster = json.dumps({
-        "STRY-X001": {"code": "STRY-X001", "char_name": "Claimed By Someone Else",
-                      "player_name": "Not Gergo", "saved_at": 500},
-        "STRY-X002": {"code": "STRY-X002", "char_name": "Unclaimed Local Draft", "saved_at": 600},
-    })
-    page.add_init_script(f"localStorage.setItem('dg_agent_roster', '{stray_roster}');")
+    page.add_init_script("""
+        const now = Date.now();
+        localStorage.setItem('dg_agent_roster', JSON.stringify({
+            'STRY-X001': { code: 'STRY-X001', char_name: 'Claimed By Someone Else',
+                           player_name: 'Not Gergo', saved_at: 500 },
+            'STRY-X002': { code: 'STRY-X002', char_name: 'Unclaimed Local Draft', saved_at: now - 60000 },
+            'STRY-X003': { code: 'STRY-X003', char_name: 'Stale Unclaimed Ghost', saved_at: now - 40 * 60 * 60 * 1000 },
+        }));
+    """)
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
-    record("hub", "starts with both stray Agents already in the roster before any lookup",
+    record("hub", "starts with all three stray Agents already in the roster before any lookup",
            set(page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)"))
-           == {"+ New Recruit", "Claimed By Someone Else", "Unclaimed Local Draft"}, "")
+           == {"+ New Recruit", "Claimed By Someone Else", "Unclaimed Local Draft", "Stale Unclaimed Ghost"}, "")
 
     page.fill("#cover-identity-input", "Gergo")
     page.click("#cover-identity-btn")
@@ -1437,6 +1446,8 @@ def test_agent_hub_cover_identity(p):
            "Claimed By Someone Else" not in tab_labels, str(tab_labels))
     record("hub", "the unclaimed local draft survives the search -- nobody's said it isn't Gergo's yet",
            "Unclaimed Local Draft" in tab_labels, str(tab_labels))
+    record("hub", "an unclaimed Agent that's been sitting untouched for days is dropped, not kept forever",
+           "Stale Unclaimed Ghost" not in tab_labels, str(tab_labels))
     record("hub", "the status line confirms how many Agents were loaded",
            "2" in page.inner_text("#ci-status"), page.inner_text("#ci-status"))
     record("hub", "the entered Cover Identity is remembered for next time",
