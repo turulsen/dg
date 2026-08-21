@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v27 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v28 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -273,6 +273,19 @@
 //   filename), just under the wrong extension. New
 //   extensionForDataUri_() picks .pdf/.png/.jpg/etc. from the data
 //   URI's own mime type.
+// + Fixed Evidence unable to create/update AT ALL, confirmed against a
+//   real live spreadsheet's header row: legacy.setName('Evidence') in
+//   getOrCreateEvidenceSheet() only ever renamed the Handouts sheet
+//   TAB, never its own header cells, so the id column stayed literally
+//   named "handout_id" -- every create_evidence/update_evidence has
+//   been failing closed on requireColumns_() rejecting a header row
+//   missing "evidence_id" since this feature's very first deploy, not
+//   a timing issue at all (the create/update retry logic added
+//   earlier this round is still worth keeping for genuinely slow Drive
+//   uploads, it just wasn't the actual cause here). One-time header
+//   rename, cache key deliberately renamed to *_v2 so this can't be
+//   silently skipped by a stale "already migrated" flag from before
+//   this fix existed.
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -2352,16 +2365,34 @@ function getOrCreateEvidenceSheet() {
   // getOrCreateCellNotesSheet() uses for pinned/tags -- covers both a
   // freshly-renamed legacy Handouts sheet and one from an even older
   // deploy that predates this whole feature.
+  //
+  // *_v2 cache key (not the original name) is deliberate: a live bug
+  // report traced this whole feature down to legacy.setName('Evidence')
+  // above only renaming the SHEET TAB, never its own header row --
+  // every create/update_evidence has been failing closed on
+  // requireColumns_() rejecting a header row that still says
+  // handout_id, not evidence_id, since the very first deploy of this
+  // feature (a real live spreadsheet's actual header row, confirmed).
+  // The old cache key could already be sitting at '1' on some
+  // deployments from before this fix existed, which would silently
+  // skip the one-time rename below for up to its own TTL -- a new key
+  // name guarantees this runs on the very next call after redeploy
+  // instead of waiting out a stale flag.
   const cache = CacheService.getScriptCache();
-  if (cache.get('evidence_columns_ensured') !== '1') {
+  if (cache.get('evidence_columns_ensured_v2') !== '1') {
     const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const handoutIdCol = headers.indexOf('handout_id');
+    if (handoutIdCol !== -1 && headers.indexOf('evidence_id') === -1) {
+      sheet.getRange(1, handoutIdCol + 1).setValue('evidence_id');
+      headers[handoutIdCol] = 'evidence_id';
+    }
     ['operation_id', 'released', 'restricted_to'].forEach(function (col) {
       if (headers.indexOf(col) === -1) {
         sheet.getRange(1, sheet.getLastColumn() + 1).setValue(col);
         headers.push(col);
       }
     });
-    cache.put('evidence_columns_ensured', '1', 21600);
+    cache.put('evidence_columns_ensured_v2', '1', 21600);
   }
   return sheet;
 }
@@ -3356,12 +3387,12 @@ function ensureBriefsColumns(ss) {
 
 // Throws on failure -- used to catch its own error and return the
 // message AS THE URL STRING, so a failed upload silently became a
-// "successful" save with face_plate_url (or a Handout's photo) literally
-// set to the text "Image upload failed: ...". Every caller already
-// wraps this (or now does, see resolveHandoutPhoto_()/createHandout()/
-// updateHandout() below) in its own try/catch and returns a real ERROR
-// response instead, so a failure can never again be mistaken for a
-// valid gdrive: link.
+// "successful" save with face_plate_url (or an Evidence item's photo)
+// literally set to the text "Image upload failed: ...". Every caller
+// already wraps this (or now does, see resolveEvidencePhoto_()/
+// createEvidence()/updateEvidence() above) in its own try/catch and
+// returns a real ERROR response instead, so a failure can never again
+// be mistaken for a valid gdrive: link.
 function saveImageToDrive(base64DataUrl, filename, charName) {
   const base64 = base64DataUrl.split(',')[1];
   const mimeType = base64DataUrl.split(';')[0].split(':')[1];
