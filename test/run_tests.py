@@ -6200,6 +6200,176 @@ def test_notes_v2_editorjs(p):
     return errs
 
 
+def test_notes_evidence_integration(p):
+    """Evidence Locker Stage 3: Evidence surfaced inside Notes. Backend
+    support (mark_evidence_seen / EvidenceSeen sheet / listEvidence()
+    bundling a `seen` map, and evidence_remark as just another opaque
+    CellNotes block_type) was already built in an earlier round; this
+    is the client-side piece -- an "Evidence" section in the sidebar
+    (red dot = unseen, synced server-side across devices, not a local-
+    only flag) and a detail modal (title/body/photo-or-PDF, reused
+    exactly as A-Cell/Agent Hub already resolve a gdrive: link) with a
+    Remarks thread reusing the same private/Circulated privacy model as
+    regular notes. Also verifies evidence_remark blocks stay fully out
+    of the places they'd otherwise leak into or break: the live
+    Editor.js document (unknown block_type, never registered as a
+    tool), the general Shared feed, and cross-tab search."""
+    page = p.new_page()
+    page.set_default_timeout(10000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    cell = {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12", "PRIY-AN34"],
+            "member_names": {"OWEN-CS12": "Owen Castillo", "PRIY-AN34": "Priya Anand"}}
+    notes_blocks = [
+        {"block_id": "b1", "agent_code": "OWEN-CS12", "block_type": "header",
+         "text": json.dumps({"text": "Meadowbrook", "level": 1}), "shared": False, "sort_order": 100, "created_at": 1, "updated_at": 1},
+        {"block_id": "rem1", "agent_code": "PRIY-AN34", "block_type": "evidence_remark",
+         "text": json.dumps({"evidence_id": "ev1", "text": "The blood spatter doesn't match a fall."}),
+         "shared": True, "sort_order": 200, "created_at": 500, "updated_at": 500},
+    ]
+    evidence_fixture = [
+        {"evidence_id": "ev1", "title": "Coroner's Report", "body": "Cause of death listed as accidental.",
+         "photo": "gdrive:fake123", "cell_id": "", "operation_id": "", "created_at": "2000"},
+        {"evidence_id": "ev2", "title": "Torn Photograph", "body": "Shows a lighthouse.",
+         "photo": "", "cell_id": "", "operation_id": "", "created_at": "1000"},
+    ]
+    identities = {"PRIY-AN34": {"color": "#2f855a", "font": "kalam"}}
+    seen_map = {"ev2": True}
+    posts = []
+    fake_png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+
+    def fake_apps_script(route):
+        req = route.request
+        url = req.url
+        if req.method == "POST":
+            body = json.loads(req.post_data or "{}")
+            posts.append(body)
+            action = body.get("action")
+            if action == "save_note_block":
+                bid = body.get("block_id") or ""
+                existing = next((b for b in notes_blocks if b["block_id"] == bid), None)
+                if existing:
+                    existing.update({"block_type": body.get("block_type"), "text": body.get("text"), "shared": bool(body.get("shared"))})
+                else:
+                    notes_blocks.append({
+                        "block_id": bid, "agent_code": body.get("agent_code"), "block_type": body.get("block_type"),
+                        "text": body.get("text"), "shared": bool(body.get("shared")),
+                        "sort_order": body.get("sort_order", 0), "created_at": 9000, "updated_at": 9000,
+                    })
+            elif action == "delete_note_block":
+                bid = body.get("block_id")
+                notes_blocks[:] = [b for b in notes_blocks if b["block_id"] != bid]
+            elif action == "mark_evidence_seen":
+                seen_map[body.get("evidence_id")] = True
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        if "action=imgdata" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK", "dataUri": fake_png})})')
+            return
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=list_cells" in url:
+                res = {"status": "OK", "cells": [cell]}
+            elif "action=list_cell_notes" in url:
+                requester = url.split("agent_code=")[1].split("&")[0] if "agent_code=" in url else ""
+                notes = {}
+                for b in notes_blocks:
+                    if b["agent_code"] != requester and not b["shared"]:
+                        continue
+                    notes.setdefault(b["agent_code"], []).append(b)
+                res = {"status": "OK", "notes": notes, "identities": identities}
+            elif "action=list_evidence" in url:
+                res = {"status": "OK", "evidence": evidence_fixture, "seen": dict(seen_map)}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.add_init_script("""
+        try {
+            localStorage.setItem('dg_agent_roster', JSON.stringify({
+                'OWEN-CS12': { code: 'OWEN-CS12', char_name: 'Owen Castillo', saved_at: Date.now() }
+            }));
+        } catch (e) {}
+    """)
+    page.goto(f"{BASE}/notes/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector(".dg-notes-identity-modal, #dg-notes-editor-mount", timeout=10000)
+    if page.query_selector(".dg-notes-identity-modal"):
+        page.click(".dg-notes-color-swatch")
+        page.click(".dg-notes-identity-confirm")
+    page.wait_for_selector("#dg-notes-editor-mount .ce-block", timeout=10000)
+    page.wait_for_timeout(500)
+
+    record("notes", "the sidebar lists an Evidence section with both visible items",
+           page.locator(".dg-notes-evidence-item").count() == 2, "")
+    unseen_dots = page.eval_on_selector_all(".dg-notes-evidence-dot", "els => els.map(e => e.className)")
+    record("notes", "an item never opened shows the unseen dot",
+           any("unseen" in c for c in unseen_dots), str(unseen_dots))
+    record("notes", "an item already marked seen server-side does NOT show the unseen dot",
+           not all("unseen" in c for c in unseen_dots), str(unseen_dots))
+    record("notes", "your own tab's live editor still works normally alongside the Evidence sidebar",
+           "Meadowbrook" in page.content(), "")
+
+    page.click('[data-evidence-id="ev1"]')
+    page.wait_for_timeout(600)
+    record("notes", "clicking an Evidence item opens a detail modal with its title and body",
+           page.is_visible(".dg-notes-evidence-modal") and "Coroner's Report" in page.inner_text(".dg-notes-evidence-body")
+           and "Cause of death" in page.inner_text(".dg-notes-evidence-body"), "")
+    record("notes", "a Cell-mate's existing Circulated remark shows in the Remarks thread, attributed to them",
+           "blood spatter" in page.inner_text(".dg-notes-evidence-body") and "Priya Anand" in page.inner_text(".dg-notes-evidence-body"), "")
+    record("notes", "opening it posts mark_evidence_seen for this Agent and this item",
+           any(x.get("action") == "mark_evidence_seen" and x.get("evidence_id") == "ev1" and x.get("agent_code") == "OWEN-CS12" for x in posts), str(posts))
+    record("notes", "its gdrive-backed photo resolves and renders as a real image",
+           page.locator(".dg-notes-evidence-photo-img").count() == 1, "")
+
+    posts.clear()
+    page.fill(".dg-notes-evidence-remark-input", "Check the neighbor's alibi.")
+    page.click(".dg-notes-evidence-remark-add")
+    page.wait_for_timeout(300)
+    record("notes", "adding a remark (Share unchecked) posts save_note_block as a private evidence_remark",
+           any(x.get("action") == "save_note_block" and x.get("block_type") == "evidence_remark"
+               and json.loads(x.get("text") or "{}").get("evidence_id") == "ev1" and x.get("shared") is False
+               for x in posts), str(posts))
+    record("notes", "the new remark appears in the thread immediately, marked Private",
+           "Check the neighbor's alibi" in page.inner_text(".dg-notes-evidence-remarks-list")
+           and "PRIVATE" in page.inner_text(".dg-notes-evidence-remarks-list").upper(), "")
+
+    del_btn = page.locator(".dg-notes-evidence-remark-del")
+    record("notes", "only your own remark shows a delete control, not a Cell-mate's",
+           del_btn.count() == 1, "")
+    posts.clear()
+    del_btn.click()
+    page.wait_for_timeout(300)
+    record("notes", "deleting your own remark posts delete_note_block",
+           any(x.get("action") == "delete_note_block" for x in posts), str(posts))
+    record("notes", "the deleted remark is gone from the thread, the Cell-mate's stays",
+           "Check the neighbor's alibi" not in page.inner_text(".dg-notes-evidence-remarks-list")
+           and "blood spatter" in page.inner_text(".dg-notes-evidence-remarks-list"), "")
+
+    page.click(".dg-notes-evidence-close")
+    page.wait_for_timeout(200)
+    record("notes", "closing the modal removes it",
+           page.locator(".dg-notes-evidence-modal").count() == 0, "")
+    sidebar_dots_after = page.eval_on_selector_all(".dg-notes-evidence-dot", "els => els.map(e => e.className)")
+    record("notes", "the sidebar's unseen dot clears once its item has been opened",
+           not any("unseen" in c for c in sidebar_dots_after), str(sidebar_dots_after))
+
+    page.click('.dg-notes-tab-shared')
+    page.wait_for_timeout(300)
+    shared_html = page.inner_html("#dg-notes-readonly-feed")
+    record("notes", "a Circulated evidence_remark never leaks into the general Shared feed",
+           "blood spatter" not in shared_html, "")
+
+    record("notes", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
+
 def test_notes_reload_shows_own_previous_blocks(p):
     """Regression test for a bug caught while building the Timeline
     view: mountEditor() necessarily mounts your own tab's live Editor.js
@@ -6505,6 +6675,7 @@ def main():
         safe(test_pwa_update_banner, browser, area="pwa")
 
         safe(test_notes_v2_editorjs, browser, area="notes")
+        safe(test_notes_evidence_integration, browser, area="notes")
 
         safe(test_notes_reload_shows_own_previous_blocks, browser, area="notes")
         safe(test_notes_code_url_param, browser, area="notes")

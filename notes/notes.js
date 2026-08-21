@@ -237,6 +237,21 @@
     const tagsByBlockId = {};
     const saveTimers = {}; // block_id -> debounce handle
 
+    // Evidence, surfaced inside Notes: a per-Cell-member view of
+    // whatever the Handler has filed and released (or restricted
+    // specifically to this Agent) via A-Cell's Evidence Locker,
+    // fetched independently of the notes themselves (see fetchEvidence()
+    // below). evidenceSeenMap comes bundled in that same response
+    // (server-side EvidenceSeen sheet, synced across devices rather
+    // than a local-only flag). Remarks (players annotating a piece of
+    // evidence, privately or shared) reuse the existing CellNotes table
+    // via a plain evidence_remark block_type -- see mountEditor()'s own
+    // comment for why those never enter the live editor or the general
+    // Shared feed.
+    let evidenceItems = [];
+    let evidenceSeenMap = {};
+    let evidenceModalEl = null;
+
     const TAG_TYPES = [
       { id: 'npc', label: 'NPC' },
       { id: 'location', label: 'Location' },
@@ -338,6 +353,204 @@
       });
     }
 
+    /* ── Evidence, surfaced in the sidebar + a detail modal. Fetched
+       independently of the notes themselves (own list_evidence call,
+       own poll-adjacent refresh) since it's a different data source
+       entirely -- A-Cell's Evidence Locker, not CellNotes -- that just
+       happens to share this same per-Cell, per-Agent visibility model.
+       Remarks are the one piece that genuinely lives in CellNotes (see
+       the evidenceItems/evidenceSeenMap declaration above for why). ── */
+
+    function extractDriveId_(url) {
+      if (!url) return null;
+      const m = String(url).match(/^gdrive:(.+)$/);
+      return m ? m[1] : null;
+    }
+
+    // Resolves a gdrive: link to a data URI via the imgdata JSONP proxy
+    // -- same pattern a-cell.html/agent-hub.html already use for their
+    // own Evidence photo previews, duplicated here rather than shared
+    // (every module in this app keeps its own small copy of helpers
+    // like this, see jsonpGet() above's own comment for the convention).
+    function loadEvidencePhotoDataUri_(photoUrl, onReady) {
+      const id = extractDriveId_(photoUrl);
+      if (!id) return;
+      const cbName = '_dgNotesEvPhoto_' + id.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
+      const s = document.createElement('script');
+      window[cbName] = function (json) {
+        delete window[cbName];
+        if (s.parentNode) s.remove();
+        if (json && json.status === 'OK' && json.dataUri) onReady(json.dataUri);
+      };
+      s.src = APPS_SCRIPT_URL + '?action=imgdata&id=' + encodeURIComponent(id) + '&callback=' + cbName;
+      document.head.appendChild(s);
+    }
+
+    function fetchEvidence() {
+      if (!cellId) return;
+      jsonpGet('list_evidence', { agent_code: agentCode, token: agentToken }, res => {
+        if (!res || res.status !== 'OK' || !Array.isArray(res.evidence)) return;
+        evidenceItems = res.evidence.slice().sort((a, b) => Number(b.created_at) - Number(a.created_at));
+        evidenceSeenMap = res.seen || {};
+        refreshEvidenceSidebar();
+        // Keeps an already-open detail modal in sync with a fresh poll
+        // -- a Cell-mate's new remark should show up without having to
+        // close and reopen it.
+        if (evidenceModalEl) renderEvidenceModalBody_(evidenceModalEl.dataset.evidenceId);
+      });
+    }
+
+    function refreshEvidenceSidebar() {
+      const mount = container.querySelector('#dg-notes-evidence-mount');
+      if (!mount) return;
+      if (!evidenceItems.length) { mount.innerHTML = ''; return; }
+      mount.innerHTML =
+        '<div class="dg-notes-toc-subhead">Evidence</div>' +
+        evidenceItems.map(h => {
+          const unseen = !evidenceSeenMap[h.evidence_id];
+          return '<a href="#" class="dg-notes-evidence-item" data-evidence-id="' + escapeHtml(h.evidence_id) + '">' +
+            '<span class="dg-notes-evidence-dot' + (unseen ? ' unseen' : '') + '"></span>' +
+            '<span class="dg-notes-evidence-title">' + escapeHtml(h.title) + '</span>' +
+            '</a>';
+        }).join('');
+      mount.querySelectorAll('[data-evidence-id]').forEach(a => {
+        a.addEventListener('click', e => { e.preventDefault(); openEvidenceModal(a.dataset.evidenceId); });
+      });
+    }
+
+    function markEvidenceSeenIfNeeded_(evidenceId) {
+      if (evidenceSeenMap[evidenceId]) return;
+      evidenceSeenMap[evidenceId] = true;
+      refreshEvidenceSidebar();
+      postAction({ action: 'mark_evidence_seen', agent_code: agentCode, evidence_id: evidenceId }).catch(() => { });
+    }
+
+    // Every remark attached to one Evidence item that's actually
+    // visible to you -- your own (any privacy) plus any Cell member's
+    // shared one, exactly the same visibility rule as everything else
+    // in CellNotes (server-side filter already applied, nothing extra
+    // to guard against here).
+    function remarksFor_(evidenceId) {
+      return allVisibleBlocks()
+        .filter(b => b.type === 'evidence_remark' && b.data && b.data.evidence_id === evidenceId)
+        .sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+    }
+
+    function renderEvidenceModalBody_(evidenceId) {
+      if (!evidenceModalEl) return;
+      const h = evidenceItems.find(x => x.evidence_id === evidenceId);
+      const body = evidenceModalEl.querySelector('.dg-notes-evidence-body');
+      if (!h || !body) return;
+
+      let photoHtml = '';
+      if (h.photo) {
+        if (extractDriveId_(h.photo)) {
+          photoHtml = '<div class="dg-notes-evidence-photo-wrap"></div>';
+        } else if (h.photo.indexOf('data:application/pdf') === 0) {
+          photoHtml = '<div class="dg-notes-evidence-photo-pdf"><a href="' + h.photo + '" target="_blank" rel="noopener">&#128196; Open PDF</a></div>';
+        } else {
+          photoHtml = '<img class="dg-notes-evidence-photo-img" src="' + h.photo + '" alt="">';
+        }
+      }
+
+      const remarks = remarksFor_(evidenceId);
+      const remarksHtml = remarks.length
+        ? remarks.map(r => {
+          const id = identityFor(r.agent_code);
+          const mine = r.agent_code === agentCode;
+          const privBadge = '<span class="dg-notes-shared-badge">' + (r.shared ? 'Circulated' : 'Private') + '</span>';
+          const delBtn = mine ? '<button type="button" class="dg-notes-evidence-remark-del" data-remark-id="' + escapeHtml(r.block_id) + '">&times;</button>' : '';
+          return '<div class="dg-notes-evidence-remark">' +
+            '<div class="dg-notes-evidence-remark-head">' +
+            '<span class="dg-notes-author-badge" style="background:' + (id ? id.color : '#4a5568') + '">' + escapeHtml(mine ? 'You' : memberLabel(r.agent_code)) + '</span>' +
+            privBadge + delBtn +
+            '</div>' +
+            '<div class="dg-notes-evidence-remark-text">' + escapeHtml((r.data && r.data.text) || '') + '</div>' +
+            '</div>';
+        }).join('')
+        : '<div class="dg-notes-empty">No remarks yet.</div>';
+
+      body.innerHTML =
+        '<div class="dg-notes-identity-title">' + escapeHtml(h.title) + '</div>' +
+        photoHtml +
+        (h.body ? '<p class="dg-notes-evidence-body-text">' + escapeHtml(h.body) + '</p>' : '') +
+        '<div class="dg-notes-toc-subhead">Remarks</div>' +
+        '<div class="dg-notes-evidence-remarks-list">' + remarksHtml + '</div>' +
+        '<div class="dg-notes-evidence-compose">' +
+        '<textarea class="dg-notes-evidence-remark-input" placeholder="Add a remark…"></textarea>' +
+        '<label class="dg-notes-toggle-label-inline"><input type="checkbox" class="dg-notes-evidence-remark-shared"> Share with your Cell</label>' +
+        '<button type="button" class="dg-notes-evidence-remark-add">Add Remark</button>' +
+        '</div>';
+
+      if (extractDriveId_(h.photo)) {
+        loadEvidencePhotoDataUri_(h.photo, dataUri => {
+          const wrap = body.querySelector('.dg-notes-evidence-photo-wrap');
+          if (!wrap) return;
+          wrap.innerHTML = dataUri.indexOf('data:application/pdf') === 0
+            ? '<div class="dg-notes-evidence-photo-pdf"><a href="' + dataUri + '" target="_blank" rel="noopener">&#128196; Open PDF</a></div>'
+            : '<img class="dg-notes-evidence-photo-img" src="' + dataUri + '" alt="">';
+        });
+      }
+
+      body.querySelector('.dg-notes-evidence-remark-add').addEventListener('click', () => {
+        const input = body.querySelector('.dg-notes-evidence-remark-input');
+        const text = input.value.trim();
+        if (!text) return;
+        const shared = body.querySelector('.dg-notes-evidence-remark-shared').checked;
+        const blockId = 'block_' + Date.now() + '_' + Math.floor(Math.random() * 100000).toString(36);
+        const now = Date.now();
+        const list = notesByCode[agentCode] || (notesByCode[agentCode] = []);
+        const sortOrder = list.length * 1000;
+        list.push({
+          block_id: blockId, agent_code: agentCode, type: 'evidence_remark',
+          data: { evidence_id: evidenceId, text: text }, shared: shared, pinned: false,
+          tags: [], sort_order: sortOrder, created_at: now, updated_at: now,
+        });
+        postAction({
+          action: 'save_note_block', block_id: blockId, cell_id: cellId, agent_code: agentCode, token: agentToken,
+          block_type: 'evidence_remark', text: JSON.stringify({ evidence_id: evidenceId, text: text }),
+          shared: shared, pinned: false, tags: '[]', sort_order: sortOrder,
+        }).catch(() => { });
+        renderEvidenceModalBody_(evidenceId);
+      });
+      body.querySelectorAll('.dg-notes-evidence-remark-del').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const blockId = btn.dataset.remarkId;
+          const list = notesByCode[agentCode] || [];
+          const idx = list.findIndex(x => x.block_id === blockId);
+          if (idx !== -1) list.splice(idx, 1);
+          postAction({ action: 'delete_note_block', block_id: blockId, cell_id: cellId, agent_code: agentCode, token: agentToken }).catch(() => { });
+          renderEvidenceModalBody_(evidenceId);
+        });
+      });
+    }
+
+    // Appended to document.body (not `container`) and removed
+    // explicitly on close -- same reasoning as showIdentityPicker()'s
+    // own comment (render() would otherwise wipe it out mid-view on
+    // the next poll/tab switch).
+    function openEvidenceModal(evidenceId) {
+      if (!evidenceItems.find(x => x.evidence_id === evidenceId)) return;
+      closeEvidenceModal();
+      const modal = document.createElement('div');
+      modal.className = 'dg-notes-identity-modal dg-notes-evidence-modal';
+      modal.dataset.evidenceId = evidenceId;
+      modal.innerHTML =
+        '<div class="dg-notes-identity-card dg-notes-evidence-card">' +
+        '<button type="button" class="dg-notes-evidence-close">&times;</button>' +
+        '<div class="dg-notes-evidence-body"></div>' +
+        '</div>';
+      modal.addEventListener('click', e => { if (e.target === modal) closeEvidenceModal(); });
+      document.body.appendChild(modal);
+      evidenceModalEl = modal;
+      modal.querySelector('.dg-notes-evidence-close').addEventListener('click', closeEvidenceModal);
+      renderEvidenceModalBody_(evidenceId);
+      markEvidenceSeenIfNeeded_(evidenceId);
+    }
+    function closeEvidenceModal() {
+      if (evidenceModalEl) { evidenceModalEl.remove(); evidenceModalEl = null; }
+    }
+
     function allVisibleBlocks() {
       const out = [];
       Object.keys(notesByCode).forEach(code => {
@@ -347,7 +560,10 @@
     }
     function sharedBlocksSorted() {
       return allVisibleBlocks()
-        .filter(b => b.shared)
+        // evidence_remark blocks are shown only in the Evidence detail
+        // modal, never mixed into the general Shared feed -- see
+        // mountEditor()'s own filter for the fuller reasoning.
+        .filter(b => b.shared && b.type !== 'evidence_remark')
         .sort((a, b) => (a.created_at || a.updated_at || 0) - (b.created_at || b.updated_at || 0));
     }
     function matchesSearch(block) {
@@ -456,7 +672,8 @@
         '<label class="dg-notes-toggle-label-inline"><input type="checkbox" class="dg-notes-plain-fonts"' + (plainFonts ? ' checked' : '') + '> Plain fonts</label>' +
         '</div>' +
         '<div class="dg-notes-body">' +
-        '<aside class="dg-notes-toc"><div class="dg-notes-toc-label">Index</div><div id="dg-notes-toc-mount"></div></aside>' +
+        '<aside class="dg-notes-toc"><div class="dg-notes-toc-label">Index</div><div id="dg-notes-toc-mount"></div>' +
+        '<div id="dg-notes-evidence-mount"></div></aside>' +
         '<main class="dg-notes-main">' +
         bodyHtml +
         '</main></div>' +
@@ -469,6 +686,7 @@
         refreshReadOnlyFeed();
       }
       refreshToc();
+      refreshEvidenceSidebar();
     }
 
     // Updates just the TOC and tab ink colors in place, without
@@ -508,7 +726,9 @@
       if (searchEverywhere && searchTerm) {
         if (label) label.textContent = 'Search Results';
         const hits = allVisibleBlocks()
-          .filter(b => (b.agent_code === agentCode || b.shared) && matchesSearch(b))
+          // evidence_remark blocks are reachable from the Evidence
+          // sidebar/detail modal instead, not general note search.
+          .filter(b => b.type !== 'evidence_remark' && (b.agent_code === agentCode || b.shared) && matchesSearch(b))
           .sort((a, b) => (a.created_at || a.updated_at || 0) - (b.created_at || b.updated_at || 0));
         mount.innerHTML = hits.length
           ? hits.map(b => {
@@ -889,6 +1109,12 @@
       currentBlockId = null;
       tagPopoverOpen = false;
       const initialBlocks = (notesByCode[agentCode] || []).slice()
+        // evidence_remark blocks (see the Evidence sidebar/detail view
+        // further down) reuse this same CellNotes table but aren't a
+        // tool Editor.js has registered -- keep them out of the live
+        // document entirely, they're rendered only in the Evidence
+        // detail modal.
+        .filter(b => b.type !== 'evidence_remark')
         .sort((a, b) => a.sort_order - b.sort_order)
         .map(b => {
           sharedByBlockId[b.block_id] = !!b.shared;
@@ -1086,6 +1312,7 @@
     function loadOwnBlocksIntoEditor() {
       if (!editorInstance) return;
       const initialBlocks = (notesByCode[agentCode] || []).slice()
+        .filter(b => b.type !== 'evidence_remark') // see mountEditor()'s own filter for why
         .sort((a, b) => a.sort_order - b.sort_order)
         .map(b => {
           sharedByBlockId[b.block_id] = !!b.shared;
@@ -1109,9 +1336,13 @@
       });
     }
 
+    function pollTick_() {
+      fetchNotes();
+      fetchEvidence();
+    }
     function startPolling() {
       stopPolling();
-      pollTimer = setInterval(fetchNotes, POLL_MS);
+      pollTimer = setInterval(pollTick_, POLL_MS);
     }
     function stopPolling() {
       if (pollTimer) clearInterval(pollTimer);
@@ -1119,12 +1350,12 @@
     }
 
     render();
-    fetchNotes();
+    pollTick_();
     startPolling();
 
     return {
-      refresh: fetchNotes,
-      destroy: () => { stopPolling(); unmountEditor(); },
+      refresh: pollTick_,
+      destroy: () => { stopPolling(); closeEvidenceModal(); unmountEditor(); },
     };
   }
 

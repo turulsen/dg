@@ -289,6 +289,20 @@
 #dg-notes-panel .dg-notes-toc-item-text{ flex:1 1 auto; min-width:0; }
 #dg-notes-panel .dg-notes-toc-empty{ font-size:11px; color:rgba(43,36,22,.5); font-style:italic; }
 
+/* Evidence sidebar list -- same subhead/compact-link treatment as
+   Pinned/Index above it, own dot marker (red = unseen) instead of the
+   Index's per-author color dot since this isn't attributed to anyone. */
+#dg-notes-panel .dg-notes-evidence-item{
+  display:flex; align-items:center; gap:6px; font-size:12px; color:#3a3220; text-decoration:none;
+  padding:4px 0; border-bottom:1px dotted rgba(58,40,10,.15);
+}
+#dg-notes-panel .dg-notes-evidence-item:hover{ color:#1a1508; }
+#dg-notes-panel .dg-notes-evidence-dot{
+  width:7px; height:7px; border-radius:50%; flex-shrink:0; background:rgba(58,40,10,.2);
+}
+#dg-notes-panel .dg-notes-evidence-dot.unseen{ background:var(--red); box-shadow:0 0 0 2px rgba(197,48,48,.2); }
+#dg-notes-panel .dg-notes-evidence-title{ flex:1 1 auto; min-width:0; }
+
 #dg-notes-panel .dg-notes-main{ flex:1; min-width:0; }
 
 #dg-notes-panel .dg-notes-empty{
@@ -460,6 +474,65 @@
   border:none; border-radius:4px; padding:11px; cursor:pointer;
 }
 .dg-notes-identity-confirm:disabled{ opacity:.4; cursor:not-allowed; }
+
+/* Evidence detail modal -- same overlay/card chrome as the identity
+   picker (.dg-notes-identity-modal/-card), just wider and scrollable
+   since it can carry a photo/PDF plus a growing remarks thread. */
+.dg-notes-evidence-card{ max-width:480px; max-height:85vh; overflow-y:auto; position:relative; padding-top:40px; }
+.dg-notes-evidence-close{
+  position:absolute; top:10px; right:10px; width:28px; height:28px; border-radius:50%;
+  background:rgba(58,40,10,.08); border:none; color:#2b2416; font-size:18px; line-height:1; cursor:pointer;
+}
+.dg-notes-evidence-close:hover{ background:rgba(58,40,10,.18); }
+.dg-notes-evidence-photo-img{ max-width:100%; border-radius:4px; margin:8px 0; display:block; }
+.dg-notes-evidence-photo-pdf{
+  display:inline-flex; align-items:center; gap:6px; font-size:13px; margin:8px 0; padding:8px 12px;
+  background:rgba(58,40,10,.06); border:1px solid rgba(58,40,10,.2); border-radius:4px;
+}
+.dg-notes-evidence-photo-pdf a{ color:#1a3a6e; text-decoration:none; }
+.dg-notes-evidence-photo-pdf a:hover{ text-decoration:underline; }
+.dg-notes-evidence-body-text{ font-size:13px; color:#2b2416; line-height:1.6; white-space:pre-wrap; }
+.dg-notes-evidence-remarks-list{ display:flex; flex-direction:column; gap:10px; margin:6px 0 var(--s4); }
+.dg-notes-evidence-remark{ background:rgba(58,40,10,.04); border-radius:4px; padding:8px 10px; }
+.dg-notes-evidence-remark-head{ display:flex; align-items:center; gap:6px; margin-bottom:4px; }
+.dg-notes-evidence-remark-text{ font-size:12px; color:#2b2416; white-space:pre-wrap; line-height:1.5; }
+.dg-notes-evidence-remark-del{
+  margin-left:auto; background:none; border:none; color:rgba(43,36,22,.5); font-size:15px; line-height:1;
+  cursor:pointer; padding:0 2px;
+}
+.dg-notes-evidence-remark-del:hover{ color:var(--red); }
+.dg-notes-evidence-compose{ display:flex; flex-direction:column; gap:8px; }
+.dg-notes-evidence-remark-input{
+  width:100%; min-height:56px; font-family:'Courier Prime',monospace; font-size:12px; color:#2b2416;
+  background:var(--paper); border:1px solid rgba(58,40,10,.25); border-radius:4px; padding:8px; resize:vertical;
+}
+.dg-notes-evidence-remark-add{
+  align-self:flex-start; font-family:'Courier Prime',monospace; font-size:12px; background:#1a1508; color:var(--paper);
+  border:none; border-radius:4px; padding:8px 14px; cursor:pointer;
+}
+.dg-notes-evidence-remark-add:hover{ opacity:.85; }
+
+/* The modal is appended to document.body, outside #dg-notes-panel (same
+   placement as the identity modal above) -- so the author/shared badge
+   styles reused here need their own unprefixed copy, the #dg-notes-panel
+   ones never match here. */
+.dg-notes-evidence-modal .dg-notes-author-badge{
+  display:inline-block; font-size:9px; letter-spacing:.06em; color:#fff;
+  padding:2px 7px; border-radius:3px; background:#4a5568;
+}
+.dg-notes-evidence-modal .dg-notes-shared-badge{
+  display:inline-block; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:rgba(43,36,22,.6);
+  border:1px solid rgba(58,40,10,.25); border-radius:3px; padding:2px 6px; white-space:nowrap;
+}
+.dg-notes-evidence-modal .dg-notes-empty{ font-size:13px; color:rgba(43,36,22,.55); font-style:italic; padding:6px 0; }
+.dg-notes-evidence-modal .dg-notes-toc-subhead{
+  font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase;
+  color:rgba(43,36,22,.5); margin:14px 0 4px;
+}
+.dg-notes-evidence-modal .dg-notes-toggle-label-inline{
+  display:flex; align-items:center; gap:5px; font-family:'Courier Prime',monospace; font-size:11px;
+  color:#3a3220; white-space:nowrap; cursor:pointer;
+}
 
 @media (max-width: 720px){
   #dg-notes-panel .dg-notes-body{ flex-direction:column; }
