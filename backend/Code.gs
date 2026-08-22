@@ -1649,7 +1649,40 @@ function getOrCreateDeletedSheet(name, liveHeaders) {
     return sheet;
   }
   ensureDeletedAtColumn(sheet);
+  reconcileDeletedSheetColumns_(sheet, liveHeaders);
   return sheet;
+}
+
+// The live sheet this mirrors (Characters/Briefs) has gained new
+// columns many times over this campaign's life -- every addition so
+// far has been appended at the end (same pattern as every other
+// ensure*Column-style helper in this file), never inserted in the
+// middle or renamed. Without this, a Deleted sheet created before one
+// of those additions keeps its old, shorter header row forever (only
+// ensureDeletedAtColumn's own column ever gets added to it) while
+// deleteCharacter() below still appends the FULL current-width row
+// copied straight from the live sheet -- so "Deleted At" silently
+// lands one or more columns to the right of where the header row says
+// it is. purgeOldDeleted() then reads whatever real character data
+// happens to sit in that stale header position as if it were the
+// deletion timestamp, which explains "Recently Deleted never purges"
+// even on a deploy that already has the purge logic itself fixed.
+// Inserting the missing headers right before "Deleted At" keeps every
+// already-deleted row's existing values in their original columns
+// (the new columns just come back blank for them, same as if those
+// rows had simply never used a field that didn't exist yet) and
+// realigns every future appendRow() call to match liveHeaders again.
+function reconcileDeletedSheetColumns_(sheet, liveHeaders) {
+  const lastCol = sheet.getLastColumn();
+  if (lastCol === 0) return;
+  const headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const deletedAtIdx = headerRow.indexOf('Deleted At');
+  const existing = deletedAtIdx === -1 ? headerRow : headerRow.slice(0, deletedAtIdx);
+  const missing = liveHeaders.filter(function (h) { return existing.indexOf(h) === -1; });
+  if (!missing.length) return;
+  const insertBefore = deletedAtIdx === -1 ? lastCol + 1 : deletedAtIdx + 1;
+  sheet.insertColumnsBefore(insertBefore, missing.length);
+  sheet.getRange(1, insertBefore, 1, missing.length).setValues([missing]);
 }
 
 // A soft-deleted Agent older than this is gone for good -- "Recently
@@ -1693,7 +1726,8 @@ function purgeOldDeleted() {
     // deleting row i shifts every row below it up, so walking forward
     // would skip a row right after deleting its predecessor.
     for (let i = data.length - 1; i >= 1; i--) {
-      const deletedAt = normalizedDeletedAt_(data[i][deletedAtCol]);
+      const row = data[i];
+      const deletedAt = normalizedDeletedAt_(row[deletedAtCol]);
       // A row with no parseable Deleted At at all (blank cell) predates
       // this column being added -- there's no way to know its real age,
       // but the only way it could exist without one is if it was deleted
@@ -1701,7 +1735,19 @@ function purgeOldDeleted() {
       // the retention window by definition. Treating "no timestamp" as
       // "keep forever" (the previous behavior) is exactly why Recently
       // Deleted was accumulating years-old test rows that never left.
-      if (!deletedAt || deletedAt < cutoff) sheet.deleteRow(i + 1);
+      //
+      // A row with any real data sitting PAST the Deleted At column is
+      // the same problem in a sneakier form: it was appended back when
+      // the live sheet had more columns than this Deleted sheet's
+      // header row did yet (reconcileDeletedSheetColumns_() closes that
+      // gap for every append from here on, but can't fix a row that's
+      // already this shape) -- whatever's actually sitting under
+      // "Deleted At" for that row is unrelated character data, not a
+      // real timestamp, and its true deletion time is unrecoverable.
+      // Same "can't know its real age, so treat it as already expired"
+      // call as the blank-cell case above.
+      const hasStrayTrailingData = row.slice(deletedAtCol + 1).some(function (v) { return v !== '' && v !== null; });
+      if (!deletedAt || hasStrayTrailingData || deletedAt < cutoff) sheet.deleteRow(i + 1);
     }
   });
 }
