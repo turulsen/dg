@@ -3492,8 +3492,10 @@ function enterSplitView(persist = true) {
     }
     document.body.classList.add('dg-split-active');
     setTheme('mobile', { persist: false });
+    // Relative to this page's own location (stats/index.html), not the
+    // site root -- notes/ is a sibling of stats/, one level up.
     const iframe = document.getElementById('dg-split-notes-frame');
-    if (iframe) iframe.src = 'notes/index.html?code=' + encodeURIComponent(code);
+    if (iframe) iframe.src = '../notes/index.html?code=' + encodeURIComponent(code);
     const btn = document.getElementById('split-view-toggle-btn');
     if (btn) btn.classList.add('active');
     if (persist) localStorage.setItem(SPLIT_VIEW_KEY, '1');

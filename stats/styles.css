@@ -1886,6 +1886,11 @@ body.dg-split-active #dg-split-notes-pane {
     flex: 1 1 480px;
     min-width: 0;
     min-height: 70vh;
+    /* Clears the fixed Split View toggle + settings cog, which sit at
+       top:14px over whatever's underneath them -- Notes' own header UI
+       starts right at the top of its content with no natural gap of
+       its own to absorb that overlap. */
+    margin-top: 80px;
     border: 1px solid var(--primary-color);
     background: #faf7ee;
 }

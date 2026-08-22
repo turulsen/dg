@@ -6590,7 +6590,7 @@ def test_split_view(p):
 
     iframe_src = page.get_attribute("#dg-split-notes-frame", "src") or ""
     record("stats", "the Notes pane iframe points at this Agent's own Cloud Save code",
-           iframe_src == f"notes/index.html?code={cloud_code}", f"{iframe_src} vs code={cloud_code}")
+           iframe_src == f"../notes/index.html?code={cloud_code}", f"{iframe_src} vs code={cloud_code}")
 
     saved_theme_during_split = page.evaluate("() => localStorage.getItem('dg_theme')")
     record("stats", "forcing Mobile for Split View does not overwrite the user's real saved theme preference",
