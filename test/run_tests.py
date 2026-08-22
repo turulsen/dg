@@ -6678,7 +6678,26 @@ def test_split_view_tablet_breakpoint(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=list_cells" in url:
+                res = {"status": "OK", "cells": [{"cell_id": "cell_1", "name": "Cell Alpha",
+                                                    "handler": "Sam", "member_codes": []}]}
+            elif "action=list_cell_notes" in url:
+                res = {"status": "OK", "notes": {}, "identities": {}}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
 
     # A portrait iPad's own CSS viewport width sits right in what used
     # to be the disagreement gap.
