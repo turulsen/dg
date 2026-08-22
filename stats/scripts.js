@@ -3257,6 +3257,14 @@ function dgInitStatsSheet() {
         setTheme(savedTheme, { skipSave: true });
         const wantLivePlay = forceLivePlay || localStorage.getItem('dg_live_play') === '1';
         if (wantLivePlay) setLivePlay(true, { skipSave: true });
+        // Split View restore: only if a Cloud Save code is already on this
+        // device (getCloudCode() reads localStorage directly, so it's
+        // available immediately regardless of how far character load has
+        // gotten) -- otherwise silently stays off rather than restoring to
+        // a broken state with no Agent to open Notes for.
+        if (localStorage.getItem(SPLIT_VIEW_KEY) === '1' && window.dgCloudSave?.getCloudCode?.()) {
+            enterSplitView(false);
+        }
         const sel = document.getElementById('cs-theme-select');
         if (sel) sel.addEventListener('change', (e) => setTheme(e.target.value));
         const nameEl = document.getElementById('cs-name');
@@ -3394,7 +3402,7 @@ function sosPlaceholder(text) {
  * theme-specific setup — LP sheet build/sync, pyramid visibility, button states,
  * and Son of Sam's plus-button glyphs.
  */
-function setTheme(theme, { skipSave = false } = {}) {
+function setTheme(theme, { skipSave = false, persist = true } = {}) {
     try {
         // Save current state synchronously before switching so no form values are
         // lost through the debounce window.
@@ -3411,7 +3419,11 @@ function setTheme(theme, { skipSave = false } = {}) {
 
         body.classList.remove('theme-xfiles', 'theme-modern', 'theme-son-of-sam', 'theme-field-notes', 'theme-mobile');
         body.classList.add('theme-' + theme);
-        localStorage.setItem('dg_theme', theme);
+        // persist:false is Split View forcing the Mobile skin on top of
+        // whichever theme is really selected -- see dgSplitView below.
+        // That's a view mode, not a preference change, so it must not
+        // overwrite the user's actual saved theme.
+        if (persist) localStorage.setItem('dg_theme', theme);
         const sel = document.getElementById('cs-theme-select');
         if (sel) sel.value = theme;
         // Son of Sam: swap all stat increment buttons between + and ⛧
@@ -3458,6 +3470,54 @@ function setTheme(theme, { skipSave = false } = {}) {
         }
     } catch (e) { }
 }
+
+/**
+ * Split View: this sheet -- forced into the Mobile theme, a fixed compact
+ * skin rather than one gated by viewport-width @media queries, so it still
+ * looks right at half the window's width -- alongside this Agent's Notes
+ * in an iframe. A view mode layered on top of whichever theme is really
+ * selected, same relationship Live Play already has to theme: entering it
+ * doesn't touch the user's saved theme preference (setTheme's persist:false
+ * above), exiting restores exactly what was there before. Needs a Cloud
+ * Save code (see cloud-sync.js) to know which Agent's Notes to open --
+ * there's no character to open Notes for until one exists.
+ */
+const SPLIT_VIEW_KEY = 'dg_split_view';
+
+function enterSplitView(persist = true) {
+    const code = window.dgCloudSave?.getCloudCode?.() || '';
+    if (!code) {
+        if (window.showToast) window.showToast('Name and save your Agent first — Split View needs a Cloud Save code to know which Agent\'s Notes to open.');
+        return;
+    }
+    document.body.classList.add('dg-split-active');
+    setTheme('mobile', { persist: false });
+    const iframe = document.getElementById('dg-split-notes-frame');
+    if (iframe) iframe.src = 'notes/index.html?code=' + encodeURIComponent(code);
+    const btn = document.getElementById('split-view-toggle-btn');
+    if (btn) btn.classList.add('active');
+    if (persist) localStorage.setItem(SPLIT_VIEW_KEY, '1');
+}
+
+function exitSplitView(persist = true) {
+    document.body.classList.remove('dg-split-active');
+    const savedTheme = localStorage.getItem('dg_theme') || 'xfiles';
+    setTheme(savedTheme, { skipSave: true });
+    // Drops the iframe's document so Notes' own polling stops running in
+    // the background while Split View is off, not just visually hidden.
+    const iframe = document.getElementById('dg-split-notes-frame');
+    if (iframe) iframe.src = 'about:blank';
+    const btn = document.getElementById('split-view-toggle-btn');
+    if (btn) btn.classList.remove('active');
+    if (persist) localStorage.setItem(SPLIT_VIEW_KEY, '0');
+}
+
+function toggleSplitView() {
+    if (document.body.classList.contains('dg-split-active')) exitSplitView();
+    else enterSplitView();
+}
+
+window.dgSplitView = { enter: enterSplitView, exit: exitSplitView, toggle: toggleSplitView };
 
 /**
  * Toggles Live Play mode: a compact, at-the-table view (sticky HP/WP/SAN

@@ -148,6 +148,15 @@
     <div style="max-width:1400px;margin:0 auto;padding:16px 20px 0;">
         <a href="../agent-hub.html" style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.05em;color:#8a8a8a;text-decoration:none;">&larr; Agent Hub</a>
     </div>
+    <!-- Split View: this sheet (forced into the Mobile theme, a fixed
+         compact skin rather than a screen-width-responsive one, so it
+         still looks right at half the window's width) alongside this
+         Agent's Notes -- see dgSplitView in scripts.js. A toggle anyone
+         can flip, not an auto width-based switch; needs a Cloud Save
+         code to know which Agent's Notes to open, so it no-ops with a
+         toast until the sheet has been named and synced at least once. -->
+    <button type="button" id="split-view-toggle-btn" class="dg-split-toggle-btn" onclick="dgSplitView.toggle()"
+        title="Split View: this sheet + your Notes side by side">&#9707; Split View</button>
     <!-- Settings cog -- houses Theme, Live Play, Load by Code, Export, and
          Open Agent File so the main page opens on Import/Wizard instead of
          a wall of controls a brand-new recruit doesn't need yet. -->
@@ -916,6 +925,13 @@
                 </div>
             </div>
         </main>
+        <!-- Split View's second pane -- see dgSplitView in scripts.js.
+             Hidden (display:none) whenever Split View is off; the iframe's
+             src is only ever set while it's on, so Notes' own polling
+             isn't running in the background the rest of the time. -->
+        <div id="dg-split-notes-pane">
+            <iframe id="dg-split-notes-frame" title="Notes" loading="lazy"></iframe>
+        </div>
         <footer class="site-footer">
             <div class="github-link-container">
                 <a href="https://github.com/pigeon-labs-stack/DELTA-GREEN-STATS" target="_blank"

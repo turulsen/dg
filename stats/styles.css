@@ -1861,6 +1861,65 @@ select {
     width: 100%;
 }
 
+/* ── Split View: this sheet + Notes side by side. #dg-split-notes-pane
+   sits right after #app-main (see stats/index.html); a body-level class
+   turns them into two flex children instead of #app-main claiming the
+   full row alone. Row on desktop/tablet-width windows, stacked on a
+   narrow real one -- the sheet pane itself renders correctly at either
+   width regardless, since dgSplitView forces the Mobile theme (a fixed
+   compact skin, not one gated by viewport-width @media queries) rather
+   than relying on this pane's own width to trigger normal responsive
+   breakpoints, which wouldn't fire correctly for a flex child narrower
+   than the real window. ── */
+#dg-split-notes-pane {
+    display: none;
+}
+
+body.dg-split-active #app-main {
+    width: auto;
+    flex: 1 1 480px;
+    min-width: 0;
+}
+
+body.dg-split-active #dg-split-notes-pane {
+    display: block;
+    flex: 1 1 480px;
+    min-width: 0;
+    min-height: 70vh;
+    border: 1px solid var(--primary-color);
+    background: #faf7ee;
+}
+
+#dg-split-notes-pane iframe {
+    width: 100%;
+    height: 100%;
+    min-height: 70vh;
+    border: none;
+    display: block;
+}
+
+@media (max-width: 900px) {
+    body.dg-split-active #app-main,
+    body.dg-split-active #dg-split-notes-pane {
+        flex-basis: 100%;
+    }
+}
+
+.dg-split-toggle-btn {
+    position: fixed;
+    top: 14px;
+    right: 64px;
+    z-index: 9400;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 0.75rem;
+    padding: 9px 12px;
+}
+
+.dg-split-toggle-btn.active {
+    background-color: var(--primary-color);
+    color: var(--bg-color);
+}
+
 .stats-section {
     display: flex;
     flex-direction: column;

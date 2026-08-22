@@ -6522,6 +6522,113 @@ def test_notes_code_url_param(p):
     return errs
 
 
+def test_split_view(p):
+    """Split View: the character sheet -- forced into the Mobile theme
+    (a fixed compact skin, not one gated by viewport-width @media
+    queries, so it still renders correctly at half the window's width)
+    -- alongside this Agent's Notes in an iframe. A toggle anyone can
+    flip, not an automatic width-based switch; needs a Cloud Save code
+    to know which Agent's Notes to open, so it no-ops until the sheet
+    has been named at least once. Entering it must not clobber the
+    user's real saved theme preference -- exiting has to restore it
+    exactly."""
+    page = p.new_page()
+    page.set_default_timeout(10000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=list_cells" in url:
+                res = {"status": "OK", "cells": [{"cell_id": "cell_1", "name": "Cell Alpha",
+                                                    "handler": "Sam", "member_codes": []}]}
+            elif "action=list_cell_notes" in url:
+                res = {"status": "OK", "notes": {}, "identities": {}}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+
+    record("stats", "Split View toggle button is present",
+           page.locator("#split-view-toggle-btn").count() == 1, "")
+
+    # No Cloud Save code yet -- clicking must no-op rather than activate
+    # split mode with nothing for the Notes pane to point at.
+    page.click("#split-view-toggle-btn")
+    page.wait_for_timeout(200)
+    record("stats", "clicking Split View with no Cloud Save code yet does not activate it",
+           page.evaluate("() => document.body.classList.contains('dg-split-active')") is False, "")
+
+    page.fill("#cs-name", "Split Test Agent")
+    page.wait_for_timeout(300)
+    cloud_code = page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')")
+    record("stats", "naming the agent mints a Cloud Save code", bool(cloud_code), str(cloud_code))
+
+    page.select_option("#cs-theme-select", "field-notes")
+    page.wait_for_timeout(150)
+
+    page.click("#split-view-toggle-btn")
+    page.wait_for_timeout(400)
+    record("stats", "Split View activates: body picks up dg-split-active",
+           page.evaluate("() => document.body.classList.contains('dg-split-active')") is True, "")
+    record("stats", "Split View forces the sheet into the Mobile theme",
+           page.evaluate("() => document.body.classList.contains('theme-mobile')") is True, "")
+    record("stats", "the toggle button shows an active state",
+           "active" in (page.get_attribute("#split-view-toggle-btn", "class") or ""), "")
+
+    iframe_src = page.get_attribute("#dg-split-notes-frame", "src") or ""
+    record("stats", "the Notes pane iframe points at this Agent's own Cloud Save code",
+           iframe_src == f"notes/index.html?code={cloud_code}", f"{iframe_src} vs code={cloud_code}")
+
+    saved_theme_during_split = page.evaluate("() => localStorage.getItem('dg_theme')")
+    record("stats", "forcing Mobile for Split View does not overwrite the user's real saved theme preference",
+           saved_theme_during_split == "field-notes", str(saved_theme_during_split))
+
+    wait_for_condition(
+        lambda: page.eval_on_selector(
+            "#dg-split-notes-frame",
+            "el => !!(el.contentDocument && el.contentDocument.readyState === 'complete' && el.contentDocument.body && el.contentDocument.body.innerHTML.length > 0)"
+        ),
+        timeout_ms=6000)
+    record("stats", "the Notes iframe actually loads notes/index.html content",
+           page.frame_locator("#dg-split-notes-frame").locator("body").count() >= 1, "")
+
+    # Toggle off restores the real theme and tears the pane back down.
+    page.click("#split-view-toggle-btn")
+    page.wait_for_timeout(300)
+    record("stats", "toggling off drops dg-split-active",
+           page.evaluate("() => document.body.classList.contains('dg-split-active')") is False, "")
+    record("stats", "toggling off restores the real theme, not Mobile",
+           page.evaluate("() => document.body.classList.contains('theme-field-notes')") is True, "")
+    restored_theme = page.evaluate("() => localStorage.getItem('dg_theme')")
+    record("stats", "the real theme preference in storage is unchanged after the round trip",
+           restored_theme == "field-notes", str(restored_theme))
+
+    # A reload with the toggle left on should auto-restore it, since a
+    # Cloud Save code already exists on this device.
+    page.evaluate("() => localStorage.setItem('dg_split_view', '1')")
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_timeout(600)
+    record("stats", "Split View auto-restores on reload when left on and a Cloud Save code exists",
+           page.evaluate("() => document.body.classList.contains('dg-split-active')") is True, "")
+
+    record("stats", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
+
 def main():
     with sync_playwright() as p:
         # Chrome's own background-tab timer throttling policy applies to a
@@ -6685,6 +6792,8 @@ def main():
 
         safe(test_notes_reload_shows_own_previous_blocks, browser, area="notes")
         safe(test_notes_code_url_param, browser, area="notes")
+
+        safe(test_split_view, browser, area="stats")
 
         browser.close()
 
