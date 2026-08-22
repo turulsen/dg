@@ -6814,9 +6814,10 @@ def test_mobile_notes_fullscreen(p):
     wait_for_condition(
         lambda: page.eval_on_selector(
             "#dg-split-notes-frame",
-            "el => !!(el.contentDocument && el.contentDocument.readyState === 'complete' && el.contentDocument.body && el.contentDocument.body.innerHTML.length > 0)"
+            "el => { const d = el.contentDocument; const b = d && d.getElementById('notes-play-btn'); "
+            "return !!(b && getComputedStyle(b).display !== 'none'); }"
         ),
-        timeout_ms=6000)
+        timeout_ms=10000)
     frame = page.frame_locator("#dg-split-notes-frame")
     record("stats", "Notes' own Agent Hub link is hidden while embedded this way",
            frame.locator("#notes-back-link").is_visible() is False, "")
