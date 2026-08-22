@@ -6250,6 +6250,7 @@ def test_notes_evidence_integration(p):
     seen_map = {"ev2": True}
     posts = []
     fake_png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    imgdata_calls = {"n": 0}
 
     def fake_apps_script(route):
         req = route.request
@@ -6277,6 +6278,7 @@ def test_notes_evidence_integration(p):
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         if "action=imgdata" in url:
+            imgdata_calls["n"] += 1
             cb = url.split("callback=")[1].split("&")[0]
             route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK", "dataUri": fake_png})})')
             return
@@ -6336,6 +6338,24 @@ def test_notes_evidence_integration(p):
     record("notes", "opening it posts mark_evidence_seen for this Agent and this item",
            any(x.get("action") == "mark_evidence_seen" and x.get("evidence_id") == "ev1" and x.get("agent_code") == "OWEN-CS12" for x in posts), str(posts))
     record("notes", "its gdrive-backed photo resolves and renders as a real image",
+           page.locator(".dg-notes-evidence-photo-img").count() == 1, "")
+
+    # Regression: a live report described the Evidence photo flickering
+    # in and out in the popup -- traced to the 5s poll tick (POLL_MS)
+    # unconditionally rebuilding an open modal, including re-blanking
+    # the photo to its loading placeholder and re-fetching it from
+    # Drive every single tick, even though the photo never changed. A
+    # real network round trip makes that blank gap visible; this mock
+    # resolves near-instantly, so the reliable signature to check for
+    # is the redundant re-fetch itself, not a DOM-visibility sample
+    # that could miss a sub-poll-interval blink. Wait past two full
+    # poll ticks and confirm imgdata was only ever fetched once.
+    calls_after_first_resolve = imgdata_calls["n"]
+    page.wait_for_timeout(11000)
+    record("notes", "the resolved Evidence photo is not re-fetched from Drive on later poll ticks",
+           imgdata_calls["n"] == calls_after_first_resolve,
+           f"calls after first resolve={calls_after_first_resolve}, calls now={imgdata_calls['n']}")
+    record("notes", "the resolved Evidence photo is still showing after two poll ticks, not blanked back to loading",
            page.locator(".dg-notes-evidence-photo-img").count() == 1, "")
 
     posts.clear()
