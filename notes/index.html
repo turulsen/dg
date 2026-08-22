@@ -44,16 +44,22 @@
   .picker-btn:hover{ opacity:.85; }
 
   /* Notes' own way back to the sheet when embedded as stats/index.html's
-     mobile fullscreen pane (see notes-play-btn below) -- deliberately
-     real button chrome, not the header's subtle .back-link text style,
-     since there's no sheet visible here to make "how do I get back"
-     obvious any other way. */
+     mobile fullscreen pane (see notes-play-btn below) -- docked at the
+     exact same fixed bottom-left spot #notes-widget-btn occupies on the
+     sheet (same size, same dark pill, same font), so flipping between
+     the two feels like one control switching label/direction rather
+     than two unrelated buttons in different places. */
   .notes-play-btn{
-    font-family:'Courier Prime',monospace; font-size:12px; font-weight:700;
-    background:var(--ink); color:var(--paper); border:none; border-radius:3px;
-    padding:8px 16px; cursor:pointer; display:none;
+    display:none;
+    position:fixed; left:14px; bottom:14px; z-index:9999;
+    font-family:'JetBrains Mono',ui-monospace,monospace; font-size:12px;
+    font-weight:400; letter-spacing:normal; text-transform:none;
+    background:#161a14; color:#c9d4b8; border:1px solid #3a4432;
+    border-radius:20px; padding:8px 14px; cursor:pointer;
+    box-shadow:0 4px 14px rgba(0,0,0,.4);
   }
-  .notes-play-btn:hover{ opacity:.85; }
+  .notes-play-btn:hover{ background:#161a14; color:#c9d4b8; }
+  @media (max-width:600px){ .notes-play-btn{ bottom:78px; } }
   .picker-status{ font-size:11px; color:var(--ink-3); min-height:1.4em; }
 
   .notes-mount{ max-width:1100px; margin:var(--s5) auto 0; padding:0 6px; }
