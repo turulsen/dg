@@ -1959,6 +1959,11 @@ body.dg-split-active #dg-split-notes-pane {
     border-radius: 20px;
     padding: 8px 14px;
     box-shadow: 0 4px 14px rgba(0, 0, 0, .4);
+    /* Overrides the page's own @media(max-width:600px){button{width:100%}}
+       rule -- without this a plain <button> stretches full-width there,
+       same reason #dg-radio's own widget uses a <div> pill instead of a
+       real <button> to begin with. */
+    width: fit-content;
 }
 
 @media (max-width: 768px) {
