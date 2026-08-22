@@ -1939,7 +1939,13 @@ body.dg-split-active #dg-split-notes-pane {
    @media(max-width:600px) rule in assets/table-radio.js) and styled to
    match its collapsed pill -- same dark palette, same shape. Desktop-
    hidden by default; only shown under the 768px threshold. ── */
-.dg-notes-widget-btn {
+/* ID selector, not just .dg-notes-widget-btn -- .theme-mobile button
+   (a class+tag combo, higher specificity than a lone class) repaints
+   every <button> as a big chunky 44px-tall touch target with its own
+   font/padding/border, which otherwise silently wins over this rule
+   property-by-property regardless of source order. An ID beats that
+   outright without needing !important on each property. */
+#notes-widget-btn {
     display: none;
     position: fixed;
     left: 14px;
@@ -1953,11 +1959,15 @@ body.dg-split-active #dg-split-notes-pane {
     z-index: 9999;
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 12px;
+    font-weight: 400;
+    letter-spacing: normal;
+    text-transform: none;
     background: #161a14;
     color: #c9d4b8;
     border: 1px solid #3a4432;
     border-radius: 20px;
     padding: 8px 14px;
+    min-height: unset;
     box-shadow: 0 4px 14px rgba(0, 0, 0, .4);
     /* Overrides the page's own @media(max-width:600px){button{width:100%}}
        rule -- without this a plain <button> stretches full-width there,
@@ -1966,14 +1976,19 @@ body.dg-split-active #dg-split-notes-pane {
     width: fit-content;
 }
 
+#notes-widget-btn:hover {
+    background: #161a14;
+    color: #c9d4b8;
+}
+
 @media (max-width: 768px) {
-    .dg-notes-widget-btn {
+    #notes-widget-btn {
         display: block;
     }
 }
 
 @media (max-width: 600px) {
-    .dg-notes-widget-btn {
+    #notes-widget-btn {
         bottom: 78px;
     }
 }
@@ -1984,7 +1999,7 @@ body.dg-split-active #dg-split-notes-pane {
    full viewport. notes/index.html shows its own Play button (only when
    it detects it's embedded this way) to flip back. ── */
 body.dg-notes-fullscreen-active #app-main,
-body.dg-notes-fullscreen-active .dg-notes-widget-btn,
+body.dg-notes-fullscreen-active #notes-widget-btn,
 body.dg-notes-fullscreen-active #dg-radio,
 body.dg-notes-fullscreen-active #settings-cog-btn {
     display: none;
