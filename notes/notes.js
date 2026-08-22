@@ -251,6 +251,13 @@
     let evidenceItems = [];
     let evidenceSeenMap = {};
     let evidenceModalEl = null;
+    // Every 5s poll tick re-renders an already-open modal (see
+    // fetchEvidence() below) so a Cell-mate's new remark shows up live --
+    // but a Drive-backed photo doesn't change between polls, so without
+    // this cache each tick would blank it back to the loading placeholder
+    // and re-fetch it from Drive, flickering the image on and off in
+    // lockstep with the poll interval.
+    const evidencePhotoCache_ = {};
 
     const TAG_TYPES = [
       { id: 'npc', label: 'NPC' },
@@ -464,7 +471,13 @@
       let photoHtml = '';
       if (h.photo) {
         if (extractDriveId_(h.photo)) {
-          photoHtml = '<div class="dg-notes-evidence-photo-wrap"></div>';
+          const cached = evidencePhotoCache_[evidenceId];
+          const cachedDataUri = (cached && cached.src === h.photo) ? cached.dataUri : null;
+          photoHtml = cachedDataUri
+            ? (cachedDataUri.indexOf('data:application/pdf') === 0
+              ? '<div class="dg-notes-evidence-photo-pdf"><a href="' + dataUriToBlobUrl_(cachedDataUri) + '" target="_blank" rel="noopener">&#128196; Open PDF</a></div>'
+              : '<img class="dg-notes-evidence-photo-img" src="' + cachedDataUri + '" alt="">')
+            : '<div class="dg-notes-evidence-photo-wrap"></div>';
         } else if (h.photo.indexOf('data:application/pdf') === 0) {
           photoHtml = '<div class="dg-notes-evidence-photo-pdf"><a href="' + dataUriToBlobUrl_(h.photo) + '" target="_blank" rel="noopener">&#128196; Open PDF</a></div>';
         } else {
@@ -501,8 +514,10 @@
         '<button type="button" class="dg-notes-evidence-remark-add">Add Remark</button>' +
         '</div>';
 
-      if (extractDriveId_(h.photo)) {
+      const alreadyCached = evidencePhotoCache_[evidenceId] && evidencePhotoCache_[evidenceId].src === h.photo;
+      if (extractDriveId_(h.photo) && !alreadyCached) {
         loadEvidencePhotoDataUri_(h.photo, dataUri => {
+          evidencePhotoCache_[evidenceId] = { src: h.photo, dataUri: dataUri };
           const wrap = body.querySelector('.dg-notes-evidence-photo-wrap');
           if (!wrap) return;
           wrap.innerHTML = dataUri.indexOf('data:application/pdf') === 0
