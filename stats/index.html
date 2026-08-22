@@ -157,6 +157,16 @@
          toast until the sheet has been named and synced at least once. -->
     <button type="button" id="split-view-toggle-btn" class="dg-split-toggle-btn" onclick="dgSplitView.toggle()"
         title="Split View: this sheet + your Notes side by side">&#9707; Split View</button>
+    <!-- Mobile-only counterpart to Split View above -- a real side-by-side
+         split doesn't fit a phone-width screen, so instead this flips the
+         whole screen over to Notes (dgNotesFullscreen in scripts.js);
+         notes/index.html's own Play button (shown only when it detects
+         it's embedded this way) flips it back. Docks bottom-left, same
+         height as the Table Radio widget's own bottom-right mobile dock,
+         only shown at or under the same 768px width scripts.js already
+         uses elsewhere on this page to mean "small screen." -->
+    <button type="button" id="notes-widget-btn" class="dg-notes-widget-btn" onclick="dgNotesFullscreen.enter()"
+        title="Open Notes">&#128220; Notes</button>
     <!-- Settings cog -- houses Theme, Live Play, Load by Code, Export, and
          Open Agent File so the main page opens on Import/Wizard instead of
          a wall of controls a brand-new recruit doesn't need yet. -->

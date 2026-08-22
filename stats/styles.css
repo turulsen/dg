@@ -1925,6 +1925,79 @@ body.dg-split-active #dg-split-notes-pane {
     color: var(--bg-color);
 }
 
+/* Split View is a desktop/tablet setting only -- a real side-by-side
+   split doesn't fit a phone-width screen. Same 768px "is this a phone"
+   threshold dgInitStatsSheet() already uses elsewhere in scripts.js. */
+@media (max-width: 768px) {
+    .dg-split-toggle-btn {
+        display: none;
+    }
+}
+
+/* ── Mobile Notes widget: docks bottom-left, same height as the Table
+   Radio widget's own bottom-right mobile dock (see #dg-radio's
+   @media(max-width:600px) rule in assets/table-radio.js) and styled to
+   match its collapsed pill -- same dark palette, same shape. Desktop-
+   hidden by default; only shown under the 768px threshold. ── */
+.dg-notes-widget-btn {
+    display: none;
+    position: fixed;
+    left: 14px;
+    bottom: 14px;
+    /* #dg-radio (assets/table-radio.js) is a transparent wrapper sized
+       to fit its right-docked pill, but its own width -- min(280px,
+       calc(100vw - 28px)) -- spans nearly the full viewport on a phone,
+       so its (invisible where empty) bounding box reaches all the way
+       over to this button's left-docked position and would otherwise
+       intercept its clicks at #dg-radio's own z-index of 9998. */
+    z-index: 9999;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 12px;
+    background: #161a14;
+    color: #c9d4b8;
+    border: 1px solid #3a4432;
+    border-radius: 20px;
+    padding: 8px 14px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .4);
+}
+
+@media (max-width: 768px) {
+    .dg-notes-widget-btn {
+        display: block;
+    }
+}
+
+@media (max-width: 600px) {
+    .dg-notes-widget-btn {
+        bottom: 78px;
+    }
+}
+
+/* ── Mobile Notes fullscreen: dgNotesFullscreen (scripts.js) flips the
+   whole screen over to Notes instead of squeezing a split in -- the
+   sheet is hidden outright, not shrunk, and the Notes pane takes the
+   full viewport. notes/index.html shows its own Play button (only when
+   it detects it's embedded this way) to flip back. ── */
+body.dg-notes-fullscreen-active #app-main,
+body.dg-notes-fullscreen-active .dg-notes-widget-btn,
+body.dg-notes-fullscreen-active #dg-radio,
+body.dg-notes-fullscreen-active #settings-cog-btn {
+    display: none;
+}
+
+body.dg-notes-fullscreen-active #dg-split-notes-pane {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 9200;
+    margin: 0;
+    border: none;
+}
+
+body.dg-notes-fullscreen-active #dg-split-notes-pane iframe {
+    min-height: 100dvh;
+}
+
 .stats-section {
     display: flex;
     flex-direction: column;

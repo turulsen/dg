@@ -62,7 +62,14 @@
 <body class="folder-theme">
 
 <div class="notes-header">
-  <a class="back-link" href="../agent-hub.html">&larr; Agent Hub</a>
+  <a class="back-link" href="../agent-hub.html" id="notes-back-link">&larr; Agent Hub</a>
+  <!-- Shown instead of the Agent Hub link above when this page is the
+       mobile fullscreen-Notes pane of stats/index.html's Split View
+       feature (dgNotesFullscreen there) -- "Agent Hub" would navigate
+       out of the embedding page entirely, which isn't what flipping
+       back to the sheet means here. See the embed=fullscreen check
+       below. -->
+  <button type="button" class="back-link" id="notes-play-btn" style="background:none;border:none;cursor:pointer;display:none;">&#9654; Play</button>
   <h1>Player Notes</h1>
   <p>Shared and private session notes for your Cell. Anything you mark
      Shared is visible to every other member of the same Cell; everything
@@ -203,6 +210,25 @@
     try { return new URLSearchParams(location.search).get('code') || ''; } catch (e) { return ''; }
   }
   let urlCodeConsumed = false;
+
+  // stats/index.html's Split View feature (mobile: dgNotesFullscreen,
+  // desktop: dgSplitView) embeds this page in an iframe with
+  // embed=fullscreen or embed=split -- only the mobile fullscreen case
+  // needs a way back, since the split case leaves the sheet visible
+  // right alongside. Same-origin parent, so a direct call is simplest;
+  // guarded in case this ever loads standalone with the param somehow
+  // still attached (e.g. a bookmarked/shared link).
+  if (new URLSearchParams(location.search).get('embed') === 'fullscreen') {
+    const backLink = document.getElementById('notes-back-link');
+    const playBtn = document.getElementById('notes-play-btn');
+    if (backLink) backLink.style.display = 'none';
+    if (playBtn) {
+      playBtn.style.display = '';
+      playBtn.addEventListener('click', () => {
+        try { window.parent?.dgNotesFullscreen?.exit?.(); } catch (e) { /* not actually embedded this way */ }
+      });
+    }
+  }
 
   function proceed() {
     if (!urlCodeConsumed) {

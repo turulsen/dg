@@ -3261,10 +3261,20 @@ function dgInitStatsSheet() {
         // device (getCloudCode() reads localStorage directly, so it's
         // available immediately regardless of how far character load has
         // gotten) -- otherwise silently stays off rather than restoring to
-        // a broken state with no Agent to open Notes for.
-        if (localStorage.getItem(SPLIT_VIEW_KEY) === '1' && window.dgCloudSave?.getCloudCode?.()) {
+        // a broken state with no Agent to open Notes for. Desktop/tablet
+        // only -- see dg-notes-fullscreen-active's comment in styles.css
+        // for why a real side-by-side split doesn't fit a phone screen.
+        if (localStorage.getItem(SPLIT_VIEW_KEY) === '1' && window.dgCloudSave?.getCloudCode?.()
+            && !window.matchMedia(DG_MOBILE_QUERY).matches) {
             enterSplitView(false);
         }
+        // A window that narrows past the mobile threshold while Split
+        // View is active (browser resize, tablet rotation) forces it back
+        // off rather than leaving a real side-by-side split squeezed into
+        // a phone-width window.
+        window.matchMedia(DG_MOBILE_QUERY).addEventListener('change', (e) => {
+            if (e.matches && document.body.classList.contains('dg-split-active')) exitSplitView();
+        });
         const sel = document.getElementById('cs-theme-select');
         if (sel) sel.addEventListener('change', (e) => setTheme(e.target.value));
         const nameEl = document.getElementById('cs-name');
@@ -3520,6 +3530,41 @@ function toggleSplitView() {
 }
 
 window.dgSplitView = { enter: enterSplitView, exit: exitSplitView, toggle: toggleSplitView };
+
+const DG_MOBILE_QUERY = '(max-width: 768px)';
+
+/**
+ * Mobile counterpart to Split View: a real side-by-side split doesn't
+ * fit a phone-width screen, so instead this flips the whole screen over
+ * to this Agent's Notes rather than squeezing both in -- the sheet is
+ * hidden outright (dg-notes-fullscreen-active in styles.css), not
+ * shrunk. Shares the same #dg-split-notes-pane/#dg-split-notes-frame
+ * elements Split View uses; the two are mutually exclusive (entering
+ * one exits the other) since both point the same iframe at Notes, just
+ * at a different size. notes/index.html is told embed=fullscreen so it
+ * knows to show its own Play button, since there's no visible sheet
+ * pane here to switch back to it from.
+ */
+function enterNotesFullscreen() {
+    const code = window.dgCloudSave?.getCloudCode?.() || '';
+    if (!code) {
+        if (window.showToast) window.showToast('Name and save your Agent first — Notes needs a Cloud Save code to know which Agent it belongs to.');
+        return;
+    }
+    exitSplitView();
+    window.dgSettingsPanel?.close?.();
+    document.body.classList.add('dg-notes-fullscreen-active');
+    const iframe = document.getElementById('dg-split-notes-frame');
+    if (iframe) iframe.src = '../notes/index.html?embed=fullscreen&code=' + encodeURIComponent(code);
+}
+
+function exitNotesFullscreen() {
+    document.body.classList.remove('dg-notes-fullscreen-active');
+    const iframe = document.getElementById('dg-split-notes-frame');
+    if (iframe) iframe.src = 'about:blank';
+}
+
+window.dgNotesFullscreen = { enter: enterNotesFullscreen, exit: exitNotesFullscreen };
 
 /**
  * Toggles Live Play mode: a compact, at-the-table view (sticky HP/WP/SAN
