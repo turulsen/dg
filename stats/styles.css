@@ -486,9 +486,9 @@
    #dg-confirm-backdrop) -- this rule predates that fix and was missed
    when it landed, so Son of Sam had the identical squared-off-dial bug
    Field Notes did. */
-.theme-son-of-sam *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *),
-.theme-son-of-sam *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *)::before,
-.theme-son-of-sam *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *)::after {
+.theme-son-of-sam *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn),
+.theme-son-of-sam *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn)::before,
+.theme-son-of-sam *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn)::after {
     border-radius: 0 !important;
 }
 
@@ -5274,9 +5274,9 @@ input[type="checkbox"]:checked+label {
    descendants of body.theme-field-notes, squaring off e.g. the radio
    dial's round knob into a rectangle even though it never re-skins for
    any other theme either. */
-.theme-field-notes *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *),
-.theme-field-notes *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *)::before,
-.theme-field-notes *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *)::after {
+.theme-field-notes *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn),
+.theme-field-notes *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn)::before,
+.theme-field-notes *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn)::after {
     border-radius: 0 !important;
     font-weight: 400;
 }
@@ -7163,9 +7163,9 @@ input[type="checkbox"]:checked+label {
    round dial, #settings-cog-btn's circular gear, #settings-panel,
    #dg-toast, and #dg-confirm-backdrop are theme-agnostic overlay
    widgets that were getting squared off here too. */
-.theme-mobile *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *),
-.theme-mobile *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *)::before,
-.theme-mobile *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *)::after {
+.theme-mobile *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn),
+.theme-mobile *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn)::before,
+.theme-mobile *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn)::after {
     border-radius: 0 !important;
     font-weight: 400;
 }

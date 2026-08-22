@@ -42,6 +42,18 @@
     border:none; border-radius:3px; padding:9px 18px; cursor:pointer;
   }
   .picker-btn:hover{ opacity:.85; }
+
+  /* Notes' own way back to the sheet when embedded as stats/index.html's
+     mobile fullscreen pane (see notes-play-btn below) -- deliberately
+     real button chrome, not the header's subtle .back-link text style,
+     since there's no sheet visible here to make "how do I get back"
+     obvious any other way. */
+  .notes-play-btn{
+    font-family:'Courier Prime',monospace; font-size:12px; font-weight:700;
+    background:var(--ink); color:var(--paper); border:none; border-radius:3px;
+    padding:8px 16px; cursor:pointer; display:none;
+  }
+  .notes-play-btn:hover{ opacity:.85; }
   .picker-status{ font-size:11px; color:var(--ink-3); min-height:1.4em; }
 
   .notes-mount{ max-width:1100px; margin:var(--s5) auto 0; padding:0 6px; }
@@ -69,7 +81,7 @@
        out of the embedding page entirely, which isn't what flipping
        back to the sheet means here. See the embed=fullscreen check
        below. -->
-  <button type="button" class="back-link" id="notes-play-btn" style="background:none;border:none;cursor:pointer;display:none;">Play</button>
+  <button type="button" class="notes-play-btn" id="notes-play-btn">Play</button>
   <h1>Player Notes</h1>
   <p>Shared and private session notes for your Cell. Anything you mark
      Shared is visible to every other member of the same Cell; everything
@@ -223,7 +235,7 @@
     const playBtn = document.getElementById('notes-play-btn');
     if (backLink) backLink.style.display = 'none';
     if (playBtn) {
-      playBtn.style.display = '';
+      playBtn.style.display = 'inline-block';
       playBtn.addEventListener('click', () => {
         try { window.parent?.dgNotesFullscreen?.exit?.(); } catch (e) { /* not actually embedded this way */ }
       });
