@@ -6662,6 +6662,57 @@ def test_split_view(p):
     return errs
 
 
+def test_split_view_tablet_breakpoint(p):
+    """Regression coverage for a real live report from a portrait iPad:
+    Split View's toggle-hidden threshold and the mobile Notes widget's
+    toggle-shown threshold used to disagree (768px vs 900px), so a
+    width in that gap showed Split View's own toggle but the two panes
+    had nowhere to go but stacked full-width, one below the other --
+    indistinguishable in practice from the toggle just flipping between
+    the two, since each pane runs a good deal taller than the screen.
+    Both thresholds now match (900px, see DG_MOBILE_QUERY in scripts.js
+    and its styles.css counterpart) so there's no width where Split
+    View is reachable but has nothing usable to fall back on."""
+    page = p.new_page()
+    page.set_default_timeout(10000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+
+    # A portrait iPad's own CSS viewport width sits right in what used
+    # to be the disagreement gap.
+    page.set_viewport_size({"width": 820, "height": 1100})
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(400)
+    record("stats", "at a portrait-iPad width, Split View's toggle is hidden, not reachable in a half-usable state",
+           page.is_visible("#split-view-toggle-btn") is False, "")
+    record("stats", "the mobile Notes widget is shown instead at that same width",
+           page.is_visible("#notes-widget-btn") is True, "")
+
+    # One tick wider and Split View should be a real, genuinely
+    # side-by-side split -- not stacked.
+    page.set_viewport_size({"width": 901, "height": 1100})
+    page.wait_for_timeout(300)
+    record("stats", "one pixel past the threshold, Split View's toggle is reachable",
+           page.is_visible("#split-view-toggle-btn") is True, "")
+    page.fill("#cs-name", "Tablet Breakpoint Agent")
+    page.wait_for_timeout(300)
+    page.click("#split-view-toggle-btn")
+    page.wait_for_timeout(600)
+    sheet_top = page.eval_on_selector("#dg-split-sheet-pane", "el => el.getBoundingClientRect().top")
+    notes_top = page.eval_on_selector("#dg-split-notes-pane", "el => el.getBoundingClientRect().top")
+    sheet_left = page.eval_on_selector("#dg-split-sheet-pane", "el => el.getBoundingClientRect().left")
+    notes_left = page.eval_on_selector("#dg-split-notes-pane", "el => el.getBoundingClientRect().left")
+    record("stats", "just past the threshold, the two panes sit side by side (same row, different columns), not stacked",
+           sheet_top == notes_top and sheet_left != notes_left,
+           f"sheet=({sheet_left},{sheet_top}) notes=({notes_left},{notes_top})")
+
+    record("stats", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
+
 def test_mobile_notes_fullscreen(p):
     """Split View doesn't fit a phone-width screen, so mobile gets a
     separate control instead: a Notes widget (dgNotesFullscreen in
@@ -6963,6 +7014,8 @@ def main():
         safe(test_notes_code_url_param, browser, area="notes")
 
         safe(test_split_view, browser, area="stats")
+
+        safe(test_split_view_tablet_breakpoint, browser, area="stats")
 
         safe(test_mobile_notes_fullscreen, browser, area="stats")
 

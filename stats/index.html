@@ -947,11 +947,23 @@
              table's stacking rule, for instance) at all. A real narrow
              iframe gets that behavior for free, correctly, for
              whichever theme/mode is actually active. -->
-        <div id="dg-split-sheet-pane">
-            <iframe id="dg-split-sheet-frame" title="Character Sheet" loading="lazy"></iframe>
-        </div>
-        <div id="dg-split-notes-pane">
-            <iframe id="dg-split-notes-frame" title="Notes" loading="lazy"></iframe>
+        <!-- A dedicated flex row for just these two, not left as direct
+             children of .content alongside the footer -- .content's own
+             flex-wrap:wrap decides which row an item lands on using its
+             *hypothetical* (pre-shrink) size, and forcing nowrap directly
+             on .content to stop the panes wrapping onto separate rows
+             from each other pulled the footer onto that same row too
+             (nothing was making it wrap any more), stealing most of the
+             Notes pane's width out from under it. Scoping nowrap to a
+             wrapper that holds only the two panes keeps the footer's own
+             wrap-onto-its-own-line behavior intact. -->
+        <div id="dg-split-pane-row">
+            <div id="dg-split-sheet-pane">
+                <iframe id="dg-split-sheet-frame" title="Character Sheet" loading="lazy"></iframe>
+            </div>
+            <div id="dg-split-notes-pane">
+                <iframe id="dg-split-notes-frame" title="Notes" loading="lazy"></iframe>
+            </div>
         </div>
         <footer class="site-footer">
             <div class="github-link-container">

@@ -1878,8 +1878,7 @@ select {
    of chrome that stays up while split) so they start flush with each
    other, not just individually vertically centered-ish. Row on
    desktop/tablet-width windows, stacked on a narrow real one. ── */
-#dg-split-sheet-pane,
-#dg-split-notes-pane {
+#dg-split-pane-row {
     display: none;
 }
 
@@ -1887,23 +1886,44 @@ body.dg-split-active #app-main {
     display: none;
 }
 
-body.dg-split-active #dg-split-sheet-pane,
-body.dg-split-active #dg-split-notes-pane {
-    display: block;
-    min-height: 80vh;
+/* A dedicated flex row for just these two panes, not left as direct
+   children of .content alongside the footer (see the comment on this
+   wrapper in stats/index.html) -- nowrap here is what actually keeps
+   them side by side: flex-wrap decides which row an item lands on
+   using its *hypothetical* (pre-shrink) size, not its size after
+   flex-shrink is applied, so with .content's own default wrap the
+   sheet pane's fixed 440px plus the Notes pane's 480px flex-basis
+   (920px combined) would still wrap Notes onto its own full-width row
+   at any real window between Split View's 900px reachability cutoff
+   and roughly 920px+padding, even though shrinking it would have let
+   both sit side by side just fine -- a real live report traced to
+   exactly this gap. Nowrap is safe here specifically because Split
+   View is only ever reachable at widths built for a real side-by-side
+   pair (the same 900px cutoff both panes' toggles share), so there's
+   no narrower case left needing a wrap fallback for the row itself. */
+body.dg-split-active #dg-split-pane-row {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: var(--spacing-lg, 20px);
+    width: 100%;
     margin-top: 56px;
 }
 
-body.dg-split-active #dg-split-sheet-pane {
+#dg-split-sheet-pane,
+#dg-split-notes-pane {
+    min-height: 80vh;
+}
+
+#dg-split-sheet-pane {
     flex: 0 0 440px;
 }
 
-body.dg-split-active #dg-split-notes-pane {
+#dg-split-notes-pane {
     flex: 1 1 480px;
     min-width: 0;
     /* A thin divider, not a boxed border -- the two panes are meant to
        read as one continuous split view, not an iframe dropped onto
-       the page. .content's own gap already provides the breathing room
+       the page. The row's own gap already provides the breathing room
        on either side of it. */
     border-left: 1px solid color-mix(in srgb, var(--primary-color) 25%, transparent);
 }
@@ -1915,13 +1935,6 @@ body.dg-split-active #dg-split-notes-pane {
     min-height: 80vh;
     border: none;
     display: block;
-}
-
-@media (max-width: 900px) {
-    body.dg-split-active #dg-split-sheet-pane,
-    body.dg-split-active #dg-split-notes-pane {
-        flex-basis: 100%;
-    }
 }
 
 .dg-split-toggle-btn {
@@ -1939,10 +1952,19 @@ body.dg-split-active #dg-split-notes-pane {
     color: var(--bg-color);
 }
 
-/* Split View is a desktop/tablet setting only -- a real side-by-side
-   split doesn't fit a phone-width screen. Same 768px "is this a phone"
-   threshold dgInitStatsSheet() already uses elsewhere in scripts.js. */
-@media (max-width: 768px) {
+/* Split View is a desktop/tablet setting only -- below this width there
+   isn't room for the sheet's fixed ~440px pane plus a Notes pane worth
+   having open alongside it. Originally 768px, matching dgInitStatsSheet's
+   own "is this a phone" check elsewhere in scripts.js -- raised to 900px
+   after a real report from a portrait iPad (a common width in exactly
+   the 768-900px gap): Split View was reachable there but had nothing
+   better to fall back on than stacking the two panes full-width, one
+   below the other, which -- given each pane runs a good deal taller than
+   the screen -- read as "pressing the toggle just flips between the
+   two" rather than an actual side-by-side split. Matches DG_MOBILE_QUERY
+   in scripts.js; the two must stay in lockstep since a mismatch would
+   put Split View in a state its own UI didn't agree was legal. */
+@media (max-width: 900px) {
     .dg-split-toggle-btn {
         display: none;
     }
@@ -1965,7 +1987,8 @@ body.dg-embedded #dr-panel {
    Radio widget's own bottom-right mobile dock (see #dg-radio's
    @media(max-width:600px) rule in assets/table-radio.js) and styled to
    match its collapsed pill -- same dark palette, same shape. Desktop-
-   hidden by default; only shown under the 768px threshold. ── */
+   hidden by default; only shown under the 900px threshold (see Split
+   View's own comment above for why it's 900, not 768). ── */
 /* ID selector, not just .dg-notes-widget-btn -- .theme-mobile button
    (a class+tag combo, higher specificity than a lone class) repaints
    every <button> as a big chunky 44px-tall touch target with its own
@@ -2008,7 +2031,10 @@ body.dg-embedded #dr-panel {
     color: #c9d4b8;
 }
 
-@media (max-width: 768px) {
+/* Matches Split View's own 900px cutoff above -- see its comment for
+   why (a portrait iPad landing in the old 768-900px gap between "shows
+   the Notes widget" and "shows the Split View toggle" got neither). */
+@media (max-width: 900px) {
     #notes-widget-btn {
         display: block;
     }
@@ -2029,6 +2055,25 @@ body.dg-notes-fullscreen-active #app-main,
 body.dg-notes-fullscreen-active #notes-widget-btn,
 body.dg-notes-fullscreen-active #dg-radio,
 body.dg-notes-fullscreen-active #settings-cog-btn {
+    display: none;
+}
+
+/* #dg-split-notes-pane's own parent (#dg-split-pane-row) is display:none
+   by default, only shown for body.dg-split-active -- fullscreen mode
+   sets a different class, so the row needs its own visibility rule
+   here too, or the pane's display:block below would have no effect
+   (a hidden parent still hides a visible child). */
+body.dg-notes-fullscreen-active #dg-split-pane-row {
+    display: block;
+}
+
+/* The sheet pane isn't used in fullscreen mode at all (its iframe src
+   is cleared to about:blank -- see exitSplitView(), which
+   enterNotesFullscreen() always calls first) -- without hiding it
+   explicitly it'd still occupy normal document flow (an 80vh-tall
+   empty box) even though the Notes pane visually covers it via
+   position:fixed, adding invisible extra scrollable space below. */
+body.dg-notes-fullscreen-active #dg-split-sheet-pane {
     display: none;
 }
 

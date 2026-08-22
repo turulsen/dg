@@ -3550,7 +3550,14 @@ function toggleSplitView() {
 
 window.dgSplitView = { enter: enterSplitView, exit: exitSplitView, toggle: toggleSplitView };
 
-const DG_MOBILE_QUERY = '(max-width: 768px)';
+// Matches the .dg-split-toggle-btn/#notes-widget-btn breakpoint in
+// styles.css (see its comment: raised from 768px to 900px after a real
+// report from a portrait iPad landing in that gap, where Split View's
+// toggle was reachable but the two panes had nowhere to go but stacked
+// full-width, one below the other -- indistinguishable in practice from
+// the toggle just flipping between the two). Must stay in lockstep with
+// that CSS value, not just conceptually similar to it.
+const DG_MOBILE_QUERY = '(max-width: 900px)';
 
 /**
  * Mobile counterpart to Split View: a real side-by-side split doesn't
