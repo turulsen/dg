@@ -935,10 +935,21 @@
                 </div>
             </div>
         </main>
-        <!-- Split View's second pane -- see dgSplitView in scripts.js.
-             Hidden (display:none) whenever Split View is off; the iframe's
-             src is only ever set while it's on, so Notes' own polling
-             isn't running in the background the rest of the time. -->
+        <!-- Split View's two panes -- see dgSplitView in scripts.js. Both
+             hidden (display:none) whenever Split View is off; each
+             iframe's src is only ever set while it's on. The sheet pane
+             is a real second copy of this same page (self-referencing
+             iframe, ?embed=split-sheet) at a genuinely narrow width --
+             not #app-main resized into a flex child forced into the
+             Mobile theme, which never actually changes the real
+             viewport width and so never triggers this page's own
+             existing @media-query responsive layout (the LP-sheet
+             table's stacking rule, for instance) at all. A real narrow
+             iframe gets that behavior for free, correctly, for
+             whichever theme/mode is actually active. -->
+        <div id="dg-split-sheet-pane">
+            <iframe id="dg-split-sheet-frame" title="Character Sheet" loading="lazy"></iframe>
+        </div>
         <div id="dg-split-notes-pane">
             <iframe id="dg-split-notes-frame" title="Notes" loading="lazy"></iframe>
         </div>

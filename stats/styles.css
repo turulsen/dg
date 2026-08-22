@@ -1861,50 +1861,64 @@ select {
     width: 100%;
 }
 
-/* ── Split View: this sheet + Notes side by side. #dg-split-notes-pane
-   sits right after #app-main (see stats/index.html); a body-level class
-   turns them into two flex children instead of #app-main claiming the
-   full row alone. Row on desktop/tablet-width windows, stacked on a
-   narrow real one -- the sheet pane itself renders correctly at either
-   width regardless, since dgSplitView forces the Mobile theme (a fixed
-   compact skin, not one gated by viewport-width @media queries) rather
-   than relying on this pane's own width to trigger normal responsive
-   breakpoints, which wouldn't fire correctly for a flex child narrower
-   than the real window. ── */
+/* ── Split View: this sheet's own real mobile layout + Notes side by
+   side. #dg-split-sheet-pane and #dg-split-notes-pane sit right after
+   #app-main (see stats/index.html); a body-level class hides #app-main
+   outright and turns the two panes into this row's flex children
+   instead. The sheet pane is a real iframe of this same page at a
+   fixed, genuinely narrow width -- not #app-main resized into a flex
+   child and forced into the Mobile theme, which never actually changes
+   the real viewport width and so never triggers this page's own
+   existing @media-query responsive layout (the LP-sheet table's
+   stacking rule, for instance). A real narrow iframe gets that
+   correctly, for free, for whichever theme/mode is actually active --
+   see the embed=split-sheet guard in scripts.js that stops it from
+   trying to recursively open its own Split View. Both panes share the
+   same fixed top offset (clearing the Split View toggle, the one piece
+   of chrome that stays up while split) so they start flush with each
+   other, not just individually vertically centered-ish. Row on
+   desktop/tablet-width windows, stacked on a narrow real one. ── */
+#dg-split-sheet-pane,
 #dg-split-notes-pane {
     display: none;
 }
 
 body.dg-split-active #app-main {
-    width: auto;
-    flex: 1 1 480px;
-    min-width: 0;
+    display: none;
+}
+
+body.dg-split-active #dg-split-sheet-pane,
+body.dg-split-active #dg-split-notes-pane {
+    display: block;
+    min-height: 80vh;
+    margin-top: 56px;
+}
+
+body.dg-split-active #dg-split-sheet-pane {
+    flex: 0 0 440px;
 }
 
 body.dg-split-active #dg-split-notes-pane {
-    display: block;
     flex: 1 1 480px;
     min-width: 0;
-    min-height: 70vh;
-    /* Clears the fixed Split View toggle + settings cog, which sit at
-       top:14px over whatever's underneath them -- Notes' own header UI
-       starts right at the top of its content with no natural gap of
-       its own to absorb that overlap. */
-    margin-top: 80px;
-    border: 1px solid var(--primary-color);
-    background: #faf7ee;
+    /* A thin divider, not a boxed border -- the two panes are meant to
+       read as one continuous split view, not an iframe dropped onto
+       the page. .content's own gap already provides the breathing room
+       on either side of it. */
+    border-left: 1px solid color-mix(in srgb, var(--primary-color) 25%, transparent);
 }
 
+#dg-split-sheet-pane iframe,
 #dg-split-notes-pane iframe {
     width: 100%;
     height: 100%;
-    min-height: 70vh;
+    min-height: 80vh;
     border: none;
     display: block;
 }
 
 @media (max-width: 900px) {
-    body.dg-split-active #app-main,
+    body.dg-split-active #dg-split-sheet-pane,
     body.dg-split-active #dg-split-notes-pane {
         flex-basis: 100%;
     }
@@ -1932,6 +1946,19 @@ body.dg-split-active #dg-split-notes-pane {
     .dg-split-toggle-btn {
         display: none;
     }
+}
+
+/* Neither toggle means anything one level inside Split View's own sheet
+   iframe -- see DG_EMBED_MODE in scripts.js. Radio and Dice Roller are
+   hidden there too: the outer page already has its own copies of both,
+   and at this pane's fixed ~440px width there's little enough vertical
+   room for a second set to end up floating over the sheet's own
+   content instead of tucked out of the way in a corner. */
+body.dg-embedded .dg-split-toggle-btn,
+body.dg-embedded #notes-widget-btn,
+body.dg-embedded #dg-radio,
+body.dg-embedded #dr-panel {
+    display: none !important;
 }
 
 /* ── Mobile Notes widget: docks bottom-left, same height as the Table
@@ -3746,7 +3773,11 @@ body.dg-agent-loading #dg-agent-loading-notice {
 /* ═══════════════════════════════════════════════════════════════════   DICE ROLLER PANEL═══════════════════════════════════════════════════════════════════ */
 #dr-panel {
     position: fixed;
-    bottom: 24px;
+    /* #dg-radio (assets/table-radio.js) docks the same bottom-right
+       corner at bottom:14px/height:32px -- 24px left this panel's
+       collapsed bar directly overlapping it (a pre-existing conflict,
+       not specific to any one mode) rather than sitting above it. */
+    bottom: 58px;
     right: 24px;
     width: 270px;
     background: var(--bg-color, #0a0a0a);

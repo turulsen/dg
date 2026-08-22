@@ -3264,7 +3264,10 @@ function dgInitStatsSheet() {
         // a broken state with no Agent to open Notes for. Desktop/tablet
         // only -- see dg-notes-fullscreen-active's comment in styles.css
         // for why a real side-by-side split doesn't fit a phone screen.
-        if (localStorage.getItem(SPLIT_VIEW_KEY) === '1' && window.dgCloudSave?.getCloudCode?.()
+        // Never inside Split View's own sheet iframe (DG_EMBED_MODE) --
+        // that's the one thing a nested copy of this page must not try
+        // to do, or every level of nesting would try to open one more.
+        if (!DG_EMBED_MODE && localStorage.getItem(SPLIT_VIEW_KEY) === '1' && window.dgCloudSave?.getCloudCode?.()
             && !window.matchMedia(DG_MOBILE_QUERY).matches) {
             enterSplitView(false);
         }
@@ -3482,17 +3485,31 @@ function setTheme(theme, { skipSave = false, persist = true } = {}) {
 }
 
 /**
- * Split View: this sheet -- forced into the Mobile theme, a fixed compact
- * skin rather than one gated by viewport-width @media queries, so it still
- * looks right at half the window's width -- alongside this Agent's Notes
- * in an iframe. A view mode layered on top of whichever theme is really
- * selected, same relationship Live Play already has to theme: entering it
- * doesn't touch the user's saved theme preference (setTheme's persist:false
- * above), exiting restores exactly what was there before. Needs a Cloud
- * Save code (see cloud-sync.js) to know which Agent's Notes to open --
- * there's no character to open Notes for until one exists.
+ * Split View: this sheet's own real mobile layout alongside this Agent's
+ * Notes, each in its own iframe. The sheet pane is a second copy of this
+ * exact page (self-referencing iframe, ?embed=split-sheet) at a fixed,
+ * genuinely narrow width -- earlier this forced the Mobile theme onto the
+ * live #app-main squeezed into a flex child instead, which never actually
+ * changes the real viewport width and so never triggers this page's own
+ * existing @media-query responsive layout (the LP-sheet table's stacking
+ * rule, for instance) no matter which theme or mode was active. A real
+ * narrow iframe gets that correctly, for free, whatever theme/mode is
+ * actually in use, exactly like visiting on an actual phone would. Needs
+ * a Cloud Save code (see cloud-sync.js) to know which Agent to reopen and
+ * which Agent's Notes to show -- there's no character for either pane
+ * until one exists. #app-main itself is hidden while split (not resized)
+ * so there's only ever one live, editable copy of the character at a
+ * time -- the one inside the sheet iframe -- rather than two independent
+ * instances that could drift out of sync with each other.
  */
 const SPLIT_VIEW_KEY = 'dg_split_view';
+const SPLIT_SHEET_URL = location.pathname.split('/').pop() + '?embed=split-sheet';
+// Set when this exact page is loaded as Split View's own sheet iframe
+// (see SPLIT_SHEET_URL above) -- nested Split View/mobile-Notes toggles
+// wouldn't mean anything one level in, so they're hidden rather than
+// left to open a second, pointless layer of the same feature.
+const DG_EMBED_MODE = new URLSearchParams(location.search).get('embed');
+if (DG_EMBED_MODE) document.body.classList.add('dg-embedded');
 
 function enterSplitView(persist = true) {
     const code = window.dgCloudSave?.getCloudCode?.() || '';
@@ -3501,11 +3518,12 @@ function enterSplitView(persist = true) {
         return;
     }
     document.body.classList.add('dg-split-active');
-    setTheme('mobile', { persist: false });
+    const sheetFrame = document.getElementById('dg-split-sheet-frame');
+    if (sheetFrame) sheetFrame.src = SPLIT_SHEET_URL;
     // Relative to this page's own location (stats/index.html), not the
     // site root -- notes/ is a sibling of stats/, one level up.
-    const iframe = document.getElementById('dg-split-notes-frame');
-    if (iframe) iframe.src = '../notes/index.html?code=' + encodeURIComponent(code);
+    const notesFrame = document.getElementById('dg-split-notes-frame');
+    if (notesFrame) notesFrame.src = '../notes/index.html?code=' + encodeURIComponent(code);
     const btn = document.getElementById('split-view-toggle-btn');
     if (btn) btn.classList.add('active');
     if (persist) localStorage.setItem(SPLIT_VIEW_KEY, '1');
@@ -3513,12 +3531,13 @@ function enterSplitView(persist = true) {
 
 function exitSplitView(persist = true) {
     document.body.classList.remove('dg-split-active');
-    const savedTheme = localStorage.getItem('dg_theme') || 'xfiles';
-    setTheme(savedTheme, { skipSave: true });
-    // Drops the iframe's document so Notes' own polling stops running in
-    // the background while Split View is off, not just visually hidden.
-    const iframe = document.getElementById('dg-split-notes-frame');
-    if (iframe) iframe.src = 'about:blank';
+    // Drops both iframes' documents so neither's own polling/autosave
+    // keeps running in the background while Split View is off, not just
+    // visually hidden.
+    const sheetFrame = document.getElementById('dg-split-sheet-frame');
+    if (sheetFrame) sheetFrame.src = 'about:blank';
+    const notesFrame = document.getElementById('dg-split-notes-frame');
+    if (notesFrame) notesFrame.src = 'about:blank';
     const btn = document.getElementById('split-view-toggle-btn');
     if (btn) btn.classList.remove('active');
     if (persist) localStorage.setItem(SPLIT_VIEW_KEY, '0');

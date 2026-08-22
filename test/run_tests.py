@@ -6523,15 +6523,17 @@ def test_notes_code_url_param(p):
 
 
 def test_split_view(p):
-    """Split View: the character sheet -- forced into the Mobile theme
-    (a fixed compact skin, not one gated by viewport-width @media
-    queries, so it still renders correctly at half the window's width)
-    -- alongside this Agent's Notes in an iframe. A toggle anyone can
-    flip, not an automatic width-based switch; needs a Cloud Save code
-    to know which Agent's Notes to open, so it no-ops until the sheet
-    has been named at least once. Entering it must not clobber the
-    user's real saved theme preference -- exiting has to restore it
-    exactly."""
+    """Split View: this sheet's own real mobile layout (a second, real
+    iframe of this exact page at a genuinely narrow width, not the live
+    #app-main resized into a flex child and forced into the Mobile
+    theme -- that never actually changed the real viewport width, so it
+    never triggered this page's own existing @media-query responsive
+    layout at all) alongside this Agent's Notes in another iframe. A
+    toggle anyone can flip, not an automatic width-based switch; needs
+    a Cloud Save code to know which Agent to reopen and which Agent's
+    Notes to show, so it no-ops until the sheet has been named at least
+    once. Must never touch the user's saved theme preference -- there's
+    nothing to restore on exit since nothing was ever forced."""
     page = p.new_page()
     page.set_default_timeout(10000)
     errs = collect_errors(page)
@@ -6565,7 +6567,7 @@ def test_split_view(p):
            page.locator("#split-view-toggle-btn").count() == 1, "")
 
     # No Cloud Save code yet -- clicking must no-op rather than activate
-    # split mode with nothing for the Notes pane to point at.
+    # split mode with nothing for either pane to point at.
     page.click("#split-view-toggle-btn")
     page.wait_for_timeout(200)
     record("stats", "clicking Split View with no Cloud Save code yet does not activate it",
@@ -6580,38 +6582,64 @@ def test_split_view(p):
     page.wait_for_timeout(150)
 
     page.click("#split-view-toggle-btn")
-    page.wait_for_timeout(400)
+    page.wait_for_timeout(500)
     record("stats", "Split View activates: body picks up dg-split-active",
            page.evaluate("() => document.body.classList.contains('dg-split-active')") is True, "")
-    record("stats", "Split View forces the sheet into the Mobile theme",
-           page.evaluate("() => document.body.classList.contains('theme-mobile')") is True, "")
+    record("stats", "the live sheet (#app-main) is hidden -- only the sheet iframe is live now",
+           page.is_visible("#app-main") is False, "")
     record("stats", "the toggle button shows an active state",
            "active" in (page.get_attribute("#split-view-toggle-btn", "class") or ""), "")
 
-    iframe_src = page.get_attribute("#dg-split-notes-frame", "src") or ""
-    record("stats", "the Notes pane iframe points at this Agent's own Cloud Save code",
-           iframe_src == f"../notes/index.html?code={cloud_code}", f"{iframe_src} vs code={cloud_code}")
-
+    theme_during_split = page.evaluate("() => document.body.className")
+    record("stats", "Split View does not force the Mobile theme -- the real theme stays active",
+           "theme-field-notes" in theme_during_split and "theme-mobile" not in theme_during_split,
+           theme_during_split)
     saved_theme_during_split = page.evaluate("() => localStorage.getItem('dg_theme')")
-    record("stats", "forcing Mobile for Split View does not overwrite the user's real saved theme preference",
+    record("stats", "the user's real saved theme preference is untouched",
            saved_theme_during_split == "field-notes", str(saved_theme_during_split))
 
-    wait_for_condition(
-        lambda: page.eval_on_selector(
-            "#dg-split-notes-frame",
-            "el => !!(el.contentDocument && el.contentDocument.readyState === 'complete' && el.contentDocument.body && el.contentDocument.body.innerHTML.length > 0)"
-        ),
-        timeout_ms=6000)
+    sheet_iframe_src = page.get_attribute("#dg-split-sheet-frame", "src") or ""
+    record("stats", "the sheet pane iframe re-opens this exact page, flagged as the embedded sheet",
+           sheet_iframe_src == "index.html?embed=split-sheet", sheet_iframe_src)
+
+    notes_iframe_src = page.get_attribute("#dg-split-notes-frame", "src") or ""
+    record("stats", "the Notes pane iframe points at this Agent's own Cloud Save code",
+           notes_iframe_src == f"../notes/index.html?code={cloud_code}", f"{notes_iframe_src} vs code={cloud_code}")
+
+    def frame_ready(sel):
+        return page.eval_on_selector(
+            sel,
+            "el => !!(el.contentDocument && el.contentDocument.readyState === 'complete' && el.contentDocument.body && el.contentDocument.body.innerHTML.length > 0)")
+    wait_for_condition(lambda: frame_ready("#dg-split-sheet-frame"), timeout_ms=8000)
+    wait_for_condition(lambda: frame_ready("#dg-split-notes-frame"), timeout_ms=6000)
+
+    sheet_frame = page.frame_locator("#dg-split-sheet-frame")
+    page.wait_for_timeout(600)
+    record("stats", "the sheet iframe actually loads stats/index.html content",
+           sheet_frame.locator("body").count() >= 1, "")
+    record("stats", "the sheet iframe picks up the same character via the shared local autosave",
+           sheet_frame.locator("#cs-name").input_value() == "Split Test Agent", "")
+    record("stats", "the sheet iframe carries the same real theme too, not Mobile",
+           sheet_frame.locator("body.theme-field-notes").count() == 1, "")
+    record("stats", "the sheet iframe hides its own Split View toggle -- nesting one level deep doesn't mean anything",
+           sheet_frame.locator("#split-view-toggle-btn").count() == 0
+           or sheet_frame.locator("#split-view-toggle-btn").is_visible() is False, "")
     record("stats", "the Notes iframe actually loads notes/index.html content",
            page.frame_locator("#dg-split-notes-frame").locator("body").count() >= 1, "")
 
-    # Toggle off restores the real theme and tears the pane back down.
+    sheet_box = page.eval_on_selector("#dg-split-sheet-pane", "el => el.getBoundingClientRect().top")
+    notes_box = page.eval_on_selector("#dg-split-notes-pane", "el => el.getBoundingClientRect().top")
+    record("stats", "both panes start at the same vertical position",
+           sheet_box == notes_box, f"sheet_top={sheet_box} notes_top={notes_box}")
+
+    # Toggle off tears both panes back down; nothing to restore since
+    # nothing was ever forced.
     page.click("#split-view-toggle-btn")
     page.wait_for_timeout(300)
     record("stats", "toggling off drops dg-split-active",
            page.evaluate("() => document.body.classList.contains('dg-split-active')") is False, "")
-    record("stats", "toggling off restores the real theme, not Mobile",
-           page.evaluate("() => document.body.classList.contains('theme-field-notes')") is True, "")
+    record("stats", "toggling off brings the live sheet back",
+           page.is_visible("#app-main") is True, "")
     restored_theme = page.evaluate("() => localStorage.getItem('dg_theme')")
     record("stats", "the real theme preference in storage is unchanged after the round trip",
            restored_theme == "field-notes", str(restored_theme))
