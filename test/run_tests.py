@@ -6629,6 +6629,142 @@ def test_split_view(p):
     return errs
 
 
+def test_mobile_notes_fullscreen(p):
+    """Split View doesn't fit a phone-width screen, so mobile gets a
+    separate control instead: a Notes widget (dgNotesFullscreen in
+    scripts.js) docked bottom-left, same size/position/palette as the
+    Table Radio widget's own bottom-right mobile dock -- tapping it
+    flips the whole screen over to this Agent's Notes (sheet, radio,
+    settings cog, and the widget itself all hidden, not shrunk) instead
+    of squeezing a split in. notes/index.html shows its own Play pill,
+    docked at that exact same spot, to flip back -- same control
+    switching label and direction, not two different buttons in two
+    different places."""
+    page = p.new_page()
+    page.set_default_timeout(10000)
+    errs = collect_errors(page)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    state = {"code": None}
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=list_cells" in url:
+                member_codes = [state["code"]] if state.get("code") else []
+                res = {"status": "OK", "cells": [{"cell_id": "cell_1", "name": "Cell Alpha",
+                                                    "handler": "Sam", "member_codes": member_codes}]}
+            elif "action=list_cell_notes" in url:
+                res = {"status": "OK", "notes": {}, "identities": {}}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+
+    record("stats", "at a phone width, Split View's toggle is hidden -- desktop/tablet only",
+           page.is_visible("#split-view-toggle-btn") is False, "")
+    record("stats", "at a phone width, the mobile Notes widget is shown instead",
+           page.is_visible("#notes-widget-btn") is True, "")
+
+    # No Cloud Save code yet -- tapping it must no-op, same guard Split
+    # View has, rather than flip to a Notes pane with no Agent to open.
+    page.click("#notes-widget-btn")
+    page.wait_for_timeout(200)
+    record("stats", "tapping the Notes widget with no Cloud Save code yet does not activate fullscreen",
+           page.evaluate("() => document.body.classList.contains('dg-notes-fullscreen-active')") is False, "")
+
+    page.fill("#cs-name", "Mobile Notes Test Agent")
+    page.wait_for_timeout(300)
+    state["code"] = page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')")
+    record("stats", "naming the agent mints a Cloud Save code", bool(state["code"]), str(state["code"]))
+
+    page.click("#notes-widget-btn")
+    page.wait_for_timeout(500)
+    record("stats", "tapping Notes flips the screen over: body picks up dg-notes-fullscreen-active",
+           page.evaluate("() => document.body.classList.contains('dg-notes-fullscreen-active')") is True, "")
+    record("stats", "the sheet itself is hidden, not just shrunk",
+           page.is_visible("#app-main") is False, "")
+    record("stats", "the Notes widget hides itself while its own fullscreen pane is showing",
+           page.is_visible("#notes-widget-btn") is False, "")
+    record("stats", "the Table Radio widget is hidden too -- the whole screen is Notes now",
+           page.is_visible("#dg-radio") is False, "")
+    record("stats", "the settings cog is hidden as well",
+           page.is_visible("#settings-cog-btn") is False, "")
+
+    iframe_src = page.get_attribute("#dg-split-notes-frame", "src") or ""
+    record("stats", "the iframe points at this Agent's Notes with embed=fullscreen",
+           iframe_src == f"../notes/index.html?embed=fullscreen&code={state['code']}",
+           f"{iframe_src} vs code={state['code']}")
+
+    wait_for_condition(
+        lambda: page.eval_on_selector(
+            "#dg-split-notes-frame",
+            "el => !!(el.contentDocument && el.contentDocument.readyState === 'complete' && el.contentDocument.body && el.contentDocument.body.innerHTML.length > 0)"
+        ),
+        timeout_ms=6000)
+    frame = page.frame_locator("#dg-split-notes-frame")
+    record("stats", "Notes' own Agent Hub link is hidden while embedded this way",
+           frame.locator("#notes-back-link").is_visible() is False, "")
+    record("stats", "Notes shows its own Play pill instead, docked at the Notes widget's exact spot",
+           frame.locator("#notes-play-btn").is_visible() is True, "")
+
+    play_box = frame.locator("#notes-play-btn").bounding_box()
+    widget_box_style = page.eval_on_selector(
+        "#notes-widget-btn",
+        "el => { const s = getComputedStyle(el); return JSON.stringify({left: s.left, bottom: s.bottom, borderRadius: s.borderRadius}); }")
+    play_box_style = frame.locator("#notes-play-btn").evaluate(
+        "el => { const s = getComputedStyle(el); return JSON.stringify({left: s.left, bottom: s.bottom, borderRadius: s.borderRadius}); }")
+    record("stats", "the Play pill is docked at the same fixed left/bottom spot and shape as the Notes widget",
+           widget_box_style == play_box_style, f"widget={widget_box_style} play={play_box_style}")
+
+    frame.locator("#notes-play-btn").click()
+    page.wait_for_timeout(400)
+    record("stats", "tapping Play flips back: dg-notes-fullscreen-active is dropped",
+           page.evaluate("() => document.body.classList.contains('dg-notes-fullscreen-active')") is False, "")
+    record("stats", "the sheet is visible again",
+           page.is_visible("#app-main") is True, "")
+    record("stats", "the Notes widget is back too",
+           page.is_visible("#notes-widget-btn") is True, "")
+
+    # Split View is desktop/tablet only -- widening back out should not
+    # somehow leave Notes fullscreen active or the toggle still hidden.
+    page.set_viewport_size({"width": 1400, "height": 900})
+    page.wait_for_timeout(300)
+    record("stats", "widening back to desktop restores Split View's own toggle",
+           page.is_visible("#split-view-toggle-btn") is True, "")
+    record("stats", "widening back to desktop hides the mobile Notes widget",
+           page.is_visible("#notes-widget-btn") is False, "")
+
+    page.click("#split-view-toggle-btn")
+    page.wait_for_timeout(400)
+    record("stats", "Split View activates normally on desktop",
+           page.evaluate("() => document.body.classList.contains('dg-split-active')") is True, "")
+
+    # Narrowing back down while Split View is active must force it off --
+    # a real side-by-side split squeezed into a phone-width window isn't
+    # a state this feature should ever be left in.
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.wait_for_timeout(400)
+    record("stats", "narrowing to phone width while Split View is active forces it back off",
+           page.evaluate("() => document.body.classList.contains('dg-split-active')") is False, "")
+
+    record("stats", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
+
 def main():
     with sync_playwright() as p:
         # Chrome's own background-tab timer throttling policy applies to a
@@ -6794,6 +6930,8 @@ def main():
         safe(test_notes_code_url_param, browser, area="notes")
 
         safe(test_split_view, browser, area="stats")
+
+        safe(test_mobile_notes_fullscreen, browser, area="stats")
 
         browser.close()
 
