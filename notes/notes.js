@@ -367,6 +367,25 @@
       return m ? m[1] : null;
     }
 
+    // A raw data: URI opened via <a target="_blank"> reliably shows a
+    // blank "about:blank" tab instead of the PDF in Safari (and, in
+    // some versions, other browsers too) -- treated as a top-level
+    // navigation to an untrusted data: URI and blocked, silently,
+    // rather than with any visible error. A blob: URL doesn't hit that
+    // restriction, so PDF links are built from one instead.
+    function dataUriToBlobUrl_(dataUri) {
+      try {
+        const [meta, b64] = dataUri.split(',');
+        const mime = (meta.match(/data:([^;]+)/) || [])[1] || 'application/octet-stream';
+        const binary = atob(b64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return URL.createObjectURL(new Blob([bytes], { type: mime }));
+      } catch (e) {
+        return dataUri; // best effort -- still better than throwing
+      }
+    }
+
     // Resolves a gdrive: link to a data URI via the imgdata JSONP proxy
     // -- same pattern a-cell.html/agent-hub.html already use for their
     // own Evidence photo previews, duplicated here rather than shared
@@ -447,7 +466,7 @@
         if (extractDriveId_(h.photo)) {
           photoHtml = '<div class="dg-notes-evidence-photo-wrap"></div>';
         } else if (h.photo.indexOf('data:application/pdf') === 0) {
-          photoHtml = '<div class="dg-notes-evidence-photo-pdf"><a href="' + h.photo + '" target="_blank" rel="noopener">&#128196; Open PDF</a></div>';
+          photoHtml = '<div class="dg-notes-evidence-photo-pdf"><a href="' + dataUriToBlobUrl_(h.photo) + '" target="_blank" rel="noopener">&#128196; Open PDF</a></div>';
         } else {
           photoHtml = '<img class="dg-notes-evidence-photo-img" src="' + h.photo + '" alt="">';
         }
@@ -487,7 +506,7 @@
           const wrap = body.querySelector('.dg-notes-evidence-photo-wrap');
           if (!wrap) return;
           wrap.innerHTML = dataUri.indexOf('data:application/pdf') === 0
-            ? '<div class="dg-notes-evidence-photo-pdf"><a href="' + dataUri + '" target="_blank" rel="noopener">&#128196; Open PDF</a></div>'
+            ? '<div class="dg-notes-evidence-photo-pdf"><a href="' + dataUriToBlobUrl_(dataUri) + '" target="_blank" rel="noopener">&#128196; Open PDF</a></div>'
             : '<img class="dg-notes-evidence-photo-img" src="' + dataUri + '" alt="">';
         });
       }

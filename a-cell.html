@@ -2151,8 +2151,27 @@
 
   // PDFs open in a new tab (the browser's own native viewer) rather than
   // this app's photo lightbox, which only knows how to display an <img>.
+  // A raw data: URI opened via window.open/target=_blank reliably shows
+  // a blank "about:blank" tab instead of the PDF in Safari (and, in
+  // some versions, other browsers too) -- treated as a top-level
+  // navigation to an untrusted data: URI and blocked, silently, rather
+  // than with any visible error. A blob: URL doesn't hit that
+  // restriction, so the data: URI is converted to one first.
+  function dataUriToBlobUrl(dataUri) {
+    try {
+      const [meta, b64] = dataUri.split(',');
+      const mime = (meta.match(/data:([^;]+)/) || [])[1] || 'application/octet-stream';
+      const binary = atob(b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return URL.createObjectURL(new Blob([bytes], { type: mime }));
+    } catch (e) {
+      return dataUri; // best effort -- still better than throwing
+    }
+  }
+
   function openPdfInNewTab(dataUri) {
-    window.open(dataUri, '_blank');
+    window.open(dataUriToBlobUrl(dataUri), '_blank');
   }
 
   // Verifies a create/update actually landed by polling list_evidence

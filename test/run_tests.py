@@ -2818,8 +2818,13 @@ def test_acell_evidence_pdf(p):
     page.click(".evidence-photo-pdf-note")
     page.wait_for_timeout(200)
     open_calls = page.evaluate("() => window.__openCalls")
+    # A blob: URL, not the raw data: URI -- window.open/target=_blank on a
+    # data:application/pdf URI reliably shows a blank "about:blank" tab
+    # instead of the PDF in Safari (a real live report), since that's a
+    # top-level navigation to an untrusted data: URI and gets silently
+    # blocked. A blob: URL doesn't hit that restriction.
     record("acell", "clicking the PDF box opens it in a new tab (window.open), not this app's photo lightbox",
-           len(open_calls) == 1 and open_calls[0].startswith("data:application/pdf"), str(open_calls))
+           len(open_calls) == 1 and open_calls[0].startswith("blob:"), str(open_calls))
     record("acell", "clicking a PDF box never opens the photo lightbox",
            not page.is_visible(".evidence-lightbox"), "")
 
