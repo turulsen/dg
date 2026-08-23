@@ -3395,6 +3395,36 @@
     }).catch(function () { trackLibStatus.textContent = 'Could not reach the backend.'; });
   }
 
+  // A real mp3 (unlike every other write in this app) can genuinely take
+  // several seconds to actually land: DriveApp.createFile() on a
+  // multi-MB file is the slow step inside uploadTrack(), not the sheet
+  // row it appends afterward. A single fixed wait -- long enough for
+  // every other action's near-instant write -- was too short for this
+  // one and reported "not confirmed" on uploads that were, in fact,
+  // still in flight server-side. Retrying with increasing delays gives
+  // a genuinely slow (but successful) upload real room before this
+  // gives up and calls it failed.
+  var TRACK_UPLOAD_VERIFY_DELAYS_MS = [1500, 3000, 5000, 8000];
+  function verifyTrackUpload(title, attempt) {
+    jsonpGet('list_tracks', {}, function (res) {
+      var ok = res && res.status === 'OK' && Array.isArray(res.tracks) &&
+        res.tracks.some(function (x) { return x.title === title; });
+      if (ok) {
+        tracks = res.tracks;
+        trackLibStatus.textContent = '';
+        trackLibTitleInput.value = '';
+        trackLibFileInput.value = '';
+        renderTrackLibrary();
+        return;
+      }
+      if (attempt < TRACK_UPLOAD_VERIFY_DELAYS_MS.length) {
+        setTimeout(function () { verifyTrackUpload(title, attempt + 1); }, TRACK_UPLOAD_VERIFY_DELAYS_MS[attempt]);
+        return;
+      }
+      trackLibStatus.textContent = 'Sent, but the backend still hasn\'t confirmed it after several checks. Either the Track Library addition (upload_track) isn\'t pasted into Apps Script and redeployed yet, or this file is having trouble uploading (try a shorter clip or a lower-bitrate export).';
+    });
+  }
+
   trackLibUploadBtn.addEventListener('click', function () {
     var title = trackLibTitleInput.value.trim();
     var file = trackLibFileInput.files[0];
@@ -3410,18 +3440,7 @@
         body: JSON.stringify({ action: 'upload_track', title: title, mp3_base64: e.target.result, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
       }).then(function () {
         trackLibStatus.textContent = 'Uploaded — checking…';
-        setTimeout(function () {
-          jsonpGet('list_tracks', {}, function (res) {
-            var ok = res && res.status === 'OK' && Array.isArray(res.tracks) &&
-              res.tracks.some(function (x) { return x.title === title; });
-            if (!ok) { trackLibStatus.textContent = 'Sent, but the backend didn\'t confirm it. Check that the Track Library addition (upload_track) is pasted into Apps Script and redeployed.'; return; }
-            tracks = res.tracks;
-            trackLibStatus.textContent = '';
-            trackLibTitleInput.value = '';
-            trackLibFileInput.value = '';
-            renderTrackLibrary();
-          });
-        }, 1500); // a real mp3 upload takes longer to land than a small text write
+        setTimeout(function () { verifyTrackUpload(title, 0); }, 1500);
       }).catch(function () { trackLibStatus.textContent = 'Could not reach the backend.'; });
     };
     reader.readAsDataURL(file);

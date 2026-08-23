@@ -3181,6 +3181,7 @@ def test_acell_music(p):
     backend_state = {"track_url": "", "track_title": "", "track_kind": "", "paused": False, "loop": False}
     fake_cells = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": [], "channel": "4"}]
     tracks_state = []
+    slow_landing_get_count = {"n": 0}
 
     def fake_apps_script(route):
         req = route.request
@@ -3229,7 +3230,17 @@ def test_acell_music(p):
             elif "action=list_cells" in url:
                 res = {"status": "OK", "cells": fake_cells}
             elif "action=list_tracks" in url:
-                res = {"status": "OK", "tracks": tracks_state}
+                visible = list(tracks_state)
+                # Simulates a real upload that's genuinely still landing
+                # server-side (DriveApp.createFile() on a multi-MB file
+                # is slow) rather than a failed one -- withheld from the
+                # first two list_tracks reads after it exists, then
+                # visible from the third read onward.
+                if any(t["title"] == "Slow Landing" for t in tracks_state):
+                    slow_landing_get_count["n"] += 1
+                    if slow_landing_get_count["n"] <= 2:
+                        visible = [t for t in visible if t["title"] != "Slow Landing"]
+                res = {"status": "OK", "tracks": visible}
             else:
                 res = {"status": "OK"}
             route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
@@ -3442,6 +3453,31 @@ def test_acell_music(p):
     wait_for_condition(lambda: "No tracks uploaded yet" in page.inner_text("#tracklib-list"))
     record("acell", "accepting Delete removes the track from the library",
            "No tracks uploaded yet" in page.inner_text("#tracklib-list"), "")
+
+    # Regression: a live report was a false "Sent, but the backend
+    # didn't confirm it" on a real (if modest, ~3 minute) mp3 -- traced
+    # to the upload verify step checking list_tracks exactly once, 1.5s
+    # after the POST resolved, with no retry. DriveApp.createFile() on
+    # a real file is genuinely slower than every other write in this
+    # app; the fix retries with increasing delays instead of giving up
+    # on the first miss. The mock above withholds "Slow Landing" from
+    # the first two list_tracks reads after it's uploaded to simulate
+    # exactly that -- this must NOT show the "didn't confirm" message
+    # and must eventually show the track once the retries catch up.
+    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+        f.write(os.urandom(150_000))
+        slow_mp3_path = f.name
+    page.fill("#tracklib-title-input", "Slow Landing")
+    page.set_input_files("#tracklib-file-input", slow_mp3_path)
+    page.click("#tracklib-upload-btn")
+    tracklib_text = wait_for_condition(lambda: page.inner_text("#tracklib-list")
+                                       if "Slow Landing" in page.inner_text("#tracklib-list") else None,
+                                       timeout_ms=20000)
+    record("acell", "a slow-to-land upload does not falsely report 'backend didn't confirm it' -- it retries and succeeds",
+           bool(tracklib_text) and "Slow Landing" in tracklib_text
+           and "didn't confirm" not in page.inner_text("#tracklib-status"),
+           page.inner_text("#tracklib-status"))
+    os.unlink(slow_mp3_path)
 
     page.close()
     return errs
