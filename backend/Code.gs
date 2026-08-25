@@ -1053,16 +1053,37 @@ function doPost(e) {
         imageLink = existingValues[existingRowIndex][refImageLinkCol] || '';
       }
 
-      const row = COLUMNS.map(col => {
+      // Resolved by real column NAME against this sheet's actual current
+      // header row (already reconciled by ensureBriefsColumns() inside
+      // getOrCreateSheet() above), not by COLUMNS' own array position --
+      // see ensureBriefsColumns()'s comment for why a blind positional
+      // write silently corrupted whichever field ended up misaligned
+      // (Player Name included) the moment this sheet's real column
+      // order ever drifted from COLUMNS' declared order.
+      const valueFor = col => {
         if (col === 'agent_code') return agentCode;
         if (col === 'ref_image_link') return imageLink;
         if (col === 'ref_image_base64') return '';
         return data[col] || '';
-      });
+      };
 
       if (existingRowIndex !== -1) {
+        // Starts from the row's own current values so any column this
+        // codebase doesn't track (e.g. a Handler's own manually added
+        // note column) survives a resubmission untouched, instead of
+        // being blanked out just because it isn't in COLUMNS.
+        const row = existingValues[existingRowIndex].slice();
+        COLUMNS.forEach(col => {
+          const idx = existingHeaders.indexOf(briefsHeaderNameFor_(col));
+          if (idx !== -1) row[idx] = valueFor(col);
+        });
         sheet.getRange(existingRowIndex + 1, 1, 1, row.length).setValues([row]);
       } else {
+        const row = new Array(existingHeaders.length).fill('');
+        COLUMNS.forEach(col => {
+          const idx = existingHeaders.indexOf(briefsHeaderNameFor_(col));
+          if (idx !== -1) row[idx] = valueFor(col);
+        });
         sheet.appendRow(row);
       }
 
@@ -3426,10 +3447,37 @@ function getOrCreateSheet() {
 // track_kind/paused/paused_at/loop columns above: adds any column below
 // that's missing from a live sheet created before that column existed,
 // so an existing deployment doesn't need a manual one-time migration
-// run. Each is appended at the END of the header row (never inserted
-// among the existing columns) -- this must match where each column sits
-// in COLUMNS above (also always the end), since the new-agent-submission
-// row builder in doPost (COLUMNS.map(...)) writes positionally.
+// run.
+//
+// Every COLUMNS entry is reconciled here now, not just the two most
+// recently added ones -- the previous version only self-healed 'Player
+// Name'/'Profession' and left the brief-submission row builder writing
+// COLUMNS.map()'s output positionally (column N = COLUMNS[N-1], always,
+// regardless of what the live header row actually said was in column
+// N). That's only correct if this sheet's real column order has never
+// once drifted from COLUMNS' own declared order -- extremely fragile
+// for a sheet that's been manually opened and tweaked in the Sheets UI
+// over a long campaign, and the exact same "position assumed to match
+// a JS constant, doesn't actually get checked against the live header"
+// shape as the DeletedCharacters/DeletedBriefs purge bug. A silent
+// mismatch here means whatever a player types into a field silently
+// lands in the WRONG column (or nowhere useful) on every single brief
+// submission -- explains a report of "Player Name" search failing for
+// every player checked, not a single mistyped name. Fixed at the root
+// by making the row builder in the brief-submission handler resolve
+// each field's real column index by name (see briefsHeaderNameFor_())
+// instead of trusting position; this function's job is just making
+// sure every column in COLUMNS has a home in the header row somewhere,
+// appended at the end in COLUMNS' own order if it doesn't yet.
+function briefsHeaderNameFor_(col) {
+  // Four columns were added keeping their raw snake_case name instead
+  // of the standard Title Case transform every other column uses
+  // (matches updateAgentField()'s own FIELD_MAP and every existing
+  // .indexOf(...) lookup against this sheet elsewhere in this file,
+  // e.g. findByPlayerName()'s briefHeaders.indexOf('face_plate_url')).
+  if (col === 'face_plate_url' || col === 'outfit_plate_url' || col === 'mode0_prompt' || col === 'mode1_prompt') return col;
+  return col.replace(/_/g, ' ').replace(/\b\w/g, function (l) { return l.toUpperCase(); });
+}
 function ensureBriefsColumns(ss) {
   // This used to re-verify both columns with a fresh read on every single
   // call -- and getOrCreateSheet() calls this on nearly every request --
@@ -3437,19 +3485,24 @@ function ensureBriefsColumns(ss) {
   // cache flag skips the check entirely once it's confirmed clean, same
   // reasoning as the SPREADSHEET_ID cache right above.
   const cache = CacheService.getScriptCache();
-  if (cache.get('briefs_columns_ensured') === '1') return;
+  // Key changed (was 'briefs_columns_ensured') so a cache entry set by
+  // the old, narrower version of this check -- Player Name/Profession
+  // only -- can't mask this fuller reconciliation from ever actually
+  // running post-redeploy for up to its old 6h TTL.
+  if (cache.get('briefs_columns_ensured_v2') === '1') return;
   const sheet = ss.getSheetByName(SHEET_NAME);
   if (!sheet) return; // brand-new spreadsheet -- getOrCreateSheet()'s creation path below already includes every column via COLUMNS
   let lastCol = sheet.getLastColumn();
   const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-  ['Player Name', 'Profession'].forEach(function (name) {
+  COLUMNS.forEach(function (col) {
+    const name = briefsHeaderNameFor_(col);
     if (headers.indexOf(name) === -1) {
       lastCol++;
       sheet.getRange(1, lastCol).setValue(name);
       headers.push(name);
     }
   });
-  cache.put('briefs_columns_ensured', '1', 21600);
+  cache.put('briefs_columns_ensured_v2', '1', 21600);
 }
 
 // Throws on failure -- used to catch its own error and return the
