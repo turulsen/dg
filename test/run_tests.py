@@ -333,8 +333,14 @@ def test_stat_generator_agent_file_nav(p):
     page.click("#settings-cog-btn")
     page.wait_for_timeout(200)
     page.click("#site-intro-agent-file-btn")
+    # goToAgentFile() now navigates with an explicit ?code=<agent's own
+    # Cloud Save code> rather than a bare #agent hash relying solely on
+    # dg_last_agent (see agent-portal-export.js's own comment) -- so the
+    # destination page's openSpecificAgent() (an explicit ?code= always
+    # wins) drives this, not a stale most-recent-agent fallback that a
+    # different agent's earlier session could have left behind.
     for _ in range(20):
-        if page.url.endswith("dg-agent-portal.html#agent"):
+        if "dg-agent-portal.html?code=" in page.url and page.url.endswith("#agent"):
             break
         page.wait_for_timeout(300)
 
@@ -345,8 +351,8 @@ def test_stat_generator_agent_file_nav(p):
             break
         page.wait_for_timeout(300)
 
-    record("stats-terminal", "Open Agent File button navigates to the Portal, landing on Profiling (name-only export is incomplete)",
-           page.url.endswith("dg-agent-portal.html#agent") and cover_tab_active,
+    record("stats-terminal", "Open Agent File button navigates to the Portal with this Agent's own code, landing on Profiling (name-only export is incomplete)",
+           "dg-agent-portal.html?code=" in page.url and page.url.endswith("#agent") and cover_tab_active,
            page.url)
     record("stats-terminal", "the Agent File tab is NOT shown for this still-incomplete export",
            not page.eval_on_selector("#tw-agent", "el => el.classList.contains('active')"), "")
@@ -363,6 +369,88 @@ def test_stat_generator_agent_file_nav(p):
     body = json.loads(captured.get("body") or "{}")
     record("stats-terminal", "the nav button's export used the real char_name",
            body.get("char_name") == "Priya Anand", str(body.get("char_name")))
+
+    record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
+    page.close()
+    return errs
+
+def test_stat_generator_agent_file_nav_ignores_stale_last_agent(p):
+    """Regression test for a real live report: a player exported a fresh
+    Kappa Black import (Elvis) via "Open Agent File" and landed on a
+    DIFFERENT agent's data (Daniela, from an earlier session in the same
+    browser). Root cause: goToAgentFile() used to navigate to a bare
+    '#agent' hash with no ?code=, relying entirely on dg_last_agent (a
+    single browser-wide "most recently exported agent" localStorage key)
+    for dg-agent-portal.html to pick up -- stale whenever run() silently
+    no-ops (blank name) or just plain overwritten by an earlier session's
+    export that's still sitting there. Now goToAgentFile() passes this
+    Agent's own Cloud Save code explicitly via ?code=, which
+    openSpecificAgent() (dg-agent-portal.html) already documents as
+    always winning over the dg_last_agent fallback. This test pre-seeds
+    a stale dg_last_agent for a wholly different agent BEFORE exporting
+    a new one, to prove the stale entry is never what gets shown."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    def fake_apps_script(route):
+        url = route.request.url
+        if route.request.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        if "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"OK"}})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(400)
+
+    # Pre-seed a stale "most recently exported agent" from a wholly
+    # different, earlier session -- exactly what a shared/reused browser
+    # would already have sitting in localStorage. A one-time evaluate(),
+    # not add_init_script -- that would reapply on every navigation this
+    # test makes (including the one onto dg-agent-portal.html itself),
+    # clobbering the real write goToAgentFile() is about to make right
+    # before the destination page ever gets to read it.
+    page.evaluate("""() => {
+        try {
+            localStorage.setItem('dg_last_agent', JSON.stringify({
+                code: 'DANI-STALE',
+                data: { char_name: 'Daniela Martinez', codename: 'Spwarrow' }
+            }));
+        } catch (e) {}
+    }""")
+
+    page.fill("#cs-name", "Elvis Shantings")
+    page.wait_for_timeout(150)
+
+    page.click("#settings-cog-btn")
+    page.wait_for_timeout(200)
+    page.click("#site-intro-agent-file-btn")
+    for _ in range(20):
+        if "dg-agent-portal.html?code=" in page.url and page.url.endswith("#agent"):
+            break
+        page.wait_for_timeout(300)
+
+    nav_code = ""
+    if "code=" in page.url:
+        nav_code = page.url.split("code=")[1].split("#")[0]
+    record("stats-terminal", "Open Agent File links to this Agent's own code, not the stale dg_last_agent one",
+           bool(nav_code) and nav_code != "DANI-STALE", f"url={page.url}")
+
+    char_name_val = ""
+    for _ in range(15):
+        char_name_val = page.eval_on_selector("#dg-form [name=char_name]", "el => el.value") if page.locator("#dg-form [name=char_name]").count() else ""
+        if char_name_val:
+            break
+        page.wait_for_timeout(300)
+    record("stats-terminal", "the Agent Portal shows the just-exported agent (Elvis), not the stale one (Daniela)",
+           char_name_val == "Elvis Shantings", char_name_val)
 
     record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
     page.close()
@@ -7212,6 +7300,8 @@ def main():
         safe(test_stat_generator, browser, area="stats-terminal")
 
         safe(test_stat_generator_agent_file_nav, browser, area="stats-terminal")
+
+        safe(test_stat_generator_agent_file_nav_ignores_stale_last_agent, browser, area="stats-terminal")
 
         safe(test_stat_generator_sheets_roundtrip, browser, area="stats-terminal")
 

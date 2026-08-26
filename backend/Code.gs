@@ -3613,7 +3613,18 @@ function generateAppearancePrompt(data) {
     };
     const eraNote = eraOutfitContext[era] || '';
 
-    const isBase = data.mode === 'base' || injuries.length === 0;
+    // An explicit data.mode always wins. injuries.length === 0 is only a
+    // fallback for the two older call sites (dg-agent-portal.html's
+    // Medical Record/appearance-after-injury flows) that never set mode
+    // at all -- for THEM, no injuries really did mean "nothing to draft
+    // a post-injury prompt from, fall back to the face lock". But the
+    // newer per-era Field Portrait / Field Reference buttons always send
+    // mode explicitly AND always send injuries: [] (there's no medical
+    // record involved in drafting those at all), so the old `||` short-
+    // circuited isBase to true regardless of mode -- every Field
+    // Reference (outfit, full-body) request silently got a Mode 0
+    // headshot prompt back instead, with isOutfit below never reached.
+    const isBase = data.mode === 'base' || (!data.mode && injuries.length === 0);
     const isOutfit = data.mode === 'outfit';
     const isSurveillance = data.mode === 'surveillance';
 
