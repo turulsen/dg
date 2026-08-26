@@ -547,9 +547,36 @@ def test_kappablack_toml_import(p):
 
     toml_path = os.path.join(HERE, "fixtures", "kappablack-export.toml")
     toml_text = open(toml_path, encoding="utf-8").read()
+    # The real fixture's own agent has 0/3 boxes checked in both categories
+    # (Kappa Black's IAgent model -- github.com/troygoode/kappablack,
+    # src/types/agent.ts -- stores these as flat incident COUNTS,
+    # violenceAdaptation/helplessnessAdaptation, not per-box booleans), so
+    # append non-zero counts here to actually exercise the conversion --
+    # see convertKappaBlackToAgentData()'s kappaBlackAdaptationFromCount().
+    # Must land among the flat top-level keys, before the first [section]/
+    # [[array]] header -- parseSimpleTOML() has no concept of "top level"
+    # once a header switches its `current` write target, so appending at
+    # EOF (after [[weapons]]) would silently attach these to the last
+    # weapons entry instead of the root object.
+    toml_text = toml_text.replace(
+        'version = "2025-10-16"',
+        'version = "2025-10-16"\nviolenceAdaptation = 2\nhelplessnessAdaptation = 1'
+    )
     page.fill("#kappablack-import-area", toml_text)
     page.click("#kappablack-to-editor-button")
     page.wait_for_timeout(600)
+
+    violence_checks = page.evaluate(
+        "[1,2,3].map(i => document.getElementById('cs-violence-incident'+i)?.checked)"
+    )
+    record("stats-terminal", "Kappa Black TOML import converts violenceAdaptation=2 into the first two violence incident boxes checked",
+           violence_checks == [True, True, False], f"checks={violence_checks}")
+
+    helplessness_checks = page.evaluate(
+        "[1,2,3].map(i => document.getElementById('cs-helplessness-incident'+i)?.checked)"
+    )
+    record("stats-terminal", "Kappa Black TOML import converts helplessnessAdaptation=1 into just the first helplessness incident box checked",
+           helplessness_checks == [True, False, False], f"checks={helplessness_checks}")
 
     name_val = page.eval_on_selector("#cs-name", "el => el.value")
     record("stats-terminal", "Kappa Black TOML import loads the character name",
@@ -5936,7 +5963,12 @@ def test_pwa_offline(p):
     page.route("**/script.google.com/**", fake_apps_script)
     errs = collect_errors(page)
 
-    pages = ["index.html", "agent-hub.html", "a-cell.html", "dg-agent-portal.html", "dg-id-creator.html", "stats/index.html"]
+    # notes/index.html included: it's in SHELL_FILES and registers the
+    # service worker via assets/sw-update.js same as every other page
+    # (a real gap this app once had -- Notes silently had no offline
+    # support or update-check registration at all, see the sw-update.js
+    # comment on this file).
+    pages = ["index.html", "agent-hub.html", "a-cell.html", "dg-agent-portal.html", "dg-id-creator.html", "stats/index.html", "notes/index.html"]
 
     # Visit every page online first so the service worker (registered
     # from each one) precaches the whole shell.
@@ -6024,6 +6056,38 @@ def test_pwa_update_banner(p):
     reload_btn = page.query_selector("#dg-update-banner button")
     record("pwa", "banner has a visible Reload button",
            reload_btn is not None and "Reload" in (reload_btn.inner_text() or ""), "")
+
+
+def test_notes_pwa_update_banner(p):
+    """Regression test for a real live report: a player (Levi) opened
+    Notes on an iPad and saw a long-since-removed old screen -- Notes
+    was the one page in the app that never included assets/sw-update.js,
+    so a tab left open there (exactly the kind of "always on" tab this
+    app expects for Notes, same as Table Radio) had no service worker
+    registration call of its own and no way to notice or prompt a
+    reload when a new version had already taken over the tab. Same
+    check as test_pwa_update_banner above, pointed at notes/index.html."""
+    context = p.new_context()
+    page = context.new_page()
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    errs = collect_errors(page)
+
+    page.goto(f"{BASE}/notes/index.html", wait_until="load", timeout=15000)
+    wait_for_condition(lambda: page.evaluate("() => !!navigator.serviceWorker.controller"), timeout_ms=15000)
+
+    record("pwa", "Notes registers the service worker same as every other page",
+           page.evaluate("() => !!navigator.serviceWorker.controller"), "")
+
+    page.evaluate("() => navigator.serviceWorker.dispatchEvent(new Event('controllerchange'))")
+    page.wait_for_timeout(200)
+
+    banner = page.query_selector("#dg-update-banner")
+    record("pwa", "Notes shows the update banner after a controllerchange event",
+           banner is not None, "")
+
+    record("pwa", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
 
 
 def test_notes_v2_editorjs(p):
@@ -6783,6 +6847,20 @@ def test_split_view(p):
     record("stats", "Split View toggle button is present",
            page.locator("#split-view-toggle-btn").count() == 1, "")
 
+    # Regression: the toggle's resting-state colors used to come from
+    # whatever the active theme's own `button` rule painted (a class+tag
+    # selector beats the toggle's bare class), leaving it a flat
+    # near-black slab under some themes -- checked here in the default
+    # theme, before Split View is ever activated (the .active state has
+    # its own separate, always-legible colors, checked further below).
+    resting_toggle_colors = page.evaluate("""() => {
+        const cs = getComputedStyle(document.getElementById('split-view-toggle-btn'));
+        return { bg: cs.backgroundColor, color: cs.color };
+    }""")
+    record("stats", "the Split View toggle keeps its own legible resting-state colors, not whatever the theme's button rule paints",
+           resting_toggle_colors["bg"] == "rgb(22, 26, 20)" and resting_toggle_colors["color"] == "rgb(201, 212, 184)",
+           str(resting_toggle_colors))
+
     # No Cloud Save code yet -- clicking must no-op rather than activate
     # split mode with nothing for either pane to point at.
     page.click("#split-view-toggle-btn")
@@ -6843,6 +6921,22 @@ def test_split_view(p):
            or sheet_frame.locator("#split-view-toggle-btn").is_visible() is False, "")
     record("stats", "the Notes iframe actually loads notes/index.html content",
            page.frame_locator("#dg-split-notes-frame").locator("body").count() >= 1, "")
+
+    # Regression: clicking a skill inside the embedded sheet iframe used to
+    # roll against that iframe's own #dr-panel, which is hidden there by
+    # design (body.dg-embedded) -- the roll happened but the player could
+    # never see it. It should now relay to the outer page's visible panel.
+    skill_input = sheet_frame.locator("#cs-skills input.cs-skill-input").first
+    skill_input.fill("55")
+    skill_input.click()
+    wait_for_condition(
+        lambda: (page.eval_on_selector("#dr-result-label", "el => el.textContent") or "") != "" or None,
+        timeout_ms=4000)
+    outer_dr_name = page.eval_on_selector("#dr-skill-name", "el => el.textContent")
+    outer_dr_result = page.eval_on_selector("#dr-result-label", "el => el.textContent")
+    record("stats", "a skill click inside Split View's embedded sheet relays a roll to the outer page's visible dice panel",
+           bool(outer_dr_name) and outer_dr_result in ("SUCCESS", "FAILURE", "CRITICAL SUCCESS", "FUMBLE"),
+           f"name={outer_dr_name!r} result={outer_dr_result!r}")
 
     sheet_box = page.eval_on_selector("#dg-split-sheet-pane", "el => el.getBoundingClientRect().top")
     notes_box = page.eval_on_selector("#dg-split-notes-pane", "el => el.getBoundingClientRect().top")
@@ -7238,6 +7332,8 @@ def main():
         safe(test_pwa_offline, browser, area="pwa")
 
         safe(test_pwa_update_banner, browser, area="pwa")
+
+        safe(test_notes_pwa_update_banner, browser, area="pwa")
 
         safe(test_notes_v2_editorjs, browser, area="notes")
         safe(test_notes_evidence_integration, browser, area="notes")

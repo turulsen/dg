@@ -4187,7 +4187,17 @@ function generatePlateImage(era, mode) {
     // a Face Plate is generated or uploaded). Falling back to a fresh
     // Drive fetch covers a Face Plate from an earlier session instead.
     (recentFaceDataUri ? Promise.resolve(recentFaceDataUri) : fetchDriveImageAsDataUri(faceUrl)).then(function(dataUri) {
-      if (dataUri) payload.reference_image_base64 = dataUri;
+      if (dataUri) {
+        payload.reference_image_base64 = dataUri;
+        // The reference here is the existing Face Plate -- a tight
+        // forehead-to-chest headshot by Mode 0's own framing. Gemini's
+        // image-to-image generation otherwise anchors hard on the
+        // reference's composition, not just the face in it, so without
+        // this override the "full body" instructions above still come
+        // back cropped like a headshot -- a Face Plate wearing the
+        // right clothes instead of an actual full-body shot.
+        payload.prompt += '\n\nIMPORTANT: The attached reference image is ONLY for facial identity and likeness -- completely ignore its framing, crop, and camera distance. The output MUST be a full-body image with the entire figure visible from head to feet, matching the framing instructions above, not a headshot or close-up crop.';
+      }
       send();
     });
   } else if (type === 'face' && afData && afData.ref_image_link) {
