@@ -1,0 +1,161 @@
+rules_version = '2';
+
+// ════════════════════════════════════════════════════════════════
+// Firestore security rules -- Phase 1 (Foundation) of the Firebase
+// migration. Mirrors the CURRENT real access model in backend/Code.gs
+// as closely as possible, not an idealized one:
+//
+//   - Agent-owned data (Characters, Briefs, Notes, Agent Identity,
+//     Handout Notes, Evidence-Seen): Code.gs's requireAgentToken_()
+//     was deliberately turned into a no-op earlier in this project
+//     (see that function's own comment) -- there is no real per-Agent
+//     secret today. Knowing an Agent Code is already sufficient to
+//     write that Agent's data. These rules require a Firebase Auth
+//     sign-in (via the exchangeAgentToken bridge function) but do NOT
+//     add a real ownership check beyond that, matching today's actual
+//     security posture -- see functions/index.js's own comment on
+//     exchangeAgentToken for why.
+//   - Handler-owned data (Cells, Evidence, Operations, Radio, Tracks,
+//     Character delete/restore, update_character_field): gated on the
+//     `handler` custom-claim boolean, mirroring requireHandlerAuth_()
+//     / requireHandlerSession_().
+//
+// Tighten collection-by-collection as each one is actually cut over
+// in its own phase (see the migration brief) -- this is deliberately
+// not the final word on any one collection, just a faithful Phase 1
+// starting point that doesn't regress what's live today.
+// ════════════════════════════════════════════════════════════════
+
+function isSignedIn() {
+  return request.auth != null;
+}
+
+function isHandler() {
+  return request.auth != null && request.auth.token.handler == true;
+}
+
+function agentCode() {
+  return request.auth.token.agentCode;
+}
+
+function isCellMember(cellId) {
+  return isSignedIn() &&
+    agentCode() in get(/databases/$(database)/documents/cells/$(cellId)).data.member_codes;
+}
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // characters/{agentCode} -- mirrors the Characters sheet row.
+    // Read is public today (Cover Identity search, ?load=CODE) --
+    // stays public. Write requires sign-in only (see header note).
+    match /characters/{agentCode} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // briefs/{agentCode} -- mirrors DeltaGreenBriefs. Same posture as
+    // Characters: the brief-submission upsert has no auth check today.
+    match /briefs/{agentCode} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // cells/{cellId} -- Cell metadata (name, handler, member_codes,
+    // channel). Membership is not itself secret (A-Cell shows it to
+    // every member), so read stays open; only a Handler creates/edits/
+    // deletes a Cell (create_cell/update_cell_members/delete_cell all
+    // gated by requireHandlerAuth_ today).
+    match /cells/{cellId} {
+      allow read: if true;
+      allow write: if isHandler();
+
+      // cells/{cellId}/notes/{blockId} -- mirrors CellNotes. Row-level
+      // visibility today (listCellNotes): a block's own author always
+      // sees it; everyone else sees it only if `shared` is true; a
+      // valid Handler session sees everything for that Cell.
+      match /notes/{blockId} {
+        allow read: if isHandler()
+          || resource.data.shared == true
+          || (isSignedIn() && resource.data.agent_code == agentCode());
+        allow create: if isHandler()
+          || (isSignedIn() && request.resource.data.agent_code == agentCode());
+        allow update, delete: if isHandler()
+          || (isSignedIn() && resource.data.agent_code == agentCode());
+      }
+    }
+
+    // radio/{channel} -- mirrors RadioChannels (Now Playing). Read is
+    // public (every player's Table Radio listens with no auth); only
+    // the Handler sets/pauses/resumes/loops a channel.
+    match /radio/{channel} {
+      allow read: if true;
+      allow write: if isHandler();
+    }
+
+    // tracks/{trackId} -- mirrors the Track Library. Public read
+    // (playback), Handler-only upload/delete.
+    match /tracks/{trackId} {
+      allow read: if true;
+      allow write: if isHandler();
+    }
+
+    // evidence/{evidenceId} -- mirrors Evidence (formerly Handouts).
+    // A released item is visible to any signed-in Agent; an
+    // unreleased one (still being filed) or one restricted to a
+    // specific Cell only shows to the Handler or that Cell's members.
+    // create/update/delete are Handler-only, matching create_evidence/
+    // update_evidence/delete_evidence.
+    match /evidence/{evidenceId} {
+      allow read: if isHandler()
+        || (resource.data.released == true &&
+            (resource.data.restricted_to == null || resource.data.restricted_to == '' ||
+             isCellMember(resource.data.restricted_to)));
+      allow write: if isHandler();
+    }
+
+    // operations/{operationId} -- Evidence Locker folders. Handler-only
+    // like Evidence itself; read open (folder names aren't sensitive).
+    match /operations/{operationId} {
+      allow read: if true;
+      allow write: if isHandler();
+    }
+
+    // evidence_seen/{agentCode}_{evidenceId} -- per-Agent "opened this"
+    // flag. Fully open today (mark_evidence_seen has no auth call at
+    // all -- only a cosmetic unseen dot is at stake). Kept open here
+    // too rather than adding a check the live system never had.
+    match /evidence_seen/{docId} {
+      allow read, write: if true;
+    }
+
+    // agent_identity/{agentCode} -- mirrors AgentIdentity (color/font).
+    match /agent_identity/{agentCode} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // handout_notes/{agentCode}_{handoutId} -- a player's own private
+    // annotations on an Evidence item. Never read by the Handler or
+    // any other Agent today (nothing in A-Cell reads this sheet) --
+    // scoped strictly to the owning Agent here, tighter than today's
+    // token-optional model since there's real content to protect.
+    match /handout_notes/{docId} {
+      allow read, update, delete: if isSignedIn() && resource.data.agent_code == agentCode();
+      allow create: if isSignedIn() && request.resource.data.agent_code == agentCode();
+    }
+
+    // dice_rolls/{cellId}/rolls/{rollId} -- new collection (Phase 3),
+    // no existing Sheets data to match. An Agent sees only their own
+    // Cell's rolls; a Handler sees every Cell they run (running "every
+    // Cell they run" isn't tracked yet beyond the `handler` claim
+    // being global, so for now any Handler sees every Cell's rolls --
+    // matches A-Cell's existing single-Handler assumption elsewhere in
+    // this app).
+    match /dice_rolls/{cellId}/rolls/{rollId} {
+      allow read: if isHandler() || isCellMember(cellId);
+      allow create: if isHandler() || isCellMember(cellId);
+      allow update, delete: if false; // history is append-only
+    }
+  }
+}
