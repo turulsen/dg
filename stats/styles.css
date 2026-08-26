@@ -486,9 +486,9 @@
    #dg-confirm-backdrop) -- this rule predates that fix and was missed
    when it landed, so Son of Sam had the identical squared-off-dial bug
    Field Notes did. */
-.theme-son-of-sam *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn),
-.theme-son-of-sam *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn)::before,
-.theme-son-of-sam *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn)::after {
+.theme-son-of-sam *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn, #split-view-toggle-btn),
+.theme-son-of-sam *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn, #split-view-toggle-btn)::before,
+.theme-son-of-sam *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn, #split-view-toggle-btn)::after {
     border-radius: 0 !important;
 }
 
@@ -1937,7 +1937,21 @@ body.dg-split-active #dg-split-pane-row {
     display: block;
 }
 
-.dg-split-toggle-btn {
+/* ID selector, not just .dg-split-toggle-btn -- same reason as
+   #notes-widget-btn above: a theme's own "button, .adjust-button" rule
+   (a class+tag combo, higher specificity than a lone class) repaints
+   every <button> with that theme's colors, which otherwise silently
+   wins over this rule's unset background/color/border property-by-
+   property regardless of source order. In the two light-paper themes
+   (Field Notes, Mobile) that left this toggle as a flat near-black
+   slab with no border of its own -- exactly the "almost invisible,
+   totally black" report -- since only its .active state had explicit
+   colors, never its default resting state. An ID beats that outright
+   without needing !important on each property, and gives the toggle
+   the same theme-agnostic dark-pill treatment already used for Radio/
+   Notes/Settings so all the floating widgets read as one consistent
+   family regardless of which of the 5 sheet themes is active. */
+#split-view-toggle-btn {
     position: fixed;
     top: 14px;
     right: 64px;
@@ -1945,11 +1959,20 @@ body.dg-split-active #dg-split-pane-row {
     font-family: 'JetBrains Mono', 'Courier New', monospace;
     font-size: 0.75rem;
     padding: 9px 12px;
+    background: #161a14;
+    color: #c9d4b8;
+    border: 1px solid #3a4432;
+    border-radius: 20px;
 }
 
-.dg-split-toggle-btn.active {
-    background-color: var(--primary-color);
-    color: var(--bg-color);
+#split-view-toggle-btn:hover {
+    background: #232b1c;
+}
+
+#split-view-toggle-btn.active {
+    background: #3a8f3a;
+    color: #0d1a0d;
+    border-color: #3a8f3a;
 }
 
 /* Split View is a desktop/tablet setting only -- below this width there
@@ -1965,7 +1988,7 @@ body.dg-split-active #dg-split-pane-row {
    in scripts.js; the two must stay in lockstep since a mismatch would
    put Split View in a state its own UI didn't agree was legal. */
 @media (max-width: 900px) {
-    .dg-split-toggle-btn {
+    #split-view-toggle-btn {
         display: none;
     }
 }
@@ -1976,7 +1999,7 @@ body.dg-split-active #dg-split-pane-row {
    and at this pane's fixed ~440px width there's little enough vertical
    room for a second set to end up floating over the sheet's own
    content instead of tucked out of the way in a corner. */
-body.dg-embedded .dg-split-toggle-btn,
+body.dg-embedded #split-view-toggle-btn,
 body.dg-embedded #notes-widget-btn,
 body.dg-embedded #dg-radio,
 body.dg-embedded #dr-panel {
@@ -5365,9 +5388,9 @@ input[type="checkbox"]:checked+label {
    descendants of body.theme-field-notes, squaring off e.g. the radio
    dial's round knob into a rectangle even though it never re-skins for
    any other theme either. */
-.theme-field-notes *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn),
-.theme-field-notes *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn)::before,
-.theme-field-notes *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn)::after {
+.theme-field-notes *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn, #split-view-toggle-btn),
+.theme-field-notes *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn, #split-view-toggle-btn)::before,
+.theme-field-notes *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn, #split-view-toggle-btn)::after {
     border-radius: 0 !important;
     font-weight: 400;
 }
@@ -7254,9 +7277,9 @@ input[type="checkbox"]:checked+label {
    round dial, #settings-cog-btn's circular gear, #settings-panel,
    #dg-toast, and #dg-confirm-backdrop are theme-agnostic overlay
    widgets that were getting squared off here too. */
-.theme-mobile *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn),
-.theme-mobile *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn)::before,
-.theme-mobile *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn)::after {
+.theme-mobile *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn, #split-view-toggle-btn),
+.theme-mobile *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn, #split-view-toggle-btn)::before,
+.theme-mobile *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn, #split-view-toggle-btn)::after {
     border-radius: 0 !important;
     font-weight: 400;
 }
