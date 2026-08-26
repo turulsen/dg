@@ -592,6 +592,170 @@ function requireColumns_(map, names) {
   return null;
 }
 
+// ════════════════════════════════════════════════════════════════
+// Firestore dual-write bridge (Firebase migration, Phase 1) --
+// ADDITIVE ONLY. Every function below is called from existing write
+// paths purely to keep a Firestore mirror live-current alongside the
+// Sheet, which stays the write path of record until each collection's
+// own cutover phase. Never allowed to affect the Sheet write it's
+// piggybacking on: firestoreDualWrite_/firestoreDualPatch_/
+// firestoreDualDelete_ all catch and log-but-swallow their own errors,
+// so a Firestore/network hiccup can never surface as a failed save to
+// a player. No-ops entirely (silently) until both Script Properties
+// below are set -- see docs/firebase-migration/README.md for setup.
+// ════════════════════════════════════════════════════════════════
+
+const FIRESTORE_PROJECT_ID_PROPERTY = 'FIRESTORE_PROJECT_ID';
+const FIRESTORE_SERVICE_ACCOUNT_PROPERTY = 'FIRESTORE_SERVICE_ACCOUNT_JSON';
+
+function firestoreDualWriteEnabled_() {
+  const props = PropertiesService.getScriptProperties();
+  return !!(props.getProperty(FIRESTORE_PROJECT_ID_PROPERTY) && props.getProperty(FIRESTORE_SERVICE_ACCOUNT_PROPERTY));
+}
+
+// Exchanges the service-account key stored in Script Properties for a
+// short-lived Firestore OAuth2 access token (self-signed JWT ->
+// oauth2.googleapis.com/token, the same flow the Sheets/Firestore
+// client libraries do internally) -- Apps Script has no built-in way
+// to authenticate to a DIFFERENT GCP project's APIs, since
+// ScriptApp.getOAuthToken() only ever covers this script's own
+// project. Cached a few minutes under the token's real 1h expiry so
+// this round-trip doesn't happen on every single dual-write call.
+function getFirestoreAccessToken_() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get('firestore_access_token');
+  if (cached) return cached;
+
+  const saJson = PropertiesService.getScriptProperties().getProperty(FIRESTORE_SERVICE_ACCOUNT_PROPERTY);
+  if (!saJson) return null;
+  const sa = JSON.parse(saJson);
+
+  const now = Math.floor(Date.now() / 1000);
+  const toBase64Url = function (obj) { return Utilities.base64EncodeWebSafe(JSON.stringify(obj)).replace(/=+$/, ''); };
+  const unsigned = toBase64Url({ alg: 'RS256', typ: 'JWT' }) + '.' + toBase64Url({
+    iss: sa.client_email,
+    scope: 'https://www.googleapis.com/auth/datastore',
+    aud: 'https://oauth2.googleapis.com/token',
+    exp: now + 3600,
+    iat: now
+  });
+  const signatureBytes = Utilities.computeRsaSha256Signature(unsigned, sa.private_key);
+  const jwt = unsigned + '.' + Utilities.base64EncodeWebSafe(signatureBytes).replace(/=+$/, '');
+
+  const resp = UrlFetchApp.fetch('https://oauth2.googleapis.com/token', {
+    method: 'post',
+    contentType: 'application/x-www-form-urlencoded',
+    payload: { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: jwt },
+    muteHttpExceptions: true
+  });
+  const body = JSON.parse(resp.getContentText());
+  if (!body.access_token) throw new Error('Firestore token exchange failed: ' + resp.getContentText());
+  cache.put('firestore_access_token', body.access_token, 3000); // just under the real 1h expiry
+  return body.access_token;
+}
+
+// Converts a plain JS value into the Firestore REST API's typed-value
+// wrapper shape ({stringValue:...}, {arrayValue:{values:[...]}}, etc).
+function toFirestoreValue_(v) {
+  if (v === null || v === undefined) return { nullValue: null };
+  if (typeof v === 'boolean') return { booleanValue: v };
+  if (typeof v === 'number') return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(toFirestoreValue_) } };
+  if (typeof v === 'object') {
+    const fields = {};
+    Object.keys(v).forEach(function (k) { fields[k] = toFirestoreValue_(v[k]); });
+    return { mapValue: { fields: fields } };
+  }
+  return { stringValue: String(v) };
+}
+
+function firestoreDocUrl_(collectionName, docId) {
+  const projectId = PropertiesService.getScriptProperties().getProperty(FIRESTORE_PROJECT_ID_PROPERTY);
+  return 'https://firestore.googleapis.com/v1/projects/' + projectId +
+    '/databases/(default)/documents/' + collectionName + '/' + encodeURIComponent(docId);
+}
+
+// Full-document upsert (PATCH with no updateMask replaces the whole
+// document) -- matches the one-time mirror script's own
+// set({merge:false}) semantics. Use this when the caller already has
+// every field the document should end up with (saveCharacter, the
+// brief-submission upsert, restoreCharacter).
+function firestoreDualWrite_(collectionName, docId, dataObj) {
+  if (!firestoreDualWriteEnabled_()) return;
+  try {
+    const token = getFirestoreAccessToken_();
+    if (!token) return;
+    const fields = {};
+    Object.keys(dataObj).forEach(function (k) { fields[k] = toFirestoreValue_(dataObj[k]); });
+    UrlFetchApp.fetch(firestoreDocUrl_(collectionName, docId), {
+      method: 'patch',
+      contentType: 'application/json',
+      headers: { Authorization: 'Bearer ' + token },
+      payload: JSON.stringify({ fields: fields }),
+      muteHttpExceptions: true
+    });
+  } catch (err) {
+    console.error('firestoreDualWrite_ failed for ' + collectionName + '/' + docId + ': ' + err.message);
+  }
+}
+
+// Partial-field update (PATCH with an explicit updateMask touches only
+// the named fields, leaving every other field on the document alone).
+// Use this when the caller is only changing one or two columns and
+// must NOT clobber the rest of the document (updateCharacterField).
+function firestoreDualPatch_(collectionName, docId, dataObj) {
+  if (!firestoreDualWriteEnabled_()) return;
+  try {
+    const token = getFirestoreAccessToken_();
+    if (!token) return;
+    const fields = {};
+    const maskParams = Object.keys(dataObj).map(function (k) {
+      fields[k] = toFirestoreValue_(dataObj[k]);
+      return 'updateMask.fieldPaths=' + encodeURIComponent(k);
+    }).join('&');
+    UrlFetchApp.fetch(firestoreDocUrl_(collectionName, docId) + '?' + maskParams, {
+      method: 'patch',
+      contentType: 'application/json',
+      headers: { Authorization: 'Bearer ' + token },
+      payload: JSON.stringify({ fields: fields }),
+      muteHttpExceptions: true
+    });
+  } catch (err) {
+    console.error('firestoreDualPatch_ failed for ' + collectionName + '/' + docId + ': ' + err.message);
+  }
+}
+
+function firestoreDualDelete_(collectionName, docId) {
+  if (!firestoreDualWriteEnabled_()) return;
+  try {
+    const token = getFirestoreAccessToken_();
+    if (!token) return;
+    UrlFetchApp.fetch(firestoreDocUrl_(collectionName, docId), {
+      method: 'delete',
+      headers: { Authorization: 'Bearer ' + token },
+      muteHttpExceptions: true
+    });
+  } catch (err) {
+    console.error('firestoreDualDelete_ failed for ' + collectionName + '/' + docId + ': ' + err.message);
+  }
+}
+
+// Builds a {normalized_header: value} object from a Sheets header row +
+// one data row -- same snake_case normalization tools/firestore-mirror/
+// mirror.js uses, so a row read back off Characters/Briefs (e.g. inside
+// restoreCharacter()) can be dual-written with the exact same field
+// names the mirror script and the rest of this bridge already use.
+// Drops a trailing "Deleted At" column (not part of the live schema).
+function rowToFirestoreFields_(headers, row) {
+  const out = {};
+  headers.forEach(function (h, i) {
+    if (!h || h === 'Deleted At') return;
+    const key = String(h).trim().toLowerCase().replace(/\s+/g, '_');
+    out[key] = row[i] !== undefined ? row[i] : '';
+  });
+  return out;
+}
+
 function doGet(e) {
   // e is undefined if this is run manually from the Apps Script editor
   // (the "Run" button) instead of a real web request -- guard so that
@@ -1087,6 +1251,10 @@ function doPost(e) {
         sheet.appendRow(row);
       }
 
+      const firestoreFields = {};
+      COLUMNS.forEach(col => { firestoreFields[col] = valueFor(col); });
+      firestoreDualWrite_('briefs', agentCode, firestoreFields);
+
       return ContentService
         .createTextOutput(JSON.stringify({ status: 'OK', agent_code: agentCode }))
         .setMimeType(ContentService.MimeType.JSON);
@@ -1305,6 +1473,9 @@ function saveCharacter(data) {
           row[jsonCol] = characterJson;
           if (playerNameCol !== undefined) row[playerNameCol] = playerName;
           sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
+          firestoreDualWrite_('characters', data.agent_code, {
+            agent_code: data.agent_code, updated_at: now, character_json: characterJson, player_name: playerName
+          });
           return ContentService
             .createTextOutput(JSON.stringify({ status: 'OK', agent_code: data.agent_code, updated_at: now }))
             .setMimeType(ContentService.MimeType.JSON);
@@ -1321,6 +1492,9 @@ function saveCharacter(data) {
       newRow[jsonCol] = characterJson;
       if (playerNameCol !== undefined) newRow[playerNameCol] = playerName;
       sheet.appendRow(newRow);
+      firestoreDualWrite_('characters', data.agent_code, {
+        agent_code: data.agent_code, updated_at: now, character_json: characterJson, player_name: playerName
+      });
       return ContentService
         .createTextOutput(JSON.stringify({ status: 'OK', agent_code: data.agent_code, updated_at: now }))
         .setMimeType(ContentService.MimeType.JSON);
@@ -1650,6 +1824,14 @@ function updateCharacterField(agentCode, field, value) {
   for (let i = 0; i < codes.length; i++) {
     if (codes[i][0] === agentCode) {
       sheet.getRange(i + 2, fieldCol + 1).setValue(value);
+      // Only 'player_name' has a matching Firestore field today (handler/
+      // operation are the unused legacy fields updateCharacterField()'s
+      // own allowlist comment already notes) -- partial-patch just that
+      // one field so this never touches character_json or anything else
+      // on the document.
+      if (field === 'player_name') {
+        firestoreDualPatch_('characters', agentCode, { player_name: value });
+      }
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
@@ -1840,6 +2022,9 @@ function deleteCharacter(agentCode) {
       }
     }
 
+    firestoreDualDelete_('characters', agentCode);
+    firestoreDualDelete_('briefs', agentCode);
+
     return ContentService.createTextOutput(JSON.stringify({ status: 'OK', agent_code: agentCode }))
       .setMimeType(ContentService.MimeType.JSON);
   });
@@ -1936,6 +2121,7 @@ function restoreCharacter(agentCode) {
           if (data[i][codeCol] === agentCode) {
             // Drop the trailing "Deleted At" column when moving back.
             charSheet.appendRow(data[i].slice(0, data[0].length - 1));
+            firestoreDualWrite_('characters', agentCode, rowToFirestoreFields_(data[0], data[i]));
             deletedChars.deleteRow(i + 1);
             break;
           }
@@ -1957,6 +2143,7 @@ function restoreCharacter(agentCode) {
         for (let j = data.length - 1; j >= 1; j--) {
           if (data[j][codeCol] === agentCode) {
             briefsSheet.appendRow(data[j].slice(0, data[0].length - 1));
+            firestoreDualWrite_('briefs', agentCode, rowToFirestoreFields_(data[0], data[j]));
             deletedBriefs.deleteRow(j + 1);
             break;
           }
