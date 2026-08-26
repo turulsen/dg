@@ -1453,10 +1453,6 @@ function findByPlayerName(name, callback) {
       const row = charRows[j];
       const code = row[cCodeCol];
       if (!code) continue;
-      let bio = {};
-      if (cJsonCol !== -1) {
-        try { bio = JSON.parse(row[cJsonCol] || '{}').bio || {}; } catch (e) { /* skip unparsable */ }
-      }
       // Two independent places a Character's player name can live: the
       // dedicated Player Name column (what A-Cell Sheet tab's inline
       // edit and updateCharacterField() write to) and the character
@@ -1468,8 +1464,26 @@ function findByPlayerName(name, callback) {
       // of them is exactly "the Sheet tab clearly shows my name but
       // Cover Identity still can't find me." Treat either as a match.
       const columnName = cPnCol !== -1 ? String(row[cPnCol] || '').trim().toLowerCase() : '';
-      const jsonName = String(bio.player_name || '').trim().toLowerCase();
-      if (columnName !== needle && jsonName !== needle) continue;
+      let bio = {};
+      let jsonParsed = false;
+      let matched = !!columnName && columnName === needle;
+      if (!matched && !columnName && cJsonCol !== -1) {
+        // Only worth parsing this row's full character sheet as a
+        // fallback if the dedicated column had nothing to check in the
+        // first place -- a populated (even if non-matching) column is
+        // trusted on its own. Unconditionally parsing every row's JSON
+        // to support the OR above turned this into an O(roster size)
+        // JSON.parse of every character's full sheet on every single
+        // search, live-reported as Cover Identity search timing out
+        // once the campaign's roster grew large enough.
+        try { bio = JSON.parse(row[cJsonCol] || '{}').bio || {}; } catch (e) { /* skip unparsable */ }
+        jsonParsed = true;
+        matched = String(bio.player_name || '').trim().toLowerCase() === needle;
+      }
+      if (!matched) continue;
+      if (!jsonParsed && cJsonCol !== -1) {
+        try { bio = JSON.parse(row[cJsonCol] || '{}').bio || {}; } catch (e) { /* skip unparsable */ }
+      }
       const existing = byCode[code] || {};
       // Updated At is stored as an ISO string (see saveCharacter()
       // above, new Date().toISOString()), not epoch millis -- parse it
