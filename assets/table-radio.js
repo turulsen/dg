@@ -51,11 +51,18 @@
   var MUTED_KEY = 'dg_radio_muted';
   var VOLUME_KEY = 'dg_radio_volume';
   var EXPANDED_KEY = 'dg_radio_expanded';
-  // Was 6000ms -- shortened as a zero-new-infra latency cut (still one
-  // JSONP GET to Apps Script/Sheets per tick, so this is a stopgap, not
-  // real push; a table-sized group's poll traffic is nowhere near
-  // Apps Script's execution quotas at this interval).
-  var POLL_MS = 2000;
+  // Was 2000ms (before that, 6000ms) -- widened back out, and jittered
+  // (see POLL_JITTER_MS/scheduleNextPoll() below), after live reports
+  // of intermittent backend timeouts under real concurrent load
+  // (several tabs' Radio widgets, Notes panels, and character-sheet
+  // autosaves all sharing the same Apps Script project/Sheet). A fixed
+  // setInterval also means every tab opened around the same moment
+  // polls in lockstep forever after -- a self-rescheduling setTimeout
+  // with jitter spreads that back out instead of everyone hitting the
+  // backend in the same instant, every cycle. Still one JSONP GET to
+  // Apps Script/Sheets per tick, so this is a stopgap, not real push.
+  var POLL_MS = 4000;
+  var POLL_JITTER_MS = 1500;
   // Fixed numbered channels, picked by turning a dial rather than typing a
   // name -- five slots, no typos, no two players landing on "sam" vs "Sam".
   var CHANNELS = ['1', '2', '3', '4', '5'];
@@ -651,7 +658,19 @@
       var statusEl = document.getElementById('dg-radio-status');
       var trackEl = document.getElementById('dg-radio-track');
       var miniTrackEl = document.getElementById('dg-radio-mini-track');
-      if (!res || res.status !== 'OK' || !res.track_url) {
+      // A well-formed "genuinely nothing playing" (status: 'NOT_FOUND',
+      // what getNowPlaying() actually returns for that case) is a real
+      // answer -- but anything else that isn't a clean 'OK' with a
+      // track_url (a malformed/error response, or no response object
+      // at all) means the backend didn't actually manage to answer
+      // this poll, not that the broadcast stopped. Treating those the
+      // same used to flicker a live broadcast to "Waiting for the
+      // Handler" and back on every transient miss under concurrent
+      // load -- silently skip this tick instead and let the next poll
+      // (a couple seconds away) try again, leaving whatever was last
+      // known on screen in the meantime.
+      if (!res || (res.status !== 'OK' && res.status !== 'NOT_FOUND')) return;
+      if (res.status !== 'OK' || !res.track_url) {
         if (statusEl) statusEl.textContent = 'Waiting for the Handler…';
         if (trackEl) trackEl.textContent = 'No signal yet.';
         if (miniTrackEl) miniTrackEl.textContent = 'No signal yet.';
@@ -684,13 +703,19 @@
     document.head.appendChild(s);
   }
 
+  function scheduleNextPoll() {
+    pollTimer = setTimeout(function () {
+      poll();
+      scheduleNextPoll();
+    }, POLL_MS + Math.floor(Math.random() * POLL_JITTER_MS));
+  }
   function startPolling() {
     stopPolling();
     poll();
-    pollTimer = setInterval(poll, POLL_MS);
+    scheduleNextPoll();
   }
   function stopPolling() {
-    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
   }
 
   if (getChannel()) {

@@ -55,7 +55,17 @@
   "use strict";
 
   const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
-  const POLL_MS = 5000; // slower than Table Radio's 2s -- note content changes far less often than "what's playing"
+  // Widened (was 5000ms flat) and jittered (see POLL_JITTER_MS/
+  // startPolling() below) after live reports of intermittent backend
+  // timeouts under real concurrent load -- several tabs' Notes panels,
+  // Table Radio widgets, and character-sheet autosaves all share the
+  // same Apps Script project/Sheet. A fixed setInterval also means
+  // every Notes panel opened around the same moment polls in lockstep
+  // forever after; a self-rescheduling setTimeout with jitter spreads
+  // that back out. Still slower than Table Radio's own poll -- note
+  // content changes far less often than "what's playing".
+  const POLL_MS = 8000;
+  const POLL_JITTER_MS = 2000;
   const SAVE_DEBOUNCE_MS = 1200; // matches agent-hub.html's scheduleNoteSave() convention
   const SHARED_TAB = '__shared__'; // pseudo agent_code, never a real one -- selects the combined tab
   const HEADER_LEVELS = [1, 2]; // keeps the existing H1/H2-only vocabulary rather than Editor.js's default 1-6
@@ -1374,12 +1384,18 @@
       fetchNotes();
       fetchEvidence();
     }
+    function scheduleNextPoll_() {
+      pollTimer = setTimeout(function () {
+        pollTick_();
+        scheduleNextPoll_();
+      }, POLL_MS + Math.floor(Math.random() * POLL_JITTER_MS));
+    }
     function startPolling() {
       stopPolling();
-      pollTimer = setInterval(pollTick_, POLL_MS);
+      scheduleNextPoll_();
     }
     function stopPolling() {
-      if (pollTimer) clearInterval(pollTimer);
+      if (pollTimer) clearTimeout(pollTimer);
       pollTimer = null;
     }
 

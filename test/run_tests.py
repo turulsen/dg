@@ -3743,6 +3743,103 @@ def test_table_radio_widget(p):
     page.close()
     return errs
 
+def test_table_radio_transient_miss_no_flicker(p):
+    """Regression: get_now_playing's poll() used to treat ANY response
+    that wasn't a clean {status:'OK', track_url} the same as the
+    backend's own well-formed "genuinely nothing playing" answer
+    ({status:'NOT_FOUND'}) -- a malformed/error response under real
+    concurrent backend load (several tabs' Radio widgets, Notes panels,
+    and character-sheet autosaves all sharing the same Apps Script
+    project) flickered a live broadcast to "Waiting for the Handler"
+    and back on every transient miss, even though nothing had actually
+    stopped playing. Now only a real NOT_FOUND (or OK-with-no-track_url)
+    counts; anything else silently keeps whatever was last known on
+    screen and waits for the next poll to try again."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+
+    # "malformed" stays on until the test explicitly turns it off below
+    # -- an indefinite streak (rather than a fixed number of ticks)
+    # means the mid-streak check below can't accidentally land after a
+    # real recovery poll already quietly re-filled the state, whatever
+    # the actual poll interval turns out to be.
+    poll_state = {"calls": 0, "malformed": False}
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        if "action=get_now_playing" in url:
+            poll_state["calls"] += 1
+            if poll_state["malformed"]:
+                # Standing in for the backend being too busy to
+                # actually answer this poll -- not a real "nothing
+                # playing" response.
+                res = {"status": "ERROR"}
+            else:
+                res = {"status": "OK", "channel": "3",
+                       "track_url": "https://drive.google.com/uc?export=download&id=fakeFileId123",
+                       "track_title": "Rain Loop", "started_at": 1700000000000, "track_kind": "audio"}
+        else:
+            res = {"status": "OK"}
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+    page.route("**/script.google.com/**", fake_apps_script)
+    page.route("**/uc?export=download*", lambda r: r.fulfill(status=200, content_type="audio/mpeg", body=""))
+
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.evaluate("() => localStorage.setItem('dg_radio_channel', '3')")
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_timeout(800)
+    # Checked via window._dgRadioLast (poll()'s own record of the last
+    # real track it saw) rather than the visible status/track text --
+    # this fake audio: URL can't actually decode in a real browser, so
+    # the widget's own (unrelated) playback-error handling overwrites
+    # the status line regardless of poll() behavior. _dgRadioLast is
+    # untouched by that and directly reflects whether poll() itself
+    # reset track state, which is the actual thing under test here.
+    record("radio", "the first (real) poll records the track as the last known state",
+           page.evaluate("() => window._dgRadioLast && window._dgRadioLast.track_title") == "Rain Loop", "")
+
+    # Now switch the mock to malformed and hold it there indefinitely --
+    # synchronize on the mock's own call counter advancing (proof at
+    # least one malformed poll actually landed) rather than a fixed
+    # wait, and keep it malformed until this test explicitly turns it
+    # back off below, so the check can't land after a real recovery
+    # poll already quietly re-filled the state (whatever the actual
+    # poll interval turns out to be).
+    poll_state["malformed"] = True
+    calls_before = poll_state["calls"]
+    wait_for_condition(lambda: (poll_state["calls"] > calls_before) or None, timeout_ms=15000)
+    record("radio", "a malformed poll response mid-broadcast does not clear the last-known track (no flicker to 'nothing playing')",
+           page.evaluate("() => window._dgRadioLast && window._dgRadioLast.track_title") == "Rain Loop", "")
+    record("radio", "the status/track text also never flipped to the 'nothing playing' strings",
+           "Waiting for the Handler" not in page.inner_text("#dg-radio-status")
+           and "No signal yet" not in page.inner_text("#dg-radio-track"), page.inner_text("#dg-radio-status"))
+    record("radio", "at least one malformed poll actually happened while the check ran (not a fluke)",
+           poll_state["malformed"] and poll_state["calls"] > calls_before, poll_state["calls"])
+
+    # Recovery: switch back to real responses and confirm the track
+    # keeps showing correctly -- the malformed streak didn't leave any
+    # lingering bad state behind either.
+    poll_state["malformed"] = False
+    calls_before = poll_state["calls"]
+    wait_for_condition(lambda: (poll_state["calls"] > calls_before) or None, timeout_ms=15000)
+    page.wait_for_timeout(300)
+    record("radio", "the track keeps showing correctly once real responses resume after the malformed streak",
+           page.evaluate("() => window._dgRadioLast && window._dgRadioLast.track_title") == "Rain Loop", "")
+
+    page.close()
+    return errs
+
 def test_table_radio_audio_volume(p):
     """assets/table-radio.js: a direct .mp3 track (no external player API
     involved) is the simplest, most directly verifiable path for real
@@ -6434,7 +6531,7 @@ def test_notes_evidence_integration(p):
            page.locator(".dg-notes-evidence-photo-img").count() == 1, "")
 
     # Regression: a live report described the Evidence photo flickering
-    # in and out in the popup -- traced to the 5s poll tick (POLL_MS)
+    # in and out in the popup -- traced to the poll tick (POLL_MS)
     # unconditionally rebuilding an open modal, including re-blanking
     # the photo to its loading placeholder and re-fetching it from
     # Drive every single tick, even though the photo never changed. A
@@ -6442,9 +6539,11 @@ def test_notes_evidence_integration(p):
     # resolves near-instantly, so the reliable signature to check for
     # is the redundant re-fetch itself, not a DOM-visibility sample
     # that could miss a sub-poll-interval blink. Wait past two full
-    # poll ticks and confirm imgdata was only ever fetched once.
+    # poll ticks and confirm imgdata was only ever fetched once -- POLL_MS
+    # is now 8000 + up to 2000 jitter (was a flat 5000), so worst case
+    # two ticks take up to 20s.
     calls_after_first_resolve = imgdata_calls["n"]
-    page.wait_for_timeout(11000)
+    page.wait_for_timeout(21000)
     record("notes", "the resolved Evidence photo is not re-fetched from Drive on later poll ticks",
            imgdata_calls["n"] == calls_after_first_resolve,
            f"calls after first resolve={calls_after_first_resolve}, calls now={imgdata_calls['n']}")
