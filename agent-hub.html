@@ -688,22 +688,52 @@
 
   function setCiStatus(msg) { if (ciStatus) ciStatus.textContent = msg; }
 
-  function lookupCoverIdentity(name, opts) {
+  // Retried with increasing delays on anything that looks like the
+  // backend couldn't actually answer (a hard timeout, or a malformed/
+  // error response) -- NOT on a well-formed "found nothing" (status:
+  // 'OK' with an empty agents array), which is a real, trustworthy
+  // answer and shouldn't be retried into a false positive. A live
+  // report showed the exact same player name working, then failing,
+  // then working again minutes later with no code change in between --
+  // this campaign's Apps Script backend is a single shared script
+  // handling every open tab's autosave/radio-poll/notes-poll traffic
+  // at once (see the "Fix Apps Script backend overload under
+  // concurrent live-session load" fix elsewhere in this project), and
+  // this particular read path had never been hardened against that
+  // the way writes elsewhere already are.
+  const CI_LOOKUP_RETRY_DELAYS_MS = [2000, 4000, 8000];
+  function lookupCoverIdentity(name, opts, attempt) {
     opts = opts || {};
+    attempt = attempt || 0;
     name = (name || '').trim();
     if (!name) { if (!opts.silent) setCiStatus('Enter your name first.'); return; }
-    if (!opts.silent) setCiStatus('Looking up Agents for "' + name + '"…');
-    const cbName = '_ciLookup_' + Date.now();
-    const timer = setTimeout(() => {
-      delete window[cbName];
-      if (!opts.silent) setCiStatus('Connection timed out. Try again.');
-    }, 8000);
-    window[cbName] = function (res) {
-      clearTimeout(timer);
+    if (!opts.silent) {
+      setCiStatus(attempt === 0
+        ? 'Looking up Agents for "' + name + '"…'
+        : 'Still trying -- the backend seems busy right now…');
+    }
+    const cbName = '_ciLookup_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
+    function retryOrGiveUp() {
       delete window[cbName];
       const s = document.getElementById('s-' + cbName);
       if (s) s.remove();
-      if (!res || res.status !== 'OK' || !Array.isArray(res.agents) || !res.agents.length) {
+      if (attempt < CI_LOOKUP_RETRY_DELAYS_MS.length) {
+        setTimeout(() => lookupCoverIdentity(name, opts, attempt + 1), CI_LOOKUP_RETRY_DELAYS_MS[attempt]);
+      } else if (!opts.silent) {
+        setCiStatus('The backend is taking too long to respond right now. Try again in a moment.');
+      }
+    }
+    const timer = setTimeout(retryOrGiveUp, 8000);
+    window[cbName] = function (res) {
+      clearTimeout(timer);
+      if (!res || res.status !== 'OK' || !Array.isArray(res.agents)) {
+        retryOrGiveUp();
+        return;
+      }
+      delete window[cbName];
+      const s = document.getElementById('s-' + cbName);
+      if (s) s.remove();
+      if (!res.agents.length) {
         if (!opts.silent) setCiStatus('No Agents found for "' + name + '".');
         return;
       }

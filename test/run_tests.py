@@ -1529,6 +1529,63 @@ def test_agent_hub_cover_identity(p):
            "<img" in photo_html and "data:image/png" in photo_html, photo_html)
     errs_all.extend(errs)
     page.close()
+
+    # Regression: a live report showed the exact same player name
+    # working, then failing, then working again minutes later with no
+    # code change in between -- traced to this campaign's shared Apps
+    # Script backend being genuinely busy under concurrent live-session
+    # traffic (autosave/radio-poll/notes-poll from other open tabs),
+    # something this read path had never been hardened against. A
+    # malformed/error response (not a well-formed "found nothing")
+    # now retries with increasing delays instead of immediately
+    # reporting failure -- exercised here via two bad responses before
+    # a real one lands, since simulating the 8s hard timeout itself
+    # would make this test needlessly slow.
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    retry_state = {"calls": 0}
+    def flaky_then_ok(route):
+        url = route.request.url
+        if "action=find_by_player_name" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        retry_state["calls"] += 1
+        if retry_state["calls"] <= 2:
+            # A malformed/error response -- backend busy, not a real
+            # "nothing matches" answer.
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"ERROR"}})')
+            return
+        body = json.dumps({"status": "OK", "agents": [
+            {"code": "GERG-P001", "char_name": "Patrick Montgomery", "codename": "", "sex": "Male",
+             "age_range": "Mid 30s", "nationality": "American", "saved_at": 1000},
+        ]})
+        route.fulfill(status=200, content_type="application/javascript", body=f"{cb}({body})")
+    page.route("**/script.google.com/**", flaky_then_ok)
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    page.fill("#cover-identity-input", "Gergo")
+    page.click("#cover-identity-btn")
+    # First attempt fails near-instantly (a malformed response, not a
+    # real timeout), then waits CI_LOOKUP_RETRY_DELAYS_MS[0] (2s) before
+    # the retry itself starts and updates the status line -- wait past
+    # that before checking for it.
+    page.wait_for_timeout(2300)
+    record("hub", "a busy-backend response shows a retrying status instead of a false failure",
+           "busy" in page.inner_text("#ci-status").lower(), page.inner_text("#ci-status"))
+    tab_labels = wait_for_condition(
+        lambda: page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)")
+        if "Patrick Montgomery" in page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)") else None,
+        timeout_ms=10000)
+    record("hub", "the search self-heals and loads the Agent once the backend actually answers, with no user retry",
+           bool(tab_labels) and "Patrick Montgomery" in tab_labels, str(tab_labels))
+    record("hub", "it took more than one attempt to get there (proves the retry path actually ran)",
+           retry_state["calls"] >= 3, retry_state["calls"])
+    errs_all.extend(errs)
+    page.close()
     return errs_all
 
 def test_agent_hub_erase_agent(p):
