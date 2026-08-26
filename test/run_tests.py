@@ -2560,6 +2560,18 @@ def test_acell_cells(p):
     record("acell", "every Agent on file starts out Unassigned",
            "Owen Castillo" in unassigned and "Priya Anand" in unassigned and "Marcus Reyes" in unassigned, unassigned)
 
+    # Clicking an Unassigned Agent chip before any Cell exists should
+    # open the assign popup with a clear "create one first" message,
+    # not an empty or broken list.
+    page.click('[data-assign-code="OWEN-CS12"]')
+    page.wait_for_timeout(150)
+    record("acell", "the assign popup, with no Cells yet, tells the Handler to create one first",
+           "No Cells exist yet" in page.inner_text("#cell-assign-backdrop"), page.inner_text("#cell-assign-backdrop"))
+    page.click("[data-assign-cancel]")
+    page.wait_for_timeout(100)
+    record("acell", "Cancel closes the assign popup without sending anything",
+           page.locator("#cell-assign-backdrop").count() == 0, "")
+
     # Create a Cell. Polls for the confirmed state instead of a fixed
     # sleep -- create_cell is a no-cors POST verified by a list_cells
     # read-back 900ms later, and under system load that round trip can
@@ -2648,6 +2660,21 @@ def test_acell_cells(p):
            and "Priya Anand" in page.inner_text("#cells-unassigned")
            and "Marcus Reyes" in page.inner_text("#cells-unassigned"),
            page.inner_text("#cells-unassigned"))
+
+    # Now Cell Alpha exists again and Priya is Unassigned -- the popup
+    # should list it as a one-click destination.
+    page.click('[data-assign-code="PRIY-AN34"]')
+    page.wait_for_timeout(150)
+    record("acell", "the assign popup lists existing Cells as options once at least one exists",
+           "Cell Alpha" in page.inner_text("#cell-assign-backdrop"), page.inner_text("#cell-assign-backdrop"))
+    page.click('#cell-assign-backdrop [data-assign-cell-i="0"]')
+    wait_for_condition(lambda: "Priya Anand" in alpha_members())
+    record("acell", "picking a Cell from the assign popup adds the Agent to it",
+           "Priya Anand" in alpha_members(), alpha_members())
+    record("acell", "the assigned Agent no longer shows as Unassigned",
+           "Priya Anand" not in page.inner_text("#cells-unassigned"), "")
+    record("acell", "the assign popup closes itself after a successful assignment",
+           page.locator("#cell-assign-backdrop").count() == 0, "")
 
     page.close()
     return errs
@@ -6901,6 +6928,98 @@ def test_notes_code_url_param(p):
     return errs
 
 
+def test_notes_solo_mode_for_unassigned_agent(p):
+    """Regression test for a real live report: a fresh Kappa Black import
+    (not yet placed in any Cell by the Handler) opened Notes and hit a
+    dead end -- 'Your Agent isn't assigned to a Cell yet -- ask your
+    Handler.' The player asked for a graceful fallback instead: open
+    Notes and let them write today, using a synthesized per-Agent
+    pseudo-cell ('solo:'+agentCode -- see notes/index.html's
+    soloCellId()) so all the existing Cell-scoped save/list plumbing
+    works unchanged; only the Shared tab is hidden, since nobody else is
+    in this pseudo-cell to share with. When a Handler later actually
+    assigns the Agent to a real Cell, updateCellMembers() (Code.gs)
+    migrates these rows onto the real cell_id server-side -- covered
+    separately by the Node-level verification in this session, not here
+    (Code.gs isn't exercised by this Playwright suite)."""
+    page = p.new_page()
+    page.set_default_timeout(15000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    posts = []
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            posts.append(json.loads(req.post_data or "{}"))
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=list_cells" in url:
+                # No Cell anywhere lists this Agent as a member.
+                res = {"status": "OK", "cells": [{"cell_id": "cell_1", "name": "Cell Alpha",
+                                                    "handler": "Sam", "member_codes": ["OTHR-CODE"]}]}
+            elif "action=list_cell_notes" in url:
+                res = {"status": "OK", "notes": {}, "identities": {}}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.add_init_script("""
+        try {
+            localStorage.setItem('dg_agent_roster', JSON.stringify({
+                'ELVI-HENC': { code: 'ELVI-HENC', char_name: 'Elvis Shantings', saved_at: Date.now() }
+            }));
+        } catch (e) {}
+    """)
+    page.goto(f"{BASE}/notes/index.html", wait_until="domcontentloaded", timeout=15000)
+
+    wait_for_condition(lambda: page.query_selector(".dg-notes-identity-modal") is not None, timeout_ms=6000)
+    page.click(".dg-notes-color-swatch")
+    page.click(".dg-notes-identity-confirm")
+    wait_for_condition(lambda: page.query_selector(".dg-notes-identity-modal") is None, timeout_ms=6000)
+    # Wait for Editor.js's own block to actually be there, not just the
+    # mount div -- clicking/typing before Editor.js's async init settles
+    # (or before the first fetchNotes() poll's own re-render lands) races
+    # against a remount that would drop the keystrokes.
+    wait_for_condition(lambda: page.query_selector("#dg-notes-editor-mount .ce-block") is not None, timeout_ms=6000)
+
+    record("notes", "an unassigned Agent gets a live, editable Notes panel instead of the old blocking 'ask your Handler' message",
+           page.query_selector("#dg-notes-editor-mount") is not None and page.locator("#picker-wrap:not(.hidden)").count() == 0,
+           page.inner_text("#picker-status") if page.locator("#picker-wrap:not(.hidden)").count() else "(picker hidden, panel shown)")
+
+    record("notes", "solo mode hides the Shared tab -- there's nobody else in this pseudo-cell to share with",
+           page.locator('[data-tab="__shared__"]').count() == 0, "")
+    record("notes", "solo mode still shows the Agent's own tab",
+           page.locator('[data-tab="ELVI-HENC"]').count() == 1, "")
+
+    page.click(".ce-block [contenteditable]")
+    page.keyboard.type("Working alone for now")
+    # The page.evaluate("1") is a pump, not a real check -- wait_for_condition's
+    # own time.sleep() doesn't flush Playwright's sync API connection, so
+    # without a real page call inside the polled lambda the pending
+    # no-cors POST this debounce fires never actually lands before the
+    # timeout (same idiom test_notes_v2_editorjs already uses above).
+    saved = wait_for_condition(
+        lambda: (page.evaluate("1"), next((x for x in posts if x.get("action") == "save_note_block" and x.get("agent_code") == "ELVI-HENC"), None))[1],
+        timeout_ms=25000)
+    record("notes", "writing in solo mode actually saves, keyed under the synthesized solo:<code> pseudo-cell",
+           bool(saved) and saved.get("cell_id") == "solo:ELVI-HENC"
+           and json.loads(saved.get("text") or "{}").get("text") == "Working alone for now",
+           json.dumps(saved) if saved else "no POST captured")
+
+    record("notes", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
+
 def test_split_view(p):
     """Split View: this sheet's own real mobile layout (a second, real
     iframe of this exact page at a genuinely narrow width, not the live
@@ -7440,6 +7559,7 @@ def main():
 
         safe(test_notes_reload_shows_own_previous_blocks, browser, area="notes")
         safe(test_notes_code_url_param, browser, area="notes")
+        safe(test_notes_solo_mode_for_unassigned_agent, browser, area="notes")
 
         safe(test_split_view, browser, area="stats")
 

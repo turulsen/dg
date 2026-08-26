@@ -283,23 +283,40 @@
     statusEl.textContent = 'Choose which Agent’s notes to open.';
   }
 
+  // Prefix that can never collide with a real cell_id (those are always
+  // 'cell_<timestamp>_<random>', see createCell() in Code.gs) -- a
+  // synthesized, per-Agent-only pseudo-cell so an Agent who isn't in a
+  // real Cell yet can still open Notes and start writing today, rather
+  // than being blocked on their Handler. Everything downstream (save/
+  // list_cell_notes, the panel's own poll) already just works against
+  // any cell_id string, since the one this Agent is alone in behaves
+  // identically to a real Cell with one member -- it just never shows
+  // a Shared tab, since there's nobody else to share with (soloMode).
+  // Once a Handler actually assigns this Agent to a real Cell,
+  // updateCellMembers() (Code.gs) migrates these rows onto the real
+  // cell_id server-side, so nothing written here is lost or orphaned.
+  function soloCellId(agentCode) {
+    return 'solo:' + agentCode;
+  }
+
   function openFor(agentCode) {
     const cell = findCellForAgent(agentCode);
-    if (!cell) {
-      pickerWrap.classList.remove('hidden');
-      statusEl.textContent = 'Your Agent (' + agentCode + ') isn’t assigned to a Cell yet -- ask your Handler.';
-      return;
-    }
     pickerWrap.classList.add('hidden');
     changeRow.classList.remove('hidden');
     mount.classList.remove('hidden');
 
     if (panelHandle && panelHandle.destroy) panelHandle.destroy();
-    panelHandle = window.dgNotesPanel.init(mount, {
+    panelHandle = window.dgNotesPanel.init(mount, cell ? {
       cellId: cell.cell_id,
       agentCode: agentCode,
       agentToken: agentToken(agentCode),
       memberNames: cell.member_names || {},
+    } : {
+      cellId: soloCellId(agentCode),
+      agentCode: agentCode,
+      agentToken: agentToken(agentCode),
+      memberNames: {},
+      soloMode: true,
     });
   }
 

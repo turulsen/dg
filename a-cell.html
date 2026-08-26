@@ -301,8 +301,37 @@
   .cells-unassigned-chip{
     background:rgba(28,22,8,.04); border:1px solid var(--rule); color:var(--ink-2);
     font-size:11px; font-family:'Courier Prime',monospace; padding:5px 10px;
+    cursor:pointer;
   }
+  .cells-unassigned-chip:hover{ background:rgba(28,22,8,.09); }
   .cells-status{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); min-height:1.4em; margin-bottom:10px; }
+
+  /* ── Assign-to-Cell popup: clicking an Unassigned Agent chip opens
+     this, listing every existing Cell as a one-click destination --
+     same "click a chip's own name to act on it" pattern the rest of
+     this tab already uses, just anchored as a small centered popup
+     instead of an inline row, since it needs to pick from a list that
+     doesn't belong to any one Cell card. ── */
+  .cell-assign-backdrop{
+    position:fixed; inset:0; z-index:9999; background:rgba(8,6,2,.55);
+    display:flex; align-items:center; justify-content:center; padding:24px;
+  }
+  .cell-assign-popup{
+    background:var(--paper, #f4efe0); box-shadow:0 8px 40px rgba(0,0,0,.5);
+    border-radius:3px; padding:var(--s4, 18px); max-width:360px; width:100%;
+    font-family:'Courier Prime',monospace;
+  }
+  .cell-assign-popup h3{
+    font-family:'Special Elite',monospace; font-size:14px; margin:0 0 4px; color:var(--ink);
+  }
+  .cell-assign-popup p{ font-size:11px; color:var(--ink-3); margin:0 0 12px; }
+  .cell-assign-list{ display:flex; flex-direction:column; gap:6px; max-height:260px; overflow-y:auto; }
+  .cell-assign-option{
+    text-align:left; background:transparent; border:1px solid var(--rule); color:var(--ink-2);
+    font-family:'Courier Prime',monospace; font-size:12px; padding:8px 10px; cursor:pointer;
+  }
+  .cell-assign-option:hover{ background:rgba(28,22,8,.06); }
+  .cell-assign-popup-actions{ display:flex; justify-content:flex-end; margin-top:14px; }
 
   /* ── Evidence: a shared clue/document locker, each item filed under
      one Cell (or every Cell) and, within that Cell, an optional
@@ -1710,8 +1739,61 @@
     cells.forEach(function (c) { c.member_codes.forEach(function (code) { assigned[code] = true; }); });
     var unassigned = agents.filter(function (a) { return !assigned[a.code]; });
     unassignedEl.innerHTML = unassigned.length
-      ? unassigned.map(function (a) { return '<span class="cells-unassigned-chip">' + escapeHtml(a.name) + '</span>'; }).join('')
+      ? unassigned.map(function (a) {
+          return '<button type="button" class="cells-unassigned-chip" data-assign-code="' + escapeHtml(a.code) + '" title="Assign to a Cell">' + escapeHtml(a.name) + '</button>';
+        }).join('')
       : '<div class="cells-empty-note">Every Agent on file belongs to at least one Cell.</div>';
+    Array.prototype.forEach.call(unassignedEl.querySelectorAll('[data-assign-code]'), function (btn) {
+      btn.addEventListener('click', function () { openAssignPopup(btn.dataset.assignCode); });
+    });
+  }
+
+  // Clicking an Unassigned Agent chip opens this rather than requiring
+  // the Handler to first find the right Cell card and use its own Add
+  // Selected row -- an unassigned Agent otherwise has no player-facing
+  // Notes access at all until this happens (see notes/index.html's
+  // solo-notes fallback), so this is meant to be the fast, obvious path
+  // the moment a Handler notices a fresh recruit sitting here.
+  function openAssignPopup(agentCode) {
+    var existing = document.getElementById('cell-assign-backdrop');
+    if (existing) existing.remove();
+
+    var agent = agentsByCode[agentCode];
+    var name = agent ? agent.name : agentCode;
+
+    var backdrop = document.createElement('div');
+    backdrop.className = 'cell-assign-backdrop';
+    backdrop.id = 'cell-assign-backdrop';
+
+    var listHtml = cells.length
+      ? cells.map(function (c, i) {
+          return '<button type="button" class="cell-assign-option" data-assign-cell-i="' + i + '">' + escapeHtml(c.name) + '</button>';
+        }).join('')
+      : '<div class="cells-empty-note">No Cells exist yet -- create one first, then come back to assign ' + escapeHtml(name) + '.</div>';
+
+    backdrop.innerHTML =
+      '<div class="cell-assign-popup">' +
+      '<h3>Assign to a Cell</h3>' +
+      '<p>' + escapeHtml(name) + ' (' + escapeHtml(agentCode) + ') isn’t in a Cell yet.</p>' +
+      '<div class="cell-assign-list">' + listHtml + '</div>' +
+      '<div class="cell-assign-popup-actions"><button type="button" class="paper-btn" data-assign-cancel>Cancel</button></div>' +
+      '</div>';
+
+    backdrop.addEventListener('click', function (e) {
+      if (e.target === backdrop) backdrop.remove();
+    });
+    backdrop.querySelector('[data-assign-cancel]').addEventListener('click', function () { backdrop.remove(); });
+    Array.prototype.forEach.call(backdrop.querySelectorAll('[data-assign-cell-i]'), function (btn) {
+      btn.addEventListener('click', function () {
+        var cell = cells[parseInt(btn.dataset.assignCellI, 10)];
+        backdrop.remove();
+        if (!cell) return;
+        var newMembers = cell.member_codes.concat([agentCode]);
+        saveMembers(cell, newMembers);
+      });
+    });
+
+    document.body.appendChild(backdrop);
   }
 
   function saveMembers(cellObj, newMembers) {
