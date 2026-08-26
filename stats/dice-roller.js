@@ -197,6 +197,18 @@
     function rollPercent(target, skillName) {
         if (_activeDie !== 'dpct') selectDie('dpct');
         rollDie(target, skillName);
+        // Inside Split View's own sheet iframe (DG_EMBED_MODE) this
+        // instance's own #dr-panel is hidden -- see the body.dg-embedded
+        // rule in styles.css -- so a roll made here would otherwise
+        // animate and land somewhere the player can never see. The outer
+        // page keeps its own visible copy of this same panel up for
+        // exactly this reason; relay the roll to it so clicking a skill
+        // inside the embedded sheet still shows a result somewhere.
+        if (document.body.classList.contains('dg-embedded') && window.parent !== window) {
+            try {
+                window.parent.postMessage({ type: 'dg-dice-roll', target, skillName }, location.origin);
+            } catch (e) { }
+        }
     }
 
     /* ── Dice expression parser ─────────────────────────────────────── */
@@ -466,6 +478,18 @@
 
     /* ── Public API ───────────────────────────────────────────────── */
     window.dgDice = { roll: rollPercent, rollManual, _toggle: togglePanel, _select: selectDie };
+
+    /* ── Split View relay: only the outer (non-embedded) page listens --
+       see rollPercent()'s postMessage above. Same-origin only, both ways. */
+    if (!document.body.classList.contains('dg-embedded')) {
+        window.addEventListener('message', e => {
+            if (e.origin !== location.origin) return;
+            const data = e.data;
+            if (data && data.type === 'dg-dice-roll') {
+                rollPercent(data.target, data.skillName);
+            }
+        });
+    }
 
     /* ── Init ─────────────────────────────────────────────────────── */
     // Was window's 'load' event -- but buildPanel() only creates its own

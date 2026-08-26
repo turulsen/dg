@@ -3047,6 +3047,17 @@ function matchKappaBlackSkillKey(title) {
     return found ? found[0] : null;
 }
 
+// Kappa Black's own IAgent model (github.com/troygoode/kappablack,
+// src/types/agent.ts) stores adaptation as a flat incident COUNT per
+// category -- `violenceAdaptation`/`helplessnessAdaptation`, 0-3 -- not
+// this app's per-incident checkbox booleans. A count of N means the
+// first N boxes are checked, in order (that's how the rule accumulates
+// them on the paper sheet too), so this just expands the count back out.
+function kappaBlackAdaptationFromCount(count) {
+    const n = Math.max(0, Math.min(3, parseInt(count, 10) || 0));
+    return { incident1: n >= 1, incident2: n >= 2, incident3: n >= 3 };
+}
+
 function convertKappaBlackToAgentData(toml) {
     const statistics = {};
     Object.entries(KAPPABLACK_STAT_SECTIONS).forEach(([section, code]) => {
@@ -3128,7 +3139,14 @@ function convertKappaBlackToAgentData(toml) {
             physical: { description: '', wounds: '' },
             health: { max: toml.hp ?? 0, value: toml.hp ?? 0 },
             wp: { max: toml.wp ?? 0, value: toml.wp ?? 0 },
-            sanity: { value: toml.san ?? 0, currentBreakingPoint: 0, adaptations: {} },
+            sanity: {
+                value: toml.san ?? 0,
+                currentBreakingPoint: 0,
+                adaptations: {
+                    violence: kappaBlackAdaptationFromCount(toml.violenceAdaptation),
+                    helplessness: kappaBlackAdaptationFromCount(toml.helplessnessAdaptation)
+                }
+            },
             skills,
             typedSkills
         }

@@ -321,5 +321,15 @@
   init();
 </script>
 
+<!-- Every other page in the app registers the service worker and shows
+     the "update available" banner through this script -- Notes never
+     did, which meant a tab left open here (the one page players are
+     most likely to leave open for a whole session, alongside Table
+     Radio) had no way to notice a deploy had happened and could keep
+     running arbitrarily old cached JS indefinitely, with no self-heal
+     path -- see sw.js's own comment for the stale-while-revalidate
+     strategy this plugs into. -->
+<script src="../assets/sw-update.js" data-sw="../sw.js"></script>
+
 </body>
 </html>
