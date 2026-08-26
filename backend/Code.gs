@@ -1448,14 +1448,28 @@ function findByPlayerName(name, callback) {
   const cCodeCol = charHeaders.indexOf('Agent Code');
   const cJsonCol = charHeaders.indexOf('Character JSON');
   const cUpdatedCol = charHeaders.indexOf('Updated At');
-  if (cPnCol !== -1 && cCodeCol !== -1) {
+  if (cCodeCol !== -1) {
     for (let j = 1; j < charRows.length; j++) {
       const row = charRows[j];
-      if (String(row[cPnCol] || '').trim().toLowerCase() !== needle) continue;
       const code = row[cCodeCol];
       if (!code) continue;
       let bio = {};
-      try { bio = JSON.parse(row[cJsonCol] || '{}').bio || {}; } catch (e) { /* skip unparsable */ }
+      if (cJsonCol !== -1) {
+        try { bio = JSON.parse(row[cJsonCol] || '{}').bio || {}; } catch (e) { /* skip unparsable */ }
+      }
+      // Two independent places a Character's player name can live: the
+      // dedicated Player Name column (what A-Cell Sheet tab's inline
+      // edit and updateCharacterField() write to) and the character
+      // sheet's own bio.player_name embedded in Character JSON (what
+      // that same Sheet tab's own DISPLAY actually reads, and what a
+      // player saves just by typing their name into their own sheet).
+      // An inline Handler edit only ever touches the column, never the
+      // JSON, so the two can genuinely disagree -- matching only one
+      // of them is exactly "the Sheet tab clearly shows my name but
+      // Cover Identity still can't find me." Treat either as a match.
+      const columnName = cPnCol !== -1 ? String(row[cPnCol] || '').trim().toLowerCase() : '';
+      const jsonName = String(bio.player_name || '').trim().toLowerCase();
+      if (columnName !== needle && jsonName !== needle) continue;
       const existing = byCode[code] || {};
       // Updated At is stored as an ISO string (see saveCharacter()
       // above, new Date().toISOString()), not epoch millis -- parse it
