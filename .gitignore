@@ -2,3 +2,10 @@ test/results.json
 test/results-tmp-*.xlsx
 __pycache__/
 *.pyc
+
+# Firebase migration -- never commit service account keys or installed deps
+node_modules/
+*-service-account*.json
+*-sa-key*.json
+.firebase/
+firebase-debug*.log

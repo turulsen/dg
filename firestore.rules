@@ -26,25 +26,29 @@ rules_version = '2';
 // starting point that doesn't regress what's live today.
 // ════════════════════════════════════════════════════════════════
 
-function isSignedIn() {
-  return request.auth != null;
-}
-
-function isHandler() {
-  return request.auth != null && request.auth.token.handler == true;
-}
-
-function agentCode() {
-  return request.auth.token.agentCode;
-}
-
-function isCellMember(cellId) {
-  return isSignedIn() &&
-    agentCode() in get(/databases/$(database)/documents/cells/$(cellId)).data.member_codes;
-}
-
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isHandler() {
+      return request.auth != null && request.auth.token.handler == true;
+    }
+
+    function agentCode() {
+      return request.auth.token.agentCode;
+    }
+
+    // Declared in this same match scope (not top-level) so the
+    // get() call below resolves cleanly against the real $(database)
+    // binding instead of triggering a "call occurs outside of
+    // defining scope" compiler warning.
+    function isCellMember(cellId) {
+      return isSignedIn() &&
+        agentCode() in get(/databases/$(database)/documents/cells/$(cellId)).data.member_codes;
+    }
 
     // characters/{agentCode} -- mirrors the Characters sheet row.
     // Read is public today (Cover Identity search, ?load=CODE) --
