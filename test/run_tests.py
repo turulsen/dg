@@ -5591,14 +5591,24 @@ def test_agent_file_outfit_plate_requires_face_first(p):
 
     # Now Outfit Plate generation should go through, referencing the
     # just-generated Face Plate -- no reload, no round trip to Drive.
+    # The prompt sent is no longer the bare textarea value: when a Face
+    # Plate reference image is attached, generatePlateImage() appends an
+    # explicit override telling Gemini to use the reference for facial
+    # identity only, not framing -- otherwise Gemini's image-to-image
+    # generation anchors on the reference's own tight headshot crop and
+    # the "full body" instructions above get ignored (see that fix's
+    # commit). Match on startswith rather than equality for that reason.
     page.click('button[data-mode="mode1"]:has-text("Generate Image")')
     page.wait_for_timeout(500)
-    outfit_posts = [p_ for p_ in plate_posts if p_.get("prompt") == "outfit prompt"]
+    outfit_posts = [p_ for p_ in plate_posts if (p_.get("prompt") or "").startswith("outfit prompt")]
     record("agent-portal", "generating the Outfit Plate after the Face Plate exists sends a generate_plate_image request",
            len(outfit_posts) == 1, str(outfit_posts))
     record("agent-portal", "the Outfit Plate request carries the just-generated Face Plate as its reference image",
            len(outfit_posts) == 1 and outfit_posts[0].get("reference_image_base64") == "data:image/png;base64,RkFDRURBVEE=",
            str(outfit_posts))
+    record("agent-portal", "the Outfit Plate prompt tells Gemini to ignore the reference image's framing, not just its face",
+           len(outfit_posts) == 1 and "ignore its framing" in outfit_posts[0].get("prompt", ""),
+           str(outfit_posts[0].get("prompt") if outfit_posts else None))
 
     record("agent-portal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
