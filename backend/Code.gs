@@ -3424,6 +3424,11 @@ function setNowPlaying(channel, trackUrl, trackTitle, trackKind, loop) {
       if (pausedAtCol !== undefined) row[pausedAtCol] = '';
       if (loopCol !== undefined) row[loopCol] = loopVal;
       sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
+      firestoreDualWrite_('radio', channel, {
+        channel: channel, track_url: trackUrl || '', track_title: trackTitle || '',
+        started_at: now, updated_at: now, track_kind: trackKind || '',
+        paused: false, paused_at: '', loop: !!loopVal
+      });
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
@@ -3440,6 +3445,11 @@ function setNowPlaying(channel, trackUrl, trackTitle, trackKind, loop) {
   if (pausedCol !== undefined) newRow[pausedCol] = 0;
   if (loopCol !== undefined) newRow[loopCol] = loopVal;
   sheet.appendRow(newRow);
+  firestoreDualWrite_('radio', channel, {
+    channel: channel, track_url: trackUrl || '', track_title: trackTitle || '',
+    started_at: now, updated_at: now, track_kind: trackKind || '',
+    paused: false, paused_at: '', loop: !!loopVal
+  });
   return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -3473,6 +3483,7 @@ function pauseNowPlaying(channel) {
       if (pausedAtCol !== undefined) row[pausedAtCol] = now;
       if (updatedCol !== undefined) row[updatedCol] = now;
       sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
+      firestoreDualPatch_('radio', channel, { paused: true, paused_at: now, updated_at: now });
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
@@ -3509,6 +3520,7 @@ function resumeNowPlaying(channel) {
       if (pausedAtCol !== undefined) row[pausedAtCol] = '';
       if (updatedCol !== undefined) row[updatedCol] = now;
       sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
+      firestoreDualPatch_('radio', channel, { started_at: shiftedStart, paused: false, paused_at: '', updated_at: now });
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
