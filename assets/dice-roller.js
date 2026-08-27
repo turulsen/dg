@@ -369,7 +369,7 @@
                 return db.collection('dice_rolls').doc(ctx.cellId).collection('rolls').add(doc);
             });
         }).catch(err => {
-            console.error('dice-roller: recordRoll failed (roll itself is unaffected):', err);
+            showHistoryError('Roll not saved', err);
         });
     }
 
@@ -429,6 +429,16 @@
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
     }
+    // A phone has no DevTools console within easy reach -- surfacing the
+    // actual error code/message right in the history panel (instead of
+    // only console.error) turns "still doesn't work" reports into
+    // something actionable without needing a tethered debugger session.
+    function showHistoryError(context, err) {
+        console.error('dice-roller: ' + context, err);
+        if (!_e || !_e.historyList) return;
+        const detail = (err && (err.code || err.message)) || String(err);
+        _e.historyList.innerHTML = '<div class="dr-history-empty">' + escapeHtml(context + ': ' + detail) + '</div>';
+    }
     function stopHistoryFeed() {
         if (_historyUnsubscribe) { _historyUnsubscribe(); _historyUnsubscribe = null; }
     }
@@ -441,7 +451,7 @@
                 const entries = [];
                 snap.forEach(doc => entries.push(doc.data()));
                 renderHistoryList(entries);
-            }, err => console.error('dice-roller: history feed error:', err));
+            }, err => showHistoryError('History feed error', err));
     }
     function startHandlerHistoryFeed() {
         stopHistoryFeed();
@@ -456,7 +466,7 @@
                     entries.push(data);
                 });
                 renderHistoryList(entries);
-            }, err => console.error('dice-roller: handler history feed error:', err));
+            }, err => showHistoryError('Live Rolls feed error', err));
     }
 
     // Kicks off the right feed for this page's context. Agent mode
@@ -467,7 +477,7 @@
         resolveRollContext().then(ctx => {
             if (ctx.mode === 'agent') {
                 ensureAgentSignedIn(ctx.agentCode).then(() => startAgentHistoryFeed(ctx))
-                    .catch(err => console.error('dice-roller: agent sign-in failed, history unavailable:', err));
+                    .catch(err => showHistoryError('Sign-in failed', err));
             } else if (ctx.mode === 'handler' && _e.handlerGate) {
                 _e.handlerGate.style.display = '';
             } else if (ctx.mode === 'none' && _e.historyList) {
@@ -919,10 +929,12 @@
                 signInAsHandler(password).then(() => {
                     _e.handlerGate.style.display = 'none';
                     startHandlerHistoryFeed();
-                }).catch(() => {
+                }).catch(err => {
                     _e.handlerGate.disabled = false;
                     _e.handlerGate.textContent = 'Show Live Rolls (Handler)';
-                    window.alert('Wrong password, or Live Rolls is temporarily unreachable.');
+                    console.error('dice-roller: Handler sign-in failed', err);
+                    const detail = (err && (err.code || err.message)) || String(err);
+                    window.alert('Wrong password, or Live Rolls is temporarily unreachable.\n\n(' + detail + ')');
                 });
             });
         }
