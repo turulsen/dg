@@ -333,8 +333,14 @@ def test_stat_generator_agent_file_nav(p):
     page.click("#settings-cog-btn")
     page.wait_for_timeout(200)
     page.click("#site-intro-agent-file-btn")
+    # goToAgentFile() now navigates with an explicit ?code=<agent's own
+    # Cloud Save code> rather than a bare #agent hash relying solely on
+    # dg_last_agent (see agent-portal-export.js's own comment) -- so the
+    # destination page's openSpecificAgent() (an explicit ?code= always
+    # wins) drives this, not a stale most-recent-agent fallback that a
+    # different agent's earlier session could have left behind.
     for _ in range(20):
-        if page.url.endswith("dg-agent-portal.html#agent"):
+        if "dg-agent-portal.html?code=" in page.url and page.url.endswith("#agent"):
             break
         page.wait_for_timeout(300)
 
@@ -345,8 +351,8 @@ def test_stat_generator_agent_file_nav(p):
             break
         page.wait_for_timeout(300)
 
-    record("stats-terminal", "Open Agent File button navigates to the Portal, landing on Profiling (name-only export is incomplete)",
-           page.url.endswith("dg-agent-portal.html#agent") and cover_tab_active,
+    record("stats-terminal", "Open Agent File button navigates to the Portal with this Agent's own code, landing on Profiling (name-only export is incomplete)",
+           "dg-agent-portal.html?code=" in page.url and page.url.endswith("#agent") and cover_tab_active,
            page.url)
     record("stats-terminal", "the Agent File tab is NOT shown for this still-incomplete export",
            not page.eval_on_selector("#tw-agent", "el => el.classList.contains('active')"), "")
@@ -363,6 +369,88 @@ def test_stat_generator_agent_file_nav(p):
     body = json.loads(captured.get("body") or "{}")
     record("stats-terminal", "the nav button's export used the real char_name",
            body.get("char_name") == "Priya Anand", str(body.get("char_name")))
+
+    record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
+    page.close()
+    return errs
+
+def test_stat_generator_agent_file_nav_ignores_stale_last_agent(p):
+    """Regression test for a real live report: a player exported a fresh
+    Kappa Black import (Elvis) via "Open Agent File" and landed on a
+    DIFFERENT agent's data (Daniela, from an earlier session in the same
+    browser). Root cause: goToAgentFile() used to navigate to a bare
+    '#agent' hash with no ?code=, relying entirely on dg_last_agent (a
+    single browser-wide "most recently exported agent" localStorage key)
+    for dg-agent-portal.html to pick up -- stale whenever run() silently
+    no-ops (blank name) or just plain overwritten by an earlier session's
+    export that's still sitting there. Now goToAgentFile() passes this
+    Agent's own Cloud Save code explicitly via ?code=, which
+    openSpecificAgent() (dg-agent-portal.html) already documents as
+    always winning over the dg_last_agent fallback. This test pre-seeds
+    a stale dg_last_agent for a wholly different agent BEFORE exporting
+    a new one, to prove the stale entry is never what gets shown."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    def fake_apps_script(route):
+        url = route.request.url
+        if route.request.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        if "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"OK"}})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(400)
+
+    # Pre-seed a stale "most recently exported agent" from a wholly
+    # different, earlier session -- exactly what a shared/reused browser
+    # would already have sitting in localStorage. A one-time evaluate(),
+    # not add_init_script -- that would reapply on every navigation this
+    # test makes (including the one onto dg-agent-portal.html itself),
+    # clobbering the real write goToAgentFile() is about to make right
+    # before the destination page ever gets to read it.
+    page.evaluate("""() => {
+        try {
+            localStorage.setItem('dg_last_agent', JSON.stringify({
+                code: 'DANI-STALE',
+                data: { char_name: 'Daniela Martinez', codename: 'Spwarrow' }
+            }));
+        } catch (e) {}
+    }""")
+
+    page.fill("#cs-name", "Elvis Shantings")
+    page.wait_for_timeout(150)
+
+    page.click("#settings-cog-btn")
+    page.wait_for_timeout(200)
+    page.click("#site-intro-agent-file-btn")
+    for _ in range(20):
+        if "dg-agent-portal.html?code=" in page.url and page.url.endswith("#agent"):
+            break
+        page.wait_for_timeout(300)
+
+    nav_code = ""
+    if "code=" in page.url:
+        nav_code = page.url.split("code=")[1].split("#")[0]
+    record("stats-terminal", "Open Agent File links to this Agent's own code, not the stale dg_last_agent one",
+           bool(nav_code) and nav_code != "DANI-STALE", f"url={page.url}")
+
+    char_name_val = ""
+    for _ in range(15):
+        char_name_val = page.eval_on_selector("#dg-form [name=char_name]", "el => el.value") if page.locator("#dg-form [name=char_name]").count() else ""
+        if char_name_val:
+            break
+        page.wait_for_timeout(300)
+    record("stats-terminal", "the Agent Portal shows the just-exported agent (Elvis), not the stale one (Daniela)",
+           char_name_val == "Elvis Shantings", char_name_val)
 
     record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
     page.close()
@@ -2472,6 +2560,18 @@ def test_acell_cells(p):
     record("acell", "every Agent on file starts out Unassigned",
            "Owen Castillo" in unassigned and "Priya Anand" in unassigned and "Marcus Reyes" in unassigned, unassigned)
 
+    # Clicking an Unassigned Agent chip before any Cell exists should
+    # open the assign popup with a clear "create one first" message,
+    # not an empty or broken list.
+    page.click('[data-assign-code="OWEN-CS12"]')
+    page.wait_for_timeout(150)
+    record("acell", "the assign popup, with no Cells yet, tells the Handler to create one first",
+           "No Cells exist yet" in page.inner_text("#cell-assign-backdrop"), page.inner_text("#cell-assign-backdrop"))
+    page.click("[data-assign-cancel]")
+    page.wait_for_timeout(100)
+    record("acell", "Cancel closes the assign popup without sending anything",
+           page.locator("#cell-assign-backdrop").count() == 0, "")
+
     # Create a Cell. Polls for the confirmed state instead of a fixed
     # sleep -- create_cell is a no-cors POST verified by a list_cells
     # read-back 900ms later, and under system load that round trip can
@@ -2560,6 +2660,21 @@ def test_acell_cells(p):
            and "Priya Anand" in page.inner_text("#cells-unassigned")
            and "Marcus Reyes" in page.inner_text("#cells-unassigned"),
            page.inner_text("#cells-unassigned"))
+
+    # Now Cell Alpha exists again and Priya is Unassigned -- the popup
+    # should list it as a one-click destination.
+    page.click('[data-assign-code="PRIY-AN34"]')
+    page.wait_for_timeout(150)
+    record("acell", "the assign popup lists existing Cells as options once at least one exists",
+           "Cell Alpha" in page.inner_text("#cell-assign-backdrop"), page.inner_text("#cell-assign-backdrop"))
+    page.click('#cell-assign-backdrop [data-assign-cell-i="0"]')
+    wait_for_condition(lambda: "Priya Anand" in alpha_members())
+    record("acell", "picking a Cell from the assign popup adds the Agent to it",
+           "Priya Anand" in alpha_members(), alpha_members())
+    record("acell", "the assigned Agent no longer shows as Unassigned",
+           "Priya Anand" not in page.inner_text("#cells-unassigned"), "")
+    record("acell", "the assign popup closes itself after a successful assignment",
+           page.locator("#cell-assign-backdrop").count() == 0, "")
 
     page.close()
     return errs
@@ -6813,6 +6928,98 @@ def test_notes_code_url_param(p):
     return errs
 
 
+def test_notes_solo_mode_for_unassigned_agent(p):
+    """Regression test for a real live report: a fresh Kappa Black import
+    (not yet placed in any Cell by the Handler) opened Notes and hit a
+    dead end -- 'Your Agent isn't assigned to a Cell yet -- ask your
+    Handler.' The player asked for a graceful fallback instead: open
+    Notes and let them write today, using a synthesized per-Agent
+    pseudo-cell ('solo:'+agentCode -- see notes/index.html's
+    soloCellId()) so all the existing Cell-scoped save/list plumbing
+    works unchanged; only the Shared tab is hidden, since nobody else is
+    in this pseudo-cell to share with. When a Handler later actually
+    assigns the Agent to a real Cell, updateCellMembers() (Code.gs)
+    migrates these rows onto the real cell_id server-side -- covered
+    separately by the Node-level verification in this session, not here
+    (Code.gs isn't exercised by this Playwright suite)."""
+    page = p.new_page()
+    page.set_default_timeout(15000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    posts = []
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            posts.append(json.loads(req.post_data or "{}"))
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=list_cells" in url:
+                # No Cell anywhere lists this Agent as a member.
+                res = {"status": "OK", "cells": [{"cell_id": "cell_1", "name": "Cell Alpha",
+                                                    "handler": "Sam", "member_codes": ["OTHR-CODE"]}]}
+            elif "action=list_cell_notes" in url:
+                res = {"status": "OK", "notes": {}, "identities": {}}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.add_init_script("""
+        try {
+            localStorage.setItem('dg_agent_roster', JSON.stringify({
+                'ELVI-HENC': { code: 'ELVI-HENC', char_name: 'Elvis Shantings', saved_at: Date.now() }
+            }));
+        } catch (e) {}
+    """)
+    page.goto(f"{BASE}/notes/index.html", wait_until="domcontentloaded", timeout=15000)
+
+    wait_for_condition(lambda: page.query_selector(".dg-notes-identity-modal") is not None, timeout_ms=6000)
+    page.click(".dg-notes-color-swatch")
+    page.click(".dg-notes-identity-confirm")
+    wait_for_condition(lambda: page.query_selector(".dg-notes-identity-modal") is None, timeout_ms=6000)
+    # Wait for Editor.js's own block to actually be there, not just the
+    # mount div -- clicking/typing before Editor.js's async init settles
+    # (or before the first fetchNotes() poll's own re-render lands) races
+    # against a remount that would drop the keystrokes.
+    wait_for_condition(lambda: page.query_selector("#dg-notes-editor-mount .ce-block") is not None, timeout_ms=6000)
+
+    record("notes", "an unassigned Agent gets a live, editable Notes panel instead of the old blocking 'ask your Handler' message",
+           page.query_selector("#dg-notes-editor-mount") is not None and page.locator("#picker-wrap:not(.hidden)").count() == 0,
+           page.inner_text("#picker-status") if page.locator("#picker-wrap:not(.hidden)").count() else "(picker hidden, panel shown)")
+
+    record("notes", "solo mode hides the Shared tab -- there's nobody else in this pseudo-cell to share with",
+           page.locator('[data-tab="__shared__"]').count() == 0, "")
+    record("notes", "solo mode still shows the Agent's own tab",
+           page.locator('[data-tab="ELVI-HENC"]').count() == 1, "")
+
+    page.click(".ce-block [contenteditable]")
+    page.keyboard.type("Working alone for now")
+    # The page.evaluate("1") is a pump, not a real check -- wait_for_condition's
+    # own time.sleep() doesn't flush Playwright's sync API connection, so
+    # without a real page call inside the polled lambda the pending
+    # no-cors POST this debounce fires never actually lands before the
+    # timeout (same idiom test_notes_v2_editorjs already uses above).
+    saved = wait_for_condition(
+        lambda: (page.evaluate("1"), next((x for x in posts if x.get("action") == "save_note_block" and x.get("agent_code") == "ELVI-HENC"), None))[1],
+        timeout_ms=25000)
+    record("notes", "writing in solo mode actually saves, keyed under the synthesized solo:<code> pseudo-cell",
+           bool(saved) and saved.get("cell_id") == "solo:ELVI-HENC"
+           and json.loads(saved.get("text") or "{}").get("text") == "Working alone for now",
+           json.dumps(saved) if saved else "no POST captured")
+
+    record("notes", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
+
 def test_split_view(p):
     """Split View: this sheet's own real mobile layout (a second, real
     iframe of this exact page at a genuinely narrow width, not the live
@@ -7213,6 +7420,8 @@ def main():
 
         safe(test_stat_generator_agent_file_nav, browser, area="stats-terminal")
 
+        safe(test_stat_generator_agent_file_nav_ignores_stale_last_agent, browser, area="stats-terminal")
+
         safe(test_stat_generator_sheets_roundtrip, browser, area="stats-terminal")
 
         safe(test_foundry_import_profession_and_outfit, browser, area="stats-terminal")
@@ -7350,6 +7559,7 @@ def main():
 
         safe(test_notes_reload_shows_own_previous_blocks, browser, area="notes")
         safe(test_notes_code_url_param, browser, area="notes")
+        safe(test_notes_solo_mode_for_unassigned_agent, browser, area="notes")
 
         safe(test_split_view, browser, area="stats")
 

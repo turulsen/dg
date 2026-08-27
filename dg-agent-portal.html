@@ -5292,6 +5292,17 @@ function rerollAgent() {
 
   // Default (including #agent): Agent File tab.
   switchTab('agent');
+  // If autoRestore() above already populated this exact agent from
+  // dg_last_agent (true right after stats/'s "Open Agent File" button,
+  // which writes dg_last_agent synchronously then links here with this
+  // same code), render straight from memory -- a fresh loadAgentFile()
+  // round-trip here would race the fire-and-forget save_character POST
+  // that button also just fired, and lose to a NOT_FOUND on any slow
+  // connection despite the correct data already sitting right here.
+  if (typeof afCode !== 'undefined' && afCode === upper && typeof afData !== 'undefined' && afData) {
+    openInAgentFile();
+    return;
+  }
   const afInput = document.getElementById('af-code-input');
   if (afInput) {
     afInput.value = upper;

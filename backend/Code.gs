@@ -2284,6 +2284,40 @@ function createCell(name, handler) {
   return ContentService.createTextOutput(JSON.stringify({ status: 'OK', cell_id: cellId })).setMimeType(ContentService.MimeType.JSON);
 }
 
+// When a Handler assigns an Agent to a real Cell for the first time,
+// any Notes that Agent wrote before assignment live under a synthesized
+// pseudo cell_id 'solo:<code>' (see notes/index.html's soloCellId() --
+// the fallback that lets an unassigned Agent open Notes and write
+// today instead of being blocked). Rewrite those rows onto the real
+// cell_id so that history carries forward instead of being orphaned --
+// purely a cell_id column update, nothing about the blocks themselves
+// (privacy, shared flag, content) changes.
+function migrateSoloNotesToCell_(agentCode, newCellId) {
+  const soloCellId = 'solo:' + agentCode;
+  const sheet = getOrCreateCellNotesSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const cellCol = headers.indexOf('cell_id');
+  const codeCol = headers.indexOf('agent_code');
+  if (cellCol === -1 || codeCol === -1) return;
+  let migrated = false;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][cellCol]).trim() === soloCellId &&
+        String(data[i][codeCol]).trim().toUpperCase() === agentCode) {
+      sheet.getRange(i + 1, cellCol + 1).setValue(newCellId);
+      migrated = true;
+    }
+  }
+  if (migrated) {
+    // listCellNotes()'s raw-row cache is keyed per cell_id -- both the
+    // old (now-empty) and new cell_id's cache entries could already be
+    // populated from before this migration ran, so both need dropping.
+    const cache = CacheService.getScriptCache();
+    cache.remove('cell_notes_raw_' + soloCellId);
+    cache.remove('cell_notes_raw_' + newCellId);
+  }
+}
+
 // Overwrites the full member list for a Cell -- the client sends the
 // complete new list (after an add or a remove), rather than this
 // function doing incremental add/remove itself.
@@ -2297,9 +2331,20 @@ function updateCellMembers(cellId, memberCodes) {
   const headers = data[0];
   const idCol = headers.indexOf('cell_id');
   const membersCol = headers.indexOf('member_codes');
+  const newMembers = memberCodes || [];
   for (let i = 1; i < data.length; i++) {
     if (data[i][idCol] === cellId) {
-      sheet.getRange(i + 1, membersCol + 1).setValue(JSON.stringify(memberCodes || []));
+      let previousMembers = [];
+      try { previousMembers = JSON.parse(data[i][membersCol] || '[]'); } catch (e) { previousMembers = []; }
+      sheet.getRange(i + 1, membersCol + 1).setValue(JSON.stringify(newMembers));
+      // Any code in the new list that wasn't in the old one is a fresh
+      // assignment -- carry forward whatever solo Notes that Agent
+      // already wrote before joining a Cell.
+      newMembers.forEach(function (code) {
+        if (previousMembers.indexOf(code) === -1) {
+          migrateSoloNotesToCell_(String(code).trim().toUpperCase(), cellId);
+        }
+      });
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
@@ -3812,7 +3857,18 @@ function generateAppearancePrompt(data) {
     };
     const eraNote = eraOutfitContext[era] || '';
 
-    const isBase = data.mode === 'base' || injuries.length === 0;
+    // An explicit data.mode always wins. injuries.length === 0 is only a
+    // fallback for the two older call sites (dg-agent-portal.html's
+    // Medical Record/appearance-after-injury flows) that never set mode
+    // at all -- for THEM, no injuries really did mean "nothing to draft
+    // a post-injury prompt from, fall back to the face lock". But the
+    // newer per-era Field Portrait / Field Reference buttons always send
+    // mode explicitly AND always send injuries: [] (there's no medical
+    // record involved in drafting those at all), so the old `||` short-
+    // circuited isBase to true regardless of mode -- every Field
+    // Reference (outfit, full-body) request silently got a Mode 0
+    // headshot prompt back instead, with isOutfit below never reached.
+    const isBase = data.mode === 'base' || (!data.mode && injuries.length === 0);
     const isOutfit = data.mode === 'outfit';
     const isSurveillance = data.mode === 'surveillance';
 

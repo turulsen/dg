@@ -137,7 +137,7 @@
     const name = (state.bio?.name || '').trim();
     if (!name || name === 'Agent') {
       if (status) { status.textContent = 'Enter a name in Biography first.'; status.style.color = '#a03030'; }
-      return;
+      return null;
     }
 
     const outfit = PROFESSION_OUTFIT[state.bio?.profession] || {};
@@ -190,6 +190,8 @@
       if (btn) { btn.disabled = false; }
       if (status) { status.textContent = 'Connection error -- try again.'; status.style.color = '#a03030'; }
     });
+
+    return agentCode;
   }
 
   // Nav shortcut above the theme selector: export (best effort -- run()
@@ -197,9 +199,22 @@
   // Agent Portal's Agent File tab. The localStorage write in run() happens
   // synchronously before its fetch, and that fetch is keepalive:true, so
   // navigating away immediately doesn't lose either.
+  //
+  // Pass this character's OWN code explicitly via ?code= rather than
+  // relying on dg_last_agent alone -- dg-agent-portal.html's own
+  // openSpecificAgent() already treats an explicit ?code= as always
+  // winning over the dg_last_agent fallback (see its comment), and
+  // dg_last_agent is a single browser-wide "most recent agent" pointer
+  // that stays stale whenever run() no-ops (blank name, a beat before
+  // Cloud Save has minted a code) -- this used to open whichever OTHER
+  // agent this browser had most recently exported instead of the one
+  // actually being viewed here, silently and with no error shown.
   function goToAgentFile() {
-    try { run(); } catch (e) { /* best effort -- still navigate below */ }
-    window.location.href = '../dg-agent-portal.html#agent';
+    let code = null;
+    try { code = run(); } catch (e) { /* best effort -- still navigate below */ }
+    window.location.href = code
+      ? '../dg-agent-portal.html?code=' + encodeURIComponent(code) + '#agent'
+      : '../dg-agent-portal.html#agent';
   }
 
   window.dgAgentPortalExport = { run, goToAgentFile, buildFromStats, ageToRange, sexToOption, buildNotes, genCode, PROFESSION_OUTFIT };

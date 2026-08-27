@@ -23,6 +23,19 @@
      cellId: string,
      agentCode: string,        -- the viewer's own Agent Code (identity)
      memberNames: {code: name} -- optional, for nicer author-badge labels
+     soloMode: boolean         -- true when cellId is a synthesized
+                                  per-Agent pseudo-cell (this Agent isn't
+                                  in a real Cell yet -- see notes/index.html's
+                                  openFor()), not a real Cell nobody else
+                                  has joined. Hides the Shared tab, since
+                                  there is nobody else who could ever see
+                                  or contribute to it; blocks marked
+                                  shared here just sit dormant until a
+                                  Handler assigns a real Cell, at which
+                                  point the same rows (migrated server-
+                                  side, see updateCellMembers() in
+                                  Code.gs) become visible to real Cell
+                                  mates with no further action needed.
    }
 
    Architecture note (the central decision of this rewrite): Editor.js
@@ -181,6 +194,7 @@
   function init(container, opts) {
     opts = opts || {};
     const cellId = opts.cellId;
+    const soloMode = !!opts.soloMode;
     const agentCode = (opts.agentCode || '').trim().toUpperCase();
     // Backend hardening: list_cell_notes/save_note_block/
     // delete_note_block/save_agent_identity now need this Agent's own
@@ -658,7 +672,12 @@
       // Shared tab.
       const myId = identityFor(agentCode);
       const myInkStyle = myId ? ' style="--tab-ink:' + myId.color + '"' : '';
-      const tabsHtml = '<button type="button" class="dg-notes-tab dg-notes-tab-shared' + (activeCode === SHARED_TAB ? ' active' : '') + '" data-tab="' + SHARED_TAB + '">Shared</button>' +
+      // soloMode: no Shared tab -- this Agent isn't in a real Cell yet,
+      // so there's nobody else who could ever see or add to it. See
+      // this module's own header comment for what happens to any block
+      // marked shared while solo once a real Cell assignment lands.
+      const tabsHtml = (soloMode ? '' :
+        '<button type="button" class="dg-notes-tab dg-notes-tab-shared' + (activeCode === SHARED_TAB ? ' active' : '') + '" data-tab="' + SHARED_TAB + '">Shared</button>') +
         '<button type="button" class="dg-notes-tab' + (activeCode === agentCode ? ' active' : '') + '" data-tab="' + escapeHtml(agentCode) + '"' + myInkStyle + '>' + escapeHtml(memberLabel(agentCode)) + '</button>';
 
       const isOwnTab = activeCode === agentCode;
