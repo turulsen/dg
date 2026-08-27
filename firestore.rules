@@ -175,5 +175,19 @@ service cloud.firestore {
         || (isCellMember(cellId) && request.resource.data.agent_code == agentCode());
       allow update, delete: if false; // history is append-only
     }
+
+    // Collection-group access for the Handler's cross-Cell "Live Rolls"
+    // feed (assets/dice-roller.js's startHandlerHistoryFeed(), a
+    // collectionGroup('rolls') query). The fixed-depth rule above
+    // (dice_rolls/{cellId}/rolls/{rollId}) covers direct reads/writes
+    // and a query scoped to one already-known Cell, but Firestore does
+    // NOT treat that as authorizing a collection-group query across
+    // every Cell -- that requires its own rule written with the
+    // recursive {path=**} wildcard. Read-only, Handler-only; create/
+    // update/delete for this collection are governed solely by the
+    // rule above, unaffected by this one.
+    match /{path=**}/rolls/{rollId} {
+      allow read: if isHandler();
+    }
   }
 }
