@@ -470,6 +470,15 @@
                     .catch(err => console.error('dice-roller: agent sign-in failed, history unavailable:', err));
             } else if (ctx.mode === 'handler' && _e.handlerGate) {
                 _e.handlerGate.style.display = '';
+            } else if (ctx.mode === 'none' && _e.historyList) {
+                // No Agent Code known on this device yet (no Cloud Save
+                // code, no Cover Identity roster entry) -- rolls still
+                // work, they just can't be attributed to anyone, so
+                // recordRoll() no-ops for this mode. Say so instead of
+                // leaving the initial "No rolls yet." placeholder up
+                // forever, which reads as broken rather than as "nothing
+                // to save to."
+                _e.historyList.innerHTML = '<div class="dr-history-empty">Load your Cover Identity on this device to save roll history.</div>';
             }
         });
     }
@@ -699,7 +708,15 @@
             '#dr-panel{position:fixed;bottom:58px;right:24px;width:270px;',
             'background:var(--bg-color,#0a0a0a);border:1px solid var(--primary-color,#00b521);',
             'border-radius:8px;box-shadow:0 0 28px color-mix(in srgb,var(--primary-color) 20%,transparent),0 6px 20px rgba(0,0,0,.7);',
-            'font-family:"JetBrains Mono",monospace;color:var(--primary-color,#00b521);z-index:8000;user-select:none;}',
+            // z-index above table-radio.js's own #dg-radio (9998, see
+            // assets/table-radio.js) -- that widget's mobile offset
+            // (bottom:78px) only clears THIS panel's collapsed handle bar,
+            // not its full expanded sheet, so when both are on the same
+            // page and this panel is open, it needs to render on top
+            // rather than have the radio pill float mid-sheet over the
+            // roll controls. Collapsing this panel (▲) always restores
+            // the radio pill's normal spot.
+            'font-family:"JetBrains Mono",monospace;color:var(--primary-color,#00b521);z-index:9999;user-select:none;}',
             '#dr-handle{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;cursor:grab;',
             'border-bottom:1px solid color-mix(in srgb,var(--primary-color) 30%,transparent);',
             'background:color-mix(in srgb,var(--primary-color) 6%,transparent);border-radius:8px 8px 0 0;}',
