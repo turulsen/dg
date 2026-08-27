@@ -45,9 +45,20 @@ service cloud.firestore {
     // get() call below resolves cleanly against the real $(database)
     // binding instead of triggering a "call occurs outside of
     // defining scope" compiler warning.
+    //
+    // 'solo:<agentCode>' is CellNotes'/dice_rolls' pseudo-cell-id
+    // convention for an Agent not yet assigned to a real Cell (see
+    // notes/index.html's soloCellId() and migrateSoloNotesToCell_() in
+    // Code.gs) -- checked first and short-circuits before the get()
+    // below, since no real cells/ doc exists at that id for get() to
+    // read (a get() on a missing doc throws inside a rule, which only
+    // fails THAT sub-expression closed, but there's no reason to pay
+    // for a lookup the id's own shape already answers).
     function isCellMember(cellId) {
-      return isSignedIn() &&
-        agentCode() in get(/databases/$(database)/documents/cells/$(cellId)).data.member_codes;
+      return isSignedIn() && (
+        cellId == ('solo:' + agentCode()) ||
+        agentCode() in get(/databases/$(database)/documents/cells/$(cellId)).data.member_codes
+      );
     }
 
     // characters/{agentCode} -- mirrors the Characters sheet row.
@@ -158,7 +169,10 @@ service cloud.firestore {
     // this app).
     match /dice_rolls/{cellId}/rolls/{rollId} {
       allow read: if isHandler() || isCellMember(cellId);
-      allow create: if isHandler() || isCellMember(cellId);
+      // A Handler may log a roll under any label (an NPC's, say); an
+      // Agent can only ever write a roll attributed to their own code.
+      allow create: if isHandler()
+        || (isCellMember(cellId) && request.resource.data.agent_code == agentCode());
       allow update, delete: if false; // history is append-only
     }
   }
