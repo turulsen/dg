@@ -932,6 +932,22 @@
         _e.body.style.display = 'none';
         _e.arrow.textContent = '▲';
         initDrag($('dr-handle'), panel);
+
+        // iOS Safari has a long-standing quirk where position:fixed
+        // elements can freeze at a stale scroll-relative spot -- appearing
+        // to float mid-page instead of staying docked -- after the screen
+        // locks and unlocks while the tab stays open. Not specific to this
+        // panel or to Live Play, just more likely to be noticed there since
+        // that's the mode people leave open through a lock/unlock during
+        // an actual session. Forcing a reflow when the tab becomes visible
+        // again snaps it back to its real fixed position.
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState !== 'visible' || !panel.isConnected) return;
+            const prevDisplay = panel.style.display;
+            panel.style.display = 'none';
+            void panel.offsetHeight;
+            panel.style.display = prevDisplay;
+        });
     }
 
     /* ── Wire skill inputs ────────────────────────────────────────── */
