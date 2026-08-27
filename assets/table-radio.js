@@ -15,9 +15,13 @@
    lot less jarring than the full dial+video panel flashing in on
    every single page load.
 
-   Requires the set_now_playing / get_now_playing Apps Script actions
-   (see acell-table-radio-addition.txt, handed over separately -- not
-   yet deployed on the live backend until pasted in and redeployed).
+   Now Playing sync: reads radio/{channel} in Firestore via a live
+   onSnapshot listener (Firebase migration Phase 2), not a poll loop --
+   the Handler's set/pause/resume_now_playing Apps Script actions keep
+   that document current via Code.gs's dual-write bridge (see
+   docs/firebase-migration/). Read-only and public (see firestore.rules)
+   -- no sign-in needed for this widget, only the Handler-side A-Cell
+   Music tab (a separate file, untouched by this phase) writes.
 
    Deliberately styled as its own self-contained floating "device"
    (dark, amber/green field-radio look) rather than trying to match
@@ -46,30 +50,28 @@
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
-  var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
+  var FIREBASE_SDK_VERSION = '12.18.0';
+  // Public Web SDK config for the dg-app-b3447 Firebase project -- not
+  // a secret, same reasoning as every other client-side Firebase config;
+  // security is enforced by firestore.rules, not by hiding this object.
+  var FIREBASE_CONFIG = {
+    apiKey: 'AIzaSyBiFBvgmrjtacxXvh7FHa9a28BbwV0LnDQ',
+    authDomain: 'dg-app-b3447.firebaseapp.com',
+    projectId: 'dg-app-b3447',
+    storageBucket: 'dg-app-b3447.firebasestorage.app',
+    messagingSenderId: '464997490443',
+    appId: '1:464997490443:web:dad47a347ae7a64a9e4c0e'
+  };
   var CHANNEL_KEY = 'dg_radio_channel';
   var MUTED_KEY = 'dg_radio_muted';
   var VOLUME_KEY = 'dg_radio_volume';
   var EXPANDED_KEY = 'dg_radio_expanded';
-  // Was 2000ms (before that, 6000ms) -- widened back out, and jittered
-  // (see POLL_JITTER_MS/scheduleNextPoll() below), after live reports
-  // of intermittent backend timeouts under real concurrent load
-  // (several tabs' Radio widgets, Notes panels, and character-sheet
-  // autosaves all sharing the same Apps Script project/Sheet). A fixed
-  // setInterval also means every tab opened around the same moment
-  // polls in lockstep forever after -- a self-rescheduling setTimeout
-  // with jitter spreads that back out instead of everyone hitting the
-  // backend in the same instant, every cycle. Still one JSONP GET to
-  // Apps Script/Sheets per tick, so this is a stopgap, not real push.
-  var POLL_MS = 4000;
-  var POLL_JITTER_MS = 1500;
   // Fixed numbered channels, picked by turning a dial rather than typing a
   // name -- five slots, no typos, no two players landing on "sam" vs "Sam".
   var CHANNELS = ['1', '2', '3', '4', '5'];
 
   var lastStartedAt = null;
   var lastPaused = false;
-  var pollTimer = null;
 
   // Which live-controllable player (if any) currently backs the embed --
   // drives whether a mute/volume change can be applied in place (cheap,
@@ -635,87 +637,95 @@
     }
   }
 
-  function poll() {
-    var ch = getChannel();
-    if (!ch) return;
-    // A stale in-flight request (slow network, dropped response) shouldn't
-    // pile up scripts/globals every POLL_MS -- clear whatever the previous
-    // cycle left pending before starting a new one.
-    var prevScript = document.getElementById('_dg_radio_poll_script');
-    if (prevScript) prevScript.remove();
-    var cbName = '_dgRadioPoll_' + Date.now();
-    var timedOut = false;
-    var timer = setTimeout(function () {
-      timedOut = true;
-      delete window[cbName];
-    }, 5000);
-    window[cbName] = function (res) {
-      if (timedOut) return;
-      clearTimeout(timer);
-      delete window[cbName];
-      var s = document.getElementById('_dg_radio_poll_script');
-      if (s) s.remove();
-      var statusEl = document.getElementById('dg-radio-status');
-      var trackEl = document.getElementById('dg-radio-track');
-      var miniTrackEl = document.getElementById('dg-radio-mini-track');
-      // A well-formed "genuinely nothing playing" (status: 'NOT_FOUND',
-      // what getNowPlaying() actually returns for that case) is a real
-      // answer -- but anything else that isn't a clean 'OK' with a
-      // track_url (a malformed/error response, or no response object
-      // at all) means the backend didn't actually manage to answer
-      // this poll, not that the broadcast stopped. Treating those the
-      // same used to flicker a live broadcast to "Waiting for the
-      // Handler" and back on every transient miss under concurrent
-      // load -- silently skip this tick instead and let the next poll
-      // (a couple seconds away) try again, leaving whatever was last
-      // known on screen in the meantime.
-      if (!res || (res.status !== 'OK' && res.status !== 'NOT_FOUND')) return;
-      if (res.status !== 'OK' || !res.track_url) {
-        if (statusEl) statusEl.textContent = 'Waiting for the Handler…';
-        if (trackEl) trackEl.textContent = 'No signal yet.';
-        if (miniTrackEl) miniTrackEl.textContent = 'No signal yet.';
-        if (lastStartedAt) { window._dgRadioLast = null; renderEmbed(null); }
-        lastStartedAt = null;
-        lastPaused = false;
-        return;
-      }
-      var label = res.track_title || res.track_url;
-      if (trackEl) trackEl.textContent = label;
-      if (miniTrackEl) miniTrackEl.textContent = label;
-      if (statusEl) statusEl.textContent = res.paused ? 'Paused by the Handler' : 'On air';
-      if (res.started_at !== lastStartedAt) {
-        lastStartedAt = res.started_at;
-        lastPaused = !!res.paused;
-        window._dgRadioLast = res;
-        renderEmbed(res);
-      } else if (!!res.paused !== lastPaused) {
-        // Same track, only the pause state flipped -- toggle the live
-        // player in place instead of a full rebuild (which would restart
-        // YouTube/SoundCloud from scratch on every Pause/Resume click).
-        lastPaused = !!res.paused;
-        window._dgRadioLast = res;
-        if (!applyLivePauseState(lastPaused)) renderEmbed(res);
-      }
+  /* ── Firebase Firestore, loaded on demand -- same on-demand-script
+     pattern as the YouTube/SoundCloud APIs above, so pages that never
+     tune in never pay for it. ── */
+  var firebaseApiLoading = false;
+  var firebaseApiCallbacks = [];
+  function ensureFirebaseApi(cb) {
+    if (window.firebase && window.firebase.apps && window.firebase.apps.length) { cb(); return; }
+    firebaseApiCallbacks.push(cb);
+    if (firebaseApiLoading) return;
+    firebaseApiLoading = true;
+    var appScript = document.createElement('script');
+    appScript.src = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/firebase-app-compat.js';
+    appScript.onload = function () {
+      var fsScript = document.createElement('script');
+      fsScript.src = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/firebase-firestore-compat.js';
+      fsScript.onload = function () {
+        if (!window.firebase.apps.length) window.firebase.initializeApp(FIREBASE_CONFIG);
+        var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
+        cbs.forEach(function (fn) { fn(); });
+      };
+      document.head.appendChild(fsScript);
     };
-    var s = document.createElement('script');
-    s.id = '_dg_radio_poll_script';
-    s.src = APPS_SCRIPT_URL + '?action=get_now_playing&channel=' + encodeURIComponent(ch) + '&callback=' + cbName;
-    document.head.appendChild(s);
+    document.head.appendChild(appScript);
   }
 
-  function scheduleNextPoll() {
-    pollTimer = setTimeout(function () {
-      poll();
-      scheduleNextPoll();
-    }, POLL_MS + Math.floor(Math.random() * POLL_JITTER_MS));
+  // Given a radio/{channel} Firestore document's data (or null if it
+  // doesn't exist / has no track yet), updates every on-screen bit of
+  // state -- same logic the old JSONP poll()'s success callback had,
+  // just fed by a live snapshot instead of a timed GET. np's field
+  // names match getNowPlaying()'s old JSONP response 1:1 (both are
+  // ultimately written by the same Code.gs functions -- see the
+  // dual-write bridge in setNowPlaying()/pauseNowPlaying()/
+  // resumeNowPlaying()), so renderEmbed()/applyLivePauseState() below
+  // needed no changes at all for this swap.
+  function handleNowPlaying(np) {
+    var statusEl = document.getElementById('dg-radio-status');
+    var trackEl = document.getElementById('dg-radio-track');
+    var miniTrackEl = document.getElementById('dg-radio-mini-track');
+    if (!np || !np.track_url) {
+      if (statusEl) statusEl.textContent = 'Waiting for the Handler…';
+      if (trackEl) trackEl.textContent = 'No signal yet.';
+      if (miniTrackEl) miniTrackEl.textContent = 'No signal yet.';
+      if (lastStartedAt) { window._dgRadioLast = null; renderEmbed(null); }
+      lastStartedAt = null;
+      lastPaused = false;
+      return;
+    }
+    var label = np.track_title || np.track_url;
+    if (trackEl) trackEl.textContent = label;
+    if (miniTrackEl) miniTrackEl.textContent = label;
+    if (statusEl) statusEl.textContent = np.paused ? 'Paused by the Handler' : 'On air';
+    if (np.started_at !== lastStartedAt) {
+      lastStartedAt = np.started_at;
+      lastPaused = !!np.paused;
+      window._dgRadioLast = np;
+      renderEmbed(np);
+    } else if (!!np.paused !== lastPaused) {
+      // Same track, only the pause state flipped -- toggle the live
+      // player in place instead of a full rebuild (which would restart
+      // YouTube/SoundCloud from scratch on every Pause/Resume click).
+      lastPaused = !!np.paused;
+      window._dgRadioLast = np;
+      if (!applyLivePauseState(lastPaused)) renderEmbed(np);
+    }
   }
+
+  var radioUnsubscribe = null;
   function startPolling() {
     stopPolling();
-    poll();
-    scheduleNextPoll();
+    var ch = getChannel();
+    if (!ch) return;
+    ensureFirebaseApi(function () {
+      // The channel may have changed (or Leave may have cleared it)
+      // while the SDK was still loading -- don't subscribe to a
+      // now-stale channel.
+      if (getChannel() !== ch) return;
+      var docRef = window.firebase.firestore().collection('radio').doc(ch);
+      radioUnsubscribe = docRef.onSnapshot(function (snap) {
+        handleNowPlaying(snap.exists ? snap.data() : null);
+      }, function (err) {
+        // Same tolerance the old poll() had for a transient miss -- log
+        // it and leave whatever was last known on screen; Firestore's
+        // own client handles reconnect/retry, no manual re-poll needed.
+        console.error('Table Radio listener error:', err);
+      });
+    });
   }
   function stopPolling() {
-    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+    if (radioUnsubscribe) { radioUnsubscribe(); radioUnsubscribe = null; }
   }
 
   if (getChannel()) {
