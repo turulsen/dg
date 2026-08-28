@@ -302,10 +302,24 @@
         return cellsList.find(c => (c.member_codes || []).indexOf(agentCode) !== -1) || null;
     }
 
+    // window.dgSaveLoad only exists on stats/index.html itself (the one
+    // page that loads stats/save-load.js) -- on every other Hub page this
+    // panel now also lives on, that check always misses and recordRoll()
+    // fell back to showing the bare Agent Code in history instead of the
+    // character's name. The roster's own char_name (kept in sync by
+    // rosterUpsert() on every save, cloud-sync.js) works from any page,
+    // so it's the fallback; dgSaveLoad's live value is still preferred
+    // when available since it reflects an unsaved in-progress edit.
     function currentAgentName() {
         try {
             const s = window.dgSaveLoad && window.dgSaveLoad.collectState && window.dgSaveLoad.collectState();
-            return (s && s.bio && s.bio.name) || '';
+            const live = s && s.bio && s.bio.name;
+            if (live) return live;
+        } catch (e) { /* best effort */ }
+        try {
+            const code = currentAgentCode();
+            const roster = JSON.parse(localStorage.getItem(ROSTER_KEY) || '{}');
+            return (code && roster[code] && roster[code].char_name) || '';
         } catch (e) { return ''; }
     }
 
