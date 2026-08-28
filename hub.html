@@ -13,17 +13,22 @@
 <link rel="stylesheet" href="assets/theme-folder.css">
 <style>
   /* ══════════════════════════════════════════════
-     Phase 1 (inert scaffold) -- see docs/firebase-migration/ (shell
-     plan) on this branch. This page owns Table Radio, Dice Roller, and
-     the service-worker update banner once, for the tab's whole
-     lifetime; everything else the app does still lives in the standalone
-     pages, loaded here one at a time into #dg-shell-content instead of
-     via a real page navigation. Unlinked from every existing page for
-     now -- visiting it directly is the only way in, and it does nothing
-     but stand up the shell chrome and an empty content frame. Later
-     phases wire in real content, cross-frame navigation
-     (assets/shell-nav.js), and finally point the app's real entry
-     points here.
+     Phase 2 -- see docs/firebase-migration/ (shell plan) on this
+     branch. This page owns Table Radio, Dice Roller, and the
+     service-worker update banner once, for the tab's whole lifetime;
+     everything else the app does still lives in the standalone pages,
+     loaded here one at a time into #dg-shell-content instead of via a
+     real page navigation -- Agent Hub is the pilot page, loaded by
+     default below. Still unlinked from every existing page -- visiting
+     this file directly is the only way in. Agent Hub still includes
+     its own copies of table-radio.js/dice-roller.js too (unchanged, so
+     it keeps working exactly as before when visited standalone), so
+     expect a second, redundant pair of widgets rendered inside the
+     content iframe until a later phase stops it loading them there --
+     harmless, just visually doubled up for now. Later phases add
+     cross-frame navigation (assets/shell-nav.js), fold in the
+     remaining pages, and finally point the app's real entry points
+     here.
      ══════════════════════════════════════════════ */
   html,body{ height:100%; margin:0; }
   *{ box-sizing:border-box; }
@@ -54,11 +59,11 @@
 
 <div id="dg-shell-header">
   <span class="brand">Delta Green — Hub</span>
-  <span class="scaffold-note">shell scaffold — content wiring lands in a later phase</span>
+  <span class="scaffold-note">shell in progress — cross-frame nav lands in a later phase</span>
 </div>
 
 <div id="dg-shell-content-wrap">
-  <iframe id="dg-shell-content" title="Delta Green content"></iframe>
+  <iframe id="dg-shell-content" title="Delta Green content" src="agent-hub.html"></iframe>
 </div>
 
 <script src="assets/table-radio.js"></script>

@@ -4455,6 +4455,64 @@ def test_table_radio_theme_consistent_style(p):
     page.close()
     return errs
 
+def test_shell_content_swap_preserves_hoisted_widgets(p):
+    """hub.html (Phase 2 of the app-shell plan, docs/firebase-migration/
+    on this branch) hoists Table Radio and Dice Roller into the outer
+    document once, for the tab's whole lifetime, and loads each real
+    page into #dg-shell-content instead of doing a real page navigation
+    -- the entire point being that swapping the iframe's src can never
+    touch the outer document's own widgets, so audio playing there is
+    never interrupted (a real page navigation, by contrast, always
+    destroys and recreates them -- see table-radio.js's own header
+    comment). Proves that structurally, without needing a real Firestore
+    connection: tag the outer widgets' DOM nodes, swap the content
+    iframe to a different page, and confirm the exact same nodes (not
+    same-looking rebuilt ones) are still there afterward. Both widgets
+    start in their default collapsed/no-channel state here (no
+    localStorage channel set), which never opens a Firestore connection
+    in the first place (see table-radio.js's startPolling()) -- so this
+    needs no Firestore mocking to be a meaningful proof."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+
+    record("shell", "the shell page shows its own (hoisted, outside the content iframe) Table Radio pill",
+           page.is_visible("#dg-radio-pill"), "")
+    record("shell", "the shell page shows its own (hoisted, outside the content iframe) Dice Roller panel",
+           page.locator("#dr-panel").count() == 1, "")
+    record("shell", "the shell's content iframe defaults to Agent Hub",
+           "agent-hub.html" in (page.get_attribute("#dg-shell-content", "src") or ""), "")
+
+    page.wait_for_function(
+        "() => { var f = document.getElementById('dg-shell-content'); "
+        "return f.contentDocument && f.contentDocument.readyState === 'complete'; }")
+    page.evaluate("""() => {
+        document.getElementById('dg-radio-pill').dataset.dgTestTag = 'radio-still-here';
+        document.getElementById('dr-panel').dataset.dgTestTag = 'dice-still-here';
+    }""")
+
+    page.evaluate("() => { document.getElementById('dg-shell-content').src = 'a-cell.html'; }")
+    page.wait_for_function(
+        "() => { var f = document.getElementById('dg-shell-content'); "
+        "return f.contentDocument && f.contentDocument.readyState === 'complete' "
+        "&& /a-cell\\.html/.test(f.contentWindow.location.href); }")
+    page.wait_for_timeout(200)
+
+    record("shell", "the content iframe actually swapped to the new page",
+           "a-cell.html" in page.eval_on_selector("#dg-shell-content", "el => el.contentWindow.location.href"), "")
+    record("shell", "the outer Table Radio pill is the exact same DOM node after the swap (not rebuilt) -- any audio it owns was never touched",
+           page.eval_on_selector("#dg-radio-pill", "el => el.dataset.dgTestTag") == "radio-still-here", "")
+    record("shell", "the outer Dice Roller panel is the exact same DOM node after the swap (not rebuilt)",
+           page.eval_on_selector("#dr-panel", "el => el.dataset.dgTestTag") == "dice-still-here", "")
+    record("shell", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_agent_portal_code_query_param(p):
     """agent-hub.html's Agent Files "Files" and "ID Creator" buttons link
     to dg-agent-portal.html?code=XXXX#agent / #ids -- a new
@@ -7494,6 +7552,8 @@ def main():
         safe(test_table_radio_mobile_buttons_not_stretched, browser, area="radio")
 
         safe(test_table_radio_theme_consistent_style, browser, area="radio")
+
+        safe(test_shell_content_swap_preserves_hoisted_widgets, browser, area="shell")
 
         safe(test_agent_portal_code_query_param, browser, area="agent-portal")
 
