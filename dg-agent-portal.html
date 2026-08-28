@@ -2820,9 +2820,6 @@ async function handleSubmit() {
   const form = document.getElementById('dg-form');
   if (!form.reportValidity()) return;
 
-  const btn = document.getElementById('submit-btn');
-  const status = document.getElementById('form-status');
-  btn.disabled=true; status.className=''; status.textContent='Transmitting...';
   const payload={};
   new FormData(document.getElementById('dg-form')).forEach((v,k)=>{ payload[k]=v; });
   payload.submitted_at = new Date().toISOString();
@@ -2841,6 +2838,34 @@ async function handleSubmit() {
   // distinguishes "editing the loaded Agent" from "describing a new one."
   const sameAgent = afCode && afData
     && (afData.char_name || '').trim().toLowerCase() === (payload.char_name || '').trim().toLowerCase();
+  // A real report: a player generated a brand new random identity via
+  // the Random Agent Generator on a page that already had a real Agent
+  // loaded (via "Open Agent File" from stats/index.html), then hit
+  // Submit -- sameAgent is correctly false (the name changed), so this
+  // silently mints a whole new, disconnected Agent File rather than
+  // updating the one that had actually been open, with no signal that
+  // anything unusual just happened. The player's real Agent is never
+  // touched, but the new one now sits in their Agent Hub roster too,
+  // easy to open by mistake and mistake for the original having
+  // vanished. Gated on afFileViewedCode, not just afData being
+  // populated -- autoRestore() silently loads the last-active Agent into
+  // afData/afCode on every fresh visit (see the comment above on
+  // sameAgent), and a player who lands here fresh and simply types up a
+  // second, different character over that silent prefill is doing
+  // exactly what they mean to; only warn when they actually SAW this
+  // other Agent's file rendered this page load.
+  if (!sameAgent && afCode && afData && afFileViewedCode === afCode && (afData.char_name || '').trim()) {
+    const proceed = confirm(
+      'This Profiling form was showing ' + afData.char_name + ' (' + afCode + ').\n\n' +
+      'Submitting now will create a NEW, separate Agent File for "' + (payload.char_name || '').trim() +
+      '" -- it will not update ' + afData.char_name + '\'s own file.\n\n' +
+      'Continue only if you actually mean to create a new Agent.');
+    if (!proceed) return;
+  }
+
+  const btn = document.getElementById('submit-btn');
+  const status = document.getElementById('form-status');
+  btn.disabled=true; status.className=''; status.textContent='Transmitting...';
   // Not just afCode -- a character built or imported on stats/index.html
   // mints and stores its own code independently (dg_agent_roster,
   // written by stats/cloud-sync.js) before this page ever sees it.
@@ -3692,6 +3717,13 @@ function f2b(file){
 
 let afData = null;       // current agent data
 let afCode = null;       // current agent code
+// The code of whichever Agent renderAgentFile() has actually put on screen
+// this page load -- distinct from afCode/afData just being populated,
+// which also happens silently via autoRestore() on every fresh visit (see
+// handleSubmit()'s own comment on that). Only a player who actually SAW
+// this Agent's file rendered has grounds to be confused by a subsequent
+// Submit quietly spawning a different Agent instead.
+let afFileViewedCode = null;
 let afEraPages = [];     // rendered era pages
 let afActiveEra = null;  // currently front era
 // A just-generated/uploaded Face Plate's data URI, kept in memory so an
@@ -3759,6 +3791,7 @@ function showAfGate() {
 
 /* ── Render the full agent file ── */
 function renderAgentFile(data) {
+  afFileViewedCode = afCode;
   document.getElementById('af-gate').style.display = 'none';
   document.getElementById('af-content').style.display = 'block';
 
@@ -4089,7 +4122,11 @@ function saveGeneratedPlate(dataUrl, era, type, imageName) {
   const box = document.getElementById('plate-' + type + '-' + era);
   if (box) box.innerHTML = '<img src="' + dataUrl + '" style="width:100%;display:block;object-fit:cover;object-position:top center;">';
   if (type === 'face') afRecentFacePlateDataUri[era] = dataUrl;
-  const fieldKey = type === 'face' ? 'face_plate_url' : 'outfit_plate_url';
+  // This era's own column, not the shared face_plate_url/outfit_plate_url
+  // -- see COLUMNS' own comment in Code.gs for why sharing those across
+  // eras silently overwrote an earlier era's plate the moment a second
+  // era's was generated or uploaded.
+  const fieldKey = 'era_' + era + '_' + (type === 'face' ? 'face_url' : 'outfit_url');
   const charName = afData ? afData.char_name || afCode : afCode;
   fetch(APPS_SCRIPT_URL, {
     method: 'POST', mode: 'no-cors',
@@ -4263,11 +4300,12 @@ function autoGenerateEraPrompts(era) {
       if (json.status === 'OK' && json.prompt) {
         ta0.value = json.prompt;
         if (st0) { st0.textContent = 'Generated.'; setTimeout(function(){ st0.textContent=''; }, 3000); }
-        // Save to Sheet
+        // Save to this era's own column, not the shared mode0_prompt --
+        // see saveEraPrompt()'s own comment for why.
         fetch(APPS_SCRIPT_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'},
-          body: JSON.stringify({ action:'update_field', agent_code: afCode, token: agentToken(afCode), field:'mode0_prompt', value: json.prompt })
+          body: JSON.stringify({ action:'update_field', agent_code: afCode, token: agentToken(afCode), field:'era_' + era + '_mode0', value: json.prompt })
         }).catch(function(e){ console.error(e); });
-        if (afData) afData.mode0_prompt = json.prompt;
+        if (afData) afData['era_' + era + '_mode0'] = json.prompt;
         persistAgent(afCode, afData);
       } else {
         if (st0) st0.textContent = 'Error.';
@@ -4288,10 +4326,12 @@ function autoGenerateEraPrompts(era) {
       if (json.status === 'OK' && json.prompt) {
         ta1.value = json.prompt;
         if (st1) { st1.textContent = 'Generated.'; setTimeout(function(){ st1.textContent=''; }, 3000); }
+        // Save to this era's own column, not the shared mode1_prompt --
+        // see saveEraPrompt()'s own comment for why.
         fetch(APPS_SCRIPT_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'},
-          body: JSON.stringify({ action:'update_field', agent_code: afCode, token: agentToken(afCode), field:'mode1_prompt', value: json.prompt })
+          body: JSON.stringify({ action:'update_field', agent_code: afCode, token: agentToken(afCode), field:'era_' + era + '_mode1', value: json.prompt })
         }).catch(function(e){ console.error(e); });
-        if (afData) afData.mode1_prompt = json.prompt;
+        if (afData) afData['era_' + era + '_mode1'] = json.prompt;
         persistAgent(afCode, afData);
       } else {
         if (st1) st1.textContent = 'Error.';
@@ -4310,8 +4350,11 @@ function saveEraPrompt(btn) {
   const val = textarea.value.trim();
   if (!val) return;
   if (status) status.textContent = 'Saving…';
-  // Map mode to sheet field name
-  const fieldMap = {'mode0': 'mode0_prompt', 'mode1': 'mode1_prompt'};
+  // Map mode to this era's own sheet column, not the old shared
+  // mode0_prompt/mode1_prompt fields -- see COLUMNS' own comment in
+  // Code.gs for why sharing those across eras was the actual bug
+  // ("all the info moves to the newest era").
+  const fieldMap = {'mode0': 'era_' + era + '_mode0', 'mode1': 'era_' + era + '_mode1'};
   const field = fieldMap[mode];
   fetch(APPS_SCRIPT_URL, {
     method: 'POST', mode: 'no-cors',

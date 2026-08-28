@@ -364,7 +364,28 @@ const COLUMNS = [
   // COLUMNS means COLUMNS.map() below never wrote it to any column), so
   // it never actually reached the Sheet -- same append-at-the-end
   // discipline as player_name above.
-  'profession'
+  'profession',
+  // Per-era Face/Outfit Plate images and prompts. Previously these all
+  // shared the single flat face_plate_url/outfit_plate_url/mode0_prompt/
+  // mode1_prompt columns above regardless of which era's accordion the
+  // Handler was actually editing (renderEraStack()'s own read side
+  // already fell back to era-specific columns first, in anticipation --
+  // see its "era-specific cols added later" comment -- but nothing ever
+  // wrote them, so every era secretly aliased the same four flat
+  // columns). Adding the second era to an Agent File silently
+  // overwrote the first era's plates/prompts this way -- a real report.
+  // One column per era per field, not one shared JSON blob: this stays
+  // consistent with how every other flat field here works (a single
+  // updateAgentField() write to one column), and savePlateImage()'s own
+  // "look up the field name, overwrite with a URL" design has no
+  // read-modify-write step to merge into a blob safely. The old flat
+  // columns are left in place, untouched, as the fallback
+  // renderEraStack() already reads for any Agent whose plates were
+  // generated before this fix.
+  'era_90s_face_url', 'era_90s_outfit_url', 'era_90s_mode0', 'era_90s_mode1',
+  'era_00s_face_url', 'era_00s_outfit_url', 'era_00s_mode0', 'era_00s_mode1',
+  'era_10s_face_url', 'era_10s_outfit_url', 'era_10s_mode0', 'era_10s_mode1',
+  'era_20s_face_url', 'era_20s_outfit_url', 'era_20s_mode0', 'era_20s_mode1'
 ];
 
 // Serializes a read-modify-write against a Sheet (scan for an existing
@@ -1122,7 +1143,17 @@ function updateAgentField(data) {
       // the same 'Player Name' -- spelled out so it's not relying on
       // that fallback matching by coincidence if this map is ever
       // consulted elsewhere.
-      'player_name':    'Player Name'
+      'player_name':    'Player Name',
+      // Per-era plate/prompt columns (see COLUMNS' own comment) --
+      // identity-mapped, same as face_plate_url/mode0_prompt above.
+      'era_90s_face_url': 'era_90s_face_url', 'era_90s_outfit_url': 'era_90s_outfit_url',
+      'era_90s_mode0': 'era_90s_mode0', 'era_90s_mode1': 'era_90s_mode1',
+      'era_00s_face_url': 'era_00s_face_url', 'era_00s_outfit_url': 'era_00s_outfit_url',
+      'era_00s_mode0': 'era_00s_mode0', 'era_00s_mode1': 'era_00s_mode1',
+      'era_10s_face_url': 'era_10s_face_url', 'era_10s_outfit_url': 'era_10s_outfit_url',
+      'era_10s_mode0': 'era_10s_mode0', 'era_10s_mode1': 'era_10s_mode1',
+      'era_20s_face_url': 'era_20s_face_url', 'era_20s_outfit_url': 'era_20s_outfit_url',
+      'era_20s_mode0': 'era_20s_mode0', 'era_20s_mode1': 'era_20s_mode1'
     };
 
     let fieldName;
@@ -3548,7 +3579,11 @@ function briefsHeaderNameFor_(col) {
   // (matches updateAgentField()'s own FIELD_MAP and every existing
   // .indexOf(...) lookup against this sheet elsewhere in this file,
   // e.g. findByPlayerName()'s briefHeaders.indexOf('face_plate_url')).
-  if (col === 'face_plate_url' || col === 'outfit_plate_url' || col === 'mode0_prompt' || col === 'mode1_prompt') return col;
+  // The 16 per-era plate/prompt columns follow the same rule, for the
+  // same reason -- updateAgentField()'s FIELD_MAP below indexes them
+  // by this exact snake_case string too.
+  if (col === 'face_plate_url' || col === 'outfit_plate_url' || col === 'mode0_prompt' || col === 'mode1_prompt'
+    || /^era_(90s|00s|10s|20s)_(face_url|outfit_url|mode0|mode1)$/.test(col)) return col;
   return col.replace(/_/g, ' ').replace(/\b\w/g, function (l) { return l.toUpperCase(); });
 }
 function ensureBriefsColumns(ss) {
@@ -3558,11 +3593,12 @@ function ensureBriefsColumns(ss) {
   // cache flag skips the check entirely once it's confirmed clean, same
   // reasoning as the SPREADSHEET_ID cache right above.
   const cache = CacheService.getScriptCache();
-  // Key changed (was 'briefs_columns_ensured') so a cache entry set by
-  // the old, narrower version of this check -- Player Name/Profession
-  // only -- can't mask this fuller reconciliation from ever actually
+  // Key changed (was 'briefs_columns_ensured', then 'briefs_columns_
+  // ensured_v2') so a cache entry set by an older, narrower version of
+  // this check can't mask this fuller reconciliation -- now covering
+  // the 16 new per-era plate/prompt columns -- from ever actually
   // running post-redeploy for up to its old 6h TTL.
-  if (cache.get('briefs_columns_ensured_v2') === '1') return;
+  if (cache.get('briefs_columns_ensured_v3') === '1') return;
   const sheet = ss.getSheetByName(SHEET_NAME);
   if (!sheet) return; // brand-new spreadsheet -- getOrCreateSheet()'s creation path below already includes every column via COLUMNS
   let lastCol = sheet.getLastColumn();
@@ -3575,7 +3611,7 @@ function ensureBriefsColumns(ss) {
       headers.push(name);
     }
   });
-  cache.put('briefs_columns_ensured_v2', '1', 21600);
+  cache.put('briefs_columns_ensured_v3', '1', 21600);
 }
 
 // Throws on failure -- used to catch its own error and return the

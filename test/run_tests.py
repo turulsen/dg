@@ -5448,6 +5448,95 @@ def test_agent_portal_random_generator_matches_sex(p):
         page.close()
     return errs_all
 
+def test_agent_portal_submit_warns_before_creating_new_agent(p):
+    """Regression test for a real live report: a player had a real Agent
+    (imported via Kappa Black) open on the Profiling tab, used the
+    Random Agent Generator (which produced a brand new name since
+    char_name wasn't locked at that point), and clicked Submit Brief --
+    handleSubmit()'s own sameAgent check correctly saw the name had
+    changed and minted a whole new, disconnected Agent File rather than
+    updating the one that had actually been open, with no signal
+    anything unusual happened. The player's real Agent was never
+    touched server-side, but the new one silently landing in their
+    Agent Hub roster read as "my character is gone" once they opened
+    the wrong tab looking for it. handleSubmit() now confirms before
+    submitting whenever this would create a new Agent instead of
+    updating the one on screen."""
+    page = p.new_page()
+    page.set_default_timeout(10000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    complete_extra = {
+        "age_range": "Early 30s", "sex": "Male", "nationality": "American",
+        "face_shape": "oval", "eye_color": "brown", "eye_shape": "round",
+        "nose": "straight", "lips": "thin", "skin": "tan", "facial_hair": "none",
+        "hair_color": "brown", "hair_style": "short", "hair_texture": "straight",
+        "build": "average", "posture": "upright", "jacket": "coat", "shirt": "shirt",
+        "trousers": "trousers", "footwear": "boots", "expression": "neutral", "vibe": "calm",
+        "active_eras": json.dumps(["00s"]),
+    }
+    briefs = {"ELVI-HENC": {"char_name": "Eli Filagree", **complete_extra}}
+    submit_posts = []
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            body = json.loads(req.post_data or "{}")
+            if not body.get("action"):
+                submit_posts.append(body)
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        if "code=" in url:
+            code = url.split("code=")[1].split("&")[0]
+            res = {"status": "OK", "data": briefs[code]} if code in briefs else {"status": "NOT_FOUND"}
+        else:
+            res = {"status": "OK"}
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/dg-agent-portal.html?code=ELVI-HENC#agent", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(800)
+    page.click('#tw-cover')
+    page.wait_for_timeout(200)
+
+    # Simulates what Random Generate produces once char_name isn't
+    # locked (e.g. it wasn't propagated non-empty in the first place) --
+    # decoupled from the Generate button's own locking mechanics, this
+    # tests the actual safety net in handleSubmit() directly.
+    page.fill('#dg-form [name="char_name"]', 'Charles Lee')
+
+    dialog_seen = {"text": None}
+    def on_dialog(d):
+        dialog_seen["text"] = d.message
+        d.dismiss()
+    page.once("dialog", on_dialog)
+    page.click("#submit-btn")
+    page.wait_for_timeout(300)
+
+    record("agent-portal", "submitting a changed char_name over an already-loaded Agent shows a confirm naming both agents",
+           bool(dialog_seen["text"]) and "Eli Filagree" in dialog_seen["text"] and "Charles Lee" in dialog_seen["text"],
+           str(dialog_seen["text"]))
+    record("agent-portal", "dismissing the confirm sends nothing to the backend",
+           len(submit_posts) == 0, str(submit_posts))
+
+    page.once("dialog", lambda d: d.accept())
+    page.click("#submit-btn")
+    page.wait_for_timeout(500)
+    record("agent-portal", "accepting the confirm proceeds with the submission as before",
+           len(submit_posts) == 1 and submit_posts[0].get("char_name") == "Charles Lee",
+           str(submit_posts))
+
+    record("agent-portal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_agent_portal_incomplete_submit_blocked(p):
     """Regression test for a real bug: #dg-form's [required] attributes
     were purely decorative -- the submit button is type="submit" inside a
@@ -5625,6 +5714,97 @@ def test_agent_file_era_prompt_includes_era(p):
            len(base_posts) >= 1 and base_posts[0].get("era") == "00s", str(base_posts))
     record("agent-portal", "the Field Reference (mode: outfit) prompt request carries the Agent's actual era too",
            len(outfit_posts) >= 1 and outfit_posts[0].get("era") == "00s", str(outfit_posts))
+
+    record("agent-portal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
+def test_agent_file_era_prompts_isolated_per_era(p):
+    """Regression test for a real live report: "when I add an era...
+    all the info moves to [the newest] era and the old one comes up
+    empty." Root cause: saveEraPrompt()/autoGenerateEraPrompts()/
+    saveGeneratedPlate() all wrote every era's Field Portrait/Reference
+    prompt (and plate image) into the same four flat sheet columns
+    (mode0_prompt/mode1_prompt/face_plate_url/outfit_plate_url)
+    regardless of which era's accordion was actually open --
+    renderEraStack()'s own read side already preferred an era-specific
+    column first (in anticipation, per its own "era-specific cols added
+    later" comment), but nothing ever wrote one, so every era secretly
+    aliased the same flat record. Generating a second era's prompt
+    silently overwrote the first era's. Now each era has its own
+    era_<era>_mode0/mode1/face_url/outfit_url column. This test starts
+    with 1990s already populated and 2000s blank (triggering
+    autoGenerateEraPrompts' auto-fill), and confirms 1990s' own prompt
+    survives 2000s being generated."""
+    page = p.new_page()
+    page.set_default_timeout(10000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    complete_extra = {
+        "age_range": "40s", "sex": "Female", "nationality": "Hispanic American",
+        "face_shape": "oval", "eye_color": "brown", "eye_shape": "round",
+        "nose": "straight", "lips": "thin", "skin": "tan", "facial_hair": "none",
+        "hair_color": "black", "hair_style": "short", "hair_texture": "straight",
+        "build": "average", "posture": "upright", "jacket": "coat", "shirt": "shirt",
+        "trousers": "trousers", "footwear": "boots", "expression": "neutral", "vibe": "calm",
+        "active_eras": json.dumps(["90s", "00s"]),
+        "era_90s_mode0": "1990s portrait prompt", "era_90s_mode1": "1990s outfit prompt",
+    }
+    briefs = {"DANI-U8BM": {"char_name": "Daniela Martinez", **complete_extra}}
+    field_posts = []
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            body = json.loads(req.post_data or "{}")
+            if body.get("action") == "generate_prompt":
+                era = body.get("era")
+                mode = body.get("mode")
+                text = ("2000s portrait prompt" if mode == "base" else "2000s outfit prompt") if era == "00s" else "[unexpected era]"
+                route.fulfill(status=200, content_type="application/json",
+                               body=json.dumps({"status": "OK", "prompt": text}))
+            elif body.get("action") == "update_field":
+                field_posts.append(body)
+                route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            else:
+                route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        if "code=" in url:
+            code = url.split("code=")[1].split("&")[0]
+            res = {"status": "OK", "data": briefs[code]} if code in briefs else {"status": "NOT_FOUND"}
+        else:
+            res = {"status": "OK"}
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/dg-agent-portal.html?code=DANI-U8BM#agent", wait_until="domcontentloaded", timeout=15000)
+
+    def evaluate_pump():
+        page.evaluate("1")
+        return next((f for f in field_posts if f.get("field") == "era_00s_mode0"), None) or None
+    wait_for_condition(evaluate_pump, timeout_ms=8000)
+
+    era00_posts = [f for f in field_posts if (f.get("field") or "").startswith("era_00s_")]
+    era90_posts = [f for f in field_posts if (f.get("field") or "").startswith("era_90s_")]
+    record("agent-portal", "auto-generating 2000s' prompt saves to era_00s_mode0/mode1, not the shared mode0_prompt/mode1_prompt",
+           any(f.get("field") == "era_00s_mode0" for f in era00_posts) and any(f.get("field") == "era_00s_mode1" for f in era00_posts),
+           str(field_posts))
+    record("agent-portal", "generating 2000s' prompt never touches 1990s' own era_90s_* columns",
+           len(era90_posts) == 0, str(era90_posts))
+
+    val_90s = page.eval_on_selector("#prompt-mode0-90s", "el => el.value")
+    val_00s = page.eval_on_selector("#prompt-mode0-00s", "el => el.value")
+    record("agent-portal", "1990s' own Field Portrait prompt is untouched by 2000s being generated",
+           val_90s == "1990s portrait prompt", val_90s)
+    record("agent-portal", "2000s' own Field Portrait prompt shows its own newly-generated content",
+           val_00s == "2000s portrait prompt", val_00s)
 
     record("agent-portal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
@@ -7529,6 +7709,7 @@ def main():
 
         safe(test_agent_portal_random_generator_matches_sex, browser, area="agent-portal")
 
+        safe(test_agent_portal_submit_warns_before_creating_new_agent, browser, area="agent-portal")
         safe(test_agent_portal_incomplete_submit_blocked, browser, area="agent-portal")
 
         safe(test_agent_portal_submit_reuses_roster_code, browser, area="agent-portal")
@@ -7538,6 +7719,7 @@ def main():
         safe(test_agent_file_vitals_and_bonds, browser, area="agent-portal")
 
         safe(test_agent_file_era_prompt_includes_era, browser, area="agent-portal")
+        safe(test_agent_file_era_prompts_isolated_per_era, browser, area="agent-portal")
 
         safe(test_agent_file_outfit_plate_requires_face_first, browser, area="agent-portal")
 
