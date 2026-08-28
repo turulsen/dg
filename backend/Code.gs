@@ -2932,6 +2932,43 @@ function recomputeEvidenceVisibleToForCell_(cellId) {
   }
 }
 
+// One-time backfill (Phase 5): Evidence had NO Firestore dual-write at
+// all before this phase (createEvidence/updateEvidence only just
+// started calling firestoreDualWrite_ today), so every Evidence item
+// that already existed before this patch was pasted in has no
+// Firestore document at all -- invisible to the new visible_to
+// array-contains-any client queries, not just missing that one field.
+// Run this ONCE from the Apps Script editor (select it in the function
+// dropdown next to the Run button, then Run) after pasting this patch
+// in -- it full-document-upserts (firestoreDualWrite_, not a patch)
+// every row currently in the Evidence sheet, same field shape
+// createEvidence/updateEvidence already write, so a row with no doc
+// yet gets one fully created, not a fragment. Safe to re-run any time
+// (idempotent -- always recomputes from the Sheet's current state).
+function backfillEvidenceVisibleTo_() {
+  const sheet = getOrCreateEvidenceSheet();
+  const data = sheet.getDataRange().getValues();
+  const cols = headerMap_(data[0]);
+  let count = 0;
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const evidenceId = row[cols.evidence_id];
+    if (!evidenceId) continue;
+    let restrictedTo = [];
+    try { restrictedTo = JSON.parse(row[cols.restricted_to] || '[]'); } catch (e) { restrictedTo = []; }
+    const released = asBoolean_(row[cols.released]);
+    const cellId = row[cols.cell_id] || '';
+    firestoreDualWrite_('evidence', evidenceId, {
+      title: row[cols.title] || '', body: row[cols.body] || '', photo: row[cols.photo] || '',
+      cell_id: cellId, created_at: row[cols.created_at] || 0, operation_id: row[cols.operation_id] || '',
+      released: released, restricted_to: restrictedTo,
+      visible_to: evidenceVisibleTo_(released, cellId, restrictedTo)
+    });
+    count++;
+  }
+  Logger.log('backfillEvidenceVisibleTo_: wrote ' + count + ' Evidence documents to Firestore.');
+}
+
 function listOperations(callback) {
   const sheet = getOrCreateOperationsSheet();
   const data = sheet.getDataRange().getValues();
