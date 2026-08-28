@@ -948,41 +948,133 @@
   }
   function handoutLightboxEscHandler(e) { if (e.key === 'Escape') closeHandoutLightbox(); }
 
-  // One list_evidence fetch per Agent (not one shared fetch reused for
-  // everyone) -- listEvidence() in Code.gs applies BOTH the Cell-
-  // membership filter and the restricted-to-specific-Agents filter
-  // server-side, keyed off whichever agent_code the request itself
-  // carries. A single anonymous fetch (no agent_code at all) used to
-  // get every restricted item filtered out entirely, for every Agent,
-  // regardless of who it was actually restricted to -- an item the
-  // Handler filed and explicitly restricted to one Agent never showed
-  // up on that Agent's own Hub page, the one place it was supposed to.
-  function loadHandouts() {
-    let cells = [];
-    function cellsByIdMap() {
-      const map = {};
-      cells.forEach(c => { map[c.cell_id] = c; });
-      return map;
-    }
-    function loadForAgent(a) {
-      jsonpGet('list_evidence', { agent_code: a.code, token: agentToken(a.code) }, res => {
-        const el = document.getElementById('ah-handouts-' + a.code);
-        if (!res || res.status !== 'OK' || !Array.isArray(res.evidence)) {
-          if (el) el.innerHTML = '<div class="ah-handouts-empty">Could not load handouts.</div>';
-          return;
-        }
-        const relevant = res.evidence.slice().sort((x, y) => Number(y.created_at) - Number(x.created_at));
-        renderHandoutsFor(a.code, relevant, cellsByIdMap());
-        jsonpGet('list_handout_notes', { agent_code: a.code, token: agentToken(a.code) }, notesRes => {
-          if (!notesRes || notesRes.status !== 'OK' || !Array.isArray(notesRes.notes)) return;
-          const notesByHandoutId = {};
-          notesRes.notes.forEach(n => { notesByHandoutId[n.handout_id] = n.note; });
-          renderHandoutsFor(a.code, relevant, cellsByIdMap(), notesByHandoutId);
+  /* ── Firebase (Phase 5): Evidence read for a player's own Hub is now a
+     live per-Agent Firestore listener instead of a JSONP poll -- same
+     visible_to array-contains-any([myCode,'ALL']) pattern notes.js's
+     fetchEvidence() and a-cell.html's Evidence Locker use, see
+     evidenceVisibleTo_()'s own comment in Code.gs for why a denormalized
+     field is needed at all instead of a rule that checks Cell membership
+     directly. Self-contained loader, same shape as every other page's
+     own copy (this page had none before). ── */
+  const FIREBASE_SDK_VERSION = '12.18.0';
+  const FIREBASE_CONFIG = {
+    apiKey: 'AIzaSyBiFBvgmrjtacxXvh7FHa9a28BbwV0LnDQ',
+    authDomain: 'dg-app-b3447.firebaseapp.com',
+    projectId: 'dg-app-b3447',
+    storageBucket: 'dg-app-b3447.firebasestorage.app',
+    messagingSenderId: '464997490443',
+    appId: '1:464997490443:web:dad47a347ae7a64a9e4c0e'
+  };
+  let firebaseApiLoading = false;
+  let firebaseApiCallbacks = [];
+  function loadFirebaseScriptTag(src, cb) {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = cb;
+    document.head.appendChild(s);
+  }
+  function ensureFirebaseApi(cb) {
+    const ready = () => window.firebase && window.firebase.firestore && window.firebase.auth && window.firebase.functions;
+    if (ready()) { cb(); return; }
+    firebaseApiCallbacks.push(cb);
+    if (firebaseApiLoading) return;
+    firebaseApiLoading = true;
+    const base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/';
+    loadFirebaseScriptTag(base + 'firebase-app-compat.js', () => {
+      loadFirebaseScriptTag(base + 'firebase-firestore-compat.js', () => {
+        if (!window.firebase.apps.length) window.firebase.initializeApp(FIREBASE_CONFIG);
+        loadFirebaseScriptTag(base + 'firebase-auth-compat.js', () => {
+          loadFirebaseScriptTag(base + 'firebase-functions-compat.js', () => {
+            const cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
+            cbs.forEach(fn => fn());
+          });
         });
       });
+    });
+  }
+  // Per-Agent sign-in (exchangeAgentToken -- no real per-Agent secret,
+  // see that function's own comment), keyed by code since this page can
+  // hold several Agents' tabs at once, each needing their own identity
+  // for their own visible_to query.
+  const _authPromisesByCode = {};
+  function ensureAgentSignedInAs(code) {
+    if (_authPromisesByCode[code]) return _authPromisesByCode[code];
+    const p = new Promise((resolve, reject) => {
+      ensureFirebaseApi(() => {
+        window.firebase.functions().httpsCallable('exchangeAgentToken')({ agent_code: code })
+          .then(result => window.firebase.auth().signInWithCustomToken(result.data.token))
+          .then(cred => resolve(cred.user))
+          .catch(err => { delete _authPromisesByCode[code]; reject(err); });
+      });
+    });
+    _authPromisesByCode[code] = p;
+    return p;
+  }
+
+  // Module-scoped (not local to loadHandouts()) so a long-lived listener
+  // set up on an earlier loadHandouts() call always reads the LATEST
+  // fetched Cells, not a stale snapshot closed over from when it started
+  // -- renderRoster() (and therefore loadHandouts()) can run again later
+  // (e.g. a Cover Identity lookup adding a new Agent to the roster).
+  let handoutCells = [];
+  function cellsByIdMap() {
+    const map = {};
+    handoutCells.forEach(c => { map[c.cell_id] = c; });
+    return map;
+  }
+  const notesByHandoutIdByCode = {};
+  const lastEvidenceByCode = {};
+  // code -> true once its listener is attached or an attach attempt is
+  // in flight -- reset back to false only on a failed sign-in, so a
+  // later loadHandouts() call can retry without ever double-attaching a
+  // listener that already succeeded.
+  const evidenceListenerStartedByCode = {};
+  function startEvidenceListenerFor(code) {
+    if (evidenceListenerStartedByCode[code]) return;
+    evidenceListenerStartedByCode[code] = true;
+    ensureAgentSignedInAs(code).then(() => {
+      window.firebase.firestore().collection('evidence')
+        .where('visible_to', 'array-contains-any', [code, 'ALL'])
+        .onSnapshot(snap => {
+          const relevant = [];
+          snap.forEach(doc => {
+            const d = doc.data();
+            relevant.push({
+              evidence_id: doc.id, title: d.title || '', body: d.body || '',
+              photo: d.photo || '', cell_id: d.cell_id || '', created_at: d.created_at || 0
+            });
+          });
+          relevant.sort((x, y) => Number(y.created_at) - Number(x.created_at));
+          lastEvidenceByCode[code] = relevant;
+          renderHandoutsFor(code, relevant, cellsByIdMap(), notesByHandoutIdByCode[code]);
+        }, err => {
+          console.error('agent-hub: evidence listener error for ' + code, err);
+          const el = document.getElementById('ah-handouts-' + code);
+          if (el) el.innerHTML = '<div class="ah-handouts-empty">Could not load handouts.</div>';
+        });
+    }).catch(err => {
+      console.error('agent-hub: evidence sign-in failed for ' + code, err);
+      evidenceListenerStartedByCode[code] = false; // allow a retry on the next loadHandouts() call
+    });
+  }
+
+  function loadHandouts() {
+    function loadForAgent(a) {
+      // Personal per-Agent notes on a Handout stay a one-shot JSONP
+      // fetch (low-churn, never shown to anyone but their own author) --
+      // re-render once they land so "Your Notes" isn't blank on first
+      // paint if this resolves after the Firestore listener's first fire.
+      jsonpGet('list_handout_notes', { agent_code: a.code, token: agentToken(a.code) }, notesRes => {
+        if (!notesRes || notesRes.status !== 'OK' || !Array.isArray(notesRes.notes)) return;
+        const notesByHandoutId = {};
+        notesRes.notes.forEach(n => { notesByHandoutId[n.handout_id] = n.note; });
+        notesByHandoutIdByCode[a.code] = notesByHandoutId;
+        if (lastEvidenceByCode[a.code]) renderHandoutsFor(a.code, lastEvidenceByCode[a.code], cellsByIdMap(), notesByHandoutId);
+      });
+      startEvidenceListenerFor(a.code);
     }
     jsonpGet('list_cells', {}, res => {
-      if (res && res.status === 'OK' && Array.isArray(res.cells)) cells = res.cells;
+      if (res && res.status === 'OK' && Array.isArray(res.cells)) handoutCells = res.cells;
       agents.forEach(loadForAgent);
     });
   }

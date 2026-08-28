@@ -669,10 +669,16 @@ function toFirestoreValue_(v) {
   return { stringValue: String(v) };
 }
 
+// docId is normally a single flat id (encoded whole), but a caller
+// addressing a subcollection doc (e.g. Notes' cells/{cellId}/notes/{blockId})
+// passes one with literal '/' path separators -- encoding the whole
+// thing as one blob would turn those into %2F and address the wrong
+// (nonexistent) document, so each path segment is encoded on its own.
 function firestoreDocUrl_(collectionName, docId) {
   const projectId = PropertiesService.getScriptProperties().getProperty(FIRESTORE_PROJECT_ID_PROPERTY);
+  const encodedId = String(docId).split('/').map(encodeURIComponent).join('/');
   return 'https://firestore.googleapis.com/v1/projects/' + projectId +
-    '/databases/(default)/documents/' + collectionName + '/' + encodeURIComponent(docId);
+    '/databases/(default)/documents/' + collectionName + '/' + encodedId;
 }
 
 // Full-document upsert (PATCH with no updateMask replaces the whole
@@ -2303,15 +2309,34 @@ function migrateSoloNotesToCell_(agentCode, newCellId) {
   const sheet = getOrCreateCellNotesSheet();
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
-  const cellCol = headers.indexOf('cell_id');
-  const codeCol = headers.indexOf('agent_code');
-  if (cellCol === -1 || codeCol === -1) return;
+  const cols = headerMap_(headers);
+  if (cols.cell_id === undefined || cols.agent_code === undefined) return;
   let migrated = false;
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][cellCol]).trim() === soloCellId &&
-        String(data[i][codeCol]).trim().toUpperCase() === agentCode) {
-      sheet.getRange(i + 1, cellCol + 1).setValue(newCellId);
+    if (String(data[i][cols.cell_id]).trim() === soloCellId &&
+        String(data[i][cols.agent_code]).trim().toUpperCase() === agentCode) {
+      sheet.getRange(i + 1, cols.cell_id + 1).setValue(newCellId);
       migrated = true;
+      // The Firestore mirror can't just have its cell_id field edited in
+      // place, the way the Sheet cell above just was -- cell_id is part
+      // of the document's own PATH (cells/{cellId}/notes/{blockId}), so
+      // moving Cell means deleting the doc under the old path and
+      // recreating it under the new one with the same fields.
+      const blockId = data[i][cols.block_id];
+      if (blockId) {
+        firestoreDualDelete_('cells', soloCellId + '/notes/' + blockId);
+        firestoreDualWrite_('cells', newCellId + '/notes/' + blockId, {
+          agent_code: agentCode,
+          block_type: data[i][cols.block_type] || 'paragraph',
+          text: data[i][cols.text] || '',
+          shared: asBoolean_(data[i][cols.shared]),
+          sort_order: Number(data[i][cols.sort_order]) || 0,
+          created_at: data[i][cols.created_at] || 0,
+          updated_at: data[i][cols.updated_at] || 0,
+          pinned: cols.pinned !== undefined && asBoolean_(data[i][cols.pinned]),
+          tags: (cols.tags !== undefined && data[i][cols.tags]) || '[]'
+        });
+      }
     }
   }
   if (migrated) {
@@ -2356,6 +2381,11 @@ function updateCellMembers(cellId, memberCodes) {
           migrateSoloNotesToCell_(String(code).trim().toUpperCase(), cellId);
         }
       });
+      // Every Evidence item scoped to this Cell has a visible_to that
+      // may now be stale -- see recomputeEvidenceVisibleToForCell_()'s
+      // own comment. Runs after the cache.remove() above so it reads
+      // the membership just written, not whatever was cached before.
+      recomputeEvidenceVisibleToForCell_(cellId);
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
@@ -2538,6 +2568,7 @@ function saveNoteBlock(data) {
               .setMimeType(ContentService.MimeType.JSON);
           }
           const row = values[i];
+          const createdAt = (cols.created_at !== undefined && row[cols.created_at]) || now;
           row[cols.block_type] = blockType;
           row[cols.text] = data.text || '';
           row[cols.shared] = shared;
@@ -2547,6 +2578,11 @@ function saveNoteBlock(data) {
           if (cols.tags !== undefined) row[cols.tags] = tags;
           sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
           CacheService.getScriptCache().remove('cell_notes_raw_' + cellId);
+          firestoreDualWrite_('cells', cellId + '/notes/' + blockId, {
+            agent_code: agentCode, block_type: blockType, text: data.text || '',
+            shared: !!shared, sort_order: sortOrder, created_at: createdAt,
+            updated_at: now, pinned: !!pinned, tags: tags
+          });
           return ContentService.createTextOutput(JSON.stringify({ status: 'OK', block_id: blockId })).setMimeType(ContentService.MimeType.JSON);
         }
       }
@@ -2572,6 +2608,11 @@ function saveNoteBlock(data) {
     if (cols.tags !== undefined) newRow[cols.tags] = tags;
     sheet.appendRow(newRow);
     CacheService.getScriptCache().remove('cell_notes_raw_' + cellId);
+    firestoreDualWrite_('cells', cellId + '/notes/' + blockId, {
+      agent_code: agentCode, block_type: blockType, text: data.text || '',
+      shared: !!shared, sort_order: sortOrder, created_at: now,
+      updated_at: now, pinned: !!pinned, tags: tags
+    });
     return ContentService.createTextOutput(JSON.stringify({ status: 'OK', block_id: blockId })).setMimeType(ContentService.MimeType.JSON);
   });
 }
@@ -2594,14 +2635,20 @@ function deleteNoteBlock(data) {
   const values = sheet.getDataRange().getValues();
   const idCol = values[0].indexOf('block_id');
   const codeCol = values[0].indexOf('agent_code');
+  const cellCol = values[0].indexOf('cell_id');
   for (let i = values.length - 1; i >= 1; i--) {
     if (values[i][idCol] === blockId) {
       if (codeCol !== -1 && String(values[i][codeCol] || '').trim().toUpperCase() !== agentCode) {
         return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'not your block' }))
           .setMimeType(ContentService.MimeType.JSON);
       }
+      // Prefer the row's own cell_id (always accurate) over the
+      // client-sent one (optional, and notes.js doesn't always have it
+      // handy) so the Firestore mirror gets cleaned up either way.
+      const rowCellId = cellId || (cellCol !== -1 ? String(values[i][cellCol] || '').trim() : '');
       sheet.deleteRow(i + 1);
-      if (cellId) CacheService.getScriptCache().remove('cell_notes_raw_' + cellId);
+      if (rowCellId) CacheService.getScriptCache().remove('cell_notes_raw_' + rowCellId);
+      if (rowCellId) firestoreDualDelete_('cells', rowCellId + '/notes/' + blockId);
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
@@ -2829,6 +2876,62 @@ function cellIdsForAgent_(agentCode) {
   return out;
 }
 
+// Firestore's list-query security rules can only ever prove a query
+// safe when the rule's own condition is a subset check against the
+// SAME field the query already filtered on (e.g. an array-contains-any
+// query paired with a resource.data.field.hasAny() rule) -- it can't
+// evaluate an arbitrary per-document membership lookup the way
+// listEvidence()'s own filtering above does (cell_id -> Cells sheet ->
+// member_codes, intersected with restricted_to) without rejecting the
+// whole query as unprovable. So the *resolved* set of Agent Codes
+// allowed to see a given (released) item is denormalized onto the
+// Firestore mirror as its own field, recomputed on every write that
+// could change it -- this function is the single source of truth for
+// that computation, shared by createEvidence/updateEvidence (item
+// itself changed) and updateCellMembers (an affected Cell's membership
+// changed instead). 'ALL' is a sentinel for "every Agent" (released,
+// no cell_id, no restricted_to) -- there's no way to enumerate every
+// Agent Code that might ever exist, so the client instead queries
+// array-contains-any([myCode, 'ALL']) and this is the other member of
+// that pair. An unreleased item resolves to [] (nobody but the
+// Handler, who reads via a separate isHandler() rule, not this field).
+function evidenceVisibleTo_(released, cellId, restrictedTo) {
+  if (!released) return [];
+  restrictedTo = restrictedTo || [];
+  let allowed = null; // null == "everyone" until a scoping rule narrows it
+  if (cellId) {
+    allowed = (cellsMemberMap_()[cellId] || []).slice();
+  }
+  if (restrictedTo.length) {
+    allowed = allowed === null ? restrictedTo.slice()
+      : allowed.filter(function (code) { return restrictedTo.indexOf(code) !== -1; });
+  }
+  return allowed === null ? ['ALL'] : allowed;
+}
+
+// Called after a Cell's member_codes change (updateCellMembers) --
+// every Evidence item scoped to that Cell has a visible_to that may now
+// be stale (someone added or removed), regardless of whether that item
+// also carries its own restricted_to on top. cellsMemberMap_()'s cache
+// must already be cleared by the caller before this runs, or this
+// would just recompute the same stale membership.
+function recomputeEvidenceVisibleToForCell_(cellId) {
+  const sheet = getOrCreateEvidenceSheet();
+  const data = sheet.getDataRange().getValues();
+  const cols = headerMap_(data[0]);
+  if (cols.evidence_id === undefined) return;
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (String(row[cols.cell_id] || '').trim() !== cellId) continue;
+    const evidenceId = row[cols.evidence_id];
+    if (!evidenceId) continue;
+    let restrictedTo = [];
+    try { restrictedTo = JSON.parse(row[cols.restricted_to] || '[]'); } catch (e) { restrictedTo = []; }
+    const visibleTo = evidenceVisibleTo_(asBoolean_(row[cols.released]), cellId, restrictedTo);
+    firestoreDualPatch_('evidence', evidenceId, { visible_to: visibleTo });
+  }
+}
+
 function listOperations(callback) {
   const sheet = getOrCreateOperationsSheet();
   const data = sheet.getDataRange().getValues();
@@ -2974,9 +3077,18 @@ function createEvidence(data) {
   row[cols.created_at] = new Date().getTime();
   row[cols.operation_id] = data.operation_id || '';
   row[cols.released] = data.released ? 1 : 0;
-  row[cols.restricted_to] = typeof data.restricted_to === 'string' ? data.restricted_to : '[]';
+  const restrictedToStr = typeof data.restricted_to === 'string' ? data.restricted_to : '[]';
+  row[cols.restricted_to] = restrictedToStr;
   sheet.appendRow(row);
   CacheService.getScriptCache().remove('evidence_raw');
+  let restrictedToArr = [];
+  try { restrictedToArr = JSON.parse(restrictedToStr); } catch (e) { restrictedToArr = []; }
+  firestoreDualWrite_('evidence', evidenceId, {
+    title: title, body: data.body || '', photo: photo, cell_id: data.cell_id || '',
+    created_at: row[cols.created_at], operation_id: data.operation_id || '',
+    released: !!data.released, restricted_to: restrictedToArr,
+    visible_to: evidenceVisibleTo_(!!data.released, data.cell_id || '', restrictedToArr)
+  });
   return ContentService.createTextOutput(JSON.stringify({ status: 'OK', evidence_id: evidenceId })).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -3007,9 +3119,19 @@ function updateEvidence(data) {
       row[cols.cell_id] = data.cell_id || '';
       row[cols.operation_id] = data.operation_id || '';
       row[cols.released] = data.released ? 1 : 0;
-      row[cols.restricted_to] = typeof data.restricted_to === 'string' ? data.restricted_to : '[]';
+      const restrictedToStr = typeof data.restricted_to === 'string' ? data.restricted_to : '[]';
+      row[cols.restricted_to] = restrictedToStr;
       sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
       CacheService.getScriptCache().remove('evidence_raw');
+      let restrictedToArr = [];
+      try { restrictedToArr = JSON.parse(restrictedToStr); } catch (e) { restrictedToArr = []; }
+      firestoreDualWrite_('evidence', data.evidence_id, {
+        title: data.title || '', body: data.body || '', photo: row[cols.photo] || '',
+        cell_id: data.cell_id || '', created_at: row[cols.created_at] || 0,
+        operation_id: data.operation_id || '', released: !!data.released,
+        restricted_to: restrictedToArr,
+        visible_to: evidenceVisibleTo_(!!data.released, data.cell_id || '', restrictedToArr)
+      });
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
@@ -3028,6 +3150,7 @@ function deleteEvidence(evidenceId) {
     if (data[i][idCol] === evidenceId) {
       sheet.deleteRow(i + 1);
       CacheService.getScriptCache().remove('evidence_raw');
+      firestoreDualDelete_('evidence', evidenceId);
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
