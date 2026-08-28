@@ -5626,6 +5626,112 @@ def test_agent_file_era_prompt_includes_era(p):
     record("agent-portal", "the Field Reference (mode: outfit) prompt request carries the Agent's actual era too",
            len(outfit_posts) >= 1 and outfit_posts[0].get("era") == "00s", str(outfit_posts))
 
+
+def test_agent_file_era_prompts_isolated_per_era(p):
+    """Regression test for a real player-reported bug: 'When I add an
+    era, lets say I had 1990s, then I add 2000s, all the info moves to
+    2000s and 1990s comes up as empty on agent file.' Root cause: every
+    era's Field Portrait/Reference prompt (and Face/Outfit Plate) shared
+    the same four flat sheet columns (mode0_prompt/mode1_prompt/
+    face_plate_url/outfit_plate_url) regardless of which era was being
+    edited, so generating a second era's prompt silently overwrote the
+    first era's. Fixed by writing era-specific columns
+    (era_<era>_mode0/mode1/face_url/outfit_url) instead. Sets up two
+    active eras -- 90s already has both prompts saved, 00s has neither
+    (so renderEraStack()'s auto-generate only fires for 00s) -- and
+    checks the resulting update_field POST targets era_00s_mode0/mode1
+    (not the shared flat fields, and not 90s's own era-specific fields),
+    and that 90s's displayed prompt is completely unchanged afterward."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    complete_extra = {
+        "age_range": "40s", "sex": "Female", "nationality": "Hispanic American",
+        "face_shape": "oval", "eye_color": "brown", "eye_shape": "round",
+        "nose": "straight", "lips": "thin", "skin": "tan", "facial_hair": "none",
+        "hair_color": "black", "hair_style": "short", "hair_texture": "straight",
+        "build": "average", "posture": "upright", "jacket": "coat", "shirt": "shirt",
+        "trousers": "trousers", "footwear": "boots", "expression": "neutral", "vibe": "calm",
+        "active_eras": json.dumps(["90s", "00s"]),
+        # 90s already has both prompts -- renderEraStack()'s
+        # `if (!mode0 || !mode1)` auto-generate guard must skip it.
+        "era_90s_mode0": "Existing 90s portrait prompt, do not touch.",
+        "era_90s_mode1": "Existing 90s reference prompt, do not touch.",
+        # 00s has neither -- must auto-generate.
+        "era_00s_mode0": "", "era_00s_mode1": "",
+        # Legacy flat columns intentionally left populated too, mirroring
+        # a real pre-fix Agent -- must never be touched by this fix
+        # either (write-side only stops using them; the columns
+        # themselves aren't cleared).
+        "mode0_prompt": "Stale legacy flat value.", "mode1_prompt": "Stale legacy flat value.",
+    }
+    briefs = {"DANI-U8BM": {"char_name": "Daniela Martinez", **complete_extra}}
+    prompt_posts = []
+    field_posts = []
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            body = json.loads(req.post_data or "{}")
+            action = body.get("action")
+            if action == "generate_prompt":
+                prompt_posts.append(body)
+                mock_prompt = "[mock 00s prompt for mode " + body.get("mode", "?") + "]"
+                route.fulfill(status=200, content_type="application/json",
+                               body=json.dumps({"status": "OK", "prompt": mock_prompt}))
+            elif action == "update_field":
+                field_posts.append(body)
+                route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            else:
+                route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        if "code=" in url:
+            code = url.split("code=")[1].split("&")[0]
+            res = {"status": "OK", "data": briefs[code]} if code in briefs else {"status": "NOT_FOUND"}
+        else:
+            res = {"status": "OK"}
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/dg-agent-portal.html?code=DANI-U8BM#agent", wait_until="domcontentloaded", timeout=15000)
+    # Auto-generate is staggered (500ms + idx*200ms per era in
+    # renderEraStack()) and 00s is the second era rendered -- give it
+    # real headroom to actually fire and its mocked round trip to land.
+    page.wait_for_timeout(2000)
+
+    era00_field_posts = [b for b in field_posts if b.get("field") in ("era_00s_mode0", "era_00s_mode1")]
+    record("agent-portal", "auto-generating 00s's missing prompts writes to era-specific fields, not the shared flat ones",
+           len(era00_field_posts) == 2, str(field_posts))
+
+    stale_field_posts = [b for b in field_posts if b.get("field") in
+                          ("mode0_prompt", "mode1_prompt", "era_90s_mode0", "era_90s_mode1")]
+    record("agent-portal", "generating 00s's prompts never writes to 90s's fields or the shared flat fields",
+           len(stale_field_posts) == 0, str(stale_field_posts))
+
+    era90_mode0_val = page.input_value("#prompt-mode0-90s")
+    era90_mode1_val = page.input_value("#prompt-mode1-90s")
+    record("agent-portal", "90s's own displayed prompts are completely unchanged after 00s auto-generates",
+           era90_mode0_val == "Existing 90s portrait prompt, do not touch."
+           and era90_mode1_val == "Existing 90s reference prompt, do not touch.",
+           f"mode0={era90_mode0_val!r} mode1={era90_mode1_val!r}")
+
+    era00_mode0_val = page.input_value("#prompt-mode0-00s")
+    era00_mode1_val = page.input_value("#prompt-mode1-00s")
+    record("agent-portal", "00s's displayed prompts are populated with the newly generated values",
+           era00_mode0_val.startswith("[mock 00s prompt") and era00_mode1_val.startswith("[mock 00s prompt"),
+           f"mode0={era00_mode0_val!r} mode1={era00_mode1_val!r}")
+
+    record("agent-portal", "no console errors on the era-isolation flow", len(errs) == 0, str(errs))
+    page.close()
+
     record("agent-portal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
     return errs
@@ -7538,6 +7644,8 @@ def main():
         safe(test_agent_file_vitals_and_bonds, browser, area="agent-portal")
 
         safe(test_agent_file_era_prompt_includes_era, browser, area="agent-portal")
+
+        safe(test_agent_file_era_prompts_isolated_per_era, browser, area="agent-portal")
 
         safe(test_agent_file_outfit_plate_requires_face_first, browser, area="agent-portal")
 

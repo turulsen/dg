@@ -4054,7 +4054,10 @@ function renderEraStack(eras, data) {
   const eraDecade = {'90s':'1990s','00s':'2000s','10s':'2010s','20s':'2020s'};
 
   eras.forEach((era, idx) => {
-    // Flat sheet columns are the source of truth for now — era-specific cols added later
+    // Era-specific columns are the source of truth now (every write path
+    // writes these); the flat face_plate_url/outfit_plate_url/mode0_prompt/
+    // mode1_prompt columns are only a fallback, for any Agent whose Plates/
+    // prompts were generated before the era Plate/prompt data collision fix.
     const faceUrl = driveDirectUrl(data['era_' + era + '_face_url'] || data.face_plate_url || '');
     const outfitUrl = driveDirectUrl(data['era_' + era + '_outfit_url'] || data.outfit_plate_url || '');
     const mode0 = data['era_' + era + '_mode0'] || data.mode0_prompt || '';
@@ -4136,8 +4139,16 @@ function renderEraStack(eras, data) {
     stack.appendChild(item);
     if (faceUrl) loadDriveImage(faceUrl, 'img-face-' + era);
     if (outfitUrl) loadDriveImage(outfitUrl, 'img-outfit-' + era);
-    // Auto-generate prompts if missing
-    if (!mode0 || !mode1) {
+    // Auto-generate prompts if missing -- checks THIS era's own columns
+    // directly, not the mode0/mode1 fallback value used for display
+    // above. That fallback exists so an Agent's pre-fix era still shows
+    // its real legacy prompt; but for a genuinely NEW era with no
+    // era-specific data yet, the same fallback would resolve to some
+    // OTHER (unrecorded) era's stale flat value, make this check think
+    // data already exists, and permanently skip generation -- the exact
+    // cross-era leak this whole fix exists to prevent, just reached
+    // through the read fallback instead of the old write collision.
+    if (!data['era_' + era + '_mode0'] || !data['era_' + era + '_mode1']) {
       (function(capturedEra) {
         setTimeout(function() { autoGenerateEraPrompts(capturedEra); }, 500 + idx * 200);
       })(era);
@@ -4206,7 +4217,10 @@ function saveGeneratedPlate(dataUrl, era, type, imageName) {
   const box = document.getElementById('plate-' + type + '-' + era);
   if (box) box.innerHTML = '<img src="' + dataUrl + '" style="width:100%;display:block;object-fit:cover;object-position:top center;">';
   if (type === 'face') afRecentFacePlateDataUri[era] = dataUrl;
-  const fieldKey = type === 'face' ? 'face_plate_url' : 'outfit_plate_url';
+  // Era-specific (era Plate/prompt data collision fix) -- the old flat
+  // face_plate_url/outfit_plate_url was shared by every era, so adding
+  // a second era silently overwrote the first era's Plate.
+  const fieldKey = 'era_' + era + '_' + (type === 'face' ? 'face_url' : 'outfit_url');
   const charName = afData ? afData.char_name || afCode : afCode;
   const mime = dataUrl.split(';')[0].split(':')[1] || 'image/png';
   const ext = '.' + (mime.split('/')[1] || 'png');
@@ -4365,8 +4379,17 @@ function autoGenerateEraPrompts(era) {
   const st1 = document.getElementById('prompt-mode1-status-' + era);
   if (!ta0 || !ta1) return;
 
-  const needsPortrait = !ta0.value.trim();
-  const needsReference = !ta1.value.trim();
+  // Checks THIS era's own columns directly, same reasoning as
+  // renderEraStack()'s own outer guard right above its call to this
+  // function -- ta0.value/ta1.value at this point is whatever
+  // renderEraStack() just rendered into the textarea, which for a
+  // brand-new era with no era-specific data yet is the display
+  // fallback's merged value (some OTHER, unrecorded era's stale flat
+  // prompt), not actually empty. Checking that instead of afData
+  // directly used to make this function think a genuinely-blank new
+  // era already had data and silently skip generation.
+  const needsPortrait = !afData['era_' + era + '_mode0'];
+  const needsReference = !afData['era_' + era + '_mode1'];
   if (!needsPortrait && !needsReference) return;
 
   const character = {
@@ -4406,9 +4429,9 @@ function autoGenerateEraPrompts(era) {
         if (st0) { st0.textContent = 'Generated.'; setTimeout(function(){ st0.textContent=''; }, 3000); }
         // Save to Sheet
         fetch(APPS_SCRIPT_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'},
-          body: JSON.stringify({ action:'update_field', agent_code: afCode, token: agentToken(afCode), field:'mode0_prompt', value: json.prompt })
+          body: JSON.stringify({ action:'update_field', agent_code: afCode, token: agentToken(afCode), field: 'era_' + era + '_mode0', value: json.prompt })
         }).catch(function(e){ console.error(e); });
-        if (afData) afData.mode0_prompt = json.prompt;
+        if (afData) afData['era_' + era + '_mode0'] = json.prompt;
         persistAgent(afCode, afData);
       } else {
         if (st0) st0.textContent = 'Error.';
@@ -4430,9 +4453,9 @@ function autoGenerateEraPrompts(era) {
         ta1.value = json.prompt;
         if (st1) { st1.textContent = 'Generated.'; setTimeout(function(){ st1.textContent=''; }, 3000); }
         fetch(APPS_SCRIPT_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'},
-          body: JSON.stringify({ action:'update_field', agent_code: afCode, token: agentToken(afCode), field:'mode1_prompt', value: json.prompt })
+          body: JSON.stringify({ action:'update_field', agent_code: afCode, token: agentToken(afCode), field: 'era_' + era + '_mode1', value: json.prompt })
         }).catch(function(e){ console.error(e); });
-        if (afData) afData.mode1_prompt = json.prompt;
+        if (afData) afData['era_' + era + '_mode1'] = json.prompt;
         persistAgent(afCode, afData);
       } else {
         if (st1) st1.textContent = 'Error.';
@@ -4451,8 +4474,10 @@ function saveEraPrompt(btn) {
   const val = textarea.value.trim();
   if (!val) return;
   if (status) status.textContent = 'Saving…';
-  // Map mode to sheet field name
-  const fieldMap = {'mode0': 'mode0_prompt', 'mode1': 'mode1_prompt'};
+  // Map mode to sheet field name -- era-specific (era Plate/prompt data
+  // collision fix), not the shared flat mode0_prompt/mode1_prompt every
+  // era used to silently overwrite.
+  const fieldMap = {'mode0': 'era_' + era + '_mode0', 'mode1': 'era_' + era + '_mode1'};
   const field = fieldMap[mode];
   fetch(APPS_SCRIPT_URL, {
     method: 'POST', mode: 'no-cors',
