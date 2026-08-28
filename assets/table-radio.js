@@ -50,6 +50,20 @@
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
+  // Inside the app shell (hub.html), the shell owns one hoisted copy of
+  // this widget outside #dg-shell-content entirely -- a page loaded
+  // *into* that iframe (e.g. agent-hub.html) must not also mount its
+  // own, or both sit at the same fixed bottom-right position (this
+  // widget's #dg-radio is position:fixed, which is relative to
+  // whichever document it's actually in -- the iframe's own viewport
+  // here, landing almost exactly on top of the shell's real one) with
+  // no way to tell which pill is which, and only the inner copy (which
+  // a real navigation destroys) would ever actually be reachable to tap.
+  // window.frameElement is same-origin-only, so this is null for every
+  // standalone visit and for any other embedding (e.g. Split View's own
+  // nested iframes, keyed on a different id) -- only the shell's own
+  // content frame matches.
+  if (window.frameElement && window.frameElement.id === 'dg-shell-content') return;
   var FIREBASE_SDK_VERSION = '12.18.0';
   // Public Web SDK config for the dg-app-b3447 Firebase project -- not
   // a secret, same reasoning as every other client-side Firebase config;

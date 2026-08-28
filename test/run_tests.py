@@ -4518,12 +4518,27 @@ def test_shell_content_swap_preserves_hoisted_widgets(p):
     destroys and recreates them -- see table-radio.js's own header
     comment). Proves that structurally, without needing a real Firestore
     connection: tag the outer widgets' DOM nodes, swap the content
-    iframe to a different page, and confirm the exact same nodes (not
-    same-looking rebuilt ones) are still there afterward. Both widgets
-    start in their default collapsed/no-channel state here (no
-    localStorage channel set), which never opens a Firestore connection
-    in the first place (see table-radio.js's startPolling()) -- so this
-    needs no Firestore mocking to be a meaningful proof."""
+    iframe (via the tappable manual-test-swap buttons -- the same path
+    an iPad tester with no devtools access actually has), and confirm
+    the exact same nodes (not same-looking rebuilt ones) are still there
+    afterward. Both widgets start in their default collapsed/no-channel
+    state here (no localStorage channel set), which never opens a
+    Firestore connection in the first place (see table-radio.js's
+    startPolling()) -- so this needs no Firestore mocking to be a
+    meaningful proof.
+
+    Also confirms the dedup guard actually works: table-radio.js and
+    dice-roller.js both bail out immediately when
+    window.frameElement.id === 'dg-shell-content' (both widgets are
+    position:fixed, so an un-suppressed inner copy would render right on
+    top of the shell's real one, at bottom-right of the iframe's own
+    viewport rather than the window's -- close enough on screen that a
+    tester can't reliably tell which pill they're tapping, and only the
+    inner one -- which a real iframe navigation destroys -- would
+    actually be reachable). Regression coverage for exactly that: before
+    this guard existed, Agent Hub's own copies rendered inside the
+    content iframe alongside the shell's, making "does Table Radio
+    survive a swap" impossible to verify by tapping the visible pill."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -4543,12 +4558,22 @@ def test_shell_content_swap_preserves_hoisted_widgets(p):
     page.wait_for_function(
         "() => { var f = document.getElementById('dg-shell-content'); "
         "return f.contentDocument && f.contentDocument.readyState === 'complete'; }")
+    page.wait_for_timeout(200)
+
+    record("shell", "Agent Hub's own copy of the Table Radio pill did NOT also mount inside the content iframe (dedup guard)",
+           page.eval_on_selector("#dg-shell-content", "el => el.contentDocument.getElementById('dg-radio-pill')") is None, "")
+    record("shell", "Agent Hub's own copy of the Dice Roller panel did NOT also mount inside the content iframe (dedup guard)",
+           page.eval_on_selector("#dg-shell-content", "el => el.contentDocument.getElementById('dr-panel')") is None, "")
+
     page.evaluate("""() => {
         document.getElementById('dg-radio-pill').dataset.dgTestTag = 'radio-still-here';
         document.getElementById('dr-panel').dataset.dgTestTag = 'dice-still-here';
     }""")
 
-    page.evaluate("() => { document.getElementById('dg-shell-content').src = 'a-cell.html'; }")
+    # The tappable manual-test-swap control (#dg-shell-test-nav), not a
+    # raw iframe.src assignment -- proving the actual UI path an iPad
+    # tester with no devtools/paired Mac has access to.
+    page.click('#dg-shell-test-nav button[data-target="a-cell.html"]')
     page.wait_for_function(
         "() => { var f = document.getElementById('dg-shell-content'); "
         "return f.contentDocument && f.contentDocument.readyState === 'complete' "
@@ -4561,6 +4586,8 @@ def test_shell_content_swap_preserves_hoisted_widgets(p):
            page.eval_on_selector("#dg-radio-pill", "el => el.dataset.dgTestTag") == "radio-still-here", "")
     record("shell", "the outer Dice Roller panel is the exact same DOM node after the swap (not rebuilt)",
            page.eval_on_selector("#dr-panel", "el => el.dataset.dgTestTag") == "dice-still-here", "")
+    record("shell", "A-Cell's own copy of the Table Radio pill also did NOT mount inside the content iframe (dedup guard, second page)",
+           page.eval_on_selector("#dg-shell-content", "el => el.contentDocument.getElementById('dg-radio-pill')") is None, "")
     record("shell", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
     return errs

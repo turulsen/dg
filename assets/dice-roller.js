@@ -39,6 +39,17 @@
 (function () {
     'use strict';
 
+    // Same reasoning as table-radio.js's own guard, right next to it in
+    // every page that includes both -- inside the app shell (hub.html),
+    // the shell owns one hoisted copy of this widget outside
+    // #dg-shell-content entirely; a page loaded *into* that iframe must
+    // not also mount its own (this widget's #dr-panel is also
+    // position:fixed, landing on top of the shell's real one). Null on
+    // every standalone visit and for any other embedding (e.g. Split
+    // View's own nested iframes, a different frame id) -- same-origin
+    // only, so this can't misfire cross-origin either.
+    if (window.frameElement && window.frameElement.id === 'dg-shell-content') return;
+
     /* ── Dice config ──────────────────────────────────────────────── */
     const DICE = [
         { id: 'd4', sides: 4, label: 'D4' },

@@ -20,15 +20,16 @@
      loaded here one at a time into #dg-shell-content instead of via a
      real page navigation -- Agent Hub is the pilot page, loaded by
      default below. Still unlinked from every existing page -- visiting
-     this file directly is the only way in. Agent Hub still includes
-     its own copies of table-radio.js/dice-roller.js too (unchanged, so
-     it keeps working exactly as before when visited standalone), so
-     expect a second, redundant pair of widgets rendered inside the
-     content iframe until a later phase stops it loading them there --
-     harmless, just visually doubled up for now. Later phases add
-     cross-frame navigation (assets/shell-nav.js), fold in the
-     remaining pages, and finally point the app's real entry points
-     here.
+     this file directly is the only way in. Agent Hub still includes its
+     own copies of table-radio.js/dice-roller.js too (unchanged, so it
+     keeps working exactly as before when visited standalone) -- both
+     scripts now detect they're running inside this exact iframe
+     (window.frameElement.id === 'dg-shell-content') and skip mounting
+     their own copy there, so only this page's hoisted widgets ever
+     render, with no second pill sitting on top of the real one. Later
+     phases add real cross-frame navigation (assets/shell-nav.js), fold
+     in the remaining pages, and finally point the app's real entry
+     points here.
      ══════════════════════════════════════════════ */
   html,body{ height:100%; margin:0; }
   *{ box-sizing:border-box; }
@@ -49,6 +50,21 @@
   #dg-shell-header .scaffold-note{
     font-size:11px; color:#7a8a68;
   }
+  /* Temporary, manual-test-only -- real cross-frame nav (a persistent
+     top nav wired through assets/shell-nav.js) is Phase 3+. This is
+     just enough to prove the content swap from a touchscreen (an iPad
+     testing this has no devtools of its own -- Safari's Web Inspector
+     needs a paired Mac), without needing a console. Remove once real
+     nav replaces it. */
+  #dg-shell-test-nav{
+    margin-left:auto; display:flex; gap:6px; align-items:center;
+  }
+  #dg-shell-test-nav span{ font-size:10px; color:#5a6a48; text-transform:uppercase; letter-spacing:.1em; }
+  #dg-shell-test-nav button{
+    font-family:'Courier Prime',monospace; font-size:11px; color:#c8c1a8;
+    background:#1a1f16; border:1px solid #3a4630; padding:5px 10px; cursor:pointer;
+  }
+  #dg-shell-test-nav button:hover{ border-color:#6a7a4f; }
   #dg-shell-content-wrap{ flex:1; min-height:0; }
   #dg-shell-content{
     display:block; width:100%; height:100%; border:0; background:#0a0d08;
@@ -59,7 +75,12 @@
 
 <div id="dg-shell-header">
   <span class="brand">Delta Green — Hub</span>
-  <span class="scaffold-note">shell in progress — cross-frame nav lands in a later phase</span>
+  <span class="scaffold-note">shell in progress — real nav lands in a later phase</span>
+  <span id="dg-shell-test-nav">
+    <span>Manual test swap:</span>
+    <button type="button" data-target="agent-hub.html">Agent Hub</button>
+    <button type="button" data-target="a-cell.html">A-Cell</button>
+  </span>
 </div>
 
 <div id="dg-shell-content-wrap">
@@ -69,6 +90,17 @@
 <script src="assets/table-radio.js"></script>
 <script src="assets/dice-roller.js?v=4"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>
+<script>
+  // Temporary manual-test wiring -- see the #dg-shell-test-nav CSS
+  // comment above. Plain iframe.src assignment, same mechanism real
+  // navigation will use, just triggered by a tap instead of a link
+  // click, so this is testable from a touchscreen with no devtools.
+  document.getElementById('dg-shell-test-nav').addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-target]');
+    if (!btn) return;
+    document.getElementById('dg-shell-content').src = btn.getAttribute('data-target');
+  });
+</script>
 
 </body>
 </html>
