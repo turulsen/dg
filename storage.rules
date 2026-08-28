@@ -24,11 +24,25 @@ service firebase.storage {
       allow write: if isHandler();
     }
 
-    // Everything else stays default-deny until its own surface (Evidence
-    // photos, Face Plates, Brief reference photos) is actually built and
-    // scoped, rather than the blanket "any signed-in user, anywhere"
-    // placeholder Phase 1 scaffolded -- that included every Agent
-    // (Dice Roller signs every Agent in), which was never meant to be
-    // the final word on who can write where in Storage.
+    // evidence/{evidenceId}.{ext} -- Evidence Locker photos/PDFs.
+    // Handler-only write, same as Track Library (only A-Cell's Evidence
+    // form has any upload UI for this). Read stays public rather than
+    // trying to duplicate listEvidence()'s own released/restricted_to
+    // filtering here in rules -- no regression from today's actual
+    // posture, since the existing gdrive: links this replaces are
+    // already ANYONE_WITH_LINK-shared, and the URL itself is only ever
+    // handed to a client that already passed that server-side filter
+    // in the first place.
+    match /evidence/{allPaths=**} {
+      allow read: if true;
+      allow write: if isHandler();
+    }
+
+    // Everything else stays default-deny until its own surface (Face
+    // Plates, Brief reference photos) is actually built and scoped,
+    // rather than the blanket "any signed-in user, anywhere" placeholder
+    // Phase 1 scaffolded -- that included every Agent (Dice Roller signs
+    // every Agent in), which was never meant to be the final word on who
+    // can write where in Storage.
   }
 }

@@ -1939,13 +1939,100 @@
   // is wrong.
   var fetchGen = 0;
   // formPhotoDataUrl: the data URI of a NEWLY picked file this edit
-  // session, or null if none picked. formPhotoExisting: the original
-  // stored photo value (a gdrive: link, a legacy pre-migration data
-  // URI, or ''), used as the save fallback so re-saving without
-  // changing the photo sends the existing link back unchanged instead
-  // of a freshly-decoded, freshly-re-uploaded data URI.
+  // session, used for the live preview only now (Phase 4 -- the actual
+  // upload happens from formPhotoFile, the raw File object, straight to
+  // Firebase Storage; see uploadEvidencePhotoIfNeeded_() below).
+  // formPhotoExisting: the original stored photo value (a gdrive: link,
+  // a Storage download URL, a legacy pre-migration data URI, or ''),
+  // used as the save fallback so re-saving without changing the photo
+  // sends the existing link back unchanged instead of re-uploading.
   var formPhotoDataUrl = null;
+  var formPhotoFile = null;
   var formPhotoExisting = null;
+
+  /* ── Firebase Storage: direct client upload for Evidence photos/PDFs
+     (Phase 4). Self-contained copy of the same loader/sign-in pattern
+     assets/table-radio.js, assets/dice-roller.js, and this page's own
+     MUSIC section (Track Library) each already use independently --
+     every script block on this page is deliberately self-contained
+     rather than sharing state across sections, so this is its own
+     small copy, not a shared import. ── */
+  var FIREBASE_SDK_VERSION = '12.18.0';
+  var FIREBASE_CONFIG = {
+    apiKey: 'AIzaSyBiFBvgmrjtacxXvh7FHa9a28BbwV0LnDQ',
+    authDomain: 'dg-app-b3447.firebaseapp.com',
+    projectId: 'dg-app-b3447',
+    storageBucket: 'dg-app-b3447.firebasestorage.app',
+    messagingSenderId: '464997490443',
+    appId: '1:464997490443:web:dad47a347ae7a64a9e4c0e'
+  };
+  var firebaseApiLoading = false;
+  var firebaseApiCallbacks = [];
+  function loadScriptTag(src, cb) {
+    var s = document.createElement('script');
+    s.src = src;
+    s.onload = cb;
+    document.head.appendChild(s);
+  }
+  function ensureFirebaseApi(cb) {
+    var ready = function () { return window.firebase && window.firebase.storage && window.firebase.auth && window.firebase.functions; };
+    if (ready()) { cb(); return; }
+    firebaseApiCallbacks.push(cb);
+    if (firebaseApiLoading) return;
+    firebaseApiLoading = true;
+    var base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/';
+    var loadIfMissing = function (check, url, next) { if (check()) { next(); } else { loadScriptTag(url, next); } };
+    loadIfMissing(function () { return window.firebase && window.firebase.apps; }, base + 'firebase-app-compat.js', function () {
+      if (!window.firebase.apps.length) window.firebase.initializeApp(FIREBASE_CONFIG);
+      loadIfMissing(function () { return !!window.firebase.auth; }, base + 'firebase-auth-compat.js', function () {
+        loadIfMissing(function () { return !!window.firebase.functions; }, base + 'firebase-functions-compat.js', function () {
+          loadIfMissing(function () { return !!window.firebase.storage; }, base + 'firebase-storage-compat.js', function () {
+            var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
+            cbs.forEach(function (fn) { fn(); });
+          });
+        });
+      });
+    });
+  }
+  var _handlerAuthPromise = null;
+  function ensureHandlerSignedIn() {
+    if (_handlerAuthPromise) return _handlerAuthPromise;
+    _handlerAuthPromise = new Promise(function (resolve, reject) {
+      ensureFirebaseApi(function () {
+        var auth = window.firebase.auth();
+        if (auth.currentUser) { resolve(auth.currentUser); return; }
+        var password = sessionStorage.getItem('dg_acell_pw') || '';
+        if (!password) { _handlerAuthPromise = null; reject(new Error('No A-Cell session -- log in as Handler first.')); return; }
+        window.firebase.functions().httpsCallable('handlerLogin')({ handler_password: password })
+          .then(function (result) { return auth.signInWithCustomToken(result.data.token); })
+          .then(function (cred) { resolve(cred.user); })
+          .catch(function (err) { _handlerAuthPromise = null; reject(err); });
+      });
+    });
+    return _handlerAuthPromise;
+  }
+  function extensionForFile_(file) {
+    var type = file.type || '';
+    if (type === 'application/pdf') return '.pdf';
+    if (type.indexOf('image/') === 0) return '.' + type.slice('image/'.length);
+    var m = /\.[a-z0-9]+$/i.exec(file.name || '');
+    return m ? m[0] : '';
+  }
+  // Resolves to the URL to actually save: uploads formPhotoFile to
+  // Storage first if a new file was picked this edit, otherwise
+  // resolves immediately with whatever was already there (no-op,
+  // matches the pre-Phase-4 behavior of sending the existing value
+  // back unchanged).
+  function uploadEvidencePhotoIfNeeded_(evidenceId) {
+    if (!formPhotoFile) return Promise.resolve(formPhotoExisting || '');
+    var file = formPhotoFile;
+    return ensureHandlerSignedIn().then(function () {
+      var path = 'evidence/' + evidenceId + extensionForFile_(file);
+      return window.firebase.storage().ref(path).put(file, { contentType: file.type || 'application/octet-stream' });
+    }).then(function (snapshot) {
+      return snapshot.ref.getDownloadURL();
+    });
+  }
 
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -2393,7 +2480,8 @@
       if (errEl) errEl.textContent = 'Could not read that file -- try again or pick a different one.';
     };
     r.onload = function (e) {
-      formPhotoDataUrl = e.target.result;
+      formPhotoDataUrl = e.target.result; // preview only now -- see formPhotoFile's own comment
+      formPhotoFile = file;
       renderPhotoPreview(prevWrapId, e.target.result, isPdf, file.name);
     };
     r.readAsDataURL(file);
@@ -2435,6 +2523,7 @@
   function showForm(editingEvidence) {
     if (!editingEvidence && createFormSlot.childNodes.length) { createFormSlot.innerHTML = ''; return; }
     formPhotoDataUrl = null;
+    formPhotoFile = null;
     formPhotoExisting = editingEvidence ? (editingEvidence.photo || null) : null;
     var initialCellId = editingEvidence ? (editingEvidence.cell_id || '') : filterCellId;
     var initialOpId = editingEvidence ? (editingEvidence.operation_id || '') : (filterOpId === 'UNFILED' ? '' : filterOpId);
@@ -2489,34 +2578,42 @@
         document.querySelectorAll('#evidence-new-restrict-wrap input:checked'), function (cb) { return cb.value; });
       var errEl = document.getElementById('evidence-new-error');
       if (!title) { errEl.textContent = 'Give the evidence a title first.'; return; }
-      statusEl.textContent = editingEvidence ? 'Saving…' : 'Creating…';
       var handlerPw = sessionStorage.getItem('dg_acell_pw') || '';
-      // A freshly picked file wins; otherwise send the existing stored
-      // value back unchanged (a gdrive: link, a legacy data URI, or
-      // nothing) rather than re-uploading a photo that didn't change.
-      var photoToSave = formPhotoDataUrl || formPhotoExisting || '';
-      var payload = editingEvidence
-        ? { action: 'update_evidence', evidence_id: editingEvidence.evidence_id, title: title, body: body, photo: photoToSave, cell_id: cellId, operation_id: opId, released: released, restricted_to: JSON.stringify(restrictedTo), handler_password: handlerPw }
-        : { action: 'create_evidence', title: title, body: body, photo: photoToSave, cell_id: cellId, operation_id: opId, released: released, restricted_to: JSON.stringify(restrictedTo), handler_password: handlerPw };
-      // No keepalive here, unlike every other POST in this file: keepalive
-      // requests are capped at 64KiB by the browser (not this app, not
-      // Apps Script) -- fine for the small JSON payloads every other
-      // action sends, but a real photo's base64 data URI blows past that
-      // easily, and fetch() rejects the whole request before it's even
-      // sent, landing in the catch below with a misleadingly generic
-      // "could not reach the backend" for what's actually an oversized
-      // request. Evidence is the one action here that can carry a photo.
-      fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify(payload),
+      // Known up front either way -- an edit already has one, and a
+      // brand-new item mints its own here (Phase 4: needed before the
+      // photo upload starts, since the Storage path is evidence/{this
+      // id}.{ext}; Code.gs's createEvidence() accepts this client-
+      // supplied id instead of minting its own now, see its own comment).
+      var evidenceId = editingEvidence ? editingEvidence.evidence_id
+        : ('evidence_' + Date.now() + '_' + Math.floor(Math.random() * 100000).toString(36));
+      statusEl.textContent = formPhotoFile ? 'Uploading…' : (editingEvidence ? 'Saving…' : 'Creating…');
+      uploadEvidencePhotoIfNeeded_(evidenceId).then(function (photoToSave) {
+        var payload = editingEvidence
+          ? { action: 'update_evidence', evidence_id: evidenceId, title: title, body: body, photo: photoToSave, cell_id: cellId, operation_id: opId, released: released, restricted_to: JSON.stringify(restrictedTo), handler_password: handlerPw }
+          : { action: 'create_evidence', evidence_id: evidenceId, title: title, body: body, photo: photoToSave, cell_id: cellId, operation_id: opId, released: released, restricted_to: JSON.stringify(restrictedTo), handler_password: handlerPw };
+        statusEl.textContent = editingEvidence ? 'Saving…' : 'Creating…';
+        // No keepalive here, unlike every other POST in this file: keepalive
+        // requests are capped at 64KiB by the browser (not this app, not
+        // Apps Script) -- fine for the small JSON payload this now always
+        // is (a Storage URL, not a base64 photo, now that a picked file
+        // uploads to Storage directly above instead of riding in this
+        // POST -- a legacy gdrive:/data: value falling through
+        // formPhotoExisting unchanged is the only way this could still be
+        // large, and even that's rare enough not to special-case).
+        return fetch(APPS_SCRIPT_URL, {
+          method: 'POST', mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify(payload),
+        });
       }).then(function () {
         verifyEvidenceWrite_(
           function (list) { return list.some(function (x) { return x.title === title && x.cell_id === cellId; }); },
           function () { statusEl.textContent = ''; createFormSlot.innerHTML = ''; renderList(); },
           function () { statusEl.textContent = NOT_DEPLOYED_MSG; }
         );
-      }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+      }).catch(function (err) {
+        statusEl.textContent = 'Upload failed: ' + ((err && err.message) || 'could not reach the backend.');
+      });
     });
     if (formPhotoExisting && extractDriveId(formPhotoExisting)) {
       loadEvidencePhotoDataUri(formPhotoExisting, function (dataUri) {

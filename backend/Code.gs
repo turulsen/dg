@@ -2881,7 +2881,16 @@ function createEvidence(data) {
   const cols = headerMap_(headers);
   const missing = requireColumns_(cols, ['evidence_id', 'title', 'body', 'photo', 'cell_id', 'created_at', 'operation_id', 'released', 'restricted_to']);
   if (missing) return missing;
-  const evidenceId = 'evidence_' + new Date().getTime() + '_' + Math.floor(Math.random() * 100000).toString(36);
+  // Phase 4 (Firebase Storage): when the client is uploading a photo
+  // directly to Storage (see a-cell.html's ensureHandlerSignedIn()),
+  // it needs to know the evidence_id BEFORE this call so the upload's
+  // own path (evidence/{evidence_id}.{ext}) is known -- accepts a
+  // client-supplied id for that case, same pattern uploadTrack()'s
+  // storage_url branch already uses; falls back to generating one here
+  // as before when the caller doesn't send one (a text-only save, or
+  // any older client).
+  const evidenceId = (data.evidence_id || '').trim() ||
+    ('evidence_' + new Date().getTime() + '_' + Math.floor(Math.random() * 100000).toString(36));
   let photo;
   try { photo = resolveEvidencePhoto_(data.photo, title); } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'Image upload failed: ' + err.message }))
