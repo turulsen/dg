@@ -1975,7 +1975,7 @@
     document.head.appendChild(s);
   }
   function ensureFirebaseApi(cb) {
-    var ready = function () { return window.firebase && window.firebase.storage && window.firebase.auth && window.firebase.functions; };
+    var ready = function () { return window.firebase && window.firebase.storage && window.firebase.auth && window.firebase.functions && window.firebase.firestore; };
     if (ready()) { cb(); return; }
     firebaseApiCallbacks.push(cb);
     if (firebaseApiLoading) return;
@@ -1987,8 +1987,15 @@
       loadIfMissing(function () { return !!window.firebase.auth; }, base + 'firebase-auth-compat.js', function () {
         loadIfMissing(function () { return !!window.firebase.functions; }, base + 'firebase-functions-compat.js', function () {
           loadIfMissing(function () { return !!window.firebase.storage; }, base + 'firebase-storage-compat.js', function () {
-            var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-            cbs.forEach(function (fn) { fn(); });
+            // firestore-compat (Phase 5): the Handler's live, full
+            // (unfiltered by visible_to -- isHandler() bypasses that)
+            // Evidence collection listener, see startEvidenceListener()
+            // below. Loaded last/on demand like the others rather than
+            // reordering them.
+            loadIfMissing(function () { return !!window.firebase.firestore; }, base + 'firebase-firestore-compat.js', function () {
+              var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
+              cbs.forEach(function (fn) { fn(); });
+            });
           });
         });
       });
@@ -2110,29 +2117,23 @@
     return 'Filed ' + new Date(n).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   }
 
+  // Evidence content itself (Phase 5) is now a live Firestore listener
+  // -- see startEvidenceListener() below -- not part of this poll-driven
+  // fetch/render cycle anymore. This still owns Cells/Operations
+  // (unmigrated) and the "has base data loaded at least once" gate the
+  // listener's own render calls check via baseDataReady.
+  var baseDataReady = false;
   function fetchAll(isRefresh) {
     var myGen = ++fetchGen;
-    var evDone = false, cellsDone = false, opsDone = false, evOk = false, cellsOk = false;
+    var cellsDone = false, opsDone = false, cellsOk = false;
     function maybeRender() {
       if (myGen !== fetchGen) return;
-      if (!evDone || !cellsDone || !opsDone) return;
-      if (!evOk) {
-        listEl.innerHTML = '<div class="evidence-empty-note">Could not load Evidence. (The A-Cell Evidence addition may not be deployed yet.)</div>';
-        return;
-      }
+      if (!cellsDone || !opsDone) return;
+      baseDataReady = true;
       renderFolders();
       renderList();
       if (isRefresh) refreshNote.textContent = 'Updated ' + new Date().toLocaleTimeString();
     }
-    jsonpGet('list_evidence', {}, function (res) {
-      if (myGen !== fetchGen) return;
-      evDone = true;
-      if (res && res.status === 'OK' && Array.isArray(res.evidence)) {
-        evidenceItems = res.evidence.slice().sort(function (a, b) { return Number(b.created_at) - Number(a.created_at); });
-        evOk = true;
-      }
-      maybeRender();
-    });
     jsonpGet('list_cells', {}, function (res) {
       if (myGen !== fetchGen) return;
       cellsDone = true;
@@ -2157,6 +2158,42 @@
         });
       }
       maybeRender();
+    });
+  }
+
+  // Live evidence/{evidenceId} collection listener (Phase 5) -- the
+  // Handler sees every item (isHandler() bypasses the visible_to
+  // ACL rule players' own listeners are scoped to, see firestore.rules'
+  // own comment on that field), so this is one unfiltered listener, no
+  // splitting required the way Notes' shared/private split needed.
+  // Guarded by evidenceListenerActive rather than evidenceListenerStarted
+  // so a failed sign-in attempt (Handler not logged in yet at page load)
+  // can still retry from the dg-acell-handler-ready event below instead
+  // of being permanently stuck.
+  var evidenceListenerActive = false;
+  function startEvidenceListener() {
+    if (evidenceListenerActive) return;
+    ensureHandlerSignedIn().then(function () {
+      if (evidenceListenerActive) return; // race: two callers both resolved sign-in
+      evidenceListenerActive = true;
+      window.firebase.firestore().collection('evidence').orderBy('created_at', 'desc')
+        .onSnapshot(function (snap) {
+          evidenceItems = [];
+          snap.forEach(function (doc) {
+            var d = doc.data();
+            evidenceItems.push({
+              evidence_id: doc.id, title: d.title || '', body: d.body || '', photo: d.photo || '',
+              cell_id: d.cell_id || '', operation_id: d.operation_id || '', created_at: d.created_at || 0,
+              released: !!d.released, restricted_to: d.restricted_to || []
+            });
+          });
+          if (baseDataReady) { renderFolders(); renderList(); }
+        }, function (err) {
+          console.error('a-cell: evidence listener error', err);
+          listEl.innerHTML = '<div class="evidence-empty-note">Could not load Evidence (Firestore): ' + escapeHtml(err && err.message || String(err)) + '</div>';
+        });
+    }).catch(function (err) {
+      console.error('a-cell: evidence listener sign-in failed (retries on next handler-ready event)', err);
     });
   }
 
@@ -2343,30 +2380,38 @@
     window.open(dataUriToBlobUrl(dataUri), '_blank');
   }
 
-  // Verifies a create/update actually landed by polling list_evidence
-  // over increasing delays, rather than checking once at a fixed 900ms --
-  // a write that includes a freshly picked photo/PDF has to wait on
-  // resolveEvidencePhoto_()'s real Google Drive upload server-side first,
-  // which for anything beyond a tiny image can genuinely take longer than
-  // a single fixed delay tuned for the no-photo case. A too-early check
+  // Verifies a create/update actually landed by checking the live
+  // Firestore-backed evidenceItems (kept current by startEvidenceListener()'s
+  // onSnapshot, Phase 5) over increasing delays, rather than a single
+  // fixed-delay check -- a write that includes a freshly picked photo/PDF
+  // has to wait on the Storage upload finishing server-side first, which
+  // for anything beyond a tiny image can genuinely take longer than a
+  // single fixed delay tuned for the no-photo case. A too-early check
   // showed a false "Sent, but the backend didn't confirm it" for exactly
   // the uploads this feature exists to support, even though the write
   // would have actually landed moments later -- a real live report traced
   // back to this.
+  //
+  // Used to poll its OWN separate list_evidence JSONP fetch here instead
+  // of reading the shared evidenceItems -- redundant with (and slower
+  // than) the live listener that already keeps evidenceItems current, and
+  // its total ~10s budget didn't account for createEvidence()/
+  // updateEvidence() now also making their own synchronous Firestore
+  // round-trip (Phase 5's dual-write) as part of the same Apps Script
+  // execution, measurably slower than the Sheets-only write this budget
+  // was originally tuned for -- confirmed live: a save that was simply
+  // taking a bit longer blew the old budget, silently re-enabled the
+  // Create button (see its own "Write likely still succeeded server-side"
+  // comment below), and a second tap created a real duplicate.
   function verifyEvidenceWrite_(checkFn, onFound, onGiveUp) {
-    var delays = [900, 1500, 3000, 4000];
+    var delays = [400, 800, 1200, 2000, 3000, 4000, 5000];
     var attempt = 0;
     function tryOnce() {
       setTimeout(function () {
-        jsonpGet('list_evidence', {}, function (res) {
-          if (res && res.status === 'OK' && Array.isArray(res.evidence)) {
-            evidenceItems = res.evidence.slice().sort(function (a, b) { return Number(b.created_at) - Number(a.created_at); });
-            if (checkFn(res.evidence)) { onFound(); return; }
-          }
-          attempt++;
-          if (attempt < delays.length) tryOnce();
-          else onGiveUp();
-        });
+        if (checkFn(evidenceItems)) { onFound(); return; }
+        attempt++;
+        if (attempt < delays.length) tryOnce();
+        else onGiveUp();
       }, delays[attempt]);
     }
     tryOnce();
@@ -2706,15 +2751,15 @@
     renderList();
   });
   fetchAll(false);
+  startEvidenceListener();
   // Same Handler-session race as Play/Cells/Sheet -- see the Handler-
-  // password module's own comment. list_evidence's isHandler flag needs a
-  // valid session too, which may still be an in-flight silent re-login at
-  // this point in page load if a saved password exists -- and unlike
-  // Play/Cells/Sheet's gated reads, listEvidence() doesn't error on an
-  // invalid session, it silently falls back to the filtered player view,
-  // so without this retry the Handler would see an incomplete Locker with
-  // no indication anything's missing.
-  window.addEventListener('dg-acell-handler-ready', function () { fetchAll(true); });
+  // password module's own comment. ensureHandlerSignedIn() needs
+  // dg_acell_pw in sessionStorage, which may not be there yet at this
+  // point in page load even when a saved password exists (an in-flight
+  // silent re-login) -- startEvidenceListener()'s own evidenceListenerActive
+  // guard makes a second call here a safe retry rather than a duplicate
+  // listener once the first attempt actually succeeds.
+  window.addEventListener('dg-acell-handler-ready', function () { fetchAll(true); startEvidenceListener(); });
 })();
 </script>
 
