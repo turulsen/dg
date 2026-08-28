@@ -2569,6 +2569,18 @@
     });
     document.getElementById('evidence-new-cancel').addEventListener('click', function () { createFormSlot.innerHTML = ''; });
     document.getElementById('evidence-new-confirm').addEventListener('click', function () {
+      var confirmBtn = this;
+      // A photo upload can genuinely take a few seconds, and the shared
+      // statusEl text elsewhere in the panel is easy to miss on a small
+      // screen -- confirmed live: nothing stopped a second tap on this
+      // exact button while the first upload was still in flight, which
+      // created two full duplicate Evidence rows (two uploads, two
+      // create_evidence calls) rather than one. Disabling THIS button
+      // and changing its own label is both the clearest possible
+      // feedback (it's the thing they just tapped) and a hard guard
+      // against that double-submit, not just a status message that can
+      // go unnoticed.
+      if (confirmBtn.disabled) return;
       var title = document.getElementById('evidence-new-title').value.trim();
       var body = document.getElementById('evidence-new-body').value.trim();
       var cellId = document.getElementById('evidence-new-scope').value;
@@ -2579,6 +2591,9 @@
       var errEl = document.getElementById('evidence-new-error');
       if (!title) { errEl.textContent = 'Give the evidence a title first.'; return; }
       var handlerPw = sessionStorage.getItem('dg_acell_pw') || '';
+      var originalLabel = confirmBtn.textContent;
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = formPhotoFile ? 'Uploading…' : (editingEvidence ? 'Saving…' : 'Creating…');
       // Known up front either way -- an edit already has one, and a
       // brand-new item mints its own here (Phase 4: needed before the
       // photo upload starts, since the Storage path is evidence/{this
@@ -2591,6 +2606,7 @@
         var payload = editingEvidence
           ? { action: 'update_evidence', evidence_id: evidenceId, title: title, body: body, photo: photoToSave, cell_id: cellId, operation_id: opId, released: released, restricted_to: JSON.stringify(restrictedTo), handler_password: handlerPw }
           : { action: 'create_evidence', evidence_id: evidenceId, title: title, body: body, photo: photoToSave, cell_id: cellId, operation_id: opId, released: released, restricted_to: JSON.stringify(restrictedTo), handler_password: handlerPw };
+        confirmBtn.textContent = editingEvidence ? 'Saving…' : 'Creating…';
         statusEl.textContent = editingEvidence ? 'Saving…' : 'Creating…';
         // No keepalive here, unlike every other POST in this file: keepalive
         // requests are capped at 64KiB by the browser (not this app, not
@@ -2609,9 +2625,15 @@
         verifyEvidenceWrite_(
           function (list) { return list.some(function (x) { return x.title === title && x.cell_id === cellId; }); },
           function () { statusEl.textContent = ''; createFormSlot.innerHTML = ''; renderList(); },
-          function () { statusEl.textContent = NOT_DEPLOYED_MSG; }
+          // Write likely still succeeded server-side (this is only
+          // verification not catching up yet) -- the form stays open
+          // here rather than closing, so the button needs re-enabling
+          // too, not just the two error paths below.
+          function () { confirmBtn.disabled = false; confirmBtn.textContent = originalLabel; statusEl.textContent = NOT_DEPLOYED_MSG; }
         );
       }).catch(function (err) {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = originalLabel;
         statusEl.textContent = 'Upload failed: ' + ((err && err.message) || 'could not reach the backend.');
       });
     });
@@ -3692,6 +3714,12 @@
   }
 
   trackLibUploadBtn.addEventListener('click', function () {
+    // Same guard added to Evidence's Create/Save button after a live
+    // double-submit report there (nothing stopped a second tap while an
+    // upload was still in flight, creating two duplicate entries) --
+    // disabling THIS button for the duration is a clearer, harder
+    // guarantee than trackLibStatus text alone, which is easy to miss.
+    if (trackLibUploadBtn.disabled) return;
     var title = trackLibTitleInput.value.trim();
     var file = trackLibFileInput.files[0];
     if (!title) { trackLibStatus.textContent = 'Give the track a title first.'; return; }
@@ -3700,6 +3728,9 @@
     // before the upload starts -- deleteTrack() above reconstructs the
     // same tracks/{track_id}.mp3 path from this same id later.
     var trackId = 'track_' + new Date().getTime() + '_' + Math.floor(Math.random() * 100000).toString(36);
+    var originalUploadLabel = trackLibUploadBtn.textContent;
+    trackLibUploadBtn.disabled = true;
+    trackLibUploadBtn.textContent = 'Uploading…';
     trackLibStatus.textContent = 'Uploading…';
     ensureHandlerSignedIn().then(function () {
       return window.firebase.storage().ref('tracks/' + trackId + '.mp3').put(file, { contentType: 'audio/mpeg' });
@@ -3712,9 +3743,13 @@
         body: JSON.stringify({ action: 'upload_track', track_id: trackId, title: title, storage_url: downloadUrl, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
       });
     }).then(function () {
+      trackLibUploadBtn.disabled = false;
+      trackLibUploadBtn.textContent = originalUploadLabel;
       trackLibStatus.textContent = 'Uploaded — checking…';
       setTimeout(function () { verifyTrackUpload(title, 0); }, 500);
     }).catch(function (err) {
+      trackLibUploadBtn.disabled = false;
+      trackLibUploadBtn.textContent = originalUploadLabel;
       trackLibStatus.textContent = 'Upload failed: ' + ((err && err.message) || 'could not reach Firebase Storage.');
     });
   });
