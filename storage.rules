@@ -1,14 +1,34 @@
 rules_version = '2';
 
-// Not used until Phase 4 (Images/Storage) -- scaffolded now so
-// `firebase deploy` has a valid target from Phase 1 onward. New
-// uploads only (Handout photos, Face Plates, Evidence, Track library);
-// existing gdrive: links are untouched by this migration.
+// Phase 4 (Images/Storage) of the Firebase migration. New uploads only
+// (Handout photos, Face Plates, Evidence, Track Library); existing
+// gdrive: links from before this migration are untouched.
+//
+// Tighten path-by-path as each upload surface is actually cut over,
+// same approach firestore.rules took -- this is deliberately not a
+// blanket rule for the whole bucket the way Phase 1's placeholder was.
 service firebase.storage {
   match /b/{bucket}/o {
-    match /{allPaths=**} {
-      allow read: if true;
-      allow write: if request.auth != null;
+
+    function isHandler() {
+      return request.auth != null && request.auth.token.handler == true;
     }
+
+    // tracks/{trackId}.mp3 -- Table Radio's Track Library. Public read
+    // (every player's Table Radio streams these with no auth, same as
+    // Firestore's tracks/{trackId} docs); Handler-only write, mirroring
+    // firestore.rules' posture for the same feature -- only the Handler
+    // has any upload UI for this today.
+    match /tracks/{allPaths=**} {
+      allow read: if true;
+      allow write: if isHandler();
+    }
+
+    // Everything else stays default-deny until its own surface (Evidence
+    // photos, Face Plates, Brief reference photos) is actually built and
+    // scoped, rather than the blanket "any signed-in user, anywhere"
+    // placeholder Phase 1 scaffolded -- that included every Agent
+    // (Dice Roller signs every Agent in), which was never meant to be
+    // the final word on who can write where in Storage.
   }
 }

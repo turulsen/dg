@@ -3162,8 +3162,37 @@ function uploadTrack(data) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'title is required' }))
       .setMimeType(ContentService.MimeType.JSON);
   }
+  // Phase 4 (Firebase Storage): the client already uploaded the mp3
+  // straight to Firebase Storage and just needs this row recorded --
+  // no DriveApp Blob/file/folder work at all for this path. drive_file_id
+  // stays blank, which both listTracks() (already falls back to the
+  // stored url column whenever drive_file_id is empty) and deleteTrack()
+  // (already no-ops its DriveApp call whenever drive_file_id is empty)
+  // handle correctly with zero changes needed to either of them.
+  if (data.storage_url) {
+    try {
+      const trackId = (data.track_id || '').trim() ||
+        ('track_' + new Date().getTime() + '_' + Math.floor(Math.random() * 100000).toString(36));
+      const sheet = getOrCreateTracksSheet();
+      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      const cols = headerMap_(headers);
+      const missing = requireColumns_(cols, ['track_id', 'title', 'url', 'uploaded_at']);
+      if (missing) return missing;
+      const row = new Array(headers.length).fill('');
+      row[cols.track_id] = trackId;
+      row[cols.title] = title;
+      row[cols.url] = data.storage_url;
+      row[cols.uploaded_at] = new Date().getTime();
+      sheet.appendRow(row);
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK', track_id: trackId, url: data.storage_url }))
+        .setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: err.message }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
   if (!data.mp3_base64) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'mp3_base64 is required' }))
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'mp3_base64 or storage_url is required' }))
       .setMimeType(ContentService.MimeType.JSON);
   }
   try {

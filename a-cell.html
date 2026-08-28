@@ -3392,14 +3392,86 @@
     statusEl.textContent = 'Added to playlist.';
   });
 
-  /* ── Track Library: mp3s the Handler uploads once (stored in Drive via
-     upload_track, table-radio-tracks addition) and can then cue on any
-     channel with one click instead of pasting a link every time. No
-     keepalive on the upload POST -- unlike every other write here, a
-     real mp3's base64 easily blows past the 64KiB cap keepalive
-     requests are held to, which silently drops the request before it
-     ever reaches the network (the exact bug already hit and fixed for
-     Evidence photos). ── */
+  /* ── Track Library: mp3s the Handler uploads once and can then cue on
+     any channel with one click instead of pasting a link every time.
+     Phase 4 of the Firebase migration -- the file itself now goes
+     straight from this browser to Firebase Storage (see
+     ensureFirebaseApi()/ensureHandlerSignedIn() below), and only a tiny
+     JSON {title, storage_url} POST reaches Code.gs to record the row.
+     Before this, the whole mp3's base64 rode inside that POST, which
+     is why the upload had to skip fetch's keepalive (a real mp3 easily
+     blows past its 64KiB cap, silently dropping the request) and why
+     verifyTrackUpload() below waits in increasingly long steps -- both
+     still apply to a legacy Drive-hosted upload if that path is ever
+     used again, but a Storage upload is already durably saved by the
+     time this ever POSTs anything, so its own confirmation only has a
+     tiny Sheet-row write left to wait on. ── */
+  var FIREBASE_SDK_VERSION = '12.18.0';
+  var FIREBASE_CONFIG = {
+    apiKey: 'AIzaSyBiFBvgmrjtacxXvh7FHa9a28BbwV0LnDQ',
+    authDomain: 'dg-app-b3447.firebaseapp.com',
+    projectId: 'dg-app-b3447',
+    storageBucket: 'dg-app-b3447.firebasestorage.app',
+    messagingSenderId: '464997490443',
+    appId: '1:464997490443:web:dad47a347ae7a64a9e4c0e'
+  };
+  var firebaseApiLoading = false;
+  var firebaseApiCallbacks = [];
+  function loadScriptTag(src, cb) {
+    var s = document.createElement('script');
+    s.src = src;
+    s.onload = cb;
+    document.head.appendChild(s);
+  }
+  // Loads only whichever product SDKs aren't already on the page --
+  // assets/table-radio.js and assets/dice-roller.js (both also on this
+  // page) may have already pulled in app/auth/functions themselves, and
+  // this checks for each individually rather than assuming any one
+  // widget's load order.
+  function ensureFirebaseApi(cb) {
+    var ready = function () { return window.firebase && window.firebase.storage && window.firebase.auth && window.firebase.functions; };
+    if (ready()) { cb(); return; }
+    firebaseApiCallbacks.push(cb);
+    if (firebaseApiLoading) return;
+    firebaseApiLoading = true;
+    var base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/';
+    var loadIfMissing = function (check, url, next) { if (check()) { next(); } else { loadScriptTag(url, next); } };
+    loadIfMissing(function () { return window.firebase && window.firebase.apps; }, base + 'firebase-app-compat.js', function () {
+      if (!window.firebase.apps.length) window.firebase.initializeApp(FIREBASE_CONFIG);
+      loadIfMissing(function () { return !!window.firebase.auth; }, base + 'firebase-auth-compat.js', function () {
+        loadIfMissing(function () { return !!window.firebase.functions; }, base + 'firebase-functions-compat.js', function () {
+          loadIfMissing(function () { return !!window.firebase.storage; }, base + 'firebase-storage-compat.js', function () {
+            var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
+            cbs.forEach(function (fn) { fn(); });
+          });
+        });
+      });
+    });
+  }
+  // Reuses the SAME Handler password A-Cell's own login already put in
+  // sessionStorage (dg_acell_pw) to sign into Firebase transparently --
+  // no separate password prompt, unlike Dice Roller's own opt-in Live
+  // Rolls gate, since this only ever runs from inside an already-active
+  // A-Cell Handler session (the Track Library UI isn't reachable any
+  // other way).
+  var _handlerAuthPromise = null;
+  function ensureHandlerSignedIn() {
+    if (_handlerAuthPromise) return _handlerAuthPromise;
+    _handlerAuthPromise = new Promise(function (resolve, reject) {
+      ensureFirebaseApi(function () {
+        var auth = window.firebase.auth();
+        if (auth.currentUser) { resolve(auth.currentUser); return; }
+        var password = sessionStorage.getItem('dg_acell_pw') || '';
+        if (!password) { _handlerAuthPromise = null; reject(new Error('No A-Cell session -- log in as Handler first.')); return; }
+        window.firebase.functions().httpsCallable('handlerLogin')({ handler_password: password })
+          .then(function (result) { return auth.signInWithCustomToken(result.data.token); })
+          .then(function (cred) { resolve(cred.user); })
+          .catch(function (err) { _handlerAuthPromise = null; reject(err); });
+      });
+    });
+    return _handlerAuthPromise;
+  }
+
   var trackLibTitleInput = document.getElementById('tracklib-title-input');
   var trackLibFileInput = document.getElementById('tracklib-file-input');
   var trackLibUploadBtn = document.getElementById('tracklib-upload-btn');
@@ -3457,12 +3529,28 @@
   }
 
   function deleteTrack(t) {
-    if (!confirm('Delete "' + t.title + '"? This removes it from Drive and cannot be undone.')) return;
+    if (!confirm('Delete "' + t.title + '"? This cannot be undone.')) return;
     trackLibStatus.textContent = 'Deleting…';
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'delete_track', track_id: t.track_id, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+    // A Storage-hosted track (Phase 4 upload) needs its own object
+    // deleted from Storage first -- a legacy Drive-hosted one's file is
+    // already handled entirely server-side by deleteTrack() in Code.gs
+    // (unchanged), so this is skipped for those. Firebase Storage
+    // download URLs are always served from firebasestorage.googleapis.com,
+    // which is what tells the two apart -- track_id + the same fixed
+    // tracks/{track_id}.mp3 naming this same file used on upload is
+    // enough to reconstruct the path without storing it separately.
+    var isStorageTrack = t.url && t.url.indexOf('firebasestorage.googleapis.com') !== -1;
+    var storageDeletion = isStorageTrack
+      ? ensureHandlerSignedIn().then(function () {
+        return window.firebase.storage().ref('tracks/' + t.track_id + '.mp3').delete();
+      }).catch(function () { /* best effort -- the Sheet row removal below is what actually stops it being offered to players either way */ })
+      : Promise.resolve();
+    storageDeletion.then(function () {
+      return fetch(APPS_SCRIPT_URL, {
+        method: 'POST', mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'delete_track', track_id: t.track_id, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+      });
     }).then(function () {
       setTimeout(function () {
         jsonpGet('list_tracks', {}, function (res) {
@@ -3477,16 +3565,15 @@
     }).catch(function () { trackLibStatus.textContent = 'Could not reach the backend.'; });
   }
 
-  // A real mp3 (unlike every other write in this app) can genuinely take
-  // several seconds to actually land: DriveApp.createFile() on a
-  // multi-MB file is the slow step inside uploadTrack(), not the sheet
-  // row it appends afterward. A single fixed wait -- long enough for
-  // every other action's near-instant write -- was too short for this
-  // one and reported "not confirmed" on uploads that were, in fact,
-  // still in flight server-side. Retrying with increasing delays gives
-  // a genuinely slow (but successful) upload real room before this
-  // gives up and calls it failed.
-  var TRACK_UPLOAD_VERIFY_DELAYS_MS = [1500, 3000, 5000, 8000];
+  // Used to need long, increasing delays here because DriveApp.createFile()
+  // on a multi-MB base64 payload inside uploadTrack() was itself the slow
+  // step -- a real mp3 could still be uploading server-side well after
+  // this POST returned. A Storage upload is already durably saved before
+  // this ever POSTs anything (see the upload handler below), so all
+  // that's left to wait on is one Sheet-row append, same as every other
+  // near-instant write in this app -- shorter delays, kept as retries
+  // (not a single fixed wait) only for ordinary network jitter.
+  var TRACK_UPLOAD_VERIFY_DELAYS_MS = [500, 1000, 2000];
   function verifyTrackUpload(title, attempt) {
     jsonpGet('list_tracks', {}, function (res) {
       var ok = res && res.status === 'OK' && Array.isArray(res.tracks) &&
@@ -3512,20 +3599,27 @@
     var file = trackLibFileInput.files[0];
     if (!title) { trackLibStatus.textContent = 'Give the track a title first.'; return; }
     if (!file) { trackLibStatus.textContent = 'Choose an mp3 file first.'; return; }
-    trackLibStatus.textContent = 'Reading file…';
-    var reader = new FileReader();
-    reader.onload = function (e) {
-      trackLibStatus.textContent = 'Uploading…';
-      fetch(APPS_SCRIPT_URL, {
+    // Generated here, not by Code.gs, so the Storage path is known
+    // before the upload starts -- deleteTrack() above reconstructs the
+    // same tracks/{track_id}.mp3 path from this same id later.
+    var trackId = 'track_' + new Date().getTime() + '_' + Math.floor(Math.random() * 100000).toString(36);
+    trackLibStatus.textContent = 'Uploading…';
+    ensureHandlerSignedIn().then(function () {
+      return window.firebase.storage().ref('tracks/' + trackId + '.mp3').put(file, { contentType: 'audio/mpeg' });
+    }).then(function (snapshot) {
+      return snapshot.ref.getDownloadURL();
+    }).then(function (downloadUrl) {
+      return fetch(APPS_SCRIPT_URL, {
         method: 'POST', mode: 'no-cors',
         headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'upload_track', title: title, mp3_base64: e.target.result, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
-      }).then(function () {
-        trackLibStatus.textContent = 'Uploaded — checking…';
-        setTimeout(function () { verifyTrackUpload(title, 0); }, 1500);
-      }).catch(function () { trackLibStatus.textContent = 'Could not reach the backend.'; });
-    };
-    reader.readAsDataURL(file);
+        body: JSON.stringify({ action: 'upload_track', track_id: trackId, title: title, storage_url: downloadUrl, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+      });
+    }).then(function () {
+      trackLibStatus.textContent = 'Uploaded — checking…';
+      setTimeout(function () { verifyTrackUpload(title, 0); }, 500);
+    }).catch(function (err) {
+      trackLibStatus.textContent = 'Upload failed: ' + ((err && err.message) || 'could not reach Firebase Storage.');
+    });
   });
 
   checkCurrent();
