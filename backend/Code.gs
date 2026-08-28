@@ -2337,6 +2337,11 @@ function updateCellMembers(cellId, memberCodes) {
       let previousMembers = [];
       try { previousMembers = JSON.parse(data[i][membersCol] || '[]'); } catch (e) { previousMembers = []; }
       sheet.getRange(i + 1, membersCol + 1).setValue(JSON.stringify(newMembers));
+      // Keep cellIdsForAgent_()'s own cache (via cellsMemberMap_()) from
+      // serving a stale membership list for up to its own TTL right
+      // after the Handler just changed it -- a newly-assigned Agent
+      // should see their own Evidence immediately, not after a wait.
+      CacheService.getScriptCache().remove('cells_member_map');
       // Any code in the new list that wasn't in the old one is a fresh
       // assignment -- carry forward whatever solo Notes that Agent
       // already wrote before joining a Cell.
@@ -2776,20 +2781,45 @@ function resolveEvidencePhoto_(photo, title) {
 // player-mode filtering below -- an Agent only ever sees evidence
 // scoped to a Cell they actually belong to (or campaign-wide,
 // cell_id blank).
-function cellIdsForAgent_(agentCode) {
-  const code = String(agentCode || '').trim().toUpperCase();
-  const out = {};
-  if (!code) return out;
+// Called on every single listEvidence() request for every player (see
+// below) -- was a full, uncached Cells sheet scan every time, unlike
+// every other hot read path in this file (getNowPlaying/listCellNotes/
+// getPlaylist/getAgentIdentitiesMap all cache their own raw scan for a
+// few seconds; this one never did). Live-reported as "Evidence takes a
+// while to load" on agent-hub.html. Caches the {cell_id: [member_codes]}
+// shape (not the final per-agent boolean map, which would need its own
+// cache entry per requester) so a burst of players loading Evidence
+// around the same time shares one Cells read instead of each triggering
+// its own.
+function cellsMemberMap_() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get('cells_member_map');
+  if (cached) return JSON.parse(cached);
   const sheet = getOrCreateCellsSheet();
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
   const idCol = headers.indexOf('cell_id');
   const membersCol = headers.indexOf('member_codes');
+  const map = {};
   for (let i = 1; i < data.length; i++) {
+    const cellId = data[i][idCol];
+    if (!cellId) continue;
     let members = [];
     try { members = JSON.parse(data[i][membersCol] || '[]'); } catch (e) { members = []; }
-    if (members.indexOf(code) !== -1) out[data[i][idCol]] = true;
+    map[cellId] = members;
   }
+  cache.put('cells_member_map', JSON.stringify(map), 3);
+  return map;
+}
+
+function cellIdsForAgent_(agentCode) {
+  const code = String(agentCode || '').trim().toUpperCase();
+  const out = {};
+  if (!code) return out;
+  const map = cellsMemberMap_();
+  Object.keys(map).forEach(function (cellId) {
+    if (map[cellId].indexOf(code) !== -1) out[cellId] = true;
+  });
   return out;
 }
 
@@ -2821,10 +2851,46 @@ function listOperations(callback) {
 // or, with no agent_code at all, just released + fully-unrestricted
 // items (matches how list_cells/list_handouts already stayed reachable
 // with zero identifying info, see this action's own doGet comment).
-function listEvidence(params, callback) {
+// Every field listEvidence() below could ever need for ANY requester
+// (Handler or player) -- cached raw and unfiltered for a few seconds,
+// same "cache the raw scan, filter fresh on every call" pattern
+// listCellNotes() already uses for the identical reason (its response
+// also differs per requester, so the FINAL filtered JSON can't be the
+// cache value the way getNowPlaying's can). Was a fresh full-sheet
+// scan on every single Evidence read before this -- for every player,
+// every load -- live-reported as "Evidence takes a while to load" on
+// agent-hub.html.
+function evidenceRawRows_() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get('evidence_raw');
+  if (cached) return JSON.parse(cached);
   const sheet = getOrCreateEvidenceSheet();
   const data = sheet.getDataRange().getValues();
   const cols = headerMap_(data[0]);
+  const rows = [];
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (!row[cols.evidence_id]) continue;
+    let restrictedTo = [];
+    try { restrictedTo = JSON.parse(row[cols.restricted_to] || '[]'); } catch (e) { restrictedTo = []; }
+    rows.push({
+      evidence_id: row[cols.evidence_id],
+      title: row[cols.title] || '',
+      body: row[cols.body] || '',
+      photo: row[cols.photo] || '',
+      cell_id: row[cols.cell_id] || '',
+      operation_id: row[cols.operation_id] || '',
+      created_at: row[cols.created_at] || '',
+      released: asBoolean_(row[cols.released]),
+      restricted_to: restrictedTo
+    });
+  }
+  cache.put('evidence_raw', JSON.stringify(rows), 3);
+  return rows;
+}
+
+function listEvidence(params, callback) {
+  const rawRows = evidenceRawRows_();
 
   const session = String((params && params.handler_session) || '').trim();
   const isHandler = !!(session && CacheService.getScriptCache().get('handler_session_' + session));
@@ -2832,36 +2898,33 @@ function listEvidence(params, callback) {
   const requesterCells = isHandler ? null : cellIdsForAgent_(requesterCode);
 
   const evidence = [];
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    if (!row[cols.evidence_id]) continue;
-    const released = asBoolean_(row[cols.released]);
-    let restrictedTo = [];
-    try { restrictedTo = JSON.parse(row[cols.restricted_to] || '[]'); } catch (e) { restrictedTo = []; }
-    const cellId = row[cols.cell_id] || '';
+  rawRows.forEach(function (row) {
+    const released = row.released;
+    const restrictedTo = row.restricted_to;
+    const cellId = row.cell_id;
 
     if (!isHandler) {
-      if (!released) continue;
-      if (cellId && !(requesterCells && requesterCells[cellId])) continue;
-      if (restrictedTo.length && requesterCode && restrictedTo.indexOf(requesterCode) === -1) continue;
-      if (restrictedTo.length && !requesterCode) continue;
+      if (!released) return;
+      if (cellId && !(requesterCells && requesterCells[cellId])) return;
+      if (restrictedTo.length && requesterCode && restrictedTo.indexOf(requesterCode) === -1) return;
+      if (restrictedTo.length && !requesterCode) return;
     }
 
     evidence.push({
-      evidence_id: row[cols.evidence_id],
-      title: row[cols.title] || '',
-      body: row[cols.body] || '',
-      photo: row[cols.photo] || '',
+      evidence_id: row.evidence_id,
+      title: row.title,
+      body: row.body,
+      photo: row.photo,
       cell_id: cellId,
-      operation_id: row[cols.operation_id] || '',
-      created_at: row[cols.created_at] || '',
+      operation_id: row.operation_id,
+      created_at: row.created_at,
       released: released,
       // Only the Handler view needs the actual allowlist (to edit it);
       // a player already implicitly passed this check above just by
       // being in the response at all.
       restricted_to: isHandler ? restrictedTo : undefined
     });
-  }
+  });
 
   const result = { status: 'OK', evidence: evidence };
   if (!isHandler && requesterCode) {
@@ -2907,6 +2970,7 @@ function createEvidence(data) {
   row[cols.released] = data.released ? 1 : 0;
   row[cols.restricted_to] = typeof data.restricted_to === 'string' ? data.restricted_to : '[]';
   sheet.appendRow(row);
+  CacheService.getScriptCache().remove('evidence_raw');
   return ContentService.createTextOutput(JSON.stringify({ status: 'OK', evidence_id: evidenceId })).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -2939,6 +3003,7 @@ function updateEvidence(data) {
       row[cols.released] = data.released ? 1 : 0;
       row[cols.restricted_to] = typeof data.restricted_to === 'string' ? data.restricted_to : '[]';
       sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
+      CacheService.getScriptCache().remove('evidence_raw');
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
@@ -2956,6 +3021,7 @@ function deleteEvidence(evidenceId) {
   for (let i = data.length - 1; i >= 1; i--) {
     if (data[i][idCol] === evidenceId) {
       sheet.deleteRow(i + 1);
+      CacheService.getScriptCache().remove('evidence_raw');
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }

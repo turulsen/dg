@@ -2284,7 +2284,7 @@
       btn.addEventListener('click', function () { showForm(evidenceItems[parseInt(btn.dataset.editEvidence, 10)]); });
     });
     Array.prototype.forEach.call(listEl.querySelectorAll('[data-delete-evidence]'), function (btn) {
-      btn.addEventListener('click', function () { deleteEvidence(evidenceItems[parseInt(btn.dataset.deleteEvidence, 10)]); });
+      btn.addEventListener('click', function () { deleteEvidence(evidenceItems[parseInt(btn.dataset.deleteEvidence, 10)], btn); });
     });
     Array.prototype.forEach.call(listEl.querySelectorAll('[data-toggle-released]'), function (cb) {
       cb.addEventListener('change', function () { toggleReleased(evidenceItems[parseInt(cb.dataset.toggleReleased, 10)], cb); });
@@ -2418,8 +2418,15 @@
   }
   function lightboxEscHandler(e) { if (e.key === 'Escape') closeLightbox(); }
 
-  function deleteEvidence(h) {
+  function deleteEvidence(h, btn) {
     if (!confirm('Delete "' + h.title + '"? This cannot be undone.')) return;
+    // Same fix as the Create/Save button (see its own comment) -- this
+    // had the identical gap: nothing disabled the Delete button either,
+    // so a slow response invited a second tap that could fire a second
+    // delete_evidence call. renderList() below replaces this button
+    // entirely on success, so it's only re-enabled on the two failure
+    // paths.
+    if (btn) { btn.disabled = true; btn.textContent = 'Deleting…'; }
     statusEl.textContent = 'Deleting…';
     fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors', keepalive: true,
@@ -2430,7 +2437,11 @@
         jsonpGet('list_evidence', {}, function (res) {
           var stillThere = res && res.status === 'OK' && Array.isArray(res.evidence) &&
             res.evidence.some(function (x) { return x.evidence_id === h.evidence_id; });
-          if (stillThere) { statusEl.textContent = NOT_DEPLOYED_MSG; return; }
+          if (stillThere) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Delete'; }
+            statusEl.textContent = NOT_DEPLOYED_MSG;
+            return;
+          }
           if (res && res.status === 'OK' && Array.isArray(res.evidence)) {
             evidenceItems = res.evidence.slice().sort(function (a, b) { return Number(b.created_at) - Number(a.created_at); });
           }
@@ -2438,7 +2449,10 @@
           renderList();
         });
       }, 900);
-    }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+    }).catch(function () {
+      if (btn) { btn.disabled = false; btn.textContent = 'Delete'; }
+      statusEl.textContent = 'Could not reach the backend.';
+    });
   }
 
   // Generous for a scan/photo, small enough that the FileReader -> base64
