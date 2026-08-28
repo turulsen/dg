@@ -3924,7 +3924,7 @@ function saveImageToDrive(base64DataUrl, filename, charName) {
 
 function savePlateImage(data) {
   try {
-    const url = saveImageToDrive(data.image_base64, data.image_name, data.char_name);
+    const url = data.storage_url || saveImageToDrive(data.image_base64, data.image_name, data.char_name);
     return updateAgentField({
       action: 'update_field',
       agent_code: data.agent_code,

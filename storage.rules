@@ -52,8 +52,18 @@ service firebase.storage {
       allow write: if request.auth != null;
     }
 
-    // Everything else stays default-deny until its own surface (Face
-    // Plates) is actually built and scoped, rather than the blanket
-    // "any signed-in user, anywhere" placeholder Phase 1 scaffolded.
+    // agent-plates/{agentCode}-{type}-{era}.{ext} -- Face/Outfit Plate
+    // images (dg-agent-portal.html), both the manual-upload path and the
+    // Gemini-generated path. Same posture as agent-refs/ -- the Agent is
+    // the uploader, write is any signed-in Agent (not scoped to their own
+    // path), matching Code.gs's existing no-real-per-Agent-secret model.
+    match /agent-plates/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Everything else stays default-deny until its own surface is
+    // actually built and scoped, rather than the blanket "any signed-in
+    // user, anywhere" placeholder Phase 1 scaffolded.
   }
 }
