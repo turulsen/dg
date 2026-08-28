@@ -1196,7 +1196,13 @@ function doPost(e) {
       }
 
       let imageLink = '';
-      if (data.ref_image_base64 && data.ref_image_name) {
+      if (data.ref_storage_url) {
+        // Phase 4 (Firebase Storage): the client already uploaded the
+        // photo directly to Storage (see dg-agent-portal.html's
+        // ensureAgentSignedIn()) and just needs the resulting URL
+        // recorded -- no Drive Blob upload for this path at all.
+        imageLink = data.ref_storage_url;
+      } else if (data.ref_image_base64 && data.ref_image_name) {
         // This whole submission is a fire-and-forget POST the client
         // never reads a response from -- a failed upload here shouldn't
         // fail the ENTIRE brief (medical log, appearance, everything

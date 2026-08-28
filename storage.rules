@@ -38,11 +38,22 @@ service firebase.storage {
       allow write: if isHandler();
     }
 
+    // agent-refs/{agentCode}.{ext} -- the brief-submission reference
+    // photo (dg-agent-portal.html). Unlike Track Library/Evidence, this
+    // one's uploader is the Agent themselves, not the Handler -- write
+    // is any signed-in Agent, matching this whole migration's actual
+    // security posture (requireAgentToken_() in Code.gs is a deliberate
+    // no-op -- knowing an Agent Code is already sufficient today, same
+    // as characters/{agentCode} and briefs/{agentCode} in
+    // firestore.rules), not scoped to only writing their own path --
+    // that would be a stricter model than Code.gs itself enforces.
+    match /agent-refs/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
     // Everything else stays default-deny until its own surface (Face
-    // Plates, Brief reference photos) is actually built and scoped,
-    // rather than the blanket "any signed-in user, anywhere" placeholder
-    // Phase 1 scaffolded -- that included every Agent (Dice Roller signs
-    // every Agent in), which was never meant to be the final word on who
-    // can write where in Storage.
+    // Plates) is actually built and scoped, rather than the blanket
+    // "any signed-in user, anywhere" placeholder Phase 1 scaffolded.
   }
 }
