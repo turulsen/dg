@@ -252,6 +252,32 @@
         try { return !!sessionStorage.getItem(ACELL_SESSION_KEY); } catch (e) { return false; }
     }
 
+    // A-Cell's real login flow is: the page loads (this panel builds
+    // itself immediately, before anyone has signed in, so isHandlerContext()
+    // reads false and the panel renders as a normal Agent panel) *then*
+    // the Handler types the A-Cell password into A-Cell's own login card,
+    // which only afterwards sets dg_acell_session. Nothing here ever
+    // re-checked that after the panel had already been built once --
+    // rechecking it here on a light poll and rebuilding from scratch
+    // when it flips is simpler and more robust than trying to hook into
+    // A-Cell's own login success callback (which this file deliberately
+    // stays out of -- see this file's header comment).
+    let _lastHandlerMode = null;
+    function watchHandlerModeChange() {
+        setInterval(() => {
+            if (!_e || !_e.panel || !_e.panel.isConnected) return;
+            const nowHandler = isHandlerContext();
+            if (nowHandler === _lastHandlerMode) return;
+            stopHistoryFeed();
+            _rollContext = null;
+            _rollContextPromise = null;
+            _authPromise = null;
+            _e.panel.remove();
+            buildPanel();
+            initHistory();
+        }, 1500);
+    }
+
     // Highest priority: this exact page's own Cloud Save code (only
     // ever set on stats/index.html). Falls back to the shared Cover
     // Identity roster's most-recently-active Agent -- same precedence
@@ -835,6 +861,7 @@
         ).join('');
 
         const handlerMode = isHandlerContext();
+        _lastHandlerMode = handlerMode;
 
         panel.innerHTML = `
 <div id="dr-handle" title="Drag to move">
@@ -1052,7 +1079,7 @@
     // an iframe, which is what made this panel visibly take as long to
     // appear as the character-load lag fixed elsewhere on this same
     // page (see stats/scripts.js's dgInitStatsSheet() comment).
-    const dgInitDiceRoller = () => { buildPanel(); wireSkillInputs(); initHistory(); };
+    const dgInitDiceRoller = () => { buildPanel(); wireSkillInputs(); initHistory(); watchHandlerModeChange(); };
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', dgInitDiceRoller);
     } else {
