@@ -2774,13 +2774,94 @@ function idsReset() {
 
 /* ── PHOTO ── */
 let photoDataUrl = null;
+// Separate from photoDataUrl, which also gets populated when an
+// existing Agent's data is restored/loaded (a gdrive: link resolved to
+// a preview data URI, see the restore path's own comment) -- this one
+// is set ONLY when the player actually picks a NEW file this session,
+// which is what decides whether handleSubmit() below needs to upload
+// anything at all.
+let refImageFile = null;
 document.getElementById('ref-img').addEventListener('change', async function() {
   if (this.files[0]) {
+    refImageFile = this.files[0];
     photoDataUrl = await f2b(this.files[0]);
     const p = document.getElementById('upload-prev');
     p.src = photoDataUrl; p.style.display = 'block';
   }
 });
+
+/* ── Firebase Storage: direct client upload for the reference photo
+   (Phase 4). Self-contained copy of the same loader/sign-in pattern
+   assets/dice-roller.js and a-cell.html's own script sections each
+   already use independently. Signs in as the AGENT (not the Handler --
+   this form has no Handler context at all), reusing the already-live
+   exchangeAgentToken function Dice Roller's own Agent sign-in already
+   calls; matches this whole migration's real security posture
+   (requireAgentToken_() in Code.gs is a deliberate no-op -- see its own
+   comment there), not a new hole. ── */
+var FIREBASE_SDK_VERSION = '12.18.0';
+var FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyBiFBvgmrjtacxXvh7FHa9a28BbwV0LnDQ',
+  authDomain: 'dg-app-b3447.firebaseapp.com',
+  projectId: 'dg-app-b3447',
+  storageBucket: 'dg-app-b3447.firebasestorage.app',
+  messagingSenderId: '464997490443',
+  appId: '1:464997490443:web:dad47a347ae7a64a9e4c0e'
+};
+var firebaseApiLoading = false;
+var firebaseApiCallbacks = [];
+function loadFirebaseScriptTag(src, cb) {
+  var s = document.createElement('script');
+  s.src = src;
+  s.onload = cb;
+  document.head.appendChild(s);
+}
+function ensureFirebaseApi(cb) {
+  var ready = function () { return window.firebase && window.firebase.storage && window.firebase.auth && window.firebase.functions; };
+  if (ready()) { cb(); return; }
+  firebaseApiCallbacks.push(cb);
+  if (firebaseApiLoading) return;
+  firebaseApiLoading = true;
+  var base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/';
+  var loadIfMissing = function (check, url, next) { if (check()) { next(); } else { loadFirebaseScriptTag(url, next); } };
+  loadIfMissing(function () { return window.firebase && window.firebase.apps; }, base + 'firebase-app-compat.js', function () {
+    if (!window.firebase.apps.length) window.firebase.initializeApp(FIREBASE_CONFIG);
+    loadIfMissing(function () { return !!window.firebase.auth; }, base + 'firebase-auth-compat.js', function () {
+      loadIfMissing(function () { return !!window.firebase.functions; }, base + 'firebase-functions-compat.js', function () {
+        loadIfMissing(function () { return !!window.firebase.storage; }, base + 'firebase-storage-compat.js', function () {
+          var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
+          cbs.forEach(function (fn) { fn(); });
+        });
+      });
+    });
+  });
+}
+var _agentAuthPromise = null;
+var _agentAuthCode = null;
+function ensureAgentSignedIn(agentCode) {
+  // Re-signs in if a DIFFERENT Agent Code shows up (e.g. this same tab
+  // submits a second, unrelated brief) -- a memoized promise keyed to
+  // whichever code signed in first would otherwise silently keep using
+  // the wrong identity for every Agent after the first one.
+  if (_agentAuthPromise && _agentAuthCode === agentCode) return _agentAuthPromise;
+  _agentAuthCode = agentCode;
+  _agentAuthPromise = new Promise(function (resolve, reject) {
+    ensureFirebaseApi(function () {
+      var auth = window.firebase.auth();
+      window.firebase.functions().httpsCallable('exchangeAgentToken')({ agent_code: agentCode })
+        .then(function (result) { return auth.signInWithCustomToken(result.data.token); })
+        .then(function (cred) { resolve(cred.user); })
+        .catch(function (err) { _agentAuthPromise = null; reject(err); });
+    });
+  });
+  return _agentAuthPromise;
+}
+function extensionForFile_(file) {
+  var type = file.type || '';
+  if (type.indexOf('image/') === 0) return '.' + type.slice('image/'.length);
+  var m = /\.[a-z0-9]+$/i.exec(file.name || '');
+  return m ? m[0] : '';
+}
 
 /* ── CODE GENERATION -- shared with stats/cloud-sync.js and
    stats/agent-portal-export.js via assets/agent-code.js ── */
@@ -2822,14 +2903,11 @@ async function handleSubmit() {
 
   const btn = document.getElementById('submit-btn');
   const status = document.getElementById('form-status');
+  const originalBtnLabel = btn.textContent;
   btn.disabled=true; status.className=''; status.textContent='Transmitting...';
   const payload={};
   new FormData(document.getElementById('dg-form')).forEach((v,k)=>{ payload[k]=v; });
   payload.submitted_at = new Date().toISOString();
-  if (photoDataUrl) {
-    payload.ref_image_base64 = photoDataUrl;
-    payload.ref_image_name = document.getElementById('ref-img').files[0]?.name||'photo.jpg';
-  }
   // Reuse this Agent's existing code only if the form is actually still
   // describing THAT Agent (same char_name) -- afCode alone isn't a safe
   // signal, since autoRestore() silently loads the last-active Agent's
@@ -2851,7 +2929,32 @@ async function handleSubmit() {
   // report: two separate files (a Characters row and a Briefs row) for
   // what should have been one Agent.
   const rosterCode = sameAgent ? null : findRosterCodeByName(payload.char_name);
+  // Resolved BEFORE any photo upload now (Phase 4) -- moved ahead of
+  // where it used to sit, since the Storage path
+  // (agent-refs/{agentCode}.{ext}) needs this Agent Code known up
+  // front, same reasoning as a-cell.html's Evidence/Track Library
+  // uploads needing their own id minted before the upload starts.
+  // genCode() (assets/agent-code.js) already exists specifically so a
+  // brand-new Agent's code is known client-side before this point --
+  // this form never actually relied on Code.gs's own server-side
+  // auto-generation branch to begin with.
   const agentCode = sameAgent ? afCode : (rosterCode || genCode(payload.char_name));
+  if (refImageFile) {
+    status.textContent = 'Uploading photo…';
+    btn.textContent = 'Uploading…';
+    try {
+      const user = await ensureAgentSignedIn(agentCode);
+      const path = 'agent-refs/' + agentCode + extensionForFile_(refImageFile);
+      const snapshot = await window.firebase.storage().ref(path).put(refImageFile, { contentType: refImageFile.type || 'image/jpeg' });
+      payload.ref_storage_url = await snapshot.ref.getDownloadURL();
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = originalBtnLabel;
+      status.className = '';
+      status.textContent = 'Could not upload the photo: ' + ((err && err.message) || 'unknown error') + ' -- try again.';
+      return;
+    }
+  }
   payload.agent_code = agentCode;
   persistAgent(agentCode, payload);
   afCode = agentCode;
@@ -2983,6 +3086,7 @@ function resetForm(){
   document.getElementById('form-status').textContent='';
   document.getElementById('upload-prev').style.display='none';
   photoDataUrl=null;
+  refImageFile=null;
   window.scrollTo(0,0);
 }
 function printDossier(){
