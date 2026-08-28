@@ -2380,30 +2380,38 @@
     window.open(dataUriToBlobUrl(dataUri), '_blank');
   }
 
-  // Verifies a create/update actually landed by polling list_evidence
-  // over increasing delays, rather than checking once at a fixed 900ms --
-  // a write that includes a freshly picked photo/PDF has to wait on
-  // resolveEvidencePhoto_()'s real Google Drive upload server-side first,
-  // which for anything beyond a tiny image can genuinely take longer than
-  // a single fixed delay tuned for the no-photo case. A too-early check
+  // Verifies a create/update actually landed by checking the live
+  // Firestore-backed evidenceItems (kept current by startEvidenceListener()'s
+  // onSnapshot, Phase 5) over increasing delays, rather than a single
+  // fixed-delay check -- a write that includes a freshly picked photo/PDF
+  // has to wait on the Storage upload finishing server-side first, which
+  // for anything beyond a tiny image can genuinely take longer than a
+  // single fixed delay tuned for the no-photo case. A too-early check
   // showed a false "Sent, but the backend didn't confirm it" for exactly
   // the uploads this feature exists to support, even though the write
   // would have actually landed moments later -- a real live report traced
   // back to this.
+  //
+  // Used to poll its OWN separate list_evidence JSONP fetch here instead
+  // of reading the shared evidenceItems -- redundant with (and slower
+  // than) the live listener that already keeps evidenceItems current, and
+  // its total ~10s budget didn't account for createEvidence()/
+  // updateEvidence() now also making their own synchronous Firestore
+  // round-trip (Phase 5's dual-write) as part of the same Apps Script
+  // execution, measurably slower than the Sheets-only write this budget
+  // was originally tuned for -- confirmed live: a save that was simply
+  // taking a bit longer blew the old budget, silently re-enabled the
+  // Create button (see its own "Write likely still succeeded server-side"
+  // comment below), and a second tap created a real duplicate.
   function verifyEvidenceWrite_(checkFn, onFound, onGiveUp) {
-    var delays = [900, 1500, 3000, 4000];
+    var delays = [400, 800, 1200, 2000, 3000, 4000, 5000];
     var attempt = 0;
     function tryOnce() {
       setTimeout(function () {
-        jsonpGet('list_evidence', {}, function (res) {
-          if (res && res.status === 'OK' && Array.isArray(res.evidence)) {
-            evidenceItems = res.evidence.slice().sort(function (a, b) { return Number(b.created_at) - Number(a.created_at); });
-            if (checkFn(res.evidence)) { onFound(); return; }
-          }
-          attempt++;
-          if (attempt < delays.length) tryOnce();
-          else onGiveUp();
-        });
+        if (checkFn(evidenceItems)) { onFound(); return; }
+        attempt++;
+        if (attempt < delays.length) tryOnce();
+        else onGiveUp();
       }, delays[attempt]);
     }
     tryOnce();
