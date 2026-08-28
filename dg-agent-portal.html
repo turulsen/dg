@@ -4058,10 +4058,21 @@ function renderEraStack(eras, data) {
     // writes these); the flat face_plate_url/outfit_plate_url/mode0_prompt/
     // mode1_prompt columns are only a fallback, for any Agent whose Plates/
     // prompts were generated before the era Plate/prompt data collision fix.
-    const faceUrl = driveDirectUrl(data['era_' + era + '_face_url'] || data.face_plate_url || '');
-    const outfitUrl = driveDirectUrl(data['era_' + era + '_outfit_url'] || data.outfit_plate_url || '');
-    const mode0 = data['era_' + era + '_mode0'] || data.mode0_prompt || '';
-    const mode1 = data['era_' + era + '_mode1'] || data.mode1_prompt || '';
+    // Gated to idx === 0 (the first/only era on the accordion) -- a
+    // pre-fix Agent only ever had ONE era, always eras[0], so that's the
+    // only era the flat legacy value could actually belong to. Every
+    // era added after that is necessarily a genuinely new one (added
+    // post-fix, since adding an era at all requires this very page); a
+    // second+ era falling back to the same flat value made a brand-new,
+    // still-blank era look like it already had a real Face Plate or
+    // prompt, live-reported as "the face plate still loads in to the
+    // latest added era" -- same underlying flaw, image side, permanent
+    // instead of a self-correcting flash the way prompts' own auto-
+    // generate guard already handles (see that guard's own comment).
+    const faceUrl = driveDirectUrl(data['era_' + era + '_face_url'] || (idx === 0 ? data.face_plate_url : '') || '');
+    const outfitUrl = driveDirectUrl(data['era_' + era + '_outfit_url'] || (idx === 0 ? data.outfit_plate_url : '') || '');
+    const mode0 = data['era_' + era + '_mode0'] || (idx === 0 ? data.mode0_prompt : '') || '';
+    const mode1 = data['era_' + era + '_mode1'] || (idx === 0 ? data.mode1_prompt : '') || '';
     const isOpen = idx === 0;
 
     const item = document.createElement('div');
@@ -4286,7 +4297,15 @@ function generatePlateImage(era, mode, btn) {
   const prompt = ta.value.trim();
   if (!prompt) { if (st) st.textContent = 'Write or generate a prompt first.'; return; }
 
-  const faceUrl = afData ? (afData['era_' + era + '_face_url'] || afData.face_plate_url || '') : '';
+  // Same idx===0 gating as renderEraStack()'s own display fallback (see
+  // its comment) -- afEraPages[0] is the first/only era on a pre-fix
+  // Agent, the only one the flat legacy face_plate_url could actually
+  // belong to. Without this, generating an Outfit Plate for a second+
+  // era (still genuinely blank) would silently pass this era's own
+  // "no Face Plate yet" gate using some OTHER era's leftover face as
+  // the reference -- wrong likeness, and the gate meant to prevent
+  // exactly that never fires.
+  const faceUrl = afData ? (afData['era_' + era + '_face_url'] || (afEraPages[0] === era ? afData.face_plate_url : '') || '') : '';
   const recentFaceDataUri = afRecentFacePlateDataUri[era];
 
   // Outfit Plate depends on the Face Plate for likeness -- require it to
