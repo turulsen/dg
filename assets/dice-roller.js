@@ -493,33 +493,71 @@
                 renderHistoryList(entries);
             }, err => showHistoryError('History feed error', err));
     }
+    // Cell docs' own `name` field ("Test", "H-Cell"...) vs. the id doc
+    // path segments actually are (cell_<timestamp>_<rand>) -- fetched
+    // once and cached rather than per-row, since a campaign realistically
+    // has a handful of Cells, not thousands; cells/{cellId} is public
+    // read (see firestore.rules) so no extra auth is needed for this.
+    let _cellNameMap = null;
     function startHandlerHistoryFeed() {
         stopHistoryFeed();
         const db = window.firebase.firestore();
-        _historyUnsubscribe = db.collectionGroup('rolls')
-            .orderBy('created_at', 'desc').limit(HISTORY_LIMIT)
-            .onSnapshot(snap => {
-                const entries = [];
-                snap.forEach(doc => {
-                    const data = doc.data();
-                    data.cellName = doc.ref.parent.parent ? doc.ref.parent.parent.id : '';
-                    entries.push(data);
-                });
-                renderHistoryList(entries);
-            }, err => showHistoryError('Live Rolls feed error', err));
+        const attachListener = () => {
+            _historyUnsubscribe = db.collectionGroup('rolls')
+                .orderBy('created_at', 'desc').limit(HISTORY_LIMIT)
+                .onSnapshot(snap => {
+                    const entries = [];
+                    snap.forEach(doc => {
+                        const data = doc.data();
+                        const cellId = doc.ref.parent.parent ? doc.ref.parent.parent.id : '';
+                        data.cellName = (_cellNameMap && _cellNameMap[cellId]) || cellId;
+                        entries.push(data);
+                    });
+                    renderHistoryList(entries);
+                }, err => showHistoryError('Live Rolls feed error', err));
+        };
+        if (_cellNameMap) { attachListener(); return; }
+        db.collection('cells').get().then(snap => {
+            _cellNameMap = {};
+            snap.forEach(doc => { _cellNameMap[doc.id] = doc.data().name || doc.id; });
+            attachListener();
+        }).catch(() => { _cellNameMap = {}; attachListener(); });
     }
 
     // Kicks off the right feed for this page's context. Agent mode
-    // starts automatically (no password needed); Handler mode instead
-    // reveals a button, wired in buildPanel() below, since it needs a
-    // one-time password prompt this function itself doesn't collect.
+    // starts automatically (no password needed); Handler mode first
+    // checks for a Firebase Auth session already persisted on this
+    // device from an earlier "Show Live Rolls" password entry -- the JS
+    // SDK's default persistence (IndexedDB) survives page reloads on
+    // its own, but nothing here ever checked for it, so every single
+    // page load re-prompted for the same password even right after
+    // typing it once, on top of A-Cell's own separate login. Only falls
+    // back to the button+prompt when there's genuinely no usable session
+    // (first time on this device, or it was signed out).
+    function checkExistingHandlerSession() {
+        ensureFirebaseApi(() => {
+            const auth = window.firebase.auth();
+            const unsub = auth.onAuthStateChanged(user => {
+                unsub();
+                if (!user) { if (_e.handlerGate) _e.handlerGate.style.display = ''; return; }
+                user.getIdTokenResult().then(res => {
+                    if (res.claims && res.claims.handler) {
+                        if (_e.handlerGate) _e.handlerGate.style.display = 'none';
+                        startHandlerHistoryFeed();
+                    } else if (_e.handlerGate) {
+                        _e.handlerGate.style.display = '';
+                    }
+                }).catch(() => { if (_e.handlerGate) _e.handlerGate.style.display = ''; });
+            });
+        });
+    }
     function initHistory() {
         resolveRollContext().then(ctx => {
             if (ctx.mode === 'agent') {
                 ensureAgentSignedIn(ctx.agentCode).then(() => startAgentHistoryFeed(ctx))
                     .catch(err => showHistoryError('Sign-in failed', err));
             } else if (ctx.mode === 'handler' && _e.handlerGate) {
-                _e.handlerGate.style.display = '';
+                checkExistingHandlerSession();
             } else if (ctx.mode === 'none' && _e.historyList) {
                 // No Agent Code known on this device yet (no Cloud Save
                 // code, no Cover Identity roster entry) -- rolls still
