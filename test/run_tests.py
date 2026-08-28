@@ -104,6 +104,78 @@ def collect_errors(page):
     page.on("console", lambda m: errs.append(f"console.error: {m.text}") if m.type == "error" and "Failed to load resource" not in m.text else None)
     return errs
 
+# ── Table Radio's Firestore listener (assets/table-radio.js, Firebase
+# migration Phase 2) -- a minimal in-page fake of the compat SDK surface
+# table-radio.js actually calls (firebase.firestore().collection('radio')
+# .doc(ch).onSnapshot(success, error)), installed via add_init_script so
+# it's already in place, with window.firebase.apps already non-empty,
+# before ensureFirebaseApi() runs -- that makes it take the "already
+# initialized" branch and call its callback synchronously, so no real
+# network request to gstatic.com ever happens. Registers each listener
+# into window.__dgRadioListeners keyed by channel but does NOT auto-fire
+# a snapshot on subscribe (unlike a real Firestore listener's immediate
+# first callback) -- tests instead deliver data on their own schedule via
+# push_radio_now_playing()/push_radio_listener_error() below, which is
+# what actually lets a test simulate "nothing has arrived yet" or "an
+# error came back" without racing a real listener's timing.
+RADIO_FIRESTORE_STUB = """
+(function () {
+  window.__dgRadioListeners = {};
+  window.firebase = {
+    apps: [{}],
+    initializeApp: function () {},
+    firestore: function () {
+      return {
+        collection: function () {
+          return {
+            doc: function (id) {
+              return {
+                onSnapshot: function (success, error) {
+                  window.__dgRadioListeners[id] = { success: success, error: error };
+                  return function () { delete window.__dgRadioListeners[id]; };
+                }
+              };
+            }
+          };
+        }
+      };
+    }
+  };
+})();
+"""
+
+def install_radio_firestore_stub(page):
+    page.add_init_script(RADIO_FIRESTORE_STUB)
+
+def push_radio_now_playing(page, channel, data):
+    """Delivers a fake radio/{channel} Firestore snapshot to whichever
+    listener table-radio.js currently has registered for that channel
+    (must be called after the widget has actually subscribed -- e.g.
+    after the page/reload that tunes it in, or after a live in-page
+    channel change). data=None means the document doesn't exist (no
+    broadcast on that channel yet)."""
+    page.evaluate(
+        """([channel, data]) => {
+            var l = window.__dgRadioListeners && window.__dgRadioListeners[channel];
+            if (!l) throw new Error('no radio listener registered for channel ' + channel);
+            l.success({ exists: data != null, data: function () { return data; } });
+        }""",
+        [channel, data],
+    )
+
+def push_radio_listener_error(page, channel):
+    """Delivers a fake Firestore listener error (a transient miss --
+    network hiccup, permission blip, whatever) to the given channel's
+    listener, same as push_radio_now_playing but down the error path."""
+    page.evaluate(
+        """(channel) => {
+            var l = window.__dgRadioListeners && window.__dgRadioListeners[channel];
+            if (!l) throw new Error('no radio listener registered for channel ' + channel);
+            l.error(new Error('fake transient listener error'));
+        }""",
+        channel,
+    )
+
 def fill_cover_form(page, agent, form_selector="#dg-form"):
     text_fields = ["char_name","codename","nationality","face_shape","eye_color","eye_shape",
                    "nose","lips","skin","facial_hair","face_scars","hair_color","hair_style",
@@ -3728,21 +3800,24 @@ def test_acell_music_backend_not_deployed(p):
 def test_table_radio_widget(p):
     """assets/table-radio.js: a small persistent widget on every Hub
     page, so a player stays "tuned in" to the Handler's music channel
-    (via get_now_playing) as they move between pages -- each full page
+    (via a live Firestore radio/{channel} onSnapshot listener, Firebase
+    migration Phase 2) as they move between pages -- each full page
     load is a fresh document, so continuity comes from remembering the
-    channel (localStorage) and re-syncing to the server-stamped
-    started_at on every page, not from one <audio> element surviving
-    navigation. A YouTube track is driven through the real YouTube
-    IFrame Player API now (for volume control -- the plain embed URL
-    has no volume param), so this test fakes that API rather than
-    hitting the real youtube.com, the same way script.google.com is
-    faked -- nothing here should depend on real network access."""
+    channel (localStorage) and re-subscribing on every page, not from
+    one <audio> element surviving navigation. Firestore itself is faked
+    via install_radio_firestore_stub()/push_radio_now_playing() (see
+    their definitions) rather than hit the real project. A YouTube
+    track is driven through the real YouTube IFrame Player API now (for
+    volume control -- the plain embed URL has no volume param), so this
+    test fakes that API rather than hitting the real youtube.com --
+    nothing here should depend on real network access."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+    install_radio_firestore_stub(page)
 
     def fake_apps_script(route):
         req = route.request
@@ -3752,12 +3827,7 @@ def test_table_radio_widget(p):
         url = req.url
         if "callback=" in url:
             cb = url.split("callback=")[1].split("&")[0]
-            if "action=get_now_playing" in url:
-                res = {"status": "OK", "channel": "SAM", "track_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-                       "track_title": "Table Theme", "started_at": 1700000000000}
-            else:
-                res = {"status": "OK"}
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
         else:
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", fake_apps_script)
@@ -3804,7 +3874,12 @@ def test_table_radio_widget(p):
     record("radio", "clicking a tick on the dial selects that channel",
            page.eval_on_selector(".dgr-dial-ch", "el => el.textContent") == "3", "")
     page.click("#dg-radio-confirm-tune")
-    page.wait_for_timeout(600)
+    page.wait_for_timeout(200)
+    push_radio_now_playing(page, "3", {
+        "channel": "3", "track_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "track_title": "Table Theme", "started_at": 1700000000000,
+    })
+    page.wait_for_timeout(400)
     record("radio", "confirming tune-in shows the tuned panel with the dialed channel",
            page.is_visible("#dg-radio-panel") and "CH 3" in page.inner_text("#dg-radio-panel"), "")
     record("radio", "the dialed channel is remembered in localStorage",
@@ -3886,98 +3961,80 @@ def test_table_radio_widget(p):
     return errs
 
 def test_table_radio_transient_miss_no_flicker(p):
-    """Regression: get_now_playing's poll() used to treat ANY response
-    that wasn't a clean {status:'OK', track_url} the same as the
-    backend's own well-formed "genuinely nothing playing" answer
-    ({status:'NOT_FOUND'}) -- a malformed/error response under real
-    concurrent backend load (several tabs' Radio widgets, Notes panels,
-    and character-sheet autosaves all sharing the same Apps Script
-    project) flickered a live broadcast to "Waiting for the Handler"
-    and back on every transient miss, even though nothing had actually
-    stopped playing. Now only a real NOT_FOUND (or OK-with-no-track_url)
-    counts; anything else silently keeps whatever was last known on
-    screen and waits for the next poll to try again."""
+    """Regression (predates the Firestore cutover, still applies to it):
+    a transient miss reading the Handler's now-playing state must never
+    flicker a live broadcast to "Waiting for the Handler" and back --
+    under the old Apps Script poll loop this meant tolerating a
+    malformed intermediate response; under the live Firestore
+    radio/{channel} onSnapshot listener (Firebase migration Phase 2) the
+    equivalent failure mode is a transient listener error (network
+    hiccup, Firestore's own client reconnecting, etc.) -- see
+    table-radio.js's onSnapshot error callback, which only logs and
+    deliberately never touches on-screen state. Confirms that directly:
+    a real snapshot lands, a listener error follows, the last-known
+    track must survive it untouched, then a fresh good snapshot must
+    still land correctly afterward."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+    install_radio_firestore_stub(page)
 
-    # "malformed" stays on until the test explicitly turns it off below
-    # -- an indefinite streak (rather than a fixed number of ticks)
-    # means the mid-streak check below can't accidentally land after a
-    # real recovery poll already quietly re-filled the state, whatever
-    # the actual poll interval turns out to be.
-    poll_state = {"calls": 0, "malformed": False}
     def fake_apps_script(route):
         req = route.request
         if req.method == "POST":
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         url = req.url
-        if "callback=" not in url:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        cb = url.split("callback=")[1].split("&")[0]
-        if "action=get_now_playing" in url:
-            poll_state["calls"] += 1
-            if poll_state["malformed"]:
-                # Standing in for the backend being too busy to
-                # actually answer this poll -- not a real "nothing
-                # playing" response.
-                res = {"status": "ERROR"}
-            else:
-                res = {"status": "OK", "channel": "3",
-                       "track_url": "https://drive.google.com/uc?export=download&id=fakeFileId123",
-                       "track_title": "Rain Loop", "started_at": 1700000000000, "track_kind": "audio"}
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
         else:
-            res = {"status": "OK"}
-        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", fake_apps_script)
     page.route("**/uc?export=download*", lambda r: r.fulfill(status=200, content_type="audio/mpeg", body=""))
 
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.evaluate("() => localStorage.setItem('dg_radio_channel', '3')")
     page.reload(wait_until="domcontentloaded")
-    page.wait_for_timeout(800)
-    # Checked via window._dgRadioLast (poll()'s own record of the last
-    # real track it saw) rather than the visible status/track text --
-    # this fake audio: URL can't actually decode in a real browser, so
-    # the widget's own (unrelated) playback-error handling overwrites
-    # the status line regardless of poll() behavior. _dgRadioLast is
-    # untouched by that and directly reflects whether poll() itself
-    # reset track state, which is the actual thing under test here.
-    record("radio", "the first (real) poll records the track as the last known state",
+    page.wait_for_timeout(300)
+    push_radio_now_playing(page, "3", {
+        "channel": "3", "track_url": "https://drive.google.com/uc?export=download&id=fakeFileId123",
+        "track_title": "Rain Loop", "started_at": 1700000000000, "track_kind": "audio",
+    })
+    page.wait_for_timeout(400)
+    # Checked via window._dgRadioLast (handleNowPlaying()'s own record
+    # of the last real track it saw) rather than the visible
+    # status/track text -- this fake audio: URL can't actually decode
+    # in a real browser, so the widget's own (unrelated) playback-error
+    # handling overwrites the status line regardless of listener
+    # behavior. _dgRadioLast is untouched by that and directly reflects
+    # whether the listener itself reset track state, which is the
+    # actual thing under test here.
+    record("radio", "the first (real) snapshot records the track as the last known state",
            page.evaluate("() => window._dgRadioLast && window._dgRadioLast.track_title") == "Rain Loop", "")
 
-    # Now switch the mock to malformed and hold it there indefinitely --
-    # synchronize on the mock's own call counter advancing (proof at
-    # least one malformed poll actually landed) rather than a fixed
-    # wait, and keep it malformed until this test explicitly turns it
-    # back off below, so the check can't land after a real recovery
-    # poll already quietly re-filled the state (whatever the actual
-    # poll interval turns out to be).
-    poll_state["malformed"] = True
-    calls_before = poll_state["calls"]
-    wait_for_condition(lambda: (poll_state["calls"] > calls_before) or None, timeout_ms=15000)
-    record("radio", "a malformed poll response mid-broadcast does not clear the last-known track (no flicker to 'nothing playing')",
+    push_radio_listener_error(page, "3")
+    page.wait_for_timeout(300)
+    record("radio", "a transient listener error mid-broadcast does not clear the last-known track (no flicker to 'nothing playing')",
            page.evaluate("() => window._dgRadioLast && window._dgRadioLast.track_title") == "Rain Loop", "")
     record("radio", "the status/track text also never flipped to the 'nothing playing' strings",
            "Waiting for the Handler" not in page.inner_text("#dg-radio-status")
            and "No signal yet" not in page.inner_text("#dg-radio-track"), page.inner_text("#dg-radio-status"))
-    record("radio", "at least one malformed poll actually happened while the check ran (not a fluke)",
-           poll_state["malformed"] and poll_state["calls"] > calls_before, poll_state["calls"])
 
-    # Recovery: switch back to real responses and confirm the track
-    # keeps showing correctly -- the malformed streak didn't leave any
-    # lingering bad state behind either.
-    poll_state["malformed"] = False
-    calls_before = poll_state["calls"]
-    wait_for_condition(lambda: (poll_state["calls"] > calls_before) or None, timeout_ms=15000)
+    # Recovery: a fresh good snapshot (a new started_at, as a real re-cue
+    # would carry) lands and is actually applied -- proves the listener
+    # error didn't leave the subscription itself in some stuck state,
+    # not just that old data survived untouched.
+    push_radio_now_playing(page, "3", {
+        "channel": "3", "track_url": "https://drive.google.com/uc?export=download&id=fakeFileId123",
+        "track_title": "Rain Loop (recue)", "started_at": 1700000099000, "track_kind": "audio",
+    })
     page.wait_for_timeout(300)
-    record("radio", "the track keeps showing correctly once real responses resume after the malformed streak",
-           page.evaluate("() => window._dgRadioLast && window._dgRadioLast.track_title") == "Rain Loop", "")
+    record("radio", "a fresh snapshot after the listener error is actually applied (new started_at picked up)",
+           page.evaluate("() => window._dgRadioLast && window._dgRadioLast.track_title") == "Rain Loop (recue)", "")
 
     page.close()
     return errs
@@ -3996,6 +4053,7 @@ def test_table_radio_audio_volume(p):
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+    install_radio_firestore_stub(page)
 
     def fake_apps_script(route):
         req = route.request
@@ -4005,12 +4063,7 @@ def test_table_radio_audio_volume(p):
         url = req.url
         if "callback=" in url:
             cb = url.split("callback=")[1].split("&")[0]
-            if "action=get_now_playing" in url:
-                res = {"status": "OK", "channel": "SAM", "track_url": "https://example.com/ambience.mp3",
-                       "track_title": "Rain Loop", "started_at": 1700000000000}
-            else:
-                res = {"status": "OK"}
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
         else:
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", fake_apps_script)
@@ -4021,7 +4074,12 @@ def test_table_radio_audio_volume(p):
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
     page.reload(wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(700)
+    page.wait_for_timeout(300)
+    push_radio_now_playing(page, "1", {
+        "channel": "1", "track_url": "https://example.com/ambience.mp3",
+        "track_title": "Rain Loop", "started_at": 1700000000000,
+    })
+    page.wait_for_timeout(400)
 
     record("radio", "a direct audio track renders an <audio> element",
            page.query_selector("#dg-radio-embed-wrap audio") is not None, "")
@@ -4069,10 +4127,11 @@ def test_table_radio_pause_and_loop(p):
     (set_now_playing always restarts a track from 0:00, which isn't the
     right tool for "hold on a second") and mark a track to Loop (for
     ambience tracks that should keep repeating instead of the Handler
-    re-cueing it every time it ends). get_now_playing carries paused/
-    paused_at/loop; the widget must reflect a paused broadcast by NOT
-    autoplaying the <audio> element, and a looping one by setting its
-    real .loop property."""
+    re-cueing it every time it ends). The radio/{channel} Firestore
+    document (Firebase migration Phase 2) carries paused/paused_at/loop;
+    the widget must reflect a paused broadcast by NOT autoplaying the
+    <audio> element, and a looping one by setting its real .loop
+    property."""
     # A real (if tiny) playable WAV, not an empty body -- an empty
     # response has no decodable audio, so .play() rejects and .paused
     # snaps back to true regardless of pause state, which would make the
@@ -4110,7 +4169,21 @@ def test_table_radio_pause_and_loop(p):
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
     page.add_init_script(play_probe)
+    install_radio_firestore_stub(page)
     page.route("**/ambience.mp3", lambda r: r.fulfill(status=200, content_type="audio/wav", body=wav_bytes))
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
 
     # Scenario 1: broadcasting normally, with Loop on. started_at is "now"
     # (not a fixed past timestamp) -- the widget seeks the <audio>
@@ -4119,29 +4192,17 @@ def test_table_radio_pause_and_loop(p):
     # "ended" (paused), which would make this scenario's "actually
     # playing" assertion meaningless.
     now_ms = int(__import__("time").time() * 1000)
-    def fake_playing_looped(route):
-        req = route.request
-        if req.method == "POST":
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        url = req.url
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            if "action=get_now_playing" in url:
-                res = {"status": "OK", "channel": "1", "track_url": "https://example.com/ambience.mp3",
-                       "track_title": "Rain Loop", "started_at": now_ms,
-                       "paused": False, "paused_at": 0, "loop": True}
-            else:
-                res = {"status": "OK"}
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-        else:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", fake_playing_looped)
 
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
     page.reload(wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(700)
+    page.wait_for_timeout(300)
+    push_radio_now_playing(page, "1", {
+        "channel": "1", "track_url": "https://example.com/ambience.mp3",
+        "track_title": "Rain Loop", "started_at": now_ms,
+        "paused": False, "paused_at": 0, "loop": True,
+    })
+    page.wait_for_timeout(400)
 
     audio_el = page.query_selector("#dg-radio-embed-wrap audio")
     record("radio", "a Loop-flagged track sets the <audio> element's real .loop",
@@ -4154,23 +4215,6 @@ def test_table_radio_pause_and_loop(p):
 
     # Scenario 2: the Handler has paused the broadcast -- a fresh listener
     # tuning in should see it frozen, not autoplaying.
-    def fake_playing_paused(route):
-        req = route.request
-        if req.method == "POST":
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        url = req.url
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            if "action=get_now_playing" in url:
-                res = {"status": "OK", "channel": "1", "track_url": "https://example.com/ambience.mp3",
-                       "track_title": "Rain Loop", "started_at": now_ms,
-                       "paused": True, "paused_at": now_ms, "loop": False}
-            else:
-                res = {"status": "OK"}
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-        else:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page2 = p.new_page()
     page2.set_default_timeout(8000)
     errs2 = collect_errors(page2)
@@ -4178,13 +4222,20 @@ def test_table_radio_pause_and_loop(p):
     page2.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     page2.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
     page2.add_init_script(play_probe)
+    install_radio_firestore_stub(page2)
     page2.route("**/ambience.mp3", lambda r: r.fulfill(status=200, content_type="audio/wav", body=wav_bytes))
-    page2.route("**/script.google.com/**", fake_playing_paused)
+    page2.route("**/script.google.com/**", fake_apps_script)
 
     page2.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page2.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
     page2.reload(wait_until="domcontentloaded", timeout=15000)
-    page2.wait_for_timeout(700)
+    page2.wait_for_timeout(300)
+    push_radio_now_playing(page2, "1", {
+        "channel": "1", "track_url": "https://example.com/ambience.mp3",
+        "track_title": "Rain Loop", "started_at": now_ms,
+        "paused": True, "paused_at": now_ms, "loop": False,
+    })
+    page2.wait_for_timeout(400)
 
     record("radio", "a Handler-paused broadcast does not call .play() for a listener tuning in",
            page2.evaluate("() => (window.__dgPlayCalls || []).length") == 0, "")
@@ -4200,17 +4251,19 @@ def test_table_radio_library_track_kind(p):
     Music tab is stored in Drive and served back as a direct download
     link (e.g. drive.google.com/uc?export=download&id=...), which has no
     .mp3 file extension for the player's usual URL-sniffing
-    (isDirectAudio()) to catch. get_now_playing carries an explicit
-    track_kind: 'audio' for exactly this case -- confirms the widget
-    honors it and renders a real <audio> element rather than falling
-    through to the generic-iframe case (which would just try to load the
-    download link as a webpage, not play it)."""
+    (isDirectAudio()) to catch. The radio/{channel} Firestore document
+    (Firebase migration Phase 2) carries an explicit track_kind: 'audio'
+    for exactly this case -- confirms the widget honors it and renders a
+    real <audio> element rather than falling through to the
+    generic-iframe case (which would just try to load the download link
+    as a webpage, not play it)."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+    install_radio_firestore_stub(page)
 
     def fake_apps_script(route):
         req = route.request
@@ -4220,13 +4273,7 @@ def test_table_radio_library_track_kind(p):
         url = req.url
         if "callback=" in url:
             cb = url.split("callback=")[1].split("&")[0]
-            if "action=get_now_playing" in url:
-                res = {"status": "OK", "channel": "3",
-                       "track_url": "https://drive.google.com/uc?export=download&id=fakeFileId123",
-                       "track_title": "Rain Loop", "started_at": 1700000000000, "track_kind": "audio"}
-            else:
-                res = {"status": "OK"}
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
         else:
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", fake_apps_script)
@@ -4235,7 +4282,12 @@ def test_table_radio_library_track_kind(p):
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.evaluate("() => localStorage.setItem('dg_radio_channel', '3')")
     page.reload(wait_until="domcontentloaded")
-    page.wait_for_timeout(800)
+    page.wait_for_timeout(300)
+    push_radio_now_playing(page, "3", {
+        "channel": "3", "track_url": "https://drive.google.com/uc?export=download&id=fakeFileId123",
+        "track_title": "Rain Loop", "started_at": 1700000000000, "track_kind": "audio",
+    })
+    page.wait_for_timeout(500)
 
     record("radio", "a Drive-hosted library track (track_kind: 'audio') renders as a real <audio> element",
            page.query_selector("#dg-radio-embed-wrap audio") is not None, "")
@@ -4273,6 +4325,7 @@ def test_table_radio_yt_volume_reliability(p):
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+    install_radio_firestore_stub(page)
 
     def fake_apps_script(route):
         req = route.request
@@ -4282,12 +4335,7 @@ def test_table_radio_yt_volume_reliability(p):
         url = req.url
         if "callback=" in url:
             cb = url.split("callback=")[1].split("&")[0]
-            if "action=get_now_playing" in url:
-                res = {"status": "OK", "channel": "3", "track_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-                       "track_title": "Table Theme", "started_at": 1700000000000}
-            else:
-                res = {"status": "OK"}
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
         else:
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", fake_apps_script)
@@ -4323,6 +4371,10 @@ def test_table_radio_yt_volume_reliability(p):
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.evaluate("() => localStorage.setItem('dg_radio_channel', '3')")
     page.reload(wait_until="domcontentloaded")
+    push_radio_now_playing(page, "3", {
+        "channel": "3", "track_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "track_title": "Table Theme", "started_at": 1700000000000,
+    })
     page.wait_for_timeout(200)  # well before the 600ms fake onReady fires
 
     record("radio", "starts Muted by default (the state the volume-drag-while-muted fix matters for)",
