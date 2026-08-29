@@ -59,11 +59,15 @@
   // here, landing almost exactly on top of the shell's real one) with
   // no way to tell which pill is which, and only the inner copy (which
   // a real navigation destroys) would ever actually be reachable to tap.
-  // window.frameElement is same-origin-only, so this is null for every
-  // standalone visit and for any other embedding (e.g. Split View's own
-  // nested iframes, keyed on a different id) -- only the shell's own
-  // content frame matches.
-  if (window.frameElement && window.frameElement.id === 'dg-shell-content') return;
+  // Same reasoning for stats/index.html's own #dg-split-sheet-frame --
+  // Split View's sheet pane is a real second copy of that same page
+  // (self-referencing iframe), so its own dice-roller.js/table-radio.js
+  // include would otherwise mount a second widget too, live-reported as
+  // "double dice roller" when entering Live Play. window.frameElement
+  // is same-origin-only, so this is null for every standalone visit and
+  // for any other embedding not in this explicit list.
+  if (window.frameElement &&
+      (window.frameElement.id === 'dg-shell-content' || window.frameElement.id === 'dg-split-sheet-frame')) return;
   var FIREBASE_SDK_VERSION = '12.18.0';
   // Public Web SDK config for the dg-app-b3447 Firebase project -- not
   // a secret, same reasoning as every other client-side Firebase config;
