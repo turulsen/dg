@@ -91,6 +91,12 @@
   // drives whether a mute/volume change can be applied in place (cheap,
   // no reload) or needs a full renderEmbed() rebuild.
   var currentEmbedKind = null; // 'yt' | 'sc' | 'audio' | 'generic' | null
+  // True only while the CURRENT broadcast state is a real Handler-
+  // paused one (applyLivePauseState(true)/renderEmbed() loading an
+  // already-paused np) -- set alongside every intentional pause of
+  // #dg-radio-audio, so its own 'pause' listener below can tell that
+  // apart from an unprompted one and know whether to auto-resume.
+  var intentionalPause = false;
   var ytPlayer = null;
   // A freshly-constructed YT.Player object exists synchronously, well
   // before the real embedded player has finished its handshake --
@@ -524,6 +530,7 @@
     if (currentEmbedKind === 'audio') {
       var audioEl = document.getElementById('dg-radio-audio');
       if (audioEl) {
+        intentionalPause = paused;
         if (paused) { audioEl.pause(); } else { var p = audioEl.play(); if (p && p.catch) p.catch(function () { /* best effort */ }); }
         return true;
       }
@@ -615,6 +622,7 @@
       });
     } else if (isLibraryAudio || isDirectAudio(np.track_url)) {
       currentEmbedKind = 'audio';
+      intentionalPause = isPaused;
       if (volSlider) volSlider.style.display = '';
       wrap.innerHTML = '<audio id="dg-radio-audio" src="' + escapeHtml(np.track_url) + '"></audio>';
       var audioEl = document.getElementById('dg-radio-audio');
@@ -627,6 +635,27 @@
       audioEl.addEventListener('error', function () {
         var statusEl = document.getElementById('dg-radio-status');
         if (statusEl) statusEl.textContent = 'Playback failed -- this track isn\'t reachable right now.';
+      });
+      // iOS Safari can pause tab-wide <audio> playback on ANY iframe
+      // navigation elsewhere on the page -- a known WebKit quirk, not
+      // something this element being outside #dg-shell-content protects
+      // against, confirmed live: the shell's own single hoisted widget
+      // (this element) still stopped and stayed stopped on a content
+      // swap. Nothing here ever calls audioEl.pause() except a real
+      // Handler-paused broadcast (applyLivePauseState(), which sets
+      // intentionalPause first) -- any OTHER 'pause' event is the
+      // browser's own doing, so resume immediately rather than leaving
+      // the table silently stuck.
+      audioEl.addEventListener('pause', function () {
+        if (!intentionalPause && !audioEl.ended) {
+          var resumeAfterInterruption = audioEl.play();
+          if (resumeAfterInterruption && resumeAfterInterruption.catch) {
+            // Genuinely can't resume without a fresh user gesture --
+            // same fallback the initial play() attempt below already
+            // offers, not a new failure mode.
+            resumeAfterInterruption.catch(function () { resumeBtn.style.display = 'block'; });
+          }
+        }
       });
       if (!isPaused) {
         var playPromise = audioEl.play();
