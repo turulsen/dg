@@ -6044,6 +6044,155 @@ def test_agent_file_era_age_adjusts_per_era(p):
     page.close()
     return errs
 
+def test_agent_file_medical_aar_archived(p):
+    """Medical History and After-Action Reports were archived (not
+    removed) from the Agent File at the requester's ask -- everything
+    backing them (medical_log/aar_log sheet columns, Code.gs's
+    update_medical/update_aar actions, the render/save JS) is untouched,
+    only the two lines that ever flipped #af-medical/#af-aar to
+    display:block were pulled. Loads an Agent with real entries in both
+    logs (so there'd be visible content if the sections showed at all)
+    and confirms neither section is visible."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    complete_extra = {
+        "age_range": "30s", "sex": "Female", "nationality": "American",
+        "face_shape": "oval", "eye_color": "brown", "eye_shape": "almond",
+        "nose": "straight", "lips": "thin", "skin": "tan", "facial_hair": "clean-shaven",
+        "hair_color": "brown", "hair_style": "short", "hair_texture": "straight",
+        "build": "average", "posture": "upright", "expression": "neutral", "vibe": "calm",
+        "jacket": "coat", "shirt": "shirt", "trousers": "trousers", "footwear": "boots",
+        "medical_log": json.dumps([{"date": "2026-01-01", "severity": "moderate",
+                                     "body_part": "Left arm", "injury": "Laceration", "description": "Knife wound."}]),
+        "aar_log": json.dumps([{"date": "2026-01-02", "operation": "Operation Nightfall",
+                                 "location": "Abandoned warehouse", "scene": "Something bad happened."}]),
+    }
+    briefs = {"MEDX-AR01": {"char_name": "Test Agent", **complete_extra}}
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        if "code=" in url:
+            code = url.split("code=")[1].split("&")[0]
+            res = {"status": "OK", "data": briefs[code]} if code in briefs else {"status": "NOT_FOUND"}
+        else:
+            res = {"status": "OK"}
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/dg-agent-portal.html?code=MEDX-AR01#agent", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(800)
+
+    record("agent-portal", "Medical History is not visible even though this Agent has a real entry on file",
+           page.locator("#af-medical").is_visible() is False, "")
+    record("agent-portal", "After-Action Reports is not visible even though this Agent has a real entry on file",
+           page.locator("#af-aar").is_visible() is False, "")
+    record("agent-portal", "no console errors from an Agent carrying archived-feature data", len(errs) == 0, str(errs))
+    page.close()
+    return errs
+
+def test_agent_file_active_era_toggle(p):
+    """New feature: an explicit toggle for which era's Face Plate is the
+    Agent's "preview" photo (the one every OTHER surface -- roster tray,
+    Field ID card -- shows, since none of them know about the per-era
+    columns). Two active eras, both with a Face Plate on file -- the
+    first/oldest era (afEraPages[0]) should read as the Active Era by
+    default (matching what face_plate_url already held before this
+    feature existed), with a "Make Active Era" button on the other one.
+    Clicking it must: flip which era shows the "Active Era" badge, and
+    persist BOTH campaign_era (the new field) and face_plate_url (so
+    every existing preview surface picks up the new photo with no
+    changes of its own) via update_field."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    complete_extra = {
+        "age_range": "30s", "sex": "Female", "nationality": "American",
+        "face_shape": "oval", "eye_color": "brown", "eye_shape": "almond",
+        "nose": "straight", "lips": "thin", "skin": "tan", "facial_hair": "clean-shaven",
+        "hair_color": "brown", "hair_style": "short", "hair_texture": "straight",
+        "build": "average", "posture": "upright", "expression": "neutral", "vibe": "calm",
+        "jacket": "coat", "shirt": "shirt", "trousers": "trousers", "footwear": "boots",
+        "active_eras": json.dumps(["90s", "00s"]),
+        "era_90s_face_url": "https://drive.google.com/uc?id=fake90sface",
+        "era_90s_mode0": "existing", "era_90s_mode1": "existing",
+        "era_00s_face_url": "https://drive.google.com/uc?id=fake00sface",
+        "era_00s_mode0": "existing", "era_00s_mode1": "existing",
+    }
+    briefs = {"ERAT-OGL01": {"char_name": "Test Agent", **complete_extra}}
+    field_posts = []
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            body = json.loads(req.post_data or "{}")
+            if body.get("action") == "update_field":
+                field_posts.append(body)
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        if "code=" in url:
+            code = url.split("code=")[1].split("&")[0]
+            res = {"status": "OK", "data": briefs[code]} if code in briefs else {"status": "NOT_FOUND"}
+        else:
+            res = {"status": "OK"}
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+    page.route("**/script.google.com/**", fake_apps_script)
+    # Real Drive photo URLs would normally load through loadDriveImage()'s
+    # own JSONP proxy -- irrelevant to this test (only the toggle's own
+    # logic/network calls matter), and no route is registered for it, so
+    # nothing here needs to intercept it.
+
+    page.goto(f"{BASE}/dg-agent-portal.html?code=ERAT-OGL01#agent", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(800)
+
+    # text-transform:uppercase is CSS-only -- Playwright's inner_text()
+    # returns the rendered text, so this compares case-insensitively
+    # rather than against the literal "Active Era" HTML content.
+    record("agent-portal", "the first/oldest era (90s) reads as the Active Era by default",
+           "active era" in page.inner_text("#era-preview-90s").lower(), page.inner_text("#era-preview-90s"))
+    record("agent-portal", "the other era (00s) offers a Make Active Era button instead",
+           page.locator("#era-preview-00s button").count() == 1, "")
+
+    page.click("#era-preview-00s button")
+    page.wait_for_timeout(300)
+
+    record("agent-portal", "clicking it flips the badge to the 00s era",
+           "active era" in page.inner_text("#era-preview-00s").lower(), page.inner_text("#era-preview-00s"))
+    record("agent-portal", "the 90s era now offers Make Active Era instead (no longer the active one)",
+           page.locator("#era-preview-90s button").count() == 1, "")
+
+    campaign_era_posts = [b for b in field_posts if b.get("field") == "campaign_era"]
+    record("agent-portal", "campaign_era was persisted with the newly-chosen era",
+           len(campaign_era_posts) == 1 and campaign_era_posts[0].get("value") == "00s", str(field_posts))
+
+    face_plate_posts = [b for b in field_posts if b.get("field") == "face_plate_url"]
+    record("agent-portal", "face_plate_url (the flat field every other preview surface reads) was updated to the 00s era's photo",
+           len(face_plate_posts) == 1 and face_plate_posts[0].get("value") == "https://drive.google.com/uc?id=fake00sface",
+           str(field_posts))
+
+    record("agent-portal", "no console errors on the active-era toggle flow", len(errs) == 0, str(errs))
+    page.close()
+    return errs
+
 def test_agent_file_outfit_plate_requires_face_first(p):
     """Regression test for a real bug: generating an Outfit Plate image
     read whatever the in-page <img id="img-face-ERA"> happened to hold as
@@ -7960,6 +8109,10 @@ def main():
         safe(test_agent_file_era_prompts_isolated_per_era, browser, area="agent-portal")
 
         safe(test_agent_file_era_age_adjusts_per_era, browser, area="agent-portal")
+
+        safe(test_agent_file_medical_aar_archived, browser, area="agent-portal")
+
+        safe(test_agent_file_active_era_toggle, browser, area="agent-portal")
 
         safe(test_agent_file_outfit_plate_requires_face_first, browser, area="agent-portal")
 
