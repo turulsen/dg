@@ -1465,8 +1465,11 @@ def test_hub_clearance_branches(p):
     """index.html is now a splash + clearance chooser, not a direct tool
     grid -- Character Creator and Agent Portal moved under the Agent
     branch (agent-hub.html), and A-Cell (a-cell.html) is new. Regression
-    check for the hub restructuring: exactly two clearance branches,
-    pointing at the right pages."""
+    check for the hub restructuring: exactly two clearance branches.
+    Both are routed through the app shell (hub.html) now, Phase 4 of the
+    shell plan -- Agent opens the shell at its default (Agent Hub),
+    A-Cell opens it with ?start=a-cell.html so the shell's content
+    iframe goes straight there instead of Agent Hub first."""
     page = p.new_page()
     page.set_default_timeout(5000)
     errs = collect_errors(page)
@@ -1474,8 +1477,61 @@ def test_hub_clearance_branches(p):
     page.goto(f"{BASE}/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(200)
     hrefs = page.eval_on_selector_all(".clearance-choice", "els => els.map(e=>e.getAttribute('href'))")
-    record("hub", "hub has exactly 2 clearance branches (Agent, A-Cell)",
-           hrefs == ["agent-hub.html", "a-cell.html"], str(hrefs))
+    record("hub", "hub has exactly 2 clearance branches (Agent, A-Cell), both routed through the shell",
+           hrefs == ["hub.html", "hub.html?start=a-cell.html"], str(hrefs))
+    page.close()
+    return errs
+
+def test_hub_clearance_lands_in_shell(p):
+    """End-to-end proof that index.html's two Clearance choices actually
+    land in the app shell correctly, not just that their href attributes
+    look right: clicking Agent opens hub.html with its content iframe on
+    Agent Hub (the default); clicking A-Cell (a fresh visit, since the
+    first navigation already left index.html) opens hub.html with the
+    content iframe going straight to a-cell.html via ?start=, not Agent
+    Hub first. Also checks the ?start= allowlist actually rejects
+    anything unexpected rather than blindly trusting it -- a crafted
+    ?start= pointing anywhere else must still fall back to Agent Hub."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    skip_boot_splash(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    page.goto(f"{BASE}/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(200)
+    page.click(".clearance-choice.cc-agent")
+    page.wait_for_function(
+        "() => { var f = document.getElementById('dg-shell-content'); "
+        "return f && f.contentDocument && f.contentDocument.readyState === 'complete'; }",
+        timeout=10000)
+    record("hub", "clicking Agent lands on hub.html with the shell chrome present",
+           "hub.html" in page.url and page.locator("#dg-shell-nav").count() == 1, page.url)
+    record("hub", "the content iframe opened to Agent Hub (the default, no ?start=)",
+           "agent-hub.html" in page.eval_on_selector("#dg-shell-content", "el => el.contentWindow.location.href"), "")
+
+    page.goto(f"{BASE}/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(200)
+    page.click(".clearance-choice.cc-acell")
+    page.wait_for_function(
+        "() => { var f = document.getElementById('dg-shell-content'); "
+        "return f && f.contentDocument && f.contentDocument.readyState === 'complete' "
+        "&& /a-cell\\.html/.test(f.contentWindow.location.href); }",
+        timeout=10000)
+    record("hub", "clicking A-Cell lands on hub.html with the content iframe going straight to a-cell.html",
+           "a-cell.html" in page.eval_on_selector("#dg-shell-content", "el => el.contentWindow.location.href"), "")
+
+    page.goto(f"{BASE}/hub.html?start=https://evil.example", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function(
+        "() => { var f = document.getElementById('dg-shell-content'); "
+        "return f && f.contentDocument && f.contentDocument.readyState === 'complete'; }",
+        timeout=10000)
+    record("hub", "a ?start= value outside the allowlist falls back to Agent Hub, not whatever was requested",
+           "agent-hub.html" in page.eval_on_selector("#dg-shell-content", "el => el.contentWindow.location.href"),
+           page.eval_on_selector("#dg-shell-content", "el => el.contentWindow.location.href"))
+
+    record("hub", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
     return errs
 
@@ -8242,6 +8298,8 @@ def main():
         safe(test_hub_boot_splash, browser, area="hub")
 
         safe(test_hub_clearance_branches, browser, area="hub")
+
+        safe(test_hub_clearance_lands_in_shell, browser, area="hub")
 
         safe(test_agent_hub, browser, area="hub")
 
