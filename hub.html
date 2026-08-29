@@ -99,6 +99,32 @@
     document.getElementById('dg-shell-content').src = initial;
   })();
 </script>
+<script>
+  // Small, explicit API any page loaded into #dg-shell-content can call
+  // (via window.parent.dgShellSetWidgetsHidden -- same-origin, so this
+  // is safe) to temporarily get the shell's own hoisted widgets out of
+  // the way. Both #dg-radio and #dr-panel are position:fixed in THIS
+  // document, so they paint over the ENTIRE content iframe
+  // unconditionally, regardless of any z-index used inside it -- an
+  // iframe boundary can't be crossed by CSS stacking context alone, no
+  // matter how high a z-index the page inside it uses. First real case:
+  // notes/notes.js's own Editor.js block-type picker (a mobile bottom
+  // sheet) was rendering correctly but sitting BEHIND these widgets,
+  // covered and unusable, once notes/index.html started loading inside
+  // this shell.
+  //
+  // visibility:hidden, not display:none -- Table Radio's own audio/
+  // video keeps playing either way (see its own header comment on why
+  // Minimized uses height:0 + overflow:hidden instead of display:none,
+  // same reasoning), only the visible chrome needs to duck out of the
+  // way, never the playback itself.
+  window.dgShellSetWidgetsHidden = function (hidden) {
+    var radio = document.getElementById('dg-radio');
+    var dice = document.getElementById('dr-panel');
+    if (radio) radio.style.visibility = hidden ? 'hidden' : '';
+    if (dice) dice.style.visibility = hidden ? 'hidden' : '';
+  };
+</script>
 <script src="assets/table-radio.js"></script>
 <script src="assets/dice-roller.js?v=4"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>
