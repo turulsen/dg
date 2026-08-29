@@ -1164,8 +1164,27 @@
         if (open && document.body.style.overflow !== 'hidden') {
           bodyOverflowBeforeLock = document.body.style.overflow;
           document.body.style.overflow = 'hidden';
+          // Loaded inside the app shell (hub.html)? Its own hoisted Table
+          // Radio/Dice Roller widgets are position:fixed in the PARENT
+          // document, so they paint over this ENTIRE iframe unconditionally
+          // -- no z-index used in here can ever get above them, since an
+          // iframe boundary blocks CSS stacking context, not just this
+          // popover's own. Same-origin, so reaching out to hub.html's
+          // small dgShellSetWidgetsHidden() API to duck them out of the
+          // way while the popover is open is safe. Standalone visits (not
+          // in the shell) have window.parent === window, so this no-ops.
+          try {
+            if (window.parent && window.parent !== window && window.parent.dgShellSetWidgetsHidden) {
+              window.parent.dgShellSetWidgetsHidden(true);
+            }
+          } catch (e) { /* not embedded in the shell -- no-op */ }
         } else if (!open && document.body.style.overflow === 'hidden') {
           document.body.style.overflow = bodyOverflowBeforeLock;
+          try {
+            if (window.parent && window.parent !== window && window.parent.dgShellSetWidgetsHidden) {
+              window.parent.dgShellSetWidgetsHidden(false);
+            }
+          } catch (e) { /* not embedded in the shell -- no-op */ }
         }
       };
       popoverScrollLockObserver = new MutationObserver(sync);
@@ -1174,6 +1193,16 @@
     function unlockBodyScrollForPopover() {
       if (popoverScrollLockObserver) { popoverScrollLockObserver.disconnect(); popoverScrollLockObserver = null; }
       if (document.body.style.overflow === 'hidden') document.body.style.overflow = bodyOverflowBeforeLock;
+      // Safety net for the shell-widgets-hidden case too, in case this
+      // teardown fires while a popover was left open (the editor getting
+      // destroyed/swapped away mid-interaction) -- without this, the
+      // shell's own widgets could stay hidden with nothing left around
+      // to ever un-hide them again.
+      try {
+        if (window.parent && window.parent !== window && window.parent.dgShellSetWidgetsHidden) {
+          window.parent.dgShellSetWidgetsHidden(false);
+        }
+      } catch (e) { /* not embedded in the shell -- no-op */ }
     }
 
     function updateCirculateButton() {
