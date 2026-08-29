@@ -50,6 +50,20 @@
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
+  // Inside the app shell (hub.html), the shell owns one hoisted copy of
+  // this widget outside #dg-shell-content entirely -- a page loaded
+  // *into* that iframe (e.g. agent-hub.html) must not also mount its
+  // own, or both sit at the same fixed bottom-right position (this
+  // widget's #dg-radio is position:fixed, which is relative to
+  // whichever document it's actually in -- the iframe's own viewport
+  // here, landing almost exactly on top of the shell's real one) with
+  // no way to tell which pill is which, and only the inner copy (which
+  // a real navigation destroys) would ever actually be reachable to tap.
+  // window.frameElement is same-origin-only, so this is null for every
+  // standalone visit and for any other embedding (e.g. Split View's own
+  // nested iframes, keyed on a different id) -- only the shell's own
+  // content frame matches.
+  if (window.frameElement && window.frameElement.id === 'dg-shell-content') return;
   var FIREBASE_SDK_VERSION = '12.18.0';
   // Public Web SDK config for the dg-app-b3447 Firebase project -- not
   // a secret, same reasoning as every other client-side Firebase config;
@@ -77,6 +91,12 @@
   // drives whether a mute/volume change can be applied in place (cheap,
   // no reload) or needs a full renderEmbed() rebuild.
   var currentEmbedKind = null; // 'yt' | 'sc' | 'audio' | 'generic' | null
+  // True only while the CURRENT broadcast state is a real Handler-
+  // paused one (applyLivePauseState(true)/renderEmbed() loading an
+  // already-paused np) -- set alongside every intentional pause of
+  // #dg-radio-audio, so its own 'pause' listener below can tell that
+  // apart from an unprompted one and know whether to auto-resume.
+  var intentionalPause = false;
   var ytPlayer = null;
   // A freshly-constructed YT.Player object exists synchronously, well
   // before the real embedded player has finished its handshake --
@@ -165,6 +185,41 @@
       cbs.forEach(function (fn) { fn(); });
     };
     document.head.appendChild(s);
+  }
+
+  // Recomputes, from wall-clock "now", how far into the broadcast a
+  // channel's current track should be -- shared by renderEmbed() (for
+  // both the <audio> seek and YouTube's playerVars.start) and
+  // seekAudioToLive_()'s post-interruption reseek below, so both land on
+  // the same live position instead of two slightly different formulas.
+  function liveElapsedSeconds_(np) {
+    var isPaused = !!np.paused;
+    var pausedAtMs = np.paused_at || Date.now();
+    return isPaused
+      ? Math.max(0, Math.floor((pausedAtMs - (np.started_at || pausedAtMs)) / 1000))
+      : Math.max(0, Math.floor((Date.now() - (np.started_at || Date.now())) / 1000));
+  }
+
+  // Seeks an <audio> element to the live position for the given
+  // now-playing doc, THEN invokes `then` (if given) -- calling .play()
+  // before metadata has loaded and a later currentTime assignment both
+  // "work" individually, but calling play() first turned out to win the
+  // race: Chromium (confirmed via a currentTime-setter probe, not just
+  // suspected) silently resets the seek back toward 0 once the requested
+  // playback actually starts, discarding a currentTime set in between.
+  // Routing every play() call through `then` guarantees the seek is
+  // fully applied first. Also handles setting .currentTime before the
+  // element has loaded enough to know its own duration at all (readyState
+  // 0, HAVE_NOTHING) -- deferred until loadedmetadata, since iOS Safari
+  // is known to silently drop that assignment rather than queue it.
+  function seekAudioToLive_(audioEl, np, then) {
+    if (!audioEl || !np) { if (then) then(); return; }
+    function apply() {
+      try { audioEl.currentTime = liveElapsedSeconds_(np); } catch (e) { /* not seekable yet */ }
+      if (then) then();
+    }
+    if (audioEl.readyState >= 1) { apply(); return; }
+    audioEl.addEventListener('loadedmetadata', apply, { once: true });
   }
 
   function destroyActivePlayers() {
@@ -510,6 +565,7 @@
     if (currentEmbedKind === 'audio') {
       var audioEl = document.getElementById('dg-radio-audio');
       if (audioEl) {
+        intentionalPause = paused;
         if (paused) { audioEl.pause(); } else { var p = audioEl.play(); if (p && p.catch) p.catch(function () { /* best effort */ }); }
         return true;
       }
@@ -535,16 +591,14 @@
     }
 
     var isPaused = !!np.paused;
-    var pausedAtMs = np.paused_at || Date.now();
-    var elapsed = isPaused
-      ? Math.max(0, Math.floor((pausedAtMs - (np.started_at || pausedAtMs)) / 1000))
-      : Math.max(0, Math.floor((Date.now() - (np.started_at || Date.now())) / 1000));
+    var elapsed = liveElapsedSeconds_(np);
     var muted = isMuted();
     var vol = getVolume();
     var loop = !!np.loop;
-    // A Track Library pick's Drive download link has no .mp3 extension
-    // for isDirectAudio() to catch -- track_kind says so explicitly
-    // instead of relying on the URL shape, and skips the YouTube/
+    // A Track Library pick's download link (Firebase Storage now, or a
+    // Drive one for any track uploaded before that migration) has no
+    // .mp3 extension for isDirectAudio() to catch -- track_kind says so
+    // explicitly instead of relying on the URL shape, and skips the YouTube/
     // SoundCloud sniffing entirely rather than risking a false match.
     var isLibraryAudio = np.track_kind === 'audio';
     var ytId = isLibraryAudio ? null : extractYouTubeId(np.track_url);
@@ -601,10 +655,10 @@
       });
     } else if (isLibraryAudio || isDirectAudio(np.track_url)) {
       currentEmbedKind = 'audio';
+      intentionalPause = isPaused;
       if (volSlider) volSlider.style.display = '';
       wrap.innerHTML = '<audio id="dg-radio-audio" src="' + escapeHtml(np.track_url) + '"></audio>';
       var audioEl = document.getElementById('dg-radio-audio');
-      audioEl.currentTime = elapsed;
       audioEl.muted = muted;
       audioEl.volume = vol / 100;
       audioEl.loop = loop;
@@ -614,12 +668,53 @@
         var statusEl = document.getElementById('dg-radio-status');
         if (statusEl) statusEl.textContent = 'Playback failed -- this track isn\'t reachable right now.';
       });
-      if (!isPaused) {
-        var playPromise = audioEl.play();
-        if (playPromise && playPromise.catch) {
-          playPromise.catch(function () { resumeBtn.style.display = 'block'; });
+      // iOS Safari can pause tab-wide <audio> playback on ANY iframe
+      // navigation elsewhere on the page -- a known WebKit quirk, not
+      // something this element being outside #dg-shell-content protects
+      // against, confirmed live: the shell's own single hoisted widget
+      // (this element) still stopped and stayed stopped on a content
+      // swap. Nothing here ever calls audioEl.pause() except a real
+      // Handler-paused broadcast (applyLivePauseState(), which sets
+      // intentionalPause first) -- any OTHER 'pause' event is the
+      // browser's own doing, so resume immediately rather than leaving
+      // the table silently stuck.
+      audioEl.addEventListener('pause', function () {
+        if (!intentionalPause && !audioEl.ended) {
+          // The same WebKit interruption that fires this unprompted
+          // pause can also silently evict the element's buffered audio,
+          // which resets currentTime back toward 0 once play() actually
+          // starts fetching again -- reseek to the CURRENT live position
+          // (recomputed from wall-clock, not whatever renderEmbed()
+          // computed when the track first loaded) so a resume lands back
+          // where the broadcast actually is now, not at the beginning.
+          // window._dgRadioLast is the last known now-playing doc; a
+          // real Handler pause would have set intentionalPause first, so
+          // reaching here with .paused true would be a stale reference,
+          // hence the belt-and-suspenders check.
+          function resumeAfterInterruption() {
+            var p = audioEl.play();
+            if (p && p.catch) {
+              // Genuinely can't resume without a fresh user gesture --
+              // same fallback the initial play() attempt below already
+              // offers, not a new failure mode.
+              p.catch(function () { resumeBtn.style.display = 'block'; });
+            }
+          }
+          if (window._dgRadioLast && !window._dgRadioLast.paused) {
+            seekAudioToLive_(audioEl, window._dgRadioLast, resumeAfterInterruption);
+          } else {
+            resumeAfterInterruption();
+          }
         }
-      }
+      });
+      seekAudioToLive_(audioEl, np, function () {
+        if (!isPaused) {
+          var playPromise = audioEl.play();
+          if (playPromise && playPromise.catch) {
+            playPromise.catch(function () { resumeBtn.style.display = 'block'; });
+          }
+        }
+      });
     } else {
       // Generic embeddable URL, neither YouTube, SoundCloud, nor direct
       // audio -- no API, cross-origin, never controllable from here
