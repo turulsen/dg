@@ -4920,20 +4920,20 @@ def test_shell_nav_tracks_in_page_navigation(p):
     page.close()
     return errs
 
-def test_shell_back_link_exits_shell_entirely(p):
-    """A page's own "back to Clearance" link (href="index.html") must
-    NOT just navigate the content iframe when running inside hub.html's
-    shell -- index.html isn't part of the shell's own page set the way
-    Agent Hub/A-Cell/Notes/etc. are, so loading it inside #dg-shell-
-    content would trap the player on the Clearance chooser cramped
-    inside the shell's chrome, with no way back out short of a hard
-    reload. Fixed with target="_top" on that one <a> in agent-hub.html,
-    a-cell.html, and dg-agent-portal.html -- a no-op for a standalone
-    visit, but inside an iframe it forces the TOP-level browsing context
-    to navigate instead, closing the whole shell down to a real,
-    standalone index.html. Proven here by checking the outer page's own
-    URL actually changed (not just the iframe's) and #dg-shell-content
-    no longer exists at all."""
+def test_shell_back_link_hidden_inside_shell(p):
+    """A page's own "back to Clearance" link (href="index.html") is
+    redundant once inside hub.html's shell -- the shell's own persistent
+    nav (assets/shell-nav.js) already covers switching between Agent Hub
+    and A-Cell directly, with no need to ever route through index.html
+    at all. Two earlier approaches (target="_top" breaking out of the
+    shell entirely, then a script making index.html redirect back
+    through the parent's existing iframe) both got replaced by simply
+    hiding the link inside the shell -- it stays for a standalone visit
+    (a bookmark, a search result), where window.frameElement is null and
+    the check below never fires. Checks both agent-hub.html's own
+    back-link and, after swapping to A-Cell via the shell's nav,
+    a-cell.html's (there are two there -- the pre-login gate's and the
+    post-login header's, both hidden the same way)."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -4945,16 +4945,66 @@ def test_shell_back_link_exits_shell_entirely(p):
         "() => { var f = document.getElementById('dg-shell-content'); "
         "return f.contentDocument && f.contentDocument.readyState === 'complete'; }")
 
-    record("shell", "the back-link inside the loaded page has target=_top (breaks out of the shell)",
-           page.eval_on_selector("#dg-shell-content", "el => el.contentDocument.querySelector('a.back-link').target") == "_top", "")
+    record("shell", "Agent Hub's own back-link is hidden inside the shell",
+           page.eval_on_selector("#dg-shell-content", "el => el.contentDocument.getElementById('hub-back-link').style.display") == "none", "")
 
-    with page.expect_navigation(url=lambda u: "index.html" in u, timeout=8000):
-        page.eval_on_selector("#dg-shell-content", "el => el.contentDocument.querySelector('a.back-link').click()")
+    page.click('#dg-shell-nav button[data-target="a-cell.html"]')
+    page.wait_for_function(
+        "() => { var f = document.getElementById('dg-shell-content'); "
+        "return f.contentDocument && f.contentDocument.readyState === 'complete' "
+        "&& /a-cell\\.html/.test(f.contentWindow.location.href); }")
 
-    record("shell", "the OUTER page itself navigated to index.html, not just the iframe",
-           "index.html" in page.url, "")
-    record("shell", "the shell's own chrome (content iframe) is gone -- this really left the shell, not just the visible page inside it",
-           page.locator("#dg-shell-content").count() == 0, "")
+    record("shell", "A-Cell's pre-login gate back-link is hidden inside the shell too",
+           page.eval_on_selector("#dg-shell-content", "el => { var b = el.contentDocument.getElementById('acell-back'); return b && b.style.display; }") == "none", "")
+    record("shell", "A-Cell's post-login header back-link is also hidden",
+           page.eval_on_selector("#dg-shell-content", "el => { var b = el.contentDocument.getElementById('acell-header-back-link'); return b && b.style.display; }") == "none", "")
+
+    # The shell's own nav is the real replacement for the hidden
+    # link -- confirm it actually still gets a player back to Agent Hub.
+    page.click('#dg-shell-nav button[data-target="agent-hub.html"]')
+    page.wait_for_function(
+        "() => { var f = document.getElementById('dg-shell-content'); "
+        "return f.contentDocument && f.contentDocument.readyState === 'complete' "
+        "&& /agent-hub\\.html/.test(f.contentWindow.location.href); }")
+    record("shell", "the shell's own nav still gets a player back to Agent Hub with the link gone",
+           "agent-hub.html" in page.eval_on_selector("#dg-shell-content", "el => el.contentWindow.location.href"), "")
+    record("shell", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
+def test_page_back_link_visible_standalone(p):
+    """The flip side of test_shell_back_link_hidden_inside_shell -- a
+    standalone visit (window.frameElement is null, not inside the shell
+    at all) must still show the "back to Clearance" link normally on
+    each of the three pages that have one. Regression coverage for
+    accidentally hiding it unconditionally instead of only inside the
+    shell."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    # JSONP-aware -- both pages load some data via a <script src=...
+    # &callback=...> tag, which executes the response as raw JS; a bare
+    # JSON body (not wrapped in the callback call) throws "Unexpected
+    # token ':'".
+    def fake_apps_script(route):
+        url = route.request.url
+        if "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    record("shell", "Agent Hub's back-link is visible on a standalone visit",
+           page.eval_on_selector("#hub-back-link", "el => getComputedStyle(el).display") != "none", "")
+
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    record("shell", "A-Cell's pre-login gate back-link is visible on a standalone visit",
+           page.eval_on_selector("#acell-back", "el => getComputedStyle(el).display") != "none", "")
+
     record("shell", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
     return errs
@@ -8354,7 +8404,9 @@ def main():
 
         safe(test_shell_nav_tracks_in_page_navigation, browser, area="shell")
 
-        safe(test_shell_back_link_exits_shell_entirely, browser, area="shell")
+        safe(test_shell_back_link_hidden_inside_shell, browser, area="shell")
+
+        safe(test_page_back_link_visible_standalone, browser, area="shell")
 
         safe(test_agent_portal_code_query_param, browser, area="agent-portal")
 

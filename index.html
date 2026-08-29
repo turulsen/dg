@@ -260,35 +260,6 @@
 })();
 </script>
 
-<script>
-/* When this page loads inside the shell's own content iframe (reached
-   via a page's "back to Clearance" link, itself a plain in-page link
-   now rather than target="_top" -- see agent-hub.html/a-cell.html's own
-   comment on that link), its two Clearance choices must NOT load
-   hub.html again inside itself: that would nest a second shell inside
-   the first, and the outer one's own Table Radio/Dice Roller would sit
-   frozen behind it -- exactly the "why does going back interrupt the
-   music" a player asked about. Same-origin, so reaching into the parent
-   document to swap its EXISTING content iframe's src directly is safe
-   and simple -- same end state as clicking the shell's own persistent
-   nav (assets/shell-nav.js), just triggered from inside the iframe
-   instead of the parent chrome. */
-(function () {
-  if (!(window.frameElement && window.frameElement.id === 'dg-shell-content')) return;
-  var TARGETS = { 'cc-agent': 'agent-hub.html', 'cc-acell': 'a-cell.html' };
-  document.querySelectorAll('.clearance-choice').forEach(function (a) {
-    var cls = Object.keys(TARGETS).filter(function (c) { return a.classList.contains(c); })[0];
-    if (!cls) return;
-    a.addEventListener('click', function (e) {
-      e.preventDefault();
-      try {
-        window.parent.document.getElementById('dg-shell-content').src = TARGETS[cls];
-      } catch (err) { window.location.href = a.getAttribute('href'); } // same-origin, should never actually throw
-    });
-  });
-})();
-</script>
-
 <script src="assets/table-radio.js"></script>
 <script src="assets/dice-roller.js?v=7"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>

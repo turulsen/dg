@@ -215,13 +215,14 @@
 <body class="folder-theme">
 
 <div class="hub-header">
-  <!-- Plain in-page link -- inside hub.html's app shell this loads
-       index.html into the SAME content iframe (no different from any
-       other in-page link), keeping Table Radio/Dice Roller alive.
-       index.html itself detects being embedded there and routes its own
-       Clearance choices back through the shell's existing iframe
-       instead of nesting a second shell inside the first. -->
-  <a class="back-link" href="index.html">&lt;- Clearance</a>
+  <!-- Hidden inside the app shell (hub.html) -- redundant there, since
+       the shell's own persistent nav (assets/shell-nav.js) already
+       covers switching to A-Cell directly, without ever routing through
+       index.html at all. Still needed for a standalone visit (a
+       bookmark, a search result), so the link itself stays -- just
+       skipped via display:none, see the script right below. -->
+  <a class="back-link" id="hub-back-link" href="index.html">&lt;- Clearance</a>
+  <script>if (window.frameElement && window.frameElement.id === 'dg-shell-content') document.getElementById('hub-back-link').style.display = 'none';</script>
   <div class="restricted-stamp"><img src="assets/restricted-stamp.png" alt="Restricted -- Top Secret // Orcon // Special Access Required - Delta Green"></div>
   <h1>Agent Hub</h1>
   <p>Build a cover identity, roll or point-buy a new Agent, and keep dossiers up to date between sessions. Each tab below is one of your Agents.</p>
