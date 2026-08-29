@@ -4246,6 +4246,103 @@ def test_table_radio_pause_and_loop(p):
     page2.close()
     return errs + errs2
 
+def test_table_radio_unprompted_pause_auto_resumes(p):
+    """Regression test for a real player report: after the Phase 2 shell
+    dedup fix (only one hoisted Table Radio widget, so the swap test
+    could actually exercise the right one), a Track Library file was
+    still playing, tapping the shell's content-swap test button still
+    stopped it, and it stayed stopped. #dg-radio-audio lives entirely in
+    the shell's own document, outside #dg-shell-content -- a sibling
+    iframe navigating can't reach it directly -- so this points at a
+    known WebKit quirk: iOS Safari can pause tab-wide <audio>/<video>
+    playback on ANY iframe navigation elsewhere on the page, unrelated
+    to whether that element is inside the navigating iframe at all. Not
+    reproducible in this suite's Chromium (same class of gap as the
+    position:fixed iOS backdrop bug documented in notes/index.html's own
+    section of the QA README) -- but the FIX (auto-resume on an
+    unprompted 'pause' event) is directly testable: simulate the
+    browser's own uncommanded pause by calling audioEl.pause() from here,
+    exactly what an external interruption looks like from the element's
+    own perspective regardless of what triggered it, and confirm
+    table-radio.js resumes it. A REAL Handler-paused broadcast (pushed
+    via a fresh radio/{channel} snapshot, same as Scenario 2 above) must
+    NOT be auto-resumed -- intentionalPause is the flag that tells the
+    two apart."""
+    import wave, io
+    wav_buf = io.BytesIO()
+    w = wave.open(wav_buf, "wb")
+    w.setnchannels(1); w.setsampwidth(2); w.setframerate(8000)
+    w.writeframes(b"\x00\x00" * 8000)
+    w.close()
+    wav_bytes = wav_buf.getvalue()
+
+    play_probe = """
+        window.__dgPlayCalls = [];
+        var orig = HTMLMediaElement.prototype.play;
+        HTMLMediaElement.prototype.play = function () {
+            if (this.id === 'dg-radio-audio') window.__dgPlayCalls.push(Date.now());
+            var p = orig.call(this);
+            if (p && p.catch) p.catch(function () { /* autoplay policy, not our bug */ });
+            return p;
+        };
+    """
+
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+    page.add_init_script(play_probe)
+    install_radio_firestore_stub(page)
+    page.route("**/ambience.mp3", lambda r: r.fulfill(status=200, content_type="audio/wav", body=wav_bytes))
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+
+    now_ms = int(__import__("time").time() * 1000)
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
+    page.reload(wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    push_radio_now_playing(page, "1", {
+        "channel": "1", "track_url": "https://example.com/ambience.mp3",
+        "track_title": "Rain Loop", "started_at": now_ms,
+        "paused": False, "paused_at": 0, "loop": True,
+    })
+    page.wait_for_timeout(400)
+    initial_play_calls = page.evaluate("() => (window.__dgPlayCalls || []).length")
+    record("radio", "sanity check: the track actually started playing before simulating an interruption",
+           initial_play_calls > 0, str(initial_play_calls))
+
+    # Simulate the browser's own uncommanded pause -- same event shape
+    # an iOS Safari iframe-navigation interruption produces, regardless
+    # of cause.
+    page.evaluate("() => { var el = document.getElementById('dg-radio-audio'); if (el) el.pause(); }")
+    page.wait_for_timeout(300)
+    record("radio", "an unprompted pause (not a real Handler pause) is auto-resumed",
+           page.evaluate("() => (window.__dgPlayCalls || []).length") > initial_play_calls,
+           str(page.evaluate("() => (window.__dgPlayCalls || []).length")))
+    record("radio", "the <audio> element is actually playing again after the auto-resume",
+           page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.paused") is False, "")
+
+    resumed_play_calls = page.evaluate("() => (window.__dgPlayCalls || []).length")
+    # Now a REAL Handler pause, via a fresh broadcast snapshot -- must
+    # stick, not get auto-resumed by the same listener.
+    push_radio_now_playing(page, "1", {
+        "channel": "1", "track_url": "https://example.com/ambience.mp3",
+        "track_title": "Rain Loop", "started_at": now_ms,
+        "paused": True, "paused_at": now_ms + 1000, "loop": True,
+    })
+    page.wait_for_timeout(400)
+    record("radio", "a real Handler-paused broadcast stays paused (not auto-resumed by the same listener)",
+           page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.paused") is True, "")
+    record("radio", "a real Handler pause does not trigger another .play() call",
+           page.evaluate("() => (window.__dgPlayCalls || []).length") == resumed_play_calls,
+           str(page.evaluate("() => (window.__dgPlayCalls || []).length")))
+
+    record("radio", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_table_radio_library_track_kind(p):
     """Table Radio Track Library (v1.7): a mp3 uploaded through A-Cell's
     Music tab is stored in Drive and served back as a direct download
@@ -7714,6 +7811,8 @@ def main():
         safe(test_table_radio_audio_volume, browser, area="radio")
 
         safe(test_table_radio_pause_and_loop, browser, area="radio")
+
+        safe(test_table_radio_unprompted_pause_auto_resumes, browser, area="radio")
 
         safe(test_table_radio_library_track_kind, browser, area="radio")
 
