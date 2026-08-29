@@ -595,9 +595,10 @@
     var muted = isMuted();
     var vol = getVolume();
     var loop = !!np.loop;
-    // A Track Library pick's Drive download link has no .mp3 extension
-    // for isDirectAudio() to catch -- track_kind says so explicitly
-    // instead of relying on the URL shape, and skips the YouTube/
+    // A Track Library pick's download link (Firebase Storage now, or a
+    // Drive one for any track uploaded before that migration) has no
+    // .mp3 extension for isDirectAudio() to catch -- track_kind says so
+    // explicitly instead of relying on the URL shape, and skips the YouTube/
     // SoundCloud sniffing entirely rather than risking a false match.
     var isLibraryAudio = np.track_kind === 'audio';
     var ytId = isLibraryAudio ? null : extractYouTubeId(np.track_url);
