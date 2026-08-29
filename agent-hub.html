@@ -215,11 +215,13 @@
 <body class="folder-theme">
 
 <div class="hub-header">
-  <!-- target="_top" is a no-op standalone; inside hub.html's app shell
-       it breaks out of the content iframe instead of loading the
-       Clearance chooser cramped inside it -- index.html isn't part of
-       the shell's own page set the way Agent Hub's other pages are. -->
-  <a class="back-link" href="index.html" target="_top">&lt;- Clearance</a>
+  <!-- Plain in-page link -- inside hub.html's app shell this loads
+       index.html into the SAME content iframe (no different from any
+       other in-page link), keeping Table Radio/Dice Roller alive.
+       index.html itself detects being embedded there and routes its own
+       Clearance choices back through the shell's existing iframe
+       instead of nesting a second shell inside the first. -->
+  <a class="back-link" href="index.html">&lt;- Clearance</a>
   <div class="restricted-stamp"><img src="assets/restricted-stamp.png" alt="Restricted -- Top Secret // Orcon // Special Access Required - Delta Green"></div>
   <h1>Agent Hub</h1>
   <p>Build a cover identity, roll or point-buy a new Agent, and keep dossiers up to date between sessions. Each tab below is one of your Agents.</p>
