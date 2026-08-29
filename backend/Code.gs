@@ -380,7 +380,17 @@ const COLUMNS = [
   'era_90s_face_url', 'era_90s_outfit_url', 'era_90s_mode0', 'era_90s_mode1',
   'era_00s_face_url', 'era_00s_outfit_url', 'era_00s_mode0', 'era_00s_mode1',
   'era_10s_face_url', 'era_10s_outfit_url', 'era_10s_mode0', 'era_10s_mode1',
-  'era_20s_face_url', 'era_20s_outfit_url', 'era_20s_mode0', 'era_20s_mode1'
+  'era_20s_face_url', 'era_20s_outfit_url', 'era_20s_mode0', 'era_20s_mode1',
+  // Which era's Face Plate is the Agent's "preview" photo -- the one
+  // shown wherever a single photo represents the whole Agent (the
+  // roster tray, the Field ID card), rather than the era stack's own
+  // per-era view. Was previously never actually written by anything
+  // (rosterGetEraLabel()/eraLabel() only ever read it as an always-empty
+  // fallback), even though those two functions already existed --
+  // wiring it up to the new preview-era toggle in dg-agent-portal.html
+  // also fixes the roster tray's era label, which always showed the
+  // OLDEST era on file instead of whichever one is actually current.
+  'campaign_era'
 ];
 
 // Serializes a read-modify-write against a Sheet (scan for an existing
@@ -1324,6 +1334,8 @@ function updateAgentField(data) {
       'era_10s_mode0': 'era_10s_mode0', 'era_10s_mode1': 'era_10s_mode1',
       'era_20s_face_url': 'era_20s_face_url', 'era_20s_outfit_url': 'era_20s_outfit_url',
       'era_20s_mode0': 'era_20s_mode0', 'era_20s_mode1': 'era_20s_mode1',
+      // Preview era toggle -- see COLUMNS' own comment.
+      'campaign_era': 'campaign_era',
       'ref_image_link': 'Ref Image Link',
       // Cover Identity: explicit, even though the generic fallback below
       // (field.split('_').map(capitalize).join(' ')) already produces
