@@ -4704,10 +4704,12 @@ def test_shell_content_swap_preserves_hoisted_widgets(p):
     destroys and recreates them -- see table-radio.js's own header
     comment). Proves that structurally, without needing a real Firestore
     connection: tag the outer widgets' DOM nodes, swap the content
-    iframe (via the tappable manual-test-swap buttons -- the same path
-    an iPad tester with no devtools access actually has), and confirm
-    the exact same nodes (not same-looking rebuilt ones) are still there
-    afterward. Both widgets start in their default collapsed/no-channel
+    iframe (via the real persistent shell nav, assets/shell-nav.js --
+    the same tappable path a player actually has), and confirm the exact
+    same nodes (not same-looking rebuilt ones) are still there
+    afterward -- also checks the nav itself highlights whichever
+    destination is actually loaded. Both widgets start in their default
+    collapsed/no-channel
     state here (no localStorage channel set), which never opens a
     Firestore connection in the first place (see table-radio.js's
     startPolling()) -- so this needs no Firestore mocking to be a
@@ -4751,15 +4753,19 @@ def test_shell_content_swap_preserves_hoisted_widgets(p):
     record("shell", "Agent Hub's own copy of the Dice Roller panel did NOT also mount inside the content iframe (dedup guard)",
            page.eval_on_selector("#dg-shell-content", "el => el.contentDocument.getElementById('dr-panel')") is None, "")
 
+    record("shell", "the real nav starts with Agent Hub highlighted (the iframe's initial page)",
+           "dg-shell-nav-active" in (page.get_attribute('#dg-shell-nav button[data-target="agent-hub.html"]', "class") or ""), "")
+    record("shell", "A-Cell is not highlighted yet",
+           "dg-shell-nav-active" not in (page.get_attribute('#dg-shell-nav button[data-target="a-cell.html"]', "class") or ""), "")
+
     page.evaluate("""() => {
         document.getElementById('dg-radio-pill').dataset.dgTestTag = 'radio-still-here';
         document.getElementById('dr-panel').dataset.dgTestTag = 'dice-still-here';
     }""")
 
-    # The tappable manual-test-swap control (#dg-shell-test-nav), not a
-    # raw iframe.src assignment -- proving the actual UI path an iPad
-    # tester with no devtools/paired Mac has access to.
-    page.click('#dg-shell-test-nav button[data-target="a-cell.html"]')
+    # The real persistent nav (#dg-shell-nav), not a raw iframe.src
+    # assignment -- proving the actual UI path a player has.
+    page.click('#dg-shell-nav button[data-target="a-cell.html"]')
     page.wait_for_function(
         "() => { var f = document.getElementById('dg-shell-content'); "
         "return f.contentDocument && f.contentDocument.readyState === 'complete' "
@@ -4774,6 +4780,125 @@ def test_shell_content_swap_preserves_hoisted_widgets(p):
            page.eval_on_selector("#dr-panel", "el => el.dataset.dgTestTag") == "dice-still-here", "")
     record("shell", "A-Cell's own copy of the Table Radio pill also did NOT mount inside the content iframe (dedup guard, second page)",
            page.eval_on_selector("#dg-shell-content", "el => el.contentDocument.getElementById('dg-radio-pill')") is None, "")
+    record("shell", "the nav now highlights A-Cell instead",
+           "dg-shell-nav-active" in (page.get_attribute('#dg-shell-nav button[data-target="a-cell.html"]', "class") or ""), "")
+    record("shell", "Agent Hub is no longer highlighted",
+           "dg-shell-nav-active" not in (page.get_attribute('#dg-shell-nav button[data-target="agent-hub.html"]', "class") or ""), "")
+    record("shell", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
+def test_shell_nav_tracks_in_page_navigation(p):
+    """The persistent shell nav (assets/shell-nav.js) only offers two
+    top-level buttons (Agent Hub, A-Cell) -- deeper pages (Character
+    Sheet, Agent File, Notes) are reached the normal way, by clicking a
+    link inside whichever page is currently loaded, which just navigates
+    the iframe on its own (same-origin, no extra plumbing). This proves
+    that actually works end to end: click Agent Hub's own "Agent File"
+    button (real in-page markup, not the shell's nav) for a known Agent,
+    confirm the iframe followed it to dg-agent-portal.html WITHOUT the
+    outer shell page navigating at all (Table Radio/Dice Roller survive,
+    same proof as the swap test above), and that the nav still reads
+    this as "Agent Hub" territory rather than going blank."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    # JSONP-aware -- Agent Hub loads some data via a <script src=...
+    # &callback=...> tag, which executes the response as raw JS; a bare
+    # JSON body (not wrapped in the callback call) throws exactly the
+    # "Unexpected token ':'" a first pass at this stub hit.
+    def fake_hub_apps_script(route):
+        url = route.request.url
+        if "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
+    page.route("**/script.google.com/**", fake_hub_apps_script)
+    # add_init_script runs in every same-origin document this page
+    # loads, the content iframe included -- needed so Agent Hub's own
+    # roster (and its per-Agent "Agent File" link) actually renders
+    # something to click, same localStorage key test_agent_hub uses.
+    roster = {"OWEN-CS12": {"code": "OWEN-CS12", "char_name": "Owen Castillo", "codename": "Ferro",
+                             "sex": "Male", "age_range": "Late 30s", "nationality": "American", "saved_at": 2000}}
+    page.add_init_script(f"try {{ localStorage.setItem('dg_agent_roster', {json.dumps(json.dumps(roster))}); }} catch (e) {{}}")
+
+    page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function(
+        "() => { var f = document.getElementById('dg-shell-content'); "
+        "return f.contentDocument && f.contentDocument.readyState === 'complete'; }")
+    page.evaluate("""() => {
+        document.getElementById('dg-radio-pill').dataset.dgTestTag = 'radio-still-here';
+    }""")
+
+    # A real Agent File link, from inside the loaded Agent Hub page --
+    # any known agent code works, this is only proving the iframe
+    # follows a same-origin relative link on its own.
+    agent_file_href = page.eval_on_selector(
+        "#dg-shell-content",
+        "el => { var a = el.contentDocument.querySelector('a[href*=\"dg-agent-portal.html\"]'); "
+        "if (a) { a.target = ''; } return a && a.getAttribute('href'); }"
+    )
+    if not agent_file_href:
+        record("shell", "found an in-page Agent File link to click (roster has at least one Agent)", False, "no roster link found")
+        record("shell", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+        page.close()
+        return errs
+
+    page.eval_on_selector("#dg-shell-content", "el => { var a = el.contentDocument.querySelector('a[href*=\"dg-agent-portal.html\"]'); a.click(); }")
+    page.wait_for_function(
+        "() => { var f = document.getElementById('dg-shell-content'); "
+        "return f.contentDocument && f.contentDocument.readyState === 'complete' "
+        "&& /dg-agent-portal\\.html/.test(f.contentWindow.location.href); }")
+    page.wait_for_timeout(200)
+
+    record("shell", "clicking an in-page link (not the shell's own nav) still navigates the content iframe",
+           "dg-agent-portal.html" in page.eval_on_selector("#dg-shell-content", "el => el.contentWindow.location.href"), "")
+    record("shell", "the outer Table Radio pill is untouched by an in-page navigation too",
+           page.eval_on_selector("#dg-radio-pill", "el => el.dataset.dgTestTag") == "radio-still-here", "")
+    record("shell", "the nav still reads this as Agent Hub territory, not blank",
+           "dg-shell-nav-active" in (page.get_attribute('#dg-shell-nav button[data-target="agent-hub.html"]', "class") or ""), "")
+    record("shell", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
+def test_shell_back_link_exits_shell_entirely(p):
+    """A page's own "back to Clearance" link (href="index.html") must
+    NOT just navigate the content iframe when running inside hub.html's
+    shell -- index.html isn't part of the shell's own page set the way
+    Agent Hub/A-Cell/Notes/etc. are, so loading it inside #dg-shell-
+    content would trap the player on the Clearance chooser cramped
+    inside the shell's chrome, with no way back out short of a hard
+    reload. Fixed with target="_top" on that one <a> in agent-hub.html,
+    a-cell.html, and dg-agent-portal.html -- a no-op for a standalone
+    visit, but inside an iframe it forces the TOP-level browsing context
+    to navigate instead, closing the whole shell down to a real,
+    standalone index.html. Proven here by checking the outer page's own
+    URL actually changed (not just the iframe's) and #dg-shell-content
+    no longer exists at all."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function(
+        "() => { var f = document.getElementById('dg-shell-content'); "
+        "return f.contentDocument && f.contentDocument.readyState === 'complete'; }")
+
+    record("shell", "the back-link inside the loaded page has target=_top (breaks out of the shell)",
+           page.eval_on_selector("#dg-shell-content", "el => el.contentDocument.querySelector('a.back-link').target") == "_top", "")
+
+    with page.expect_navigation(url=lambda u: "index.html" in u, timeout=8000):
+        page.eval_on_selector("#dg-shell-content", "el => el.contentDocument.querySelector('a.back-link').click()")
+
+    record("shell", "the OUTER page itself navigated to index.html, not just the iframe",
+           "index.html" in page.url, "")
+    record("shell", "the shell's own chrome (content iframe) is gone -- this really left the shell, not just the visible page inside it",
+           page.locator("#dg-shell-content").count() == 0, "")
     record("shell", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
     return errs
@@ -7999,6 +8124,10 @@ def main():
         safe(test_table_radio_theme_consistent_style, browser, area="radio")
 
         safe(test_shell_content_swap_preserves_hoisted_widgets, browser, area="shell")
+
+        safe(test_shell_nav_tracks_in_page_navigation, browser, area="shell")
+
+        safe(test_shell_back_link_exits_shell_entirely, browser, area="shell")
 
         safe(test_agent_portal_code_query_param, browser, area="agent-portal")
 
