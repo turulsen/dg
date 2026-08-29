@@ -4497,10 +4497,16 @@ function autoGenerateEraPrompts(era) {
         if (afData) afData['era_' + era + '_mode0'] = json.prompt;
         persistAgent(afCode, afData);
       } else {
-        if (st0) st0.textContent = 'Error.';
+        // Was a bare "Error." with no way to tell a real failure apart
+        // from a rate limit (checkRateLimit_() in Code.gs, 10 prompt
+        // generations per 10 minutes per Agent -- easy to hit just from
+        // adding several eras at once, each needing up to two of these
+        // calls) -- surfaces json.message now, same as
+        // generatePlateImage()'s own error text already does.
+        if (st0) st0.textContent = 'Error: ' + (json.message || 'generation failed');
       }
     })
-    .catch(function() { if (st0) st0.textContent = 'Error.'; });
+    .catch(function() { if (st0) st0.textContent = 'Error: connection failed.'; });
   }
 
   // Generate Field Reference (mode: outfit = full body with outfit)
@@ -4521,10 +4527,11 @@ function autoGenerateEraPrompts(era) {
         if (afData) afData['era_' + era + '_mode1'] = json.prompt;
         persistAgent(afCode, afData);
       } else {
-        if (st1) st1.textContent = 'Error.';
+        // See the mode0 branch above's comment -- same fix.
+        if (st1) st1.textContent = 'Error: ' + (json.message || 'generation failed');
       }
     })
-    .catch(function() { if (st1) st1.textContent = 'Error.'; });
+    .catch(function() { if (st1) st1.textContent = 'Error: connection failed.'; });
   }
 }
 
