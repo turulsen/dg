@@ -77,11 +77,81 @@
   // forever after; a self-rescheduling setTimeout with jitter spreads
   // that back out. Still slower than Table Radio's own poll -- note
   // content changes far less often than "what's playing".
-  const POLL_MS = 8000;
-  const POLL_JITTER_MS = 2000;
+  // Phase 5 (Firebase migration): note CONTENT itself is now a live
+  // Firestore onSnapshot listener (see startNotesListeners() in init()),
+  // not this poll -- this interval now only refreshes identities/colors
+  // (which change rarely) and the Evidence sidebar (list_evidence, not
+  // yet on Firestore). Widened well past the old 8s now that it's no
+  // longer the thing that makes a Cell-mate's new note show up.
+  const POLL_MS = 30000;
+  const POLL_JITTER_MS = 4000;
   const SAVE_DEBOUNCE_MS = 1200; // matches agent-hub.html's scheduleNoteSave() convention
   const SHARED_TAB = '__shared__'; // pseudo agent_code, never a real one -- selects the combined tab
   const HEADER_LEVELS = [1, 2]; // keeps the existing H1/H2-only vocabulary rather than Editor.js's default 1-6
+
+  const FIREBASE_SDK_VERSION = '12.18.0';
+  const FIREBASE_CONFIG = {
+    apiKey: 'AIzaSyBiFBvgmrjtacxXvh7FHa9a28BbwV0LnDQ',
+    authDomain: 'dg-app-b3447.firebaseapp.com',
+    projectId: 'dg-app-b3447',
+    storageBucket: 'dg-app-b3447.firebasestorage.app',
+    messagingSenderId: '464997490443',
+    appId: '1:464997490443:web:dad47a347ae7a64a9e4c0e'
+  };
+  // Same on-demand loader shape as assets/dice-roller.js -- Notes lives
+  // on its own standalone page (notes/index.html) with no other widget
+  // to share an already-loaded SDK with, but auth+firestore only (no
+  // functions needed beyond exchangeAgentToken's own httpsCallable,
+  // which functions-compat provides).
+  let firebaseApiLoading = false;
+  let firebaseApiCallbacks = [];
+  function loadFirebaseScript_(src, cb) {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = cb;
+    document.head.appendChild(s);
+  }
+  function ensureFirebaseApi(cb) {
+    const ready = () => window.firebase && window.firebase.firestore && window.firebase.auth && window.firebase.functions;
+    if (ready()) { cb(); return; }
+    firebaseApiCallbacks.push(cb);
+    if (firebaseApiLoading) return;
+    firebaseApiLoading = true;
+    const base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/';
+    loadFirebaseScript_(base + 'firebase-app-compat.js', () => {
+      loadFirebaseScript_(base + 'firebase-firestore-compat.js', () => {
+        if (!window.firebase.apps.length) window.firebase.initializeApp(FIREBASE_CONFIG);
+        loadFirebaseScript_(base + 'firebase-auth-compat.js', () => {
+          loadFirebaseScript_(base + 'firebase-functions-compat.js', () => {
+            const cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
+            cbs.forEach(fn => fn());
+          });
+        });
+      });
+    });
+  }
+  // Mints a Firebase sign-in from just the Agent Code (exchangeAgentToken
+  // -- no real per-Agent secret, see that function's own comment) --
+  // same shape as dice-roller.js's ensureAgentSignedIn(), duplicated
+  // rather than shared since these are two entirely separate page
+  // contexts with no existing shared-state convention between them.
+  let _authPromise = null;
+  let _authedCode = null;
+  function ensureAgentSignedIn(agentCode) {
+    if (_authPromise && _authedCode === agentCode) return _authPromise;
+    _authedCode = agentCode;
+    _authPromise = new Promise((resolve, reject) => {
+      ensureFirebaseApi(() => {
+        const auth = window.firebase.auth();
+        if (auth.currentUser) { resolve(auth.currentUser); return; }
+        window.firebase.functions().httpsCallable('exchangeAgentToken')({ agent_code: agentCode })
+          .then(result => auth.signInWithCustomToken(result.data.token))
+          .then(cred => resolve(cred.user))
+          .catch(err => { _authPromise = null; reject(err); });
+      });
+    });
+    return _authPromise;
+  }
 
   // Each Agent picks one of these once -- their "ink" -- to mark their
   // contributions in the combined Shared feed and on their own tab.
@@ -436,17 +506,49 @@
       document.head.appendChild(s);
     }
 
-    function fetchEvidence() {
+    // Evidence content itself (Phase 5) is a live Firestore listener --
+    // same visible_to array-contains-any([myCode,'ALL']) pattern
+    // agent-hub.html's loadHandouts() and a-cell.html's Evidence Locker
+    // use, see evidenceVisibleTo_()'s own comment in Code.gs. "Seen"
+    // status stays a slow poll (fetchEvidenceSeen() below) -- it's
+    // mutated optimistically client-side the moment you actually open an
+    // item (see markEvidenceSeen()), so a periodic re-fetch only matters
+    // for catching up across devices, not for feeling live.
+    let evidenceListenerStarted = false;
+    let _evidenceUnsub = null;
+    function startEvidenceListener() {
+      if (evidenceListenerStarted || !agentCode) return;
+      evidenceListenerStarted = true;
+      ensureAgentSignedIn(agentCode).then(() => {
+        _evidenceUnsub = window.firebase.firestore().collection('evidence')
+          .where('visible_to', 'array-contains-any', [agentCode, 'ALL'])
+          .onSnapshot(snap => {
+            const items = [];
+            snap.forEach(doc => {
+              const d = doc.data();
+              items.push({
+                evidence_id: doc.id, title: d.title || '', body: d.body || '',
+                photo: d.photo || '', cell_id: d.cell_id || '', created_at: d.created_at || 0
+              });
+            });
+            evidenceItems = items.sort((a, b) => Number(b.created_at) - Number(a.created_at));
+            refreshEvidenceSidebar();
+            // Keeps an already-open detail modal in sync -- a Cell-mate's
+            // new remark should show up without having to close and
+            // reopen it.
+            if (evidenceModalEl) renderEvidenceModalBody_(evidenceModalEl.dataset.evidenceId);
+          }, err => console.error('notes: evidence listener error', err));
+      }).catch(err => {
+        console.error('notes: evidence sign-in failed', err);
+        evidenceListenerStarted = false; // allow a retry on the next pollTick_
+      });
+    }
+    function fetchEvidenceSeen() {
       if (!cellId) return;
       jsonpGet('list_evidence', { agent_code: agentCode, token: agentToken }, res => {
-        if (!res || res.status !== 'OK' || !Array.isArray(res.evidence)) return;
-        evidenceItems = res.evidence.slice().sort((a, b) => Number(b.created_at) - Number(a.created_at));
-        evidenceSeenMap = res.seen || {};
+        if (!res || res.status !== 'OK') return;
+        evidenceSeenMap = res.seen || evidenceSeenMap;
         refreshEvidenceSidebar();
-        // Keeps an already-open detail modal in sync with a fresh poll
-        // -- a Cell-mate's new remark should show up without having to
-        // close and reopen it.
-        if (evidenceModalEl) renderEvidenceModalBody_(evidenceModalEl.dataset.evidenceId);
       });
     }
 
@@ -1304,63 +1406,98 @@
       refreshChrome();
     }
 
-    /* ── Polling: refreshes everyone else's data (and your own row's
-       server-echoed metadata, harmlessly) every 5s. Never touches the
-       live editor instance or re-renders the shell -- only the TOC/
-       tab-dot chrome and, if you're not on your own tab, the read-only
-       feed. Your own tab's actual content is only ever written by
-       YOU, through the editor's own onChange -- there's no merge race
-       to defend against anymore, because a background poll's data is
-       never fed back into the one place you could be actively typing. ── */
-    // mountEditor() necessarily mounts your own tab's live editor
-    // BEFORE the first fetchNotes() has ever resolved (render() runs
-    // synchronously in init(), fetchNotes() is async) -- so the very
-    // first time it mounts, it's always empty, regardless of whatever
-    // you'd already saved in a previous session. Tracks whether that
-    // first fetch has landed yet, so fetchNotes() below can tell "the
-    // editor is empty because nothing's loaded yet" apart from "the
-    // editor already has your real, possibly-just-typed content."
-    let ownDataLoaded = false;
+    /* ── Note CONTENT (Phase 5, Firebase migration): two live Firestore
+       onSnapshot listeners against cells/{cellId}/notes, replacing the
+       old poll entirely -- a "shared==true" query (every other member's
+       circulated blocks) and an "agent_code==mine" query (all of my own,
+       shared or not), the same split-query shape dice-roller.js already
+       uses for Agent-vs-Handler roll history, needed because Firestore
+       can only prove a LIST query safe when its security rule checks
+       the exact field the query already filtered on -- a single mixed
+       query couldn't be proven safe against a privacy rule that depends
+       on WHICH agent is asking. Writes are unchanged: still
+       save_note_block/delete_note_block through Code.gs (see
+       scheduleNoteSave_() etc. below), which dual-writes into the same
+       collection these listeners watch. identities/Evidence still poll
+       -- see fetchIdentities()/fetchEvidence() below pollTick_(). ── */
+    let ownDataLoaded = false; // has the "mine" listener fired at least once yet
+    let _ownBlocksById = {};
+    let _sharedBlocksById = {};
+    let _notesUnsubOwn = null;
+    let _notesUnsubShared = null;
 
-    function fetchNotes() {
+    function firestoreRowToBlock_(doc) {
+      const row = doc.data();
+      const b = parseStoredBlock(row.block_type, row.text);
+      let tags = [];
+      try { tags = JSON.parse(row.tags || '[]'); } catch (e) { tags = []; }
+      return {
+        block_id: doc.id, agent_code: row.agent_code, type: b.type, data: b.data,
+        shared: !!row.shared, pinned: !!row.pinned, tags: tags,
+        sort_order: row.sort_order, created_at: row.created_at, updated_at: row.updated_at,
+      };
+    }
+
+    // Rebuilds notesByCode from the union of both live listener maps
+    // (own wins on conflict -- both maps can hold the same block_id when
+    // one of your own blocks is Circulated, but "mine" is always at
+    // least as fresh) and re-renders. Your own tab's live Editor.js
+    // instance is the source of truth once it's actually holding your
+    // real data, same reasoning the old poll's isFirstLoad skip had --
+    // a listener firing again (someone else's block changed, or your
+    // own write echoing back) must never silently replace what's live
+    // in the editor out from under its own bookkeeping.
+    function rebuildNotesAndRender_() {
+      const merged = Object.assign({}, _sharedBlocksById, _ownBlocksById);
+      const grouped = {};
+      Object.keys(merged).forEach(id => {
+        const b = merged[id];
+        (grouped[b.agent_code] || (grouped[b.agent_code] = [])).push(b);
+      });
+      if (activeCode === agentCode && editorInstance && ownDataLoaded) {
+        grouped[agentCode] = notesByCode[agentCode];
+      }
+      notesByCode = grouped;
+      refreshChrome();
+      if (activeCode !== agentCode) refreshReadOnlyFeed();
+    }
+
+    function startNotesListeners() {
+      if (!cellId) return;
+      ensureAgentSignedIn(agentCode).then(() => {
+        const col = window.firebase.firestore().collection('cells').doc(cellId).collection('notes');
+        _notesUnsubShared = col.where('shared', '==', true).onSnapshot(snap => {
+          snap.docChanges().forEach(ch => { if (ch.type === 'removed') delete _sharedBlocksById[ch.doc.id]; });
+          snap.forEach(doc => { _sharedBlocksById[doc.id] = firestoreRowToBlock_(doc); });
+          rebuildNotesAndRender_();
+        }, err => console.error('notes: shared listener error', err));
+        _notesUnsubOwn = col.where('agent_code', '==', agentCode).onSnapshot(snap => {
+          snap.docChanges().forEach(ch => { if (ch.type === 'removed') delete _ownBlocksById[ch.doc.id]; });
+          snap.forEach(doc => { _ownBlocksById[doc.id] = firestoreRowToBlock_(doc); });
+          const isFirstOwnLoad = !ownDataLoaded;
+          rebuildNotesAndRender_();
+          if (isFirstOwnLoad) {
+            ownDataLoaded = true;
+            if (activeCode === agentCode && editorInstance) loadOwnBlocksIntoEditor();
+          }
+        }, err => console.error('notes: own listener error', err));
+      }).catch(err => console.error('notes: sign-in failed', err));
+    }
+    function stopNotesListeners() {
+      if (_notesUnsubShared) { _notesUnsubShared(); _notesUnsubShared = null; }
+      if (_notesUnsubOwn) { _notesUnsubOwn(); _notesUnsubOwn = null; }
+    }
+
+    // Identities (author color/font) still poll -- low-churn data (an
+    // Agent picks these once), not worth a third listener. Reuses
+    // list_cell_notes purely for its bundled identities map, discarding
+    // res.notes now that the two listeners above own note content.
+    function fetchIdentities() {
       if (!cellId) return;
       jsonpGet('list_cell_notes', { cell_id: cellId, agent_code: agentCode, token: agentToken }, res => {
         if (!res || res.status !== 'OK') return;
-        const incoming = res.notes || {};
-        const parsed = {};
-        Object.keys(incoming).forEach(code => {
-          parsed[code] = (incoming[code] || []).map(row => {
-            const b = parseStoredBlock(row.block_type, row.text);
-            let tags = [];
-            try { tags = JSON.parse(row.tags || '[]'); } catch (e) { tags = []; }
-            return {
-              block_id: row.block_id, agent_code: row.agent_code, type: b.type, data: b.data,
-              shared: !!row.shared, pinned: !!row.pinned, tags: tags,
-              sort_order: row.sort_order, created_at: row.created_at, updated_at: row.updated_at,
-            };
-          });
-        });
-        const isFirstLoad = !ownDataLoaded;
-        ownDataLoaded = true;
-        // Your own tab's live document is the source of truth once
-        // it's actually holding your real data -- don't let a LATER
-        // poll's (possibly-lagging) echo of your own writes overwrite
-        // notesByCode[agentCode] out from under the editor's own
-        // bookkeeping. The very first fetch is different: the editor
-        // was necessarily mounted empty (see ownDataLoaded's own
-        // comment above), so this one time the server's copy IS what
-        // needs to end up on screen -- skipping it here silently made
-        // every previously-saved note vanish from its own author's
-        // view the moment they reopened Notes (still safe server-side,
-        // and still visible to every other Cell member's own client,
-        // just gone from the one screen a returning player actually
-        // looks at, effectively a false "did I lose everything?" scare).
-        if (!isFirstLoad && activeCode === agentCode && editorInstance) delete parsed[agentCode];
-        Object.assign(notesByCode, parsed);
         identities = res.identities || identities;
-        if (isFirstLoad && activeCode === agentCode && editorInstance) loadOwnBlocksIntoEditor();
         refreshChrome();
-        if (activeCode !== agentCode) refreshReadOnlyFeed();
       });
     }
 
@@ -1400,8 +1537,9 @@
     }
 
     function pollTick_() {
-      fetchNotes();
-      fetchEvidence();
+      fetchIdentities();
+      fetchEvidenceSeen();
+      startEvidenceListener(); // no-op once already attached; retries a failed sign-in
     }
     function scheduleNextPoll_() {
       pollTimer = setTimeout(function () {
@@ -1419,12 +1557,16 @@
     }
 
     render();
+    startNotesListeners();
     pollTick_();
     startPolling();
 
     return {
       refresh: pollTick_,
-      destroy: () => { stopPolling(); closeEvidenceModal(); unmountEditor(); },
+      destroy: () => {
+        stopPolling(); stopNotesListeners(); closeEvidenceModal(); unmountEditor();
+        if (_evidenceUnsub) { _evidenceUnsub(); _evidenceUnsub = null; }
+      },
     };
   }
 

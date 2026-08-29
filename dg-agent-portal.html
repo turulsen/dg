@@ -2774,13 +2774,94 @@ function idsReset() {
 
 /* ── PHOTO ── */
 let photoDataUrl = null;
+// Separate from photoDataUrl, which also gets populated when an
+// existing Agent's data is restored/loaded (a gdrive: link resolved to
+// a preview data URI, see the restore path's own comment) -- this one
+// is set ONLY when the player actually picks a NEW file this session,
+// which is what decides whether handleSubmit() below needs to upload
+// anything at all.
+let refImageFile = null;
 document.getElementById('ref-img').addEventListener('change', async function() {
   if (this.files[0]) {
+    refImageFile = this.files[0];
     photoDataUrl = await f2b(this.files[0]);
     const p = document.getElementById('upload-prev');
     p.src = photoDataUrl; p.style.display = 'block';
   }
 });
+
+/* ── Firebase Storage: direct client upload for the reference photo
+   (Phase 4). Self-contained copy of the same loader/sign-in pattern
+   assets/dice-roller.js and a-cell.html's own script sections each
+   already use independently. Signs in as the AGENT (not the Handler --
+   this form has no Handler context at all), reusing the already-live
+   exchangeAgentToken function Dice Roller's own Agent sign-in already
+   calls; matches this whole migration's real security posture
+   (requireAgentToken_() in Code.gs is a deliberate no-op -- see its own
+   comment there), not a new hole. ── */
+var FIREBASE_SDK_VERSION = '12.18.0';
+var FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyBiFBvgmrjtacxXvh7FHa9a28BbwV0LnDQ',
+  authDomain: 'dg-app-b3447.firebaseapp.com',
+  projectId: 'dg-app-b3447',
+  storageBucket: 'dg-app-b3447.firebasestorage.app',
+  messagingSenderId: '464997490443',
+  appId: '1:464997490443:web:dad47a347ae7a64a9e4c0e'
+};
+var firebaseApiLoading = false;
+var firebaseApiCallbacks = [];
+function loadFirebaseScriptTag(src, cb) {
+  var s = document.createElement('script');
+  s.src = src;
+  s.onload = cb;
+  document.head.appendChild(s);
+}
+function ensureFirebaseApi(cb) {
+  var ready = function () { return window.firebase && window.firebase.storage && window.firebase.auth && window.firebase.functions; };
+  if (ready()) { cb(); return; }
+  firebaseApiCallbacks.push(cb);
+  if (firebaseApiLoading) return;
+  firebaseApiLoading = true;
+  var base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/';
+  var loadIfMissing = function (check, url, next) { if (check()) { next(); } else { loadFirebaseScriptTag(url, next); } };
+  loadIfMissing(function () { return window.firebase && window.firebase.apps; }, base + 'firebase-app-compat.js', function () {
+    if (!window.firebase.apps.length) window.firebase.initializeApp(FIREBASE_CONFIG);
+    loadIfMissing(function () { return !!window.firebase.auth; }, base + 'firebase-auth-compat.js', function () {
+      loadIfMissing(function () { return !!window.firebase.functions; }, base + 'firebase-functions-compat.js', function () {
+        loadIfMissing(function () { return !!window.firebase.storage; }, base + 'firebase-storage-compat.js', function () {
+          var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
+          cbs.forEach(function (fn) { fn(); });
+        });
+      });
+    });
+  });
+}
+var _agentAuthPromise = null;
+var _agentAuthCode = null;
+function ensureAgentSignedIn(agentCode) {
+  // Re-signs in if a DIFFERENT Agent Code shows up (e.g. this same tab
+  // submits a second, unrelated brief) -- a memoized promise keyed to
+  // whichever code signed in first would otherwise silently keep using
+  // the wrong identity for every Agent after the first one.
+  if (_agentAuthPromise && _agentAuthCode === agentCode) return _agentAuthPromise;
+  _agentAuthCode = agentCode;
+  _agentAuthPromise = new Promise(function (resolve, reject) {
+    ensureFirebaseApi(function () {
+      var auth = window.firebase.auth();
+      window.firebase.functions().httpsCallable('exchangeAgentToken')({ agent_code: agentCode })
+        .then(function (result) { return auth.signInWithCustomToken(result.data.token); })
+        .then(function (cred) { resolve(cred.user); })
+        .catch(function (err) { _agentAuthPromise = null; reject(err); });
+    });
+  });
+  return _agentAuthPromise;
+}
+function extensionForFile_(file) {
+  var type = file.type || '';
+  if (type.indexOf('image/') === 0) return '.' + type.slice('image/'.length);
+  var m = /\.[a-z0-9]+$/i.exec(file.name || '');
+  return m ? m[0] : '';
+}
 
 /* ── CODE GENERATION -- shared with stats/cloud-sync.js and
    stats/agent-portal-export.js via assets/agent-code.js ── */
@@ -2822,14 +2903,11 @@ async function handleSubmit() {
 
   const btn = document.getElementById('submit-btn');
   const status = document.getElementById('form-status');
+  const originalBtnLabel = btn.textContent;
   btn.disabled=true; status.className=''; status.textContent='Transmitting...';
   const payload={};
   new FormData(document.getElementById('dg-form')).forEach((v,k)=>{ payload[k]=v; });
   payload.submitted_at = new Date().toISOString();
-  if (photoDataUrl) {
-    payload.ref_image_base64 = photoDataUrl;
-    payload.ref_image_name = document.getElementById('ref-img').files[0]?.name||'photo.jpg';
-  }
   // Reuse this Agent's existing code only if the form is actually still
   // describing THAT Agent (same char_name) -- afCode alone isn't a safe
   // signal, since autoRestore() silently loads the last-active Agent's
@@ -2851,7 +2929,32 @@ async function handleSubmit() {
   // report: two separate files (a Characters row and a Briefs row) for
   // what should have been one Agent.
   const rosterCode = sameAgent ? null : findRosterCodeByName(payload.char_name);
+  // Resolved BEFORE any photo upload now (Phase 4) -- moved ahead of
+  // where it used to sit, since the Storage path
+  // (agent-refs/{agentCode}.{ext}) needs this Agent Code known up
+  // front, same reasoning as a-cell.html's Evidence/Track Library
+  // uploads needing their own id minted before the upload starts.
+  // genCode() (assets/agent-code.js) already exists specifically so a
+  // brand-new Agent's code is known client-side before this point --
+  // this form never actually relied on Code.gs's own server-side
+  // auto-generation branch to begin with.
   const agentCode = sameAgent ? afCode : (rosterCode || genCode(payload.char_name));
+  if (refImageFile) {
+    status.textContent = 'Uploading photo…';
+    btn.textContent = 'Uploading…';
+    try {
+      const user = await ensureAgentSignedIn(agentCode);
+      const path = 'agent-refs/' + agentCode + extensionForFile_(refImageFile);
+      const snapshot = await window.firebase.storage().ref(path).put(refImageFile, { contentType: refImageFile.type || 'image/jpeg' });
+      payload.ref_storage_url = await snapshot.ref.getDownloadURL();
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = originalBtnLabel;
+      status.className = '';
+      status.textContent = 'Could not upload the photo: ' + ((err && err.message) || 'unknown error') + ' -- try again.';
+      return;
+    }
+  }
   payload.agent_code = agentCode;
   persistAgent(agentCode, payload);
   afCode = agentCode;
@@ -2983,6 +3086,7 @@ function resetForm(){
   document.getElementById('form-status').textContent='';
   document.getElementById('upload-prev').style.display='none';
   photoDataUrl=null;
+  refImageFile=null;
   window.scrollTo(0,0);
 }
 function printDossier(){
@@ -3950,11 +4054,25 @@ function renderEraStack(eras, data) {
   const eraDecade = {'90s':'1990s','00s':'2000s','10s':'2010s','20s':'2020s'};
 
   eras.forEach((era, idx) => {
-    // Flat sheet columns are the source of truth for now — era-specific cols added later
-    const faceUrl = driveDirectUrl(data['era_' + era + '_face_url'] || data.face_plate_url || '');
-    const outfitUrl = driveDirectUrl(data['era_' + era + '_outfit_url'] || data.outfit_plate_url || '');
-    const mode0 = data['era_' + era + '_mode0'] || data.mode0_prompt || '';
-    const mode1 = data['era_' + era + '_mode1'] || data.mode1_prompt || '';
+    // Era-specific columns are the source of truth now (every write path
+    // writes these); the flat face_plate_url/outfit_plate_url/mode0_prompt/
+    // mode1_prompt columns are only a fallback, for any Agent whose Plates/
+    // prompts were generated before the era Plate/prompt data collision fix.
+    // Gated to idx === 0 (the first/only era on the accordion) -- a
+    // pre-fix Agent only ever had ONE era, always eras[0], so that's the
+    // only era the flat legacy value could actually belong to. Every
+    // era added after that is necessarily a genuinely new one (added
+    // post-fix, since adding an era at all requires this very page); a
+    // second+ era falling back to the same flat value made a brand-new,
+    // still-blank era look like it already had a real Face Plate or
+    // prompt, live-reported as "the face plate still loads in to the
+    // latest added era" -- same underlying flaw, image side, permanent
+    // instead of a self-correcting flash the way prompts' own auto-
+    // generate guard already handles (see that guard's own comment).
+    const faceUrl = driveDirectUrl(data['era_' + era + '_face_url'] || (idx === 0 ? data.face_plate_url : '') || '');
+    const outfitUrl = driveDirectUrl(data['era_' + era + '_outfit_url'] || (idx === 0 ? data.outfit_plate_url : '') || '');
+    const mode0 = data['era_' + era + '_mode0'] || (idx === 0 ? data.mode0_prompt : '') || '';
+    const mode1 = data['era_' + era + '_mode1'] || (idx === 0 ? data.mode1_prompt : '') || '';
     const isOpen = idx === 0;
 
     const item = document.createElement('div');
@@ -4002,7 +4120,7 @@ function renderEraStack(eras, data) {
       + '<div style="display:flex;gap:8px;margin-top:4px;">'
       + '<button data-era="' + era + '" data-mode="mode0" onclick="saveEraPrompt(this)" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:#1c1608;color:#f4eed8;border:none;padding:4px 10px;cursor:pointer;">Save</button>'
       + '<button data-target="prompt-mode0-' + era + '" onclick="copyPrompt(this.dataset.target)" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:transparent;color:#4a3f28;border:1px solid rgba(160,130,70,.35);padding:4px 10px;cursor:pointer;">Copy</button>'
-      + '<button data-era="' + era + '" data-mode="mode0" onclick="generatePlateImage(this.dataset.era,this.dataset.mode)" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:transparent;color:#8b1a1a;border:1px solid rgba(139,26,26,.4);padding:4px 10px;cursor:pointer;">Generate Image</button>'
+      + '<button data-era="' + era + '" data-mode="mode0" onclick="generatePlateImage(this.dataset.era,this.dataset.mode,this)" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:transparent;color:#8b1a1a;border:1px solid rgba(139,26,26,.4);padding:4px 10px;cursor:pointer;">Generate Image</button>'
       + '<span id="prompt-mode0-status-' + era + '" style="font-family:Courier Prime,monospace;font-size:9px;font-style:italic;color:#8a7a5a;align-self:center;"></span>'
       + '</div>'
       + '</div>'
@@ -4012,7 +4130,7 @@ function renderEraStack(eras, data) {
       + '<div style="display:flex;gap:8px;margin-top:4px;">'
       + '<button data-era="' + era + '" data-mode="mode1" onclick="saveEraPrompt(this)" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:#1c1608;color:#f4eed8;border:none;padding:4px 10px;cursor:pointer;">Save</button>'
       + '<button data-target="prompt-mode1-' + era + '" onclick="copyPrompt(this.dataset.target)" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:transparent;color:#4a3f28;border:1px solid rgba(160,130,70,.35);padding:4px 10px;cursor:pointer;">Copy</button>'
-      + '<button data-era="' + era + '" data-mode="mode1" onclick="generatePlateImage(this.dataset.era,this.dataset.mode)" title="' + (faceUrl ? 'Uses the Face Plate as a reference for character consistency' : 'Generate a Face Plate first -- the Outfit Plate uses it as a reference') + '" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:transparent;color:#8b1a1a;border:1px solid rgba(139,26,26,.4);padding:4px 10px;cursor:pointer;' + (faceUrl ? '' : 'opacity:.5;') + '">Generate Image</button>'
+      + '<button data-era="' + era + '" data-mode="mode1" onclick="generatePlateImage(this.dataset.era,this.dataset.mode,this)" title="' + (faceUrl ? 'Uses the Face Plate as a reference for character consistency' : 'Generate a Face Plate first -- the Outfit Plate uses it as a reference') + '" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:transparent;color:#8b1a1a;border:1px solid rgba(139,26,26,.4);padding:4px 10px;cursor:pointer;' + (faceUrl ? '' : 'opacity:.5;') + '">Generate Image</button>'
       + '<span id="prompt-mode1-status-' + era + '" style="font-family:Courier Prime,monospace;font-size:9px;font-style:italic;color:#8a7a5a;align-self:center;"></span>'
       + '</div>'
       + '</div>'
@@ -4032,8 +4150,16 @@ function renderEraStack(eras, data) {
     stack.appendChild(item);
     if (faceUrl) loadDriveImage(faceUrl, 'img-face-' + era);
     if (outfitUrl) loadDriveImage(outfitUrl, 'img-outfit-' + era);
-    // Auto-generate prompts if missing
-    if (!mode0 || !mode1) {
+    // Auto-generate prompts if missing -- checks THIS era's own columns
+    // directly, not the mode0/mode1 fallback value used for display
+    // above. That fallback exists so an Agent's pre-fix era still shows
+    // its real legacy prompt; but for a genuinely NEW era with no
+    // era-specific data yet, the same fallback would resolve to some
+    // OTHER (unrecorded) era's stale flat value, make this check think
+    // data already exists, and permanently skip generation -- the exact
+    // cross-era leak this whole fix exists to prevent, just reached
+    // through the read fallback instead of the old write collision.
+    if (!data['era_' + era + '_mode0'] || !data['era_' + era + '_mode1']) {
       (function(capturedEra) {
         setTimeout(function() { autoGenerateEraPrompts(capturedEra); }, 500 + idx * 200);
       })(era);
@@ -4069,41 +4195,69 @@ function eraDataField(key, val) {
 
 /* ── Handle plate image upload ── */
 function handlePlateUpload(input, era, type) {
-  if (!input.files[0] || !afCode) return;
+  if (!input.files[0] || !afCode || input.disabled) return;
   const file = input.files[0];
   const r = new FileReader();
   r.onload = e => {
     const lbl = input.previousElementSibling;
-    if (lbl) lbl.textContent = type === 'face' ? 'Replace Face Plate' : 'Replace Outfit Plate';
-    saveGeneratedPlate(e.target.result, era, type, type + '_' + era + '_' + file.name);
+    const doneLabel = type === 'face' ? 'Replace Face Plate' : 'Replace Outfit Plate';
+    input.disabled = true;
+    if (lbl) lbl.textContent = 'Uploading…';
+    saveGeneratedPlate(e.target.result, era, type, type + '_' + era + '_' + file.name).then(function() {
+      input.disabled = false;
+      if (lbl) lbl.textContent = doneLabel;
+    }).catch(function() {
+      input.disabled = false;
+      if (lbl) lbl.textContent = doneLabel;
+    });
   };
   r.readAsDataURL(file);
 }
 
 // Shared by both a manual upload (above) and a Gemini-generated image
 // (generatePlateImage() below) -- shows the image immediately, then
-// saves it through the one existing save_plate action so there's a
-// single Drive-upload/Sheet-write code path regardless of where the
-// image came from.
+// uploads it to Firebase Storage (Phase 4) and saves the resulting URL
+// through the existing save_plate action, one path regardless of
+// whether the image came from a file picker or Gemini. Returns the
+// Promise chain (previously fire-and-forget with no return value) so a
+// caller that wants to guard against a double-submit -- Storage upload
+// makes this take noticeably longer than the old plain POST did -- can
+// wait for it, same reasoning as a-cell.html's Evidence/Track Library
+// upload buttons after a live double-submit report there.
 function saveGeneratedPlate(dataUrl, era, type, imageName) {
   const box = document.getElementById('plate-' + type + '-' + era);
   if (box) box.innerHTML = '<img src="' + dataUrl + '" style="width:100%;display:block;object-fit:cover;object-position:top center;">';
   if (type === 'face') afRecentFacePlateDataUri[era] = dataUrl;
-  const fieldKey = type === 'face' ? 'face_plate_url' : 'outfit_plate_url';
+  // Era-specific (era Plate/prompt data collision fix) -- the old flat
+  // face_plate_url/outfit_plate_url was shared by every era, so adding
+  // a second era silently overwrote the first era's Plate.
+  const fieldKey = 'era_' + era + '_' + (type === 'face' ? 'face_url' : 'outfit_url');
   const charName = afData ? afData.char_name || afCode : afCode;
-  fetch(APPS_SCRIPT_URL, {
-    method: 'POST', mode: 'no-cors',
-    headers: {'Content-Type':'text/plain'},
-    body: JSON.stringify({
-      action: 'save_plate',
-      agent_code: afCode,
-      token: agentToken(afCode),
-      field: fieldKey,
-      image_base64: dataUrl,
-      image_name: imageName || (type + '_' + era + '_generated.png'),
-      char_name: charName
-    })
-  }).catch(e => console.error('Plate save:', e));
+  const mime = dataUrl.split(';')[0].split(':')[1] || 'image/png';
+  const ext = '.' + (mime.split('/')[1] || 'png');
+  return ensureAgentSignedIn(afCode).then(function () {
+    return fetch(dataUrl);
+  }).then(function (res) {
+    return res.blob();
+  }).then(function (blob) {
+    return window.firebase.storage().ref('agent-plates/' + afCode + '-' + type + '-' + era + ext).put(blob, { contentType: mime });
+  }).then(function (snapshot) {
+    return snapshot.ref.getDownloadURL();
+  }).then(function (storageUrl) {
+    return fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors',
+      headers: {'Content-Type':'text/plain'},
+      body: JSON.stringify({
+        action: 'save_plate',
+        agent_code: afCode,
+        token: agentToken(afCode),
+        field: fieldKey,
+        storage_url: storageUrl,
+        image_name: imageName || (type + '_' + era + '_generated.png'),
+        char_name: charName
+      })
+    });
+  }).catch(e => { console.error('Plate save:', e); throw e; });
 }
 
 // Renders a Face/Outfit Plate image server-side (Gemini) from whatever's
@@ -4134,7 +4288,8 @@ function fetchDriveImageAsDataUri(url) {
   });
 }
 
-function generatePlateImage(era, mode) {
+function generatePlateImage(era, mode, btn) {
+  if (btn && btn.disabled) return;
   const type = mode === 'mode0' ? 'face' : 'outfit';
   const ta = document.getElementById('prompt-' + mode + '-' + era);
   const st = document.getElementById('prompt-' + mode + '-status-' + era);
@@ -4142,7 +4297,15 @@ function generatePlateImage(era, mode) {
   const prompt = ta.value.trim();
   if (!prompt) { if (st) st.textContent = 'Write or generate a prompt first.'; return; }
 
-  const faceUrl = afData ? (afData['era_' + era + '_face_url'] || afData.face_plate_url || '') : '';
+  // Same idx===0 gating as renderEraStack()'s own display fallback (see
+  // its comment) -- afEraPages[0] is the first/only era on a pre-fix
+  // Agent, the only one the flat legacy face_plate_url could actually
+  // belong to. Without this, generating an Outfit Plate for a second+
+  // era (still genuinely blank) would silently pass this era's own
+  // "no Face Plate yet" gate using some OTHER era's leftover face as
+  // the reference -- wrong likeness, and the gate meant to prevent
+  // exactly that never fires.
+  const faceUrl = afData ? (afData['era_' + era + '_face_url'] || (afEraPages[0] === era ? afData.face_plate_url : '') || '') : '';
   const recentFaceDataUri = afRecentFacePlateDataUri[era];
 
   // Outfit Plate depends on the Face Plate for likeness -- require it to
@@ -4155,6 +4318,14 @@ function generatePlateImage(era, mode) {
 
   if (st) st.textContent = 'Generating image…';
 
+  // Guard against a double-submit -- this now includes a Storage upload
+  // (saveGeneratedPlate()) after the Gemini call, the same slow-async +
+  // easy-to-miss-status combination that caused real duplicate uploads
+  // on a-cell.html's Evidence form.
+  const btnLabel = btn ? btn.textContent : null;
+  if (btn) { btn.disabled = true; btn.textContent = 'Working…'; }
+  function reenable() { if (btn) { btn.disabled = false; btn.textContent = btnLabel; } }
+
   const payload = { action: 'generate_plate_image', agent_code: afCode, token: agentToken(afCode), prompt: prompt };
 
   function send() {
@@ -4166,13 +4337,16 @@ function generatePlateImage(era, mode) {
     .then(function(r) { return r.json(); })
     .then(function(json) {
       if (json.status === 'OK' && json.image_base64) {
-        saveGeneratedPlate(json.image_base64, era, type);
-        if (st) { st.textContent = 'Image generated.'; setTimeout(function(){ st.textContent=''; }, 3000); }
-      } else if (st) {
-        st.textContent = 'Error: ' + (json.message || 'generation failed');
+        return saveGeneratedPlate(json.image_base64, era, type).then(function() {
+          if (st) { st.textContent = 'Image generated.'; setTimeout(function(){ st.textContent=''; }, 3000); }
+          reenable();
+        });
+      } else {
+        if (st) st.textContent = 'Error: ' + (json.message || 'generation failed');
+        reenable();
       }
     })
-    .catch(function() { if (st) st.textContent = 'Error.'; });
+    .catch(function() { if (st) st.textContent = 'Error.'; reenable(); });
   }
 
   if (type === 'outfit') {
@@ -4214,6 +4388,50 @@ function generatePlateImage(era, mode) {
   }
 }
 
+/* ── Per-era age adjustment: an Agent's age_range is entered once, at
+   whichever era they were originally registered in (eras[0]/
+   afEraPages[0] -- the same "original era" concept renderEraStack()'s
+   own display fallback already uses, see its comment). Real player
+   report: registering at 40s in the 2020s should describe her as in
+   her 20s in a 2000s portrait, not still 40s -- every era's prompt was
+   using the same flat age_range regardless of how many years before/
+   after registration that era actually is. ── */
+const ERA_YEAR_ = {'90s':1990,'00s':2000,'10s':2010,'20s':2020};
+function ageRangeToYears_(label) {
+  if (!label) return null;
+  if (/60s or older/i.test(label)) return 62; // representative point for the open-ended top bracket
+  const m = /^(Early|Mid|Late)\s+(\d)0s$/i.exec(label.trim());
+  if (!m) return null; // an unrecognized/legacy value -- leave age adjustment out rather than guess
+  const decade = parseInt(m[2], 10) * 10;
+  const sub = { early: 2, mid: 5, late: 8 }[m[1].toLowerCase()];
+  return decade + sub;
+}
+function yearsToAgeRangeLabel_(years) {
+  years = Math.round(years);
+  if (years >= 60) return '60s or older';
+  if (years < 21) years = 21; // floor -- youngest real option is Early 20s
+  const decade = Math.floor(years / 10) * 10;
+  const sub = years - decade;
+  const bucket = sub <= 3 ? 'Early' : (sub <= 6 ? 'Mid' : 'Late');
+  return bucket + ' ' + decade + 's';
+}
+// The reference era is whichever one was rendered first this load
+// (afEraPages is fully populated by the time this runs -- it's built
+// synchronously across renderEraStack()'s whole forEach before any of
+// its staggered setTimeout-deferred autoGenerateEraPrompts() calls can
+// fire) with a parseEras() fallback for the one call site that runs
+// before any era has rendered at all (initEra() on a brand-new Agent's
+// very first era).
+function ageRangeForEra_(era) {
+  const raw = afData && afData.age_range || '';
+  if (!raw) return raw;
+  const refEra = (afEraPages && afEraPages.length) ? afEraPages[0] : ((parseEras(afData || {})[0]) || era);
+  if (refEra === era || !ERA_YEAR_[refEra] || !ERA_YEAR_[era]) return raw;
+  const baseYears = ageRangeToYears_(raw);
+  if (baseYears === null) return raw;
+  return yearsToAgeRangeLabel_(baseYears + (ERA_YEAR_[era] - ERA_YEAR_[refEra]));
+}
+
 /* ── AUTO-GENERATE ERA PROMPTS ── */
 function autoGenerateEraPrompts(era) {
   if (!afData || !afCode) return;
@@ -4224,12 +4442,21 @@ function autoGenerateEraPrompts(era) {
   const st1 = document.getElementById('prompt-mode1-status-' + era);
   if (!ta0 || !ta1) return;
 
-  const needsPortrait = !ta0.value.trim();
-  const needsReference = !ta1.value.trim();
+  // Checks THIS era's own columns directly, same reasoning as
+  // renderEraStack()'s own outer guard right above its call to this
+  // function -- ta0.value/ta1.value at this point is whatever
+  // renderEraStack() just rendered into the textarea, which for a
+  // brand-new era with no era-specific data yet is the display
+  // fallback's merged value (some OTHER, unrecorded era's stale flat
+  // prompt), not actually empty. Checking that instead of afData
+  // directly used to make this function think a genuinely-blank new
+  // era already had data and silently skip generation.
+  const needsPortrait = !afData['era_' + era + '_mode0'];
+  const needsReference = !afData['era_' + era + '_mode1'];
   if (!needsPortrait && !needsReference) return;
 
   const character = {
-    age_range: afData.age_range||'', sex: afData.sex||'', nationality: afData.nationality||'',
+    age_range: ageRangeForEra_(era), sex: afData.sex||'', nationality: afData.nationality||'',
     build: afData.build||'', posture: afData.posture||'', face_shape: afData.face_shape||'',
     eye_color: afData.eye_color||'', eye_shape: afData.eye_shape||'', nose: afData.nose||'',
     lips: afData.lips||'', skin: afData.skin||'', facial_hair: afData.facial_hair||'',
@@ -4265,15 +4492,21 @@ function autoGenerateEraPrompts(era) {
         if (st0) { st0.textContent = 'Generated.'; setTimeout(function(){ st0.textContent=''; }, 3000); }
         // Save to Sheet
         fetch(APPS_SCRIPT_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'},
-          body: JSON.stringify({ action:'update_field', agent_code: afCode, token: agentToken(afCode), field:'mode0_prompt', value: json.prompt })
+          body: JSON.stringify({ action:'update_field', agent_code: afCode, token: agentToken(afCode), field: 'era_' + era + '_mode0', value: json.prompt })
         }).catch(function(e){ console.error(e); });
-        if (afData) afData.mode0_prompt = json.prompt;
+        if (afData) afData['era_' + era + '_mode0'] = json.prompt;
         persistAgent(afCode, afData);
       } else {
-        if (st0) st0.textContent = 'Error.';
+        // Was a bare "Error." with no way to tell a real failure apart
+        // from a rate limit (checkRateLimit_() in Code.gs, 10 prompt
+        // generations per 10 minutes per Agent -- easy to hit just from
+        // adding several eras at once, each needing up to two of these
+        // calls) -- surfaces json.message now, same as
+        // generatePlateImage()'s own error text already does.
+        if (st0) st0.textContent = 'Error: ' + (json.message || 'generation failed');
       }
     })
-    .catch(function() { if (st0) st0.textContent = 'Error.'; });
+    .catch(function() { if (st0) st0.textContent = 'Error: connection failed.'; });
   }
 
   // Generate Field Reference (mode: outfit = full body with outfit)
@@ -4289,15 +4522,16 @@ function autoGenerateEraPrompts(era) {
         ta1.value = json.prompt;
         if (st1) { st1.textContent = 'Generated.'; setTimeout(function(){ st1.textContent=''; }, 3000); }
         fetch(APPS_SCRIPT_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'},
-          body: JSON.stringify({ action:'update_field', agent_code: afCode, token: agentToken(afCode), field:'mode1_prompt', value: json.prompt })
+          body: JSON.stringify({ action:'update_field', agent_code: afCode, token: agentToken(afCode), field: 'era_' + era + '_mode1', value: json.prompt })
         }).catch(function(e){ console.error(e); });
-        if (afData) afData.mode1_prompt = json.prompt;
+        if (afData) afData['era_' + era + '_mode1'] = json.prompt;
         persistAgent(afCode, afData);
       } else {
-        if (st1) st1.textContent = 'Error.';
+        // See the mode0 branch above's comment -- same fix.
+        if (st1) st1.textContent = 'Error: ' + (json.message || 'generation failed');
       }
     })
-    .catch(function() { if (st1) st1.textContent = 'Error.'; });
+    .catch(function() { if (st1) st1.textContent = 'Error: connection failed.'; });
   }
 }
 
@@ -4310,8 +4544,10 @@ function saveEraPrompt(btn) {
   const val = textarea.value.trim();
   if (!val) return;
   if (status) status.textContent = 'Saving…';
-  // Map mode to sheet field name
-  const fieldMap = {'mode0': 'mode0_prompt', 'mode1': 'mode1_prompt'};
+  // Map mode to sheet field name -- era-specific (era Plate/prompt data
+  // collision fix), not the shared flat mode0_prompt/mode1_prompt every
+  // era used to silently overwrite.
+  const fieldMap = {'mode0': 'era_' + era + '_mode0', 'mode1': 'era_' + era + '_mode1'};
   const field = fieldMap[mode];
   fetch(APPS_SCRIPT_URL, {
     method: 'POST', mode: 'no-cors',
@@ -5657,7 +5893,7 @@ function rosterClearAll() {
 
 
 <script src="assets/table-radio.js"></script>
-<script src="assets/dice-roller.js?v=4"></script>
+<script src="assets/dice-roller.js?v=7"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>
 
 </body>

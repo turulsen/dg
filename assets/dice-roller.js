@@ -263,6 +263,32 @@
         try { return !!sessionStorage.getItem(ACELL_SESSION_KEY); } catch (e) { return false; }
     }
 
+    // A-Cell's real login flow is: the page loads (this panel builds
+    // itself immediately, before anyone has signed in, so isHandlerContext()
+    // reads false and the panel renders as a normal Agent panel) *then*
+    // the Handler types the A-Cell password into A-Cell's own login card,
+    // which only afterwards sets dg_acell_session. Nothing here ever
+    // re-checked that after the panel had already been built once --
+    // rechecking it here on a light poll and rebuilding from scratch
+    // when it flips is simpler and more robust than trying to hook into
+    // A-Cell's own login success callback (which this file deliberately
+    // stays out of -- see this file's header comment).
+    let _lastHandlerMode = null;
+    function watchHandlerModeChange() {
+        setInterval(() => {
+            if (!_e || !_e.panel || !_e.panel.isConnected) return;
+            const nowHandler = isHandlerContext();
+            if (nowHandler === _lastHandlerMode) return;
+            stopHistoryFeed();
+            _rollContext = null;
+            _rollContextPromise = null;
+            _authPromise = null;
+            _e.panel.remove();
+            buildPanel();
+            initHistory();
+        }, 1500);
+    }
+
     // Highest priority: this exact page's own Cloud Save code (only
     // ever set on stats/index.html). Falls back to the shared Cover
     // Identity roster's most-recently-active Agent -- same precedence
@@ -287,10 +313,24 @@
         return cellsList.find(c => (c.member_codes || []).indexOf(agentCode) !== -1) || null;
     }
 
+    // window.dgSaveLoad only exists on stats/index.html itself (the one
+    // page that loads stats/save-load.js) -- on every other Hub page this
+    // panel now also lives on, that check always misses and recordRoll()
+    // fell back to showing the bare Agent Code in history instead of the
+    // character's name. The roster's own char_name (kept in sync by
+    // rosterUpsert() on every save, cloud-sync.js) works from any page,
+    // so it's the fallback; dgSaveLoad's live value is still preferred
+    // when available since it reflects an unsaved in-progress edit.
     function currentAgentName() {
         try {
             const s = window.dgSaveLoad && window.dgSaveLoad.collectState && window.dgSaveLoad.collectState();
-            return (s && s.bio && s.bio.name) || '';
+            const live = s && s.bio && s.bio.name;
+            if (live) return live;
+        } catch (e) { /* best effort */ }
+        try {
+            const code = currentAgentCode();
+            const roster = JSON.parse(localStorage.getItem(ROSTER_KEY) || '{}');
+            return (code && roster[code] && roster[code].char_name) || '';
         } catch (e) { return ''; }
     }
 
@@ -464,33 +504,71 @@
                 renderHistoryList(entries);
             }, err => showHistoryError('History feed error', err));
     }
+    // Cell docs' own `name` field ("Test", "H-Cell"...) vs. the id doc
+    // path segments actually are (cell_<timestamp>_<rand>) -- fetched
+    // once and cached rather than per-row, since a campaign realistically
+    // has a handful of Cells, not thousands; cells/{cellId} is public
+    // read (see firestore.rules) so no extra auth is needed for this.
+    let _cellNameMap = null;
     function startHandlerHistoryFeed() {
         stopHistoryFeed();
         const db = window.firebase.firestore();
-        _historyUnsubscribe = db.collectionGroup('rolls')
-            .orderBy('created_at', 'desc').limit(HISTORY_LIMIT)
-            .onSnapshot(snap => {
-                const entries = [];
-                snap.forEach(doc => {
-                    const data = doc.data();
-                    data.cellName = doc.ref.parent.parent ? doc.ref.parent.parent.id : '';
-                    entries.push(data);
-                });
-                renderHistoryList(entries);
-            }, err => showHistoryError('Live Rolls feed error', err));
+        const attachListener = () => {
+            _historyUnsubscribe = db.collectionGroup('rolls')
+                .orderBy('created_at', 'desc').limit(HISTORY_LIMIT)
+                .onSnapshot(snap => {
+                    const entries = [];
+                    snap.forEach(doc => {
+                        const data = doc.data();
+                        const cellId = doc.ref.parent.parent ? doc.ref.parent.parent.id : '';
+                        data.cellName = (_cellNameMap && _cellNameMap[cellId]) || cellId;
+                        entries.push(data);
+                    });
+                    renderHistoryList(entries);
+                }, err => showHistoryError('Live Rolls feed error', err));
+        };
+        if (_cellNameMap) { attachListener(); return; }
+        db.collection('cells').get().then(snap => {
+            _cellNameMap = {};
+            snap.forEach(doc => { _cellNameMap[doc.id] = doc.data().name || doc.id; });
+            attachListener();
+        }).catch(() => { _cellNameMap = {}; attachListener(); });
     }
 
     // Kicks off the right feed for this page's context. Agent mode
-    // starts automatically (no password needed); Handler mode instead
-    // reveals a button, wired in buildPanel() below, since it needs a
-    // one-time password prompt this function itself doesn't collect.
+    // starts automatically (no password needed); Handler mode first
+    // checks for a Firebase Auth session already persisted on this
+    // device from an earlier "Show Live Rolls" password entry -- the JS
+    // SDK's default persistence (IndexedDB) survives page reloads on
+    // its own, but nothing here ever checked for it, so every single
+    // page load re-prompted for the same password even right after
+    // typing it once, on top of A-Cell's own separate login. Only falls
+    // back to the button+prompt when there's genuinely no usable session
+    // (first time on this device, or it was signed out).
+    function checkExistingHandlerSession() {
+        ensureFirebaseApi(() => {
+            const auth = window.firebase.auth();
+            const unsub = auth.onAuthStateChanged(user => {
+                unsub();
+                if (!user) { if (_e.handlerGate) _e.handlerGate.style.display = ''; return; }
+                user.getIdTokenResult().then(res => {
+                    if (res.claims && res.claims.handler) {
+                        if (_e.handlerGate) _e.handlerGate.style.display = 'none';
+                        startHandlerHistoryFeed();
+                    } else if (_e.handlerGate) {
+                        _e.handlerGate.style.display = '';
+                    }
+                }).catch(() => { if (_e.handlerGate) _e.handlerGate.style.display = ''; });
+            });
+        });
+    }
     function initHistory() {
         resolveRollContext().then(ctx => {
             if (ctx.mode === 'agent') {
                 ensureAgentSignedIn(ctx.agentCode).then(() => startAgentHistoryFeed(ctx))
                     .catch(err => showHistoryError('Sign-in failed', err));
             } else if (ctx.mode === 'handler' && _e.handlerGate) {
-                _e.handlerGate.style.display = '';
+                checkExistingHandlerSession();
             } else if (ctx.mode === 'none' && _e.historyList) {
                 // No Agent Code known on this device yet (no Cloud Save
                 // code, no Cover Identity roster entry) -- rolls still
@@ -846,6 +924,7 @@
         ).join('');
 
         const handlerMode = isHandlerContext();
+        _lastHandlerMode = handlerMode;
 
         panel.innerHTML = `
 <div id="dr-handle" title="Drag to move">
@@ -1063,7 +1142,7 @@
     // an iframe, which is what made this panel visibly take as long to
     // appear as the character-load lag fixed elsewhere on this same
     // page (see stats/scripts.js's dgInitStatsSheet() comment).
-    const dgInitDiceRoller = () => { buildPanel(); wireSkillInputs(); initHistory(); };
+    const dgInitDiceRoller = () => { buildPanel(); wireSkillInputs(); initHistory(); watchHandlerModeChange(); };
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', dgInitDiceRoller);
     } else {

@@ -116,16 +116,29 @@ service cloud.firestore {
     }
 
     // evidence/{evidenceId} -- mirrors Evidence (formerly Handouts).
-    // A released item is visible to any signed-in Agent; an
-    // unreleased one (still being filed) or one restricted to a
-    // specific Cell only shows to the Handler or that Cell's members.
-    // create/update/delete are Handler-only, matching create_evidence/
-    // update_evidence/delete_evidence.
+    // Real visibility (listEvidence() in Code.gs) is released == true
+    // AND (no cell_id, or requester is a member of that Cell) AND (no
+    // restricted_to, or requester's Agent Code is in it) -- both
+    // scoping mechanisms apply together when both are set, not either/
+    // or (an item can be scoped to a Cell AND further narrowed to
+    // specific members of it). That can't be expressed as a rule a
+    // list query can be proven safe against -- Firestore can only prove
+    // a query safe when the rule checks the SAME field the query
+    // already filtered on, and "is a member of the Cell this item
+    // happens to reference" is a per-document lookup, not a filterable
+    // field. So Code.gs denormalizes the *resolved* set of Agent Codes
+    // onto visible_to (evidenceVisibleTo_(), recomputed on every write
+    // that could change it) and the client queries
+    // array-contains-any([myCode, 'ALL']) against that instead --
+    // 'ALL' is the sentinel for "released, no cell_id, no
+    // restricted_to" (there's no way to enumerate every Agent Code that
+    // might ever exist to put in the array literally). This rule is
+    // exactly that query's own condition, restated -- what makes it
+    // provably safe. create/update/delete are Handler-only, matching
+    // create_evidence/update_evidence/delete_evidence.
     match /evidence/{evidenceId} {
       allow read: if isHandler()
-        || (resource.data.released == true &&
-            (resource.data.restricted_to == null || resource.data.restricted_to == '' ||
-             isCellMember(resource.data.restricted_to)));
+        || (isSignedIn() && resource.data.visible_to.hasAny([agentCode(), 'ALL']));
       allow write: if isHandler();
     }
 

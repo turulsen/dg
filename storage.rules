@@ -1,14 +1,69 @@
 rules_version = '2';
 
-// Not used until Phase 4 (Images/Storage) -- scaffolded now so
-// `firebase deploy` has a valid target from Phase 1 onward. New
-// uploads only (Handout photos, Face Plates, Evidence, Track library);
-// existing gdrive: links are untouched by this migration.
+// Phase 4 (Images/Storage) of the Firebase migration. New uploads only
+// (Handout photos, Face Plates, Evidence, Track Library); existing
+// gdrive: links from before this migration are untouched.
+//
+// Tighten path-by-path as each upload surface is actually cut over,
+// same approach firestore.rules took -- this is deliberately not a
+// blanket rule for the whole bucket the way Phase 1's placeholder was.
 service firebase.storage {
   match /b/{bucket}/o {
-    match /{allPaths=**} {
+
+    function isHandler() {
+      return request.auth != null && request.auth.token.handler == true;
+    }
+
+    // tracks/{trackId}.mp3 -- Table Radio's Track Library. Public read
+    // (every player's Table Radio streams these with no auth, same as
+    // Firestore's tracks/{trackId} docs); Handler-only write, mirroring
+    // firestore.rules' posture for the same feature -- only the Handler
+    // has any upload UI for this today.
+    match /tracks/{allPaths=**} {
+      allow read: if true;
+      allow write: if isHandler();
+    }
+
+    // evidence/{evidenceId}.{ext} -- Evidence Locker photos/PDFs.
+    // Handler-only write, same as Track Library (only A-Cell's Evidence
+    // form has any upload UI for this). Read stays public rather than
+    // trying to duplicate listEvidence()'s own released/restricted_to
+    // filtering here in rules -- no regression from today's actual
+    // posture, since the existing gdrive: links this replaces are
+    // already ANYONE_WITH_LINK-shared, and the URL itself is only ever
+    // handed to a client that already passed that server-side filter
+    // in the first place.
+    match /evidence/{allPaths=**} {
+      allow read: if true;
+      allow write: if isHandler();
+    }
+
+    // agent-refs/{agentCode}.{ext} -- the brief-submission reference
+    // photo (dg-agent-portal.html). Unlike Track Library/Evidence, this
+    // one's uploader is the Agent themselves, not the Handler -- write
+    // is any signed-in Agent, matching this whole migration's actual
+    // security posture (requireAgentToken_() in Code.gs is a deliberate
+    // no-op -- knowing an Agent Code is already sufficient today, same
+    // as characters/{agentCode} and briefs/{agentCode} in
+    // firestore.rules), not scoped to only writing their own path --
+    // that would be a stricter model than Code.gs itself enforces.
+    match /agent-refs/{allPaths=**} {
       allow read: if true;
       allow write: if request.auth != null;
     }
+
+    // agent-plates/{agentCode}-{type}-{era}.{ext} -- Face/Outfit Plate
+    // images (dg-agent-portal.html), both the manual-upload path and the
+    // Gemini-generated path. Same posture as agent-refs/ -- the Agent is
+    // the uploader, write is any signed-in Agent (not scoped to their own
+    // path), matching Code.gs's existing no-real-per-Agent-secret model.
+    match /agent-plates/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Everything else stays default-deny until its own surface is
+    // actually built and scoped, rather than the blanket "any signed-in
+    // user, anywhere" placeholder Phase 1 scaffolded.
   }
 }

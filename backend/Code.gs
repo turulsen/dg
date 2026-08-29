@@ -364,7 +364,23 @@ const COLUMNS = [
   // COLUMNS means COLUMNS.map() below never wrote it to any column), so
   // it never actually reached the Sheet -- same append-at-the-end
   // discipline as player_name above.
-  'profession'
+  'profession',
+  // Per-era Face/Outfit Plate images and prompts. One column per era
+  // per field (not a shared JSON blob) to stay consistent with every
+  // other flat field here (a single updateAgentField() write to one
+  // column), and because savePlateImage()'s "look up the field name,
+  // overwrite with a URL" design has no read-modify-write step to
+  // merge into a blob safely. The old flat columns
+  // (face_plate_url/outfit_plate_url/mode0_prompt/mode1_prompt) are
+  // left in place, untouched, as the fallback renderEraStack() already
+  // reads for any Agent whose plates were generated before this fix --
+  // real bug report: adding a second era silently overwrote the first
+  // era's Plates/prompts, since every era shared those same four flat
+  // columns with nowhere else for a second era's data to go.
+  'era_90s_face_url', 'era_90s_outfit_url', 'era_90s_mode0', 'era_90s_mode1',
+  'era_00s_face_url', 'era_00s_outfit_url', 'era_00s_mode0', 'era_00s_mode1',
+  'era_10s_face_url', 'era_10s_outfit_url', 'era_10s_mode0', 'era_10s_mode1',
+  'era_20s_face_url', 'era_20s_outfit_url', 'era_20s_mode0', 'era_20s_mode1'
 ];
 
 // Serializes a read-modify-write against a Sheet (scan for an existing
@@ -669,10 +685,16 @@ function toFirestoreValue_(v) {
   return { stringValue: String(v) };
 }
 
+// docId is normally a single flat id (encoded whole), but a caller
+// addressing a subcollection doc (e.g. Notes' cells/{cellId}/notes/{blockId})
+// passes one with literal '/' path separators -- encoding the whole
+// thing as one blob would turn those into %2F and address the wrong
+// (nonexistent) document, so each path segment is encoded on its own.
 function firestoreDocUrl_(collectionName, docId) {
   const projectId = PropertiesService.getScriptProperties().getProperty(FIRESTORE_PROJECT_ID_PROPERTY);
+  const encodedId = String(docId).split('/').map(encodeURIComponent).join('/');
   return 'https://firestore.googleapis.com/v1/projects/' + projectId +
-    '/databases/(default)/documents/' + collectionName + '/' + encodeURIComponent(docId);
+    '/databases/(default)/documents/' + collectionName + '/' + encodedId;
 }
 
 // Full-document upsert (PATCH with no updateMask replaces the whole
@@ -1196,7 +1218,13 @@ function doPost(e) {
       }
 
       let imageLink = '';
-      if (data.ref_image_base64 && data.ref_image_name) {
+      if (data.ref_storage_url) {
+        // Phase 4 (Firebase Storage): the client already uploaded the
+        // photo directly to Storage (see dg-agent-portal.html's
+        // ensureAgentSignedIn()) and just needs the resulting URL
+        // recorded -- no Drive Blob upload for this path at all.
+        imageLink = data.ref_storage_url;
+      } else if (data.ref_image_base64 && data.ref_image_name) {
         // This whole submission is a fire-and-forget POST the client
         // never reads a response from -- a failed upload here shouldn't
         // fail the ENTIRE brief (medical log, appearance, everything
@@ -1284,6 +1312,18 @@ function updateAgentField(data) {
       'outfit_plate_url': 'outfit_plate_url',
       'mode0_prompt':   'mode0_prompt',
       'mode1_prompt':   'mode1_prompt',
+      // Per-era Face/Outfit Plate images and prompts -- see COLUMNS'
+      // own comment (era Plate/prompt data collision fix). Identity-
+      // mapped like the flat columns above; savePlateImage()/
+      // saveEraPrompt() send these as data.field verbatim.
+      'era_90s_face_url': 'era_90s_face_url', 'era_90s_outfit_url': 'era_90s_outfit_url',
+      'era_90s_mode0': 'era_90s_mode0', 'era_90s_mode1': 'era_90s_mode1',
+      'era_00s_face_url': 'era_00s_face_url', 'era_00s_outfit_url': 'era_00s_outfit_url',
+      'era_00s_mode0': 'era_00s_mode0', 'era_00s_mode1': 'era_00s_mode1',
+      'era_10s_face_url': 'era_10s_face_url', 'era_10s_outfit_url': 'era_10s_outfit_url',
+      'era_10s_mode0': 'era_10s_mode0', 'era_10s_mode1': 'era_10s_mode1',
+      'era_20s_face_url': 'era_20s_face_url', 'era_20s_outfit_url': 'era_20s_outfit_url',
+      'era_20s_mode0': 'era_20s_mode0', 'era_20s_mode1': 'era_20s_mode1',
       'ref_image_link': 'Ref Image Link',
       // Cover Identity: explicit, even though the generic fallback below
       // (field.split('_').map(capitalize).join(' ')) already produces
@@ -2297,15 +2337,34 @@ function migrateSoloNotesToCell_(agentCode, newCellId) {
   const sheet = getOrCreateCellNotesSheet();
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
-  const cellCol = headers.indexOf('cell_id');
-  const codeCol = headers.indexOf('agent_code');
-  if (cellCol === -1 || codeCol === -1) return;
+  const cols = headerMap_(headers);
+  if (cols.cell_id === undefined || cols.agent_code === undefined) return;
   let migrated = false;
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][cellCol]).trim() === soloCellId &&
-        String(data[i][codeCol]).trim().toUpperCase() === agentCode) {
-      sheet.getRange(i + 1, cellCol + 1).setValue(newCellId);
+    if (String(data[i][cols.cell_id]).trim() === soloCellId &&
+        String(data[i][cols.agent_code]).trim().toUpperCase() === agentCode) {
+      sheet.getRange(i + 1, cols.cell_id + 1).setValue(newCellId);
       migrated = true;
+      // The Firestore mirror can't just have its cell_id field edited in
+      // place, the way the Sheet cell above just was -- cell_id is part
+      // of the document's own PATH (cells/{cellId}/notes/{blockId}), so
+      // moving Cell means deleting the doc under the old path and
+      // recreating it under the new one with the same fields.
+      const blockId = data[i][cols.block_id];
+      if (blockId) {
+        firestoreDualDelete_('cells', soloCellId + '/notes/' + blockId);
+        firestoreDualWrite_('cells', newCellId + '/notes/' + blockId, {
+          agent_code: agentCode,
+          block_type: data[i][cols.block_type] || 'paragraph',
+          text: data[i][cols.text] || '',
+          shared: asBoolean_(data[i][cols.shared]),
+          sort_order: Number(data[i][cols.sort_order]) || 0,
+          created_at: data[i][cols.created_at] || 0,
+          updated_at: data[i][cols.updated_at] || 0,
+          pinned: cols.pinned !== undefined && asBoolean_(data[i][cols.pinned]),
+          tags: (cols.tags !== undefined && data[i][cols.tags]) || '[]'
+        });
+      }
     }
   }
   if (migrated) {
@@ -2337,6 +2396,11 @@ function updateCellMembers(cellId, memberCodes) {
       let previousMembers = [];
       try { previousMembers = JSON.parse(data[i][membersCol] || '[]'); } catch (e) { previousMembers = []; }
       sheet.getRange(i + 1, membersCol + 1).setValue(JSON.stringify(newMembers));
+      // Keep cellIdsForAgent_()'s own cache (via cellsMemberMap_()) from
+      // serving a stale membership list for up to its own TTL right
+      // after the Handler just changed it -- a newly-assigned Agent
+      // should see their own Evidence immediately, not after a wait.
+      CacheService.getScriptCache().remove('cells_member_map');
       // Any code in the new list that wasn't in the old one is a fresh
       // assignment -- carry forward whatever solo Notes that Agent
       // already wrote before joining a Cell.
@@ -2345,6 +2409,11 @@ function updateCellMembers(cellId, memberCodes) {
           migrateSoloNotesToCell_(String(code).trim().toUpperCase(), cellId);
         }
       });
+      // Every Evidence item scoped to this Cell has a visible_to that
+      // may now be stale -- see recomputeEvidenceVisibleToForCell_()'s
+      // own comment. Runs after the cache.remove() above so it reads
+      // the membership just written, not whatever was cached before.
+      recomputeEvidenceVisibleToForCell_(cellId);
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
@@ -2527,6 +2596,7 @@ function saveNoteBlock(data) {
               .setMimeType(ContentService.MimeType.JSON);
           }
           const row = values[i];
+          const createdAt = (cols.created_at !== undefined && row[cols.created_at]) || now;
           row[cols.block_type] = blockType;
           row[cols.text] = data.text || '';
           row[cols.shared] = shared;
@@ -2536,6 +2606,11 @@ function saveNoteBlock(data) {
           if (cols.tags !== undefined) row[cols.tags] = tags;
           sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
           CacheService.getScriptCache().remove('cell_notes_raw_' + cellId);
+          firestoreDualWrite_('cells', cellId + '/notes/' + blockId, {
+            agent_code: agentCode, block_type: blockType, text: data.text || '',
+            shared: !!shared, sort_order: sortOrder, created_at: createdAt,
+            updated_at: now, pinned: !!pinned, tags: tags
+          });
           return ContentService.createTextOutput(JSON.stringify({ status: 'OK', block_id: blockId })).setMimeType(ContentService.MimeType.JSON);
         }
       }
@@ -2561,6 +2636,11 @@ function saveNoteBlock(data) {
     if (cols.tags !== undefined) newRow[cols.tags] = tags;
     sheet.appendRow(newRow);
     CacheService.getScriptCache().remove('cell_notes_raw_' + cellId);
+    firestoreDualWrite_('cells', cellId + '/notes/' + blockId, {
+      agent_code: agentCode, block_type: blockType, text: data.text || '',
+      shared: !!shared, sort_order: sortOrder, created_at: now,
+      updated_at: now, pinned: !!pinned, tags: tags
+    });
     return ContentService.createTextOutput(JSON.stringify({ status: 'OK', block_id: blockId })).setMimeType(ContentService.MimeType.JSON);
   });
 }
@@ -2583,14 +2663,20 @@ function deleteNoteBlock(data) {
   const values = sheet.getDataRange().getValues();
   const idCol = values[0].indexOf('block_id');
   const codeCol = values[0].indexOf('agent_code');
+  const cellCol = values[0].indexOf('cell_id');
   for (let i = values.length - 1; i >= 1; i--) {
     if (values[i][idCol] === blockId) {
       if (codeCol !== -1 && String(values[i][codeCol] || '').trim().toUpperCase() !== agentCode) {
         return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'not your block' }))
           .setMimeType(ContentService.MimeType.JSON);
       }
+      // Prefer the row's own cell_id (always accurate) over the
+      // client-sent one (optional, and notes.js doesn't always have it
+      // handy) so the Firestore mirror gets cleaned up either way.
+      const rowCellId = cellId || (cellCol !== -1 ? String(values[i][cellCol] || '').trim() : '');
       sheet.deleteRow(i + 1);
-      if (cellId) CacheService.getScriptCache().remove('cell_notes_raw_' + cellId);
+      if (rowCellId) CacheService.getScriptCache().remove('cell_notes_raw_' + rowCellId);
+      if (rowCellId) firestoreDualDelete_('cells', rowCellId + '/notes/' + blockId);
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
@@ -2776,21 +2862,139 @@ function resolveEvidencePhoto_(photo, title) {
 // player-mode filtering below -- an Agent only ever sees evidence
 // scoped to a Cell they actually belong to (or campaign-wide,
 // cell_id blank).
-function cellIdsForAgent_(agentCode) {
-  const code = String(agentCode || '').trim().toUpperCase();
-  const out = {};
-  if (!code) return out;
+// Called on every single listEvidence() request for every player (see
+// below) -- was a full, uncached Cells sheet scan every time, unlike
+// every other hot read path in this file (getNowPlaying/listCellNotes/
+// getPlaylist/getAgentIdentitiesMap all cache their own raw scan for a
+// few seconds; this one never did). Live-reported as "Evidence takes a
+// while to load" on agent-hub.html. Caches the {cell_id: [member_codes]}
+// shape (not the final per-agent boolean map, which would need its own
+// cache entry per requester) so a burst of players loading Evidence
+// around the same time shares one Cells read instead of each triggering
+// its own.
+function cellsMemberMap_() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get('cells_member_map');
+  if (cached) return JSON.parse(cached);
   const sheet = getOrCreateCellsSheet();
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
   const idCol = headers.indexOf('cell_id');
   const membersCol = headers.indexOf('member_codes');
+  const map = {};
   for (let i = 1; i < data.length; i++) {
+    const cellId = data[i][idCol];
+    if (!cellId) continue;
     let members = [];
     try { members = JSON.parse(data[i][membersCol] || '[]'); } catch (e) { members = []; }
-    if (members.indexOf(code) !== -1) out[data[i][idCol]] = true;
+    map[cellId] = members;
   }
+  cache.put('cells_member_map', JSON.stringify(map), 3);
+  return map;
+}
+
+function cellIdsForAgent_(agentCode) {
+  const code = String(agentCode || '').trim().toUpperCase();
+  const out = {};
+  if (!code) return out;
+  const map = cellsMemberMap_();
+  Object.keys(map).forEach(function (cellId) {
+    if (map[cellId].indexOf(code) !== -1) out[cellId] = true;
+  });
   return out;
+}
+
+// Firestore's list-query security rules can only ever prove a query
+// safe when the rule's own condition is a subset check against the
+// SAME field the query already filtered on (e.g. an array-contains-any
+// query paired with a resource.data.field.hasAny() rule) -- it can't
+// evaluate an arbitrary per-document membership lookup the way
+// listEvidence()'s own filtering above does (cell_id -> Cells sheet ->
+// member_codes, intersected with restricted_to) without rejecting the
+// whole query as unprovable. So the *resolved* set of Agent Codes
+// allowed to see a given (released) item is denormalized onto the
+// Firestore mirror as its own field, recomputed on every write that
+// could change it -- this function is the single source of truth for
+// that computation, shared by createEvidence/updateEvidence (item
+// itself changed) and updateCellMembers (an affected Cell's membership
+// changed instead). 'ALL' is a sentinel for "every Agent" (released,
+// no cell_id, no restricted_to) -- there's no way to enumerate every
+// Agent Code that might ever exist, so the client instead queries
+// array-contains-any([myCode, 'ALL']) and this is the other member of
+// that pair. An unreleased item resolves to [] (nobody but the
+// Handler, who reads via a separate isHandler() rule, not this field).
+function evidenceVisibleTo_(released, cellId, restrictedTo) {
+  if (!released) return [];
+  restrictedTo = restrictedTo || [];
+  let allowed = null; // null == "everyone" until a scoping rule narrows it
+  if (cellId) {
+    allowed = (cellsMemberMap_()[cellId] || []).slice();
+  }
+  if (restrictedTo.length) {
+    allowed = allowed === null ? restrictedTo.slice()
+      : allowed.filter(function (code) { return restrictedTo.indexOf(code) !== -1; });
+  }
+  return allowed === null ? ['ALL'] : allowed;
+}
+
+// Called after a Cell's member_codes change (updateCellMembers) --
+// every Evidence item scoped to that Cell has a visible_to that may now
+// be stale (someone added or removed), regardless of whether that item
+// also carries its own restricted_to on top. cellsMemberMap_()'s cache
+// must already be cleared by the caller before this runs, or this
+// would just recompute the same stale membership.
+function recomputeEvidenceVisibleToForCell_(cellId) {
+  const sheet = getOrCreateEvidenceSheet();
+  const data = sheet.getDataRange().getValues();
+  const cols = headerMap_(data[0]);
+  if (cols.evidence_id === undefined) return;
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (String(row[cols.cell_id] || '').trim() !== cellId) continue;
+    const evidenceId = row[cols.evidence_id];
+    if (!evidenceId) continue;
+    let restrictedTo = [];
+    try { restrictedTo = JSON.parse(row[cols.restricted_to] || '[]'); } catch (e) { restrictedTo = []; }
+    const visibleTo = evidenceVisibleTo_(asBoolean_(row[cols.released]), cellId, restrictedTo);
+    firestoreDualPatch_('evidence', evidenceId, { visible_to: visibleTo });
+  }
+}
+
+// One-time backfill (Phase 5): Evidence had NO Firestore dual-write at
+// all before this phase (createEvidence/updateEvidence only just
+// started calling firestoreDualWrite_ today), so every Evidence item
+// that already existed before this patch was pasted in has no
+// Firestore document at all -- invisible to the new visible_to
+// array-contains-any client queries, not just missing that one field.
+// Run this ONCE from the Apps Script editor (select it in the function
+// dropdown next to the Run button, then Run) after pasting this patch
+// in -- it full-document-upserts (firestoreDualWrite_, not a patch)
+// every row currently in the Evidence sheet, same field shape
+// createEvidence/updateEvidence already write, so a row with no doc
+// yet gets one fully created, not a fragment. Safe to re-run any time
+// (idempotent -- always recomputes from the Sheet's current state).
+function backfillEvidenceVisibleTo_() {
+  const sheet = getOrCreateEvidenceSheet();
+  const data = sheet.getDataRange().getValues();
+  const cols = headerMap_(data[0]);
+  let count = 0;
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const evidenceId = row[cols.evidence_id];
+    if (!evidenceId) continue;
+    let restrictedTo = [];
+    try { restrictedTo = JSON.parse(row[cols.restricted_to] || '[]'); } catch (e) { restrictedTo = []; }
+    const released = asBoolean_(row[cols.released]);
+    const cellId = row[cols.cell_id] || '';
+    firestoreDualWrite_('evidence', evidenceId, {
+      title: row[cols.title] || '', body: row[cols.body] || '', photo: row[cols.photo] || '',
+      cell_id: cellId, created_at: row[cols.created_at] || 0, operation_id: row[cols.operation_id] || '',
+      released: released, restricted_to: restrictedTo,
+      visible_to: evidenceVisibleTo_(released, cellId, restrictedTo)
+    });
+    count++;
+  }
+  Logger.log('backfillEvidenceVisibleTo_: wrote ' + count + ' Evidence documents to Firestore.');
 }
 
 function listOperations(callback) {
@@ -2821,10 +3025,46 @@ function listOperations(callback) {
 // or, with no agent_code at all, just released + fully-unrestricted
 // items (matches how list_cells/list_handouts already stayed reachable
 // with zero identifying info, see this action's own doGet comment).
-function listEvidence(params, callback) {
+// Every field listEvidence() below could ever need for ANY requester
+// (Handler or player) -- cached raw and unfiltered for a few seconds,
+// same "cache the raw scan, filter fresh on every call" pattern
+// listCellNotes() already uses for the identical reason (its response
+// also differs per requester, so the FINAL filtered JSON can't be the
+// cache value the way getNowPlaying's can). Was a fresh full-sheet
+// scan on every single Evidence read before this -- for every player,
+// every load -- live-reported as "Evidence takes a while to load" on
+// agent-hub.html.
+function evidenceRawRows_() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get('evidence_raw');
+  if (cached) return JSON.parse(cached);
   const sheet = getOrCreateEvidenceSheet();
   const data = sheet.getDataRange().getValues();
   const cols = headerMap_(data[0]);
+  const rows = [];
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (!row[cols.evidence_id]) continue;
+    let restrictedTo = [];
+    try { restrictedTo = JSON.parse(row[cols.restricted_to] || '[]'); } catch (e) { restrictedTo = []; }
+    rows.push({
+      evidence_id: row[cols.evidence_id],
+      title: row[cols.title] || '',
+      body: row[cols.body] || '',
+      photo: row[cols.photo] || '',
+      cell_id: row[cols.cell_id] || '',
+      operation_id: row[cols.operation_id] || '',
+      created_at: row[cols.created_at] || '',
+      released: asBoolean_(row[cols.released]),
+      restricted_to: restrictedTo
+    });
+  }
+  cache.put('evidence_raw', JSON.stringify(rows), 3);
+  return rows;
+}
+
+function listEvidence(params, callback) {
+  const rawRows = evidenceRawRows_();
 
   const session = String((params && params.handler_session) || '').trim();
   const isHandler = !!(session && CacheService.getScriptCache().get('handler_session_' + session));
@@ -2832,36 +3072,33 @@ function listEvidence(params, callback) {
   const requesterCells = isHandler ? null : cellIdsForAgent_(requesterCode);
 
   const evidence = [];
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    if (!row[cols.evidence_id]) continue;
-    const released = asBoolean_(row[cols.released]);
-    let restrictedTo = [];
-    try { restrictedTo = JSON.parse(row[cols.restricted_to] || '[]'); } catch (e) { restrictedTo = []; }
-    const cellId = row[cols.cell_id] || '';
+  rawRows.forEach(function (row) {
+    const released = row.released;
+    const restrictedTo = row.restricted_to;
+    const cellId = row.cell_id;
 
     if (!isHandler) {
-      if (!released) continue;
-      if (cellId && !(requesterCells && requesterCells[cellId])) continue;
-      if (restrictedTo.length && requesterCode && restrictedTo.indexOf(requesterCode) === -1) continue;
-      if (restrictedTo.length && !requesterCode) continue;
+      if (!released) return;
+      if (cellId && !(requesterCells && requesterCells[cellId])) return;
+      if (restrictedTo.length && requesterCode && restrictedTo.indexOf(requesterCode) === -1) return;
+      if (restrictedTo.length && !requesterCode) return;
     }
 
     evidence.push({
-      evidence_id: row[cols.evidence_id],
-      title: row[cols.title] || '',
-      body: row[cols.body] || '',
-      photo: row[cols.photo] || '',
+      evidence_id: row.evidence_id,
+      title: row.title,
+      body: row.body,
+      photo: row.photo,
       cell_id: cellId,
-      operation_id: row[cols.operation_id] || '',
-      created_at: row[cols.created_at] || '',
+      operation_id: row.operation_id,
+      created_at: row.created_at,
       released: released,
       // Only the Handler view needs the actual allowlist (to edit it);
       // a player already implicitly passed this check above just by
       // being in the response at all.
       restricted_to: isHandler ? restrictedTo : undefined
     });
-  }
+  });
 
   const result = { status: 'OK', evidence: evidence };
   if (!isHandler && requesterCode) {
@@ -2881,7 +3118,16 @@ function createEvidence(data) {
   const cols = headerMap_(headers);
   const missing = requireColumns_(cols, ['evidence_id', 'title', 'body', 'photo', 'cell_id', 'created_at', 'operation_id', 'released', 'restricted_to']);
   if (missing) return missing;
-  const evidenceId = 'evidence_' + new Date().getTime() + '_' + Math.floor(Math.random() * 100000).toString(36);
+  // Phase 4 (Firebase Storage): when the client is uploading a photo
+  // directly to Storage (see a-cell.html's ensureHandlerSignedIn()),
+  // it needs to know the evidence_id BEFORE this call so the upload's
+  // own path (evidence/{evidence_id}.{ext}) is known -- accepts a
+  // client-supplied id for that case, same pattern uploadTrack()'s
+  // storage_url branch already uses; falls back to generating one here
+  // as before when the caller doesn't send one (a text-only save, or
+  // any older client).
+  const evidenceId = (data.evidence_id || '').trim() ||
+    ('evidence_' + new Date().getTime() + '_' + Math.floor(Math.random() * 100000).toString(36));
   let photo;
   try { photo = resolveEvidencePhoto_(data.photo, title); } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'Image upload failed: ' + err.message }))
@@ -2896,8 +3142,18 @@ function createEvidence(data) {
   row[cols.created_at] = new Date().getTime();
   row[cols.operation_id] = data.operation_id || '';
   row[cols.released] = data.released ? 1 : 0;
-  row[cols.restricted_to] = typeof data.restricted_to === 'string' ? data.restricted_to : '[]';
+  const restrictedToStr = typeof data.restricted_to === 'string' ? data.restricted_to : '[]';
+  row[cols.restricted_to] = restrictedToStr;
   sheet.appendRow(row);
+  CacheService.getScriptCache().remove('evidence_raw');
+  let restrictedToArr = [];
+  try { restrictedToArr = JSON.parse(restrictedToStr); } catch (e) { restrictedToArr = []; }
+  firestoreDualWrite_('evidence', evidenceId, {
+    title: title, body: data.body || '', photo: photo, cell_id: data.cell_id || '',
+    created_at: row[cols.created_at], operation_id: data.operation_id || '',
+    released: !!data.released, restricted_to: restrictedToArr,
+    visible_to: evidenceVisibleTo_(!!data.released, data.cell_id || '', restrictedToArr)
+  });
   return ContentService.createTextOutput(JSON.stringify({ status: 'OK', evidence_id: evidenceId })).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -2928,8 +3184,19 @@ function updateEvidence(data) {
       row[cols.cell_id] = data.cell_id || '';
       row[cols.operation_id] = data.operation_id || '';
       row[cols.released] = data.released ? 1 : 0;
-      row[cols.restricted_to] = typeof data.restricted_to === 'string' ? data.restricted_to : '[]';
+      const restrictedToStr = typeof data.restricted_to === 'string' ? data.restricted_to : '[]';
+      row[cols.restricted_to] = restrictedToStr;
       sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
+      CacheService.getScriptCache().remove('evidence_raw');
+      let restrictedToArr = [];
+      try { restrictedToArr = JSON.parse(restrictedToStr); } catch (e) { restrictedToArr = []; }
+      firestoreDualWrite_('evidence', data.evidence_id, {
+        title: data.title || '', body: data.body || '', photo: row[cols.photo] || '',
+        cell_id: data.cell_id || '', created_at: row[cols.created_at] || 0,
+        operation_id: data.operation_id || '', released: !!data.released,
+        restricted_to: restrictedToArr,
+        visible_to: evidenceVisibleTo_(!!data.released, data.cell_id || '', restrictedToArr)
+      });
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
@@ -2947,6 +3214,8 @@ function deleteEvidence(evidenceId) {
   for (let i = data.length - 1; i >= 1; i--) {
     if (data[i][idCol] === evidenceId) {
       sheet.deleteRow(i + 1);
+      CacheService.getScriptCache().remove('evidence_raw');
+      firestoreDualDelete_('evidence', evidenceId);
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
@@ -3162,8 +3431,37 @@ function uploadTrack(data) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'title is required' }))
       .setMimeType(ContentService.MimeType.JSON);
   }
+  // Phase 4 (Firebase Storage): the client already uploaded the mp3
+  // straight to Firebase Storage and just needs this row recorded --
+  // no DriveApp Blob/file/folder work at all for this path. drive_file_id
+  // stays blank, which both listTracks() (already falls back to the
+  // stored url column whenever drive_file_id is empty) and deleteTrack()
+  // (already no-ops its DriveApp call whenever drive_file_id is empty)
+  // handle correctly with zero changes needed to either of them.
+  if (data.storage_url) {
+    try {
+      const trackId = (data.track_id || '').trim() ||
+        ('track_' + new Date().getTime() + '_' + Math.floor(Math.random() * 100000).toString(36));
+      const sheet = getOrCreateTracksSheet();
+      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      const cols = headerMap_(headers);
+      const missing = requireColumns_(cols, ['track_id', 'title', 'url', 'uploaded_at']);
+      if (missing) return missing;
+      const row = new Array(headers.length).fill('');
+      row[cols.track_id] = trackId;
+      row[cols.title] = title;
+      row[cols.url] = data.storage_url;
+      row[cols.uploaded_at] = new Date().getTime();
+      sheet.appendRow(row);
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK', track_id: trackId, url: data.storage_url }))
+        .setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: err.message }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
   if (!data.mp3_base64) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'mp3_base64 is required' }))
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'mp3_base64 or storage_url is required' }))
       .setMimeType(ContentService.MimeType.JSON);
   }
   try {
@@ -3747,7 +4045,8 @@ function briefsHeaderNameFor_(col) {
   // (matches updateAgentField()'s own FIELD_MAP and every existing
   // .indexOf(...) lookup against this sheet elsewhere in this file,
   // e.g. findByPlayerName()'s briefHeaders.indexOf('face_plate_url')).
-  if (col === 'face_plate_url' || col === 'outfit_plate_url' || col === 'mode0_prompt' || col === 'mode1_prompt') return col;
+  if (col === 'face_plate_url' || col === 'outfit_plate_url' || col === 'mode0_prompt' || col === 'mode1_prompt'
+    || /^era_(90s|00s|10s|20s)_(face_url|outfit_url|mode0|mode1)$/.test(col)) return col;
   return col.replace(/_/g, ' ').replace(/\b\w/g, function (l) { return l.toUpperCase(); });
 }
 function ensureBriefsColumns(ss) {
@@ -3757,11 +4056,12 @@ function ensureBriefsColumns(ss) {
   // cache flag skips the check entirely once it's confirmed clean, same
   // reasoning as the SPREADSHEET_ID cache right above.
   const cache = CacheService.getScriptCache();
-  // Key changed (was 'briefs_columns_ensured') so a cache entry set by
-  // the old, narrower version of this check -- Player Name/Profession
-  // only -- can't mask this fuller reconciliation from ever actually
-  // running post-redeploy for up to its old 6h TTL.
-  if (cache.get('briefs_columns_ensured_v2') === '1') return;
+  // Key changed (was 'briefs_columns_ensured', then '_v2') so a cache
+  // entry set by an older, narrower version of this check can't mask
+  // this fuller reconciliation -- most recently the 16 new per-era
+  // Plate/prompt columns (era Plate/prompt data collision fix) -- from
+  // ever actually running post-redeploy for up to its old 6h TTL.
+  if (cache.get('briefs_columns_ensured_v3') === '1') return;
   const sheet = ss.getSheetByName(SHEET_NAME);
   if (!sheet) return; // brand-new spreadsheet -- getOrCreateSheet()'s creation path below already includes every column via COLUMNS
   let lastCol = sheet.getLastColumn();
@@ -3774,7 +4074,7 @@ function ensureBriefsColumns(ss) {
       headers.push(name);
     }
   });
-  cache.put('briefs_columns_ensured_v2', '1', 21600);
+  cache.put('briefs_columns_ensured_v3', '1', 21600);
 }
 
 // Throws on failure -- used to catch its own error and return the
@@ -3814,7 +4114,7 @@ function saveImageToDrive(base64DataUrl, filename, charName) {
 
 function savePlateImage(data) {
   try {
-    const url = saveImageToDrive(data.image_base64, data.image_name, data.char_name);
+    const url = data.storage_url || saveImageToDrive(data.image_base64, data.image_name, data.char_name);
     return updateAgentField({
       action: 'update_field',
       agent_code: data.agent_code,
