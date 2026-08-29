@@ -3884,9 +3884,12 @@ function renderAgentFile(data) {
     renderEraStack(eras, data);
   }
 
-  // Medical + AAR always visible once file is loaded
-  document.getElementById('af-medical').style.display = 'block';
-  document.getElementById('af-aar').style.display = 'block';
+  // Medical History + After-Action Reports: archived, not removed --
+  // left at their markup's own default display:none rather than ever
+  // being flipped to 'block'. Everything backing them (the sheet
+  // columns, Code.gs's update_medical/AAR actions, the render/save
+  // functions below) is untouched, so restoring the feature later is
+  // just re-adding these two lines.
 
   // Ensure add forms are closed
   document.getElementById('med-add-form').style.display = 'none';
@@ -4085,7 +4088,8 @@ function renderEraStack(eras, data) {
     header.innerHTML = '<div style="font-family:Special Elite,monospace;font-size:20px;color:#1c1608;letter-spacing:.04em;">' + eraDecade[era] + '</div>'
       + '<div style="font-family:Courier Prime,monospace;font-size:8px;letter-spacing:.15em;text-transform:uppercase;color:#4a3f28;">' + (eraLabels[era]||'') + '</div>'
       + '<div style="margin-left:auto;display:flex;align-items:center;gap:12px;">'
-      + '<span style="font-family:Courier Prime,monospace;font-size:8px;color:#4a3f28;">' + (faceUrl ? '&#9679; Active' : '&#9675; Pending') + '</span>'
+      + '<span id="era-preview-' + era + '"></span>'
+      + '<span style="font-family:Courier Prime,monospace;font-size:8px;color:#4a3f28;">' + (faceUrl ? '&#9679; Photo On File' : '&#9675; No Photo Yet') + '</span>'
       + '<span id="era-chevron-' + era + '" style="font-size:12px;color:#8a7a5a;transition:transform 200ms;">' + (isOpen ? '&#9650;' : '&#9660;') + '</span>'
       + '</div>';
     header.onclick = () => toggleEraAccordion(era);
@@ -4171,6 +4175,50 @@ function renderEraStack(eras, data) {
   // Remove old min-height hack — accordion is natural height
   stack.style.minHeight = '';
   document.getElementById('af-add-era-btn').style.display = eras.length < 4 ? 'block' : 'none';
+  updatePreviewBadges();
+}
+
+// Which era's Face Plate is the Agent's "preview" photo -- the one every
+// OTHER surface (roster tray, Field ID card) shows via the flat
+// face_plate_url field, since none of them know about the per-era
+// columns. campaign_era records the explicit choice; before it's ever
+// set, the first/oldest era (afEraPages[0]) is treated as the preview,
+// matching what face_plate_url already held by default (era Plate/
+// prompt data collision fix's own idx===0 fallback).
+function updatePreviewBadges() {
+  if (!afData) return;
+  afEraPages.forEach(function (era) {
+    const el = document.getElementById('era-preview-' + era);
+    if (!el) return;
+    // Available on every era regardless of whether its Face Plate
+    // exists yet -- marking an era active ahead of generating its photo
+    // is a real, useful order of operations, not just a display choice.
+    const isPreview = afData.campaign_era ? (afData.campaign_era === era) : (afEraPages[0] === era);
+    el.innerHTML = isPreview
+      ? '<span style="font-family:Courier Prime,monospace;font-size:8px;letter-spacing:.08em;text-transform:uppercase;color:#8b1a1a;">Active Era</span>'
+      : '<button type="button" data-era="' + era + '" onclick="event.stopPropagation();setPreviewEra(this.dataset.era)" style="font-family:Courier Prime,monospace;font-size:8px;letter-spacing:.08em;text-transform:uppercase;background:transparent;color:#4a3f28;border:1px solid rgba(160,130,70,.4);padding:2px 6px;cursor:pointer;">Make Active Era</button>';
+  });
+}
+
+function setPreviewEra(era) {
+  if (!afData || !afCode) return;
+  // May be '' if this era has no Face Plate yet -- that's fine, it just
+  // means the preview surfaces (roster tray, Field ID card) show no
+  // photo until one's added for this era, same as before this feature
+  // existed for an Agent with no Face Plate at all.
+  const faceUrl = afData['era_' + era + '_face_url'] || (afEraPages[0] === era ? afData.face_plate_url : '');
+  afData.campaign_era = era;
+  afData.face_plate_url = faceUrl;
+  persistAgent(afCode, afData);
+  updatePreviewBadges();
+  fetch(APPS_SCRIPT_URL, {
+    method: 'POST', mode: 'no-cors', headers: {'Content-Type':'text/plain'},
+    body: JSON.stringify({ action: 'update_field', agent_code: afCode, token: agentToken(afCode), field: 'campaign_era', value: era })
+  }).catch(() => {});
+  fetch(APPS_SCRIPT_URL, {
+    method: 'POST', mode: 'no-cors', headers: {'Content-Type':'text/plain'},
+    body: JSON.stringify({ action: 'update_field', agent_code: afCode, token: agentToken(afCode), field: 'face_plate_url', value: faceUrl })
+  }).catch(() => {});
 }
 
 function toggleEraAccordion(era) {
