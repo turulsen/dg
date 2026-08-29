@@ -5009,6 +5009,109 @@ def test_page_back_link_visible_standalone(p):
     page.close()
     return errs
 
+def test_shell_hides_widgets_for_notes_popover(p):
+    """Real player report: Notes' own block-type picker (Editor.js's
+    mobile bottom sheet, opened via a block's own "+" button) was
+    rendering correctly but sitting BEHIND the shell's hoisted Table
+    Radio/Dice Roller -- both are position:fixed in hub.html's own
+    document (outside the content iframe entirely), so they paint over
+    the ENTIRE iframe unconditionally; no z-index used inside Notes can
+    ever get above them, since an iframe boundary blocks CSS stacking
+    context, not just this popover's own. Fixed with a small explicit
+    API (hub.html's window.dgShellSetWidgetsHidden) that Notes calls
+    into via window.parent when its own popover-open MutationObserver
+    (lockBodyScrollWhilePopoverOpen) fires -- same-origin, so reaching
+    into the parent directly is safe. Loads Notes for real inside the
+    shell (not a standalone visit), gets a live Editor.js instance up,
+    and clicks a block's own real "+" button to open the REAL popover
+    (not a simulated class toggle) -- proving the actual code path, not
+    just the plumbing around it."""
+    page = p.new_page()
+    page.set_default_timeout(15000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=list_cells" in url:
+                res = {"status": "OK", "cells": []}  # unassigned -> solo mode, reaches a live editor fastest
+            elif "action=list_cell_notes" in url:
+                res = {"status": "OK", "notes": {}, "identities": {}}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+    page.add_init_script("""
+        try {
+            localStorage.setItem('dg_agent_roster', JSON.stringify({
+                'ELVI-HENC': { code: 'ELVI-HENC', char_name: 'Elvis Shantings', saved_at: Date.now() }
+            }));
+        } catch (e) {}
+    """)
+
+    page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function(
+        "() => { var f = document.getElementById('dg-shell-content'); "
+        "return f.contentDocument && f.contentDocument.readyState === 'complete'; }")
+    # Load Notes into the shell's own content iframe -- same mechanism a
+    # real "Notes" link click uses, just driven directly here rather
+    # than clicking through Agent Hub's roster first.
+    page.evaluate("() => { document.getElementById('dg-shell-content').src = 'notes/index.html?code=ELVI-HENC'; }")
+    page.wait_for_function(
+        "() => { var f = document.getElementById('dg-shell-content'); "
+        "return f.contentDocument && f.contentDocument.readyState === 'complete' "
+        "&& /notes\\/index\\.html/.test(f.contentWindow.location.href); }")
+
+    frame = page.frame_locator("#dg-shell-content")
+    wait_for_condition(lambda: page.eval_on_selector(
+        "#dg-shell-content", "el => !!(el.contentDocument && el.contentDocument.querySelector('.dg-notes-identity-modal'))"
+    ), timeout_ms=8000)
+    frame.locator(".dg-notes-color-swatch").first.click()
+    frame.locator(".dg-notes-identity-confirm").click()
+    wait_for_condition(lambda: page.eval_on_selector(
+        "#dg-shell-content", "el => !!(el.contentDocument && el.contentDocument.querySelector('#dg-notes-editor-mount .ce-block'))"
+    ), timeout_ms=8000)
+
+    record("shell", "the shell's own widgets start out visible (not hidden before any popover ever opened)",
+           page.eval_on_selector("#dg-radio", "el => el.style.visibility") != "hidden", "")
+
+    # A real block's own "+" button, not a simulated class toggle --
+    # exercises Editor.js's actual popover-open code path.
+    frame.locator(".ce-block").first.hover()
+    frame.locator(".ce-toolbar__plus").click()
+    wait_for_condition(lambda: page.eval_on_selector(
+        "#dg-shell-content", "el => !!(el.contentDocument && el.contentDocument.querySelector('.ce-popover--opened'))"
+    ), timeout_ms=6000)
+
+    record("shell", "opening the real block-type picker hides the shell's Table Radio widget",
+           page.eval_on_selector("#dg-radio", "el => el.style.visibility") == "hidden", "")
+    record("shell", "opening the real block-type picker hides the shell's Dice Roller widget",
+           page.eval_on_selector("#dr-panel", "el => el.style.visibility") == "hidden", "")
+
+    # Close it by clicking elsewhere in the document.
+    frame.locator("body").click(position={"x": 5, "y": 5})
+    wait_for_condition(lambda: page.eval_on_selector(
+        "#dg-shell-content", "el => !(el.contentDocument && el.contentDocument.querySelector('.ce-popover--opened'))"
+    ), timeout_ms=6000)
+
+    record("shell", "closing the picker restores the shell's Table Radio widget",
+           page.eval_on_selector("#dg-radio", "el => el.style.visibility") != "hidden", "")
+    record("shell", "closing the picker restores the shell's Dice Roller widget",
+           page.eval_on_selector("#dr-panel", "el => el.style.visibility") != "hidden", "")
+
+    record("shell", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_agent_portal_code_query_param(p):
     """agent-hub.html's Agent Files "Files" and "ID Creator" buttons link
     to dg-agent-portal.html?code=XXXX#agent / #ids -- a new
@@ -8407,6 +8510,8 @@ def main():
         safe(test_shell_back_link_hidden_inside_shell, browser, area="shell")
 
         safe(test_page_back_link_visible_standalone, browser, area="shell")
+
+        safe(test_shell_hides_widgets_for_notes_popover, browser, area="shell")
 
         safe(test_agent_portal_code_query_param, browser, area="agent-portal")
 
