@@ -187,6 +187,41 @@
     document.head.appendChild(s);
   }
 
+  // Recomputes, from wall-clock "now", how far into the broadcast a
+  // channel's current track should be -- shared by renderEmbed() (for
+  // both the <audio> seek and YouTube's playerVars.start) and
+  // seekAudioToLive_()'s post-interruption reseek below, so both land on
+  // the same live position instead of two slightly different formulas.
+  function liveElapsedSeconds_(np) {
+    var isPaused = !!np.paused;
+    var pausedAtMs = np.paused_at || Date.now();
+    return isPaused
+      ? Math.max(0, Math.floor((pausedAtMs - (np.started_at || pausedAtMs)) / 1000))
+      : Math.max(0, Math.floor((Date.now() - (np.started_at || Date.now())) / 1000));
+  }
+
+  // Seeks an <audio> element to the live position for the given
+  // now-playing doc, THEN invokes `then` (if given) -- calling .play()
+  // before metadata has loaded and a later currentTime assignment both
+  // "work" individually, but calling play() first turned out to win the
+  // race: Chromium (confirmed via a currentTime-setter probe, not just
+  // suspected) silently resets the seek back toward 0 once the requested
+  // playback actually starts, discarding a currentTime set in between.
+  // Routing every play() call through `then` guarantees the seek is
+  // fully applied first. Also handles setting .currentTime before the
+  // element has loaded enough to know its own duration at all (readyState
+  // 0, HAVE_NOTHING) -- deferred until loadedmetadata, since iOS Safari
+  // is known to silently drop that assignment rather than queue it.
+  function seekAudioToLive_(audioEl, np, then) {
+    if (!audioEl || !np) { if (then) then(); return; }
+    function apply() {
+      try { audioEl.currentTime = liveElapsedSeconds_(np); } catch (e) { /* not seekable yet */ }
+      if (then) then();
+    }
+    if (audioEl.readyState >= 1) { apply(); return; }
+    audioEl.addEventListener('loadedmetadata', apply, { once: true });
+  }
+
   function destroyActivePlayers() {
     if (ytPlayer) { try { ytPlayer.destroy(); } catch (e) { /* already gone */ } ytPlayer = null; }
     ytPlayerReady = false;
@@ -556,10 +591,7 @@
     }
 
     var isPaused = !!np.paused;
-    var pausedAtMs = np.paused_at || Date.now();
-    var elapsed = isPaused
-      ? Math.max(0, Math.floor((pausedAtMs - (np.started_at || pausedAtMs)) / 1000))
-      : Math.max(0, Math.floor((Date.now() - (np.started_at || Date.now())) / 1000));
+    var elapsed = liveElapsedSeconds_(np);
     var muted = isMuted();
     var vol = getVolume();
     var loop = !!np.loop;
@@ -626,7 +658,6 @@
       if (volSlider) volSlider.style.display = '';
       wrap.innerHTML = '<audio id="dg-radio-audio" src="' + escapeHtml(np.track_url) + '"></audio>';
       var audioEl = document.getElementById('dg-radio-audio');
-      audioEl.currentTime = elapsed;
       audioEl.muted = muted;
       audioEl.volume = vol / 100;
       audioEl.loop = loop;
@@ -648,21 +679,41 @@
       // the table silently stuck.
       audioEl.addEventListener('pause', function () {
         if (!intentionalPause && !audioEl.ended) {
-          var resumeAfterInterruption = audioEl.play();
-          if (resumeAfterInterruption && resumeAfterInterruption.catch) {
-            // Genuinely can't resume without a fresh user gesture --
-            // same fallback the initial play() attempt below already
-            // offers, not a new failure mode.
-            resumeAfterInterruption.catch(function () { resumeBtn.style.display = 'block'; });
+          // The same WebKit interruption that fires this unprompted
+          // pause can also silently evict the element's buffered audio,
+          // which resets currentTime back toward 0 once play() actually
+          // starts fetching again -- reseek to the CURRENT live position
+          // (recomputed from wall-clock, not whatever renderEmbed()
+          // computed when the track first loaded) so a resume lands back
+          // where the broadcast actually is now, not at the beginning.
+          // window._dgRadioLast is the last known now-playing doc; a
+          // real Handler pause would have set intentionalPause first, so
+          // reaching here with .paused true would be a stale reference,
+          // hence the belt-and-suspenders check.
+          function resumeAfterInterruption() {
+            var p = audioEl.play();
+            if (p && p.catch) {
+              // Genuinely can't resume without a fresh user gesture --
+              // same fallback the initial play() attempt below already
+              // offers, not a new failure mode.
+              p.catch(function () { resumeBtn.style.display = 'block'; });
+            }
+          }
+          if (window._dgRadioLast && !window._dgRadioLast.paused) {
+            seekAudioToLive_(audioEl, window._dgRadioLast, resumeAfterInterruption);
+          } else {
+            resumeAfterInterruption();
           }
         }
       });
-      if (!isPaused) {
-        var playPromise = audioEl.play();
-        if (playPromise && playPromise.catch) {
-          playPromise.catch(function () { resumeBtn.style.display = 'block'; });
+      seekAudioToLive_(audioEl, np, function () {
+        if (!isPaused) {
+          var playPromise = audioEl.play();
+          if (playPromise && playPromise.catch) {
+            playPromise.catch(function () { resumeBtn.style.display = 'block'; });
+          }
         }
-      }
+      });
     } else {
       // Generic embeddable URL, neither YouTube, SoundCloud, nor direct
       // audio -- no API, cross-origin, never controllable from here

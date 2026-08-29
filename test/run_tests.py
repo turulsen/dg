@@ -4343,6 +4343,95 @@ def test_table_radio_unprompted_pause_auto_resumes(p):
     page.close()
     return errs
 
+def test_table_radio_audio_syncs_to_live_position(p):
+    """Regression test for a real player report: tuning in to a Track
+    Library broadcast always started the <audio> element from 0:00
+    instead of syncing to where the Handler actually started it. Root
+    cause was setting audioEl.currentTime immediately after creating the
+    element, before it has loaded enough to know its own duration
+    (readyState 0 / HAVE_NOTHING) -- Chrome queues that assignment and
+    applies it once ready, but iOS Safari can silently drop it, which is
+    exactly the "always restarts from the beginning" shape of bug. The
+    fix (seekAudioToLive_()) defers the assignment to loadedmetadata
+    when the element isn't ready yet. Not reproducible as a Safari-vs-
+    Chrome behavioral difference in this suite's Chromium (same class of
+    gap as the unprompted-pause quirk above), but the actual seek target
+    -- landing on the live elapsed position, not 0 -- is directly
+    testable and would already have failed against the pre-fix code path
+    that computed but never re-applied it after a deferred load.
+
+    A second scenario covers the other half of the same player report:
+    after the WebKit interruption + auto-resume from the test above,
+    'stops and restarts from the beginning' rather than resuming where
+    it left off -- simulated here by corrupting currentTime to 0 (as if
+    the browser evicted the buffered audio) immediately before firing an
+    unprompted 'pause' event, confirming the auto-resume path reseeks to
+    the live position rather than resuming from wherever iOS left it."""
+    # Needs a fixture genuinely longer than the elapsed offset being
+    # seeked to -- a 1s clip would just clamp/loop back near 0 and the
+    # test couldn't tell a real seek from a no-op.
+    import wave, io
+    wav_buf = io.BytesIO()
+    w = wave.open(wav_buf, "wb")
+    w.setnchannels(1); w.setsampwidth(2); w.setframerate(8000)
+    w.writeframes(b"\x00\x00" * 8000 * 90)  # 90s of silence
+    w.close()
+    wav_bytes = wav_buf.getvalue()
+
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+    install_radio_firestore_stub(page)
+    # Accept-Ranges is required for Chromium to treat this as a genuinely
+    # seekable resource in this synthetic test setup -- without it,
+    # currentTime assignments were silently reverting (an artifact of the
+    # mock response, confirmed by a currentTime-setter probe against this
+    # exact fixture; not a real-world seeking distinction, since a real
+    # Drive-hosted download link does advertise range support).
+    page.route("**/ambience.mp3", lambda r: r.fulfill(status=200, content_type="audio/wav", body=wav_bytes,
+                headers={"Accept-Ranges": "bytes"}))
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
+    page.reload(wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+
+    # A broadcast that "started" 45s ago -- a fresh tune-in should land
+    # roughly there, not at 0:00.
+    started_45s_ago = int(__import__("time").time() * 1000) - 45000
+    push_radio_now_playing(page, "1", {
+        "channel": "1", "track_url": "https://example.com/ambience.mp3",
+        "track_title": "Rain Loop", "started_at": started_45s_ago,
+        "paused": False, "paused_at": 0, "loop": False,
+    })
+    page.wait_for_timeout(1000)
+    current_time = page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.currentTime")
+    record("radio", "tuning in to an already-running broadcast seeks near the live elapsed position, not 0:00",
+           43 <= current_time <= 52, f"currentTime={current_time}")
+
+    # Now simulate the other half of the report: an unprompted pause
+    # where the browser also silently reset the position (as iOS can do
+    # when it evicts buffered audio) -- corrupt currentTime to 0 right
+    # before the 'pause' event fires, same shape an external interruption
+    # takes from the element's own perspective.
+    page.evaluate("""() => {
+        var el = document.getElementById('dg-radio-audio');
+        el.currentTime = 0;
+        el.dispatchEvent(new Event('pause'));
+    }""")
+    page.wait_for_timeout(500)
+    resumed_time = page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.currentTime")
+    record("radio", "an auto-resume after a simulated position reset reseeks to the live position, not 0:00",
+           resumed_time >= 44, f"currentTime={resumed_time}")
+
+    record("radio", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_table_radio_library_track_kind(p):
     """Table Radio Track Library (v1.7): a mp3 uploaded through A-Cell's
     Music tab is stored in Drive and served back as a direct download
@@ -7722,6 +7811,8 @@ def main():
         safe(test_table_radio_pause_and_loop, browser, area="radio")
 
         safe(test_table_radio_unprompted_pause_auto_resumes, browser, area="radio")
+
+        safe(test_table_radio_audio_syncs_to_live_position, browser, area="radio")
 
         safe(test_table_radio_library_track_kind, browser, area="radio")
 
