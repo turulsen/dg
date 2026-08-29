@@ -4054,11 +4054,25 @@ function renderEraStack(eras, data) {
   const eraDecade = {'90s':'1990s','00s':'2000s','10s':'2010s','20s':'2020s'};
 
   eras.forEach((era, idx) => {
-    // Flat sheet columns are the source of truth for now — era-specific cols added later
-    const faceUrl = driveDirectUrl(data['era_' + era + '_face_url'] || data.face_plate_url || '');
-    const outfitUrl = driveDirectUrl(data['era_' + era + '_outfit_url'] || data.outfit_plate_url || '');
-    const mode0 = data['era_' + era + '_mode0'] || data.mode0_prompt || '';
-    const mode1 = data['era_' + era + '_mode1'] || data.mode1_prompt || '';
+    // Era-specific columns are the source of truth now (every write path
+    // writes these); the flat face_plate_url/outfit_plate_url/mode0_prompt/
+    // mode1_prompt columns are only a fallback, for any Agent whose Plates/
+    // prompts were generated before the era Plate/prompt data collision fix.
+    // Gated to idx === 0 (the first/only era on the accordion) -- a
+    // pre-fix Agent only ever had ONE era, always eras[0], so that's the
+    // only era the flat legacy value could actually belong to. Every
+    // era added after that is necessarily a genuinely new one (added
+    // post-fix, since adding an era at all requires this very page); a
+    // second+ era falling back to the same flat value made a brand-new,
+    // still-blank era look like it already had a real Face Plate or
+    // prompt, live-reported as "the face plate still loads in to the
+    // latest added era" -- same underlying flaw, image side, permanent
+    // instead of a self-correcting flash the way prompts' own auto-
+    // generate guard already handles (see that guard's own comment).
+    const faceUrl = driveDirectUrl(data['era_' + era + '_face_url'] || (idx === 0 ? data.face_plate_url : '') || '');
+    const outfitUrl = driveDirectUrl(data['era_' + era + '_outfit_url'] || (idx === 0 ? data.outfit_plate_url : '') || '');
+    const mode0 = data['era_' + era + '_mode0'] || (idx === 0 ? data.mode0_prompt : '') || '';
+    const mode1 = data['era_' + era + '_mode1'] || (idx === 0 ? data.mode1_prompt : '') || '';
     const isOpen = idx === 0;
 
     const item = document.createElement('div');
@@ -4136,8 +4150,16 @@ function renderEraStack(eras, data) {
     stack.appendChild(item);
     if (faceUrl) loadDriveImage(faceUrl, 'img-face-' + era);
     if (outfitUrl) loadDriveImage(outfitUrl, 'img-outfit-' + era);
-    // Auto-generate prompts if missing
-    if (!mode0 || !mode1) {
+    // Auto-generate prompts if missing -- checks THIS era's own columns
+    // directly, not the mode0/mode1 fallback value used for display
+    // above. That fallback exists so an Agent's pre-fix era still shows
+    // its real legacy prompt; but for a genuinely NEW era with no
+    // era-specific data yet, the same fallback would resolve to some
+    // OTHER (unrecorded) era's stale flat value, make this check think
+    // data already exists, and permanently skip generation -- the exact
+    // cross-era leak this whole fix exists to prevent, just reached
+    // through the read fallback instead of the old write collision.
+    if (!data['era_' + era + '_mode0'] || !data['era_' + era + '_mode1']) {
       (function(capturedEra) {
         setTimeout(function() { autoGenerateEraPrompts(capturedEra); }, 500 + idx * 200);
       })(era);
@@ -4206,7 +4228,10 @@ function saveGeneratedPlate(dataUrl, era, type, imageName) {
   const box = document.getElementById('plate-' + type + '-' + era);
   if (box) box.innerHTML = '<img src="' + dataUrl + '" style="width:100%;display:block;object-fit:cover;object-position:top center;">';
   if (type === 'face') afRecentFacePlateDataUri[era] = dataUrl;
-  const fieldKey = type === 'face' ? 'face_plate_url' : 'outfit_plate_url';
+  // Era-specific (era Plate/prompt data collision fix) -- the old flat
+  // face_plate_url/outfit_plate_url was shared by every era, so adding
+  // a second era silently overwrote the first era's Plate.
+  const fieldKey = 'era_' + era + '_' + (type === 'face' ? 'face_url' : 'outfit_url');
   const charName = afData ? afData.char_name || afCode : afCode;
   const mime = dataUrl.split(';')[0].split(':')[1] || 'image/png';
   const ext = '.' + (mime.split('/')[1] || 'png');
@@ -4272,7 +4297,15 @@ function generatePlateImage(era, mode, btn) {
   const prompt = ta.value.trim();
   if (!prompt) { if (st) st.textContent = 'Write or generate a prompt first.'; return; }
 
-  const faceUrl = afData ? (afData['era_' + era + '_face_url'] || afData.face_plate_url || '') : '';
+  // Same idx===0 gating as renderEraStack()'s own display fallback (see
+  // its comment) -- afEraPages[0] is the first/only era on a pre-fix
+  // Agent, the only one the flat legacy face_plate_url could actually
+  // belong to. Without this, generating an Outfit Plate for a second+
+  // era (still genuinely blank) would silently pass this era's own
+  // "no Face Plate yet" gate using some OTHER era's leftover face as
+  // the reference -- wrong likeness, and the gate meant to prevent
+  // exactly that never fires.
+  const faceUrl = afData ? (afData['era_' + era + '_face_url'] || (afEraPages[0] === era ? afData.face_plate_url : '') || '') : '';
   const recentFaceDataUri = afRecentFacePlateDataUri[era];
 
   // Outfit Plate depends on the Face Plate for likeness -- require it to
@@ -4355,6 +4388,50 @@ function generatePlateImage(era, mode, btn) {
   }
 }
 
+/* ── Per-era age adjustment: an Agent's age_range is entered once, at
+   whichever era they were originally registered in (eras[0]/
+   afEraPages[0] -- the same "original era" concept renderEraStack()'s
+   own display fallback already uses, see its comment). Real player
+   report: registering at 40s in the 2020s should describe her as in
+   her 20s in a 2000s portrait, not still 40s -- every era's prompt was
+   using the same flat age_range regardless of how many years before/
+   after registration that era actually is. ── */
+const ERA_YEAR_ = {'90s':1990,'00s':2000,'10s':2010,'20s':2020};
+function ageRangeToYears_(label) {
+  if (!label) return null;
+  if (/60s or older/i.test(label)) return 62; // representative point for the open-ended top bracket
+  const m = /^(Early|Mid|Late)\s+(\d)0s$/i.exec(label.trim());
+  if (!m) return null; // an unrecognized/legacy value -- leave age adjustment out rather than guess
+  const decade = parseInt(m[2], 10) * 10;
+  const sub = { early: 2, mid: 5, late: 8 }[m[1].toLowerCase()];
+  return decade + sub;
+}
+function yearsToAgeRangeLabel_(years) {
+  years = Math.round(years);
+  if (years >= 60) return '60s or older';
+  if (years < 21) years = 21; // floor -- youngest real option is Early 20s
+  const decade = Math.floor(years / 10) * 10;
+  const sub = years - decade;
+  const bucket = sub <= 3 ? 'Early' : (sub <= 6 ? 'Mid' : 'Late');
+  return bucket + ' ' + decade + 's';
+}
+// The reference era is whichever one was rendered first this load
+// (afEraPages is fully populated by the time this runs -- it's built
+// synchronously across renderEraStack()'s whole forEach before any of
+// its staggered setTimeout-deferred autoGenerateEraPrompts() calls can
+// fire) with a parseEras() fallback for the one call site that runs
+// before any era has rendered at all (initEra() on a brand-new Agent's
+// very first era).
+function ageRangeForEra_(era) {
+  const raw = afData && afData.age_range || '';
+  if (!raw) return raw;
+  const refEra = (afEraPages && afEraPages.length) ? afEraPages[0] : ((parseEras(afData || {})[0]) || era);
+  if (refEra === era || !ERA_YEAR_[refEra] || !ERA_YEAR_[era]) return raw;
+  const baseYears = ageRangeToYears_(raw);
+  if (baseYears === null) return raw;
+  return yearsToAgeRangeLabel_(baseYears + (ERA_YEAR_[era] - ERA_YEAR_[refEra]));
+}
+
 /* ── AUTO-GENERATE ERA PROMPTS ── */
 function autoGenerateEraPrompts(era) {
   if (!afData || !afCode) return;
@@ -4365,12 +4442,21 @@ function autoGenerateEraPrompts(era) {
   const st1 = document.getElementById('prompt-mode1-status-' + era);
   if (!ta0 || !ta1) return;
 
-  const needsPortrait = !ta0.value.trim();
-  const needsReference = !ta1.value.trim();
+  // Checks THIS era's own columns directly, same reasoning as
+  // renderEraStack()'s own outer guard right above its call to this
+  // function -- ta0.value/ta1.value at this point is whatever
+  // renderEraStack() just rendered into the textarea, which for a
+  // brand-new era with no era-specific data yet is the display
+  // fallback's merged value (some OTHER, unrecorded era's stale flat
+  // prompt), not actually empty. Checking that instead of afData
+  // directly used to make this function think a genuinely-blank new
+  // era already had data and silently skip generation.
+  const needsPortrait = !afData['era_' + era + '_mode0'];
+  const needsReference = !afData['era_' + era + '_mode1'];
   if (!needsPortrait && !needsReference) return;
 
   const character = {
-    age_range: afData.age_range||'', sex: afData.sex||'', nationality: afData.nationality||'',
+    age_range: ageRangeForEra_(era), sex: afData.sex||'', nationality: afData.nationality||'',
     build: afData.build||'', posture: afData.posture||'', face_shape: afData.face_shape||'',
     eye_color: afData.eye_color||'', eye_shape: afData.eye_shape||'', nose: afData.nose||'',
     lips: afData.lips||'', skin: afData.skin||'', facial_hair: afData.facial_hair||'',
@@ -4406,15 +4492,21 @@ function autoGenerateEraPrompts(era) {
         if (st0) { st0.textContent = 'Generated.'; setTimeout(function(){ st0.textContent=''; }, 3000); }
         // Save to Sheet
         fetch(APPS_SCRIPT_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'},
-          body: JSON.stringify({ action:'update_field', agent_code: afCode, token: agentToken(afCode), field:'mode0_prompt', value: json.prompt })
+          body: JSON.stringify({ action:'update_field', agent_code: afCode, token: agentToken(afCode), field: 'era_' + era + '_mode0', value: json.prompt })
         }).catch(function(e){ console.error(e); });
-        if (afData) afData.mode0_prompt = json.prompt;
+        if (afData) afData['era_' + era + '_mode0'] = json.prompt;
         persistAgent(afCode, afData);
       } else {
-        if (st0) st0.textContent = 'Error.';
+        // Was a bare "Error." with no way to tell a real failure apart
+        // from a rate limit (checkRateLimit_() in Code.gs, 10 prompt
+        // generations per 10 minutes per Agent -- easy to hit just from
+        // adding several eras at once, each needing up to two of these
+        // calls) -- surfaces json.message now, same as
+        // generatePlateImage()'s own error text already does.
+        if (st0) st0.textContent = 'Error: ' + (json.message || 'generation failed');
       }
     })
-    .catch(function() { if (st0) st0.textContent = 'Error.'; });
+    .catch(function() { if (st0) st0.textContent = 'Error: connection failed.'; });
   }
 
   // Generate Field Reference (mode: outfit = full body with outfit)
@@ -4430,15 +4522,16 @@ function autoGenerateEraPrompts(era) {
         ta1.value = json.prompt;
         if (st1) { st1.textContent = 'Generated.'; setTimeout(function(){ st1.textContent=''; }, 3000); }
         fetch(APPS_SCRIPT_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'},
-          body: JSON.stringify({ action:'update_field', agent_code: afCode, token: agentToken(afCode), field:'mode1_prompt', value: json.prompt })
+          body: JSON.stringify({ action:'update_field', agent_code: afCode, token: agentToken(afCode), field: 'era_' + era + '_mode1', value: json.prompt })
         }).catch(function(e){ console.error(e); });
-        if (afData) afData.mode1_prompt = json.prompt;
+        if (afData) afData['era_' + era + '_mode1'] = json.prompt;
         persistAgent(afCode, afData);
       } else {
-        if (st1) st1.textContent = 'Error.';
+        // See the mode0 branch above's comment -- same fix.
+        if (st1) st1.textContent = 'Error: ' + (json.message || 'generation failed');
       }
     })
-    .catch(function() { if (st1) st1.textContent = 'Error.'; });
+    .catch(function() { if (st1) st1.textContent = 'Error: connection failed.'; });
   }
 }
 
@@ -4451,8 +4544,10 @@ function saveEraPrompt(btn) {
   const val = textarea.value.trim();
   if (!val) return;
   if (status) status.textContent = 'Saving…';
-  // Map mode to sheet field name
-  const fieldMap = {'mode0': 'mode0_prompt', 'mode1': 'mode1_prompt'};
+  // Map mode to sheet field name -- era-specific (era Plate/prompt data
+  // collision fix), not the shared flat mode0_prompt/mode1_prompt every
+  // era used to silently overwrite.
+  const fieldMap = {'mode0': 'era_' + era + '_mode0', 'mode1': 'era_' + era + '_mode1'};
   const field = fieldMap[mode];
   fetch(APPS_SCRIPT_URL, {
     method: 'POST', mode: 'no-cors',
