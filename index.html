@@ -162,7 +162,15 @@
           </div>
 
           <div class="clearance-choices">
-            <a class="clearance-choice cc-agent" href="agent-hub.html">
+            <!-- Both routed through the app shell (hub.html) now, not a
+                 direct page load -- keeps Table Radio/Dice Roller alive
+                 across whatever page comes next instead of restarting on
+                 every navigation. ?start= picks which page the shell's
+                 content iframe opens to (hub.html validates it against
+                 an allowlist); the shell's own persistent nav lets a
+                 player switch between Agent Hub and A-Cell afterward
+                 without leaving either behind. -->
+            <a class="clearance-choice cc-agent" href="hub.html">
               <span class="cc-tab">Clearance: Agent</span>
               <span class="cc-body">
                 <span class="cc-title">AGENT</span>
@@ -170,7 +178,7 @@
                 <span class="cc-go">-&gt; Enter as Agent</span>
               </span>
             </a>
-            <a class="clearance-choice cc-acell" href="a-cell.html">
+            <a class="clearance-choice cc-acell" href="hub.html?start=a-cell.html">
               <span class="cc-tab">Clearance: A-Cell</span>
               <span class="cc-body">
                 <span class="cc-title">A-CELL</span>

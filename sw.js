@@ -16,11 +16,12 @@
    the activate handler below drops the old cache instead of pages
    being stuck on stale JS forever.
    ══════════════════════════════════════════════ */
-const CACHE_NAME = 'dg-hub-shell-v42';
+const CACHE_NAME = 'dg-hub-shell-v43';
 
 const SHELL_FILES = [
   './',
   'index.html',
+  'hub.html',
   'agent-hub.html',
   'a-cell.html',
   'dg-agent-portal.html',

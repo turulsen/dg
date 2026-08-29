@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Delta Green — Hub</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/png" href="assets/mars-tech-seal.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a0d08">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/theme-folder.css">
+<style>
+  /* ══════════════════════════════════════════════
+     Phase 2/3/4 -- see docs/firebase-migration/ (shell plan) on this
+     branch. This page owns Table Radio, Dice Roller, and the
+     service-worker update banner once, for the tab's whole lifetime;
+     everything else the app does still lives in the standalone pages,
+     loaded here one at a time into #dg-shell-content instead of via a
+     real page navigation -- Agent Hub is the default, loaded on a bare
+     visit; ?start=a-cell.html (see index.html's own Clearance links)
+     opens straight to A-Cell instead. Agent Hub/stats/Agent File all
+     still include their own copies of table-radio.js/dice-roller.js
+     too (unchanged, so they keep working exactly as before when
+     visited standalone) -- both scripts detect they're running inside
+     this exact iframe (window.frameElement.id === 'dg-shell-content')
+     and skip mounting their own copy there, so only this page's
+     hoisted widgets ever render, with no second pill sitting on top of
+     the real one.
+
+     Phase 3 -- real cross-frame nav (assets/shell-nav.js): a persistent
+     top nav for the two top-level destinations (Agent Hub, A-Cell);
+     deeper pages (Character Sheet, Agent File, Notes) are reached the
+     normal way, via a link clicked inside whichever page is currently
+     loaded -- a relative <a href> inside an iframe navigates that
+     iframe on its own, no extra plumbing needed.
+
+     Phase 4 -- linked live from index.html's own Clearance choices,
+     replacing a real page navigation to agent-hub.html/a-cell.html.
+     Still remaining: fold the rest of the site's own top-level nav (if
+     any gets added later) into #dg-shell-nav too.
+     ══════════════════════════════════════════════ */
+  html,body{ height:100%; margin:0; }
+  *{ box-sizing:border-box; }
+  body{
+    display:flex; flex-direction:column;
+    background:#0a0d08; color:#d9d2b8;
+    font-family:'Courier Prime',monospace;
+  }
+  #dg-shell-header{
+    flex:none; display:flex; align-items:center; gap:10px;
+    padding:10px 16px; border-bottom:1px solid #3a4630;
+    background:#11150d;
+  }
+  #dg-shell-header .brand{
+    font-family:'Special Elite',monospace; font-size:13px; letter-spacing:.12em;
+    text-transform:uppercase; color:#c8c1a8;
+  }
+  #dg-shell-nav{
+    margin-left:auto; display:flex; gap:6px; align-items:center;
+  }
+  #dg-shell-nav button{
+    font-family:'Courier Prime',monospace; font-size:11px; color:#c8c1a8;
+    background:#1a1f16; border:1px solid #3a4630; padding:5px 10px; cursor:pointer;
+  }
+  #dg-shell-nav button:hover{ border-color:#6a7a4f; }
+  #dg-shell-nav button.dg-shell-nav-active{
+    background:#2a3a1c; border-color:#4a6a30; color:#d8f0c0;
+  }
+  #dg-shell-content-wrap{ flex:1; min-height:0; }
+  #dg-shell-content{
+    display:block; width:100%; height:100%; border:0; background:#0a0d08;
+  }
+</style>
+</head>
+<body>
+
+<div id="dg-shell-header">
+  <span class="brand">Delta Green — Hub</span>
+</div>
+
+<div id="dg-shell-content-wrap">
+  <iframe id="dg-shell-content" title="Delta Green content"></iframe>
+</div>
+
+<script>
+  // Explicit allowlist, not a bare pass-through of ?start= into the
+  // iframe's src -- a crafted link (?start=https://evil.example) would
+  // otherwise load an arbitrary page inside the shell's own chrome.
+  // Runs synchronously, right after the iframe is parsed and before any
+  // deferred script (shell-nav.js's own initial active-tab read
+  // included) -- the iframe only ever loads the one correct page, no
+  // flash of Agent Hub before redirecting to A-Cell.
+  (function () {
+    var ALLOWED_START = ['agent-hub.html', 'a-cell.html'];
+    var requested = new URLSearchParams(location.search).get('start');
+    var initial = ALLOWED_START.indexOf(requested) !== -1 ? requested : 'agent-hub.html';
+    document.getElementById('dg-shell-content').src = initial;
+  })();
+</script>
+<script src="assets/table-radio.js"></script>
+<script src="assets/dice-roller.js?v=4"></script>
+<script src="assets/sw-update.js" data-sw="sw.js"></script>
+<script src="assets/shell-nav.js"></script>
+
+</body>
+</html>
