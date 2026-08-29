@@ -6113,7 +6113,11 @@ def test_agent_file_active_era_toggle(p):
     Clicking it must: flip which era shows the "Active Era" badge, and
     persist BOTH campaign_era (the new field) and face_plate_url (so
     every existing preview surface picks up the new photo with no
-    changes of its own) via update_field."""
+    changes of its own) via update_field. A third era with no Face
+    Plate yet must still offer the toggle -- an earlier pass at this
+    hid it whenever there was no photo yet, but marking an era active
+    ahead of generating its photo is a real, useful order of
+    operations, not just a display choice."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -6127,11 +6131,13 @@ def test_agent_file_active_era_toggle(p):
         "hair_color": "brown", "hair_style": "short", "hair_texture": "straight",
         "build": "average", "posture": "upright", "expression": "neutral", "vibe": "calm",
         "jacket": "coat", "shirt": "shirt", "trousers": "trousers", "footwear": "boots",
-        "active_eras": json.dumps(["90s", "00s"]),
+        "active_eras": json.dumps(["90s", "00s", "10s"]),
         "era_90s_face_url": "https://drive.google.com/uc?id=fake90sface",
         "era_90s_mode0": "existing", "era_90s_mode1": "existing",
         "era_00s_face_url": "https://drive.google.com/uc?id=fake00sface",
         "era_00s_mode0": "existing", "era_00s_mode1": "existing",
+        # No era_10s_face_url -- this era has no Face Plate yet.
+        "era_10s_mode0": "", "era_10s_mode1": "",
     }
     briefs = {"ERAT-OGL01": {"char_name": "Test Agent", **complete_extra}}
     field_posts = []
@@ -6188,6 +6194,20 @@ def test_agent_file_active_era_toggle(p):
     record("agent-portal", "face_plate_url (the flat field every other preview surface reads) was updated to the 00s era's photo",
            len(face_plate_posts) == 1 and face_plate_posts[0].get("value") == "https://drive.google.com/uc?id=fake00sface",
            str(field_posts))
+
+    # A third era with no Face Plate yet -- the toggle must still work.
+    record("agent-portal", "an era with no Face Plate yet still offers the Make Active Era button",
+           page.locator("#era-preview-10s button").count() == 1, "")
+    page.click("#era-preview-10s button")
+    page.wait_for_timeout(300)
+    record("agent-portal", "clicking it flips the badge to the photo-less era too",
+           "active era" in page.inner_text("#era-preview-10s").lower(), page.inner_text("#era-preview-10s"))
+    campaign_era_posts_2 = [b for b in field_posts if b.get("field") == "campaign_era"]
+    record("agent-portal", "campaign_era was persisted with the photo-less era",
+           campaign_era_posts_2[-1].get("value") == "10s" if campaign_era_posts_2 else False, str(field_posts))
+    face_plate_posts_2 = [b for b in field_posts if b.get("field") == "face_plate_url"]
+    record("agent-portal", "face_plate_url was set to empty (no photo to show yet), not left stale on the 00s era's photo",
+           face_plate_posts_2[-1].get("value") == "" if face_plate_posts_2 else False, str(field_posts))
 
     record("agent-portal", "no console errors on the active-era toggle flow", len(errs) == 0, str(errs))
     page.close()

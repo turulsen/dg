@@ -4190,19 +4190,23 @@ function updatePreviewBadges() {
   afEraPages.forEach(function (era) {
     const el = document.getElementById('era-preview-' + era);
     if (!el) return;
-    const faceUrl = afData['era_' + era + '_face_url'] || (afEraPages[0] === era ? afData.face_plate_url : '');
-    if (!faceUrl) { el.innerHTML = ''; return; }
+    // Available on every era regardless of whether its Face Plate
+    // exists yet -- marking an era active ahead of generating its photo
+    // is a real, useful order of operations, not just a display choice.
     const isPreview = afData.campaign_era ? (afData.campaign_era === era) : (afEraPages[0] === era);
     el.innerHTML = isPreview
-      ? '<span style="font-family:Courier Prime,monospace;font-size:8px;letter-spacing:.08em;text-transform:uppercase;color:#8b1a1a;">&#9733; Active Era</span>'
-      : '<button type="button" data-era="' + era + '" onclick="event.stopPropagation();setPreviewEra(this.dataset.era)" style="font-family:Courier Prime,monospace;font-size:8px;letter-spacing:.08em;text-transform:uppercase;background:transparent;color:#4a3f28;border:1px solid rgba(160,130,70,.4);padding:2px 6px;cursor:pointer;">&#9734; Make Active Era</button>';
+      ? '<span style="font-family:Courier Prime,monospace;font-size:8px;letter-spacing:.08em;text-transform:uppercase;color:#8b1a1a;">Active Era</span>'
+      : '<button type="button" data-era="' + era + '" onclick="event.stopPropagation();setPreviewEra(this.dataset.era)" style="font-family:Courier Prime,monospace;font-size:8px;letter-spacing:.08em;text-transform:uppercase;background:transparent;color:#4a3f28;border:1px solid rgba(160,130,70,.4);padding:2px 6px;cursor:pointer;">Make Active Era</button>';
   });
 }
 
 function setPreviewEra(era) {
   if (!afData || !afCode) return;
+  // May be '' if this era has no Face Plate yet -- that's fine, it just
+  // means the preview surfaces (roster tray, Field ID card) show no
+  // photo until one's added for this era, same as before this feature
+  // existed for an Agent with no Face Plate at all.
   const faceUrl = afData['era_' + era + '_face_url'] || (afEraPages[0] === era ? afData.face_plate_url : '');
-  if (!faceUrl) return; // nothing to preview for this era yet
   afData.campaign_era = era;
   afData.face_plate_url = faceUrl;
   persistAgent(afCode, afData);
