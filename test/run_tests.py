@@ -5732,7 +5732,77 @@ def test_agent_file_era_prompts_isolated_per_era(p):
     record("agent-portal", "no console errors on the era-isolation flow", len(errs) == 0, str(errs))
     page.close()
 
-    record("agent-portal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+
+def test_agent_file_era_age_adjusts_per_era(p):
+    """Regression test for a real player-reported follow-up: an Agent
+    registered as (say) Late 40s in the 2020s era should read as
+    noticeably younger in an earlier era's portrait -- specifically
+    "if an agent registers 40s in 2020s, the 2000s should be in her
+    20s". ageRangeForEra_() (dg-agent-portal.html) computes this from
+    the reference era (eras[0]/afEraPages[0] -- wherever age_range was
+    actually entered) and a fixed decade-year map (90s/00s/10s/20s ->
+    1990/2000/2010/2020), floored at Early 20s so nobody reads as a
+    literal child. Three active eras -- 20s (reference, Late 40s),
+    00s, and 90s -- checks the generate_prompt request for each
+    non-reference era carries the correctly age-shifted character.age_range,
+    not the flat, unadjusted value."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    complete_extra = {
+        "age_range": "Late 40s", "sex": "Female", "nationality": "Hispanic American",
+        "face_shape": "oval", "eye_color": "brown", "eye_shape": "round",
+        "nose": "straight", "lips": "thin", "skin": "tan", "facial_hair": "none",
+        "hair_color": "black", "hair_style": "short", "hair_texture": "straight",
+        "build": "average", "posture": "upright", "jacket": "coat", "shirt": "shirt",
+        "trousers": "trousers", "footwear": "boots", "expression": "neutral", "vibe": "calm",
+        "active_eras": json.dumps(["20s", "00s", "90s"]),
+        "era_20s_mode0": "Existing 20s portrait.", "era_20s_mode1": "Existing 20s reference.",
+        "era_00s_mode0": "", "era_00s_mode1": "", "era_90s_mode0": "", "era_90s_mode1": "",
+    }
+    briefs = {"AGED-E20A": {"char_name": "Daniela Martinez", **complete_extra}}
+    prompt_posts = []
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            body = json.loads(req.post_data or "{}")
+            if body.get("action") == "generate_prompt":
+                prompt_posts.append(body)
+                route.fulfill(status=200, content_type="application/json",
+                               body=json.dumps({"status": "OK", "prompt": "[mock]"}))
+            else:
+                route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        if "code=" in url:
+            code = url.split("code=")[1].split("&")[0]
+            res = {"status": "OK", "data": briefs[code]} if code in briefs else {"status": "NOT_FOUND"}
+        else:
+            res = {"status": "OK"}
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/dg-agent-portal.html?code=AGED-E20A#agent", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(2500)
+
+    ages_by_era = {}
+    for pp in prompt_posts:
+        ages_by_era.setdefault(pp.get("era"), pp.get("character", {}).get("age_range"))
+
+    record("agent-portal", "the 2000s era's prompt age is shifted 20 years younger than the 2020s reference (Late 40s -> Late 20s)",
+           ages_by_era.get("00s") == "Late 20s", str(ages_by_era))
+    record("agent-portal", "the 1990s era's prompt age is floored at Early 20s rather than going unrealistically young",
+           ages_by_era.get("90s") == "Early 20s", str(ages_by_era))
+
+    record("agent-portal", "no console errors on the age-adjustment flow", len(errs) == 0, str(errs))
     page.close()
     return errs
 
@@ -7646,6 +7716,8 @@ def main():
         safe(test_agent_file_era_prompt_includes_era, browser, area="agent-portal")
 
         safe(test_agent_file_era_prompts_isolated_per_era, browser, area="agent-portal")
+
+        safe(test_agent_file_era_age_adjusts_per_era, browser, area="agent-portal")
 
         safe(test_agent_file_outfit_plate_requires_face_first, browser, area="agent-portal")
 

@@ -4388,6 +4388,50 @@ function generatePlateImage(era, mode, btn) {
   }
 }
 
+/* ── Per-era age adjustment: an Agent's age_range is entered once, at
+   whichever era they were originally registered in (eras[0]/
+   afEraPages[0] -- the same "original era" concept renderEraStack()'s
+   own display fallback already uses, see its comment). Real player
+   report: registering at 40s in the 2020s should describe her as in
+   her 20s in a 2000s portrait, not still 40s -- every era's prompt was
+   using the same flat age_range regardless of how many years before/
+   after registration that era actually is. ── */
+const ERA_YEAR_ = {'90s':1990,'00s':2000,'10s':2010,'20s':2020};
+function ageRangeToYears_(label) {
+  if (!label) return null;
+  if (/60s or older/i.test(label)) return 62; // representative point for the open-ended top bracket
+  const m = /^(Early|Mid|Late)\s+(\d)0s$/i.exec(label.trim());
+  if (!m) return null; // an unrecognized/legacy value -- leave age adjustment out rather than guess
+  const decade = parseInt(m[2], 10) * 10;
+  const sub = { early: 2, mid: 5, late: 8 }[m[1].toLowerCase()];
+  return decade + sub;
+}
+function yearsToAgeRangeLabel_(years) {
+  years = Math.round(years);
+  if (years >= 60) return '60s or older';
+  if (years < 21) years = 21; // floor -- youngest real option is Early 20s
+  const decade = Math.floor(years / 10) * 10;
+  const sub = years - decade;
+  const bucket = sub <= 3 ? 'Early' : (sub <= 6 ? 'Mid' : 'Late');
+  return bucket + ' ' + decade + 's';
+}
+// The reference era is whichever one was rendered first this load
+// (afEraPages is fully populated by the time this runs -- it's built
+// synchronously across renderEraStack()'s whole forEach before any of
+// its staggered setTimeout-deferred autoGenerateEraPrompts() calls can
+// fire) with a parseEras() fallback for the one call site that runs
+// before any era has rendered at all (initEra() on a brand-new Agent's
+// very first era).
+function ageRangeForEra_(era) {
+  const raw = afData && afData.age_range || '';
+  if (!raw) return raw;
+  const refEra = (afEraPages && afEraPages.length) ? afEraPages[0] : ((parseEras(afData || {})[0]) || era);
+  if (refEra === era || !ERA_YEAR_[refEra] || !ERA_YEAR_[era]) return raw;
+  const baseYears = ageRangeToYears_(raw);
+  if (baseYears === null) return raw;
+  return yearsToAgeRangeLabel_(baseYears + (ERA_YEAR_[era] - ERA_YEAR_[refEra]));
+}
+
 /* ── AUTO-GENERATE ERA PROMPTS ── */
 function autoGenerateEraPrompts(era) {
   if (!afData || !afCode) return;
@@ -4412,7 +4456,7 @@ function autoGenerateEraPrompts(era) {
   if (!needsPortrait && !needsReference) return;
 
   const character = {
-    age_range: afData.age_range||'', sex: afData.sex||'', nationality: afData.nationality||'',
+    age_range: ageRangeForEra_(era), sex: afData.sex||'', nationality: afData.nationality||'',
     build: afData.build||'', posture: afData.posture||'', face_shape: afData.face_shape||'',
     eye_color: afData.eye_color||'', eye_shape: afData.eye_shape||'', nose: afData.nose||'',
     lips: afData.lips||'', skin: afData.skin||'', facial_hair: afData.facial_hair||'',
