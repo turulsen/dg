@@ -730,21 +730,22 @@
     <div id="acell-term-log"></div>
     <div class="acell-input-line" id="acell-input-line">&gt;<input id="acell-pw-input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="40"><span class="boot-cursor"></span></div>
   </div>
-  <!-- target="_top": see the matching comment on .hub-header's own
-       back-link below -- same reasoning, both need to exit the shell
-       entirely rather than load inside its content iframe. -->
-  <a id="acell-back" href="index.html" target="_top">&lt;- back to clearance</a>
+  <!-- Plain in-page link -- see the matching comment on .hub-header's
+       own back-link below. -->
+  <a id="acell-back" href="index.html">&lt;- back to clearance</a>
   <div id="acell-logo">
     <img src="assets/delta-green-triangle.png" alt="" width="150">
   </div>
 </div>
 
 <div class="hub-header">
-  <!-- target="_top" is a no-op standalone; inside hub.html's app shell
-       it breaks out of the content iframe instead of loading the
-       Clearance chooser cramped inside it -- index.html isn't part of
-       the shell's own page set the way A-Cell itself is. -->
-  <a class="back-link" href="index.html" target="_top">&lt;- Clearance</a>
+  <!-- Plain in-page link -- inside hub.html's app shell this loads
+       index.html into the SAME content iframe (no different from any
+       other in-page link), keeping Table Radio/Dice Roller alive.
+       index.html itself detects being embedded there and routes its own
+       Clearance choices back through the shell's existing iframe
+       instead of nesting a second shell inside the first. -->
+  <a class="back-link" href="index.html">&lt;- Clearance</a>
   <div class="stamp">Clearance: A-Cell</div>
   <h1>A-Cell</h1>
   <p>Handler tools — run Play from a simplified agent view, organize every Agent on file into Cells, and curate the table's music.</p>

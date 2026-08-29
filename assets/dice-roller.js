@@ -44,11 +44,14 @@
     // the shell owns one hoisted copy of this widget outside
     // #dg-shell-content entirely; a page loaded *into* that iframe must
     // not also mount its own (this widget's #dr-panel is also
-    // position:fixed, landing on top of the shell's real one). Null on
-    // every standalone visit and for any other embedding (e.g. Split
-    // View's own nested iframes, a different frame id) -- same-origin
-    // only, so this can't misfire cross-origin either.
-    if (window.frameElement && window.frameElement.id === 'dg-shell-content') return;
+    // position:fixed, landing on top of the shell's real one). Same for
+    // stats/index.html's own #dg-split-sheet-frame -- Split View's sheet
+    // pane is a real second copy of that same page (self-referencing
+    // iframe), so its own include would otherwise mount a second Dice
+    // Roller too. Null on every standalone visit and for any other
+    // embedding -- same-origin only, so this can't misfire cross-origin.
+    if (window.frameElement &&
+        (window.frameElement.id === 'dg-shell-content' || window.frameElement.id === 'dg-split-sheet-frame')) return;
 
     /* ── Dice config ──────────────────────────────────────────────── */
     const DICE = [
@@ -203,6 +206,11 @@
     const ROSTER_KEY = 'dg_agent_roster';
     const CLOUD_CODE_KEY = 'dg_stats_cloud_code';
     const ACELL_SESSION_KEY = 'dg_acell_session';
+    // Set alongside dg_acell_session by a-cell.html's own login success
+    // handler -- reused here to sign into Live Rolls silently, same
+    // pattern a-cell.html's own ensureHandlerSignedIn() already uses for
+    // Evidence/Track Library (see attemptSilentHandlerSignIn() below).
+    const ACELL_PW_KEY = 'dg_acell_pw';
     const HISTORY_LIMIT = 25;
 
     /* ── On-demand Firebase script loading -- same pattern as the
@@ -535,30 +543,49 @@
         }).catch(() => { _cellNameMap = {}; attachListener(); });
     }
 
+    // Same password A-Cell's own login already put in sessionStorage
+    // (dg_acell_pw) -- reused here transparently, exactly the pattern
+    // a-cell.html's own ensureHandlerSignedIn() already uses for
+    // Evidence/Track Library. A real player report: this widget used to
+    // require its OWN separate password entry on top of A-Cell's
+    // already-critical gate ("still need double log in for handler
+    // dice") even though the password is identical and already sitting
+    // right there in sessionStorage. Only falls back to the manual
+    // button+prompt if this genuinely fails (stale/wrong password, a
+    // network error) -- isHandlerContext() being true (the only way
+    // this function gets called) guarantees the key is present, but the
+    // Cloud Function call behind signInAsHandler() can still fail on
+    // its own.
+    function attemptSilentHandlerSignIn() {
+        let password = '';
+        try { password = sessionStorage.getItem(ACELL_PW_KEY) || ''; } catch (e) { /* best effort */ }
+        if (!password) { if (_e.handlerGate) _e.handlerGate.style.display = ''; return; }
+        signInAsHandler(password).then(() => {
+            if (_e.handlerGate) _e.handlerGate.style.display = 'none';
+            startHandlerHistoryFeed();
+        }).catch(() => { if (_e.handlerGate) _e.handlerGate.style.display = ''; });
+    }
     // Kicks off the right feed for this page's context. Agent mode
     // starts automatically (no password needed); Handler mode first
     // checks for a Firebase Auth session already persisted on this
-    // device from an earlier "Show Live Rolls" password entry -- the JS
-    // SDK's default persistence (IndexedDB) survives page reloads on
-    // its own, but nothing here ever checked for it, so every single
-    // page load re-prompted for the same password even right after
-    // typing it once, on top of A-Cell's own separate login. Only falls
-    // back to the button+prompt when there's genuinely no usable session
-    // (first time on this device, or it was signed out).
+    // device from an earlier sign-in -- the JS SDK's default persistence
+    // (IndexedDB) survives page reloads on its own -- and otherwise
+    // attempts the silent sign-in above before ever falling back to the
+    // button+prompt.
     function checkExistingHandlerSession() {
         ensureFirebaseApi(() => {
             const auth = window.firebase.auth();
             const unsub = auth.onAuthStateChanged(user => {
                 unsub();
-                if (!user) { if (_e.handlerGate) _e.handlerGate.style.display = ''; return; }
+                if (!user) { attemptSilentHandlerSignIn(); return; }
                 user.getIdTokenResult().then(res => {
                     if (res.claims && res.claims.handler) {
                         if (_e.handlerGate) _e.handlerGate.style.display = 'none';
                         startHandlerHistoryFeed();
-                    } else if (_e.handlerGate) {
-                        _e.handlerGate.style.display = '';
+                    } else {
+                        attemptSilentHandlerSignIn();
                     }
-                }).catch(() => { if (_e.handlerGate) _e.handlerGate.style.display = ''; });
+                }).catch(attemptSilentHandlerSignIn);
             });
         });
     }
