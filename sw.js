@@ -15,8 +15,23 @@
    the cache for next time. Bump CACHE_NAME on any shell file change so
    the activate handler below drops the old cache instead of pages
    being stuck on stale JS forever.
+
+   Every URL in SHELL_FILES MUST actually exist -- caches.addAll() below
+   is atomic and rejects the WHOLE install if even one entry 404s. That
+   silently happened here for over a week: stats/dice-roller.js was
+   moved to assets/dice-roller.js on Aug 27 (Phase 3) but this list
+   still pointed at the old, now-gone path, so every install attempt
+   since then failed. A failed install never replaces whatever service
+   worker was already active, so any browser with a working SW from
+   before that move got stuck on that exact cache forever, unable to
+   ever pick up a newer CACHE_NAME -- while a browser with no SW yet, or
+   one that happened to fail its very first install, just fell through
+   to the network every time. That's why different browsers/devices
+   were showing completely different, inconsistent states of the app
+   through this whole migration -- not random flakiness, one bad path
+   silently breaking the update mechanism itself.
    ══════════════════════════════════════════════ */
-const CACHE_NAME = 'dg-hub-shell-v43';
+const CACHE_NAME = 'dg-hub-shell-v44';
 
 const SHELL_FILES = [
   './',
@@ -29,6 +44,8 @@ const SHELL_FILES = [
   'manifest.json',
   'assets/theme-folder.css',
   'assets/table-radio.js',
+  'assets/dice-roller.js',
+  'assets/shell-nav.js',
   'assets/sw-update.js',
   'assets/agent-code.js',
   'assets/mars-tech-seal.png',
@@ -53,7 +70,6 @@ const SHELL_FILES = [
   'stats/save-load.js',
   'stats/agent-portal-export.js',
   'stats/cloud-sync.js',
-  'stats/dice-roller.js',
   'stats/equipment-data.js',
   'stats/equipment-picker.js',
   'stats/wizard.js',
