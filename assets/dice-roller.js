@@ -281,30 +281,12 @@
     // when it flips is simpler and more robust than trying to hook into
     // A-Cell's own login success callback (which this file deliberately
     // stays out of -- see this file's header comment).
-    //
-    // Also watches currentAgentCode() for the same reason, added once the
-    // app shell (hub.html) started hoisting a single copy of this panel
-    // for the whole tab's lifetime instead of it rebuilding on every real
-    // page load: resolveRollContext() below resolves and caches identity
-    // ONCE per panel build, which used to be safe (every page load got
-    // its own fresh script execution) but isn't any more -- a player can
-    // land on Agent Hub (no specific Agent Code yet, resolves to 'none')
-    // and only afterwards navigate the shell's content iframe into their
-    // own character sheet (a real Cloud Save code now in localStorage),
-    // with this exact same hoisted panel still running the whole time.
-    // Without this, that first 'none' resolution stuck forever -- rolls
-    // still worked, but history/identity attribution silently never
-    // recovered for the rest of the tab's session.
     let _lastHandlerMode = null;
-    let _lastAgentCode = null;
     function watchHandlerModeChange() {
         setInterval(() => {
             if (!_e || !_e.panel || !_e.panel.isConnected) return;
             const nowHandler = isHandlerContext();
-            const nowAgentCode = nowHandler ? null : currentAgentCode();
-            if (nowHandler === _lastHandlerMode && nowAgentCode === _lastAgentCode) return;
-            _lastHandlerMode = nowHandler;
-            _lastAgentCode = nowAgentCode;
+            if (nowHandler === _lastHandlerMode) return;
             stopHistoryFeed();
             _rollContext = null;
             _rollContextPromise = null;
