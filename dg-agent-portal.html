@@ -4439,10 +4439,8 @@ function generatePlateImage(era, mode, btn) {
   }
 }
 
-/* ── Per-era age adjustment: an Agent's age_range is entered once, at
-   whichever era they were originally registered in (eras[0]/
-   afEraPages[0] -- the same "original era" concept renderEraStack()'s
-   own display fallback already uses, see its comment). Real player
+/* ── Per-era age adjustment: an Agent's age_range is entered once, for
+   whichever era the player actually means it to describe. Real player
    report: registering at 40s in the 2020s should describe her as in
    her 20s in a 2000s portrait, not still 40s -- every era's prompt was
    using the same flat age_range regardless of how many years before/
@@ -4466,17 +4464,24 @@ function yearsToAgeRangeLabel_(years) {
   const bucket = sub <= 3 ? 'Early' : (sub <= 6 ? 'Mid' : 'Late');
   return bucket + ' ' + decade + 's';
 }
-// The reference era is whichever one was rendered first this load
-// (afEraPages is fully populated by the time this runs -- it's built
-// synchronously across renderEraStack()'s whole forEach before any of
-// its staggered setTimeout-deferred autoGenerateEraPrompts() calls can
-// fire) with a parseEras() fallback for the one call site that runs
-// before any era has rendered at all (initEra() on a brand-new Agent's
-// very first era).
+// The reference era is the explicit "Active Era" (campaign_era, set via
+// the Make Active Era button -- see updatePreviewBadges()/setPreviewEra()
+// just above, whose own campaign_era-or-afEraPages[0] fallback this
+// matches) -- age_range is meant to describe the Agent as of THAT era,
+// which is also the one place a player deliberately says "this is my
+// reference point" rather than it being inferred from creation order.
+// Before an Active Era is ever explicitly chosen, falls back to
+// whichever era was rendered first this load (afEraPages is fully
+// populated by the time this runs -- it's built synchronously across
+// renderEraStack()'s whole forEach before any of its staggered
+// setTimeout-deferred autoGenerateEraPrompts() calls can fire), with a
+// parseEras() fallback for the one call site that runs before any era
+// has rendered at all (initEra() on a brand-new Agent's very first era).
 function ageRangeForEra_(era) {
   const raw = afData && afData.age_range || '';
   if (!raw) return raw;
-  const refEra = (afEraPages && afEraPages.length) ? afEraPages[0] : ((parseEras(afData || {})[0]) || era);
+  const refEra = (afData && afData.campaign_era) ||
+    ((afEraPages && afEraPages.length) ? afEraPages[0] : ((parseEras(afData || {})[0]) || era));
   if (refEra === era || !ERA_YEAR_[refEra] || !ERA_YEAR_[era]) return raw;
   const baseYears = ageRangeToYears_(raw);
   if (baseYears === null) return raw;
