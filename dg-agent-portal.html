@@ -2061,6 +2061,30 @@ function isProfilingComplete(data) {
   });
 }
 
+// Real player report: a character sheet imported into Agent Portal
+// (Kappa Black, Foundry JSON, Random Bio, or hand-built) genuinely does
+// carry its data over -- confirmed via a full round-trip, name/
+// nationality/sex/profession/build/outfit all land correctly -- but
+// stats/ has no source for the physical-appearance fields
+// (face_shape/eye_color/hair_.../posture/expression/vibe etc, see
+// agent-portal-export.js's own header comment), so isProfilingComplete()
+// above is never true for a fresh import and this page silently bounces
+// to Profiling instead of showing the Agent File dossier the player
+// expected. Nothing was lost -- it just looks like "my info didn't carry
+// over" with zero explanation, since only name/nationality/sex/
+// profession/build/outfit are actually pre-filled and everything else
+// on this mostly-blank form is still genuinely empty. Only shown when
+// there's real carried-over data to explain (char_name present) -- a
+// genuinely fresh, blank visit needs no explanation for its own blank
+// form.
+function showIncompleteProfilingBanner_(data) {
+  const status = document.getElementById('code-load-status');
+  if (status && data && data.char_name) {
+    status.textContent = 'Your character sheet info carried over -- add the appearance details below to finish your Agent File.';
+    status.style.color = '#8b1a1a';
+  }
+}
+
 // The Agent File tab's onclick -- an incomplete Profiling has nothing
 // real to show on the Agent File side yet, so clicking it bounces back
 // to Profiling instead of a half-empty (or NOT_FOUND) Agent File view.
@@ -3634,6 +3658,7 @@ function openInAgentFile() {
       switchTab('agent');
       renderAgentFile(afData);
     } else {
+      showIncompleteProfilingBanner_(afData);
       switchTab('cover');
     }
     return;
@@ -3839,6 +3864,7 @@ function loadAgentFile() {
       if (isProfilingComplete(json.data)) {
         renderAgentFile(json.data);
       } else {
+        showIncompleteProfilingBanner_(json.data);
         switchTab('cover');
       }
     } else if (json.status === 'NOT_FOUND') {
