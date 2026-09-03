@@ -50,8 +50,27 @@
     // iframe), so its own include would otherwise mount a second Dice
     // Roller too. Null on every standalone visit and for any other
     // embedding -- same-origin only, so this can't misfire cross-origin.
-    if (window.frameElement &&
-        (window.frameElement.id === 'dg-shell-content' || window.frameElement.id === 'dg-split-sheet-frame')) return;
+    //
+    // This ONLY suppresses this instance's own floating #dr-panel --
+    // it must NOT bail out of the whole script early the way it used to
+    // (a bare `return` here), because wireSkillInputs() below attaches
+    // its click listener to THIS document, and the character sheet's
+    // own skill/stat inputs only ever exist in THIS document (the one
+    // actually showing the sheet, inside the iframe) -- never in the
+    // shell's own hub.html, which has no sheet markup at all. An early
+    // return here meant NOTHING ever listened for a skill click at all
+    // once a sheet was loaded through the shell (or through Split
+    // View's own sheet pane, once that was added to this same guard) --
+    // clicking a skill value did nothing but let the input become an
+    // editable text field, its ordinary default behavior, since nothing
+    // was left to intercept the click and treat it as a roll instead.
+    // rollPercent() below relays the roll to whichever ancestor DOES
+    // have a visible panel (the shell's hoisted copy, or Split View's
+    // own outer/non-embedded page) via postMessage, same mechanism this
+    // file already used for Split View alone before this fix widened it
+    // to also cover the shell.
+    const SUPPRESS_OWN_PANEL = !!(window.frameElement &&
+        (window.frameElement.id === 'dg-shell-content' || window.frameElement.id === 'dg-split-sheet-frame'));
 
     /* ── Dice config ──────────────────────────────────────────────── */
     const DICE = [
@@ -673,20 +692,25 @@
 
     /* ── Skill-click entry point (always uses d%) ─────────────────── */
     function rollPercent(target, skillName) {
+        // No panel was ever built here (SUPPRESS_OWN_PANEL -- inside the
+        // app shell's #dg-shell-content, or Split View's own
+        // #dg-split-sheet-frame), so there's nothing local to animate
+        // into and rollDie() would throw trying to destructure a null
+        // _e. Relay to whichever ancestor DOES have a visible panel
+        // instead -- the shell's hoisted copy, or Split View's own
+        // outer/non-embedded page -- same postMessage this file already
+        // used for Split View alone before SUPPRESS_OWN_PANEL widened
+        // to also cover the shell.
+        if (SUPPRESS_OWN_PANEL) {
+            if (window.parent !== window) {
+                try {
+                    window.parent.postMessage({ type: 'dg-dice-roll', target, skillName }, location.origin);
+                } catch (e) { }
+            }
+            return;
+        }
         if (_activeDie !== 'dpct') selectDie('dpct');
         rollDie(target, skillName);
-        // Inside Split View's own sheet iframe (DG_EMBED_MODE) this
-        // instance's own #dr-panel is hidden -- see the body.dg-embedded
-        // rule in styles.css -- so a roll made here would otherwise
-        // animate and land somewhere the player can never see. The outer
-        // page keeps its own visible copy of this same panel up for
-        // exactly this reason; relay the roll to it so clicking a skill
-        // inside the embedded sheet still shows a result somewhere.
-        if (document.body.classList.contains('dg-embedded') && window.parent !== window) {
-            try {
-                window.parent.postMessage({ type: 'dg-dice-roll', target, skillName }, location.origin);
-            } catch (e) { }
-        }
     }
 
     /* ── Dice expression parser ─────────────────────────────────────── */
@@ -1146,9 +1170,11 @@
     /* ── Public API ───────────────────────────────────────────────── */
     window.dgDice = { roll: rollPercent, rollManual, _toggle: togglePanel, _select: selectDie };
 
-    /* ── Split View relay: only the outer (non-embedded) page listens --
-       see rollPercent()'s postMessage above. Same-origin only, both ways. */
-    if (!document.body.classList.contains('dg-embedded')) {
+    /* ── Relay listener: only an instance with a real panel of its own
+       should listen -- a SUPPRESS_OWN_PANEL instance has no built _e to
+       roll into (see rollPercent() above) and only ever relays UP, never
+       receives. Same-origin only, both ways. */
+    if (!SUPPRESS_OWN_PANEL) {
         window.addEventListener('message', e => {
             if (e.origin !== location.origin) return;
             const data = e.data;
@@ -1169,7 +1195,16 @@
     // an iframe, which is what made this panel visibly take as long to
     // appear as the character-load lag fixed elsewhere on this same
     // page (see stats/scripts.js's dgInitStatsSheet() comment).
-    const dgInitDiceRoller = () => { buildPanel(); wireSkillInputs(); initHistory(); watchHandlerModeChange(); };
+    const dgInitDiceRoller = () => {
+        // Skill-click wiring runs regardless of SUPPRESS_OWN_PANEL --
+        // this document is the one actually showing the sheet, so it's
+        // the only place a skill click could ever be caught at all.
+        // Everything else below is specifically about this instance's
+        // OWN floating panel, which a suppressed instance never builds.
+        wireSkillInputs();
+        if (SUPPRESS_OWN_PANEL) return;
+        buildPanel(); initHistory(); watchHandlerModeChange();
+    };
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', dgInitDiceRoller);
     } else {
