@@ -146,8 +146,9 @@
         })();
     </script>
     <div style="max-width:1400px;margin:0 auto;padding:16px 20px 0;">
-        <a href="../agent-hub.html" style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.05em;color:#8a8a8a;text-decoration:none;">&larr; Agent Hub</a>
+        <a href="../agent-hub.html" id="stats-back-link" style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.05em;color:#8a8a8a;text-decoration:none;">&larr; Agent Hub</a>
     </div>
+    <script>if (window.frameElement && window.frameElement.id === 'dg-shell-content') document.getElementById('stats-back-link').style.display = 'none';</script>
     <!-- Split View: this sheet (forced into the Mobile theme, a fixed
          compact skin rather than a screen-width-responsive one, so it
          still looks right at half the window's width) alongside this
