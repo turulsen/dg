@@ -1218,9 +1218,25 @@ body{
 }
 /* ══════════════════════════════════════════════
    AGENT ROSTER — slide-up drawer
+   Hidden (not removed): this was the only way to switch between
+   locally-known Agents before Agent Hub existed as a real, server-
+   backed roster -- a real player report confirmed a stale/last-active
+   Agent's data being visible here (autoRestore()'s own dg_last_agent
+   fallback showing on a bare visit) reads as "the wrong Agent's data
+   loaded", especially now that this drawer is redundant with Agent
+   Hub's own switching. Only the visible trigger button is hidden here
+   -- every function underneath it (rosterLoad/Save/AddAgent/etc, all
+   keyed on dg_agent_roster in localStorage) stays fully intact, since
+   that SAME localStorage store is still load-bearing for things that
+   have nothing to do with this drawer: agentToken() (per-Agent write
+   auth), findRosterCodeByName() (Profiling's cross-page code reuse
+   check), and dice-roller.js's own currentAgentCode() fallback all
+   read it directly. Deleting the underlying roster mechanism would
+   break those; hiding just this one UI entry point doesn't.
    ══════════════════════════════════════════════ */
 
 #roster-trigger {
+  display: none;
   position: fixed;
   bottom: 0;
   left: 50%;
