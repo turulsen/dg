@@ -696,15 +696,21 @@
         // app shell's #dg-shell-content, or Split View's own
         // #dg-split-sheet-frame), so there's nothing local to animate
         // into and rollDie() would throw trying to destructure a null
-        // _e. Relay to whichever ancestor DOES have a visible panel
-        // instead -- the shell's hoisted copy, or Split View's own
-        // outer/non-embedded page -- same postMessage this file already
-        // used for Split View alone before SUPPRESS_OWN_PANEL widened
-        // to also cover the shell.
+        // _e. Relay to window.top rather than just window.parent --
+        // Split View opened FROM WITHIN the shell nests two levels deep
+        // (hub.html -> #dg-shell-content -> #dg-split-sheet-frame), and
+        // the middle frame is ALSO SUPPRESS_OWN_PANEL (it has no panel
+        // of its own either, see the relay listener below), so a single
+        // hop to window.parent would land on a frame that never
+        // listens and the roll would just vanish. window.top always
+        // reaches the one frame that's actually NOT suppressed and
+        // therefore has a real, visible panel to animate into --
+        // whether that's one level up (Split View alone) or two
+        // (Split View inside the shell).
         if (SUPPRESS_OWN_PANEL) {
-            if (window.parent !== window) {
+            if (window.top !== window) {
                 try {
-                    window.parent.postMessage({ type: 'dg-dice-roll', target, skillName }, location.origin);
+                    window.top.postMessage({ type: 'dg-dice-roll', target, skillName }, location.origin);
                 } catch (e) { }
             }
             return;
