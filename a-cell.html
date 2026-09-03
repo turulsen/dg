@@ -2009,6 +2009,12 @@
       });
     });
   }
+  // Reuses the SAME Handler password A-Cell's own login already put in
+  // sessionStorage (dg_acell_pw) to sign into Firebase transparently --
+  // no separate password prompt, unlike Dice Roller's own opt-in Live
+  // Rolls gate, since this only ever runs from inside an already-active
+  // A-Cell Handler session. Shared by the Evidence listener below and
+  // the Track Library upload/delete flow further down this file.
   var _handlerAuthPromise = null;
   function ensureHandlerSignedIn() {
     if (_handlerAuthPromise) return _handlerAuthPromise;
@@ -2201,7 +2207,19 @@
           listEl.innerHTML = '<div class="evidence-empty-note">Could not load Evidence (Firestore): ' + escapeHtml(err && err.message || String(err)) + '</div>';
         });
     }).catch(function (err) {
+      // Was silently swallowed here -- a failed sign-in (e.g. the
+      // Firebase-side handlerLogin secret never set, or set to a
+      // different value than Apps Script's own HANDLER_PASSWORD Script
+      // Property -- see functions/index.js's own comment on why these
+      // are two independent copies of the same secret) left the tab
+      // showing the exact same "No evidence filed here yet" text as a
+      // genuinely empty Evidence sheet, with zero indication anything
+      // was actually broken. Surfaces the real error instead, same
+      // place/format the onSnapshot error callback above already uses.
       console.error('a-cell: evidence listener sign-in failed (retries on next handler-ready event)', err);
+      if (listEl) {
+        listEl.innerHTML = '<div class="evidence-empty-note">Could not load Evidence (Handler sign-in failed): ' + escapeHtml(err && err.message || String(err)) + '</div>';
+      }
     });
   }
 
@@ -3634,29 +3652,16 @@
       });
     });
   }
-  // Reuses the SAME Handler password A-Cell's own login already put in
-  // sessionStorage (dg_acell_pw) to sign into Firebase transparently --
-  // no separate password prompt, unlike Dice Roller's own opt-in Live
-  // Rolls gate, since this only ever runs from inside an already-active
-  // A-Cell Handler session (the Track Library UI isn't reachable any
-  // other way).
-  var _handlerAuthPromise = null;
-  function ensureHandlerSignedIn() {
-    if (_handlerAuthPromise) return _handlerAuthPromise;
-    _handlerAuthPromise = new Promise(function (resolve, reject) {
-      ensureFirebaseApi(function () {
-        var auth = window.firebase.auth();
-        if (auth.currentUser) { resolve(auth.currentUser); return; }
-        var password = sessionStorage.getItem('dg_acell_pw') || '';
-        if (!password) { _handlerAuthPromise = null; reject(new Error('No A-Cell session -- log in as Handler first.')); return; }
-        window.firebase.functions().httpsCallable('handlerLogin')({ handler_password: password })
-          .then(function (result) { return auth.signInWithCustomToken(result.data.token); })
-          .then(function (cred) { resolve(cred.user); })
-          .catch(function (err) { _handlerAuthPromise = null; reject(err); });
-      });
-    });
-    return _handlerAuthPromise;
-  }
+  // ensureHandlerSignedIn() is defined once, above (this file's other
+  // Firebase-auth-gated feature, the Evidence listener, already needed
+  // it) -- also used here by the Track Library upload/delete flow
+  // below, since it's the same Handler-password-to-Firebase-custom-
+  // token exchange either way. A second, byte-for-byte identical copy
+  // used to live right here (probably written before whoever added it
+  // realized this one already existed) -- harmless in itself, since
+  // `var`/`function` re-declaration just replaces the same binding with
+  // an identical one, but confusing to read as if they were two
+  // different things.
 
   var trackLibTitleInput = document.getElementById('tracklib-title-input');
   var trackLibFileInput = document.getElementById('tracklib-file-input');
