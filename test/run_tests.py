@@ -6881,21 +6881,23 @@ def test_agent_file_vitals_and_bonds(p):
     return errs
 
 def test_agent_roster(p):
-    """The Agent Roster drawer (localStorage dg_agent_roster): every agent
-    persistAgent()'d in this browser -- Cover form submit, Agent File load
-    by code, etc. -- joins it automatically, so a Handler testing several
-    players' briefs (or a player who's made more than one agent over time)
-    can see and switch between all of them, not just the single
-    most-recently-active one dg_last_agent tracks. Ported from the
-    project's Dev branch alongside the Cover ID Fabricator.
-
-    Regression-tests a real bug found while porting this: handleSubmit()
-    never updated the in-memory afCode/afData globals after a fresh Cover
-    submission (only other code paths like loading-by-code did), so
-    rosterRender()'s active-agent detection -- which prefers afCode over
-    the fresher localStorage value -- kept pointing at whichever agent was
-    active *before* the most recent submission, not the one just
-    submitted."""
+    """The Agent Roster drawer's own UI (a slide-up "AGENTS ON FILE"
+    button + drawer, letting a Handler switch between locally-known
+    Agents) was hidden -- real player report, confirmed: it read as
+    the WRONG Agent's data being shown (autoRestore()'s dg_last_agent
+    fallback surfacing whichever Agent was last active on this device),
+    and is redundant now that Agent Hub is a real, server-backed way to
+    switch between Agents. #roster-trigger is display:none now; nothing
+    on the page can open the drawer any more. The underlying
+    localStorage store (dg_agent_roster) is deliberately NOT touched --
+    agentToken() (per-Agent write auth), findRosterCodeByName()
+    (Profiling's cross-page code reuse check), and dice-roller.js's own
+    currentAgentCode() fallback all still read it directly, so this
+    test also re-confirms a real regression that predates the drawer's
+    own removal: handleSubmit() must still update the in-memory
+    afCode/afData globals after a fresh Cover submission (checked here
+    via JS state directly, not the now-gone drawer UI that used to
+    surface this same bug as "the wrong agent shown as active")."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -6915,16 +6917,18 @@ def test_agent_roster(p):
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", capture)
 
+    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    record("agent-roster", "the roster drawer's trigger button is hidden (feature removed from the UI)",
+           not page.is_visible("#roster-trigger"), "")
+
     # Submit 3 different agents across separate page loads -- like a
     # Handler checking multiple players' briefs in the same browser --
-    # tracking each one's real generated code so later steps can address
-    # a specific agent rather than "whichever happens to be first".
-    # Complete profiles, not just a name -- isProfilingComplete() now
-    # gates the Agent File view behind every #dg-form [required] field
-    # actually being filled in, so a name-only submission would bounce
-    # rosterSelectAgent()'s "fetch by code" lookup (below) back to
-    # Profiling instead of the roster-switching behavior this test is
-    # actually about.
+    # tracking each one's real generated code so the count check below
+    # addresses the underlying store directly rather than via UI.
+    # Complete profiles, not just a name -- isProfilingComplete() gates
+    # the Agent File view behind every #dg-form [required] field
+    # actually being filled in.
     for name in ["Marcus Reyes", "Priya Anand", "Owen Castillo"]:
         page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
         page.wait_for_timeout(300)
@@ -6941,57 +6945,18 @@ def test_agent_roster(p):
         saved = page.evaluate("JSON.parse(localStorage.getItem('dg_last_agent'))")
         agents_by_code[saved["code"]] = saved["data"]
 
-    roster_count = page.inner_text("#roster-trigger-count")
-    record("agent-roster", "all 3 submitted agents join the roster automatically",
-           roster_count == "3", f"count={roster_count}")
+        # Regression check (previously surfaced via the roster drawer's
+        # own "active card" highlight, now checked directly): the
+        # in-memory afCode/afData globals must reflect THIS just-
+        # submitted Agent, not whichever was active before it.
+        record("agent-roster", f"afCode/afData reflect the just-submitted Agent ({name}), not a stale prior one",
+               page.evaluate("() => afCode") == saved["code"]
+               and page.evaluate("() => afData && afData.char_name") == name, "")
 
-    page.click("#roster-trigger")
-    page.wait_for_timeout(400)
-    record("agent-roster", "roster drawer opens", page.is_visible("#roster-drawer.open") or
-           "open" in (page.eval_on_selector("#roster-drawer", "el => el.className") or ""), "")
-
-    entries = page.evaluate("""() => Array.from(document.querySelectorAll('.roster-card')).map(c => ({
-        name: c.querySelector('.roster-card-name').textContent,
-        code: c.dataset.code,
-        active: c.classList.contains('active-agent'),
-    }))""")
-    names = sorted(e["name"] for e in entries)
-    record("agent-roster", "roster lists all 3 agents by name",
-           names == ["Marcus Reyes", "Owen Castillo", "Priya Anand"], str(names))
-
-    active = [e for e in entries if e["active"]]
-    record("agent-roster", "the most recently submitted agent (Owen Castillo) is marked active -- "
-           "regression check for afCode/afData not being updated after a fresh Cover submit",
-           len(active) == 1 and active[0]["name"] == "Owen Castillo", str(active))
-
-    # Switch to a non-active agent and confirm it actually loads (exercises
-    # rosterSelectAgent()'s "fetch by code" path, not just the in-memory
-    # shortcut, since the target isn't the one already held in afData)
-    target = next(e for e in entries if not e["active"])
-    page.evaluate(f"rosterSelectAgent('{target['code']}')")
-    page.wait_for_timeout(500)
-    af_html = page.inner_html("#panel-agent")
-    record("agent-roster", f"selecting a different roster card ({target['name']}) loads and displays that agent",
-           target["name"] in af_html, "")
-    record("agent-roster", "selecting a roster card switches to the Agent File tab",
-           "active" in (page.eval_on_selector("#tw-agent", "el => el.className") or ""), "")
-
-    # Delete one agent and confirm the roster shrinks
-    page.click("#roster-trigger")
-    page.wait_for_timeout(300)
-    page.on("dialog", lambda d: d.accept())
-    page.click(".roster-card-delete")
-    page.wait_for_timeout(400)
-    new_count = page.inner_text("#roster-trigger-count")
-    record("agent-roster", "deleting a roster entry updates the count",
-           new_count == "2", f"count={new_count}")
-
-    # Export downloads a JSON file
-    with page.expect_download() as dl_info:
-        page.click("text=Export Roster")
-    dl = dl_info.value
-    record("agent-roster", "Export Roster downloads a .json file",
-           dl.suggested_filename.endswith(".json"), dl.suggested_filename)
+    roster = page.evaluate("() => JSON.parse(localStorage.getItem('dg_agent_roster') || '{}')")
+    record("agent-roster", "all 3 submitted agents still join the underlying roster store "
+           "(agentToken()/findRosterCodeByName()/dice-roller.js's currentAgentCode() all still read this)",
+           len(roster) == 3, f"count={len(roster)}")
 
     record("agent-roster", "no JS exceptions", len(errs)==0, "; ".join(errs))
     page.close()
