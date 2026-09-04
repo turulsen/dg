@@ -72,7 +72,14 @@
     var hadController = !!navigator.serviceWorker.controller;
     var seenFirstChange = false;
 
-    navigator.serviceWorker.register(swPath).then(function (reg) {
+    // { updateViaCache: 'none' } -- without this, the browser's own
+    // update check for sw.js ITSELF can be answered from ordinary HTTP
+    // cache instead of hitting the network, on top of GitHub Pages'
+    // own Cache-Control on static files. sw.js bumping CACHE_NAME on
+    // every shell change means nothing if the browser never actually
+    // re-fetches sw.js to notice the byte it changed -- this is the
+    // one call that has to always hit the network, every time.
+    navigator.serviceWorker.register(swPath, { updateViaCache: 'none' }).then(function (reg) {
       // A worker already waiting when we register means an update landed
       // while this page had no active controller yet to notice it.
       if (reg.waiting && hadController) showUpdateBanner();
@@ -85,6 +92,26 @@
             showUpdateBanner();
           }
         });
+      });
+
+      // The other half of the gap: a page that's opened once and left
+      // open (exactly how this app gets used at a live table, or during
+      // a testing session) never re-checks for a new deploy on its own
+      // -- browsers only check for a new sw.js on navigation, and this
+      // tab isn't navigating anywhere. A live report: several fixes
+      // shipped in a row, and a phone that had A-Cell open from before
+      // any of them kept running the old JS indefinitely, reload
+      // included, since reloading a page doesn't re-fetch the service
+      // worker file itself on every load either, only on the browser's
+      // own update schedule. Explicitly poking reg.update() on an
+      // interval, and whenever the tab becomes visible again (the
+      // common iPad case: Safari backgrounded mid-session, then
+      // switched back to), closes both gaps without waiting on the
+      // browser's own timing.
+      function pokeForUpdate() { reg.update().catch(function () {}); }
+      setInterval(pokeForUpdate, 5 * 60 * 1000);
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') pokeForUpdate();
       });
     }).catch(function () {});
 

@@ -893,3 +893,29 @@ alongside it: its cache had no per-Agent key at all, so once any Agent
 signed in through that widget, every later call for a *different*
 Agent Code silently reused that first identity too, not just the
 missing-Handler case.
+
+**A phone that had a page open from before a batch of fixes kept
+running the old JS indefinitely -- reload included -- showing old UI,
+old bugs, and a stale local roster all at once.** Two real gaps in the
+service worker's own update mechanism, not a one-off: (1)
+`navigator.serviceWorker.register()` never passed `{ updateViaCache:
+'none' }`, so the browser's own check for a new `sw.js` could be
+answered from ordinary HTTP cache instead of hitting the network --
+`sw.js` bumping `CACHE_NAME` means nothing if the browser never
+re-fetches `sw.js` to notice the byte that changed. (2) There was no
+periodic re-check at all -- browsers only check for a new service
+worker on navigation, so a tab opened once and left open (exactly how
+this app gets used at a live table, or during a testing session) never
+noticed a new deploy on its own. Fixed both: registration now forces a
+network check, and `assets/sw-update.js` pokes `registration.update()`
+every 5 minutes and whenever the tab becomes visible again (the common
+iPad case -- Safari backgrounded mid-session, then switched back to).
+Separately, and directly self-inflicted: `sw.js`'s own header
+explicitly says to bump `CACHE_NAME` on any change to a file listed in
+`SHELL_FILES` (`a-cell.html`, `agent-hub.html`, `dg-agent-portal.html`,
+`notes/notes.js` all are) -- several fixes shipped in the same session
+as this one touched those files without bumping it, which is very
+likely why a device that had been open since before them kept showing
+old behavior through every one of them. Bumped now; the standing rule
+going forward is to bump `CACHE_NAME` in the same commit as any change
+to a `SHELL_FILES`-listed file, not just when remembered.
