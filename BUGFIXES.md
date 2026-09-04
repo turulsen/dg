@@ -1174,3 +1174,17 @@ short-circuits entirely (no registration, no banner) when running
 inside `#dg-shell-content` -- the outer shell's own instance already
 covers the whole app, and a real reload of the outer page re-navigates
 the iframe fresh too.
+
+**Dice Roller's Roll button rendered purple on request-reported pages
+instead of matching the rest of the panel.** Bundled into the same
+restyle commit as the widget's palette-matching change (a redesign, not
+a bug fix on its own -- not logged here for that part). Real, separate
+bug found while in there: `#dr-manual-row button` (the Roll button
+next to the manual target/expression input) only ever set layout
+properties (padding/font/width) -- no color, background, or border at
+all, unlike every other control in the panel. It fell through to
+whatever generic `button` styling the embedding page happened to
+define instead of the panel's own accent color, which is what read as
+"purple" on at least one page/theme. Given its own explicit styling
+(border/color/background, hover state) matching the rest of the panel,
+same pattern the die pills and handler gate already used.

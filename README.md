@@ -2,7 +2,7 @@
 
 Player- and Handler-facing tools for a Delta Green campaign, published as a static site via GitHub Pages, installable as an offline-capable PWA.
 
-**Live site:** enable GitHub Pages on this repo (Settings → Pages → Deploy from branch → `main` → `/ (root)`) and it'll be served at `https://<your-username>.github.io/dg-campaign/`.
+**Live site:** enable GitHub Pages on this repo (Settings → Pages → Deploy from branch → `main` → `/ (root)`) and it'll be served at `https://<your-username>.github.io/<repo-name>/` — this repo is `dg`, so `https://turulsen.github.io/dg/`.
 
 ## What's here
 
