@@ -266,20 +266,44 @@ sync across page navigations via a server-stamped `started_at`
 timestamp every device reads. A small persistent widget
 (`assets/table-radio.js`) included on every player-reachable page.
 
-**Layers:**
+**Layers — what's actually live today:**
 - **Main track** — the current YouTube/SoundCloud embed or uploaded
   mp3 the Handler set as Now Playing for a channel. Pause/Resume
   (freezes in place, doesn't restart) and Restart are separate from
   Set Now Playing (always restarts from 0:00).
-- **Ambient loops** (rain, wind, machine hum, static — procedurally
-  synthesized, not licensed audio) — layered underneath the main
-  track, independently toggleable per channel by the Handler, and
-  locally mutable per listener.
-- **Stingers** — one-shot sound effects the Handler fires, heard by
-  everyone currently tuned to that channel.
 - **Track Library** — mp3s uploaded once (to Drive), then cued on any
   channel without re-uploading; a per-channel **playlist** persists
   across reloads.
+
+**Ambient loops and stingers — built, then abandoned. Not live.**
+Both were fully implemented at one point (ambient rain/wind/machine-
+hum/static loops the Handler could toggle per channel; a 13-button
+one-shot stinger soundboard — knock, wood creak, gunshot variants,
+explosions, screams, child-voice sounds), with full Playwright
+coverage passing at every step. **They were then deliberately dropped
+and stripped back out of this branch** after real-device listening
+found the procedurally-synthesized audio (numpy + ffmpeg, not
+sourced/licensed clips) mostly unusable — only the 4 gunshot stinger
+variants and 3 of the 4 ambient layers (not the hum) actually sounded
+right; everything else (explosions, screams, child-voice, knock,
+creak) didn't land. Rather than iterate further on synthesis, this was
+abandoned in favor of other work, and the feature branch was reset to
+remove it from history here.
+
+**The work isn't lost — it's on a separate branch:**
+`design-graveyard/table-radio-audio-soundscape` (pushed to origin,
+`git fetch origin design-graveyard/table-radio-audio-soundscape` to
+get it). That branch has the real commits (ambient layers, stingers,
+and a committed Apps Script reference file,
+`apps-script/table-radio-audio-additions.gs`) plus a retrospective at
+`design-graveyard/table-radio-audio-soundscape/RETROSPECTIVE.md`
+explaining exactly what was built and why it was dropped. **If this
+UI is checked on `main` or this branch's live files, none of it will
+be there — that's expected, not a bug or a missing merge.** Reviving
+it would mean swapping the synthesized clips for real recordings
+(Freesound.org, Zapsplat, BBC Sound Effects, OpenGameArt, and Pixabay
+were suggested in the retrospective as sources), not re-writing the
+toggle/broadcast plumbing, which already worked correctly.
 
 **Channel model:** 5 fixed channels, selected via a rotary-dial UI on
 both the Handler and player sides (not free text — avoids the
