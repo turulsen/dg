@@ -293,15 +293,21 @@
    Pinned/Index above it, own dot marker (red = unseen) instead of the
    Index's per-author color dot since this isn't attributed to anyone. */
 #dg-notes-panel .dg-notes-evidence-item{
-  display:flex; align-items:center; gap:6px; font-size:12px; color:#3a3220; text-decoration:none;
+  display:flex; align-items:flex-start; gap:6px; font-size:12px; color:#3a3220; text-decoration:none;
   padding:4px 0; border-bottom:1px dotted rgba(58,40,10,.15);
 }
 #dg-notes-panel .dg-notes-evidence-item:hover{ color:#1a1508; }
 #dg-notes-panel .dg-notes-evidence-dot{
   width:7px; height:7px; border-radius:50%; flex-shrink:0; background:rgba(58,40,10,.2);
+  margin-top:4px; /* centers on the title's first line now that the item can grow a second (tag) line below it */
 }
 #dg-notes-panel .dg-notes-evidence-dot.unseen{ background:var(--red); box-shadow:0 0 0 2px rgba(197,48,48,.2); }
-#dg-notes-panel .dg-notes-evidence-title{ flex:1 1 auto; min-width:0; }
+/* Title and its Operation tag stack in a column, not side by side --
+   this sidebar is a fixed 210px column, and a long title fighting a
+   long tag for the same line wrapped into an overlapping mess instead
+   of just wrapping cleanly. */
+#dg-notes-panel .dg-notes-evidence-main{ display:flex; flex-direction:column; gap:2px; flex:1 1 auto; min-width:0; }
+#dg-notes-panel .dg-notes-evidence-title{ overflow-wrap:anywhere; }
 /* Operation filter above the Evidence list -- narrows to one folder at
    a time, same organizing idea as A-Cell's own Evidence Locker
    folders, sized to fit this sidebar's narrow column. */
