@@ -154,7 +154,16 @@
     _authPromise = new Promise((resolve, reject) => {
       ensureFirebaseApi(() => {
         const auth = window.firebase.auth();
-        if (auth.currentUser) { resolve(auth.currentUser); return; }
+        // Firebase Auth sessions persist per-origin across page loads
+        // (IndexedDB, not per-page) -- a bare `if (auth.currentUser)`
+        // trusted WHOEVER happened to already be signed in, including a
+        // different Agent's leftover session, or the Handler's, from
+        // this same browser having viewed a-cell.html or another
+        // Agent's Notes earlier. exchangeAgentToken sets the token's
+        // uid to the Agent Code itself, so checking it costs nothing
+        // (already on the cached user object) and catches exactly this
+        // case instead of silently reading/writing as the wrong Agent.
+        if (auth.currentUser && auth.currentUser.uid === agentCode) { resolve(auth.currentUser); return; }
         window.firebase.functions().httpsCallable('exchangeAgentToken')({ agent_code: agentCode })
           .then(result => auth.signInWithCustomToken(result.data.token))
           .then(cred => resolve(cred.user))
