@@ -24,16 +24,24 @@ All pages are static HTML/CSS/JS with no build step. `stats/` is the one excepti
 
 `assets/table-radio.js` is a small persistent widget included on every player-reachable hub page (and `stats/`) that keeps a player "tuned in" to whatever the Handler is broadcasting from A-Cell's Music tab, staying loosely in sync as players move between pages via a server-stamped `started_at` timestamp every device reads. Backed by its own Apps Script additions (`acell-table-radio-addition.txt`, handed over separately, not committed here since it's Apps Script, not something this static site serves).
 
-Ambient loops and one-shot stinger sound effects layered under the main
-track are **not built yet**, despite older versions of this doc
-describing them as shipped. A real attempt at both was built once,
-tested, and then deliberately abandoned before ever merging to `main` —
-the procedurally-synthesized audio didn't sound convincing (only gunshot
-variants were usable), and the effort was dropped rather than iterate
-further on synthesis. See
+A soundboard on A-Cell's Music tab layers **7 ambient loops** (toggled
+on/off per channel) and **18 one-shot stingers** (grouped Screams &
+Laughter / Impacts & Weather / Bells, Rhythm & Texture) under the main
+track — real recorded SFX (`assets/ambient/`, `assets/stingers/`), both
+mirrored onto the same `radio/{channel}` Firestore doc Now Playing
+lives on so every tuned-in player's widget picks them up instantly. A
+Handler-draggable seek slider on the same tab lets the Handler jump the
+current track to a new position; players only ever see a **read-only**
+progress bar, so nobody can scrub their own copy out of sync.
+
+An earlier attempt at ambient/stingers was built, tested, and then
+deliberately abandoned before ever merging to `main` — the
+procedurally-synthesized audio didn't sound convincing (only gunshot
+variants were usable). See
 `design-graveyard/table-radio-audio-soundscape`'s own `RETROSPECTIVE.md`
-for the full account. Currently being revisited with real recorded SFX
-instead of synthesis.
+for the full account; its own recommendation to use real recordings
+instead of synthesis is what the current, shipped version above is
+built on.
 
 ### Offline support (PWA)
 

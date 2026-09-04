@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v77 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v78 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -1258,6 +1258,27 @@ function doPost(e) {
       const authErr = requireHandlerAuth_(data);
       if (authErr) return authErr;
       return resumeNowPlaying(data.channel);
+    }
+
+    // Table Radio Soundboard: Handler toggles an ambient loop on/off, or
+    // fires a one-shot stinger, for a channel.
+    if (data.action === 'set_ambient_layer') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
+      return setAmbientLayer_(data.channel, data.layer_id, data.active === '1' || data.active === true);
+    }
+    if (data.action === 'trigger_stinger') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
+      return triggerStinger_(data.channel, data.stinger_id);
+    }
+    // Table Radio: Handler drags the media-player scrubber to jump the
+    // current track to a new position. Handler-only -- see
+    // seekNowPlaying_'s own comment for why players don't get this.
+    if (data.action === 'seek_now_playing') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
+      return seekNowPlaying_(data.channel, data.position_ms);
     }
 
     // Table Radio: Handler saves the playlist for a channel.
@@ -3932,7 +3953,12 @@ function getOrCreateRadioSheet() {
     // paused/paused_at/loop: let the Handler pause, resume, and loop a
     // broadcast in place -- set_now_playing always restarts a track from
     // 0:00, which isn't the right tool for either of those.
-    ['track_kind', 'paused', 'paused_at', 'loop'].forEach(function (col) {
+    // ambient_layers/stingers: the Table Radio soundboard -- JSON arrays
+    // (active layer ids; recent {id, fired_at} stinger fires) rather than
+    // their own sheet tabs, so they upsert onto the exact same row/doc
+    // Now Playing already lives on and ride the existing dual-write +
+    // onSnapshot plumbing for free. See setAmbientLayer_/triggerStinger_.
+    ['track_kind', 'paused', 'paused_at', 'loop', 'ambient_layers', 'stingers'].forEach(function (col) {
       if (headers.indexOf(col) === -1) {
         lastCol++;
         sheet.getRange(1, lastCol).setValue(col);
@@ -3975,21 +4001,27 @@ function getNowPlaying(channel, callback) {
     const pausedCol = headers.indexOf('paused');
     const pausedAtCol = headers.indexOf('paused_at');
     const loopCol = headers.indexOf('loop');
+    const ambientCol = headers.indexOf('ambient_layers');
+    const stingersCol = headers.indexOf('stingers');
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
         const trackUrl = data[i][urlCol] || '';
+        // Ambient layers/stingers are independent of whether a track is
+        // set (a Handler can layer ambience onto a silent channel), so
+        // these two are read and returned regardless of the `if (trackUrl)`
+        // gate below that guards the rest of the Now Playing fields.
+        result.ambient_layers = parseJsonArray_(ambientCol !== -1 && data[i][ambientCol]);
+        result.stingers = parseJsonArray_(stingersCol !== -1 && data[i][stingersCol]);
         if (trackUrl) {
-          result = {
-            status: 'OK',
-            channel: data[i][chCol],
-            track_url: trackUrl,
-            track_title: data[i][titleCol] || '',
-            started_at: data[i][startedCol] || 0,
-            track_kind: (kindCol !== -1 && data[i][kindCol]) || '',
-            paused: pausedCol !== -1 && asBoolean_(data[i][pausedCol]),
-            paused_at: (pausedAtCol !== -1 && data[i][pausedAtCol]) || 0,
-            loop: loopCol !== -1 && asBoolean_(data[i][loopCol])
-          };
+          result.status = 'OK';
+          result.channel = data[i][chCol];
+          result.track_url = trackUrl;
+          result.track_title = data[i][titleCol] || '';
+          result.started_at = data[i][startedCol] || 0;
+          result.track_kind = (kindCol !== -1 && data[i][kindCol]) || '';
+          result.paused = pausedCol !== -1 && asBoolean_(data[i][pausedCol]);
+          result.paused_at = (pausedAtCol !== -1 && data[i][pausedAtCol]) || 0;
+          result.loop = loopCol !== -1 && asBoolean_(data[i][loopCol]);
         }
         break;
       }
@@ -4147,6 +4179,182 @@ function resumeNowPlaying(channel) {
       if (updatedCol !== undefined) row[updatedCol] = now;
       sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
       firestoreDualPatch_('radio', channel, { started_at: shiftedStart, paused: false, paused_at: '', updated_at: now });
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'no track for that channel' }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ════════════════════════════════════════════════════════════════
+// Table Radio Soundboard: ambient loops + layered one-shot stingers.
+// Real recorded SFX (assets/ambient/*.mp3, assets/stingers/*.mp3),
+// replacing an earlier procedurally-synthesized attempt that was built,
+// tested, and deliberately abandoned for poor audio quality -- see
+// design-graveyard/table-radio-audio-soundscape's RETROSPECTIVE.md.
+// Both fields are dual-patched straight onto the same radio/{channel}
+// Firestore document Now Playing already lives on, so the existing
+// onSnapshot listener in table-radio.js picks up every toggle/trigger
+// instantly -- no separate listener, collection, or poll loop needed.
+// ════════════════════════════════════════════════════════════════
+const AMBIENT_LAYER_IDS = ['alien-lunch', 'any-human-heart', 'haunted', 'howling-city-bells', 'music-box-morning', 'drone-dead', 'drone-low'];
+const STINGER_IDS = [
+  'scream-01', 'scream-02', 'scream-03', 'manic-laugh-01', 'manic-laugh-02', 'manic-laugh-03',
+  'evil-baby-cry', 'evil-baby-sound', 'impact-ghost', 'impact-metal', 'impact-slam',
+  'thunder-01', 'thunder-02', 'bells-distant', 'bells-vinyl',
+  'hell-drum-loop-01', 'hell-drum-loop-02', 'weird-choir-vinyl-crackle'
+];
+// Recent stinger fires kept per channel as an ARRAY, not a single scalar
+// (the abandoned branch's design) -- so a second stinger fired shortly
+// after the first survives instead of silently clobbering it, letting
+// players' clients actually overlap/layer them via separate <audio>
+// elements rather than only ever hearing the latest one.
+const STINGER_HISTORY_LENGTH = 5;
+
+function parseJsonArray_(val) {
+  if (!val) return [];
+  try {
+    const parsed = JSON.parse(val);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+// Finds a channel's row in RadioChannels, appending an empty one (no
+// track) if it doesn't exist yet -- ambient layers and stingers are
+// independent of whether music is currently set, so a Handler can layer
+// ambience onto a silent channel without first pushing a track.
+function findOrCreateRadioRow_(sheet, data, headers, cols, channel) {
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][cols.channel]).trim().toLowerCase() === channel.toLowerCase()) {
+      return i;
+    }
+  }
+  const newRow = new Array(headers.length).fill('');
+  newRow[cols.channel] = channel;
+  sheet.appendRow(newRow);
+  data.push(newRow);
+  return data.length - 1;
+}
+
+// Toggles one ambient loop on/off for a channel. `active` decides
+// membership rather than the caller having to know the current state
+// first (a dumb toggle button on the A-Cell side would otherwise need
+// its own extra round-trip just to read that state before flipping it).
+function setAmbientLayer_(channel, layerId, active) {
+  channel = (channel || '').trim();
+  if (!channel) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  if (AMBIENT_LAYER_IDS.indexOf(layerId) === -1) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'unknown ambient layer: ' + layerId }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
+
+  const sheet = getOrCreateRadioSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const cols = headerMap_(headers);
+  const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
+  const row = data[rowIdx];
+  const layers = parseJsonArray_(row[cols.ambient_layers]);
+  const pos = layers.indexOf(layerId);
+  if (active && pos === -1) layers.push(layerId);
+  if (!active && pos !== -1) layers.splice(pos, 1);
+  const now = new Date().getTime();
+  row[cols.ambient_layers] = JSON.stringify(layers);
+  row[cols.updated_at] = now;
+  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
+  firestoreDualPatch_('radio', channel, { ambient_layers: layers, updated_at: now });
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK', ambient_layers: layers })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Fires a one-shot stinger for a channel. Always appends a fresh
+// {id, fired_at} entry, even for a repeated stinger_id -- a second press
+// of the same button (e.g. two gunshots back to back) is a deliberate
+// replay, not a no-op, so it must get its own timestamp rather than
+// updating an existing entry in place. Trimmed to the most recent
+// STINGER_HISTORY_LENGTH so the document doesn't grow unbounded over a
+// long session; a freshly-tuned-in client only needs to know about
+// stingers fired since it started listening anyway.
+function triggerStinger_(channel, stingerId) {
+  channel = (channel || '').trim();
+  if (!channel) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  if (STINGER_IDS.indexOf(stingerId) === -1) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'unknown stinger: ' + stingerId }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
+
+  const sheet = getOrCreateRadioSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const cols = headerMap_(headers);
+  const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
+  const row = data[rowIdx];
+  const now = new Date().getTime();
+  let stingers = parseJsonArray_(row[cols.stingers]);
+  stingers.push({ id: stingerId, fired_at: now });
+  if (stingers.length > STINGER_HISTORY_LENGTH) stingers = stingers.slice(-STINGER_HISTORY_LENGTH);
+  row[cols.stingers] = JSON.stringify(stingers);
+  row[cols.updated_at] = now;
+  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
+  firestoreDualPatch_('radio', channel, { stingers: stingers, updated_at: now });
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK', stingers: stingers })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Handler-draggable media-player scrubber: jumps the CURRENT track to an
+// arbitrary position without restarting it (set_now_playing always
+// resets to 0:00) and without a pause/resume round-trip first. started_at
+// is recomputed so every listener's own elapsed-time formula (now -
+// started_at while playing, paused_at - started_at while paused --
+// see table-radio.js's liveElapsedSeconds_) lands on positionMs, the
+// same trick resumeNowPlaying() uses to preserve position across a
+// pause. Handler-only and intentionally not exposed to players (see the
+// approved design): a read-only progress display keeps everyone
+// provably in sync instead of letting each listener drift by scrubbing
+// their own local copy.
+function seekNowPlaying_(channel, positionMs) {
+  channel = (channel || '').trim();
+  positionMs = Math.max(0, Number(positionMs) || 0);
+  if (!channel) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
+
+  const sheet = getOrCreateRadioSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const cols = headerMap_(headers);
+  const chCol = cols.channel;
+  const startedCol = cols.started_at;
+  const pausedCol = cols.paused;
+  const pausedAtCol = cols.paused_at;
+  const updatedCol = cols.updated_at;
+  const now = new Date().getTime();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
+      const row = data[i];
+      const wasPaused = pausedCol !== undefined && asBoolean_(row[pausedCol]);
+      const newStarted = now - positionMs;
+      row[startedCol] = newStarted;
+      // While paused, elapsed is (paused_at - started_at) rather than
+      // (now - started_at) -- stamping paused_at fresh too makes the
+      // seek take effect immediately for a paused track instead of only
+      // becoming visible once the Handler later hits Resume.
+      if (wasPaused && pausedAtCol !== undefined) row[pausedAtCol] = now;
+      if (updatedCol !== undefined) row[updatedCol] = now;
+      sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
+      const patch = { started_at: newStarted, updated_at: now };
+      if (wasPaused) patch.paused_at = now;
+      firestoreDualPatch_('radio', channel, patch);
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
