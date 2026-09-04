@@ -712,6 +712,21 @@ function firestoreDocUrl_(collectionName, docId) {
 // set({merge:false}) semantics. Use this when the caller already has
 // every field the document should end up with (saveCharacter, the
 // brief-submission upsert, restoreCharacter).
+// muteHttpExceptions:true means a non-2xx response (bad field value,
+// expired/invalid token, wrong project) never throws -- it just comes
+// back as an ordinary response object nothing was reading, so a dual
+// write could fail on every single call and nothing would ever say so,
+// not even in this project's own Executions log, directly contradicting
+// this section's "log-but-swallow" design intent above. Never let a
+// Firestore hiccup fail the player's actual save (still true, still the
+// whole point of the try/catch), but a bad response code IS worth
+// logging same as a thrown exception is.
+function logFirestoreDualWriteFailure_(fn, collectionName, docId, resp) {
+  const code = resp.getResponseCode();
+  if (code >= 200 && code < 300) return;
+  console.error(fn + ' failed for ' + collectionName + '/' + docId + ': HTTP ' + code + ' -- ' + resp.getContentText());
+}
+
 function firestoreDualWrite_(collectionName, docId, dataObj) {
   if (!firestoreDualWriteEnabled_()) return;
   try {
@@ -719,13 +734,14 @@ function firestoreDualWrite_(collectionName, docId, dataObj) {
     if (!token) return;
     const fields = {};
     Object.keys(dataObj).forEach(function (k) { fields[k] = toFirestoreValue_(dataObj[k]); });
-    UrlFetchApp.fetch(firestoreDocUrl_(collectionName, docId), {
+    const resp = UrlFetchApp.fetch(firestoreDocUrl_(collectionName, docId), {
       method: 'patch',
       contentType: 'application/json',
       headers: { Authorization: 'Bearer ' + token },
       payload: JSON.stringify({ fields: fields }),
       muteHttpExceptions: true
     });
+    logFirestoreDualWriteFailure_('firestoreDualWrite_', collectionName, docId, resp);
   } catch (err) {
     console.error('firestoreDualWrite_ failed for ' + collectionName + '/' + docId + ': ' + err.message);
   }
@@ -745,13 +761,14 @@ function firestoreDualPatch_(collectionName, docId, dataObj) {
       fields[k] = toFirestoreValue_(dataObj[k]);
       return 'updateMask.fieldPaths=' + encodeURIComponent(k);
     }).join('&');
-    UrlFetchApp.fetch(firestoreDocUrl_(collectionName, docId) + '?' + maskParams, {
+    const resp = UrlFetchApp.fetch(firestoreDocUrl_(collectionName, docId) + '?' + maskParams, {
       method: 'patch',
       contentType: 'application/json',
       headers: { Authorization: 'Bearer ' + token },
       payload: JSON.stringify({ fields: fields }),
       muteHttpExceptions: true
     });
+    logFirestoreDualWriteFailure_('firestoreDualPatch_', collectionName, docId, resp);
   } catch (err) {
     console.error('firestoreDualPatch_ failed for ' + collectionName + '/' + docId + ': ' + err.message);
   }
@@ -762,11 +779,12 @@ function firestoreDualDelete_(collectionName, docId) {
   try {
     const token = getFirestoreAccessToken_();
     if (!token) return;
-    UrlFetchApp.fetch(firestoreDocUrl_(collectionName, docId), {
+    const resp = UrlFetchApp.fetch(firestoreDocUrl_(collectionName, docId), {
       method: 'delete',
       headers: { Authorization: 'Bearer ' + token },
       muteHttpExceptions: true
     });
+    logFirestoreDualWriteFailure_('firestoreDualDelete_', collectionName, docId, resp);
   } catch (err) {
     console.error('firestoreDualDelete_ failed for ' + collectionName + '/' + docId + ': ' + err.message);
   }
@@ -3141,6 +3159,79 @@ function listEvidence(params, callback) {
     result.seen = seenEvidenceIdsFor_(requesterCode);
   }
   return respond_(result, callback);
+}
+
+// TEMP DIAGNOSTIC (read-only, safe to delete after use): for every row
+// in the Evidence sheet, checks whether a matching document actually
+// exists in the Firestore evidence/ mirror -- root-causing "I added
+// evidence and it saved, but it never shows up in the live Evidence
+// Locker." createEvidence()/updateEvidence() dual-write via
+// firestoreDualWrite_(), which (before the HTTP-status-logging fix
+// alongside this function) silently swallowed a failed write with
+// muteHttpExceptions:true and never logged anything -- the Sheet row
+// always exists because that write is unconditional, so this is the
+// only way to tell a truly-missing mirror doc apart from a real client
+// display bug. Run via runDiagnoseEvidenceNow() below, NOT this
+// function directly -- the Apps Script editor's function dropdown
+// hides anything ending in "_".
+function diagnoseEvidenceFirestore_() {
+  const out = [];
+  const token = getFirestoreAccessToken_();
+  if (!token) {
+    out.push('Firestore dual-write not configured (no token) -- cannot check the mirror at all.');
+    return out.join('\n');
+  }
+  const rows = evidenceRawRows_();
+  out.push('Evidence sheet rows: ' + rows.length);
+  out.push('');
+  let missing = 0;
+  rows.forEach(function (row) {
+    const resp = UrlFetchApp.fetch(firestoreDocUrl_('evidence', row.evidence_id), {
+      method: 'get',
+      headers: { Authorization: 'Bearer ' + token },
+      muteHttpExceptions: true
+    });
+    const code = resp.getResponseCode();
+    const ok = code >= 200 && code < 300;
+    if (!ok) missing++;
+    out.push((ok ? 'OK  ' : '*** MISSING (HTTP ' + code + ') ') + row.evidence_id +
+      ' -- "' + row.title + '" (cell_id: ' + (row.cell_id || '(none)') + ', operation_id: ' + (row.operation_id || '(none)') + ')');
+  });
+  out.push('');
+  out.push(missing === 0
+    ? 'All ' + rows.length + ' Evidence rows have a matching Firestore document.'
+    : missing + ' of ' + rows.length + ' Evidence rows are MISSING from Firestore -- run runBackfillEvidenceNow() to fix.');
+  return out.join('\n');
+}
+
+function runDiagnoseEvidenceNow() {
+  Logger.log(diagnoseEvidenceFirestore_());
+}
+
+// ONE-SHOT REPAIR (safe to re-run; a no-op for rows already in
+// Firestore): re-sends every Evidence sheet row through the exact same
+// firestoreDualWrite_() call createEvidence()/updateEvidence() already
+// use, so any row that silently failed to reach Firestore before the
+// logging fix above gets a second, now-visible attempt. Run via
+// runBackfillEvidenceNow(), NOT this function directly (see the
+// underscore-hides-from-dropdown note above).
+function backfillMissingEvidenceToFirestore_() {
+  const rows = evidenceRawRows_();
+  let written = 0;
+  rows.forEach(function (row) {
+    firestoreDualWrite_('evidence', row.evidence_id, {
+      title: row.title, body: row.body, photo: row.photo, cell_id: row.cell_id,
+      created_at: row.created_at, operation_id: row.operation_id,
+      released: row.released, restricted_to: row.restricted_to,
+      visible_to: evidenceVisibleTo_(row.released, row.cell_id, row.restricted_to)
+    });
+    written++;
+  });
+  Logger.log('Re-sent ' + written + ' Evidence rows to Firestore. Run runDiagnoseEvidenceNow() again to confirm.');
+}
+
+function runBackfillEvidenceNow() {
+  backfillMissingEvidenceToFirestore_();
 }
 
 function createEvidence(data) {
