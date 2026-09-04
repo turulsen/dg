@@ -2175,8 +2175,23 @@
   // A-Cell Handler session. Shared by the Evidence listener below and
   // the Track Library upload/delete flow further down this file.
   var _handlerAuthPromise = null;
+  // Wraps a promise with its own hard deadline -- the Firebase SDK's own
+  // default timeout for httpsCallable (70s) is far too long to sit
+  // silently on before a device with no devtools has any idea something
+  // is even wrong, and signInWithCustomToken has no documented timeout
+  // guarantee at all. Used below so EITHER live network call after the
+  // SDK itself has already loaded (see loadScriptTag()'s own 15s
+  // timeout for that earlier stage) surfaces a real, visible failure
+  // within a reasonable wait instead of an open-ended hang.
+  function withTimeout_(promise, ms, label) {
+    return new Promise(function (resolve, reject) {
+      var timer = setTimeout(function () { reject(new Error('Timed out: ' + label + ' (' + (ms / 1000) + 's) -- check network connection.')); }, ms);
+      promise.then(function (v) { clearTimeout(timer); resolve(v); }, function (e) { clearTimeout(timer); reject(e); });
+    });
+  }
   function ensureHandlerSignedIn() {
     if (_handlerAuthPromise) return _handlerAuthPromise;
+    setFsStatus('Firestore: loading SDK…');
     _handlerAuthPromise = new Promise(function (resolve, reject) {
       ensureFirebaseApi(function () {
         var auth = window.firebase.auth();
@@ -2195,8 +2210,12 @@
         if (auth.currentUser && auth.currentUser.uid === 'handler') { resolve(auth.currentUser); return; }
         var password = sessionStorage.getItem('dg_acell_pw') || '';
         if (!password) { _handlerAuthPromise = null; reject(new Error('No A-Cell session -- log in as Handler first.')); return; }
-        window.firebase.functions().httpsCallable('handlerLogin')({ handler_password: password })
-          .then(function (result) { return auth.signInWithCustomToken(result.data.token); })
+        setFsStatus('Firestore: SDK loaded — calling handlerLogin()…');
+        withTimeout_(window.firebase.functions().httpsCallable('handlerLogin')({ handler_password: password }), 20000, 'handlerLogin()')
+          .then(function (result) {
+            setFsStatus('Firestore: got token — exchanging for a session…');
+            return withTimeout_(auth.signInWithCustomToken(result.data.token), 20000, 'signInWithCustomToken()');
+          })
           .then(function (cred) { resolve(cred.user); })
           .catch(function (err) { _handlerAuthPromise = null; reject(err); });
       }, function (err) {
