@@ -1991,7 +1991,21 @@
     var base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/';
     var loadIfMissing = function (check, url, next) { if (check()) { next(); } else { loadScriptTag(url, next); } };
     loadIfMissing(function () { return window.firebase && window.firebase.apps; }, base + 'firebase-app-compat.js', function () {
-      if (!window.firebase.apps.length) window.firebase.initializeApp(FIREBASE_CONFIG);
+      if (!window.firebase.apps.length) {
+        window.firebase.initializeApp(FIREBASE_CONFIG);
+        // Brave (and some ad-blocker extensions) silently blocks
+        // Firestore's default streaming transport (WebChannel) -- it
+        // looks like a long-lived tracking connection -- which leaves
+        // every onSnapshot() listener permanently stuck with zero data
+        // and, worse, no error at all (Safari on the same account/data
+        // worked fine, confirming this wasn't a real permissions or
+        // data problem). Falls back to plain HTTP long-polling, which
+        // isn't blocked. Must be set before ANY other Firestore call on
+        // this page -- doing it here, guarded by the same
+        // apps.length check initializeApp() already uses, guarantees
+        // exactly-once and first.
+        window.firebase.firestore().settings({ experimentalAutoDetectLongPolling: true });
+      }
       loadIfMissing(function () { return !!window.firebase.auth; }, base + 'firebase-auth-compat.js', function () {
         loadIfMissing(function () { return !!window.firebase.functions; }, base + 'firebase-functions-compat.js', function () {
           loadIfMissing(function () { return !!window.firebase.storage; }, base + 'firebase-storage-compat.js', function () {
@@ -3641,7 +3655,21 @@
     var base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/';
     var loadIfMissing = function (check, url, next) { if (check()) { next(); } else { loadScriptTag(url, next); } };
     loadIfMissing(function () { return window.firebase && window.firebase.apps; }, base + 'firebase-app-compat.js', function () {
-      if (!window.firebase.apps.length) window.firebase.initializeApp(FIREBASE_CONFIG);
+      if (!window.firebase.apps.length) {
+        window.firebase.initializeApp(FIREBASE_CONFIG);
+        // Brave (and some ad-blocker extensions) silently blocks
+        // Firestore's default streaming transport (WebChannel) -- it
+        // looks like a long-lived tracking connection -- which leaves
+        // every onSnapshot() listener permanently stuck with zero data
+        // and, worse, no error at all (Safari on the same account/data
+        // worked fine, confirming this wasn't a real permissions or
+        // data problem). Falls back to plain HTTP long-polling, which
+        // isn't blocked. Must be set before ANY other Firestore call on
+        // this page -- doing it here, guarded by the same
+        // apps.length check initializeApp() already uses, guarantees
+        // exactly-once and first.
+        window.firebase.firestore().settings({ experimentalAutoDetectLongPolling: true });
+      }
       loadIfMissing(function () { return !!window.firebase.auth; }, base + 'firebase-auth-compat.js', function () {
         loadIfMissing(function () { return !!window.firebase.functions; }, base + 'firebase-functions-compat.js', function () {
           loadIfMissing(function () { return !!window.firebase.storage; }, base + 'firebase-storage-compat.js', function () {

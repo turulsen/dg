@@ -845,3 +845,20 @@ found" for an Agent who very much has a character on file. Mirrors
 just triggered reactively from every read path instead of only that one
 button. A retry guard (`retrying`/`!retrying`) prevents this from ever
 looping more than once even if the auto-create attempt itself fails.
+
+**A-Cell's Evidence Locker showed "No evidence filed here yet" in
+Brave, with the identical account and data working fine in Safari.**
+A live diagnostic ruled out both the Sheet and the Firestore mirror --
+every Evidence item's `cell_id`/`visible_to` were confirmed correct on
+both. Root cause: Firestore's default real-time listener transport
+(WebChannel, a long-lived streaming connection) gets silently blocked
+by Brave's Shields (and some ad-blocker extensions) since it resembles
+a tracking connection -- `onSnapshot()` then never fires at all, with
+no error surfaced (a genuinely different failure mode from the earlier
+Handler-sign-in-failure fix, which does surface an error). Fixed
+project-wide, not just in A-Cell: every page with a Firestore listener
+(`a-cell.html`, `agent-hub.html`, `notes/notes.js`,
+`assets/dice-roller.js`, `assets/table-radio.js`) now calls
+`firestore().settings({ experimentalAutoDetectLongPolling: true })`
+immediately after `initializeApp()`, falling back to plain HTTP
+long-polling instead of the streaming transport that gets blocked.
