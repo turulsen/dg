@@ -1031,3 +1031,22 @@ mode), both of which now properly reject `ensureHandlerSignedIn()`'s
 promise -- which the earlier `evidenceLoadError`/status-line fixes
 already know how to surface as a real, visible, non-clobbered error
 instead of an infinite silent hang.
+
+**That fix alone didn't finish the job -- confirmed live: still stuck
+on "signing in..." after a full minute, well past the new 15s
+script-load timeout.** That means the SDK scripts themselves were
+loading fine, and the actual hang was one level deeper: the live
+`httpsCallable('handlerLogin')(...)` call to the Cloud Function (or
+`signInWithCustomToken()` right after it), neither of which the
+previous fix touched at all -- the Firebase SDK's own default
+`httpsCallable` timeout is 70s, and `signInWithCustomToken()` has no
+documented timeout guarantee at all, either of which could sit
+silently well past what anyone waiting on a phone would consider
+"working." Added `withTimeout_()`, a small helper that races a promise
+against its own hard deadline (20s each), wrapped around both calls,
+plus finer-grained status-line checkpoints ("loading SDK…" → "SDK
+loaded — calling handlerLogin()…" → "got token — exchanging for a
+session…") so the next report pinpoints exactly which stage is
+actually stuck, rather than everything collapsing into one generic
+"signing in…" that could mean any of four completely different
+things.
