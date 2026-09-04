@@ -401,10 +401,11 @@ not even hidden in the DOM.
 A persistent widget keeping a player "tuned in" to whatever the Handler
 broadcasts from A-Cell's Music tab, staying loosely in sync via a
 server-stamped `started_at` timestamp every device reads. Covers the main
-track, **ambient layers** (rain/wind/machine hum/static, independently
-toggleable per channel and locally mutable per listener), and one-shot
-**stinger** sound effects heard by everyone tuned to that channel, plus the
-widget's minimize/expand states and volume slider.
+track and the widget's minimize/expand states and volume slider.
+**Ambient layers and stinger sound effects are not built** (an earlier
+attempt was abandoned over audio quality, see
+`design-graveyard/table-radio-audio-soundscape`'s `RETROSPECTIVE.md`) --
+this suite has no coverage for them because there's nothing to cover yet.
 
 ### PWA / offline
 
