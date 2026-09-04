@@ -1849,6 +1849,28 @@ function findByPlayerName(name, callback) {
 // fetches it on demand via the existing, already-fast load_character
 // action (doLookupCharacter() below -- a targeted single-row read, not
 // a full-sheet scan, same one that already fixed the ?load= 8-10s lag).
+// face_plate_url only ever lives on the Briefs sheet (Characters has no
+// such column -- see findByPlayerName()'s own comment on this same
+// gap) -- built once per listCharacters() call rather than per row, so
+// A-Cell's Play tab can show each Agent's actual photo instead of just
+// their initial letter without needing its own separate round trip
+// per Agent.
+function facePlateUrlMap_() {
+  const map = {};
+  const briefsSheet = getOrCreateSheet().getSheetByName(SHEET_NAME);
+  if (!briefsSheet) return map;
+  const rows = briefsSheet.getDataRange().getValues();
+  const headers = rows[0];
+  const codeCol = headers.indexOf('Agent Code');
+  const faceCol = headers.indexOf('face_plate_url');
+  if (codeCol === -1 || faceCol === -1) return map;
+  for (let i = 1; i < rows.length; i++) {
+    const code = rows[i][codeCol];
+    if (code && rows[i][faceCol]) map[code] = rows[i][faceCol];
+  }
+  return map;
+}
+
 function listCharacters(callback) {
   const sheet = getOrCreateCharactersSheet();
   const result = { status: 'OK', characters: [] };
@@ -1859,6 +1881,7 @@ function listCharacters(callback) {
   const jsonCol = headers.indexOf('Character JSON');
   const updatedCol = headers.indexOf('Updated At');
   const playerNameCol = headers.indexOf('Player Name');
+  const faceMap = facePlateUrlMap_();
 
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
@@ -1881,7 +1904,8 @@ function listCharacters(callback) {
       // is authoritative -- bio.player_name is only a fallback for a row
       // saved before that column existed.
       player_name: (playerNameCol >= 0 && row[playerNameCol]) || bio.player_name || '',
-      hp: derived.hp, wp: derived.wp, san: derived.san, bp: derived.bp
+      hp: derived.hp, wp: derived.wp, san: derived.san, bp: derived.bp,
+      face_plate_url: faceMap[code] || ''
     });
   }
 
