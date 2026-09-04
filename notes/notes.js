@@ -356,6 +356,13 @@
     let evidenceItems = [];
     let evidenceSeenMap = {};
     let evidenceModalEl = null;
+    // Operation names -- list_operations is deliberately unauthenticated
+    // (players need folder names without a Handler session, same
+    // reasoning as list_cells), fetched once at mount rather than every
+    // poll tick since Operations change rarely. opFilter narrows the
+    // sidebar to one Operation at a time; '' shows everything.
+    let operations = [];
+    let opFilter = '';
     // Every 5s poll tick re-renders an already-open modal (see
     // fetchEvidence() below) so a Cell-mate's new remark shows up live --
     // but a Drive-backed photo doesn't change between polls, so without
@@ -539,7 +546,8 @@
               const d = doc.data();
               items.push({
                 evidence_id: doc.id, title: d.title || '', body: d.body || '',
-                photo: d.photo || '', cell_id: d.cell_id || '', created_at: d.created_at || 0
+                photo: d.photo || '', cell_id: d.cell_id || '', operation_id: d.operation_id || '',
+                created_at: d.created_at || 0
               });
             });
             evidenceItems = items.sort((a, b) => Number(b.created_at) - Number(a.created_at));
@@ -563,19 +571,63 @@
       });
     }
 
+    function fetchOperations() {
+      jsonpGet('list_operations', {}, res => {
+        if (res && res.status === 'OK' && Array.isArray(res.operations)) {
+          operations = res.operations;
+          refreshEvidenceSidebar();
+        }
+      });
+    }
+    function operationsByIdMap_() {
+      const map = {};
+      operations.forEach(o => { map[o.operation_id] = o; });
+      return map;
+    }
+    function operationLabel_(operationId) {
+      if (!operationId) return '';
+      const o = operationsByIdMap_()[operationId];
+      return o ? o.name : operationId;
+    }
+
     function refreshEvidenceSidebar() {
       const mount = container.querySelector('#dg-notes-evidence-mount');
       if (!mount) return;
       if (!evidenceItems.length) { mount.innerHTML = ''; return; }
+
+      // Filter options built from this Agent's own visible Evidence,
+      // not every Operation campaign-wide -- a folder with nothing
+      // visible to you is just noise to pick from here.
+      const seenOpIds = {};
+      let hasUnfiled = false;
+      evidenceItems.forEach(h => { if (h.operation_id) seenOpIds[h.operation_id] = true; else hasUnfiled = true; });
+      const opIds = Object.keys(seenOpIds);
+      let filterHtml = '';
+      if (opIds.length || hasUnfiled) {
+        if (opFilter && opFilter !== 'UNFILED' && !seenOpIds[opFilter]) opFilter = ''; // stale selection (e.g. that Operation now has nothing visible) -- fall back to All
+        let optsHtml = '<option value="">All Operations</option>';
+        if (hasUnfiled) optsHtml += '<option value="UNFILED"' + (opFilter === 'UNFILED' ? ' selected' : '') + '>Unfiled</option>';
+        opIds.forEach(id => { optsHtml += '<option value="' + escapeHtml(id) + '"' + (opFilter === id ? ' selected' : '') + '>' + escapeHtml(operationLabel_(id)) + '</option>'; });
+        filterHtml = '<select class="dg-notes-evidence-filter">' + optsHtml + '</select>';
+      }
+
+      const shown = opFilter
+        ? evidenceItems.filter(h => opFilter === 'UNFILED' ? !h.operation_id : h.operation_id === opFilter)
+        : evidenceItems;
+
       mount.innerHTML =
         '<div class="dg-notes-toc-subhead">Evidence</div>' +
-        evidenceItems.map(h => {
+        filterHtml +
+        (shown.length ? shown.map(h => {
           const unseen = !evidenceSeenMap[h.evidence_id];
+          const opTag = h.operation_id ? '<span class="dg-notes-evidence-op-tag">' + escapeHtml(operationLabel_(h.operation_id)) + '</span>' : '';
           return '<a href="#" class="dg-notes-evidence-item" data-evidence-id="' + escapeHtml(h.evidence_id) + '">' +
             '<span class="dg-notes-evidence-dot' + (unseen ? ' unseen' : '') + '"></span>' +
-            '<span class="dg-notes-evidence-title">' + escapeHtml(h.title) + '</span>' +
+            '<span class="dg-notes-evidence-title">' + escapeHtml(h.title) + '</span>' + opTag +
             '</a>';
-        }).join('');
+        }).join('') : '<div class="dg-notes-toc-empty">Nothing filed under this Operation.</div>');
+      const filterEl = mount.querySelector('.dg-notes-evidence-filter');
+      if (filterEl) filterEl.addEventListener('change', () => { opFilter = filterEl.value; refreshEvidenceSidebar(); });
       mount.querySelectorAll('[data-evidence-id]').forEach(a => {
         a.addEventListener('click', e => { e.preventDefault(); openEvidenceModal(a.dataset.evidenceId); });
       });
@@ -639,8 +691,10 @@
         }).join('')
         : '<div class="dg-notes-empty">No remarks yet.</div>';
 
+      const opTag = h.operation_id ? '<div class="dg-notes-evidence-op-tag">' + escapeHtml(operationLabel_(h.operation_id)) + '</div>' : '';
       body.innerHTML =
         '<div class="dg-notes-identity-title">' + escapeHtml(h.title) + '</div>' +
+        opTag +
         photoHtml +
         (h.body ? '<p class="dg-notes-evidence-body-text">' + escapeHtml(h.body) + '</p>' : '') +
         '<div class="dg-notes-toc-subhead">Remarks</div>' +
@@ -1598,6 +1652,7 @@
 
     render();
     startNotesListeners();
+    fetchOperations();
     pollTick_();
     startPolling();
 
