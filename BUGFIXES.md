@@ -919,3 +919,33 @@ likely why a device that had been open since before them kept showing
 old behavior through every one of them. Bumped now; the standing rule
 going forward is to bump `CACHE_NAME` in the same commit as any change
 to a `SHELL_FILES`-listed file, not just when remembered.
+
+**A failed Firestore dual-write could fail completely silently, with
+nothing logged anywhere -- not even in this project's own Executions
+log.** `firestoreDualWrite_`/`firestoreDualPatch_`/`firestoreDualDelete_`
+(`backend/Code.gs`) all call `UrlFetchApp.fetch` with
+`muteHttpExceptions: true`, which is correct and deliberate -- a
+Firestore/network hiccup must never fail the player's actual Sheet
+save, which is the write of record. But `muteHttpExceptions` also means
+a non-2xx response (a bad field value, an expired token, wrong project)
+never throws, so the surrounding `try/catch` never fires either --
+nothing ever inspected the response's actual status code. A dual-write
+could fail on every single call and the Sheet row would still save
+looking completely normal, while the corresponding Firestore document
+silently never existed. This is indistinguishable, from the player's
+side, from "I added evidence and it saved fine" while the live
+Evidence Locker permanently shows nothing for it. Added
+`logFirestoreDualWriteFailure_()`, now called after every dual-write
+attempt, which checks the actual response code and logs the real HTTP
+status + body on failure -- the "log-but-swallow" behavior this
+section's own header comment always claimed, now actually true. Also
+added a read-only diagnostic (`diagnoseEvidenceFirestore_`, run via
+`runDiagnoseEvidenceNow()`) that checks every Evidence sheet row
+against its Firestore mirror doc and reports any that are missing, plus
+a one-shot repair (`backfillMissingEvidenceToFirestore_`, run via
+`runBackfillEvidenceNow()`) that re-sends every row through the same
+dual-write call to self-heal any gaps found -- both safe to re-run.
+Not yet confirmed whether this was the actual cause of a live "evidence
+added but not showing" report (diagnostic needs to be run against the
+real Sheet first), but the swallowed-error gap itself is real and now
+fixed regardless of that outcome.
