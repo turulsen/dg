@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v75 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v76 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -3294,6 +3294,55 @@ function diagnoseEvidenceFirestore_() {
 
 function runDiagnoseEvidenceNow() {
   Logger.log(diagnoseEvidenceFirestore_());
+}
+
+// TEMP DIAGNOSTIC (read-only, safe to delete after use): all 16
+// Evidence rows already confirmed present in Firestore by
+// diagnoseEvidenceFirestore_() above -- ruling out a lost dual-write --
+// so "No evidence filed here yet" under a specific Cell + Operation
+// most likely means the evidence landed under a DIFFERENT Cell/
+// Operation than the one currently selected. cell_id/operation_id are
+// opaque generated strings, unreadable on their own; this resolves each
+// Evidence row's cell_id and operation_id to their actual Cell/Operation
+// NAMES (as they'd appear in the A-Cell dropdowns) side by side, so a
+// mismatch against what's on screen (Cell "Impossible" / Operation
+// "Dorchester House at Night") is immediately visible. Run via
+// runDiagnoseEvidencePlacementNow() below, not this function directly.
+function diagnoseEvidencePlacement_() {
+  const out = [];
+
+  const cellNames = {};
+  getOrCreateCellsSheet().getDataRange().getValues().slice(1).forEach(function (row) {
+    if (row[0]) cellNames[row[0]] = row[1] || '(unnamed cell)';
+  });
+
+  const opNames = {};
+  getOrCreateOperationsSheet().getDataRange().getValues().slice(1).forEach(function (row) {
+    if (row[0]) opNames[row[0]] = { name: row[2] || '(unnamed operation)', cell_id: row[1] || '' };
+  });
+
+  out.push('=== Cells ===');
+  Object.keys(cellNames).forEach(function (id) { out.push(id + ' -> "' + cellNames[id] + '"'); });
+
+  out.push('');
+  out.push('=== Operations ===');
+  Object.keys(opNames).forEach(function (id) {
+    out.push(id + ' -> "' + opNames[id].name + '" (under Cell "' + (cellNames[opNames[id].cell_id] || opNames[id].cell_id) + '")');
+  });
+
+  out.push('');
+  out.push('=== Evidence, resolved ===');
+  evidenceRawRows_().forEach(function (row) {
+    const cellName = row.cell_id ? (cellNames[row.cell_id] || '*** UNKNOWN CELL ID: ' + row.cell_id) : '(no cell_id)';
+    const opName = row.operation_id ? (opNames[row.operation_id] ? opNames[row.operation_id].name : '*** UNKNOWN OPERATION ID: ' + row.operation_id) : '(no operation_id -- Unfiled)';
+    out.push('"' + row.title + '" -- Cell: ' + cellName + ' | Operation: ' + opName + ' | released: ' + row.released);
+  });
+
+  return out.join('\n');
+}
+
+function runDiagnoseEvidencePlacementNow() {
+  Logger.log(diagnoseEvidencePlacement_());
 }
 
 // ONE-SHOT REPAIR (safe to re-run; a no-op for rows already in
