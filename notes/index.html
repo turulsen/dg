@@ -66,7 +66,8 @@
   .notes-mount.hidden{ display:none; }
   .picker-wrap.hidden{ display:none; }
   .change-context{
-    max-width:1100px; margin:0 auto var(--s3); padding:0 6px; text-align:right;
+    max-width:1100px; margin:0 auto var(--s3); padding:0 6px;
+    display:flex; justify-content:flex-end; gap:8px;
   }
   .change-context button{
     font-family:'Courier Prime',monospace; font-size:11px; background:transparent;
@@ -80,12 +81,13 @@
 <body class="folder-theme">
 
 <div class="notes-header">
-  <a class="back-link" href="../agent-hub.html" id="notes-back-link">&larr; Agent Hub</a>
-  <!-- Shown instead of the Agent Hub link above when this page is the
-       mobile fullscreen-Notes pane of stats/index.html's Split View
-       feature (dgNotesFullscreen there) -- "Agent Hub" would navigate
-       out of the embedding page entirely, which isn't what flipping
-       back to the sheet means here. See the embed=fullscreen check
+  <!-- The "← Agent Hub" backlink that used to live here is gone on
+       request -- Split View/Character Sheet buttons (see
+       #change-context-row below) now cover getting back to the sheet,
+       so a separate nav-away link at the top was redundant. Still
+       shown instead of nothing when this page is the mobile
+       fullscreen-Notes pane of stats/index.html's Split View feature
+       (dgNotesFullscreen there) -- see the embed=fullscreen check
        below. -->
   <button type="button" class="notes-play-btn" id="notes-play-btn">Play</button>
   <h1>Player Notes</h1>
@@ -115,7 +117,8 @@
 </div>
 
 <div class="change-context hidden" id="change-context-row">
-  <button type="button" id="change-context-btn">Change Agent</button>
+  <button type="button" id="split-view-btn">Split View</button>
+  <button type="button" id="character-sheet-btn">Character Sheet</button>
 </div>
 
 <div class="notes-mount hidden" id="notes-mount"></div>
@@ -149,11 +152,16 @@
   const statusEl = document.getElementById('picker-status');
   const openBtn = document.getElementById('picker-open-btn');
   const fallbackOpenBtn = document.getElementById('picker-fallback-open-btn');
-  const changeBtn = document.getElementById('change-context-btn');
+  const splitViewBtn = document.getElementById('split-view-btn');
+  const characterSheetBtn = document.getElementById('character-sheet-btn');
 
   let cellsList = [];
   let myAgents = [];
   let panelHandle = null;
+  // Set by openFor() below -- Split View/Character Sheet need to know
+  // which Agent's sheet to open, replacing the old "Change Agent"
+  // button that lived in the same spot.
+  let currentAgentCode = '';
 
   function jsonpGet(action, params, cb) {
     const cbName = '_dgNotesIdx_' + action + '_' + Date.now();
@@ -301,6 +309,7 @@
 
   function openFor(agentCode) {
     const cell = findCellForAgent(agentCode);
+    currentAgentCode = agentCode;
     pickerWrap.classList.add('hidden');
     changeRow.classList.remove('hidden');
     mount.classList.remove('hidden');
@@ -327,12 +336,18 @@
     openFor(agentCode);
   });
   codeInput.addEventListener('keydown', e => { if (e.key === 'Enter') fallbackOpenBtn.click(); });
-  changeBtn.addEventListener('click', () => {
-    if (panelHandle && panelHandle.destroy) panelHandle.destroy();
-    mount.classList.add('hidden');
-    changeRow.classList.add('hidden');
-    pickerWrap.classList.remove('hidden');
-    proceed();
+  // Split View/Character Sheet -- replaces the old "Change Agent"
+  // button in this same spot. Same tab, same reasoning as the Play
+  // link elsewhere in the Hub (agentToken() below is per-Agent, not
+  // needed for a plain navigation). ../stats/ is a sibling of notes/,
+  // one level up.
+  splitViewBtn.addEventListener('click', () => {
+    if (!currentAgentCode) return;
+    location.href = '../stats/index.html?load=' + encodeURIComponent(currentAgentCode) + '&split=1';
+  });
+  characterSheetBtn.addEventListener('click', () => {
+    if (!currentAgentCode) return;
+    location.href = '../stats/index.html?load=' + encodeURIComponent(currentAgentCode);
   });
 
   init();
