@@ -293,15 +293,24 @@ timestamp every device reads. A small persistent widget
   mp3 the Handler set as Now Playing for a channel. Pause/Resume
   (freezes in place, doesn't restart) and Restart are separate from
   Set Now Playing (always restarts from 0:00).
-- **Ambient loops** (rain, wind, machine hum, static — procedurally
-  synthesized, not licensed audio) — layered underneath the main
-  track, independently toggleable per channel by the Handler, and
-  locally mutable per listener.
-- **Stingers** — one-shot sound effects the Handler fires, heard by
-  everyone currently tuned to that channel.
 - **Track Library** — mp3s uploaded once (to Drive), then cued on any
   channel without re-uploading; a per-channel **playlist** persists
   across reloads.
+
+**[Corrected — this doc previously listed ambient loops and stingers here
+as shipped layers. Verified: they are not.]** A real attempt at both
+(rain/wind/static ambient loops, a 13-sound stinger soundboard) was
+built, tested (399/399 Playwright checks passing), and then
+deliberately abandoned before merging to `main` -- the
+procedurally-synthesized audio wasn't convincing enough (only 4 gunshot
+variants were usable; explosions, vocals, knock/creak weren't), so the
+branch was archived rather than iterated on further. See
+`design-graveyard/table-radio-audio-soundscape`'s own `RETROSPECTIVE.md`
+for the full account, including its own recommendation to use real
+recordings instead of synthesis if revisited -- currently being
+rebuilt on that basis, against real sourced SFX, on top of the current
+Firestore-backed Now Playing (§12) rather than the old polling model
+that branch was built against.
 
 **Channel model:** 5 fixed channels, selected via a rotary-dial UI on
 both the Handler and player sides (not free text — avoids the
