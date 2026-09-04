@@ -1149,3 +1149,28 @@ set. `gstatic.com` already sends the necessary CORS header for this,
 so it costs nothing to add. Added to both loader blocks so any real
 future error from these scripts actually shows its real message
 instead of this useless placeholder.
+
+**Password masking made mistyped passwords impossible to proofread
+before submitting, on request.** A-Cell's clearance gate had a custom
+X-masking scheme (built to match the terminal aesthetic, not native
+`type="password"` dots) tracking the real value separately from the
+displayed X's; the Handler-password and Sheet-tab password fields used
+plain `type="password"`. All three now show the real typed characters
+directly -- the clearance gate's shadow-value tracking (`realValue` +
+its `beforeinput`/`input` handlers) is removed entirely rather than
+kept unused, since `input.value` is now itself always the real value.
+
+**"Double banner on top of screen" on mobile, with the lower one's
+Reload button seemingly not tappable.** `assets/sw-update.js` runs
+independently on every page, including both `hub.html` (the outer
+shell) and whatever page is loaded into its `#dg-shell-content`
+iframe, since it's included on all of them. Browsing via the shell,
+BOTH documents detect the same service-worker update (one scope covers
+the whole origin) and each renders its own `position:fixed` banner
+within its own document -- two banners stacking on screen, with the
+inner iframe's own Reload button only reloading the iframe's `src`,
+not the whole page, which read as "nothing happens" when tapped. Now
+short-circuits entirely (no registration, no banner) when running
+inside `#dg-shell-content` -- the outer shell's own instance already
+covers the whole app, and a real reload of the outer page re-navigates
+the iframe fresh too.

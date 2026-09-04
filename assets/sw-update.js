@@ -16,6 +16,19 @@
    ══════════════════════════════════════════════ */
 (function () {
   if (!('serviceWorker' in navigator)) return;
+  // hub.html's shell loads every other page into #dg-shell-content, an
+  // iframe -- and this script runs independently in BOTH the outer shell
+  // document and whatever page is loaded inside that iframe, since it's
+  // included on every page. Both detect the same service-worker update
+  // (one scope covers the whole origin) and each shows its OWN
+  // position:fixed banner within its own document, stacking as two
+  // separate banners on screen -- reported live as "double banner on
+  // top of screen" with the lower one's Reload button unreachable/
+  // inert-feeling (it only reloads the iframe's own src, not the whole
+  // page, so tapping it looked like nothing happened). The outer shell's
+  // own instance is the only one that needs to run: its Reload does a
+  // real full-page reload, which re-navigates the iframe fresh too.
+  if (window.frameElement && window.frameElement.id === 'dg-shell-content') return;
 
   var swPath = (document.currentScript && document.currentScript.getAttribute('data-sw')) || 'sw.js';
 
