@@ -158,6 +158,7 @@
     background:rgba(28,22,8,.04); border:1px solid var(--rule); padding:8px;
   }
   .play-agent-btn{
+    display:flex; align-items:center; gap:10px;
     text-align:left; background:transparent; border:1px solid var(--rule); color:var(--ink);
     padding:9px 11px; font-family:inherit; cursor:pointer; transition:border-color .15s, background .15s;
   }
@@ -165,6 +166,11 @@
   .play-agent-btn.active{ border-color:var(--red); background:rgba(139,26,26,.08); }
   .play-agent-btn .pa-name{ font-family:'Special Elite',monospace; font-size:13px; color:var(--ink); overflow-wrap:anywhere; }
   .play-agent-btn .pa-meta{ color:var(--ink-3); font-size:10px; margin-top:3px; font-family:'Courier Prime',monospace; }
+  .pa-photo{
+    width:34px; height:34px; flex-shrink:0; border-radius:2px; overflow:hidden;
+    background:var(--ink-placeholder); border:1px solid var(--ink-2);
+  }
+  .pa-photo img{ width:100%; height:100%; object-fit:cover; display:block; }
   #play-view.paper{ padding:0; min-height:180px; overflow:visible; }
   .play-view-empty, .play-loading, .play-error{
     color:var(--ink-3); font-size:13px; font-style:italic; text-align:center; padding:26px 10px;
@@ -207,6 +213,18 @@
     font-family:'Special Elite',monospace; font-size:20px; color:var(--paper);
   }
   .pv-photo img{ width:100%; height:100%; object-fit:cover; display:block; }
+  /* ── "No Face Plate on file yet" placeholder -- a small yellow
+     sticky note instead of a bare initial letter, so it reads as an
+     open task rather than finished design. Shared by .pv-photo (the
+     dossier header) and .pa-photo (each roster list row) -- fills
+     whichever box it's dropped into via width/height:100%. ── */
+  .photo-missing-note{
+    width:100%; height:100%; display:flex; align-items:center; justify-content:center;
+    text-align:center; background:#f0e87a; color:#5a4a10;
+    font-family:'Special Elite',monospace; font-size:7px; letter-spacing:.05em;
+    text-transform:uppercase; line-height:1.25; padding:2px; box-sizing:border-box;
+    transform:rotate(-2deg); box-shadow:inset 0 0 0 1px rgba(90,74,16,.25);
+  }
   .pv-sticky-info{ min-width:0; }
   .pv-bio{ font-family:'Special Elite',monospace; font-size:18px; color:var(--ink); overflow-wrap:anywhere; }
   .kia-name{ color:var(--red); text-decoration:line-through; text-decoration-thickness:2px; text-decoration-color:var(--red); }
@@ -1240,6 +1258,7 @@
         return {
           code: c.agent_code,
           updatedAt: c.updated_at,
+          face_plate_url: c.face_plate_url || '',
           state: {
             bio: { name: c.name, profession: c.profession, nationality: c.nationality, player_name: c.player_name },
             derived: { hp: c.hp, wp: c.wp, san: c.san, bp: c.bp }
@@ -1320,11 +1339,16 @@
       var bio = c.state.bio || {};
       var name = bio.name || 'Unknown Agent';
       var prof = bio.profession || '';
+      var photoId = 'pa-photo-' + i;
       return '<button type="button" class="play-agent-btn' + (c.code === selectedCode ? ' active' : '') + '" data-i="' + i + '">' +
-        '<div class="pa-name">' + escapeHtml(name) + '</div>' +
-        '<div class="pa-meta">' + escapeHtml(c.code) + (prof ? ' &middot; ' + escapeHtml(prof) : '') + '</div>' +
+        '<div class="pa-photo" id="' + photoId + '">' + (c.face_plate_url ? '' : '<div class="photo-missing-note">Take Photo</div>') + '</div>' +
+        '<div><div class="pa-name">' + escapeHtml(name) + '</div>' +
+        '<div class="pa-meta">' + escapeHtml(c.code) + (prof ? ' &middot; ' + escapeHtml(prof) : '') + '</div></div>' +
         '</button>';
     }).join('');
+    characters.forEach(function (c, i) {
+      if (c.face_plate_url) resolveFacePlateInto(c.face_plate_url, 'pa-photo-' + i);
+    });
     Array.prototype.forEach.call(listEl.querySelectorAll('.play-agent-btn'), function (btn) {
       btn.addEventListener('click', function () {
         Array.prototype.forEach.call(listEl.querySelectorAll('.play-agent-btn'), function (b) { b.classList.remove('active'); });
@@ -1441,11 +1465,45 @@
     document.head.appendChild(s);
   }
 
-  // Best-effort photo lookup: character_json (Characters sheet, via
-  // list_characters) has no photo -- that lives on the Agent File
+  // Drops a Face Plate into a photo box, given its URL is already
+  // known -- a direct Phase 4 (Firebase Storage) https:// link is set
+  // straight as the <img> src (already publicly readable, same as
+  // every other post-migration image path in this app); a legacy
+  // pre-migration gdrive:FILE_ID link still needs the imgdata proxy
+  // for Drive's own access rules. Shared by the roster list (which
+  // already has every Agent's face_plate_url from list_characters, see
+  // its own comment in Code.gs) and loadPlayPhoto() below (the dossier
+  // header, which has to look its own up first).
+  function resolveFacePlateInto(faceUrl, imgElId) {
+    if (!faceUrl) return;
+    if (/^https?:\/\//.test(faceUrl)) {
+      var div = document.getElementById(imgElId);
+      if (div) div.innerHTML = '<img src="' + faceUrl + '" alt="">';
+      return;
+    }
+    var m = faceUrl.match(/^gdrive:(.+)$/);
+    if (!m) return;
+    var cbName = '_acellPlayFace_' + imgElId.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
+    window[cbName] = function (json) {
+      delete window[cbName];
+      if (json.status === 'OK' && json.dataUri) {
+        var div = document.getElementById(imgElId);
+        if (div) div.innerHTML = '<img src="' + json.dataUri + '" alt="">';
+      }
+    };
+    var s = document.createElement('script');
+    s.src = APPS_SCRIPT_URL + '?action=imgdata&id=' + encodeURIComponent(m[1]) + '&callback=' + cbName;
+    document.head.appendChild(s);
+  }
+
+  // The dossier header's own photo: character_json (Characters sheet,
+  // via list_characters) has no photo -- that lives on the Agent File
   // (Delta Green Briefs sheet), fetched separately per selected Agent
   // rather than for the whole roster up front, to avoid N extra
-  // requests just to render the list.
+  // requests just to render the list. Shows the yellow "Take Photo"
+  // note in place of the bare initial letter once it's confirmed there
+  // really is no Face Plate on file yet, rather than leaving the
+  // letter up looking like a finished, intentional design.
   function loadPlayPhoto(code, imgElId) {
     var cbName = '_acellPlayAf_' + code.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
     window[cbName] = function (res) {
@@ -1453,19 +1511,12 @@
       var s = document.getElementById('s-' + cbName);
       if (s) s.remove();
       var faceUrl = res && res.status === 'OK' && res.data ? res.data.face_plate_url : null;
-      var m = faceUrl && faceUrl.match(/^gdrive:(.+)$/);
-      if (!m) return;
-      var cb2 = '_acellPlayFace_' + code.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
-      window[cb2] = function (json) {
-        delete window[cb2];
-        if (json.status === 'OK' && json.dataUri) {
-          var div = document.getElementById(imgElId);
-          if (div) div.innerHTML = '<img src="' + json.dataUri + '" alt="">';
-        }
-      };
-      var s2 = document.createElement('script');
-      s2.src = APPS_SCRIPT_URL + '?action=imgdata&id=' + encodeURIComponent(m[1]) + '&callback=' + cb2;
-      document.head.appendChild(s2);
+      if (faceUrl) {
+        resolveFacePlateInto(faceUrl, imgElId);
+      } else {
+        var div = document.getElementById(imgElId);
+        if (div) div.innerHTML = '<div class="photo-missing-note">Take Photo</div>';
+      }
     };
     var s = document.createElement('script');
     s.id = 's-' + cbName;
