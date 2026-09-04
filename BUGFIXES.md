@@ -993,3 +993,15 @@ snapshot…" → "snapshot received, N doc(s) @ \<time\>", or the real error
 text at whichever stage actually fails. Turns the previously fully
 invisible async chain into something readable on screen without
 needing a computer at all.
+
+**Self-correction, same day: the status line above was itself invisible
+on a phone.** Placed in the Evidence toolbar's flex row with
+`margin-left:auto` to push it right, on a screen actually showing
+nothing there at all -- that row has no `flex-wrap`, so on a narrow
+phone width it silently overflowed off the right edge instead of
+wrapping, with no horizontal scroll to reveal it. Confirmed via a live
+screenshot: the toolbar rendered normally, buttons and refresh
+timestamp all visible, with no status text anywhere -- exactly the
+"looks like nothing happened" failure mode this line exists to prevent,
+just relocated to the tool that was supposed to fix it. Moved to its
+own full-width row below the toolbar instead of sharing that row.
