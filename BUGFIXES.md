@@ -1005,3 +1005,29 @@ timestamp all visible, with no status text anywhere -- exactly the
 "looks like nothing happened" failure mode this line exists to prevent,
 just relocated to the tool that was supposed to fix it. Moved to its
 own full-width row below the toolbar instead of sharing that row.
+
+**Root cause found, via the status line above: Evidence's Firestore
+sign-in could hang forever, with no error, ever, and no way to recover
+short of a full reload.** The new status line showed "Firestore:
+signing in..." stuck indefinitely. Traced to `loadScriptTag()`
+(a-cell.html's own Firebase-SDK loader, used to fetch
+app/auth/functions/storage/firestore compat scripts on demand): it set
+`s.onload = cb` but had **no `s.onerror` at all**. Any one of those
+script requests failing -- blocked, a dropped mobile connection, a
+flaky CDN response, exactly the kind of thing a real phone on real
+signal hits -- left `cb` never called, and nothing else waiting on it
+either: the whole `ensureFirebaseApi()` chain, and therefore
+`ensureHandlerSignedIn()`'s promise, just hung forever, neither
+resolved nor rejected. This is very likely the actual explanation for
+"I loaded up many, could manage them, then all of a sudden they
+disappeared" from earlier today -- not a permanent misconfiguration
+(ruled out via the project-ID check), but a pipeline that silently,
+permanently wedges itself the moment one script request fails, with
+literally nothing --no error, no timeout, no retry -- to recover it
+short of a full reload (and a full reload on the same flaky connection
+just hangs again). Added a real `s.onerror` handler plus a 15s timeout
+backstop (in case `onerror` itself doesn't fire for every failure
+mode), both of which now properly reject `ensureHandlerSignedIn()`'s
+promise -- which the earlier `evidenceLoadError`/status-line fixes
+already know how to surface as a real, visible, non-clobbered error
+instead of an infinite silent hang.
