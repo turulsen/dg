@@ -150,6 +150,17 @@
   .play-refresh-note{
     font-family:'Courier Prime',monospace; font-size:10px; color:var(--ink-3);
   }
+  /* Visible on-screen pipeline status for the Evidence Firestore listener --
+     added after several rounds of "shows nothing, no error either" reports
+     that were hard to debug on a device with no devtools access. Makes
+     every stage (signing in / listening / snapshot received) show up on
+     screen in real time instead of only in a console nobody can open. */
+  .evidence-fs-status{
+    font-family:'Courier Prime',monospace; font-size:10px; color:var(--ink-3);
+    margin-left:auto;
+  }
+  .evidence-fs-status.is-error{ color:#a33; font-weight:bold; }
+  .evidence-fs-status.is-ok{ color:#3a6; }
   .play-layout{ display:grid; grid-template-columns:240px 1fr; gap:18px; align-items:start; }
   @media (max-width:720px){ .play-layout{ grid-template-columns:1fr; } }
   .play-agent-list{
@@ -831,6 +842,7 @@
           <button type="button" class="paper-btn primary" id="evidence-create-btn">+ New Evidence</button>
           <button type="button" class="paper-btn" id="evidence-refresh-btn">Refresh</button>
           <span class="play-refresh-note" id="evidence-refresh-note"></span>
+          <span class="evidence-fs-status" id="evidence-fs-status"></span>
         </div>
         <div class="evidence-layout">
           <div class="evidence-sidebar">
@@ -2013,6 +2025,12 @@
   var foldersEl = document.getElementById('evidence-folders');
   var opFormSlot = document.getElementById('evidence-op-form-slot');
   var newOpBtn = document.getElementById('evidence-new-op-btn');
+  var fsStatusEl = document.getElementById('evidence-fs-status');
+  function setFsStatus(text, kind) {
+    if (!fsStatusEl) return;
+    fsStatusEl.textContent = text;
+    fsStatusEl.className = 'evidence-fs-status' + (kind ? ' is-' + kind : '');
+  }
 
   var evidenceItems = [];
   // Set by startEvidenceListener()'s sign-in/onSnapshot failure paths,
@@ -2313,9 +2331,11 @@
   var evidenceListenerActive = false;
   function startEvidenceListener() {
     if (evidenceListenerActive) return;
-    ensureHandlerSignedIn().then(function () {
+    setFsStatus('Firestore: signing in…');
+    ensureHandlerSignedIn().then(function (user) {
       if (evidenceListenerActive) return; // race: two callers both resolved sign-in
       evidenceListenerActive = true;
+      setFsStatus('Firestore: signed in as "' + (user && user.uid) + '" — waiting for snapshot…');
       window.firebase.firestore().collection('evidence').orderBy('created_at', 'desc')
         .onSnapshot(function (snap) {
           evidenceItems = [];
@@ -2328,10 +2348,12 @@
             });
           });
           evidenceLoadError = null;
+          setFsStatus('Firestore: snapshot received, ' + evidenceItems.length + ' doc(s) @ ' + new Date().toLocaleTimeString(), 'ok');
           if (baseDataReady) { renderFolders(); renderList(); }
         }, function (err) {
           console.error('a-cell: evidence listener error', err);
           evidenceLoadError = 'Could not load Evidence (Firestore): ' + (err && err.message || String(err));
+          setFsStatus('Firestore: listener error — ' + (err && err.message || String(err)), 'error');
           renderList();
         });
     }).catch(function (err) {
@@ -2350,6 +2372,7 @@
       // by it moments later (see evidenceLoadError's own declaration).
       console.error('a-cell: evidence listener sign-in failed (retries on next handler-ready event)', err);
       evidenceLoadError = 'Could not load Evidence (Handler sign-in failed): ' + (err && err.message || String(err));
+      setFsStatus('Firestore: sign-in failed — ' + (err && err.message || String(err)), 'error');
       renderList();
     });
   }

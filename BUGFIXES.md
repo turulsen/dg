@@ -976,3 +976,20 @@ first (cleared only on a real successful snapshot); the listener's
 failure paths set it and call `renderList()` directly instead of
 writing `innerHTML` inline, so the message now survives every later
 re-render instead of being silently wiped within moments of appearing.
+
+**Diagnostic tooling, not a fix yet: A-Cell's Evidence tab now shows a
+real-time Firestore pipeline status on screen.** After the fixes above
+still left a genuinely-fresh, correctly-signed-in device showing no
+evidence and no error, and after ruling out a lost write, a
+Cell/Operation mismatch, and a Firestore-project mismatch (all
+confirmed via `runDiagnoseEvidenceNow()` / `runShowFirestoreProjectIdNow()`)
+-- the only thing left unverified was what the live client's own
+sign-in/listener pipeline was actually doing in real time, which no
+amount of server-side diagnostics can show, and which isn't visible on
+a device with no devtools access. Added a small status line
+(`#evidence-fs-status`) in the Evidence toolbar that updates live
+through every stage: "signing in…" → "signed in as \<uid\>, waiting for
+snapshot…" → "snapshot received, N doc(s) @ \<time\>", or the real error
+text at whichever stage actually fails. Turns the previously fully
+invisible async chain into something readable on screen without
+needing a computer at all.
