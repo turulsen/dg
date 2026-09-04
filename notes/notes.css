@@ -302,6 +302,21 @@
 }
 #dg-notes-panel .dg-notes-evidence-dot.unseen{ background:var(--red); box-shadow:0 0 0 2px rgba(197,48,48,.2); }
 #dg-notes-panel .dg-notes-evidence-title{ flex:1 1 auto; min-width:0; }
+/* Operation filter above the Evidence list -- narrows to one folder at
+   a time, same organizing idea as A-Cell's own Evidence Locker
+   folders, sized to fit this sidebar's narrow column. */
+#dg-notes-panel .dg-notes-evidence-filter{
+  width:100%; font-family:'Courier Prime',monospace; font-size:10.5px; color:#3a3220;
+  background:rgba(255,255,255,.5); border:1px solid rgba(58,40,10,.25); border-radius:3px;
+  padding:3px 5px; margin-bottom:4px;
+}
+#dg-notes-panel .dg-notes-evidence-op-tag{
+  flex-shrink:0; font-size:9px; letter-spacing:.04em; text-transform:uppercase; color:rgba(43,36,22,.55);
+}
+.dg-notes-evidence-modal .dg-notes-evidence-op-tag{
+  display:inline-block; font-size:9px; letter-spacing:.06em; text-transform:uppercase;
+  background:rgba(58,40,10,.08); color:#3a3220; padding:2px 8px; border-radius:3px; margin-bottom:6px;
+}
 
 #dg-notes-panel .dg-notes-main{ flex:1; min-width:0; }
 
