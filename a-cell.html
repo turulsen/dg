@@ -390,6 +390,11 @@
     flex-shrink:0; color:var(--ink-3); font-size:13px; line-height:1; cursor:pointer; opacity:.6;
   }
   .evidence-folder-del:hover{ opacity:1; color:var(--red); }
+  .evidence-folder-actions{ display:flex; align-items:center; gap:8px; flex-shrink:0; }
+  .evidence-folder-edit{
+    flex-shrink:0; color:var(--ink-3); font-size:11px; line-height:1; cursor:pointer; opacity:.5;
+  }
+  .evidence-folder-edit:hover{ opacity:1; color:var(--ink); }
   .evidence-new-op-form{
     background:rgba(28,22,8,.04); border:1px solid var(--rule); padding:8px 10px;
     display:flex; flex-direction:column; gap:6px;
@@ -2342,19 +2347,96 @@
     newOpBtn.style.display = '';
     var ops = operationsByCell[filterCellId] || [];
     var rows = [{ id: '', label: 'All' }, { id: 'UNFILED', label: 'Unfiled' }]
-      .concat(ops.map(function (o) { return { id: o.operation_id, label: o.name, del: true }; }));
+      .concat(ops.map(function (o) { return { id: o.operation_id, label: o.name, editable: true }; }));
     foldersEl.innerHTML = rows.map(function (r) {
       var active = filterOpId === r.id ? ' active' : '';
-      var del = r.del ? '<span class="evidence-folder-del" data-del-op="' + escapeHtml(r.id) + '" title="Delete Operation">&times;</span>' : '';
+      var actions = r.editable
+        ? '<span class="evidence-folder-actions">' +
+          '<span class="evidence-folder-edit" data-edit-op="' + escapeHtml(r.id) + '" title="Rename Operation">&#9998;</span>' +
+          '<span class="evidence-folder-del" data-del-op="' + escapeHtml(r.id) + '" title="Delete Operation">&times;</span>' +
+          '</span>'
+        : '';
       return '<div class="evidence-folder-item' + active + '" data-op="' + escapeHtml(r.id) + '">' +
-        '<span class="evidence-folder-name">' + escapeHtml(r.label) + '</span>' + del + '</div>';
+        '<span class="evidence-folder-name">' + escapeHtml(r.label) + '</span>' + actions + '</div>';
     }).join('');
     Array.prototype.forEach.call(foldersEl.querySelectorAll('[data-op]'), function (row) {
       row.addEventListener('click', function (e) {
-        if (e.target.hasAttribute('data-del-op')) return;
+        if (e.target.hasAttribute('data-del-op') || e.target.hasAttribute('data-edit-op')) return;
         filterOpId = row.dataset.op;
         renderFolders();
         renderList();
+      });
+    });
+    // Refreshes the local operations{,ById,ByCell} caches from a fresh
+    // list_operations read -- shared by create/rename/delete below so
+    // the folder list, and whatever Operation dropdown the Evidence
+    // create/edit form has open, all stay in sync with the same read
+    // instead of three near-duplicate copies of this refetch.
+    function refreshOperations(cb) {
+      jsonpGet('list_operations', {}, function (res) {
+        if (res && res.status === 'OK' && Array.isArray(res.operations)) {
+          operations = res.operations;
+          operationsById = {}; operationsByCell = {};
+          operations.forEach(function (o2) {
+            operationsById[o2.operation_id] = o2;
+            (operationsByCell[o2.cell_id] = operationsByCell[o2.cell_id] || []).push(o2);
+          });
+        }
+        cb();
+      });
+    }
+    Array.prototype.forEach.call(foldersEl.querySelectorAll('[data-edit-op]'), function (x) {
+      x.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var opId = x.dataset.editOp;
+        var o = operationsById[opId];
+        if (!o) return;
+        opFormSlot.innerHTML =
+          '<div class="evidence-new-op-form">' +
+          '<input type="text" id="evidence-op-edit-name" value="' + escapeHtml(o.name) + '">' +
+          '<div class="evidence-new-op-actions">' +
+          '<button type="button" class="paper-btn primary" id="evidence-op-edit-confirm">Save</button>' +
+          '<button type="button" class="paper-btn" id="evidence-op-edit-cancel">Cancel</button>' +
+          '</div></div>';
+        var nameInput = document.getElementById('evidence-op-edit-name');
+        nameInput.focus();
+        nameInput.select();
+        document.getElementById('evidence-op-edit-cancel').addEventListener('click', function () { opFormSlot.innerHTML = ''; });
+        var confirmBtn = document.getElementById('evidence-op-edit-confirm');
+        confirmBtn.addEventListener('click', function () {
+          var newName = nameInput.value.trim();
+          if (!newName || newName === o.name) { opFormSlot.innerHTML = ''; return; }
+          // Disabled immediately, with the button's own text carrying
+          // the in-flight state -- statusEl alone (below the fold on a
+          // small screen) was easy to miss, and a second tap on a
+          // still-enabled button during the ~900ms round trip is
+          // exactly what produced a real duplicate Operation before
+          // this fix (same class of bug, same fix, as the Create flow
+          // just below).
+          confirmBtn.disabled = true;
+          document.getElementById('evidence-op-edit-cancel').disabled = true;
+          confirmBtn.textContent = 'Saving…';
+          statusEl.textContent = 'Renaming Operation…';
+          fetch(APPS_SCRIPT_URL, {
+            method: 'POST', mode: 'no-cors', keepalive: true,
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ action: 'update_operation', operation_id: opId, name: newName, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+          }).then(function () {
+            setTimeout(function () {
+              refreshOperations(function () {
+                statusEl.textContent = '';
+                opFormSlot.innerHTML = '';
+                renderFolders();
+                renderList();
+              });
+            }, 900);
+          }).catch(function () {
+            statusEl.textContent = 'Could not reach the backend.';
+            confirmBtn.disabled = false;
+            document.getElementById('evidence-op-edit-cancel').disabled = false;
+            confirmBtn.textContent = 'Save';
+          });
+        });
       });
     });
     Array.prototype.forEach.call(foldersEl.querySelectorAll('[data-del-op]'), function (x) {
@@ -2363,6 +2445,7 @@
         var opId = x.dataset.delOp;
         var o = operationsById[opId];
         if (!o || !confirm('Delete Operation "' + o.name + '"? Evidence filed under it becomes Unfiled, not deleted.')) return;
+        x.style.pointerEvents = 'none'; // same double-submit guard as Create/Rename, see their own comments
         statusEl.textContent = 'Deleting Operation…';
         fetch(APPS_SCRIPT_URL, {
           method: 'POST', mode: 'no-cors', keepalive: true,
@@ -2370,15 +2453,7 @@
           body: JSON.stringify({ action: 'delete_operation', operation_id: opId, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
         }).then(function () {
           setTimeout(function () {
-            jsonpGet('list_operations', {}, function (res) {
-              if (res && res.status === 'OK' && Array.isArray(res.operations)) {
-                operations = res.operations;
-                operationsById = {}; operationsByCell = {};
-                operations.forEach(function (o2) {
-                  operationsById[o2.operation_id] = o2;
-                  (operationsByCell[o2.cell_id] = operationsByCell[o2.cell_id] || []).push(o2);
-                });
-              }
+            refreshOperations(function () {
               if (filterOpId === opId) filterOpId = '';
               statusEl.textContent = 'Deleted ' + o.name + '.';
               renderFolders();
@@ -2838,9 +2913,20 @@
       '<button type="button" class="paper-btn" id="evidence-op-new-cancel">Cancel</button>' +
       '</div></div>';
     document.getElementById('evidence-op-new-cancel').addEventListener('click', function () { opFormSlot.innerHTML = ''; });
-    document.getElementById('evidence-op-new-confirm').addEventListener('click', function () {
+    var newConfirmBtn = document.getElementById('evidence-op-new-confirm');
+    var newCancelBtn = document.getElementById('evidence-op-new-cancel');
+    newConfirmBtn.addEventListener('click', function () {
       var name = document.getElementById('evidence-op-new-name').value.trim();
       if (!name || !filterCellId) return;
+      // Disabled immediately and relabeled, not just the separate
+      // statusEl text -- a real report: with only statusEl showing
+      // progress (easy to miss below the fold on a phone) and the
+      // button staying live for the whole ~900ms round trip, a second
+      // tap fired a second create_operation POST and produced a genuine
+      // duplicate Operation, since nothing here was idempotent by name.
+      newConfirmBtn.disabled = true;
+      newCancelBtn.disabled = true;
+      newConfirmBtn.textContent = 'Creating…';
       statusEl.textContent = 'Creating Operation…';
       fetch(APPS_SCRIPT_URL, {
         method: 'POST', mode: 'no-cors', keepalive: true,
@@ -2862,7 +2948,12 @@
             renderFolders();
           });
         }, 900);
-      }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+      }).catch(function () {
+        statusEl.textContent = 'Could not reach the backend.';
+        newConfirmBtn.disabled = false;
+        newCancelBtn.disabled = false;
+        newConfirmBtn.textContent = 'Create';
+      });
     });
   }
 
