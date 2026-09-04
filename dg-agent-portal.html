@@ -5691,6 +5691,26 @@ function rerollAgent() {
     return;
   }
 
+  // #cover: land straight on the Profiling/Cover tab with this Agent's
+  // code already restored -- the "Take Photo" note on A-Cell's Play tab
+  // and the Agent Hub roster link here specifically (not the default
+  // #agent landing) so a Handler or player clicking it goes straight to
+  // the form that actually generates a Face Plate, not the read-only
+  // Agent File dossier. loadAgentCode() already auto-creates a Brief
+  // from the character sheet on a NOT_FOUND (see
+  // autoCreateBriefFromCharacterThenRetry_()'s own comment), so this
+  // also self-heals the exact "no Agent File yet" gap that put a
+  // "Take Photo" note up in the first place.
+  if (window.location.hash === '#cover') {
+    switchTab('cover');
+    const codeInput = document.getElementById('agent-code-input');
+    if (codeInput) {
+      codeInput.value = upper;
+      setTimeout(loadAgentCode, 50);
+    }
+    return;
+  }
+
   // Default (including #agent): Agent File tab.
   switchTab('agent');
   // If autoRestore() above already populated this exact agent from

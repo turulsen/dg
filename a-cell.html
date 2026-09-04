@@ -224,7 +224,9 @@
     font-family:'Special Elite',monospace; font-size:7px; letter-spacing:.05em;
     text-transform:uppercase; line-height:1.25; padding:2px; box-sizing:border-box;
     transform:rotate(-2deg); box-shadow:inset 0 0 0 1px rgba(90,74,16,.25);
+    text-decoration:none; cursor:pointer;
   }
+  .photo-missing-note:hover{ background:#e8df6a; }
   .pv-sticky-info{ min-width:0; }
   .pv-bio{ font-family:'Special Elite',monospace; font-size:18px; color:var(--ink); overflow-wrap:anywhere; }
   .kia-name{ color:var(--red); text-decoration:line-through; text-decoration-thickness:2px; text-decoration-color:var(--red); }
@@ -1340,8 +1342,14 @@
       var name = bio.name || 'Unknown Agent';
       var prof = bio.profession || '';
       var photoId = 'pa-photo-' + i;
+      // A plain <div>, not an <a> -- this whole row is already a
+      // <button> (see openAgent() below), and nesting an interactive
+      // <a> inside a <button> is invalid HTML that Safari in particular
+      // can collapse in odd ways. Click-wired separately below instead,
+      // with stopPropagation so it opens the Profiling tab rather than
+      // also selecting this Agent in the roster.
       return '<button type="button" class="play-agent-btn' + (c.code === selectedCode ? ' active' : '') + '" data-i="' + i + '">' +
-        '<div class="pa-photo" id="' + photoId + '">' + (c.face_plate_url ? '' : '<div class="photo-missing-note">Take Photo</div>') + '</div>' +
+        '<div class="pa-photo" id="' + photoId + '">' + (c.face_plate_url ? '' : '<div class="photo-missing-note" data-take-photo="' + escapeHtml(c.code) + '">Take Photo</div>') + '</div>' +
         '<div><div class="pa-name">' + escapeHtml(name) + '</div>' +
         '<div class="pa-meta">' + escapeHtml(c.code) + (prof ? ' &middot; ' + escapeHtml(prof) : '') + '</div></div>' +
         '</button>';
@@ -1349,6 +1357,7 @@
     characters.forEach(function (c, i) {
       if (c.face_plate_url) resolveFacePlateInto(c.face_plate_url, 'pa-photo-' + i);
     });
+    wireTakePhotoNotes(listEl);
     Array.prototype.forEach.call(listEl.querySelectorAll('.play-agent-btn'), function (btn) {
       btn.addEventListener('click', function () {
         Array.prototype.forEach.call(listEl.querySelectorAll('.play-agent-btn'), function (b) { b.classList.remove('active'); });
@@ -1496,6 +1505,28 @@
     document.head.appendChild(s);
   }
 
+  // Clicking a "Take Photo" note opens that Agent's Profiling tab in a
+  // new tab (dg-agent-portal.html's own #cover handling auto-restores
+  // the code there and, per autoCreateBriefFromCharacterThenRetry_()'s
+  // own comment, auto-fills the Cover form from the character sheet if
+  // no Agent File exists yet -- exactly the case that put this note up
+  // in the first place). A separate click-wiring pass rather than an
+  // <a> in the markup: the roster-list note sits inside a <button> (see
+  // renderList()), and nesting an interactive <a> inside a <button> is
+  // invalid HTML. Idempotent to call repeatedly (each note only ever
+  // gets one listener, via a data attribute guard) since it's called
+  // from both renderList() and loadPlayPhoto()'s own fallback.
+  function wireTakePhotoNotes(root) {
+    Array.prototype.forEach.call(root.querySelectorAll('.photo-missing-note[data-take-photo]'), function (note) {
+      if (note.dataset.wired) return;
+      note.dataset.wired = '1';
+      note.addEventListener('click', function (e) {
+        e.stopPropagation();
+        window.open('dg-agent-portal.html?code=' + encodeURIComponent(note.dataset.takePhoto) + '#cover', '_blank', 'noopener');
+      });
+    });
+  }
+
   // The dossier header's own photo: character_json (Characters sheet,
   // via list_characters) has no photo -- that lives on the Agent File
   // (Delta Green Briefs sheet), fetched separately per selected Agent
@@ -1515,7 +1546,10 @@
         resolveFacePlateInto(faceUrl, imgElId);
       } else {
         var div = document.getElementById(imgElId);
-        if (div) div.innerHTML = '<div class="photo-missing-note">Take Photo</div>';
+        if (div) {
+          div.innerHTML = '<div class="photo-missing-note" data-take-photo="' + escapeHtml(code) + '">Take Photo</div>';
+          wireTakePhotoNotes(div);
+        }
       }
     };
     var s = document.createElement('script');

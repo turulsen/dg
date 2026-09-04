@@ -101,7 +101,9 @@
     font-family:'Special Elite',monospace; font-size:8px; letter-spacing:.06em;
     text-transform:uppercase; line-height:1.3; padding:2px; box-sizing:border-box;
     transform:rotate(-2deg); box-shadow:inset 0 0 0 1px rgba(90,74,16,.25);
+    text-decoration:none; cursor:pointer;
   }
+  .photo-missing-note:hover{ background:#e8df6a; }
 
   .recruit-copy, .empty-copy{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.85; max-width:52ch; margin-bottom:var(--s5); }
   .empty-panel .paper-title{ font-size:20px; }
@@ -562,7 +564,7 @@
         <div class="paper-content">
           <div class="paper-header">
             <div class="lead">
-              <div class="paper-photo" id="${photoId}">${a.face_plate_url ? '' : '<div class="photo-missing-note">Take Photo</div>'}</div>
+              <div class="paper-photo" id="${photoId}">${a.face_plate_url ? '' : `<a class="photo-missing-note" href="dg-agent-portal.html?code=${encodeURIComponent(a.code)}#cover" title="Open this Agent's Profiling tab to generate a Face Plate">Take Photo</a>`}</div>
               <div>
                 <div class="paper-title-sub">Delta Green — Agent Roster</div>
                 <div class="paper-title" id="${titleId}">${escapeHtml(a.char_name || 'Unknown Agent')}</div>
