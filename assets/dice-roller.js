@@ -891,8 +891,17 @@
         style.id = 'dr-style';
         style.textContent = [
             '#dr-panel{position:fixed;bottom:58px;right:24px;width:270px;',
-            'background:var(--bg-color,#0a0a0a);border:1px solid var(--primary-color,#00b521);',
-            'border-radius:8px;box-shadow:0 0 28px color-mix(in srgb,var(--primary-color) 20%,transparent),0 6px 20px rgba(0,0,0,.7);',
+            // Border and shadow toned down to match Table Radio's own flat,
+            // muted panel (assets/table-radio.js's #dg-radio-panel) instead
+            // of a full-brightness accent border with a colored glow --
+            // reported as clashing with every other widget/page, and
+            // reading as "out of theme" against A-Cell's own terminal
+            // look too. color-mix (not a hardcoded hex) so this still
+            // adapts proportionally on stats/index.html's own themed pages,
+            // which set --primary-color per theme, rather than a fixed
+            // color that would look wrong there.
+            'background:var(--bg-color,#161a14);border:1px solid color-mix(in srgb,var(--primary-color,#8fae5a) 45%,transparent);',
+            'border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.5);',
             // z-index above table-radio.js's own #dg-radio (9998, see
             // assets/table-radio.js) -- that widget's mobile offset
             // (bottom:78px) only clears THIS panel's collapsed handle bar,
@@ -901,7 +910,7 @@
             // rather than have the radio pill float mid-sheet over the
             // roll controls. Collapsing this panel (▲) always restores
             // the radio pill's normal spot.
-            'font-family:"JetBrains Mono",monospace;color:var(--primary-color,#00b521);z-index:9999;user-select:none;}',
+            'font-family:"JetBrains Mono",monospace;color:var(--primary-color,#8fae5a);z-index:9999;user-select:none;}',
             '#dr-handle{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;cursor:grab;',
             'border-bottom:1px solid color-mix(in srgb,var(--primary-color) 30%,transparent);',
             'background:color-mix(in srgb,var(--primary-color) 6%,transparent);border-radius:8px 8px 0 0;}',
@@ -916,8 +925,8 @@
             'padding:5px 2px;text-align:center;font-size:10px;font-family:inherit;letter-spacing:.05em;font-weight:bold;',
             'background:transparent;border:1px solid rgba(128,128,128,.35);border-radius:4px;color:inherit;cursor:pointer;',
             'opacity:.55;transition:opacity .15s,border-color .15s,background .15s;min-width:0;width:auto;flex:1;max-width:42px;}',
-            '.dr-die-btn:hover{opacity:.85;border-color:var(--primary-color,#00b521);}',
-            '.dr-die-btn-active{opacity:1!important;border-color:var(--primary-color,#00b521)!important;',
+            '.dr-die-btn:hover{opacity:.85;border-color:var(--primary-color,#8fae5a);}',
+            '.dr-die-btn-active{opacity:1!important;border-color:var(--primary-color,#8fae5a)!important;',
             'background:color-mix(in srgb,var(--primary-color) 12%,transparent)!important;}',
             '#dr-face-area{display:flex;justify-content:center;min-height:84px;align-items:center;}',
             '.dr-face-wrap{display:flex;flex-direction:column;align-items:center;gap:4px;width:100%;}',
@@ -929,7 +938,7 @@
             '.dr-pct-sep{font-size:16px;opacity:.3;margin-bottom:14px;}',
             '.dr-die-face{width:58px;height:58px;border:none;border-radius:0;display:flex;align-items:center;',
             'justify-content:center;font-size:20px;font-weight:bold;letter-spacing:-1px;background:transparent;',
-            'box-shadow:none;position:relative;overflow:visible;color:var(--primary-color,#00b521);}',
+            'box-shadow:none;position:relative;overflow:visible;color:var(--primary-color,#8fae5a);}',
             '.dr-face-num{position:relative;z-index:1;}',
             '.dr-die-face::before{content:"";position:absolute;inset:0;opacity:.18;background-color:currentColor;',
             '-webkit-mask-size:80%;mask-size:80%;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;',
@@ -973,8 +982,18 @@
             '#dr-manual-row{display:flex;gap:6px;}',
             '#dr-manual-target{flex:1;padding:5px 8px;background:transparent;border:1px solid rgba(128,128,128,.35);',
             'border-radius:4px;color:inherit;font-family:inherit;font-size:12px;text-align:center;min-width:0;}',
-            '#dr-manual-target:focus{outline:none;border-color:var(--primary-color,#00b521);}',
-            '#dr-manual-row button{padding:5px 14px;font-size:11px;letter-spacing:.08em;width:auto;flex-shrink:0;}',
+            '#dr-manual-target:focus{outline:none;border-color:var(--primary-color,#8fae5a);}',
+            // Real bug, not just a style tweak: this only ever set layout
+            // (padding/font/width), no color/border/background at all --
+            // so this one button, unlike every other control in the
+            // panel, fell through to whatever generic `button` rule the
+            // embedding PAGE happened to define (reported as "the roll
+            // button looks purple" -- some page's own theme accent
+            // bleeding through here, not this panel's).
+            '#dr-manual-row button{padding:5px 14px;font-size:11px;letter-spacing:.08em;width:auto;flex-shrink:0;',
+            'background:transparent;color:var(--primary-color,#8fae5a);border:1px solid var(--primary-color,#8fae5a);border-radius:4px;',
+            'font-family:inherit;cursor:pointer;}',
+            '#dr-manual-row button:hover{background:color-mix(in srgb,var(--primary-color,#8fae5a) 12%,transparent);}',
             '#dr-hint{font-size:8px;opacity:.3;text-align:center;line-height:1.4;letter-spacing:.03em;}',
             // ── Live history feed (new in Phase 3 -- no stats/styles.css
             // precedent, styled to match the rest of this panel) ──
@@ -982,7 +1001,7 @@
             '#dr-history-head{font-size:9px;letter-spacing:.12em;opacity:.5;text-transform:uppercase;text-align:center;}',
             '#dr-handler-gate{width:100%;padding:6px;font-size:10px;letter-spacing:.06em;background:transparent;',
             'border:1px solid rgba(128,128,128,.35);border-radius:4px;color:inherit;font-family:inherit;cursor:pointer;}',
-            '#dr-handler-gate:hover{border-color:var(--primary-color,#00b521);}',
+            '#dr-handler-gate:hover{border-color:var(--primary-color,#8fae5a);}',
             '#dr-handler-gate:disabled{opacity:.5;cursor:default;}',
             '#dr-history-list{display:flex;flex-direction:column;gap:4px;max-height:160px;overflow-y:auto;}',
             '.dr-history-empty{font-size:9px;opacity:.35;text-align:center;padding:4px 0;}',
