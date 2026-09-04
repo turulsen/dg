@@ -145,6 +145,10 @@ already-existing `?live=1` pattern that jumps straight to Live Play).
 The embed=fullscreen "Play" flip-back button (Split View's own way back
 to the sheet when Notes is the mobile fullscreen pane, see above) is
 untouched -- this only affects Notes reached normally, not embedded.
+Split View hides below 900px width (`#split-view-btn`'s own media
+query in `notes/index.html`), the same cutoff `stats/index.html`'s own
+`#split-view-toggle-btn` already uses -- Character Sheet alone still
+makes sense on a phone; Split View's two panes don't fit there.
 
 ---
 

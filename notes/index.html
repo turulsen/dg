@@ -69,6 +69,15 @@
     max-width:1100px; margin:0 auto var(--s3); padding:0 6px;
     display:flex; justify-content:flex-end; gap:8px;
   }
+  /* Matches stats/index.html's own #split-view-toggle-btn cutoff
+     (stats/styles.css, DG_MOBILE_QUERY in scripts.js) -- Split View's
+     two panes have nowhere to go but stacked below this width, where
+     the toggle reads as "flips between two views" rather than an
+     actual side-by-side split. Character Sheet alone still makes
+     sense on a phone; Split View specifically doesn't. */
+  @media (max-width:900px){
+    #split-view-btn{ display:none; }
+  }
   .change-context button{
     font-family:'Courier Prime',monospace; font-size:11px; background:transparent;
     border:1px solid rgba(216,196,106,.4); color:#c8c1a8; border-radius:3px;
