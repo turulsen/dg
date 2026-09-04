@@ -623,7 +623,7 @@
           const opTag = h.operation_id ? '<span class="dg-notes-evidence-op-tag">' + escapeHtml(operationLabel_(h.operation_id)) + '</span>' : '';
           return '<a href="#" class="dg-notes-evidence-item" data-evidence-id="' + escapeHtml(h.evidence_id) + '">' +
             '<span class="dg-notes-evidence-dot' + (unseen ? ' unseen' : '') + '"></span>' +
-            '<span class="dg-notes-evidence-title">' + escapeHtml(h.title) + '</span>' + opTag +
+            '<span class="dg-notes-evidence-main"><span class="dg-notes-evidence-title">' + escapeHtml(h.title) + '</span>' + opTag + '</span>' +
             '</a>';
         }).join('') : '<div class="dg-notes-toc-empty">Nothing filed under this Operation.</div>');
       const filterEl = mount.querySelector('.dg-notes-evidence-filter');
