@@ -752,7 +752,18 @@
       var fsScript = document.createElement('script');
       fsScript.src = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/firebase-firestore-compat.js';
       fsScript.onload = function () {
-        if (!window.firebase.apps.length) window.firebase.initializeApp(FIREBASE_CONFIG);
+        if (!window.firebase.apps.length) {
+          window.firebase.initializeApp(FIREBASE_CONFIG);
+          // Brave (and some ad-blocker extensions) silently blocks
+          // Firestore's default streaming transport (WebChannel) --
+          // it looks like a long-lived tracking connection -- which
+          // leaves every onSnapshot() listener permanently stuck with
+          // zero data and no error at all. Falls back to plain HTTP
+          // long-polling, which isn't blocked. See a-cell.html's own
+          // copy of this comment for the full report that traced this
+          // down (worked in Safari, silently empty in Brave).
+          window.firebase.firestore().settings({ experimentalAutoDetectLongPolling: true });
+        }
         var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
         cbs.forEach(function (fn) { fn(); });
       };
