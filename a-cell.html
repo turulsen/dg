@@ -154,11 +154,18 @@
      added after several rounds of "shows nothing, no error either" reports
      that were hard to debug on a device with no devtools access. Makes
      every stage (signing in / listening / snapshot received) show up on
-     screen in real time instead of only in a console nobody can open. */
+     screen in real time instead of only in a console nobody can open. Its
+     own full-width row below the toolbar, not squeezed into that flex row
+     with margin-left:auto -- that first version silently overflowed off
+     the right edge of a phone-width screen (no flex-wrap on
+     .evidence-toolbar), invisible without horizontal scroll, exactly the
+     kind of self-inflicted "looks like nothing happened" bug this status
+     line exists to stop happening elsewhere. */
   .evidence-fs-status{
     font-family:'Courier Prime',monospace; font-size:10px; color:var(--ink-3);
-    margin-left:auto;
+    margin:-6px 0 12px;
   }
+  .evidence-fs-status:empty{ display:none; }
   .evidence-fs-status.is-error{ color:#a33; font-weight:bold; }
   .evidence-fs-status.is-ok{ color:#3a6; }
   .play-layout{ display:grid; grid-template-columns:240px 1fr; gap:18px; align-items:start; }
@@ -842,8 +849,8 @@
           <button type="button" class="paper-btn primary" id="evidence-create-btn">+ New Evidence</button>
           <button type="button" class="paper-btn" id="evidence-refresh-btn">Refresh</button>
           <span class="play-refresh-note" id="evidence-refresh-note"></span>
-          <span class="evidence-fs-status" id="evidence-fs-status"></span>
         </div>
+        <div class="evidence-fs-status" id="evidence-fs-status"></div>
         <div class="evidence-layout">
           <div class="evidence-sidebar">
             <div class="evidence-cell-select-row">
