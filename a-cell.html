@@ -2170,6 +2170,15 @@
   // reliably for every possible failure mode.
   function loadScriptTag(src, cb, onerror) {
     var s = document.createElement('script');
+    // Without this, a runtime error thrown from INSIDE this
+    // cross-origin script (gstatic.com, a different origin than this
+    // page) reports to window.onerror as the browser's generic,
+    // content-free "Script error." -- no message, no file, no line --
+    // instead of the real detail, defeating the whole point of the
+    // page-wide JS-error banner for exactly the scripts most likely to
+    // throw something worth seeing. gstatic.com serves these with
+    // Access-Control-Allow-Origin already, so this costs nothing.
+    s.crossOrigin = 'anonymous';
     s.src = src;
     var done = false;
     var timer = setTimeout(function () {
@@ -4006,6 +4015,11 @@
   var firebaseApiCallbacks = [];
   function loadScriptTag(src, cb) {
     var s = document.createElement('script');
+    // See the Evidence block's own copy of this comment above -- without
+    // this, an error thrown from inside this cross-origin script reports
+    // to window.onerror as a content-free "Script error." instead of the
+    // real message.
+    s.crossOrigin = 'anonymous';
     s.src = src;
     s.onload = cb;
     document.head.appendChild(s);
