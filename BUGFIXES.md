@@ -1130,3 +1130,22 @@ the missing script onerror/timeout, the handlerLogin/signInWithCustomToken
 timeouts) was real and independently correct, and none of them were
 wrong to make -- they just could never have mattered while this
 specific line kept the whole chain from ever reaching them.
+
+**CONFIRMED FIXED, live on the reporting device:** all 16 Evidence
+items now render correctly (photos, titles, Cell/Operation tags) with
+the status line reading "Firestore: snapshot received, 16 doc(s)."
+Closes out the entire day's Evidence saga.
+
+**Follow-on: a residual, content-free `"Script error."` appeared ~9s
+after Evidence loaded successfully -- not blocking anything, but the
+new JS-error banner couldn't say what it actually was.** This is
+standard browser behavior, not a new bug: an error thrown from inside
+a cross-origin `<script src>` (Firebase's SDK, served from
+`gstatic.com`, a different origin than this page) reports to
+`window.onerror` as a generic, content-free "Script error." -- no
+message, no file, no line -- unless that script tag opts in with
+`crossorigin="anonymous"`, which `loadScriptTag()` (both copies) never
+set. `gstatic.com` already sends the necessary CORS header for this,
+so it costs nothing to add. Added to both loader blocks so any real
+future error from these scripts actually shows its real message
+instead of this useless placeholder.
