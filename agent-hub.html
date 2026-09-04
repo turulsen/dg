@@ -181,7 +181,24 @@
     border:1.5px solid var(--red); color:var(--red); padding:3px 10px; opacity:.85; display:inline-block;
   }
   .ah-handout-scope.all-cells{ border-color:var(--green); color:var(--green); }
+  .ah-handout-op-tag{
+    font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.06em; text-transform:uppercase;
+    background:rgba(28,22,8,.08); color:var(--ink-2); padding:3px 9px; display:inline-block;
+  }
   .ah-handout-date{ font-family:'Courier Prime',monospace; font-size:10px; color:var(--ink-3); }
+  /* ── Operation filter -- lets a player narrow their own Evidence
+     mirror down to one Operation at a time, same "Cell/Operation
+     folders" organizing idea A-Cell's own Evidence Locker already
+     uses, just a single dropdown here rather than a full folder list
+     since a player only ever sees their own, already-small slice. ── */
+  .ah-handouts-filter{
+    display:flex; align-items:center; gap:8px; margin-bottom:4px;
+    font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3);
+  }
+  .ah-handouts-filter select{
+    font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink);
+    background:var(--paper,#f4eed8); border:1px solid var(--rule,#c8b888); padding:4px 8px;
+  }
   .ah-handout-title{ font-family:'Special Elite',monospace; font-size:15px; color:var(--ink); margin-bottom:8px; }
   .ah-handout-body-row{ display:flex; gap:14px; }
   .ah-handout-photo{
@@ -584,6 +601,7 @@
             <button type="button" class="ah-erase-link">Erase Agent&hellip;</button>
           </div>
           <div class="ah-section-divider">Evidence</div>
+          <div id="ah-handouts-filter-${a.code}"></div>
           <div class="ah-handouts" id="ah-handouts-${a.code}"><div class="ah-handouts-empty">Loading&hellip;</div></div>
         </div>
       </div>`;
@@ -885,15 +903,55 @@
 
   function renderHandoutsFor(code, handouts, cellsById, notesByHandoutId) {
     const el = document.getElementById('ah-handouts-' + code);
+    const filterWrapEl = document.getElementById('ah-handouts-filter-' + code);
     if (!el) return;
     if (!handouts.length) {
+      if (filterWrapEl) filterWrapEl.innerHTML = '';
       el.innerHTML = '<div class="ah-handouts-empty">Nothing filed for this Agent yet.</div>';
       return;
     }
     notesByHandoutId = notesByHandoutId || {};
-    el.innerHTML = handouts.map(h => {
+    const operationsById = operationsByIdMap();
+
+    // Filter options built from this Agent's OWN evidence, not every
+    // Operation campaign-wide -- an Agent only ever sees a handful of
+    // items, and a folder they have nothing filed under is just noise
+    // to pick from.
+    if (filterWrapEl) {
+      const seenOpIds = {};
+      let hasUnfiled = false;
+      handouts.forEach(h => { if (h.operation_id) seenOpIds[h.operation_id] = true; else hasUnfiled = true; });
+      const opOptions = Object.keys(seenOpIds).map(id => ({ id, label: (operationsById[id] && operationsById[id].name) || id }));
+      if (opOptions.length || hasUnfiled) {
+        const selected = opFilterByCode[code] || '';
+        let optsHtml = '<option value="">All Operations</option>';
+        if (hasUnfiled) optsHtml += `<option value="UNFILED"${selected === 'UNFILED' ? ' selected' : ''}>Unfiled</option>`;
+        opOptions.forEach(o => { optsHtml += `<option value="${escapeHtml(o.id)}"${selected === o.id ? ' selected' : ''}>${escapeHtml(o.label)}</option>`; });
+        filterWrapEl.innerHTML = `<div class="ah-handouts-filter"><span>Operation:</span><select data-op-filter-code="${escapeHtml(code)}">${optsHtml}</select></div>`;
+        const sel = filterWrapEl.querySelector('select');
+        sel.addEventListener('change', () => {
+          opFilterByCode[code] = sel.value;
+          renderHandoutsFor(code, lastEvidenceByCode[code] || handouts, cellsById, notesByHandoutIdByCode[code]);
+        });
+      } else {
+        filterWrapEl.innerHTML = '';
+      }
+    }
+
+    const activeFilter = opFilterByCode[code] || '';
+    const shown = activeFilter
+      ? handouts.filter(h => activeFilter === 'UNFILED' ? !h.operation_id : h.operation_id === activeFilter)
+      : handouts;
+    if (!shown.length) {
+      el.innerHTML = '<div class="ah-handouts-empty">Nothing filed under this Operation.</div>';
+      return;
+    }
+    el.innerHTML = shown.map(h => {
       const scopeClass = h.cell_id ? 'ah-handout-scope' : 'ah-handout-scope all-cells';
       const scopeLabel = h.cell_id ? ((cellsById[h.cell_id] && cellsById[h.cell_id].name) || h.cell_id) : 'All Cells';
+      const opTag = h.operation_id
+        ? `<span class="ah-handout-op-tag">${escapeHtml((operationsById[h.operation_id] && operationsById[h.operation_id].name) || h.operation_id)}</span>`
+        : '';
       // A gdrive:-backed photo (the normal case now -- see
       // resolveEvidencePhoto_() in Code.gs) resolves async below, same
       // pattern loadFacePlate() already uses; a legacy pre-migration
@@ -907,7 +965,7 @@
       const myNote = notesByHandoutId[h.evidence_id] || '';
       return `<div class="ah-handout-card">
         <div class="ah-handout-head">
-          <span class="${scopeClass}">${escapeHtml(scopeLabel)}</span>
+          <span class="${scopeClass}">${escapeHtml(scopeLabel)}</span>${opTag}
           <span class="ah-handout-date">${escapeHtml(formatHandoutDate(h.created_at))}</span>
         </div>
         <div class="ah-handout-title">${escapeHtml(h.title)}</div>
@@ -924,7 +982,7 @@
     el.querySelectorAll('[data-lightbox-src]').forEach(img => {
       img.addEventListener('click', () => openHandoutLightbox(img.dataset.lightboxSrc));
     });
-    handouts.forEach(h => {
+    shown.forEach(h => {
       if (extractDriveId(h.photo)) loadHandoutPhoto(h.evidence_id, h.photo, 'ah-handout-photo-' + code + '-' + h.evidence_id);
     });
     el.querySelectorAll('.ah-handout-notes-input').forEach(ta => {
@@ -1065,8 +1123,21 @@
     handoutCells.forEach(c => { map[c.cell_id] = c; });
     return map;
   }
+  // Operation names -- list_operations is deliberately unauthenticated
+  // (same reasoning as list_cells above: players need folder names
+  // without a Handler session), fetched once alongside Cells.
+  let handoutOperations = [];
+  function operationsByIdMap() {
+    const map = {};
+    handoutOperations.forEach(o => { map[o.operation_id] = o; });
+    return map;
+  }
   const notesByHandoutIdByCode = {};
   const lastEvidenceByCode = {};
+  // Selected Operation filter per Agent tab -- '' (default) shows
+  // everything, 'UNFILED' shows only items with no Operation, or a
+  // real operation_id narrows to just that folder.
+  const opFilterByCode = {};
   // code -> true once its listener is attached or an attach attempt is
   // in flight -- reset back to false only on a failed sign-in, so a
   // later loadHandouts() call can retry without ever double-attaching a
@@ -1084,7 +1155,8 @@
             const d = doc.data();
             relevant.push({
               evidence_id: doc.id, title: d.title || '', body: d.body || '',
-              photo: d.photo || '', cell_id: d.cell_id || '', created_at: d.created_at || 0
+              photo: d.photo || '', cell_id: d.cell_id || '', operation_id: d.operation_id || '',
+              created_at: d.created_at || 0
             });
           });
           relevant.sort((x, y) => Number(y.created_at) - Number(x.created_at));
@@ -1118,7 +1190,10 @@
     }
     jsonpGet('list_cells', {}, res => {
       if (res && res.status === 'OK' && Array.isArray(res.cells)) handoutCells = res.cells;
-      agents.forEach(loadForAgent);
+      jsonpGet('list_operations', {}, opRes => {
+        if (opRes && opRes.status === 'OK' && Array.isArray(opRes.operations)) handoutOperations = opRes.operations;
+        agents.forEach(loadForAgent);
+      });
     });
   }
 
