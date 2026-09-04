@@ -862,3 +862,34 @@ project-wide, not just in A-Cell: every page with a Firestore listener
 `firestore().settings({ experimentalAutoDetectLongPolling: true })`
 immediately after `initializeApp()`, falling back to plain HTTP
 long-polling instead of the streaming transport that gets blocked.
+
+**A-Cell's Evidence Locker showed "No evidence filed here yet" in
+Safari too, on a browser that had definitely uploaded evidence
+successfully, and survived a full page reload.** The earlier Brave
+fix above was real but not the whole story. Root cause, found by
+reading the actual Firestore security rules and every Firebase
+sign-in helper in the codebase side by side: `ensureHandlerSignedIn()`
+(`a-cell.html`), `ensureAgentSignedIn()` (`notes/notes.js`,
+`assets/dice-roller.js`) all did `if (auth.currentUser) { resolve(...);
+return; }` -- trusting *whoever* happened to already be signed in to
+Firebase on this device, rather than verifying it was actually the
+identity being requested. Firebase Auth sessions persist per-origin
+across page loads (IndexedDB, not per-page), so a browser used to test
+both a player page (which signs in as a specific Agent) and A-Cell
+(which needs the Handler) picked up the leftover Agent session as if
+it were the Handler -- Firestore's rules then correctly denied most of
+the Evidence collection for that identity, which looked like "just
+empty" with no error, and never self-corrected on reload since the
+stale session lives in IndexedDB, not the page. `dg-agent-portal.html`
+and `agent-hub.html`'s own sign-in helpers already did this correctly
+(verify the signed-in uid matches, or unconditionally re-sign-in) --
+this was inconsistency across the codebase, not a missing pattern.
+Fixed all three to check `auth.currentUser.uid` against the expected
+identity (`'handler'`, or the Agent Code -- both are literally the
+custom token's uid, set by `handlerLogin`/`exchangeAgentToken` in
+`functions/index.js`) before trusting it, falling through to a real
+sign-in otherwise. `assets/dice-roller.js`'s version had a second bug
+alongside it: its cache had no per-Agent key at all, so once any Agent
+signed in through that widget, every later call for a *different*
+Agent Code silently reused that first identity too, not just the
+missing-Handler case.

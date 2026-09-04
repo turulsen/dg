@@ -2125,7 +2125,19 @@
     _handlerAuthPromise = new Promise(function (resolve, reject) {
       ensureFirebaseApi(function () {
         var auth = window.firebase.auth();
-        if (auth.currentUser) { resolve(auth.currentUser); return; }
+        // Firebase Auth sessions persist per-origin across page loads
+        // (IndexedDB, not per-page) -- a bare `if (auth.currentUser)`
+        // trusted WHOEVER happened to already be signed in, including a
+        // leftover Agent session from testing agent-hub.html/notes/ in
+        // this same browser. Firestore's rules then correctly denied
+        // most of the Evidence collection (that Agent isn't the
+        // Handler), which looked like "Evidence is just empty" with no
+        // error, and survived reloads since the stale session lives in
+        // IndexedDB, not the page. handlerLogin_()/exchangeAgentToken
+        // both set the token's uid to a known value ('handler' here) --
+        // checking it costs nothing (already on the cached user object,
+        // no extra round trip) and catches exactly this case.
+        if (auth.currentUser && auth.currentUser.uid === 'handler') { resolve(auth.currentUser); return; }
         var password = sessionStorage.getItem('dg_acell_pw') || '';
         if (!password) { _handlerAuthPromise = null; reject(new Error('No A-Cell session -- log in as Handler first.')); return; }
         window.firebase.functions().httpsCallable('handlerLogin')({ handler_password: password })
