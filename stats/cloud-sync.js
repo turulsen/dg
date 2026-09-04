@@ -378,6 +378,12 @@
         const loadCode = params.get('load');
         if (!loadCode) return;
         const wantLive = params.get('live') === '1';
+        // notes/index.html's "Split View" button links here as
+        // `?load=CODE&split=1` -- mirrors wantLive immediately below:
+        // only fires once the load has actually settled successfully
+        // (onApplied, not onNotFound/onSettled's error paths), same
+        // reasoning as setLivePlay(true) there.
+        const wantSplit = params.get('split') === '1';
         // Matches the inline script at the top of <body> that gated
         // #app-main behind body.dg-agent-loading the instant it saw this
         // same ?load= param -- lift the gate once this load has actually
@@ -469,7 +475,11 @@
             // inside that same hazard window, and get its own effects
             // (buildLpSheet() reading stats that are still default 3s)
             // silently stomped right along with it.
-            onApplied: () => { revealGate(); finishBadge(); if (wantLive && typeof setLivePlay === 'function') setLivePlay(true); },
+            onApplied: () => {
+                revealGate(); finishBadge();
+                if (wantLive && typeof setLivePlay === 'function') setLivePlay(true);
+                if (wantSplit && window.dgSplitView) window.dgSplitView.enter();
+            },
             onSettled: () => { revealGate(); finishBadge(); },
         });
     });
