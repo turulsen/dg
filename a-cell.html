@@ -2100,21 +2100,41 @@
     appId: '1:464997490443:web:dad47a347ae7a64a9e4c0e'
   };
   var firebaseApiLoading = false;
-  var firebaseApiCallbacks = [];
-  function loadScriptTag(src, cb) {
+  var firebaseApiCallbacks = []; // { ok, err } pairs
+  // s.onload with no s.onerror at all meant a script that failed to load --
+  // blocked, a dropped mobile connection, a flaky CDN response -- left
+  // `cb` never called and nothing else waiting on it either: the whole
+  // ensureFirebaseApi() chain (and therefore ensureHandlerSignedIn()'s
+  // promise) just hung forever, neither resolved nor rejected, showing
+  // "signing in..." indefinitely with no error and no way to recover
+  // short of a full reload -- and if the same flaky connection caused it,
+  // not even that. A 15s timeout backstops onerror itself not firing
+  // reliably for every possible failure mode.
+  function loadScriptTag(src, cb, onerror) {
     var s = document.createElement('script');
     s.src = src;
-    s.onload = cb;
+    var done = false;
+    var timer = setTimeout(function () {
+      if (done) return; done = true;
+      onerror(new Error('Timed out loading ' + src + ' (15s) -- check network connection.'));
+    }, 15000);
+    s.onload = function () { if (done) return; done = true; clearTimeout(timer); cb(); };
+    s.onerror = function () { if (done) return; done = true; clearTimeout(timer); onerror(new Error('Failed to load ' + src + ' -- check network connection.')); };
     document.head.appendChild(s);
   }
-  function ensureFirebaseApi(cb) {
+  function ensureFirebaseApi(cb, onerror) {
     var ready = function () { return window.firebase && window.firebase.storage && window.firebase.auth && window.firebase.functions && window.firebase.firestore; };
     if (ready()) { cb(); return; }
-    firebaseApiCallbacks.push(cb);
+    firebaseApiCallbacks.push({ ok: cb, err: onerror || function () {} });
     if (firebaseApiLoading) return;
     firebaseApiLoading = true;
     var base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/';
-    var loadIfMissing = function (check, url, next) { if (check()) { next(); } else { loadScriptTag(url, next); } };
+    function fail(err) {
+      firebaseApiLoading = false; // lets a later call actually retry once the network recovers
+      var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
+      cbs.forEach(function (pair) { pair.err(err); });
+    }
+    var loadIfMissing = function (check, url, next) { if (check()) { next(); } else { loadScriptTag(url, next, fail); } };
     loadIfMissing(function () { return window.firebase && window.firebase.apps; }, base + 'firebase-app-compat.js', function () {
       if (!window.firebase.apps.length) {
         window.firebase.initializeApp(FIREBASE_CONFIG);
@@ -2141,7 +2161,7 @@
             // reordering them.
             loadIfMissing(function () { return !!window.firebase.firestore; }, base + 'firebase-firestore-compat.js', function () {
               var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-              cbs.forEach(function (fn) { fn(); });
+              cbs.forEach(function (pair) { pair.ok(); });
             });
           });
         });
@@ -2179,6 +2199,17 @@
           .then(function (result) { return auth.signInWithCustomToken(result.data.token); })
           .then(function (cred) { resolve(cred.user); })
           .catch(function (err) { _handlerAuthPromise = null; reject(err); });
+      }, function (err) {
+        // A Firebase SDK script failed or timed out loading -- see
+        // loadScriptTag()'s own comment. Without this second argument,
+        // that failure left this whole promise hanging forever with no
+        // resolve or reject at all, which is exactly what "signing
+        // in..." getting stuck indefinitely (no error, ever) turned out
+        // to be: a flaky mobile connection dropping one Firebase SDK
+        // script request, silently, with nothing downstream able to
+        // notice or recover short of a full reload.
+        _handlerAuthPromise = null;
+        reject(err);
       });
     });
     return _handlerAuthPromise;
