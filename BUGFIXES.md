@@ -1073,3 +1073,60 @@ outside every path checked so far -- a JS error elsewhere on the page
 preventing this code from ever running as expected is one real
 possibility this can now surface, on a device with no devtools access,
 that nothing built so far could have caught.
+
+**ROOT CAUSE, found via the banner above on the very next report:
+`TypeError: window.firebase.firestore is not a function` at
+a-cell.html:2210, thrown as an UNCAUGHT exception (not a promise
+rejection) -- which is exactly why every fix to the sign-in promise's
+own error handling never mattered, no matter how correct each one was
+in isolation. This bug never had anything to do with sign-in at all.**
+`ensureFirebaseApi()`'s load chain requests
+app -> auth -> functions -> storage -> firestore, in that order --
+firestore-compat.js loads LAST. But
+`window.firebase.firestore().settings({experimentalAutoDetectLongPolling:true})`
+(the Brave fix from earlier today) was called immediately after
+`initializeApp()`, at the very START of that chain -- before
+firestore-compat.js had ever been requested, let alone loaded.
+`window.firebase.firestore` was genuinely undefined at that point,
+every single time this code path ran. It only ever appeared to work
+because of load-order luck: if some OTHER widget on the page (Table
+Radio, Dice Roller) happened to finish initializing Firebase (all
+pieces, correctly ordered on THEIR pages) first, the `apps.length`
+guard skipped this broken block entirely. A completely fresh device
+with nothing pre-loaded -- exactly the state days of "clear cache and
+reload" troubleshooting kept forcing -- made this script's own chain
+race to go first every time instead, crashing on every single load,
+permanently aborting the whole callback chain with an exception nothing
+downstream could catch (an uncaught throw inside an async callback
+doesn't reject a Promise someone is awaiting -- it just becomes an
+unhandled global error), which is exactly why the sign-in promise
+never resolved OR rejected no matter how long anyone waited: it was
+never going to, the code that would eventually call resolve/reject
+never even ran.
+
+Checked the other 4 files that got the same Brave/long-polling fix
+today (`agent-hub.html`, `notes/notes.js`, `assets/dice-roller.js`,
+`assets/table-radio.js`) -- all four load `firebase-firestore-compat.js`
+**second**, immediately after `firebase-app-compat.js`, before ever
+calling `.settings()`. Only `a-cell.html`'s two self-contained loader
+blocks (Evidence's own, and Track Library's separate copy) had
+reordered the chain to load firestore last, breaking this. Fixed both:
+`isFirstInit` is now captured at the true first-and-only-knowable
+point (`!window.firebase.apps.length`, before firestore-compat.js
+changes what that check could still mean), and the `.settings()` call
+itself is deferred into firestore-compat.js's own load-completion
+callback in both blocks -- Track Library's copy also never requested
+firebase-firestore-compat.js at all before this fix, relying entirely
+on some other script having loaded it first; it now loads it directly
+like the other four files always did.
+
+This is very likely THE actual explanation for the entire day's
+Evidence saga -- "worked fine, loaded many, then all of a sudden
+disappeared," every subsequent "still nothing" after every genuinely
+correct earlier fix, and the "signing in" status that could never
+move no matter how long anyone waited. Every earlier fix shipped today
+(the swallowed-dual-write logging, the clobbered-error-message fix,
+the missing script onerror/timeout, the handlerLogin/signInWithCustomToken
+timeouts) was real and independently correct, and none of them were
+wrong to make -- they just could never have mattered while this
+specific line kept the whole chain from ever reaching them.
