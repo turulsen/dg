@@ -1050,3 +1050,26 @@ session…") so the next report pinpoints exactly which stage is
 actually stuck, rather than everything collapsing into one generic
 "signing in…" that could mean any of four completely different
 things.
+
+**Still stuck, even confirmed against the exact deployed commit and a
+full "Clear History and Website Data -- All time" + fresh reopen: the
+status stayed on the plain, generic "signing in" text, with none of
+the new checkpoint text ever appearing.** That result is genuinely hard
+to reconcile with the code as read -- a full data clear plus a fresh
+tab load leaves nothing to fall back to but the current deploy, and the
+first checkpoint (`setFsStatus('Firestore: loading SDK…')`) fires
+synchronously, before any network call, so it should be visible near-
+instantly if this code is really what's running. Rather than keep
+guessing at narrower and narrower causes inside the sign-in pipeline
+specifically, added a page-wide uncaught-error/unhandled-rejection
+catcher as literally the first script in `<head>`, before anything
+else on the page -- a small dismissible on-screen banner showing the
+real error message/stack for ANYTHING that throws or rejects anywhere
+on the page, not scoped to Evidence or Firebase at all. The working
+theory shifting: several individually-verified-correct fixes in a row
+all failing to change the observed behavior on this one device is
+itself a signal that the actual blocker may be something entirely
+outside every path checked so far -- a JS error elsewhere on the page
+preventing this code from ever running as expected is one real
+possibility this can now surface, on a device with no devtools access,
+that nothing built so far could have caught.

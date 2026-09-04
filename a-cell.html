@@ -4,6 +4,64 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Delta Green — A-Cell</title>
+<script>
+/* ══════════════════════════════════════════════
+   Page-wide uncaught-error/unhandled-rejection catcher -- deliberately
+   the very first script on the page, before anything else runs, so it
+   can catch a crash from ANY later script, not just Evidence's own.
+   Added after several rounds of narrow, targeted fixes (Evidence's own
+   sign-in pipeline) each individually verified correct, yet a live
+   device stayed stuck showing nothing new after every one of them --
+   a strong signal that something ELSE, outside every path checked so
+   far, might be the actual blocker. With no devtools access on the
+   reporting device, this is the one tool that can reveal a completely
+   different, unanticipated failure instead of guessing at more
+   variations on the same already-checked pipeline. Shows a small
+   dismissible banner with the real error message/stack -- intentionally
+   NOT gated to any one tab or feature. ══════════════════════════════ */
+(function () {
+  function showJsErrorBanner(label, detail) {
+    var id = 'dg-jserror-banner';
+    var bar = document.getElementById(id);
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = id;
+      Object.assign(bar.style, {
+        position: 'fixed', left: '0', right: '0', bottom: '0', zIndex: '999999',
+        maxHeight: '40vh', overflowY: 'auto',
+        padding: '10px 14px', background: '#3a0f0f', color: '#f5d0d0',
+        borderTop: '2px solid #a33', fontFamily: "'Courier Prime', monospace",
+        fontSize: '11px', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+        boxShadow: '0 -2px 10px rgba(0,0,0,.5)'
+      });
+      var dismiss = document.createElement('button');
+      dismiss.type = 'button';
+      dismiss.textContent = 'Dismiss all JS error banners';
+      Object.assign(dismiss.style, {
+        display: 'block', marginBottom: '8px', background: '#5a1a1a', color: '#f5d0d0',
+        border: '1px solid #a33', padding: '4px 10px', cursor: 'pointer',
+        fontFamily: 'inherit', fontSize: 'inherit'
+      });
+      dismiss.addEventListener('click', function () { bar.remove(); });
+      bar.appendChild(dismiss);
+      (document.body || document.documentElement).appendChild(bar);
+    }
+    var line = document.createElement('div');
+    line.style.marginBottom = '6px';
+    line.style.borderBottom = '1px dotted #a33';
+    line.style.paddingBottom = '6px';
+    line.textContent = '[' + new Date().toLocaleTimeString() + '] ' + label + ': ' + detail;
+    bar.appendChild(line);
+  }
+  window.addEventListener('error', function (e) {
+    showJsErrorBanner('JS error', (e.message || 'unknown') + (e.filename ? ' (' + e.filename + ':' + e.lineno + ')' : ''));
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e.reason;
+    showJsErrorBanner('Unhandled promise rejection', (r && (r.stack || r.message)) || String(r));
+  });
+})();
+</script>
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" type="image/png" href="assets/mars-tech-seal.png">
 <link rel="manifest" href="manifest.json">
