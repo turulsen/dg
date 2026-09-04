@@ -297,20 +297,43 @@ timestamp every device reads. A small persistent widget
   channel without re-uploading; a per-channel **playlist** persists
   across reloads.
 
-**[Corrected — this doc previously listed ambient loops and stingers here
-as shipped layers. Verified: they are not.]** A real attempt at both
-(rain/wind/static ambient loops, a 13-sound stinger soundboard) was
-built, tested (399/399 Playwright checks passing), and then
-deliberately abandoned before merging to `main` -- the
-procedurally-synthesized audio wasn't convincing enough (only 4 gunshot
-variants were usable; explosions, vocals, knock/creak weren't), so the
-branch was archived rather than iterated on further. See
-`design-graveyard/table-radio-audio-soundscape`'s own `RETROSPECTIVE.md`
-for the full account, including its own recommendation to use real
-recordings instead of synthesis if revisited -- currently being
-rebuilt on that basis, against real sourced SFX, on top of the current
-Firestore-backed Now Playing (§12) rather than the old polling model
-that branch was built against.
+- **Ambient loops** — 7 real recorded loops (`assets/ambient/*.mp3`,
+  GowlerMusic Halloween pack), toggled on/off per channel from A-Cell's
+  Music tab soundboard and layered *under* the main track (or under
+  silence — independent of whether a track is even set). Diffed against
+  what's already looping rather than restarted wholesale on every
+  Firestore snapshot, so an already-playing loop keeps its own position
+  when some other layer or the main track changes.
+- **Stingers** — 18 one-shot sounds (`assets/stingers/*.mp3`, same
+  pack), grouped in the soundboard as Screams & Laughter, Impacts &
+  Weather, and Bells/Rhythm/Texture. Firing one appends a fresh
+  `{id, fired_at}` entry to an array of recent fires (kept to the last
+  5) rather than a single scalar, so two stingers fired close together
+  both survive to play as separate, genuinely overlapping `<audio>`
+  elements instead of the second clobbering the first.
+- **Media-player scrubber** — the Handler's Music tab has a draggable
+  seek slider (elapsed time, not synced to the browser's own duration
+  since A-Cell never embeds the track itself); players only ever see a
+  **read-only** progress bar in the widget's expanded panel, so nobody
+  can scrub their own copy out of sync with the actual broadcast.
+
+Both the soundboard and the scrubber dual-write straight onto the same
+`radio/{channel}` Firestore document Now Playing already lives on
+(`set_ambient_layer`/`trigger_stinger`/`seek_now_playing` in
+`backend/Code.gs`), so the existing `onSnapshot` listener in
+`assets/table-radio.js` picks up every toggle/fire/seek instantly with
+no new listener, collection, or poll loop.
+
+Real recorded SFX, replacing an earlier procedurally-synthesized
+attempt (rain/wind/static ambient loops, a 13-sound stinger soundboard)
+that was built, tested (399/399 Playwright checks passing), and
+deliberately abandoned before merging to `main` -- that audio wasn't
+convincing enough (only 4 gunshot variants were usable; explosions,
+vocals, knock/creak weren't), so the branch was archived rather than
+iterated on further. See `design-graveyard/table-radio-audio-soundscape`'s
+own `RETROSPECTIVE.md` for the full account, including its own
+recommendation (followed here) to use real recordings instead of
+synthesis if revisited.
 
 **Channel model:** 5 fixed channels, selected via a rotary-dial UI on
 both the Handler and player sides (not free text — avoids the
