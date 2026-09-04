@@ -154,9 +154,15 @@ sheet tracking which Agent has opened which item (a purely cosmetic
 full management), `agent-hub.html`'s read-only mirror per Agent
 (fetches with that Agent's own code so the backend's Cell-membership
 filter can correctly include Cell/Operation-restricted items), and
-surfaced inside Player Notes too (Evidence Locker Stage 3). Photos are
-uploaded to Google Drive (not stored raw in the Sheet), same pattern
-as Face/Outfit Plates.
+surfaced inside Player Notes too (Evidence Locker Stage 3). **[Updated
+— verified against current code]** Photos upload directly to Firebase
+Storage now (Phase 4, same as Face/Outfit Plates below) — the client
+uploads the file itself and POSTs back the resulting URL;
+`resolveEvidencePhoto_()` in `Code.gs` only still falls back to Google
+Drive for a raw `data:` URI, i.e. an older client that never made this
+switch. Also now dual-written to Firestore and read live via
+`onSnapshot` on A-Cell's Evidence tab and `agent-hub.html`'s mirror —
+see §12.
 
 **Terminology note:** the UI-visible label is "Evidence," but this
 started life as "Handouts" and some internal names (`HandoutNotes`, a
@@ -365,6 +371,20 @@ anything:**
   both intentionally unauthenticated — this app's whole access model
   is "the code is your key," and the fields exposed are fictional
   character content, not real personal data.
+- **[Added — missing from this doc entirely]** A second, separate auth
+  layer exists purely to gate live Firestore reads (Table Radio, Dice
+  Roller, Player Notes, Evidence — see §12): `functions/index.js`'s
+  `handlerLogin` and `exchangeAgentToken` Cloud Functions mint a
+  Firebase custom token (uid `'handler'` with a `handler: true` claim,
+  or the Agent Code itself with an `agentCode` claim), checked against
+  `HANDLER_PASSWORD`'s own Firebase Secret Manager copy (independently
+  of the Apps Script Script Property of the same name — the two are not
+  automatically kept in sync). Firestore's own security rules
+  (`firestore.rules`) then gate reads per-document off those claims,
+  entirely separately from anything in `Code.gs` above. This is not
+  the same system as `requireAgentToken_()`/`requireHandlerAuth_()` and
+  has its own class of bugs — see `BUGFIXES.md`'s stale-Firebase-
+  identity and Evidence-error-visibility entries.
 
 **Performance patterns worth knowing before "optimizing" further:**
 `CacheService` is used everywhere for short-TTL response caching
@@ -501,13 +521,24 @@ Sheets/Drive backend wholesale:
   base64-over-POST to a direct Firebase Storage upload (the client
   uploads straight to Storage, then POSTs the resulting URL rather
   than the image bytes).
+- **Phase 5 [Added — missing from this doc, confirmed live]** — Player
+  Notes and the Evidence Locker are both fully cut over to live
+  `onSnapshot` reads (A-Cell's Evidence tab, `agent-hub.html`'s Evidence
+  mirror, `notes/notes.js`) — not just dual-write. The Sheet is still
+  the write path of record (every write still lands there first, then
+  mirrors to Firestore), but for these two surfaces the read path has
+  fully moved off Sheets/polling.
 
-**Important:** Phase 4's Plate-image cutover changed the *upload
-transport* only — it did **not** fix the era-collision bug described
-in §5 (all eras still shared one flat sheet field for the image URL
-at last check). A full handoff brief with the exact fix, adapted for
-the Storage-upload code path, was already prepared separately for
-whoever picks that up.
+**[Corrected — verified against current code, this claim was wrong]**
+This previously said Phase 4's Plate-image cutover changed the upload
+transport only, without fixing the era-collision bug from §5. Checked
+`dg-agent-portal.html`'s `saveGeneratedPlate()` (the function used by
+both the file-picker and Gemini-generated paths under Phase 4's direct
+Storage upload) directly: it builds `fieldKey = 'era_' + era + '_' +
+(type === 'face' ? 'face_url' : 'outfit_url')` and saves through that
+field unconditionally — the era-specific columns from §5 *are* in use
+on the current Storage-upload path. No known era-collision bug remains
+open as of this check.
 
 The longer-term goal discussed (not yet built): a single-page "iframe
 shell" — one outer page owning persistent Table Radio/Dice Roller
