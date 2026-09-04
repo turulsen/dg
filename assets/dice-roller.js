@@ -415,12 +415,29 @@
        deliberately separate from A-Cell's existing password gate
        rather than hooking into that already-critical login flow. ── */
     let _authPromise = null;
+    let _authedCode = null;
     function ensureAgentSignedIn(agentCode) {
-        if (_authPromise) return _authPromise;
+        // Was cached with no per-Agent key at all -- once ANY agent
+        // signed in via this widget, every later call (even for a
+        // different agentCode, e.g. this same page embedded for a
+        // different Agent) resolved with that first identity instead
+        // of re-authenticating. Same class of bug as the `uid` check
+        // just below: both let a stale/wrong identity silently stand
+        // in for the one actually being requested.
+        if (_authPromise && _authedCode === agentCode) return _authPromise;
+        _authedCode = agentCode;
         _authPromise = new Promise((resolve, reject) => {
             ensureFirebaseApi(() => {
                 const auth = window.firebase.auth();
-                if (auth.currentUser) { resolve(auth.currentUser); return; }
+                // Firebase Auth sessions persist per-origin across page
+                // loads (IndexedDB, not per-page) -- a bare
+                // `if (auth.currentUser)` trusted whoever happened to
+                // already be signed in (a different Agent, or the
+                // Handler, from this same browser having viewed another
+                // page earlier). exchangeAgentToken sets the token's uid
+                // to the Agent Code itself, so checking it costs nothing
+                // and catches exactly this case.
+                if (auth.currentUser && auth.currentUser.uid === agentCode) { resolve(auth.currentUser); return; }
                 window.firebase.functions().httpsCallable('exchangeAgentToken')({ agent_code: agentCode })
                     .then(result => auth.signInWithCustomToken(result.data.token))
                     .then(cred => resolve(cred.user))
