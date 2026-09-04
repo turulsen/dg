@@ -134,6 +134,18 @@ via `save_agent_identity`) an ink color and handwriting-style font, so
 Notes visually distinguishes who wrote what without needing names on
 every line.
 
+**Getting to the sheet from Notes**: the "← Agent Hub" backlink and
+"Change Agent" button that used to sit at the top of `notes/index.html`
+are gone -- replaced by **Split View** and **Character Sheet** buttons
+(same spot the "Change Agent" button used to occupy), both navigating
+to `stats/index.html?load=CODE` for whichever Agent's Notes are open
+(`&split=1` added for the Split View one, picked up by a small addition
+to `stats/cloud-sync.js`'s existing `?load=` handler -- mirrors the
+already-existing `?live=1` pattern that jumps straight to Live Play).
+The embed=fullscreen "Play" flip-back button (Split View's own way back
+to the sheet when Notes is the mobile fullscreen pane, see above) is
+untouched -- this only affects Notes reached normally, not embedded.
+
 ---
 
 ## 4. Evidence Locker (formerly "Handouts")
