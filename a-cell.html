@@ -2194,21 +2194,16 @@
     }
     var loadIfMissing = function (check, url, next) { if (check()) { next(); } else { loadScriptTag(url, next, fail); } };
     loadIfMissing(function () { return window.firebase && window.firebase.apps; }, base + 'firebase-app-compat.js', function () {
-      if (!window.firebase.apps.length) {
-        window.firebase.initializeApp(FIREBASE_CONFIG);
-        // Brave (and some ad-blocker extensions) silently blocks
-        // Firestore's default streaming transport (WebChannel) -- it
-        // looks like a long-lived tracking connection -- which leaves
-        // every onSnapshot() listener permanently stuck with zero data
-        // and, worse, no error at all (Safari on the same account/data
-        // worked fine, confirming this wasn't a real permissions or
-        // data problem). Falls back to plain HTTP long-polling, which
-        // isn't blocked. Must be set before ANY other Firestore call on
-        // this page -- doing it here, guarded by the same
-        // apps.length check initializeApp() already uses, guarantees
-        // exactly-once and first.
-        window.firebase.firestore().settings({ experimentalAutoDetectLongPolling: true });
-      }
+      // Captured HERE, not re-checked later -- firebase-firestore-compat.js
+      // (loaded last, see below) attaches window.firebase.firestore as a
+      // side effect, which would make a later `!window.firebase.apps.length`
+      // check meaningless as an "is this truly the first init" signal
+      // even though apps.length itself doesn't change from loading more
+      // SDK pieces. This boolean is the actual "was this genuinely the
+      // first initializeApp() call" fact, frozen at the only point it's
+      // still knowable.
+      var isFirstInit = !window.firebase.apps.length;
+      if (isFirstInit) window.firebase.initializeApp(FIREBASE_CONFIG);
       loadIfMissing(function () { return !!window.firebase.auth; }, base + 'firebase-auth-compat.js', function () {
         loadIfMissing(function () { return !!window.firebase.functions; }, base + 'firebase-functions-compat.js', function () {
           loadIfMissing(function () { return !!window.firebase.storage; }, base + 'firebase-storage-compat.js', function () {
@@ -2218,6 +2213,35 @@
             // below. Loaded last/on demand like the others rather than
             // reordering them.
             loadIfMissing(function () { return !!window.firebase.firestore; }, base + 'firebase-firestore-compat.js', function () {
+              // Real bug, not a guess: this settings() call used to sit
+              // right after initializeApp() above, BEFORE
+              // firebase-firestore-compat.js (loaded last in this whole
+              // chain) had ever actually loaded -- window.firebase.firestore
+              // was genuinely undefined at that point, throwing
+              // "window.firebase.firestore is not a function" as an
+              // UNCAUGHT exception (not a promise rejection anything
+              // downstream could catch), permanently aborting this whole
+              // load chain silently. It only ever worked when some OTHER
+              // widget on the page (Table Radio, Dice Roller) happened to
+              // finish initializing Firebase (all pieces) first, which
+              // skipped this block entirely via the apps.length guard --
+              // load-order luck, not a real fix. A completely fresh device
+              // with nothing pre-loaded made this script's own chain race
+              // to go first every time, crashing on every single load.
+              //
+              // Brave (and some ad-blocker extensions) silently blocks
+              // Firestore's default streaming transport (WebChannel) -- it
+              // looks like a long-lived tracking connection -- which leaves
+              // every onSnapshot() listener permanently stuck with zero data
+              // and, worse, no error at all (Safari on the same account/data
+              // worked fine, confirming this wasn't a real permissions or
+              // data problem). Falls back to plain HTTP long-polling, which
+              // isn't blocked. Must be set before ANY other Firestore call
+              // on this page, and can only ever be called once -- isFirstInit
+              // (captured above, before firestore-compat.js changed what
+              // apps.length-based checks could tell us) still correctly
+              // gates that.
+              if (isFirstInit) window.firebase.firestore().settings({ experimentalAutoDetectLongPolling: true });
               var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
               cbs.forEach(function (pair) { pair.ok(); });
             });
@@ -3992,7 +4016,7 @@
   // this checks for each individually rather than assuming any one
   // widget's load order.
   function ensureFirebaseApi(cb) {
-    var ready = function () { return window.firebase && window.firebase.storage && window.firebase.auth && window.firebase.functions; };
+    var ready = function () { return window.firebase && window.firebase.storage && window.firebase.auth && window.firebase.functions && window.firebase.firestore; };
     if (ready()) { cb(); return; }
     firebaseApiCallbacks.push(cb);
     if (firebaseApiLoading) return;
@@ -4000,26 +4024,42 @@
     var base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/';
     var loadIfMissing = function (check, url, next) { if (check()) { next(); } else { loadScriptTag(url, next); } };
     loadIfMissing(function () { return window.firebase && window.firebase.apps; }, base + 'firebase-app-compat.js', function () {
-      if (!window.firebase.apps.length) {
-        window.firebase.initializeApp(FIREBASE_CONFIG);
-        // Brave (and some ad-blocker extensions) silently blocks
-        // Firestore's default streaming transport (WebChannel) -- it
-        // looks like a long-lived tracking connection -- which leaves
-        // every onSnapshot() listener permanently stuck with zero data
-        // and, worse, no error at all (Safari on the same account/data
-        // worked fine, confirming this wasn't a real permissions or
-        // data problem). Falls back to plain HTTP long-polling, which
-        // isn't blocked. Must be set before ANY other Firestore call on
-        // this page -- doing it here, guarded by the same
-        // apps.length check initializeApp() already uses, guarantees
-        // exactly-once and first.
-        window.firebase.firestore().settings({ experimentalAutoDetectLongPolling: true });
-      }
+      // Real bug, found live via a-cell.html's page-wide JS-error banner:
+      // this used to call window.firebase.firestore().settings(...)
+      // immediately after initializeApp(), right here -- but THIS load
+      // chain never requested firebase-firestore-compat.js at all (ready()
+      // above never checked for it either), so window.firebase.firestore
+      // was only ever defined by luck, if some OTHER script on the page
+      // (the Evidence tab's own ensureFirebaseApi(), earlier in this same
+      // file) happened to load it first. "TypeError: window.firebase.
+      // firestore is not a function" as an uncaught exception, not a
+      // catchable rejection, silently aborted this whole chain whenever
+      // this block won the race to initialize Firebase first -- which a
+      // completely fresh device with nothing pre-loaded makes far more
+      // likely, not less. isFirstInit is captured now, before firestore
+      // changes what an apps.length check could still tell us, and the
+      // settings() call itself is deferred to its own loadIfMissing step
+      // below so it only ever runs once firebase-firestore-compat.js has
+      // actually loaded.
+      var isFirstInit = !window.firebase.apps.length;
+      if (isFirstInit) window.firebase.initializeApp(FIREBASE_CONFIG);
       loadIfMissing(function () { return !!window.firebase.auth; }, base + 'firebase-auth-compat.js', function () {
         loadIfMissing(function () { return !!window.firebase.functions; }, base + 'firebase-functions-compat.js', function () {
           loadIfMissing(function () { return !!window.firebase.storage; }, base + 'firebase-storage-compat.js', function () {
-            var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-            cbs.forEach(function (fn) { fn(); });
+            loadIfMissing(function () { return !!window.firebase.firestore; }, base + 'firebase-firestore-compat.js', function () {
+              // Brave (and some ad-blocker extensions) silently blocks
+              // Firestore's default streaming transport (WebChannel) --
+              // it looks like a long-lived tracking connection -- which
+              // leaves every onSnapshot() listener permanently stuck with
+              // zero data and, worse, no error at all. Falls back to
+              // plain HTTP long-polling, which isn't blocked. Must be set
+              // before ANY other Firestore call on this page, and can
+              // only ever be called once -- isFirstInit still correctly
+              // gates that.
+              if (isFirstInit) window.firebase.firestore().settings({ experimentalAutoDetectLongPolling: true });
+              var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
+              cbs.forEach(function (fn) { fn(); });
+            });
           });
         });
       });
