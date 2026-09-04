@@ -817,3 +817,31 @@ harmless-but-confusing byte-for-byte duplicate of the
 twice in the same file (Evidence's own listener needed it; Track
 Library's upload/delete flow already had its own separate copy from
 before Evidence existed).
+
+**Restoring an Agent by code returned "not found" even for a real,
+active Agent (Eli Filagree).** Root-caused via a read-only Apps Script
+diagnostic: the character sheet itself was fine (Characters sheet had
+real, current data) — but the Delta Green Briefs sheet had ZERO rows
+for that Agent Code. `doLookup()`/`doGet()` correctly return
+`NOT_FOUND` when no Brief exists; the Agent Portal's Cover tab and
+"RETURNING AGENT" code box both read exclusively from that sheet, so a
+character who was imported/played but never had `stats/`'s "Open Agent
+File" button clicked had no Agent File at all, on any device, forever.
+Not a caching bug — the earlier working theory (a `localStorage`-wipe
+navigation artifact) was directly disproven by this same failure
+persisting through an explicit, decoupled code-restore test.
+
+**Same gap, closed for every entry point, not just the one button.**
+Once the above was confirmed, the fix was applied at the choke point
+instead of only where it was first noticed: `loadAgentFile()` (the
+Hub's own "Agent File" link, via `openSpecificAgent()`) and
+`loadAgentCode()` (the Cover tab's restore box) now both call a new
+`autoCreateBriefFromCharacterThenRetry_()` on a `NOT_FOUND` — it fetches
+the Agent's existing Characters-sheet data, and if a real character
+exists, auto-creates a minimal Brief (name/profession/nationality/sex)
+from it and retries the lookup once, instead of just reporting "not
+found" for an Agent who very much has a character on file. Mirrors
+`stats/agent-portal-export.js`'s existing "Open Agent File" auto-export,
+just triggered reactively from every read path instead of only that one
+button. A retry guard (`retrying`/`!retrying`) prevents this from ever
+looping more than once even if the auto-create attempt itself fails.
