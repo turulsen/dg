@@ -678,6 +678,19 @@
      transport control set. */
   .rdo-now-playing-row{ display:flex; gap:6px; }
   .rdo-now-playing-row .rdo-btn{ flex:1; }
+  /* Handler-only scrubber -- jumps the CURRENT track to a new position
+     for everyone tuned in (seek_now_playing). Deliberately NOT mirrored
+     on the player-facing table-radio.js widget, which only ever shows a
+     read-only progress display -- letting every listener scrub their
+     own local copy would drift them out of sync with each other and
+     with the actual broadcast. min/max is elapsed seconds, not a
+     percentage of track length -- this tab never embeds the track
+     itself (see acell-radio-display's plain Cue List, no player), so
+     there's no reliable duration to scale against; 30 minutes covers
+     every track this campaign has actually used with room to spare. */
+  .rdo-seek-row{ display:flex; align-items:center; gap:8px; margin-top:2px; }
+  .rdo-seek-slider{ flex:1; accent-color:#8fae5a; }
+  .rdo-seek-label{ font-family:'Courier Prime',monospace; font-size:10px; color:#a8c890; min-width:34px; text-align:right; }
 
   .rdo-playlist-empty{ font-family:'Courier Prime',monospace; font-size:11px; color:#5a6a48; font-style:italic; }
   .rdo-playlist-row{
@@ -709,6 +722,53 @@
   .rdo-track-empty{ font-family:'Courier Prime',monospace; font-size:11px; color:#5a6a48; font-style:italic; }
   .rpr-title{ color:#c9d4b8; overflow-wrap:anywhere; font-family:'Courier Prime',monospace; }
   .rpr-actions{ display:flex; gap:6px; flex-shrink:0; }
+
+  /* ── Soundboard: real recorded ambient loops + one-shot stingers,
+     replacing an earlier procedurally-synthesized attempt that was
+     built, tested, and deliberately abandoned for poor audio quality
+     (see design-graveyard/table-radio-audio-soundscape's own
+     RETROSPECTIVE.md). Ambient buttons are a toggle (active class =
+     currently looping under the broadcast); stinger buttons are a
+     one-shot fire, styled like a transport button rather than a toggle
+     since there's no "on" state to reflect. Both write straight onto
+     the same radio/{channel} row/doc Now Playing already lives on (see
+     setAmbientLayer_/triggerStinger_ in Code.gs), so a fresh page load
+     of this tab -- or a second Handler device -- always reflects the
+     live state via get_now_playing rather than only this tab's own
+     memory of what it last clicked. ── */
+  .acell-radio-soundboard{
+    border-top:1px solid #1a2214; padding:14px; background:#0e1209;
+    position:relative; z-index:2;
+  }
+  .rdo-ambient-grid{
+    display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:6px; margin-bottom:4px;
+  }
+  .rdo-ambient-btn{
+    background:transparent; border:1px solid #2a3020; color:#7a8a68;
+    font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.06em; text-transform:uppercase;
+    padding:9px 6px; cursor:pointer; transition:all 80ms; text-align:center;
+  }
+  .rdo-ambient-btn:hover{ border-color:#5a6a48; }
+  .rdo-ambient-btn.active{
+    background:#1c2a14; border-color:#6a9a40; color:#d8f0c0;
+    box-shadow:0 0 8px rgba(122,180,64,.3), inset 0 0 6px rgba(122,180,64,.15);
+    text-shadow:0 0 6px rgba(216,240,192,.4);
+  }
+  .rdo-stinger-group-label{
+    font-family:'Courier Prime',monospace; font-size:8px; letter-spacing:.14em; color:#5a6a48;
+    text-transform:uppercase; margin:12px 0 6px;
+  }
+  .rdo-stinger-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:6px; }
+  .rdo-stinger-btn{
+    background:linear-gradient(180deg,#20261a 0%,#161a10 100%); border:1px solid #3a4432;
+    border-top-color:#4a5a3a; color:#c9d4b8; font-family:'Courier Prime',monospace;
+    font-size:9px; letter-spacing:.04em; text-transform:uppercase; padding:9px 6px;
+    cursor:pointer; transition:all 80ms;
+  }
+  .rdo-stinger-btn:hover{ border-color:#5a6a48; }
+  .rdo-stinger-btn:active, .rdo-stinger-btn.firing{
+    transform:translateY(1px); background:#2a3a1c; border-color:#8fae5a; color:#d8f0c0;
+  }
 
   /* ── Channel dial: a dark field-radio console, matching the player-
      facing Table Radio widget's look. Turned to a fixed 1-5 stop
@@ -973,6 +1033,10 @@
                     <button type="button" class="rdo-btn rdo-btn-ghost" id="music-restart-btn">Restart</button>
                     <button type="button" class="rdo-btn rdo-btn-ghost" id="music-stop-btn">Stop Broadcast</button>
                   </div>
+                  <div class="rdo-seek-row" id="music-seek-row" style="display:none;">
+                    <input type="range" class="rdo-seek-slider" id="music-seek-slider" min="0" max="1800" step="1" value="0">
+                    <span class="rdo-seek-label" id="music-seek-label">0:00</span>
+                  </div>
                   <div class="rdo-status-line" id="music-status"></div>
                 </div>
               </div>
@@ -990,6 +1054,12 @@
                 <div class="rdo-status-line" id="tracklib-status"></div>
               </div>
               <div id="tracklib-list"></div>
+            </div>
+            <div class="acell-radio-soundboard">
+              <div class="rdo-section-label">Soundboard — Ambient Loops (toggle, layers under anything on this channel)</div>
+              <div class="rdo-ambient-grid" id="music-ambient-grid"></div>
+              <div id="music-stinger-groups"></div>
+              <div class="rdo-status-line" id="soundboard-status"></div>
             </div>
           </div>
         </div>
@@ -3607,20 +3677,139 @@
   var cellSelect = document.getElementById('music-cell-select');
   var cellNote = document.getElementById('music-cell-note');
   var cellAssignBtn = document.getElementById('music-cell-assign-btn');
+  var ambientGridEl = document.getElementById('music-ambient-grid');
+  var stingerGroupsEl = document.getElementById('music-stinger-groups');
+  var soundboardStatusEl = document.getElementById('soundboard-status');
+  var seekRow = document.getElementById('music-seek-row');
+  var seekSlider = document.getElementById('music-seek-slider');
+  var seekLabel = document.getElementById('music-seek-label');
 
   var playlist = [];
   var cells = [];
+  // Ids here MUST match AMBIENT_LAYER_IDS/STINGER_IDS in Code.gs exactly --
+  // labels are purely cosmetic. Real recorded SFX (assets/ambient/*.mp3,
+  // assets/stingers/*.mp3), replacing an earlier procedurally-synthesized
+  // attempt that was built, tested, and deliberately abandoned for poor
+  // audio quality (see design-graveyard/table-radio-audio-soundscape's
+  // own RETROSPECTIVE.md).
+  var AMBIENT_LAYERS = [
+    { id: 'alien-lunch', label: 'Alien Lunch' },
+    { id: 'any-human-heart', label: 'Any Human Heart' },
+    { id: 'haunted', label: 'Haunted' },
+    { id: 'howling-city-bells', label: 'Howling City Bells' },
+    { id: 'music-box-morning', label: 'Music Box Morning' },
+    { id: 'drone-dead', label: 'Drone: Dead' },
+    { id: 'drone-low', label: 'Drone: Low' }
+  ];
+  var STINGER_GROUPS = [
+    { label: 'Screams & Laughter', stingers: [
+      { id: 'scream-01', label: 'Scream 01' },
+      { id: 'scream-02', label: 'Scream 02' },
+      { id: 'scream-03', label: 'Scream 03' },
+      { id: 'manic-laugh-01', label: 'Manic Laugh 01' },
+      { id: 'manic-laugh-02', label: 'Manic Laugh 02' },
+      { id: 'manic-laugh-03', label: 'Manic Laugh 03' },
+      { id: 'evil-baby-cry', label: 'Evil Baby Cry' },
+      { id: 'evil-baby-sound', label: 'Evil Baby Sound' }
+    ] },
+    { label: 'Impacts & Weather', stingers: [
+      { id: 'impact-ghost', label: 'Impact: Ghost' },
+      { id: 'impact-metal', label: 'Impact: Metal' },
+      { id: 'impact-slam', label: 'Impact: Slam' },
+      { id: 'thunder-01', label: 'Thunder 01' },
+      { id: 'thunder-02', label: 'Thunder 02' }
+    ] },
+    { label: 'Bells, Rhythm & Texture', stingers: [
+      { id: 'bells-distant', label: 'Bells: Distant' },
+      { id: 'bells-vinyl', label: 'Bells: Vinyl' },
+      { id: 'hell-drum-loop-01', label: 'Hell Drum Loop 01' },
+      { id: 'hell-drum-loop-02', label: 'Hell Drum Loop 02' },
+      { id: 'weird-choir-vinyl-crackle', label: 'Weird Choir (Vinyl Crackle)' }
+    ] }
+  ];
+  // The ambient toggle states last confirmed for currentChannel -- kept
+  // so renderAmbientGrid() can redraw the grid (e.g. after a channel
+  // switch) without needing a fresh round-trip just to know which
+  // buttons should already show "active".
+  var activeAmbientLayers = [];
   // The last known now-playing state for the currently dialed channel --
   // lets Pause/Resume and Restart act without the Handler having to
   // re-paste the URL, and lets Pause show "Resume" once it's already
   // paused instead of the two staying visually identical.
-  var current = { track_url: '', track_title: '', track_kind: '', loop: false, paused: false };
+  var current = { track_url: '', track_title: '', track_kind: '', loop: false, paused: false, started_at: 0, paused_at: 0 };
+  // True only while the Handler's thumb is actually on the seek slider --
+  // the 1s tick below must not overwrite the slider's value out from
+  // under a drag in progress, the same reason table-radio.js's own
+  // volume slider skips re-render on every mute/volume-driven redraw.
+  var isSeekDragging = false;
+
+  function formatSeekTime_(sec) {
+    if (!isFinite(sec) || sec < 0) sec = 0;
+    sec = Math.floor(sec);
+    var m = Math.floor(sec / 60);
+    var s = sec % 60;
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  // Same formula as table-radio.js's own liveElapsedSeconds_ -- both
+  // read the identical started_at/paused_at fields this tab's own
+  // set/pause/resume/seek actions write, so the Handler's slider always
+  // agrees with what players are actually hearing.
+  function liveElapsedSeconds_() {
+    var isPaused = !!current.paused;
+    var pausedAtMs = current.paused_at || Date.now();
+    return isPaused
+      ? Math.max(0, Math.floor((pausedAtMs - (current.started_at || pausedAtMs)) / 1000))
+      : Math.max(0, Math.floor((Date.now() - (current.started_at || Date.now())) / 1000));
+  }
 
   function setPauseBtnLabel() {
     pauseBtn.textContent = current.paused ? 'Resume' : 'Pause';
     pauseBtn.disabled = !current.track_url;
     restartBtn.disabled = !current.track_url;
+    seekRow.style.display = current.track_url ? '' : 'none';
+    if (current.track_url && !isSeekDragging) {
+      var elapsed = liveElapsedSeconds_();
+      seekSlider.value = Math.min(elapsed, parseInt(seekSlider.max, 10));
+      seekLabel.textContent = formatSeekTime_(elapsed);
+    }
   }
+
+  // Ticks the slider forward every second so it reads as a live,
+  // playing transport rather than a snapshot frozen at the last
+  // checkCurrent()/verify call -- same idea as table-radio.js's own
+  // progress display, just driven by this tab's own `current` state
+  // instead of a fresh Firestore snapshot each time.
+  setInterval(function () {
+    if (current.track_url && !current.paused && !isSeekDragging) setPauseBtnLabel();
+  }, 1000);
+
+  seekSlider.addEventListener('input', function () {
+    isSeekDragging = true;
+    seekLabel.textContent = formatSeekTime_(parseInt(seekSlider.value, 10));
+  });
+  seekSlider.addEventListener('change', function () {
+    var ch = currentChannel;
+    var positionMs = parseInt(seekSlider.value, 10) * 1000;
+    statusEl.textContent = 'Seeking…';
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors', keepalive: true,
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'seek_now_playing', channel: ch, position_ms: String(positionMs), handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+    }).then(function () {
+      setTimeout(function () {
+        jsonpGet('get_now_playing', { channel: ch }, function (res) {
+          isSeekDragging = false;
+          if (!res || res.status !== 'OK' || !res.track_url) { statusEl.textContent = NOT_DEPLOYED_MSG; return; }
+          current.started_at = res.started_at || 0;
+          current.paused_at = res.paused_at || 0;
+          current.paused = !!res.paused;
+          statusEl.textContent = 'Seeked to ' + formatSeekTime_(positionMs / 1000) + ' on CH ' + ch + '.';
+          setPauseBtnLabel();
+        });
+      }, 900);
+    }).catch(function () { isSeekDragging = false; statusEl.textContent = 'Could not reach the backend.'; });
+  });
 
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -3738,18 +3927,97 @@
     airEl.classList.toggle('on-air', !!onAir);
   }
 
+  /* ── Soundboard: ambient loops (toggle) + one-shot stingers (fire).
+     Both dual-write straight onto the same radio/{channel} row/doc Now
+     Playing already lives on (setAmbientLayer_/triggerStinger_ in
+     Code.gs), so table-radio.js's existing onSnapshot listener picks up
+     every change instantly -- no separate listener needed on the player
+     side. Same `mode:'no-cors' POST, then a real GET to confirm` pattern
+     as every other Handler write here, since no-cors POSTs can't be
+     read back directly. ── */
+  function renderAmbientGrid() {
+    ambientGridEl.innerHTML = AMBIENT_LAYERS.map(function (a) {
+      return '<button type="button" class="rdo-ambient-btn' +
+        (activeAmbientLayers.indexOf(a.id) !== -1 ? ' active' : '') +
+        '" data-layer="' + a.id + '">' + escapeHtml(a.label) + '</button>';
+    }).join('');
+    Array.prototype.forEach.call(ambientGridEl.querySelectorAll('[data-layer]'), function (btn) {
+      btn.addEventListener('click', function () {
+        var layerId = btn.dataset.layer;
+        var label = btn.textContent;
+        var active = !btn.classList.contains('active');
+        var ch = currentChannel;
+        btn.classList.toggle('active', active);
+        soundboardStatusEl.textContent = (active ? 'Starting ' : 'Stopping ') + label + '…';
+        fetch(APPS_SCRIPT_URL, {
+          method: 'POST', mode: 'no-cors', keepalive: true,
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({ action: 'set_ambient_layer', channel: ch, layer_id: layerId, active: active ? '1' : '0', handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+        }).then(function () {
+          setTimeout(function () {
+            jsonpGet('get_now_playing', { channel: ch }, function (res) {
+              var layers = (res && Array.isArray(res.ambient_layers)) ? res.ambient_layers : [];
+              if ((layers.indexOf(layerId) !== -1) !== active) {
+                soundboardStatusEl.textContent = NOT_DEPLOYED_MSG;
+                btn.classList.toggle('active', !active);
+                return;
+              }
+              activeAmbientLayers = layers;
+              soundboardStatusEl.textContent = (active ? label + ' is now looping on CH ' : label + ' stopped on CH ') + ch + '.';
+            });
+          }, 900);
+        }).catch(function () {
+          soundboardStatusEl.textContent = 'Could not reach the backend.';
+          btn.classList.toggle('active', !active);
+        });
+      });
+    });
+  }
+
+  function renderStingerGroups() {
+    stingerGroupsEl.innerHTML = STINGER_GROUPS.map(function (g) {
+      return '<div class="rdo-stinger-group-label">' + escapeHtml(g.label) + '</div>' +
+        '<div class="rdo-stinger-grid">' + g.stingers.map(function (s) {
+          return '<button type="button" class="rdo-stinger-btn" data-stinger="' + s.id + '">' + escapeHtml(s.label) + '</button>';
+        }).join('') + '</div>';
+    }).join('');
+    Array.prototype.forEach.call(stingerGroupsEl.querySelectorAll('[data-stinger]'), function (btn) {
+      btn.addEventListener('click', function () {
+        var stingerId = btn.dataset.stinger;
+        var label = btn.textContent;
+        var ch = currentChannel;
+        btn.classList.add('firing');
+        setTimeout(function () { btn.classList.remove('firing'); }, 200);
+        soundboardStatusEl.textContent = 'Firing ' + label + ' on CH ' + ch + '…';
+        fetch(APPS_SCRIPT_URL, {
+          method: 'POST', mode: 'no-cors', keepalive: true,
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({ action: 'trigger_stinger', channel: ch, stinger_id: stingerId, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+        }).then(function () {
+          soundboardStatusEl.textContent = label + ' fired on CH ' + ch + '.';
+        }).catch(function () { soundboardStatusEl.textContent = 'Could not reach the backend.'; });
+      });
+    });
+  }
+
   function checkCurrent() {
     var ch = currentChannel;
     jsonpGet('get_now_playing', { channel: ch }, function (res) {
       if (res && res.status === 'OK' && res.track_url) {
-        current = { track_url: res.track_url, track_title: res.track_title || '', track_kind: res.track_kind || '', loop: !!res.loop, paused: !!res.paused };
+        current = { track_url: res.track_url, track_title: res.track_title || '', track_kind: res.track_kind || '', loop: !!res.loop, paused: !!res.paused, started_at: res.started_at || 0, paused_at: res.paused_at || 0 };
         statusEl.textContent = (current.paused ? 'Paused on CH ' : 'Currently broadcasting to CH ') + ch + ': ' + (current.track_title || current.track_url);
         setAirIndicator(true);
       } else {
-        current = { track_url: '', track_title: '', track_kind: '', loop: false, paused: false };
+        current = { track_url: '', track_title: '', track_kind: '', loop: false, paused: false, started_at: 0, paused_at: 0 };
         statusEl.textContent = 'Nothing currently broadcasting to CH ' + ch + '.';
         setAirIndicator(false);
       }
+      // Ambient layers are per-channel state independent of the track --
+      // re-synced on every channel switch (checkCurrent() is the dial's
+      // onChange handler) so the grid always reflects THIS channel's
+      // loops, not whichever channel was last dialed.
+      activeAmbientLayers = (res && Array.isArray(res.ambient_layers)) ? res.ambient_layers : [];
+      renderAmbientGrid();
       setPauseBtnLabel();
     });
     loadPlaylist(ch);
@@ -3773,8 +4041,8 @@
       var live = res && res.status === 'OK' ? (res.track_url || '') : '';
       if (live === expectedUrl) {
         current = (res && res.status === 'OK')
-          ? { track_url: res.track_url || '', track_title: res.track_title || '', track_kind: res.track_kind || '', loop: !!res.loop, paused: !!res.paused }
-          : { track_url: '', track_title: '', track_kind: '', loop: false, paused: false };
+          ? { track_url: res.track_url || '', track_title: res.track_title || '', track_kind: res.track_kind || '', loop: !!res.loop, paused: !!res.paused, started_at: res.started_at || 0, paused_at: res.paused_at || 0 }
+          : { track_url: '', track_title: '', track_kind: '', loop: false, paused: false, started_at: 0, paused_at: 0 };
         statusEl.textContent = expectedUrl
           ? 'Broadcasting to CH ' + ch + ': ' + (expectedTitle || expectedUrl)
           : 'Stopped broadcasting to CH ' + ch + '.';
@@ -3807,6 +4075,8 @@
           var ok = res && res.status === 'OK' && res.track_url && !!res.paused !== wasPaused;
           if (!ok) { statusEl.textContent = NOT_DEPLOYED_MSG; return; }
           current.paused = !!res.paused;
+          current.started_at = res.started_at || 0;
+          current.paused_at = res.paused_at || 0;
           statusEl.textContent = (current.paused ? 'Paused on CH ' : 'Resumed on CH ') + ch + ': ' + (current.track_title || current.track_url);
           setPauseBtnLabel();
         });
@@ -4204,6 +4474,7 @@
     });
   });
 
+  renderStingerGroups();
   checkCurrent();
   fetchCells();
   fetchTracks();

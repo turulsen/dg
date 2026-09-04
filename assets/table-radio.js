@@ -110,8 +110,33 @@
   // one, set only inside onReady.
   var ytPlayerReady = false;
   var scWidget = null;
+  // SoundCloud's Widget API is callback-based, not a synchronous getter
+  // like YouTube's or <audio>'s own .currentTime -- duration is fetched
+  // once on READY and cached here; position is pushed by the widget's
+  // own PLAY_PROGRESS event rather than polled, since getPosition() is
+  // also callback-based and polling it every tick would mean a new
+  // postMessage round-trip to the iframe every second for no benefit.
+  var scDuration = null;
+  var scPosition = 0;
   var ytApiLoading = false;
   var ytApiCallbacks = [];
+  // Ambient loops + one-shot stingers: the Table Radio soundboard, fully
+  // independent of the main "Now Playing" track/embed above -- ambience
+  // can run under a track, over silence, or across a track change, so it
+  // gets its own teardown/volume handling instead of folding into
+  // destroyActivePlayers()/renderEmbed(), which only ever concern the
+  // single primary track. Real recorded SFX, replacing an earlier
+  // procedurally-synthesized attempt that was built, tested, and
+  // deliberately abandoned for poor audio quality (see design-graveyard/
+  // table-radio-audio-soundscape's own RETROSPECTIVE.md).
+  var ambientAudioEls = {}; // layer id -> looping <audio> element
+  // Which stinger fired_at values have already been played on THIS
+  // client, so a fresh onSnapshot (page load, reconnect, channel
+  // re-tune) doesn't replay the last few minutes' worth of stingers --
+  // only ones fired from here on. Reset to null on every (re)tune;
+  // applyStingers_'s first call after that seeds it from whatever's
+  // already on the doc without playing any of it.
+  var seenStingerFires = null;
   var scApiLoading = false;
   var scApiCallbacks = [];
 
@@ -230,7 +255,138 @@
     if (ytPlayer) { try { ytPlayer.destroy(); } catch (e) { /* already gone */ } ytPlayer = null; }
     ytPlayerReady = false;
     scWidget = null; // SC.Widget doesn't need explicit teardown -- its iframe is about to be replaced/removed anyway
+    scDuration = null;
+    scPosition = 0;
     currentEmbedKind = null;
+  }
+
+  // Starts/stops looping <audio> elements to match the channel's active
+  // ambient layer ids exactly -- diffed against ambientAudioEls rather
+  // than torn down and rebuilt wholesale on every snapshot, so a layer
+  // that was already looping keeps its own playback position instead of
+  // restarting every time some OTHER layer or the main track changes.
+  function applyAmbientLayers_(activeIds) {
+    activeIds = activeIds || [];
+    Object.keys(ambientAudioEls).forEach(function (id) {
+      if (activeIds.indexOf(id) === -1) {
+        var el = ambientAudioEls[id];
+        try { el.pause(); el.src = ''; el.remove(); } catch (e) { /* already gone */ }
+        delete ambientAudioEls[id];
+      }
+    });
+    activeIds.forEach(function (id) {
+      if (ambientAudioEls[id]) return;
+      var el = document.createElement('audio');
+      el.src = 'assets/ambient/' + id + '.mp3';
+      el.loop = true;
+      el.muted = isMuted();
+      el.volume = getVolume() / 100;
+      el.style.display = 'none';
+      document.body.appendChild(el);
+      // Same muted-autoplay-then-unmute-later pattern the main track
+      // already relies on (see #dg-radio-audio's own setup below) --
+      // starting muted (the default until the first Sound tap) always
+      // autoplays; a later mute-button tap just flips .muted on an
+      // already-playing element, which needs no fresh gesture.
+      var p = el.play();
+      if (p && p.catch) p.catch(function () { /* best effort -- ambience is cosmetic, no resume affordance needed */ });
+      ambientAudioEls[id] = el;
+    });
+  }
+
+  function playStinger_(id) {
+    var el = document.createElement('audio');
+    el.src = 'assets/stingers/' + id + '.mp3';
+    el.muted = isMuted();
+    el.volume = getVolume() / 100;
+    el.style.display = 'none';
+    document.body.appendChild(el);
+    el.addEventListener('ended', function () { el.remove(); });
+    var p = el.play();
+    // A blocked/failed one-shot just silently doesn't play -- there's no
+    // sensible "tap to resume" affordance for a stinger that's already
+    // fired and gone by the time anyone could tap it.
+    if (p && p.catch) p.catch(function () { el.remove(); });
+  }
+
+  // Plays any stinger fire not already seen on this client -- an ARRAY
+  // of recent {id, fired_at} fires (not a single scalar), so two
+  // stingers triggered close together both survive to be played here as
+  // separate, naturally overlapping <audio> elements instead of the
+  // second clobbering the first before it could ever be noticed.
+  function applyStingers_(stingers) {
+    stingers = Array.isArray(stingers) ? stingers : [];
+    if (seenStingerFires === null) {
+      seenStingerFires = {};
+      stingers.forEach(function (s) { seenStingerFires[s.fired_at] = true; });
+      return;
+    }
+    stingers.forEach(function (s) {
+      if (seenStingerFires[s.fired_at]) return;
+      seenStingerFires[s.fired_at] = true;
+      playStinger_(s.id);
+    });
+  }
+
+  // Formats a seconds count as m:ss (no leading-zero hours -- nothing in
+  // this app plays anything long enough to need them).
+  function formatTime_(sec) {
+    if (!isFinite(sec) || sec < 0) sec = 0;
+    sec = Math.floor(sec);
+    var m = Math.floor(sec / 60);
+    var s = sec % 60;
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  // Read-only progress display -- deliberately NOT a draggable seek bar.
+  // Only the Handler's A-Cell Music tab can scrub (seek_now_playing),
+  // keeping every listener's playback provably in sync with the
+  // broadcast instead of letting each one drift by scrubbing their own
+  // local copy. Pulls elapsed/duration from whichever embed kind is
+  // actually live; hides itself entirely for a kind that can't report
+  // both (the generic-iframe fallback, or before an API/embed is ready).
+  function updateProgressDisplay() {
+    var wrap = document.getElementById('dg-radio-progress');
+    if (!wrap) return;
+    var elapsed = null, duration = null;
+    if (currentEmbedKind === 'audio') {
+      var audioEl = document.getElementById('dg-radio-audio');
+      if (audioEl) {
+        elapsed = audioEl.currentTime;
+        duration = isFinite(audioEl.duration) ? audioEl.duration : null;
+      }
+    } else if (currentEmbedKind === 'yt' && ytPlayer && ytPlayerReady) {
+      try {
+        elapsed = ytPlayer.getCurrentTime();
+        duration = ytPlayer.getDuration();
+      } catch (e) { /* not ready yet */ }
+    } else if (currentEmbedKind === 'sc' && scDuration) {
+      elapsed = scPosition / 1000;
+      duration = scDuration / 1000;
+    }
+    if (elapsed === null || !duration) {
+      wrap.style.display = 'none';
+      return;
+    }
+    wrap.style.display = '';
+    var fill = document.getElementById('dg-radio-progress-fill');
+    var label = document.getElementById('dg-radio-progress-label');
+    var pct = Math.max(0, Math.min(100, (elapsed / duration) * 100));
+    if (fill) fill.style.width = pct + '%';
+    if (label) label.textContent = formatTime_(elapsed) + ' / ' + formatTime_(duration);
+  }
+
+  var progressInterval = null;
+  // Only ticks while the panel is actually expanded (the progress row is
+  // hidden entirely when minimized) -- no point paying a per-second
+  // getCurrentTime()/postMessage round-trip for a display nobody can see.
+  function startProgressInterval() {
+    stopProgressInterval();
+    progressInterval = setInterval(updateProgressDisplay, 1000);
+    updateProgressDisplay();
+  }
+  function stopProgressInterval() {
+    if (progressInterval) { clearInterval(progressInterval); progressInterval = null; }
   }
 
   /* ── DOM / styles ── */
@@ -284,6 +440,13 @@
     '#dg-radio-panel:not(.dgr-panel-expanded) .dgr-expand-section{display:none;}',
     '.dgr-expand-section{margin-top:8px;}',
     '#dg-radio-track{font-size:12px;color:#e6ecd8;margin-bottom:4px;overflow-wrap:anywhere;}',
+    // Read-only -- see updateProgressDisplay()'s own comment for why
+    // this never accepts a click/drag the way a real media player's
+    // scrubber would.
+    '.dgr-progress{margin:2px 0 8px;}',
+    '.dgr-progress-track{width:100%;height:4px;background:#20261a;border-radius:2px;overflow:hidden;}',
+    '.dgr-progress-fill{height:100%;background:#8fae5a;width:0%;}',
+    '.dgr-progress-label{font-size:9px;color:#7a8a68;margin-top:3px;text-align:right;}',
     '#dg-radio-status{font-size:10px;color:#7a8a68;margin-bottom:8px;}',
     '#dg-radio-resume{',
     'display:none;width:100%;margin-top:6px;background:#2a3a1c;color:#d8f0c0;',
@@ -425,6 +588,8 @@
       setChannel(dial.get());
       lastStartedAt = null;
       lastPaused = false;
+      seenStingerFires = null;
+      applyAmbientLayers_([]);
       renderTuned();
       startPolling();
     });
@@ -437,6 +602,7 @@
     if (panel) panel.classList.toggle('dgr-panel-expanded', expanded);
     var btn = document.getElementById('dg-radio-toggle-expand');
     if (btn) btn.textContent = expanded ? 'Minimize' : 'Expand';
+    if (expanded) startProgressInterval(); else stopProgressInterval();
   }
 
   function renderTuned() {
@@ -454,6 +620,10 @@
       '<button type="button" class="dgr-btn" id="dg-radio-change">Change Channel</button>' +
       '<div id="dg-radio-dial-slot"></div>' +
       '<div id="dg-radio-track">No signal yet.</div>' +
+      '<div id="dg-radio-progress" class="dgr-progress" style="display:none;">' +
+      '<div class="dgr-progress-track"><div class="dgr-progress-fill" id="dg-radio-progress-fill"></div></div>' +
+      '<div class="dgr-progress-label" id="dg-radio-progress-label"></div>' +
+      '</div>' +
       '<div id="dg-radio-status">Waiting for the Handler…</div>' +
       '<button type="button" id="dg-radio-resume">Tap to resume audio</button>' +
       '</div>' +
@@ -496,6 +666,8 @@
         ch = newCh;
         lastStartedAt = null;
         lastPaused = false;
+        seenStingerFires = null;
+        applyAmbientLayers_([]);
         window._dgRadioLast = null;
         document.getElementById('dg-radio-ch-label').textContent = 'CH ' + newCh;
         document.getElementById('dg-radio-track').textContent = 'No signal yet.';
@@ -507,8 +679,11 @@
     });
     document.getElementById('dg-radio-leave').addEventListener('click', function () {
       stopPolling();
+      stopProgressInterval();
       clearChannel();
       window._dgRadioLast = null;
+      seenStingerFires = null;
+      applyAmbientLayers_([]);
       destroyActivePlayers();
       renderCollapsed();
     });
@@ -538,6 +713,14 @@
   function applyLiveMuteVolume() {
     var muted = isMuted();
     var vol = getVolume();
+    // Ambient loops follow the same mute/volume control as the main
+    // track -- there's no separate soundboard volume knob, same reasoning
+    // as everything else on this widget sharing one control surface.
+    Object.keys(ambientAudioEls).forEach(function (id) {
+      var el = ambientAudioEls[id];
+      el.muted = muted;
+      el.volume = vol / 100;
+    });
     if (currentEmbedKind === 'yt' && ytPlayer && ytPlayerReady) {
       try {
         if (muted) { ytPlayer.mute(); } else { ytPlayer.unMute(); ytPlayer.setVolume(vol); }
@@ -655,6 +838,13 @@
         scWidget = window.SC.Widget(iframeEl);
         scWidget.bind(window.SC.Widget.Events.READY, function () {
           try { scWidget.setVolume(muted ? 0 : vol); } catch (e) { /* best effort */ }
+          try { scWidget.getDuration(function (ms) { scDuration = ms; }); } catch (e) { /* best effort */ }
+        });
+        // Pushed by the widget itself every couple hundred ms while
+        // playing -- see scDuration/scPosition's own comment above for
+        // why this isn't polled the same way <audio>/YouTube are.
+        scWidget.bind(window.SC.Widget.Events.PLAY_PROGRESS, function (e) {
+          scPosition = e.currentPosition;
         });
       });
     } else if (isLibraryAudio || isDirectAudio(np.track_url)) {
@@ -782,6 +972,11 @@
   // resumeNowPlaying()), so renderEmbed()/applyLivePauseState() below
   // needed no changes at all for this swap.
   function handleNowPlaying(np) {
+    // Ambient loops/stingers are independent of the main track -- applied
+    // unconditionally, before the no-track early return below, so a
+    // Handler can layer ambience onto a silent channel.
+    applyAmbientLayers_(np && np.ambient_layers);
+    applyStingers_(np && np.stingers);
     var statusEl = document.getElementById('dg-radio-status');
     var trackEl = document.getElementById('dg-radio-track');
     var miniTrackEl = document.getElementById('dg-radio-mini-track');
