@@ -853,7 +853,7 @@
   <div class="acell-handler-auth" id="acell-handler-auth">
     <span class="acell-handler-auth-label" id="acell-handler-auth-label">Handler session: not set</span>
     <div class="acell-handler-auth-fields">
-      <input type="password" id="acell-handler-pw-input" placeholder="Handler password" autocomplete="off">
+      <input type="text" id="acell-handler-pw-input" placeholder="Handler password" autocomplete="off">
       <button type="button" class="acell-handler-pw-btn" id="acell-handler-pw-btn">Unlock</button>
     </div>
     <span class="acell-handler-auth-err" id="acell-handler-auth-err"></span>
@@ -1051,59 +1051,11 @@
   addLine('enter_clearance_code:');
   input.focus();
 
-  // Native type="password" masks with the browser's own round dots --
-  // this is a plain type="text" field instead, so the mask character can
-  // be an X, matching the terminal aesthetic. realValue is the source of
-  // truth for what was actually typed; the field itself only ever shows
-  // X's.
-  //
-  // This used to just read input.value straight into realValue on
-  // 'input' -- broken, because by the time that event fires the field
-  // has ALREADY been overwritten with X's from the previous keystroke
-  // (see the reassignment below), so every 'input' event after the
-  // first one was reading "old X's + this one new real character", not
-  // the real cumulative value. Typing landed on access_denied every
-  // time no matter how carefully the password was typed, since realValue
-  // was never anything but junk past the first character -- while a
-  // paste worked fine, since it inserts the whole real string in one
-  // atomic edit before any masking has happened yet. Fixed by computing
-  // the edit itself (what was inserted/deleted, and where) on
-  // 'beforeinput' -- while input.value is still whatever the field
-  // showed BEFORE this edit (all X's, but same length/positions as
-  // realValue) -- and applying that same edit to realValue directly,
-  // instead of ever trying to read the real characters back out of the
-  // display value.
-  var realValue = '';
-  input.addEventListener('beforeinput', function (e) {
-    var start = input.selectionStart;
-    var end = input.selectionEnd;
-    var data = e.data;
-    if (e.inputType === 'insertFromPaste' && e.clipboardData) {
-      data = e.clipboardData.getData('text');
-    }
-    if (data) {
-      realValue = realValue.slice(0, start) + data + realValue.slice(end);
-    } else if (start !== end) {
-      // A selection is being replaced/removed (covers deleteByCut and a
-      // Backspace/Delete with an active selection) -- start/end already
-      // bracket exactly what goes away.
-      realValue = realValue.slice(0, start) + realValue.slice(end);
-    } else if (e.inputType === 'deleteContentForward') {
-      // Delete key, cursor collapsed -- removes the character AFTER it.
-      realValue = realValue.slice(0, start) + realValue.slice(start + 1);
-    } else {
-      // deleteContentBackward (plain Backspace), cursor collapsed --
-      // removes the character BEFORE it. start === end here, so without
-      // the -1 this would slice the string apart and rejoin it unchanged.
-      realValue = realValue.slice(0, start - 1) + realValue.slice(end);
-    }
-  });
-  input.addEventListener('input', function () {
-    var caret = Math.min(input.selectionStart, realValue.length);
-    input.value = 'X'.repeat(realValue.length);
-    input.setSelectionRange(caret, caret);
-  });
-
+  // Used to mask with X's (a custom scheme, since native type="password"
+  // dots didn't match the terminal aesthetic) -- removed on request:
+  // masking was hiding real mistyped-password mistakes with no way to
+  // proofread before hitting Enter. input.value is now the real typed
+  // value directly, no separate shadow-tracking needed.
   function grantAccess() {
     input.disabled = true;
     inputLine.style.display = 'none';
@@ -1118,12 +1070,11 @@
   function denyAccess() {
     addLine('access_denied', 'term-denied');
     input.value = '';
-    realValue = '';
   }
 
   input.addEventListener('keydown', function (e) {
     if (e.key !== 'Enter') return;
-    var val = realValue.trim().toUpperCase();
+    var val = input.value.trim().toUpperCase();
     if (!val) return;
     if (val === PASSWORD) grantAccess();
     else denyAccess();
@@ -3467,7 +3418,7 @@
       '<div class="admin-confirm">' +
       '<p>Enter the A-Cell password to delete <b>' + escapeHtml(row.name) + '</b> (moves to Recently Deleted, restorable for 24 hours):</p>' +
       '<div class="admin-confirm-error" id="sheet-confirm-err-' + i + '"></div>' +
-      '<input type="password" id="sheet-pw-input-' + i + '" placeholder="A-Cell password" autocomplete="off">' +
+      '<input type="text" id="sheet-pw-input-' + i + '" placeholder="A-Cell password" autocomplete="off">' +
       '<div class="admin-confirm-actions">' +
       '<button type="button" class="paper-btn admin-delete-btn" id="sheet-delete-confirm-btn-' + i + '">Delete Agent</button>' +
       '<button type="button" class="paper-btn" id="sheet-confirm-cancel-' + i + '">Cancel</button>' +
