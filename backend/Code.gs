@@ -4285,19 +4285,42 @@ function generateAppearancePrompt(data) {
 
     const outfitDesc = isBase ? [char.jacket, char.shirt, char.trousers, char.footwear, char.accessories, char.jewelry].filter(Boolean).join(', ') : '';
 
+    // What's actually visible from the chest up in a Mode 0 headshot --
+    // the character's own jacket/shirt (outermost layer first, since a
+    // jacket collar reads over a shirt collar), not the generic plain
+    // black camisole/tank baseline the Banana Pro Director skill
+    // defaults to for a brand-new character with no outfit on file yet.
+    // Falls back to that same generic baseline only when neither field
+    // is set (a character who hasn't filled in Cover Identity's outfit
+    // fields at all) -- built as a full "wears ___" phrase rather than
+    // a bare noun phrase, since the fallback already carries its own
+    // article ("a plain black tank") that a "their own " prefix would
+    // otherwise double up on ("their own a plain black tank").
+    const topWearItems = [char.jacket, char.shirt].filter(Boolean).join(' over their ');
+    const topWearDesc = topWearItems
+      ? ('their own ' + topWearItems)
+      : ('a plain black ' + (char.sex === 'Female' ? 'thin-strap camisole' : 'ribbed tank'));
+
     const injuryDesc = injuries.map(function(inj, i) {
       return (i + 1) + '. ' + inj.body_part + ' — ' + inj.injury + (inj.appearance ? '. Appearance impact: ' + inj.appearance : '');
     }).join('\n');
 
     let userPrompt;
     if (isBase) {
-      // Mode 0 — Face lock. Canonical structure from Banana Pro Director 2.0 skill.
+      // Mode 0 — Face lock. Canonical structure from Banana Pro Director 2.0 skill,
+      // with the skill's own plain black camisole/tank baseline swapped for the
+      // character's actual visible-from-the-chest-up clothing (jacket/shirt) --
+      // this app's Agents already have real outfit data on file by this point, so
+      // showing them in their own matching clothing here (rather than always
+      // resetting to the generic wardrobe-free baseline) reads truer to the
+      // character, and keeps the Field Portrait's outfit from looking like an
+      // unrelated costume change against this same headshot.
       userPrompt = 'You are a Higgsfield / Banana Pro image prompt writer. '
         + 'Write a Mode 0 FACE LOCK prompt using the canonical Banana Pro Director structure. '
         + 'This is a 3:4 HEADSHOT from forehead to upper chest only. Face fills most of the frame. '
-        + 'The character wears a plain black ' + (char.sex === 'Female' ? 'thin-strap camisole' : 'ribbed tank') + ', no jewelry, no logos. '
+        + 'The character wears ' + topWearDesc + ', visible only from the chest up. '
         + 'Background is mid-gray seamless studio. Soft soft lighting from camera-left. '
-        + 'No outfit styling. Identity only.\n\n'
+        + 'Identity only -- no jewelry, no logos, no additional outfit styling beyond this collar/shoulder line.\n\n'
         + 'CHARACTER SPEC:\n' + baseDesc + '\n'
         + (char.facial_hair ? 'Facial hair: ' + char.facial_hair + '\n' : '')
         + (char.face_scars ? 'Identity markers: ' + char.face_scars + '\n' : '')
@@ -4306,7 +4329,7 @@ function generateAppearancePrompt(data) {
         + '\nWrite the prompt using this EXACT structure — two paragraphs, no preamble, no labels:\n\n'
         + 'PARAGRAPH 1: Open with "A clean cinema-character-reference 3:4 headshot, framed from forehead to upper chest with the face filling most of the frame." '
         + 'Then: full identity description — heritage/nationality, build, skin tone and finish, hair (color, length, texture), face register (jaw, cheekbones, brow, eye shape and color, nose, lips), all identity markers. '
-        + 'Then: wardrobe baseline ("She wears a plain black thin-strap camisole" or "He wears a plain black ribbed tank, no jewelry, no logos, no graphics"). '
+        + 'Then: wardrobe baseline, describing exactly this collar/shoulder line: "' + topWearDesc + ', no jewelry, no logos, no graphics." '
         + 'Then: "Body squared to camera, head level, neutral relaxed expression, eyes to camera, lips closed and relaxed, subtle controlled energy."\n\n'
         + 'PARAGRAPH 2: Open with "Mid-gray seamless studio background — even neutral mid-gray, no seam line, no gradient, no falloff to black or white." '
         + 'Then lighting: "Relight from scratch overriding any reference lighting: one broad diffused source from camera-left and slightly above, a soft triangle of light on the shadow cheek, gentle wrap onto the face, no hard shadow edges, no rim light, no hair light, no kicker." '
