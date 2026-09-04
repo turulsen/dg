@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v76 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v77 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -3343,6 +3343,25 @@ function diagnoseEvidencePlacement_() {
 
 function runDiagnoseEvidencePlacementNow() {
   Logger.log(diagnoseEvidencePlacement_());
+}
+
+// TEMP DIAGNOSTIC (read-only, safe to delete after use): every prior
+// Evidence diagnostic above talks to Firestore via this Script
+// Property, using a service-account token that bypasses security rules
+// entirely -- it says nothing about whether the CLIENT (a-cell.html,
+// signed in as Handler through Firebase Auth) is reading from the same
+// Firestore project at all. a-cell.html's own client-side Firebase
+// config hardcodes projectId 'dg-app-b3447' -- if this Script Property
+// was ever set to a different project (a leftover from an early setup
+// attempt, a typo, a second project created along the way), every
+// dual-write above would keep landing somewhere the live client can
+// never see, no matter how correct the client's own sign-in and
+// security rules are. Run via runShowFirestoreProjectIdNow().
+function runShowFirestoreProjectIdNow() {
+  const configured = PropertiesService.getScriptProperties().getProperty(FIRESTORE_PROJECT_ID_PROPERTY);
+  Logger.log('FIRESTORE_PROJECT_ID Script Property: ' + configured);
+  Logger.log('a-cell.html client config projectId:  dg-app-b3447');
+  Logger.log(configured === 'dg-app-b3447' ? 'MATCH -- not the cause.' : '*** MISMATCH -- this is very likely the whole problem. ***');
 }
 
 // ONE-SHOT REPAIR (safe to re-run; a no-op for rows already in
