@@ -949,3 +949,28 @@ Not yet confirmed whether this was the actual cause of a live "evidence
 added but not showing" report (diagnostic needs to be run against the
 real Sheet first), but the swallowed-error gap itself is real and now
 fixed regardless of that outcome.
+
+**A-Cell's Evidence Locker could show "No evidence filed here yet" while
+actually failing to load, with no error ever visible -- not even
+briefly.** `runDiagnoseEvidenceNow()` (above) confirmed all 16
+Evidence rows genuinely exist in Firestore, and selecting "All Cells"
+still showed nothing -- ruling out both a lost write and a Cell/Operation
+placement mismatch, pointing at the CLIENT read path itself.
+`startEvidenceListener()`'s sign-in-failure and `onSnapshot` error
+handlers did already write a real error message ("Could not load
+Evidence (Handler sign-in failed): ..." / "... (Firestore): ...")
+straight into `listEl.innerHTML` -- but `fetchAll()` (which loads
+Cells/Operations from the separate, still-unmigrated Apps Script
+backend) calls `renderList()` unconditionally on every refresh,
+completely independent of whether the Firestore listener succeeded.
+Both fire together off the same `dg-acell-handler-ready` event, so any
+real Evidence error was immediately overwritten by the next
+Cells/Operations-driven re-render showing the plain empty-Locker text --
+making a genuine, live failure indistinguishable from an actually-empty
+Locker, and explaining why no error had ever been seen despite this
+exact symptom being reported more than once. Added a persistent
+`evidenceLoadError` flag that `renderList()` now checks first (cleared
+only on a real successful snapshot); the listener's failure paths set it
+and call `renderList()` directly instead of writing `innerHTML` inline,
+so the message now survives every later re-render instead of being
+silently wiped within moments of appearing.

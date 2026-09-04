@@ -2015,6 +2015,16 @@
   var newOpBtn = document.getElementById('evidence-new-op-btn');
 
   var evidenceItems = [];
+  // Set by startEvidenceListener()'s sign-in/onSnapshot failure paths,
+  // cleared on a successful snapshot. renderList() checks this FIRST --
+  // without it, fetchAll()'s own renderList() call (fired on every
+  // Cells/Operations refresh, completely independent of whether the
+  // Firestore listener below is even working) would silently overwrite
+  // a real "Could not load Evidence" error with the plain "No evidence
+  // filed here yet" empty-state text the next time it ran, which is
+  // exactly what made a real, live failure indistinguishable from a
+  // genuinely empty Locker for as long as this bug existed.
+  var evidenceLoadError = null;
   var cells = [];
   var cellsById = {};
   var operations = [];
@@ -2317,10 +2327,12 @@
               released: !!d.released, restricted_to: d.restricted_to || []
             });
           });
+          evidenceLoadError = null;
           if (baseDataReady) { renderFolders(); renderList(); }
         }, function (err) {
           console.error('a-cell: evidence listener error', err);
-          listEl.innerHTML = '<div class="evidence-empty-note">Could not load Evidence (Firestore): ' + escapeHtml(err && err.message || String(err)) + '</div>';
+          evidenceLoadError = 'Could not load Evidence (Firestore): ' + (err && err.message || String(err));
+          renderList();
         });
     }).catch(function (err) {
       // Was silently swallowed here -- a failed sign-in (e.g. the
@@ -2331,11 +2343,14 @@
       // showing the exact same "No evidence filed here yet" text as a
       // genuinely empty Evidence sheet, with zero indication anything
       // was actually broken. Surfaces the real error instead, same
-      // place/format the onSnapshot error callback above already uses.
+      // place/format the onSnapshot error callback above already uses --
+      // and, since this sets evidenceLoadError rather than writing
+      // listEl.innerHTML directly, it now survives fetchAll()'s own
+      // unconditional renderList() call instead of being silently wiped
+      // by it moments later (see evidenceLoadError's own declaration).
       console.error('a-cell: evidence listener sign-in failed (retries on next handler-ready event)', err);
-      if (listEl) {
-        listEl.innerHTML = '<div class="evidence-empty-note">Could not load Evidence (Handler sign-in failed): ' + escapeHtml(err && err.message || String(err)) + '</div>';
-      }
+      evidenceLoadError = 'Could not load Evidence (Handler sign-in failed): ' + (err && err.message || String(err));
+      renderList();
     });
   }
 
@@ -2488,6 +2503,10 @@
   }
 
   function renderList() {
+    if (evidenceLoadError) {
+      listEl.innerHTML = '<div class="evidence-empty-note">' + escapeHtml(evidenceLoadError) + '</div>';
+      return;
+    }
     var shown = visibleEvidence();
     if (!shown.length) {
       listEl.innerHTML = '<div class="evidence-empty-note">No evidence filed here yet -- click "+ New Evidence" to add one.</div>';
