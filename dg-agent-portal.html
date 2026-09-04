@@ -3628,7 +3628,58 @@ function populateCoverForm(data){
   if (data.ref_image_base64) photoDataUrl = data.ref_image_base64;
 }
 
-function loadAgentCode(){
+/* ── AUTO-CREATE A MISSING BRIEF FROM THE CHARACTER SHEET ──
+   A real report (Eli Filagree): a Kappa Black import synced fine to
+   the Characters sheet, but nobody had ever clicked stats/'s "Open
+   Agent File" button for this Agent -- so no Delta Green Briefs row
+   existed at all, and EVERY way of reaching the Agent File (the Hub's
+   own "Agent File" link, the Cover tab's "RETURNING AGENT" code box)
+   returned a correct but unhelpful NOT_FOUND forever, with no
+   indication that the character sheet itself was actually fine.
+   stats/agent-portal-export.js already solves this exact gap, but only
+   for the ONE entry point a player happens to click that specific
+   button from -- this is the same auto-export, triggered instead the
+   moment ANY entry point discovers a missing Brief for an Agent who
+   does have a saved character, so the gap self-heals regardless of
+   which door the player came in through. Deliberately minimal (name/
+   profession/nationality/sex only, no outfit/build derivation --
+   dg-agent-portal.html doesn't have stats/'s professions.js/bio.js
+   loaded to do that part the same way) -- isProfilingComplete()'s
+   existing incomplete-Profiling banner already prompts the player to
+   fill in the rest, same as any other partial brief. */
+function autoCreateBriefFromCharacterThenRetry_(code, onCreated, onGiveUp) {
+  window._acbCallback = function (json) {
+    delete window._acbCallback;
+    const old = document.getElementById('_acb_script');
+    if (old) old.remove();
+    let bio = {};
+    try { bio = (json.status === 'OK' && json.character_json) ? (JSON.parse(json.character_json).bio || {}) : null; }
+    catch (e) { bio = null; }
+    const name = bio && (bio.name || '').trim();
+    if (!bio || !name || name === 'Agent') { onGiveUp(); return; }
+    const sexRaw = (bio.sex || '').trim().toLowerCase();
+    const sex = sexRaw === 'male' || sexRaw === 'm' ? 'Male' : sexRaw === 'female' || sexRaw === 'f' ? 'Female' : sexRaw ? 'Other' : '';
+    const payload = {
+      char_name: name,
+      profession: bio.profession || '',
+      nationality: bio.nationality || '',
+      sex: sex,
+      notes: 'Auto-created from this Agent\'s character sheet -- no Agent File was on record yet.',
+      agent_code: code,
+      submitted_at: new Date().toISOString()
+    };
+    fetch(APPS_SCRIPT_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(payload) })
+      .then(function () { setTimeout(onCreated, 700); })
+      .catch(onGiveUp);
+  };
+  const s = document.createElement('script');
+  s.id = '_acb_script';
+  s.src = APPS_SCRIPT_URL + '?action=load_character&code=' + encodeURIComponent(code) + '&callback=_acbCallback';
+  s.onerror = onGiveUp;
+  document.head.appendChild(s);
+}
+
+function loadAgentCode(retrying){
   const input=document.getElementById('agent-code-input');
   const status=document.getElementById('code-load-status');
   const code=(input.value||'').trim().toUpperCase();
@@ -3649,6 +3700,12 @@ function loadAgentCode(){
       const afInput = document.getElementById('af-code-input');
       if (afInput) afInput.value = existingCode;
       renderDossier(data, existingCode, true);
+    }else if(json.status==='NOT_FOUND' && !retrying){
+      status.textContent='No Agent File yet -- checking your character sheet…';
+      autoCreateBriefFromCharacterThenRetry_(code,
+        function(){ loadAgentCode(true); },
+        function(){ status.textContent='Code not found. Check with your Handler.'; }
+      );
     }else{
       status.textContent=json.status==='NOT_FOUND'?'Code not found. Check with your Handler.':'Could not retrieve file.';
     }
@@ -3853,7 +3910,7 @@ let afMedPhotos = {};    // temp photo store for medical entries
 let afAarPhotos = {};    // temp photo store for AAR
 
 /* ── Load agent file from Sheet ── */
-function loadAgentFile() {
+function loadAgentFile(retrying) {
   const input = document.getElementById('af-code-input');
   const status = document.getElementById('af-gate-status');
   const code = (input.value || '').trim().toUpperCase();
@@ -3883,6 +3940,16 @@ function loadAgentFile() {
         showIncompleteProfilingBanner_(json.data);
         switchTab('cover');
       }
+    } else if (json.status === 'NOT_FOUND' && !retrying) {
+      // See autoCreateBriefFromCharacterThenRetry_()'s own comment --
+      // this is the Hub's "Agent File" link landing here via
+      // openSpecificAgent() for an Agent who has a character sheet but
+      // never had an Agent File auto-exported for them.
+      status.textContent = 'No Agent File on record -- checking your character sheet…';
+      autoCreateBriefFromCharacterThenRetry_(code,
+        function () { loadAgentFile(true); },
+        function () { status.textContent = 'Clearance code not recognised. Contact your Handler.'; switchTab('cover'); }
+      );
     } else if (json.status === 'NOT_FOUND') {
       status.textContent = 'Clearance code not recognised. Contact your Handler.';
       switchTab('cover');
