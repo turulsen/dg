@@ -311,11 +311,23 @@ timestamp every device reads. A small persistent widget
   5) rather than a single scalar, so two stingers fired close together
   both survive to play as separate, genuinely overlapping `<audio>`
   elements instead of the second clobbering the first.
-- **Media-player scrubber** — the Handler's Music tab has a draggable
-  seek slider (elapsed time, not synced to the browser's own duration
-  since A-Cell never embeds the track itself); players only ever see a
-  **read-only** progress bar in the widget's expanded panel, so nobody
-  can scrub their own copy out of sync with the actual broadcast.
+- **Now Playing control panel** — A-Cell's Music tab has a dedicated
+  panel (the wide column, above the Cue List) showing whatever's live
+  on the dialed channel, with icon transport controls (Restart/Pause
+  or Resume/Stop, styled as a real media player rather than text-label
+  buttons) instead of the old plain button row. For an uploaded Track
+  Library pick or any direct mp3/wav/ogg/m4a URL, it embeds a real,
+  muted `<audio controls>` preview — the browser's own native scrubber
+  and accurate duration, not an estimate — and swaps to a fresh embed
+  automatically the moment a different track starts playing; dragging
+  it or hitting its native Play/Pause sends the same `seek_now_playing`/
+  `pause_now_playing`/`resume_now_playing` actions as the icon controls.
+  A pasted YouTube/SoundCloud/generic URL has no cheap way to get a
+  real embed+duration here, so it falls back to the original
+  elapsed-seconds-only draggable slider instead. Players only ever see
+  a **read-only** progress bar in the widget's own expanded panel
+  (`assets/table-radio.js`), so nobody can scrub their own copy out of
+  sync with the actual broadcast.
 
 Both the soundboard and the scrubber dual-write straight onto the same
 `radio/{channel}` Firestore document Now Playing already lives on
