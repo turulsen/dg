@@ -1222,9 +1222,39 @@ soon as one exists.
 **A-Cell Music tab redesign, bundled into the same commit as the fix
 above (not logged here for the redesign itself, see FEATURES.md):** the
 Handler's Pause/Restart/Stop controls moved into a new "Now Playing"
-panel with a real embedded, real-scrubber `<audio controls>` preview
-for uploaded/direct tracks -- while building it, confirmed the same
-detached-audio-element issue could never have affected this panel
-specifically, since it reuses one persistent `<audio>` element and only
-ever reassigns its `.src`, which browsers already handle by stopping
+panel with a real embedded, real-scrubber preview for uploaded/direct
+tracks (a headless `<audio>` element driving a custom-styled play/
+pause + scrubber row, not the browser's own native `<audio controls>`
+chrome, which doesn't match this app's look) -- while building it,
+confirmed the same detached-audio-element issue could never have
+affected this panel specifically, since it reuses one persistent
+`<audio>` element and only ever reassigns its `.src`, which browsers
+already handle by stopping
 and replacing playback with no equivalent orphaning risk.
+
+**The Now Playing panel's Restart/Pause/Stop icons rendered as
+full-color platform emoji instead of plain icons, and the audio preview
+looked like a generic OS media player instead of matching the rest of
+the app.** Live report, with a screenshot: the transport buttons showed
+chunky colored glyphs sitting in blue rounded squares, and the preview
+below them was a plain grey system scrubber. Root cause of the first
+part: the icons were literal Unicode characters (`⏮`⏸`⏹`, the
+"Miscellaneous Technical" block) -- how these render is entirely up to
+whatever font/emoji-substitution table the visiting device happens to
+use, completely outside this app's control, and several platforms
+substitute a full-color emoji glyph for exactly this block. Root cause
+of the second part: the preview used a real `<audio controls>` element,
+which deliberately renders using the browser/OS's own native media-
+player chrome (by design, for accessibility and consistency with the
+rest of the OS) -- there's no way to reskin that to match a specific
+site's look. Fixed by replacing the Unicode icons with inline SVG
+(`fill="currentColor"`, so it always renders as one flat glyph in
+whatever color the surrounding CSS sets -- the exact same technique
+`assets/dice-roller.js`'s own die-face icons already use, just not
+carried over here the first time), and by dropping the `controls`
+attribute entirely -- the `<audio>` element is now a headless engine
+only, with a hand-built play/pause button, scrubber (`<input
+type="range">`, styled with `accent-color` like every other slider in
+this app), and elapsed/duration readout standing in for what
+`controls` used to draw, matching the panel's actual visual language
+instead of the visiting device's own media-player skin.

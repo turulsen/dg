@@ -314,16 +314,22 @@ timestamp every device reads. A small persistent widget
 - **Now Playing control panel** — A-Cell's Music tab has a dedicated
   panel (the wide column, above the Cue List) showing whatever's live
   on the dialed channel, with icon transport controls (Restart/Pause
-  or Resume/Stop, styled as a real media player rather than text-label
-  buttons) instead of the old plain button row. For an uploaded Track
-  Library pick or any direct mp3/wav/ogg/m4a URL, it embeds a real,
-  muted `<audio controls>` preview — the browser's own native scrubber
-  and accurate duration, not an estimate — and swaps to a fresh embed
-  automatically the moment a different track starts playing; dragging
-  it or hitting its native Play/Pause sends the same `seek_now_playing`/
-  `pause_now_playing`/`resume_now_playing` actions as the icon controls.
-  A pasted YouTube/SoundCloud/generic URL has no cheap way to get a
-  real embed+duration here, so it falls back to the original
+  or Resume/Stop) instead of the old plain text-label button row. The
+  icons are inline SVG (`fill="currentColor"`, same approach as
+  `assets/dice-roller.js`'s own die-face icons) rather than Unicode
+  media-control glyphs — those render as full-color platform emoji on
+  some devices, entirely font-dependent. For an uploaded Track Library
+  pick or any direct mp3/wav/ogg/m4a URL, the panel drives a custom
+  play/pause + scrubber + elapsed/duration row, styled to match the
+  rest of the app (dark, olive/khaki, Courier Prime) rather than the
+  browser's own native `<audio controls>` chrome — backed by a headless
+  `<audio>` element purely for its real duration/position, muted by
+  default. It swaps to a fresh track automatically the moment a
+  different one starts playing; dragging the scrubber or hitting the
+  play/pause button sends the same `seek_now_playing`/
+  `pause_now_playing`/`resume_now_playing` actions as the icon
+  controls. A pasted YouTube/SoundCloud/generic URL has no cheap way to
+  get a real embed+duration here, so it falls back to the original
   elapsed-seconds-only draggable slider instead. Players only ever see
   a **read-only** progress bar in the widget's own expanded panel
   (`assets/table-radio.js`), so nobody can scrub their own copy out of

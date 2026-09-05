@@ -686,31 +686,43 @@
     font-family:'Courier Prime',monospace; font-size:11px; color:#e6ecd8;
     overflow-wrap:anywhere; margin-bottom:8px;
   }
-  /* Icon transport controls, matching a real media player's look rather
-     than plain text-label pills -- the same visual language the player-
-     facing table-radio.js widget's own controls use (small, round,
-     olive-on-dark). Restart/Stop have no native-player equivalent, so
-     they stay as their own icon buttons even when the native <audio>
-     preview below is showing (which already covers Play/Pause itself --
-     see #music-pause-btn's display toggle in syncTransportUI_()). */
+  /* Icon transport controls -- plain geometric SVG shapes (a bar-pair,
+     a triangle, a square), not Unicode media-control glyphs. Those
+     render as full-color platform emoji on several devices instead of
+     a plain icon (confirmed live on a real report) -- entirely font-
+     dependent and completely outside this app's control. An inline SVG
+     with fill="currentColor" always renders as one flat glyph in
+     whatever color this rule sets, matching the same visual language
+     used everywhere else on this panel (small, round, olive-on-dark),
+     the same reasoning dice-roller.js's own inline-SVG die faces
+     already rely on. Restart/Stop have no equivalent in the custom
+     player row below, so they stay their own icon buttons regardless
+     of which kind (native-preview vs fallback-slider) is showing --
+     only Pause/Resume hides itself when the preview row's own
+     Play/Pause already covers that (see syncTransportUI_()). */
   .rdo-transport-row{ display:flex; gap:8px; margin-bottom:8px; }
   .rdo-transport-btn{
     background:linear-gradient(180deg,#20261a 0%,#161a10 100%); border:1px solid #3a4432;
     border-top-color:#4a5a3a; color:#c9d4b8; border-radius:50%;
-    width:32px; height:32px; font-size:13px; line-height:1; cursor:pointer;
+    width:30px; height:30px; padding:0; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
     box-shadow:0 1px 0 rgba(255,255,255,.04), 0 2px 4px rgba(0,0,0,.4);
   }
+  .rdo-transport-btn svg{ display:block; }
   .rdo-transport-btn:hover{ border-color:#5a6a48; box-shadow:0 0 8px rgba(122,138,104,.2), 0 2px 4px rgba(0,0,0,.4); }
   .rdo-transport-btn:disabled{ opacity:.4; cursor:default; box-shadow:none; }
-  /* Real duration/scrubber for an uploaded/direct mp3 -- the browser's
-     own native <audio controls> element does this correctly for free
-     (accurate duration, smooth sub-second progress, real seeking) far
-     better than anything hand-rolled against an assumed max length.
-     Muted by default (the Handler is normally already hearing the real
-     broadcast at the table through some other speaker) -- the native
-     controls' own volume/mute UI lets them unmute to actually preview
-     it through this device if they want to. */
-  .rdo-preview-wrap audio{ width:100%; }
+  /* Custom player row for an uploaded/direct mp3 -- backed by a
+     headless <audio> element (no `controls`; see the HTML comment
+     above it) purely for its real duration/currentTime, driving THIS
+     styled scrubber instead of the browser's own native media-player
+     chrome, which doesn't match this app's terminal look anywhere
+     else. Muted by default (the Handler is normally already hearing
+     the real broadcast at the table through some other speaker) --
+     there's no unmute control here on purpose, same reasoning; this
+     row exists to see and scrub the track, not to double up the
+     audio. */
+  .rdo-player-row{ display:flex; align-items:center; gap:8px; }
+  .rdo-player-time{ font-family:'Courier Prime',monospace; font-size:10px; color:#a8c890; min-width:34px; text-align:center; }
   /* Fallback for YouTube/SoundCloud/generic pasted URLs -- there's no
      cheap way to get a real embed+duration for those without pulling in
      their full iframe APIs, so this stays an elapsed-seconds-only
@@ -1068,12 +1080,33 @@
                 <div class="rdo-nowplaying-panel" id="music-nowplaying-panel">
                   <div class="rdo-nowplaying-title" id="music-nowplaying-title">Nothing broadcasting on this channel yet.</div>
                   <div class="rdo-transport-row" id="music-transport-row">
-                    <button type="button" class="rdo-transport-btn" id="music-restart-btn" title="Restart" aria-label="Restart">&#9198;</button>
-                    <button type="button" class="rdo-transport-btn" id="music-pause-btn" title="Pause" aria-label="Pause">&#9208;</button>
-                    <button type="button" class="rdo-transport-btn" id="music-stop-btn" title="Stop Broadcast" aria-label="Stop Broadcast">&#9209;</button>
+                    <button type="button" class="rdo-transport-btn" id="music-restart-btn" title="Restart" aria-label="Restart">
+                      <svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M6 6h2v12H6zm3.5 6L18 18V6z"/></svg>
+                    </button>
+                    <button type="button" class="rdo-transport-btn" id="music-pause-btn" title="Pause" aria-label="Pause">
+                      <svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+                    </button>
+                    <button type="button" class="rdo-transport-btn" id="music-stop-btn" title="Stop Broadcast" aria-label="Stop Broadcast">
+                      <svg viewBox="0 0 24 24" width="13" height="13"><rect x="6" y="6" width="12" height="12" fill="currentColor"/></svg>
+                    </button>
                   </div>
+                  <!-- Headless -- no `controls` attribute. The browser's
+                       own native media-player chrome (grey bar, system
+                       font, OS-styled scrubber) doesn't match this app's
+                       terminal look anywhere else, so this element is
+                       just the playback engine; #music-preview-row below
+                       is the actual UI, styled the same as every other
+                       control on this panel. -->
+                  <audio id="music-preview-audio" muted preload="metadata" style="display:none;"></audio>
                   <div class="rdo-preview-wrap" id="music-preview-wrap" style="display:none;">
-                    <audio id="music-preview-audio" controls muted preload="metadata"></audio>
+                    <div class="rdo-player-row">
+                      <button type="button" class="rdo-transport-btn rdo-player-playpause" id="music-preview-playpause" title="Pause" aria-label="Pause">
+                        <svg viewBox="0 0 24 24" width="13" height="13" id="music-preview-playpause-icon"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+                      </button>
+                      <span class="rdo-player-time" id="music-preview-elapsed">0:00</span>
+                      <input type="range" class="rdo-seek-slider" id="music-preview-slider" min="0" max="0" step="0.1" value="0">
+                      <span class="rdo-player-time" id="music-preview-duration">0:00</span>
+                    </div>
                   </div>
                   <div class="rdo-seek-row" id="music-seek-row" style="display:none;">
                     <input type="range" class="rdo-seek-slider" id="music-seek-slider" min="0" max="1800" step="1" value="0">
@@ -3725,6 +3758,13 @@
   var nowPlayingTitleEl = document.getElementById('music-nowplaying-title');
   var previewWrap = document.getElementById('music-preview-wrap');
   var previewAudio = document.getElementById('music-preview-audio');
+  var previewPlayPauseBtn = document.getElementById('music-preview-playpause');
+  var previewPlayPauseIcon = document.getElementById('music-preview-playpause-icon');
+  var previewSlider = document.getElementById('music-preview-slider');
+  var previewElapsedEl = document.getElementById('music-preview-elapsed');
+  var previewDurationEl = document.getElementById('music-preview-duration');
+  var PLAY_ICON_PATH = '<path fill="currentColor" d="M8 5v14l11-7z"/>';
+  var PAUSE_ICON_PATH = '<path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/>';
 
   // Matches table-radio.js's own isDirectAudio() -- a Track Library
   // pick's download link (Firebase Storage, or a legacy Drive one) has
@@ -3814,7 +3854,7 @@
       : Math.max(0, Math.floor((Date.now() - (current.started_at || Date.now())) / 1000));
   }
 
-  // Which "instance" of playback the native preview <audio> currently
+  // Which "instance" of playback the preview <audio> engine currently
   // reflects -- url alone isn't enough (a Restart keeps the same url but
   // must still visibly reset the scrubber to 0:00), so this also folds
   // in started_at/paused_at, which change on every set/pause/resume/
@@ -3825,12 +3865,22 @@
   // place, no re-fetch or rebuffer hiccup.
   var previewLoadedUrl = '';
   var previewKey = '';
-  // True only while this code is itself driving the preview <audio>
-  // element (reseeking/pausing/playing to match server state) -- its
-  // 'play'/'pause'/'seeked' listeners below must not mistake that for
-  // the Handler interacting with the native controls and echo it back
-  // as a redundant (or actively wrong) POST.
+  // True only while THIS code is itself moving the preview <audio>'s
+  // currentTime to match server state (see applyPreviewState below) --
+  // the 'timeupdate' handler further down must not mistake that jump
+  // for real playback progress and fight it with the Handler's own
+  // slider drag.
   var suppressPreviewEvents = false;
+  // True only while the Handler's thumb is on the preview scrubber --
+  // 'timeupdate' must not overwrite the slider's value out from under
+  // an active drag, same reasoning as isSeekDragging for the fallback
+  // slider below.
+  var isPreviewSeekDragging = false;
+
+  function setPreviewPlayPauseIcon_(isPlaying) {
+    previewPlayPauseIcon.innerHTML = isPlaying ? PAUSE_ICON_PATH : PLAY_ICON_PATH;
+    previewPlayPauseBtn.title = isPlaying ? 'Pause' : 'Resume';
+  }
 
   function syncTransportUI_() {
     var hasTrack = !!current.track_url;
@@ -3838,12 +3888,12 @@
     nowPlayingTitleEl.textContent = hasTrack
       ? (current.track_title || current.track_url) + (current.paused ? ' (paused)' : '')
       : 'Nothing broadcasting on this channel yet.';
-    pauseBtn.textContent = current.paused ? '▶' : '⏸'; // ▶ : ⏸
+    pauseBtn.innerHTML = current.paused ? '<svg viewBox="0 0 24 24" width="13" height="13">' + PLAY_ICON_PATH + '</svg>' : '<svg viewBox="0 0 24 24" width="13" height="13">' + PAUSE_ICON_PATH + '</svg>';
     pauseBtn.title = current.paused ? 'Resume' : 'Pause';
-    // A native <audio controls> preview already has its own Play/Pause
-    // -- showing a second one right next to it would just invite the
-    // two to disagree with each other mid-drag. Restart/Stop have no
-    // native-player equivalent, so they stay visible either way.
+    // The preview row below already has its own Play/Pause -- showing a
+    // second one right next to it would just invite the two to disagree
+    // with each other mid-drag. Restart/Stop have no equivalent there,
+    // so they stay visible either way.
     pauseBtn.style.display = isAudioKind ? 'none' : '';
     pauseBtn.disabled = !hasTrack;
     restartBtn.disabled = !hasTrack;
@@ -3852,11 +3902,11 @@
     seekRow.style.display = (hasTrack && !isAudioKind) ? '' : 'none';
 
     if (isAudioKind) {
+      setPreviewPlayPauseIcon_(!current.paused);
       var urlChanged = previewLoadedUrl !== current.track_url;
       if (urlChanged) {
         previewLoadedUrl = current.track_url;
         previewKey = '';
-        suppressPreviewEvents = true;
         previewAudio.src = current.track_url;
         previewAudio.load();
       }
@@ -3866,16 +3916,18 @@
         var applyPreviewState = function () {
           suppressPreviewEvents = true;
           try { previewAudio.currentTime = liveElapsedSeconds_(); } catch (e) { /* not seekable yet */ }
+          previewSlider.value = liveElapsedSeconds_();
+          previewElapsedEl.textContent = formatSeekTime_(liveElapsedSeconds_());
           if (current.paused) {
             previewAudio.pause();
           } else {
             var p = previewAudio.play();
-            if (p && p.catch) p.catch(function () { /* needs a tap on the native controls -- same as any other autoplay-blocked element */ });
+            if (p && p.catch) p.catch(function () { /* autoplay-blocked -- Resume needs one real tap, same as any other element */ });
           }
-          // 'seeked'/'pause'/'play' fire asynchronously, shortly after
-          // these synchronous calls, not necessarily in the same tick --
-          // a short delay covers that without needing to hook every one
-          // of those events just to clear one flag.
+          // 'timeupdate' fires asynchronously, shortly after this
+          // synchronous currentTime write, not necessarily in the same
+          // tick -- a short delay covers that without hooking the event
+          // just to clear one flag.
           setTimeout(function () { suppressPreviewEvents = false; }, 50);
         };
         if (previewAudio.readyState >= 1) applyPreviewState();
@@ -3884,9 +3936,7 @@
     } else if (previewLoadedUrl) {
       previewLoadedUrl = '';
       previewKey = '';
-      suppressPreviewEvents = true;
       try { previewAudio.pause(); previewAudio.removeAttribute('src'); previewAudio.load(); } catch (e) { /* already gone */ }
-      suppressPreviewEvents = false;
     }
 
     if (hasTrack && !isAudioKind && !isSeekDragging) {
@@ -3896,22 +3946,42 @@
     }
   }
 
-  // A Handler interacting with the native preview's own controls should
-  // drive the REAL broadcast, not just this local muted copy -- same
-  // sendTransportAction_/sendSeek_ helpers the icon Pause button and the
-  // fallback slider use. suppressPreviewEvents rules out echoes of this
-  // code's own programmatic play()/pause()/currentTime writes above.
-  previewAudio.addEventListener('play', function () {
-    if (suppressPreviewEvents || !current.paused) return;
-    sendTransportAction_('resume_now_playing');
+  // Real duration/position from the headless preview <audio> engine --
+  // drives the custom scrubber above instead of an assumed max length.
+  previewAudio.addEventListener('loadedmetadata', function () {
+    if (isFinite(previewAudio.duration)) {
+      previewSlider.max = previewAudio.duration;
+      previewDurationEl.textContent = formatSeekTime_(previewAudio.duration);
+    }
   });
-  previewAudio.addEventListener('pause', function () {
-    if (suppressPreviewEvents || current.paused) return;
-    sendTransportAction_('pause_now_playing');
+  previewAudio.addEventListener('timeupdate', function () {
+    if (suppressPreviewEvents || isPreviewSeekDragging) return;
+    previewSlider.value = previewAudio.currentTime;
+    previewElapsedEl.textContent = formatSeekTime_(previewAudio.currentTime);
   });
-  previewAudio.addEventListener('seeked', function () {
-    if (suppressPreviewEvents) return;
-    sendSeek_(Math.round(previewAudio.currentTime * 1000));
+
+  // The preview row's own Play/Pause drives the REAL broadcast, not
+  // just this local muted copy -- same sendTransportAction_ the icon
+  // Pause button uses. The icon itself is set by syncTransportUI_()
+  // once the confirm GET lands, not optimistically here, so it can
+  // never show a state the backend hasn't actually confirmed.
+  previewPlayPauseBtn.addEventListener('click', function () {
+    if (!current.track_url) return;
+    sendTransportAction_(current.paused ? 'resume_now_playing' : 'pause_now_playing');
+  });
+  previewSlider.addEventListener('input', function () {
+    isPreviewSeekDragging = true;
+    previewElapsedEl.textContent = formatSeekTime_(parseFloat(previewSlider.value));
+  });
+  previewSlider.addEventListener('change', function () {
+    isPreviewSeekDragging = false;
+    var seconds = parseFloat(previewSlider.value);
+    // Optimistic local seek -- moves the actual audio (and its own
+    // 'timeupdate' readout) immediately, rather than waiting out
+    // sendSeek_'s ~900ms confirm round-trip before anything visibly
+    // happens.
+    try { previewAudio.currentTime = seconds; } catch (e) { /* not seekable yet */ }
+    sendSeek_(Math.round(seconds * 1000));
   });
 
   // Ticks the slider/preview forward every second so it reads as a live,
