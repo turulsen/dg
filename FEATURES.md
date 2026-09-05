@@ -341,11 +341,17 @@ timestamp every device reads. A small persistent widget
   panel (the wide column, above the Cue List) showing whatever's live
   on the dialed channel: a "Table Radio — CH. N" header, the track
   title, a scrubber with elapsed/duration labels, one shared Restart /
-  Pause-Resume / Stop transport row (Pause-Resume is the bigger,
+  Pause-Resume / Stop / Loop transport row (Pause-Resume is the bigger,
   highlighted center button — the one actually used mid-broadcast —
-  with Restart/Stop smaller on either side), and a volume slider with a
-  speaker icon, muted by default. Every icon (transport row, speaker)
-  is inline SVG (`fill="currentColor"`, same approach as
+  with Restart/Stop/Loop smaller on either side), and a volume slider
+  with a speaker icon, muted by default. The Loop toggle flips the
+  CURRENT track's loop flag in place via a dedicated
+  `set_now_playing_loop` action — no restart, no jump back to 0:00,
+  unlike the separate "Loop this track" checkbox in the Broadcast form
+  above (which only takes effect on the next Set Now Playing); it lights
+  up the same green on/off ring the Active Sounds rows' own Loop button
+  uses. Every icon (transport row, speaker) is inline SVG
+  (`fill="currentColor"`, same approach as
   `assets/dice-roller.js`'s own die-face icons) rather than Unicode
   media-control glyphs or an emoji speaker — those render as full-color
   platform emoji on some devices, entirely font-dependent; the speaker

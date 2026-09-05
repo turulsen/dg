@@ -735,6 +735,10 @@
     box-shadow:0 0 12px rgba(122,180,64,.35), 0 2px 4px rgba(0,0,0,.4);
   }
   .rdo-transport-btn-lg:hover{ box-shadow:0 0 16px rgba(122,180,64,.5), 0 2px 4px rgba(0,0,0,.4); }
+  /* Same on/off convention as .rdo-active-btn.rdo-loop-on in the Active
+     Sounds rows below -- a lit green ring reads as "this will repeat"
+     without needing a separate label next to the icon. */
+  .rdo-transport-btn.rdo-loop-on{ border-color:#6a9a40; color:#d8f0c0; box-shadow:0 0 6px rgba(122,180,64,.3); }
   /* Volume for the preview only -- muted (0) by default, since the
      Handler is normally already hearing the real broadcast at the
      table through some other speaker; raising this previews it through
@@ -1160,6 +1164,9 @@
                     </button>
                     <button type="button" class="rdo-transport-btn rdo-transport-btn-sm" id="music-stop-btn" title="Stop Broadcast" aria-label="Stop Broadcast">
                       <svg viewBox="0 0 24 24" width="13" height="13"><rect x="6" y="6" width="12" height="12" fill="currentColor"/></svg>
+                    </button>
+                    <button type="button" class="rdo-transport-btn rdo-transport-btn-sm" id="music-loop-btn" title="Loop" aria-label="Loop">
+                      <svg viewBox="0 0 24 24" width="13" height="13" id="music-loop-icon"></svg>
                     </button>
                   </div>
 
@@ -3813,6 +3820,8 @@
   var pauseBtn = document.getElementById('music-pause-btn');
   var restartBtn = document.getElementById('music-restart-btn');
   var stopBtn = document.getElementById('music-stop-btn');
+  var loopBtn = document.getElementById('music-loop-btn');
+  var loopIconEl = document.getElementById('music-loop-icon');
   var addPlaylistBtn = document.getElementById('music-add-playlist-btn');
   var statusEl = document.getElementById('music-status');
   var playlistEl = document.getElementById('music-playlist');
@@ -4207,6 +4216,10 @@
     pauseBtn.title = current.paused ? 'Resume' : 'Pause';
     pauseBtn.disabled = !hasTrack;
     restartBtn.disabled = !hasTrack;
+    loopBtn.disabled = !hasTrack;
+    loopBtn.classList.toggle('rdo-loop-on', !!current.loop);
+    loopBtn.title = current.loop ? 'Loop: On' : 'Loop: Off';
+    if (previewAudio) previewAudio.loop = !!current.loop;
 
     previewScrubberRow.style.display = isAudioKind ? '' : 'none';
     volumeRow.style.display = isAudioKind ? '' : 'none';
@@ -4274,6 +4287,7 @@
   // real broadcast at the table through some other speaker; raising
   // this previews it through THIS device too.
   volumeIcon.innerHTML = VOLUME_OFF_ICON_PATH;
+  loopIconEl.innerHTML = LOOP_ICON_PATH;
   volumeSlider.addEventListener('input', function () {
     var v = parseInt(volumeSlider.value, 10) || 0;
     previewAudio.volume = v / 100;
@@ -4640,6 +4654,36 @@
   restartBtn.addEventListener('click', function () {
     if (!current.track_url) { statusEl.textContent = 'Nothing is broadcasting on CH ' + currentChannel + ' yet.'; return; }
     setNowPlaying(current.track_url, current.track_title, current.track_kind, current.loop);
+  });
+
+  // Flips Loop on the CURRENT track in place -- no restart, no jump back
+  // to 0:00, unlike the "Loop this track" checkbox in the Broadcast form
+  // above (which only applies on the NEXT Set Now Playing).
+  function sendLoopToggle_() {
+    var ch = currentChannel;
+    var nextLoop = !current.loop;
+    statusEl.textContent = nextLoop ? 'Turning loop on…' : 'Turning loop off…';
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors', keepalive: true,
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'set_now_playing_loop', channel: ch, loop: nextLoop ? '1' : '0', handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+    }).then(function () {
+      setTimeout(function () {
+        jsonpGet('get_now_playing', { channel: ch }, function (res) {
+          var ok = res && res.status === 'OK' && res.track_url && !!res.loop === nextLoop;
+          if (!ok) { statusEl.textContent = NOT_DEPLOYED_MSG; return; }
+          current.loop = !!res.loop;
+          if (previewAudio) previewAudio.loop = current.loop;
+          statusEl.textContent = (current.loop ? 'Looping CH ' : 'Loop off on CH ') + ch + ': ' + (current.track_title || current.track_url);
+          syncTransportUI_();
+        });
+      }, 900);
+    }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+  }
+
+  loopBtn.addEventListener('click', function () {
+    if (!current.track_url) { statusEl.textContent = 'Nothing is broadcasting on CH ' + currentChannel + ' yet.'; return; }
+    sendLoopToggle_();
   });
 
   /* ── Playlist: a saved list of tracks per channel, so the Handler

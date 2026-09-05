@@ -1331,3 +1331,28 @@ itself, not in a separate section below the ambient/stinger catalog
 grids -- per feedback that "that area should be a control panel where
 I can control every sound that is playing," one glance at the top of
 the tab now shows the main track AND everything layered under it.
+
+**Every Table Radio button had a noticeable, and reportedly ~10s,
+delay before an action was actually audible at the table.** Live
+report: "the buttons have a very annoying latency, they dont react
+immediately." Real playback everywhere is driven by each listener's
+`onSnapshot` on the `radio/{channel}` Firestore document, not the
+Sheet -- but every write function here (`setNowPlaying`,
+`pauseNowPlaying`, `resumeNowPlaying`, `updateSoundInstance_`,
+`removeSoundInstance_`, `setAmbientLayer_`, `triggerStinger_`,
+`seekNowPlaying_`) did its `sheet.getRange(...).setValues([row])` call
+FIRST and only fired the matching `firestoreDualWrite_`/
+`firestoreDualPatch_` afterward. Apps Script's Sheets I/O has real,
+sometimes multi-second, per-call latency of its own -- every action
+was paying that cost before the one write that actually matters for
+audible playback even started. Reordered all eight functions to fire
+their Firestore write/patch first and the Sheet write second; both
+dual-write helpers already log-but-swallow their own errors, so this
+doesn't change failure-safety -- a Firestore hiccup still leaves the
+Sheet (the real source of truth, and what A-Cell's own JSONP
+`get_now_playing` reads back to confirm) written correctly, just no
+longer gating how soon the change is heard. Doesn't eliminate Apps
+Script Web App dispatch/cold-start latency itself, which is a separate,
+already-documented platform characteristic (see "Backend performance &
+security hardening" below) -- this only removes the extra, unnecessary
+delay this session's own Sheets-first ordering was adding on top of it.
