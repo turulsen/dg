@@ -672,23 +672,55 @@
     font-size:9px; letter-spacing:.08em; text-transform:uppercase; color:#7a8a68; cursor:pointer;
   }
   .rdo-checkbox-row input{ accent-color:#6a9a40; cursor:pointer; }
-  /* Pause/Restart/Stop live alongside each other once something's
-     actually broadcasting -- Set Now Playing and + Add to Playlist stay
-     full-width above since those are one-shot actions, not an ongoing
-     transport control set. */
-  .rdo-now-playing-row{ display:flex; gap:6px; }
-  .rdo-now-playing-row .rdo-btn{ flex:1; }
-  /* Handler-only scrubber -- jumps the CURRENT track to a new position
-     for everyone tuned in (seek_now_playing). Deliberately NOT mirrored
-     on the player-facing table-radio.js widget, which only ever shows a
-     read-only progress display -- letting every listener scrub their
-     own local copy would drift them out of sync with each other and
-     with the actual broadcast. min/max is elapsed seconds, not a
-     percentage of track length -- this tab never embeds the track
-     itself (see acell-radio-display's plain Cue List, no player), so
-     there's no reliable duration to scale against; 30 minutes covers
-     every track this campaign has actually used with room to spare. */
-  .rdo-seek-row{ display:flex; align-items:center; gap:8px; margin-top:2px; }
+  /* ── Now Playing control panel -- lives in the wide acell-radio-
+     display column (not the narrow 220px controls rail), so there's
+     actually room for a real embedded scrubber. Shows whichever track
+     is live for the dialed channel and swaps to a new one automatically
+     the moment a different track starts (checkCurrent()/verifyNowPlaying()
+     drive it, same as the status line already did). ── */
+  .rdo-nowplaying-panel{
+    border:1px solid #2a3020; border-radius:4px; padding:10px; margin-bottom:14px;
+    background:#0e1209;
+  }
+  .rdo-nowplaying-title{
+    font-family:'Courier Prime',monospace; font-size:11px; color:#e6ecd8;
+    overflow-wrap:anywhere; margin-bottom:8px;
+  }
+  /* Icon transport controls, matching a real media player's look rather
+     than plain text-label pills -- the same visual language the player-
+     facing table-radio.js widget's own controls use (small, round,
+     olive-on-dark). Restart/Stop have no native-player equivalent, so
+     they stay as their own icon buttons even when the native <audio>
+     preview below is showing (which already covers Play/Pause itself --
+     see #music-pause-btn's display toggle in syncTransportUI_()). */
+  .rdo-transport-row{ display:flex; gap:8px; margin-bottom:8px; }
+  .rdo-transport-btn{
+    background:linear-gradient(180deg,#20261a 0%,#161a10 100%); border:1px solid #3a4432;
+    border-top-color:#4a5a3a; color:#c9d4b8; border-radius:50%;
+    width:32px; height:32px; font-size:13px; line-height:1; cursor:pointer;
+    box-shadow:0 1px 0 rgba(255,255,255,.04), 0 2px 4px rgba(0,0,0,.4);
+  }
+  .rdo-transport-btn:hover{ border-color:#5a6a48; box-shadow:0 0 8px rgba(122,138,104,.2), 0 2px 4px rgba(0,0,0,.4); }
+  .rdo-transport-btn:disabled{ opacity:.4; cursor:default; box-shadow:none; }
+  /* Real duration/scrubber for an uploaded/direct mp3 -- the browser's
+     own native <audio controls> element does this correctly for free
+     (accurate duration, smooth sub-second progress, real seeking) far
+     better than anything hand-rolled against an assumed max length.
+     Muted by default (the Handler is normally already hearing the real
+     broadcast at the table through some other speaker) -- the native
+     controls' own volume/mute UI lets them unmute to actually preview
+     it through this device if they want to. */
+  .rdo-preview-wrap audio{ width:100%; }
+  /* Fallback for YouTube/SoundCloud/generic pasted URLs -- there's no
+     cheap way to get a real embed+duration for those without pulling in
+     their full iframe APIs, so this stays an elapsed-seconds-only
+     Handler-draggable slider (seek_now_playing), bounded to 30 minutes
+     rather than scaled to a real (unknown here) track length. Never
+     mirrored on the player-facing table-radio.js widget, which only
+     ever shows a read-only progress display -- letting every listener
+     scrub their own local copy would drift them out of sync with each
+     other and with the actual broadcast. */
+  .rdo-seek-row{ display:flex; align-items:center; gap:8px; }
   .rdo-seek-slider{ flex:1; accent-color:#8fae5a; }
   .rdo-seek-label{ font-family:'Courier Prime',monospace; font-size:10px; color:#a8c890; min-width:34px; text-align:right; }
 
@@ -1028,19 +1060,26 @@
                   <label class="rdo-checkbox-row"><input type="checkbox" id="music-loop-input"> Loop this track</label>
                   <button type="button" class="rdo-btn rdo-btn-full" id="music-set-btn">Set Now Playing</button>
                   <button type="button" class="rdo-btn rdo-btn-ghost rdo-btn-full" id="music-add-playlist-btn">+ Add to Playlist</button>
-                  <div class="rdo-now-playing-row">
-                    <button type="button" class="rdo-btn rdo-btn-ghost" id="music-pause-btn">Pause</button>
-                    <button type="button" class="rdo-btn rdo-btn-ghost" id="music-restart-btn">Restart</button>
-                    <button type="button" class="rdo-btn rdo-btn-ghost" id="music-stop-btn">Stop Broadcast</button>
+                  <div class="rdo-status-line" id="music-status"></div>
+                </div>
+              </div>
+              <div class="acell-radio-display">
+                <div class="rdo-section-label">Now Playing</div>
+                <div class="rdo-nowplaying-panel" id="music-nowplaying-panel">
+                  <div class="rdo-nowplaying-title" id="music-nowplaying-title">Nothing broadcasting on this channel yet.</div>
+                  <div class="rdo-transport-row" id="music-transport-row">
+                    <button type="button" class="rdo-transport-btn" id="music-restart-btn" title="Restart" aria-label="Restart">&#9198;</button>
+                    <button type="button" class="rdo-transport-btn" id="music-pause-btn" title="Pause" aria-label="Pause">&#9208;</button>
+                    <button type="button" class="rdo-transport-btn" id="music-stop-btn" title="Stop Broadcast" aria-label="Stop Broadcast">&#9209;</button>
+                  </div>
+                  <div class="rdo-preview-wrap" id="music-preview-wrap" style="display:none;">
+                    <audio id="music-preview-audio" controls muted preload="metadata"></audio>
                   </div>
                   <div class="rdo-seek-row" id="music-seek-row" style="display:none;">
                     <input type="range" class="rdo-seek-slider" id="music-seek-slider" min="0" max="1800" step="1" value="0">
                     <span class="rdo-seek-label" id="music-seek-label">0:00</span>
                   </div>
-                  <div class="rdo-status-line" id="music-status"></div>
                 </div>
-              </div>
-              <div class="acell-radio-display">
                 <div class="rdo-section-label">Cue List</div>
                 <div id="music-playlist"></div>
               </div>
@@ -3683,6 +3722,18 @@
   var seekRow = document.getElementById('music-seek-row');
   var seekSlider = document.getElementById('music-seek-slider');
   var seekLabel = document.getElementById('music-seek-label');
+  var nowPlayingTitleEl = document.getElementById('music-nowplaying-title');
+  var previewWrap = document.getElementById('music-preview-wrap');
+  var previewAudio = document.getElementById('music-preview-audio');
+
+  // Matches table-radio.js's own isDirectAudio() -- a Track Library
+  // pick's download link (Firebase Storage, or a legacy Drive one) has
+  // no .mp3 extension for this to catch, which is why track_kind is
+  // checked first below; this only covers a pasted URL that's a real
+  // audio file link.
+  function isDirectAudioUrl_(url) {
+    return /\.(mp3|wav|ogg|m4a)(\?|#|$)/i.test((url || '').split(/[?#]/)[0]);
+  }
 
   var playlist = [];
   var cells = [];
@@ -3763,34 +3814,124 @@
       : Math.max(0, Math.floor((Date.now() - (current.started_at || Date.now())) / 1000));
   }
 
-  function setPauseBtnLabel() {
-    pauseBtn.textContent = current.paused ? 'Resume' : 'Pause';
-    pauseBtn.disabled = !current.track_url;
-    restartBtn.disabled = !current.track_url;
-    seekRow.style.display = current.track_url ? '' : 'none';
-    if (current.track_url && !isSeekDragging) {
+  // Which "instance" of playback the native preview <audio> currently
+  // reflects -- url alone isn't enough (a Restart keeps the same url but
+  // must still visibly reset the scrubber to 0:00), so this also folds
+  // in started_at/paused_at, which change on every set/pause/resume/
+  // restart/seek. Reloading the whole element only happens on a url
+  // change (real Set Now Playing/Restart-with-different-track/Play from
+  // Cue List or Track Library); a same-url instance change (Restart,
+  // Pause, Resume, Seek) just reseeks the already-loaded element in
+  // place, no re-fetch or rebuffer hiccup.
+  var previewLoadedUrl = '';
+  var previewKey = '';
+  // True only while this code is itself driving the preview <audio>
+  // element (reseeking/pausing/playing to match server state) -- its
+  // 'play'/'pause'/'seeked' listeners below must not mistake that for
+  // the Handler interacting with the native controls and echo it back
+  // as a redundant (or actively wrong) POST.
+  var suppressPreviewEvents = false;
+
+  function syncTransportUI_() {
+    var hasTrack = !!current.track_url;
+    var isAudioKind = hasTrack && (current.track_kind === 'audio' || isDirectAudioUrl_(current.track_url));
+    nowPlayingTitleEl.textContent = hasTrack
+      ? (current.track_title || current.track_url) + (current.paused ? ' (paused)' : '')
+      : 'Nothing broadcasting on this channel yet.';
+    pauseBtn.textContent = current.paused ? '▶' : '⏸'; // ▶ : ⏸
+    pauseBtn.title = current.paused ? 'Resume' : 'Pause';
+    // A native <audio controls> preview already has its own Play/Pause
+    // -- showing a second one right next to it would just invite the
+    // two to disagree with each other mid-drag. Restart/Stop have no
+    // native-player equivalent, so they stay visible either way.
+    pauseBtn.style.display = isAudioKind ? 'none' : '';
+    pauseBtn.disabled = !hasTrack;
+    restartBtn.disabled = !hasTrack;
+
+    previewWrap.style.display = isAudioKind ? '' : 'none';
+    seekRow.style.display = (hasTrack && !isAudioKind) ? '' : 'none';
+
+    if (isAudioKind) {
+      var urlChanged = previewLoadedUrl !== current.track_url;
+      if (urlChanged) {
+        previewLoadedUrl = current.track_url;
+        previewKey = '';
+        suppressPreviewEvents = true;
+        previewAudio.src = current.track_url;
+        previewAudio.load();
+      }
+      var key = current.started_at + '|' + current.paused_at;
+      if (urlChanged || previewKey !== key) {
+        previewKey = key;
+        var applyPreviewState = function () {
+          suppressPreviewEvents = true;
+          try { previewAudio.currentTime = liveElapsedSeconds_(); } catch (e) { /* not seekable yet */ }
+          if (current.paused) {
+            previewAudio.pause();
+          } else {
+            var p = previewAudio.play();
+            if (p && p.catch) p.catch(function () { /* needs a tap on the native controls -- same as any other autoplay-blocked element */ });
+          }
+          // 'seeked'/'pause'/'play' fire asynchronously, shortly after
+          // these synchronous calls, not necessarily in the same tick --
+          // a short delay covers that without needing to hook every one
+          // of those events just to clear one flag.
+          setTimeout(function () { suppressPreviewEvents = false; }, 50);
+        };
+        if (previewAudio.readyState >= 1) applyPreviewState();
+        else previewAudio.addEventListener('loadedmetadata', applyPreviewState, { once: true });
+      }
+    } else if (previewLoadedUrl) {
+      previewLoadedUrl = '';
+      previewKey = '';
+      suppressPreviewEvents = true;
+      try { previewAudio.pause(); previewAudio.removeAttribute('src'); previewAudio.load(); } catch (e) { /* already gone */ }
+      suppressPreviewEvents = false;
+    }
+
+    if (hasTrack && !isAudioKind && !isSeekDragging) {
       var elapsed = liveElapsedSeconds_();
       seekSlider.value = Math.min(elapsed, parseInt(seekSlider.max, 10));
       seekLabel.textContent = formatSeekTime_(elapsed);
     }
   }
 
-  // Ticks the slider forward every second so it reads as a live,
+  // A Handler interacting with the native preview's own controls should
+  // drive the REAL broadcast, not just this local muted copy -- same
+  // sendTransportAction_/sendSeek_ helpers the icon Pause button and the
+  // fallback slider use. suppressPreviewEvents rules out echoes of this
+  // code's own programmatic play()/pause()/currentTime writes above.
+  previewAudio.addEventListener('play', function () {
+    if (suppressPreviewEvents || !current.paused) return;
+    sendTransportAction_('resume_now_playing');
+  });
+  previewAudio.addEventListener('pause', function () {
+    if (suppressPreviewEvents || current.paused) return;
+    sendTransportAction_('pause_now_playing');
+  });
+  previewAudio.addEventListener('seeked', function () {
+    if (suppressPreviewEvents) return;
+    sendSeek_(Math.round(previewAudio.currentTime * 1000));
+  });
+
+  // Ticks the slider/preview forward every second so it reads as a live,
   // playing transport rather than a snapshot frozen at the last
   // checkCurrent()/verify call -- same idea as table-radio.js's own
   // progress display, just driven by this tab's own `current` state
-  // instead of a fresh Firestore snapshot each time.
+  // instead of a fresh Firestore snapshot each time. The native preview
+  // element already advances its own currentTime during normal
+  // playback -- this only re-syncs the FALLBACK slider display, since
+  // syncTransportUI_()'s preview branch above deliberately skips
+  // reseeking on a tick where nothing actually changed.
   setInterval(function () {
-    if (current.track_url && !current.paused && !isSeekDragging) setPauseBtnLabel();
+    if (current.track_url && !current.paused && !isSeekDragging) {
+      var isAudioKind = current.track_kind === 'audio' || isDirectAudioUrl_(current.track_url);
+      if (!isAudioKind) syncTransportUI_();
+    }
   }, 1000);
 
-  seekSlider.addEventListener('input', function () {
-    isSeekDragging = true;
-    seekLabel.textContent = formatSeekTime_(parseInt(seekSlider.value, 10));
-  });
-  seekSlider.addEventListener('change', function () {
+  function sendSeek_(positionMs) {
     var ch = currentChannel;
-    var positionMs = parseInt(seekSlider.value, 10) * 1000;
     statusEl.textContent = 'Seeking…';
     fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors', keepalive: true,
@@ -3805,10 +3946,18 @@
           current.paused_at = res.paused_at || 0;
           current.paused = !!res.paused;
           statusEl.textContent = 'Seeked to ' + formatSeekTime_(positionMs / 1000) + ' on CH ' + ch + '.';
-          setPauseBtnLabel();
+          syncTransportUI_();
         });
       }, 900);
     }).catch(function () { isSeekDragging = false; statusEl.textContent = 'Could not reach the backend.'; });
+  }
+
+  seekSlider.addEventListener('input', function () {
+    isSeekDragging = true;
+    seekLabel.textContent = formatSeekTime_(parseInt(seekSlider.value, 10));
+  });
+  seekSlider.addEventListener('change', function () {
+    sendSeek_(parseInt(seekSlider.value, 10) * 1000);
   });
 
   function escapeHtml(str) {
@@ -4018,7 +4167,7 @@
       // loops, not whichever channel was last dialed.
       activeAmbientLayers = (res && Array.isArray(res.ambient_layers)) ? res.ambient_layers : [];
       renderAmbientGrid();
-      setPauseBtnLabel();
+      syncTransportUI_();
     });
     loadPlaylist(ch);
   }
@@ -4047,7 +4196,7 @@
           ? 'Broadcasting to CH ' + ch + ': ' + (expectedTitle || expectedUrl)
           : 'Stopped broadcasting to CH ' + ch + '.';
         setAirIndicator(!!expectedUrl);
-        setPauseBtnLabel();
+        syncTransportUI_();
       } else {
         statusEl.textContent = NOT_DEPLOYED_MSG;
       }
@@ -4059,12 +4208,14 @@
      fresh Set Now Playing always does). Restart deliberately IS a fresh
      set_now_playing with the same track -- "start this over" is exactly
      what that already does. ── */
-  pauseBtn.addEventListener('click', function () {
+  // Shared by the icon Pause/Resume button AND the native preview
+  // <audio>'s own play/pause events (see syncTransportUI_() above) --
+  // whichever one the Handler actually clicks, the same real broadcast
+  // action fires.
+  function sendTransportAction_(action) {
     var ch = currentChannel;
-    if (!current.track_url) { statusEl.textContent = 'Nothing is broadcasting on CH ' + ch + ' yet.'; return; }
     var wasPaused = current.paused;
-    var action = wasPaused ? 'resume_now_playing' : 'pause_now_playing';
-    statusEl.textContent = wasPaused ? 'Resuming…' : 'Pausing…';
+    statusEl.textContent = action === 'resume_now_playing' ? 'Resuming…' : 'Pausing…';
     fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain' },
@@ -4078,10 +4229,15 @@
           current.started_at = res.started_at || 0;
           current.paused_at = res.paused_at || 0;
           statusEl.textContent = (current.paused ? 'Paused on CH ' : 'Resumed on CH ') + ch + ': ' + (current.track_title || current.track_url);
-          setPauseBtnLabel();
+          syncTransportUI_();
         });
       }, 900);
     }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+  }
+
+  pauseBtn.addEventListener('click', function () {
+    if (!current.track_url) { statusEl.textContent = 'Nothing is broadcasting on CH ' + currentChannel + ' yet.'; return; }
+    sendTransportAction_(current.paused ? 'resume_now_playing' : 'pause_now_playing');
   });
 
   restartBtn.addEventListener('click', function () {

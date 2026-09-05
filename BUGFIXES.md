@@ -1188,3 +1188,43 @@ define instead of the panel's own accent color, which is what read as
 "purple" on at least one page/theme. Given its own explicit styling
 (border/color/background, hover state) matching the rest of the panel,
 same pattern the die pills and handler gate already used.
+
+**Switching Track Library tracks played the old and new mp3
+simultaneously, with no way to stop the one that was playing before.**
+Live report: picking a different uploaded track for a channel didn't
+replace the broadcast, it layered on top of it, and there was no UI
+control left that could reach the earlier one to silence it.
+`renderEmbed()` (`assets/table-radio.js`) rebuilds the embed by
+replacing `#dg-radio-embed-wrap`'s `innerHTML`, which removes the old
+`<audio id="dg-radio-audio">` element from the document -- but a
+playing `HTMLMediaElement` does NOT stop just because it's been
+detached; it keeps decoding and playing, orphaned, until explicitly
+paused (there's no fixed GC timeline to rely on instead). Once
+replaced, `getElementById('dg-radio-audio')` only ever returns the
+*new* element, so the old one becomes permanently unreachable from any
+button on the page -- exactly "can't stop the one that was playing
+before." `destroyActivePlayers()` (called at the top of every
+`renderEmbed()`) only ever tore down the YouTube/SoundCloud player
+objects; it never touched the plain `<audio>` case at all. Fixed by
+having it explicitly `pause()` and clear the `src` of whatever
+`#dg-radio-audio` element still exists, before the replacement happens.
+One subtlety: pausing that old element fires its own `'pause'`
+listener, which is written to treat an *unprompted* pause as a
+playback interruption to recover from and calls `.play()` right back on
+it (see the iOS Safari interruption-recovery fix elsewhere in this
+file) -- without guarding against that, this fix would have paused the
+old element only to have its own recovery code immediately resume it.
+Fixed by setting `intentionalPause = true` before pausing it, which
+that listener already checks and respects; the next real track's own
+`renderEmbed()` branch resets it to that new track's actual state as
+soon as one exists.
+
+**A-Cell Music tab redesign, bundled into the same commit as the fix
+above (not logged here for the redesign itself, see FEATURES.md):** the
+Handler's Pause/Restart/Stop controls moved into a new "Now Playing"
+panel with a real embedded, real-scrubber `<audio controls>` preview
+for uploaded/direct tracks -- while building it, confirmed the same
+detached-audio-element issue could never have affected this panel
+specifically, since it reuses one persistent `<audio>` element and only
+ever reassigns its `.src`, which browsers already handle by stopping
+and replacing playback with no equivalent orphaning risk.
