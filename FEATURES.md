@@ -300,17 +300,40 @@ timestamp every device reads. A small persistent widget
 - **Ambient loops** — 7 real recorded loops (`assets/ambient/*.mp3`,
   GowlerMusic Halloween pack), toggled on/off per channel from A-Cell's
   Music tab soundboard and layered *under* the main track (or under
-  silence — independent of whether a track is even set). Diffed against
-  what's already looping rather than restarted wholesale on every
-  Firestore snapshot, so an already-playing loop keeps its own position
-  when some other layer or the main track changes.
+  silence — independent of whether a track is even set). Each active
+  loop is a full instance object (`id, started_at, paused, paused_at,
+  loop`), not a bare id — diffed against what's already looping rather
+  than restarted wholesale on every Firestore snapshot, so an
+  already-playing loop keeps its own position when some other layer or
+  the main track changes, and can be paused, seeked, or un-looped
+  independently via A-Cell's Active Sounds panel (below) without
+  turning it fully off.
 - **Stingers** — 18 one-shot sounds (`assets/stingers/*.mp3`, same
   pack), grouped in the soundboard as Screams & Laughter, Impacts &
   Weather, and Bells/Rhythm/Texture. Firing one appends a fresh
-  `{id, fired_at}` entry to an array of recent fires (kept to the last
-  5) rather than a single scalar, so two stingers fired close together
-  both survive to play as separate, genuinely overlapping `<audio>`
-  elements instead of the second clobbering the first.
+  instance (`id, fired_at, started_at, paused, paused_at, loop`) to an
+  array of recent fires (non-looping ones trimmed to the last 5; a
+  stinger a Handler turns into a loop is exempt from that trim and
+  stays until explicitly stopped) rather than a single scalar, so two
+  stingers fired close together both survive to play as separate,
+  genuinely overlapping `<audio>` elements instead of the second
+  clobbering the first. `fired_at` is a stable identity that never
+  changes; `started_at` is a separate field pause/resume/seek actions
+  are free to shift without disturbing that identity or a client's
+  own "have I already played this one" bookkeeping.
+- **Active Sounds panel** — A-Cell's Music tab lists every currently
+  active ambient loop and stinger as its own row (real scrubber,
+  Play/Pause, an unambiguous Stop, and a Loop toggle — all inline SVG,
+  same reasoning as the Now Playing panel's icons below), each backed
+  by its own headless preview `<audio>` for accurate duration/position.
+  Every control calls a dedicated Code.gs action addressed at that one
+  instance (`pause_ambient_layer`/`resume_ambient_layer`/
+  `seek_ambient_layer`/`set_ambient_layer_loop`, and the stinger
+  equivalents keyed by `fired_at`), so stopping or pausing one loop or
+  SFX never touches any other sound playing at the same time — the real
+  fix for "toggled a loop on and couldn't tell how to turn it off,"
+  where a plain on/off toggle button was the only affordance and easy
+  to lose track of.
 - **Now Playing control panel** — A-Cell's Music tab has a dedicated
   panel (the wide column, above the Cue List) showing whatever's live
   on the dialed channel: a "Table Radio — CH. N" header, the track

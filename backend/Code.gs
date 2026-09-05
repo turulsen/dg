@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v78 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v79 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -1183,6 +1183,59 @@ function doPost(e) {
       const authErr = requireHandlerAuth_(data);
       if (authErr) return authErr;
       return triggerStinger_(data.channel, data.stinger_id);
+    }
+    // Table Radio Soundboard: per-instance transport for an already-
+    // active ambient loop or already-firing stinger, from A-Cell's
+    // Active Sounds panel -- same Pause/Resume/Seek/Loop/Stop the main
+    // track already has, just addressed at one specific sound instead
+    // of the channel's single Now Playing track.
+    if (data.action === 'pause_ambient_layer') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
+      return pauseAmbientLayer_(data.channel, data.layer_id);
+    }
+    if (data.action === 'resume_ambient_layer') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
+      return resumeAmbientLayer_(data.channel, data.layer_id);
+    }
+    if (data.action === 'seek_ambient_layer') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
+      return seekAmbientLayer_(data.channel, data.layer_id, data.position_ms);
+    }
+    if (data.action === 'set_ambient_layer_loop') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
+      return setAmbientLayerLoop_(data.channel, data.layer_id, data.loop === '1' || data.loop === true);
+    }
+    if (data.action === 'pause_stinger') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
+      return pauseStinger_(data.channel, data.fired_at);
+    }
+    if (data.action === 'resume_stinger') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
+      return resumeStinger_(data.channel, data.fired_at);
+    }
+    if (data.action === 'seek_stinger') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
+      return seekStinger_(data.channel, data.fired_at, data.position_ms);
+    }
+    if (data.action === 'set_stinger_loop') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
+      return setStingerLoop_(data.channel, data.fired_at, data.loop === '1' || data.loop === true);
+    }
+    // The only way to end a stinger before it finishes on its own --
+    // cuts it off for every player tuned in, not just this device's own
+    // local monitoring (see stopStinger_'s own comment).
+    if (data.action === 'stop_stinger') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
+      return stopStinger_(data.channel, data.fired_at);
     }
     // Table Radio: Handler drags the media-player scrubber to jump the
     // current track to a new position. Handler-only -- see
@@ -4150,10 +4203,97 @@ function findOrCreateRadioRow_(sheet, data, headers, cols, channel) {
   return data.length - 1;
 }
 
+// Finds an object by matchKey===matchVal in an array of sound-instance
+// objects (an ambient_layers entry or a stingers entry) -- shared by
+// every pause/resume/seek/loop-toggle action below, which all differ
+// only in which array/field and which key identifies "the one instance
+// being controlled": ambient matches by `id` (only one instance of a
+// given loop can be active on a channel at once), stinger matches by
+// `fired_at` (the same stinger id can have several independent
+// instances firing close together, each needing its own identity).
+function findSoundInstance_(arr, matchKey, matchVal) {
+  for (let i = 0; i < arr.length; i++) {
+    if (arr[i][matchKey] === matchVal) return arr[i];
+  }
+  return null;
+}
+
+// Shared read-modify-write for one sound instance living in a JSON-array
+// column (ambient_layers or stingers) on a channel's RadioChannels row.
+// Every pause/resume/seek/loop-toggle action below is this exact same
+// shape -- find the row, find the instance, mutate it in place, write
+// the whole array back -- just with a different field/matchKey/mutation,
+// so this is the one place that pattern needs to be gotten right.
+function updateSoundInstance_(channel, field, matchKey, matchVal, mutateFn) {
+  channel = (channel || '').trim();
+  if (!channel) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
+
+  const sheet = getOrCreateRadioSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const cols = headerMap_(headers);
+  const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
+  const row = data[rowIdx];
+  const arr = parseJsonArray_(row[cols[field]]);
+  const inst = findSoundInstance_(arr, matchKey, matchVal);
+  if (!inst) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'not currently active' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  mutateFn(inst);
+  const now = new Date().getTime();
+  row[cols[field]] = JSON.stringify(arr);
+  row[cols.updated_at] = now;
+  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
+  const patch = { updated_at: now };
+  patch[field] = arr;
+  firestoreDualPatch_('radio', channel, patch);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Same shape as updateSoundInstance_ but removes the instance entirely
+// (Stop) instead of mutating it in place -- a stinger has no separate
+// on/off toggle the way an ambient layer does, so this is the only way
+// to end one before it finishes on its own.
+function removeSoundInstance_(channel, field, matchKey, matchVal) {
+  channel = (channel || '').trim();
+  if (!channel) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
+
+  const sheet = getOrCreateRadioSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const cols = headerMap_(headers);
+  const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
+  const row = data[rowIdx];
+  const arr = parseJsonArray_(row[cols[field]]).filter(function (inst) { return inst[matchKey] !== matchVal; });
+  const now = new Date().getTime();
+  row[cols[field]] = JSON.stringify(arr);
+  row[cols.updated_at] = now;
+  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
+  const patch = { updated_at: now };
+  patch[field] = arr;
+  firestoreDualPatch_('radio', channel, patch);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+}
+
 // Toggles one ambient loop on/off for a channel. `active` decides
 // membership rather than the caller having to know the current state
 // first (a dumb toggle button on the A-Cell side would otherwise need
 // its own extra round-trip just to read that state before flipping it).
+// Each active entry is a full instance object (started_at/paused/
+// paused_at/loop), not a bare id -- lets a Handler pause, seek, or
+// un-loop a SPECIFIC already-playing ambient loop from A-Cell's Active
+// Sounds panel via pauseAmbientLayer_/resumeAmbientLayer_/
+// seekAmbientLayer_/setAmbientLayerLoop_ below, the same way the main
+// track already supports pause/resume/seek.
 function setAmbientLayer_(channel, layerId, active) {
   channel = (channel || '').trim();
   if (!channel) {
@@ -4173,10 +4313,10 @@ function setAmbientLayer_(channel, layerId, active) {
   const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
   const row = data[rowIdx];
   const layers = parseJsonArray_(row[cols.ambient_layers]);
-  const pos = layers.indexOf(layerId);
-  if (active && pos === -1) layers.push(layerId);
-  if (!active && pos !== -1) layers.splice(pos, 1);
+  const idx = layers.findIndex(function (l) { return l.id === layerId; });
   const now = new Date().getTime();
+  if (active && idx === -1) layers.push({ id: layerId, started_at: now, paused: false, paused_at: 0, loop: true });
+  if (!active && idx !== -1) layers.splice(idx, 1);
   row[cols.ambient_layers] = JSON.stringify(layers);
   row[cols.updated_at] = now;
   sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
@@ -4184,14 +4324,60 @@ function setAmbientLayer_(channel, layerId, active) {
   return ContentService.createTextOutput(JSON.stringify({ status: 'OK', ambient_layers: layers })).setMimeType(ContentService.MimeType.JSON);
 }
 
+function pauseAmbientLayer_(channel, layerId) {
+  const now = new Date().getTime();
+  return updateSoundInstance_(channel, 'ambient_layers', 'id', layerId, function (inst) {
+    inst.paused = true;
+    inst.paused_at = now;
+  });
+}
+
+// Same shiftedStart math as resumeNowPlaying()/resumeStinger_() below --
+// preserves the loop's current position across the pause instead of
+// jumping back to wherever it happened to be when paused_at was
+// stamped.
+function resumeAmbientLayer_(channel, layerId) {
+  const now = new Date().getTime();
+  return updateSoundInstance_(channel, 'ambient_layers', 'id', layerId, function (inst) {
+    const pausedAt = inst.paused_at || now;
+    const startedAt = inst.started_at || now;
+    inst.started_at = startedAt + (now - pausedAt);
+    inst.paused = false;
+    inst.paused_at = 0;
+  });
+}
+
+function seekAmbientLayer_(channel, layerId, positionMs) {
+  const now = new Date().getTime();
+  positionMs = Math.max(0, Number(positionMs) || 0);
+  return updateSoundInstance_(channel, 'ambient_layers', 'id', layerId, function (inst) {
+    inst.started_at = now - positionMs;
+    if (inst.paused) inst.paused_at = now;
+  });
+}
+
+function setAmbientLayerLoop_(channel, layerId, loop) {
+  return updateSoundInstance_(channel, 'ambient_layers', 'id', layerId, function (inst) {
+    inst.loop = !!loop;
+  });
+}
+
 // Fires a one-shot stinger for a channel. Always appends a fresh
-// {id, fired_at} entry, even for a repeated stinger_id -- a second press
-// of the same button (e.g. two gunshots back to back) is a deliberate
-// replay, not a no-op, so it must get its own timestamp rather than
-// updating an existing entry in place. Trimmed to the most recent
+// instance, even for a repeated stinger_id -- a second press of the
+// same button (e.g. two gunshots back to back) is a deliberate replay,
+// not a no-op, so it must get its own identity rather than updating an
+// existing entry in place. `fired_at` is that stable identity, used by
+// every client to dedupe which fires it's already played and by every
+// pause/resume/seek/loop/stop action below to address one exact
+// instance -- it's set once here and never changes; `started_at` is a
+// SEPARATE field for elapsed-time math (same started_at/paused_at
+// pattern as the main track and ambient layers) that resumeStinger_()
+// is free to shift on resume without disturbing that identity.
+// Non-looping instances are trimmed to the most recent
 // STINGER_HISTORY_LENGTH so the document doesn't grow unbounded over a
-// long session; a freshly-tuned-in client only needs to know about
-// stingers fired since it started listening anyway.
+// long session; an instance a Handler has explicitly turned into a loop
+// (setStingerLoop_) is exempt from that trim and stays until explicitly
+// stopped, same as an ambient layer.
 function triggerStinger_(channel, stingerId) {
   channel = (channel || '').trim();
   if (!channel) {
@@ -4212,13 +4398,59 @@ function triggerStinger_(channel, stingerId) {
   const row = data[rowIdx];
   const now = new Date().getTime();
   let stingers = parseJsonArray_(row[cols.stingers]);
-  stingers.push({ id: stingerId, fired_at: now });
-  if (stingers.length > STINGER_HISTORY_LENGTH) stingers = stingers.slice(-STINGER_HISTORY_LENGTH);
+  stingers.push({ id: stingerId, fired_at: now, started_at: now, paused: false, paused_at: 0, loop: false, stopped: false });
+  const looping = stingers.filter(function (s) { return s.loop; });
+  let oneShot = stingers.filter(function (s) { return !s.loop; });
+  if (oneShot.length > STINGER_HISTORY_LENGTH) oneShot = oneShot.slice(-STINGER_HISTORY_LENGTH);
+  stingers = looping.concat(oneShot).sort(function (a, b) { return a.fired_at - b.fired_at; });
   row[cols.stingers] = JSON.stringify(stingers);
   row[cols.updated_at] = now;
   sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
   firestoreDualPatch_('radio', channel, { stingers: stingers, updated_at: now });
   return ContentService.createTextOutput(JSON.stringify({ status: 'OK', stingers: stingers })).setMimeType(ContentService.MimeType.JSON);
+}
+
+function pauseStinger_(channel, firedAt) {
+  const now = new Date().getTime();
+  return updateSoundInstance_(channel, 'stingers', 'fired_at', Number(firedAt), function (inst) {
+    inst.paused = true;
+    inst.paused_at = now;
+  });
+}
+
+function resumeStinger_(channel, firedAt) {
+  const now = new Date().getTime();
+  return updateSoundInstance_(channel, 'stingers', 'fired_at', Number(firedAt), function (inst) {
+    const pausedAt = inst.paused_at || now;
+    const startedAt = inst.started_at || now;
+    inst.started_at = startedAt + (now - pausedAt);
+    inst.paused = false;
+    inst.paused_at = 0;
+  });
+}
+
+function seekStinger_(channel, firedAt, positionMs) {
+  const now = new Date().getTime();
+  positionMs = Math.max(0, Number(positionMs) || 0);
+  return updateSoundInstance_(channel, 'stingers', 'fired_at', Number(firedAt), function (inst) {
+    inst.started_at = now - positionMs;
+    if (inst.paused) inst.paused_at = now;
+  });
+}
+
+function setStingerLoop_(channel, firedAt, loop) {
+  return updateSoundInstance_(channel, 'stingers', 'fired_at', Number(firedAt), function (inst) {
+    inst.loop = !!loop;
+  });
+}
+
+// The only way to end a stinger before it finishes on its own -- unlike
+// ambient (an explicit on/off toggle), a fired stinger has no natural
+// "off" state to flip back to. Removes the instance outright rather
+// than just marking it stopped, so it stops counting against
+// STINGER_HISTORY_LENGTH's trim too.
+function stopStinger_(channel, firedAt) {
+  return removeSoundInstance_(channel, 'stingers', 'fired_at', Number(firedAt));
 }
 
 // Handler-draggable media-player scrubber: jumps the CURRENT track to an
