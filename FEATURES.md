@@ -295,7 +295,30 @@ timestamp every device reads. A small persistent widget
   Set Now Playing (always restarts from 0:00).
 - **Track Library** — mp3s uploaded once (to Drive), then cued on any
   channel without re-uploading; a per-channel **playlist** persists
-  across reloads.
+  across reloads. Uploaded tracks and pasted YouTube/SoundCloud/direct
+  URLs share the SAME Cue List (a "+ Queue" button on every Track
+  Library row adds it in, tagged `kind: 'audio'`, alongside whatever
+  "+ Add to Playlist" already queued) — one mixed queue, e.g. a YouTube
+  video, then an uploaded track, then another YouTube video, in whatever
+  order they're added.
+- **Auto-advance** — a Handler-local checkbox (Cue List header,
+  persisted to `localStorage`, not per-channel broadcast state, since
+  A-Cell itself is what drives Now Playing forward — there's no
+  separate server-side "radio station" process) that steps to the next
+  Cue List entry when the current one finishes. Detecting "finished"
+  differs by kind: an uploaded/direct track's real headless `<audio>`
+  engine already fires a native `ended` event; YouTube/SoundCloud have
+  no such signal visible to A-Cell (which has never embedded a real,
+  audible player for those — only the manual fallback seek slider), so
+  a hidden, always-muted detector player (a real `YT.Player` or
+  `SC.Widget`, loaded on demand the same chain-safe way
+  `assets/table-radio.js` already loads those APIs) is spun up purely to
+  catch `ENDED`/`FINISH` and never otherwise heard. A generic URL
+  (neither audio, YouTube, nor SoundCloud) has no detectable "finished"
+  signal, so Auto-advance simply doesn't fire for it — the Handler still
+  moves on manually, same as before this feature existed. A track with
+  Loop on is exempt (advancing away from a loop the Handler explicitly
+  asked for would defeat the point).
 
 - **Ambient loops** — 7 real recorded loops (`assets/ambient/*.mp3`,
   GowlerMusic Halloween pack), toggled on/off per channel from A-Cell's
@@ -371,6 +394,23 @@ timestamp every device reads. A small persistent widget
   **read-only** progress bar in the widget's own expanded panel
   (`assets/table-radio.js`), so nobody can scrub their own copy out of
   sync with the actual broadcast.
+- **Mix (broadcast-wide)** — two sliders in A-Cell's Music tab (`04 //
+  Mix`), separate from the Now Playing panel's own volume slider (which
+  is explicitly a Handler-local preview control, muted by default).
+  These change what every listener at the table actually hears: a
+  `track_volume`/`ambient_volume` mix level (0-100, default 100 when
+  never set) stored on the channel's `radio/{channel}` document
+  (`set_track_volume`/`set_ambient_volume` in Code.gs, same
+  Firestore-first dual-patch pattern as every other live control) and
+  applied by every listener's `table-radio.js` ON TOP of their own local
+  volume slider — final volume is `localVolume × (mix / 100)`, never a
+  replacement for the listener's own control. `ambient_volume` covers
+  both ambient loops AND stingers (both are "soundscape" layers,
+  distinct from the one "music" track), so a Handler can fade the music
+  down while bringing SFX/ambience up, or the reverse, for the whole
+  table at once — lets e.g. a tense stinger read as louder than the
+  background music without the Handler needing everyone to touch their
+  own device.
 
 Both the soundboard and the scrubber dual-write straight onto the same
 `radio/{channel}` Firestore document Now Playing already lives on
@@ -666,9 +706,21 @@ implied-done:
 - **`stats/`'s Share URL** (a base64 character dump in a URL fragment)
   is a fourth, fully parallel save mechanism, untracked by the
   backend, invisible to Cover Identity, un-lookupable by a Handler.
-- **A-Cell shared music curator/playlist-building UI** beyond the
-  current Track Library + per-channel playlist (flagged as still open
-  in the task history).
+- **Scream 03 (and possibly other stingers) reported as "still visually
+  active" well after it finished playing** — live report: "I pressed
+  scream 03 once, and it plays now every 15 seconds (though I could
+  only hear it the first time)," later narrowed by the reporter to
+  something they SEE recur in A-Cell (a button glow or an Active Sounds
+  row), not actual repeated audio. Investigated at length across two
+  passes (checked for a literal 15000ms timer in table-radio.js/
+  a-cell.html — none exists; measured scream_03.mp3's real duration via
+  a live audio load — 6.48s, ruling out native re-looping as the direct
+  mechanism; re-verified `applyStingers_()`'s dedup guards
+  (`isFirstSnapshot`/`alreadySeen`/element-existence checks) and the
+  Active Sounds row's own local `ended` cleanup — none show an obvious
+  path to periodic re-triggering) without finding a code-level cause.
+  Not yet reproduced; needs either a repro from the reporter's own
+  device or further live debugging before it can be root-caused.
 - **Agent File not prefilling fully after any character-sheet
   export** — see §5's Profiling-gate explanation; root-caused but not
   yet fixed as of this document.
