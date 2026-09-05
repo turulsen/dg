@@ -325,8 +325,21 @@
   // resume/seek already is -- and Stop (removing it from the array
   // entirely) is unambiguous, unlike a toggle button whose current
   // state is easy to lose track of.
+  // Upgrades a bare ambient-layer id string (the field's ORIGINAL,
+  // pre-instance-object shape) into the full object shape -- matches
+  // Code.gs's own normalizeAmbientLayer_(). A stale string can still
+  // reach this client via Firestore for a channel that hasn't had a
+  // fresh ambient write since this migration shipped (every write
+  // normalizes and re-patches the whole array server-side, but reads in
+  // between see whatever's already there); without this, `l.id` on a
+  // bare string is undefined and the loop becomes permanently
+  // unreachable by id, unable to ever be diffed away.
+  function normalizeAmbientLayer_(l) {
+    return typeof l === 'string' ? { id: l, started_at: Date.now(), paused: false, paused_at: 0, loop: true } : l;
+  }
+
   function applyAmbientLayers_(activeLayers) {
-    activeLayers = Array.isArray(activeLayers) ? activeLayers : [];
+    activeLayers = (Array.isArray(activeLayers) ? activeLayers : []).map(normalizeAmbientLayer_);
     var activeIds = activeLayers.map(function (l) { return l.id; });
     Object.keys(ambientAudioEls).forEach(function (id) {
       if (activeIds.indexOf(id) === -1) {

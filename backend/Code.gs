@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v79 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v80 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -4063,7 +4063,7 @@ function getNowPlaying(channel, callback) {
         // set (a Handler can layer ambience onto a silent channel), so
         // these two are read and returned regardless of the `if (trackUrl)`
         // gate below that guards the rest of the Now Playing fields.
-        result.ambient_layers = parseJsonArray_(ambientCol !== -1 && data[i][ambientCol]);
+        result.ambient_layers = parseJsonArray_(ambientCol !== -1 && data[i][ambientCol]).map(normalizeAmbientLayer_);
         result.stingers = parseJsonArray_(stingersCol !== -1 && data[i][stingersCol]);
         if (trackUrl) {
           result.status = 'OK';
@@ -4274,6 +4274,28 @@ function parseJsonArray_(val) {
   }
 }
 
+// Upgrades a bare ambient-layer id (the ORIGINAL, pre-instance-object
+// shape this field used before it grew started_at/paused/paused_at/loop
+// -- see setAmbientLayer_'s own comment) into the full object shape on
+// the fly. Applied everywhere ambient_layers is read for mutation or
+// returned to a client: without this, a stale plain string already
+// sitting in a channel's row from before this migration (any channel a
+// Handler had toggled ambient on for prior to this deploy) has no `id`
+// property, so `l.id === layerId` never matches it -- Stop/pause/seek/
+// loop-toggle silently no-op against it forever, while the audio
+// (started from whenever it WAS a bare string, or restarted via a
+// duplicate object entry pushed alongside it) just keeps playing with
+// no way to reach it. Idempotent -- an already-upgraded object passes
+// through unchanged -- and self-healing: the next write that touches
+// this array serializes the now-upgraded shape back to the sheet, so no
+// separate one-time migration script is needed.
+function normalizeAmbientLayer_(entry) {
+  if (typeof entry === 'string') {
+    return { id: entry, started_at: new Date().getTime(), paused: false, paused_at: 0, loop: true };
+  }
+  return entry;
+}
+
 // Finds a channel's row in RadioChannels, appending an empty one (no
 // track) if it doesn't exist yet -- ambient layers and stingers are
 // independent of whether music is currently set, so a Handler can layer
@@ -4326,7 +4348,8 @@ function updateSoundInstance_(channel, field, matchKey, matchVal, mutateFn) {
   const cols = headerMap_(headers);
   const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
   const row = data[rowIdx];
-  const arr = parseJsonArray_(row[cols[field]]);
+  let arr = parseJsonArray_(row[cols[field]]);
+  if (field === 'ambient_layers') arr = arr.map(normalizeAmbientLayer_);
   const inst = findSoundInstance_(arr, matchKey, matchVal);
   if (!inst) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'not currently active' }))
@@ -4361,7 +4384,9 @@ function removeSoundInstance_(channel, field, matchKey, matchVal) {
   const cols = headerMap_(headers);
   const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
   const row = data[rowIdx];
-  const arr = parseJsonArray_(row[cols[field]]).filter(function (inst) { return inst[matchKey] !== matchVal; });
+  let arr = parseJsonArray_(row[cols[field]]);
+  if (field === 'ambient_layers') arr = arr.map(normalizeAmbientLayer_);
+  arr = arr.filter(function (inst) { return inst[matchKey] !== matchVal; });
   const now = new Date().getTime();
   row[cols[field]] = JSON.stringify(arr);
   row[cols.updated_at] = now;
@@ -4400,11 +4425,20 @@ function setAmbientLayer_(channel, layerId, active) {
   const cols = headerMap_(headers);
   const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
   const row = data[rowIdx];
-  const layers = parseJsonArray_(row[cols.ambient_layers]);
-  const idx = layers.findIndex(function (l) { return l.id === layerId; });
+  // normalizeAmbientLayer_ upgrades any stale bare-string entry left
+  // over from before this field grew instance objects; filtering out
+  // every match (not just the first) when turning off is deliberate
+  // belt-and-suspenders against a channel that picked up a literal
+  // duplicate for the same id while that bug was live.
+  let layers = parseJsonArray_(row[cols.ambient_layers]).map(normalizeAmbientLayer_);
   const now = new Date().getTime();
-  if (active && idx === -1) layers.push({ id: layerId, started_at: now, paused: false, paused_at: 0, loop: true });
-  if (!active && idx !== -1) layers.splice(idx, 1);
+  if (active) {
+    if (!layers.some(function (l) { return l.id === layerId; })) {
+      layers.push({ id: layerId, started_at: now, paused: false, paused_at: 0, loop: true });
+    }
+  } else {
+    layers = layers.filter(function (l) { return l.id !== layerId; });
+  }
   row[cols.ambient_layers] = JSON.stringify(layers);
   row[cols.updated_at] = now;
   sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
