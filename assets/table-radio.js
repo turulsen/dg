@@ -129,13 +129,26 @@
   // procedurally-synthesized attempt that was built, tested, and
   // deliberately abandoned for poor audio quality (see design-graveyard/
   // table-radio-audio-soundscape's own RETROSPECTIVE.md).
-  var ambientAudioEls = {}; // layer id -> looping <audio> element
+  // layer id -> { el, key }. `key` (started_at|paused_at|loop) identifies
+  // which instance-state the element currently reflects, so a snapshot
+  // that changes some OTHER layer doesn't cause a redundant reseek of
+  // this one -- same discipline as A-Cell's own preview-instance
+  // tracking for the main track.
+  var ambientAudioEls = {};
+  // fired_at -> { el, key }, same shape as ambientAudioEls -- a stinger
+  // a Handler has turned into a loop (setStingerLoop_) needs the exact
+  // same pause/resume/seek tracking an ambient layer does, addressed by
+  // fired_at instead of id since the same stinger id can have several
+  // independent instances firing close together.
+  var stingerAudioEls = {};
   // Which stinger fired_at values have already been played on THIS
   // client, so a fresh onSnapshot (page load, reconnect, channel
-  // re-tune) doesn't replay the last few minutes' worth of stingers --
-  // only ones fired from here on. Reset to null on every (re)tune;
-  // applyStingers_'s first call after that seeds it from whatever's
-  // already on the doc without playing any of it.
+  // re-tune) doesn't replay the last few minutes' worth of one-shot
+  // stingers -- only ones fired from here on. A stinger a Handler has
+  // explicitly looped is treated as "still on air" regardless (same as
+  // an ambient layer would be), not backlog. Reset to null on every
+  // (re)tune; applyStingers_'s first call after that seeds it from
+  // whatever's already on the doc.
   var seenStingerFires = null;
   var scApiLoading = false;
   var scApiCallbacks = [];
@@ -288,71 +301,150 @@
     currentEmbedKind = null;
   }
 
-  // Starts/stops looping <audio> elements to match the channel's active
-  // ambient layer ids exactly -- diffed against ambientAudioEls rather
-  // than torn down and rebuilt wholesale on every snapshot, so a layer
-  // that was already looping keeps its own playback position instead of
+  // Same elapsed-time formula as liveElapsedSeconds_(np) above, just
+  // generalized to any object carrying started_at/paused/paused_at --
+  // an ambient-layer or stinger instance from Code.gs's soundboard
+  // actions has the exact same shape as the main Now Playing doc.
+  function instanceElapsedSeconds_(inst) {
+    var isPaused = !!inst.paused;
+    var pausedAtMs = inst.paused_at || Date.now();
+    return isPaused
+      ? Math.max(0, Math.floor((pausedAtMs - (inst.started_at || pausedAtMs)) / 1000))
+      : Math.max(0, Math.floor((Date.now() - (inst.started_at || Date.now())) / 1000));
+  }
+
+  // Starts/stops/reseeks <audio> elements to match the channel's active
+  // ambient layers exactly -- diffed against ambientAudioEls rather than
+  // torn down and rebuilt wholesale on every snapshot, so a layer that
+  // was already looping keeps its own playback position instead of
   // restarting every time some OTHER layer or the main track changes.
-  function applyAmbientLayers_(activeIds) {
-    activeIds = activeIds || [];
+  // Each active layer is now a full instance object (started_at/paused/
+  // paused_at/loop), not a bare id, so a Handler pausing, seeking, or
+  // un-looping one specific loop from A-Cell's Active Sounds panel is
+  // reflected here exactly the same way the main track's own pause/
+  // resume/seek already is -- and Stop (removing it from the array
+  // entirely) is unambiguous, unlike a toggle button whose current
+  // state is easy to lose track of.
+  function applyAmbientLayers_(activeLayers) {
+    activeLayers = Array.isArray(activeLayers) ? activeLayers : [];
+    var activeIds = activeLayers.map(function (l) { return l.id; });
     Object.keys(ambientAudioEls).forEach(function (id) {
       if (activeIds.indexOf(id) === -1) {
-        var el = ambientAudioEls[id];
-        try { el.pause(); el.src = ''; el.remove(); } catch (e) { /* already gone */ }
+        var entry = ambientAudioEls[id];
+        try { entry.el.pause(); entry.el.src = ''; entry.el.remove(); } catch (e) { /* already gone */ }
         delete ambientAudioEls[id];
       }
     });
-    activeIds.forEach(function (id) {
-      if (ambientAudioEls[id]) return;
-      var el = document.createElement('audio');
-      el.src = 'assets/ambient/' + id + '.mp3';
-      el.loop = true;
-      el.muted = isMuted();
-      el.volume = getVolume() / 100;
-      el.style.display = 'none';
-      document.body.appendChild(el);
-      // Same muted-autoplay-then-unmute-later pattern the main track
-      // already relies on (see #dg-radio-audio's own setup below) --
-      // starting muted (the default until the first Sound tap) always
-      // autoplays; a later mute-button tap just flips .muted on an
-      // already-playing element, which needs no fresh gesture.
-      var p = el.play();
-      if (p && p.catch) p.catch(function () { /* best effort -- ambience is cosmetic, no resume affordance needed */ });
-      ambientAudioEls[id] = el;
+    activeLayers.forEach(function (layer) {
+      var entry = ambientAudioEls[layer.id];
+      if (!entry) {
+        var el = document.createElement('audio');
+        el.src = 'assets/ambient/' + layer.id + '.mp3';
+        el.muted = isMuted();
+        el.volume = getVolume() / 100;
+        el.style.display = 'none';
+        document.body.appendChild(el);
+        entry = { el: el, key: '' };
+        ambientAudioEls[layer.id] = entry;
+      }
+      entry.el.loop = !!layer.loop;
+      var key = layer.started_at + '|' + layer.paused_at + '|' + (layer.loop ? 1 : 0);
+      if (entry.key === key) return;
+      entry.key = key;
+      var applyState = function () {
+        try { entry.el.currentTime = instanceElapsedSeconds_(layer); } catch (e) { /* not seekable yet */ }
+        if (layer.paused) {
+          entry.el.pause();
+        } else {
+          // Same muted-autoplay-then-unmute-later pattern the main track
+          // already relies on -- starting muted (the default until the
+          // first Sound tap) always autoplays; a later mute-button tap
+          // just flips .muted on an already-playing element.
+          var p = entry.el.play();
+          if (p && p.catch) p.catch(function () { /* best effort -- ambience is cosmetic, no resume affordance needed */ });
+        }
+      };
+      if (entry.el.readyState >= 1) applyState();
+      else entry.el.addEventListener('loadedmetadata', applyState, { once: true });
     });
   }
 
-  function playStinger_(id) {
-    var el = document.createElement('audio');
-    el.src = 'assets/stingers/' + id + '.mp3';
-    el.muted = isMuted();
-    el.volume = getVolume() / 100;
-    el.style.display = 'none';
-    document.body.appendChild(el);
-    el.addEventListener('ended', function () { el.remove(); });
-    var p = el.play();
-    // A blocked/failed one-shot just silently doesn't play -- there's no
-    // sensible "tap to resume" affordance for a stinger that's already
-    // fired and gone by the time anyone could tap it.
-    if (p && p.catch) p.catch(function () { el.remove(); });
-  }
-
-  // Plays any stinger fire not already seen on this client -- an ARRAY
-  // of recent {id, fired_at} fires (not a single scalar), so two
-  // stingers triggered close together both survive to be played here as
-  // separate, naturally overlapping <audio> elements instead of the
-  // second clobbering the first before it could ever be noticed.
+  // Plays/stops/reseeks stinger instances the same instance-diffing way
+  // applyAmbientLayers_ does above -- an ARRAY of recent instances (not
+  // a single scalar), so two stingers triggered close together both
+  // survive to be played here as separate, naturally overlapping
+  // <audio> elements instead of the second clobbering the first. A
+  // stinger a Handler turns into a loop (setStingerLoop_) is tracked
+  // exactly like an ambient layer from that point on; an ordinary
+  // one-shot's own 'ended' event cleans itself up, and reaching the end
+  // of the array (removed via stop_stinger, or trimmed out of history)
+  // stops it early for every listener, not just this device.
   function applyStingers_(stingers) {
     stingers = Array.isArray(stingers) ? stingers : [];
-    if (seenStingerFires === null) {
-      seenStingerFires = {};
-      stingers.forEach(function (s) { seenStingerFires[s.fired_at] = true; });
-      return;
-    }
+    var isFirstSnapshot = seenStingerFires === null;
+    if (isFirstSnapshot) seenStingerFires = {};
+
+    var activeFiredAts = stingers.map(function (s) { return s.fired_at; });
+    Object.keys(stingerAudioEls).forEach(function (firedAtKey) {
+      if (activeFiredAts.indexOf(Number(firedAtKey)) === -1) {
+        var oldEntry = stingerAudioEls[firedAtKey];
+        try { oldEntry.el.pause(); oldEntry.el.src = ''; oldEntry.el.remove(); } catch (e) { /* already gone */ }
+        delete stingerAudioEls[firedAtKey];
+      }
+    });
+
     stingers.forEach(function (s) {
-      if (seenStingerFires[s.fired_at]) return;
+      var alreadySeen = !!seenStingerFires[s.fired_at];
       seenStingerFires[s.fired_at] = true;
-      playStinger_(s.id);
+      // A fresh tune-in shouldn't replay the last few minutes' worth of
+      // one-shot fires -- but a stinger a Handler has explicitly looped
+      // is legitimately still "on air" right now, same as an ambient
+      // layer would be, not backlog to skip.
+      if (isFirstSnapshot && !s.loop) return;
+      // A one-shot stinger this client has already seen, with no
+      // currently-playing element for it, already finished naturally
+      // (its own 'ended' handler cleaned it up) -- not a signal to
+      // start it again from scratch.
+      if (!s.loop && alreadySeen && !stingerAudioEls[s.fired_at]) return;
+
+      var entry = stingerAudioEls[s.fired_at];
+      if (!entry) {
+        var el = document.createElement('audio');
+        el.src = 'assets/stingers/' + s.id + '.mp3';
+        el.muted = isMuted();
+        el.volume = getVolume() / 100;
+        el.style.display = 'none';
+        document.body.appendChild(el);
+        el.addEventListener('ended', function () {
+          try { el.remove(); } catch (e) { /* already gone */ }
+          delete stingerAudioEls[s.fired_at];
+        });
+        entry = { el: el, key: '' };
+        stingerAudioEls[s.fired_at] = entry;
+      }
+      entry.el.loop = !!s.loop;
+      var key = s.started_at + '|' + s.paused_at + '|' + (s.loop ? 1 : 0);
+      if (entry.key === key) return;
+      entry.key = key;
+      var applyState = function () {
+        try { entry.el.currentTime = instanceElapsedSeconds_(s); } catch (e) { /* not seekable yet */ }
+        if (s.paused) {
+          entry.el.pause();
+        } else {
+          var p = entry.el.play();
+          // A blocked/failed fire just silently doesn't play -- there's
+          // no sensible "tap to resume" affordance for a one-shot
+          // that's already fired and gone by the time anyone could tap
+          // it (a looped one will simply pick up on the next snapshot
+          // that actually changes something).
+          if (p && p.catch) p.catch(function () {
+            try { entry.el.remove(); } catch (e2) { /* already gone */ }
+            delete stingerAudioEls[s.fired_at];
+          });
+        }
+      };
+      if (entry.el.readyState >= 1) applyState();
+      else entry.el.addEventListener('loadedmetadata', applyState, { once: true });
     });
   }
 
@@ -741,13 +833,19 @@
   function applyLiveMuteVolume() {
     var muted = isMuted();
     var vol = getVolume();
-    // Ambient loops follow the same mute/volume control as the main
-    // track -- there's no separate soundboard volume knob, same reasoning
-    // as everything else on this widget sharing one control surface.
+    // Ambient loops and any looped stinger follow the same mute/volume
+    // control as the main track -- there's no separate soundboard
+    // volume knob, same reasoning as everything else on this widget
+    // sharing one control surface. An ordinary one-shot stinger is
+    // over too fast for this to matter, but a looped one can run
+    // indefinitely, same as an ambient layer.
     Object.keys(ambientAudioEls).forEach(function (id) {
-      var el = ambientAudioEls[id];
-      el.muted = muted;
-      el.volume = vol / 100;
+      ambientAudioEls[id].el.muted = muted;
+      ambientAudioEls[id].el.volume = vol / 100;
+    });
+    Object.keys(stingerAudioEls).forEach(function (firedAt) {
+      stingerAudioEls[firedAt].el.muted = muted;
+      stingerAudioEls[firedAt].el.volume = vol / 100;
     });
     if (currentEmbedKind === 'yt' && ytPlayer && ytPlayerReady) {
       try {

@@ -826,6 +826,39 @@
     transform:translateY(1px); background:#2a3a1c; border-color:#8fae5a; color:#d8f0c0;
   }
 
+  /* ── Active Sounds -- one row per currently-playing ambient loop or
+     stinger, built dynamically (renderActiveSounds_()) since the set of
+     what's playing changes constantly. Real fix for "toggled a loop on
+     and couldn't tell how to stop it" -- a dedicated Stop button here is
+     unambiguous, unlike a toggle button whose current state is easy to
+     lose track of in a grid of many. Each row is backed by its own
+     headless preview <audio> (see the Now Playing panel's own comment
+     on why headless, not native `controls`) purely for real duration/
+     position, exactly the same pattern as the main track's preview,
+     just one instance per active sound instead of one for the channel. */
+  .rdo-active-empty{ font-family:'Courier Prime',monospace; font-size:11px; color:#5a6a48; font-style:italic; margin-top:6px; }
+  .rdo-active-row{
+    border:1px solid #2a3020; border-radius:4px; padding:8px 10px; margin-top:6px;
+    background:#0e1209;
+  }
+  .rdo-active-row-top{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+  .rdo-active-row-title{
+    font-family:'Courier Prime',monospace; font-size:11px; color:#e6ecd8; overflow-wrap:anywhere;
+  }
+  .rdo-active-row-title .rdo-active-row-kind{ color:#5a6a48; text-transform:uppercase; font-size:8px; letter-spacing:.1em; margin-right:6px; }
+  .rdo-active-row-controls{ display:flex; gap:6px; flex-shrink:0; }
+  .rdo-active-btn{
+    background:linear-gradient(180deg,#20261a 0%,#161a10 100%); border:1px solid #3a4432;
+    color:#c9d4b8; border-radius:50%; width:24px; height:24px; padding:0; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .rdo-active-btn svg{ display:block; }
+  .rdo-active-btn:hover{ border-color:#5a6a48; }
+  /* Loop is a toggle, not a one-shot action -- reads as "on" the same
+     way an active ambient-grid button does. */
+  .rdo-active-btn.rdo-loop-on{ border-color:#6a9a40; color:#d8f0c0; box-shadow:0 0 6px rgba(122,180,64,.3); }
+  .rdo-active-row-scrubber{ display:flex; align-items:center; gap:8px; }
+
   /* ── Channel dial: a dark field-radio console, matching the player-
      facing Table Radio widget's look. Turned to a fixed 1-5 stop
      instead of typed -- no more two players landing on "sam" vs "Sam"
@@ -1151,6 +1184,8 @@
               <div class="rdo-ambient-grid" id="music-ambient-grid"></div>
               <div id="music-stinger-groups"></div>
               <div class="rdo-status-line" id="soundboard-status"></div>
+              <div class="rdo-section-label" style="margin-top:14px;">Active Sounds — every loop and SFX currently playing on this channel</div>
+              <div id="soundboard-active-list"><div class="rdo-active-empty" id="soundboard-active-empty">Nothing playing besides the main track.</div></div>
             </div>
           </div>
         </div>
@@ -3793,6 +3828,10 @@
   // muted instead of always showing full volume regardless of position.
   var VOLUME_UP_ICON_PATH = '<path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3z"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M16.2 8.8a5 5 0 0 1 0 6.4"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M18.8 6.2a9 9 0 0 1 0 11.6"/>';
   var VOLUME_OFF_ICON_PATH = '<path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3z"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M16 9.5l5 5m0-5l-5 5"/>';
+  var STOP_ICON_PATH = '<rect x="6" y="6" width="12" height="12" fill="currentColor"/>';
+  // Standard "repeat/loop" icon convention (two curved arrows forming a
+  // cycle), not an emoji -- same reasoning as every other icon here.
+  var LOOP_ICON_PATH = '<path fill="currentColor" d="M12 5V2L7 6l5 4V7c2.76 0 5 2.24 5 5 0 .84-.21 1.63-.58 2.32l1.46 1.46A6.96 6.96 0 0019 12c0-3.87-3.13-7-7-7zm-4.42 1.68L6.12 5.22A6.96 6.96 0 005 12c0 3.87 3.13 7 7 7v3l5-4-5-4v3c-2.76 0-5-2.24-5-5 0-.84.21-1.63.58-2.32z"/>';
 
   // Matches table-radio.js's own isDirectAudio() -- a Track Library
   // pick's download link (Firebase Storage, or a legacy Drive one) has
@@ -3846,11 +3885,228 @@
       { id: 'weird-choir-vinyl-crackle', label: 'Weird Choir (Vinyl Crackle)' }
     ] }
   ];
-  // The ambient toggle states last confirmed for currentChannel -- kept
-  // so renderAmbientGrid() can redraw the grid (e.g. after a channel
-  // switch) without needing a fresh round-trip just to know which
-  // buttons should already show "active".
+  // The ambient/stinger instance state last confirmed for currentChannel
+  // -- each entry is a full {id/fired_at, started_at, paused, paused_at,
+  // loop} object now (see Code.gs's setAmbientLayer_/triggerStinger_),
+  // not a bare id, so renderAmbientGrid()/renderActiveSounds_() can
+  // redraw (e.g. after a channel switch) without needing a fresh
+  // round-trip just to know which buttons should already show "active".
   var activeAmbientLayers = [];
+  var activeStingers = [];
+  // rowKey ('ambient:<id>' or 'stinger:<fired_at>') -> row bookkeeping
+  // object built by buildActiveSoundRow_() -- see renderActiveSounds_().
+  var activeSoundRows = {};
+
+  function ambientLabel_(id) {
+    var found = AMBIENT_LAYERS.filter(function (a) { return a.id === id; })[0];
+    return found ? found.label : id;
+  }
+  function stingerLabel_(id) {
+    var found = null;
+    STINGER_GROUPS.forEach(function (g) {
+      g.stingers.forEach(function (s) { if (s.id === id) found = s; });
+    });
+    return found ? found.label : id;
+  }
+  function instanceElapsedSeconds_(inst) {
+    var isPaused = !!inst.paused;
+    var pausedAtMs = inst.paused_at || Date.now();
+    return isPaused
+      ? Math.max(0, Math.floor((pausedAtMs - (inst.started_at || pausedAtMs)) / 1000))
+      : Math.max(0, Math.floor((Date.now() - (inst.started_at || Date.now())) / 1000));
+  }
+
+  // Sends a per-instance transport action (pause/resume/seek/loop/stop)
+  // for one active ambient layer or stinger, then confirms via a real
+  // GET and re-renders both the ambient grid (its "active" class) and
+  // the Active Sounds panel -- same no-cors-POST-then-confirm-GET
+  // discipline every other Handler write in this app already uses.
+  function sendActiveSoundAction_(row, action, extraParams) {
+    var ch = currentChannel;
+    var body = { action: action, channel: ch, handler_password: sessionStorage.getItem('dg_acell_pw') || '' };
+    if (row.kind === 'ambient') body.layer_id = row.refId; else body.fired_at = String(row.refId);
+    Object.keys(extraParams || {}).forEach(function (k) { body[k] = extraParams[k]; });
+    soundboardStatusEl.textContent = 'Working…';
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors', keepalive: true,
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(body),
+    }).then(function () {
+      setTimeout(function () {
+        jsonpGet('get_now_playing', { channel: ch }, function (res) {
+          activeAmbientLayers = (res && Array.isArray(res.ambient_layers)) ? res.ambient_layers : [];
+          activeStingers = (res && Array.isArray(res.stingers)) ? res.stingers : [];
+          renderAmbientGrid();
+          renderActiveSounds_();
+          soundboardStatusEl.textContent = 'Updated.';
+        });
+      }, 900);
+    }).catch(function () { soundboardStatusEl.textContent = 'Could not reach the backend.'; });
+  }
+
+  // Builds the DOM + headless preview <audio> for one Active Sounds row
+  // -- same headless-engine-driving-a-custom-scrubber pattern as the
+  // main track's Now Playing preview, just one instance per active
+  // ambient layer/stinger instead of one for the whole channel.
+  function buildActiveSoundRow_(kind, refId, soundId, label) {
+    var rowEl = document.createElement('div');
+    rowEl.className = 'rdo-active-row';
+    rowEl.innerHTML =
+      '<div class="rdo-active-row-top">' +
+        '<span class="rdo-active-row-title"><span class="rdo-active-row-kind">' + (kind === 'ambient' ? 'Loop' : 'SFX') + '</span>' + escapeHtml(label) + '</span>' +
+        '<div class="rdo-active-row-controls">' +
+          '<button type="button" class="rdo-active-btn" data-action="loop" title="Loop">' +
+            '<svg viewBox="0 0 24 24" width="12" height="12" class="rdo-active-loop-icon">' + LOOP_ICON_PATH + '</svg>' +
+          '</button>' +
+          '<button type="button" class="rdo-active-btn" data-action="playpause" title="Pause">' +
+            '<svg viewBox="0 0 24 24" width="12" height="12" class="rdo-active-playpause-icon">' + PAUSE_ICON_PATH + '</svg>' +
+          '</button>' +
+          '<button type="button" class="rdo-active-btn" data-action="stop" title="Stop">' +
+            '<svg viewBox="0 0 24 24" width="12" height="12">' + STOP_ICON_PATH + '</svg>' +
+          '</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rdo-active-row-scrubber">' +
+        '<span class="rdo-player-time rdo-active-elapsed">0:00</span>' +
+        '<input type="range" class="rdo-scrubber rdo-active-slider" min="0" max="0" step="0.1" value="0">' +
+        '<span class="rdo-player-time rdo-active-duration">0:00</span>' +
+      '</div>';
+
+    var audioEl = document.createElement('audio');
+    audioEl.muted = true;
+    audioEl.preload = 'metadata';
+    audioEl.style.display = 'none';
+    audioEl.src = (kind === 'ambient' ? 'assets/ambient/' : 'assets/stingers/') + soundId + '.mp3';
+    rowEl.appendChild(audioEl);
+
+    var row = {
+      rowEl: rowEl, audioEl: audioEl,
+      sliderEl: rowEl.querySelector('.rdo-active-slider'),
+      elapsedEl: rowEl.querySelector('.rdo-active-elapsed'),
+      durationEl: rowEl.querySelector('.rdo-active-duration'),
+      playPauseIconEl: rowEl.querySelector('.rdo-active-playpause-icon'),
+      loopBtnEl: rowEl.querySelector('[data-action="loop"]'),
+      kind: kind, refId: refId, previewKey: '',
+      isSeekDragging: false, suppress: false, currentPaused: false, currentLoop: false
+    };
+
+    audioEl.addEventListener('loadedmetadata', function () {
+      if (isFinite(audioEl.duration)) {
+        row.sliderEl.max = audioEl.duration;
+        row.durationEl.textContent = formatSeekTime_(audioEl.duration);
+      }
+    });
+    audioEl.addEventListener('timeupdate', function () {
+      if (row.suppress || row.isSeekDragging) return;
+      row.sliderEl.value = audioEl.currentTime;
+      row.elapsedEl.textContent = formatSeekTime_(audioEl.currentTime);
+    });
+    // Reaching the end while NOT looping means this instance is
+    // genuinely done -- clean it out of local state immediately rather
+    // than waiting for the next server round-trip (which may not come
+    // until some other action happens, since this tab has no live
+    // listener for Now Playing).
+    audioEl.addEventListener('ended', function () {
+      if (audioEl.loop) return;
+      if (kind === 'ambient') {
+        activeAmbientLayers = activeAmbientLayers.filter(function (l) { return l.id !== refId; });
+        renderAmbientGrid();
+      } else {
+        activeStingers = activeStingers.filter(function (s) { return s.fired_at !== refId; });
+      }
+      renderActiveSounds_();
+    });
+    row.sliderEl.addEventListener('input', function () {
+      row.isSeekDragging = true;
+      row.elapsedEl.textContent = formatSeekTime_(parseFloat(row.sliderEl.value));
+    });
+    row.sliderEl.addEventListener('change', function () {
+      row.isSeekDragging = false;
+      var seconds = parseFloat(row.sliderEl.value);
+      try { audioEl.currentTime = seconds; } catch (e) { /* not seekable yet */ }
+      sendActiveSoundAction_(row, kind === 'ambient' ? 'seek_ambient_layer' : 'seek_stinger', { position_ms: String(Math.round(seconds * 1000)) });
+    });
+    rowEl.querySelector('[data-action="playpause"]').addEventListener('click', function () {
+      var action = row.currentPaused
+        ? (kind === 'ambient' ? 'resume_ambient_layer' : 'resume_stinger')
+        : (kind === 'ambient' ? 'pause_ambient_layer' : 'pause_stinger');
+      sendActiveSoundAction_(row, action, {});
+    });
+    row.loopBtnEl.addEventListener('click', function () {
+      sendActiveSoundAction_(row, kind === 'ambient' ? 'set_ambient_layer_loop' : 'set_stinger_loop', { loop: row.currentLoop ? '0' : '1' });
+    });
+    rowEl.querySelector('[data-action="stop"]').addEventListener('click', function () {
+      if (kind === 'ambient') sendActiveSoundAction_(row, 'set_ambient_layer', { active: '0' });
+      else sendActiveSoundAction_(row, 'stop_stinger', {});
+    });
+
+    return row;
+  }
+
+  // Diffs activeAmbientLayers/activeStingers against activeSoundRows,
+  // creating/removing rows as instances start/stop, and refreshing
+  // every still-active row's controls/scrubber to match its current
+  // instance state. Called after every ambient/stinger action and every
+  // checkCurrent() (channel switch) -- this tab has no live listener for
+  // Now Playing, so "currently playing" here means "as of the last
+  // confirmed read," same as every other status line in this tab.
+  function renderActiveSounds_() {
+    var wanted = {};
+    activeAmbientLayers.forEach(function (l) { wanted['ambient:' + l.id] = { kind: 'ambient', inst: l, label: ambientLabel_(l.id) }; });
+    activeStingers.forEach(function (s) { wanted['stinger:' + s.fired_at] = { kind: 'stinger', inst: s, label: stingerLabel_(s.id) }; });
+
+    Object.keys(activeSoundRows).forEach(function (key) {
+      if (!wanted[key]) {
+        var row = activeSoundRows[key];
+        try { row.audioEl.pause(); row.audioEl.removeAttribute('src'); row.audioEl.load(); } catch (e) { /* already gone */ }
+        row.rowEl.remove();
+        delete activeSoundRows[key];
+      }
+    });
+
+    var listEl = document.getElementById('soundboard-active-list');
+    var emptyEl = document.getElementById('soundboard-active-empty');
+    var keys = Object.keys(wanted);
+    emptyEl.style.display = keys.length ? 'none' : '';
+
+    keys.forEach(function (key) {
+      var w = wanted[key];
+      var row = activeSoundRows[key];
+      if (!row) {
+        var refId = w.kind === 'ambient' ? w.inst.id : w.inst.fired_at;
+        row = buildActiveSoundRow_(w.kind, refId, w.inst.id, w.label);
+        activeSoundRows[key] = row;
+        listEl.appendChild(row.rowEl);
+      }
+      row.currentPaused = !!w.inst.paused;
+      row.currentLoop = !!w.inst.loop;
+      row.playPauseIconEl.innerHTML = row.currentPaused ? PLAY_ICON_PATH : PAUSE_ICON_PATH;
+      row.rowEl.querySelector('[data-action="playpause"]').title = row.currentPaused ? 'Resume' : 'Pause';
+      row.loopBtnEl.classList.toggle('rdo-loop-on', row.currentLoop);
+      row.loopBtnEl.title = row.currentLoop ? 'Loop: on (tap to turn off)' : 'Loop: off (tap to turn on)';
+      row.audioEl.loop = row.currentLoop;
+
+      var instKey = w.inst.started_at + '|' + w.inst.paused_at + '|' + (w.inst.loop ? 1 : 0);
+      if (row.previewKey === instKey) return;
+      row.previewKey = instKey;
+      var elapsed = instanceElapsedSeconds_(w.inst);
+      var applyState = function () {
+        row.suppress = true;
+        try { row.audioEl.currentTime = elapsed; } catch (e) { /* not seekable yet */ }
+        row.sliderEl.value = elapsed;
+        row.elapsedEl.textContent = formatSeekTime_(elapsed);
+        if (row.currentPaused) {
+          row.audioEl.pause();
+        } else {
+          var p = row.audioEl.play();
+          if (p && p.catch) p.catch(function () { /* best effort -- soundboard preview is cosmetic */ });
+        }
+        setTimeout(function () { row.suppress = false; }, 50);
+      };
+      if (row.audioEl.readyState >= 1) applyState();
+      else row.audioEl.addEventListener('loadedmetadata', applyState, { once: true });
+    });
+  }
   // The last known now-playing state for the currently dialed channel --
   // lets Pause/Resume and Restart act without the Handler having to
   // re-paste the URL, and lets Pause show "Resume" once it's already
@@ -4180,8 +4436,8 @@
      read back directly. ── */
   function renderAmbientGrid() {
     ambientGridEl.innerHTML = AMBIENT_LAYERS.map(function (a) {
-      return '<button type="button" class="rdo-ambient-btn' +
-        (activeAmbientLayers.indexOf(a.id) !== -1 ? ' active' : '') +
+      var isActive = activeAmbientLayers.some(function (l) { return l.id === a.id; });
+      return '<button type="button" class="rdo-ambient-btn' + (isActive ? ' active' : '') +
         '" data-layer="' + a.id + '">' + escapeHtml(a.label) + '</button>';
     }).join('');
     Array.prototype.forEach.call(ambientGridEl.querySelectorAll('[data-layer]'), function (btn) {
@@ -4200,12 +4456,15 @@
           setTimeout(function () {
             jsonpGet('get_now_playing', { channel: ch }, function (res) {
               var layers = (res && Array.isArray(res.ambient_layers)) ? res.ambient_layers : [];
-              if ((layers.indexOf(layerId) !== -1) !== active) {
+              var landed = layers.some(function (l) { return l.id === layerId; });
+              if (landed !== active) {
                 soundboardStatusEl.textContent = NOT_DEPLOYED_MSG;
                 btn.classList.toggle('active', !active);
                 return;
               }
               activeAmbientLayers = layers;
+              activeStingers = (res && Array.isArray(res.stingers)) ? res.stingers : activeStingers;
+              renderActiveSounds_();
               soundboardStatusEl.textContent = (active ? label + ' is now looping on CH ' : label + ' stopped on CH ') + ch + '.';
             });
           }, 900);
@@ -4238,6 +4497,15 @@
           body: JSON.stringify({ action: 'trigger_stinger', channel: ch, stinger_id: stingerId, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
         }).then(function () {
           soundboardStatusEl.textContent = label + ' fired on CH ' + ch + '.';
+          // See it (and be able to Stop/Loop/scrub it) in Active Sounds
+          // right away, not only after the next unrelated action.
+          setTimeout(function () {
+            jsonpGet('get_now_playing', { channel: ch }, function (res) {
+              activeStingers = (res && Array.isArray(res.stingers)) ? res.stingers : activeStingers;
+              activeAmbientLayers = (res && Array.isArray(res.ambient_layers)) ? res.ambient_layers : activeAmbientLayers;
+              renderActiveSounds_();
+            });
+          }, 900);
         }).catch(function () { soundboardStatusEl.textContent = 'Could not reach the backend.'; });
       });
     });
@@ -4255,12 +4523,15 @@
         statusEl.textContent = 'Nothing currently broadcasting to CH ' + ch + '.';
         setAirIndicator(false);
       }
-      // Ambient layers are per-channel state independent of the track --
-      // re-synced on every channel switch (checkCurrent() is the dial's
-      // onChange handler) so the grid always reflects THIS channel's
-      // loops, not whichever channel was last dialed.
+      // Ambient layers/stingers are per-channel state independent of the
+      // track -- re-synced on every channel switch (checkCurrent() is
+      // the dial's onChange handler) so the grid/Active Sounds always
+      // reflect THIS channel's sounds, not whichever channel was last
+      // dialed.
       activeAmbientLayers = (res && Array.isArray(res.ambient_layers)) ? res.ambient_layers : [];
+      activeStingers = (res && Array.isArray(res.stingers)) ? res.stingers : [];
       renderAmbientGrid();
+      renderActiveSounds_();
       syncTransportUI_();
     });
     loadPlaylist(ch);
