@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v80 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v81 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -1244,6 +1244,14 @@ function doPost(e) {
       const authErr = requireHandlerAuth_(data);
       if (authErr) return authErr;
       return seekNowPlaying_(data.channel, data.position_ms);
+    }
+    // Table Radio: Handler toggles Loop on the CURRENT track in place,
+    // e.g. from the Now Playing panel's transport row, without restarting
+    // playback for anyone.
+    if (data.action === 'set_now_playing_loop') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
+      return setNowPlayingLoop_(data.channel, data.loop === '1' || data.loop === true);
     }
 
     // Table Radio: Handler saves the playlist for a channel.
@@ -4046,12 +4054,21 @@ function setNowPlaying(channel, trackUrl, trackTitle, trackKind, loop) {
       if (pausedCol !== undefined) row[pausedCol] = 0;
       if (pausedAtCol !== undefined) row[pausedAtCol] = '';
       if (loopCol !== undefined) row[loopCol] = loopVal;
-      sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
+      // Firestore first -- every listener's actual playback is driven by
+      // its onSnapshot mirror, not this Sheet, so this is the write that
+      // determines how soon a Handler's action is actually audible.
+      // Sheets I/O (setValues() below) has its own real per-call latency
+      // in Apps Script; doing it second keeps it off that critical path
+      // without changing which one is the write of record -- the dual-
+      // write helpers already log-but-swallow their own errors, so a
+      // failure here still leaves the Sheet write (this function's real
+      // source of truth) unaffected.
       firestoreDualWrite_('radio', channel, {
         channel: channel, track_url: trackUrl || '', track_title: trackTitle || '',
         started_at: now, updated_at: now, track_kind: trackKind || '',
         paused: false, paused_at: '', loop: !!loopVal
       });
+      sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
@@ -4067,12 +4084,12 @@ function setNowPlaying(channel, trackUrl, trackTitle, trackKind, loop) {
   if (kindCol !== undefined) newRow[kindCol] = trackKind || '';
   if (pausedCol !== undefined) newRow[pausedCol] = 0;
   if (loopCol !== undefined) newRow[loopCol] = loopVal;
-  sheet.appendRow(newRow);
   firestoreDualWrite_('radio', channel, {
     channel: channel, track_url: trackUrl || '', track_title: trackTitle || '',
     started_at: now, updated_at: now, track_kind: trackKind || '',
     paused: false, paused_at: '', loop: !!loopVal
   });
+  sheet.appendRow(newRow);
   return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -4105,8 +4122,10 @@ function pauseNowPlaying(channel) {
       if (pausedCol !== undefined) row[pausedCol] = 1;
       if (pausedAtCol !== undefined) row[pausedAtCol] = now;
       if (updatedCol !== undefined) row[updatedCol] = now;
-      sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
+      // Firestore first -- see setNowPlaying()'s own comment on this
+      // ordering.
       firestoreDualPatch_('radio', channel, { paused: true, paused_at: now, updated_at: now });
+      sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
@@ -4142,9 +4161,46 @@ function resumeNowPlaying(channel) {
       if (pausedCol !== undefined) row[pausedCol] = 0;
       if (pausedAtCol !== undefined) row[pausedAtCol] = '';
       if (updatedCol !== undefined) row[updatedCol] = now;
-      sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
+      // Firestore first -- see setNowPlaying()'s own comment on this
+      // ordering.
       firestoreDualPatch_('radio', channel, { started_at: shiftedStart, paused: false, paused_at: '', updated_at: now });
+      sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'no track for that channel' }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// Flips the CURRENT track's loop flag in place, without restarting it or
+// touching started_at/paused -- a Handler deciding mid-playback that a
+// track should (or shouldn't) repeat when it ends shouldn't have to
+// re-fire set_now_playing and jump everyone back to 0:00 just to set it.
+function setNowPlayingLoop_(channel, loop) {
+  channel = (channel || '').trim();
+  if (!channel) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
+
+  const sheet = getOrCreateRadioSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const cols = headerMap_(headers);
+  const chCol = cols.channel;
+  const loopCol = cols.loop;
+  const updatedCol = cols.updated_at;
+  const now = new Date().getTime();
+  const loopVal = !!loop;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
+      const row = data[i];
+      if (loopCol !== undefined) row[loopCol] = loopVal ? 1 : 0;
+      if (updatedCol !== undefined) row[updatedCol] = now;
+      firestoreDualPatch_('radio', channel, { loop: loopVal, updated_at: now });
+      sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK', loop: loopVal })).setMimeType(ContentService.MimeType.JSON);
     }
   }
   return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'no track for that channel' }))
@@ -4271,10 +4327,10 @@ function updateSoundInstance_(channel, field, matchKey, matchVal, mutateFn) {
   const now = new Date().getTime();
   row[cols[field]] = JSON.stringify(arr);
   row[cols.updated_at] = now;
-  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
   const patch = { updated_at: now };
   patch[field] = arr;
   firestoreDualPatch_('radio', channel, patch);
+  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
   return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -4302,10 +4358,10 @@ function removeSoundInstance_(channel, field, matchKey, matchVal) {
   const now = new Date().getTime();
   row[cols[field]] = JSON.stringify(arr);
   row[cols.updated_at] = now;
-  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
   const patch = { updated_at: now };
   patch[field] = arr;
   firestoreDualPatch_('radio', channel, patch);
+  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
   return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -4353,8 +4409,8 @@ function setAmbientLayer_(channel, layerId, active) {
   }
   row[cols.ambient_layers] = JSON.stringify(layers);
   row[cols.updated_at] = now;
-  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
   firestoreDualPatch_('radio', channel, { ambient_layers: layers, updated_at: now });
+  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
   return ContentService.createTextOutput(JSON.stringify({ status: 'OK', ambient_layers: layers })).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -4439,8 +4495,8 @@ function triggerStinger_(channel, stingerId) {
   stingers = looping.concat(oneShot).sort(function (a, b) { return a.fired_at - b.fired_at; });
   row[cols.stingers] = JSON.stringify(stingers);
   row[cols.updated_at] = now;
-  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
   firestoreDualPatch_('radio', channel, { stingers: stingers, updated_at: now });
+  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
   return ContentService.createTextOutput(JSON.stringify({ status: 'OK', stingers: stingers })).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -4529,10 +4585,10 @@ function seekNowPlaying_(channel, positionMs) {
       // becoming visible once the Handler later hits Resume.
       if (wasPaused && pausedAtCol !== undefined) row[pausedAtCol] = now;
       if (updatedCol !== undefined) row[updatedCol] = now;
-      sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
       const patch = { started_at: newStarted, updated_at: now };
       if (wasPaused) patch.paused_at = now;
       firestoreDualPatch_('radio', channel, patch);
+      sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
