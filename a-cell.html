@@ -752,6 +752,15 @@
   .rdo-volume-row{ display:flex; align-items:center; gap:10px; }
   .rdo-volume-icon{ color:#7a8a68; flex-shrink:0; }
 
+  /* Broadcast-wide mix sliders (04 // Mix) -- deliberately its own
+     section, not folded into the Now Playing panel's own volume row
+     above, since that one is explicitly a Handler-local preview control
+     (muted by default) while these two change what every listener at
+     the table actually hears. */
+  .rdo-mix-row{ display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+  .rdo-mix-label{ font-family:'Courier Prime',monospace; font-size:11px; color:#a8c890; width:52px; flex-shrink:0; }
+  .rdo-mix-value{ font-family:'Courier Prime',monospace; font-size:11px; color:#7a8a68; width:28px; text-align:right; flex-shrink:0; }
+
   .rdo-playlist-empty{ font-family:'Courier Prime',monospace; font-size:11px; color:#5a6a48; font-style:italic; }
   .rdo-playlist-row{
     display:flex; align-items:center; justify-content:space-between; gap:10px;
@@ -1131,6 +1140,20 @@
                   <button type="button" class="rdo-btn rdo-btn-ghost rdo-btn-full" id="music-add-playlist-btn">+ Add to Playlist</button>
                   <div class="rdo-status-line" id="music-status"></div>
                 </div>
+                <div class="rdo-section">
+                  <div class="rdo-section-label">04 // Mix (broadcast-wide)</div>
+                  <div class="rdo-mix-row">
+                    <span class="rdo-mix-label">Music</span>
+                    <input type="range" class="rdo-scrubber" id="music-mix-track" min="0" max="100" step="1" value="100">
+                    <span class="rdo-mix-value" id="music-mix-track-value">100</span>
+                  </div>
+                  <div class="rdo-mix-row">
+                    <span class="rdo-mix-label">Ambient</span>
+                    <input type="range" class="rdo-scrubber" id="music-mix-ambient" min="0" max="100" step="1" value="100">
+                    <span class="rdo-mix-value" id="music-mix-ambient-value">100</span>
+                  </div>
+                  <div class="rdo-note">Fades the track vs. ambient/SFX for every listener at the table -- not just this device's own preview.</div>
+                </div>
               </div>
               <div class="acell-radio-display">
                 <div class="rdo-section-label">Now Playing</div>
@@ -1192,7 +1215,15 @@
                   <div id="soundboard-active-list"><div class="rdo-active-empty" id="soundboard-active-empty">Nothing else playing right now.</div></div>
                 </div>
                 <div class="rdo-section-label">Cue List</div>
+                <label class="rdo-checkbox-row" id="music-autoadvance-row"><input type="checkbox" id="music-autoadvance-input"> Auto-advance (play the queue in order)</label>
                 <div id="music-playlist"></div>
+                <!-- Hidden players that exist ONLY to detect when the
+                     current queued YouTube/SoundCloud track finishes --
+                     see maybeAutoAdvance_()'s own comment. Never shown,
+                     never the thing players actually hear (that's the
+                     real broadcast on their own devices). -->
+                <div id="music-advance-yt-target" style="position:absolute; left:-9999px; width:2px; height:2px; overflow:hidden;"></div>
+                <div id="music-advance-sc-wrap" style="position:absolute; left:-9999px; width:2px; height:2px; overflow:hidden;"></div>
               </div>
             </div>
             <div class="acell-radio-tracklib">
@@ -3822,6 +3853,10 @@
   var stopBtn = document.getElementById('music-stop-btn');
   var loopBtn = document.getElementById('music-loop-btn');
   var loopIconEl = document.getElementById('music-loop-icon');
+  var mixTrackSlider = document.getElementById('music-mix-track');
+  var mixTrackValueEl = document.getElementById('music-mix-track-value');
+  var mixAmbientSlider = document.getElementById('music-mix-ambient');
+  var mixAmbientValueEl = document.getElementById('music-mix-ambient-value');
   var addPlaylistBtn = document.getElementById('music-add-playlist-btn');
   var statusEl = document.getElementById('music-status');
   var playlistEl = document.getElementById('music-playlist');
@@ -3867,6 +3902,16 @@
   function isDirectAudioUrl_(url) {
     return /\.(mp3|wav|ogg|m4a)(\?|#|$)/i.test((url || '').split(/[?#]/)[0]);
   }
+  // Same regexes as assets/table-radio.js's own extractYouTubeId()/
+  // isSoundCloud() -- needed here too so Auto-advance knows which kind
+  // of hidden detector player (if any) to spin up for the current queue
+  // entry. Duplicated rather than shared since this file and that one
+  // don't share a module scope.
+  function extractYouTubeId_(url) {
+    var m = (url || '').match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{11})/);
+    return m ? m[1] : null;
+  }
+  function isSoundCloudUrl_(url) { return /soundcloud\.com/i.test(url || ''); }
 
   var playlist = [];
   var cells = [];
@@ -4267,6 +4312,7 @@
       seekSlider.value = Math.min(elapsed, parseInt(seekSlider.max, 10));
       seekElapsedEl.textContent = formatSeekTime_(elapsed);
     }
+    syncAdvanceDetector_();
   }
 
   // Real duration/position from the headless preview <audio> engine --
@@ -4576,6 +4622,16 @@
       // dialed.
       activeAmbientLayers = ((res && Array.isArray(res.ambient_layers)) ? res.ambient_layers : []).map(normalizeAmbientLayer_);
       activeStingers = (res && Array.isArray(res.stingers)) ? res.stingers : [];
+      // Broadcast-wide mix levels are per-channel state too, same as
+      // ambient_layers/stingers above -- re-synced on every channel
+      // switch so the sliders show THIS channel's mix, not whichever
+      // channel was last dialed.
+      var trackVol = (res && res.track_volume != null) ? res.track_volume : 100;
+      var ambientVol = (res && res.ambient_volume != null) ? res.ambient_volume : 100;
+      mixTrackSlider.value = trackVol;
+      mixTrackValueEl.textContent = trackVol;
+      mixAmbientSlider.value = ambientVol;
+      mixAmbientValueEl.textContent = ambientVol;
       renderAmbientGrid();
       renderActiveSounds_();
       syncTransportUI_();
@@ -4684,6 +4740,181 @@
   loopBtn.addEventListener('click', function () {
     if (!current.track_url) { statusEl.textContent = 'Nothing is broadcasting on CH ' + currentChannel + ' yet.'; return; }
     sendLoopToggle_();
+  });
+
+  /* ── Broadcast-wide Mix: fades the main track vs. ambient/stingers for
+     every listener at once (set_track_volume/set_ambient_volume),
+     unlike the Now Playing panel's own volume slider above (Handler-
+     local preview only, muted by default). Debounced so dragging the
+     slider doesn't fire a POST on every pixel of movement, same
+     reasoning as any other live-drag control talking to Apps Script. ── */
+  var mixSendTimers = {};
+  function sendMixVolume_(field, action, value) {
+    clearTimeout(mixSendTimers[field]);
+    mixSendTimers[field] = setTimeout(function () {
+      fetch(APPS_SCRIPT_URL, {
+        method: 'POST', mode: 'no-cors', keepalive: true,
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: action, channel: currentChannel, volume: String(value), handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+      }).catch(function () { /* best effort, same as every other live-drag control */ });
+    }, 150);
+  }
+  mixTrackSlider.addEventListener('input', function () {
+    mixTrackValueEl.textContent = mixTrackSlider.value;
+    sendMixVolume_('track', 'set_track_volume', mixTrackSlider.value);
+  });
+  mixAmbientSlider.addEventListener('input', function () {
+    mixAmbientValueEl.textContent = mixAmbientSlider.value;
+    sendMixVolume_('ambient', 'set_ambient_volume', mixAmbientSlider.value);
+  });
+
+  /* ── Auto-advance: steps through the Cue List in order when the
+     current track finishes, mixing uploaded Track Library picks and
+     pasted YouTube/SoundCloud/direct URLs freely in one queue. A
+     Handler-local preference (this tab is what drives Now Playing
+     forward either way -- there's no server-side "radio station"
+     process, only whichever A-Cell tab is open), not per-channel
+     broadcast state, so it's just a checkbox saved to localStorage.
+     Detecting "finished" differs by kind: a real headless <audio>
+     engine already fires a native 'ended' event for an uploaded/direct
+     track (wired below); YouTube/SoundCloud have no such signal visible
+     to this tab (A-Cell has never embedded a real, audible YT/SC player
+     -- only the manual fallback slider), so a HIDDEN, always-muted
+     detector player is spun up purely to notice when one of those
+     finishes. Never what a listener actually hears -- that's the real
+     broadcast already playing on every tuned-in device. ── */
+  var AUTO_ADVANCE_KEY = 'dg_acell_autoadvance';
+  var autoAdvanceInput = document.getElementById('music-autoadvance-input');
+  var autoAdvanceEnabled = false;
+  try { autoAdvanceEnabled = localStorage.getItem(AUTO_ADVANCE_KEY) === '1'; } catch (e) { /* best effort */ }
+  autoAdvanceInput.checked = autoAdvanceEnabled;
+
+  function maybeAutoAdvance_() {
+    if (!autoAdvanceEnabled || !current.track_url || current.loop) return;
+    var idx = -1;
+    for (var i = 0; i < playlist.length; i++) {
+      if (playlist[i].url === current.track_url) { idx = i; break; }
+    }
+    if (idx === -1 || playlist.length < 2) return;
+    var next = playlist[(idx + 1) % playlist.length];
+    setNowPlaying(next.url, next.title || '', next.kind || '', false);
+  }
+  previewAudio.addEventListener('ended', maybeAutoAdvance_);
+
+  // Same on-demand-load, chain-safe idiom assets/table-radio.js's own
+  // ensureYouTubeApi()/ensureSoundCloudApi() use -- wrapping (not
+  // clobbering) window.onYouTubeIframeAPIReady so this tab's own hidden
+  // detector and that widget's real, audible player (if the Handler's
+  // own device also happens to be tuned to a channel with a YouTube
+  // track live) can both load the same external API script safely,
+  // regardless of which one asks for it first.
+  var advanceYtApiLoading = false, advanceYtApiCallbacks = [];
+  function ensureAdvanceYouTubeApi_(cb) {
+    if (window.YT && window.YT.Player) { cb(); return; }
+    advanceYtApiCallbacks.push(cb);
+    if (advanceYtApiLoading) return;
+    advanceYtApiLoading = true;
+    var prev = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = function () {
+      if (typeof prev === 'function') prev();
+      var cbs = advanceYtApiCallbacks; advanceYtApiCallbacks = [];
+      cbs.forEach(function (fn) { fn(); });
+    };
+    var s = document.createElement('script');
+    s.src = 'https://www.youtube.com/iframe_api';
+    document.head.appendChild(s);
+  }
+  var advanceScApiLoading = false, advanceScApiCallbacks = [];
+  function ensureAdvanceSoundCloudApi_(cb) {
+    if (window.SC && window.SC.Widget) { cb(); return; }
+    advanceScApiCallbacks.push(cb);
+    if (advanceScApiLoading) return;
+    advanceScApiLoading = true;
+    var s = document.createElement('script');
+    s.src = 'https://w.soundcloud.com/player/api.js';
+    s.onload = function () {
+      var cbs = advanceScApiCallbacks; advanceScApiCallbacks = [];
+      cbs.forEach(function (fn) { fn(); });
+    };
+    document.head.appendChild(s);
+  }
+
+  var advanceYtPlayer = null;
+  var advanceScWidget = null;
+  var advanceDetectorKey = ''; // 'yt:<id>' or 'sc:<url>' -- what the live detector (if any) currently targets
+
+  function teardownAdvanceDetector_() {
+    advanceDetectorKey = '';
+    if (advanceYtPlayer) {
+      try { advanceYtPlayer.destroy(); } catch (e) { /* already gone */ }
+      advanceYtPlayer = null;
+    }
+    if (advanceScWidget) {
+      document.getElementById('music-advance-sc-wrap').innerHTML = '';
+      advanceScWidget = null;
+    }
+  }
+
+  // Called from syncTransportUI_() on every state change -- spins up (or
+  // tears down) the hidden detector to match whatever's actually
+  // current, so it never keeps "listening" to a track that isn't live
+  // anymore, and never runs at all while Auto-advance is off.
+  function syncAdvanceDetector_() {
+    if (!autoAdvanceEnabled || !current.track_url || current.loop) { teardownAdvanceDetector_(); return; }
+    var isAudioKind = current.track_kind === 'audio' || isDirectAudioUrl_(current.track_url);
+    if (isAudioKind) { teardownAdvanceDetector_(); return; } // previewAudio's own 'ended' event already covers this
+    var ytId = extractYouTubeId_(current.track_url);
+    if (ytId) {
+      var key = 'yt:' + ytId;
+      if (advanceDetectorKey === key) return;
+      teardownAdvanceDetector_();
+      advanceDetectorKey = key;
+      ensureAdvanceYouTubeApi_(function () {
+        if (advanceDetectorKey !== key) return; // superseded while the API was loading
+        var target = document.getElementById('music-advance-yt-target');
+        if (!target) return;
+        advanceYtPlayer = new window.YT.Player(target, {
+          height: '1', width: '1', videoId: ytId,
+          playerVars: { autoplay: 1, mute: 1, controls: 0, playsinline: 1 },
+          events: {
+            onStateChange: function (e) {
+              if (window.YT && e.data === window.YT.PlayerState.ENDED) maybeAutoAdvance_();
+            }
+          }
+        });
+      });
+      return;
+    }
+    if (isSoundCloudUrl_(current.track_url)) {
+      var scKey = 'sc:' + current.track_url;
+      if (advanceDetectorKey === scKey) return;
+      teardownAdvanceDetector_();
+      advanceDetectorKey = scKey;
+      var wrap = document.getElementById('music-advance-sc-wrap');
+      wrap.innerHTML = '<iframe id="music-advance-sc-iframe" width="1" height="1" src="https://w.soundcloud.com/player/?url=' +
+        encodeURIComponent(current.track_url) + '&auto_play=true" allow="autoplay"></iframe>';
+      ensureAdvanceSoundCloudApi_(function () {
+        if (advanceDetectorKey !== scKey) return;
+        var iframeEl = document.getElementById('music-advance-sc-iframe');
+        if (!iframeEl) return;
+        advanceScWidget = window.SC.Widget(iframeEl);
+        advanceScWidget.bind(window.SC.Widget.Events.READY, function () {
+          try { advanceScWidget.setVolume(0); } catch (e) { /* best effort */ }
+        });
+        advanceScWidget.bind(window.SC.Widget.Events.FINISH, function () { maybeAutoAdvance_(); });
+      });
+      return;
+    }
+    // A generic URL (not audio/YouTube/SoundCloud) has no way to detect
+    // "finished" -- Auto-advance simply won't fire for it; the Handler
+    // still moves on manually from the Cue List, same as before.
+    teardownAdvanceDetector_();
+  }
+
+  autoAdvanceInput.addEventListener('change', function () {
+    autoAdvanceEnabled = autoAdvanceInput.checked;
+    try { localStorage.setItem(AUTO_ADVANCE_KEY, autoAdvanceEnabled ? '1' : '0'); } catch (e) { /* best effort */ }
+    syncAdvanceDetector_();
   });
 
   /* ── Playlist: a saved list of tracks per channel, so the Handler
@@ -4933,6 +5164,7 @@
         '<label class="rdo-checkbox-row" style="flex:none;"><input type="checkbox" data-tracklib-loop="' + i + '"> Loop</label>' +
         '<span class="rpr-actions">' +
         '<button type="button" class="rdo-btn rdo-btn-ghost rdo-btn-sm" data-tracklib-play="' + i + '">Play</button>' +
+        '<button type="button" class="rdo-btn rdo-btn-ghost rdo-btn-sm" data-tracklib-add="' + i + '">+ Queue</button>' +
         '<button type="button" class="rdo-btn rdo-btn-ghost rdo-btn-sm" data-tracklib-delete="' + i + '">Delete</button>' +
         '</span></div>';
     }).join('');
@@ -4942,6 +5174,20 @@
         if (!t) return;
         var loopBox = trackLibListEl.querySelector('[data-tracklib-loop="' + btn.dataset.tracklibPlay + '"]');
         setNowPlaying(t.url, t.title || '', 'audio', loopBox ? loopBox.checked : loopInput.checked);
+      });
+    });
+    // Adds an uploaded track into the SAME Cue List a pasted YouTube/
+    // SoundCloud/direct URL goes into (via "+ Add to Playlist" above) --
+    // one mixed queue, not two separate systems, so Auto-advance can
+    // step through an uploaded track, then a YouTube video, then
+    // another upload, in whatever order they're queued.
+    Array.prototype.forEach.call(trackLibListEl.querySelectorAll('[data-tracklib-add]'), function (btn) {
+      btn.addEventListener('click', function () {
+        var t = tracks[parseInt(btn.dataset.tracklibAdd, 10)];
+        if (!t) return;
+        playlist.push({ url: t.url, title: t.title || '', kind: 'audio' });
+        renderPlaylist();
+        savePlaylist();
       });
     });
     Array.prototype.forEach.call(trackLibListEl.querySelectorAll('[data-tracklib-delete]'), function (btn) {
