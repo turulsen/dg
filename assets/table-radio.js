@@ -257,6 +257,34 @@
     scWidget = null; // SC.Widget doesn't need explicit teardown -- its iframe is about to be replaced/removed anyway
     scDuration = null;
     scPosition = 0;
+    // Real bug, live-reported: switching Track Library tracks played the
+    // old and new mp3 simultaneously, with no way to stop the old one.
+    // renderEmbed() replaces #dg-radio-embed-wrap's innerHTML to build
+    // the new embed, but a playing HTMLMediaElement does NOT stop just
+    // because it's removed from the document -- it keeps decoding and
+    // playing, orphaned, until explicitly paused (or eventually GC'd,
+    // with no fixed timeline). Once replaced, getElementById('dg-radio-
+    // audio') only ever returns the NEW element, so the old one becomes
+    // permanently unreachable -- exactly "can't stop the one that was
+    // playing before". Must pause() AND clear the src (not just
+    // pause()) -- a paused element with a src still loaded can audibly
+    // resume if anything ever calls .play() on a stale reference again.
+    var oldAudioEl = document.getElementById('dg-radio-audio');
+    if (oldAudioEl) {
+      try {
+        // Set BEFORE pause() -- pausing fires this same element's own
+        // 'pause' listener (added in renderEmbed() below), which treats
+        // an unprompted pause as a playback interruption to recover
+        // from and calls .play() right back on it. intentionalPause is
+        // reset to the new track's real state as soon as one exists (see
+        // renderEmbed()'s 'audio' branch below), so this is safe to
+        // leave set for however long it takes for that to happen.
+        intentionalPause = true;
+        oldAudioEl.pause();
+        oldAudioEl.removeAttribute('src');
+        oldAudioEl.load();
+      } catch (e) { /* already gone */ }
+    }
     currentEmbedKind = null;
   }
 
