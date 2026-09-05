@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v81 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v82 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -1252,6 +1252,19 @@ function doPost(e) {
       const authErr = requireHandlerAuth_(data);
       if (authErr) return authErr;
       return setNowPlayingLoop_(data.channel, data.loop === '1' || data.loop === true);
+    }
+    // Table Radio: Handler drags the broadcast-wide Music/Ambient mix
+    // sliders -- see setChannelVolume_'s own comment for why this is
+    // separate from each listener's own local volume control.
+    if (data.action === 'set_track_volume') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
+      return setChannelVolume_(data.channel, 'track_volume', data.volume);
+    }
+    if (data.action === 'set_ambient_volume') {
+      const authErr = requireHandlerAuth_(data);
+      if (authErr) return authErr;
+      return setChannelVolume_(data.channel, 'ambient_volume', data.volume);
     }
 
     // Table Radio: Handler saves the playlist for a channel.
@@ -3931,7 +3944,14 @@ function getOrCreateRadioSheet() {
     // their own sheet tabs, so they upsert onto the exact same row/doc
     // Now Playing already lives on and ride the existing dual-write +
     // onSnapshot plumbing for free. See setAmbientLayer_/triggerStinger_.
-    ['track_kind', 'paused', 'paused_at', 'loop', 'ambient_layers', 'stingers'].forEach(function (col) {
+    // track_volume/ambient_volume: a broadcast-wide mix level (0-100,
+    // defaults to 100/unmixed when absent) applied on TOP of each
+    // listener's own local volume slider -- lets a Handler fade the main
+    // track down under a rising ambient loop (or back up) for every
+    // listener at once, not just their own device's preview. Stingers
+    // ride ambient_volume too (both are "soundscape" layers, distinct
+    // from the one "music" track). See setChannelVolume_.
+    ['track_kind', 'paused', 'paused_at', 'loop', 'ambient_layers', 'stingers', 'track_volume', 'ambient_volume'].forEach(function (col) {
       if (headers.indexOf(col) === -1) {
         lastCol++;
         sheet.getRange(1, lastCol).setValue(col);
@@ -3976,15 +3996,20 @@ function getNowPlaying(channel, callback) {
     const loopCol = headers.indexOf('loop');
     const ambientCol = headers.indexOf('ambient_layers');
     const stingersCol = headers.indexOf('stingers');
+    const trackVolCol = headers.indexOf('track_volume');
+    const ambientVolCol = headers.indexOf('ambient_volume');
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
         const trackUrl = data[i][urlCol] || '';
-        // Ambient layers/stingers are independent of whether a track is
-        // set (a Handler can layer ambience onto a silent channel), so
-        // these two are read and returned regardless of the `if (trackUrl)`
+        // Ambient layers/stingers/mix volumes are independent of whether a
+        // track is set (a Handler can layer ambience onto a silent
+        // channel, or pre-set a mix balance before broadcasting), so
+        // these are read and returned regardless of the `if (trackUrl)`
         // gate below that guards the rest of the Now Playing fields.
         result.ambient_layers = parseJsonArray_(ambientCol !== -1 && data[i][ambientCol]).map(normalizeAmbientLayer_);
         result.stingers = parseJsonArray_(stingersCol !== -1 && data[i][stingersCol]);
+        result.track_volume = (trackVolCol !== -1 && data[i][trackVolCol] !== '' && data[i][trackVolCol] != null) ? Number(data[i][trackVolCol]) : 100;
+        result.ambient_volume = (ambientVolCol !== -1 && data[i][ambientVolCol] !== '' && data[i][ambientVolCol] != null) ? Number(data[i][ambientVolCol]) : 100;
         if (trackUrl) {
           result.status = 'OK';
           result.channel = data[i][chCol];
@@ -4205,6 +4230,42 @@ function setNowPlayingLoop_(channel, loop) {
   }
   return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'no track for that channel' }))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// Sets a broadcast-wide mix level (0-100) for either the main track or
+// the ambient/stinger layer on a channel -- applied by every listener
+// ON TOP OF their own local volume slider (see applyLiveMuteVolume() in
+// table-radio.js), not just previewed on the Handler's own device. Lets
+// a Handler fade the music down while bringing ambient up (or the
+// reverse) for the whole table at once. `field` is 'track_volume' or
+// 'ambient_volume'.
+function setChannelVolume_(channel, field, volume) {
+  channel = (channel || '').trim();
+  if (!channel) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  if (field !== 'track_volume' && field !== 'ambient_volume') {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'unknown volume field: ' + field }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  volume = Math.max(0, Math.min(100, Math.round(Number(volume)) || 0));
+  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
+
+  const sheet = getOrCreateRadioSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const cols = headerMap_(headers);
+  const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
+  const row = data[rowIdx];
+  const now = new Date().getTime();
+  row[cols[field]] = volume;
+  row[cols.updated_at] = now;
+  const patch = { updated_at: now };
+  patch[field] = volume;
+  firestoreDualPatch_('radio', channel, patch);
+  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK', volume: volume })).setMimeType(ContentService.MimeType.JSON);
 }
 
 // ════════════════════════════════════════════════════════════════

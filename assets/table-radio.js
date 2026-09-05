@@ -141,6 +141,19 @@
   // fired_at instead of id since the same stinger id can have several
   // independent instances firing close together.
   var stingerAudioEls = {};
+  // Broadcast-wide mix levels (0-100, default 100/unmixed) for the main
+  // track vs. the ambient/stinger layer -- set by the Handler
+  // (set_track_volume/set_ambient_volume) and applied here ON TOP of
+  // this listener's own local volume slider, not instead of it, so a
+  // Handler fading ambient up under the music changes what every
+  // listener actually hears, not just their own preview. Updated from
+  // every Now Playing snapshot in handleNowPlaying().
+  var mixTrackVolume = 100;
+  var mixAmbientVolume = 100;
+  function mixedVolumePercent_(bucket) {
+    var mix = bucket === 'track' ? mixTrackVolume : mixAmbientVolume;
+    return Math.round(getVolume() * (mix / 100));
+  }
   // Which stinger fired_at values have already been played on THIS
   // client, so a fresh onSnapshot (page load, reconnect, channel
   // re-tune) doesn't replay the last few minutes' worth of one-shot
@@ -354,7 +367,7 @@
         var el = document.createElement('audio');
         el.src = 'assets/ambient/' + layer.id + '.mp3';
         el.muted = isMuted();
-        el.volume = getVolume() / 100;
+        el.volume = mixedVolumePercent_('ambient') / 100;
         el.style.display = 'none';
         document.body.appendChild(el);
         entry = { el: el, key: '' };
@@ -425,7 +438,7 @@
         var el = document.createElement('audio');
         el.src = 'assets/stingers/' + s.id + '.mp3';
         el.muted = isMuted();
-        el.volume = getVolume() / 100;
+        el.volume = mixedVolumePercent_('ambient') / 100;
         el.style.display = 'none';
         document.body.appendChild(el);
         el.addEventListener('ended', function () {
@@ -845,33 +858,32 @@
   // renderEmbed() rebuild where that's the only option.
   function applyLiveMuteVolume() {
     var muted = isMuted();
-    var vol = getVolume();
-    // Ambient loops and any looped stinger follow the same mute/volume
-    // control as the main track -- there's no separate soundboard
-    // volume knob, same reasoning as everything else on this widget
-    // sharing one control surface. An ordinary one-shot stinger is
-    // over too fast for this to matter, but a looped one can run
-    // indefinitely, same as an ambient layer.
+    // Ambient loops and any looped stinger share this listener's own
+    // mute toggle with the main track, but scale against the Handler's
+    // separate ambient_volume mix level instead of the main track's --
+    // see mixedVolumePercent_()/mixTrackVolume/mixAmbientVolume above.
+    var ambientVol = mixedVolumePercent_('ambient');
+    var trackVol = mixedVolumePercent_('track');
     Object.keys(ambientAudioEls).forEach(function (id) {
       ambientAudioEls[id].el.muted = muted;
-      ambientAudioEls[id].el.volume = vol / 100;
+      ambientAudioEls[id].el.volume = ambientVol / 100;
     });
     Object.keys(stingerAudioEls).forEach(function (firedAt) {
       stingerAudioEls[firedAt].el.muted = muted;
-      stingerAudioEls[firedAt].el.volume = vol / 100;
+      stingerAudioEls[firedAt].el.volume = ambientVol / 100;
     });
     if (currentEmbedKind === 'yt' && ytPlayer && ytPlayerReady) {
       try {
-        if (muted) { ytPlayer.mute(); } else { ytPlayer.unMute(); ytPlayer.setVolume(vol); }
+        if (muted) { ytPlayer.mute(); } else { ytPlayer.unMute(); ytPlayer.setVolume(trackVol); }
         return true;
       } catch (e) { return false; }
     }
     if (currentEmbedKind === 'sc' && scWidget) {
-      try { scWidget.setVolume(muted ? 0 : vol); return true; } catch (e) { return false; }
+      try { scWidget.setVolume(muted ? 0 : trackVol); return true; } catch (e) { return false; }
     }
     if (currentEmbedKind === 'audio') {
       var audioEl = document.getElementById('dg-radio-audio');
-      if (audioEl) { audioEl.muted = muted; audioEl.volume = vol / 100; return true; }
+      if (audioEl) { audioEl.muted = muted; audioEl.volume = trackVol / 100; return true; }
     }
     return false;
   }
@@ -919,7 +931,6 @@
     var isPaused = !!np.paused;
     var elapsed = liveElapsedSeconds_(np);
     var muted = isMuted();
-    var vol = getVolume();
     var loop = !!np.loop;
     // A Track Library pick's download link (Firebase Storage now, or a
     // Drive one for any track uploaded before that migration) has no
@@ -957,7 +968,7 @@
             onReady: function (e) {
               ytPlayerReady = true;
               try {
-                e.target.setVolume(getVolume());
+                e.target.setVolume(mixedVolumePercent_('track'));
                 if (isMuted()) e.target.mute(); else e.target.unMute();
                 if (!isPaused) e.target.playVideo();
               } catch (e2) { /* best effort */ }
@@ -976,7 +987,7 @@
         if (!iframeEl) return; // superseded by a later renderEmbed() call
         scWidget = window.SC.Widget(iframeEl);
         scWidget.bind(window.SC.Widget.Events.READY, function () {
-          try { scWidget.setVolume(muted ? 0 : vol); } catch (e) { /* best effort */ }
+          try { scWidget.setVolume(muted ? 0 : mixedVolumePercent_('track')); } catch (e) { /* best effort */ }
           try { scWidget.getDuration(function (ms) { scDuration = ms; }); } catch (e) { /* best effort */ }
         });
         // Pushed by the widget itself every couple hundred ms while
@@ -993,7 +1004,7 @@
       wrap.innerHTML = '<audio id="dg-radio-audio" src="' + escapeHtml(np.track_url) + '"></audio>';
       var audioEl = document.getElementById('dg-radio-audio');
       audioEl.muted = muted;
-      audioEl.volume = vol / 100;
+      audioEl.volume = mixedVolumePercent_('track') / 100;
       audioEl.loop = loop;
       // A bad/unreachable src (e.g. a broken Drive hotlink) otherwise
       // fails completely silently -- no sound, no visible sign why.
@@ -1111,11 +1122,21 @@
   // resumeNowPlaying()), so renderEmbed()/applyLivePauseState() below
   // needed no changes at all for this swap.
   function handleNowPlaying(np) {
+    // Broadcast-wide mix levels, same as ambient_layers/stingers below --
+    // independent of whether a track is set, and applied before anything
+    // else touches an <audio>/YT/SC volume this tick so ambient/stinger
+    // elements created just below already pick up the current mix.
+    var newTrackVol = (np && np.track_volume != null) ? np.track_volume : 100;
+    var newAmbientVol = (np && np.ambient_volume != null) ? np.ambient_volume : 100;
+    var mixChanged = newTrackVol !== mixTrackVolume || newAmbientVol !== mixAmbientVolume;
+    mixTrackVolume = newTrackVol;
+    mixAmbientVolume = newAmbientVol;
     // Ambient loops/stingers are independent of the main track -- applied
     // unconditionally, before the no-track early return below, so a
     // Handler can layer ambience onto a silent channel.
     applyAmbientLayers_(np && np.ambient_layers);
     applyStingers_(np && np.stingers);
+    if (mixChanged) applyLiveMuteVolume();
     var statusEl = document.getElementById('dg-radio-status');
     var trackEl = document.getElementById('dg-radio-track');
     var miniTrackEl = document.getElementById('dg-radio-mini-track');
