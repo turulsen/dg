@@ -1258,3 +1258,35 @@ type="range">`, styled with `accent-color` like every other slider in
 this app), and elapsed/duration readout standing in for what
 `controls` used to draw, matching the panel's actual visual language
 instead of the visiting device's own media-player skin.
+
+**Toggling an ambient loop on in A-Cell gave no reliable way to tell it
+was actually off again.** Live report: "when I play an ambient loop, I
+cannot stop that." Root cause wasn't a playback bug -- toggling the
+grid button correctly sent `active: '0'` and the backend correctly
+removed the layer -- it was a UX gap: a single toggle button is the
+only affordance, with no separate confirmation of current state beyond
+its own highlight, and no way to see or manage a loop once several are
+running at once. `ambient_layers` (and `stingers`) were also flat
+scalars/bare ids with no way to pause, seek, or re-loop one specific
+already-playing instance independently of turning it fully off. Fixed
+at the root: both are now full instance objects
+(`{id/fired_at, started_at, paused, paused_at, loop}`, mirroring the
+main track's own started_at/paused_at/loop fields) with dedicated
+Code.gs actions (`pause_ambient_layer`/`resume_ambient_layer`/
+`seek_ambient_layer`/`set_ambient_layer_loop`, and the stinger
+equivalents keyed by `fired_at` since the same stinger id can fire
+several independent overlapping instances) built on two small shared
+helpers (`updateSoundInstance_`/`removeSoundInstance_`) rather than
+nine near-duplicate functions. A-Cell's new Active Sounds panel lists
+every currently-active loop and stinger as its own row with a real
+scrubber, Play/Pause, an unambiguous Stop button, and a Loop toggle --
+each backed by its own headless preview `<audio>` for accurate
+duration/position, the same pattern the main track's Now Playing
+preview already uses. `assets/table-radio.js`'s `applyAmbientLayers_`/
+`applyStingers_` were updated to read the richer instance shape and
+apply pause/seek/loop changes to an already-playing element in place
+(diffed by an instance key, same discipline as the main track's own
+preview-instance tracking), and a stinger's own `<audio>` element is
+now tracked by `fired_at` (not fired-and-forgotten) so a Handler
+stopping one from the Active Sounds panel silences it for every
+listener immediately, not just the Handler's own device.
