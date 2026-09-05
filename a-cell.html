@@ -826,7 +826,10 @@
     transform:translateY(1px); background:#2a3a1c; border-color:#8fae5a; color:#d8f0c0;
   }
 
-  /* ── Active Sounds -- one row per currently-playing ambient loop or
+  /* ── Active Sounds -- lives directly under the main track's own
+     scrubber INSIDE the Now Playing panel (not a separate section
+     buried below the ambient/stinger catalog grids you'd have to
+     scroll past) -- one row per currently-playing ambient loop or
      stinger, built dynamically (renderActiveSounds_()) since the set of
      what's playing changes constantly. Real fix for "toggled a loop on
      and couldn't tell how to stop it" -- a dedicated Stop button here is
@@ -836,7 +839,12 @@
      on why headless, not native `controls`) purely for real duration/
      position, exactly the same pattern as the main track's preview,
      just one instance per active sound instead of one for the channel. */
-  .rdo-active-empty{ font-family:'Courier Prime',monospace; font-size:11px; color:#5a6a48; font-style:italic; margin-top:6px; }
+  .rdo-nowplaying-divider{ border-top:1px dotted #2a3020; margin:12px 0 8px; }
+  .rdo-active-label{
+    font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.14em;
+    color:#5a6a48; text-transform:uppercase; margin-bottom:4px;
+  }
+  .rdo-active-empty{ font-family:'Courier Prime',monospace; font-size:11px; color:#5a6a48; font-style:italic; margin-top:2px; }
   .rdo-active-row{
     border:1px solid #2a3020; border-radius:4px; padding:8px 10px; margin-top:6px;
     background:#0e1209;
@@ -1164,6 +1172,17 @@
                   </div>
 
                   <audio id="music-preview-audio" muted preload="metadata" style="display:none;"></audio>
+
+                  <!-- Everything ELSE playing on this channel right now
+                       (ambient loops, SFX) -- lives right here, under the
+                       main track's own scrubber, so this whole panel
+                       really is "every sound on CH N, and what to do
+                       about it," not just the one main track with
+                       ambience toggles buried in a separate section you
+                       have to scroll past the grids to find. -->
+                  <div class="rdo-nowplaying-divider"></div>
+                  <div class="rdo-active-label">Also playing on this channel</div>
+                  <div id="soundboard-active-list"><div class="rdo-active-empty" id="soundboard-active-empty">Nothing else playing right now.</div></div>
                 </div>
                 <div class="rdo-section-label">Cue List</div>
                 <div id="music-playlist"></div>
@@ -1184,8 +1203,6 @@
               <div class="rdo-ambient-grid" id="music-ambient-grid"></div>
               <div id="music-stinger-groups"></div>
               <div class="rdo-status-line" id="soundboard-status"></div>
-              <div class="rdo-section-label" style="margin-top:14px;">Active Sounds — every loop and SFX currently playing on this channel</div>
-              <div id="soundboard-active-list"><div class="rdo-active-empty" id="soundboard-active-empty">Nothing playing besides the main track.</div></div>
             </div>
           </div>
         </div>
@@ -3897,6 +3914,21 @@
   // object built by buildActiveSoundRow_() -- see renderActiveSounds_().
   var activeSoundRows = {};
 
+  // Upgrades a bare ambient-layer id string (the field's ORIGINAL,
+  // pre-instance-object shape) into the full object shape -- matches
+  // Code.gs's own normalizeAmbientLayer_(). A stale string can still
+  // reach this tab from a channel that hasn't had a fresh ambient write
+  // since this migration shipped; without this, `l.id` on a bare string
+  // is undefined, which read as a real, live report: the ambient
+  // toggle glowed on click then reverted (the confirm-check's `l.id ===
+  // layerId` never matched the stale string) while the loop kept
+  // audibly playing regardless (the widget/backend still had it "on"
+  // by the old bare-string reckoning), with no working Stop reachable
+  // from this tab at all.
+  function normalizeAmbientLayer_(l) {
+    return typeof l === 'string' ? { id: l, started_at: Date.now(), paused: false, paused_at: 0, loop: true } : l;
+  }
+
   function ambientLabel_(id) {
     var found = AMBIENT_LAYERS.filter(function (a) { return a.id === id; })[0];
     return found ? found.label : id;
@@ -3934,7 +3966,7 @@
     }).then(function () {
       setTimeout(function () {
         jsonpGet('get_now_playing', { channel: ch }, function (res) {
-          activeAmbientLayers = (res && Array.isArray(res.ambient_layers)) ? res.ambient_layers : [];
+          activeAmbientLayers = ((res && Array.isArray(res.ambient_layers)) ? res.ambient_layers : []).map(normalizeAmbientLayer_);
           activeStingers = (res && Array.isArray(res.stingers)) ? res.stingers : [];
           renderAmbientGrid();
           renderActiveSounds_();
@@ -4455,7 +4487,7 @@
         }).then(function () {
           setTimeout(function () {
             jsonpGet('get_now_playing', { channel: ch }, function (res) {
-              var layers = (res && Array.isArray(res.ambient_layers)) ? res.ambient_layers : [];
+              var layers = ((res && Array.isArray(res.ambient_layers)) ? res.ambient_layers : []).map(normalizeAmbientLayer_);
               var landed = layers.some(function (l) { return l.id === layerId; });
               if (landed !== active) {
                 soundboardStatusEl.textContent = NOT_DEPLOYED_MSG;
@@ -4502,7 +4534,7 @@
           setTimeout(function () {
             jsonpGet('get_now_playing', { channel: ch }, function (res) {
               activeStingers = (res && Array.isArray(res.stingers)) ? res.stingers : activeStingers;
-              activeAmbientLayers = (res && Array.isArray(res.ambient_layers)) ? res.ambient_layers : activeAmbientLayers;
+              activeAmbientLayers = (res && Array.isArray(res.ambient_layers)) ? res.ambient_layers.map(normalizeAmbientLayer_) : activeAmbientLayers;
               renderActiveSounds_();
             });
           }, 900);
@@ -4528,7 +4560,7 @@
       // the dial's onChange handler) so the grid/Active Sounds always
       // reflect THIS channel's sounds, not whichever channel was last
       // dialed.
-      activeAmbientLayers = (res && Array.isArray(res.ambient_layers)) ? res.ambient_layers : [];
+      activeAmbientLayers = ((res && Array.isArray(res.ambient_layers)) ? res.ambient_layers : []).map(normalizeAmbientLayer_);
       activeStingers = (res && Array.isArray(res.stingers)) ? res.stingers : [];
       renderAmbientGrid();
       renderActiveSounds_();

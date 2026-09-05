@@ -321,19 +321,22 @@ timestamp every device reads. A small persistent widget
   changes; `started_at` is a separate field pause/resume/seek actions
   are free to shift without disturbing that identity or a client's
   own "have I already played this one" bookkeeping.
-- **Active Sounds panel** — A-Cell's Music tab lists every currently
-  active ambient loop and stinger as its own row (real scrubber,
-  Play/Pause, an unambiguous Stop, and a Loop toggle — all inline SVG,
-  same reasoning as the Now Playing panel's icons below), each backed
-  by its own headless preview `<audio>` for accurate duration/position.
-  Every control calls a dedicated Code.gs action addressed at that one
-  instance (`pause_ambient_layer`/`resume_ambient_layer`/
-  `seek_ambient_layer`/`set_ambient_layer_loop`, and the stinger
-  equivalents keyed by `fired_at`), so stopping or pausing one loop or
-  SFX never touches any other sound playing at the same time — the real
-  fix for "toggled a loop on and couldn't tell how to turn it off,"
-  where a plain on/off toggle button was the only affordance and easy
-  to lose track of.
+- **Active Sounds panel** — lives directly under the main track's own
+  scrubber, inside the Now Playing panel itself (not a separate section
+  below the ambient/stinger catalog grids) — one glance at the top of
+  the Music tab shows the main track and everything layered under it.
+  Lists every currently active ambient loop and stinger as its own row
+  (real scrubber, Play/Pause, an unambiguous Stop, and a Loop toggle —
+  all inline SVG, same reasoning as the Now Playing panel's icons
+  below), each backed by its own headless preview `<audio>` for
+  accurate duration/position. Every control calls a dedicated Code.gs
+  action addressed at that one instance (`pause_ambient_layer`/
+  `resume_ambient_layer`/`seek_ambient_layer`/`set_ambient_layer_loop`,
+  and the stinger equivalents keyed by `fired_at`), so stopping or
+  pausing one loop or SFX never touches any other sound playing at the
+  same time — the real fix for "toggled a loop on and couldn't tell how
+  to turn it off," where a plain on/off toggle button was the only
+  affordance and easy to lose track of.
 - **Now Playing control panel** — A-Cell's Music tab has a dedicated
   panel (the wide column, above the Cue List) showing whatever's live
   on the dialed channel: a "Table Radio — CH. N" header, the track
