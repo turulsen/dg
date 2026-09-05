@@ -1290,3 +1290,44 @@ preview-instance tracking), and a stinger's own `<audio>` element is
 now tracked by `fired_at` (not fired-and-forgotten) so a Handler
 stopping one from the Active Sounds panel silences it for every
 listener immediately, not just the Handler's own device.
+
+**Part two of "when I play an ambient loop, I cannot stop that" -- the
+Active Sounds panel above was real, but the exact same channel it was
+first tested on still couldn't be stopped.** Live report with a
+screenshot: toggling the ambient button glowed briefly then reverted,
+while the loop kept audibly playing under the main track regardless.
+Root cause: this migration's own gap. `ambient_layers` changed from an
+array of bare id strings to an array of instance objects
+(`{id, started_at, paused, paused_at, loop}`) in the same session --
+but a channel already toggled on under the OLD shape (exactly the
+channel used to test the NEW soundboard) still had a plain string
+sitting in its row. Every new code path assumes an object and reads
+`l.id` off each entry -- on a bare string that's `undefined`, so
+`l.id === layerId` never matches it: the confirm-check in A-Cell's
+toggle button treated it as never having landed (hence the immediate
+revert), Stop/pause/seek/loop-toggle could never find it to act on,
+and the Active Sounds panel/player widget either skipped it entirely
+or (worse) rendered/loaded `assets/ambient/undefined.mp3` for it.
+Meanwhile the loop kept playing because the ORIGINAL toggle-on POST,
+back when the bare-string format was still live, had genuinely
+succeeded -- there was just no longer any code path that could
+recognize that entry as the same layer to turn it back off. Fixed with
+a small `normalizeAmbientLayer_()` (Code.gs and, for defense-in-depth,
+`assets/table-radio.js` and `a-cell.html` too, since Firestore reads
+and stale in-memory state can still hand a client a bare string before
+a fresh write flows through) that upgrades a bare string into the full
+object shape on first touch. Applied at every ambient_layers read site
+that mutates or returns the array, so it's fully self-healing -- the
+very next toggle/pause/seek/stop/loop action on an affected channel
+rewrites its row in the new shape permanently, with no separate
+migration script needed. `setAmbientLayer_`'s turn-off branch was also
+hardened to filter out every matching entry (not just the first found)
+as belt-and-suspenders against a literal duplicate id landing in the
+array while this bug was live.
+
+**Also moved, not a fix:** the Active Sounds list now lives directly
+under the main track's own scrubber inside the Now Playing panel
+itself, not in a separate section below the ambient/stinger catalog
+grids -- per feedback that "that area should be a control panel where
+I can control every sound that is playing," one glance at the top of
+the tab now shows the main track AND everything layered under it.
