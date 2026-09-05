@@ -313,25 +313,30 @@ timestamp every device reads. A small persistent widget
   elements instead of the second clobbering the first.
 - **Now Playing control panel** — A-Cell's Music tab has a dedicated
   panel (the wide column, above the Cue List) showing whatever's live
-  on the dialed channel, with icon transport controls (Restart/Pause
-  or Resume/Stop) instead of the old plain text-label button row. The
-  icons are inline SVG (`fill="currentColor"`, same approach as
+  on the dialed channel: a "Table Radio — CH. N" header, the track
+  title, a scrubber with elapsed/duration labels, one shared Restart /
+  Pause-Resume / Stop transport row (Pause-Resume is the bigger,
+  highlighted center button — the one actually used mid-broadcast —
+  with Restart/Stop smaller on either side), and a volume slider with a
+  speaker icon, muted by default. Every icon (transport row, speaker)
+  is inline SVG (`fill="currentColor"`, same approach as
   `assets/dice-roller.js`'s own die-face icons) rather than Unicode
-  media-control glyphs — those render as full-color platform emoji on
-  some devices, entirely font-dependent. For an uploaded Track Library
-  pick or any direct mp3/wav/ogg/m4a URL, the panel drives a custom
-  play/pause + scrubber + elapsed/duration row, styled to match the
-  rest of the app (dark, olive/khaki, Courier Prime) rather than the
-  browser's own native `<audio controls>` chrome — backed by a headless
-  `<audio>` element purely for its real duration/position, muted by
-  default. It swaps to a fresh track automatically the moment a
-  different one starts playing; dragging the scrubber or hitting the
-  play/pause button sends the same `seek_now_playing`/
-  `pause_now_playing`/`resume_now_playing` actions as the icon
-  controls. A pasted YouTube/SoundCloud/generic URL has no cheap way to
-  get a real embed+duration here, so it falls back to the original
-  elapsed-seconds-only draggable slider instead. Players only ever see
-  a **read-only** progress bar in the widget's own expanded panel
+  media-control glyphs or an emoji speaker — those render as full-color
+  platform emoji on some devices, entirely font-dependent; the speaker
+  icon itself swaps between a "volume" and a "muted" glyph depending on
+  the slider's position. For an uploaded Track Library pick or any
+  direct mp3/wav/ogg/m4a URL, the scrubber and volume are driven by a
+  real headless `<audio>` element (no `controls` attribute — the
+  browser's own native media-player chrome doesn't match this app's
+  look) for accurate duration/position, not an estimate; it swaps to a
+  fresh track automatically the moment a different one starts playing.
+  Dragging the scrubber or hitting Pause/Resume sends the same
+  `seek_now_playing`/`pause_now_playing`/`resume_now_playing` actions
+  either way. A pasted YouTube/SoundCloud/generic URL has no cheap way
+  to get a real embed+duration here, so its scrubber falls back to an
+  elapsed-seconds-only draggable slider (no volume row, since there's
+  no local audio engine to control). Players only ever see a
+  **read-only** progress bar in the widget's own expanded panel
   (`assets/table-radio.js`), so nobody can scrub their own copy out of
   sync with the actual broadcast.
 

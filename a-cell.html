@@ -679,62 +679,74 @@
      the moment a different track starts (checkCurrent()/verifyNowPlaying()
      drive it, same as the status line already did). ── */
   .rdo-nowplaying-panel{
-    border:1px solid #2a3020; border-radius:4px; padding:10px; margin-bottom:14px;
+    border:1px solid #2a3020; border-radius:4px; padding:14px; margin-bottom:14px;
     background:#0e1209;
   }
-  .rdo-nowplaying-title{
-    font-family:'Courier Prime',monospace; font-size:11px; color:#e6ecd8;
-    overflow-wrap:anywhere; margin-bottom:8px;
+  .rdo-nowplaying-header{
+    font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.16em;
+    color:#7a8a68; text-transform:uppercase; margin-bottom:6px;
   }
+  .rdo-nowplaying-title{
+    font-family:'Courier Prime',monospace; font-size:13px; color:#e6ecd8;
+    overflow-wrap:anywhere; margin-bottom:12px;
+  }
+  /* Real duration/scrubber for an uploaded/direct mp3 -- backed by a
+     headless <audio> element (no `controls`; see the HTML comment
+     above it) purely for its real duration/currentTime, driving THIS
+     styled scrubber instead of the browser's own native media-player
+     chrome, which doesn't match this app's terminal look anywhere
+     else. The elapsed-seconds-only fallback row (YouTube/SoundCloud/
+     generic pasted URLs -- no cheap way to get a real embed+duration
+     for those without pulling in their full iframe APIs) shares this
+     same look, just bounded to 30 minutes rather than a real length.
+     Never mirrored on the player-facing table-radio.js widget, which
+     only ever shows a read-only progress display -- letting every
+     listener scrub their own local copy would drift them out of sync
+     with each other and with the actual broadcast. */
+  .rdo-scrubber-row{ display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+  .rdo-scrubber{ flex:1; accent-color:#8fae5a; }
+  .rdo-player-time{ font-family:'Courier Prime',monospace; font-size:11px; color:#a8c890; min-width:32px; text-align:center; }
   /* Icon transport controls -- plain geometric SVG shapes (a bar-pair,
      a triangle, a square), not Unicode media-control glyphs. Those
      render as full-color platform emoji on several devices instead of
      a plain icon (confirmed live on a real report) -- entirely font-
      dependent and completely outside this app's control. An inline SVG
      with fill="currentColor" always renders as one flat glyph in
-     whatever color this rule sets, matching the same visual language
-     used everywhere else on this panel (small, round, olive-on-dark),
-     the same reasoning dice-roller.js's own inline-SVG die faces
-     already rely on. Restart/Stop have no equivalent in the custom
-     player row below, so they stay their own icon buttons regardless
-     of which kind (native-preview vs fallback-slider) is showing --
-     only Pause/Resume hides itself when the preview row's own
-     Play/Pause already covers that (see syncTransportUI_()). */
-  .rdo-transport-row{ display:flex; gap:8px; margin-bottom:8px; }
+     whatever color this rule sets, the same reasoning dice-roller.js's
+     own inline-SVG die faces already rely on. One shared Pause/Resume
+     button (not two, one per embed kind) drives whichever kind is
+     actually live -- see syncTransportUI_(). Pause/Resume is the
+     visually prominent center button (bigger, glowing ring) since it's
+     the one actually used mid-broadcast; Restart/Stop are smaller,
+     plain -- one-shot actions reached less often. */
+  .rdo-player-transport-row{ display:flex; align-items:center; justify-content:center; gap:14px; margin-bottom:14px; }
   .rdo-transport-btn{
     background:linear-gradient(180deg,#20261a 0%,#161a10 100%); border:1px solid #3a4432;
     border-top-color:#4a5a3a; color:#c9d4b8; border-radius:50%;
-    width:30px; height:30px; padding:0; cursor:pointer;
-    display:flex; align-items:center; justify-content:center;
+    padding:0; cursor:pointer; display:flex; align-items:center; justify-content:center;
     box-shadow:0 1px 0 rgba(255,255,255,.04), 0 2px 4px rgba(0,0,0,.4);
   }
   .rdo-transport-btn svg{ display:block; }
   .rdo-transport-btn:hover{ border-color:#5a6a48; box-shadow:0 0 8px rgba(122,138,104,.2), 0 2px 4px rgba(0,0,0,.4); }
   .rdo-transport-btn:disabled{ opacity:.4; cursor:default; box-shadow:none; }
-  /* Custom player row for an uploaded/direct mp3 -- backed by a
-     headless <audio> element (no `controls`; see the HTML comment
-     above it) purely for its real duration/currentTime, driving THIS
-     styled scrubber instead of the browser's own native media-player
-     chrome, which doesn't match this app's terminal look anywhere
-     else. Muted by default (the Handler is normally already hearing
-     the real broadcast at the table through some other speaker) --
-     there's no unmute control here on purpose, same reasoning; this
-     row exists to see and scrub the track, not to double up the
-     audio. */
-  .rdo-player-row{ display:flex; align-items:center; gap:8px; }
-  .rdo-player-time{ font-family:'Courier Prime',monospace; font-size:10px; color:#a8c890; min-width:34px; text-align:center; }
-  /* Fallback for YouTube/SoundCloud/generic pasted URLs -- there's no
-     cheap way to get a real embed+duration for those without pulling in
-     their full iframe APIs, so this stays an elapsed-seconds-only
-     Handler-draggable slider (seek_now_playing), bounded to 30 minutes
-     rather than scaled to a real (unknown here) track length. Never
-     mirrored on the player-facing table-radio.js widget, which only
-     ever shows a read-only progress display -- letting every listener
-     scrub their own local copy would drift them out of sync with each
-     other and with the actual broadcast. */
-  .rdo-seek-row{ display:flex; align-items:center; gap:8px; }
-  .rdo-seek-slider{ flex:1; accent-color:#8fae5a; }
-  .rdo-seek-label{ font-family:'Courier Prime',monospace; font-size:10px; color:#a8c890; min-width:34px; text-align:right; }
+  .rdo-transport-btn-sm{ width:32px; height:32px; }
+  .rdo-transport-btn-lg{
+    width:52px; height:52px; border-color:#6a9a40;
+    box-shadow:0 0 12px rgba(122,180,64,.35), 0 2px 4px rgba(0,0,0,.4);
+  }
+  .rdo-transport-btn-lg:hover{ box-shadow:0 0 16px rgba(122,180,64,.5), 0 2px 4px rgba(0,0,0,.4); }
+  /* Volume for the preview only -- muted (0) by default, since the
+     Handler is normally already hearing the real broadcast at the
+     table through some other speaker; raising this previews it through
+     THIS device too, same accent-color scrubber look as the seek bar
+     above. The icon is plain SVG (a speaker cone + sound-wave arcs, the
+     standard volume-control convention), not an emoji speaker glyph --
+     same reasoning as the transport icons above -- and swaps to a
+     muted/crossed-out version at 0 so the control reads correctly at a
+     glance instead of always showing "full volume" regardless of the
+     slider's actual position. */
+  .rdo-volume-row{ display:flex; align-items:center; gap:10px; }
+  .rdo-volume-icon{ color:#7a8a68; flex-shrink:0; }
 
   .rdo-playlist-empty{ font-family:'Courier Prime',monospace; font-size:11px; color:#5a6a48; font-style:italic; }
   .rdo-playlist-row{
@@ -1078,40 +1090,47 @@
               <div class="acell-radio-display">
                 <div class="rdo-section-label">Now Playing</div>
                 <div class="rdo-nowplaying-panel" id="music-nowplaying-panel">
+                  <div class="rdo-nowplaying-header">Table Radio &mdash; CH. <span id="music-nowplaying-ch">1</span></div>
                   <div class="rdo-nowplaying-title" id="music-nowplaying-title">Nothing broadcasting on this channel yet.</div>
-                  <div class="rdo-transport-row" id="music-transport-row">
-                    <button type="button" class="rdo-transport-btn" id="music-restart-btn" title="Restart" aria-label="Restart">
+
+                  <!-- Real scrubber for an uploaded/direct mp3, backed by
+                       the headless <audio> below (no `controls` -- the
+                       browser's own native media-player chrome doesn't
+                       match this app's terminal look anywhere else). -->
+                  <div class="rdo-scrubber-row" id="music-preview-scrubber-row" style="display:none;">
+                    <span class="rdo-player-time" id="music-preview-elapsed">0:00</span>
+                    <input type="range" class="rdo-scrubber" id="music-preview-slider" min="0" max="0" step="0.1" value="0">
+                    <span class="rdo-player-time" id="music-preview-duration">0:00</span>
+                  </div>
+                  <!-- Fallback for YouTube/SoundCloud/generic URLs -- see
+                       the CSS comment above .rdo-scrubber-row. -->
+                  <div class="rdo-scrubber-row" id="music-seek-row" style="display:none;">
+                    <span class="rdo-player-time" id="music-seek-elapsed">0:00</span>
+                    <input type="range" class="rdo-scrubber" id="music-seek-slider" min="0" max="1800" step="1" value="0">
+                    <span class="rdo-player-time">&ndash;</span>
+                  </div>
+
+                  <div class="rdo-player-transport-row">
+                    <button type="button" class="rdo-transport-btn rdo-transport-btn-sm" id="music-restart-btn" title="Restart" aria-label="Restart">
                       <svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M6 6h2v12H6zm3.5 6L18 18V6z"/></svg>
                     </button>
-                    <button type="button" class="rdo-transport-btn" id="music-pause-btn" title="Pause" aria-label="Pause">
-                      <svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+                    <button type="button" class="rdo-transport-btn rdo-transport-btn-lg" id="music-pause-btn" title="Pause" aria-label="Pause">
+                      <svg viewBox="0 0 24 24" width="18" height="18" id="music-pause-icon"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
                     </button>
-                    <button type="button" class="rdo-transport-btn" id="music-stop-btn" title="Stop Broadcast" aria-label="Stop Broadcast">
+                    <button type="button" class="rdo-transport-btn rdo-transport-btn-sm" id="music-stop-btn" title="Stop Broadcast" aria-label="Stop Broadcast">
                       <svg viewBox="0 0 24 24" width="13" height="13"><rect x="6" y="6" width="12" height="12" fill="currentColor"/></svg>
                     </button>
                   </div>
-                  <!-- Headless -- no `controls` attribute. The browser's
-                       own native media-player chrome (grey bar, system
-                       font, OS-styled scrubber) doesn't match this app's
-                       terminal look anywhere else, so this element is
-                       just the playback engine; #music-preview-row below
-                       is the actual UI, styled the same as every other
-                       control on this panel. -->
+
+                  <!-- Preview-only: there's no local audio engine behind
+                       the fallback (YouTube/SoundCloud/generic) case, so
+                       nothing to set a volume on there. -->
+                  <div class="rdo-volume-row" id="music-volume-row" style="display:none;">
+                    <svg class="rdo-volume-icon" viewBox="0 0 24 24" width="15" height="15" id="music-volume-icon"></svg>
+                    <input type="range" class="rdo-scrubber" id="music-preview-volume" min="0" max="100" step="1" value="0">
+                  </div>
+
                   <audio id="music-preview-audio" muted preload="metadata" style="display:none;"></audio>
-                  <div class="rdo-preview-wrap" id="music-preview-wrap" style="display:none;">
-                    <div class="rdo-player-row">
-                      <button type="button" class="rdo-transport-btn rdo-player-playpause" id="music-preview-playpause" title="Pause" aria-label="Pause">
-                        <svg viewBox="0 0 24 24" width="13" height="13" id="music-preview-playpause-icon"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
-                      </button>
-                      <span class="rdo-player-time" id="music-preview-elapsed">0:00</span>
-                      <input type="range" class="rdo-seek-slider" id="music-preview-slider" min="0" max="0" step="0.1" value="0">
-                      <span class="rdo-player-time" id="music-preview-duration">0:00</span>
-                    </div>
-                  </div>
-                  <div class="rdo-seek-row" id="music-seek-row" style="display:none;">
-                    <input type="range" class="rdo-seek-slider" id="music-seek-slider" min="0" max="1800" step="1" value="0">
-                    <span class="rdo-seek-label" id="music-seek-label">0:00</span>
-                  </div>
                 </div>
                 <div class="rdo-section-label">Cue List</div>
                 <div id="music-playlist"></div>
@@ -3754,17 +3773,26 @@
   var soundboardStatusEl = document.getElementById('soundboard-status');
   var seekRow = document.getElementById('music-seek-row');
   var seekSlider = document.getElementById('music-seek-slider');
-  var seekLabel = document.getElementById('music-seek-label');
+  var seekElapsedEl = document.getElementById('music-seek-elapsed');
+  var nowPlayingChEl = document.getElementById('music-nowplaying-ch');
   var nowPlayingTitleEl = document.getElementById('music-nowplaying-title');
-  var previewWrap = document.getElementById('music-preview-wrap');
+  var previewScrubberRow = document.getElementById('music-preview-scrubber-row');
   var previewAudio = document.getElementById('music-preview-audio');
-  var previewPlayPauseBtn = document.getElementById('music-preview-playpause');
-  var previewPlayPauseIcon = document.getElementById('music-preview-playpause-icon');
+  var pauseIcon = document.getElementById('music-pause-icon');
   var previewSlider = document.getElementById('music-preview-slider');
   var previewElapsedEl = document.getElementById('music-preview-elapsed');
   var previewDurationEl = document.getElementById('music-preview-duration');
+  var volumeRow = document.getElementById('music-volume-row');
+  var volumeSlider = document.getElementById('music-preview-volume');
+  var volumeIcon = document.getElementById('music-volume-icon');
   var PLAY_ICON_PATH = '<path fill="currentColor" d="M8 5v14l11-7z"/>';
   var PAUSE_ICON_PATH = '<path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/>';
+  // Standard "volume" icon convention (a speaker cone + sound-wave arcs),
+  // not an emoji speaker glyph -- same reasoning as the transport icons.
+  // Swapped to a crossed-out version at 0 so muted actually reads as
+  // muted instead of always showing full volume regardless of position.
+  var VOLUME_UP_ICON_PATH = '<path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3z"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M16.2 8.8a5 5 0 0 1 0 6.4"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M18.8 6.2a9 9 0 0 1 0 11.6"/>';
+  var VOLUME_OFF_ICON_PATH = '<path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3z"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M16 9.5l5 5m0-5l-5 5"/>';
 
   // Matches table-radio.js's own isDirectAudio() -- a Track Library
   // pick's download link (Firebase Storage, or a legacy Drive one) has
@@ -3877,32 +3905,26 @@
   // slider below.
   var isPreviewSeekDragging = false;
 
-  function setPreviewPlayPauseIcon_(isPlaying) {
-    previewPlayPauseIcon.innerHTML = isPlaying ? PAUSE_ICON_PATH : PLAY_ICON_PATH;
-    previewPlayPauseBtn.title = isPlaying ? 'Pause' : 'Resume';
-  }
-
   function syncTransportUI_() {
     var hasTrack = !!current.track_url;
     var isAudioKind = hasTrack && (current.track_kind === 'audio' || isDirectAudioUrl_(current.track_url));
+    nowPlayingChEl.textContent = currentChannel;
     nowPlayingTitleEl.textContent = hasTrack
       ? (current.track_title || current.track_url) + (current.paused ? ' (paused)' : '')
       : 'Nothing broadcasting on this channel yet.';
-    pauseBtn.innerHTML = current.paused ? '<svg viewBox="0 0 24 24" width="13" height="13">' + PLAY_ICON_PATH + '</svg>' : '<svg viewBox="0 0 24 24" width="13" height="13">' + PAUSE_ICON_PATH + '</svg>';
+    // One shared Pause/Resume button drives whichever kind (real preview
+    // or fallback slider) is actually live -- see the HTML/CSS comments
+    // on .rdo-player-transport-row for why this used to be two buttons.
+    pauseIcon.innerHTML = current.paused ? PLAY_ICON_PATH : PAUSE_ICON_PATH;
     pauseBtn.title = current.paused ? 'Resume' : 'Pause';
-    // The preview row below already has its own Play/Pause -- showing a
-    // second one right next to it would just invite the two to disagree
-    // with each other mid-drag. Restart/Stop have no equivalent there,
-    // so they stay visible either way.
-    pauseBtn.style.display = isAudioKind ? 'none' : '';
     pauseBtn.disabled = !hasTrack;
     restartBtn.disabled = !hasTrack;
 
-    previewWrap.style.display = isAudioKind ? '' : 'none';
+    previewScrubberRow.style.display = isAudioKind ? '' : 'none';
+    volumeRow.style.display = isAudioKind ? '' : 'none';
     seekRow.style.display = (hasTrack && !isAudioKind) ? '' : 'none';
 
     if (isAudioKind) {
-      setPreviewPlayPauseIcon_(!current.paused);
       var urlChanged = previewLoadedUrl !== current.track_url;
       if (urlChanged) {
         previewLoadedUrl = current.track_url;
@@ -3942,7 +3964,7 @@
     if (hasTrack && !isAudioKind && !isSeekDragging) {
       var elapsed = liveElapsedSeconds_();
       seekSlider.value = Math.min(elapsed, parseInt(seekSlider.max, 10));
-      seekLabel.textContent = formatSeekTime_(elapsed);
+      seekElapsedEl.textContent = formatSeekTime_(elapsed);
     }
   }
 
@@ -3960,15 +3982,17 @@
     previewElapsedEl.textContent = formatSeekTime_(previewAudio.currentTime);
   });
 
-  // The preview row's own Play/Pause drives the REAL broadcast, not
-  // just this local muted copy -- same sendTransportAction_ the icon
-  // Pause button uses. The icon itself is set by syncTransportUI_()
-  // once the confirm GET lands, not optimistically here, so it can
-  // never show a state the backend hasn't actually confirmed.
-  previewPlayPauseBtn.addEventListener('click', function () {
-    if (!current.track_url) return;
-    sendTransportAction_(current.paused ? 'resume_now_playing' : 'pause_now_playing');
+  // Muted (0) by default -- the Handler is normally already hearing the
+  // real broadcast at the table through some other speaker; raising
+  // this previews it through THIS device too.
+  volumeIcon.innerHTML = VOLUME_OFF_ICON_PATH;
+  volumeSlider.addEventListener('input', function () {
+    var v = parseInt(volumeSlider.value, 10) || 0;
+    previewAudio.volume = v / 100;
+    previewAudio.muted = v === 0;
+    volumeIcon.innerHTML = v === 0 ? VOLUME_OFF_ICON_PATH : VOLUME_UP_ICON_PATH;
   });
+
   previewSlider.addEventListener('input', function () {
     isPreviewSeekDragging = true;
     previewElapsedEl.textContent = formatSeekTime_(parseFloat(previewSlider.value));
@@ -4024,7 +4048,7 @@
 
   seekSlider.addEventListener('input', function () {
     isSeekDragging = true;
-    seekLabel.textContent = formatSeekTime_(parseInt(seekSlider.value, 10));
+    seekElapsedEl.textContent = formatSeekTime_(parseInt(seekSlider.value, 10));
   });
   seekSlider.addEventListener('change', function () {
     sendSeek_(parseInt(seekSlider.value, 10) * 1000);
