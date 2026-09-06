@@ -1356,3 +1356,70 @@ Script Web App dispatch/cold-start latency itself, which is a separate,
 already-documented platform characteristic (see "Backend performance &
 security hardening" below) -- this only removes the extra, unnecessary
 delay this session's own Sheets-first ordering was adding on top of it.
+
+**CI's QA harness (`test/run_tests.py`) hardcoded a dev-sandbox Chromium
+path, and separately, its Notes/Evidence-in-Notes tests were mocking a
+backend the app no longer reads content from.** Two distinct bugs, both
+only surfaced once GitHub Actions CI actually got wired up (this
+session's own addition, see `VERSIONING.md`) and could finally run this
+suite in a clean environment for the first time.
+
+1. `main()` called `p.chromium.launch(executable_path="/opt/pw-browsers/chromium", ...)`
+   -- a path specific to the Claude Code sandbox this file was
+   originally authored in, not a real path on a GitHub Actions runner
+   or any machine that just ran `playwright install` normally (which
+   puts the browser in Playwright's own default cache location
+   instead). Every CI run failed at that exact line, immediately, 100%
+   reproducible, regardless of what the triggering commit actually
+   changed. Fixed by making `executable_path` opt-in via a
+   `DG_TEST_CHROMIUM_PATH` env var (unset by default), matching the
+   existing `DG_TEST_BASE` env-var-with-default pattern already in this
+   file, and falling back to Playwright's own standard resolution.
+
+2. Once that was fixed and the suite could finally run to completion in
+   CI for the first time, it surfaced ~38 failures concentrated entirely
+   in Notes (`test_notes_v2_editorjs`, `test_notes_evidence_integration`,
+   cascading into further crashes later in each of those same test
+   functions) plus one cross-iframe timing issue and one genuinely stale
+   assertion. First hypothesis (a slow/cold CI runner racing a handful of
+   fixed `page.wait_for_timeout(N)` calls that should have been
+   `wait_for_condition` polling instead) was wrong -- verified locally
+   with the polling fix applied and the exact same failures still
+   happened, with generous 8-second timeouts. Real cause: `notes/notes.js`
+   was migrated to live Firestore `onSnapshot` listeners for actual note
+   and Evidence content as part of this project's own earlier Firebase
+   migration (Phase 5) -- its own code comment says so plainly, "Reuses
+   `list_cell_notes` purely for its bundled identities map, discarding
+   `res.notes` now that the two \[Firestore\] listeners above own note
+   content." But the test fixtures for Notes were never updated to
+   match -- they still only mocked the old Apps Script JSONP endpoint,
+   whose note/Evidence content the app has been silently discarding ever
+   since that migration. These tests have likely produced no real
+   content-flow coverage since then, invisible only because CI could
+   never run far enough to expose it. `install_radio_firestore_stub`
+   already existed for Table Radio's own single-document Firestore
+   listener, but nothing equivalent existed for Notes' collection+
+   `.where()`-clause queries or the `ensureAgentSignedIn()` Auth+Functions
+   sign-in step both Notes' and Evidence's listeners sit behind. Added
+   `NOTES_FIRESTORE_STUB`/`install_notes_firestore_stub()`/
+   `push_firestore_snapshot()` (a more general stub: fake Auth
+   `signInWithCustomToken`, fake Functions `httpsCallable('exchangeAgentToken')`,
+   and a Firestore collection stub matching listeners by exact
+   collection-path + `.where()`-chain rather than a single document id),
+   wired into both broken test functions and into `test_mobile_notes_fullscreen`
+   (which embeds `notes/index.html` in an iframe and was hitting the
+   same real-network-call problem even though it doesn't check Notes
+   content itself). Also fixed in the same pass: `test_notes_code_url_param`
+   asserted a "Change Agent" button (`#change-context-btn`) that was
+   deliberately removed and replaced by Split View/Character Sheet
+   buttons in an earlier commit -- notes/index.html's own code comment
+   confirms the removal was intentional; the test was simply never
+   updated to match, so it was replaced with an assertion on the actual
+   current replacement UI. And `test_mobile_notes_fullscreen`'s own
+   cross-iframe `#notes-play-btn` visibility check raced Playwright's
+   `frame_locator` frame-attachment bookkeeping against a raw
+   `contentDocument` DOM read that can resolve a tick earlier -- fixed by
+   polling via `frame_locator` itself instead of mixing the two APIs.
+   Verified locally (all 4 previously-broken test functions, 83 checks,
+   0 failures) before shipping; CI's full 666-check run is the real
+   confirmation.
