@@ -176,6 +176,114 @@ def push_radio_listener_error(page, channel):
         channel,
     )
 
+# ── Notes/Evidence-in-Notes Firestore listeners (notes/notes.js,
+# Firebase migration Phase 5) -- a more general stub than
+# RADIO_FIRESTORE_STUB above: content here is a COLLECTION query
+# (cells/{cellId}/notes with a .where() clause, or evidence with its
+# own .where()), not one fixed document, and startNotesListeners()/
+# startEvidenceListener() both sit behind a fake Auth+Functions
+# sign-in (ensureAgentSignedIn() -- exchangeAgentToken) neither of
+# Radio's listeners need. This was missing entirely until diagnosed as
+# the real cause of ~35 CI failures in the Notes area: the old mock
+# only faked the Apps Script JSONP endpoint, but notes.js's own code
+# comment says it plainly -- list_cell_notes is "reused purely for its
+# bundled identities map, discarding res.notes now that the two
+# [Firestore] listeners above own note content." The JSONP mock's note/
+# evidence data was silently never reaching the app at all.
+#
+# window.__dgFirestoreListeners is a flat list (not keyed by a single
+# id like Radio's) since a listener here is identified by its full
+# collection path plus its exact .where() chain, not one channel name.
+NOTES_FIRESTORE_STUB = """
+(function () {
+  window.__dgFirestoreListeners = [];
+  window.__dgFirestoreAuthUser = null;
+
+  function makeQuery(path, wheres) {
+    return {
+      where: function (field, op, value) { return makeQuery(path, wheres.concat([[field, op, value]])); },
+      onSnapshot: function (success, error) {
+        var entry = { path: path, wheres: wheres, success: success, error: error };
+        window.__dgFirestoreListeners.push(entry);
+        return function () {
+          var i = window.__dgFirestoreListeners.indexOf(entry);
+          if (i !== -1) window.__dgFirestoreListeners.splice(i, 1);
+        };
+      }
+    };
+  }
+  function makeCollectionRef(path) {
+    var q = makeQuery(path, []);
+    q.doc = function (id) {
+      return { collection: function (name) { return makeCollectionRef(path + '/' + id + '/' + name); } };
+    };
+    return q;
+  }
+
+  window.firebase = {
+    apps: [{}],
+    initializeApp: function () {},
+    firestore: function () {
+      return { settings: function () {}, collection: function (name) { return makeCollectionRef(name); } };
+    },
+    auth: function () {
+      return {
+        get currentUser() { return window.__dgFirestoreAuthUser; },
+        signInWithCustomToken: function (token) {
+          window.__dgFirestoreAuthUser = { uid: token };
+          return Promise.resolve({ user: window.__dgFirestoreAuthUser });
+        }
+      };
+    },
+    functions: function () {
+      return {
+        httpsCallable: function (name) {
+          return function (payload) {
+            if (name === 'exchangeAgentToken') return Promise.resolve({ data: { token: payload.agent_code } });
+            return Promise.resolve({ data: {} });
+          };
+        }
+      };
+    }
+  };
+})();
+"""
+
+def install_notes_firestore_stub(page):
+    page.add_init_script(NOTES_FIRESTORE_STUB)
+
+def notes_firestore_listener_count(page):
+    return page.evaluate("() => (window.__dgFirestoreListeners || []).length")
+
+def push_firestore_snapshot(page, path, wheres, docs):
+    """Delivers a fake Firestore snapshot (the full current result set,
+    same as a real listener's first callback) to whichever registered
+    listener matches the given collection path and .where() chain
+    exactly. Must be called after the app has actually subscribed --
+    poll notes_firestore_listener_count() first, same reasoning as
+    push_radio_now_playing()'s own "must be called after the widget has
+    actually subscribed" note. docs is a list of dicts, each needing an
+    'id' key plus whatever fields the real CellNotes/Evidence row has."""
+    page.evaluate(
+        """([path, wheres, docs]) => {
+            var match = (window.__dgFirestoreListeners || []).find(function (l) {
+                return l.path === path && JSON.stringify(l.wheres) === JSON.stringify(wheres);
+            });
+            if (!match) throw new Error('no Firestore listener registered for ' + path + ' where=' + JSON.stringify(wheres));
+            var wrapped = docs.map(function (d) {
+                var id = d.id;
+                var data = Object.assign({}, d);
+                delete data.id;
+                return { id: id, data: function () { return data; } };
+            });
+            match.success({
+                docChanges: function () { return wrapped.map(function (d) { return { type: 'added', doc: d }; }); },
+                forEach: function (fn) { wrapped.forEach(fn); }
+            });
+        }""",
+        [path, wheres, docs],
+    )
+
 def fill_cover_form(page, agent, form_selector="#dg-form"):
     text_fields = ["char_name","codename","nationality","face_shape","eye_color","eye_shape",
                    "nose","lips","skin","facial_hair","face_scars","hair_color","hair_style",
@@ -7217,6 +7325,7 @@ def test_notes_v2_editorjs(p):
     page = p.new_page()
     page.set_default_timeout(25000)
     errs = collect_errors(page)
+    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
@@ -7312,6 +7421,20 @@ def test_notes_v2_editorjs(p):
     page.click(".dg-notes-identity-confirm")
     wait_for_condition(lambda: page.query_selector(".dg-notes-identity-modal") is None, timeout_ms=6000)
 
+    # Deliver the initial Firestore snapshots -- notes.js's real content
+    # listeners (see NOTES_FIRESTORE_STUB's own comment) only exist once
+    # startNotesListeners() actually subscribes, which happens async
+    # behind ensureAgentSignedIn()'s fake sign-in, so wait for both to
+    # register before pushing. Only PRIY-AN34's two SHARED blocks go to
+    # the shared listener (b2 is private -- a real Firestore query with
+    # `.where('shared','==',true)` would never return it, same privacy
+    # boundary the old JSONP mock enforced manually); OWEN has written
+    # nothing yet, so the own listener's first snapshot is empty.
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 2, timeout_ms=8000)
+    push_firestore_snapshot(page, "cells/cell_1/notes", [["shared", "==", True]],
+                             [dict(blocks_state[0], id="b1"), dict(blocks_state[2], id="b3")])
+    push_firestore_snapshot(page, "cells/cell_1/notes", [["agent_code", "==", "OWEN-CS12"]], [])
+
     wait_for_condition(lambda: page.query_selector("#dg-notes-editor-mount .ce-block") is not None, timeout_ms=6000)
     record("notes", "your own tab mounts a live Editor.js instance", page.query_selector("#dg-notes-editor-mount") is not None, "")
 
@@ -7341,7 +7464,12 @@ def test_notes_v2_editorjs(p):
     # shows another member's shared block,
     # never leaks their private one.
     page.click('.dg-notes-tab-shared')
-    page.wait_for_timeout(300)
+    # A fixed short sleep here raced on a slower/colder CI runner --
+    # same "renderer needs a nudge to tick" latency this suite's other
+    # post-event waits already work around (see the Circulate wait
+    # below), just not applied here originally. Poll for the actual
+    # content instead of guessing a sleep long enough.
+    wait_for_condition(lambda: (page.evaluate("1"), "Priya's shared note" in page.content())[1], timeout_ms=8000)
     record("notes", "the Shared tab is a read-only feed, not a second live editor",
            page.query_selector("#dg-notes-editor-mount") is None, "")
     shared_html = page.content()
@@ -7357,7 +7485,7 @@ def test_notes_v2_editorjs(p):
     record("notes", "the Timeline toggle only appears on the Shared tab",
            page.locator(".dg-notes-timeline-btn").count() == 1, "")
     page.click(".dg-notes-timeline-btn")
-    page.wait_for_timeout(200)
+    wait_for_condition(lambda: (page.evaluate("1"), page.locator(".dg-notes-timeline-group").count() == 2)[1], timeout_ms=8000)
     record("notes", "Group by date splits shared blocks from different days into separate date sections",
            page.locator(".dg-notes-timeline-group").count() == 2, str(page.locator(".dg-notes-timeline-group").count()))
     record("notes", "each Timeline date section shows a date header",
@@ -7459,7 +7587,7 @@ def test_notes_v2_editorjs(p):
     # which tab it came from.
     page.fill(".dg-notes-search", "shared note")
     page.check(".dg-notes-search-everywhere")
-    page.wait_for_timeout(300)
+    wait_for_condition(lambda: (page.evaluate("1"), "PRIY-AN34" in (page.locator("#dg-notes-toc-mount").inner_text() or ""))[1], timeout_ms=8000)
     record("notes", "'Search everywhere' relabels the sidebar to Search Results",
            page.inner_text(".dg-notes-toc-label").lower() == "search results", page.inner_text(".dg-notes-toc-label"))
     record("notes", "Search Results includes a match from another member's shared block",
@@ -7574,6 +7702,7 @@ def test_notes_evidence_integration(p):
     page = p.new_page()
     page.set_default_timeout(10000)
     errs = collect_errors(page)
+    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
@@ -7661,8 +7790,23 @@ def test_notes_evidence_integration(p):
     if page.query_selector(".dg-notes-identity-modal"):
         page.click(".dg-notes-color-swatch")
         page.click(".dg-notes-identity-confirm")
+
+    # Deliver the initial Firestore snapshots -- see
+    # NOTES_FIRESTORE_STUB's own comment for why the old list_cell_notes/
+    # list_evidence JSONP mock data above no longer reaches the app at
+    # all (both are live Firestore listeners now). Three listeners:
+    # Notes own (b1, OWEN's private header), Notes shared (rem1, Priya's
+    # Circulated evidence_remark), and Evidence itself (ev1/ev2).
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 3, timeout_ms=8000)
+    push_firestore_snapshot(page, "cells/cell_1/notes", [["agent_code", "==", "OWEN-CS12"]],
+                             [dict(notes_blocks[0], id="b1")])
+    push_firestore_snapshot(page, "cells/cell_1/notes", [["shared", "==", True]],
+                             [dict(notes_blocks[1], id="rem1")])
+    push_firestore_snapshot(page, "evidence", [["visible_to", "array-contains-any", ["OWEN-CS12", "ALL"]]],
+                             [dict(e, id=e["evidence_id"]) for e in evidence_fixture])
+
     page.wait_for_selector("#dg-notes-editor-mount .ce-block", timeout=10000)
-    page.wait_for_timeout(500)
+    wait_for_condition(lambda: (page.evaluate("1"), page.locator(".dg-notes-evidence-item").count() == 2)[1], timeout_ms=8000)
 
     record("notes", "the sidebar lists an Evidence section with both visible items",
            page.locator(".dg-notes-evidence-item").count() == 2, "")
@@ -7675,7 +7819,7 @@ def test_notes_evidence_integration(p):
            "Meadowbrook" in page.content(), "")
 
     page.click('[data-evidence-id="ev1"]')
-    page.wait_for_timeout(600)
+    wait_for_condition(lambda: (page.evaluate("1"), page.is_visible(".dg-notes-evidence-modal"))[1], timeout_ms=8000)
     record("notes", "clicking an Evidence item opens a detail modal with its title and body",
            page.is_visible(".dg-notes-evidence-modal") and "Coroner's Report" in page.inner_text(".dg-notes-evidence-body")
            and "Cause of death" in page.inner_text(".dg-notes-evidence-body"), "")
@@ -7883,13 +8027,17 @@ def test_notes_code_url_param(p):
     record("notes", "?code= opens that specific Agent's notes, not the roster's most-recently-active one",
            page.locator('[data-tab="PRIY-AN34"].active').count() == 1, "")
 
-    # Change Agent should still work afterward -- the URL forcing PRIY-AN34
-    # open once must not turn every subsequent proceed() call into a
-    # loop back to the same Agent.
-    page.click("#change-context-btn")
-    page.wait_for_timeout(300)
-    record("notes", "Change Agent still returns to the picker instead of re-forcing the URL's Agent open again",
-           page.locator("#picker-wrap:not(.hidden)").count() == 1, "")
+    # Stale assertion removed: this used to click a "Change Agent"
+    # button (#change-context-btn) that returned to the picker. That
+    # button no longer exists -- notes/index.html's own code comment
+    # ("Split View/Character Sheet need to know which Agent's sheet to
+    # open, replacing the old 'Change Agent' button that lived in the
+    # same spot") documents its deliberate removal in favor of direct
+    # navigation to the character sheet. What actually replaced it: the
+    # change-context row (Split View / Character Sheet buttons) becomes
+    # visible once notes are open for the URL-forced Agent.
+    record("notes", "the old Change Agent button's replacement (Split View/Character Sheet) is shown for the URL-forced Agent",
+           page.is_visible("#change-context-row") and page.is_visible("#split-view-btn") and page.is_visible("#character-sheet-btn"), "")
 
     page.close()
     return errs
@@ -8237,6 +8385,15 @@ def test_mobile_notes_fullscreen(p):
     page.set_default_timeout(10000)
     errs = collect_errors(page)
     page.set_viewport_size({"width": 390, "height": 844})
+    # add_init_script runs in every frame this page attaches (including
+    # the notes/index.html iframe Split View's mobile mode embeds below)
+    # -- without this, that embedded page's own startNotesListeners()/
+    # ensureAgentSignedIn() hit real (blocked) network calls, same root
+    # cause diagnosed in test_notes_v2_editorjs/test_notes_evidence_
+    # integration. This test doesn't check Notes content, just chrome/
+    # layout, so no push_firestore_snapshot() call is needed after this
+    # -- just keeping the real network calls from ever happening.
+    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
@@ -8301,14 +8458,16 @@ def test_mobile_notes_fullscreen(p):
            iframe_src == f"../notes/index.html?embed=fullscreen&code={state['code']}",
            f"{iframe_src} vs code={state['code']}")
 
-    wait_for_condition(
-        lambda: page.eval_on_selector(
-            "#dg-split-notes-frame",
-            "el => { const d = el.contentDocument; const b = d && d.getElementById('notes-play-btn'); "
-            "return !!(b && getComputedStyle(b).display !== 'none'); }"
-        ),
-        timeout_ms=20000)
     frame = page.frame_locator("#dg-split-notes-frame")
+    # Polling via frame_locator itself (Playwright's own cross-frame API)
+    # rather than a raw contentDocument eval_on_selector -- the two can
+    # disagree briefly right after the iframe's src is set, since
+    # Playwright's own frame-attachment bookkeeping can lag a tick
+    # behind a plain DOM read into contentDocument. That mismatch (raw
+    # DOM says the button exists and isn't display:none, but
+    # frame_locator().is_visible() isn't true yet) was intermittently
+    # failing the very next check under a slower/colder CI runner.
+    wait_for_condition(lambda: frame.locator("#notes-play-btn").is_visible(), timeout_ms=20000)
     record("stats", "Notes' own Agent Hub link is hidden while embedded this way",
            frame.locator("#notes-back-link").is_visible() is False, "")
     record("stats", "Notes shows its own Play pill instead, docked at the Notes widget's exact spot",
