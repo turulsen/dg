@@ -196,18 +196,20 @@ returns to across sessions.
 
 **Profiling → Agent File gate:** the Agent File tab only renders once
 `isProfilingComplete()` considers every `[required]` field on the
-Profiling form filled in. This is a deliberate design choice (a
-half-finished record isn't worth showing as if it were done), but it's
-also the mechanism behind a real, still-open UX gap: any character
-sheet export (§2, Kappa Black or otherwise) only ever fills ~7 of the
-~20 required fields (name, age, sex, nationality, profession, build,
-outfit — never the ~13 pure-appearance fields like eye color or hair,
-since a character sheet has no source for those), so a player landing
-on their Agent File right after export gets bounced back to a
-mostly-blank Profiling form instead, with no explanation of why. See
-`BUGFIXES.md`'s "Recent fixes" and the diagnosis on this specific gap
-handed to the firebase session separately — **this one is still open,
-not yet fixed.**
+Profiling form filled in — 22 fields total. This is a deliberate
+design choice (a half-finished record isn't worth showing as if it
+were done). Any character sheet export (§2, Kappa Black or otherwise)
+only ever fills 9 of those 22 (`char_name`, `age_range`, `sex`,
+`nationality`, `build`, and the four outfit fields) — never the 13
+pure-appearance fields like eye color, hair, posture, or vibe, since a
+character sheet has no source for those. **This is intentional, not a
+bug:** appearance can't be derived from stats, so the remaining fields
+are always meant to be completed by the player by hand or via the
+Random Agent Generator, regardless of import source. A player landing
+on Profiling right after an export previously had no explanation for
+why the form still looked incomplete — fixed by a one-time banner
+(`2f39fe9`, Sep 3) that explains the carryover without relaxing the
+gate itself. No further fix is needed here.
 
 **Per-era Field Portrait/Reference:** an Agent can have multiple
 "eras" (decades) active — `active_eras` — each with its own Face
@@ -683,11 +685,16 @@ field unconditionally — the era-specific columns from §5 *are* in use
 on the current Storage-upload path. No known era-collision bug remains
 open as of this check.
 
-The longer-term goal discussed (not yet built): a single-page "iframe
-shell" — one outer page owning persistent Table Radio/Dice Roller
-widgets, with an inner iframe swapping between the existing pages, so
-music/dice state survives page-to-page navigation instead of resetting
-on every load. Planned but not started as of this document.
+**[Corrected — this shipped]** The longer-term goal discussed here was
+a single-page "iframe shell" — one outer page (`hub.html`) owning
+persistent Table Radio/Dice Roller widgets, with an inner iframe
+swapping between the existing pages, so music/dice state survives
+page-to-page navigation instead of resetting on every load. This went
+live `c1219e1` (Aug 29, "app shell live, linked from index.html"),
+followed by a series of `Cut over:` fix commits through early
+September addressing bugs the shell surfaced (Dice Roller state going
+stale, Split View, Notes block picker, back-navigation, duplicate
+widgets). Live and current — no longer just planned.
 
 ---
 
@@ -721,10 +728,12 @@ implied-done:
   path to periodic re-triggering) without finding a code-level cause.
   Not yet reproduced; needs either a repro from the reporter's own
   device or further live debugging before it can be root-caused.
-- **Agent File not prefilling fully after any character-sheet
-  export** — see §5's Profiling-gate explanation; root-caused but not
-  yet fixed as of this document.
-- **The Firebase "one-page iframe shell" idea** — designed, not built.
+- ~~Agent File not prefilling fully after character-sheet export~~ —
+  not a bug. Appearance fields can't be derived from a stat block by
+  design; players complete them manually or via the Random Agent
+  Generator. The confusing bounce-with-no-explanation was fixed with a
+  banner (`2f39fe9`). See §5.
+- ~~The Firebase "one-page iframe shell" idea~~ — shipped, see §12.
 - Two items the original external security review flagged and this
   project deliberately decided *not* to build, with reasoning kept in
   `Code.gs`'s own comments: a secondary `AgentIndex` sheet for O(1)
