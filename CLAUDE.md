@@ -44,3 +44,12 @@ context, kept here as a quick reference)
 - Apps Script's Run-dropdown hides any function whose name ends in `_` —
   diagnostic/wrapper functions meant to be run manually must not have a
   trailing underscore.
+
+## Versioning, CI, and rollback
+
+See `VERSIONING.md` for the full policy — semver tag cadence, what
+`.github/workflows/ci.yml` actually checks (and deliberately doesn't),
+and the rollback plan. The one thing worth knowing before reading that
+file: the frontend (git/Pages) and backend (Apps Script) roll back
+completely differently, and mixing up which one you're rolling back is
+the main way a rollback makes things worse instead of better.

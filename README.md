@@ -118,6 +118,15 @@ Everything else in this repo — the Agent Hub, Agent Portal, A-Cell, ID Creator
 
 There's an automated smoke-test suite in `test/` (550+ checks) that exercises every page — `index.html`, `agent-hub.html`, `dg-agent-portal.html`, `stats/`, `a-cell.html`, `dg-id-creator.html`, `notes/` — including the Field IDs Fabricator, Export to Agent File, the Agent Roster, the Evidence Locker (folders, Released toggle, per-Agent restriction), Notes (Timeline, Pin, Tags, cross-tab search), Table Radio (main track, ambient layers, stingers), Cloud Save/Load by Code, and full offline/PWA behavior, with the Google Apps Script backend faked out so it never touches real data. See `test/README.md`.
 
+## Versioning & CI
+
+Releases are semver-tagged on `main` (`vMAJOR.MINOR.PATCH`); a GitHub
+Actions workflow runs the QA suite above plus a check that `sw.js`'s
+`CACHE_NAME` gets bumped alongside any shell-file change, on every push
+to `main`/`firebase-migration`. Full policy, including how frontend and
+backend rollback differ (they're deployed completely separately), is in
+`VERSIONING.md`.
+
 ## Roadmap ideas for a fuller Agent Hub
 
 Rough priority order, cheapest/highest-value first:
