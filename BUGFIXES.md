@@ -1423,3 +1423,40 @@ suite in a clean environment for the first time.
    Verified locally (all 4 previously-broken test functions, 83 checks,
    0 failures) before shipping; CI's full 666-check run is the real
    confirmation.
+
+**Follow-up: that fix was itself incomplete -- one Notes test function
+was missed, plus one already-passing-locally check turned out to be a
+genuine CI-only flake.** Confirmed by actually watching the resulting
+CI run complete rather than assuming green: it went from 42 failures to
+31, not zero.
+
+1. `test_notes_reload_shows_own_previous_blocks` -- a small, separate
+   regression test (deliberately not folded into `test_notes_v2_editorjs`,
+   see its own docstring) covering a returning player's own already-
+   saved notes reappearing on a fresh page load -- was never touched by
+   the pass above and still only seeded its pre-existing block through
+   the old JSONP `list_cell_notes` fixture, the exact same discarded-by-
+   the-app data path the rest of this fix addressed. Fixed the same way:
+   `install_notes_firestore_stub()` plus a `push_firestore_snapshot()`
+   call once both listeners subscribe.
+2. `test_mobile_notes_fullscreen`'s Play-pill visibility check
+   (`#notes-play-btn`) failed on the real CI run despite passing locally
+   in isolation. Reproduced properly this time by running the *entire*
+   suite locally in one sequential pass (matching how CI actually runs
+   it, not just the 4 previously-broken functions in isolation) --  it
+   passed there too, 673/697. The button's visibility is set
+   synchronously at script-parse time from a URL param
+   (`notes/index.html`'s `embed=fullscreen` check), with no dependency
+   on Firestore, Auth, or any async chain at all -- there is no
+   plausible app-side race left to fix here. Concluded this is a
+   genuine CI-runner-only timing flake (the suite runs ~700 checks
+   sequentially in one browser by that point, and GitHub Actions'
+   shared runners are meaningfully slower/more contended than this
+   session's own sandbox) rather than evidence of a real bug, and left
+   it as-is rather than papering over a single flake with speculative
+   test changes.
+
+Lesson repeated from the entry above: "verified locally" and "verified
+in CI" are not the same claim, even when the local run is the complete
+suite and not just the previously-broken functions -- confirm the
+actual CI result before calling a fix done.

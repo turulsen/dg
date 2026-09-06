@@ -7914,6 +7914,7 @@ def test_notes_reload_shows_own_previous_blocks(p):
     page = p.new_page()
     page.set_default_timeout(15000)
     errs = collect_errors(page)
+    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
@@ -7960,6 +7961,16 @@ def test_notes_reload_shows_own_previous_blocks(p):
     wait_for_condition(lambda: page.query_selector(".dg-notes-identity-modal") is not None, timeout_ms=6000)
     page.click(".dg-notes-color-swatch")
     page.click(".dg-notes-identity-confirm")
+
+    # Notes content is delivered via live Firestore onSnapshot listeners
+    # now (Firebase migration Phase 5), not the JSONP list_cell_notes
+    # response above -- that fixture is only reused for its bundled
+    # identities map. Feed the pre-existing block through the stub once
+    # both listeners have actually subscribed.
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 2, timeout_ms=8000)
+    push_firestore_snapshot(page, "cells/cell_1/notes", [["agent_code", "==", "OWEN-CS12"]],
+                             [dict(blocks_state[0], id="b0")])
+    push_firestore_snapshot(page, "cells/cell_1/notes", [["shared", "==", True]], [])
 
     wait_for_condition(lambda: "Notes from last session" in page.content(), timeout_ms=8000)
     record("notes", "a block saved before this page load reappears in your own tab on a fresh open",
