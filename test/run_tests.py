@@ -8370,11 +8370,25 @@ def main():
         # to do with Chrome deciding this page isn't the one the user is
         # looking at. Real players' foregrounded tabs never hit this;
         # only this offscreen test browser does.
-        browser = p.chromium.launch(executable_path="/opt/pw-browsers/chromium", args=[
+        #
+        # executable_path is opt-in via DG_TEST_CHROMIUM_PATH, not
+        # hardcoded -- a fixed sandbox path (e.g. /opt/pw-browsers/chromium,
+        # this file's previous value) only exists in the specific dev
+        # environment it was written for. Every CI run failed on this
+        # exact line for that reason: `playwright install` puts Chromium
+        # in Playwright's own default cache location, which isn't that
+        # path, so leaving executable_path unset and letting Playwright
+        # resolve its own install is what actually works both there and
+        # in any environment that ran `playwright install` normally.
+        launch_kwargs = {"args": [
             "--disable-background-timer-throttling",
             "--disable-backgrounding-occluded-windows",
             "--disable-renderer-backgrounding",
-        ])
+        ]}
+        chromium_path = os.environ.get("DG_TEST_CHROMIUM_PATH", "")
+        if chromium_path:
+            launch_kwargs["executable_path"] = chromium_path
+        browser = p.chromium.launch(**launch_kwargs)
 
         def safe(fn, *args, area="unknown"):
             try:
