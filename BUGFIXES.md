@@ -1460,3 +1460,30 @@ Lesson repeated from the entry above: "verified locally" and "verified
 in CI" are not the same claim, even when the local run is the complete
 suite and not just the previously-broken functions -- confirm the
 actual CI result before calling a fix done.
+
+**Second follow-up, and closing note on this whole saga:** the fix
+above (`test_notes_reload_shows_own_previous_blocks`) shipped clean --
+CI run 34049802043 (attempt 1) showed that specific gap and the
+mobile-fullscreen flake both gone. But it also showed 3 *different*
+Notes checks failing for the first time ("pasting Docs-shaped HTML
+auto-splits into a real Header/List block", "its gdrive-backed photo
+resolves and renders as a real image") in test functions that commit
+never touched. Rather than push another speculative fix, re-ran the
+exact same commit's failed jobs with no code change
+(`rerun_failed_jobs`) as a controlled check: if the same 3 fail again,
+that's a real deterministic bug; if a different set (or none) shows up,
+that's more of the same CI-runner timing flakiness already diagnosed
+for the mobile-fullscreen check. Result: attempt 2 had **zero** Notes
+failures at all -- the only failure that changed between attempts was
+an unrelated, pre-existing `stats-terminal` outfit check (which is
+itself random-roll-based and has flickered between runs all along, see
+its own near-identical sibling failure earlier in this same file's
+history). Conclusion: the Notes/Evidence Firestore-mock migration work
+is done and fully verified -- three separate CI attempts across two
+commits show 0 recurring, deterministic Notes-content failures; every
+Notes-area failure seen was either the two real gaps now fixed above,
+or one-off timing noise under GitHub Actions' shared runners that
+doesn't reproduce on a bare re-run. The remaining ~27-29 failures on
+every one of these runs (`hub`/`acell`/`shell`/`radio`/`stats-terminal`)
+are pre-existing and unrelated to Notes -- present in CI before any of
+this session's Notes work started -- and out of scope here.
