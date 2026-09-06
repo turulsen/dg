@@ -185,3 +185,31 @@ understands the new one, or the reverse. Before considering a rollback
 finished, check both halves are actually at versions meant to talk to
 each other (the tag message's "Backend: vNN (redeployed: yes/no)" line
 from §2 is what makes this checkable after the fact).
+
+## 5. Bug tracking: Issues vs. `BUGFIXES.md` vs. `FEATURES.md` §13
+
+Three places used to blur together here. The split, going forward:
+
+- **GitHub Issues** (`https://github.com/turulsen/dg/issues`) — the
+  *live* board. Anything currently open and unresolved gets filed here,
+  not as a `FEATURES.md` bullet. Default labels only (`bug` for actual
+  defects, `enhancement` for known gaps/feature work) — no custom label
+  taxonomy was worth building for a project this size. Close an issue
+  with `Fixes #N` in the commit message that actually fixes it; that
+  works fine against this repo's direct-push-to-`main` workflow, no PR
+  needed.
+- **`BUGFIXES.md`** — the *narrative archive*. Once something ships,
+  it gets the same detailed root-cause writeup it always has, whether
+  or not it happened to pass through an Issue first. This doesn't
+  change — it's still the first thing to read in full before touching
+  a reported bug (see `CLAUDE.md` §1).
+- **`FEATURES.md` §13** — neither of the above. Just a short pointer to
+  the Issues list, plus a permanent record of things that are
+  *resolved-but-worth-remembering-the-context-of* (like the Profiling
+  gate turning out to be working-as-designed) or *deliberately decided
+  not to build*. Not a place to re-list what Issues already tracks.
+
+A session picking up a bug report should still check `BUGFIXES.md` in
+full first (recurring symptoms are often an old fix that was real but
+partial), then check open Issues for whether it's already tracked,
+before doing anything else.
