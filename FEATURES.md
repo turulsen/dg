@@ -708,12 +708,11 @@ full reasoning on the split (Issues = live status board, `BUGFIXES.md`
 = narrative archive of what shipped, this section = closed/decided
 matters worth a permanent note).
 
-As of this writing, three tracked issues: #4 (Scream 03 stinger
+As of this writing, two open tracked issues: #4 (Scream 03 stinger
 reported as "still visually active" ~15s after it finishes — extensively
 investigated, not yet reproduced), #5 (Handler-facing access control —
 shared A-Cell password, dossiers reachable by Agent Code, no per-player
-identity), #6 (`stats/`'s Share URL is a fourth save mechanism untracked
-by the backend/Cover Identity/Handler lookup).
+identity).
 
 **Resolved, kept here as a permanent record (not re-opened as issues):**
 
@@ -723,6 +722,18 @@ by the backend/Cover Identity/Handler lookup).
   Generator. The confusing bounce-with-no-explanation was fixed with a
   banner (`2f39fe9`). See §5.
 - ~~The Firebase "one-page iframe shell" idea~~ — shipped, see §12.
+- ~~`stats/`'s Share URL is a fourth save mechanism untracked by the
+  backend/Cover Identity/Handler lookup~~ (issue #6) — not actually
+  true of the current code. `applyState()` in `stats/save-load.js`
+  (which `loadFromURL()`'s share-link path already routes through, same
+  as every other importer) mints a real Agent Code and pushes to the
+  backend via `ensureCloudCode()`/`pushToCloud()` the moment a named
+  character loads — verified live: a built share link produced a real
+  Agent Code and the exact same `save_character` payload (including the
+  `player_name` field Cover Identity/Handler lookup key off) any other
+  import produces. A share-linked character with a name is fully
+  tracked like any other; an unnamed one isn't trackable via any import
+  path, which is consistent, not share-link-specific.
 
 **Deliberately decided *not* to build** (not open work — a closed
 decision, kept here rather than as a "wontfix" issue since there's
