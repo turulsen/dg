@@ -2,3 +2,18 @@ test/results.json
 test/results-tmp-*.xlsx
 __pycache__/
 *.pyc
+
+# Firebase migration backend infra (Cloud Functions, the Sheets->Firestore
+# mirror script, and the Firebase CLI's own local hosting cache) lives on
+# the firebase-migration branch, not main -- main is the static-site-only
+# branch GitHub Pages actually serves, and never merges the full Firebase
+# migration history, only cherry-picked "cutover" pieces. Ignored here so
+# a local `npm install`/`firebase` CLI run in either directory (or the
+# CLI's own cache) doesn't show up as untracked noise on this branch.
+node_modules/
+.firebase/
+functions/
+tools/
+*-service-account*.json
+*-sa-key*.json
+firebase-debug*.log
