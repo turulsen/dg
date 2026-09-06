@@ -1,0 +1,56 @@
+name: CI
+
+# Runs on the two branches that actually matter: main (what GitHub Pages
+# serves live) and firebase-migration (the active development trunk).
+# Deliberately NOT on claude/new-session-* or other short-lived branches
+# -- those get validated indirectly once their work lands on one of
+# these two via the repo's own "cutover" merge pattern, and running full
+# Playwright suites on every scratch branch would mostly burn CI minutes
+# on branches that get discarded after merging.
+on:
+  push:
+    branches: [main, firebase-migration]
+  workflow_dispatch: {}
+
+jobs:
+  shell-cache-discipline:
+    name: sw.js CACHE_NAME bump check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check SHELL_FILES changes bumped CACHE_NAME
+        run: node scripts/check-shell-cache-bump.js "${{ github.event.before }}" "${{ github.sha }}"
+
+  test:
+    name: QA harness (test/run_tests.py)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test dependencies
+        run: pip install -r test/requirements.txt
+      - name: Install Playwright's Chromium + OS deps
+        run: python -m playwright install --with-deps chromium
+      - name: Serve the repo locally
+        run: python3 -m http.server 8949 &
+      - name: Wait for local server
+        run: |
+          for i in $(seq 1 20); do
+            curl -sf http://127.0.0.1:8949/index.html > /dev/null && exit 0
+            sleep 0.5
+          done
+          echo "Local server never came up" >&2
+          exit 1
+      - name: Run QA harness
+        run: python3 test/run_tests.py
+      - name: Upload results.json
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test/results.json
+          if-no-files-found: ignore
