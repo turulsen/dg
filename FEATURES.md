@@ -700,44 +700,36 @@ widgets). Live and current — no longer just planned.
 
 ## 13. Open / known-incomplete work
 
-Pulled from the README's own roadmap section plus what's come up
-since, kept honest about what's actually still missing rather than
-implied-done:
+**Currently-open items live in GitHub Issues, not here** —
+`https://github.com/turulsen/dg/issues`. This section used to carry the
+live list directly, which meant two places could say different things
+about whether something was still open; see `VERSIONING.md` for the
+full reasoning on the split (Issues = live status board, `BUGFIXES.md`
+= narrative archive of what shipped, this section = closed/decided
+matters worth a permanent note).
 
-- **Access control.** A-Cell is gated behind one shared password;
-  individual Agent dossiers are reachable by anyone with the code;
-  Cover Identity is a bare name match with no PIN. None of this is
-  tied to real per-player identity. (Agent-token auth was built once
-  and deliberately reverted — see §9 — this is a different, still-open
-  question about *Handler-facing* access, not player writes.)
-- **`stats/`'s Share URL** (a base64 character dump in a URL fragment)
-  is a fourth, fully parallel save mechanism, untracked by the
-  backend, invisible to Cover Identity, un-lookupable by a Handler.
-- **Scream 03 (and possibly other stingers) reported as "still visually
-  active" well after it finished playing** — live report: "I pressed
-  scream 03 once, and it plays now every 15 seconds (though I could
-  only hear it the first time)," later narrowed by the reporter to
-  something they SEE recur in A-Cell (a button glow or an Active Sounds
-  row), not actual repeated audio. Investigated at length across two
-  passes (checked for a literal 15000ms timer in table-radio.js/
-  a-cell.html — none exists; measured scream_03.mp3's real duration via
-  a live audio load — 6.48s, ruling out native re-looping as the direct
-  mechanism; re-verified `applyStingers_()`'s dedup guards
-  (`isFirstSnapshot`/`alreadySeen`/element-existence checks) and the
-  Active Sounds row's own local `ended` cleanup — none show an obvious
-  path to periodic re-triggering) without finding a code-level cause.
-  Not yet reproduced; needs either a repro from the reporter's own
-  device or further live debugging before it can be root-caused.
+As of this writing, three tracked issues: #4 (Scream 03 stinger
+reported as "still visually active" ~15s after it finishes — extensively
+investigated, not yet reproduced), #5 (Handler-facing access control —
+shared A-Cell password, dossiers reachable by Agent Code, no per-player
+identity), #6 (`stats/`'s Share URL is a fourth save mechanism untracked
+by the backend/Cover Identity/Handler lookup).
+
+**Resolved, kept here as a permanent record (not re-opened as issues):**
+
 - ~~Agent File not prefilling fully after character-sheet export~~ —
   not a bug. Appearance fields can't be derived from a stat block by
   design; players complete them manually or via the Random Agent
   Generator. The confusing bounce-with-no-explanation was fixed with a
   banner (`2f39fe9`). See §5.
 - ~~The Firebase "one-page iframe shell" idea~~ — shipped, see §12.
-- Two items the original external security review flagged and this
-  project deliberately decided *not* to build, with reasoning kept in
-  `Code.gs`'s own comments: a secondary `AgentIndex` sheet for O(1)
-  lookups (this campaign's real scan cost is negligible at its actual
-  scale), and a full XSS/input-sanitization audit (flagged as a real,
-  separate follow-up, not bundled into the performance/security pass
-  already done).
+
+**Deliberately decided *not* to build** (not open work — a closed
+decision, kept here rather than as a "wontfix" issue since there's
+nothing left to track): two items the original external security
+review flagged, with the actual reasoning kept in `Code.gs`'s own
+comments — a secondary `AgentIndex` sheet for O(1) lookups (this
+campaign's real scan cost is negligible at its actual scale), and a
+full XSS/input-sanitization audit (flagged as a real, separate
+follow-up, not bundled into the performance/security pass already
+done).

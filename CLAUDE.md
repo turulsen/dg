@@ -15,22 +15,29 @@
 2. **Read `README.md` and `FEATURES.md` before diagnosing.** `README.md` is
    the short page-by-page overview. `FEATURES.md` is the deeper reference —
    architecture, the full backend action table, the Sheets data model, and
-   an explicit "open/known-incomplete work" section — written so a fresh
-   session can understand a bug report without reverse-engineering it from
-   the code alone. **Caveat:** `FEATURES.md` documents the app as of the
-   pre-Firebase `claude/delta-green-agent-hub-sn79d4` branch, with a
-   deliberately separate §12 summarizing Firebase migration status as of
-   whenever it was last updated — treat its Firestore/Firebase specifics as
-   probably stale (this migration has moved fast) and verify anything
-   Firebase-related against the actual current code rather than trusting
-   the doc outright; its Sheets/Apps Script architecture description is
-   still the reliable part. Fixing behavior without checking these risks
-   solving the wrong problem, or "fixing" something that's actually working
-   as designed.
+   §13 pointing at GitHub Issues for what's currently open (see below) —
+   written so a fresh session can understand a bug report without
+   reverse-engineering it from the code alone. **Caveat:** `FEATURES.md`
+   documents the app as of the pre-Firebase `claude/delta-green-agent-hub-sn79d4`
+   branch, with a deliberately separate §12 summarizing Firebase migration
+   status as of whenever it was last updated — treat its Firestore/Firebase
+   specifics as probably stale (this migration has moved fast) and verify
+   anything Firebase-related against the actual current code rather than
+   trusting the doc outright; its Sheets/Apps Script architecture
+   description is still the reliable part. Fixing behavior without checking
+   these risks solving the wrong problem, or "fixing" something that's
+   actually working as designed.
 
-Doing both first is often faster than re-deriving the same root cause from
-scratch, and avoids the kind of redundant work that already happened once
-today (a second pass rediscovering the first half of an already-logged bug).
+3. **Check GitHub Issues** (`https://github.com/turulsen/dg/issues`) for
+   whether this is already tracked. See `VERSIONING.md` §5 for the full
+   split between Issues (live, open items), `BUGFIXES.md` (narrative
+   archive of what shipped), and `FEATURES.md` §13 (resolved/decided
+   matters only, not a live list).
+
+Doing all three first is often faster than re-deriving the same root cause
+from scratch, and avoids the kind of redundant work that already happened
+once today (a second pass rediscovering the first half of an already-logged
+bug).
 
 ## Standing rules already established (see `BUGFIXES.md`/`sw.js` for full
 context, kept here as a quick reference)
