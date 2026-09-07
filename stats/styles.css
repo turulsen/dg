@@ -6138,15 +6138,156 @@ input[type="checkbox"]:checked+label {
 
 /* ============================================================================   FIELD DOCUMENT (LIVE PLAY) THEME — DD Form 315 aesthetic   ============================================================================ */
 .live-play {
-    --primary-color: #1a1408;
-    --bg-color: #cac6b8;
-    --text-color: #1a1408;
-    --input-bg: #f5f0e0;
-    --input-border: #1a1408;
-    background-color: #7a5c2e;
+    /* ── Live Play design tokens ──────────────────────────────────────
+       Every .lp- class, #lp-sheet, and #lp-tracker-bar color and font
+       below reads from these instead of a hardcoded literal, so each
+       theme can give
+       Live Play its own identity via a small override block (see
+       .theme-xfiles.live-play etc. further down) instead of Live Play
+       forcing one universal "Field Document" look regardless of which
+       theme is active in Edit mode. Defaults here are exactly Field
+       Notes' original hardcoded values -- this block is a pure refactor,
+       not a redesign, for Field Notes itself (the theme these already
+       matched). Two accent tokens on purpose: the dice/sanity-roll
+       accent (green) and a separate "advancement" accent (olive) stay
+       visually distinct, matching how they always have. */
+    --lp-page-bg: #7a5c2e;
+    --lp-page-bg-soft: #cac6b8;
+    --lp-paper-bg: #f9f7f0;
+    --lp-paper-white: #fffce8;
+    --lp-ink: #000000;
+    --lp-ink-soft: #444444;
+    --lp-header-bg: #000000;
+    --lp-header-text: #ffffff;
+    --lp-subheader-bg: #e0e0e0;
+    --lp-accent: #008a2a;
+    --lp-accent-hover: #2a6a2a;
+    --lp-accent-soft: #e8f4e8;
+    --lp-accent-warm: #7b5e00;
+    --lp-accent-warm-hover: #5a4500;
+    --lp-tracker-bg: #1a1408;
+    --lp-tracker-border: #4a4030;
+    --lp-tracker-label: #a89878;
+    --lp-tracker-value: #f5f0e0;
+    --lp-tracker-mid: #6a6040;
+    --lp-font-display: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    --lp-font-mono: 'Courier New', Courier, monospace;
+    --lp-font-hand: 'Permanent Marker', cursive;
+    --lp-font-body: Arial, Helvetica, sans-serif;
+
+    --primary-color: var(--lp-tracker-bg);
+    --bg-color: var(--lp-page-bg-soft);
+    --text-color: var(--lp-tracker-bg);
+    --input-bg: var(--lp-tracker-value);
+    --input-border: var(--lp-tracker-bg);
+    background-color: var(--lp-page-bg);
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.25'/%3E%3C/svg%3E");
-    color: #1a1408;
-    font-family: Arial, Helvetica, sans-serif;
+    color: var(--lp-tracker-bg);
+    font-family: var(--lp-font-body);
+}
+
+/* ── Per-theme Live Play identity ─────────────────────────────────────
+   Field Notes needs no override -- the defaults above already ARE its
+   look. The other three themes redefine the same token set so Live Play
+   actually reflects whichever theme is active in Edit mode, instead of
+   forcing this one "Field Document" paper look on every theme. Layout
+   (the printed-form grid, tables, tracker bar) is unchanged -- only
+   color and font identity shifts per theme, same as Edit mode itself
+   never changes layout between themes. */
+
+/* X-Files: black-on-neon-green CRT terminal, matching Edit mode's own
+   look (and its 'JetBrains Mono' base font/CRT flicker, unaffected by
+   Live Play). An amber "system alert" tone marks the rarer Advancement
+   action apart from the routine green accent. No paper grain -- a
+   terminal doesn't have texture. */
+.theme-xfiles.live-play {
+    --lp-page-bg: #000000;
+    --lp-page-bg-soft: #001a08;
+    --lp-paper-bg: #001a08;
+    --lp-paper-white: #00330f;
+    --lp-ink: #00b521;
+    --lp-ink-soft: #0a7a1f;
+    --lp-header-bg: #000000;
+    --lp-header-text: #00e62e;
+    --lp-subheader-bg: #0d2b0d;
+    --lp-accent: #39ff6a;
+    --lp-accent-hover: #2ecc55;
+    --lp-accent-soft: #0d3d1a;
+    --lp-accent-warm: #ffb000;
+    --lp-accent-warm-hover: #cc8c00;
+    --lp-tracker-bg: #000000;
+    --lp-tracker-border: #0d3d1a;
+    --lp-tracker-label: #3a9a4a;
+    --lp-tracker-value: #00e62e;
+    --lp-tracker-mid: #1f7a2f;
+    --lp-font-display: 'JetBrains Mono', monospace;
+    --lp-font-mono: 'JetBrains Mono', monospace;
+    --lp-font-hand: 'JetBrains Mono', monospace;
+    --lp-font-body: 'JetBrains Mono', monospace;
+    background-image: none;
+}
+
+/* Modern: reuses the exact Catppuccin Mocha custom properties Edit mode
+   already defines (--ctp-*) rather than inventing new colors, so Live
+   Play is guaranteed to stay in the same palette as this theme's other
+   riced-dev-tool surfaces. */
+.theme-modern.live-play {
+    --lp-page-bg: var(--ctp-crust);
+    --lp-page-bg-soft: var(--ctp-mantle);
+    --lp-paper-bg: var(--ctp-base);
+    --lp-paper-white: var(--ctp-surface0);
+    --lp-ink: var(--ctp-text);
+    --lp-ink-soft: var(--ctp-subtext0);
+    --lp-header-bg: var(--ctp-surface1);
+    --lp-header-text: var(--ctp-text);
+    --lp-subheader-bg: var(--ctp-surface0);
+    --lp-accent: var(--ctp-mauve);
+    --lp-accent-hover: var(--ctp-pink);
+    --lp-accent-soft: var(--ctp-surface1);
+    --lp-accent-warm: var(--ctp-peach);
+    --lp-accent-warm-hover: var(--ctp-flamingo);
+    --lp-tracker-bg: var(--ctp-mantle);
+    --lp-tracker-border: var(--ctp-surface1);
+    --lp-tracker-label: var(--ctp-subtext0);
+    --lp-tracker-value: var(--ctp-text);
+    --lp-tracker-mid: var(--ctp-overlay0);
+    --lp-font-display: 'JetBrains Mono', monospace;
+    --lp-font-mono: 'JetBrains Mono', monospace;
+    --lp-font-hand: 'JetBrains Mono', monospace;
+    --lp-font-body: 'JetBrains Mono', monospace;
+    background-image: none;
+}
+
+/* Son of Sam: black-and-blood-red horror ritual look, matching Edit
+   mode's own palette. Deliberately a shade off the hardcoded critical/
+   dying status reds elsewhere on this page (#ff5555/#ff2222) so a
+   themed accent button is never visually confused with a real HP/SAN
+   alert. */
+.theme-son-of-sam.live-play {
+    --lp-page-bg: #000000;
+    --lp-page-bg-soft: #1a0000;
+    --lp-paper-bg: #150505;
+    --lp-paper-white: #2a0a0a;
+    --lp-ink: #cc0000;
+    --lp-ink-soft: #7a2020;
+    --lp-header-bg: #000000;
+    --lp-header-text: #ff3333;
+    --lp-subheader-bg: #2a0a0a;
+    --lp-accent: #e60000;
+    --lp-accent-hover: #a80000;
+    --lp-accent-soft: #3a0808;
+    --lp-accent-warm: #8b0000;
+    --lp-accent-warm-hover: #5c0000;
+    --lp-tracker-bg: #000000;
+    --lp-tracker-border: #4a0a0a;
+    --lp-tracker-label: #8a3a3a;
+    --lp-tracker-value: #ff3333;
+    --lp-tracker-mid: #7a2020;
+    --lp-font-display: 'JetBrains Mono', monospace;
+    --lp-font-mono: 'JetBrains Mono', monospace;
+    --lp-font-hand: 'JetBrains Mono', monospace;
+    --lp-font-body: 'JetBrains Mono', monospace;
+    background-image: none;
 }
 
 /* ── Reveal live-play tracker bar ────────────────────────────────── */
@@ -6172,50 +6313,50 @@ input[type="checkbox"]:checked+label {
 
 /* ── Page title ──────────────────────────────────────────────────── */
 .live-play .page-title {
-    color: #1a1408;
-    font-family: 'Courier New', Courier, monospace;
+    color: var(--lp-tracker-bg);
+    font-family: var(--lp-font-mono);
     font-weight: 900;
     letter-spacing: 0.15em;
     text-transform: uppercase;
     text-shadow: none;
-    -webkit-text-fill-color: #1a1408;
+    -webkit-text-fill-color: var(--lp-tracker-bg);
 }
 
 .live-play .site-intro {
-    color: #3a3020;
+    color: var(--lp-tracker-border);
     font-size: 0.78rem;
 }
 
 .live-play .site-intro strong {
-    color: #1a1408;
-    -webkit-text-fill-color: #1a1408;
+    color: var(--lp-tracker-bg);
+    -webkit-text-fill-color: var(--lp-tracker-bg);
 }
 
 /* ── Advanced options ────────────────────────────────────────────── */
 .live-play #advanced-options-details summary {
-    color: #f5f0e0;
-    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    color: var(--lp-tracker-value);
+    font-family: var(--lp-font-display);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     font-size: 1rem;
 }
 
 .live-play #advanced-options-details summary::before {
-    color: #008a2a;
+    color: var(--lp-accent);
 }
 
 .live-play .advanced-options-body {
-    background: #f5f0e0;
-    border: 1px solid #1a1408;
+    background: var(--lp-tracker-value);
+    border: 1px solid var(--lp-tracker-bg);
 }
 
 .live-play .json-drop-zone {
-    border: 2px dashed #1a1408;
-    background: #ebe6d4;
+    border: 2px dashed var(--lp-tracker-bg);
+    background: var(--lp-paper-bg);
 }
 
 .live-play .json-drop-zone:hover {
-    background: #e0dac8;
+    background: var(--lp-paper-white);
 }
 
 /* ── Save/share bar ──────────────────────────────────────────────── */
@@ -6225,22 +6366,22 @@ input[type="checkbox"]:checked+label {
 }
 
 .live-play #theme-selector {
-    color: #1a1408;
+    color: var(--lp-tracker-bg);
 }
 
 .live-play .github-link-container a,
 .live-play .github-link-container svg {
-    color: #1a1408;
-    stroke: #1a1408;
+    color: var(--lp-tracker-bg);
+    stroke: var(--lp-tracker-bg);
 }
 
 /* ── Save/share buttons in field-doc ────────────────────────────── */
 .live-play .section-buttons button {
-    background: #1a1408;
-    color: #f5f0e0;
-    border: 1px solid #1a1408;
+    background: var(--lp-tracker-bg);
+    color: var(--lp-tracker-value);
+    border: 1px solid var(--lp-tracker-bg);
     border-radius: 0;
-    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    font-family: var(--lp-font-display);
     font-size: 0.75rem;
     font-weight: 700;
     letter-spacing: 0.1em;
@@ -6248,48 +6389,48 @@ input[type="checkbox"]:checked+label {
 }
 
 .live-play .section-buttons button:hover {
-    background: #3a3020;
+    background: var(--lp-tracker-border);
 }
 
 /* ── Dice roller panel ───────────────────────────────────────────── */
 .live-play #dr-panel {
-    background: #1a1408;
-    border: 2px solid #f5f0e0;
-    color: #f5f0e0;
+    background: var(--lp-tracker-bg);
+    border: 2px solid var(--lp-tracker-value);
+    color: var(--lp-tracker-value);
 }
 
 .live-play #dr-handle {
-    background: #1a1408;
-    color: #f5f0e0;
+    background: var(--lp-tracker-bg);
+    color: var(--lp-tracker-value);
 }
 
 .live-play .dr-die-btn {
-    background: #2e2810;
-    color: #f5f0e0;
-    border-color: #f5f0e0;
+    background: var(--lp-tracker-border);
+    color: var(--lp-tracker-value);
+    border-color: var(--lp-tracker-value);
 }
 
 .live-play .dr-die-btn-active,
 .live-play .dr-die-btn:hover {
-    background: #f5f0e0;
-    color: #1a1408;
+    background: var(--lp-tracker-value);
+    color: var(--lp-tracker-bg);
 }
 
 .live-play .dr-die-face,
 .live-play .dr-face-num {
-    color: #f5f0e0;
+    color: var(--lp-tracker-value);
 }
 
 .live-play #dr-roll-btn {
-    background: #f5f0e0;
-    color: #1a1408;
-    border: 1px solid #f5f0e0;
+    background: var(--lp-tracker-value);
+    color: var(--lp-tracker-bg);
+    border: 1px solid var(--lp-tracker-value);
 }
 
 .live-play #dr-manual-target {
-    background: #2e2810;
-    color: #f5f0e0;
-    border: 1px solid #6a6040;
+    background: var(--lp-tracker-border);
+    color: var(--lp-tracker-value);
+    border: 1px solid var(--lp-tracker-mid);
 }
 
 /* ── Sigil / pyramid: hidden ─────────────────────────────────────── */
@@ -6303,8 +6444,8 @@ input[type="checkbox"]:checked+label {
 #lp-tracker-bar {
     display: none;
     align-items: stretch;
-    background: #1a1408;
-    border-bottom: 2px solid #4a4030;
+    background: var(--lp-tracker-bg);
+    border-bottom: 2px solid var(--lp-tracker-border);
     margin-bottom: 8px;
     position: sticky;
     /* Stacks right below the sticky #character-mode-toggle (Edit button)
@@ -6320,7 +6461,7 @@ input[type="checkbox"]:checked+label {
     justify-content: center;
     gap: 5px;
     padding: 6px 10px;
-    border-right: 1px solid #4a4030;
+    border-right: 1px solid var(--lp-tracker-border);
     flex: 1;
     min-width: 0;
 }
@@ -6338,12 +6479,12 @@ input[type="checkbox"]:checked+label {
 }
 
 .lp-tracker-label {
-    font-family: 'Courier New', Courier, monospace;
+    font-family: var(--lp-font-mono);
     font-size: 0.58rem;
     font-weight: 700;
     letter-spacing: 0.25em;
     text-transform: uppercase;
-    color: #a89878;
+    color: var(--lp-tracker-label);
     line-height: 1;
 }
 
@@ -6354,30 +6495,30 @@ input[type="checkbox"]:checked+label {
 }
 
 .lp-tracker-current {
-    font-family: 'Courier New', Courier, monospace;
+    font-family: var(--lp-font-mono);
     font-size: 1.75rem;
     font-weight: 700;
-    color: #f5f0e0;
+    color: var(--lp-tracker-value);
     line-height: 1;
 }
 
 .lp-tracker-sep {
-    font-family: 'Courier New', Courier, monospace;
+    font-family: var(--lp-font-mono);
     font-size: 1rem;
-    color: #6a6040;
+    color: var(--lp-tracker-mid);
     line-height: 1;
 }
 
 .lp-tracker-max {
-    font-family: 'Courier New', Courier, monospace;
+    font-family: var(--lp-font-mono);
     font-size: 1rem;
     font-weight: normal;
-    color: #8a8060;
+    color: var(--lp-tracker-mid);
     line-height: 1;
 }
 
 .lp-tracker-status {
-    font-family: 'Courier New', Courier, monospace;
+    font-family: var(--lp-font-mono);
     font-size: 0.48rem;
     font-weight: 700;
     letter-spacing: 0.15em;
@@ -6390,9 +6531,9 @@ input[type="checkbox"]:checked+label {
 
 .lp-tracker-btn {
     background: transparent !important;
-    color: #a89878 !important;
-    border: 1px solid #4a4030 !important;
-    font-family: 'Courier New', Courier, monospace !important;
+    color: var(--lp-tracker-label) !important;
+    border: 1px solid var(--lp-tracker-border) !important;
+    font-family: var(--lp-font-mono) !important;
     font-size: 1.1rem !important;
     font-weight: 700 !important;
     width: 26px;
@@ -6421,8 +6562,8 @@ input[type="checkbox"]:checked+label {
 }
 
 .lp-tracker-btn:hover {
-    background: #4a4030 !important;
-    color: #f5f0e0 !important;
+    background: var(--lp-tracker-border) !important;
+    color: var(--lp-tracker-value) !important;
 }
 
 /* Critical / warning colour states */
@@ -6467,11 +6608,11 @@ input[type="checkbox"]:checked+label {
 
 .lp-track-bp .lp-tracker-current {
     font-size: 1.2rem;
-    color: #8a8060;
+    color: var(--lp-tracker-mid);
 }
 
 .lp-track-bp .lp-tracker-label {
-    color: #6a6040;
+    color: var(--lp-tracker-mid);
     font-size: 0.7rem;
     letter-spacing: 0.1em;
 }
@@ -6495,7 +6636,7 @@ input[type="checkbox"]:checked+label {
     max-width: 44px !important;
     max-height: 44px !important;
     font-size: 0 !important;
-    background: #008a2a !important;
+    background: var(--lp-accent) !important;
     border: none !important;
     clip-path: polygon(50% 13.4%, 0% 100%, 100% 100%);
     -webkit-clip-path: polygon(50% 13.4%, 0% 100%, 100% 100%);
@@ -6509,10 +6650,10 @@ input[type="checkbox"]:checked+label {
 }
 
 .lp-dice-result {
-    font-family: 'Courier New', monospace;
+    font-family: var(--lp-font-mono);
     font-size: 0.85rem;
     font-weight: 700;
-    color: #a89878;
+    color: var(--lp-tracker-label);
     text-align: center;
     min-height: 1em;
 }
@@ -6524,32 +6665,32 @@ input[type="checkbox"]:checked+label {
 /* ──────────────────────────────────────────────────────────────────   LP SHEET — DD FORM 315 STYLED LIVE SHEET   ────────────────────────────────────────────────────────────────── */
 #lp-sheet {
     display: none;
-    background-color: #f9f7f0;
-    border: 1px solid #000;
+    background-color: var(--lp-paper-bg);
+    border: 1px solid var(--lp-ink);
     margin-bottom: 10px;
-    font-family: Arial, Helvetica, sans-serif;
+    font-family: var(--lp-font-body);
     font-size: 10pt;
-    color: #000;
+    color: var(--lp-ink);
     line-height: 1.3;
 }
 
 /* Title bar */
 .lp-dg-title {
-    background: #000;
-    color: #f5f0e0;
+    background: var(--lp-header-bg);
+    color: var(--lp-tracker-value);
     text-align: center;
     font-size: 18pt;
     font-weight: 900;
     letter-spacing: 5px;
     text-transform: uppercase;
     padding: 3px 0 5px;
-    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    font-family: var(--lp-font-display);
 }
 
 /* Section band (horizontal strip with rot-label) */
 .lp-band {
     display: flex;
-    border-top: 1px solid #000;
+    border-top: 1px solid var(--lp-ink);
 }
 
 /* Rotating vertical section label */
@@ -6560,21 +6701,21 @@ input[type="checkbox"]:checked+label {
     font-weight: bold;
     text-transform: uppercase;
     letter-spacing: 1px;
-    background: #000;
-    color: #fff;
+    background: var(--lp-header-bg);
+    color: var(--lp-header-text);
     padding: 5px 2px;
     text-align: center;
     width: 14px;
     min-width: 14px;
     max-width: 14px;
-    border-right: 1px solid #000;
+    border-right: 1px solid var(--lp-ink);
 }
 
 /* Section header (black bar) */
 .lp-sec-hd {
-    background: #000;
-    color: #fff;
-    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    background: var(--lp-header-bg);
+    color: var(--lp-header-text);
+    font-family: var(--lp-font-display);
     font-weight: 400;
     font-size: 11pt;
     padding: 2px 4px;
@@ -6585,7 +6726,7 @@ input[type="checkbox"]:checked+label {
 
 /* Generic bordered table cell */
 .lp-tc {
-    border: 1px solid #000;
+    border: 1px solid var(--lp-ink);
     padding: 2px 4px;
     vertical-align: middle;
 }
@@ -6602,8 +6743,8 @@ input[type="checkbox"]:checked+label {
 
 /* Sub-header row (column labels inside <thead>) — must look clearly   lighter than the black .lp-sec-hd bar above it */
 #lp-sheet .lp-full-table thead th.lp-tc {
-    background: #e0e0e0;
-    color: #000;
+    background: var(--lp-subheader-bg);
+    color: var(--lp-ink);
     font-weight: normal;
     font-size: 8pt;
     padding: 1px 4px;
@@ -6636,8 +6777,8 @@ input[type="checkbox"]:checked+label {
 .lp-proxy {
     background: transparent;
     border: none;
-    color: #000;
-    font-family: 'Courier New', Courier, monospace;
+    color: var(--lp-ink);
+    font-family: var(--lp-font-mono);
     font-size: 10pt;
     font-weight: normal;
     width: 100%;
@@ -6647,27 +6788,27 @@ input[type="checkbox"]:checked+label {
 }
 
 .lp-proxy:focus {
-    background: #fffce8;
-    border-bottom-color: #000;
+    background: var(--lp-paper-white);
+    border-bottom-color: var(--lp-ink);
     outline: none;
 }
 
 .lp-proxy[readonly] {
-    color: #444;
+    color: var(--lp-ink-soft);
     font-weight: normal;
-    border-bottom-color: #bbb;
+    border-bottom-color: var(--lp-ink-soft);
     cursor: default;
     pointer-events: none;
 }
 
 /* Textareas */
 .lp-ta {
-    background-color: #f5f4ef;
+    background-color: var(--lp-paper-bg);
     background-image: linear-gradient(rgba(60, 100, 220, 0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(60, 100, 220, 0.07) 1px, transparent 1px);
     background-size: 22px 22px;
     border: none;
-    color: #000;
-    font-family: 'Permanent Marker', cursive;
+    color: var(--lp-ink);
+    font-family: var(--lp-font-hand);
     font-size: 12pt;
     width: 100%;
     padding: 2px 3px;
@@ -6678,7 +6819,7 @@ input[type="checkbox"]:checked+label {
 }
 
 .lp-ta:focus {
-    background-color: #fffce8;
+    background-color: var(--lp-paper-white);
     background-image: none;
     outline: none;
 }
@@ -6686,7 +6827,7 @@ input[type="checkbox"]:checked+label {
 /* Handwritten marker-pen font for bio/personal-data fields */
 .lp-handwritten,
 #lp-sheet .lp-handwritten {
-    font-family: 'Permanent Marker', cursive !important;
+    font-family: var(--lp-font-hand) !important;
     font-weight: normal !important;
     font-size: 12pt !important;
 }
@@ -6695,12 +6836,12 @@ input[type="checkbox"]:checked+label {
 .lp-stat-inp {
     width: 100%;
     text-align: center;
-    font-family: 'Permanent Marker', cursive;
+    font-family: var(--lp-font-hand);
     font-size: 12pt;
     font-weight: normal;
     background: transparent;
     border: none;
-    color: #000;
+    color: var(--lp-ink);
     padding: 0;
     box-sizing: border-box;
     cursor: text;
@@ -6709,12 +6850,12 @@ input[type="checkbox"]:checked+label {
 /* Editable distinguishing features inputs */
 .lp-feat-inp {
     width: 100%;
-    font-family: 'Permanent Marker', cursive;
+    font-family: var(--lp-font-hand);
     font-size: 12pt;
     font-style: normal;
     background: transparent;
     border: none;
-    color: #000;
+    color: var(--lp-ink);
     padding: 0 2px;
     box-sizing: border-box;
     cursor: text;
@@ -6722,8 +6863,8 @@ input[type="checkbox"]:checked+label {
 
 .lp-stat-inp:focus,
 .lp-feat-inp:focus {
-    background: #fffce8;
-    outline: 1px solid #000;
+    background: var(--lp-paper-white);
+    outline: 1px solid var(--lp-ink);
 }
 
 /* Name-size large text */
@@ -6739,7 +6880,7 @@ input[type="checkbox"]:checked+label {
 
 /* ── Stats + Psychological side-by-side row ──────────────────────── */
 .lp-stats-psych-row>.lp-rot-label {
-    border-right: 1px solid #000;
+    border-right: 1px solid var(--lp-ink);
 }
 
 /* ── Flex-row layout: each section pair is one .lp-sp-row ───────── */
@@ -6755,7 +6896,7 @@ input[type="checkbox"]:checked+label {
 .lp-sp-row {
     display: flex;
     align-items: stretch;
-    border-bottom: 1px solid #000;
+    border-bottom: 1px solid var(--lp-ink);
 }
 
 .lp-sp-last-row {
@@ -6766,7 +6907,7 @@ input[type="checkbox"]:checked+label {
 .lp-sp-col-l {
     flex: 0 0 44%;
     min-width: 0;
-    border-right: 1px solid #000;
+    border-right: 1px solid var(--lp-ink);
     display: flex;
     flex-direction: column;
 }
@@ -6782,7 +6923,7 @@ input[type="checkbox"]:checked+label {
 /* .lp-sp-cell, .lp-sp-fill, .lp-stats-col, .lp-psych-col — retired */
 /* Section block within a column */
 .lp-section-block {
-    border-top: 1px solid #000;
+    border-top: 1px solid var(--lp-ink);
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -6803,11 +6944,11 @@ input[type="checkbox"]:checked+label {
 
 /* Small inline + / − buttons for derived attrs */
 .lp-adj-btn {
-    background: #000 !important;
-    color: #fff !important;
+    background: var(--lp-header-bg) !important;
+    color: var(--lp-header-text) !important;
     border: none !important;
     border-radius: 0 !important;
-    font-family: Arial, Helvetica, sans-serif !important;
+    font-family: var(--lp-font-body) !important;
     font-size: 13pt !important;
     font-weight: bold !important;
     width: 18px;
@@ -6825,26 +6966,26 @@ input[type="checkbox"]:checked+label {
 }
 
 .lp-adj-btn:hover {
-    background: #444 !important;
+    background: var(--lp-ink-soft) !important;
 }
 
 /* ── Bonds compact table ─────────────────────────────────────────── */
 .lp-bond-name-input {
     background: transparent;
     border: none;
-    font-family: 'Permanent Marker', cursive;
+    font-family: var(--lp-font-hand);
     font-size: 12pt;
     font-weight: normal;
     width: 100%;
     padding: 0 2px;
     box-sizing: border-box;
-    color: #000;
+    color: var(--lp-ink);
 }
 
 .lp-bond-name-input:focus {
-    background: #fffce8;
+    background: var(--lp-paper-white);
     outline: none;
-    border-bottom-color: #000;
+    border-bottom-color: var(--lp-ink);
 }
 
 .lp-bond-score-input {
@@ -6852,25 +6993,25 @@ input[type="checkbox"]:checked+label {
     text-align: center;
     font-size: 12pt;
     font-weight: normal;
-    font-family: 'Permanent Marker', cursive;
+    font-family: var(--lp-font-hand);
     border: none;
     background: transparent;
-    color: #000;
+    color: var(--lp-ink);
     padding: 0 2px;
     box-sizing: border-box;
 }
 
 .lp-bond-score-input:focus {
-    background: #fffce8;
+    background: var(--lp-paper-white);
     outline: none;
 }
 
 .lp-bond-dmg-btn {
     background: #900 !important;
-    color: #fff !important;
+    color: var(--lp-header-text) !important;
     border: none !important;
     border-radius: 0 !important;
-    font-family: Arial, Helvetica, sans-serif !important;
+    font-family: var(--lp-font-body) !important;
     font-size: 9pt !important;
     font-weight: 700 !important;
     padding: 1px 4px !important;
@@ -6887,7 +7028,7 @@ input[type="checkbox"]:checked+label {
 /* ── Weapon table editable row inputs ────────────────────────────── */
 .lp-weapon-del-btn {
     background: #555 !important;
-    color: #fff !important;
+    color: var(--lp-header-text) !important;
     border: none !important;
     border-radius: 0 !important;
     font-size: 11pt !important;
@@ -6951,7 +7092,7 @@ input[type="checkbox"]:checked+label {
     white-space: nowrap;
     padding: 3px 6px;
     font-size: 13pt;
-    font-family: 'Permanent Marker', cursive;
+    font-family: var(--lp-font-hand);
 }
 
 .lp-sk-val-td {
@@ -6966,7 +7107,7 @@ input[type="checkbox"]:checked+label {
     width: 100%;
     background: transparent;
     border: none;
-    font-family: 'Permanent Marker', cursive;
+    font-family: var(--lp-font-hand);
     font-size: 13pt;
     padding: 0;
     box-sizing: border-box;
@@ -6975,7 +7116,7 @@ input[type="checkbox"]:checked+label {
 
 .lp-skill-table td,
 .lp-skill-table th {
-    border: 1px solid #000;
+    border: 1px solid var(--lp-ink);
     padding: 4px 3px;
 }
 
@@ -6990,7 +7131,7 @@ input[type="checkbox"]:checked+label {
     display: block;
     margin: 0 auto;
     cursor: pointer;
-    accent-color: #000;
+    accent-color: var(--lp-ink);
 }
 
 .lp-skill-cb.lp-skill-cb-zero,
@@ -7006,8 +7147,8 @@ input[type="checkbox"]:checked+label {
     min-width: 36px;
     text-align: center;
     font-size: 13pt !important;
-    font-family: 'Permanent Marker', cursive !important;
-    color: #000;
+    font-family: var(--lp-font-hand) !important;
+    color: var(--lp-ink);
     padding: 0;
     box-sizing: border-box;
     -webkit-text-decoration: none;
@@ -7015,12 +7156,12 @@ input[type="checkbox"]:checked+label {
 }
 
 .lp-skill-val:focus {
-    background: #fffce8;
+    background: var(--lp-paper-white);
     outline: none;
 }
 
 .lp-skills-footer {
-    border-top: 1px solid #000;
+    border-top: 1px solid var(--lp-ink);
     padding: 2px 6px;
     font-size: 8pt;
     font-style: italic;
@@ -7032,18 +7173,18 @@ input[type="checkbox"]:checked+label {
 
 /* ── General utility ─────────────────────────────────────────────── */
 .lp-footnote {
-    border-top: 1px solid #000;
+    border-top: 1px solid var(--lp-ink);
     padding: 2px 5px;
     font-size: 6.5pt;
     font-style: italic;
 }
 
 .lp-btn-sm {
-    background: #000 !important;
-    color: #fff !important;
+    background: var(--lp-header-bg) !important;
+    color: var(--lp-header-text) !important;
     border: none !important;
     border-radius: 0 !important;
-    font-family: Arial, Helvetica, sans-serif !important;
+    font-family: var(--lp-font-body) !important;
     font-size: 9pt !important;
     font-weight: bold !important;
     padding: 2px 6px !important;
@@ -7054,16 +7195,16 @@ input[type="checkbox"]:checked+label {
 }
 
 .lp-btn-sm:hover {
-    background: #333 !important;
+    background: var(--lp-ink-soft) !important;
 }
 
 /* ── Advancement button ─────────────────────────────────────────────────── */
 .lp-btn-advance {
-    background: #7b5e00 !important;
+    background: var(--lp-accent-warm) !important;
 }
 
 .lp-btn-advance:hover {
-    background: #5a4500 !important;
+    background: var(--lp-accent-warm-hover) !important;
 }
 
 /* ── Advancement modal overlay ──────────────────────────────────────────── */
@@ -7080,23 +7221,23 @@ input[type="checkbox"]:checked+label {
 }
 
 .lp-adv-dialog {
-    background: #f5f0e8;
-    border: 2px solid #000;
+    background: var(--lp-paper-bg);
+    border: 2px solid var(--lp-ink);
     max-width: 560px;
     width: 100%;
     max-height: 90vh;
     overflow-y: auto;
     padding: 0;
-    font-family: Arial, Helvetica, sans-serif;
+    font-family: var(--lp-font-body);
     font-size: 10pt;
-    color: #000;
+    color: var(--lp-ink);
     box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.45);
 }
 
 .lp-adv-title {
-    background: #000;
-    color: #fff;
-    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    background: var(--lp-header-bg);
+    color: var(--lp-header-text);
+    font-family: var(--lp-font-display);
     font-size: 14pt;
     font-weight: 400;
     letter-spacing: 2px;
@@ -7105,12 +7246,12 @@ input[type="checkbox"]:checked+label {
 }
 
 .lp-adv-rule {
-    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    font-family: var(--lp-font-display);
     font-size: 10pt;
     font-style: normal;
     font-weight: 400;
     letter-spacing: 0.5px;
-    color: #444;
+    color: var(--lp-ink-soft);
     margin: 4px 10px 2px;
     text-align: center;
 }
@@ -7123,45 +7264,45 @@ input[type="checkbox"]:checked+label {
 }
 
 .lp-adv-table th {
-    background: #d6cfc0;
-    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    background: var(--lp-subheader-bg);
+    font-family: var(--lp-font-display);
     font-size: 10pt;
     font-weight: 400;
     letter-spacing: 1px;
     text-align: center;
     padding: 3px 6px;
-    border: 1px solid #888;
+    border: 1px solid var(--lp-ink-soft);
 }
 
 .lp-adv-table td {
     padding: 3px 6px;
-    border: 1px solid #bbb;
+    border: 1px solid var(--lp-ink-soft);
     text-align: center;
 }
 
 .lp-adv-table td:first-child {
     text-align: left;
-    font-family: 'Permanent Marker', cursive;
+    font-family: var(--lp-font-hand);
     font-size: 9pt;
 }
 
 .lp-adv-improved {
-    background: #e8f4e8;
+    background: var(--lp-accent-soft);
 }
 
 .lp-adv-unchanged {
-    background: #f0f0f0;
-    color: #666;
+    background: var(--lp-subheader-bg);
+    color: var(--lp-ink-soft);
 }
 
 .lp-adv-summary {
-    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    font-family: var(--lp-font-display);
     font-size: 11pt;
     font-weight: 400;
     font-style: normal;
     text-align: center;
     padding: 6px 10px 4px;
-    border-top: 1px solid #ccc;
+    border-top: 1px solid var(--lp-ink-soft);
     letter-spacing: 1px;
 }
 
@@ -7170,7 +7311,7 @@ input[type="checkbox"]:checked+label {
     gap: 6px;
     justify-content: center;
     padding: 6px 10px 10px;
-    border-top: 1px solid #bbb;
+    border-top: 1px solid var(--lp-ink-soft);
 }
 
 .lp-bond-row {
@@ -7183,10 +7324,10 @@ input[type="checkbox"]:checked+label {
     z-index: 200;
     top: 100%;
     left: 0;
-    background: #111;
-    color: #fff;
+    background: var(--lp-header-bg);
+    color: var(--lp-header-text);
     padding: 6px 10px;
-    font-family: Arial, Helvetica, sans-serif;
+    font-family: var(--lp-font-body);
     font-size: 9pt;
     font-style: normal;
     font-weight: normal;
@@ -7227,7 +7368,7 @@ input[type="checkbox"]:checked+label {
     border: none;
     border-radius: 0;
     background: transparent;
-    font-family: 'Courier New', Courier, monospace;
+    font-family: var(--lp-font-mono);
     font-size: 10pt;
 }
 
@@ -7235,7 +7376,7 @@ input[type="checkbox"]:checked+label {
 #lp-sheet input[type="text"]:not([readonly]),
 #lp-sheet input[type="number"]:not([readonly]),
 #lp-sheet textarea {
-    font-family: 'Permanent Marker', cursive !important;
+    font-family: var(--lp-font-hand) !important;
     font-size: 12pt !important;
     text-decoration: none !important;
 }
@@ -7850,22 +7991,22 @@ input[type="checkbox"]:checked+label {
     height: auto !important;
     min-height: 38px !important;
     padding: 4px 16px !important;
-    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif !important;
+    font-family: var(--lp-font-display) !important;
     font-size: 1.15rem !important;
     line-height: 1 !important;
     letter-spacing: 0.12em !important;
     text-transform: uppercase !important;
     text-align: center !important;
     white-space: nowrap !important;
-    background: rgba(0, 100, 30, 0.18) !important;
-    border-color: #3a7a3a !important;
-    color: #8acf8a !important;
+    background: color-mix(in srgb, var(--lp-accent) 20%, transparent) !important;
+    border-color: var(--lp-accent) !important;
+    color: var(--lp-accent) !important;
 }
 
 .lp-san-check-btn:hover {
-    background: #2a6a2a !important;
-    color: #c8f0c8 !important;
-    border-color: #6acf6a !important;
+    background: var(--lp-accent-hover) !important;
+    color: var(--lp-accent-soft) !important;
+    border-color: var(--lp-accent) !important;
 }
 
 /* ── LP theme: clickable x5 stat values ─────────────────────────────── */

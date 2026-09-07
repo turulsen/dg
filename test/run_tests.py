@@ -500,6 +500,64 @@ def test_stat_generator(p):
     page.close()
     return errs
 
+def test_live_play_themed_skins(p):
+    """Live Play used to force one universal "Field Document" DD-315
+    paper look (khaki background, ink-brown colors) regardless of which
+    of the 4 themes was active in Edit mode -- X-Files' neon terminal,
+    Modern's Catppuccin palette, and Son of Sam's black/red horror look
+    all flipped to the same brown paper the instant Live Play turned on.
+    stats/styles.css now defines a --lp-* token set (--lp-ink, --lp-
+    accent, etc.) on .live-play, with Field Notes as the default and
+    .theme-xfiles.live-play / .theme-modern.live-play / .theme-son-of-
+    sam.live-play each overriding it to match that theme's own Edit-mode
+    identity. This checks each theme's tokens actually differ from every
+    other theme's (not just that they're defined) and that Field Notes
+    still gets its original, unchanged values."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+
+    ink_by_theme = {}
+    accent_by_theme = {}
+    for theme in ["xfiles", "modern", "son-of-sam", "field-notes"]:
+        page.evaluate("""(t) => {
+            const sel = document.getElementById('cs-theme-select');
+            sel.value = t;
+            sel.dispatchEvent(new Event('change'));
+        }""", theme)
+        page.wait_for_timeout(150)
+        page.evaluate("() => window.setLivePlay(true)")
+        page.wait_for_timeout(150)
+        tokens = page.evaluate("""() => {
+            const cs = getComputedStyle(document.body);
+            return { ink: cs.getPropertyValue('--lp-ink').trim(), accent: cs.getPropertyValue('--lp-accent').trim() };
+        }""")
+        ink_by_theme[theme] = tokens["ink"]
+        accent_by_theme[theme] = tokens["accent"]
+        page.evaluate("() => window.setLivePlay(false)")
+        page.wait_for_timeout(100)
+
+    record("stats-terminal", "every theme defines a non-empty --lp-ink token",
+           all(v for v in ink_by_theme.values()), str(ink_by_theme))
+    record("stats-terminal", "X-Files, Modern, Son of Sam, and Field Notes each get a distinct Live Play ink color",
+           len(set(ink_by_theme.values())) == 4, str(ink_by_theme))
+    record("stats-terminal", "X-Files, Modern, Son of Sam, and Field Notes each get a distinct Live Play accent color",
+           len(set(accent_by_theme.values())) == 4, str(accent_by_theme))
+    record("stats-terminal", "Field Notes' Live Play ink is unchanged from its original hardcoded value",
+           ink_by_theme["field-notes"] == "#000000", ink_by_theme["field-notes"])
+    record("stats-terminal", "X-Files' Live Play ink matches its neon-green identity, not brown ink",
+           ink_by_theme["xfiles"] == "#00b521", ink_by_theme["xfiles"])
+    record("stats-terminal", "Modern's Live Play ink reuses the Catppuccin --ctp-text value",
+           ink_by_theme["modern"] == "#cdd6f4", ink_by_theme["modern"])
+    record("stats-terminal", "Son of Sam's Live Play ink is a red, not brown ink or a hardcoded HP-critical red",
+           ink_by_theme["son-of-sam"] == "#cc0000", ink_by_theme["son-of-sam"])
+
+    record("stats-terminal", "no JS exceptions across the themed Live Play run", len(errs)==0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_stat_generator_creation_lockout(p):
     """The Bonus Skill Points panel and Bond generator are creation-only
     tools that used to stay on the sheet forever, confusing players
@@ -8898,6 +8956,8 @@ def main():
                 return None
 
         safe(test_stat_generator, browser, area="stats-terminal")
+
+        safe(test_live_play_themed_skins, browser, area="stats-terminal")
 
         safe(test_stat_generator_creation_lockout, browser, area="stats-terminal")
 
