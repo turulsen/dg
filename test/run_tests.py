@@ -593,6 +593,46 @@ def test_stat_generator_creation_lockout(p):
     page.close()
     return errs
 
+def test_new_recruit_split_and_import_commit(p):
+    """The New Recruit block (stats/index.html) now presents two explicit
+    paths side by side -- "Already Have a Character?" (import) and
+    "Building Someone New?" (wizard) -- rather than a drop zone and a
+    wizard promo just stacked with no framing. Also covers the other half
+    of that split: an imported character already exists in another
+    system, so unlike a from-scratch character it should never show the
+    Bonus Points panel at all, not even before Live Play -- it goes
+    straight to committed via applyImportedAgentData() (scripts.js)."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+
+    record("stats-terminal", "New Recruit shows both the import path and the wizard path",
+           page.is_visible("#new-recruit-import-option") and page.is_visible("#new-recruit-wizard-option"), "")
+    record("stats-terminal", "an OR divider separates the two New Recruit paths",
+           page.is_visible(".new-recruit-divider"), "")
+    record("stats-terminal", "a brand-new page (nothing imported yet) is not committed",
+           not page.eval_on_selector("body", "el => el.classList.contains('agent-committed')"), "")
+
+    toml_path = os.path.join(HERE, "fixtures", "kappablack-export.toml")
+    toml_text = open(toml_path, encoding="utf-8").read()
+    page.evaluate("document.getElementById('agent-paste-details').open = true")
+    page.fill("#agent-paste-area", toml_text)
+    page.click("#agent-paste-details button")
+    page.wait_for_timeout(600)
+
+    record("stats-terminal", "importing a Kappa Black character marks it committed immediately, without ever entering Live Play",
+           page.eval_on_selector("body", "el => el.classList.contains('agent-committed')"), "")
+    record("stats-terminal", "the Bonus Points panel never shows for an imported character",
+           not page.is_visible(".panel-bonus-skills"), "")
+    record("stats-terminal", "the Bond generator never shows for an imported character either",
+           not page.is_visible(".bonds-left"), "")
+
+    record("stats-terminal", "no JS exceptions across the New Recruit split / import-commit run", len(errs)==0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_stat_generator_agent_file_nav(p):
     """The "Open Agent File" button above the theme selector on
     stats/index.html (replacing the old Foundry-VTT-mentioning intro
@@ -874,6 +914,9 @@ def test_stat_generator_sheets_roundtrip(p):
            f"{name_val!r} / {employer_val!r} / {nationality_val!r} / {age_val!r}")
     record("stats-terminal", "Sheets round-trip recovers STR (13 = 3 base + 10 point-buy clicks)",
            str_val == "13", f"STR={str_val!r}")
+    record("stats-terminal", "importing a character from a Google Sheet marks it committed (no Bonus Points panel on re-editing an existing Agent)",
+           page.eval_on_selector("body", "el => el.classList.contains('agent-committed')")
+           and not page.is_visible(".panel-bonus-skills"), "")
 
     record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
     page.close()
@@ -8857,6 +8900,8 @@ def main():
         safe(test_stat_generator, browser, area="stats-terminal")
 
         safe(test_stat_generator_creation_lockout, browser, area="stats-terminal")
+
+        safe(test_new_recruit_split_and_import_commit, browser, area="stats-terminal")
 
         safe(test_stat_generator_agent_file_nav, browser, area="stats-terminal")
 
