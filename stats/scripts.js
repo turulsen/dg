@@ -2569,6 +2569,17 @@ window.dgCharacterMode = {
     },
     toggleLivePlay() {
         setLivePlay(!document.body.classList.contains('live-play'));
+    },
+    // Temporarily re-reveals the Bonus Points panel and Bond generator on
+    // an already-committed Agent's sheet (see .agent-committed rules in
+    // styles.css) so a bad import or rules mistake can be fixed in place.
+    // Deliberately NOT persisted anywhere (not in collectState(), not
+    // localStorage) -- it's a session-only unlock, off again on the next
+    // visit, so this doesn't quietly reopen creation tools forever.
+    toggleCreationToolsUnlock() {
+        const on = document.body.classList.toggle('creation-tools-unlocked');
+        const btn = document.getElementById('creation-tools-unlocked-btn');
+        if (btn) btn.textContent = on ? '✓ Creation Tools Unlocked — Click to Re-Hide' : '🔧 Fix a Character Creation Mistake';
     }
 };
 
@@ -3621,6 +3632,19 @@ window.dgNotesFullscreen = { enter: enterNotesFullscreen, exit: exitNotesFullscr
  */
 function setLivePlay(on, { skipSave = false } = {}) {
     try {
+        // First real (non-restore) entry into Live Play retires the
+        // creation-only apparatus (Bonus Points panel, Bond generator --
+        // see .agent-committed rules in styles.css) from Edit mode for
+        // good, on the theory that an Agent who's actually been played
+        // has graduated past character creation. skipSave === true means
+        // this call is the page-load restore of a *previous* Live Play
+        // session (see dg_live_play in dgInitStatsSheet), not a fresh
+        // entry, so it must never flip this on its own -- the real
+        // creationCommitted value for an existing character is restored
+        // by applyState() instead.
+        if (on && !skipSave && !document.body.classList.contains('agent-committed')) {
+            document.body.classList.add('agent-committed');
+        }
         if (!skipSave) window.dgSaveLoad?.save?.();
 
         // Flush any LP skill % values the user edited back to the underlying
