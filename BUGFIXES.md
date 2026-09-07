@@ -1487,3 +1487,67 @@ doesn't reproduce on a bare re-run. The remaining ~27-29 failures on
 every one of these runs (`hub`/`acell`/`shell`/`radio`/`stats-terminal`)
 are pre-existing and unrelated to Notes -- present in CI before any of
 this session's Notes work started -- and out of scope here.
+
+**Correction to the above: most of those "pre-existing/unrelated"
+failures were neither.** Asked to actually check them individually
+rather than take that dismissal at face value, most turned out to be
+real and in-scope -- tracked in
+[GitHub issue #7](https://github.com/turulsen/dg/issues/7). Fixed in
+this pass:
+
+1. **Real, live production bug, not test-only**: `#dg-radio` (Table
+   Radio widget, `assets/table-radio.js`) had `z-index: 9999` in
+   `stats/styles.css`, while `#settings-panel` (and its backdrop) had
+   `z-index: 9500`/`9400` -- lower. Confirmed via Playwright's own
+   pointer-event interception trace: with the Settings panel open, the
+   widget visually sits on top of it wherever it docks on screen and
+   blocks clicks on panel content underneath (e.g. "Export Google
+   Sheet"), for real users, not just this test. Root cause of
+   `test_stat_generator_sheets_roundtrip`'s crash -- confirmed by
+   calling `exportToSheets()` directly (bypassing the click entirely),
+   which worked perfectly; only the click was ever the problem. Fixed
+   by raising `#settings-panel`/`#settings-panel-backdrop` to
+   `10000`/`9990`, clearing every floating widget's z-index.
+2. **CI-load timing flake, not a real bug**: `test_foundry_import_
+   profession_and_outfit`'s and `test_kappablack_toml_import`'s
+   outfit-export checks used a fixed `page.wait_for_timeout(500)`
+   after clicking Export to Agent File instead of polling for the
+   captured POST body -- reproduced 0/14 failures in isolation, so
+   this only ever lost the race under GitHub Actions' shared-runner
+   contention. Converted to `wait_for_condition`.
+3. **Two stale tests, not app bugs** -- the app was already correct,
+   the test was never updated after a prior, deliberate change:
+   - `test_acell_music`'s Pause/Resume assertions checked
+     `button.textContent`, but this session's own earlier SVG-icon
+     transport redesign moved that state into the `title` attribute
+     instead (an icon-only button has no visible text anymore).
+   - `test_acell_gate`'s password field check asserted X-masking, but
+     X-masking was deliberately removed per a-cell.html's own code
+     comment on `grantAccess()` ("was hiding real mistyped-password
+     mistakes with no way to proofread before hitting Enter").
+
+**Still open, larger than first scoped** (issue #7 tracks progress):
+A-Cell's Evidence tab (Handler view) and Agent Hub's Handouts tab went
+through the same Phase 5 Firestore-Auth migration as Notes, but their
+test fixtures never got a Firestore/Auth stub -- same bug class as the
+Notes fix above, different UI surface. Digging into it surfaced more
+than a missing stub, though: Evidence's photo/PDF attachments were
+*also* separately migrated to direct-to-Storage uploads (Phase 4,
+`uploadEvidencePhotoIfNeeded_()`), so `test_acell_evidence_pdf`'s own
+assertions (checking for a `data:application/pdf` URI in the
+`create_evidence` POST body) test behavior that no longer exists
+either -- it's not just a missing mock, some of the test's own claims
+are stale. `test_acell_evidence_create_verify_retries` has a similar
+problem one level deeper: the retry-polling logic it exercises
+(`verifyEvidenceWrite_`) was rewritten to poll the live
+Firestore-fed `evidenceItems` array directly instead of its own
+separate `list_evidence` JSONP fetch, so the test's whole delayed-
+JSONP-response mechanism no longer matches what the code actually
+does. The shared Firestore stub (`NOTES_FIRESTORE_STUB`/
+`install_notes_firestore_stub()`) was extended with `.orderBy()`
+support, a `handlerLogin` Functions response, and a `storage()` stub
+(`ref().put()`/`.delete()`) to cover all of this, but wiring it into
+the 5 affected test functions -- correctly simulating Storage-URL
+photos instead of data URIs, and re-timing the retry test around a
+delayed Firestore push instead of a delayed JSONP response -- is not
+done yet.
