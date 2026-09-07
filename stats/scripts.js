@@ -2948,6 +2948,16 @@ function applyImportedAgentData(data) {
     // cog and reveals the Live Play toggle in their place.
     window.dgCharacterMode?.update?.();
 
+    // An imported character already exists in another system -- it isn't
+    // "still being created" here, so it shouldn't sit around with the
+    // Bonus Points panel / Bond generator visible until the player
+    // happens to enter Live Play once (see .agent-committed in
+    // styles.css). Skip straight to committed, same as an already-played
+    // Agent. If something came in wrong (an unmatched profession, a
+    // missing field), that's a normal edit on an existing Agent's sheet,
+    // not a reason to re-open character creation.
+    document.body.classList.add('agent-committed');
+
     // Every field above was set via el.value = ..., which never fires
     // 'input'/'change' -- so cloud-sync.js's own document-level listeners
     // (the only thing that ever calls ensureCloudCode()/pushToCloud() or
