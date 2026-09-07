@@ -198,6 +198,21 @@
              Empty by default; JS fills it in. -->
         <div id="cog-new-recruit-section"></div>
 
+        <!-- Only ever shown once this Agent is committed (body.agent-committed
+             -- see styles.css and dgCharacterMode.toggleCreationToolsUnlock()
+             in scripts.js), which is exactly when the Bonus Points panel and
+             Bond generator are normally hidden from the sheet below. Lets a
+             player or Handler temporarily bring them back to fix something
+             that got imported or generated badly, without permanently
+             re-cluttering an established Agent's Edit mode. Session-only --
+             never persisted, so it's back off on the next visit. -->
+        <div id="creation-tools-unlock-row">
+            <button type="button" id="creation-tools-unlocked-btn"
+                onclick="dgCharacterMode.toggleCreationToolsUnlock()"
+                title="Temporarily brings back the Bonus Points panel and Bond generator to fix a mistake -- turns off again next visit.">
+                &#128295; Fix a Character Creation Mistake</button>
+        </div>
+
         <h3>Open Agent File</h3>
         <button type="button" id="site-intro-agent-file-btn" onclick="dgGoToAgentFile()"
             title="Sends this character to the Agent Portal as an Agent File (name, stats-derived build/outfit, notes) and opens it there.">

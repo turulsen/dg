@@ -500,6 +500,99 @@ def test_stat_generator(p):
     page.close()
     return errs
 
+def test_stat_generator_creation_lockout(p):
+    """The Bonus Skill Points panel and Bond generator are creation-only
+    tools that used to stay on the sheet forever, confusing players
+    editing an already-played Agent. body.agent-committed (added the
+    first time this character actually enters Live Play, see
+    setLivePlay() in scripts.js) now retires both from Edit mode --
+    while leaving the actual Bonds list (#cs-bonds) editable, since
+    scores still change in play. Must round-trip through a reload (i.e.
+    actually persisted, not just an in-memory flag) and be reversible via
+    the settings cog's "Fix a Character Creation Mistake" unlock."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+
+    record("stats-terminal", "Bonus Points panel is visible before an Agent has a name",
+           page.is_visible(".panel-bonus-skills"), "")
+
+    page.fill("#cs-name", "Test Creation Lockout Agent")
+    page.dispatch_event("#cs-name", "input")
+    page.wait_for_timeout(200)
+    record("stats-terminal", "Bonus Points panel still visible for a newly-named, not-yet-played Agent",
+           page.is_visible(".panel-bonus-skills"), "")
+
+    # Add a real bond first (while the generator is still visible) so the
+    # "stays visible/editable" check below has actual content to check --
+    # #cs-bonds is a plain empty container pre-generation, which Playwright
+    # correctly reports as not visible (zero-size), not evidence of a bug.
+    page.click("#bonds-button")
+    page.wait_for_timeout(150)
+    page.click("#add-bond-button")
+    page.wait_for_timeout(150)
+
+    # Live Play/Edit toggle only appears once dgCharacterMode considers
+    # this an existing (named) character -- see dgCharacterMode.update().
+    page.click("#character-mode-toggle")
+    page.wait_for_timeout(200)
+    is_committed = page.eval_on_selector("body", "el => el.classList.contains('agent-committed')")
+    record("stats-terminal", "entering Live Play for the first time marks the Agent committed",
+           is_committed, "")
+
+    # Leaving Live Play again must not un-commit the Agent -- creation
+    # tools stay retired in Edit mode too, not just while in Live Play.
+    # (Checked back in Edit mode, not while still in Live Play, since
+    # Live Play's own pre-existing CSS already hides every #character-sheet
+    # fieldset -- including Bonds -- regardless of commit status, which
+    # would make these checks pass for the wrong reason.)
+    page.click("#character-mode-toggle")
+    page.wait_for_timeout(200)
+    record("stats-terminal", "Bonus Points panel stays hidden back in Edit mode after leaving Live Play",
+           not page.is_visible(".panel-bonus-skills"), "")
+    record("stats-terminal", "Bond generator (pyramid/category picker) stays hidden back in Edit mode",
+           not page.is_visible(".bonds-left"), "")
+    record("stats-terminal", "the actual Bonds list stays visible/editable once committed",
+           page.is_visible("#cs-bonds .bond-entry"), "")
+
+    # Committed status must be a real persisted field (collectState()/
+    # applyState() in save-load.js), not just an in-memory body class --
+    # otherwise a reload (or a different device via Cloud Save) would
+    # silently bring creation tools back for an already-played Agent.
+    page.reload(wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(600)
+    record("stats-terminal", "committed status survives a reload (persisted, not just in-memory)",
+           page.eval_on_selector("body", "el => el.classList.contains('agent-committed')")
+           and not page.is_visible(".panel-bonus-skills"), "")
+
+    # Settings cog unlock: session-only escape hatch to fix a bad import
+    # or rules mistake without permanently re-cluttering the sheet.
+    page.click("#settings-cog-btn")
+    page.wait_for_timeout(200)
+    record("stats-terminal", "the creation-tools unlock control only appears once committed",
+           page.is_visible("#creation-tools-unlock-row"), "")
+    page.click("#creation-tools-unlocked-btn")
+    page.wait_for_timeout(150)
+    page.click("#settings-panel-close")
+    page.wait_for_timeout(150)
+    record("stats-terminal", "unlock button brings the Bonus Points panel back",
+           page.is_visible(".panel-bonus-skills"), "")
+
+    page.click("#settings-cog-btn")
+    page.wait_for_timeout(200)
+    page.click("#creation-tools-unlocked-btn")
+    page.wait_for_timeout(150)
+    page.click("#settings-panel-close")
+    page.wait_for_timeout(150)
+    record("stats-terminal", "clicking unlock again re-hides the panel",
+           not page.is_visible(".panel-bonus-skills"), "")
+
+    record("stats-terminal", "no JS exceptions across the creation-lockout run", len(errs)==0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_stat_generator_agent_file_nav(p):
     """The "Open Agent File" button above the theme selector on
     stats/index.html (replacing the old Foundry-VTT-mentioning intro
@@ -8762,6 +8855,8 @@ def main():
                 return None
 
         safe(test_stat_generator, browser, area="stats-terminal")
+
+        safe(test_stat_generator_creation_lockout, browser, area="stats-terminal")
 
         safe(test_stat_generator_agent_file_nav, browser, area="stats-terminal")
 

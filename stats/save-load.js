@@ -201,6 +201,16 @@ function matchProfessionKey(profStr) {
         const specialtyInstances = (typeof appState !== 'undefined') ? appState.specialtyInstances.map(i => ({ ...i })) : [];
         const professionSkillsApplied = document.getElementById('apply-profession-button')?.classList.contains('apply-profession-done') || false;
 
+        // Whether this Agent has graduated from "still being created" to
+        // "existing, played" -- flips true the first time Live Play is
+        // entered (setLivePlay() in scripts.js) and retires the
+        // Bonus Points panel / Bond generator from normal Edit mode from
+        // then on. Must round-trip through Cloud Save (this object is what
+        // cloud-sync.js pushes/pulls verbatim), or a player who's already
+        // played on one device would see creation-only tools reappear on
+        // another.
+        const creationCommitted = document.body.classList.contains('agent-committed');
+
         // LP skill check state — which skills are marked as failed this session
         const lpCheckedSkills = [];
         document.querySelectorAll('#lp-sheet .lp-skill-cb:checked').forEach(cb => {
@@ -224,7 +234,7 @@ function matchProfessionKey(profStr) {
             if (valInp) lpCustomSkills.push({ name: nameInp.value.trim(), val: valInp.value.trim() });
         });
 
-        return { v: 1, stats, csStats, derived, bio, skills, skillSpecs, customSkills, bonds, sanity, theme, protoJson, itemsJson, bondCats, equipment, lpNotes, lpWeapons, lpFeat, optionalSkillChecked, bonusPrepared, bonusSkills, bonusApplied, appliedBonuses, specialtyInstances, lpCheckedSkills, lpCustomSkills, professionSkillsApplied };
+        return { v: 1, stats, csStats, derived, bio, skills, skillSpecs, customSkills, bonds, sanity, theme, protoJson, itemsJson, bondCats, equipment, lpNotes, lpWeapons, lpFeat, optionalSkillChecked, bonusPrepared, bonusSkills, bonusApplied, appliedBonuses, specialtyInstances, lpCheckedSkills, lpCustomSkills, professionSkillsApplied, creationCommitted };
     }
 
     /* =========================================================================
@@ -246,6 +256,12 @@ function matchProfessionKey(profStr) {
             const sel = document.getElementById('cs-theme-select');
             if (sel) { sel.value = state.theme; sel.dispatchEvent(new Event('change')); }
         }
+
+        // Creation-committed status -- a plain body class, no DOM
+        // dependency, so it's safe to restore synchronously here rather
+        // than in Phase 2 below. Older saves have no such field at all;
+        // default to false (still-being-created) rather than throwing.
+        document.body.classList.toggle('agent-committed', !!state.creationCommitted);
 
         // Bio fields
         if (state.bio) {
