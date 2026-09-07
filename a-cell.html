@@ -2565,6 +2565,20 @@
     return m ? m[1] : null;
   }
 
+  // A raw data: URI (pre-Phase-4, before Evidence photos uploaded
+  // straight to Storage) still marks a PDF with its MIME type. A
+  // Storage-uploaded PDF has none of that -- resolveEvidencePhoto_() in
+  // Code.gs only rewrites data: URIs to gdrive: links, so a Storage
+  // download URL passes through unchanged, and it only carries the
+  // original file extension in its path (before any query string --
+  // real Firebase Storage URLs append ?alt=media&token=...), not a
+  // content type this client can inspect.
+  function isPdfUrl_(url) {
+    if (!url) return false;
+    if (url.indexOf('data:application/pdf') === 0) return true;
+    return /\.pdf(\?|$)/i.test(url);
+  }
+
   // Resolves a gdrive: link to a data URI via the imgdata JSONP proxy
   // and hands it to onReady -- used for both the thumbnail grid and the
   // edit-form preview.
@@ -2895,10 +2909,10 @@
       // PDF can't be an <img> src -- shown as a small labeled box that
       // opens the PDF in a new tab instead of this app's photo lightbox.
       var driveId = extractDriveId(h.photo);
-      var isLegacyPdf = !driveId && h.photo && h.photo.indexOf('data:application/pdf') === 0;
+      var isCardPdf = !driveId && isPdfUrl_(h.photo);
       var photoRow = h.photo
         ? (driveId ? '<div class="evidence-photo-wrap" id="evidence-photo-' + i + '"></div>'
-                   : (isLegacyPdf
+                   : (isCardPdf
                       ? '<div class="evidence-photo-pdf-note" data-lightbox-pdf="' + i + '"><span class="icon">📄</span><span class="name">View PDF</span></div>'
                       : '<img class="evidence-photo" src="' + h.photo + '" alt="" data-lightbox-photo="' + i + '">'))
         : '';
@@ -3221,7 +3235,7 @@
     refreshFormOperationOptions(initialCellId, initialOpId);
     refreshFormRestrictList(initialCellId, initialRestricted);
     if (previewSrc) {
-      renderPhotoPreview('evidence-new-photo-prev-wrap', previewSrc, previewSrc.indexOf('data:application/pdf') === 0, 'existing file');
+      renderPhotoPreview('evidence-new-photo-prev-wrap', previewSrc, isPdfUrl_(previewSrc), 'existing file');
     }
     document.getElementById('evidence-new-scope').addEventListener('change', function () {
       refreshFormOperationOptions(this.value, '');
@@ -5128,16 +5142,46 @@
       });
     });
   }
-  // ensureHandlerSignedIn() is defined once, above (this file's other
-  // Firebase-auth-gated feature, the Evidence listener, already needed
-  // it) -- also used here by the Track Library upload/delete flow
-  // below, since it's the same Handler-password-to-Firebase-custom-
-  // token exchange either way. A second, byte-for-byte identical copy
-  // used to live right here (probably written before whoever added it
-  // realized this one already existed) -- harmless in itself, since
-  // `var`/`function` re-declaration just replaces the same binding with
-  // an identical one, but confusing to read as if they were two
-  // different things.
+  // The Evidence tab (a separate <script> block/IIFE above) has its own
+  // ensureHandlerSignedIn() for this exact same Handler-password-to-
+  // Firebase-custom-token exchange -- but each <script> tag in this file
+  // is its own IIFE with its own scope, so a function declared in one
+  // is NOT visible from another. A second copy of this function used to
+  // live right here and was removed on the mistaken assumption it was a
+  // redundant duplicate of the Evidence tab's -- that left the Track
+  // Library upload/delete flow below calling an undefined function,
+  // silently throwing before its own .then()/.catch() chain even
+  // attached (a real live "Uploading..." hangs forever, no error ever
+  // shown" report). Restored; this really does need its own copy.
+  var _handlerAuthPromise = null;
+  function withTimeout_(promise, ms, label) {
+    return new Promise(function (resolve, reject) {
+      var timer = setTimeout(function () { reject(new Error('Timed out: ' + label + ' (' + (ms / 1000) + 's) -- check network connection.')); }, ms);
+      promise.then(function (v) { clearTimeout(timer); resolve(v); }, function (e) { clearTimeout(timer); reject(e); });
+    });
+  }
+  function ensureHandlerSignedIn() {
+    if (_handlerAuthPromise) return _handlerAuthPromise;
+    _handlerAuthPromise = new Promise(function (resolve, reject) {
+      ensureFirebaseApi(function () {
+        var auth = window.firebase.auth();
+        // See the Evidence tab's own copy of this comment -- a stale
+        // Agent session from testing another page in this same browser
+        // must not be trusted just because *some* Firebase user is
+        // signed in.
+        if (auth.currentUser && auth.currentUser.uid === 'handler') { resolve(auth.currentUser); return; }
+        var password = sessionStorage.getItem('dg_acell_pw') || '';
+        if (!password) { _handlerAuthPromise = null; reject(new Error('No A-Cell session -- log in as Handler first.')); return; }
+        withTimeout_(window.firebase.functions().httpsCallable('handlerLogin')({ handler_password: password }), 20000, 'handlerLogin()')
+          .then(function (result) {
+            return withTimeout_(auth.signInWithCustomToken(result.data.token), 20000, 'signInWithCustomToken()');
+          })
+          .then(function (cred) { resolve(cred.user); })
+          .catch(function (err) { _handlerAuthPromise = null; reject(err); });
+      });
+    });
+    return _handlerAuthPromise;
+  }
 
   var trackLibTitleInput = document.getElementById('tracklib-title-input');
   var trackLibFileInput = document.getElementById('tracklib-file-input');
