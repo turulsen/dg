@@ -8652,3 +8652,39 @@ input[type="checkbox"]:checked+label {
         overflow-y: auto;
     }
 }
+
+/* ── Creation-only tools retire once an Agent is committed ────────────
+   .agent-committed is added to <body> the first time this character
+   actually enters Live Play (setLivePlay() in scripts.js) and restored
+   from saved state on load (applyState() in save-load.js). Past that
+   point the Bonus Skill Points panel and the Bond *generator* (random
+   pyramid/sigil box, category checkboxes, Generate/Add/New Empty
+   buttons) are creation-time apparatus that no longer applies and were
+   confusing players editing an already-played Agent's sheet -- hide
+   both. #cs-bonds (the actual Bonds list -- name/description/score,
+   which DOES still get edited in play as Bonds rise and fall) is
+   deliberately untouched. #creation-tools-unlocked-btn (settings cog)
+   toggles .creation-tools-unlocked on <body> to bring these back
+   temporarily, e.g. to fix a bad import -- session-only, never saved. */
+body.agent-committed:not(.creation-tools-unlocked) .panel-bonus-skills,
+body.agent-committed:not(.creation-tools-unlocked) .bonds-left {
+    display: none;
+}
+
+/* Settings-cog unlock link: only meaningful (and only shown) once there's
+   something to unlock -- a brand-new, not-yet-committed character never
+   needs it, since the panels above are already visible. */
+#creation-tools-unlock-row {
+    display: none;
+    margin: 8px 0 4px;
+}
+body.agent-committed #creation-tools-unlock-row {
+    display: block;
+}
+
+/* Bonds panel loses its two-column layout once the generator half is
+   hidden -- let the list take the full fieldset width instead of
+   leaving a dead half-empty column. */
+body.agent-committed:not(.creation-tools-unlocked) .bonds-layout {
+    grid-template-columns: 1fr;
+}
