@@ -387,11 +387,13 @@ def test_stat_generator(p):
     page.click("#settings-cog-btn")
     page.wait_for_timeout(200)
 
-    # All five themes must switch without throwing (field-doc retired --
-    # Live Play is now a mode layered on any theme, not a theme itself)
+    # All four themes must switch without throwing (field-doc retired --
+    # Live Play is now a mode layered on any theme, not a theme itself.
+    # Modern/Catppuccin was later removed as redundant with the other
+    # four).
     theme_options = page.eval_on_selector_all("#cs-theme-select option", "els => els.map(e=>e.value)")
-    record("stats-terminal", "theme selector has all 5 themes",
-           set(theme_options) == {"xfiles","modern","son-of-sam","field-notes","mobile"}, str(theme_options))
+    record("stats-terminal", "theme selector has all 4 themes",
+           set(theme_options) == {"xfiles","son-of-sam","field-notes","mobile"}, str(theme_options))
     for t in theme_options:
         page.select_option("#cs-theme-select", t)
         page.wait_for_timeout(200)
@@ -503,16 +505,16 @@ def test_stat_generator(p):
 def test_live_play_themed_skins(p):
     """Live Play used to force one universal "Field Document" DD-315
     paper look (khaki background, ink-brown colors) regardless of which
-    of the 4 themes was active in Edit mode -- X-Files' neon terminal,
-    Modern's Catppuccin palette, and Son of Sam's black/red horror look
-    all flipped to the same brown paper the instant Live Play turned on.
-    stats/styles.css now defines a --lp-* token set (--lp-ink, --lp-
-    accent, etc.) on .live-play, with Field Notes as the default and
-    .theme-xfiles.live-play / .theme-modern.live-play / .theme-son-of-
+    theme was active in Edit mode -- X-Files' neon terminal and Son of
+    Sam's black/red horror look both flipped to the same brown paper the
+    instant Live Play turned on. stats/styles.css now defines a --lp-*
+    token set (--lp-ink, --lp-accent, etc.) on .live-play, with Field
+    Notes as the default and .theme-xfiles.live-play / .theme-son-of-
     sam.live-play each overriding it to match that theme's own Edit-mode
     identity. This checks each theme's tokens actually differ from every
     other theme's (not just that they're defined) and that Field Notes
-    still gets its original, unchanged values."""
+    gets its realigned (assets/theme-folder.css-matching) values, not
+    its old separate cardboard/marker-pen ones."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -521,7 +523,7 @@ def test_live_play_themed_skins(p):
 
     ink_by_theme = {}
     accent_by_theme = {}
-    for theme in ["xfiles", "modern", "son-of-sam", "field-notes"]:
+    for theme in ["xfiles", "son-of-sam", "field-notes"]:
         page.evaluate("""(t) => {
             const sel = document.getElementById('cs-theme-select');
             sel.value = t;
@@ -541,16 +543,14 @@ def test_live_play_themed_skins(p):
 
     record("stats-terminal", "every theme defines a non-empty --lp-ink token",
            all(v for v in ink_by_theme.values()), str(ink_by_theme))
-    record("stats-terminal", "X-Files, Modern, Son of Sam, and Field Notes each get a distinct Live Play ink color",
-           len(set(ink_by_theme.values())) == 4, str(ink_by_theme))
-    record("stats-terminal", "X-Files, Modern, Son of Sam, and Field Notes each get a distinct Live Play accent color",
-           len(set(accent_by_theme.values())) == 4, str(accent_by_theme))
-    record("stats-terminal", "Field Notes' Live Play ink is unchanged from its original hardcoded value",
-           ink_by_theme["field-notes"] == "#000000", ink_by_theme["field-notes"])
+    record("stats-terminal", "X-Files, Son of Sam, and Field Notes each get a distinct Live Play ink color",
+           len(set(ink_by_theme.values())) == 3, str(ink_by_theme))
+    record("stats-terminal", "X-Files, Son of Sam, and Field Notes each get a distinct Live Play accent color",
+           len(set(accent_by_theme.values())) == 3, str(accent_by_theme))
+    record("stats-terminal", "Field Notes' Live Play ink matches its realigned theme-folder.css ink color",
+           ink_by_theme["field-notes"] == "#1c1608", ink_by_theme["field-notes"])
     record("stats-terminal", "X-Files' Live Play ink matches its neon-green identity, not brown ink",
            ink_by_theme["xfiles"] == "#00b521", ink_by_theme["xfiles"])
-    record("stats-terminal", "Modern's Live Play ink reuses the Catppuccin --ctp-text value",
-           ink_by_theme["modern"] == "#cdd6f4", ink_by_theme["modern"])
     record("stats-terminal", "Son of Sam's Live Play ink is a red, not brown ink or a hardcoded HP-critical red",
            ink_by_theme["son-of-sam"] == "#cc0000", ink_by_theme["son-of-sam"])
 
@@ -5161,11 +5161,11 @@ def test_table_radio_mobile_buttons_not_stretched(p):
 def test_table_radio_theme_consistent_style(p):
     """Bug report (screenshots): the Tune In panel's dial arrows and
     Confirm button looked different across themes -- a plain border box
-    in Modern, nearly invisible (flat, theme-primary-colored fill) in
+    in one theme, nearly invisible (flat, theme-primary-colored fill) in
     Son of Sam. Root cause: .dgr-turn/.dgr-confirm/.dgr-volume were bare
     class selectors in table-radio.js's injected CSS, losing on
     specificity to each theme's own blanket `button`/`input` rules in
-    stats/styles.css (e.g. .theme-son-of-sam button, .theme-modern
+    stats/styles.css (e.g. .theme-son-of-sam button, .theme-xfiles
     input) -- same class of bug .dgr-btn was already protected against
     (see its #dg-radio-panel prefix and comment). Confirms the dial's
     computed border/background now stay identical across two themes
@@ -5198,17 +5198,17 @@ def test_table_radio_theme_consistent_style(p):
 
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
-    modern_styles = dial_styles("modern")
+    xfiles_styles = dial_styles("xfiles")
     sam_styles = dial_styles("son-of-sam")
 
-    record("radio", "the dial turn buttons keep the same border color across Modern and Son of Sam themes",
-           modern_styles["turnBorder"] == sam_styles["turnBorder"], f"{modern_styles} vs {sam_styles}")
-    record("radio", "the dial turn buttons keep the same background across Modern and Son of Sam themes",
-           modern_styles["turnBg"] == sam_styles["turnBg"], f"{modern_styles} vs {sam_styles}")
-    record("radio", "the Tune In confirm button keeps the same border color across Modern and Son of Sam themes",
-           modern_styles["confirmBorder"] == sam_styles["confirmBorder"], f"{modern_styles} vs {sam_styles}")
-    record("radio", "the Tune In confirm button keeps the same background across Modern and Son of Sam themes",
-           modern_styles["confirmBg"] == sam_styles["confirmBg"], f"{modern_styles} vs {sam_styles}")
+    record("radio", "the dial turn buttons keep the same border color across X-Files and Son of Sam themes",
+           xfiles_styles["turnBorder"] == sam_styles["turnBorder"], f"{xfiles_styles} vs {sam_styles}")
+    record("radio", "the dial turn buttons keep the same background across X-Files and Son of Sam themes",
+           xfiles_styles["turnBg"] == sam_styles["turnBg"], f"{xfiles_styles} vs {sam_styles}")
+    record("radio", "the Tune In confirm button keeps the same border color across X-Files and Son of Sam themes",
+           xfiles_styles["confirmBorder"] == sam_styles["confirmBorder"], f"{xfiles_styles} vs {sam_styles}")
+    record("radio", "the Tune In confirm button keeps the same background across X-Files and Son of Sam themes",
+           xfiles_styles["confirmBg"] == sam_styles["confirmBg"], f"{xfiles_styles} vs {sam_styles}")
     record("radio", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
     return errs
@@ -6069,13 +6069,13 @@ def test_stats_new_recruit_blank_sheet(p):
 def test_mobile_no_overflow(p):
     """Regression check: no page should force horizontal scroll on a phone
     viewport. stats/index.html originally only had this for its dedicated
-    "Mobile" theme -- the other five (X-Files, Modern, Son of Sam, Field
-    Notes, Live Play) were desktop-oriented by pigeon-labs-stack's original
+    "Mobile" theme -- the other themes (X-Files, Son of Sam, Field Notes,
+    Live Play) were desktop-oriented by pigeon-labs-stack's original
     design and genuinely overflowed on a phone. This hub's own addition
     (a viewport-width-gated CSS block in stats/styles.css, not scoped to
     any theme) fixes the underlying causes -- <fieldset>'s UA-default
     min-width: min-content, a few fixed-column grids/tables -- for all
-    five, so they're now checked the same as Mobile rather than excluded."""
+    of them, so they're now checked the same as Mobile rather than excluded."""
     errs_all = []
     for path in ["index.html", "agent-hub.html", "dg-agent-portal.html", "dg-id-creator.html", "a-cell.html"]:
         page = p.new_page(viewport={"width": 390, "height": 844})
@@ -6148,10 +6148,10 @@ def test_mobile_no_overflow(p):
     errs_all.extend(errs)
     page.close()
 
-    # All six stats/ themes are expected to be overflow-free at 390px --
+    # All four stats/ themes are expected to be overflow-free at 390px --
     # the fieldset/grid/table min-width fixes added for this are
     # theme-agnostic (gated on viewport width, not theme class), covering
-    # X-Files, Modern, Son of Sam, and Field Notes the same as Mobile.
+    # X-Files, Son of Sam, and Field Notes the same as Mobile.
     # Live Play mode is checked separately below with actual filled
     # content, since its full character sheet is the one deliberate
     # exception (it scrolls horizontally within its own box by design --
@@ -6163,7 +6163,7 @@ def test_mobile_no_overflow(p):
     page.wait_for_timeout(500)
     page.click("#settings-cog-btn")
     page.wait_for_timeout(200)
-    for theme in ["xfiles", "modern", "son-of-sam", "field-notes", "mobile"]:
+    for theme in ["xfiles", "son-of-sam", "field-notes", "mobile"]:
         page.select_option("#cs-theme-select", theme)
         page.wait_for_timeout(400)
         scroll_width = page.evaluate("() => document.documentElement.scrollWidth")

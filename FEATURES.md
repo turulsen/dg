@@ -52,10 +52,15 @@ against upstream if ever worth re-syncing. This is what "Pigeon" means
 whenever it comes up in this project's history; it is not itself an
 import format.
 
-**Five visual themes** (X-Files, Modern, Son of Sam, Field Notes,
-Mobile) — all upstream, all made mobile-responsive by this project
-(the upstream themes were desktop-first and genuinely broke on a
-phone; see `BUGFIXES.md`'s mobile-layout section for the specifics).
+**Four visual themes** (X-Files, Son of Sam, Field Notes, Mobile) — all
+upstream, all made mobile-responsive by this project (the upstream
+themes were desktop-first and genuinely broke on a phone; see
+`BUGFIXES.md`'s mobile-layout section for the specifics). A fifth
+upstream theme, Modern (Catppuccin Mocha), was later removed as
+redundant with the other four; Field Notes was also realigned to the
+same paper/ink/typewriter system (`assets/theme-folder.css`) the rest
+of the hub already uses, rather than its own separate cardboard/
+marker-pen look.
 
 **Live Play** is an orthogonal mode layered on top of whichever theme
 is active (not a theme of its own) — a sticky HP/WP/SAN/BP tracker bar
