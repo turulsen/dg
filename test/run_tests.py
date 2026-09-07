@@ -213,6 +213,7 @@ NOTES_FIRESTORE_STUB = """
     return {
       where: function (field, op, value) { return makeQuery(path, wheres.concat([[field, op, value]])); },
       orderBy: function () { return makeQuery(path, wheres); },
+      limit: function () { return makeQuery(path, wheres); },
       onSnapshot: function (success, error) {
         var entry = { path: path, wheres: wheres, success: success, error: error };
         window.__dgFirestoreListeners.push(entry);
@@ -689,6 +690,25 @@ def test_stat_generator_sheets_roundtrip(p):
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     jszip_path = os.path.join(HERE, "vendor", "jszip.min.js")
     page.route("**/cdnjs.cloudflare.com/ajax/libs/jszip/**", lambda r: r.fulfill(path=jszip_path))
+    # This test never used to mock script.google.com at all -- fine
+    # while nothing on this page happened to call it, but stats/
+    # index.html makes its own background JSONP calls on load, which
+    # went out to the REAL production backend over the network. A bare
+    # JSON body loaded as a <script> tag's content (no callback(...)
+    # wrapper) throws "Unexpected token ':'" the moment the parser hits
+    # the first key's colon -- exactly what a real, un-JSONP-shaped
+    # response (or no route handler at all, letting some other
+    # accidental response through) can trigger. See
+    # test_shell_nav_tracks_in_page_navigation's own comment on this
+    # same failure signature.
+    def fake_apps_script(route):
+        url = route.request.url
+        if route.request.method == "POST" or "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
+    page.route("**/script.google.com/**", fake_apps_script)
 
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
@@ -2671,6 +2691,15 @@ def test_acell_handler_session_race(p):
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
+    # Evidence's own read side moved to a live Firestore listener since
+    # this test was written (Phase 5) -- the dg_acell_session race this
+    # test is named for was specific to the old JSONP list_evidence
+    # path, and Firestore's own Handler auth (ensureHandlerSignedIn(),
+    # cached in _handlerAuthPromise) is a separate mechanism that
+    # doesn't have that particular staleness problem. The Evidence
+    # check below still needs a working stub to show anything at all,
+    # it just isn't exercising a race anymore.
+    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     skip_acell_gate(page)
@@ -2752,17 +2781,16 @@ def test_acell_handler_session_race(p):
     record("acell", "Cells recovers and shows the roster too, instead of 'Could not load Cells' forever",
            bool(cells_text) and "Cell Alpha" in cells_text, page.inner_text("#cells-groups"))
 
-    # Evidence's list_evidence doesn't error on an invalid session like
-    # list_characters does -- it silently degrades to the released-only
-    # player view, which for an unreleased item means it's simply missing,
-    # no error shown at all. Without its own retry-on-ready listener the
-    # Handler would be stuck looking at an incomplete Locker with nothing
-    # telling them so.
+    # Evidence itself now reads from its own live Firestore listener
+    # (Phase 5), independent of the dg_acell_session race this test is
+    # named for -- this just confirms the tab still renders correctly
+    # on a page that also happens to carry a stale Sheets-side session.
     page.click('.tw[data-tab="evidence"]')
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 1, timeout_ms=8000)
+    push_firestore_snapshot(page, "evidence", [], [dict(e, id=e["evidence_id"]) for e in evidence_fixture])
     evidence_text = wait_for_condition(lambda: page.inner_text("#evidence-list")
                                         if "Confidential Photo" in page.inner_text("#evidence-list") else None)
-    record("acell", "Evidence recovers and shows an unreleased item once the fresh (Handler) session lands, "
-                    "instead of silently sitting on the released-only player view forever",
+    record("acell", "Evidence renders correctly via its own Firestore listener on this page too",
            bool(evidence_text) and "Confidential Photo" in evidence_text, page.inner_text("#evidence-list"))
 
     page.close()
@@ -5008,6 +5036,19 @@ def test_shell_content_swap_preserves_hoisted_widgets(p):
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
+    # Table Radio's own Firestore usage really is conditional on a
+    # channel being set (see this test's own docstring above), but the
+    # content iframe swaps into a-cell.html too, and its own Evidence
+    # listener starts unconditionally on load (Phase 5) regardless of
+    # anything this test is actually proving -- without a stub, that's
+    # a real network call reaching the real backend in CI (this sandbox
+    # silently fails unmocked external calls instead, which is why this
+    # never showed up locally). Also seeding a Handler session so sign-in
+    # actually succeeds instead of a benign-but-noisy local "No A-Cell
+    # session" rejection -- this test isn't about Handler auth at all,
+    # so a clean sign-in is the least surprising simulated state.
+    install_notes_firestore_stub(page)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
@@ -5081,6 +5122,12 @@ def test_shell_nav_tracks_in_page_navigation(p):
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
+    # Agent Hub's own Evidence listener (Phase 5) starts unconditionally
+    # for every roster agent on load -- this test seeds one (OWEN-CS12)
+    # to have something to click, which otherwise reaches the real
+    # backend in CI and produces a real console error this test's own
+    # "no JS exceptions" check flags.
+    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     # JSONP-aware -- Agent Hub loads some data via a <script src=...
@@ -5159,6 +5206,12 @@ def test_shell_back_link_hidden_inside_shell(p):
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
+    # Swaps the content iframe into a-cell.html, whose own Evidence
+    # listener (Phase 5) starts unconditionally on load, independent of
+    # anything this test is actually proving -- see the swap test's own
+    # comment on the same fix.
+    install_notes_firestore_stub(page)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
@@ -5251,6 +5304,13 @@ def test_shell_hides_widgets_for_notes_popover(p):
     page = p.new_page()
     page.set_default_timeout(15000)
     errs = collect_errors(page)
+    # The shell's content iframe defaults to agent-hub.html before this
+    # test swaps it to Notes -- agent-hub.html's own Evidence listener
+    # (Phase 5) starts unconditionally for every roster agent during
+    # that brief initial load, reaching the real backend in CI without
+    # a stub (this sandbox silently fails unmocked external calls
+    # instead, which is why this never showed up locally).
+    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
