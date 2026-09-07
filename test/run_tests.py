@@ -191,17 +191,28 @@ def push_radio_listener_error(page, channel):
 # [Firestore] listeners above own note content." The JSONP mock's note/
 # evidence data was silently never reaching the app at all.
 #
+# Also covers a-cell.html's Handler-side Evidence listener (orderBy(),
+# not where()) and Handler auth (handlerLogin), plus agent-hub.html's
+# per-Agent Handouts/Evidence listener -- same Phase 5 migration, same
+# gap, different UI surfaces, diagnosed later than the Notes one above.
+# Storage is Phase 4's own separate migration (Track Library / Evidence
+# photo direct-to-Storage uploads) but reuses this same stub/install
+# function since every affected test needs both.
+#
 # window.__dgFirestoreListeners is a flat list (not keyed by a single
 # id like Radio's) since a listener here is identified by its full
-# collection path plus its exact .where() chain, not one channel name.
+# collection path plus its exact .where()/.orderBy() chain, not one
+# channel name.
 NOTES_FIRESTORE_STUB = """
 (function () {
   window.__dgFirestoreListeners = [];
   window.__dgFirestoreAuthUser = null;
+  window.__dgStorageUploads = [];
 
   function makeQuery(path, wheres) {
     return {
       where: function (field, op, value) { return makeQuery(path, wheres.concat([[field, op, value]])); },
+      orderBy: function () { return makeQuery(path, wheres); },
       onSnapshot: function (success, error) {
         var entry = { path: path, wheres: wheres, success: success, error: error };
         window.__dgFirestoreListeners.push(entry);
@@ -240,7 +251,23 @@ NOTES_FIRESTORE_STUB = """
         httpsCallable: function (name) {
           return function (payload) {
             if (name === 'exchangeAgentToken') return Promise.resolve({ data: { token: payload.agent_code } });
+            if (name === 'handlerLogin') return Promise.resolve({ data: { token: 'handler' } });
             return Promise.resolve({ data: {} });
+          };
+        }
+      };
+    },
+    storage: function () {
+      return {
+        ref: function (path) {
+          return {
+            put: function (file, opts) {
+              window.__dgStorageUploads.push({ path: path, file: file, opts: opts });
+              return Promise.resolve({
+                ref: { getDownloadURL: function () { return Promise.resolve('https://fake-storage.example/' + path); } }
+              });
+            },
+            delete: function () { return Promise.resolve(); }
           };
         }
       };
@@ -776,7 +803,7 @@ def test_foundry_import_profession_and_outfit(p):
            prof_val == "pilot_sailor", f"value={prof_val!r}")
 
     page.click("#export-agent-file-btn")
-    page.wait_for_timeout(500)
+    wait_for_condition(lambda: captured.get("body"), timeout_ms=8000)
     body = json.loads(captured.get("body") or "{}")
     record("stats-terminal", "outfit reflects the imported Pilot profession, not the pre-existing Police Officer one",
            body.get("jacket") == "flight/deck jacket" and body.get("footwear") == "deck shoes",
@@ -875,7 +902,7 @@ def test_kappablack_toml_import(p):
            bonds_count == 2, f"count={bonds_count}")
 
     page.click("#export-agent-file-btn")
-    page.wait_for_timeout(500)
+    wait_for_condition(lambda: captured.get("body"), timeout_ms=8000)
     body = json.loads(captured.get("body") or "{}")
     record("stats-terminal", "outfit derived from the imported Kappa Black character matches its Pilot profession",
            body.get("jacket") == "flight/deck jacket" and body.get("footwear") == "deck shoes",
@@ -2315,13 +2342,15 @@ def test_acell_gate(p):
     record("acell", "gate is visible on first load with the clearance prompt",
            page.is_visible("#acell-gate") and "enter_clearance_code:" in page.inner_text("#acell-term-log"), "")
 
-    # Wrong password -> denied, gate stays up. The field itself is a
-    # plain type="text" input with its display rewritten to X's (not a
-    # native type="password" field, which would mask with round dots).
+    # Wrong password -> denied, gate stays up. The field is a plain
+    # type="text" input showing the real typed value directly -- X
+    # masking was deliberately removed (see a-cell.html's own comment on
+    # grantAccess(): it was hiding real mistyped-password mistakes with
+    # no way to proofread before hitting Enter).
     page.fill("#acell-pw-input", "WRONGPASS")
-    record("acell", "the password field masks what's typed with X's, not the real characters",
-           page.input_value("#acell-pw-input") == "X" * len("WRONGPASS"), page.input_value("#acell-pw-input"))
-    record("acell", "the password field is a plain text input (X masking is manual, not the browser's own dots)",
+    record("acell", "the password field shows the real typed value, not masked",
+           page.input_value("#acell-pw-input") == "WRONGPASS", page.input_value("#acell-pw-input"))
+    record("acell", "the password field is a plain text input, not the browser's own type=password dots",
            page.eval_on_selector("#acell-pw-input", "el => el.type") == "text", "")
     page.press("#acell-pw-input", "Enter")
     page.wait_for_timeout(200)
@@ -3725,8 +3754,10 @@ def test_acell_music(p):
            len(pause_posts) == 1 and pause_posts[0].get("channel") == "2", str(pause_posts))
     record("acell", "status line confirms Paused once a read-back verifies it",
            "Paused" in page.inner_text("#music-status"), page.inner_text("#music-status"))
+    # An icon-only SVG button now (no visible text) -- Pause/Resume state
+    # is reflected in its title/aria-label instead, see syncTransportUI_.
     record("acell", "the Pause button flips to Resume once paused",
-           page.eval_on_selector("#music-pause-btn", "el => el.textContent") == "Resume", "")
+           page.get_attribute("#music-pause-btn", "title") == "Resume", "")
 
     page.click("#music-pause-btn")
     page.wait_for_timeout(1200)
@@ -3734,7 +3765,7 @@ def test_acell_music(p):
     record("acell", "clicking the same button again (now labeled Resume) posts resume_now_playing",
            len(resume_posts) == 1 and resume_posts[0].get("channel") == "2", str(resume_posts))
     record("acell", "the button flips back to Pause once resumed",
-           page.eval_on_selector("#music-pause-btn", "el => el.textContent") == "Pause", "")
+           page.get_attribute("#music-pause-btn", "title") == "Pause", "")
 
     # Restart: re-broadcasts the currently confirmed track from 0:00 even
     # with the form fields cleared -- it works off the last known
