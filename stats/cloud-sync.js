@@ -340,7 +340,7 @@
         // blank, since the Agent File name fetch below hasn't resolved
         // yet), and that blank snapshot then wins when save-load.js's own
         // restore runs moments later, wiping out the pre-filled name.
-        if (typeof setTheme === 'function') setTheme('modern', { skipSave: true });
+        if (typeof setTheme === 'function') setTheme('xfiles', { skipSave: true });
         setTimeout(() => { if (window.dgWizard?.activate) window.dgWizard.activate(); }, 200);
 
         // Best-effort: the Agent File (submitted separately, via the Cover

@@ -1,4 +1,4 @@
-﻿/* ============================================================================   DELTA GREEN STATS - PRODUCTION STYLESHEET   ============================================================================   Organized for easy customization with clear sections for:   1. Color configuration (CSS variables)   2. Global styling   3. Component styling   4. Layout patterns   5. Modern theme (Catppuccin-inspired)   ============================================================================ */
+﻿/* ============================================================================   DELTA GREEN STATS - PRODUCTION STYLESHEET   ============================================================================   Organized for easy customization with clear sections for:   1. Color configuration (CSS variables)   2. Global styling   3. Component styling   4. Layout patterns   ============================================================================ */
 /* ============================================================================   CONFIGURATION: Colors, Spacing, Typography   ============================================================================ */
 :root {
     /* === X-Files Theme Colors === */
@@ -25,443 +25,86 @@
     --font-xl: 32px;
 }
 
-/* ── Modern Theme (Catppuccin Mocha) ─────────────────────────────────── */
-/* ═══════════════════════════════════════════════════════════════════   MODERN THEME — Catppuccin Mocha   Full palette, JetBrains Mono, per-section accents, riced aesthetic═══════════════════════════════════════════════════════════════════ */
-.theme-modern {
-    /* ── Catppuccin Mocha full palette ──────────────── */
-    --ctp-crust: #11111b;
-    --ctp-mantle: #181825;
-    --ctp-base: #1e1e2e;
-    --ctp-surface0: #313244;
-    --ctp-surface1: #45475a;
-    --ctp-surface2: #585b70;
-    --ctp-overlay0: #6c7086;
-    --ctp-overlay1: #7f849c;
-    --ctp-overlay2: #9399b2;
-    --ctp-subtext0: #a6adc8;
-    --ctp-subtext1: #bac2de;
-    --ctp-text: #cdd6f4;
-    --ctp-lavender: #b4befe;
-    --ctp-blue: #89b4fa;
-    --ctp-sapphire: #74c7ec;
-    --ctp-sky: #89dceb;
-    --ctp-teal: #94e2d5;
-    --ctp-green: #a6e3a1;
-    --ctp-yellow: #f9e2af;
-    --ctp-peach: #fab387;
-    --ctp-maroon: #eba0ac;
-    --ctp-red: #f38ba8;
-    --ctp-mauve: #cba6f7;
-    --ctp-pink: #f5c2e7;
-    --ctp-flamingo: #f2cdcd;
-    --ctp-rosewater: #f5e0dc;
-    /* ── Semantic tokens ────────────────────────────── */
-    --primary-color: var(--ctp-mauve);
-    --bg-color: var(--ctp-crust);
-    --text-color: var(--ctp-text);
-    --input-bg: var(--ctp-surface0);
-    --input-border: var(--ctp-surface1);
-    font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
-    background-color: var(--bg-color);
-    /* Faint dot-grid gives the flat page some texture */
-    background-image: radial-gradient(circle, rgba(203, 166, 247, 0.07) 1px, transparent 1px);
-    background-size: 28px 28px;
-    color: var(--text-color);
-}
-
 /* ── Page title: pastel gradient across the full Mocha palette ─ */
-.theme-modern .page-title {
-    background: linear-gradient(90deg, var(--ctp-mauve) 0%, var(--ctp-blue) 40%, var(--ctp-teal) 75%, var(--ctp-green) 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    font-weight: 800;
-    letter-spacing: 0.04em;
-}
 
-.theme-modern .site-intro {
-    color: var(--ctp-subtext0);
-    font-size: 0.82rem;
-    line-height: 1.4;
-    text-align: center;
-    flex: 0 0 100%;
-    width: 100%;
-    max-width: 100%;
-    padding: 0 33.5%;
-    box-sizing: border-box;
-    margin-bottom: var(--spacing-lg);
-    opacity: 0.85;
-}
 
-.theme-modern .site-intro strong {
-    color: var(--ctp-mauve);
-    -webkit-text-fill-color: var(--ctp-mauve);
-}
 
 /* ── Per-section accent colours ────────────────────────────────── */
-.theme-modern #cs-biography-fieldset {
-    --primary-color: var(--ctp-mauve);
-}
 
-.theme-modern .panel-skills {
-    --primary-color: var(--ctp-lavender);
-}
 
-.theme-modern .panel-bonus-skills {
-    --primary-color: var(--ctp-teal);
-}
 
-.theme-modern #cs-bonds-fieldset {
-    --primary-color: var(--ctp-blue);
-}
 
-.theme-modern #eq-picker-fieldset {
-    --primary-color: var(--ctp-pink);
-}
 
 /* ── Panels: surface0 bg gives real contrast vs crust body ─── */
-.theme-modern #cs-biography-fieldset,
-.theme-modern .panel-skills,
-.theme-modern .panel-bonus-skills,
-.theme-modern #cs-bonds-fieldset,
-.theme-modern #eq-picker-fieldset {
-    background: var(--ctp-surface0);
-    border: 1px solid var(--ctp-surface1);
-    border-left: 3px solid var(--primary-color);
-    border-radius: 8px;
-    /* top-edge inner highlight + crisp drop shadow — no bloom */
-    box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.07) inset, 0 2px 4px rgba(0, 0, 0, 0.5), 0 6px 16px rgba(0, 0, 0, 0.4);
-}
 
 /* ── Legends: solid coloured pill, crust text ───────────────── */
-.theme-modern #cs-biography-fieldset>legend,
-.theme-modern .panel-skills>legend,
-.theme-modern .panel-bonus-skills>legend,
-.theme-modern #cs-bonds-fieldset>legend,
-.theme-modern #eq-picker-fieldset>legend {
-    background: var(--primary-color);
-    color: var(--ctp-crust);
-    border-radius: 4px;
-    font-size: 0.7rem;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    font-weight: 700;
-    padding: 2px 10px;
-    font-family: 'JetBrains Mono', monospace;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-}
 
 /* ── Inputs ─────────────────────────────────────────────────── */
-.theme-modern input,
-.theme-modern textarea {
-    /* base is darker than the surface0 panel — looks sunken */
-    background: var(--ctp-base);
-    border-color: var(--ctp-surface1);
-    color: var(--ctp-text);
-    border-radius: 5px;
-    font-family: 'JetBrains Mono', monospace;
-    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
-}
 
 /* Auto-expand motivations textarea to fit its content */
-.theme-modern #cs-motivations {
-    field-sizing: content;
-    min-height: 60px;
-    overflow: hidden;
-    resize: none;
-}
 
 /* ── Specialty skill name: match existing skill label style ──── */
-.theme-modern #cs-specialty-skills .cs-skill-name {
-    color: var(--primary-color);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.9rem;
-}
 
 /* ── Bond intro text: match bonds section accent (blue) ──────── */
-.theme-modern #cs-bonds-fieldset .bonus-skills-description {
-    color: var(--ctp-blue);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.8rem;
-    opacity: 0.9;
-}
 
-.theme-modern #cs-bonds-fieldset .bonus-skills-description strong {
-    color: var(--ctp-blue);
-    -webkit-text-fill-color: var(--ctp-blue);
-}
 
 /* ── JSON import textarea placeholder: plain readable text ───── */
-.theme-modern #json-import-area::placeholder {
-    color: var(--ctp-subtext0);
-    font-style: normal;
-    opacity: 0.8;
-}
 
-.theme-modern input:focus,
-.theme-modern textarea:focus {
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 28%, transparent);
-    outline: none;
-}
 
-.theme-modern .panel-skills input,
-.theme-modern .panel-bonus-skills select {
-    border-color: var(--ctp-surface1);
-    background-color: var(--ctp-base);
-}
 
 /* ── Selects ─────────────────────────────────────────────────── */
-.theme-modern select {
-    background-color: var(--ctp-base);
-    color: var(--ctp-text);
-    border: 1px solid var(--ctp-surface1);
-    border-radius: 5px;
-    font-family: 'JetBrains Mono', monospace;
-    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
-}
 
-.theme-modern select option {
-    background-color: var(--ctp-base);
-    color: var(--ctp-text);
-}
 
 /* ── Equipment search/filter ─────────────────────────────────── */
-.theme-modern .eq-search-input,
-.theme-modern .eq-cat-select {
-    border-color: var(--ctp-surface1);
-    background: var(--ctp-base);
-}
 
-.theme-modern .eq-search-input:focus,
-.theme-modern .eq-cat-select:focus {
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 28%, transparent);
-}
 
 /* ── Buttons: ghost outline, section-colour highlight on hover ─ */
-.theme-modern button,
-.theme-modern .adjust-button {
-    background: transparent;
-    border: 1px solid var(--ctp-surface1);
-    color: var(--ctp-subtext1);
-    border-radius: 6px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.78rem;
-    letter-spacing: 0.04em;
-    font-weight: 600;
-    transition: background 0.15s, border-color 0.15s, color 0.15s;
-    filter: none;
-}
 
-.theme-modern button:hover,
-.theme-modern .adjust-button:hover {
-    background: color-mix(in srgb, var(--primary-color) 14%, transparent);
-    border-color: var(--primary-color);
-    color: var(--primary-color);
-    filter: none;
-}
 
 /* Utility buttons (eq picker) */
-.theme-modern .eq-add-btn,
-.theme-modern .eq-remove-btn,
-.theme-modern .eq-clear-btn {
-    background-color: transparent;
-    border-color: var(--ctp-surface1);
-    color: var(--ctp-subtext0);
-    filter: none;
-}
 
 /* ── Primary action buttons: filled with section colour ─────── */
-.theme-modern #random-point-buy,
-.theme-modern #random-dice-roll,
-.theme-modern #random-bio-button,
-.theme-modern #add-skill-button,
-.theme-modern #bonds-button,
-.theme-modern #add-bond-button,
-.theme-modern #share-link-btn,
-.theme-modern #preview-json,
-.theme-modern #export-json,
-.theme-modern #refresh-stats,
-.theme-modern #export-printable,
-.theme-modern #json-to-printable-button,
-.theme-modern #json-to-editor-button {
-    background: linear-gradient(to bottom, color-mix(in srgb, var(--primary-color) 90%, white) 0%, var(--primary-color) 100%);
-    border-color: color-mix(in srgb, var(--primary-color) 80%, black);
-    color: var(--ctp-crust);
-    box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.18) inset, 0 3px 10px rgba(0, 0, 0, 0.4);
-}
 
-.theme-modern #random-point-buy:hover,
-.theme-modern #random-dice-roll:hover,
-.theme-modern #random-bio-button:hover,
-.theme-modern #add-skill-button:hover,
-.theme-modern #bonds-button:hover,
-.theme-modern #add-bond-button:hover,
-.theme-modern #share-link-btn:hover,
-.theme-modern #preview-json:hover,
-.theme-modern #export-json:hover,
-.theme-modern #refresh-stats:hover,
-.theme-modern #export-printable:hover,
-.theme-modern #json-to-printable-button:hover,
-.theme-modern #json-to-editor-button:hover {
-    background: color-mix(in srgb, var(--primary-color) 82%, white);
-    border-color: color-mix(in srgb, var(--primary-color) 82%, white);
-    color: var(--ctp-crust);
-    filter: none;
-}
 
 /* ── Danger buttons ──────────────────────────────────────────── */
-.theme-modern #reset-button,
-.theme-modern #clear-save-btn {
-    background: transparent;
-    border-color: color-mix(in srgb, var(--ctp-red) 45%, transparent);
-    color: var(--ctp-red);
-}
 
-.theme-modern #reset-button:hover,
-.theme-modern #clear-save-btn:hover {
-    background: color-mix(in srgb, var(--ctp-red) 14%, transparent);
-    border-color: var(--ctp-red);
-    color: var(--ctp-red);
-    filter: none;
-}
 
 /* ── Apply / prepare reminder buttons ───────────────────────── */
-.theme-modern .bonus-prep-row #reminder-prepare-bonus,
-.theme-modern .bonus-apply-row #reminder-apply-bonus,
-.theme-modern #bio-profession-apply-row #reminder-apply-profession {
-    color: var(--ctp-red);
-}
 
-.theme-modern #prepare-bonus-button,
-.theme-modern #apply-bonus-button,
-.theme-modern #bio-profession-apply-row #apply-profession-button {
-    background: var(--ctp-red);
-    border-color: var(--ctp-red);
-    color: var(--ctp-crust);
-}
 
-.theme-modern #prepare-bonus-button.prepare-bonus-done,
-.theme-modern #apply-bonus-button.apply-bonus-done,
-.theme-modern #bio-profession-apply-row #apply-profession-button.apply-profession-done {
-    background: var(--ctp-green);
-    border-color: var(--ctp-green);
-    color: var(--ctp-crust);
-}
 
 /* ── Scrollbar ───────────────────────────────────────────────── */
-.theme-modern ::-webkit-scrollbar-thumb {
-    background: var(--ctp-surface2);
-    border-radius: 4px;
-}
 
-.theme-modern ::-webkit-scrollbar-thumb:hover {
-    background: var(--ctp-overlay0);
-}
 
-.theme-modern ::-webkit-scrollbar-track {
-    background: var(--ctp-mantle);
-}
 
 /* ── Selection ───────────────────────────────────────────────── */
-.theme-modern ::selection {
-    background: color-mix(in srgb, var(--ctp-mauve) 35%, transparent);
-    color: var(--ctp-text);
-}
 
 /* ── JSON viewer ─────────────────────────────────────────────── */
-.theme-modern #cs-json {
-    background: var(--ctp-crust) !important;
-    color: var(--ctp-green) !important;
-    border-color: var(--ctp-surface0) !important;
-    font-family: 'JetBrains Mono', monospace;
-}
 
 /* ── Sanity checkboxes ───────────────────────────────────────── */
-.theme-modern .sanity-adaptation-checkbox {
-    accent-color: var(--primary-color);
-}
 
-.theme-modern .sanity-adaptation-checkbox+span {
-    color: var(--primary-color);
-}
 
 /* ── Statistics section: multi-accent rainbow treatment ─────── */
 /* "STATISTICS:" heading gets the same gradient sweep as the page title */
-.theme-modern .stats-section h2 {
-    background: linear-gradient(90deg, var(--ctp-flamingo) 0%, var(--ctp-pink) 20%, var(--ctp-mauve) 40%, var(--ctp-lavender) 60%, var(--ctp-blue) 80%, var(--ctp-teal) 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-}
 
 /* Point-buy stat cards — each card picks its own Catppuccin accent */
-.theme-modern #stats .stat-container:nth-child(1) {
-    --primary-color: var(--ctp-flamingo);
-}
 
-.theme-modern #stats .stat-container:nth-child(2) {
-    --primary-color: var(--ctp-pink);
-}
 
-.theme-modern #stats .stat-container:nth-child(3) {
-    --primary-color: var(--ctp-mauve);
-}
 
-.theme-modern #stats .stat-container:nth-child(4) {
-    --primary-color: var(--ctp-lavender);
-}
 
-.theme-modern #stats .stat-container:nth-child(5) {
-    --primary-color: var(--ctp-blue);
-}
 
-.theme-modern #stats .stat-container:nth-child(6) {
-    --primary-color: var(--ctp-teal);
-}
 
 /* Character sheet stat inputs — same arc as the point-buy cards */
-.theme-modern #cs-stats .stat-container:nth-child(1) {
-    --primary-color: var(--ctp-flamingo);
-}
 
-.theme-modern #cs-stats .stat-container:nth-child(2) {
-    --primary-color: var(--ctp-pink);
-}
 
-.theme-modern #cs-stats .stat-container:nth-child(3) {
-    --primary-color: var(--ctp-mauve);
-}
 
-.theme-modern #cs-stats .stat-container:nth-child(4) {
-    --primary-color: var(--ctp-lavender);
-}
 
-.theme-modern #cs-stats .stat-container:nth-child(5) {
-    --primary-color: var(--ctp-blue);
-}
 
-.theme-modern #cs-stats .stat-container:nth-child(6) {
-    --primary-color: var(--ctp-teal);
-}
 
 /* Derived attributes (HP, WP, SAN, BP) — cool half of the palette */
-.theme-modern #cs-derived-attributes .stat-container:nth-child(1) {
-    --primary-color: var(--ctp-maroon);
-}
 
-.theme-modern #cs-derived-attributes .stat-container:nth-child(2) {
-    --primary-color: var(--ctp-lavender);
-}
 
-.theme-modern #cs-derived-attributes .stat-container:nth-child(3) {
-    --primary-color: var(--ctp-blue);
-}
 
-.theme-modern #cs-derived-attributes .stat-container:nth-child(4) {
-    --primary-color: var(--ctp-teal);
-}
 
 /* ── Son of Sam Theme (Black / Red / White — all sharp edges) ───────────── */
 .theme-son-of-sam {
@@ -1560,10 +1203,6 @@ select {
 }
 
 /* Dark theme highlight overrides — keeps warning border, swaps light bg for dark-compatible tint */
-.theme-modern .highlight-empty-input,
-.theme-modern select.highlight-empty-input {
-    background: color-mix(in srgb, #fe640b 12%, var(--ctp-base)) !important;
-}
 
 .theme-son-of-sam .highlight-empty-input,
 .theme-son-of-sam select.highlight-empty-input {
@@ -1593,15 +1232,7 @@ select {
     box-shadow: none;
 }
 
-/* Modern theme: Statistics buy section — Catppuccin flamingo/pink accent */
-.theme-modern #stats-buy-section {
-    --primary-color: #f5bde6;
-}
-
 /* The button-container (Random Point Buy / Dice Roll / Reset) sits as a sibling   to #stats-buy-section, so we need to explicitly scope it too */
-.theme-modern #stats-buy-section+.button-container {
-    --primary-color: #f5bde6;
-}
 
 /* X-Files stat buy section: terminal panel */
 .theme-xfiles #stats-buy-section {
@@ -2191,19 +1822,6 @@ body.dg-notes-fullscreen-active #dg-split-notes-pane iframe {
 
 #stats .stat-container:hover {
     box-shadow: 0 0 14px color-mix(in srgb, var(--primary-color) 30%, transparent);
-}
-
-/* Modern theme stat cards: gradient depth + lift shadow */
-.theme-modern #stats .stat-container {
-    background: linear-gradient(160deg, color-mix(in srgb, var(--primary-color) 10%, var(--ctp-surface1)) 0%, color-mix(in srgb, var(--primary-color) 3%, var(--ctp-surface0)) 100%);
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.07) inset, 0 3px 12px rgba(0, 0, 0, 0.45), 0 0 20px -6px color-mix(in srgb, var(--primary-color) 30%, transparent);
-    border-radius: 8px;
-}
-
-.theme-modern #stats .stat-container:hover {
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.07) inset, 0 4px 20px color-mix(in srgb, var(--primary-color) 35%, transparent), 0 6px 24px rgba(0, 0, 0, 0.5);
-    transform: translateY(-2px);
-    transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 /* Shared overrides for all #stats text children */
@@ -3597,10 +3215,10 @@ textarea {
     min-width: 0;
 }
 
-/* Modern theme reskins #export-printable by ID (.theme-modern
-   #export-printable), which outranks the plain #settings-panel button
-   rule above (a matching ID beats a matching class at equal ID count).
-   Re-anchored on #settings-panel's own ID here to win that specifically. */
+/* Keeps this button's own neutral, drawer-appropriate styling
+   regardless of which theme is active -- a theme's own by-ID button
+   rules would otherwise beat the plain #settings-panel button rule
+   above (a matching ID beats a matching class at equal ID count). */
 #settings-panel #export-printable,
 #settings-panel #export-printable:hover {
     background: #262626;
@@ -4845,11 +4463,6 @@ input[type="checkbox"]:checked+label {
     margin-top: var(--spacing-md);
 }
 
-.theme-modern #cs-json {
-    background: var(--input-bg) !important;
-    color: var(--primary-color) !important;
-    border-color: var(--primary-color) !important;
-}
 
 /* ============================================================================   ANIMATIONS   ============================================================================ */
 @keyframes blink {
@@ -5359,18 +4972,18 @@ input[type="checkbox"]:checked+label {
 
 /* ============================================================================   FIELD NOTES THEME — Handwritten notebook / field report aesthetic   Cardboard outer surround, graph-paper panel interiors, Permanent Marker   labels, black ink borders, squared-off everything. No drama — just notes   made in the dark by someone who knows too much already.   ============================================================================ */
 .theme-field-notes {
-    --primary-color: #1a1408;
-    --bg-color: #faf7ee;
-    --text-color: #1a1408;
+    --primary-color: #1c1608;
+    --bg-color: #f4eed8;
+    --text-color: #1c1608;
     --input-bg: transparent;
-    --input-border: #1a1408;
+    --input-border: #1c1608;
     --radius-sm: 0px;
     --radius-md: 0px;
     /* Cork/cardboard outer surround — same worn texture as the LP sheet */
-    background-color: #7a5c2e;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.25'/%3E%3C/svg%3E");
-    color: #1a1408;
-    font-family: 'Permanent Marker', cursive;
+    background-color: #0e100b;
+    background-image: radial-gradient(ellipse at 50% 20%, #141710 0%, #090b07 100%);
+    color: #1c1608;
+    font-family: 'Special Elite', monospace;
     font-weight: 400;
 }
 
@@ -5402,16 +5015,22 @@ input[type="checkbox"]:checked+label {
 }
 
 /* ── Page title ────────────────────────────────────────────────────────────── */
+/* Page title/tagline sit directly on the dark desk background (see
+   .theme-field-notes's own background-color further up), not on a
+   paper panel -- they need the same light "chrome" text color
+   assets/theme-folder.css uses for its own out-of-paper text
+   (body.folder-theme's #e9e3ce), not the dark ink that's only readable
+   against a paper-colored fieldset. */
 .theme-field-notes .page-title {
-    color: #1a1408;
+    color: #e9e3ce;
     font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
     font-size: 3.2rem;
     font-weight: 400;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     text-shadow: none;
-    -webkit-text-fill-color: #1a1408;
-    border-bottom: 3px solid #1a1408;
+    -webkit-text-fill-color: #e9e3ce;
+    border-bottom: 3px solid #e9e3ce;
 }
 
 .theme-field-notes .blinking-cursor {
@@ -5420,7 +5039,7 @@ input[type="checkbox"]:checked+label {
 
 /* ── Site intro ────────────────────────────────────────────────────────────── */
 .theme-field-notes .site-intro {
-    color: #1a1408;
+    color: #e9e3ce;
     font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
     font-size: 1.1rem;
     font-weight: 400;
@@ -5436,16 +5055,27 @@ input[type="checkbox"]:checked+label {
 }
 
 .theme-field-notes .site-intro strong {
-    color: #1a1408;
+    color: #e9e3ce;
     font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
     font-size: 1.1rem;
     font-weight: 400;
-    -webkit-text-fill-color: #1a1408;
+    -webkit-text-fill-color: #e9e3ce;
+}
+
+/* New Recruit split headings/descriptions (.new-recruit-heading etc.,
+   generic across every theme) sit on the same dark desk background as
+   the page title above -- same light "chrome" text color, not the
+   generic un-themed default which reads as this theme's dark ink. */
+.theme-field-notes .new-recruit-heading,
+.theme-field-notes .new-recruit-option-title,
+.theme-field-notes .new-recruit-option-desc,
+.theme-field-notes .new-recruit-skip-note {
+    color: #e9e3ce;
 }
 
 /* ── Stats buy section + its button row ─────────────────────────────────────── */
 .theme-field-notes #stats-buy-section {
-    background-color: #faf7ee;
+    background-color: #f4eed8;
     background-image:
         /* binding crease — soft shadow either side of the centre fold */
         linear-gradient(to right,
@@ -5459,7 +5089,7 @@ input[type="checkbox"]:checked+label {
         linear-gradient(rgba(80, 120, 200, 0.15) 1px, transparent 1px),
         linear-gradient(90deg, rgba(80, 120, 200, 0.15) 1px, transparent 1px);
     background-size: 100% 100%, 20px 20px, 20px 20px;
-    border: 3px solid #1a1408;
+    border: 3px solid #1c1608;
     padding: 20px 16px 16px;
     box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35);
     max-width: 960px;
@@ -5474,44 +5104,44 @@ input[type="checkbox"]:checked+label {
 }
 
 .theme-field-notes #stats-buy-section+.button-container {
-    --primary-color: #1a1408;
+    --primary-color: #1c1608;
     transform: translateX(0);
     /* follow stats section */
 }
 
 /* ── Stat containers in the buy section ──────────────────────────────────── */
 .theme-field-notes #stats .stat-container {
-    background-color: #faf7ee;
+    background-color: #f4eed8;
     background-image: linear-gradient(rgba(80, 120, 200, 0.14) 1px, transparent 1px), linear-gradient(90deg, rgba(80, 120, 200, 0.14) 1px, transparent 1px);
     background-size: 20px 20px;
-    border: 2px solid #1a1408;
+    border: 2px solid #1c1608;
     box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.25);
 }
 
 .theme-field-notes #stats .stat-container .stat-label {
-    font-family: 'Permanent Marker', cursive;
+    font-family: 'Special Elite', monospace;
     font-size: 1.2rem;
     font-weight: 400;
-    color: #1a1408;
+    color: #1c1608;
 }
 
 .theme-field-notes #stats .stat-container .descriptor {
-    font-family: 'Permanent Marker', cursive;
+    font-family: 'Special Elite', monospace;
     font-size: 0.85rem;
     font-weight: 400;
-    color: #1a1408;
+    color: #1c1608;
 }
 
 .theme-field-notes #stats .stat-container .stat-value {
-    font-family: 'Permanent Marker', cursive;
-    color: #1a1408;
+    font-family: 'Special Elite', monospace;
+    color: #1c1608;
     font-size: 2.4rem;
     font-weight: 400;
 }
 
 .theme-field-notes #stats .stat-container .x5-value {
-    font-family: 'Courier New', Courier, monospace;
-    color: #5a4a2a;
+    font-family: 'Courier Prime', monospace;
+    color: #4a3f28;
     font-size: 0.78rem;
     opacity: 0.8;
 }
@@ -5522,8 +5152,8 @@ input[type="checkbox"]:checked+label {
 .theme-field-notes .panel-bonus-skills,
 .theme-field-notes #cs-bonds-fieldset,
 .theme-field-notes #eq-picker-fieldset {
-    --primary-color: #1a1408;
-    background-color: #faf7ee;
+    --primary-color: #1c1608;
+    background-color: #f4eed8;
     background-image:
         /* binding crease — soft shadow either side of the centre fold */
         linear-gradient(to right,
@@ -5537,7 +5167,7 @@ input[type="checkbox"]:checked+label {
         linear-gradient(rgba(80, 120, 200, 0.15) 1px, transparent 1px),
         linear-gradient(90deg, rgba(80, 120, 200, 0.15) 1px, transparent 1px);
     background-size: 100% 100%, 20px 20px, 20px 20px;
-    border: 2px solid #1a1408;
+    border: 2px solid #1c1608;
     box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.3);
     /* Field Notes notebook: right side only has rounded corners, left is flat (binding) */
     border-top-left-radius: 0 !important;
@@ -5650,9 +5280,9 @@ input[type="checkbox"]:checked+label {
 .theme-field-notes .panel-bonus-skills>legend,
 .theme-field-notes #cs-bonds-fieldset>legend,
 .theme-field-notes #eq-picker-fieldset>legend {
-    background: #1a1408;
-    color: #f5f0e0;
-    font-family: 'Permanent Marker', cursive;
+    background: #1c1608;
+    color: #ece1c4;
+    font-family: 'Special Elite', monospace;
     font-size: 1.2rem;
     font-weight: 400;
     letter-spacing: 0.1em;
@@ -5662,10 +5292,10 @@ input[type="checkbox"]:checked+label {
 
 /* ── Stats section header ─────────────────────────────────────────────────── */
 .theme-field-notes .stats-section h2 {
-    font-family: 'Permanent Marker', cursive;
+    font-family: 'Special Elite', monospace;
     font-size: 1.2rem;
     font-weight: 400;
-    color: #1a1408;
+    color: #1c1608;
     letter-spacing: 0.08em;
 }
 
@@ -5676,8 +5306,8 @@ input[type="checkbox"]:checked+label {
     background: transparent;
     border: none;
     border-bottom: 2px solid rgba(26, 20, 8, 0.55);
-    color: #1a1408;
-    font-family: 'Permanent Marker', cursive;
+    color: #1c1608;
+    font-family: 'Special Elite', monospace;
     font-size: 1.2rem;
     font-weight: 400;
     box-shadow: none;
@@ -5687,7 +5317,7 @@ input[type="checkbox"]:checked+label {
 .theme-field-notes input[type="number"]:focus,
 .theme-field-notes textarea:focus {
     outline: none;
-    border-bottom: 2px solid #1a1408;
+    border-bottom: 2px solid #1c1608;
     box-shadow: none;
     background: rgba(80, 120, 200, 0.06);
 }
@@ -5696,7 +5326,7 @@ input[type="checkbox"]:checked+label {
 /* The wrapper overrides the base box style for field-notes look */
 .theme-field-notes .cs-skill-value-wrap {
     border: 1px solid rgba(26, 20, 8, 0.45);
-    border-bottom: 2px solid #1a1408;
+    border-bottom: 2px solid #1c1608;
     background: rgba(255, 255, 255, 0.35);
     width: auto;
     min-width: 4ch;
@@ -5704,10 +5334,10 @@ input[type="checkbox"]:checked+label {
 }
 
 .theme-field-notes .cs-skill-pct {
-    font-family: 'Permanent Marker', cursive;
+    font-family: 'Special Elite', monospace;
     font-size: 1.2rem;
     font-weight: 400;
-    color: #1a1408;
+    color: #1c1608;
     line-height: 1;
 }
 
@@ -5715,30 +5345,30 @@ input[type="checkbox"]:checked+label {
 .theme-field-notes #cs-specialty-skills .cs-skill-input,
 .theme-field-notes .panel-skills input[type="number"],
 .theme-field-notes .cs-skill-input {
-    font-family: 'Permanent Marker', cursive;
+    font-family: 'Special Elite', monospace;
     font-weight: 400;
     font-size: 1.2rem;
-    color: #1a1408;
+    color: #1c1608;
 }
 
 /* ── Selects ─────────────────────────────────────────────────────────────── */
 .theme-field-notes select {
-    background: #f5f0e0;
-    border: 2px solid #1a1408;
-    color: #1a1408;
-    font-family: 'Permanent Marker', cursive;
+    background: #ece1c4;
+    border: 2px solid #1c1608;
+    color: #1c1608;
+    font-family: 'Special Elite', monospace;
     font-size: 0.85rem;
 }
 
 .theme-field-notes select:focus {
     outline: none;
-    border-color: #1a1408;
+    border-color: #1c1608;
     box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.22);
 }
 
 .theme-field-notes select option {
-    background: #faf7ee;
-    color: #1a1408;
+    background: #f4eed8;
+    color: #1c1608;
 }
 
 /* Specialty selects in the skills grid — underline only */
@@ -5746,15 +5376,15 @@ input[type="checkbox"]:checked+label {
     background: transparent;
     border: none;
     border-bottom: 1px solid rgba(26, 20, 8, 0.4);
-    color: #1a1408;
-    font-family: 'Permanent Marker', cursive;
+    color: #1c1608;
+    font-family: 'Special Elite', monospace;
     font-size: 0.8rem;
 }
 
 .theme-field-notes .cs-skill-specialty:focus {
     outline: none;
     box-shadow: none;
-    border-bottom-color: #1a1408;
+    border-bottom-color: #1c1608;
 }
 
 /* Equipment search / category selects */
@@ -5766,15 +5396,15 @@ input[type="checkbox"]:checked+label {
 
 .theme-field-notes .eq-search-input:focus,
 .theme-field-notes .eq-cat-select:focus {
-    border-color: #1a1408;
+    border-color: #1c1608;
 }
 
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
 .theme-field-notes button,
 .theme-field-notes .adjust-button {
-    background: #1a1408;
-    color: #f5f0e0;
-    border: 2px solid #1a1408;
+    background: #1c1608;
+    color: #ece1c4;
+    border: 2px solid #1c1608;
     font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
     font-size: 1rem;
     font-weight: 400;
@@ -5785,8 +5415,8 @@ input[type="checkbox"]:checked+label {
 
 .theme-field-notes button:hover,
 .theme-field-notes .adjust-button:hover {
-    background: #3a2e18;
-    border-color: #3a2e18;
+    background: #4a3f28;
+    border-color: #4a3f28;
     box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.25);
     transform: translate(2px, 2px);
 }
@@ -5803,7 +5433,7 @@ input[type="checkbox"]:checked+label {
 .theme-field-notes .eq-clear-btn {
     background: transparent;
     border: 1px solid rgba(26, 20, 8, 0.4);
-    color: #1a1408;
+    color: #1c1608;
     box-shadow: none;
 }
 
@@ -5832,26 +5462,26 @@ input[type="checkbox"]:checked+label {
 .theme-field-notes #prepare-bonus-button,
 .theme-field-notes #apply-bonus-button,
 .theme-field-notes #bio-profession-apply-row #apply-profession-button {
-    background: #1a1408;
-    border-color: #1a1408;
-    color: #f5f0e0;
+    background: #1c1608;
+    border-color: #1c1608;
+    color: #ece1c4;
 }
 
 /* Done state: white paper check — job complete */
 .theme-field-notes #prepare-bonus-button.prepare-bonus-done,
 .theme-field-notes #apply-bonus-button.apply-bonus-done,
 .theme-field-notes #bio-profession-apply-row #apply-profession-button.apply-profession-done {
-    background: #f5f0e0;
-    border-color: #1a1408;
-    color: #1a1408;
+    background: #ece1c4;
+    border-color: #1c1608;
+    color: #1c1608;
 }
 
 /* Reminder text — written in red marker, hard to miss */
 .theme-field-notes .bonus-prep-row #reminder-prepare-bonus,
 .theme-field-notes .bonus-apply-row #reminder-apply-bonus,
 .theme-field-notes #bio-profession-apply-row #reminder-apply-profession {
-    color: #b01828;
-    font-family: 'Permanent Marker', cursive;
+    color: #8b1a1a;
+    font-family: 'Special Elite', monospace;
     font-size: 1.2rem;
     font-weight: 400;
     letter-spacing: 0.04em;
@@ -5867,10 +5497,10 @@ input[type="checkbox"]:checked+label {
 
 /* ── Biography labels (Employer:, Nationality: etc) ─────────────────────── */
 .theme-field-notes #cs-biography-fieldset label {
-    font-family: 'Permanent Marker', cursive;
+    font-family: 'Special Elite', monospace;
     font-size: 1.2rem;
     font-weight: 400;
-    color: #1a1408;
+    color: #1c1608;
 }
 
 /* Bio hint text — Caveat biro style; key phrases in dark-red correction ink */
@@ -5922,21 +5552,21 @@ input[type="checkbox"]:checked+label {
 .theme-field-notes #cs-skills .cs-skill-name,
 .theme-field-notes #cs-specialty-skills .cs-skill-name,
 .theme-field-notes .cs-skill-name {
-    font-family: 'Permanent Marker', cursive;
+    font-family: 'Special Elite', monospace;
     font-size: 1.2rem;
     font-weight: 400;
-    color: #1a1408;
+    color: #1c1608;
 }
 
 /* ── Bond text box ───────────────────────────────────────────────────────── */
 .theme-field-notes #bondText {
-    background-color: #faf7ee;
+    background-color: #f4eed8;
     background-image: linear-gradient(rgba(80, 120, 200, 0.15) 1px, transparent 1px);
     background-size: 100% 24px;
-    border: 2px solid #1a1408;
+    border: 2px solid #1c1608;
     box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.28);
-    color: #1a1408;
-    font-family: 'Permanent Marker', cursive;
+    color: #1c1608;
+    font-family: 'Special Elite', monospace;
     font-size: 1.2rem;
     font-weight: 400;
     text-shadow: none;
@@ -5961,12 +5591,12 @@ input[type="checkbox"]:checked+label {
 
 /* ── Bond entries ────────────────────────────────────────────────────────── */
 .theme-field-notes .bond-entry {
-    background-color: #faf7ee;
+    background-color: #f4eed8;
     background-image: linear-gradient(rgba(80, 120, 200, 0.14) 1px, transparent 1px);
     background-size: 100% 24px;
-    border: 2px solid #1a1408;
+    border: 2px solid #1c1608;
     box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.22);
-    color: #1a1408;
+    color: #1c1608;
 }
 
 .theme-field-notes .bond-entry input,
@@ -5979,42 +5609,42 @@ input[type="checkbox"]:checked+label {
 }
 
 .theme-field-notes .bond-entry label {
-    font-family: 'Courier New', Courier, monospace;
-    color: #5a4a2a;
+    font-family: 'Courier Prime', monospace;
+    color: #4a3f28;
     opacity: 1;
 }
 
 /* ── JSON output panel ───────────────────────────────────────────────────── */
 .theme-field-notes #cs-json {
-    background: #f5f0e0 !important;
-    color: #1a1408 !important;
-    border: 2px solid #1a1408 !important;
-    font-family: 'Courier New', Courier, monospace !important;
+    background: #ece1c4 !important;
+    color: #1c1608 !important;
+    border: 2px solid #1c1608 !important;
+    font-family: 'Courier Prime', monospace !important;
 }
 
 /* ── Advanced options ────────────────────────────────────────────────────── */
 .theme-field-notes #advanced-options-details summary {
-    color: #f5f0e0;
-    font-family: 'Courier New', Courier, monospace;
+    color: #ece1c4;
+    font-family: 'Courier Prime', monospace;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     font-size: 0.78rem;
 }
 
 .theme-field-notes .advanced-options-body {
-    background: #faf7ee;
+    background: #f4eed8;
     background-image: linear-gradient(rgba(80, 120, 200, 0.12) 1px, transparent 1px), linear-gradient(90deg, rgba(80, 120, 200, 0.12) 1px, transparent 1px);
     background-size: 20px 20px;
-    border: 2px solid #1a1408;
+    border: 2px solid #1c1608;
 }
 
 .theme-field-notes .json-drop-zone {
-    border: 2px dashed #1a1408;
-    background: #ebe6d4;
+    border: 2px dashed #1c1608;
+    background: #ece1c4;
 }
 
 .theme-field-notes .json-drop-zone:hover {
-    background: #e0dac8;
+    background: #ece1c4;
 }
 
 /* ── Save/share bar ──────────────────────────────────────────────────────── */
@@ -6025,76 +5655,84 @@ input[type="checkbox"]:checked+label {
 }
 
 .theme-field-notes #theme-selector {
-    color: #1a1408;
-    font-family: 'Courier New', Courier, monospace;
+    color: #1c1608;
+    font-family: 'Courier Prime', monospace;
 }
 
 .theme-field-notes .github-link-container a,
 .theme-field-notes .github-link-container svg {
-    color: #1a1408;
-    stroke: #1a1408;
+    color: #e9e3ce;
+    stroke: #e9e3ce;
+}
+
+/* Footer disclaimer sits on the dark desk too -- the generic
+   .disclaimer p rule reads var(--text-color), which stays this
+   theme's dark ink (correct for text inside a paper panel), so it
+   needs its own light-chrome override same as the elements above. */
+.theme-field-notes .disclaimer p {
+    color: #e9e3ce;
 }
 
 /* ── Dice roller panel ───────────────────────────────────────────────────── */
 .theme-field-notes #dr-panel {
-    background: #1a1408;
-    border: 2px solid #f5f0e0;
-    color: #f5f0e0;
+    background: #1c1608;
+    border: 2px solid #ece1c4;
+    color: #ece1c4;
     box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.4);
 }
 
 .theme-field-notes #dr-handle {
-    background: #1a1408;
-    color: #f5f0e0;
-    font-family: 'Courier New', Courier, monospace;
+    background: #1c1608;
+    color: #ece1c4;
+    font-family: 'Courier Prime', monospace;
 }
 
 .theme-field-notes .dr-die-btn {
-    background: #2e2810;
-    color: #f5f0e0;
-    border: 2px solid #f5f0e0;
-    font-family: 'Courier New', Courier, monospace;
+    background: #1c1608;
+    color: #ece1c4;
+    border: 2px solid #ece1c4;
+    font-family: 'Courier Prime', monospace;
 }
 
 .theme-field-notes .dr-die-btn-active,
 .theme-field-notes .dr-die-btn:hover {
-    background: #f5f0e0;
-    color: #1a1408;
+    background: #ece1c4;
+    color: #1c1608;
     transform: none;
     box-shadow: none;
 }
 
 .theme-field-notes .dr-die-face,
 .theme-field-notes .dr-face-num {
-    color: #f5f0e0;
+    color: #ece1c4;
 }
 
 .theme-field-notes #dr-roll-btn {
-    background: #f5f0e0;
-    color: #1a1408;
-    border: 2px solid #f5f0e0;
+    background: #ece1c4;
+    color: #1c1608;
+    border: 2px solid #ece1c4;
 }
 
 .theme-field-notes #dr-roll-btn:hover {
-    background: #d8d4c4;
+    background: #e3d7b8;
     transform: none;
     box-shadow: none;
 }
 
 .theme-field-notes #dr-manual-target {
-    background: #2e2810;
-    color: #f5f0e0;
-    border: 1px solid #6a6040;
+    background: #1c1608;
+    color: #ece1c4;
+    border: 1px solid #8a7a5a;
 }
 
 /* ── Sanity checkboxes ───────────────────────────────────────────────────── */
 .theme-field-notes .sanity-adaptation-checkbox {
-    accent-color: #1a1408;
+    accent-color: #1c1608;
 }
 
 .theme-field-notes .sanity-adaptation-checkbox+span {
-    color: #3a2e18;
-    font-family: 'Courier New', Courier, monospace;
+    color: #4a3f28;
+    font-family: 'Courier Prime', monospace;
     font-size: 0.8rem;
 }
 
@@ -6105,21 +5743,21 @@ input[type="checkbox"]:checked+label {
 }
 
 .theme-field-notes ::-webkit-scrollbar-track {
-    background: #c4ae88;
+    background: #c9b98c;
 }
 
 .theme-field-notes ::-webkit-scrollbar-thumb {
-    background: #1a1408;
+    background: #1c1608;
 }
 
 .theme-field-notes ::-webkit-scrollbar-thumb:hover {
-    background: #3a2e18;
+    background: #4a3f28;
 }
 
 /* ── Text selection ──────────────────────────────────────────────────────── */
 .theme-field-notes ::selection {
     background: rgba(80, 120, 200, 0.28);
-    color: #1a1408;
+    color: #1c1608;
 }
 
 /* ── Hide LP-only elements (tracker bar, lp-sheet) ───────────────────────── */
@@ -6145,18 +5783,20 @@ input[type="checkbox"]:checked+label {
        Live Play its own identity via a small override block (see
        .theme-xfiles.live-play etc. further down) instead of Live Play
        forcing one universal "Field Document" look regardless of which
-       theme is active in Edit mode. Defaults here are exactly Field
-       Notes' original hardcoded values -- this block is a pure refactor,
-       not a redesign, for Field Notes itself (the theme these already
-       matched). Two accent tokens on purpose: the dice/sanity-roll
+       theme is active in Edit mode. Defaults here are Field Notes'
+       values, matching the shared paper/ink/typewriter system
+       (assets/theme-folder.css) the rest of the hub already uses
+       outside stats/ -- not the theme's own earlier, separate
+       cardboard/marker-pen look. Two accent tokens on purpose: the
+       dice/sanity-roll
        accent (green) and a separate "advancement" accent (olive) stay
        visually distinct, matching how they always have. */
-    --lp-page-bg: #7a5c2e;
-    --lp-page-bg-soft: #cac6b8;
-    --lp-paper-bg: #f9f7f0;
-    --lp-paper-white: #fffce8;
-    --lp-ink: #000000;
-    --lp-ink-soft: #444444;
+    --lp-page-bg: #0e100b;
+    --lp-page-bg-soft: #141710;
+    --lp-paper-bg: #f4eed8;
+    --lp-paper-white: #f8f0d8;
+    --lp-ink: #1c1608;
+    --lp-ink-soft: #4a3f28;
     --lp-header-bg: #000000;
     --lp-header-text: #ffffff;
     --lp-subheader-bg: #e0e0e0;
@@ -6165,15 +5805,15 @@ input[type="checkbox"]:checked+label {
     --lp-accent-soft: #e8f4e8;
     --lp-accent-warm: #7b5e00;
     --lp-accent-warm-hover: #5a4500;
-    --lp-tracker-bg: #1a1408;
-    --lp-tracker-border: #4a4030;
-    --lp-tracker-label: #a89878;
-    --lp-tracker-value: #f5f0e0;
-    --lp-tracker-mid: #6a6040;
-    --lp-font-display: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
-    --lp-font-mono: 'Courier New', Courier, monospace;
+    --lp-tracker-bg: #1c1608;
+    --lp-tracker-border: #4a3f28;
+    --lp-tracker-label: #8a7a5a;
+    --lp-tracker-value: #ece1c4;
+    --lp-tracker-mid: #8a7a5a;
+    --lp-font-display: 'Special Elite', monospace;
+    --lp-font-mono: 'Courier Prime', monospace;
     --lp-font-hand: 'Permanent Marker', cursive;
-    --lp-font-body: Arial, Helvetica, sans-serif;
+    --lp-font-body: 'Courier Prime', monospace;
 
     --primary-color: var(--lp-tracker-bg);
     --bg-color: var(--lp-page-bg-soft);
@@ -6188,7 +5828,7 @@ input[type="checkbox"]:checked+label {
 
 /* ── Per-theme Live Play identity ─────────────────────────────────────
    Field Notes needs no override -- the defaults above already ARE its
-   look. The other three themes redefine the same token set so Live Play
+   look. The other themes redefine the same token set so Live Play
    actually reflects whichever theme is active in Edit mode, instead of
    forcing this one "Field Document" paper look on every theme. Layout
    (the printed-form grid, tables, tracker bar) is unchanged -- only
@@ -6220,37 +5860,6 @@ input[type="checkbox"]:checked+label {
     --lp-tracker-label: #3a9a4a;
     --lp-tracker-value: #00e62e;
     --lp-tracker-mid: #1f7a2f;
-    --lp-font-display: 'JetBrains Mono', monospace;
-    --lp-font-mono: 'JetBrains Mono', monospace;
-    --lp-font-hand: 'JetBrains Mono', monospace;
-    --lp-font-body: 'JetBrains Mono', monospace;
-    background-image: none;
-}
-
-/* Modern: reuses the exact Catppuccin Mocha custom properties Edit mode
-   already defines (--ctp-*) rather than inventing new colors, so Live
-   Play is guaranteed to stay in the same palette as this theme's other
-   riced-dev-tool surfaces. */
-.theme-modern.live-play {
-    --lp-page-bg: var(--ctp-crust);
-    --lp-page-bg-soft: var(--ctp-mantle);
-    --lp-paper-bg: var(--ctp-base);
-    --lp-paper-white: var(--ctp-surface0);
-    --lp-ink: var(--ctp-text);
-    --lp-ink-soft: var(--ctp-subtext0);
-    --lp-header-bg: var(--ctp-surface1);
-    --lp-header-text: var(--ctp-text);
-    --lp-subheader-bg: var(--ctp-surface0);
-    --lp-accent: var(--ctp-mauve);
-    --lp-accent-hover: var(--ctp-pink);
-    --lp-accent-soft: var(--ctp-surface1);
-    --lp-accent-warm: var(--ctp-peach);
-    --lp-accent-warm-hover: var(--ctp-flamingo);
-    --lp-tracker-bg: var(--ctp-mantle);
-    --lp-tracker-border: var(--ctp-surface1);
-    --lp-tracker-label: var(--ctp-subtext0);
-    --lp-tracker-value: var(--ctp-text);
-    --lp-tracker-mid: var(--ctp-overlay0);
     --lp-font-display: 'JetBrains Mono', monospace;
     --lp-font-mono: 'JetBrains Mono', monospace;
     --lp-font-hand: 'JetBrains Mono', monospace;
@@ -7396,11 +7005,11 @@ input[type="checkbox"]:checked+label {
    ============================================================================ */
 
 .theme-mobile {
-    --primary-color: #1a1408;
-    --bg-color: #faf7ee;
-    --text-color: #1a1408;
+    --primary-color: #1c1608;
+    --bg-color: #f4eed8;
+    --text-color: #1c1608;
     --input-bg: transparent;
-    --input-border: rgba(26, 20, 8, 0.5);
+    --input-border: rgba(28, 22, 8, 0.5);
     --spacing-xs: 6px;
     --spacing-sm: 10px;
     --spacing-md: 14px;
@@ -7409,12 +7018,12 @@ input[type="checkbox"]:checked+label {
     --spacing-2xl: 36px;
     --radius-sm: 0px;
     --radius-md: 0px;
-    background-color: #faf7ee;
+    background-color: #f4eed8;
     /* Ruled-paper lines */
     background-image: linear-gradient(rgba(80, 120, 200, 0.12) 1px, transparent 1px);
     background-size: 100% 32px;
-    color: #1a1408;
-    font-family: 'Permanent Marker', cursive;
+    color: #1c1608;
+    font-family: 'Special Elite', monospace;
     font-weight: 400;
     font-size: 15px;
 }
@@ -7433,15 +7042,15 @@ input[type="checkbox"]:checked+label {
 
 /* ── Page title ─────────────────────────────────────────────────────── */
 .theme-mobile .page-title {
-    color: #1a1408;
+    color: #1c1608;
     font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
     font-size: 2.2rem;
     font-weight: 400;
     letter-spacing: 0.04em;
     text-transform: uppercase;
     text-shadow: none;
-    -webkit-text-fill-color: #1a1408;
-    border-bottom: 3px solid #1a1408;
+    -webkit-text-fill-color: #1c1608;
+    border-bottom: 3px solid #1c1608;
     text-align: center;
     width: 100%;
     margin-bottom: var(--spacing-md);
@@ -7453,8 +7062,8 @@ input[type="checkbox"]:checked+label {
 }
 
 .theme-mobile .site-intro {
-    color: #1a1408;
-    font-family: 'Permanent Marker', cursive;
+    color: #1c1608;
+    font-family: 'Special Elite', monospace;
     font-size: 0.75rem;
     text-align: center;
     padding: 0;
@@ -7463,24 +7072,24 @@ input[type="checkbox"]:checked+label {
 }
 
 .theme-mobile .site-intro strong {
-    color: #1a1408;
-    -webkit-text-fill-color: #1a1408;
+    color: #1c1608;
+    -webkit-text-fill-color: #1c1608;
 }
 
 /* ── STATISTICS section ─────────────────────────────────────────────── */
 .theme-mobile #stats-buy-section {
-    background-color: #faf7ee;
+    background-color: #f4eed8;
     background-image:
         linear-gradient(rgba(80, 120, 200, 0.12) 1px, transparent 1px);
     background-size: 100% 32px;
-    border: 2px solid #1a1408;
+    border: 2px solid #1c1608;
     padding: 16px 12px 12px;
     width: 100%;
     box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.25);
 }
 
 .theme-mobile #stats-buy-section+.button-container {
-    --primary-color: #1a1408;
+    --primary-color: #1c1608;
 }
 
 /* Stat cards: 2-column on mobile, tight and minimal */
@@ -7490,8 +7099,8 @@ input[type="checkbox"]:checked+label {
 }
 
 .theme-mobile #stats .stat-container {
-    background-color: #f0ecdf;
-    border: 1px solid rgba(26, 20, 8, 0.35);
+    background-color: #ece1c4;
+    border: 1px solid rgba(28, 22, 8, 0.35);
     padding: 4px 6px;
     display: grid;
     grid-template-columns: auto 1fr auto;
@@ -7502,22 +7111,22 @@ input[type="checkbox"]:checked+label {
 .theme-mobile #stats .stat-container .stat-label {
     font-family: 'Bebas Neue', 'Barlow Condensed', sans-serif;
     font-size: 0.95rem;
-    color: #1a1408;
+    color: #1c1608;
     text-align: left;
     min-width: unset;
 }
 
 .theme-mobile #stats .stat-container .stat-value {
-    font-family: 'Permanent Marker', cursive;
+    font-family: 'Special Elite', monospace;
     font-size: 1.1rem;
-    color: #1a1408;
+    color: #1c1608;
     min-width: unset;
     text-align: center;
 }
 
 .theme-mobile #stats .stat-container .x5-value {
     font-size: 0.7rem;
-    color: rgba(26, 20, 8, 0.55);
+    color: rgba(28, 22, 8, 0.55);
     text-align: right;
 }
 
@@ -7541,10 +7150,10 @@ input[type="checkbox"]:checked+label {
 .theme-mobile .panel-bonus-skills,
 .theme-mobile #cs-bonds-fieldset,
 .theme-mobile #eq-picker-fieldset {
-    background-color: #faf7ee;
+    background-color: #f4eed8;
     background-image: linear-gradient(rgba(80, 120, 200, 0.12) 1px, transparent 1px);
     background-size: 100% 32px;
-    border: 2px solid #1a1408;
+    border: 2px solid #1c1608;
     padding: 16px 12px 12px;
     box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.25);
     margin-bottom: var(--spacing-md);
@@ -7558,8 +7167,8 @@ input[type="checkbox"]:checked+label {
     font-family: 'Bebas Neue', 'Barlow Condensed', sans-serif;
     font-size: 1.1rem;
     letter-spacing: 0.08em;
-    background: #1a1408;
-    color: #faf7ee;
+    background: #1c1608;
+    color: #f4eed8;
     padding: 2px 10px;
 }
 
@@ -7568,10 +7177,10 @@ input[type="checkbox"]:checked+label {
     font-family: 'Bebas Neue', 'Barlow Condensed', sans-serif;
     font-size: 1.2rem;
     font-weight: 400;
-    color: #1a1408;
+    color: #1c1608;
     letter-spacing: 0.08em;
     text-align: center;
-    -webkit-text-fill-color: #1a1408;
+    -webkit-text-fill-color: #1c1608;
 }
 
 /* ── Inputs ─────────────────────────────────────────────────────────── */
@@ -7580,9 +7189,9 @@ input[type="checkbox"]:checked+label {
 .theme-mobile textarea {
     background: transparent;
     border: none;
-    border-bottom: 2px solid rgba(26, 20, 8, 0.5);
-    color: #1a1408;
-    font-family: 'Permanent Marker', cursive;
+    border-bottom: 2px solid rgba(28, 22, 8, 0.5);
+    color: #1c1608;
+    font-family: 'Special Elite', monospace;
     font-size: 1rem;
     box-shadow: none;
     padding: 4px 2px;
@@ -7594,7 +7203,7 @@ input[type="checkbox"]:checked+label {
 .theme-mobile input[type="number"]:focus,
 .theme-mobile textarea:focus {
     outline: none;
-    border-bottom-color: #1a1408;
+    border-bottom-color: #1c1608;
     background: rgba(80, 120, 200, 0.06);
 }
 
@@ -7616,26 +7225,26 @@ input[type="checkbox"]:checked+label {
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    border-bottom: 1px solid rgba(26, 20, 8, 0.12);
+    border-bottom: 1px solid rgba(28, 22, 8, 0.12);
     padding: 3px 0;
 }
 
 .theme-mobile .cs-skill-value-wrap {
     background: transparent;
-    border: 1.5px solid rgba(26, 20, 8, 0.45);
+    border: 1.5px solid rgba(28, 22, 8, 0.45);
     min-width: 52px;
 }
 
 .theme-mobile .cs-skill-pct {
-    color: rgba(26, 20, 8, 0.55);
+    color: rgba(28, 22, 8, 0.55);
     font-size: 0.7rem;
 }
 
 .theme-mobile #cs-skills .cs-skill-input,
 .theme-mobile #cs-specialty-skills .cs-skill-input,
 .theme-mobile .cs-skill-input {
-    font-family: 'Permanent Marker', cursive;
-    color: #1a1408;
+    font-family: 'Special Elite', monospace;
+    color: #1c1608;
     background: transparent;
     border: none;
     font-size: 1rem;
@@ -7646,9 +7255,9 @@ input[type="checkbox"]:checked+label {
 .theme-mobile #cs-skills .cs-skill-name,
 .theme-mobile #cs-specialty-skills .cs-skill-name,
 .theme-mobile .cs-skill-name {
-    font-family: 'Permanent Marker', cursive;
+    font-family: 'Special Elite', monospace;
     font-size: 0.85rem;
-    color: #1a1408;
+    color: #1c1608;
     letter-spacing: 0.02em;
 }
 
@@ -7676,26 +7285,26 @@ input[type="checkbox"]:checked+label {
 
 /* ── Select dropdowns ───────────────────────────────────────────────── */
 .theme-mobile select {
-    background: #f0ecdf;
-    color: #1a1408;
-    border: 1.5px solid rgba(26, 20, 8, 0.5);
-    font-family: 'Permanent Marker', cursive;
+    background: #ece1c4;
+    color: #1c1608;
+    border: 1.5px solid rgba(28, 22, 8, 0.5);
+    font-family: 'Special Elite', monospace;
     font-size: 0.9rem;
     padding: 6px 8px;
     min-height: 40px;
 }
 
 .theme-mobile select option {
-    background: #faf7ee;
-    color: #1a1408;
+    background: #f4eed8;
+    color: #1c1608;
 }
 
 /* ── Buttons: full-width, large touch targets ───────────────────────── */
 .theme-mobile button,
 .theme-mobile .adjust-button {
-    background: #1a1408;
-    color: #faf7ee;
-    border: 2px solid #1a1408;
+    background: #1c1608;
+    color: #f4eed8;
+    border: 2px solid #1c1608;
     font-family: 'Bebas Neue', 'Barlow Condensed', sans-serif;
     font-size: 1rem;
     letter-spacing: 0.06em;
@@ -7707,8 +7316,8 @@ input[type="checkbox"]:checked+label {
 
 .theme-mobile button:hover,
 .theme-mobile .adjust-button:hover {
-    background: #faf7ee;
-    color: #1a1408;
+    background: #f4eed8;
+    color: #1c1608;
 }
 
 .theme-mobile button:active,
@@ -7735,7 +7344,7 @@ input[type="checkbox"]:checked+label {
 }
 
 .theme-mobile .bonds-right {
-    border: 1.5px solid rgba(26, 20, 8, 0.4);
+    border: 1.5px solid rgba(28, 22, 8, 0.4);
     padding: var(--spacing-sm);
     min-height: unset;
 }
@@ -7793,7 +7402,7 @@ input[type="checkbox"]:checked+label {
 
 /* ── Bond entries ──────────────────────────────────────────────────── */
 .theme-mobile .bond-entry {
-    border-bottom: 1.5px solid rgba(26, 20, 8, 0.3);
+    border-bottom: 1.5px solid rgba(28, 22, 8, 0.3);
     padding: var(--spacing-sm) 0;
     width: 100%;
     box-sizing: border-box;
@@ -7851,8 +7460,8 @@ input[type="checkbox"]:checked+label {
 .theme-mobile .bond-entry input,
 .theme-mobile .bond-entry textarea,
 .theme-mobile .bond-entry-field {
-    font-family: 'Permanent Marker', cursive;
-    color: #1a1408;
+    font-family: 'Special Elite', monospace;
+    color: #1c1608;
     font-size: 1rem;
     width: 100%;
     box-sizing: border-box;
@@ -7860,27 +7469,27 @@ input[type="checkbox"]:checked+label {
 
 /* ── Theme selector ─────────────────────────────────────────────────── */
 .theme-mobile #theme-selector {
-    border-color: #1a1408;
-    color: #1a1408;
+    border-color: #1c1608;
+    color: #1c1608;
 }
 
 /* ── Save/share bar ─────────────────────────────────────────────────── */
 .theme-mobile .save-share-bar {
-    background: rgba(26, 20, 8, 0.06);
-    border: 1.5px solid rgba(26, 20, 8, 0.4);
+    background: rgba(28, 22, 8, 0.06);
+    border: 1.5px solid rgba(28, 22, 8, 0.4);
 }
 
 /* ── Footer links ───────────────────────────────────────────────────── */
 .theme-mobile .github-link-container a,
 .theme-mobile .github-link-container svg {
-    color: #1a1408;
-    stroke: #1a1408;
+    color: #1c1608;
+    stroke: #1c1608;
 }
 
 /* ── JSON / Advanced options: keep visible but collapsed ───────────── */
 .theme-mobile #cs-json {
-    background: rgba(26, 20, 8, 0.04);
-    border: 1.5px solid rgba(26, 20, 8, 0.3);
+    background: rgba(28, 22, 8, 0.04);
+    border: 1.5px solid rgba(28, 22, 8, 0.3);
 }
 
 /* Note: no ".theme-mobile #lp-tracker-bar/#lp-sheet { display:none }" rule
@@ -7910,28 +7519,28 @@ input[type="checkbox"]:checked+label {
 }
 
 .theme-mobile ::-webkit-scrollbar-track {
-    background: #ece8d9;
+    background: #ece1c4;
 }
 
 .theme-mobile ::-webkit-scrollbar-thumb {
-    background: rgba(26, 20, 8, 0.35);
+    background: rgba(28, 22, 8, 0.35);
 }
 
 /* ── Text selection ─────────────────────────────────────────────────── */
 .theme-mobile ::selection {
     background: rgba(80, 120, 200, 0.28);
-    color: #1a1408;
+    color: #1c1608;
 }
 
 /* ── Profession details expand / description ────────────────────────── */
 .theme-mobile .profession-details {
-    border-color: rgba(26, 20, 8, 0.22);
+    border-color: rgba(28, 22, 8, 0.22);
     background: transparent;
     border-radius: 6px;
 }
 
 .theme-mobile .profession-details-summary {
-    background: rgba(26, 20, 8, 0.06);
+    background: rgba(28, 22, 8, 0.06);
     justify-content: center;
     padding: 10px 12px;
 }
@@ -7958,7 +7567,7 @@ input[type="checkbox"]:checked+label {
     display: block;
     text-align: center;
     font-size: 0.82rem;
-    color: rgba(26, 20, 8, 0.75);
+    color: rgba(28, 22, 8, 0.75);
     font-weight: 700;
     letter-spacing: 0.06em;
 }
@@ -7969,9 +7578,9 @@ input[type="checkbox"]:checked+label {
 
 /* Full description text — readable on the light Field Notes background */
 .theme-mobile .profession-details-text {
-    background: rgba(26, 20, 8, 0.04);
-    border-top-color: rgba(26, 20, 8, 0.12);
-    color: #1a1408;
+    background: rgba(28, 22, 8, 0.04);
+    border-top-color: rgba(28, 22, 8, 0.12);
+    color: #1c1608;
     font-size: 0.82rem;
     padding: 10px 12px;
     line-height: 1.65;
@@ -8590,11 +8199,11 @@ input[type="checkbox"]:checked+label {
 }
 
 /* ══════════════════════════════════════════════
-   AGENT HUB ADDITION: mobile overflow fixes for the five non-Mobile
-   themes (X-Files, Modern, Son of Sam, Field Notes, Live Play). Not
-   theme-scoped -- these are all viewport-width-gated, so they change
-   nothing on desktop and apply uniformly regardless of which theme is
-   active, rather than duplicating near-identical fixes five times.
+   AGENT HUB ADDITION: mobile overflow fixes for the non-Mobile themes
+   (X-Files, Son of Sam, Field Notes, Live Play). Not theme-scoped --
+   these are all viewport-width-gated, so they change nothing on
+   desktop and apply uniformly regardless of which theme is active,
+   rather than duplicating near-identical fixes across each one.
 
    Root cause of most of the horizontal overflow: browsers give every
    <fieldset> a UA-stylesheet default of `min-width: min-content`, so a

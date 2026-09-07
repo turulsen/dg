@@ -149,8 +149,8 @@ save/share-link flow (calls the TinyURL API, also unreachable here).
   `dg-id-creator.html`, `a-cell.html` (including its Evidence tab's sidebar
   + open create form — a real bug once reported live: that layout's
   fixed-width sidebar didn't stack below 720px, pushing the form off the
-  right edge of a phone screen), plus all six `stats/index.html` themes
-  individually (X-Files, Modern, Son of Sam, Field Notes, Mobile, and Live
+  right edge of a phone screen), plus all `stats/index.html` themes
+  individually (X-Files, Son of Sam, Field Notes, Mobile, and Live
   Play with real content filled in — see the root README's Mobile section
   for what was actually wrong and how it was fixed). Live Play gets several
   extra checks since page-level scrollWidth alone doesn't catch everything
