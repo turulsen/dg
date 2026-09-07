@@ -2114,15 +2114,21 @@ def test_agent_hub_handouts(p):
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
+    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
     photo_data_uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
     cells_fixture = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"], "channel": ""}]
+    # visible_to is the server-side denormalization startEvidenceListenerFor()
+    # actually queries against now (Phase 5, .where('visible_to',
+    # 'array-contains-any', [code, 'ALL'])) -- not something this mock
+    # computes itself, since a real Firestore query filters server-side
+    # before delivery; this stub has to pre-filter per listener instead.
     evidence_fixture = [
-        {"evidence_id": "ev1", "title": "Cell Alpha Only Clue", "body": "Only Owen should see this.", "photo": "", "cell_id": "cell_1", "restricted_to": [], "created_at": "2000"},
-        {"evidence_id": "ev2", "title": "Campaign Wide Notice", "body": "Everyone sees this.", "photo": photo_data_uri, "cell_id": "", "restricted_to": [], "created_at": "1000"},
-        {"evidence_id": "ev3", "title": "Priya Eyes Only", "body": "Restricted to Priya specifically.", "photo": "", "cell_id": "", "restricted_to": ["PRIY-AN34"], "created_at": "1500"},
+        {"evidence_id": "ev1", "title": "Cell Alpha Only Clue", "body": "Only Owen should see this.", "photo": "", "cell_id": "cell_1", "restricted_to": [], "created_at": "2000", "visible_to": ["OWEN-CS12"]},
+        {"evidence_id": "ev2", "title": "Campaign Wide Notice", "body": "Everyone sees this.", "photo": photo_data_uri, "cell_id": "", "restricted_to": [], "created_at": "1000", "visible_to": ["ALL"]},
+        {"evidence_id": "ev3", "title": "Priya Eyes Only", "body": "Restricted to Priya specifically.", "photo": "", "cell_id": "", "restricted_to": ["PRIY-AN34"], "created_at": "1500", "visible_to": ["PRIY-AN34"]},
     ]
 
     def fake_apps_script(route):
@@ -2133,18 +2139,8 @@ def test_agent_hub_handouts(p):
         cb = url.split("callback=")[1].split("&")[0]
         if "action=list_cells" in url:
             res = {"status": "OK", "cells": cells_fixture}
-        elif "action=list_evidence" in url:
-            requester = url.split("agent_code=")[1].split("&")[0] if "agent_code=" in url else ""
-            my_cells = [c["cell_id"] for c in cells_fixture if requester in c["member_codes"]]
-            visible = []
-            for h in evidence_fixture:
-                if h["cell_id"] and h["cell_id"] not in my_cells:
-                    continue
-                restricted = h.get("restricted_to") or []
-                if restricted and requester not in restricted:
-                    continue
-                visible.append(h)
-            res = {"status": "OK", "evidence": visible}
+        elif "action=list_operations" in url:
+            res = {"status": "OK", "operations": []}
         else:
             res = {"status": "OK"}
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
@@ -2158,6 +2154,11 @@ def test_agent_hub_handouts(p):
     page.evaluate("(r) => localStorage.setItem('dg_agent_roster', JSON.stringify(r))", roster)
     page.reload(wait_until="domcontentloaded")
     page.wait_for_timeout(900)
+
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 2, timeout_ms=8000)
+    for code in ("OWEN-CS12", "PRIY-AN34"):
+        visible = [dict(h, id=h["evidence_id"]) for h in evidence_fixture if code in h["visible_to"] or "ALL" in h["visible_to"]]
+        push_firestore_snapshot(page, "evidence", [["visible_to", "array-contains-any", [code, "ALL"]]], visible)
 
     record("hub", "the section label reads Evidence, not Handouts",
            page.locator(".ah-section-divider").first.inner_text().strip().upper() == "EVIDENCE", "")
@@ -2198,11 +2199,12 @@ def test_agent_hub_handout_notes(p):
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
+    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
     evidence_fixture = [
-        {"evidence_id": "h1", "title": "Field Photo", "body": "evidence", "photo": "", "cell_id": "", "created_at": "1000"},
+        {"evidence_id": "h1", "title": "Field Photo", "body": "evidence", "photo": "", "cell_id": "", "created_at": "1000", "visible_to": ["ALL"]},
     ]
     notes_fixture = {"OWEN-CS12": [{"handout_id": "h1", "note": "Existing note text"}]}
     saved_bodies = []
@@ -2221,8 +2223,8 @@ def test_agent_hub_handout_notes(p):
         cb = url.split("callback=")[1].split("&")[0]
         if "action=list_cells" in url:
             res = {"status": "OK", "cells": []}
-        elif "action=list_evidence" in url:
-            res = {"status": "OK", "evidence": evidence_fixture}
+        elif "action=list_operations" in url:
+            res = {"status": "OK", "operations": []}
         elif "action=list_handout_notes" in url:
             code = url.split("agent_code=")[1].split("&")[0]
             res = {"status": "OK", "notes": notes_fixture.get(code, [])}
@@ -2236,6 +2238,11 @@ def test_agent_hub_handout_notes(p):
     page.evaluate("(r) => localStorage.setItem('dg_agent_roster', JSON.stringify(r))", roster)
     page.reload(wait_until="domcontentloaded")
     page.wait_for_timeout(900)
+
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 1, timeout_ms=8000)
+    push_firestore_snapshot(page, "evidence", [["visible_to", "array-contains-any", ["OWEN-CS12", "ALL"]]],
+                             [dict(h, id=h["evidence_id"]) for h in evidence_fixture])
+    wait_for_condition(lambda: page.query_selector('.ah-handout-notes-input[data-note-handout="h1"]') is not None)
 
     note_input = page.query_selector('.ah-handout-notes-input[data-note-handout="h1"]')
     record("hub", "a pre-existing note pre-fills the textarea",
@@ -2958,6 +2965,8 @@ def test_acell_evidence(p):
     page = p.new_page()
     page.set_default_timeout(30000)
     errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     skip_acell_gate(page)
@@ -2965,6 +2974,25 @@ def test_acell_evidence(p):
     cells_fixture = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12", "PRIY-AN34"], "channel": ""}]
     evidence_state = []
     operations_state = []
+
+    # a-cell.html's Evidence tab reads content from a live Firestore
+    # onSnapshot listener now (Phase 5), not from list_evidence -- only
+    # create/update go through it (verifyEvidenceWrite_ polls the
+    # listener-fed evidenceItems array directly); Released-toggle and
+    # Delete still do their own separate list_evidence JSONP read-back,
+    # unmigrated, so those two don't need a push. Waits on evidence_state
+    # (the backend-side truth) rather than the DOM, since the POST lands
+    # asynchronously relative to the click that fired it. The real
+    # listener queries .orderBy('created_at', 'desc') and the app trusts
+    # the snapshot's own delivery order (no client-side re-sort) --
+    # this stub's orderBy() is a no-op, so the docs must already be
+    # sorted before pushing to land data-*-evidence="0"-style index
+    # selectors on the same item a real backend would put there.
+    def push_evidence():
+        wait_for_condition(lambda: notes_firestore_listener_count(page) >= 1, timeout_ms=8000)
+        ordered = sorted(evidence_state, key=lambda e: int(e["created_at"]), reverse=True)
+        push_firestore_snapshot(page, "evidence", [],
+                                 [dict(e, id=e["evidence_id"]) for e in ordered])
 
     def fake_apps_script(route):
         req = route.request
@@ -3053,6 +3081,8 @@ def test_acell_evidence(p):
     page.check("#evidence-new-released")
     page.check('#evidence-new-restrict-wrap input[value="OWEN-CS12"]')
     page.click("#evidence-new-confirm")
+    wait_for_condition(lambda: len(evidence_state) >= 1)
+    push_evidence()
     list_text = wait_for_condition(lambda: page.inner_text("#evidence-list")
                                     if "Field Photograph" in page.inner_text("#evidence-list") else None)
     record("acell", "filing evidence into an Operation, released and restricted, shows it once confirmed",
@@ -3062,6 +3092,18 @@ def test_acell_evidence(p):
     record("acell", "a released item's card doesn't carry the unreleased (staged) styling",
            "unreleased" not in (page.get_attribute(".evidence-card", "class") or ""), "")
 
+    # showForm()'s own create-button toggle closes the form only once
+    # verifyEvidenceWrite_'s *own* delayed polling of evidenceItems
+    # confirms the write (up to several seconds) -- a separate, slower
+    # path than the live listener push above, which already updated the
+    # list. Clicking "+ New Evidence" again before that polling closes
+    # the still-open form just toggles it shut instead of opening a
+    # fresh one (showForm(null) closes on childNodes.length -- see its
+    # own guard), same race that push_evidence() would otherwise cause
+    # here since it resolves the list far faster than a real Firestore
+    # round-trip would.
+    wait_for_condition(lambda: page.query_selector("#evidence-new-confirm") is None)
+
     # File a second, unfiled, unreleased, unrestricted item in the same Cell.
     page.click("#evidence-create-btn")
     page.wait_for_timeout(150)
@@ -3069,6 +3111,8 @@ def test_acell_evidence(p):
     page.select_option("#evidence-new-scope", label="Cell Alpha")
     page.fill("#evidence-new-body", "Three additional livestock deaths reported.")
     page.click("#evidence-new-confirm")
+    wait_for_condition(lambda: len(evidence_state) >= 2)
+    push_evidence()
     wait_for_condition(lambda: "Wire Service Clipping" in page.inner_text("#evidence-list"))
     record("acell", "an unfiled, unreleased item shows the staged (unreleased) styling",
            page.locator(".evidence-card.unreleased").count() == 1, "")
@@ -3106,9 +3150,15 @@ def test_acell_evidence(p):
            page.is_checked('#evidence-new-restrict-wrap input[value="OWEN-CS12"]'), "")
     page.fill("#evidence-new-title", "Field Photograph (annotated)")
     page.click("#evidence-new-confirm")
+    wait_for_condition(lambda: any(e["title"] == "Field Photograph (annotated)" for e in evidence_state))
+    push_evidence()
     wait_for_condition(lambda: "Field Photograph (annotated)" in page.inner_text("#evidence-list"))
     record("acell", "editing evidence updates it in place once confirmed",
            "Field Photograph (annotated)" in page.inner_text("#evidence-list"), page.inner_text("#evidence-list"))
+    # Same create-button-toggle race as after the first create above --
+    # wait for verifyEvidenceWrite_'s own delayed polling to close this
+    # edit's form before the next "+ New Evidence" click.
+    wait_for_condition(lambda: page.query_selector("#evidence-new-confirm") is None)
 
     # A real photo's base64 data URI easily exceeds 64KiB -- the browser
     # caps keepalive request bodies at exactly that, silently rejecting
@@ -3130,6 +3180,8 @@ def test_acell_evidence(p):
     page.set_input_files("#evidence-new-photo", oversized_photo_path)
     page.wait_for_timeout(300)
     page.click("#evidence-new-confirm")
+    wait_for_condition(lambda: any(e["title"] == "Photo Evidence" for e in evidence_state))
+    push_evidence()
     photo_list_text = wait_for_condition(lambda: page.inner_text("#evidence-list")
                                           if "Photo Evidence" in page.inner_text("#evidence-list") else None)
     record("acell", "filing evidence with a real-sized photo (>64KiB base64) still reaches the backend",
@@ -3137,6 +3189,11 @@ def test_acell_evidence(p):
            and "Could not reach the backend" not in page.inner_text("#evidence-status"),
            page.inner_text("#evidence-status"))
     os.unlink(oversized_photo_path)
+    # Same create-button-toggle race as above -- until this closes, the
+    # form's own leftover photo preview (also class="evidence-photo",
+    # see renderPhotoPreview()) is still in the DOM and would be the
+    # first match instead of the real list item's.
+    wait_for_condition(lambda: page.query_selector("#evidence-new-confirm") is None)
 
     # A fixed 96x96 thumbnail is fine for "there's a photo here" but
     # useless for actually reading a filed document -- click it to see
@@ -3196,6 +3253,8 @@ def test_acell_evidence_pdf(p):
     page = p.new_page()
     page.set_default_timeout(15000)
     errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     skip_acell_gate(page)
@@ -3209,6 +3268,11 @@ def test_acell_evidence_pdf(p):
 
     evidence_state = []
     posts = []
+
+    def push_evidence():
+        wait_for_condition(lambda: notes_firestore_listener_count(page) >= 1, timeout_ms=8000)
+        push_firestore_snapshot(page, "evidence", [],
+                                 [dict(e, id=e["evidence_id"]) for e in evidence_state])
 
     def fake_apps_script(route):
         req = route.request
@@ -3272,23 +3336,34 @@ def test_acell_evidence_pdf(p):
            page.inner_text("#evidence-new-error").strip() == "", page.inner_text("#evidence-new-error"))
 
     page.click("#evidence-new-confirm")
+    wait_for_condition(lambda: len(evidence_state) >= 1)
+    push_evidence()
     wait_for_condition(lambda: "Case File 12" in page.inner_text("#evidence-list"))
-    record("acell", "creating evidence with a PDF attached sends its data URI to create_evidence",
-           any(b.get("action") == "create_evidence" and str(b.get("photo", "")).startswith("data:application/pdf")
+    # PDFs upload to Storage the same as photos now (Phase 4,
+    # uploadEvidencePhotoIfNeeded_() doesn't discriminate by file type) --
+    # a plain download URL ending in the original extension, not a
+    # base64 data: URI riding in the POST body directly.
+    record("acell", "creating evidence with a PDF attached sends its Storage download URL to create_evidence",
+           any(b.get("action") == "create_evidence" and str(b.get("photo", "")).endswith(".pdf")
                for b in posts), str([{k: v for k, v in b.items() if k != "photo"} for b in posts]))
     record("acell", "the card shows a PDF box (not a broken <img>) once created",
            "evidence-photo-pdf-note" in page.inner_html("#evidence-list"), page.inner_html("#evidence-list"))
+    wait_for_condition(lambda: page.query_selector("#evidence-new-confirm") is None)
 
     page.click(".evidence-photo-pdf-note")
     page.wait_for_timeout(200)
     open_calls = page.evaluate("() => window.__openCalls")
-    # A blob: URL, not the raw data: URI -- window.open/target=_blank on a
-    # data:application/pdf URI reliably shows a blank "about:blank" tab
-    # instead of the PDF in Safari (a real live report), since that's a
-    # top-level navigation to an untrusted data: URI and gets silently
-    # blocked. A blob: URL doesn't hit that restriction.
+    # dataUriToBlobUrl() only converts an actual data: URI to a blob: URL
+    # (its whole point: window.open/target=_blank on a data:application/pdf
+    # URI reliably shows a blank "about:blank" tab in Safari instead of the
+    # PDF, a real live report, since that's a blocked top-level navigation
+    # to an untrusted data: URI) -- a Storage https:// URL fails that parse
+    # and falls through its own try/catch fallback unchanged, which is
+    # exactly the right outcome here: opening the real URL directly needs
+    # no blob: conversion in the first place.
     record("acell", "clicking the PDF box opens it in a new tab (window.open), not this app's photo lightbox",
-           len(open_calls) == 1 and open_calls[0].startswith("blob:"), str(open_calls))
+           len(open_calls) == 1 and open_calls[0].endswith(".pdf") and not open_calls[0].startswith("blob:"),
+           str(open_calls))
     record("acell", "clicking a PDF box never opens the photo lightbox",
            not page.is_visible(".evidence-lightbox"), "")
 
@@ -3304,22 +3379,29 @@ def test_acell_evidence_create_verify_retries(p):
     the new row exists, which for anything beyond a tiny image can genuinely
     take longer than 900ms -- so the fixed-delay check saw the item wasn't
     there YET and showed a false 'Sent, but the backend didn't confirm it',
-    even though the write would have landed a moment later. Fixed by
-    polling list_evidence over several increasing delays (verifyEvidenceWrite_)
-    instead of checking once. This mock simulates exactly that: the create
-    POST lands immediately, but list_evidence doesn't actually include the
-    new item until its second read after the POST -- proving the retry,
-    not just the create, is what's under test here."""
+    even though the write would have landed a moment later. Originally fixed
+    by polling list_evidence over several increasing delays; verifyEvidenceWrite_
+    was later rewritten (Phase 5) to poll the live Firestore-fed evidenceItems
+    array directly instead of its own separate list_evidence fetch -- same
+    "don't give up on the very first check" mechanism, just reading the
+    listener's own state instead of the network. Since that leaves no
+    per-attempt network request to intercept or count from here, this
+    simulates a slow-landing write (the write completing considerably later
+    than the very next check-in-progress) by deliberately holding back the
+    Firestore push for longer than verifyEvidenceWrite_'s first delay
+    (400ms), then confirming both that the false-negative window (item not
+    yet visible, but also not yet given up on) actually happens, and that
+    the item still shows up correctly once the push lands."""
     page = p.new_page()
     page.set_default_timeout(20000)
     errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     skip_acell_gate(page)
 
     evidence_state = []
-    created = {"flag": False}
-    reads_since_create = {"n": 0}
 
     def fake_apps_script(route):
         req = route.request
@@ -3332,56 +3414,50 @@ def test_acell_evidence_create_verify_retries(p):
                     "photo": body.get("photo", ""), "cell_id": "", "operation_id": "",
                     "released": False, "restricted_to": [], "created_at": "1000",
                 })
-                created["flag"] = True
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         if "callback=" in url:
             cb = url.split("callback=")[1].split("&")[0]
-            if "action=list_evidence" in url:
-                if created["flag"]:
-                    reads_since_create["n"] += 1
-                # The very first list_evidence read after the create POST
-                # simulates the Drive upload not having landed yet -- an
-                # empty list even though evidence_state already has the row,
-                # exactly like the backend's own row not existing yet mid-
-                # upload. Every read after that (and every read before any
-                # create happened) reflects the real state.
-                if created["flag"] and reads_since_create["n"] == 1:
-                    res = {"status": "OK", "evidence": []}
-                else:
-                    res = {"status": "OK", "evidence": evidence_state}
-            elif action_from(url) == "list_cells":
+            if "action=list_cells" in url:
                 res = {"status": "OK", "cells": []}
-            elif action_from(url) == "list_operations":
+            elif "action=list_operations" in url:
                 res = {"status": "OK", "operations": []}
+            elif "action=list_evidence" in url:
+                res = {"status": "OK", "evidence": []}
             else:
                 res = {"status": "OK"}
             route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
         else:
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-
-    def action_from(url):
-        return url.split("action=")[1].split("&")[0] if "action=" in url else ""
-
     page.route("**/script.google.com/**", fake_apps_script)
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(400)
     page.click('.tw[data-tab="evidence"]')
     page.wait_for_timeout(300)
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 1, timeout_ms=8000)
     page.click("#evidence-create-btn")
     page.wait_for_timeout(300)
     page.fill("#evidence-new-title", "Slow Upload Memo")
     page.click("#evidence-new-confirm")
+    wait_for_condition(lambda: len(evidence_state) >= 1)
 
-    # The first poll (900ms) sees the simulated empty read and must not
-    # give up -- it should retry and pick the item up on a later poll
-    # instead of showing NOT_DEPLOYED_MSG.
-    result = wait_for_condition(lambda: "Slow Upload Memo" in page.inner_text("#evidence-list") or "backend didn't confirm" in page.inner_text("#evidence-status"), timeout_ms=12000)
-    record("acell", "a create whose first read-back comes back empty still succeeds via retry, instead of a false 'backend didn't confirm'",
+    # Deliberately held back past verifyEvidenceWrite_'s first delay
+    # (400ms) but well inside its ~12.4s total retry budget -- long
+    # enough that a single fixed-delay check (the original bug) would
+    # have already given up, not so long it risks tripping onGiveUp().
+    import time
+    time.sleep(1.2)
+    record("acell", "the item isn't visible yet, and no false 'backend didn't confirm' has fired -- still mid-retry",
+           "Slow Upload Memo" not in page.inner_text("#evidence-list")
+           and "backend didn't confirm" not in page.inner_text("#evidence-status"),
+           page.inner_text("#evidence-list") + " | status: " + page.inner_text("#evidence-status"))
+
+    push_firestore_snapshot(page, "evidence", [], [dict(e, id=e["evidence_id"]) for e in evidence_state])
+    wait_for_condition(lambda: "Slow Upload Memo" in page.inner_text("#evidence-list")
+                        or "backend didn't confirm" in page.inner_text("#evidence-status"), timeout_ms=12000)
+    record("acell", "a create whose write lands later than the first check still succeeds via retry, instead of a false 'backend didn't confirm'",
            "Slow Upload Memo" in page.inner_text("#evidence-list"), page.inner_text("#evidence-list") + " | status: " + page.inner_text("#evidence-status"))
-    record("acell", "the retry actually polled more than once before succeeding",
-           reads_since_create["n"] >= 2, str(reads_since_create["n"]))
 
     page.close()
     return errs
@@ -3637,6 +3713,13 @@ def test_acell_music(p):
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
+    # Track Library uploads go straight to Firebase Storage now (Phase 4,
+    # trackLibUploadBtn's handler -- ensureHandlerSignedIn() then
+    # window.firebase.storage().ref(...).put(file,...).getDownloadURL())
+    # rather than riding the upload_track POST body; no Firestore
+    # listener involved here (unlike Evidence), just Auth+Storage.
+    install_notes_firestore_stub(page)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     skip_acell_gate(page)
