@@ -1629,3 +1629,58 @@ had nothing to do with test infrastructure at all -- they were hiding
 fail for the "wrong" reason. Dismissing a batch of failures as
 "pre-existing, unrelated, out of scope" without individually checking
 each one is exactly how a real bug like this stays shipped indefinitely.
+
+**Second follow-up: the real CI run surfaced 5 more of the exact same
+missing-stub pattern, plus one gap the stub itself introduced.**
+Checking CI's actual result (not stopping at "189/189 locally") turned
+up:
+
+- `test_acell_handler_session_race`'s one Evidence-specific check was
+  testing the old, pre-Phase-5 `list_evidence`/`handler_session` JSONP
+  race -- Evidence's read side moved to a Firestore listener with its
+  own, separate auth caching (`ensureHandlerSignedIn()`/
+  `_handlerAuthPromise`) that doesn't have this particular staleness
+  problem anymore. Re-pointed that one check at the stub (its other
+  three checks, about `list_characters`/Cells, are unrelated and still
+  valid).
+- Four `shell`-area tests (`test_shell_content_swap_preserves_
+  hoisted_widgets`, `test_shell_nav_tracks_in_page_navigation`,
+  `test_shell_hides_widgets_for_notes_popover`,
+  `test_shell_back_link_hidden_inside_shell`) all load agent-hub.html
+  and/or a-cell.html inside `hub.html`'s shell without ever intending
+  to test Evidence at all -- but both pages' Evidence listeners start
+  unconditionally on load (Phase 5), reaching the real backend in CI
+  (this sandbox silently fails such unmocked external calls instead,
+  which is why none of this showed up locally until checking the real
+  run). Installed the stub in all four; two of them also needed a
+  seeded Handler session, since "No A-Cell session" is a real, correct
+  rejection the stub alone doesn't paper over -- and a clean sign-in is
+  the least surprising simulated state for tests that aren't about
+  Handler auth at all.
+- `test_stat_generator_sheets_roundtrip` never mocked
+  `**/script.google.com/**` at all, on the assumption nothing on that
+  page called it -- but stats/index.html makes its own background
+  JSONP call on load, which went out to the real production backend in
+  CI. That's the actual origin of the "Unexpected token ':'" pageerror
+  that never reproduced locally in two earlier attempts: a bare JSON
+  body loaded as a `<script>` tag's content throws exactly that,
+  the instant the parser hits the first key's colon. (Same failure
+  signature `test_shell_nav_tracks_in_page_navigation` had already
+  hit and documented once before, in its own comment on this exact
+  bug shape -- worth remembering next time it shows up somewhere else.)
+  Added a proper JSONP-aware mock, matching every other test's own
+  convention.
+- Wiring the stub into more tests than it had ever run in before
+  surfaced a gap in the stub itself: `dice-roller.js`'s own
+  cross-page roll-history feed calls `.limit()` on its Firestore
+  query, which the stub's query builder never implemented -- invisible
+  before because `window.firebase` simply didn't exist in those tests,
+  so dice-roller.js took its real-network-attempt path instead (which
+  this sandbox also fails silently). Added `.limit()` as a no-op
+  passthrough alongside the existing `.orderBy()`.
+
+All of the above, plus everything from the previous two entries, now
+passes locally (248/248 across every test function touched across this
+whole investigation). Issue #7 closed pending this run's own CI
+confirmation -- which, per the lesson above, is the only check that
+actually counts.
