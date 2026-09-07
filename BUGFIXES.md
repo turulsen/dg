@@ -1684,3 +1684,42 @@ passes locally (248/248 across every test function touched across this
 whole investigation). Issue #7 closed pending this run's own CI
 confirmation -- which, per the lesson above, is the only check that
 actually counts.
+
+**Third follow-up, and the one that finally found the systemic version
+of these bugs.** That run's own CI result (10 failures down from 24)
+turned up 2 more instances of already-diagnosed patterns and, this
+time, went looking for every OTHER copy of each pattern in the file
+instead of fixing just the one CI happened to hit:
+
+- `test_import_agent_auto_detect` had the exact same missing-JSONP-
+  wrapper bug as the sheets-roundtrip fix two entries up -- a bare
+  `lambda r: r.fulfill(..., body='{"status":"OK"}')` mock for
+  `**/script.google.com/**`, always returning unwrapped JSON even for
+  a `callback=`-bearing JSONP GET. Grepping for that exact lambda
+  string found **14 byte-identical copies** scattered across the file,
+  every one of them a latent landmine waiting for whichever page
+  happened to make one unscripted JSONP call during its test. Replaced
+  all 14 with a new shared `route_apps_script_ok(page)` helper
+  (JSONP-aware, otherwise identical) instead of patching them one at a
+  time as CI happened to surface each.
+- `test_hub_clearance_lands_in_shell` lands in a-cell.html via the
+  shell with no Firestore stub and no Handler session seeded -- same
+  "No A-Cell session" local rejection (not a network failure) already
+  fixed in four sibling shell tests two entries up; this one just
+  hadn't been caught yet. Same fix.
+
+One more failure in that run, `test_shell_back_link_hidden_inside_
+shell` timing out mid-navigation with a bare Playwright asyncio
+warning (`Task was destroyed but it is pending!`, from
+`Page._on_route()`, not any application code) rather than a captured
+JS error or assertion mismatch, reproduced 0/8 locally in isolation --
+consistent with the CI-runner-load timing flakes already documented
+multiple times in this file (mobile-notes-fullscreen, the outfit-export
+checks, the Notes gdrive-photo timing), not a new bug. Left as-is
+rather than guessing at a fix for a failure that isn't reproducible.
+
+Lesson on top of the lesson: when a fix pattern shows up more than
+once, grep the codebase for every other copy of it immediately rather
+than waiting for CI to surface each one on its own -- this exact
+14-copies-of-one-bug shape is exactly what "just fix what's currently
+failing" misses.
