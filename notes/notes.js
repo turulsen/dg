@@ -495,6 +495,19 @@
       return m ? m[1] : null;
     }
 
+    // A raw data: URI (pre-Phase-4, before Evidence photos uploaded
+    // straight to Storage) still marks a PDF with its MIME type. A
+    // Storage-uploaded PDF has none of that -- resolveEvidencePhoto_() in
+    // Code.gs only rewrites data: URIs to gdrive: links, so a Storage
+    // download URL passes through unchanged, and it only carries the
+    // original file extension in its path (before any query string --
+    // real Firebase Storage URLs append ?alt=media&token=...).
+    function isPdfUrl_(url) {
+      if (!url) return false;
+      if (url.indexOf('data:application/pdf') === 0) return true;
+      return /\.pdf(\?|$)/i.test(url);
+    }
+
     // A raw data: URI opened via <a target="_blank"> reliably shows a
     // blank "about:blank" tab instead of the PDF in Safari (and, in
     // some versions, other browsers too) -- treated as a top-level
@@ -676,7 +689,7 @@
               ? '<div class="dg-notes-evidence-photo-pdf"><a href="' + dataUriToBlobUrl_(cachedDataUri) + '" target="_blank" rel="noopener">&#128196; Open PDF</a></div>'
               : '<img class="dg-notes-evidence-photo-img" src="' + cachedDataUri + '" alt="">')
             : '<div class="dg-notes-evidence-photo-wrap"></div>';
-        } else if (h.photo.indexOf('data:application/pdf') === 0) {
+        } else if (isPdfUrl_(h.photo)) {
           photoHtml = '<div class="dg-notes-evidence-photo-pdf"><a href="' + dataUriToBlobUrl_(h.photo) + '" target="_blank" rel="noopener">&#128196; Open PDF</a></div>';
         } else {
           photoHtml = '<img class="dg-notes-evidence-photo-img" src="' + h.photo + '" alt="">';

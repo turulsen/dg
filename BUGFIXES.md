@@ -1551,3 +1551,81 @@ the 5 affected test functions -- correctly simulating Storage-URL
 photos instead of data URIs, and re-timing the retry test around a
 delayed Firestore push instead of a delayed JSONP response -- is not
 done yet.
+
+**Follow-up: all 5 wired in, and two more real, live bugs surfaced
+along the way (not just missing mocks) -- both fixed.** Issue #7's
+remaining scope, finished:
+
+1. `test_acell_evidence`'s create/edit flow needed one more piece
+   besides the stub itself: `showForm()`'s "+ New Evidence" button
+   toggles the form closed only once `verifyEvidenceWrite_`'s *own*
+   delayed polling of `evidenceItems` confirms the write (up to several
+   seconds) -- a slower, separate path from the live listener push,
+   which updates the rendered list far faster. Pushing a snapshot
+   immediately (as a real Firestore dual-write essentially never does
+   in well under a second) exposed a genuine race: clicking "+ New
+   Evidence" again before that slower polling closes the still-open
+   form just toggles it shut instead of opening a fresh one. Added a
+   short wait for the form to actually close between steps -- this
+   mirrors realistic pacing (nobody re-opens the form within
+   milliseconds of a successful create) rather than a product bug
+   worth changing app behavior over.
+
+2. **Real, live bug, found while updating `test_acell_evidence_pdf`
+   for the new Storage-URL photo format:** the PDF-detection logic
+   that decides whether to render a labeled "View PDF" box instead of
+   a broken `<img>` (`a-cell.html`'s card rendering, its edit-form
+   preview restore, and `notes/notes.js`'s Evidence detail modal) only
+   ever checked for a `data:application/pdf` URI prefix. That was the
+   *only* format a PDF's stored value could take before Phase 4 -- but
+   Evidence photos (and PDFs; `uploadEvidencePhotoIfNeeded_()` doesn't
+   discriminate by file type) upload straight to Firebase Storage now,
+   and `resolveEvidencePhoto_()` in `Code.gs` only rewrites `data:`
+   URIs to `gdrive:` links, leaving a Storage HTTPS URL to pass through
+   completely unchanged. A PDF uploaded via the *current* code path has
+   silently rendered as a broken image ever since Phase 4 shipped, in
+   every one of these three places, with no test ever catching it since
+   none of them exercised a real Storage-URL PDF end to end. Added a
+   shared `isPdfUrl_()` helper to both files (checks the legacy `data:`
+   prefix OR a `.pdf` extension in the URL's path, before any query
+   string -- a real Firebase Storage download URL appends
+   `?alt=media&token=...`) and switched all three raw-stored-value call
+   sites to it. The two call sites that check an *already-resolved*
+   data URI from the `gdrive:` Drive-proxy path were left alone --
+   those are still always real data URIs, correctly.
+
+3. **Second real, live bug, found while wiring the Storage stub into
+   `test_acell_music`:** Track Library uploads in A-Cell's Music tab
+   were completely broken -- clicking Upload MP3 hung forever on
+   "Uploading…", no error, ever. `a-cell.html`'s own comment (since
+   removed) explained why: `ensureHandlerSignedIn()` used to have a
+   second copy in the Music tab's own `<script>` block, matching the
+   Evidence tab's, and was deleted on the mistaken belief it was a
+   redundant duplicate. Each `<script>` tag in this file is its own
+   IIFE with its own scope -- a function declared in one is not visible
+   from another, `<script>` tags sharing a page do not merge scopes.
+   The Track Library upload/delete flow was left calling an undefined
+   function, which throws synchronously *before* its own
+   `.then()`/`.catch()` chain is even constructed (since
+   `ensureHandlerSignedIn()` is the very first call in that chain, not
+   something invoked from inside an already-attached `.then()`) -- so
+   nothing ever caught it, and the status text set just before that
+   call (`'Uploading…'`) simply never got a chance to change. Restored
+   the duplicate (`ensureHandlerSignedIn`, `withTimeout_`,
+   `_handlerAuthPromise`), reusing this IIFE's own already-correct
+   `ensureFirebaseApi()`.
+
+All three `test_acell_evidence*` functions, both `test_agent_hub_
+handout*` functions, and `test_acell_music` pass in full locally
+(189/189 checks across every test touched by this and the preceding
+entry, 0 failures) -- issue #7 is done pending the real CI run's own
+confirmation.
+
+Lesson worth restating from this whole saga: a "just check the
+existing failures" ask surfaced two live, currently-shipped bugs
+(broken PDF rendering, completely broken Track Library uploads) that
+had nothing to do with test infrastructure at all -- they were hiding
+*behind* a test-infrastructure gap that happened to also make them
+fail for the "wrong" reason. Dismissing a batch of failures as
+"pre-existing, unrelated, out of scope" without individually checking
+each one is exactly how a real bug like this stays shipped indefinitely.
