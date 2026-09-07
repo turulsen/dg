@@ -3449,7 +3449,7 @@ function sosPlaceholder(text) {
 }
 
 /**
- * Applies one of the available visual themes: xfiles, modern, son-of-sam, field-notes, field-doc.
+ * Applies one of the available visual themes: xfiles, son-of-sam, field-notes, mobile.
  * Saves the selection to localStorage, flushes any pending form state, and handles
  * theme-specific setup — LP sheet build/sync, pyramid visibility, button states,
  * and Son of Sam's plus-button glyphs.
@@ -3469,7 +3469,7 @@ function setTheme(theme, { skipSave = false, persist = true } = {}) {
         const _wizStep = _wizActive ? (window.dgWizard?._currentStep?.() ?? 0) : null;
         window.dgWizard?.deactivate();
 
-        body.classList.remove('theme-xfiles', 'theme-modern', 'theme-son-of-sam', 'theme-field-notes', 'theme-mobile');
+        body.classList.remove('theme-xfiles', 'theme-son-of-sam', 'theme-field-notes', 'theme-mobile');
         body.classList.add('theme-' + theme);
         // persist:false is Split View forcing the Mobile skin on top of
         // whichever theme is really selected -- see dgSplitView below.
@@ -3502,7 +3502,6 @@ function setTheme(theme, { skipSave = false, persist = true } = {}) {
         // Swap BMC badge colour to match theme
         const BMC_SRC = {
             'xfiles': 'https://cdn.buymeacoffee.com/buttons/v2/default-black.png',
-            'modern': 'https://cdn.buymeacoffee.com/buttons/v2/default-violet.png',
             'son-of-sam': 'https://cdn.buymeacoffee.com/buttons/v2/default-red.png',
             'field-notes': 'https://cdn.buymeacoffee.com/buttons/v2/default-orange.png',
         };
