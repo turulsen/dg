@@ -3427,7 +3427,12 @@ textarea {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.5);
-    z-index: 9400;
+    /* Above #dg-radio's own z-index of 9999 (assets/table-radio.js) --
+       otherwise the Table Radio widget visually sits on top of this
+       modal and its backdrop wherever it docks on screen, and blocks
+       clicks on panel content underneath it (e.g. Export Google Sheet)
+       instead of being dimmed and inert like the rest of the page. */
+    z-index: 9990;
     display: none;
 }
 
@@ -3445,7 +3450,9 @@ textarea {
     color: #eee;
     border-left: 1px solid rgba(255, 255, 255, 0.15);
     box-shadow: -8px 0 30px rgba(0, 0, 0, 0.5);
-    z-index: 9500;
+    /* See #settings-panel-backdrop's own comment above -- must clear
+       #dg-radio's z-index of 9999 too. */
+    z-index: 10000;
     padding: 60px 20px 30px;
     overflow-y: auto;
     transform: translateX(100%);
