@@ -80,6 +80,31 @@ def skip_acell_gate(page):
     specifically exercising the gate itself should pre-seed past it."""
     page.add_init_script("try { sessionStorage.setItem('dg_acell_unlocked', '1'); } catch (e) {}")
 
+def route_apps_script_ok(page):
+    """A catch-all "**/script.google.com/** always says OK" mock for
+    tests that don't care about backend content at all, just that
+    nothing errors -- JSONP-aware, unlike a bare
+    `lambda r: r.fulfill(..., body='{"status":"OK"}')` (14 near-
+    identical copies of that used to be scattered across this file). A
+    JSONP call is a <script src=...&callback=X> tag whose response gets
+    parsed and RUN as JavaScript, not fetched as data -- a bare JSON
+    body loaded that way throws "Unexpected token ':'" the instant the
+    parser hits the first key's colon (`{"status":...` parses as a
+    block statement containing the expression statement "status",
+    followed by an unexpected `:`). Silently wrong in this sandbox,
+    which fails such calls before they'd ever reach a route handler
+    that no page actually needed here -- surfaces as a real pageerror
+    in CI, on whichever of these 14 call sites happens to have a page
+    that actually makes one."""
+    def handler(route):
+        url = route.request.url
+        if route.request.method == "POST" or "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
+    page.route("**/script.google.com/**", handler)
+
 def wait_for_condition(fn, timeout_ms=25000, interval_ms=200):
     """Polls fn() every interval_ms until it returns truthy or timeout_ms
     elapses -- for assertions after a no-cors POST + read-back-to-verify
@@ -692,23 +717,12 @@ def test_stat_generator_sheets_roundtrip(p):
     page.route("**/cdnjs.cloudflare.com/ajax/libs/jszip/**", lambda r: r.fulfill(path=jszip_path))
     # This test never used to mock script.google.com at all -- fine
     # while nothing on this page happened to call it, but stats/
-    # index.html makes its own background JSONP calls on load, which
-    # went out to the REAL production backend over the network. A bare
-    # JSON body loaded as a <script> tag's content (no callback(...)
-    # wrapper) throws "Unexpected token ':'" the moment the parser hits
-    # the first key's colon -- exactly what a real, un-JSONP-shaped
-    # response (or no route handler at all, letting some other
-    # accidental response through) can trigger. See
-    # test_shell_nav_tracks_in_page_navigation's own comment on this
-    # same failure signature.
-    def fake_apps_script(route):
-        url = route.request.url
-        if route.request.method == "POST" or "callback=" not in url:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        cb = url.split("callback=")[1].split("&")[0]
-        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
-    page.route("**/script.google.com/**", fake_apps_script)
+    # index.html makes its own background JSONP call on load, which
+    # went out to the REAL production backend over the network without
+    # this. See route_apps_script_ok()'s own comment for why that
+    # particular gap throws "Unexpected token ':'" rather than just
+    # silently doing nothing.
+    route_apps_script_ok(page)
 
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
@@ -949,7 +963,7 @@ def test_kappablack_toml_import_unmatched_profession(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    route_apps_script_ok(page)
 
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
@@ -1040,7 +1054,7 @@ def test_import_agent_paste_text(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    route_apps_script_ok(page)
 
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
@@ -1110,7 +1124,7 @@ def test_import_agent_auto_detect(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    route_apps_script_ok(page)
 
     # .toml by extension, through the same #agent-import-auto-input a
     # player would use.
@@ -1209,7 +1223,7 @@ def test_player_name_field(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    route_apps_script_ok(page)
 
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(400)
@@ -1650,6 +1664,12 @@ def test_hub_clearance_lands_in_shell(p):
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
+    # Lands in a-cell.html via the shell, whose own Evidence listener
+    # (Phase 5) starts unconditionally on load, independent of anything
+    # this test is actually proving -- see the shell content-swap
+    # test's own comment on the same fix.
+    install_notes_firestore_stub(page)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
     skip_boot_splash(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
@@ -4602,7 +4622,7 @@ def test_table_radio_unprompted_pause_auto_resumes(p):
     page.add_init_script(play_probe)
     install_radio_firestore_stub(page)
     page.route("**/ambience.mp3", lambda r: r.fulfill(status=200, content_type="audio/wav", body=wav_bytes))
-    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    route_apps_script_ok(page)
 
     now_ms = int(__import__("time").time() * 1000)
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
@@ -4699,7 +4719,7 @@ def test_table_radio_audio_syncs_to_live_position(p):
     # Drive-hosted download link does advertise range support).
     page.route("**/ambience.mp3", lambda r: r.fulfill(status=200, content_type="audio/wav", body=wav_bytes,
                 headers={"Accept-Ranges": "bytes"}))
-    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    route_apps_script_ok(page)
 
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
@@ -4920,7 +4940,7 @@ def test_table_radio_mobile_buttons_not_stretched(p):
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
-    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    route_apps_script_ok(page)
 
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.evaluate("() => localStorage.setItem('dg_radio_channel', '3')")
@@ -4962,7 +4982,7 @@ def test_table_radio_theme_consistent_style(p):
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
-    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    route_apps_script_ok(page)
 
     def dial_styles(theme):
         page.evaluate(f"() => window.setTheme && window.setTheme('{theme}')")
@@ -5713,7 +5733,7 @@ def test_stats_recruit_flow_on_missing_character(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    route_apps_script_ok(page)
 
     # Seed a DIFFERENT character's local autosave, simulating a device
     # last used to play a different Agent.
@@ -5818,7 +5838,7 @@ def test_stats_new_recruit_blank_sheet(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    route_apps_script_ok(page)
 
     # Seed a previous character's local autosave AND a minted cloud code,
     # simulating a device last used to play a different Agent.
@@ -5893,7 +5913,7 @@ def test_mobile_no_overflow(p):
     # before the reload below.
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    route_apps_script_ok(page)
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.evaluate("""() => {
         localStorage.setItem('dg_agent_roster', JSON.stringify({
@@ -5920,7 +5940,7 @@ def test_mobile_no_overflow(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    route_apps_script_ok(page)
     skip_acell_gate(page)
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(400)
@@ -6176,7 +6196,7 @@ def test_agent_portal_autorestore_prefills_cover(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    route_apps_script_ok(page)
     saved = {"code": "OWEN-CS12", "data": {"char_name": "Owen Castillo", "profession": "Pilot", "codename": "Ferro"}}
     page.add_init_script(f"localStorage.setItem('dg_last_agent', '{json.dumps(saved)}');")
     page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
@@ -6364,7 +6384,7 @@ def test_agent_portal_random_generator_matches_sex(p):
         errs = collect_errors(page)
         page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
         page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-        page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+        route_apps_script_ok(page)
         page.add_init_script(f"Math.random = () => {forced_roll};")
         page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
         page.wait_for_timeout(300)
