@@ -238,6 +238,12 @@
           bonusPrepared: false, bonusSkills: [], bonusApplied: false,
           appliedBonuses: {}, specialtyInstances: [], lpCheckedSkills: [],
           lpCustomSkills: [], professionSkillsApplied: false,
+          // A Google Sheet import is always an already-existing character,
+          // not one still being created here -- skip straight past the
+          // "still being created" phase (Bonus Points panel, Bond
+          // generator) the same way any already-played Agent would. See
+          // .agent-committed in styles.css.
+          creationCommitted: true,
         };
 
         if (window.dgSaveLoad && typeof window.dgSaveLoad.applyState === "function") {

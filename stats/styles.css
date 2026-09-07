@@ -3570,7 +3570,6 @@ textarea {
 #settings-panel #agent-paste-details,
 #settings-panel #agent-paste-details summary,
 #settings-panel #wiz-promo,
-#settings-panel #wiz-promo .wiz-promo-text,
 #settings-panel .io-option-desc {
     color: #ccc;
     font-family: 'JetBrains Mono', monospace;
@@ -7884,16 +7883,147 @@ input[type="checkbox"]:checked+label {
 }
 
 /* ============================================================================
-   WIZARD — Guided step-by-step character creation overlay.
-   Activated by the Wizard button; adapts to the currently selected theme.
+   NEW RECRUIT — the two paths onto a fresh sheet: import an Agent built
+   elsewhere, or build one from scratch with the Wizard. Side by side on
+   desktop, stacked on narrow screens (same breakpoint as everywhere else
+   on this page). This same markup also gets relocated wholesale into the
+   settings cog's New Recruit section once a real name exists
+   (dgCharacterMode.update() in scripts.js) -- #settings-panel overrides
+   below collapse it back to a single column there, since the cog drawer
+   is never wide enough for two.
    ============================================================================ */
+.new-recruit-heading {
+    text-align: center;
+    font-size: 1.1rem;
+    letter-spacing: 0.08em;
+    opacity: 0.75;
+    margin: 0 0 12px;
+}
+
+.new-recruit-split {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: start;
+    gap: 20px;
+    max-width: 1000px;
+    margin: 0 auto var(--spacing-lg);
+}
+
+.new-recruit-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 8px;
+}
+
+.new-recruit-option-title {
+    font-size: 1rem;
+    margin: 0;
+}
+
+.new-recruit-option-desc {
+    font-size: 0.85em;
+    opacity: 0.8;
+    line-height: 1.5;
+    margin: 0 0 4px;
+}
+
+.new-recruit-skip-note {
+    font-size: 0.8em;
+    opacity: 0.65;
+    margin: 4px 0 0;
+}
+
+.new-recruit-option #agent-drop-zone,
+.new-recruit-option #agent-paste-details,
+.new-recruit-option .wiz-promo {
+    width: 100%;
+}
+
+.new-recruit-divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    opacity: 0.5;
+    align-self: stretch;
+}
+
+.new-recruit-divider::before {
+    content: '';
+    display: block;
+    width: 1px;
+    flex: 1;
+    background: currentColor;
+}
+
+.new-recruit-divider span {
+    padding: 8px 0;
+}
+
+.new-recruit-divider::after {
+    content: '';
+    display: block;
+    width: 1px;
+    flex: 1;
+    background: currentColor;
+}
+
+/* Stack into one column below the same width this page already treats
+   as "too narrow for side-by-side" elsewhere (.bonds-layout, Split
+   View's own threshold) -- the vertical divider line makes no sense
+   stacked, so it becomes a horizontal "— OR —" rule instead, matching
+   the Bonus Points panel's own .bonus-method-separator treatment. */
+@media (max-width: 700px) {
+    .new-recruit-split {
+        grid-template-columns: 1fr;
+    }
+    .new-recruit-divider {
+        flex-direction: row;
+        margin: 4px 0;
+    }
+    .new-recruit-divider::before,
+    .new-recruit-divider::after {
+        width: auto;
+        height: 1px;
+    }
+    .new-recruit-divider span {
+        padding: 0 8px;
+    }
+}
+
+/* Relocated into the settings cog (#cog-new-recruit-section) for an
+   existing, named character -- always single-column there regardless of
+   viewport width, since the drawer itself is never wide enough for two. */
+#settings-panel .new-recruit-split {
+    grid-template-columns: 1fr;
+}
+#settings-panel .new-recruit-divider {
+    flex-direction: row;
+    margin: 4px 0;
+}
+#settings-panel .new-recruit-divider::before,
+#settings-panel .new-recruit-divider::after {
+    width: auto;
+    height: 1px;
+}
+#settings-panel .new-recruit-divider span {
+    padding: 0 8px;
+}
 
 /* ── Wizard promo block ─────────────────────────────────────────────── */
+/* Now just a highlighted call-to-action bar around the toggle button --
+   the promo copy that used to live inside it (.wiz-promo-text, removed)
+   moved out to .new-recruit-option-desc once the New Recruit block split
+   into two side-by-side "Already have a character? / Building someone
+   new?" columns (see .new-recruit-split below), so this only ever wraps
+   one child now. */
 .wiz-promo {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 16px;
+    justify-content: center;
     padding: 12px 16px;
     margin: 0 auto 16px;
     max-width: 1600px;
@@ -7901,23 +8031,6 @@ input[type="checkbox"]:checked+label {
     border: 1px solid var(--primary-color, #333);
     border-left: 5px solid var(--primary-color, #333);
     background: color-mix(in srgb, var(--primary-color, #333) 6%, var(--bg-color, #fff));
-}
-
-.wiz-promo-text {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-size: 0.95rem;
-    line-height: 1.5;
-}
-
-.wiz-promo-text strong {
-    font-size: 1.05rem;
-    letter-spacing: 0.04em;
-}
-
-.wiz-promo-text span {
-    opacity: 0.85;
 }
 
 #wiz-toggle-btn {
@@ -8534,12 +8647,9 @@ input[type="checkbox"]:checked+label {
         width: 100%;
     }
 
-    /* Character Creation Wizard promo: the toggle button's own
-       white-space:nowrap plus flex-shrink:0 held it at its full-text
-       width beside the promo copy. Stack them instead of squeezing both
-       into one row. */
+    /* Character Creation Wizard promo: full-width tap target on mobile
+       rather than a button sized to its own text. */
     .wiz-promo {
-        flex-direction: column;
         align-items: stretch;
     }
     #wiz-toggle-btn {

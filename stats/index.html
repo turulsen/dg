@@ -305,52 +305,61 @@
                  one, or any importer applying state), and #character-mode-toggle
                  takes its place instead. -->
             <div id="new-recruit-block">
-                <!-- One-button, format-agnostic import -- drop or pick a file and
-                     the page figures out whether it's a Kappa Black .toml, a
-                     Foundry VTT (or this site's own) .json, an exported .html
-                     sheet, a DD Form 315 .pdf, or a Google Sheet .xlsx, then
-                     routes it to the matching importer. Existing format-specific
-                     buttons still live in Advanced below for pasting text or
-                     troubleshooting a file this doesn't recognize. -->
-                <div id="agent-drop-zone" class="json-drop-zone agent-drop-zone-primary"
-                    style="max-width:480px;margin:0 auto var(--spacing-lg);"
-                    ondragover="agentDropZone.over(event)" ondragleave="agentDropZone.leave(event)"
-                    ondrop="agentDropZone.drop(event)"
-                    onclick="document.getElementById('agent-import-auto-input').click()"
-                    title="Drop a character file here, or click to browse. Recognizes Kappa Black .toml/.json, Foundry VTT .json, this site's exported .html/.json, DD Form 315 .pdf, and the Google Sheet .xlsx template automatically.">
-                    <span class="json-drop-label" id="agent-drop-label">&#8593; Import Agent
-                        <br><span style="opacity:.7;">drop a file here, or click to browse — any format</span></span>
-                    <input type="file" id="agent-import-auto-input"
-                        accept=".toml,.json,.pdf,.xlsx,.html,.htm,application/json,application/pdf,text/html,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        style="display:none" onchange="agentDropZone.fileSelected(event)">
-                </div>
-                <!-- Paste fallback for the drop zone above -- Kappa Black's
-                     mobile export shows the character as on-screen text to
-                     copy, not a file a phone can save and re-pick from a file
-                     input, so dropping/browsing is often not an option there. -->
-                <details id="agent-paste-details"
-                    style="max-width:480px;margin:0 auto var(--spacing-lg);font-family:'JetBrains Mono',monospace;font-size:0.85em;text-align:center;">
-                    <summary style="cursor:pointer;opacity:.75;">Can't drop a file? Paste text instead</summary>
-                    <div style="margin-top:8px;">
-                        <textarea id="agent-paste-area" rows="5"
-                            style="width:100%;box-sizing:border-box;font-family:'JetBrains Mono',monospace;font-size:0.9em;"
-                            placeholder="Paste a Kappa Black .toml or .json export here..."></textarea>
-                        <button type="button"
-                            onclick="importAgentText(document.getElementById('agent-paste-area').value)"
-                            style="margin-top:6px;">Import Pasted Text</button>
+                <h2 class="new-recruit-heading">New Recruit</h2>
+                <div class="new-recruit-split">
+                    <div class="new-recruit-option" id="new-recruit-import-option">
+                        <h3 class="new-recruit-option-title">Already Have a Character?</h3>
+                        <p class="new-recruit-option-desc">Bring in an Agent built elsewhere — Kappa Black, Foundry
+                            VTT, an official Delta Green PDF, or a Google Sheet.</p>
+                        <!-- One-button, format-agnostic import -- drop or pick a file and
+                             the page figures out whether it's a Kappa Black .toml, a
+                             Foundry VTT (or this site's own) .json, an exported .html
+                             sheet, a DD Form 315 .pdf, or a Google Sheet .xlsx, then
+                             routes it to the matching importer. Existing format-specific
+                             buttons still live in Advanced below for pasting text or
+                             troubleshooting a file this doesn't recognize. -->
+                        <div id="agent-drop-zone" class="json-drop-zone agent-drop-zone-primary"
+                            ondragover="agentDropZone.over(event)" ondragleave="agentDropZone.leave(event)"
+                            ondrop="agentDropZone.drop(event)"
+                            onclick="document.getElementById('agent-import-auto-input').click()"
+                            title="Drop a character file here, or click to browse. Recognizes Kappa Black .toml/.json, Foundry VTT .json, this site's exported .html/.json, DD Form 315 .pdf, and the Google Sheet .xlsx template automatically.">
+                            <span class="json-drop-label" id="agent-drop-label">&#8593; Import Agent
+                                <br><span style="opacity:.7;">drop a file here, or click to browse — any format</span></span>
+                            <input type="file" id="agent-import-auto-input"
+                                accept=".toml,.json,.pdf,.xlsx,.html,.htm,application/json,application/pdf,text/html,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                style="display:none" onchange="agentDropZone.fileSelected(event)">
+                        </div>
+                        <!-- Paste fallback for the drop zone above -- Kappa Black's
+                             mobile export shows the character as on-screen text to
+                             copy, not a file a phone can save and re-pick from a file
+                             input, so dropping/browsing is often not an option there. -->
+                        <details id="agent-paste-details"
+                            style="font-family:'JetBrains Mono',monospace;font-size:0.85em;text-align:center;">
+                            <summary style="cursor:pointer;opacity:.75;">Can't drop a file? Paste text instead</summary>
+                            <div style="margin-top:8px;">
+                                <textarea id="agent-paste-area" rows="5"
+                                    style="width:100%;box-sizing:border-box;font-family:'JetBrains Mono',monospace;font-size:0.9em;"
+                                    placeholder="Paste a Kappa Black .toml or .json export here..."></textarea>
+                                <button type="button"
+                                    onclick="importAgentText(document.getElementById('agent-paste-area').value)"
+                                    style="margin-top:6px;">Import Pasted Text</button>
+                            </div>
+                        </details>
                     </div>
-                </details>
-                <!-- ── Character Creation Wizard promo block ── -->
-                <div id="wiz-promo" class="wiz-promo">
-                    <div class="wiz-promo-text">
-                        <strong>Character Creation Wizard</strong>
-                        <span>New to Delta Green or this site? The wizard walks you through each step in order — statistics,
-                            profession, biography, skills, bonds, and gear — with explanations and tips along the way.
-                            Recommended for new players and new users. Already familiar with the system? Skip the wizard and
-                            fill in the fields below from top to bottom.</span>
+                    <div class="new-recruit-divider" aria-hidden="true"><span>OR</span></div>
+                    <div class="new-recruit-option" id="new-recruit-wizard-option">
+                        <h3 class="new-recruit-option-title">Building Someone New?</h3>
+                        <p class="new-recruit-option-desc">New to Delta Green or this site? The wizard walks you
+                            through each step in order — statistics, profession, biography, skills, bonds, and gear —
+                            with explanations and tips along the way.</p>
+                        <!-- ── Character Creation Wizard promo block ── -->
+                        <div id="wiz-promo" class="wiz-promo">
+                            <button type="button" id="wiz-toggle-btn" onclick="window.dgWizard?.toggle()">&#10022;
+                                Character Creation Wizard</button>
+                        </div>
+                        <p class="new-recruit-skip-note">Already know the system? Skip the wizard and fill in the
+                            fields below from top to bottom.</p>
                     </div>
-                    <button type="button" id="wiz-toggle-btn" onclick="window.dgWizard?.toggle()">&#10022; Character
-                        Creation Wizard</button>
                 </div>
             </div>
             <!-- Live Play / Edit toggle for an existing character -- one
