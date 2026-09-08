@@ -1800,3 +1800,51 @@ input[type="text"], #lp-sheet input[type="number"]` block -- an
 ID-scoped selector `(1,0,1)` already used in this same file to win
 against this exact global rule for padding/border/font, just never
 extended to `color`.
+
+**Third report, same complaint: "you just put a red filter on the
+whole thing."** The specificity fix above was real, but it exposed a
+much older, deeper mistake underneath it: `--lp-ink` had been set to
+each theme's `--primary-color` (X-Files' green, Son of Sam's red) from
+the very first round of this work, on the never-actually-checked
+assumption that a theme's accent color IS its text color. It isn't.
+Checked properly this time via `getComputedStyle` against real Edit
+mode (not grep, not the token names) on `#cs-name`/`.stat-value`/
+textareas: X-Files' green (`:root`'s very first `--primary-color`,
+literally commented "X-Files Theme Colors") and Son of Sam's red are
+both border/legend/button accent colors ONLY -- actual body and value
+text renders in `--text-color`, a near-white `#ffffff`/`#f0f0f0` in
+both themes. Son of Sam goes further: a dedicated, clearly-commented
+rule ("Handwritten font for filled/generated content", `stats/
+styles.css` ~line 943) renders every actual typed/generated value --
+inputs, textareas, `.stat-value`, bond text -- in `'Rock Salt'`, a
+cursive font, distinct from the `JetBrains Mono` used for labels/
+legends; X-Files has no such second font, just the color split. Live
+Play was mirroring neither: `--lp-ink` stayed the accent color and
+`--lp-font-mono` (Rock Salt's Live Play analogue -- the font every
+`.lp-proxy`/`.lp-stat-inp`/`.lp-skill-val`/etc. actually renders in)
+stayed `JetBrains Mono` for Son of Sam, which is exactly what reads as
+"a red filter over Field Notes" instead of a real distinct identity.
+Fixed by setting `--lp-ink` to the same near-white as each theme's real
+`--text-color`, `--lp-font-mono` to `'Rock Salt', cursive` for Son of
+Sam specifically (matching its real dual-font design), and
+`--lp-ink-soft` (the dim/readonly variant) to a plain dim gray for both
+instead of a tinted-accent dim, since "dim white" is what real Edit
+mode's own readonly-equivalent contrast would look like. Red/green stay
+exactly where Edit mode actually uses them: borders, buttons, tracker
+chrome, section-header bars.
+
+**Self-inflicted regression while writing the fix above -- the exact
+comment-injection bug from earlier this session, again.** The
+X-Files rewrite's own explanatory comment included the literal string
+`":root { /* X-Files Theme Colors */ }"` to name where the mistaken
+green value came from -- and that embedded `*/` closed the CSS comment
+early, corrupting everything after it up to the next real `*/`,
+silently dropping the entire `.theme-xfiles.live-play` rule (confirmed
+via live `document.styleSheets` inspection: the rule simply wasn't
+registered, so the base `.live-play` Field Notes defaults leaked
+through under the X-Files class instead). Caught immediately this time
+by verifying the fix live instead of trusting the source edit --
+reworded the comment to describe the same `:root` block without
+literal `/* */` syntax inside it. Worth a standing rule: never quote
+literal `/* ... */` CSS-comment syntax inside a CSS comment, in this
+file or any other.
