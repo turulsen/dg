@@ -1848,3 +1848,17 @@ reworded the comment to describe the same `:root` block without
 literal `/* */` syntax inside it. Worth a standing rule: never quote
 literal `/* ... */` CSS-comment syntax inside a CSS comment, in this
 file or any other.
+
+**"ROLL IMPROVEMENTS"/"APPLY & CLEAR MARKS" unreadable in X-Files and
+Son of Sam Live Play.** `.lp-btn-advance` only overrides `background`
+to `--lp-accent-warm`; its text color still comes from `.lp-btn-sm`'s
+`color: var(--lp-header-text)`, chosen to work against the black
+header bar `.lp-btn-sm` is normally seen on. The moment a theme's warm
+accent isn't safely dark, that assumption breaks: X-Files' bright green
+header-text over its own bright amber accent-warm, and Son of Sam's
+bright red header-text over its own dark red accent-warm, both read as
+"unreadable" -- confirmed from an actual phone screenshot. Field
+Notes' dark gold accent-warm still works fine under the inherited
+white, so only `.theme-xfiles .lp-btn-advance` (black text) and
+`.theme-son-of-sam .lp-btn-advance` (white text) needed an explicit
+override.
