@@ -5838,18 +5838,30 @@ input[type="checkbox"]:checked+label {
    look (it has no theme-level font-family of its own, so its real font
    is the page's base body{font-family:'Courier New',monospace}, not
    'JetBrains Mono' -- that belongs to Son of Sam below, not this
-   theme). An amber "system alert" tone marks the rarer Advancement
-   action apart from the routine green accent. No paper grain -- a
-   terminal doesn't have texture. Readonly/typewritten text
-   (--lp-ink-soft) stays a clearly bright green, not a dim one -- "dim
-   means readonly" only works readably on light paper, not dark. */
+   theme). Checked via getComputedStyle, not assumed: X-Files' green
+   (#00b521, the file's very first --primary-color, labeled "X-Files
+   Theme Colors" at the top-level :root block) is a border/legend/
+   accent color ONLY in real Edit mode -- actual
+   body and value text renders in --text-color's plain white
+   (hex ffffff), confirmed on #cs-name/.stat-value/textareas alike. An
+   earlier version of this block set --lp-ink to the green
+   --primary-color directly, on the unverified assumption that "the
+   theme's accent color" and "the theme's real text color" were the
+   same thing -- they are not, here or in Son of Sam below. --lp-ink is
+   now white to match; green is reserved for what Edit mode actually
+   uses it for (borders, legends, accents), same treatment as Son of
+   Sam. An amber "system alert" tone marks the rarer Advancement action
+   apart from the routine green accent. No paper grain -- a terminal
+   doesn't have texture. Readonly text (--lp-ink-soft) stays a clearly
+   dim (not black) tone -- "dim means readonly" only works readably
+   when dim doesn't mean unreadable. */
 .theme-xfiles.live-play {
     --lp-page-bg: #000000;
     --lp-page-bg-soft: #0a2f14;
     --lp-paper-bg: #0a2f14;
     --lp-paper-white: #123d1c;
-    --lp-ink: #00b521;
-    --lp-ink-soft: #4ecb63;
+    --lp-ink: #ffffff;
+    --lp-ink-soft: #a8c0a8;
     --lp-header-bg: #000000;
     --lp-header-text: #00e62e;
     --lp-subheader-bg: #123018;
@@ -5870,19 +5882,39 @@ input[type="checkbox"]:checked+label {
 }
 
 /* Son of Sam: black-and-blood-red horror ritual look, matching Edit
-   mode's own palette (--lp-ink stays exactly --primary-color's #cc0000).
-   Deliberately a shade off the hardcoded critical/dying status reds
-   elsewhere on this page (#ff5555/#ff2222) so a themed accent button is
-   never visually confused with a real HP/SAN alert. Readonly/typewritten
-   text (--lp-ink-soft) stays a clearly bright red-pink, not a dim one --
-   "dim means readonly" only works readably on light paper, not dark. */
+   mode's own actual palette -- checked via getComputedStyle, not
+   assumed from the theme's root custom properties. Edit mode is a
+   genuine TWO-FONT design: --primary-color red is a chrome/accent
+   color only (borders, buttons, legend backgrounds) while all real
+   body/label text renders in --text-color's near-white #f0f0f0, and a
+   dedicated rule ("Handwritten font for filled/generated content",
+   ~line 943) renders every actual typed/generated VALUE -- inputs,
+   textareas, .stat-value, bond text -- in 'Rock Salt', a cursive
+   graffiti-style font, distinct from the JetBrains Mono used for
+   labels/chrome. An earlier version of this block set --lp-ink to red
+   and kept --lp-font-mono at JetBrains Mono everywhere, on the
+   unverified assumption that Edit mode's text was red monospace
+   throughout -- that produced a Live Play that read as "a red filter
+   over Field Notes" with no real identity of its own. --lp-ink is now
+   the same near-white as Edit's real value/label text, and
+   --lp-font-mono (the font every actual field value renders in, via
+   .lp-proxy/.lp-stat-inp/.lp-skill-val/etc.) is Rock Salt, matching
+   Edit's own handwritten-value rule; --lp-font-display (section
+   headers, tracker labels -- the equivalent of Edit's legends/chrome)
+   stays JetBrains Mono. Red is now reserved for what Edit mode
+   actually uses it for: borders, accents, buttons. Deliberately a
+   shade off the hardcoded critical/dying status reds elsewhere on this
+   page (#ff5555/#ff2222) so a themed accent button is never visually
+   confused with a real HP/SAN alert. Readonly text (--lp-ink-soft)
+   stays a clearly dim (not black) gray -- "dim means readonly" only
+   works readably when dim doesn't mean unreadable. */
 .theme-son-of-sam.live-play {
     --lp-page-bg: #000000;
     --lp-page-bg-soft: #2a0a0a;
     --lp-paper-bg: #2a0a0a;
     --lp-paper-white: #3a1010;
-    --lp-ink: #cc0000;
-    --lp-ink-soft: #e08080;
+    --lp-ink: #f0f0f0;
+    --lp-ink-soft: #a89a9a;
     --lp-header-bg: #000000;
     --lp-header-text: #ff3333;
     --lp-subheader-bg: #3a1010;
@@ -5897,7 +5929,7 @@ input[type="checkbox"]:checked+label {
     --lp-tracker-value: #ff3333;
     --lp-tracker-mid: #e08080;
     --lp-font-display: 'JetBrains Mono', monospace;
-    --lp-font-mono: 'JetBrains Mono', monospace;
+    --lp-font-mono: 'Rock Salt', cursive;
     --lp-font-body: 'JetBrains Mono', monospace;
     background-image: none;
 }
