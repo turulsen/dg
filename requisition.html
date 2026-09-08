@@ -859,6 +859,19 @@ function selectRoute(id){
   ['official','personal','favor','black'].forEach(k=>{
     document.getElementById('sub-'+k).classList.toggle('active', k===id);
   });
+  // A roll already resolved for a DIFFERENT route otherwise stays on screen
+  // (stamp, "vs. X%" counter, flavor text) even after switching routes to
+  // check another one's auto-filled skill -- misleadingly showing the new
+  // route's own field next to the old route's verdict, e.g. Personal Funds'
+  // freshly-pulled INT×5 sitting right above a stamp that actually rolled
+  // against Calling in a Favor's CHA×5. Clearing it here, not just on
+  // "File a new request", keeps whatever's displayed honest about which
+  // route it actually belongs to.
+  counterEl.textContent='';
+  stampEl.classList.remove('show');
+  outcomeText.classList.remove('show');
+  processNote.style.display='none';
+  rollBtn.disabled=false;
 }
 
 function d10(){ return Math.floor(Math.random()*10); } // 0-9
