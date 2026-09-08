@@ -6970,8 +6970,18 @@ input[type="checkbox"]:checked+label {
 
 /* ── LP sheet: override global input rules that hide/pad inputs ───── */
 /* Global: input[type="checkbox"]{ display:none } (specificity 0,1,1)  */
-/* Global: input[type="text"]{ padding:4px 12px } (specificity 0,1,1)  */
-/* These scoped rules use specificity (1,0,1) to win.                  */
+/* Global: input[type="text"]{ padding:4px 12px; color:var(--text-color) }
+   (specificity 0,1,1) -- that last one is the one that actually bit:
+   every .lp-proxy/.lp-stat-inp/etc color:var(--lp-ink) declaration is a
+   plain class selector (specificity 0,1,0), one rung BELOW this global
+   attribute-selector rule, so on every theme it silently lost and every
+   literal <input> in Live Play rendered pure black text regardless of
+   theme -- unreadable the moment --lp-paper-bg wasn't near-white. Correct
+   on Field Notes only because var(--text-color) there resolves to
+   --lp-tracker-bg, which happens to be near-black anyway; wrong on
+   X-Files/Son of Sam where --lp-tracker-bg is literal #000 but the paper
+   is green/red, not black. These scoped rules use specificity (1,0,1) to
+   actually win. */
 #lp-sheet input[type="checkbox"] {
     display: inline-block;
     width: 14px;
@@ -6990,6 +7000,12 @@ input[type="checkbox"]:checked+label {
     background: transparent;
     font-family: var(--lp-font-mono);
     font-size: 10pt;
+    color: var(--lp-ink);
+}
+
+#lp-sheet input[type="text"][readonly],
+#lp-sheet input[type="number"][readonly] {
+    color: var(--lp-ink-soft);
 }
 
 /* Editable (non-readonly) LP inputs use marker-pen font as visual cue */
