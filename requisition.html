@@ -1034,6 +1034,31 @@ function resolveOfficialGate(){
   return {penalty:20, note:"RETURNED FOR CORRECTION: cost center not recognized. Resubmitted anyway, under protest – −20% applied."};
 }
 
+// Logs this exact, already-rolled percentile into the shared cross-page
+// dice roll history (assets/dice-roller.js) instead of triggering that
+// widget's own roll() -- which would animate and roll a SEPARATE, fresh
+// value of its own rather than record the one this form's Section III
+// just resolved and stamped. dgDice.recordRoll() is fire-and-forget: no
+// Agent Code known on this device yet, or a write failure, is the same
+// "history is a nice-to-have, never a gate" tolerance recordRoll already
+// has internally -- nothing here needs to check for success.
+function logRollToHistory(tier, val, skill){
+  if(!window.dgDice || typeof window.dgDice.recordRoll !== 'function') return;
+  const route = ROUTES.find(r => r.id === selectedRoute);
+  const item = ITEMS[itemSel.value];
+  const label = (route ? route.name : 'Requisition') + (item ? ' — ' + item.name : '');
+  window.dgDice.recordRoll({
+    roll_type: 'percent',
+    label: label,
+    value: val,
+    target: skill,
+    tier: tier,
+    sides: null,
+    expr: null,
+    breakdown: null,
+  });
+}
+
 rollBtn.addEventListener('click', ()=>{
   if(!selectedRoute){ alert('Section II is not complete: select a method of acquisition.'); return; }
   if(itemSel.value===""){ alert('Section I is not complete: select an item.'); return; }
@@ -1103,6 +1128,7 @@ rollBtn.addEventListener('click', ()=>{
       if(tier==='critical' && extraPenalty>0){
         note = "Whatever friction there was, it didn't matter this time.";
       }
+      logRollToHistory(tier, val, skill);
       resolve(tier, val, note);
     }
   }, 55);
@@ -1259,6 +1285,15 @@ function applyAgentSkills(state){
 (function initSkillAutofill(){
   const code = new URLSearchParams(location.search).get('code');
   if(!code) return; // standalone visit, no Agent to pull from -- keep the manual defaults
+
+  // assets/dice-roller.js's own currentAgentCode() (used to attribute a
+  // logged roll to an Agent/Cell) reads this same key, not this page's
+  // own ?code= -- without setting it, a roll made here for Agent B while
+  // this device's last-active Agent was A would silently log under A
+  // instead. Same key stats/cloud-sync.js's setCloudCode() writes on a
+  // ?load=CODE deep link, for the same reason.
+  try { localStorage.setItem('dg_stats_cloud_code', code); } catch(e) { /* best effort */ }
+
   ['official','personal','favor','black'].forEach(id => setAutofillNote(id, 'Looking up this Agent’s character sheet…', true));
 
   const cbName = '_dgReqSkillsCb' + Date.now();
