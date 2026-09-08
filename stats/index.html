@@ -172,7 +172,15 @@
          Open Agent File so the main page opens on Import/Wizard instead of
          a wall of controls a brand-new recruit doesn't need yet. -->
     <button type="button" id="settings-cog-btn" onclick="dgSettingsPanel.open()"
-        title="Theme, Live Play, Load by Code, Export">&#9881;</button>
+        title="Theme, Live Play, Load by Code, Export">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path
+                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z">
+            </path>
+        </svg>
+    </button>
     <div id="settings-panel-backdrop" onclick="dgSettingsPanel.close()"></div>
     <div id="settings-panel">
         <button type="button" id="settings-panel-close" onclick="dgSettingsPanel.close()"
@@ -208,7 +216,13 @@
             <button type="button" id="creation-tools-unlocked-btn"
                 onclick="dgCharacterMode.toggleCreationToolsUnlock()"
                 title="Temporarily brings back the Bonus Points panel and Bond generator to fix a mistake -- turns off again next visit.">
-                &#128295; Fix a Character Creation Mistake</button>
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+                    style="vertical-align:-2px;margin-right:4px;">
+                    <path
+                        d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z">
+                    </path>
+                </svg>Fix a Character Creation Mistake</button>
         </div>
 
         <h3>Open Agent File</h3>
@@ -262,6 +276,206 @@
                 <p class="io-option-desc">Downloads a filled .xlsx spreadsheet.</p>
             </div>
         </div>
+
+        <h3>Backup &amp; Advanced Import</h3>
+        <!-- Relocated from the bottom of the main sheet -- Download/
+             Upload/Clear Sheet and the Advanced import tools used to sit
+             below the last fieldset, disconnected from every other
+             save/export control, which already live here in the
+             settings cog. -->
+                    <div id="save-share-bar" class="save-share-bar">
+                        <div class="section-buttons" id="save-share-buttons">
+                            <button type="button" id="copy-link-btn" onclick="dgSaveLoad.share()"
+                                title="Encodes your character into the URL so you can share or bookmark it.">Copy Share
+                                Link</button>
+                            <button type="button" id="clear-save-btn" onclick="dgSaveLoad.clearSave()"
+                                title="Wipes all locally saved character data.">Clear Save</button>
+                            <button type="button" id="download-sheet-btn" onclick="dgSaveLoad.downloadSheet()"
+                                title="Save your entire character sheet to a .json file. Captures all stats, skills, bonds, notes, wounds, gear, and Live Play session data. Use this after each session to back up your agent.">&#11015;
+                                Download Sheet</button>
+                            <button type="button" id="upload-sheet-btn" onclick="dgSaveLoad.uploadSheet()"
+                                title="Load a previously downloaded .json sheet file. Fully restores your agent — stats, skills, bonds, notes, wounds, gear, and session data — exactly as it was saved.">&#11014;
+                                Upload Sheet</button>
+                            <button type="button" id="clear-sheet-lp-btn" onclick="dgSaveLoad.clearSheet()"
+                                title="Permanently wipes all saved character data from this browser, including stats, skills, bonds, and session notes. Download your sheet first if you want to keep it.">Clear
+                                Sheet</button>
+                        </div>
+                        <div class="section-buttons" id="agent-file-export-bar" style="margin-top:10px;">
+                            <button type="button" id="export-agent-file-btn" onclick="dgAgentPortalExport.run()"
+                                title="Sends your Agent's name and stats to the Agent Portal as a new Agent File. Build and outfit are derived from STR and profession and quietly shape the portrait prompt there -- physical appearance still needs to be filled in on the Cover tab.">
+                                &#8594; Export to Agent File</button>
+                            <span id="agent-file-export-status"></span>
+                        </div>
+                    </div>
+
+                    <details id="advanced-options-details">
+                        <summary>Advanced — Export &amp; Import</summary>
+                        <div class="advanced-options-body">
+
+                            <!-- Export options moved to the settings cog (top-right) --
+                                 see #settings-panel above. Only Import stays here. -->
+                            <div class="export-actions-grid">
+                                <div class="export-action-group">
+                                    <div class="export-action-group-label">Import</div>
+                                    <div class="io-option-list">
+                                        <div class="io-option">
+                                            <button type="button" id="import-sheet-btn"
+                                                onclick="document.getElementById('import-sheet-file').click()"
+                                                style="display:flex;flex-direction:column;align-items:center;gap:4px;"><span
+                                                    style="font-size:2.4em;line-height:1;">⬆</span>Import from<br>Sheet
+                                                HTML</button>
+                                            <input type="file" id="import-sheet-file" accept=".html,text/html"
+                                                style="display:none"
+                                                onchange="dgSaveLoad.importFromSheet(this.files[0]); this.value=''">
+                                            <p class="io-option-desc">Loads a previously exported <strong>Printable
+                                                    Sheet .html file</strong> back into the editor. This is a perfect
+                                                round-trip &mdash; every stat, skill, bond, equipment item, and setting
+                                                is restored exactly as exported.</p>
+                                        </div>
+                                        <div class="io-option">
+                                            <button type="button" id="import-pdf-btn" onclick="importFromPDF()"
+                                                style="display:flex;flex-direction:column;align-items:center;gap:4px;"><span
+                                                    style="font-size:2.4em;line-height:1;">⬆</span>Import from<br>PDF
+                                                Sheet</button>
+                                            <p class="io-option-desc">Reads back a filled-in <strong>DD Form
+                                                    315</strong> &mdash; whether exported by this site, or a
+                                                pre-generated official Delta Green Agent PDF from a published
+                                                scenario, since both use the same fillable form. Recovers stats,
+                                                skills, biography, bonds, and gear. <strong>Limitation:</strong>
+                                                specialty skills (e.g. Foreign Language, Art) and some bond detail
+                                                cannot be precisely recovered from PDF form fields alone &mdash;
+                                                these may need manual re-entry after import.</p>
+                                        </div>
+                                        <div class="io-option">
+                                            <button type="button" id="import-sheets-btn" onclick="importFromSheets()"
+                                                style="display:flex;flex-direction:column;align-items:center;gap:4px;"><span
+                                                    style="font-size:2.4em;line-height:1;">⬆</span>Import from<br>Google
+                                                Sheet</button>
+                                            <p class="io-option-desc">Reads back a filled-in <strong>.xlsx</strong>
+                                                spreadsheet &mdash; either downloaded straight from <em>Export Google
+                                                    Sheet</em> above, or downloaded again after uploading and editing
+                                                it in Google Sheets. Recovers stats, skills (including specialties),
+                                                biography, bonds, and gear. <strong>Limitation:</strong> the
+                                                structured weapons table and SAN incident checkboxes are not
+                                                recovered &mdash; gear text still comes through, and weapon rows may
+                                                need manual re-entry after import.</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="export-action-group">
+                                    <div class="export-action-group-label">Foundry VTT</div>
+                                    <p class="description-text">Export to Foundry VTT, print your character sheet, or
+                                        generate a printable sheet from an existing Foundry .json file.</p>
+                                    <div class="section-buttons">
+                                        <button type="button" id="preview-json" onclick="populateCharacterJSON()"
+                                            title="Renders the Foundry VTT .json data for your character below — useful for a quick review before exporting.">Preview
+                                            Foundry VTT .json</button>
+                                        <button type="button" id="export-json" onclick="exportCharacterJSON()"
+                                            title="Downloads your character as a .json file ready to import directly into Foundry VTT via the Actors tab.">Export
+                                            to Foundry</button>
+                                        <button type="button" id="refresh-stats" onclick="populateCharacterSheetForm()"
+                                            title="Re-reads your stat values from the top section and updates the character sheet fields — useful if you changed your stats after filling in the sheet.">Sync
+                                            Stats → Sheet</button>
+                                    </div>
+                                    <pre id="cs-json" class="hidden-section"></pre>
+                                </div>
+
+                                <div class="export-action-group">
+                                    <div class="export-action-group-label">Print from Foundry .json</div>
+                                    <p class="description-text">Paste, drag-and-drop, or upload a Foundry VTT character
+                                        .json file.</p>
+                                    <div id="json-drop-zone" class="json-drop-zone"
+                                        ondragover="jsonDropZone.over(event)" ondragleave="jsonDropZone.leave(event)"
+                                        ondrop="jsonDropZone.drop(event)"
+                                        onclick="document.getElementById('json-file-input').click()">
+                                        <span class="json-drop-label">Drop Foundry VTT .json here or click to
+                                            browse</span>
+                                        <input type="file" id="json-file-input" accept=".json,application/json"
+                                            style="display:none" onchange="jsonDropZone.fileSelected(event)">
+                                    </div>
+                                    <textarea id="json-import-area" rows="5"
+                                        placeholder="Paste exported Foundry VTT character .json here..."></textarea>
+                                    <div class="section-buttons">
+                                        <button type="button" id="json-to-printable-button"
+                                            onclick="exportPrintableFromJSON()"
+                                            title="Generates a printable HTML character sheet directly from the pasted Foundry VTT .json — no need to fill in the form manually.">Generate
+                                            Printable Sheet</button>
+                                        <button type="button" id="json-to-editor-button"
+                                            onclick="importFoundryJSONToEditor()"
+                                            title="Loads all stats, skills, bonds, and biography from the pasted Foundry VTT .json back into the web editor for further editing.">Load
+                                            into Editor</button>
+                                    </div>
+                                </div>
+
+                                <div class="export-action-group">
+                                    <div class="export-action-group-label">Import from Kappa Black</div>
+                                    <p class="description-text">Paste, or upload, a character exported from the
+                                        <strong>Kappa Black</strong> app as <strong>.toml</strong>. Recovers stats,
+                                        skills (including specialties), biography, bonds, weapons, and gear.
+                                        <strong>Limitation:</strong> Kappa Black's export has no Sex field, so that
+                                        will need manual entry after import.</p>
+                                    <input type="file" id="kappablack-file-input" accept=".toml,text/plain"
+                                        style="display:none" onchange="kappaBlackFileSelected(event)">
+                                    <textarea id="kappablack-import-area" rows="5"
+                                        placeholder="Paste exported Kappa Black character .toml here..."></textarea>
+                                    <div class="section-buttons">
+                                        <button type="button" onclick="document.getElementById('kappablack-file-input').click()"
+                                            title="Choose a Kappa Black .toml export file from disk.">Choose .toml
+                                            File</button>
+                                        <button type="button" id="kappablack-to-editor-button"
+                                            onclick="importKappaBlackTOMLToEditor()"
+                                            title="Loads all stats, skills, bonds, and biography from the pasted Kappa Black .toml back into the web editor for further editing.">Load
+                                            into Editor</button>
+                                    </div>
+                                </div>
+
+                                <div class="export-action-group" id="lp-sheet-io-group">
+                                    <div class="export-action-group-label">Live Play Sheet <span
+                                            style="font-size:0.7em;font-weight:normal;opacity:0.7;">(Beta)</span></div>
+                                    <p class="description-text">
+                                        <strong>Live Play</strong> is a purpose-built mode designed for use at the
+                                        table, layered on top of whichever theme you're using -- not a theme of its
+                                        own.
+                                        It presents your agent's stats, skills, bonds, gear, and wounds on a single
+                                        streamlined sheet
+                                        with quick-roll buttons and a sticky tracker bar for HP, WP, and Sanity — no
+                                        scrolling required mid-session.
+                                    </p>
+                                    <p class="description-text">
+                                        To use it, build your character on any theme as normal, then switch on
+                                        <em>Live Play mode</em> from the settings cog (top right). An <em>Edit</em>
+                                        button at the top of the Live Play sheet takes you back to the full form,
+                                        same theme, any time. Your stats, skills, and equipment carry over
+                                        automatically.
+                                    </p>
+                                    <p class="description-text reminder-text"
+                                        style="white-space:normal;color:#ff3b30;animation:pulse-reminder 1.6s ease-in-out infinite;text-align:center;">
+                                        <strong>⚠ Beta feature:</strong> Because Live Play includes session-specific
+                                        data
+                                        (wounds, notes, tracker values, and free-form gear) that cannot be fully
+                                        preserved
+                                        by a share link alone, we've added JSON save files so you can keep a full
+                                        offline
+                                        backup
+                                        of your character between sessions. Use <em>Download Live Play Character</em>
+                                        after each
+                                        session and
+                                        <em>Upload Live Play Character</em> to restore it next time — nothing will be
+                                        lost.
+                                    </p>
+                                    <div class="section-buttons">
+                                        <button type="button" onclick="dgSaveLoad.downloadSheet()"
+                                            title="Downloads the full character sheet as a Live Play .json file.">&#11015;
+                                            Download Live Play Character</button>
+                                        <button type="button" onclick="dgSaveLoad.uploadSheet()"
+                                            title="Load a previously downloaded Live Play .json file.">&#11014;
+                                            Upload Live Play Character</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </details>
     </div>
     <div class="content">
         <noscript>
@@ -307,40 +521,44 @@
                 <div class="new-recruit-split">
                     <div class="new-recruit-option" id="new-recruit-import-option">
                         <h3 class="new-recruit-option-title">Already Have a Character?</h3>
-                        <p class="new-recruit-option-desc">Bring in an Agent built elsewhere — Kappa Black, Foundry
-                            VTT, an official Delta Green PDF, or a Google Sheet.</p>
+                        <p class="new-recruit-option-desc">Bring in an Agent built elsewhere — paste a Kappa Black or
+                            Foundry VTT export below, or drop in a file (PDF, Google Sheet, and more).</p>
+                        <!-- Paste is the default, primary path -- it's the fastest option
+                             for the common case (Kappa Black .toml/.json, Foundry VTT
+                             .json), and the only one that works when a phone's "Share"
+                             sheet hands over text instead of a file the browser can
+                             re-pick. Drop/browse (any format, including PDF) is one click
+                             away in the collapsed section below for everyone else. -->
+                        <div id="agent-paste-details"
+                            style="font-family:'JetBrains Mono',monospace;font-size:0.85em;text-align:center;">
+                            <textarea id="agent-paste-area" rows="5"
+                                style="width:100%;box-sizing:border-box;font-family:'JetBrains Mono',monospace;font-size:0.9em;"
+                                placeholder="Paste a Kappa Black or Foundry VTT .toml/.json export here..."></textarea>
+                            <button type="button"
+                                onclick="importAgentText(document.getElementById('agent-paste-area').value)"
+                                style="margin-top:6px;">Import Pasted Text</button>
+                        </div>
                         <!-- One-button, format-agnostic import -- drop or pick a file and
                              the page figures out whether it's a Kappa Black .toml, a
                              Foundry VTT (or this site's own) .json, an exported .html
                              sheet, a DD Form 315 .pdf, or a Google Sheet .xlsx, then
                              routes it to the matching importer. Existing format-specific
-                             buttons still live in Advanced below for pasting text or
-                             troubleshooting a file this doesn't recognize. -->
-                        <div id="agent-drop-zone" class="json-drop-zone agent-drop-zone-primary"
-                            ondragover="agentDropZone.over(event)" ondragleave="agentDropZone.leave(event)"
-                            ondrop="agentDropZone.drop(event)"
-                            onclick="document.getElementById('agent-import-auto-input').click()"
-                            title="Drop a character file here, or click to browse. Recognizes Kappa Black .toml/.json, Foundry VTT .json, this site's exported .html/.json, DD Form 315 .pdf, and the Google Sheet .xlsx template automatically.">
-                            <span class="json-drop-label" id="agent-drop-label">&#8593; Import Agent
-                                <br><span style="opacity:.7;">drop a file here, or click to browse — any format</span></span>
-                            <input type="file" id="agent-import-auto-input"
-                                accept=".toml,.json,.pdf,.xlsx,.html,.htm,application/json,application/pdf,text/html,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                                style="display:none" onchange="agentDropZone.fileSelected(event)">
-                        </div>
-                        <!-- Paste fallback for the drop zone above -- Kappa Black's
-                             mobile export shows the character as on-screen text to
-                             copy, not a file a phone can save and re-pick from a file
-                             input, so dropping/browsing is often not an option there. -->
-                        <details id="agent-paste-details"
-                            style="font-family:'JetBrains Mono',monospace;font-size:0.85em;text-align:center;">
-                            <summary style="cursor:pointer;opacity:.75;">Can't drop a file? Paste text instead</summary>
-                            <div style="margin-top:8px;">
-                                <textarea id="agent-paste-area" rows="5"
-                                    style="width:100%;box-sizing:border-box;font-family:'JetBrains Mono',monospace;font-size:0.9em;"
-                                    placeholder="Paste a Kappa Black .toml or .json export here..."></textarea>
-                                <button type="button"
-                                    onclick="importAgentText(document.getElementById('agent-paste-area').value)"
-                                    style="margin-top:6px;">Import Pasted Text</button>
+                             buttons still live in Advanced below for troubleshooting a
+                             file this doesn't recognize. -->
+                        <details id="agent-drop-details" style="margin-top:10px;">
+                            <summary style="cursor:pointer;opacity:.75;">Or drop/upload a file instead (PDF, Sheet,
+                                and more)</summary>
+                            <div id="agent-drop-zone" class="json-drop-zone agent-drop-zone-primary"
+                                style="margin-top:8px;" ondragover="agentDropZone.over(event)"
+                                ondragleave="agentDropZone.leave(event)" ondrop="agentDropZone.drop(event)"
+                                onclick="document.getElementById('agent-import-auto-input').click()"
+                                title="Drop a character file here, or click to browse. Recognizes Kappa Black .toml/.json, Foundry VTT .json, this site's exported .html/.json, DD Form 315 .pdf, and the Google Sheet .xlsx template automatically.">
+                                <span class="json-drop-label" id="agent-drop-label">&#8593; Import Agent
+                                    <br><span style="opacity:.7;">drop a file here, or click to browse — any
+                                        format</span></span>
+                                <input type="file" id="agent-import-auto-input"
+                                    accept=".toml,.json,.pdf,.xlsx,.html,.htm,application/json,application/pdf,text/html,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                    style="display:none" onchange="agentDropZone.fileSelected(event)">
                             </div>
                         </details>
                     </div>
@@ -762,199 +980,6 @@
 }]</textarea>
                     </fieldset>
 
-                    <div id="save-share-bar" class="save-share-bar">
-                        <div class="section-buttons" id="save-share-buttons">
-                            <button type="button" id="copy-link-btn" onclick="dgSaveLoad.share()"
-                                title="Encodes your character into the URL so you can share or bookmark it.">Copy Share
-                                Link</button>
-                            <button type="button" id="clear-save-btn" onclick="dgSaveLoad.clearSave()"
-                                title="Wipes all locally saved character data.">Clear Save</button>
-                            <button type="button" id="download-sheet-btn" onclick="dgSaveLoad.downloadSheet()"
-                                title="Save your entire character sheet to a .json file. Captures all stats, skills, bonds, notes, wounds, gear, and Live Play session data. Use this after each session to back up your agent.">&#11015;
-                                Download Sheet</button>
-                            <button type="button" id="upload-sheet-btn" onclick="dgSaveLoad.uploadSheet()"
-                                title="Load a previously downloaded .json sheet file. Fully restores your agent — stats, skills, bonds, notes, wounds, gear, and session data — exactly as it was saved.">&#11014;
-                                Upload Sheet</button>
-                            <button type="button" id="clear-sheet-lp-btn" onclick="dgSaveLoad.clearSheet()"
-                                title="Permanently wipes all saved character data from this browser, including stats, skills, bonds, and session notes. Download your sheet first if you want to keep it.">Clear
-                                Sheet</button>
-                        </div>
-                        <div class="section-buttons" id="agent-file-export-bar" style="margin-top:10px;">
-                            <button type="button" id="export-agent-file-btn" onclick="dgAgentPortalExport.run()"
-                                title="Sends your Agent's name and stats to the Agent Portal as a new Agent File. Build and outfit are derived from STR and profession and quietly shape the portrait prompt there -- physical appearance still needs to be filled in on the Cover tab.">
-                                &#8594; Export to Agent File</button>
-                            <span id="agent-file-export-status"></span>
-                        </div>
-                    </div>
-
-                    <details id="advanced-options-details">
-                        <summary>Advanced — Export &amp; Import</summary>
-                        <div class="advanced-options-body">
-
-                            <!-- Export options moved to the settings cog (top-right) --
-                                 see #settings-panel above. Only Import stays here. -->
-                            <div class="export-actions-grid">
-                                <div class="export-action-group">
-                                    <div class="export-action-group-label">Import</div>
-                                    <div class="io-option-list">
-                                        <div class="io-option">
-                                            <button type="button" id="import-sheet-btn"
-                                                onclick="document.getElementById('import-sheet-file').click()"
-                                                style="display:flex;flex-direction:column;align-items:center;gap:4px;"><span
-                                                    style="font-size:2.4em;line-height:1;">⬆</span>Import from<br>Sheet
-                                                HTML</button>
-                                            <input type="file" id="import-sheet-file" accept=".html,text/html"
-                                                style="display:none"
-                                                onchange="dgSaveLoad.importFromSheet(this.files[0]); this.value=''">
-                                            <p class="io-option-desc">Loads a previously exported <strong>Printable
-                                                    Sheet .html file</strong> back into the editor. This is a perfect
-                                                round-trip &mdash; every stat, skill, bond, equipment item, and setting
-                                                is restored exactly as exported.</p>
-                                        </div>
-                                        <div class="io-option">
-                                            <button type="button" id="import-pdf-btn" onclick="importFromPDF()"
-                                                style="display:flex;flex-direction:column;align-items:center;gap:4px;"><span
-                                                    style="font-size:2.4em;line-height:1;">⬆</span>Import from<br>PDF
-                                                Sheet</button>
-                                            <p class="io-option-desc">Reads back a filled-in <strong>DD Form
-                                                    315</strong> &mdash; whether exported by this site, or a
-                                                pre-generated official Delta Green Agent PDF from a published
-                                                scenario, since both use the same fillable form. Recovers stats,
-                                                skills, biography, bonds, and gear. <strong>Limitation:</strong>
-                                                specialty skills (e.g. Foreign Language, Art) and some bond detail
-                                                cannot be precisely recovered from PDF form fields alone &mdash;
-                                                these may need manual re-entry after import.</p>
-                                        </div>
-                                        <div class="io-option">
-                                            <button type="button" id="import-sheets-btn" onclick="importFromSheets()"
-                                                style="display:flex;flex-direction:column;align-items:center;gap:4px;"><span
-                                                    style="font-size:2.4em;line-height:1;">⬆</span>Import from<br>Google
-                                                Sheet</button>
-                                            <p class="io-option-desc">Reads back a filled-in <strong>.xlsx</strong>
-                                                spreadsheet &mdash; either downloaded straight from <em>Export Google
-                                                    Sheet</em> above, or downloaded again after uploading and editing
-                                                it in Google Sheets. Recovers stats, skills (including specialties),
-                                                biography, bonds, and gear. <strong>Limitation:</strong> the
-                                                structured weapons table and SAN incident checkboxes are not
-                                                recovered &mdash; gear text still comes through, and weapon rows may
-                                                need manual re-entry after import.</p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="export-action-group">
-                                    <div class="export-action-group-label">Foundry VTT</div>
-                                    <p class="description-text">Export to Foundry VTT, print your character sheet, or
-                                        generate a printable sheet from an existing Foundry .json file.</p>
-                                    <div class="section-buttons">
-                                        <button type="button" id="preview-json" onclick="populateCharacterJSON()"
-                                            title="Renders the Foundry VTT .json data for your character below — useful for a quick review before exporting.">Preview
-                                            Foundry VTT .json</button>
-                                        <button type="button" id="export-json" onclick="exportCharacterJSON()"
-                                            title="Downloads your character as a .json file ready to import directly into Foundry VTT via the Actors tab.">Export
-                                            to Foundry</button>
-                                        <button type="button" id="refresh-stats" onclick="populateCharacterSheetForm()"
-                                            title="Re-reads your stat values from the top section and updates the character sheet fields — useful if you changed your stats after filling in the sheet.">Sync
-                                            Stats → Sheet</button>
-                                    </div>
-                                    <pre id="cs-json" class="hidden-section"></pre>
-                                </div>
-
-                                <div class="export-action-group">
-                                    <div class="export-action-group-label">Print from Foundry .json</div>
-                                    <p class="description-text">Paste, drag-and-drop, or upload a Foundry VTT character
-                                        .json file.</p>
-                                    <div id="json-drop-zone" class="json-drop-zone"
-                                        ondragover="jsonDropZone.over(event)" ondragleave="jsonDropZone.leave(event)"
-                                        ondrop="jsonDropZone.drop(event)"
-                                        onclick="document.getElementById('json-file-input').click()">
-                                        <span class="json-drop-label">Drop Foundry VTT .json here or click to
-                                            browse</span>
-                                        <input type="file" id="json-file-input" accept=".json,application/json"
-                                            style="display:none" onchange="jsonDropZone.fileSelected(event)">
-                                    </div>
-                                    <textarea id="json-import-area" rows="5"
-                                        placeholder="Paste exported Foundry VTT character .json here..."></textarea>
-                                    <div class="section-buttons">
-                                        <button type="button" id="json-to-printable-button"
-                                            onclick="exportPrintableFromJSON()"
-                                            title="Generates a printable HTML character sheet directly from the pasted Foundry VTT .json — no need to fill in the form manually.">Generate
-                                            Printable Sheet</button>
-                                        <button type="button" id="json-to-editor-button"
-                                            onclick="importFoundryJSONToEditor()"
-                                            title="Loads all stats, skills, bonds, and biography from the pasted Foundry VTT .json back into the web editor for further editing.">Load
-                                            into Editor</button>
-                                    </div>
-                                </div>
-
-                                <div class="export-action-group">
-                                    <div class="export-action-group-label">Import from Kappa Black</div>
-                                    <p class="description-text">Paste, or upload, a character exported from the
-                                        <strong>Kappa Black</strong> app as <strong>.toml</strong>. Recovers stats,
-                                        skills (including specialties), biography, bonds, weapons, and gear.
-                                        <strong>Limitation:</strong> Kappa Black's export has no Sex field, so that
-                                        will need manual entry after import.</p>
-                                    <input type="file" id="kappablack-file-input" accept=".toml,text/plain"
-                                        style="display:none" onchange="kappaBlackFileSelected(event)">
-                                    <textarea id="kappablack-import-area" rows="5"
-                                        placeholder="Paste exported Kappa Black character .toml here..."></textarea>
-                                    <div class="section-buttons">
-                                        <button type="button" onclick="document.getElementById('kappablack-file-input').click()"
-                                            title="Choose a Kappa Black .toml export file from disk.">Choose .toml
-                                            File</button>
-                                        <button type="button" id="kappablack-to-editor-button"
-                                            onclick="importKappaBlackTOMLToEditor()"
-                                            title="Loads all stats, skills, bonds, and biography from the pasted Kappa Black .toml back into the web editor for further editing.">Load
-                                            into Editor</button>
-                                    </div>
-                                </div>
-
-                                <div class="export-action-group" id="lp-sheet-io-group">
-                                    <div class="export-action-group-label">Live Play Sheet <span
-                                            style="font-size:0.7em;font-weight:normal;opacity:0.7;">(Beta)</span></div>
-                                    <p class="description-text">
-                                        <strong>Live Play</strong> is a purpose-built mode designed for use at the
-                                        table, layered on top of whichever theme you're using -- not a theme of its
-                                        own.
-                                        It presents your agent's stats, skills, bonds, gear, and wounds on a single
-                                        streamlined sheet
-                                        with quick-roll buttons and a sticky tracker bar for HP, WP, and Sanity — no
-                                        scrolling required mid-session.
-                                    </p>
-                                    <p class="description-text">
-                                        To use it, build your character on any theme as normal, then switch on
-                                        <em>Live Play mode</em> from the settings cog (top right). An <em>Edit</em>
-                                        button at the top of the Live Play sheet takes you back to the full form,
-                                        same theme, any time. Your stats, skills, and equipment carry over
-                                        automatically.
-                                    </p>
-                                    <p class="description-text reminder-text"
-                                        style="white-space:normal;color:#ff3b30;animation:pulse-reminder 1.6s ease-in-out infinite;text-align:center;">
-                                        <strong>⚠ Beta feature:</strong> Because Live Play includes session-specific
-                                        data
-                                        (wounds, notes, tracker values, and free-form gear) that cannot be fully
-                                        preserved
-                                        by a share link alone, we've added JSON save files so you can keep a full
-                                        offline
-                                        backup
-                                        of your character between sessions. Use <em>Download Live Play Character</em>
-                                        after each
-                                        session and
-                                        <em>Upload Live Play Character</em> to restore it next time — nothing will be
-                                        lost.
-                                    </p>
-                                    <div class="section-buttons">
-                                        <button type="button" onclick="dgSaveLoad.downloadSheet()"
-                                            title="Downloads the full character sheet as a Live Play .json file.">&#11015;
-                                            Download Live Play Character</button>
-                                        <button type="button" onclick="dgSaveLoad.uploadSheet()"
-                                            title="Load a previously downloaded Live Play .json file.">&#11014;
-                                            Upload Live Play Character</button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </details>
                 </div>
             </div>
         </main>
