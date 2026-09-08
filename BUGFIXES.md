@@ -1904,3 +1904,23 @@ ink rendered as near-invisible dark-on-dark. Fixed by giving
 `#agent-paste-details` its own scoped cream-paper card background
 (`.theme-field-notes #agent-paste-details`) so the existing ink color
 actually has paper to sit on.
+
+**Live report: New Recruit's paste box rendered as a solid color-
+filled block in the settings drawer for an already-played (Live Play,
+creation-committed) Agent -- X-Files solid green, Son of Sam solid
+red -- effectively unusable and alarming enough to read as "the page
+is broken."** Root cause: `#settings-panel` has its own long-standing
+rule set that forces plain neutral drawer colors onto `button`/
+`select`/`input[type="text"]` specifically to override each theme's
+(and Live Play's) CSS custom-property reskinning, which is otherwise
+correct for controls sitting on the theme's own paper background but
+unreadable/wrong on this always-dark drawer -- see that rule's own
+comment in `styles.css`. `textarea` was never added to that list,
+because until this same round the New Recruit paste box was a
+collapsed `<details>` nobody actually opened from inside the drawer.
+Promoting it to an always-visible primary import path (see above)
+made the gap immediate: while Live Play is on, `.live-play`'s
+`--input-bg` points at `--lp-tracker-value`, which each theme
+redefines to its own bright accent -- exactly the color the box was
+filling with. Added `#settings-panel textarea` (and its placeholder)
+alongside the existing button/select/input rules.
