@@ -1643,12 +1643,11 @@ body.dg-embedded #dr-panel {
    match its collapsed pill -- same dark palette, same shape. Desktop-
    hidden by default; only shown under the 900px threshold (see Split
    View's own comment above for why it's 900, not 768). ── */
-/* ID selector, not just .dg-notes-widget-btn -- .theme-mobile button
-   (a class+tag combo, higher specificity than a lone class) repaints
-   every <button> as a big chunky 44px-tall touch target with its own
-   font/padding/border, which otherwise silently wins over this rule
-   property-by-property regardless of source order. An ID beats that
-   outright without needing !important on each property. */
+/* ID selector, not just a class -- guards against any theme's own
+   `button` element rule (class+tag, higher specificity than a lone
+   class) repainting this with its own font/padding/border regardless
+   of source order. An ID beats that outright without needing
+   !important on each property. */
 #notes-widget-btn {
     display: none;
     position: fixed;
@@ -5850,21 +5849,30 @@ input[type="checkbox"]:checked+label {
    same thing -- they are not, here or in Son of Sam below. --lp-ink is
    now white to match; green is reserved for what Edit mode actually
    uses it for (borders, legends, accents), same treatment as Son of
-   Sam. An amber "system alert" tone marks the rarer Advancement action
-   apart from the routine green accent. No paper grain -- a terminal
-   doesn't have texture. Readonly text (--lp-ink-soft) stays a clearly
-   dim (not black) tone -- "dim means readonly" only works readably
-   when dim doesn't mean unreadable. */
+   Sam. Same logic applies to the page/paper background: an earlier
+   version tinted it dark green, which read as "a green filter over
+   the whole thing" rather than a real terminal -- real Edit mode's
+   page background is flat black with no color wash at all, so
+   --lp-page-bg/--lp-page-bg-soft/--lp-paper-bg/--lp-paper-white are
+   now all black (or a near-black focus-state lift), and
+   --lp-subheader-bg is a neutral dark gray instead of a green-tinted
+   one, matching the plain #1a1a1a drawer chrome used elsewhere on this
+   page rather than inventing a themed tint with no Edit-mode
+   equivalent. An amber "system alert" tone marks the rarer Advancement
+   action apart from the routine green accent. No paper grain -- a
+   terminal doesn't have texture. Readonly text (--lp-ink-soft) stays a
+   clearly dim (not black) tone -- "dim means readonly" only works
+   readably when dim doesn't mean unreadable. */
 .theme-xfiles.live-play {
     --lp-page-bg: #000000;
-    --lp-page-bg-soft: #0a2f14;
-    --lp-paper-bg: #0a2f14;
-    --lp-paper-white: #123d1c;
+    --lp-page-bg-soft: #000000;
+    --lp-paper-bg: #000000;
+    --lp-paper-white: #0a0a0a;
     --lp-ink: #ffffff;
     --lp-ink-soft: #a8c0a8;
     --lp-header-bg: #000000;
     --lp-header-text: #00e62e;
-    --lp-subheader-bg: #123018;
+    --lp-subheader-bg: #1a1a1a;
     --lp-accent: #39ff6a;
     --lp-accent-hover: #2ecc55;
     --lp-accent-soft: #0d3d1a;
@@ -5907,17 +5915,26 @@ input[type="checkbox"]:checked+label {
    page (#ff5555/#ff2222) so a themed accent button is never visually
    confused with a real HP/SAN alert. Readonly text (--lp-ink-soft)
    stays a clearly dim (not black) gray -- "dim means readonly" only
-   works readably when dim doesn't mean unreadable. */
+   works readably when dim doesn't mean unreadable. Same "accent color
+   is not the real color" mistake also applied to the page/paper
+   background: an earlier version tinted it dark red, reading as "a red
+   filter over the whole thing" -- real Edit mode's page background is
+   flat black with no color wash at all, so
+   --lp-page-bg/--lp-page-bg-soft/--lp-paper-bg/--lp-paper-white are now
+   all black (or a near-black focus-state lift), and --lp-subheader-bg
+   is a neutral dark gray instead of a red-tinted one, matching the
+   plain #1a1a1a drawer chrome used elsewhere on this page rather than
+   inventing a themed tint with no Edit-mode equivalent. */
 .theme-son-of-sam.live-play {
     --lp-page-bg: #000000;
-    --lp-page-bg-soft: #2a0a0a;
-    --lp-paper-bg: #2a0a0a;
-    --lp-paper-white: #3a1010;
+    --lp-page-bg-soft: #000000;
+    --lp-paper-bg: #000000;
+    --lp-paper-white: #0a0a0a;
     --lp-ink: #f0f0f0;
     --lp-ink-soft: #a89a9a;
     --lp-header-bg: #000000;
     --lp-header-text: #ff3333;
-    --lp-subheader-bg: #3a1010;
+    --lp-subheader-bg: #1a1a1a;
     --lp-accent: #e60000;
     --lp-accent-hover: #a80000;
     --lp-accent-soft: #3a0808;
@@ -6726,7 +6743,7 @@ input[type="checkbox"]:checked+label {
     border-collapse: collapse;
     table-layout: fixed;
     /* lock column widths for uniform cells */
-    font-size: 13pt;
+    font-size: 11pt;
 }
 
 /* ── Skill cell classes (replaces per-row inline styles) ─────────── */
@@ -6743,7 +6760,7 @@ input[type="checkbox"]:checked+label {
     text-overflow: ellipsis;
     white-space: nowrap;
     padding: 3px 6px;
-    font-size: 13pt;
+    font-size: 11pt;
     font-family: var(--lp-font-mono);
 }
 
@@ -6760,7 +6777,7 @@ input[type="checkbox"]:checked+label {
     background: transparent;
     border: none;
     font-family: var(--lp-font-mono);
-    font-size: 13pt;
+    font-size: 11pt;
     padding: 0;
     box-sizing: border-box;
     color: inherit;
@@ -6798,7 +6815,7 @@ input[type="checkbox"]:checked+label {
     width: 100%;
     min-width: 36px;
     text-align: center;
-    font-size: 13pt !important;
+    font-size: 11pt !important;
     font-family: var(--lp-font-mono) !important;
     color: var(--lp-ink);
     padding: 0;
@@ -7076,595 +7093,6 @@ input[type="checkbox"]:checked+label {
     display: none;
 }
 
-/* ============================================================================
-   MOBILE THEME — Field Notes aesthetic, touch-optimised single-column layout
-   Auto-applied on page load when screen width ≤ 768px (user can switch away).
-   ============================================================================ */
-
-.theme-mobile {
-    --primary-color: #1c1608;
-    --bg-color: #f4eed8;
-    --text-color: #1c1608;
-    --input-bg: transparent;
-    --input-border: rgba(28, 22, 8, 0.5);
-    --spacing-xs: 6px;
-    --spacing-sm: 10px;
-    --spacing-md: 14px;
-    --spacing-lg: 20px;
-    --spacing-xl: 28px;
-    --spacing-2xl: 36px;
-    --radius-sm: 0px;
-    --radius-md: 0px;
-    background-color: #f4eed8;
-    /* Ruled-paper lines */
-    background-image: linear-gradient(rgba(80, 120, 200, 0.12) 1px, transparent 1px);
-    background-size: 100% 32px;
-    color: #1c1608;
-    font-family: 'Special Elite', monospace;
-    font-weight: 400;
-    font-size: 15px;
-}
-
-/* Hard right-angles like field-notes -- same exclusions as that rule
-   (and the Son of Sam one above it) for the same reason: #dg-radio's
-   round dial, #settings-cog-btn's circular gear, #settings-panel,
-   #dg-toast, and #dg-confirm-backdrop are theme-agnostic overlay
-   widgets that were getting squared off here too. */
-.theme-mobile *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn, #split-view-toggle-btn),
-.theme-mobile *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn, #split-view-toggle-btn)::before,
-.theme-mobile *:not(#dg-radio, #dg-radio *, #settings-cog-btn, #settings-panel, #settings-panel *, #dg-toast, #dg-confirm-backdrop, #dg-confirm-backdrop *, #notes-widget-btn, #split-view-toggle-btn)::after {
-    border-radius: 0 !important;
-    font-weight: 400;
-}
-
-/* ── Page title ─────────────────────────────────────────────────────── */
-.theme-mobile .page-title {
-    color: #1c1608;
-    font-family: 'Bebas Neue', 'Barlow Condensed', 'Arial Narrow', sans-serif;
-    font-size: 2.2rem;
-    font-weight: 400;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    text-shadow: none;
-    -webkit-text-fill-color: #1c1608;
-    border-bottom: 3px solid #1c1608;
-    text-align: center;
-    width: 100%;
-    margin-bottom: var(--spacing-md);
-    padding-bottom: 8px;
-}
-
-.theme-mobile .blinking-cursor {
-    display: none;
-}
-
-.theme-mobile .site-intro {
-    color: #1c1608;
-    font-family: 'Special Elite', monospace;
-    font-size: 0.75rem;
-    text-align: center;
-    padding: 0;
-    margin-bottom: var(--spacing-md);
-    opacity: 0.75;
-}
-
-.theme-mobile .site-intro strong {
-    color: #1c1608;
-    -webkit-text-fill-color: #1c1608;
-}
-
-/* ── STATISTICS section ─────────────────────────────────────────────── */
-.theme-mobile #stats-buy-section {
-    background-color: #f4eed8;
-    background-image:
-        linear-gradient(rgba(80, 120, 200, 0.12) 1px, transparent 1px);
-    background-size: 100% 32px;
-    border: 2px solid #1c1608;
-    padding: 16px 12px 12px;
-    width: 100%;
-    box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.25);
-}
-
-.theme-mobile #stats-buy-section+.button-container {
-    --primary-color: #1c1608;
-}
-
-/* Stat cards: 2-column on mobile, tight and minimal */
-.theme-mobile #stats {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 4px;
-}
-
-.theme-mobile #stats .stat-container {
-    background-color: #ece1c4;
-    border: 1px solid rgba(28, 22, 8, 0.35);
-    padding: 4px 6px;
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    align-items: center;
-    gap: 4px;
-}
-
-.theme-mobile #stats .stat-container .stat-label {
-    font-family: 'Bebas Neue', 'Barlow Condensed', sans-serif;
-    font-size: 0.95rem;
-    color: #1c1608;
-    text-align: left;
-    min-width: unset;
-}
-
-.theme-mobile #stats .stat-container .stat-value {
-    font-family: 'Special Elite', monospace;
-    font-size: 1.1rem;
-    color: #1c1608;
-    min-width: unset;
-    text-align: center;
-}
-
-.theme-mobile #stats .stat-container .x5-value {
-    font-size: 0.7rem;
-    color: rgba(28, 22, 8, 0.55);
-    text-align: right;
-}
-
-.theme-mobile #stats .stat-container .descriptor {
-    display: none;
-}
-
-/* Adjust/increment buttons: touch-friendly but compact */
-.theme-mobile .adjust-button,
-.theme-mobile .stat-dec-btn,
-.theme-mobile .stat-inc-btn {
-    min-width: 36px;
-    min-height: 36px;
-    font-size: 1rem;
-    padding: 2px;
-}
-
-/* ── Fieldsets ──────────────────────────────────────────────────────── */
-.theme-mobile #cs-biography-fieldset,
-.theme-mobile .panel-skills,
-.theme-mobile .panel-bonus-skills,
-.theme-mobile #cs-bonds-fieldset,
-.theme-mobile #eq-picker-fieldset {
-    background-color: #f4eed8;
-    background-image: linear-gradient(rgba(80, 120, 200, 0.12) 1px, transparent 1px);
-    background-size: 100% 32px;
-    border: 2px solid #1c1608;
-    padding: 16px 12px 12px;
-    box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.25);
-    margin-bottom: var(--spacing-md);
-}
-
-.theme-mobile #cs-biography-fieldset>legend,
-.theme-mobile .panel-skills>legend,
-.theme-mobile .panel-bonus-skills>legend,
-.theme-mobile #cs-bonds-fieldset>legend,
-.theme-mobile #eq-picker-fieldset>legend {
-    font-family: 'Bebas Neue', 'Barlow Condensed', sans-serif;
-    font-size: 1.1rem;
-    letter-spacing: 0.08em;
-    background: #1c1608;
-    color: #f4eed8;
-    padding: 2px 10px;
-}
-
-/* ── STATISTICS heading ─────────────────────────────────────────────── */
-.theme-mobile .stats-section h2 {
-    font-family: 'Bebas Neue', 'Barlow Condensed', sans-serif;
-    font-size: 1.2rem;
-    font-weight: 400;
-    color: #1c1608;
-    letter-spacing: 0.08em;
-    text-align: center;
-    -webkit-text-fill-color: #1c1608;
-}
-
-/* ── Inputs ─────────────────────────────────────────────────────────── */
-.theme-mobile input[type="text"],
-.theme-mobile input[type="number"],
-.theme-mobile textarea {
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid rgba(28, 22, 8, 0.5);
-    color: #1c1608;
-    font-family: 'Special Elite', monospace;
-    font-size: 1rem;
-    box-shadow: none;
-    padding: 4px 2px;
-    min-height: 40px;
-    width: 100%;
-}
-
-.theme-mobile input[type="text"]:focus,
-.theme-mobile input[type="number"]:focus,
-.theme-mobile textarea:focus {
-    outline: none;
-    border-bottom-color: #1c1608;
-    background: rgba(80, 120, 200, 0.06);
-}
-
-/* ── Skills: single column on mobile ───────────────────────────────── */
-.theme-mobile #cs-skills {
-    grid-template-columns: 1fr !important;
-    gap: 2px 0;
-}
-
-/* Override the inline gridColumn/gridRow set by JS — force every pair into column 1 */
-.theme-mobile #cs-skills .cs-skill-pair {
-    grid-column: 1 !important;
-    grid-row: auto !important;
-}
-
-.theme-mobile .cs-skill-pair {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    border-bottom: 1px solid rgba(28, 22, 8, 0.12);
-    padding: 3px 0;
-}
-
-.theme-mobile .cs-skill-value-wrap {
-    background: transparent;
-    border: 1.5px solid rgba(28, 22, 8, 0.45);
-    min-width: 52px;
-}
-
-.theme-mobile .cs-skill-pct {
-    color: rgba(28, 22, 8, 0.55);
-    font-size: 0.7rem;
-}
-
-.theme-mobile #cs-skills .cs-skill-input,
-.theme-mobile #cs-specialty-skills .cs-skill-input,
-.theme-mobile .cs-skill-input {
-    font-family: 'Special Elite', monospace;
-    color: #1c1608;
-    background: transparent;
-    border: none;
-    font-size: 1rem;
-    text-align: center;
-    width: 3ch;
-}
-
-.theme-mobile #cs-skills .cs-skill-name,
-.theme-mobile #cs-specialty-skills .cs-skill-name,
-.theme-mobile .cs-skill-name {
-    font-family: 'Special Elite', monospace;
-    font-size: 0.85rem;
-    color: #1c1608;
-    letter-spacing: 0.02em;
-}
-
-/* ── Specialty skills: single column on mobile ──────────────────────── */
-.theme-mobile #cs-specialty-skills {
-    grid-template-columns: 1fr;
-    gap: var(--spacing-xs);
-}
-
-.theme-mobile .specialty-skill-row {
-    grid-template-columns: 1fr auto;
-    min-width: 0;
-    overflow: hidden;
-}
-
-.theme-mobile .specialty-controls {
-    flex-wrap: wrap;
-    min-width: 0;
-}
-
-.theme-mobile .specialty-skill-name {
-    white-space: normal;
-    min-width: 0;
-}
-
-/* ── Select dropdowns ───────────────────────────────────────────────── */
-.theme-mobile select {
-    background: #ece1c4;
-    color: #1c1608;
-    border: 1.5px solid rgba(28, 22, 8, 0.5);
-    font-family: 'Special Elite', monospace;
-    font-size: 0.9rem;
-    padding: 6px 8px;
-    min-height: 40px;
-}
-
-.theme-mobile select option {
-    background: #f4eed8;
-    color: #1c1608;
-}
-
-/* ── Buttons: full-width, large touch targets ───────────────────────── */
-.theme-mobile button,
-.theme-mobile .adjust-button {
-    background: #1c1608;
-    color: #f4eed8;
-    border: 2px solid #1c1608;
-    font-family: 'Bebas Neue', 'Barlow Condensed', sans-serif;
-    font-size: 1rem;
-    letter-spacing: 0.06em;
-    padding: 10px 14px;
-    min-height: 44px;
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s;
-}
-
-.theme-mobile button:hover,
-.theme-mobile .adjust-button:hover {
-    background: #f4eed8;
-    color: #1c1608;
-}
-
-.theme-mobile button:active,
-.theme-mobile .adjust-button:active {
-    opacity: 0.75;
-}
-
-.theme-mobile .button-container {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-    margin-top: var(--spacing-lg);
-    margin-bottom: var(--spacing-lg);
-}
-
-.theme-mobile .button-container button {
-    max-width: 100%;
-    width: 100%;
-}
-
-/* ── Bonds: single-column stacked layout ───────────────────────────── */
-.theme-mobile .bonds-layout {
-    grid-template-columns: 1fr;
-}
-
-.theme-mobile .bonds-right {
-    border: 1.5px solid rgba(28, 22, 8, 0.4);
-    padding: var(--spacing-sm);
-    min-height: unset;
-}
-
-/* ── Bonus skill dropdowns: single column ───────────────────────────── */
-.theme-mobile #bonus-dropdowns {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto;
-    grid-auto-flow: row;
-    justify-items: stretch;
-    text-align: left;
-}
-
-.theme-mobile #bonus-dropdowns label {
-    align-items: flex-start !important;
-}
-
-/* ── Equipment panels: single column ───────────────────────────────── */
-.theme-mobile .eq-panels {
-    grid-template-columns: 1fr;
-}
-
-/* Allow text to wrap — base rules use white-space:nowrap which overflows */
-.theme-mobile .eq-item-name,
-.theme-mobile .eq-item-meta,
-.theme-mobile .eq-card-name,
-.theme-mobile .eq-card-stats {
-    white-space: normal;
-    overflow: visible;
-    text-overflow: clip;
-}
-
-/* Loadout cards: full-width stack on mobile */
-.theme-mobile .eq-loadout-card {
-    flex: 1 1 100%;
-    min-width: 0;
-}
-
-/* Scrollable catalog: taller on mobile so less scrolling needed */
-.theme-mobile .eq-scrolllist {
-    max-height: 50vh;
-}
-
-/* Search + filter row: stack vertically */
-.theme-mobile .eq-search-row {
-    flex-direction: column;
-    gap: 6px;
-}
-
-.theme-mobile .eq-search-input,
-.theme-mobile .eq-cat-select {
-    width: 100%;
-    box-sizing: border-box;
-}
-
-/* ── Bond entries ──────────────────────────────────────────────────── */
-.theme-mobile .bond-entry {
-    border-bottom: 1.5px solid rgba(28, 22, 8, 0.3);
-    padding: var(--spacing-sm) 0;
-    width: 100%;
-    box-sizing: border-box;
-    overflow: hidden;
-}
-
-/* Override inline flex rows so they wrap on narrow screens */
-.theme-mobile .bond-entry>div[style] {
-    flex-wrap: wrap !important;
-}
-
-/* Name row: input fills width, remove button shrinks */
-.theme-mobile .bond-entry>div:first-child {
-    display: flex;
-    gap: 6px;
-    margin-bottom: 6px;
-    align-items: flex-start;
-}
-
-.theme-mobile .bond-entry>div:first-child .bond-entry-field {
-    flex: 1 1 0;
-    min-width: 0;
-}
-
-.theme-mobile .bond-entry>div:first-child .bond-remove-button {
-    flex: 0 0 auto;
-    font-size: 0.75rem;
-    padding: 6px 8px;
-    min-height: 36px;
-}
-
-/* Description textarea: auto-height, fills width */
-.theme-mobile .bond-entry textarea.bond-entry-field {
-    height: auto !important;
-    min-height: 60px;
-    field-sizing: content;
-    width: 100% !important;
-    resize: none;
-    overflow-y: hidden;
-    box-sizing: border-box;
-}
-
-/* Relationship + score row: stack vertically */
-.theme-mobile .bond-entry>div:last-child {
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 6px;
-}
-
-.theme-mobile .bond-entry>div:last-child>div {
-    flex: 1 1 100% !important;
-    width: 100%;
-}
-
-.theme-mobile .bond-entry input,
-.theme-mobile .bond-entry textarea,
-.theme-mobile .bond-entry-field {
-    font-family: 'Special Elite', monospace;
-    color: #1c1608;
-    font-size: 1rem;
-    width: 100%;
-    box-sizing: border-box;
-}
-
-/* ── Theme selector ─────────────────────────────────────────────────── */
-.theme-mobile #theme-selector {
-    border-color: #1c1608;
-    color: #1c1608;
-}
-
-/* ── Save/share bar ─────────────────────────────────────────────────── */
-.theme-mobile .save-share-bar {
-    background: rgba(28, 22, 8, 0.06);
-    border: 1.5px solid rgba(28, 22, 8, 0.4);
-}
-
-/* ── Footer links ───────────────────────────────────────────────────── */
-.theme-mobile .github-link-container a,
-.theme-mobile .github-link-container svg {
-    color: #1c1608;
-    stroke: #1c1608;
-}
-
-/* ── JSON / Advanced options: keep visible but collapsed ───────────── */
-.theme-mobile #cs-json {
-    background: rgba(28, 22, 8, 0.04);
-    border: 1.5px solid rgba(28, 22, 8, 0.3);
-}
-
-/* Note: no ".theme-mobile #lp-tracker-bar/#lp-sheet { display:none }" rule
-   here (deliberately removed) -- it was harmless defensive dead code back
-   when Live Play WAS its own theme ('field-doc'), mutually exclusive with
-   Mobile, but now that Live Play is an orthogonal mode (.live-play class,
-   see setLivePlay() in scripts.js) that can layer on ANY theme including
-   Mobile, an equal-specificity !important rule here would win the
-   cascade tie against .live-play's own !important rule by source order
-   and silently break Live Play whenever the Mobile theme is active --
-   which happens automatically on narrow viewports. .lp-only's own
-   default `display:none !important` (unscoped, applies to every theme
-   until .live-play overrides it) already covers "hidden when not in
-   Live Play" without needing a per-theme copy.
-
-   ── Hide canvas-heavy decoration ───────────────────────────────────── */
-.theme-mobile #bond-pyramid-canvas,
-.theme-mobile #sos-bond-sigil,
-.theme-mobile #sos-sigil {
-    display: none !important;
-}
-
-/* ── Scrollbar ──────────────────────────────────────────────────────── */
-.theme-mobile ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-}
-
-.theme-mobile ::-webkit-scrollbar-track {
-    background: #ece1c4;
-}
-
-.theme-mobile ::-webkit-scrollbar-thumb {
-    background: rgba(28, 22, 8, 0.35);
-}
-
-/* ── Text selection ─────────────────────────────────────────────────── */
-.theme-mobile ::selection {
-    background: rgba(80, 120, 200, 0.28);
-    color: #1c1608;
-}
-
-/* ── Profession details expand / description ────────────────────────── */
-.theme-mobile .profession-details {
-    border-color: rgba(28, 22, 8, 0.22);
-    background: transparent;
-    border-radius: 6px;
-}
-
-.theme-mobile .profession-details-summary {
-    background: rgba(28, 22, 8, 0.06);
-    justify-content: center;
-    padding: 10px 12px;
-}
-
-/* Completely hide the name and bonds pills */
-.theme-mobile .prof-name-pill,
-.theme-mobile .prof-bonds-pill {
-    display: none !important;
-}
-
-/* Hide the original hint text; inject replacement via ::before */
-.theme-mobile .prof-expand-hint {
-    position: static !important;
-    transform: none !important;
-    font-size: 0 !important;
-    color: transparent !important;
-    letter-spacing: 0 !important;
-    white-space: normal;
-    pointer-events: none;
-}
-
-.theme-mobile .prof-expand-hint::before {
-    content: 'CLICK FOR FULL DESCRIPTION';
-    display: block;
-    text-align: center;
-    font-size: 0.82rem;
-    color: rgba(28, 22, 8, 0.75);
-    font-weight: 700;
-    letter-spacing: 0.06em;
-}
-
-.theme-mobile .profession-details[open] .prof-expand-hint {
-    display: none !important;
-}
-
-/* Full description text — readable on the light Field Notes background */
-.theme-mobile .profession-details-text {
-    background: rgba(28, 22, 8, 0.04);
-    border-top-color: rgba(28, 22, 8, 0.12);
-    color: #1c1608;
-    font-size: 0.82rem;
-    padding: 10px 12px;
-    line-height: 1.65;
-    white-space: pre-wrap;
-    word-break: break-word;
-    overflow-x: hidden;
-}
 
 /* ── LP tracker: SAN Check button ──────────────────────────────────── */
 .lp-track-san-check {
@@ -7879,9 +7307,8 @@ input[type="checkbox"]:checked+label {
     opacity: 0.85;
 }
 
-/* Hide in Live Play and Mobile themes */
-.live-play .wiz-promo,
-.theme-mobile .wiz-promo {
+/* Hide in Live Play */
+.live-play .wiz-promo {
     display: none;
 }
 
@@ -8065,7 +7492,7 @@ input[type="checkbox"]:checked+label {
     width: 100%;
 }
 
-/* Nav buttons inherit theme-mobile button styles; override for size */
+/* Nav buttons inherit the active theme's own button styles; override for size */
 #wiz-back,
 #wiz-next {
     flex: 1 1 0;
@@ -8406,10 +7833,8 @@ input[type="checkbox"]:checked+label {
        #cs-skills down to fewer columns without also overriding that
        inline placement just leaves every third skill's column-3
        assignment landing in a narrow implicit track, stacked on top of
-       another skill's name/value -- exactly what .theme-mobile already
-       had to work around (see its own #cs-skills .cs-skill-pair rule)
-       for its single-column layout. Apply the same override here, for
-       every theme, not just .theme-mobile. */
+       another skill's name/value. Apply the override here, for every
+       theme uniformly. */
     #cs-skills {
         grid-template-columns: 1fr;
         gap: 2px 0;
