@@ -31,7 +31,7 @@
    through this whole migration -- not random flakiness, one bad path
    silently breaking the update mechanism itself.
    ══════════════════════════════════════════════ */
-const CACHE_NAME = 'dg-hub-shell-v78';
+const CACHE_NAME = 'dg-hub-shell-v79';
 
 const SHELL_FILES = [
   './',
@@ -41,6 +41,7 @@ const SHELL_FILES = [
   'a-cell.html',
   'dg-agent-portal.html',
   'dg-id-creator.html',
+  'requisition.html',
   'manifest.json',
   'assets/theme-folder.css',
   'assets/table-radio.js',
