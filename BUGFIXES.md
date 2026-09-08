@@ -1723,3 +1723,80 @@ once, grep the codebase for every other copy of it immediately rather
 than waiting for CI to surface each one on its own -- this exact
 14-copies-of-one-bug shape is exactly what "just fix what's currently
 failing" misses.
+
+## Live Play theming (X-Files, Son of Sam, Field Notes)
+
+Live Play was refactored from one hardcoded "Field Document" paper
+look to a `--lp-*` CSS custom-property token system so each Edit-mode
+theme gets its own Live Play identity (colors + fonts) instead of
+forcing the same look regardless of active theme. The rollout surfaced
+several real bugs, reported from an actual phone against the live
+site, fixed across a few rounds:
+
+**Field Notes' palette didn't match the rest of the hub's shared
+paper/ink look, and the Modern (Catppuccin) theme was being retired.**
+Realigned Field Notes' `--lp-*` tokens and Live Play's defaults to
+`assets/theme-folder.css`'s actual palette/fonts (the system
+`index.html`/`agent-hub.html`/`a-cell.html` already use), and removed
+Modern entirely (64 rule blocks plus its `--ctp-*` custom properties)
+per explicit request rather than trying to theme it too.
+
+**Field Notes' Live Play textareas showed a checkered grid instead of
+the hub's lined paper, and used a calligraphy font instead of the
+Editor's typewriter font.** The checkered look came from `.lp-ta`'s
+pre-existing two-directional `linear-gradient` background (present
+since the original port, inconsistent with the rest of the hub's
+single-direction ruled look) -- replaced with a horizontal-only
+`repeating-linear-gradient` tinted via `color-mix()` from `--lp-ink` so
+it themes correctly everywhere, not just Field Notes. The calligraphy
+font came from a separate `--lp-font-hand` token (`'Permanent Marker',
+cursive`) used across ~12 call sites as a deliberate "editable field"
+cue -- once it turned out to cover nearly all visible LP sheet data,
+not a minor accent, it was removed entirely in favor of the shared
+`--lp-font-mono` (Courier Prime) used everywhere else.
+
+**X-Files' Live Play font didn't match its own Edit mode.**
+`.theme-xfiles.live-play`'s `--lp-font-*` tokens were set to
+`'JetBrains Mono'` on an incorrect assumption; X-Files actually has no
+theme-level `font-family` at all and inherits the page's base
+`body { font-family: 'Courier New', monospace }`. Fixed all three
+X-Files font tokens to `'Courier New', monospace`.
+
+**X-Files/Son of Sam: readonly/typewritten Live Play text was
+unreadable ("black on green/red").** `--lp-ink-soft` (used for
+readonly biography fields via `.lp-proxy[readonly]`) was too close in
+brightness to `--lp-paper-bg` for both themes -- the "dim = readonly"
+convention only works on Field Notes' bright cream paper, not near-
+black paper. Brightened `--lp-paper-bg`/`--lp-page-bg-soft` (more
+contrast headroom against the page background) and `--lp-ink-soft`
+substantially for both themes; `--lp-ink` itself was deliberately left
+alone since it's meant to match Edit mode's exact `--primary-color`.
+
+**Same "unreadable text" complaint came back after the above fix
+shipped -- a second, unrelated bug, not an incomplete first fix.**
+Fresh phone screenshots still showed literal *black* input text on
+green/red paper on every theme, including X-Files/Son of Sam where
+`--lp-ink` is green/red, not black. Root cause: a pre-existing global
+rule, `input[type="text"], input[type="number"], textarea, select {
+color: var(--text-color); ... }` (`stats/styles.css` ~line 1144), has
+specificity `(0,1,1)` (element + attribute selector) -- one rung above
+every `.lp-proxy`/`.lp-stat-inp`/`.lp-feat-inp`/`.lp-skill-val`/etc.
+class selector `(0,1,0)` that was supposed to set the real per-theme
+ink color. It silently won on every literal `<input>` in Live Play
+(stats, skills, bonds, distinguishing features, name field --
+confirmed via `getComputedStyle` across ~59 inputs per theme, all
+`rgb(0, 0, 0)`), while `<textarea>` elements were unaffected because
+that same global selector list's bare `textarea` clause has only
+`(0,0,1)` specificity, below `.lp-ta`'s `(0,1,0)` -- which is exactly
+why the textareas (Wounds/Gear/Personal Details) looked fine while
+every stat score, skill %, and bond name did not. It happened to look
+correct on Field Notes only because `var(--text-color)` resolves to
+`--lp-tracker-bg`, which is near-black there anyway -- purely
+coincidental, not a real fix, and the same collision would have bitten
+Field Notes too the moment its ink or tracker color ever diverged.
+Fixed by adding `color: var(--lp-ink)` (and a `[readonly]`-scoped
+`var(--lp-ink-soft)` override) to the existing `#lp-sheet
+input[type="text"], #lp-sheet input[type="number"]` block -- an
+ID-scoped selector `(1,0,1)` already used in this same file to win
+against this exact global rule for padding/border/font, just never
+extended to `color`.
