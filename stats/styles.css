@@ -5812,7 +5812,6 @@ input[type="checkbox"]:checked+label {
     --lp-tracker-mid: #8a7a5a;
     --lp-font-display: 'Special Elite', monospace;
     --lp-font-mono: 'Courier Prime', monospace;
-    --lp-font-hand: 'Permanent Marker', cursive;
     --lp-font-body: 'Courier Prime', monospace;
 
     --primary-color: var(--lp-tracker-bg);
@@ -5836,20 +5835,24 @@ input[type="checkbox"]:checked+label {
    never changes layout between themes. */
 
 /* X-Files: black-on-neon-green CRT terminal, matching Edit mode's own
-   look (and its 'JetBrains Mono' base font/CRT flicker, unaffected by
-   Live Play). An amber "system alert" tone marks the rarer Advancement
+   look (it has no theme-level font-family of its own, so its real font
+   is the page's base body{font-family:'Courier New',monospace}, not
+   'JetBrains Mono' -- that belongs to Son of Sam below, not this
+   theme). An amber "system alert" tone marks the rarer Advancement
    action apart from the routine green accent. No paper grain -- a
-   terminal doesn't have texture. */
+   terminal doesn't have texture. Readonly/typewritten text
+   (--lp-ink-soft) stays a clearly bright green, not a dim one -- "dim
+   means readonly" only works readably on light paper, not dark. */
 .theme-xfiles.live-play {
     --lp-page-bg: #000000;
-    --lp-page-bg-soft: #001a08;
-    --lp-paper-bg: #001a08;
-    --lp-paper-white: #00330f;
+    --lp-page-bg-soft: #0a2f14;
+    --lp-paper-bg: #0a2f14;
+    --lp-paper-white: #123d1c;
     --lp-ink: #00b521;
-    --lp-ink-soft: #0a7a1f;
+    --lp-ink-soft: #4ecb63;
     --lp-header-bg: #000000;
     --lp-header-text: #00e62e;
-    --lp-subheader-bg: #0d2b0d;
+    --lp-subheader-bg: #123018;
     --lp-accent: #39ff6a;
     --lp-accent-hover: #2ecc55;
     --lp-accent-soft: #0d3d1a;
@@ -5859,29 +5862,30 @@ input[type="checkbox"]:checked+label {
     --lp-tracker-border: #0d3d1a;
     --lp-tracker-label: #3a9a4a;
     --lp-tracker-value: #00e62e;
-    --lp-tracker-mid: #1f7a2f;
-    --lp-font-display: 'JetBrains Mono', monospace;
-    --lp-font-mono: 'JetBrains Mono', monospace;
-    --lp-font-hand: 'JetBrains Mono', monospace;
-    --lp-font-body: 'JetBrains Mono', monospace;
+    --lp-tracker-mid: #4ecb63;
+    --lp-font-display: 'Courier New', monospace;
+    --lp-font-mono: 'Courier New', monospace;
+    --lp-font-body: 'Courier New', monospace;
     background-image: none;
 }
 
 /* Son of Sam: black-and-blood-red horror ritual look, matching Edit
-   mode's own palette. Deliberately a shade off the hardcoded critical/
-   dying status reds elsewhere on this page (#ff5555/#ff2222) so a
-   themed accent button is never visually confused with a real HP/SAN
-   alert. */
+   mode's own palette (--lp-ink stays exactly --primary-color's #cc0000).
+   Deliberately a shade off the hardcoded critical/dying status reds
+   elsewhere on this page (#ff5555/#ff2222) so a themed accent button is
+   never visually confused with a real HP/SAN alert. Readonly/typewritten
+   text (--lp-ink-soft) stays a clearly bright red-pink, not a dim one --
+   "dim means readonly" only works readably on light paper, not dark. */
 .theme-son-of-sam.live-play {
     --lp-page-bg: #000000;
-    --lp-page-bg-soft: #1a0000;
-    --lp-paper-bg: #150505;
-    --lp-paper-white: #2a0a0a;
+    --lp-page-bg-soft: #2a0a0a;
+    --lp-paper-bg: #2a0a0a;
+    --lp-paper-white: #3a1010;
     --lp-ink: #cc0000;
-    --lp-ink-soft: #7a2020;
+    --lp-ink-soft: #e08080;
     --lp-header-bg: #000000;
     --lp-header-text: #ff3333;
-    --lp-subheader-bg: #2a0a0a;
+    --lp-subheader-bg: #3a1010;
     --lp-accent: #e60000;
     --lp-accent-hover: #a80000;
     --lp-accent-soft: #3a0808;
@@ -5889,12 +5893,11 @@ input[type="checkbox"]:checked+label {
     --lp-accent-warm-hover: #5c0000;
     --lp-tracker-bg: #000000;
     --lp-tracker-border: #4a0a0a;
-    --lp-tracker-label: #8a3a3a;
+    --lp-tracker-label: #cc6060;
     --lp-tracker-value: #ff3333;
-    --lp-tracker-mid: #7a2020;
+    --lp-tracker-mid: #e08080;
     --lp-font-display: 'JetBrains Mono', monospace;
     --lp-font-mono: 'JetBrains Mono', monospace;
-    --lp-font-hand: 'JetBrains Mono', monospace;
     --lp-font-body: 'JetBrains Mono', monospace;
     background-image: none;
 }
@@ -6413,11 +6416,19 @@ input[type="checkbox"]:checked+label {
 /* Textareas */
 .lp-ta {
     background-color: var(--lp-paper-bg);
-    background-image: linear-gradient(rgba(60, 100, 220, 0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(60, 100, 220, 0.07) 1px, transparent 1px);
-    background-size: 22px 22px;
+    /* Ruled notebook lines (horizontal only), matching the rest of the
+       hub's own paper texture (assets/theme-folder.css's .paper-rules)
+       instead of a two-directional grid -- tinted from this theme's own
+       ink so it stays right for X-Files/Son of Sam too, not just
+       Field Notes. */
+    background-image: repeating-linear-gradient(180deg,
+            transparent 0px,
+            transparent 21px,
+            color-mix(in srgb, var(--lp-ink) 15%, transparent) 21px,
+            color-mix(in srgb, var(--lp-ink) 15%, transparent) 22px);
     border: none;
     color: var(--lp-ink);
-    font-family: var(--lp-font-hand);
+    font-family: var(--lp-font-mono);
     font-size: 12pt;
     width: 100%;
     padding: 2px 3px;
@@ -6436,7 +6447,7 @@ input[type="checkbox"]:checked+label {
 /* Handwritten marker-pen font for bio/personal-data fields */
 .lp-handwritten,
 #lp-sheet .lp-handwritten {
-    font-family: var(--lp-font-hand) !important;
+    font-family: var(--lp-font-mono) !important;
     font-weight: normal !important;
     font-size: 12pt !important;
 }
@@ -6445,7 +6456,7 @@ input[type="checkbox"]:checked+label {
 .lp-stat-inp {
     width: 100%;
     text-align: center;
-    font-family: var(--lp-font-hand);
+    font-family: var(--lp-font-mono);
     font-size: 12pt;
     font-weight: normal;
     background: transparent;
@@ -6459,7 +6470,7 @@ input[type="checkbox"]:checked+label {
 /* Editable distinguishing features inputs */
 .lp-feat-inp {
     width: 100%;
-    font-family: var(--lp-font-hand);
+    font-family: var(--lp-font-mono);
     font-size: 12pt;
     font-style: normal;
     background: transparent;
@@ -6582,7 +6593,7 @@ input[type="checkbox"]:checked+label {
 .lp-bond-name-input {
     background: transparent;
     border: none;
-    font-family: var(--lp-font-hand);
+    font-family: var(--lp-font-mono);
     font-size: 12pt;
     font-weight: normal;
     width: 100%;
@@ -6602,7 +6613,7 @@ input[type="checkbox"]:checked+label {
     text-align: center;
     font-size: 12pt;
     font-weight: normal;
-    font-family: var(--lp-font-hand);
+    font-family: var(--lp-font-mono);
     border: none;
     background: transparent;
     color: var(--lp-ink);
@@ -6701,7 +6712,7 @@ input[type="checkbox"]:checked+label {
     white-space: nowrap;
     padding: 3px 6px;
     font-size: 13pt;
-    font-family: var(--lp-font-hand);
+    font-family: var(--lp-font-mono);
 }
 
 .lp-sk-val-td {
@@ -6716,7 +6727,7 @@ input[type="checkbox"]:checked+label {
     width: 100%;
     background: transparent;
     border: none;
-    font-family: var(--lp-font-hand);
+    font-family: var(--lp-font-mono);
     font-size: 13pt;
     padding: 0;
     box-sizing: border-box;
@@ -6756,7 +6767,7 @@ input[type="checkbox"]:checked+label {
     min-width: 36px;
     text-align: center;
     font-size: 13pt !important;
-    font-family: var(--lp-font-hand) !important;
+    font-family: var(--lp-font-mono) !important;
     color: var(--lp-ink);
     padding: 0;
     box-sizing: border-box;
@@ -6891,7 +6902,7 @@ input[type="checkbox"]:checked+label {
 
 .lp-adv-table td:first-child {
     text-align: left;
-    font-family: var(--lp-font-hand);
+    font-family: var(--lp-font-mono);
     font-size: 9pt;
 }
 
@@ -6985,7 +6996,7 @@ input[type="checkbox"]:checked+label {
 #lp-sheet input[type="text"]:not([readonly]),
 #lp-sheet input[type="number"]:not([readonly]),
 #lp-sheet textarea {
-    font-family: var(--lp-font-hand) !important;
+    font-family: var(--lp-font-mono) !important;
     font-size: 12pt !important;
     text-decoration: none !important;
 }
