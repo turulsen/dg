@@ -387,13 +387,16 @@ def test_stat_generator(p):
     page.click("#settings-cog-btn")
     page.wait_for_timeout(200)
 
-    # All four themes must switch without throwing (field-doc retired --
+    # All three themes must switch without throwing (field-doc retired --
     # Live Play is now a mode layered on any theme, not a theme itself.
     # Modern/Catppuccin was later removed as redundant with the other
-    # four).
+    # themes, and Mobile was retired too -- its CSS predated Field Notes'
+    # dark-desk redesign and everything useful it did is now covered by
+    # Field Notes itself plus the page's own theme-agnostic responsive
+    # layout).
     theme_options = page.eval_on_selector_all("#cs-theme-select option", "els => els.map(e=>e.value)")
-    record("stats-terminal", "theme selector has all 4 themes",
-           set(theme_options) == {"xfiles","son-of-sam","field-notes","mobile"}, str(theme_options))
+    record("stats-terminal", "theme selector has all 3 themes",
+           set(theme_options) == {"xfiles","son-of-sam","field-notes"}, str(theme_options))
     for t in theme_options:
         page.select_option("#cs-theme-select", t)
         page.wait_for_timeout(200)
@@ -489,11 +492,12 @@ def test_stat_generator(p):
     record("stats-terminal", "dice roller widget opens and rolls without throwing",
            d20_visible and len(errs)==0, f"visible={d20_visible}")
 
-    # Mobile theme: verify no horizontal overflow specifically (see test_mobile_no_overflow
-    # for why the other 5 themes are excluded from that general sweep)
+    # Field Notes: verify no horizontal overflow specifically (see test_mobile_no_overflow
+    # for why the other themes are excluded from that general sweep) -- Field Notes is
+    # the theme mobile users land on since the separate Mobile theme was retired.
     page.click("#settings-cog-btn")
     page.wait_for_timeout(200)
-    page.select_option("#cs-theme-select", "mobile")
+    page.select_option("#cs-theme-select", "field-notes")
     page.wait_for_timeout(200)
     page.click("#settings-panel-close")
     page.wait_for_timeout(150)
@@ -549,10 +553,15 @@ def test_live_play_themed_skins(p):
            len(set(accent_by_theme.values())) == 3, str(accent_by_theme))
     record("stats-terminal", "Field Notes' Live Play ink matches its realigned theme-folder.css ink color",
            ink_by_theme["field-notes"] == "#1c1608", ink_by_theme["field-notes"])
-    record("stats-terminal", "X-Files' Live Play ink matches its neon-green identity, not brown ink",
-           ink_by_theme["xfiles"] == "#00b521", ink_by_theme["xfiles"])
-    record("stats-terminal", "Son of Sam's Live Play ink is a red, not brown ink or a hardcoded HP-critical red",
-           ink_by_theme["son-of-sam"] == "#cc0000", ink_by_theme["son-of-sam"])
+    # X-Files/Son of Sam ink is white/near-white, not their accent color --
+    # checked via getComputedStyle against real Edit mode, the theme's
+    # green/red accent is a border/legend/button color only there, never
+    # the actual body/value text color (see BUGFIXES.md's "Live Play
+    # theming" section for the full story of this getting it wrong twice).
+    record("stats-terminal", "X-Files' Live Play ink is white, matching Edit mode's real text color, not its green accent",
+           ink_by_theme["xfiles"] == "#ffffff", ink_by_theme["xfiles"])
+    record("stats-terminal", "Son of Sam's Live Play ink is near-white, matching Edit mode's real text color, not its red accent",
+           ink_by_theme["son-of-sam"] == "#f0f0f0", ink_by_theme["son-of-sam"])
 
     record("stats-terminal", "no JS exceptions across the themed Live Play run", len(errs)==0, "; ".join(errs))
     page.close()
@@ -6163,7 +6172,7 @@ def test_mobile_no_overflow(p):
     page.wait_for_timeout(500)
     page.click("#settings-cog-btn")
     page.wait_for_timeout(200)
-    for theme in ["xfiles", "son-of-sam", "field-notes", "mobile"]:
+    for theme in ["xfiles", "son-of-sam", "field-notes"]:
         page.select_option("#cs-theme-select", theme)
         page.wait_for_timeout(400)
         scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
@@ -8617,8 +8626,8 @@ def test_split_view(p):
            "active" in (page.get_attribute("#split-view-toggle-btn", "class") or ""), "")
 
     theme_during_split = page.evaluate("() => document.body.className")
-    record("stats", "Split View does not force the Mobile theme -- the real theme stays active",
-           "theme-field-notes" in theme_during_split and "theme-mobile" not in theme_during_split,
+    record("stats", "Split View does not force a different theme -- the real theme stays active",
+           "theme-field-notes" in theme_during_split,
            theme_during_split)
     saved_theme_during_split = page.evaluate("() => localStorage.getItem('dg_theme')")
     record("stats", "the user's real saved theme preference is untouched",

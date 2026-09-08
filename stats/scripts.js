@@ -3281,11 +3281,14 @@ function dgInitStatsSheet() {
     }
 
     // initialize theme from storage and wire selector
-    // Auto-apply mobile theme on small screens if no preference is saved yet
+    // Auto-apply Field Notes on small screens if no preference is saved yet
+    // (Field Notes is the one theme every phone user lands on by default --
+    // see the 'mobile' migration below for why there's no separate Mobile
+    // theme to auto-apply here any more).
     try {
         const stored = localStorage.getItem('dg_theme');
         const isMobile = window.matchMedia('(max-width: 768px)').matches;
-        let savedTheme = stored || (isMobile ? 'mobile' : 'xfiles');
+        let savedTheme = stored || (isMobile ? 'field-notes' : 'xfiles');
         // Migrate anyone whose last theme was the old 'field-doc' -- Live
         // Play is no longer a theme of its own, it's the mode that theme
         // used to force on. Land them on Field Notes (the closest visual
@@ -3293,6 +3296,12 @@ function dgInitStatsSheet() {
         // their Live Play habit the next time this runs.
         let forceLivePlay = false;
         if (savedTheme === 'field-doc') { savedTheme = 'field-notes'; forceLivePlay = true; }
+        // Migrate anyone whose last theme was the retired Mobile theme --
+        // its own CSS predated (and was incompatible with) Field Notes'
+        // current dark-desk redesign, and everything it did on top of
+        // Field Notes' shared palette is now either redundant with the
+        // page's own theme-agnostic responsive layout or simply stale.
+        if (savedTheme === 'mobile') { savedTheme = 'field-notes'; }
         setTheme(savedTheme, { skipSave: true });
         const wantLivePlay = forceLivePlay || localStorage.getItem('dg_live_play') === '1';
         if (wantLivePlay) setLivePlay(true, { skipSave: true });
@@ -3449,7 +3458,7 @@ function sosPlaceholder(text) {
 }
 
 /**
- * Applies one of the available visual themes: xfiles, son-of-sam, field-notes, mobile.
+ * Applies one of the available visual themes: xfiles, son-of-sam, field-notes.
  * Saves the selection to localStorage, flushes any pending form state, and handles
  * theme-specific setup — LP sheet build/sync, pyramid visibility, button states,
  * and Son of Sam's plus-button glyphs.
@@ -3469,7 +3478,7 @@ function setTheme(theme, { skipSave = false, persist = true } = {}) {
         const _wizStep = _wizActive ? (window.dgWizard?._currentStep?.() ?? 0) : null;
         window.dgWizard?.deactivate();
 
-        body.classList.remove('theme-xfiles', 'theme-son-of-sam', 'theme-field-notes', 'theme-mobile');
+        body.classList.remove('theme-xfiles', 'theme-son-of-sam', 'theme-field-notes');
         body.classList.add('theme-' + theme);
         // persist:false is Split View forcing the Mobile skin on top of
         // whichever theme is really selected -- see dgSplitView below.
@@ -4040,11 +4049,11 @@ function buildLpSheet() {
         const ctrl = hasBtns
             ? `<div class="lp-attr-controls">
                 ${adjBtn(srcId, -1, `Reduce ${key}`)}
-                <input type="text" inputmode="numeric" pattern="[0-9]*" id="${inpId}" name="${inpId}" class="lp-proxy" data-src="${srcId}" autocomplete="off" value="0" style="width:50px;flex:0 0 50px;text-align:center;font-family:'Permanent Marker',cursive;font-size:12pt;border:1px solid #000;background:#fff;padding:1px 2px;box-sizing:border-box;">
+                <input type="text" inputmode="numeric" pattern="[0-9]*" id="${inpId}" name="${inpId}" class="lp-proxy" data-src="${srcId}" autocomplete="off" value="0" style="width:50px;flex:0 0 50px;text-align:center;padding:1px 2px;box-sizing:border-box;">
                 ${adjBtn(srcId, +1, `Restore ${key}`)}
                </div>`
             : `<div class="lp-attr-controls">
-                <input type="text" inputmode="numeric" pattern="[0-9]*" id="${inpId}" name="${inpId}" class="lp-proxy" data-src="${srcId}" autocomplete="off" value="0" style="width:50px;flex:0 0 50px;text-align:center;font-family:'Permanent Marker',cursive;font-size:12pt;border:1px solid #000;background:#fff;padding:1px 2px;box-sizing:border-box;">
+                <input type="text" inputmode="numeric" pattern="[0-9]*" id="${inpId}" name="${inpId}" class="lp-proxy" data-src="${srcId}" autocomplete="off" value="0" style="width:50px;flex:0 0 50px;text-align:center;padding:1px 2px;box-sizing:border-box;">
                </div>`;
         return `<tr>
             <td class="lp-tc" style="border-left:none;font-size:10pt;">${ATTR_LABELS[key]}</td>
