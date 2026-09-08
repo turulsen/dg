@@ -4376,7 +4376,7 @@ function renderLpBonds() {
             const descVal = escapeHtml((b.description || '').replace(/<[^>]+>/g, '').trim());
             html += `<tr class="lp-bond-row" data-desc="${descVal}">
                 <td class="lp-tc" style="border-left:none;padding:1px 3px;">
-                    <input type="text" class="lp-bond-name-input" name="lp-bond-name" autocomplete="off" value="${nameVal}" data-bond-idx="${i}">
+                    <textarea class="lp-bond-name-input" name="lp-bond-name" autocomplete="off" rows="1" data-bond-idx="${i}">${nameVal}</textarea>
                 </td>
                 <td class="lp-tc" style="width:38px;padding:1px 2px;">
                     <input type="text" inputmode="numeric" pattern="[0-9]*" class="lp-bond-score-input" name="lp-bond-score" autocomplete="off" value="${scoreVal}" data-bond-idx="${i}">

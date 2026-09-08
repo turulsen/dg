@@ -1862,3 +1862,45 @@ Notes' dark gold accent-warm still works fine under the inherited
 white, so only `.theme-xfiles .lp-btn-advance` (black text) and
 `.theme-son-of-sam .lp-btn-advance` (white text) needed an explicit
 override.
+
+**X-Files' New Recruit block flickered green-then-black on every
+load, not just its intended decorative headers.** A blanket
+`.theme-xfiles body, .theme-xfiles * { animation: textFlicker 20s
+infinite; }` rule applied the CRT-glow keyframe animation to literally
+every element on the page, including plain body/label text with no
+glow to begin with -- what read as "New Recruit glows up in green then
+fades to black" was that animation's zero-glow phase landing on text
+that should have just been static. Removed the blanket rule and
+`@keyframes textFlicker` entirely; replaced with a static (non-
+animated) version of the same glow, scoped only to the decorative
+headers it was meant for (`.page-title`, `.lp-dg-title`, `.stats-
+section h2`, `.site-intro strong`).
+
+**Son of Sam's "Return to Sheet" mode toggle nearly invisible.**
+`.dg-mode-toggle.dg-mode-active`'s colors (`#1a0d0d` background,
+`#6a2a2a` border) were tuned against Son of Sam's old paper-tinted
+red background, from before that background was flattened to solid
+black in an earlier fix -- against pure black the button had almost no
+contrast left. Brightened to `#2a1010`/`#9a4a4a`/`#e8a8a8` (and the
+matching `:hover` state) so it reads clearly again.
+
+**Bond names truncated in the Live Play Bonds table.** `.lp-bond-
+name-input` was a single-line `<input>`; real bond text (e.g. "Taylor
+Kim (They/Them) -- Tech Sergeant, Air Force") routinely runs longer
+than the column width and had nowhere to go but cut off. Converted
+the field to a `<textarea>` with `field-sizing: content` so it wraps
+and auto-grows instead of truncating -- the table row's fixed `height`
+already behaves as a minimum, not a cap, so it grows to fit without
+any further change.
+
+**Field Notes' "Import Pasted Text" paste box unreadable.** The new
+always-visible `#agent-paste-area` textarea (promoted from a collapsed
+`<details>` to the primary import path) sat directly on the theme's
+dark desk-colored page background, but Field Notes' "written on the
+lines" input styling (`background: transparent; color: #1c1608` dark
+ink) assumes it's inside a cream-paper fieldset panel -- every other
+input on the page has one, this new standalone box didn't, so its dark
+ink rendered as near-invisible dark-on-dark. Fixed by giving
+`#agent-paste-details` its own scoped cream-paper card background
+(`.theme-field-notes #agent-paste-details`) so the existing ink color
+actually has paper to sit on.
