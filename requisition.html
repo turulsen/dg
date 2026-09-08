@@ -1,0 +1,1284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DG FORM 27-R</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/png" href="assets/mars-tech-seal.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0e100b">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  /* ══════════════════════════════════════════════
+     Requisition mini-game -- Section III of DG FORM 27-R IS the dice
+     roller (a live percentile roll resolved right in the paper form),
+     not a separate widget, so this page does not use dice-roller.js's
+     own floating panel for its own roll. Table Radio + Dice Roller are
+     still both included below purely for the same reason every other
+     player-reachable Hub page carries them (persistent music across
+     navigation, and skill-click relaying if this page ever grows
+     inline skill checks) -- see hub.html's own header comment.
+     ══════════════════════════════════════════════ */
+  :root{
+    /* Tokens matched to the Agent Hub's own paper system (dg-agent-portal.html) */
+    --paper:#f4eed8;
+    --paper-line:rgba(180,148,72,.18);
+    --paper-margin:rgba(180,60,60,.22);
+    --ink:#1c1608;
+    --ink-2:#4a3f28;
+    --ink-3:#8a7a5a;
+    --ink-placeholder:#b8a878;
+    --red:#8b1a1a;
+    --green:#1a4a1a;
+    --rule:rgba(160,130,70,.35);
+    --sticky:#f0e87a;
+    --field:#fff;
+    --line:27px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    padding:32px 16px 64px;
+    background:#0e100b;
+    background-image:radial-gradient(ellipse at 50% 20%, #141710 0%, #090b07 100%);
+    min-height:100vh;
+    font-family:'Courier Prime', monospace;
+    color:var(--ink);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+  }
+  .back-link-row{ width:100%; max-width:680px; margin:0 0 14px; }
+  .back-link-row a{
+    font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.18em;
+    text-transform:uppercase; color:#8a9878; text-decoration:none;
+  }
+  .sheet{
+    width:100%;
+    max-width:680px;
+    background:var(--paper);
+    box-shadow:0 4px 18px rgba(0,0,0,.4), 0 1px 4px rgba(0,0,0,.3), 0 28px 56px rgba(0,0,0,.6);
+    position:relative;
+    padding:0 0 0 52px;
+    border-radius:1px;
+    overflow:hidden;
+  }
+  .paper-rules{
+    position:absolute;
+    inset:0;
+    background:repeating-linear-gradient(180deg,
+      transparent 0px, transparent calc(var(--line) - 1px),
+      var(--paper-line) calc(var(--line) - 1px), var(--paper-line) var(--line));
+    pointer-events:none;
+    z-index:0;
+  }
+  .paper-margin{
+    position:absolute;
+    top:0; left:52px; bottom:0;
+    width:1.5px;
+    background:var(--paper-margin);
+    pointer-events:none;
+    z-index:1;
+  }
+  .holes{
+    position:absolute;
+    left:14px; top:0; bottom:0;
+    width:16px;
+    display:flex; flex-direction:column; justify-content:space-around;
+    padding:60px 0;
+    z-index:2;
+  }
+  .hole{
+    width:14px; height:14px;
+    border-radius:50%;
+    background:#0e100b;
+    box-shadow:inset 0 2px 3px rgba(0,0,0,.5);
+  }
+  .content{ position:relative; z-index:3; }
+  .letterhead{
+    border-bottom:3px double var(--ink);
+    padding:18px 24px 12px;
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    font-family:'Courier Prime', monospace;
+  }
+  .letterhead .agency{
+    font-size:10.5px;
+    letter-spacing:.04em;
+    color:var(--ink-3);
+    line-height:1.6;
+  }
+  .letterhead .formno{
+    text-align:right;
+    font-size:10.5px;
+    color:var(--ink-3);
+    line-height:1.6;
+  }
+  .titleblock{
+    text-align:center;
+    padding:10px 24px 16px;
+  }
+  .titleblock h1{
+    margin:4px 0 6px;
+    font-family:'Special Elite', monospace;
+    font-weight:400;
+    font-size:19px;
+    letter-spacing:.02em;
+  }
+  .titleblock .sub{
+    font-size:11px;
+    color:var(--ink-3);
+    font-style:italic;
+  }
+  .warn-strip{
+    background:var(--ink);
+    color:var(--paper);
+    text-align:center;
+    font-size:9px;
+    letter-spacing:.14em;
+    padding:5px 0;
+    font-family:'Special Elite', monospace;
+    text-transform:uppercase;
+  }
+  section{
+    padding:16px 24px 22px;
+    border-bottom:1px dashed var(--rule);
+  }
+  section:last-of-type{border-bottom:none;}
+  .sec-head{
+    display:flex;
+    align-items:baseline;
+    gap:8px;
+    margin-bottom:10px;
+  }
+  .sec-num{
+    font-family:'Special Elite', monospace;
+    font-size:11px;
+    border:1px solid var(--ink);
+
+    padding:1px 7px;
+  }
+  .sec-title{
+    font-family:'Special Elite', monospace;
+    font-size:12px;
+    letter-spacing:.03em;
+    text-transform:uppercase;
+  }
+  .field-row{
+    display:flex;
+    gap:14px;
+    margin-bottom:12px;
+    flex-wrap:wrap;
+    align-items:flex-end;
+  }
+  .field{flex:1; min-width:180px;}
+  label{
+    display:block;
+    font-family:'Special Elite', monospace;
+    font-size:9px;
+    letter-spacing:.1em;
+    color:var(--ink-3);
+    margin-bottom:4px;
+    text-transform:uppercase;
+  }
+  input[type=text], input[type=number], select{
+    width:100%;
+    background:var(--field);
+    border:1px solid var(--rule);
+    padding:8px 9px;
+    font-family:'Courier Prime',monospace;
+    font-size:13px;
+    color:var(--ink);
+  }
+  input[type=text]:focus, input[type=number]:focus, select:focus{
+    outline:none;
+    border-color:var(--ink-3);
+  }
+  .cat-tag{
+    display:inline-block;
+    font-family:'Courier Prime', monospace;
+    font-size:10px;
+    padding:2px 7px;
+    border:1px solid var(--rule);
+    background:rgba(28,22,8,.05);
+    margin-top:4px;
+    letter-spacing:.03em;
+    color:var(--ink-2);
+  }
+  .routes{
+    display:grid;
+    gap:8px;
+  }
+  .route{
+    border:1px solid var(--rule);
+    background:rgba(28,22,8,.03);
+    padding:9px 11px;
+    display:grid;
+    grid-template-columns:20px 1fr auto;
+    align-items:center;
+    gap:10px;
+    cursor:pointer;
+  }
+  .route.selected{
+    background:rgba(139,26,26,.06);
+    box-shadow: inset 0 0 0 1.5px var(--red);
+  }
+  .route input[type=radio]{margin:0; accent-color:var(--red);}
+  .route .rname{font-family:'Courier Prime',monospace; font-size:12.5px; font-weight:bold; color:var(--ink);}
+  .route .rmeta{font-size:9.5px; color:var(--ink-3); grid-column:2/3; margin-top:2px; font-style:italic;}
+  .route .rskill{font-family:'Special Elite',monospace; font-size:8.5px; color:var(--ink-3); letter-spacing:.06em; text-transform:uppercase; white-space:nowrap;}
+  .subfields{
+    margin-top:8px;
+    padding:10px 12px;
+    border:1px solid var(--rule);
+    background:rgba(255,255,255,.4);
+    display:none;
+  }
+  .subfields.active{display:grid; gap:10px; grid-template-columns:1fr 1fr;}
+  .small-print{
+    font-size:9px;
+    color:var(--ink-3);
+    line-height:1.5;
+    margin-top:4px;
+    font-style:italic;
+  }
+  .autofill-note{
+    font-size:9px;
+    color:var(--green);
+    line-height:1.5;
+    margin-top:4px;
+    font-style:italic;
+  }
+  .autofill-note.stale{ color:var(--ink-3); }
+  .submit-row{
+    display:flex;
+    justify-content:center;
+    margin:14px 0 4px;
+  }
+  button.stamp-btn{
+    font-family:'Special Elite', monospace;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    background:var(--ink);
+    color:var(--paper);
+    border:none;
+    padding:11px 22px;
+    font-size:11px;
+    cursor:pointer;
+    box-shadow:0 1px 4px rgba(0,0,0,.3);
+  }
+  button.stamp-btn:hover{opacity:.85;}
+  button.stamp-btn:disabled{opacity:.35; cursor:default;}
+  .counter{
+    text-align:center;
+    font-family:'Courier Prime',monospace;
+    font-size:34px;
+    font-weight:bold;
+    letter-spacing:.06em;
+    margin:14px 0 2px;
+    min-height:42px;
+    color:var(--ink);
+  }
+  .counter .vs{font-family:'Special Elite',monospace; font-size:11px; color:var(--ink-3); display:block; letter-spacing:.02em; font-weight:normal; margin-top:4px; text-transform:uppercase;}
+  .verdict-wrap{
+    position:relative;
+    min-height:40px;
+    display:flex;
+    justify-content:center;
+    margin:10px 0 6px;
+  }
+  .stamp{
+    display:inline-block;
+    border:3px solid;
+    padding:5px 16px;
+    font-family:'Special Elite', monospace;
+    font-size:17px;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    transform:rotate(-4deg);
+    opacity:0;
+    transition:opacity .15s, transform .15s;
+  }
+  .stamp.show{opacity:.85;}
+  .stamp.approve{color:var(--green); border-color:var(--green);}
+  .stamp.deny, .stamp.fumble{color:var(--red); border-color:var(--red);}
+  .outcome-text{
+    font-family:'Courier Prime',monospace;
+    font-size:12.5px;
+    line-height:1.7;
+    padding:11px 13px;
+    border-left:3px solid var(--ink-3);
+    background:rgba(28,22,8,.04);
+    display:none;
+  }
+  .outcome-text.show{display:block;}
+  .outcome-text .tag{
+    font-family:'Special Elite',monospace;
+    font-size:9px;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    color:var(--ink-3);
+    display:block;
+    margin-bottom:5px;
+  }
+  .bond-line{
+    margin-top:8px;
+    padding-top:8px;
+    border-top:1px dashed var(--rule);
+    font-size:12px;
+  }
+  .bond-line b{color:var(--red);}
+  .footer-strip{
+    text-align:center;
+    font-family:'Special Elite',monospace;
+    font-size:8.5px;
+    color:var(--ink-3);
+    padding:14px 24px 22px;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+  }
+  .reset-link{
+    display:block;
+    text-align:center;
+    font-family:'Courier Prime',monospace;
+    font-size:10px;
+    color:var(--ink-3);
+    margin-top:10px;
+    text-decoration:underline;
+    cursor:pointer;
+  }
+  @media (max-width:480px){
+    .subfields.active{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+
+<div class="back-link-row">
+  <!-- Hidden inside the app shell -- see dg-agent-portal.html's own
+       back-link for the reasoning: hub.html's own top nav already
+       covers this when the page is loaded into its shell iframe. -->
+  <a href="index.html" id="req-back-link">← Agent Hub</a>
+  <script>if (window.frameElement && window.frameElement.id === 'dg-shell-content') document.getElementById('req-back-link').style.display = 'none';</script>
+</div>
+
+<div class="sheet">
+  <div class="paper-rules"></div>
+  <div class="paper-margin"></div>
+  <div class="holes"><div class="hole"></div><div class="hole"></div><div class="hole"></div><div class="hole"></div><div class="hole"></div></div>
+  <div class="content">
+  <div class="letterhead">
+    <div class="agency">PROGRAM OFFICE<br>MATERIEL &amp; DISBURSEMENT DESK<br>ROUTING: FIELD &rarr; DESK 4 &rarr; FILE</div>
+    <div class="formno">DG FORM 27-R<br>REV. 03 (SUPERSEDES 27-Q)<br>1 COPY REQUIRED</div>
+  </div>
+
+  <div class="warn-strip">FOR OFFICIAL USE ONLY &ndash; DESTROY IF UNSIGNED</div>
+
+  <div class="titleblock">
+    <h1>Request for Materiel &amp; Disbursement</h1>
+      </div>
+
+  <!-- SECTION I -->
+  <section>
+    <div class="sec-head"><span class="sec-num">I</span><span class="sec-title">Particulars of Request</span></div>
+
+    <div class="field-row">
+      <div class="field">
+        <label>Item Requested</label>
+        <select id="item">
+          <option value="">– select –</option>
+        </select>
+        <span class="cat-tag" id="catTag" style="display:none;"></span>
+      </div>
+      <div class="field">
+        <label>Requesting Agent (cover name)</label>
+        <input type="text" id="agentName" placeholder="e.g. J. Harbin">
+      </div>
+    </div>
+
+    <div class="field-row">
+      <div class="field" style="flex:2;">
+        <label>Stated Justification</label>
+        <input type="text" id="pretext" placeholder="e.g. &quot;routine training exercise&quot;">
+      </div>
+    </div>
+    <div class="small-print">Justification will not be verified prior to adjudication. It will be verified after, if anything goes wrong.</div>
+  </section>
+
+  <!-- SECTION II -->
+  <section>
+    <div class="sec-head"><span class="sec-num">II</span><span class="sec-title">Method of Acquisition</span></div>
+
+    <div class="routes" id="routes"></div>
+
+    <div class="subfields" id="sub-official">
+      <div style="grid-column:1/-1;">
+        <label>Requesting Agency</label>
+        <select id="agency"></select>
+      </div>
+      <div style="grid-column:1/-1;">
+        <label>Cost Center Code (format XX-ZZ)</label>
+        <input type="text" id="costCenter" placeholder="e.g. 05-10">
+        <div class="small-print">Get the filing code right and the request goes through clean. Get it wrong &ndash; or don't bother &ndash; and it still goes through, just flagged and docked 20%. Category number, then item number, per the equipment schedule below.</div>
+        <button type="button" class="stamp-btn" id="askCostCenter" style="margin-top:6px; font-size:10.5px; padding:6px 12px;">Ask Records (Luck Roll)</button>
+        <div class="small-print" id="ccResult"></div>
+      </div>
+      <div>
+        <label>Bureaucracy or Mil. Science %</label>
+        <input type="number" id="skill-official" min="1" max="99" value="40">
+        <div class="autofill-note" id="note-official"></div>
+      </div>
+      <div>
+        <label>Operational Priority</label>
+        <select id="priority">
+          <option value="-20">Low (−20%)</option>
+          <option value="0" selected>Normal (+0%)</option>
+          <option value="20">High (+20%)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="subfields" id="sub-personal">
+      <div>
+        <label>INT×5 or Accounting %</label>
+        <input type="number" id="skill-personal" min="1" max="99" value="45">
+        <div class="autofill-note" id="note-personal"></div>
+      </div>
+      <div>
+        <label>Wealthy Occupation?</label>
+        <select id="wealthy">
+          <option value="0">No</option>
+          <option value="1">Yes (+20%)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="subfields" id="sub-favor">
+      <div>
+        <label>CHA×5 %</label>
+        <input type="number" id="skill-favor" min="1" max="99" value="35">
+        <div class="autofill-note" id="note-favor"></div>
+      </div>
+      <div>
+        <label>Bond Type</label>
+        <select id="bondType">
+          <option value="">– select –</option>
+          <option>Spouse or Partner</option>
+          <option>Parent or Sibling</option>
+          <option>Child</option>
+          <option>Close Friend</option>
+          <option>Work Colleague</option>
+          <option>Old Military / Agency Contact</option>
+          <option>Support Group or Community</option>
+          <option>Other</option>
+        </select>
+      </div>
+      <div style="grid-column:1/-1;">
+        <label>The Excuse You Give Them</label>
+        <select id="excuse">
+          <option value="">– select –</option>
+          <option>"It's for a work thing, don't worry about it."</option>
+          <option>"I'm covering for a friend, it's a long story."</option>
+          <option>"It's the training request the department already signed off on."</option>
+          <option>"It's for that range trip we talked about."</option>
+          <option>"I'll explain later, it's not a good time right now."</option>
+          <option>"You don't want to know, and that's the honest part."</option>
+        </select>
+        <div class="small-print">Whether it holds up is not something you get to check in advance.</div>
+      </div>
+    </div>
+
+    <div class="subfields" id="sub-black">
+      <div>
+        <label>Criminology or Comp. Sci %</label>
+        <input type="number" id="skill-black" min="1" max="99" value="40">
+        <div class="autofill-note" id="note-black"></div>
+      </div>
+      <div>
+        <label>Who Do You Know?</label>
+        <select id="contact">
+          <option value="">– select –</option>
+          <option>A regular from the gun show circuit</option>
+          <option>A dark web vendor with good reviews</option>
+          <option>A guy from the range who talks too much</option>
+          <option>An old contact from a case you never fully wrote up</option>
+          <option>A cousin's cousin who "knows a guy"</option>
+          <option>Nobody – cold approach</option>
+        </select>
+      </div>
+      <div class="small-print" style="grid-column:1/-1;">Restricted items only. A failed roll here means the deal falls through, quietly. A fumbled one does not stay quiet.</div>
+    </div>
+  </section>
+
+  <!-- SECTION III -->
+  <section>
+    <div class="sec-head"><span class="sec-num">III</span><span class="sec-title">Adjudication</span></div>
+
+    <div class="submit-row">
+      <button class="stamp-btn" id="rollBtn">Submit for Processing</button>
+    </div>
+
+    <div class="counter" id="counter"></div>
+
+    <div class="verdict-wrap">
+      <div class="stamp" id="stamp"></div>
+    </div>
+
+    <div class="outcome-text" id="outcomeText">
+      <span class="tag" id="outcomeTag"></span>
+      <span id="outcomeBody"></span>
+      <div class="bond-line" id="processNote" style="display:none;"></div>
+      <div class="bond-line" id="bondLine" style="display:none;"></div>
+    </div>
+
+    <div class="reset-link" id="resetLink">File a new request</div>
+  </section>
+
+  <div class="footer-strip">
+    Retain no copy. If audited, this form does not exist.
+  </div>
+  </div>
+</div>
+
+<script>
+// Agency roster – pulled from the campaign's own ID creator tool, so the letterhead
+// on this form matches whichever agency the ID creator already put on the agent's badge.
+const AGENCIES = [
+  "Federal Bureau of Investigation",
+  "Department of Justice",
+  "Dept. of Justice – Office of Inspector General",
+  "Department of Homeland Security",
+  "Drug Enforcement Administration",
+  "Bureau of Alcohol, Tobacco, Firearms and Explosives",
+  "Immigration and Customs Enforcement",
+  "United States Secret Service",
+  "United States Marshals Service",
+  "Naval Criminal Investigative Service",
+  "IRS – Criminal Investigation Division",
+  "Financial Crimes Enforcement Network",
+  "U.S. Postal Inspection Service",
+  "New York City Police Department",
+  "Shelby County Sheriff's Office",
+  "M-EPIC Environmental Policy Impact Commission",
+  "Delta Green – Directorate",
+];
+
+const ITEMS = [
+  // Hand-to-Hand Weapons
+  {group:"Hand-to-Hand Weapons", name:"Brass knuckles / heavy flashlight / steel-toe boots", cat:"Incidental"},
+  {group:"Hand-to-Hand Weapons", name:"Garrote", cat:"Incidental"},
+  {group:"Hand-to-Hand Weapons", name:"Knife", cat:"Incidental"},
+  {group:"Hand-to-Hand Weapons", name:"Hatchet", cat:"Incidental"},
+  {group:"Hand-to-Hand Weapons", name:"Large knife or combat dagger", cat:"Incidental"},
+  {group:"Hand-to-Hand Weapons", name:"Club, nightstick, baton", cat:"Incidental"},
+  {group:"Hand-to-Hand Weapons", name:"Machete, tomahawk, or sword", cat:"Incidental"},
+  {group:"Hand-to-Hand Weapons", name:"Baseball bat or rifle butt", cat:"Incidental"},
+  {group:"Hand-to-Hand Weapons", name:"Spear or fixed bayonet", cat:"Incidental"},
+  {group:"Hand-to-Hand Weapons", name:"Wood axe", cat:"Incidental"},
+  {group:"Hand-to-Hand Weapons", name:"Large sword", cat:"Standard"},
+  {group:"Hand-to-Hand Weapons", name:"Two-handed sword", cat:"Standard"},
+
+  // Tear Gas and Pepper Spray
+  {group:"Tear Gas and Pepper Spray", name:"Pepper spray keychain", cat:"Incidental"},
+  {group:"Tear Gas and Pepper Spray", name:"Pepper spray can", cat:"Incidental"},
+  {group:"Tear Gas and Pepper Spray", name:"Tear gas grenade, thrown", cat:"Incidental", restricted:true},
+  {group:"Tear Gas and Pepper Spray", name:"Tear gas grenade, launched", cat:"Incidental", restricted:true},
+
+  // Stun Grenades
+  {group:"Stun Grenades", name:"Flash-bang grenade, thrown", cat:"Incidental", restricted:true},
+  {group:"Stun Grenades", name:"Flash-bang grenade, launched", cat:"Incidental", restricted:true},
+
+  // Electroshock Weapons
+  {group:"Electroshock Weapons", name:"Stun gun", cat:"Incidental"},
+  {group:"Electroshock Weapons", name:"Shock baton", cat:"Incidental"},
+  {group:"Electroshock Weapons", name:"CED pistol", cat:"Standard"},
+
+  // Firearms
+  {group:"Firearms", name:"Light pistol", cat:"Standard"},
+  {group:"Firearms", name:"Medium pistol", cat:"Standard"},
+  {group:"Firearms", name:"Heavy pistol", cat:"Standard"},
+  {group:"Firearms", name:"Shotgun (slug)", cat:"Standard"},
+  {group:"Firearms", name:"Shotgun (shot)", cat:"Standard"},
+  {group:"Firearms", name:"Shotgun (nonlethal)", cat:"Standard"},
+  {group:"Firearms", name:"Submachine gun", cat:"Unusual", restricted:true},
+  {group:"Firearms", name:"Light rifle or carbine", cat:"Standard", restricted:true},
+  {group:"Firearms", name:"Heavy rifle", cat:"Unusual", restricted:true},
+  {group:"Firearms", name:"Very heavy rifle", cat:"Major"},
+
+  // Heavy Weapons
+  {group:"Heavy Weapons", name:"Handheld flamethrower", cat:"Unusual"},
+  {group:"Heavy Weapons", name:"Military flamethrower", cat:"Unusual", restricted:true},
+  {group:"Heavy Weapons", name:"Light machine gun (LMG)", cat:"Major", restricted:true},
+  {group:"Heavy Weapons", name:"General-purpose machine gun (GPMG)", cat:"Major", restricted:true},
+  {group:"Heavy Weapons", name:"Minigun", cat:"Extreme", restricted:true},
+  {group:"Heavy Weapons", name:"Heavy machine gun (HMG)", cat:"Major", restricted:true},
+  {group:"Heavy Weapons", name:"Autocannon", cat:"Extreme", restricted:true},
+  {group:"Heavy Weapons", name:"Grenade launcher (GL)", cat:"Major", restricted:true},
+  {group:"Heavy Weapons", name:"Grenade machine gun (GMG)", cat:"Major", restricted:true},
+  {group:"Heavy Weapons", name:"Rocket-propelled grenade launcher (RPG)", cat:"Standard", restricted:true},
+  {group:"Heavy Weapons", name:"Hand grenade", cat:"Incidental", restricted:true},
+
+  // Demolitions
+  {group:"Demolitions", name:"Detonation cord or extrudable explosive, 500g", cat:"Incidental", restricted:true},
+  {group:"Demolitions", name:"Improvised explosive device (IED)", cat:"Incidental", restricted:true},
+  {group:"Demolitions", name:"Bundled IED", cat:"Incidental", restricted:true},
+  {group:"Demolitions", name:"Explosively-formed penetrator mine", cat:"Standard", restricted:true},
+  {group:"Demolitions", name:"ANFO explosive", cat:"Incidental"},
+
+  // Artillery
+  {group:"Artillery", name:"Light mortar", cat:"Major", restricted:true},
+  {group:"Artillery", name:"Artillery", cat:"Extreme", restricted:true},
+  {group:"Artillery", name:"Heavy mortar", cat:"Major", restricted:true},
+  {group:"Artillery", name:"Anti-tank guided missile (ATGM)", cat:"Extreme", restricted:true},
+  {group:"Artillery", name:"General-purpose bomb", cat:"Unusual", restricted:true},
+  {group:"Artillery", name:"Cruise missile", cat:"Extreme", restricted:true},
+
+  // Body Armor
+  {group:"Body Armor", name:"Riot helmet", cat:"Standard"},
+  {group:"Body Armor", name:"Kevlar helmet", cat:"Standard"},
+  {group:"Body Armor", name:"Kevlar vest", cat:"Standard"},
+  {group:"Body Armor", name:"Reinforced Kevlar vest", cat:"Unusual"},
+  {group:"Body Armor", name:"Tactical body armor", cat:"Unusual"},
+  {group:"Body Armor", name:"Bomb suit", cat:"Extreme"},
+
+  // Ground Vehicles
+  {group:"Ground Vehicles", name:"Motorcycle", cat:"Major"},
+  {group:"Ground Vehicles", name:"Sedan", cat:"Major"},
+  {group:"Ground Vehicles", name:"Pickup or SUV", cat:"Major"},
+  {group:"Ground Vehicles", name:"Armored SUV", cat:"Extreme"},
+  {group:"Ground Vehicles", name:"Humvee", cat:"Extreme"},
+  {group:"Ground Vehicles", name:"Armored Humvee", cat:"Extreme"},
+  {group:"Ground Vehicles", name:"Semi truck", cat:"Extreme"},
+  {group:"Ground Vehicles", name:"MRAP armored vehicle", cat:"Extreme"},
+  {group:"Ground Vehicles", name:"Armored personnel carrier", cat:"Extreme"},
+  {group:"Ground Vehicles", name:"Mid-20th century tank", cat:"Extreme"},
+  {group:"Ground Vehicles", name:"Modern tank", cat:"Extreme"},
+
+  // Water Vehicles
+  {group:"Water Vehicles", name:"Combat rubber raiding craft", cat:"Unusual"},
+  {group:"Water Vehicles", name:"Rigid-hulled inflatable boat", cat:"Major"},
+  {group:"Water Vehicles", name:"River patrol boat", cat:"Extreme"},
+  {group:"Water Vehicles", name:"Speed boat", cat:"Extreme"},
+
+  // Air Vehicles
+  {group:"Air Vehicles", name:"Civilian helicopter", cat:"Extreme"},
+  {group:"Air Vehicles", name:"Commuter plane", cat:"Extreme"},
+  {group:"Air Vehicles", name:"Police helicopter", cat:"Extreme"},
+  {group:"Air Vehicles", name:"Attack helicopter", cat:"Extreme"},
+  {group:"Air Vehicles", name:"Passenger jet", cat:"Extreme"},
+  {group:"Air Vehicles", name:"Fighter jet", cat:"Extreme"},
+
+  // Transportation
+  {group:"Transportation", name:"Same-day bus ticket", cat:"Incidental"},
+  {group:"Transportation", name:"Car or SUV, rented for a week", cat:"Standard"},
+  {group:"Transportation", name:"Same-day interstate plane or train ticket", cat:"Standard"},
+  {group:"Transportation", name:"Same-day international ticket, developed world", cat:"Unusual"},
+  {group:"Transportation", name:"Chartered helicopter, one trip", cat:"Unusual"},
+  {group:"Transportation", name:"Same-day international ticket, developing world", cat:"Major"},
+  {group:"Transportation", name:"Chartered jet, one trip", cat:"Extreme"},
+
+  // Lodgings
+  {group:"Lodgings", name:"A night or two at a cheap motel", cat:"Incidental"},
+  {group:"Lodgings", name:"A week at a motel or short-term apartment", cat:"Standard"},
+  {group:"Lodgings", name:"A week at a fine hotel", cat:"Unusual"},
+  {group:"Lodgings", name:"A week at an exclusive resort", cat:"Major"},
+  {group:"Lodgings", name:"Private accommodations, most exclusive locations", cat:"Extreme"},
+
+  // Covers and Legends
+  {group:"Covers and Legends", name:"Forged passport or identification documents", cat:"Unusual"},
+  {group:"Covers and Legends", name:"Forged passport from a G-7 country", cat:"Major"},
+  {group:"Covers and Legends", name:"A new identity", cat:"Extreme"},
+
+  // Storage
+  {group:"Storage", name:"Public storage unit, one month", cat:"Incidental"},
+  {group:"Storage", name:"Public storage unit, one year", cat:"Standard"},
+  {group:"Storage", name:"Large public storage unit, one year", cat:"Unusual"},
+
+  // Restraints
+  {group:"Restraints", name:"Flexible cuffs", cat:"Incidental"},
+  {group:"Restraints", name:"Handcuffs", cat:"Incidental"},
+
+  // Research
+  {group:"Research", name:"Access to pay-for-use journals and publications", cat:"Incidental"},
+  {group:"Research", name:"Expert advice from a professional or academic", cat:"Incidental"},
+  {group:"Research", name:"Credentials for unescorted entry to a restricted site", cat:"Standard"},
+  {group:"Research", name:"Independent verification/review from academic expert", cat:"Standard"},
+  {group:"Research", name:"Specialized scientific equipment for \"testing and review\"", cat:"Major"},
+
+  // Communications and Computers
+  {group:"Communications and Computers", name:"Burner phone", cat:"Incidental"},
+  {group:"Communications and Computers", name:"Short-range walkie talkie / early-gen mobile phone", cat:"Incidental"},
+  {group:"Communications and Computers", name:"\"Script kiddie\" hacking software", cat:"Incidental"},
+  {group:"Communications and Computers", name:"Earpiece communicator set", cat:"Standard"},
+  {group:"Communications and Computers", name:"Ordinary computer", cat:"Standard"},
+  {group:"Communications and Computers", name:"Tablet computer or late-gen smartphone", cat:"Standard"},
+  {group:"Communications and Computers", name:"3D printer (plastic)", cat:"Standard"},
+  {group:"Communications and Computers", name:"Satellite phone", cat:"Unusual"},
+  {group:"Communications and Computers", name:"Hire a hacker to defeat basic encryption", cat:"Unusual"},
+  {group:"Communications and Computers", name:"Powerful computer", cat:"Major"},
+  {group:"Communications and Computers", name:"Cutting-edge encryption or data-mining software", cat:"Major", restricted:true},
+  {group:"Communications and Computers", name:"Advanced data-analysis software", cat:"Major"},
+  {group:"Communications and Computers", name:"3D printer (metal)", cat:"Major"},
+  {group:"Communications and Computers", name:"Hire a hacker to defeat advanced encryption", cat:"Major"},
+  {group:"Communications and Computers", name:"Exclusive use of a dedicated communications satellite", cat:"Extreme", restricted:true},
+
+  // Surveillance
+  {group:"Surveillance", name:"Simple directional microphone", cat:"Incidental"},
+  {group:"Surveillance", name:"Bug detector", cat:"Standard"},
+  {group:"Surveillance", name:"Fiber optic scope", cat:"Standard"},
+  {group:"Surveillance", name:"GPS jammer", cat:"Standard"},
+  {group:"Surveillance", name:"Voice-activated recorder", cat:"Standard"},
+  {group:"Surveillance", name:"Directional microphone and acoustic software", cat:"Standard"},
+  {group:"Surveillance", name:"Basic, open-market drone", cat:"Standard"},
+  {group:"Surveillance", name:"Audio jammer (RF/cellular)", cat:"Unusual"},
+  {group:"Surveillance", name:"GPS tracking device", cat:"Unusual"},
+  {group:"Surveillance", name:"Advanced directional microphone and acoustic software", cat:"Unusual"},
+  {group:"Surveillance", name:"Advanced drone", cat:"Unusual"},
+  {group:"Surveillance", name:"Ground-penetrating radar", cat:"Major"},
+  {group:"Surveillance", name:"Military-grade drone", cat:"Extreme"},
+
+  // Lighting and Vision
+  {group:"Lighting and Vision", name:"Large flashlight", cat:"Incidental"},
+  {group:"Lighting and Vision", name:"Tactical light or weapon light", cat:"Incidental"},
+  {group:"Lighting and Vision", name:"Ordinary binoculars", cat:"Incidental"},
+  {group:"Lighting and Vision", name:"Civilian night vision goggles (NVG)", cat:"Standard"},
+  {group:"Lighting and Vision", name:"Advanced binoculars or telescope", cat:"Standard"},
+  {group:"Lighting and Vision", name:"Powerful telescope", cat:"Unusual"},
+  {group:"Lighting and Vision", name:"Military-grade night vision goggles", cat:"Major", restricted:true},
+
+  // Breaking and Entering
+  {group:"Breaking and Entering", name:"Lockpick kit", cat:"Incidental"},
+  {group:"Breaking and Entering", name:"Halligan forcible-entry tool", cat:"Standard"},
+  {group:"Breaking and Entering", name:"Lockpick gun", cat:"Standard"},
+
+  // Emergency and Survival
+  {group:"Emergency and Survival", name:"Individual first aid kit", cat:"Incidental"},
+  {group:"Emergency and Survival", name:"Small fire extinguisher (CO2)", cat:"Incidental"},
+  {group:"Emergency and Survival", name:"Handheld GPS", cat:"Incidental"},
+  {group:"Emergency and Survival", name:"Basic camping gear", cat:"Incidental"},
+  {group:"Emergency and Survival", name:"Personal protective equipment (PPE)", cat:"Incidental"},
+  {group:"Emergency and Survival", name:"Heavy-duty fire extinguisher", cat:"Standard"},
+  {group:"Emergency and Survival", name:"Gas mask", cat:"Standard"},
+  {group:"Emergency and Survival", name:"HAZMAT suit", cat:"Standard"},
+  {group:"Emergency and Survival", name:"First responder medical kit", cat:"Standard"},
+  {group:"Emergency and Survival", name:"Extended camping gear", cat:"Standard"},
+  {group:"Emergency and Survival", name:"SCUBA gear", cat:"Unusual"},
+  {group:"Emergency and Survival", name:"Polypropylene barrel filled with acid", cat:"Unusual"},
+];
+
+const ROUTES = [
+  {id:"official", name:"Official Requisition", meta:"Paper trail. Slow. Deniable to no one.", skillLabel:"Bureaucracy"},
+  {id:"personal", name:"Personal Funds", meta:"Comes out of your life, not the budget.", skillLabel:"Accounting"},
+  {id:"favor", name:"Calling In a Favor", meta:"Costs a Bond, not a dollar.", skillLabel:"CHA"},
+  {id:"black", name:"Black Market", meta:"No paperwork. No safety net.", skillLabel:"Criminology"},
+];
+
+const itemSel = document.getElementById('item');
+{
+  let catCounter = 0, itemCounter = 0, lastGroup = null;
+  ITEMS.forEach((it)=>{
+    if(it.group !== lastGroup){ catCounter++; itemCounter = 0; lastGroup = it.group; }
+    itemCounter++;
+    it.cc = String(catCounter).padStart(2,'0') + "-" + String(itemCounter).padStart(2,'0');
+  });
+}
+// Colors matched to the book's own expense-category triangle markers
+const CAT_COLORS = {
+  Incidental: "#2f7a3f",
+  Standard:   "#2f5f8f",
+  Unusual:    "#c9a227",
+  Major:      "#c1531b",
+  Extreme:    "#8b1a1a",
+};
+
+let currentGroup = null, currentOptgroup = null;
+ITEMS.forEach((it,i)=>{
+  if(it.group !== currentGroup){
+    currentGroup = it.group;
+    currentOptgroup = document.createElement('optgroup');
+    currentOptgroup.label = currentGroup;
+    itemSel.appendChild(currentOptgroup);
+  }
+  const o=document.createElement('option');
+  o.value=i;
+  o.textContent = "▲ " + it.name + (it.restricted ? "  ⚠" : "");
+  o.style.color = CAT_COLORS[it.cat] || '';
+  currentOptgroup.appendChild(o);
+});
+const agencySel = document.getElementById('agency');
+AGENCIES.forEach(name=>{
+  const o=document.createElement('option');
+  o.value=name; o.textContent=name;
+  agencySel.appendChild(o);
+});
+
+const catTag = document.getElementById('catTag');
+itemSel.addEventListener('change', ()=>{
+  // new item, any prior cost-center work is void
+  window.__ccLuckSucceeded = null;
+  const ccInput = document.getElementById('costCenter');
+  const ccResult = document.getElementById('ccResult');
+  if(ccInput){ ccInput.value=''; }
+  if(ccResult){ ccResult.textContent=''; }
+
+  if(itemSel.value===""){catTag.style.display='none'; return;}
+  const it = ITEMS[itemSel.value];
+  const tri = document.createElement('span');
+  tri.textContent = '▲ ';
+  tri.style.color = CAT_COLORS[it.cat] || 'var(--ink-3)';
+  let txt = "EXPENSE CATEGORY: " + it.cat.toUpperCase();
+  if(it.restricted) txt += "  ·  RESTRICTED";
+  catTag.innerHTML = '';
+  catTag.appendChild(tri);
+  catTag.appendChild(document.createTextNode(txt));
+  catTag.style.display='inline-block';
+});
+
+const routesDiv = document.getElementById('routes');
+let selectedRoute = null;
+ROUTES.forEach(r=>{
+  const div = document.createElement('div');
+  div.className='route';
+  div.dataset.id=r.id;
+  div.innerHTML = `<input type="radio" name="route" value="${r.id}">
+    <div><div class="rname">${r.name}</div><div class="rmeta">${r.meta}</div></div>
+    <div class="rskill">${r.skillLabel}</div>`;
+  div.addEventListener('click', ()=>selectRoute(r.id));
+  routesDiv.appendChild(div);
+});
+
+function selectRoute(id){
+  selectedRoute = id;
+  document.querySelectorAll('.route').forEach(d=>{
+    d.classList.toggle('selected', d.dataset.id===id);
+    d.querySelector('input').checked = d.dataset.id===id;
+  });
+  ['official','personal','favor','black'].forEach(k=>{
+    document.getElementById('sub-'+k).classList.toggle('active', k===id);
+  });
+}
+
+function d10(){ return Math.floor(Math.random()*10); } // 0-9
+function rollPercentile(){
+  let tens = d10(), units = d10();
+  let val = tens*10+units;
+  if(val===0) val = 100;
+  return val;
+}
+function isMatchingDigits(val){
+  if(val===100) return true;
+  let s = val.toString().padStart(2,'0');
+  return s[0]===s[1];
+}
+function tierOf(val, skill, baseSkill){
+  // baseSkill (if given) is the skill before suspicion-style penalties were applied.
+  // A critical is good enough that it doesn't care about those penalties.
+  const critFloor = (baseSkill!==undefined) ? baseSkill : skill;
+  if(val===1) return 'critical';
+  if(val<=critFloor && isMatchingDigits(val)) return 'critical';
+  if(val===100) return 'fumble';
+  if(val>skill && isMatchingDigits(val)) return 'fumble';
+  return val<=skill ? 'success' : 'failure';
+}
+
+// Flavor banks -------------------------------------------------
+const OFFICIAL = {
+  critical:["APPROVED, SAME DAY. Someone in Records made an error in your favor. Do not ask them to explain it."],
+  success:["Approved. Sixteen business days. The gear arrives in a box marked LIBRARY SUPPLIES."],
+  failure:["DENIED. Form 27-B stapled at the wrong corner. Resubmit with a new staple, rotated 90 degrees.",
+            "Your request has been forwarded to a subcommittee that convenes quarterly. It is February.",
+            "Approved in principle, pending a second form explaining the necessity of the first form."],
+  fumble:["APPROVED – and flagged. A budget analyst is now asking your supervisor why a 'training exercise' has no training scheduled. This will surface again."]
+};
+const PERSONAL = {
+  Incidental:{
+    critical:["Exact change, first try. Somehow satisfying."],
+    success:["Cash, no receipt, nobody notices."],
+    failure:["Wrong pocket, wrong card, minor fumbling at the register."],
+    fumble:["The card gets declined in front of a line of people for no reason anyone can find."]
+  },
+  Standard:{
+    critical:["The card goes through instantly, and the cashier throws in a small discount for no reason."],
+    success:["The card goes through. You'll deal with the statement later."],
+    failure:["You quietly move the cash out of the envelope marked SOFIA'S BIRTHDAY. She won't notice. You will."],
+    fumble:["You move the cash out of the envelope marked SOFIA'S BIRTHDAY, and the store re-charges the card twice. Now there's a second thing to explain."]
+  },
+  Unusual:{
+    critical:["You find the exact item used, half price, from someone who clearly doesn't know what they have."],
+    success:["You sell the guitar you haven't played since college. Nobody at home asks where it went. That's worse."],
+    failure:["You liquidate half your retirement account. Early withdrawal penalty included, free of charge."],
+    fumble:["The retirement account withdrawal triggers a fraud hold, and now the bank is calling your spouse's phone to verify it. It rings during dinner."]
+  },
+  Major:{
+    critical:["The loan clears same-day, at a rate that makes no sense. Nobody asks why."],
+    success:["The loan clears. Every relationship outside Delta Green gets a little colder, for reasons you can't explain to any of them."],
+    failure:["The loan officer says no. You've spooked your spouse asking about the joint account, alienated the friend you asked to cosign, and you still don't have the gear."],
+    fumble:["The loan officer says no, loudly, in front of the friend you asked to cosign. Word travels."]
+  },
+  Extreme:{
+    critical:["Everything you cash out is somehow enough, with a little left over. You don't examine why too closely."],
+    success:["You cash out everything you have left that isn't nailed down. It's enough. It cost more than money."],
+    failure:["You cash out everything anyway. It wasn't enough, and now there's nothing left to fall back on."],
+    fumble:["You cash out everything, it wasn't enough, and the bank has started asking questions your family can hear."]
+  }
+};
+const FAVOR = {
+  critical:["They don't just get it – they throw in a favor of their own for later. You'll owe them, eventually."],
+  success:["They come through. No questions, or none they ask out loud."],
+  failure:["They come through, barely, and you can hear in their voice that they're wondering what you've gotten into."],
+  fumble:["They can't help, and now they're wondering out loud, to other people, what you've gotten into."]
+};
+const BLACK = {
+  critical:["The dealer undersells it, badly, and doesn't seem to notice. Take the win and leave."],
+  success:["The deal goes through in a parking lot that smells like bleach. Nobody's name gets used."],
+  failure:["The contact goes quiet. Deal's off. No harm done, this time."],
+  fumble:["The buyer was ATF the entire time. Somebody, somewhere, now has your face on file."]
+};
+
+function bondText(route, tier, cat){
+  if(route==='official'){
+    if(tier==='fumble') return "No Bond loss yet – this goes to Official Review at the next Home scene (see Getting Fired / Prosecution, p.80). Not resolved here.";
+    return null;
+  }
+  if(route==='black'){
+    if(tier==='fumble') return "No Bond loss yet – Handler determines investigation fallout (see Prosecution, p.80). Not resolved here.";
+    return null;
+  }
+  if(route==='favor'){
+    if(tier==='success'||tier==='critical') return null;
+    if(tier==='failure') return "Bond −1.";
+    if(tier==='fumble'){
+      const d4 = Math.floor(Math.random()*4)+1;
+      return `Bond −${d4}.`;
+    }
+  }
+  if(route==='personal'){
+    if(cat==='Standard'){
+      if(tier==='success'||tier==='critical') return null;
+      return "Bond −1 (RAW: Standard expense, failed test).";
+    }
+    if(cat==='Unusual'){
+      return "Bond −1 regardless of the roll, unless a wealthy-occupation test was passed (RAW).";
+    }
+    if(cat==='Major'){
+      if(tier==='success'||tier==='critical') return "Bond −1 to EACH non-Delta Green Bond you have (RAW – this is the cost of the debt itself, even on success).";
+      const d4 = Math.floor(Math.random()*4)+1;
+      return `Bond −${d4} to one Bond (Handler's choice), and −1 to each other non-Delta Green Bond (RAW). Item not obtained.`;
+    }
+    if(cat==='Extreme'){
+      const d4 = Math.floor(Math.random()*4)+1;
+      return `Bond −${d4} to EACH non-Delta Green Bond (RAW – pushed through despite the failure).`;
+    }
+  }
+  return null;
+}
+
+// Roll handler ---------------------------------------------------
+const rollBtn = document.getElementById('rollBtn');
+const counterEl = document.getElementById('counter');
+const stampEl = document.getElementById('stamp');
+const outcomeText = document.getElementById('outcomeText');
+const outcomeTag = document.getElementById('outcomeTag');
+const outcomeBody = document.getElementById('outcomeBody');
+const bondLine = document.getElementById('bondLine');
+const processNote = document.getElementById('processNote');
+
+// "Ask Records" – Luck roll to learn the cost center, at the cost of suspicion
+document.getElementById('askCostCenter').addEventListener('click', ()=>{
+  if(itemSel.value===""){ alert('Select an item first.'); return; }
+  const it = ITEMS[itemSel.value];
+  const ccResult = document.getElementById('ccResult');
+  const success = Math.random() < 0.5; // Luck Roll, per the book: flat 50%
+  if(success){
+    document.getElementById('costCenter').value = it.cc;
+    window.__ccLuckSucceeded = true;
+    ccResult.textContent = "Records confirms it: " + it.cc + ". Someone will remember you called twice.";
+  } else {
+    window.__ccLuckSucceeded = false;
+    ccResult.textContent = "Records has never heard of it. Try counting it yourself.";
+  }
+});
+
+// Returns {ok, penalty, note} or {ok:false} with an immediate rejection already shown
+function resolveOfficialGate(){
+  const it = ITEMS[itemSel.value];
+  const raw = document.getElementById('costCenter').value.trim();
+  const nums = raw.match(/\d+/g);
+  let manualCorrect = false;
+  if(nums && nums.length>=2){
+    const [ca, cb] = it.cc.split('-').map(Number);
+    manualCorrect = (parseInt(nums[0])===ca && parseInt(nums[1])===cb);
+  }
+  if(manualCorrect){
+    return {penalty:0, note:null};
+  }
+  if(window.__ccLuckSucceeded===true){
+    return {penalty:20, note:"Cost center obtained through Records, not memory. Flagged as a repeat inquiry – −20% applied."};
+  }
+  return {penalty:20, note:"RETURNED FOR CORRECTION: cost center not recognized. Resubmitted anyway, under protest – −20% applied."};
+}
+
+rollBtn.addEventListener('click', ()=>{
+  if(!selectedRoute){ alert('Section II is not complete: select a method of acquisition.'); return; }
+  if(itemSel.value===""){ alert('Section I is not complete: select an item.'); return; }
+  if(selectedRoute==='official' && !document.getElementById('agency').value){
+    alert('Section II is not complete: select the requesting agency.'); return;
+  }
+  if(selectedRoute==='favor' && !document.getElementById('bondType').value){
+    alert('Section II is not complete: select which Bond you are drawing on.'); return;
+  }
+  if(selectedRoute==='black' && !document.getElementById('contact').value){
+    alert('Section II is not complete: select who you know.'); return;
+  }
+
+  let extraPenalty = 0;
+  let note = null;
+
+  if(selectedRoute==='official'){
+    const gate = resolveOfficialGate();
+    extraPenalty += gate.penalty;
+    note = gate.note;
+  }
+
+  stampEl.classList.remove('show');
+  outcomeText.classList.remove('show');
+  bondLine.style.display='none';
+  processNote.style.display='none';
+  rollBtn.disabled = true;
+
+  let skill = parseInt(document.getElementById('skill-'+selectedRoute).value) || 1;
+  const reqCat = ITEMS[itemSel.value].cat;
+  if(selectedRoute==='official'){
+    skill += parseInt(document.getElementById('priority').value);
+    if(reqCat==='Major') skill -= 20;
+    if(reqCat==='Extreme') skill -= 40;
+  }
+  if(selectedRoute==='personal'){
+    if(reqCat==='Major') skill -= 20;
+    if(reqCat==='Extreme') skill -= 40;
+    if(document.getElementById('wealthy').value==='1') skill += 20;
+  }
+  // Hidden Luck rolls: whether the excuse / the name-drop actually holds up.
+  // Resolved silently – the player only learns the result in the outcome.
+  if(selectedRoute==='favor'){
+    const luck = Math.random() < 0.5;
+    note = luck ? "They didn't ask twice." : "The excuse didn't quite land. −20% applied.";
+    if(!luck) extraPenalty += 20;
+  }
+  if(selectedRoute==='black'){
+    const luck = Math.random() < 0.5;
+    note = luck ? "The name still opens doors." : "The name didn't carry the weight you hoped. −20% applied.";
+    if(!luck) extraPenalty += 20;
+  }
+
+  skill -= extraPenalty;
+  const baseSkill = Math.max(1, Math.min(99, skill + extraPenalty));
+  skill = Math.max(1, Math.min(99, skill));
+
+  let ticks = 0;
+  const spin = setInterval(()=>{
+    counterEl.textContent = String(Math.floor(Math.random()*100)+1).padStart(2,'0');
+    ticks++;
+    if(ticks>14){
+      clearInterval(spin);
+      const val = rollPercentile();
+      const tier = tierOf(val, skill, baseSkill);
+      counterEl.innerHTML = String(val).padStart(2,'0') + `<span class="vs">vs. ${skill}%</span>`;
+      if(tier==='critical' && extraPenalty>0){
+        note = "Whatever friction there was, it didn't matter this time.";
+      }
+      resolve(tier, val, note);
+    }
+  }, 55);
+});
+
+function resolve(tier, val, note){
+  const cat = ITEMS[itemSel.value] ? ITEMS[itemSel.value].cat : 'Standard';
+  const isIncidental = (cat === 'Incidental');
+  let stampLabel, stampClass;
+  if(tier==='critical'){ stampLabel='APPROVED'; stampClass='approve'; }
+  if(tier==='success'){ stampLabel = selectedRoute==='favor' ? 'FAVOR GRANTED' : (selectedRoute==='black' ? 'DEAL DONE' : 'APPROVED'); stampClass='approve'; }
+  if(tier==='failure'){ stampLabel = selectedRoute==='black' ? 'NO DEAL' : 'DENIED'; stampClass='deny'; }
+  if(tier==='fumble'){ stampLabel = selectedRoute==='official' ? 'FLAGGED' : (selectedRoute==='black' ? 'COMPROMISED' : 'DENIED'); stampClass='fumble'; }
+
+  // Incidentals are always a success in the end – per the book, they don't even need
+  // a roll. We still roll it for the flavor text and the fun of the dice, but the
+  // stamp always lands on approved.
+  if(isIncidental){
+    stampLabel = selectedRoute==='favor' ? 'FAVOR GRANTED' : (selectedRoute==='black' ? 'DEAL DONE' : 'APPROVED');
+    stampClass = 'approve';
+  }
+
+  stampEl.textContent = stampLabel;
+  stampEl.className = 'stamp show ' + stampClass;
+
+  let body;
+  if(selectedRoute==='official') body = pick(OFFICIAL[tier]);
+  if(selectedRoute==='personal') body = pick(PERSONAL[cat][tier]);
+  if(selectedRoute==='favor') body = pick(FAVOR[tier]);
+  if(selectedRoute==='black') body = pick(BLACK[tier]);
+
+  if(isIncidental && (tier==='failure' || tier==='fumble')){
+    body += " Doesn't matter. It's Incidental – you got it anyway.";
+  }
+
+  if(selectedRoute==='official' && document.getElementById('agency').value){
+    body += ' Routed through ' + document.getElementById('agency').value + '.';
+  }
+
+  outcomeTag.textContent = tier.toUpperCase() + (val?` – ROLLED ${val}`:'');
+  outcomeBody.textContent = body;
+  outcomeText.classList.add('show');
+
+  if(note){
+    processNote.textContent = note;
+    processNote.style.display = 'block';
+  }
+
+  const bt = bondText(selectedRoute, tier, cat);
+  if(bt){
+    bondLine.innerHTML = '<b>PERSONAL COST:</b> ' + bt;
+    bondLine.style.display = 'block';
+  }
+}
+function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+document.getElementById('resetLink').addEventListener('click', ()=>{
+  itemSel.value=""; catTag.style.display='none';
+  document.getElementById('agentName').value='';
+  document.getElementById('pretext').value='';
+  document.getElementById('costCenter').value='';
+  document.getElementById('ccResult').textContent='';
+  document.getElementById('agency').value='';
+  document.getElementById('bondType').value='';
+  document.getElementById('excuse').value='';
+  document.getElementById('contact').value='';
+  window.__ccLuckSucceeded = null;
+  selectedRoute=null;
+  document.querySelectorAll('.route').forEach(d=>d.classList.remove('selected'));
+  document.querySelectorAll('.subfields').forEach(d=>d.classList.remove('active'));
+  counterEl.textContent='';
+  stampEl.classList.remove('show');
+  outcomeText.classList.remove('show');
+  processNote.style.display='none';
+  rollBtn.disabled=false;
+});
+
+/* ── Auto-fill skill percentages from this Agent's own character sheet ──
+   The four routes' skill fields (Bureaucracy/Mil. Science, INT×5/
+   Accounting, CHA×5, Criminology/Comp. Sci) started life as plain manual-
+   entry numbers in the standalone prototype -- the one thing asked to be
+   wired to real data on integration. agent-hub.html's own roster links
+   every tool page here the same way ("tool.html?code=AGENT_CODE"), and
+   skill percentages/stats live in the Cloud Save character sheet, not the
+   dg_agent_roster entry itself (that only has name/notes-adjacent fields)
+   -- fetched here the exact same way stats/cloud-sync.js's loadFromCloud()
+   and dg-agent-portal.html's own lookups already do (a plain JSONP GET,
+   no library), rather than pulling in the whole stats/ subsystem just for
+   four numbers. Military Science is a specialty skill (base key stays at
+   0; the real value lives in a specialtyInstances entry keyed 'military_
+   science') -- take the highest such instance, same as a player would
+   just pick their best one. Left fully editable either way: this only
+   pre-fills the default, a Handler can still override for a specific
+   circumstance (a specialty that doesn't apply, a wounded/impaired stat,
+   etc). */
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
+
+function setAutofillNote(routeId, text, stale){
+  const el = document.getElementById('note-'+routeId);
+  if(!el) return;
+  el.textContent = text;
+  el.classList.toggle('stale', !!stale);
+}
+
+function applyAgentSkills(state){
+  const skills = state.skills || {};
+  const stats = state.csStats || state.stats || {};
+
+  const militaryScienceMax = (state.specialtyInstances || [])
+    .filter(inst => inst.key === 'military_science')
+    .reduce((max, inst) => Math.max(max, parseInt(inst.value) || 0), 0);
+  const bureaucracy = parseInt(skills.bureaucracy) || 0;
+  if(bureaucracy || militaryScienceMax){
+    const official = Math.max(bureaucracy, militaryScienceMax);
+    document.getElementById('skill-official').value = official;
+    setAutofillNote('official', (bureaucracy >= militaryScienceMax
+      ? `Auto-filled from character sheet: Bureaucracy ${bureaucracy}%.`
+      : `Auto-filled from character sheet: Military Science ${militaryScienceMax}%.`));
+  } else {
+    setAutofillNote('official', 'No Bureaucracy or Military Science on record — enter manually.', true);
+  }
+
+  const intX5 = stats.INT ? parseInt(stats.INT) * 5 : 0;
+  const accounting = parseInt(skills.accounting) || 0;
+  if(intX5 || accounting){
+    document.getElementById('skill-personal').value = Math.max(intX5, accounting);
+    setAutofillNote('personal', (intX5 >= accounting
+      ? `Auto-filled from character sheet: INT×5 (${intX5}%).`
+      : `Auto-filled from character sheet: Accounting ${accounting}%.`));
+  } else {
+    setAutofillNote('personal', 'No INT or Accounting on record — enter manually.', true);
+  }
+
+  const chaX5 = stats.CHA ? parseInt(stats.CHA) * 5 : 0;
+  if(chaX5){
+    document.getElementById('skill-favor').value = chaX5;
+    setAutofillNote('favor', `Auto-filled from character sheet: CHA×5 (${chaX5}%).`);
+  } else {
+    setAutofillNote('favor', 'No CHA on record — enter manually.', true);
+  }
+
+  const criminology = parseInt(skills.criminology) || 0;
+  const compSci = parseInt(skills.computer_science) || 0;
+  if(criminology || compSci){
+    document.getElementById('skill-black').value = Math.max(criminology, compSci);
+    setAutofillNote('black', (criminology >= compSci
+      ? `Auto-filled from character sheet: Criminology ${criminology}%.`
+      : `Auto-filled from character sheet: Computer Science ${compSci}%.`));
+  } else {
+    setAutofillNote('black', 'No Criminology or Computer Science on record — enter manually.', true);
+  }
+}
+
+(function initSkillAutofill(){
+  const code = new URLSearchParams(location.search).get('code');
+  if(!code) return; // standalone visit, no Agent to pull from -- keep the manual defaults
+  ['official','personal','favor','black'].forEach(id => setAutofillNote(id, 'Looking up this Agent’s character sheet…', true));
+
+  const cbName = '_dgReqSkillsCb' + Date.now();
+  window[cbName] = function(res){
+    delete window[cbName];
+    const s = document.getElementById('_dg_req_skills_script');
+    if(s) s.remove();
+    if(!res || res.status !== 'OK' || !res.character_json){
+      const msg = 'Could not load this Agent’s character sheet — enter manually.';
+      ['official','personal','favor','black'].forEach(id => setAutofillNote(id, msg, true));
+      return;
+    }
+    let state;
+    try { state = JSON.parse(res.character_json); }
+    catch(e){
+      const msg = 'Could not read this Agent’s character sheet — enter manually.';
+      ['official','personal','favor','black'].forEach(id => setAutofillNote(id, msg, true));
+      return;
+    }
+    applyAgentSkills(state);
+  };
+  const script = document.createElement('script');
+  script.id = '_dg_req_skills_script';
+  script.src = APPS_SCRIPT_URL + '?action=load_character&code=' + encodeURIComponent(code) + '&callback=' + cbName;
+  script.onerror = function(){
+    delete window[cbName];
+    const msg = 'Connection error loading this Agent’s character sheet — enter manually.';
+    ['official','personal','favor','black'].forEach(id => setAutofillNote(id, msg, true));
+  };
+  document.head.appendChild(script);
+})();
+</script>
+<script src="assets/table-radio.js"></script>
+<script src="assets/dice-roller.js?v=7"></script>
+</body>
+</html>
