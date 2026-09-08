@@ -1222,7 +1222,12 @@
     }
 
     /* ── Public API ───────────────────────────────────────────────── */
-    window.dgDice = { roll: rollPercent, rollManual, _toggle: togglePanel, _select: selectDie };
+    // recordRoll is exposed separately from roll() -- a page with its own
+    // already-computed result (e.g. requisition.html's own paper-form
+    // percentile roll) logs that exact roll into the shared history here
+    // without triggering a second, independent roll of its own the way
+    // roll()/rollPercent() would (which animates and rolls fresh dice).
+    window.dgDice = { roll: rollPercent, rollManual, recordRoll, _toggle: togglePanel, _select: selectDie };
 
     /* ── Relay listener: only an instance with a real panel of its own
        should listen -- a SUPPRESS_OWN_PANEL instance has no built _e to
