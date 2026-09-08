@@ -3122,7 +3122,8 @@ textarea {
 }
 
 #settings-panel button,
-#settings-panel select {
+#settings-panel select,
+#settings-panel textarea {
     width: 100%;
     box-sizing: border-box;
 }
@@ -3137,7 +3138,14 @@ textarea {
    always meant to have. Each selector below is ID-anchored on
    #settings-panel specifically so it outranks every theme's own
    class-based rule regardless of source order or which theme is
-   active. */
+   active. `textarea` (#agent-paste-area, once it was promoted to an
+   always-visible primary import box) was missing from this list --
+   while Live Play is on, .live-play's own --input-bg override points
+   at --lp-tracker-value, which each theme redefines to its own bright
+   accent (X-Files green, Son of Sam red), so the New Recruit section
+   reachable from this drawer on an already-committed Agent rendered
+   as a solid color-filled box instead of the intended neutral dark
+   input. */
 #settings-panel #theme-selector,
 #settings-panel #theme-selector label {
     color: #eee;
@@ -3158,7 +3166,8 @@ textarea {
 #settings-panel select,
 #settings-panel #theme-selector select,
 #settings-panel button,
-#settings-panel input[type="text"] {
+#settings-panel input[type="text"],
+#settings-panel textarea {
     background: #262626;
     color: #eee;
     border: 1px solid rgba(255, 255, 255, 0.25);
@@ -3174,7 +3183,8 @@ textarea {
     border-color: rgba(255, 255, 255, 0.4);
 }
 
-#settings-panel input[type="text"]::placeholder {
+#settings-panel input[type="text"]::placeholder,
+#settings-panel textarea::placeholder {
     color: #888;
 }
 
