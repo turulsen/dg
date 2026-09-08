@@ -684,7 +684,6 @@ def test_new_recruit_split_and_import_commit(p):
 
     toml_path = os.path.join(HERE, "fixtures", "kappablack-export.toml")
     toml_text = open(toml_path, encoding="utf-8").read()
-    page.evaluate("document.getElementById('agent-paste-details').open = true")
     page.fill("#agent-paste-area", toml_text)
     page.click("#agent-paste-details button")
     page.wait_for_timeout(600)
@@ -961,6 +960,7 @@ def test_stat_generator_sheets_roundtrip(p):
         document.getElementById('cs-bio-age').value = '';
     }""")
 
+    page.evaluate("window.dgSettingsPanel.open()")
     page.click("#import-sheets-btn")
     page.wait_for_timeout(200)
     page.set_input_files("#dg-sheets-import-input", xlsx_path)
@@ -1020,6 +1020,7 @@ def test_foundry_import_profession_and_outfit(p):
 
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
+    page.evaluate("window.dgSettingsPanel.open()")
     page.evaluate("document.getElementById('advanced-options-details').open = true")
     page.wait_for_timeout(200)
 
@@ -1074,6 +1075,7 @@ def test_kappablack_toml_import(p):
 
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
+    page.evaluate("window.dgSettingsPanel.open()")
     page.evaluate("document.getElementById('advanced-options-details').open = true")
     page.wait_for_timeout(200)
 
@@ -1170,6 +1172,7 @@ def test_kappablack_toml_import_unmatched_profession(p):
 
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
+    page.evaluate("window.dgSettingsPanel.open()")
     page.evaluate("document.getElementById('advanced-options-details').open = true")
     page.wait_for_timeout(200)
 
@@ -1221,6 +1224,7 @@ def test_kappablack_toml_import_triggers_cloud_save(p):
 
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
+    page.evaluate("window.dgSettingsPanel.open()")
     page.evaluate("document.getElementById('advanced-options-details').open = true")
     page.wait_for_timeout(200)
 
@@ -1262,12 +1266,17 @@ def test_import_agent_paste_text(p):
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
 
-    record("stats-terminal", "the paste fallback is collapsed by default (not cluttering the primary drop zone)",
-           page.eval_on_selector("#agent-paste-details", "el => el.open") == False)
+    # Paste-code is the primary, always-visible path now (fastest for the
+    # common case, and the only option that works from a phone's "Share"
+    # sheet); drop/upload a file (any format, including PDF) is the
+    # collapsed secondary option instead.
+    record("stats-terminal", "the paste box is visible by default (the primary import path)",
+           page.is_visible("#agent-paste-area"))
+    record("stats-terminal", "drop/upload a file is collapsed by default (secondary, not cluttering the primary path)",
+           page.eval_on_selector("#agent-drop-details", "el => el.open") == False)
 
     toml_path = os.path.join(HERE, "fixtures", "kappablack-export.toml")
     toml_text = open(toml_path, encoding="utf-8").read()
-    page.evaluate("document.getElementById('agent-paste-details').open = true")
     page.fill("#agent-paste-area", toml_text)
     page.click("#agent-paste-details button")
     page.wait_for_timeout(600)
@@ -1605,6 +1614,7 @@ def test_agent_file_export(p):
         con_plus.click()
     page.wait_for_timeout(150)
 
+    page.evaluate("window.dgSettingsPanel.open()")
     page.click("#export-agent-file-btn")
     page.wait_for_timeout(400)
 
@@ -1690,6 +1700,7 @@ def test_random_bio_cloud_code_race(p):
     record("agent-file-export", "Random Bio mints a Cloud Save code immediately, with no other edit since",
            bool(cloud_code), str(cloud_code))
 
+    page.evaluate("window.dgSettingsPanel.open()")
     page.click("#export-agent-file-btn")
     page.wait_for_timeout(400)
     body = json.loads(captured.get("body") or "{}")

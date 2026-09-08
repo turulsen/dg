@@ -2052,7 +2052,14 @@ button:disabled,
     z-index: 2;
 }
 
-/* Suspend expensive visual effects during bond text typing.   .bond-typing is added to <body> so we can target the whole X-Files page.   We need to beat both:     - .theme-xfiles * { animation: textFlicker }  (specificity 0,1,0)     - .theme-xfiles #some-id { animation: ... !important } (specificity 1,1,0)   .bond-typing.theme-xfiles * beats the wildcard rule (0,2,0 > 0,1,0).   .bond-typing.theme-xfiles #id beats the id rules (1,2,0 > 1,1,0). */
+/* Suspend expensive visual effects during bond text typing. .bond-typing
+   is added to <body> so we can target the whole X-Files page. Originally
+   written to fight a since-removed blanket ".theme-xfiles *" flicker
+   animation (it applied to every element, including whatever the player
+   was actively typing into) -- that rule is gone now (see the CRT
+   phosphor glow comment near @keyframes textFlicker), but this still
+   correctly suspends the theme's other broadly-scoped effects (border
+   pulses, scanline drift) while typing, so it stays. */
 .bond-typing.theme-xfiles,
 .bond-typing.theme-xfiles * {
     animation: none !important;
@@ -3294,11 +3301,19 @@ textarea {
    green "standby" one. Goes sticky so it stays reachable to exit without
    scrolling back to the top of a long sheet, stacking right above the
    sticky #lp-tracker-bar (that bar's own `top` is offset by
-   --dg-mode-toggle-h to make room -- see its rule). */
+   --dg-mode-toggle-h to make room -- see its rule). Deliberately
+   theme-agnostic, matching the settings cog's own reasoning -- but its
+   original colors were tuned against a page that always had at least
+   some background brightness, and went nearly invisible once X-Files/
+   Son of Sam's Live Play backgrounds became flat black (see the ink-
+   color and flat-background fixes elsewhere in this file): #1a0d0d is
+   barely distinguishable from #000000. Brightened so "RETURN TO SHEET"
+   stays legible against true black, not just Field Notes' dark-desk
+   gradient. */
 .dg-mode-toggle.dg-mode-active {
-    background: #1a0d0d;
-    border-color: #6a2a2a;
-    color: #cf8a8a;
+    background: #2a1010;
+    border-color: #9a4a4a;
+    color: #e8a8a8;
 }
 
 .dg-mode-toggle.dg-mode-active .dg-mode-toggle-dot {
@@ -3307,8 +3322,8 @@ textarea {
 }
 
 .dg-mode-toggle.dg-mode-active:hover {
-    background: #281616;
-    border-color: #9a4a4a;
+    background: #3a1818;
+    border-color: #b85a5a;
 }
 
 .live-play #character-mode-toggle {
@@ -4480,21 +4495,6 @@ input[type="checkbox"]:checked+label {
     animation: blink 1s step-start 5s infinite;
 }
 
-@keyframes textFlicker {
-
-    0%,
-    100% {
-        text-shadow: 0 0 4px rgba(0, 255, 0, 0.4), 0 0 11px rgba(0, 255, 0, 0.2), 0 0 19px rgba(0, 255, 0, 0.1), 0 0 40px rgba(0, 255, 0, 0.05);
-        opacity: 0.99;
-    }
-
-    25%,
-    75% {
-        text-shadow: none;
-        opacity: 0.99;
-    }
-}
-
 /* CRT bond display — scan line drift and phosphor flicker */
 @keyframes crt-flicker {
 
@@ -4541,10 +4541,25 @@ input[type="checkbox"]:checked+label {
     }
 }
 
-/* Only apply the CRT flicker in the X-Files theme — other themes opt out explicitly */
-.theme-xfiles body,
-.theme-xfiles * {
-    animation: textFlicker 20s infinite;
+/* CRT phosphor glow -- X-Files only. Used to be an animated flicker
+   (textFlicker, 20s cycle) applied to literally every element via a
+   blanket `.theme-xfiles *` selector -- every heading, label, and table
+   cell on the page pulsed a glow in and out together, on a 20s loop with
+   no relation to what a user was actually looking at. Reported
+   confusingly as "New Recruit glows green then goes black on load" --
+   what's actually happening is every element's glow fades out together
+   on the same cycle, so anything already low-contrast without the glow
+   (like a 0.75-opacity heading) reads as vanishing the moment the cycle
+   dips. Fixed by making the glow a static effect (no animation, no
+   fade) instead of removing it outright, per direct request -- and
+   scoping it to actual terminal-readout headings/titles rather than
+   every element, so dense data (tables, skill lists, bond entries)
+   doesn't compete with a glow that was never meant for it. */
+.theme-xfiles .page-title,
+.theme-xfiles .lp-dg-title,
+.theme-xfiles .stats-section h2,
+.theme-xfiles .site-intro strong {
+    text-shadow: 0 0 4px rgba(0, 255, 0, 0.4), 0 0 11px rgba(0, 255, 0, 0.2), 0 0 19px rgba(0, 255, 0, 0.1), 0 0 40px rgba(0, 255, 0, 0.05);
 }
 
 /* ============================================================================   RESPONSIVE DESIGN   ============================================================================ */
@@ -5298,6 +5313,25 @@ input[type="checkbox"]:checked+label {
     letter-spacing: 0.08em;
 }
 
+/* The paste-import box sits directly on the page's own dark-desk
+   background, not inside a fieldset with its own paper panel like every
+   other input on this page -- but the "written on the lines" rule right
+   below makes every input/textarea transparent with dark ink text,
+   correct only against paper. Without a paper backdrop of its own, that
+   combination is dark ink on the dark desk: reported as "the paste
+   field is nearly invisible, it just looks like a button" (the visible
+   solid-fill submit button below it was the only thing actually
+   readable). Gives it the same cream paper color used everywhere else
+   on this page, so the ink-on-transparent styling below works the way
+   it's meant to. */
+.theme-field-notes #agent-paste-details {
+    background-color: #f4eed8;
+    border: 2px solid #1c1608;
+    border-radius: 4px;
+    padding: 10px;
+    box-sizing: border-box;
+}
+
 /* ── Inputs and textareas — written on the lines ───────────────────────── */
 .theme-field-notes input[type="text"],
 .theme-field-notes input[type="number"],
@@ -5796,6 +5830,15 @@ input[type="checkbox"]:checked+label {
     --lp-paper-white: #f8f0d8;
     --lp-ink: #1c1608;
     --lp-ink-soft: #4a3f28;
+    /* Field labels/table headers vs. actual values: Field Notes has
+       always been one consistent ink color for both (it's a monotone
+       paper-and-typewriter look, no complaint about that), so --lp-label
+       defaults to --lp-ink here -- X-Files/Son of Sam override it below
+       to their real Edit-mode accent color, so labels ("NAME", "SCORE",
+       a skill's name) read distinctly from the values sitting next to
+       them (a typed name, a score, a percentage) instead of everything
+       being the same flat white/near-white. */
+    --lp-label: var(--lp-ink);
     --lp-header-bg: #000000;
     --lp-header-text: #ffffff;
     --lp-subheader-bg: #e0e0e0;
@@ -5870,6 +5913,12 @@ input[type="checkbox"]:checked+label {
     --lp-paper-white: #0a0a0a;
     --lp-ink: #ffffff;
     --lp-ink-soft: #a8c0a8;
+    /* Field/table-header labels get the real Edit-mode green
+       (--primary-color, #00b521 -- the same green already used on
+       borders/legends) so "NAME", "SCORE", a skill's name read as
+       distinct labels next to their white values, not the same flat
+       white as everything else. */
+    --lp-label: #00b521;
     --lp-header-bg: #000000;
     --lp-header-text: #00e62e;
     --lp-subheader-bg: #1a1a1a;
@@ -5932,6 +5981,11 @@ input[type="checkbox"]:checked+label {
     --lp-paper-white: #0a0a0a;
     --lp-ink: #f0f0f0;
     --lp-ink-soft: #a89a9a;
+    /* Field/table-header labels get the real Edit-mode red
+       (--primary-color, #cc0000) so "NAME", "SCORE", a skill's name read
+       as distinct labels next to their white values, not the same flat
+       near-white as everything else. */
+    --lp-label: #cc0000;
     --lp-header-bg: #000000;
     --lp-header-text: #ff3333;
     --lp-subheader-bg: #1a1a1a;
@@ -6405,7 +6459,7 @@ input[type="checkbox"]:checked+label {
 /* Sub-header row (column labels inside <thead>) — must look clearly   lighter than the black .lp-sec-hd bar above it */
 #lp-sheet .lp-full-table thead th.lp-tc {
     background: var(--lp-subheader-bg);
-    color: var(--lp-ink);
+    color: var(--lp-label);
     font-weight: normal;
     font-size: 8pt;
     padding: 1px 4px;
@@ -6426,6 +6480,7 @@ input[type="checkbox"]:checked+label {
 }
 
 .lp-field-label {
+    color: var(--lp-label);
     font-size: 8pt;
     font-weight: bold;
     text-transform: uppercase;
@@ -6639,6 +6694,15 @@ input[type="checkbox"]:checked+label {
 }
 
 /* ── Bonds compact table ─────────────────────────────────────────── */
+/* A real bond's "Name — Relationship" text (e.g. "Taylor Kim (They/Them)
+   — Tech Sergeant, Air Force") routinely runs 40-50+ characters -- a
+   single-line <input> just clips it at the column edge with no visual
+   cue anything's missing. Switched to a <textarea> that wraps and grows
+   with its content (field-sizing: content, a Chromium-only property
+   also already used for .bond-entry textarea.bond-entry-field
+   elsewhere in this file) instead of trying to widen the column enough
+   to fit worst-case bond text on a phone screen, which isn't possible
+   without starving SCORE/DMG next to it. */
 .lp-bond-name-input {
     background: transparent;
     border: none;
@@ -6649,6 +6713,13 @@ input[type="checkbox"]:checked+label {
     padding: 0 2px;
     box-sizing: border-box;
     color: var(--lp-ink);
+    resize: none;
+    overflow: hidden;
+    white-space: pre-wrap;
+    word-break: break-word;
+    field-sizing: content;
+    min-height: 1.3em;
+    line-height: 1.3;
 }
 
 .lp-bond-name-input:focus {
@@ -6755,6 +6826,12 @@ input[type="checkbox"]:checked+label {
 }
 
 .lp-sk-name-td {
+    /* A skill's name is a label, not a value -- color: var(--lp-label)
+       so it reads distinctly from its own %-value input next to it
+       (color: var(--lp-ink)), matching Edit mode's own real skill-label
+       coloring for X-Files/Son of Sam instead of both landing on the
+       same flat ink color. */
+    color: var(--lp-label);
     /* fills remaining width inside the fixed-layout table */
     overflow: hidden;
     text-overflow: ellipsis;
