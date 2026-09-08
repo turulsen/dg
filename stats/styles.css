@@ -6851,12 +6851,30 @@ input[type="checkbox"]:checked+label {
 }
 
 /* ── Advancement button ─────────────────────────────────────────────────── */
+/* .lp-btn-sm sets color: var(--lp-header-text) for the black header bar
+   it's normally seen on -- this button only swaps the background to
+   --lp-accent-warm, so that inherited color stops making sense the
+   moment a theme's warm accent isn't safely dark: X-Files' amber
+   (#ffb000) under its own bright green header-text, or Son of Sam's
+   dark red (#8b0000) under its own bright red header-text, both read
+   as "unreadable," confirmed from an actual phone screenshot. Field
+   Notes' dark gold accent-warm keeps working fine under the inherited
+   white, so only the two themes that actually need a different color
+   get one here. */
 .lp-btn-advance {
     background: var(--lp-accent-warm) !important;
 }
 
 .lp-btn-advance:hover {
     background: var(--lp-accent-warm-hover) !important;
+}
+
+.theme-xfiles .lp-btn-advance {
+    color: #000000 !important;
+}
+
+.theme-son-of-sam .lp-btn-advance {
+    color: #ffffff !important;
 }
 
 /* ── Advancement modal overlay ──────────────────────────────────────────── */
