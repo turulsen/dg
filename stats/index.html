@@ -747,6 +747,9 @@
                         <label>Physical Description: <textarea id="cs-physical-desc" autocomplete="off"
                                 placeholder="Physical description of agent"></textarea></label>
                         <label><span data-tooltip-key="bio_motivations">Motivations and Mental Disorders:</span>
+                            <button type="button" id="random-motivation-button" onclick="generateRandomMotivation()"
+                                title="Rolls a Motivation on the book's own 1D12 category / 1D10 detail tables and adds it below -- roll again for each of the up to 5 Motivations an Agent can have.">RANDOM
+                                MOTIVATION?</button>
                             <textarea id="cs-motivations" autocomplete="off"
                                 placeholder="You may define up to 5 Motivations — deeply held beliefs, ideals, or drives that keep your agent going. Once per session, acting on a Motivation can restore lost Willpower. When your agent develops a Mental Disorder, it replaces one of their Motivations."></textarea></label>
                         <label><span data-tooltip-key="bio_personal_details">Personal Details and Notes:</span>

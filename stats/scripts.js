@@ -940,6 +940,36 @@ async function generateRandomBio() {
 }
 
 /**
+ * Rolls a Motivation on the Briefing Documents' own 1D12 category / 1D10
+ * detail tables (motivationsData in bio.js) and appends it to the
+ * Motivations field -- appends, not overwrites, since an Agent can define
+ * up to 5 and Random Bio's own "already has a name, are you sure" gate
+ * doesn't apply here: rolling twice is how you'd actually fill several
+ * slots, not a mistake to guard against.
+ */
+function generateRandomMotivation() {
+    if (typeof motivationsData === 'undefined') {
+        alert('Motivation data is still loading. Please try again in a moment.');
+        return;
+    }
+    const d = (sides) => Math.floor(Math.random() * sides) + 1;
+    const category = motivationsData.categoryByD12[d(12) - 1];
+    const detail = motivationsData.tables[category][d(10) - 1];
+    let text = category + ': ' + detail;
+    if (category === 'Protection') {
+        text += ' — from: ' + motivationsData.protectionObjects[d(8) - 1];
+    } else if (category === 'Opposition') {
+        text += ' — ' + motivationsData.oppositionObjects[d(8) - 1];
+    }
+
+    const field = document.getElementById('cs-motivations');
+    if (!field) return;
+    const existing = field.value.trim();
+    field.value = existing ? existing + '\n' + text : text;
+    field.dispatchEvent(new Event('input', { bubbles: true })); // trigger auto-save
+}
+
+/**
  * Calculates the four derived attributes using Delta Green formulas:
  *   HP = ⌈(STR + CON) / 2⌉
  *   WP = POW
