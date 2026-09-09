@@ -1,0 +1,16 @@
+{
+  "name": "dg-campaign-firestore-mirror",
+  "private": true,
+  "version": "1.0.0",
+  "description": "One-time + re-runnable mirror: reads the live Delta Green Briefs Google Sheet and writes an equivalent Firestore schema, keyed by the existing Agent Code / Cell ID / etc. identifiers. Safe to re-run repeatedly -- Sheets stays the write path of record until each phase's cutover.",
+  "type": "commonjs",
+  "main": "mirror.js",
+  "scripts": {
+    "mirror": "node mirror.js",
+    "mirror:dry-run": "node mirror.js --dry-run"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.5.0",
+    "googleapis": "^144.0.0"
+  }
+}

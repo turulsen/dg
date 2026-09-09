@@ -421,6 +421,94 @@ function withScriptLock(fn, callback) {
   }
 }
 
+// TEMP DIAGNOSTIC (read-only, safe to delete after use): checks
+// whether "ELIF-SPMV" has a duplicate/shadowed row in the Briefs
+// sheet -- doLookup()/doGet() both return the FIRST row matching a
+// code (see the doPost() upsert comment above), so an old leftover
+// row from before the upsert-by-agent_code fix was deployed would
+// permanently shadow a real, later, fully-filled-in row and explain
+// "restoring by code still comes back blank" even though a genuine
+// submission clearly happened. Also spot-checks the Characters sheet
+// and the Firestore briefs/ mirror for the same code so a single run
+// covers Sheet-duplication, Sheet/Firestore mismatch, and "no row
+// exists at all" in one pass. Run via runDiagnoseEli_() below --
+// the Apps Script editor's function dropdown is unreliable on this
+// mobile UI, so select THAT wrapper specifically.
+function diagnoseEliAgentCode_() {
+  const CODE = 'ELIF-SPMV';
+  const out = [];
+
+  const ss = getOrCreateSheet();
+  const briefsSheet = ss.getSheetByName(SHEET_NAME);
+  const briefsValues = briefsSheet.getDataRange().getValues();
+  const briefsHeaders = briefsValues[0];
+  const briefsCodeCol = briefsHeaders.indexOf('Agent Code');
+  const briefsNameCol = briefsHeaders.indexOf('Char Name');
+
+  out.push('=== Briefs sheet ("' + SHEET_NAME + '") ===');
+  out.push('Agent Code column index: ' + briefsCodeCol + ', Char Name column index: ' + briefsNameCol);
+  let briefsMatches = 0;
+  for (let i = 1; i < briefsValues.length; i++) {
+    const rowCode = String(briefsValues[i][briefsCodeCol] || '').trim().toUpperCase();
+    if (rowCode === CODE) {
+      briefsMatches++;
+      out.push('Row ' + (i + 1) + ' (match #' + briefsMatches + (briefsMatches === 1 ? ', THE ONE doLookup() RETURNS' : ', SHADOWED -- never read') + '):');
+      out.push('  Char Name: ' + briefsValues[i][briefsNameCol]);
+      briefsHeaders.forEach(function (h, idx) {
+        if (h === 'Agent Code' || h === 'Char Name') return;
+        const v = briefsValues[i][idx];
+        if (v !== '' && v !== null && v !== undefined) out.push('  ' + h + ': ' + String(v).substring(0, 120));
+      });
+    }
+  }
+  out.push('Total Briefs rows matching ' + CODE + ': ' + briefsMatches);
+  if (briefsMatches === 0) out.push('*** NO BRIEFS ROW AT ALL for this code -- doLookup() would return NOT_FOUND. ***');
+  if (briefsMatches > 1) out.push('*** DUPLICATE ROWS CONFIRMED -- the first one above is what every restore-by-code sees. ***');
+
+  out.push('');
+  out.push('=== Characters sheet ("' + CHARACTERS_SHEET_NAME + '") ===');
+  const charSheet = getOrCreateCharactersSheet();
+  const charValues = charSheet.getDataRange().getValues();
+  const charHeaders = charValues[0];
+  const charCodeCol = charHeaders.indexOf('Agent Code');
+  let charMatches = 0;
+  for (let i = 1; i < charValues.length; i++) {
+    const rowCode = String(charValues[i][charCodeCol] || '').trim().toUpperCase();
+    if (rowCode === CODE) {
+      charMatches++;
+      out.push('Row ' + (i + 1) + ' matches. Row has ' + charValues[i].length + ' columns, character_json length: ' +
+        String(charValues[i][charHeaders.indexOf('character_json')] || '').length);
+    }
+  }
+  out.push('Total Characters rows matching ' + CODE + ': ' + charMatches);
+
+  out.push('');
+  out.push('=== Firestore briefs/' + CODE + ' mirror ===');
+  try {
+    const token = getFirestoreAccessToken_();
+    if (!token) {
+      out.push('Firestore dual-write not configured (no token) -- skipped.');
+    } else {
+      const resp = UrlFetchApp.fetch(firestoreDocUrl_('briefs', CODE), {
+        method: 'get',
+        headers: { Authorization: 'Bearer ' + token },
+        muteHttpExceptions: true
+      });
+      out.push('HTTP ' + resp.getResponseCode());
+      out.push(resp.getContentText().substring(0, 2000));
+    }
+  } catch (err) {
+    out.push('Error checking Firestore: ' + err.message);
+  }
+
+  Logger.log(out.join('\n'));
+  return out.join('\n');
+}
+
+function runDiagnoseEli_() {
+  diagnoseEliAgentCode_();
+}
+
 function generateAgentCode(name) {
   const prefix = (name || 'AGNT').replace(/[^A-Za-z]/g, '').substring(0, 4).toUpperCase();
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
