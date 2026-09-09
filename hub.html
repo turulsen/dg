@@ -183,13 +183,35 @@
     // -- deliberate, not an oversight: those are normal in-page
     // navigations, not a full shell-level page swap, and veiling every
     // single click would be more annoying than helpful.
-    window.dgShellShowLoadingVeil = function () {
-      if (veil) veil.classList.remove('dg-shell-loading-hidden');
-    };
-    if (veil) {
-      iframe.addEventListener('load', function () {
+    //
+    // Hard cap, same reasoning as index.html's own boot splash ("no
+    // matter how the animation above paces out, never hold the splash
+    // past ~8.6s total"): a live report showed the veil never clearing
+    // at all -- the Cover Identity preload's own log even showed
+    // agents_loaded successfully, so the page was reachable, but the
+    // iframe's load event apparently never fired (a slow/flaky mobile
+    // connection dropping just that event, not reproducible from this
+    // sandbox). Without this, that's a hard trap: the veil has no other
+    // way off. Armed only around an actual iframe.src assignment (via
+    // armVeil() below), never while the Cover Identity prompt is
+    // genuinely waiting on typing -- that wait is supposed to be
+    // open-ended, not a hang to time out of.
+    var veilTimeout = null;
+    function armVeil() {
+      if (!veil) return;
+      veil.classList.remove('dg-shell-loading-hidden');
+      if (veilTimeout) clearTimeout(veilTimeout);
+      veilTimeout = setTimeout(function () {
         veil.classList.add('dg-shell-loading-hidden');
-      });
+      }, 12000);
+    }
+    function disarmVeil() {
+      if (veilTimeout) { clearTimeout(veilTimeout); veilTimeout = null; }
+      if (veil) veil.classList.add('dg-shell-loading-hidden');
+    }
+    window.dgShellShowLoadingVeil = armVeil;
+    if (veil) {
+      iframe.addEventListener('load', disarmVeil);
     }
 
     // Cover Identity preload -- mirrors (deliberately duplicated, not
@@ -242,6 +264,7 @@
     }
 
     function bootIframe() {
+      armVeil();
       iframe.src = initial;
     }
 
