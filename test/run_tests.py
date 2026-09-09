@@ -2031,6 +2031,11 @@ def test_hub_cover_identity_veil(p):
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
+    # a-cell.html's own Evidence listener (Phase 5) starts unconditionally
+    # on load and otherwise tries to reach the real gstatic.com Firebase
+    # SDK, unreachable from this sandbox -- same reasoning as the shell
+    # content-swap test's own copy of this comment/fix.
+    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     page.route("**/script.google.com/**", fake_apps_script)
@@ -2041,6 +2046,52 @@ def test_hub_cover_identity_veil(p):
            page.locator("#dg-shell-loading-input-line").is_visible() == False, "")
     record("hub", "the A-Cell branch boots immediately regardless",
            "a-cell.html" in (page.get_attribute("#dg-shell-content", "src") or ""), "")
+    errs_all.extend(errs)
+    page.close()
+
+    # Branch 5: live report -- the veil never cleared at all on a real
+    # device even though the Cover Identity preload itself succeeded
+    # (agents_loaded showed in its own log), meaning the iframe's load
+    # event apparently never fired. Held indefinitely here to prove the
+    # hard-cap safety timeout (armVeil() in hub.html, same "never hold
+    # past ~Ns" reasoning as index.html's own boot splash) actually
+    # clears the veil on its own instead of trapping the page forever.
+    page = p.new_page()
+    page.set_default_timeout(20000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", fake_apps_script)
+    held = []
+    page.route("**/agent-hub.html", lambda route: held.append(route))
+    page.add_init_script("try { localStorage.setItem('dg_cover_identity', 'Gergo'); } catch (e) {}")
+    page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: len(held) >= 1, timeout_ms=5000)
+    veil_hidden_class = lambda: "dg-shell-loading-hidden" in (page.get_attribute("#dg-shell-loading", "class") or "")
+    record("hub", "the veil stays up while the iframe's request is still held (not an instant no-op timeout)",
+           not veil_hidden_class(), "")
+    wait_for_condition(veil_hidden_class, timeout_ms=15000)
+    record("hub", "a held/never-loading iframe still gets the veil cleared by the hard-cap safety timeout",
+           veil_hidden_class(), "")
+    errs_all.extend(errs)
+    page.close()
+
+    # Branch 6: the interactive prompt itself has no ticking clock --
+    # only an actual iframe.src assignment (bootIframe()) arms the
+    # safety timeout, so a player who's slow to type is never rushed
+    # or skipped past.
+    page = p.new_page()
+    page.set_default_timeout(10000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", fake_apps_script)
+    page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    page.wait_for_timeout(3500)
+    record("hub", "the prompt itself never auto-times-out while genuinely waiting on input",
+           page.get_attribute("#dg-shell-content", "src") is None
+           and "dg-shell-loading-hidden" not in (page.get_attribute("#dg-shell-loading", "class") or ""), "")
     errs_all.extend(errs)
     page.close()
 
