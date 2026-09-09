@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0a0d08">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/theme-folder.css">
 <style>
   /* ══════════════════════════════════════════════
@@ -41,6 +41,7 @@
      Still remaining: fold the rest of the site's own top-level nav (if
      any gets added later) into #dg-shell-nav too.
      ══════════════════════════════════════════════ */
+  :root{ --term-green:#3ef07a; --term-green-dim:#1e7a42; }
   html,body{ height:100%; margin:0; }
   *{ box-sizing:border-box; }
   body{
@@ -63,15 +64,64 @@
   #dg-shell-nav button{
     font-family:'Courier Prime',monospace; font-size:11px; color:#c8c1a8;
     background:#1a1f16; border:1px solid #3a4630; padding:5px 10px; cursor:pointer;
+    /* Same 4px as Table Radio's own small action buttons (.dgr-confirm/
+       .dgr-btn in assets/table-radio.js) -- this had no radius at all
+       before, sharp square corners next to every other widget-chrome
+       button's rounded ones, reported as visibly inconsistent right
+       next to Table Radio's own Tune In button in the same screenshot. */
+    border-radius:4px;
   }
   #dg-shell-nav button:hover{ border-color:#6a7a4f; }
   #dg-shell-nav button.dg-shell-nav-active{
     background:#2a3a1c; border-color:#4a6a30; color:#d8f0c0;
   }
-  #dg-shell-content-wrap{ flex:1; min-height:0; }
+  #dg-shell-content-wrap{ flex:1; min-height:0; position:relative; }
   #dg-shell-content{
     display:block; width:100%; height:100%; border:0; background:#0a0d08;
   }
+  /* Loading veil: a real report was "nothing indicates it clicked, and
+     it takes a long time to load" -- most of that gap is this exact
+     spot, between the tap on index.html's Clearance card landing here
+     and the iframe's own content (fonts, its own scripts, Firestore
+     sign-in, roster fetch) actually painting. Previously nothing at all
+     covered that gap but the plain #0a0d08 background -- this shows
+     immediately and clears once the iframe's own load event fires, so
+     there's always visible confirmation something is happening instead
+     of a blank wait.
+
+     Black-screen/green-terminal, same aesthetic as index.html's boot
+     splash and a-cell.html's own gate (both have their own copy of this
+     look, not a shared element -- same convention here) -- a first pass
+     tried the destination's own paper look instead, on the reasoning
+     that landing on ANOTHER dark terminal screen felt like no progress
+     was made; asked back for the terminal look specifically, styled as
+     its own instance of it rather than reusing #boot-splash's element. */
+  #dg-shell-loading{
+    position:absolute; inset:0; z-index:5;
+    display:flex; align-items:center; justify-content:center;
+    background:#000; font-family:'JetBrains Mono',monospace;
+    transition:opacity .25s ease; padding:20px;
+  }
+  #dg-shell-loading.dg-shell-loading-hidden{ opacity:0; pointer-events:none; }
+  #dg-shell-loading-term{
+    color:var(--term-green); font-size:clamp(13px,3vw,16px);
+    line-height:1.9; text-shadow:0 0 8px rgba(62,240,122,.55);
+    white-space:pre-wrap; text-align:left; max-width:420px; width:100%;
+  }
+  #dg-shell-loading-term .term-line{ white-space:pre; }
+  #dg-shell-loading-input-line{ white-space:pre; }
+  #dg-shell-loading-ci-input{
+    background:transparent; border:none; outline:none; caret-color:var(--term-green);
+    color:var(--term-green); font-family:'JetBrains Mono',monospace;
+    font-size:inherit; text-shadow:0 0 8px rgba(62,240,122,.55);
+    width:16ch; letter-spacing:.05em;
+  }
+  #dg-shell-loading-ci-input::placeholder{ color:var(--term-green-dim); text-shadow:none; }
+  #dg-shell-loading .dg-shell-cursor{
+    display:inline-block; width:.55em; height:1em; background:var(--term-green);
+    vertical-align:text-bottom; margin-left:2px; animation:dg-shell-blink 1s step-end infinite;
+  }
+  @keyframes dg-shell-blink{ 50%{ opacity:0; } }
 </style>
 </head>
 <body>
@@ -82,6 +132,12 @@
 
 <div id="dg-shell-content-wrap">
   <iframe id="dg-shell-content" title="Delta Green content"></iframe>
+  <div id="dg-shell-loading">
+    <div id="dg-shell-loading-term">
+      <div id="dg-shell-loading-log"></div>
+      <div class="dg-shell-loading-input-line" id="dg-shell-loading-input-line">&gt;<input id="dg-shell-loading-ci-input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="60" placeholder="your real name, or Enter to skip"><span class="dg-shell-cursor"></span></div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -96,7 +152,131 @@
     var ALLOWED_START = ['agent-hub.html', 'a-cell.html'];
     var requested = new URLSearchParams(location.search).get('start');
     var initial = ALLOWED_START.indexOf(requested) !== -1 ? requested : 'agent-hub.html';
-    document.getElementById('dg-shell-content').src = initial;
+    var iframe = document.getElementById('dg-shell-content');
+    var veil = document.getElementById('dg-shell-loading');
+    var log = document.getElementById('dg-shell-loading-log');
+    var inputLine = document.getElementById('dg-shell-loading-input-line');
+    var input = document.getElementById('dg-shell-loading-ci-input');
+
+    function addLine(text) {
+      if (!log) return;
+      var div = document.createElement('div');
+      div.className = 'term-line';
+      div.textContent = '>' + text;
+      log.appendChild(div);
+    }
+
+    // The iframe's own load event fires once its document (fonts,
+    // scripts, initial synchronous render) has actually finished --
+    // not a fixed timer, so a slow connection keeps the veil up for as
+    // long as it genuinely needs to, and a fast one doesn't wait around
+    // for nothing. This same handler also catches the load event fired
+    // by shell-nav.js's own Agent Hub <-> A-Cell tab switch (which
+    // reassigns iframe.src, same as this initial load does) -- see
+    // window.dgShellShowLoadingVeil below, which shell-nav.js calls
+    // right before that switch to bring the veil back for it (that
+    // path never re-runs the Cover Identity prompt below -- it's a
+    // once-per-tab-session boot beat, same as index.html's boot splash
+    // and a-cell.html's own gate). A link clicked INSIDE the loaded
+    // page (Agent File, Notes, etc.) also fires this same load event
+    // when it finishes, but nothing brings the veil back up for those
+    // -- deliberate, not an oversight: those are normal in-page
+    // navigations, not a full shell-level page swap, and veiling every
+    // single click would be more annoying than helpful.
+    window.dgShellShowLoadingVeil = function () {
+      if (veil) veil.classList.remove('dg-shell-loading-hidden');
+    };
+    if (veil) {
+      iframe.addEventListener('load', function () {
+        veil.classList.add('dg-shell-loading-hidden');
+      });
+    }
+
+    // Cover Identity preload -- mirrors (deliberately duplicated, not
+    // shared: same standalone-page convention this app already uses
+    // everywhere, e.g. loadEvidencePhotoDataUri_'s own comment in
+    // notes/notes.js) just the localStorage-merge half of agent-hub.html's
+    // lookupCoverIdentity(). Its own copy still runs once it loads
+    // regardless, as the source of truth and the fallback if this one's
+    // request is somehow blocked or slower.
+    function runCiPreload(name) {
+      addLine('loading_agents_for_' + name.trim().toLowerCase().replace(/\s+/g, '_') + '…');
+      try {
+        var cbName = '_dgHubCiPreload_' + Date.now();
+        window[cbName] = function (res) {
+          delete window[cbName];
+          var s = document.getElementById(cbName);
+          if (s) s.remove();
+          if (!res || res.status !== 'OK' || !Array.isArray(res.agents) || !res.agents.length) {
+            addLine('no_agents_found');
+            return;
+          }
+          try {
+            var prior = JSON.parse(localStorage.getItem('dg_agent_roster') || '{}');
+            var roster = {};
+            Object.keys(prior).forEach(function (code) {
+              if (!prior[code].player_name) roster[code] = prior[code];
+            });
+            var needle = name.trim().toLowerCase();
+            res.agents.forEach(function (a) {
+              if (!a.code) return;
+              roster[a.code] = {
+                code: a.code, char_name: a.char_name || '', codename: a.codename || '',
+                sex: a.sex || '', age_range: a.age_range || '', nationality: a.nationality || '',
+                active_eras: a.active_eras || '', face_plate_url: a.face_plate_url || '',
+                campaign_era: a.campaign_era || '', player_name: a.player_name || needle,
+                saved_at: a.saved_at || Date.now(),
+              };
+            });
+            localStorage.setItem('dg_agent_roster', JSON.stringify(roster));
+            localStorage.setItem('dg_cover_identity', name.trim());
+            addLine('agents_loaded: ' + res.agents.length);
+          } catch (e) { /* best effort -- agent-hub.html's own lookup still covers this */ }
+        };
+        var script = document.createElement('script');
+        script.id = cbName;
+        script.src = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec'
+          + '?action=find_by_player_name&name=' + encodeURIComponent(name) + '&callback=' + cbName;
+        document.head.appendChild(script);
+      } catch (e) { /* best effort -- localStorage unavailable (private mode etc.) */ }
+    }
+
+    function bootIframe() {
+      iframe.src = initial;
+    }
+
+    // Only the very first boot into Agent Hub asks -- not a real access
+    // gate (there's nothing to deny), so Enter with nothing typed just
+    // moves on. A remembered identity skips the prompt entirely and
+    // preloads immediately, matching "always preloads the player's
+    // agents" without making a returning player retype their name
+    // every single visit; only a brand-new device/browser is ever
+    // actually asked.
+    if (initial === 'agent-hub.html' && log && inputLine && input) {
+      addLine('enter_cover_identity:');
+      var storedIdentity = '';
+      try { storedIdentity = localStorage.getItem('dg_cover_identity') || ''; } catch (e) { /* best effort */ }
+      if (storedIdentity) {
+        inputLine.style.display = 'none';
+        addLine(storedIdentity);
+        runCiPreload(storedIdentity);
+        bootIframe();
+      } else {
+        input.focus();
+        input.addEventListener('keydown', function (e) {
+          if (e.key !== 'Enter') return;
+          var val = input.value.trim();
+          input.disabled = true;
+          inputLine.style.display = 'none';
+          if (val) { addLine(val); runCiPreload(val); } else { addLine('(skipped)'); }
+          bootIframe();
+        });
+      }
+    } else {
+      if (inputLine) inputLine.style.display = 'none';
+      addLine('loading…');
+      bootIframe();
+    }
   })();
 </script>
 <script>

@@ -538,6 +538,16 @@
   /* ── DOM / styles ── */
   var style = document.createElement('style');
   style.textContent = [
+    // Widget chrome color language: this widget's own long-standing
+    // palette is the canonical source for --dg-widget-* (see the shared
+    // comment in stats/styles.css's :root block) -- Dice Roller, the
+    // Settings cog, the mobile Notes widget, and Split View's toggle all
+    // read the same tokens now. Declared here too (not just in
+    // stats/styles.css) so this widget still has its own palette
+    // available standalone on a page that never loads stats/styles.css.
+    ':root{--dg-widget-bg:#161a14;--dg-widget-ink:#c9d4b8;--dg-widget-border:#3a4432;',
+    '--dg-widget-accent:#8fae5a;--dg-widget-accent-bright:#a8c890;',
+    '--dg-widget-font:\'JetBrains Mono\',ui-monospace,monospace;}',
     '#dg-radio{position:fixed;right:14px;bottom:14px;z-index:9998;',
     'font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px;',
     'width:min(280px,calc(100vw - 28px));transition:width .15s ease;}',
@@ -558,7 +568,7 @@
     'display:flex;align-items:center;justify-content:space-between;gap:8px;',
     'font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:#7a8a68;',
     'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #2a3020;}',
-    '#dg-radio-panel .dgr-head b{color:#a8c890;}',
+    '#dg-radio-panel .dgr-head b{color:var(--dg-widget-accent-bright);}',
     '#dg-radio-panel .dgr-btn{',
     'background:transparent;border:1px solid #3a4432;color:#c9d4b8;border-radius:4px;',
     // width:auto is deliberate, not decorative: stats/styles.css has a
@@ -577,12 +587,12 @@
        panel is minimized or expanded ── */
     '.dgr-mini-bar{display:flex;align-items:center;gap:6px;}',
     '.dgr-mini-info{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e6ecd8;}',
-    '.dgr-mini-info b{color:#a8c890;}',
+    '.dgr-mini-info b{color:var(--dg-widget-accent-bright);}',
     // #dg-radio-prefixed for the same reason as .dgr-turn/.dgr-confirm
     // above -- stats/index.html's Modern theme has a bare "input,
     // textarea" rule (background/border/border-radius/box-shadow) that
     // would otherwise reskin this range slider's track per theme too.
-    '#dg-radio .dgr-volume{width:52px;flex-shrink:0;accent-color:#6a9a40;}',
+    '#dg-radio .dgr-volume{width:52px;flex-shrink:0;accent-color:var(--dg-widget-accent);}',
     '#dg-radio-panel:not(.dgr-panel-expanded) .dgr-expand-section{display:none;}',
     '.dgr-expand-section{margin-top:8px;}',
     '#dg-radio-track{font-size:12px;color:#e6ecd8;margin-bottom:4px;overflow-wrap:anywhere;}',
@@ -595,8 +605,17 @@
     '.dgr-progress-label{font-size:9px;color:#7a8a68;margin-top:3px;text-align:right;}',
     '#dg-radio-status{font-size:10px;color:#7a8a68;margin-bottom:8px;}',
     '#dg-radio-resume{',
-    'display:none;width:100%;margin-top:6px;background:#2a3a1c;color:#d8f0c0;',
-    'border:1px solid #4a6a30;border-radius:4px;padding:6px;font-family:inherit;',
+    // Widget color-language pass: this and .dgr-confirm below used to
+    // carry their own separate CTA sub-palette (#2a3a1c/#d8f0c0/#4a6a30)
+    // -- a cooler, mintier green than --dg-widget-accent's warmer olive,
+    // which is exactly the "Tune In looks blueish, Dice Roller looks
+    // brownish-green" mismatch reported live once the rest of the panel
+    // chrome had already been unified. Built from the same tokens
+    // instead (a color-mix fill rather than a flat hex) so a CTA button
+    // stays visibly in the same warm-olive family as everything else in
+    // this widget, and Dice Roller's own.
+    'display:none;width:100%;margin-top:6px;background:color-mix(in srgb,var(--dg-widget-accent) 22%,var(--dg-widget-bg));color:var(--dg-widget-accent-bright);',
+    'border:1px solid var(--dg-widget-accent);border-radius:4px;padding:6px;font-family:inherit;',
     'font-size:11px;letter-spacing:.05em;cursor:pointer;}',
     /* embed-wrap is ALWAYS rendered (never display:none) -- only its
        height collapses when minimized, so YouTube/SoundCloud keep
@@ -617,7 +636,7 @@
     'position:absolute;width:20px;height:20px;margin:-10px 0 0 -10px;',
     'display:flex;align-items:center;justify-content:center;',
     'font-size:11px;color:#7a8a68;cursor:pointer;}',
-    '.dgr-tick.active{color:#d8f0c0;font-weight:bold;}',
+    '.dgr-tick.active{color:var(--dg-widget-accent-bright);font-weight:bold;}',
     '.dgr-knob{',
     'position:absolute;top:50%;left:50%;width:46px;height:46px;margin:-23px;',
     'border-radius:50%;background:radial-gradient(circle at 35% 30%,#4a5a3a,#1c2214 75%);',
@@ -625,7 +644,7 @@
     'transition:transform .25s ease;}',
     '.dgr-pointer{',
     'position:absolute;top:4px;left:50%;width:2px;height:14px;',
-    'background:#d8f0c0;margin-left:-1px;border-radius:1px;}',
+    'background:var(--dg-widget-accent-bright);margin-left:-1px;border-radius:1px;}',
     '.dgr-dial-controls{display:flex;align-items:center;justify-content:center;gap:10px;}',
     // #dg-radio-prefixed, not bare .dgr-turn -- same reasoning as
     // .dgr-btn's #dg-radio-panel prefix above: stats/index.html's theme
@@ -639,12 +658,12 @@
     'width:26px;height:26px;font-size:13px;cursor:pointer;line-height:1;padding:0;}',
     '#dg-radio .dgr-turn:hover{border-color:#5a6a48;}',
     '.dgr-dial-readout{font-size:12px;color:#e6ecd8;min-width:44px;}',
-    '.dgr-dial-readout b{color:#a8c890;}',
+    '.dgr-dial-readout b{color:var(--dg-widget-accent-bright);}',
     '#dg-radio .dgr-confirm{',
-    'display:block;width:100%;background:#2a3a1c;color:#d8f0c0;',
-    'border:1px solid #4a6a30;border-radius:4px;padding:7px;font-family:inherit;',
+    'display:block;width:100%;background:color-mix(in srgb,var(--dg-widget-accent) 22%,var(--dg-widget-bg));color:var(--dg-widget-accent-bright);',
+    'border:1px solid var(--dg-widget-accent);border-radius:4px;padding:7px;font-family:inherit;',
     'font-size:11px;letter-spacing:.05em;cursor:pointer;margin-top:2px;}',
-    '#dg-radio .dgr-confirm:hover{border-color:#6a9a40;}',
+    '#dg-radio .dgr-confirm:hover{border-color:var(--dg-widget-accent-bright);}',
   ].join('');
   document.head.appendChild(style);
 

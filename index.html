@@ -93,6 +93,27 @@
     transition:transform .15s;
   }
   .clearance-choice:hover{ transform:translateY(-3px); }
+  /* Tap/press feedback -- :active alone doesn't fire reliably on iOS
+     Safari for a plain <a> with no touch listener anywhere on the page
+     (a well-known iOS quirk), which is why a tap here used to show
+     nothing at all until the real navigation eventually landed. The
+     inline touchstart handler on .clearance-choices below is what
+     actually unlocks :active on iOS; this rule is what it then shows. */
+  .clearance-choice:active{ transform:translateY(0) scale(.97); }
+  .clearance-choice:active .cc-body{ filter:brightness(.92); }
+  /* .cc-tapped: JS-applied client-side (see the script at the bottom of
+     this file) the instant a card is tapped, since :active alone clears
+     the moment the finger lifts -- well before the real page navigation
+     actually starts -- leaving the same "did that even register?" gap
+     for a quick tap-and-release. Keeps the pressed look and swaps the
+     go-link text to an explicit "Opening..." for the whole navigation,
+     however long it ends up taking; the other card dims and stops
+     accepting taps so a second, confused tap can't fire a second nav. */
+  .clearance-choice.cc-tapped{ transform:translateY(0) scale(.97); }
+  .clearance-choice.cc-tapped .cc-body{ filter:brightness(.92); }
+  .clearance-choices.cc-nav-pending .clearance-choice:not(.cc-tapped){
+    opacity:.4; pointer-events:none; transition:opacity .15s;
+  }
   .cc-tab{
     align-self:flex-start;
     font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.2em;
@@ -257,6 +278,27 @@
       setTimeout(function () { if (splash.parentNode) splash.remove(); }, 550);
     }
   }, 8600);
+})();
+</script>
+
+<script>
+/* Tap feedback for the Clearance cards -- see the .cc-tapped CSS
+   comment above for why :active alone wasn't enough. */
+(function () {
+  var choices = document.querySelector('.clearance-choices');
+  if (!choices) return;
+  // Empty touchstart listener: the documented iOS Safari trick to make
+  // :active actually apply to descendant elements on tap, not just
+  // desktop hover-capable browsers.
+  choices.addEventListener('touchstart', function () {}, { passive: true });
+  choices.querySelectorAll('.clearance-choice').forEach(function (card) {
+    card.addEventListener('click', function () {
+      choices.classList.add('cc-nav-pending');
+      card.classList.add('cc-tapped');
+      var go = card.querySelector('.cc-go');
+      if (go) go.textContent = 'Opening…';
+    });
+  });
 })();
 </script>
 

@@ -7,6 +7,32 @@
     --text-color: #ffffff;
     --input-bg: #000000;
     --input-border: #00b521;
+    /* === Widget chrome color language ===
+       Shared, theme-agnostic palette for every floating control that
+       sits on top of the sheet regardless of which theme is active --
+       Table Radio (#dg-radio), Dice Roller (#dr-panel), the mobile
+       Notes widget (#notes-widget-btn), Split View's toggle
+       (#split-view-toggle-btn), and the Settings cog (#settings-cog-btn).
+       Table Radio originated these exact values; the others now read
+       the same tokens instead of their own copies (Dice Roller used to
+       read var(--primary-color)/var(--bg-color) instead, which is why
+       it used to shift to the page's theme color -- e.g. red on Son of
+       Sam -- while every other docked widget stayed this fixed green).
+       Declared here AND re-declared inside each of dice-roller.js's/
+       table-radio.js's own injected <style> tags (same convention this
+       codebase already uses for small shared helpers -- see
+       loadEvidencePhotoDataUri_'s comment in notes/notes.js) so each
+       widget still renders correctly standalone on a page that doesn't
+       load this stylesheet at all (agent-hub.html, a-cell.html,
+       requisition.html, etc.). Redeclaring identical values on :root
+       from multiple places is harmless -- last one to apply just wins
+       with the same numbers. */
+    --dg-widget-bg: #161a14;
+    --dg-widget-ink: #c9d4b8;
+    --dg-widget-border: #3a4432;
+    --dg-widget-accent: #8fae5a;
+    --dg-widget-accent-bright: #a8c890;
+    --dg-widget-font: 'JetBrains Mono', ui-monospace, monospace;
     /* === Spacing === */
     --spacing-xs: 4px;
     --spacing-sm: 8px;
@@ -261,12 +287,32 @@
 
 /* Fix (not upstream): the selected die button's background goes to a
    near-black 12% tint via !important (see .dr-die-btn-active), but this
-   theme's blanket "button { color: #000000 }" above still applies -- black
-   text on a near-black background is unreadable. Give it the theme's red
-   text color back, matching how the rest of the dice panel (#dr-panel)
-   is already styled in this theme. */
+   theme's blanket "button { color: #000000 }" above still applies --
+   black text on a near-black background is unreadable. Widget color-
+   language pass: give it the widget's own green back (not the theme's
+   red anymore) -- Dice Roller no longer follows the theme at all, so
+   its active state shouldn't either. */
 .theme-son-of-sam .dr-die-btn-active {
-    color: var(--primary-color);
+    color: var(--dg-widget-accent);
+}
+
+/* Found while verifying the widget color-language pass (dice-roller.js
+   now uses --dg-widget-* tokens instead of --primary-color): the fix
+   above only ever addressed the SELECTED die button -- every other die
+   pill is still a plain <button>, so the same blanket ".theme-son-of-sam
+   button" rule above solid-fills it with the theme's red instead of
+   #dr-panel's own transparent/outline look, the one part of this widget
+   the color-language pass didn't already re-theme-proof. */
+.theme-son-of-sam .dr-die-btn:not(.dr-die-btn-active) {
+    background-color: transparent;
+    color: var(--dg-widget-accent);
+    border-color: rgba(128, 128, 128, .35);
+}
+
+.theme-son-of-sam .dr-die-btn:not(.dr-die-btn-active):hover {
+    background-color: transparent;
+    border-color: var(--dg-widget-accent);
+    filter: none;
 }
 
 .theme-son-of-sam .dr-handle-controls button {
@@ -1587,12 +1633,12 @@ body.dg-split-active #dg-split-pane-row {
     top: 14px;
     right: 64px;
     z-index: 9400;
-    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-family: var(--dg-widget-font);
     font-size: 0.75rem;
     padding: 9px 12px;
-    background: #161a14;
-    color: #c9d4b8;
-    border: 1px solid #3a4432;
+    background: var(--dg-widget-bg);
+    color: var(--dg-widget-ink);
+    border: 1px solid var(--dg-widget-border);
     border-radius: 20px;
 }
 
@@ -1660,14 +1706,14 @@ body.dg-embedded #dr-panel {
        over to this button's left-docked position and would otherwise
        intercept its clicks at #dg-radio's own z-index of 9998. */
     z-index: 9999;
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-family: var(--dg-widget-font);
     font-size: 12px;
     font-weight: 400;
     letter-spacing: normal;
     text-transform: none;
-    background: #161a14;
-    color: #c9d4b8;
-    border: 1px solid #3a4432;
+    background: var(--dg-widget-bg);
+    color: var(--dg-widget-ink);
+    border: 1px solid var(--dg-widget-border);
     border-radius: 20px;
     padding: 8px 14px;
     min-height: unset;
@@ -1680,8 +1726,8 @@ body.dg-embedded #dr-panel {
 }
 
 #notes-widget-btn:hover {
-    background: #161a14;
-    color: #c9d4b8;
+    background: var(--dg-widget-bg);
+    color: var(--dg-widget-ink);
 }
 
 /* Matches Split View's own 900px cutoff above -- see its comment for
@@ -3035,7 +3081,9 @@ textarea {
    Export, and Open Agent File, so the main page isn't a wall of controls
    before you've even built a character. Deliberately theme-agnostic (a
    dark overlay drawer) rather than re-skinned per theme, same reasoning
-   as #dg-toast below it. ─────────────────────────────────────────────── */
+   as #dg-toast below it -- and, since it's theme-agnostic anyway, now
+   uses the same --dg-widget-* chrome tokens as the other docked
+   controls instead of its own one-off black/white circle. ────────────── */
 #settings-cog-btn {
     position: fixed;
     top: 14px;
@@ -3043,9 +3091,9 @@ textarea {
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.55);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    color: #fff;
+    background: var(--dg-widget-bg);
+    border: 1px solid var(--dg-widget-border);
+    color: var(--dg-widget-accent);
     font-size: 18px;
     cursor: pointer;
     z-index: 9500;
@@ -3056,7 +3104,8 @@ textarea {
 }
 
 #settings-cog-btn:hover {
-    background: rgba(0, 0, 0, 0.78);
+    border-color: var(--dg-widget-accent);
+    color: var(--dg-widget-accent-bright);
     transform: rotate(25deg);
 }
 
@@ -5730,55 +5779,35 @@ input[type="checkbox"]:checked+label {
 }
 
 /* ── Dice roller panel ───────────────────────────────────────────────────── */
-.theme-field-notes #dr-panel {
-    background: #1c1608;
-    border: 2px solid #ece1c4;
-    color: #ece1c4;
-    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.4);
-}
-
-.theme-field-notes #dr-handle {
-    background: #1c1608;
-    color: #ece1c4;
-    font-family: 'Courier Prime', monospace;
-}
-
-.theme-field-notes .dr-die-btn {
-    background: #1c1608;
-    color: #ece1c4;
-    border: 2px solid #ece1c4;
-    font-family: 'Courier Prime', monospace;
-}
-
-.theme-field-notes .dr-die-btn-active,
-.theme-field-notes .dr-die-btn:hover {
-    background: #ece1c4;
-    color: #1c1608;
-    transform: none;
+/* Widget color-language pass: Field Notes used to fully reskin this
+   panel to its own cream/ink paper look (deliberate at the time), which
+   is now the odd one out -- Dice Roller matches Table Radio/the
+   Settings cog/the Notes widget/Split View's toggle via the same fixed
+   --dg-widget-* tokens on every other theme, so Field Notes gets that
+   too instead of its own copy. Only .dr-die-btn needs a defensive reset
+   below: it's a bare <button> with just one class, so without it
+   .theme-field-notes's own blanket "button { background: #1c1608;
+   font-family: Bebas Neue; ... }" rule above (same class+element
+   specificity trick already fixed for Son of Sam) would solid-fill it
+   again the moment the dedicated override above is gone. Every other
+   element dice-roller.js draws in this panel is either not a <button>
+   (#dr-panel, #dr-handle, .dr-die-face/.dr-face-num, #dr-manual-target)
+   or is addressed by an ID selector that already outranks the theme's
+   class+element rule on specificity alone (#dr-roll-btn via dice-
+   roller.js's own "#dr-manual-row button", #dr-handler-gate), so none
+   of those need a matching reset here. */
+.theme-field-notes .dr-die-btn:not(.dr-die-btn-active) {
+    background-color: transparent;
+    color: var(--dg-widget-accent);
+    font-family: var(--dg-widget-font);
+    border-color: rgba(128, 128, 128, .35);
     box-shadow: none;
 }
 
-.theme-field-notes .dr-die-face,
-.theme-field-notes .dr-face-num {
-    color: #ece1c4;
-}
-
-.theme-field-notes #dr-roll-btn {
-    background: #ece1c4;
-    color: #1c1608;
-    border: 2px solid #ece1c4;
-}
-
-.theme-field-notes #dr-roll-btn:hover {
-    background: #e3d7b8;
+.theme-field-notes .dr-die-btn:not(.dr-die-btn-active):hover {
+    background-color: transparent;
     transform: none;
     box-shadow: none;
-}
-
-.theme-field-notes #dr-manual-target {
-    background: #1c1608;
-    color: #ece1c4;
-    border: 1px solid #8a7a5a;
 }
 
 /* ── Sanity checkboxes ───────────────────────────────────────────────────── */
