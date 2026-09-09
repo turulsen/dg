@@ -3839,8 +3839,12 @@ def test_acell_sheet(p):
     page.wait_for_timeout(700)
 
     headers = page.eval_on_selector_all("#sheet-wrap th", "els => els.map(e=>e.textContent)")
+    # headers[0] is the bulk-select checkbox column's blank header (see
+    # the bulk-delete addition to renderSheet() -- a real report of
+    # hundreds of dummy/test rows needing deletion made the old one-row-
+    # at-a-time Delete button impractical).
     record("acell", "Sheet table has the requested columns in order",
-           headers[:7] == ["Cell", "Handler", "Agent Name", "Player Name", "HP", "SAN", "Online"], str(headers))
+           headers[1:8] == ["Cell", "Handler", "Agent Name", "Player Name", "HP", "SAN", "Online"], str(headers))
 
     row_texts = page.eval_on_selector_all("#sheet-wrap tbody tr", "els => els.map(e=>e.textContent)")
     record("acell", "Sheet lists every Agent on file plus every Agent-File-only entry as rows",
@@ -3858,7 +3862,7 @@ def test_acell_sheet(p):
            "KIA" in row_texts[2], row_texts[2])
     record("acell", "an Agent above 0 HP does not show a KIA badge",
            "KIA" not in row_texts[0] and "KIA" not in row_texts[1], "")
-    hp_cells = page.eval_on_selector_all("#sheet-wrap tbody tr:nth-child(3) td:nth-child(5)", "els => els.map(e=>e.textContent.trim())")
+    hp_cells = page.eval_on_selector_all("#sheet-wrap tbody tr:nth-child(3) td:nth-child(6)", "els => els.map(e=>e.textContent.trim())")
     record("acell", "an Agent at 0 HP shows '0' in the HP column, not an empty-cell dash",
            hp_cells == ["0"], str(hp_cells))
 
@@ -8967,6 +8971,33 @@ def main():
         if chromium_path:
             launch_kwargs["executable_path"] = chromium_path
         browser = p.chromium.launch(**launch_kwargs)
+
+        # Real bug found via a live report: ~30 of the test functions below
+        # never set up their own page.route("**/script.google.com/**", ...)
+        # mock. Any of those that name-fills a character (most do, using
+        # shared fixture names like "Priya Anand") triggers cloud-sync.js's
+        # real debounced auto-save, which happily hits the ACTUAL production
+        # Apps Script backend and writes a real row into the live
+        # Characters sheet. Harmless in this sandbox, where that hostname is
+        # already unreachable by network policy (confirmed: those same
+        # unmocked tests already pass today against a blocked network) --
+        # but GitHub Actions CI has full internet access and runs this exact
+        # suite on every push to main/firebase-migration, so it's been
+        # doing this for real on every single CI run, which is almost
+        # certainly the actual source of the "hundreds of dummy agents"
+        # reported live. Patching new_page() here, once, for every test's
+        # page -- rather than fixing 30 individual call sites -- so this
+        # can never regress if a 31st test is added without its own mock.
+        # A test that DOES set up its own more specific route later simply
+        # overrides this: Playwright resolves the most-recently-registered
+        # handler first, and none of the existing per-test mocks below call
+        # route.fallback(), so they fully take over instead of chaining.
+        _real_new_page = browser.new_page
+        def _new_page_blocking_live_backend(*a, **kw):
+            page = _real_new_page(*a, **kw)
+            page.route("**/script.google.com/**", lambda route: route.abort())
+            return page
+        browser.new_page = _new_page_blocking_live_backend
 
         def safe(fn, *args, area="unknown"):
             try:
