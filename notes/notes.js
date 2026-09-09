@@ -495,6 +495,21 @@
       return m ? m[1] : null;
     }
 
+    // Flavor text for the imgdata proxy round-trip -- see the
+    // .dg-notes-evidence-loading CSS comment for why this exists.
+    // Picked once per render rather than cycling, so it doesn't feel
+    // twitchy on a fast connection where it's only up for a moment.
+    const EVIDENCE_LOADING_LINES_ = [
+      'Requesting item from the Evidence Locker…',
+      'Signing out the file from custody…',
+      'Pulling the folder from the archive…',
+      'Verifying chain of custody…',
+    ];
+    function evidenceLoadingHtml_() {
+      const line = EVIDENCE_LOADING_LINES_[Math.floor(Math.random() * EVIDENCE_LOADING_LINES_.length)];
+      return '<div class="dg-notes-evidence-loading"><span class="dg-notes-evidence-loading-spinner"></span>' + escapeHtml(line) + '</div>';
+    }
+
     // A raw data: URI (pre-Phase-4, before Evidence photos uploaded
     // straight to Storage) still marks a PDF with its MIME type. A
     // Storage-uploaded PDF has none of that -- resolveEvidencePhoto_() in
@@ -688,7 +703,7 @@
             ? (cachedDataUri.indexOf('data:application/pdf') === 0
               ? '<div class="dg-notes-evidence-photo-pdf"><a href="' + dataUriToBlobUrl_(cachedDataUri) + '" target="_blank" rel="noopener">&#128196; Open PDF</a></div>'
               : '<img class="dg-notes-evidence-photo-img" src="' + cachedDataUri + '" alt="">')
-            : '<div class="dg-notes-evidence-photo-wrap"></div>';
+            : '<div class="dg-notes-evidence-photo-wrap">' + evidenceLoadingHtml_() + '</div>';
         } else if (isPdfUrl_(h.photo)) {
           photoHtml = '<div class="dg-notes-evidence-photo-pdf"><a href="' + dataUriToBlobUrl_(h.photo) + '" target="_blank" rel="noopener">&#128196; Open PDF</a></div>';
         } else {

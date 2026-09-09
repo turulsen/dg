@@ -512,6 +512,22 @@
 }
 .dg-notes-evidence-photo-pdf a{ color:#1a3a6e; text-decoration:none; }
 .dg-notes-evidence-photo-pdf a:hover{ text-decoration:underline; }
+
+/* Shown in the photo slot while the imgdata proxy round-trip (Drive
+   fetch + base64 re-encode in Code.gs) is still in flight -- that hop
+   is the actual source of the "opening Evidence feels slow" complaint,
+   so this exists to give the wait a reason instead of a blank box. */
+.dg-notes-evidence-loading{
+  display:flex; align-items:center; gap:8px; margin:8px 0; padding:10px 12px;
+  background:rgba(58,40,10,.06); border:1px solid rgba(58,40,10,.15); border-radius:4px;
+  font-size:12.5px; font-style:italic; color:rgba(43,36,22,.65);
+}
+.dg-notes-evidence-loading-spinner{
+  width:13px; height:13px; flex:0 0 auto; border-radius:50%;
+  border:2px solid rgba(58,40,10,.2); border-top-color:rgba(43,36,22,.6);
+  animation:dg-notes-evidence-spin .8s linear infinite;
+}
+@keyframes dg-notes-evidence-spin{ to{ transform:rotate(360deg); } }
 .dg-notes-evidence-body-text{ font-size:13px; color:#2b2416; line-height:1.6; white-space:pre-wrap; }
 .dg-notes-evidence-remarks-list{ display:flex; flex-direction:column; gap:10px; margin:6px 0 var(--s4); }
 .dg-notes-evidence-remark{ background:rgba(58,40,10,.04); border-radius:4px; padding:8px 10px; }
