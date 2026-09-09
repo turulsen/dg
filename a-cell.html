@@ -1102,6 +1102,22 @@
           <button type="button" class="paper-btn" id="sheet-refresh-btn">Refresh</button>
           <span class="play-refresh-note" id="sheet-refresh-note"></span>
         </div>
+        <!-- Bulk delete: a real report of hundreds of dummy/test rows
+             (a since-fixed test-suite bug that let CI hit the live
+             backend, see test/run_tests.py) made the existing one-row-
+             at-a-time Delete button (with its own password re-entry
+             per row) impractical -- hours of clicking to clear. Select
+             many rows (checkboxes, or the two shortcuts below), confirm
+             once, and every selected row is deleted with one password
+             entry instead of one per row. -->
+        <div class="sheet-toolbar" id="sheet-bulk-toolbar">
+          <input type="text" id="sheet-bulk-filter" placeholder="Filter by Agent Name…" style="flex:1;min-width:140px;max-width:260px;">
+          <button type="button" class="paper-btn" id="sheet-bulk-select-match">Select Matching</button>
+          <button type="button" class="paper-btn" id="sheet-bulk-select-placeholders" title="Selects every row whose Agent Name is still just its own Agent Code, e.g. AGNT-87JW -- never renamed, almost always a dummy/test row.">Select Unnamed</button>
+          <button type="button" class="paper-btn" id="sheet-bulk-clear">Clear Selection</button>
+          <button type="button" class="paper-btn admin-delete-btn" id="sheet-bulk-delete-btn" disabled>Delete Selected (0)</button>
+        </div>
+        <div class="admin-confirm-slot" id="sheet-bulk-confirm-slot"></div>
         <div class="admin-status" id="sheet-status"></div>
         <div class="sheet-wrap" id="sheet-wrap">
           <div class="play-loading">Loading agents…</div>
@@ -3443,6 +3459,10 @@
 
   var rows = []; // live rows: Characters-backed + Agent-File-only, merged
   var deletedAgents = [];
+  // Bulk delete selection -- code -> true. A plain object, not a Set:
+  // it's only ever read/written by code (no reactive framework here),
+  // and Object.keys() is the shape doBulkDelete() actually needs.
+  var selectedCodes = {};
   // Bumped at the start of every fetchAll() call -- see Play's own
   // listFetchGen comment for why.
   var fetchGen = 0;
@@ -3597,6 +3617,7 @@
     var body = rows.map(function (r, i) {
       var kia = typeof r.hp === 'number' && r.hp <= 0;
       return '<tr>' +
+        '<td><input type="checkbox" class="sheet-select-cb" data-code="' + escapeHtml(r.code) + '"' + (selectedCodes[r.code] ? ' checked' : '') + '></td>' +
         '<td>' + cell(r.cellNames) + '</td>' +
         '<td>' + cell(r.handlers) + '</td>' +
         '<td>' + (kia ? '<span class="kia-name">' + cell(r.name) + '</span>' : cell(r.name)) + (kia ? ' <span class="sheet-kia-badge">KIA</span>' : '') + '</td>' +
@@ -3610,7 +3631,7 @@
     }).join('');
     wrap.innerHTML =
       '<table class="sheet-table"><thead><tr>' +
-      '<th>Cell</th><th>Handler</th><th>Agent Name</th><th>Player Name</th><th>HP</th><th>SAN</th><th>Online</th><th></th>' +
+      '<th></th><th>Cell</th><th>Handler</th><th>Agent Name</th><th>Player Name</th><th>HP</th><th>SAN</th><th>Online</th><th></th>' +
       '</tr></thead><tbody>' + body + '</tbody></table>';
     Array.prototype.forEach.call(wrap.querySelectorAll('.sheet-pn-display'), function (span) {
       span.addEventListener('click', function () { startEditPlayerName(span); });
@@ -3618,6 +3639,120 @@
     Array.prototype.forEach.call(wrap.querySelectorAll('.sheet-delete-btn'), function (btn) {
       btn.addEventListener('click', function () { openConfirm(parseInt(btn.dataset.i, 10)); });
     });
+    Array.prototype.forEach.call(wrap.querySelectorAll('.sheet-select-cb'), function (cb) {
+      cb.addEventListener('change', function () {
+        if (cb.checked) selectedCodes[cb.dataset.code] = true;
+        else delete selectedCodes[cb.dataset.code];
+        updateBulkUI();
+      });
+    });
+    updateBulkUI();
+  }
+
+  // ── Bulk delete ──────────────────────────────────────────────────
+  var bulkDeleteBtn = document.getElementById('sheet-bulk-delete-btn');
+  var bulkConfirmSlot = document.getElementById('sheet-bulk-confirm-slot');
+  var bulkFilterInput = document.getElementById('sheet-bulk-filter');
+
+  function updateBulkUI() {
+    var n = Object.keys(selectedCodes).length;
+    bulkDeleteBtn.textContent = 'Delete Selected (' + n + ')';
+    bulkDeleteBtn.disabled = n === 0;
+  }
+
+  document.getElementById('sheet-bulk-select-match').addEventListener('click', function () {
+    var q = (bulkFilterInput.value || '').trim().toLowerCase();
+    if (!q) return;
+    rows.forEach(function (r) {
+      if ((r.name || '').toLowerCase().indexOf(q) !== -1) selectedCodes[r.code] = true;
+    });
+    renderSheet();
+  });
+
+  // A row never renamed still shows its own Agent Code as the Agent
+  // Name (see fetchAll()'s briefsRows mapping and Code.gs's own
+  // fallback) -- the single most reliable, one-click signal for "this
+  // was created by something automated and nobody ever touched it
+  // again," which is exactly the shape of the test-suite-generated
+  // dummy rows this button exists for.
+  var AGENT_CODE_RE = /^[A-Z]{2,6}-[A-Z0-9]{2,6}$/;
+  document.getElementById('sheet-bulk-select-placeholders').addEventListener('click', function () {
+    rows.forEach(function (r) {
+      if (AGENT_CODE_RE.test(r.name || '') || r.name === r.code) selectedCodes[r.code] = true;
+    });
+    renderSheet();
+  });
+
+  document.getElementById('sheet-bulk-clear').addEventListener('click', function () {
+    selectedCodes = {};
+    renderSheet();
+  });
+
+  bulkDeleteBtn.addEventListener('click', function () {
+    if (bulkConfirmSlot.childNodes.length) { bulkConfirmSlot.innerHTML = ''; return; } // toggle closed
+    renderBulkConfirm();
+  });
+
+  function renderBulkConfirm() {
+    var codes = Object.keys(selectedCodes);
+    bulkConfirmSlot.innerHTML =
+      '<div class="admin-confirm">' +
+      '<p>Enter the A-Cell password to delete <b>' + codes.length + ' Agent' + (codes.length === 1 ? '' : 's') + '</b> (each moves to Recently Deleted, restorable for 24 hours):</p>' +
+      '<div class="admin-confirm-error" id="sheet-bulk-confirm-err"></div>' +
+      '<input type="text" id="sheet-bulk-pw-input" placeholder="A-Cell password" autocomplete="off">' +
+      '<div class="admin-confirm-actions">' +
+      '<button type="button" class="paper-btn admin-delete-btn" id="sheet-bulk-confirm-btn">Delete ' + codes.length + '</button>' +
+      '<button type="button" class="paper-btn" id="sheet-bulk-confirm-cancel">Cancel</button>' +
+      '</div></div>';
+    document.getElementById('sheet-bulk-confirm-cancel').addEventListener('click', function () { bulkConfirmSlot.innerHTML = ''; });
+    document.getElementById('sheet-bulk-confirm-btn').addEventListener('click', function () {
+      var input = document.getElementById('sheet-bulk-pw-input');
+      var errEl = document.getElementById('sheet-bulk-confirm-err');
+      if (input.value !== ACELL_PASSWORD) {
+        errEl.textContent = 'Wrong password.';
+        return;
+      }
+      doBulkDelete(codes);
+    });
+  }
+
+  // Fire-and-forget, bounded-concurrency loop -- the same no-cors POST
+  // doDelete() already sends per row, just without that function's own
+  // per-row 900ms-wait-then-reverify step (fine for one row, far too
+  // slow for the hundreds this button is meant to clear). One list
+  // refresh at the end shows whatever's left; anything that failed to
+  // delete is still selectable and safe to retry.
+  function doBulkDelete(codes) {
+    var total = codes.length, sent = 0;
+    var CONCURRENCY = 4;
+    var idx = 0;
+    bulkConfirmSlot.innerHTML = '<div class="admin-confirm"><p>Deleting 0 / ' + total + '…</p></div>';
+    function next() {
+      if (idx >= codes.length) return;
+      var code = codes[idx++];
+      fetch(APPS_SCRIPT_URL, {
+        method: 'POST', mode: 'no-cors', keepalive: true,
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'delete_character', agent_code: code, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+      }).then(afterOne).catch(afterOne);
+    }
+    function afterOne() {
+      sent++;
+      bulkConfirmSlot.innerHTML = '<div class="admin-confirm"><p>Deleting ' + sent + ' / ' + total + '…</p></div>';
+      if (idx < codes.length) next();
+      else if (sent >= total) finishBulk(total);
+    }
+    for (var k = 0; k < Math.min(CONCURRENCY, codes.length); k++) next();
+  }
+
+  function finishBulk(total) {
+    selectedCodes = {};
+    setTimeout(function () {
+      bulkConfirmSlot.innerHTML = '';
+      statusEl.textContent = 'Sent ' + total + ' delete request' + (total === 1 ? '' : 's') + '. Anything still listed below either didn\'t match or failed -- select and delete again.';
+      fetchAll();
+      fetchDeleted();
+    }, 1500);
   }
 
   function startEditPlayerName(span) {
