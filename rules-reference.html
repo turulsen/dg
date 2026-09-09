@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Delta Green Rules Reference</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/png" href="assets/mars-tech-seal.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0e100b">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  /* ══════════════════════════════════════════════
+     Quick-lookup rules reference, built from the campaign's own
+     "Delta Green Rules Reference" PDF (Skill/Combat/Physical Dangers/
+     Sanity/Home & Bonds/Vehicles & Weapons/Equipment Acquisition/
+     Tradecraft, pp.2-20) plus the Briefing Documents' own Tradecraft
+     prose page, filling the same Tradecraft ground from the field-
+     guidance angle instead of the task-list angle. Tomes/Unnatural
+     and NPCs (the PDF's own pp.22-25) are deliberately left out --
+     player-facing scope stops at Tradecraft.
+
+     Static content, no ?code= -- every Agent sees the same rules, so
+     this page needs no per-Agent data and can be linked from anywhere
+     without a query string. Same paper/ink tokens and Table Radio/
+     Dice Roller inclusion as every other player-reachable page (see
+     hub.html's own header comment on why those two are everywhere).
+     ══════════════════════════════════════════════ */
+  :root{
+    --paper:#f4eed8;
+    --paper-line:rgba(180,148,72,.18);
+    --ink:#1c1608;
+    --ink-2:#4a3f28;
+    --ink-3:#8a7a5a;
+    --red:#8b1a1a;
+    --green:#1a4a1a;
+    --rule:rgba(160,130,70,.35);
+    --hdr:#1c1608;
+    --hdr-text:#f4eed8;
+    --stripe:rgba(28,22,8,.04);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    padding:0 0 64px;
+    background:#0e100b;
+    background-image:radial-gradient(ellipse at 50% 0%, #141710 0%, #090b07 60%);
+    min-height:100vh;
+    font-family:'Courier Prime', monospace;
+    color:var(--ink);
+  }
+  .back-link-row{ max-width:800px; margin:0 auto; padding:16px 16px 0; }
+  .back-link-row a{
+    font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.18em;
+    text-transform:uppercase; color:#8a9878; text-decoration:none;
+  }
+  .ref-header{
+    max-width:800px; margin:12px auto 0; padding:0 16px;
+    text-align:center;
+  }
+  .ref-header h1{
+    font-family:'Special Elite',monospace; font-weight:400;
+    font-size:26px; color:var(--paper); letter-spacing:.02em; margin:6px 0;
+  }
+  .ref-header p{
+    font-size:12px; color:#8a9878; font-style:italic; margin:0 0 16px;
+  }
+
+  /* Sticky section jump-nav -- this page is long, and it exists to be
+     found fast mid-scene, not read top to bottom. */
+  .ref-nav{
+    position:sticky; top:0; z-index:5;
+    background:#11150d; border-bottom:1px solid #3a4630;
+    padding:8px 10px; display:flex; gap:6px; flex-wrap:wrap;
+    justify-content:center;
+  }
+  .ref-nav a{
+    font-family:'Courier Prime',monospace; font-size:10.5px; color:#c8c1a8;
+    background:#1a1f16; border:1px solid #3a4630; border-radius:3px;
+    padding:5px 9px; text-decoration:none; white-space:nowrap;
+  }
+  .ref-nav a:hover{ border-color:#6a7a4f; }
+
+  .ref-main{ max-width:800px; margin:0 auto; padding:20px 16px 0; }
+
+  .ref-section{
+    background:var(--paper);
+    border-radius:2px;
+    box-shadow:0 4px 18px rgba(0,0,0,.4), 0 1px 4px rgba(0,0,0,.3);
+    padding:18px 20px 22px;
+    margin-bottom:22px;
+    scroll-margin-top:52px;
+  }
+  .ref-section h2{
+    font-family:'Special Elite',monospace; font-weight:400; font-size:19px;
+    margin:0 0 4px; letter-spacing:.02em;
+  }
+  .ref-section > .ref-subtitle{
+    font-size:11px; color:var(--ink-3); font-style:italic; margin:0 0 14px;
+  }
+  .ref-block{ margin:0 0 20px; }
+  .ref-block:last-child{ margin-bottom:0; }
+  .ref-block h3{
+    font-family:'Special Elite',monospace; font-weight:400; font-size:13px;
+    text-transform:uppercase; letter-spacing:.04em; margin:0 0 4px;
+    padding-bottom:4px; border-bottom:2px solid var(--ink);
+  }
+  .ref-block .ref-caption{
+    font-size:10.5px; color:var(--ink-3); font-style:italic; margin:0 0 8px;
+  }
+  .ref-table-wrap{ overflow-x:auto; margin-bottom:4px; }
+  table.ref-table{
+    border-collapse:collapse; width:100%; min-width:340px;
+    font-family:'Courier Prime',monospace; font-size:11.5px;
+  }
+  table.ref-table th{
+    background:var(--hdr); color:var(--hdr-text);
+    text-align:left; padding:6px 9px; font-weight:bold;
+    letter-spacing:.02em; white-space:nowrap;
+  }
+  table.ref-table td{
+    border:1px solid var(--paper-line); padding:6px 9px;
+    color:var(--ink); vertical-align:top;
+  }
+  table.ref-table tr:nth-child(even) td{ background:var(--stripe); }
+  table.ref-table td.ref-num{ white-space:nowrap; }
+  .ref-note{
+    font-size:10.5px; color:var(--ink-3); font-style:italic;
+    line-height:1.5; margin:6px 0 0;
+  }
+  .ref-prose{ font-size:12.5px; line-height:1.65; margin:0 0 10px; }
+  .ref-prose b{ color:var(--ink); }
+  .ref-prose:last-child{ margin-bottom:0; }
+  .ref-field-list{ columns:2; column-gap:20px; margin:0; padding-left:0; list-style:none; font-size:12px; }
+  .ref-field-list li{ break-inside:avoid; margin-bottom:6px; }
+  .ref-field-list b{ display:block; font-family:'Special Elite',monospace; font-size:11px; text-transform:uppercase; letter-spacing:.03em; margin-bottom:2px; }
+  @media (max-width:520px){
+    .ref-field-list{ columns:1; }
+  }
+</style>
+</head>
+<body>
+
+<div class="back-link-row">
+  <a href="index.html" id="ref-back-link">← Agent Hub</a>
+  <script>if (window.frameElement && window.frameElement.id === 'dg-shell-content') document.getElementById('ref-back-link').style.display = 'none';</script>
+</div>
+
+<div class="ref-header">
+  <h1>DELTA GREEN RULES REFERENCE</h1>
+  <p>Quick lookup for skill tests, combat, sanity, and fieldwork. Not a substitute for the Handler's ruling.</p>
+</div>
+
+<nav class="ref-nav">
+  <a href="#skills">Skills</a>
+  <a href="#combat">Combat &amp; Healing</a>
+  <a href="#dangers">Physical Dangers</a>
+  <a href="#sanity">Sanity</a>
+  <a href="#bonds">Home &amp; Bonds</a>
+  <a href="#vehicles">Vehicles &amp; Weapons</a>
+  <a href="#equipment">Equipment</a>
+  <a href="#tradecraft">Tradecraft</a>
+</nav>
+
+<main class="ref-main">
+
+  <!-- ══════════════════ SKILLS ══════════════════ -->
+  <section class="ref-section" id="skills">
+    <h2>Skill Tests</h2>
+    <p class="ref-subtitle">If things are calm and under control, go with the story. Only roll when it's a crisis and things are out of control.</p>
+
+    <div class="ref-block">
+      <h3>Setting a Difficulty (No Roll Needed)</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>How Much Skill Does the Task Require?</th><th>%</th></tr>
+        <tr><td>Only a little training; a hobbyist</td><td>20%</td></tr>
+        <tr><td>Basic training or a college minor</td><td>30%</td></tr>
+        <tr><td>Years of experience or a college major</td><td>40%</td></tr>
+        <tr><td>Decades of experience/graduate degree</td><td>60%</td></tr>
+        <tr><td>A lifetime's mastery</td><td>80%</td></tr>
+      </table></div>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>How Much Stat Does the Task Require?</th><th>Range</th></tr>
+        <tr><td>Anyone is able</td><td>3–4</td></tr>
+        <tr><td>Nearly anyone is able</td><td>5–8</td></tr>
+        <tr><td>An average person is able</td><td>9–12</td></tr>
+        <tr><td>Only an unusually gifted person is able</td><td>13–16</td></tr>
+        <tr><td>Only a prodigy is able</td><td>17–18</td></tr>
+      </table></div>
+    </div>
+
+    <div class="ref-block">
+      <h3>Rolling Dice</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Bonuses and Penalties</th><th></th></tr>
+        <tr><td>Most of the time</td><td>No modifier</td></tr>
+        <tr><td>Unusual circumstances</td><td>+20% or −20%</td></tr>
+        <tr><td>Rarely</td><td>+40% or −40%</td></tr>
+      </table></div>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Success and Failure</th><th></th></tr>
+        <tr><td>Critical success</td><td>A success that rolls 01 or matching dice</td></tr>
+        <tr><td>Success</td><td>Roll equal to or lower than the chance of success</td></tr>
+        <tr><td>Failure</td><td>Roll higher than the chance of success</td></tr>
+        <tr><td>Critical failure</td><td>Failure with matching dice</td></tr>
+      </table></div>
+      <p class="ref-note">The Luck Roll: not skill or talent, but blind luck — a flat 50% chance.</p>
+    </div>
+
+    <div class="ref-block">
+      <h3>Opposed Tests &amp; Group Tasks</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Opposed Test Circumstance</th><th>Outcome</th></tr>
+        <tr><td>No roll required</td><td>Highest rating wins</td></tr>
+        <tr><td>Both rolls succeed, neither critical</td><td>Highest roll wins</td></tr>
+        <tr><td>Both rolls fail, neither critical</td><td>Lowest roll wins</td></tr>
+        <tr><td>Critical success</td><td>Always wins</td></tr>
+      </table></div>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Group Task</th><th>Who Rolls</th></tr>
+        <tr><td>Having more help is useful</td><td>Highest skill in group</td></tr>
+        <tr><td>A crowd is a hindrance</td><td>Lowest skill in group</td></tr>
+        <tr><td>Need to know everyone who succeeds or fails</td><td>Each player rolls</td></tr>
+      </table></div>
+    </div>
+
+    <div class="ref-block">
+      <h3>Pursuit</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><td><b>Rolls</b></td><td>Series of Opposed Tests by pursuer and quarry to reach 1–3 successes/wins: successes cancel each other out. If both fail, lowest failure wins; critical worth two successes, fumble worth two failures.</td></tr>
+        <tr><td><b>Skills</b></td><td>Athletics, Drive, Pilot, Heavy Machinery, Swim, Ride</td></tr>
+        <tr><td><b>Advantages</b></td><td>Coordination, air support, and being faster/more maneuverable add +20%/+40%</td></tr>
+        <tr><td><b>Seeking an Edge</b></td><td>Instead of rolling to catch or get away, make an opposed test with another skill (e.g. Alertness, Navigate, Stealth, Survival, Tactics). If successful, neither side wins, but gain +20% to the next roll (critical: +40%).</td></tr>
+        <tr><td><b>Combat</b></td><td>Each test is 1 turn. Pursuer attacks, quarry gets a win; vehicle passengers attack separately.</td></tr>
+      </table></div>
+    </div>
+
+    <div class="ref-block">
+      <h3>Example Fumble Results</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Fumble</th><th>Effect</th></tr>
+        <tr><td>Physical Strain</td><td>Lose 1D6 HP or 1D4 STR/CON/DEX temporarily.</td></tr>
+        <tr><td>Emotional Burnout</td><td>Lose 1D6 WP or 1D4 INT/POW/CHA temporarily.</td></tr>
+        <tr><td>Alienation</td><td>All CHA or Persuade tests with important NPC auto-fail.</td></tr>
+        <tr><td>Exhaustion</td><td>Become Exhausted.</td></tr>
+        <tr><td>Distraction</td><td>−20% to next test.</td></tr>
+        <tr><td>Confusion</td><td>Gain false information.</td></tr>
+      </table></div>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Combat Fumbles</th></tr>
+        <tr><td>Gun misfires and needs 1D4 turns to clear.</td></tr>
+        <tr><td>Weapon drops and needs 1 turn to pick up.</td></tr>
+        <tr><td>Accidentally hit a friend, bystander, or self.</td></tr>
+        <tr><td>Fall prone.</td></tr>
+      </table></div>
+    </div>
+
+    <div class="ref-block">
+      <h3>Skill Lists &amp; Base Ratings</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Combat &amp; Pursuit</th><th>Investigative</th><th>Research</th></tr>
+        <tr><td>Alertness (20%)</td><td>Alertness (20%)</td><td>Anthropology (0%)</td></tr>
+        <tr><td>Artillery (0%)</td><td>Bureaucracy (10%)</td><td>Archaeology (0%)</td></tr>
+        <tr><td>Athletics (30%)</td><td>Criminology (0%)</td><td>Bureaucracy (10%)</td></tr>
+        <tr><td>Demolitions (0%)</td><td>Disguise (10%)</td><td>Computer Science (0%)</td></tr>
+        <tr><td>Dodge (30%)</td><td>Foreign Language (0%)</td><td>Criminology (10%)</td></tr>
+        <tr><td>Drive (20%)</td><td>Forensics (0%)</td><td>History (10%)</td></tr>
+        <tr><td>Firearms (20%)</td><td>HUMINT (10%)</td><td>Occult (10%)</td></tr>
+        <tr><td>Heavy Weapons (0%)</td><td>Persuade (20%)</td><td>Science (0%)</td></tr>
+        <tr><td>Melee Weapons (30%)</td><td>Search (20%)</td><td>SIGINT (0%)</td></tr>
+        <tr><td>Navigate (10%)</td><td>SIGINT (0%)</td><td></td></tr>
+        <tr><td>Pilot (0%)</td><td>Stealth (10%)</td><td></td></tr>
+        <tr><td>Ride (10%)</td><td>Survival (10%)</td><td></td></tr>
+        <tr><td>Swim (20%)</td><td></td><td></td></tr>
+        <tr><td>Unarmed Combat (40%)</td><td></td><td></td></tr>
+      </table></div>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Procurement</th><th>Professional</th><th>Medical</th></tr>
+        <tr><td>Accounting (10%)</td><td>Art (0%)</td><td>First Aid (10%)</td></tr>
+        <tr><td>Bureaucracy (10%)</td><td>Accounting (10%)</td><td>Medicine (0%)</td></tr>
+        <tr><td>Law (0%)</td><td>Bureaucracy (10%)</td><td>Pharmacy (0%)</td></tr>
+        <tr><td>Military Science (0%)</td><td>Craft (0%)</td><td>Psychotherapy (10%)</td></tr>
+        <tr><td>CHA×5</td><td>Heavy Machinery (10%)</td><td>Surgery (0%)</td></tr>
+        <tr><td>INT×5</td><td>Law (0%)</td><td></td></tr>
+        <tr><td>Luck (50%)</td><td>Military Science (0%)</td><td></td></tr>
+      </table></div>
+      <p class="ref-note"><b>Common Knowledge:</b> using knowledge common to everyone, or an Agent's career, is an INT×5 test. Charming with an untrained Art skill is usually a CHA or DEX test. Other efforts use other stats.<br>
+      <b>Improving Skills:</b> if your Agent has at least 1% in a skill (except Unnatural) and fails a roll, mark that skill's box. At the end of the session, add 1D4 points to each marked skill and erase the mark.</p>
+    </div>
+
+    <div class="ref-block">
+      <h3>Special Trainings &amp; Skill Families</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Training</th><th>Skill/Stat</th></tr>
+        <tr><td>Parachuting</td><td>Athletics/DEX</td></tr>
+        <tr><td>Skiing</td><td>Athletics</td></tr>
+        <tr><td>SCUBA gear</td><td>Swim</td></tr>
+        <tr><td>Space suit operation</td><td>INT</td></tr>
+        <tr><td>Exotic weapon</td><td>Melee/Firearms</td></tr>
+        <tr><td>Hand grenades</td><td>Athletics</td></tr>
+        <tr><td>Subculture knowledge</td><td>INT</td></tr>
+        <tr><td>Foreign criminal codes</td><td>Law</td></tr>
+        <tr><td>Lockpicks</td><td>DEX</td></tr>
+        <tr><td>Electronic security</td><td>INT</td></tr>
+        <tr><td>Inside knowledge of conspiracy</td><td>Criminology</td></tr>
+        <tr><td>Fluency in rare dialect</td><td>Foreign Language</td></tr>
+        <tr><td>Black markets</td><td>Criminology</td></tr>
+      </table></div>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Skill Family</th><th>Types</th></tr>
+        <tr><td>Art</td><td>Acting, Creative Writing, Dance, Flute, Forgery, Guitar, Painting, Poetry, Scriptwriting, Sculpture, Singing, Violin, etc.</td></tr>
+        <tr><td>Craft</td><td>Architect, Carpenter, Electrician, Gunsmith, Locksmith, Mechanic, Microelectronics, Plumber, etc.</td></tr>
+        <tr><td>Foreign Language</td><td>Various languages</td></tr>
+        <tr><td>Military Science</td><td>Land, Air, Sea</td></tr>
+        <tr><td>Pilot</td><td>Airplane, Drone, Helicopter, Small Boat, Ship, Space Shuttle, etc.</td></tr>
+        <tr><td>Science</td><td>Astronomy, Biology, Botany, Chemistry, Engineering, Genetics, Geology, Mathematics, Meteorology, Physics, Planetology, Zoology, etc.</td></tr>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ══════════════════ COMBAT ══════════════════ -->
+  <section class="ref-section" id="combat">
+    <h2>Combat &amp; Healing</h2>
+    <p class="ref-subtitle">Combatants take one action per turn and act in DEX order, highest to lowest.</p>
+
+    <div class="ref-block">
+      <h3>Combat Actions</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Action</th><th>Effect</th><th>Serves as Defense?</th></tr>
+        <tr><td>Aim</td><td>Adds +20% to the next attack roll.</td><td>No</td></tr>
+        <tr><td>Attack</td><td>Inflicts damage, Crit: ×2 damage (optional: Crit ×1 damage and Stun/Disarm; Knock Prone; Called Shot; Second Attack)</td><td>If Melee/Unarmed vs. Melee/Unarmed</td></tr>
+        <tr><td>Called Shot</td><td>Ignores cover/armor, −20%/−40% (optional: Stun Target −20%; Halve Damage −20%; Automatic Critical −40%)</td><td>If Melee/Unarmed vs. Melee/Unarmed</td></tr>
+        <tr><td>Disarm</td><td>Forces target to drop something. Uses Unarmed Combat.</td><td>If Melee/Unarmed vs. Melee/Unarmed</td></tr>
+        <tr><td>Dodge</td><td>Defends against an attack. Uses Dodge.</td><td>Yes</td></tr>
+        <tr><td>Escape</td><td>Break free of being pinned. Uses STR or Unarmed Combat.</td><td>Yes</td></tr>
+        <tr><td>Fight Back</td><td>Defend against an attack and counterattack. Uses Melee Weapons or Unarmed Combat.</td><td>Yes</td></tr>
+        <tr><td>Move</td><td>Jog 10m, run 20m, or sprint 30m. Usually an Agent can go about 3m as part of another action.</td><td>No</td></tr>
+        <tr><td>Pin</td><td>Hold a target down. A pinned character can take no actions except attempting to escape.</td><td>Yes</td></tr>
+        <tr><td>Wait</td><td>Act immediately after someone else's action this turn.</td><td>Varies</td></tr>
+        <tr><td>Other</td><td>Takes a moment's concentration instead of other actions.</td><td>No</td></tr>
+      </table></div>
+      <p class="ref-note"><b>STR Bonus Melee Damage:</b> STR 1–4: −2 · STR 5–8: −1 · STR 9–12: +0 · STR 13–16: +1 · STR 17–18: +2</p>
+    </div>
+
+    <div class="ref-block">
+      <h3>Combat Modifiers</h3>
+      <p class="ref-caption">Modifiers can go no higher than +40% or lower than −40%. Whatever the odds, a critical success always hits, and a critical failure always misses.</p>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Circumstance</th><th>+20%</th><th>−20%</th><th>−40%</th></tr>
+        <tr><td>Range</td><td>Point-blank (3m or less)/shotgun</td><td>Past base range (up to 2×)</td><td>Beyond 2× base range (up to 5×)</td></tr>
+        <tr><td>Target concealment/visibility</td><td>Using a laser sight</td><td>Terrible visibility (smoke/dark)</td><td>Little to no visibility</td></tr>
+        <tr><td>Called shot / area attack</td><td>Explosive weapon</td><td>Target about half covered or smaller than a human body</td><td>Target mostly covered or very small</td></tr>
+        <tr><td>Target condition (ranged)</td><td>Target standing totally still</td><td>Target prone or running</td><td>Target moving as fast as a speeding car</td></tr>
+        <tr><td>Target condition (melee)</td><td>Target pinned down or standing totally still</td><td>Target in a vehicle or running</td><td>Target moving as fast as a speeding car</td></tr>
+        <tr><td>Unusual attacker condition</td><td>Carefully aiming for a full turn</td><td>Pepper sprayed; shocked by stun gun; exhausted</td><td>Tear gas; staggered by stun grenade</td></tr>
+      </table></div>
+      <p class="ref-note"><b>Surprise Attack:</b> target bound or asleep — can kill in one turn without a roll. If target is Active but not Aware, attack roll at +20% and automatic Critical. Failure misses.<br>
+      <b>Shooting into a Crowd:</b> ranged attack in a crowd hits a random member unless a Called Shot is made.</p>
+    </div>
+
+    <div class="ref-block">
+      <h3>Defense Rolls</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><td><b>Dodging</b></td><td>Opposes Melee Weapons and Unarmed Combat. Allows running for cover to escape ranged attacks before the guns fire. Never inflicts damage.</td></tr>
+        <tr><td><b>Attacking or Fighting Back</b></td><td>Opposes Melee Weapons and Unarmed Combat only. No effect on ranged attacks unless the Handler says so. Includes an offensive action: attack, called shot, disarm, or pin.</td></tr>
+        <tr><td><b>Reacting to Attacks</b></td><td>Can Dodge or Fight Back before their turn, as their action. Cannot if already used another type of action.</td></tr>
+      </table></div>
+    </div>
+
+    <div class="ref-block">
+      <h3>Lethality, Protection &amp; Armor</h3>
+      <p class="ref-caption">Roll Lethality % for a successful attack; on success, target is reduced to 0 HP; on failure, target takes damage equal to the sum of both dice of the lethality roll as individual D10s.</p>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Protection</th><th>Vs. Lethality</th><th>Vs. HP Damage / Failed Lethality</th></tr>
+        <tr><td>Body Armor</td><td>No effect</td><td>Reduces damage</td></tr>
+        <tr><td>Cover</td><td>Lethality automatically fails</td><td>Reduces damage</td></tr>
+        <tr><td>Exposed</td><td>No effect</td><td>No effect</td></tr>
+        <tr><td>Fragile</td><td>Any attack reduces to 0 HP</td><td>Any attack reduces to 0 HP</td></tr>
+        <tr><td>Transcendent</td><td>No damage</td><td>No damage</td></tr>
+        <tr><td>Huge</td><td>Lethality automatically fails</td><td>Reduces damage</td></tr>
+      </table></div>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Armor Type</th><th>Rating</th></tr>
+        <tr><td>Kevlar helmet (adds damage reduction to other armor)</td><td>+1</td></tr>
+        <tr><td>Kevlar vest (concealable)</td><td>3</td></tr>
+        <tr><td>Reinforced Kevlar vest (typical for uniformed police)</td><td>4</td></tr>
+        <tr><td>Tactical body armor (typical for soldiers/SWAT); wall/thick door; makeshift vehicle cover</td><td>5</td></tr>
+        <tr><td>Bomb suit; thick wall, concrete, or moderate rock; light vehicle armor</td><td>10</td></tr>
+        <tr><td>Reinforced wall, big rock, or sandbag; medium vehicle armor</td><td>15</td></tr>
+        <tr><td>Heavy vehicle armor or light tank armor</td><td>20</td></tr>
+        <tr><td>Heavy tank armor</td><td>25</td></tr>
+      </table></div>
+      <p class="ref-note"><b>Armor Piercing:</b> reduce armor by rating. Explosive weapons only apply Armor Piercing to the first target.</p>
+    </div>
+
+    <div class="ref-block">
+      <h3>Kill Radius &amp; Selective Fire</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><td><b>Hit</b></td><td>Roll Lethality for all in the radius (unless the Handler says otherwise). Everyone who survives is suppressed.</td></tr>
+        <tr><td><b>Miss</b></td><td>Everyone who would have been in the radius had it hit is suppressed.</td></tr>
+        <tr><td><b>Suppressed</b></td><td>Unless adapted to Violence, must hide or go prone for the next action or lose 1 SAN.</td></tr>
+        <tr><td><b>No Kill Radius/Lethality</b></td><td>1-meter Kill Radius and attack roll. Success deals no damage (one target on Critical) and suppresses. No one is suppressed on a failure.</td></tr>
+      </table></div>
+      <p class="ref-note">+20% to the attack roll if the Kill Radius is from an explosion.</p>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Type of Fire</th><th>Ammo Used</th><th>Lethality</th><th>Kill Radius</th></tr>
+        <tr><td>Short Burst</td><td>3</td><td>10%</td><td>None</td></tr>
+        <tr><td>Long Burst</td><td>5</td><td>10%</td><td>1m</td></tr>
+        <tr><td>Short Spray</td><td>10</td><td>10%</td><td>2m</td></tr>
+        <tr><td>Long Spray</td><td>20</td><td>10%</td><td>3m</td></tr>
+      </table></div>
+    </div>
+
+    <div class="ref-block">
+      <h3>Wounds &amp; Ailments</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><td>Lose ½ or more current HP in a single attack</td><td>Stunned.</td></tr>
+        <tr><td>Stunned</td><td>Cannot act on turn; must succeed at CON×5 to recover and act next turn.</td></tr>
+        <tr><td>Reduced to 1–2 HP</td><td>Unconsciousness. Roll CON×5 to avoid Permanent Injury.</td></tr>
+        <tr><td>Unconscious</td><td>Helpless to attacks. Wake up in 1 hour or when at 3 HP.</td></tr>
+        <tr><td>Permanent Injury</td><td>If CON×5 from being reduced to 1–2 HP fails, permanently reduce one stat by the lowest digit of the roll, to a minimum of 3. (Optional injuries — cannot correct with surgery: partially blinded, −20% to eyesight tests; partially deafened, −20% to hearing tests; arm/leg crippled or severed, −20% to tests involving two hands/movement.)</td></tr>
+        <tr><td>At 0 HP</td><td>Death, unless the Handler says otherwise. HP never go below 0.</td></tr>
+        <tr><td>Death</td><td>Can resuscitate within minutes equal to CON; otherwise permanently dead.</td></tr>
+      </table></div>
+    </div>
+
+    <div class="ref-block">
+      <h3>Healing</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Type</th><th>Roll</th><th>Effect</th></tr>
+        <tr><td>Resuscitation</td><td>First Aid</td><td>Heal 1D4 HP (Crit: ×2); failure means victim dies.</td></tr>
+        <tr><td>Stabilization</td><td>First Aid</td><td>Heal 1D4 HP (Crit: ×2; Fumble: 1D4 damage). Once per damage source.</td></tr>
+        <tr><td>Treatment*</td><td>Surgery/Medicine</td><td>1×/week heal 1D4 HP (double on Critical). Fumble is 1D4 damage.</td></tr>
+        <tr><td>Recuperation</td><td>CON×5</td><td>Once/day. Heal 1 HP (+Treatment; ×2 for Crit). Fumble is 1 damage.</td></tr>
+      </table></div>
+      <p class="ref-note">*After Treatment, until all HP are recovered, strenuous activity inflicts 1D4 damage.<br>
+      <b>Healing Stat Loss:</b> lost stat points are restored at 1 point per day.</p>
+    </div>
+  </section>
+
+  <!-- ══════════════════ PHYSICAL DANGERS ══════════════════ -->
+  <section class="ref-section" id="dangers">
+    <h2>Other Physical Dangers</h2>
+
+    <div class="ref-block">
+      <h3>Poison</h3>
+      <p class="ref-caption">Roll Lethality after time equal to Speed. If the Lethality roll fails, roll CON×5 to halve damage (Critical: only 1 damage; Fumble: ×2 damage). Hospitalization grants +20% to the CON test.</p>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Poison Type</th><th>Entry Route</th><th>Speed</th><th>Lethality</th><th>Symptoms</th><th>Antidote</th></tr>
+        <tr><td>Spider venom</td><td>Bite</td><td>1D6 hours</td><td>5%</td><td>Pain, chills, nausea, possibly necrosis</td><td>Yes</td></tr>
+        <tr><td>Dangerous drug (failed Pharmacy)</td><td>Varies</td><td>1D6 hours</td><td>5%</td><td>Pain, diarrhea, convulsions, or asphyxiation</td><td>Yes</td></tr>
+        <tr><td>Arsenic</td><td>Ingestion</td><td>1D6 hours</td><td>10%</td><td>Pain, weakness, hemorrhaging</td><td>Yes</td></tr>
+        <tr><td>Scorpion/rattlesnake venom</td><td>Bite or sting</td><td>1D6 hours</td><td>10%</td><td>Pain, weakness, hemorrhaging, convulsions</td><td>Yes</td></tr>
+        <tr><td>Phosgene gas</td><td>Inhalation</td><td>2D6 hours</td><td>15%</td><td>Blistering, coughing blood, asphyxiation</td><td>No</td></tr>
+        <tr><td>Hydrogen cyanide gas</td><td>Inhalation</td><td>1D6 turns</td><td>20%</td><td>Asphyxiation</td><td>Yes</td></tr>
+        <tr><td>Sarin gas</td><td>Inhalation/skin</td><td>2D6 turns</td><td>20%</td><td>Muscle contractions, spasms, asphyxiation</td><td>Yes</td></tr>
+        <tr><td>Ricin</td><td>Injection/powder inhalation</td><td>2D6 hours</td><td>20%</td><td>Diarrhea, shock, seizures, circulatory failure</td><td>No</td></tr>
+      </table></div>
+      <p class="ref-note">Antidotes: Medicine/Pharmacy. Makes harmless if given before effect; after, halves Lethality/HP damage.</p>
+    </div>
+
+    <div class="ref-block">
+      <h3>Falling &amp; Fire</h3>
+      <p class="ref-caption">Falling: make a CON×5 test or be Stunned.</p>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Distance</th><th>Damage</th></tr>
+        <tr><td>1–3m</td><td>1D6 damage, or 2D6 for a particularly uncontrolled fall</td></tr>
+        <tr><td>Beyond 3m</td><td>1% Lethality per meter fallen</td></tr>
+      </table></div>
+      <p class="ref-caption">Fire: for a Moderate fire or larger, roll DEX×5 or catch fire, taking half damage each turn.</p>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Intensity</th><th>Example</th><th>Damage</th></tr>
+        <tr><td>Minor</td><td>Candle</td><td>1/turn</td></tr>
+        <tr><td>Moderate</td><td>Flaming brand; momentary exposure to a larger fire</td><td>1D6/turn</td></tr>
+        <tr><td>Major</td><td>Scalding steam; bonfire; blast furnace</td><td>Lethality (10%) each turn</td></tr>
+      </table></div>
+    </div>
+
+    <div class="ref-block">
+      <h3>Disease</h3>
+      <p class="ref-caption">After Speed amount of time, roll CON×5 to recover and take half damage (Failure: take damage and roll again after Speed amount of time; Critical: only take 1 damage; Fumble: ×2 damage). Hospitalization is +20% to the CON test. A diseased Agent recuperates no HP.</p>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Disease</th><th>Route</th><th>Speed</th><th>CON Test Penalty</th><th>Damage</th><th>Symptoms</th><th>Cure</th></tr>
+        <tr><td>Bacterial meningitis</td><td>Airborne</td><td>1D6 days</td><td>−40</td><td>1D4</td><td>Stiff neck, confusion</td><td>Antibiotics</td></tr>
+        <tr><td>Bacterial pneumonia</td><td>Inhalation</td><td>1D6 days</td><td>None</td><td>1D6</td><td>Cough, fever, chills</td><td>Antibiotics</td></tr>
+        <tr><td>Gangrene</td><td>Dirty wounds</td><td>1D6 days</td><td>None</td><td>1D6</td><td>Discoloration, oozing, numbness</td><td>Antibiotics, excision, or amputation</td></tr>
+        <tr><td>Plague</td><td>Flea bite (bubonic), inhalation (pneumonic)</td><td>1D6 days</td><td>None</td><td>1D6</td><td>Fever, chills, lymph node swelling, coughing (pneumonic), shock</td><td>Antibiotics</td></tr>
+        <tr><td>Ebola virus</td><td>Contact with infected blood, bodies, or bushmeat</td><td>1D6 days</td><td>−40</td><td>1D6</td><td>Fever, weakness, diarrhea, nausea, bleeding, shock</td><td>None</td></tr>
+      </table></div>
+    </div>
+
+    <div class="ref-block">
+      <h3>Other Dangers</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><td><b>Impact</b></td><td>Lethality rating of 10% for every 40 kph (25 mph). Double Lethality rating if hitting a wall and nowhere to tumble. CON×5 test or be Stunned.</td></tr>
+        <tr><td><b>Suffocation</b></td><td>Can hold breath for CON×5 turns. Then, or if choking, CON×5 test every turn. Failure is 1D6 damage; success is 1 damage. First Aid test stops choking.</td></tr>
+        <tr><td><b>Cold</b></td><td>Lasts for CON minutes unprepared, CON×5 minutes partially prepared, CON hours fully prepared. After that, CON×5 test every 5 minutes. Failure reduces CON by 1. When CON hits 1, cannot move and suffer 1D8 damage every 5 minutes. Shelter heals 1 CON per minute.</td></tr>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ══════════════════ SANITY ══════════════════ -->
+  <section class="ref-section" id="sanity">
+    <h2>Sanity</h2>
+    <p class="ref-subtitle">A critical on a SAN roll loses the minimum shown; a fumble loses the maximum.</p>
+
+    <div class="ref-block">
+      <h3>Sample SAN Losses</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Suffering Violence</th><th>Loss</th></tr>
+        <tr><td>Ambushed by gunfire</td><td>0/1</td></tr>
+        <tr><td>Find a corpse or a mangled carcass</td><td>0/1</td></tr>
+        <tr><td>Find mutilated corpse of infant/loved one</td><td>0/1D4</td></tr>
+        <tr><td>Stabbed, strangled, or shot</td><td>0/1D4</td></tr>
+        <tr><td>Suffer a permanent injury</td><td>0/1D6</td></tr>
+        <tr><td>Set on fire</td><td>0/1D6</td></tr>
+        <tr><td>Reduced to 2HP or fewer</td><td>0/1D6</td></tr>
+        <tr><td>Tortured</td><td>0/1D8</td></tr>
+      </table></div>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>The Unnatural</th><th>Loss</th></tr>
+        <tr><td>Attempting Psychotherapy of a character who lost SAN to the Unnatural</td><td>0/1</td></tr>
+        <tr><td>Witnessing benign supernatural effect</td><td>0/1</td></tr>
+        <tr><td>Witnessing a violent supernatural effect</td><td>0/1D6</td></tr>
+        <tr><td>Seeing a corpse walk</td><td>0/1D6</td></tr>
+        <tr><td>Experience overtly supernatural effect</td><td>0/1D6</td></tr>
+        <tr><td>Suffering a violent supernatural assault</td><td>1/1D8</td></tr>
+      </table></div>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Inflicting Violence</th><th>Loss</th></tr>
+        <tr><td>Incapacitate or cripple an innocent</td><td>0/1D4</td></tr>
+        <tr><td>Shove teammates' bodies into an incinerator to thwart an investigation</td><td>0/1D4</td></tr>
+        <tr><td>Kill in defense of oneself or another*</td><td>0/1D4</td></tr>
+        <tr><td>Kill a murderous enemy in cold blood*</td><td>0/1D6</td></tr>
+        <tr><td>Torture a victim</td><td>0/1D8</td></tr>
+        <tr><td>Accidentally kill an innocent</td><td>0/1D8</td></tr>
+        <tr><td>Kill innocent in cold blood, any reason</td><td>1/1D10</td></tr>
+      </table></div>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Helplessness</th><th>Loss</th></tr>
+        <tr><td>Being fired from one's job</td><td>0/1</td></tr>
+        <tr><td>Nearly get a Bond hurt or killed</td><td>0/1</td></tr>
+        <tr><td>Suffering unexpected bankruptcy</td><td>0/1</td></tr>
+        <tr><td>A Bond's score is reduced to 0</td><td>0/1D4</td></tr>
+        <tr><td>Sentenced to a prison term</td><td>0/1D4</td></tr>
+        <tr><td>Waking paralyzed or blind</td><td>0/1D4</td></tr>
+        <tr><td>Find a friend's remains</td><td>0/1D4</td></tr>
+        <tr><td>A Bond goes indefinitely insane or suffers a permanent injury</td><td>1/1D4</td></tr>
+        <tr><td>Flung into a pit of corpses</td><td>0/1D4</td></tr>
+        <tr><td>See or hear a friend gruesomely killed</td><td>0/1D6</td></tr>
+        <tr><td>Learn a Bond has been killed</td><td>1/1D6</td></tr>
+        <tr><td>See or hear a Bond gruesomely killed</td><td>0/1D8</td></tr>
+      </table></div>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Sample Willpower Losses</th><th>Loss</th></tr>
+        <tr><td>Pushing oneself to the limit physically and/or emotionally</td><td>1D6</td></tr>
+        <tr><td>A night without sleep</td><td>1D6</td></tr>
+        <tr><td>Projecting onto a Bond</td><td>1D4</td></tr>
+        <tr><td>Effects of Mental Disorders</td><td>Varies</td></tr>
+        <tr><td>Emotional Burnout from Fumbled Roll</td><td>1D6</td></tr>
+      </table></div>
+    </div>
+
+    <div class="ref-block">
+      <h3>Responding to SAN Loss</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><td><b>Adaptation to Violence</b></td><td>Take 3 violence SAN losses without suffering insanity; lose 1D6 CHA and the same amount from each Bond. Automatically succeed at SAN tests for Violence.</td></tr>
+        <tr><td><b>Adaptation to Helplessness</b></td><td>Take 3 helplessness SAN losses without suffering insanity; lose 1D6 CHA and the same amount from each Bond. Automatically succeed at SAN tests for Helplessness.</td></tr>
+        <tr><td><b>Projecting Trauma</b></td><td>Reduce WP, a Bond, and the SAN loss by 1D4.</td></tr>
+        <tr><td><b>Temporary Insanity</b></td><td>Lose 5+ SAN at once (Optional: if from an unnatural source, gain 1D6 to an Unnatural Skill).</td></tr>
+        <tr><td><b>New Disorder</b></td><td>SAN reaches the Breaking Point.</td></tr>
+        <tr><td><b>Projection (repress insanity)</b></td><td>Reduce WP and a Bond by 1D4 to make a SAN test; success prevents temp. insanity or disorder.</td></tr>
+        <tr><td><b>Destroying the Unnatural</b></td><td>Destroying an unnatural creature or object may restore SAN equal to the lowest amount it could inflict, never restoring above maximum SAN. Every Agent involved gains this SAN.</td></tr>
+      </table></div>
+      <p class="ref-note"><b>Temporary Insanity (Handler chooses one):</b> Flee (run away incoherently for turns equal to CON, or until danger is gone) · Fight (mindlessly attack anyone in sight) · Submit (curl into a helpless ball).<br>
+      <b>Mental Disorder:</b> if facing the trigger of a disorder, make a SAN roll or the disorder takes over, as described.<br>
+      <b>Self-Medicating:</b> Benzos add +20%, Alcohol/Cannabis add +10%; both give −20% to all skill and stat tests; both risk Addiction (which loses the bonus and keeps the penalty).</p>
+    </div>
+
+    <div class="ref-block">
+      <h3>Willpower, Exhaustion &amp; Sleep</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Recovering Willpower</th><th>Effect</th></tr>
+        <tr><td>Get a full night's sleep</td><td>Recover 1D6 WP, no longer exhausted</td></tr>
+        <tr><td>Engage in personal motivations</td><td>Recover 1 WP</td></tr>
+      </table></div>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Low Willpower</th><th>Effect</th></tr>
+        <tr><td>1 or 2 WP</td><td>All actions are at a −20% penalty</td></tr>
+        <tr><td>0 WP</td><td>Fail all tests, including SAN rolls. Out of control. Unconscious/incapacitated.</td></tr>
+      </table></div>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><td>Suffer a −10% or even −20% penalty to all tests, including SAN rolls, while Exhausted.</td></tr>
+        <tr><td><b>Too Long Working, or Too Long Exposed to Danger and Fear:</b> lose 1D6 WP, become Exhausted.</td></tr>
+        <tr><td><b>A Night Without Sleep:</b> lose 1D6 WP, become Exhausted.</td></tr>
+        <tr><td><b>Chain-smoking/Using Stimulants:</b> no penalty for 1D6 hours (2D6 for hard drugs). Restores no WP. Each additional dose costs 1D6 WP. Frequent use makes Addiction disorder likely.</td></tr>
+        <tr><td><b>Sleeplessness:</b> if had temporary insanity or hit the Breaking Point, make a SAN test to get a full night's sleep.</td></tr>
+        <tr><td><b>Using Sedatives or Drinking:</b> +20% bonus to the SAN test; risks Addiction disorder.</td></tr>
+      </table></div>
+    </div>
+
+    <div class="ref-block">
+      <h3>Mental Disorders</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Violence Disorders</th><th>Trigger</th><th>Description</th></tr>
+        <tr><td>Addiction</td><td>Losing 2+ SAN</td><td>Overwhelming need. Indulging is −20% penalty to stats and skills for a few hours. Every 24 hours w/o use, lose 1D6 WP and cannot recover WP. At 2 WP or less, become irrational/self-destructive.</td></tr>
+        <tr><td>Depression</td><td>Reminders of past traumas</td><td>Every skill or stat test costs 1D4 WP</td></tr>
+        <tr><td>Intermittent Explosive Disorder</td><td>Losing 2+ SAN</td><td>Filled with rage, strong temptation to attack</td></tr>
+        <tr><td>Ligyrophobia</td><td>Loud noises</td><td>SAN tests at −20%</td></tr>
+        <tr><td>Paranoia</td><td>Losing 2+ SAN</td><td>Cannot trust or rely on anyone</td></tr>
+        <tr><td>PTSD</td><td>Reminders of past traumas</td><td>React violently OR skill/stat test costs 1D4 WP</td></tr>
+        <tr><td>Sleep Disorder</td><td>Trying to sleep</td><td>SAN test: failure means cannot rest or regain WP for 24 hours</td></tr>
+        <tr><td>Totemic Compulsion</td><td>Losing or being without totem</td><td>−10% to every skill, stat, and SAN test until item recovered</td></tr>
+      </table></div>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Helplessness Disorders</th><th>Trigger</th><th>Description</th></tr>
+        <tr><td>Addiction</td><td>As Violence</td><td>As Violence</td></tr>
+        <tr><td>Anxiety Disorder</td><td>Losing 2+ SAN</td><td>−20% to all skill, stat, and SAN tests</td></tr>
+        <tr><td>Conversion Disorder</td><td>Temp Insanity or Breaking Point</td><td>Become blind, deaf, or paralyzed until stress subsides</td></tr>
+        <tr><td>Dissociative Identity Disorder</td><td>Temp Insanity or Breaking Point</td><td>Take on alternate identity/personality</td></tr>
+        <tr><td>Depression</td><td>As Violence</td><td>As Violence</td></tr>
+        <tr><td>Enclosure-related Phobia</td><td>Entering distinctly open/enclosed place</td><td>SAN tests at −20%</td></tr>
+        <tr><td>Obsession</td><td>Losing 2+ SAN</td><td>For several days, long-term actions at −20%</td></tr>
+        <tr><td>OCD</td><td>Losing 2+ SAN</td><td>−20% to all skill, stat, and SAN tests until things ordered</td></tr>
+      </table></div>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Unnatural Disorders</th><th>Trigger</th><th>Description</th></tr>
+        <tr><td>Amnesia</td><td>Losing 2+ SAN</td><td>Erases all memory of episode</td></tr>
+        <tr><td>Depersonalization</td><td>Losing 2+ SAN</td><td>−20% to skill and stat tests</td></tr>
+        <tr><td>Depression</td><td>As Violence</td><td>As Violence</td></tr>
+        <tr><td>DID</td><td>As Helplessness</td><td>As Helplessness</td></tr>
+        <tr><td>Fugues</td><td>Temp Insanity or Breaking Point</td><td>Become catatonic or wander off</td></tr>
+        <tr><td>Megalomania</td><td>Losing 2+ SAN</td><td>Stat or skill tests to help or make a good impression fail</td></tr>
+        <tr><td>Paranoia</td><td>As Violence</td><td>As Violence</td></tr>
+        <tr><td>Sleep Disorder</td><td>As Violence</td><td>As Violence</td></tr>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ══════════════════ HOME & BONDS ══════════════════ -->
+  <section class="ref-section" id="bonds">
+    <h2>Home &amp; Bonds</h2>
+
+    <div class="ref-block">
+      <h3>Personal &amp; Home Pursuits</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Pursuit</th><th>Cost</th><th>Roll</th><th>Effects</th></tr>
+        <tr><td>Fulfill responsibilities</td><td>None.</td><td>SAN.</td><td>Fumble: Bond −1D4, lose 1 SAN. Failure: Bond +1. Success: Bond +1D6. Critical: Bond +1D6, gain 1 SAN.</td></tr>
+        <tr><td>Back to nature</td><td>Non-DG Bond −1.</td><td>SAN.</td><td>Fumble: lose 1D4 SAN. Failure: gain 1 SAN. Success: gain 1D4 SAN. Critical: gain 4 SAN.</td></tr>
+        <tr><td>Establish a new Bond</td><td>Non-DG Bond −1.</td><td>CHA×5.</td><td>Failure: no effect. Success: gain a new Bond with a score of ½ CHA.</td></tr>
+        <tr><td>Go to therapy, sharing truthfully</td><td>Non-DG Bond −1.</td><td>Luck or the therapist's Psychotherapy skill.*</td><td>Fumble: lose 1 SAN. Failure: gain 1 SAN. Success: gain 1D6 SAN. Critical: gain 6 SAN, a disorder goes into remission, gain a Bond with the therapist at ½ CHA (or +1D4 to an existing Bond).</td></tr>
+        <tr><td>Go to therapy, not sharing truthfully</td><td>Non-DG Bond −1.</td><td>Luck or the therapist's Psychotherapy skill.</td><td>Fumble: lose 1 SAN. Failure: no effect. Success: gain 1D4 SAN. Critical: gain 4 SAN, a disorder goes into remission, gain a Bond with the therapist at ½ CHA (or +1D4 to an existing Bond).</td></tr>
+        <tr><td>Improve skills or stats</td><td>Non-DG Bond −1 per increase.</td><td>Two skills or stats to be improved.</td><td>Failure: +1 to a stat or +3D6 to a skill. Success: add nothing.</td></tr>
+        <tr><td>Indulge a personal motivation</td><td>Non-DG Bond −1 if SAN improves.</td><td>SAN.</td><td>Fumble: lose 1 SAN. Failure: no effect. Success: gain 1 SAN. Critical: gain 1D4 SAN.</td></tr>
+        <tr><td>Special training</td><td>Non-DG Bond −1.</td><td>None.</td><td>Gain special training with a skill or stat.</td></tr>
+        <tr><td>Stay on the case</td><td>Non-DG Bond −1, gain 1D6−3 SAN.</td><td>Criminology or Occult; the Handler rolls secretly.</td><td>Fumble: uncover a dangerously wrong clue. Failure: no effect. Success: uncover a pertinent clue. Critical: uncover an especially valuable clue.</td></tr>
+        <tr><td>Study the unnatural</td><td>Non-DG Bond −1D4.</td><td>Depends on the source.</td><td>Depends on the source.</td></tr>
+      </table></div>
+      <p class="ref-note">*If you describe criminal or unnatural events and the therapist thinks they are delusions, the roll is at a −20% penalty. If the therapist does not think they're delusions, there's a risk of criminal investigation or further exposure of the unnatural. No personal pursuit can increase SAN beyond POW×5, or a Bond's score beyond the Agent's CHA.</p>
+    </div>
+
+    <div class="ref-block">
+      <h3>Optional Home Pursuits</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Pursuit</th><th>Roll</th><th>Effect</th></tr>
+        <tr><td>Raising Illicit Cash</td><td>Reduce each non-DG Bond by 1. Roll Accounting/Bureaucracy/Criminology.</td><td>Success gains funds for 3D6 Standard Purchases, double for Critical. Fumble faces Firing and Prosecution.</td></tr>
+        <tr><td>Squandering Illicit Cash</td><td>Equivalent of Major or Extreme expense. Roll Accounting or Luck, −20% for Extreme.</td><td>Success improves one non-DG Bond by 1D4, or each Bond by 1D6 for Extreme. Failure reduces one Bond by 1D6. Fumble faces prosecution.</td></tr>
+      </table></div>
+    </div>
+
+    <div class="ref-block">
+      <h3>Firing &amp; Prosecution</h3>
+      <p class="ref-caption">Complete during Home Vignettes.</p>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Vignette</th><th>Roll</th><th>Effect</th></tr>
+        <tr><td>Getting Fired</td><td>CHA test with Supervisor; Persuade or Bureaucracy test for serious offense.</td><td>Success is reprimand or minor disciplinary action. Failure leads to being fired: lose 0/1 SAN from Helplessness and make a CHA test for each Bond, or lose 1D4 points from it (−20% if Bond is a coworker).</td></tr>
+        <tr><td>Prosecution</td><td>Luck roll; −20% for strong case against, or +20% for weak case/DG interference; may make a Law roll before the Luck roll to add +20% on success, +40% on critical, −20% on failure, or −40% on fumble.</td><td>Success is acquittal, but make a CHA test for each Bond or lose 1D4 points from it. Failure is conviction/plea bargain, loss of job, lose 0/1D4 SAN from Helplessness, and a CHA test for each Bond (success loses 1 point, failure loses 1D6).</td></tr>
+      </table></div>
+    </div>
+
+    <div class="ref-block">
+      <h3>Delta Green Bonds</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><td><b>A Special Bond</b></td><td>Whenever a member of the team suffers temporary insanity, gains a new disorder, is incapacitated by injuries, or dies, Agents present gain a DG Bond. After the crisis, make a SAN test. If it fails, gain new Bonds with the Agents involved and/or add to existing ones.</td></tr>
+        <tr><td><b>New DG Bond</b></td><td>Value is half your Agent's CHA; lose 1D4 points from one other non-DG Bond.</td></tr>
+        <tr><td><b>Existing DG Bond</b></td><td>Existing Bond adds 1D4 to its value and subtracts 1 from one other non-DG Bond.</td></tr>
+      </table></div>
+    </div>
+
+    <div class="ref-block">
+      <h3>Calling in a Favor / Spending Your Own Money</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Expense</th><th>Roll</th><th>Effects</th></tr>
+        <tr><td>Standard</td><td>CHA×5</td><td>On success, Bond acquires item; on failure, Bond refuses and is reduced by 1.</td></tr>
+        <tr><td>Unusual</td><td>CHA×5</td><td>On success, Bond acquires item and is reduced by 1; on failure, Bond is reduced by 1.</td></tr>
+        <tr><td>Major</td><td>CHA×5</td><td>On success, Bond acquires item and is reduced by 1. On failure, Bond is reduced by 1D4.</td></tr>
+        <tr><td>Extreme</td><td>CHA×5 −20%</td><td>On success, Bond acquires item and is reduced by 1D4. On failure, Bond is reduced by 1D6.</td></tr>
+      </table></div>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Expense</th><th>Roll</th><th>Effect</th></tr>
+        <tr><td>Standard</td><td>INT×5 or Accounting; +20% for wealthy occupation</td><td>Failure can purchase by reducing a non-DG Bond by 1.</td></tr>
+        <tr><td>Unusual</td><td>INT×5 or Accounting</td><td>Success and Failure each reduce every non-DG Bond by 1. Wealthy occupations do not reduce Bonds on a Success.</td></tr>
+        <tr><td>Major</td><td>INT×5 or Accounting; +20% for wealthy occupation</td><td>Success reduces each non-DG Bond by 1. Failure reduces 1 non-DG Bond by 1D4 and the others by 1.</td></tr>
+        <tr><td>Extreme</td><td>No roll</td><td>To acquire, reduce each non-Delta Green Bond by 1D4.</td></tr>
+      </table></div>
+      <p class="ref-note"><b>Limitations:</b> some items are only available via scrutiny/paperwork, official requisition, or the black market.<br>
+      <b>Using Illicit Cash:</b> allows 1 or more Standard Purchases; Unusual counts as 5, Major counts as 25.<br>
+      <b>The Black Market:</b> Criminology roll to find a contact, or Computer Science for the Dark Web; may have access to a market through Criminology or CHA. Failure means it cannot be acquired without being caught. Once found, roll Luck; on a failure, the item is one expense level greater.</p>
+    </div>
+  </section>
+
+  <!-- ══════════════════ VEHICLES & WEAPONS ══════════════════ -->
+  <section class="ref-section" id="vehicles">
+    <h2>Vehicles &amp; Weapons</h2>
+
+    <div class="ref-block">
+      <h3>Melee &amp; Small Arms</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Melee Weapon</th><th>Damage</th></tr>
+        <tr><td>Bare hands and feet</td><td>1D4−1</td></tr>
+        <tr><td>Brass knuckles or steel-toe boot</td><td>1D4</td></tr>
+        <tr><td>Taser</td><td>Stun</td></tr>
+        <tr><td>Ordinary knife or hatchet</td><td>1D4</td></tr>
+        <tr><td>Combat knife or nightstick</td><td>1D6</td></tr>
+        <tr><td>Tomahawk, machete, or baseball bat</td><td>1D8</td></tr>
+      </table></div>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Small Arms</th><th>Damage</th></tr>
+        <tr><td>Small-caliber pistol</td><td>1D8</td></tr>
+        <tr><td>Pistol</td><td>1D10</td></tr>
+        <tr><td>Carbine or very large pistol</td><td>1D12</td></tr>
+        <tr><td>Rifle</td><td>1D12+2</td></tr>
+        <tr><td>Shotgun blast, close range</td><td>2D8</td></tr>
+      </table></div>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Automatic &amp; Heavy Weapons</th><th>Skill</th><th>Lethality</th><th>Kill Radius</th></tr>
+        <tr><td>Submachine gun, fully automatic</td><td>Firearms</td><td>10%</td><td>1–3m</td></tr>
+        <tr><td>Assault rifle or carbine, fully automatic</td><td>Firearms</td><td>10%</td><td>1–3m</td></tr>
+        <tr><td>Very heavy sniper rifle</td><td>Firearms</td><td>20%</td><td>None</td></tr>
+        <tr><td>Light machine gun</td><td>Heavy Weapons</td><td>10%</td><td>3m</td></tr>
+        <tr><td>Heavy machine gun</td><td>Heavy Weapons</td><td>10%</td><td>3m</td></tr>
+        <tr><td>Hand grenade</td><td>Athletics (special training)</td><td>15%</td><td>10m</td></tr>
+        <tr><td>Improvised explosive device</td><td>Demolitions</td><td>15%</td><td>10m</td></tr>
+        <tr><td>Grenade launcher</td><td>Heavy Weapons</td><td>15%</td><td>10m</td></tr>
+        <tr><td>Rocket-propelled grenade</td><td>Heavy Weapons</td><td>30%</td><td>10m</td></tr>
+      </table></div>
+    </div>
+
+    <div class="ref-block">
+      <h3>Specific Weapon Rules</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><td><b>Tear Gas &amp; Pepper Spray</b></td><td>CON×5 test or stunned and action penalty for 1 hour; on success target not stunned and suffers half penalty. Tear gas grenades have +20% to attack roll and gas lingers 1–2 minutes. If a pepper spray attack fails, attacker makes CON×5 at +20% or is stunned and −20% for 1 hour. Gas mask protects, but −20% to Alertness/Search.</td></tr>
+        <tr><td><b>Stun Grenades</b></td><td>+20% to attack roll, automatic success when thrown into a closed room by surprise. Targets in a 10m (indoors) or 5m (outdoors) radius stunned. After stun ends, target has −40% to all actions for 1D6 turns (eye/ear protection reduces penalty to −20%).</td></tr>
+        <tr><td><b>Bright Lights</b></td><td>Shine in target's eyes up to 10m away with DEX×5 test opposed by target's DEX×5 test. Dazzled target is at −20% penalty to all actions for 1D6 turns.</td></tr>
+        <tr><td><b>Electroshock</b></td><td>CON×5 test or stunned and suffer −20% to all actions for 1D20 turns after ends.</td></tr>
+        <tr><td><b>Shotguns</b></td><td>Firing a shot adds +20% to hit at all ranges but target doubles Armor. Firing both barrels adds +1D8 damage up to base range. Other gauges can modify damage by +2 or −2.</td></tr>
+        <tr><td><b>Rifles/Carbines</b></td><td>Bolt-action rifles attacking two turns in a row have −20% to attack roll.</td></tr>
+        <tr><td><b>Heavy Guns</b></td><td>Machine guns fired without bipod/tripod/mount halve Base Range.</td></tr>
+        <tr><td><b>Unusual Ammunition</b></td><td>Armor Piercing (AP) reduces Armor by 5 (replaces weapon's usual AP rating) but does −1 damage, minimum 1. Hollow point does +1 damage, but Armor is doubled.</td></tr>
+      </table></div>
+    </div>
+
+    <div class="ref-block">
+      <h3>Weapon Concealment</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Weapon</th><th>Concealability</th></tr>
+        <tr><td>Knives and Pistols</td><td>Concealed under ordinary clothing; seen with an Alertness test.</td></tr>
+        <tr><td>Heavy Pistol or Large Knife</td><td>As above but +20% to Alertness test; +0% if wearing overcoat.</td></tr>
+        <tr><td>Submachine Gun or Sawed-off Shotgun</td><td>Can conceal under overcoat, seen with +0% Alertness test.</td></tr>
+        <tr><td>Full-size Rifle or Large Melee Weapon</td><td>Cannot be concealed.</td></tr>
+      </table></div>
+    </div>
+
+    <div class="ref-block">
+      <h3>Vehicle Rules</h3>
+      <p class="ref-caption">Vehicles count as Huge and ignore unarmed and small melee attacks. Driving at half HP or less requires a Drive/Pilot test; the vehicle dies on a fumble. 0 HP renders it permanently inoperable.</p>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Speed (Surface/Air; Air outruns Surface)</th><th>Effect</th></tr>
+        <tr><td>Slow</td><td>−20% to Drive/Pilot to pursue or escape</td></tr>
+        <tr><td>Fast</td><td>+20% to Drive/Pilot to pursue or escape</td></tr>
+        <tr><td>Jet/Special</td><td>Outruns any non-jet vehicle</td></tr>
+      </table></div>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Ramming Speed</th><th>Damage (count vehicle armor as Armor Piercing)</th></tr>
+        <tr><td>Low</td><td>1D6 or 2D6</td></tr>
+        <tr><td>Moderate (max speed for a Slow vehicle)</td><td>Lethality equal to ½ max vehicle HP</td></tr>
+        <tr><td>High</td><td>Lethality equal to max vehicle HP</td></tr>
+      </table></div>
+      <p class="ref-note"><b>Target is Huge/Vehicle:</b> ramming vehicle takes ½ target's max HP in damage.<br>
+      <b>Passengers:</b> 2D6 damage to rammed; 1D6 to rammers/0 if target not Huge. Seatbelts/airbags halve.</p>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Sample Vehicle</th><th>HP</th><th>Armor</th><th>Speed</th></tr>
+        <tr><td>Motorcycle</td><td>15 to 20</td><td>0</td><td>Fast</td></tr>
+        <tr><td>Sedan</td><td>25 to 30</td><td>3</td><td>Average</td></tr>
+        <tr><td>Pickup or SUV</td><td>30 to 35</td><td>3</td><td>Average</td></tr>
+        <tr><td>Armored SUV</td><td>35</td><td>10</td><td>Average</td></tr>
+        <tr><td>Semi truck</td><td>40</td><td>3</td><td>Slow</td></tr>
+        <tr><td>Armored personnel carrier</td><td>80</td><td>20</td><td>Slow</td></tr>
+        <tr><td>River patrol boat</td><td>30</td><td>0</td><td>Slow</td></tr>
+        <tr><td>Speed boat</td><td>25</td><td>0</td><td>Average</td></tr>
+        <tr><td>Civilian helicopter</td><td>20</td><td>0</td><td>Average</td></tr>
+        <tr><td>Commuter plane</td><td>25</td><td>0</td><td>Average</td></tr>
+        <tr><td>Police helicopter</td><td>30</td><td>0</td><td>Fast</td></tr>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ══════════════════ EQUIPMENT ══════════════════ -->
+  <section class="ref-section" id="equipment">
+    <h2>Equipment Acquisition</h2>
+
+    <div class="ref-block">
+      <h3>General Questions for Acquiring Gear</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><td><b>Do We Have It?</b></td><td>The Agents may already have what they need. Consider the operation, the Agents, and the item itself. If it's not obvious, attempt an INT or Luck roll (Major expense: −20%; Extreme expense: −40%).</td></tr>
+        <tr><td><b>Can We Requisition It?</b></td><td>If the answer's not obvious, roll Bureaucracy or Military Science (Major expense −20%, Extreme expense −40%, Low priority −20%, High priority +20%). Risks unwanted oversight and review. Can Delta Green help? Ask the Handler.</td></tr>
+        <tr><td><b>What's Plan B?</b></td><td>Ask a Bond who has access to get it for you. Spend your own money. Abuse your position as a program manager. Use a stash of illicit cash. Use Craft and a workshop to make it yourself.</td></tr>
+      </table></div>
+    </div>
+
+    <div class="ref-block">
+      <h3>Expense Levels</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Level</th><th>Examples</th></tr>
+        <tr><td>Incidental (up to $150)</td><td>A meal, a taxi across town, a rental car for a few days, firearm ammunition, shovels and tarps, a burner phone. Assume the Agent has it and move on.</td></tr>
+        <tr><td>Standard ($200 to $800)</td><td>A pistol or rifle, a same-day plane ticket to a major hub, multiple days' worth of car rental, or a week at a modest hotel or short-term apartment.</td></tr>
+        <tr><td>Unusual ($1000 to $5000)</td><td>A good-condition rifle with starlight scope, a working but ugly car bought with cash, a powerful computer, a same-day ticket to an out-of-the-way location, a week at a fine hotel, a forged passport from a developing nation.</td></tr>
+        <tr><td>Major ($6000 to $30,000)</td><td>A heavy weapon, a professional-level forgery, a new vehicle, a stay in a private villa for a week, or access to an exclusive charity event.</td></tr>
+        <tr><td>Extreme ($36,000+)</td><td>Levels of spending only open to the truly wealthy or to black budgets with astonishingly little oversight. Availability up to the Handler.</td></tr>
+      </table></div>
+      <p class="ref-note"><b>Junk Equipment:</b> one expense level lower in cost. Fumbles on any roll of 95 or higher, and/or −20% to use.<br>
+      <b>Crafting It Yourself:</b> can use Craft skill to manufacture equipment at one expense level lower (cannot craft Extreme purchases); usually takes one or two days. Can also modify firing rate on weapons.<br>
+      <b>Asking Delta Green:</b> a control officer may use their Bureaucracy skill for requisition or operation priority.</p>
+    </div>
+
+    <div class="ref-block">
+      <h3>Operational Gear: Do They Have It to Start?</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Consideration</th><th>Details</th></tr>
+        <tr><td>Consider the Operation</td><td>Look at the nature of the operation.</td></tr>
+        <tr><td>Consider the Agents</td><td>Look at the skills and background of the Agents.</td></tr>
+        <tr><td>Consider the Item</td><td>Is it unusually expensive, restricted, or inappropriate?</td></tr>
+        <tr><td>If It Is Not Obvious, Roll</td><td>Relevant Agent rolls INT×5 or Luck to have item before operation begins. Major expense at −20%, Extreme expense at −40%.</td></tr>
+      </table></div>
+      <p class="ref-note">Agents start with 1–2 Unusual Expenses each, 1–2 Major Expenses per group, and 0 Extreme Expenses.</p>
+    </div>
+
+    <div class="ref-block">
+      <h3>Official Requisition</h3>
+      <p class="ref-caption">Bureaucracy roll, or Military Science for military requisition.</p>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Requisition Expense</th><th>Modifier</th><th>Time (Normal)</th><th>Time (Accelerated)</th><th>Review</th><th>Repercussions for Wrongful Use</th></tr>
+        <tr><td>Standard</td><td>+0%</td><td>A day or two</td><td>A few hours*</td><td>If restricted; or if accelerated and a CHA×5 test fails</td><td>Reprimand</td></tr>
+        <tr><td>Unusual</td><td>+0%</td><td>A few days</td><td>A day or two*</td><td>As above</td><td>Reprimand</td></tr>
+        <tr><td>Major</td><td>−20%</td><td>A few weeks</td><td>A few days**</td><td>Always</td><td>Suspension and/or transfer</td></tr>
+        <tr><td>Extreme</td><td>−40%</td><td>A few months</td><td>A few days**</td><td>Always</td><td>Firing and/or prosecution</td></tr>
+      </table></div>
+      <p class="ref-note">Low Priority: −20%. Normal Priority: +0%. High Priority: +20%.<br>
+      *Standard or Unusual delivery can be accelerated by badgering officials. **Major or Extreme delivery can only be accelerated for a high-priority operation.</p>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><td><b>Official Review</b></td><td>Roll Accounting/Bureaucracy/Law/Military Science/Persuade/Criminology to smooth over; +20% bonus with time to prepare, or +40% with good circumstances. Failure of a Standard or Unusual Expense is a reprimand, a Major Expense a severe disciplinary action, and an Extreme Expense Firing and/or Criminal Prosecution.</td></tr>
+        <tr><td><b>Avoiding Scrutiny</b></td><td>Establishing a pretext for requisition may require a Law or Military Science test. Failure may lead to an investigation requiring Law and/or Bureaucracy rolls.</td></tr>
+        <tr><td><b>Covering the Trail</b></td><td>Accounting roll to cover up the request. A fumble could result in being Fired or Prosecuted.</td></tr>
+        <tr><td><b>Supervisory Agents</b></td><td>+20% to Accounting/Law/Bureaucracy/Military Science rolls for Requisition and Cover-Ups.</td></tr>
+        <tr><td><b>Local Support</b></td><td>CHA test to leverage the Agency's name and influence with local authorities; may result in inquiries with too many requests.</td></tr>
+        <tr><td><b>Incidental Expenses</b></td><td>Do not normally require a roll unless the Handler says otherwise.</td></tr>
+      </table></div>
+    </div>
+
+    <div class="ref-block">
+      <h3>Program Managers</h3>
+      <p class="ref-caption">Accounting roll; failure inflicts −20% to future rolls during the operation. Acquire Standard Expense with basic internet; Unusual or Major with agency software.</p>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Expense</th><th>Accounting Roll Failure</th><th>Accounting Roll Fumble</th></tr>
+        <tr><td>Standard</td><td>The money is not available. Or the Agent can get the money anyway but then the budget dries up for the rest of the operation. Either way, the Agent can cover his or her tracks enough to avoid trouble.</td><td>The budget dries up for the rest of the operation. The Agent can cover his or her tracks enough to avoid trouble.</td></tr>
+        <tr><td>Unusual</td><td>The budget dries up for the rest of the operation, but the Agent covers their tracks enough to avoid trouble.</td><td>As with failure, and a superior or budget specialist notices the irregularity. Agent risks being fired.</td></tr>
+        <tr><td>Major</td><td>The budget dries up for the rest of the operation and a superior or budget specialist notices the irregularity. The Agent risks being fired.</td><td>As with failure, and the Agent faces prosecution.</td></tr>
+        <tr><td>Extreme</td><td>The budget dries up for the rest of the operation and a superior or budget specialist notices the irregularity. The Agent risks being fired and faces prosecution.</td><td>As with failure, but the Agent is automatically fired and faces prosecution.</td></tr>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ══════════════════ TRADECRAFT ══════════════════ -->
+  <section class="ref-section" id="tradecraft">
+    <h2>Tradecraft</h2>
+
+    <div class="ref-block">
+      <h3>The Mission &amp; Standing Orders</h3>
+      <p class="ref-prose">As an agent, you protect the U.S. and humanity itself from unnatural threats so deadly that mere awareness of them is dangerous. It may be necessary to violate every law and principle that you once swore to uphold. You must never tell anyone about the Program, nor about the work you do on its behalf. You may die, be crippled, go insane, or be imprisoned, and your family will never be told the truth. You're told the mission is worth the sacrifice.</p>
+      <p class="ref-prose"><b>First Priority:</b> Stop the incursion. <b>Second Priority:</b> Minimize awareness of the incursion in order to prevent the damage from spreading. <b>Third Priority:</b> Obscure the Program's involvement. Secure or eliminate all evidence that an unnatural event has occurred. <b>Fourth Priority:</b> Secure evidence, samples, documents, and advanced technology for collection. <b>Fifth Priority:</b> Save lives. As many as you can.</p>
+      <p class="ref-prose"><b>Cover Story:</b> give first-responders, reporters, and witnesses a plausible pretext for your presence. Make sure they have no reason to investigate your team.</p>
+    </div>
+
+    <div class="ref-block">
+      <h3>Cover Identity &amp; Communications</h3>
+      <p class="ref-prose">The Program can easily provide cover identities and temporary deputization with nearly any branch of U.S. government. Its go-to cover agency is the FBI, which has the broadest jurisdiction over federal law enforcement. Always have a false identity ready to show, but rely on it only as a last resort — no false identity will stand up to sustained investigation.</p>
+      <p class="ref-prose"><b>False Name, False Employer:</b> may be no better than a doctored badge or driver's license. A more extensive legend — with falsified employers, tax returns, and social-media history — takes weeks to concoct.<br>
+      <b>True Name, False Employer:</b> intelligence officers and special operators are often employed under their own names by deniable front companies. Such a front is often a real company with many employees and years of history.</p>
+      <p class="ref-prose">Mobile devices leave records at cell towers and internet service providers, allowing investigators to trace your movements and contacts. A dedicated SIGINT team can eavesdrop. The Program sometimes provides disposable, heavily-encrypted cellphones — untraceable movements, but eavesdropping is still possible. Phone numbers must never be programmed in, only memorized, and call histories deleted frequently. Program-issued tablets and computers are password-protected and erased after each operation. Sensitive data should never be stored on these devices.</p>
+    </div>
+
+    <div class="ref-block">
+      <h3>Witnesses &amp; Handover</h3>
+      <p class="ref-prose">Agents must decide how to handle witnesses to minimize exposure. <b>Cooperation:</b> occasionally a witness quickly grasps the need for secrecy and can be trusted to cooperate. <b>Obfuscation:</b> many witnesses can be convinced they didn't really see anything unnatural — a gas leak, a hallucinogen, a toxin in the water, or convincing them privately that reporting it will look ridiculous. <b>Disinformation:</b> a witness who saw too much but refuses to cooperate must be persuaded it never happened; tell your case officer, who may discredit them publicly. <b>Sanction:</b> if all else fails and a witness attempts to make persuasive evidence public, agents may be dispatched to silence them permanently.</p>
+      <p class="ref-prose">Your case officer may direct you to turn physical evidence, artifacts, books, biological samples, or even living suspects over for analysis. Such a handover should be done away from public view.</p>
+      <p class="ref-prose"><b>Firearms:</b> if a shooting is justifiable by your cover story, using your duty weapon may raise the fewest questions. If not, make sure you have a throwaway weapon, a way to dispose of the body without drawing attention, or a patsy to blame for the shooting.</p>
+    </div>
+
+    <div class="ref-block">
+      <h3>Going Unnoticed &amp; Surveillance</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Task</th><th>Skill Required</th><th>Possible Opposing Skill</th></tr>
+        <tr><td>Concoct a legal pretext for an operation</td><td>Law</td><td>Law</td></tr>
+        <tr><td>Establish a false identity</td><td>Bureaucracy</td><td>Bureaucracy</td></tr>
+        <tr><td>Create a false online history</td><td>HUMINT (with Computer Science)</td><td>HUMINT</td></tr>
+        <tr><td>Back-date online history data</td><td>Computer Science</td><td>Computer Science</td></tr>
+        <tr><td>Falsify documents</td><td>Art (Forgery)</td><td>Art (Forgery)</td></tr>
+        <tr><td>Secure cooperation or allay suspicions</td><td>Persuade</td><td>Persuade</td></tr>
+        <tr><td>Evade surveillance or sentries</td><td>Stealth</td><td>Alertness</td></tr>
+        <tr><td>Clean a crime scene</td><td>Forensics</td><td>Forensics</td></tr>
+      </table></div>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Task</th><th>Skill Required</th><th>Possible Opposing Skill</th></tr>
+        <tr><td>Plant hidden microphones or cameras</td><td>Stealth</td><td>Search</td></tr>
+        <tr><td>Follow a subject without detection</td><td>Stealth</td><td>Alertness</td></tr>
+        <tr><td>Follow undetected while driving</td><td>Stealth or Driving, whichever is lower</td><td>Alertness</td></tr>
+        <tr><td>Enter an office unnoticed</td><td>Stealth</td><td>Alertness</td></tr>
+        <tr><td>Talk your way into an office without suspicion</td><td>Persuade</td><td>HUMINT</td></tr>
+        <tr><td>Plant a virus or Trojan horse</td><td>Computer Science</td><td>Computer Science</td></tr>
+        <tr><td>Use IMSI to track and listen to cell communications</td><td>SIGINT</td><td>SIGINT</td></tr>
+        <tr><td>Decrypt digital interceptions</td><td>SIGINT</td><td>SIGINT</td></tr>
+        <tr><td>Obtain NSA digital or voice intercepts without leaving records of the request</td><td>Bureaucracy or Law, whichever is lower</td><td>Bureaucracy</td></tr>
+      </table></div>
+    </div>
+
+    <div class="ref-block">
+      <h3>Pursuit &amp; Breaking and Entering</h3>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Task</th><th>Skill Required</th><th>Possible Opposing Skill</th></tr>
+        <tr><td>Run down a suspect or escape on foot</td><td>Athletics</td><td>Athletics</td></tr>
+        <tr><td>Pursue or escape in a vehicle</td><td>Driving or Pilot</td><td>Driving or Pilot</td></tr>
+      </table></div>
+      <div class="ref-table-wrap"><table class="ref-table">
+        <tr><th>Task</th><th>Skill Required</th><th>Possible Opposing Skill</th></tr>
+        <tr><td>Sneak past guards or cameras</td><td>Stealth</td><td>Alertness</td></tr>
+        <tr><td>Scale a wall</td><td>Athletics</td><td>n/a</td></tr>
+        <tr><td>Pick a lock</td><td>Special training (lockpicks) or Craft (locksmith)</td><td>n/a</td></tr>
+        <tr><td>Defeat a security system</td><td>Special training (security systems) or Craft (electrician)</td><td>n/a</td></tr>
+        <tr><td>Obscure signs of entry</td><td>Forensics</td><td>Forensics</td></tr>
+      </table></div>
+    </div>
+  </section>
+
+</main>
+
+<script src="assets/table-radio.js"></script>
+<script src="assets/dice-roller.js?v=7"></script>
+</body>
+</html>
