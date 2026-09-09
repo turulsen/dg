@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Incursion</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/png" href="assets/mars-tech-seal.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0e100b">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  /* ══════════════════════════════════════════════
+     Phase 3 of the player-facing-sheets plan: "The Incursion" is a
+     standalone backstory roller built from the Briefing Documents PDF's
+     own "The Incursion" page (What Brought Your Agent to Delta Green?).
+     It is deliberately NOT wired into the character sheet -- it's a
+     read-only, roll-it-yourself creation aid an Agent (or their Handler)
+     can consult once during Bio, not a field that gets saved anywhere.
+     Same paper/ink tokens, chrome, and Table Radio/Dice Roller inclusion
+     as rules-reference.html and every other player-reachable page.
+     ══════════════════════════════════════════════ */
+  :root{
+    --paper:#f4eed8;
+    --paper-line:rgba(180,148,72,.18);
+    --ink:#1c1608;
+    --ink-2:#4a3f28;
+    --ink-3:#8a7a5a;
+    --red:#8b1a1a;
+    --green:#1a4a1a;
+    --rule:rgba(160,130,70,.35);
+    --hdr:#1c1608;
+    --hdr-text:#f4eed8;
+    --stripe:rgba(28,22,8,.04);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    padding:0 0 64px;
+    background:#0e100b;
+    background-image:radial-gradient(ellipse at 50% 0%, #141710 0%, #090b07 60%);
+    min-height:100vh;
+    font-family:'Courier Prime', monospace;
+    color:var(--ink);
+  }
+  .back-link-row{ max-width:800px; margin:0 auto; padding:16px 16px 0; }
+  .back-link-row a{
+    font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.18em;
+    text-transform:uppercase; color:#8a9878; text-decoration:none;
+  }
+  .ref-header{
+    max-width:800px; margin:12px auto 0; padding:0 16px;
+    text-align:center;
+  }
+  .ref-header h1{
+    font-family:'Special Elite',monospace; font-weight:400;
+    font-size:26px; color:var(--paper); letter-spacing:.02em; margin:6px 0;
+  }
+  .ref-header p{
+    font-size:12px; color:#8a9878; font-style:italic; margin:0 0 16px;
+  }
+
+  .ref-main{ max-width:800px; margin:0 auto; padding:20px 16px 0; }
+
+  .ref-section{
+    background:var(--paper);
+    border-radius:2px;
+    box-shadow:0 4px 18px rgba(0,0,0,.4), 0 1px 4px rgba(0,0,0,.3);
+    padding:18px 20px 22px;
+    margin-bottom:22px;
+    scroll-margin-top:20px;
+  }
+  .ref-section h2{
+    font-family:'Special Elite',monospace; font-weight:400; font-size:19px;
+    margin:0 0 4px; letter-spacing:.02em;
+  }
+  .ref-section > .ref-subtitle{
+    font-size:11px; color:var(--ink-3); font-style:italic; margin:0 0 14px;
+  }
+  .ref-prose{ font-size:12.5px; line-height:1.65; margin:0 0 10px; }
+  .ref-prose b{ color:var(--ink); }
+  .ref-prose:last-child{ margin-bottom:0; }
+  .ref-field-list{ margin:0 0 10px; padding-left:20px; font-size:12.5px; line-height:1.6; }
+
+  /* Roll panel */
+  .incursion-roll-btn{
+    display:block; width:100%; padding:14px; margin:4px 0 0;
+    font-family:'Special Elite',monospace; font-size:15px; letter-spacing:.04em;
+    text-transform:uppercase; color:var(--paper); background:var(--ink);
+    border:1px solid var(--ink); border-radius:2px; cursor:pointer;
+  }
+  .incursion-roll-btn:hover{ filter:brightness(1.3); }
+  .incursion-roll-btn:active{ filter:brightness(0.9); }
+
+  #incursion-result{
+    margin-top:18px; padding-top:16px; border-top:2px solid var(--ink);
+    display:none;
+  }
+  #incursion-result.show{ display:block; }
+  .incursion-line{
+    display:flex; gap:10px; padding:6px 0; border-bottom:1px solid var(--paper-line);
+    font-size:13px; align-items:baseline;
+  }
+  .incursion-line:last-child{ border-bottom:none; }
+  .incursion-line .il-label{
+    font-family:'Special Elite',monospace; font-size:10.5px; text-transform:uppercase;
+    letter-spacing:.05em; color:var(--ink-3); flex:0 0 auto; min-width:120px;
+  }
+  .incursion-line .il-die{
+    font-size:10.5px; color:var(--ink-3); flex:0 0 auto;
+  }
+  .incursion-line .il-value{ color:var(--ink); font-weight:bold; }
+  #incursion-summary{
+    margin-top:14px; padding:12px 14px; background:var(--stripe);
+    border:1px solid var(--paper-line); border-radius:2px;
+    font-size:12.5px; line-height:1.6; font-style:italic;
+  }
+
+  .ref-block{ margin:0 0 20px; }
+  .ref-block:last-child{ margin-bottom:0; }
+  .ref-block h3{
+    font-family:'Special Elite',monospace; font-weight:400; font-size:13px;
+    text-transform:uppercase; letter-spacing:.04em; margin:0 0 4px;
+    padding-bottom:4px; border-bottom:2px solid var(--ink);
+  }
+  .ref-block .ref-caption{
+    font-size:10.5px; color:var(--ink-3); font-style:italic; margin:0 0 8px;
+  }
+  .ref-table-wrap{ overflow-x:auto; margin-bottom:4px; }
+  table.ref-table{
+    border-collapse:collapse; width:100%; min-width:280px;
+    font-family:'Courier Prime',monospace; font-size:11.5px;
+  }
+  table.ref-table th{
+    background:var(--hdr); color:var(--hdr-text);
+    text-align:left; padding:6px 9px; font-weight:bold;
+    letter-spacing:.02em; white-space:nowrap;
+  }
+  table.ref-table td{
+    border:1px solid var(--paper-line); padding:6px 9px;
+    color:var(--ink); vertical-align:top;
+  }
+  table.ref-table tr:nth-child(even) td{ background:var(--stripe); }
+  table.ref-table td.ref-num{ white-space:nowrap; width:1%; }
+  table.ref-table tr.rolled td{ background:rgba(139,26,26,.14); font-weight:bold; }
+  .ref-note{
+    font-size:10.5px; color:var(--ink-3); font-style:italic;
+    line-height:1.5; margin:6px 0 0;
+  }
+  .tables-grid{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  @media (max-width:640px){
+    .tables-grid{ grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="back-link-row">
+  <a href="index.html" id="ref-back-link">← Agent Hub</a>
+  <script>if (window.frameElement && window.frameElement.id === 'dg-shell-content') document.getElementById('ref-back-link').style.display = 'none';</script>
+</div>
+
+<div class="ref-header">
+  <h1>THE INCURSION</h1>
+  <p>What brought your Agent to Delta Green? A creation-time backstory roller -- not saved to any sheet.</p>
+</div>
+
+<main class="ref-main">
+
+  <section class="ref-section" id="incursion-intro">
+    <h2>What Brought Your Agent to Delta Green?</h2>
+    <p class="ref-prose">Beyond the edges of reality are unnatural powers that outstrip human understanding.
+      Sometimes those powers bleed through and destroy everything they touch. Sometimes people study them,
+      and the knowledge festers like a cancer of the mind. Your Agent probably experienced the unnatural in
+      some crisis that caught the attention of Delta Green. The Agent was recruited, so we know a few things
+      about how the Agent reacted&mdash;but the reasons for your Agent's responses are up to you:</p>
+    <ul class="ref-field-list">
+      <li>Your Agent recognized the catastrophic danger of the incursion.</li>
+      <li>Your Agent helped stop it.</li>
+      <li>Your Agent agreed to stay quiet for the sake of protecting the public and preventing another incursion.</li>
+      <li>When Delta Green needed help with another investigation and cover-up later, your Agent answered the call.</li>
+    </ul>
+    <p class="ref-prose">What happened in the incursion is up to the Handler. If the Handler says to make it up
+      and you want some ideas, roll 1D4, 1D6, 1D8, 1D10, and 1D12 and look up the details below.</p>
+
+    <button type="button" class="incursion-roll-btn" id="incursion-roll-btn" onclick="rollIncursion()">Roll My Incursion</button>
+
+    <div id="incursion-result">
+      <div class="incursion-line">
+        <span class="il-label">Environment</span>
+        <span class="il-die" id="il-die-environment"></span>
+        <span class="il-value" id="il-value-environment"></span>
+      </div>
+      <div class="incursion-line">
+        <span class="il-label">Vector</span>
+        <span class="il-die" id="il-die-vector"></span>
+        <span class="il-value" id="il-value-vector"></span>
+      </div>
+      <div class="incursion-line">
+        <span class="il-label">Cover Story</span>
+        <span class="il-die" id="il-die-cover"></span>
+        <span class="il-value" id="il-value-cover"></span>
+      </div>
+      <div class="incursion-line">
+        <span class="il-label">Complication</span>
+        <span class="il-die" id="il-die-complication"></span>
+        <span class="il-value" id="il-value-complication"></span>
+      </div>
+      <div class="incursion-line">
+        <span class="il-label">Incursion</span>
+        <span class="il-die" id="il-die-incursion"></span>
+        <span class="il-value" id="il-value-incursion"></span>
+      </div>
+      <div id="incursion-summary"></div>
+    </div>
+  </section>
+
+  <section class="ref-section" id="incursion-tables">
+    <h2>Reference Tables</h2>
+    <p class="ref-subtitle">Roll it yourself, or read below for the full spread.</p>
+
+    <div class="tables-grid">
+      <div class="ref-block">
+        <h3>D4 &mdash; Environment</h3>
+        <div class="ref-table-wrap"><table class="ref-table" id="table-environment">
+          <tr><th class="ref-num">D4</th><th>Environment</th></tr>
+        </table></div>
+      </div>
+
+      <div class="ref-block">
+        <h3>D6 &mdash; Vector</h3>
+        <div class="ref-table-wrap"><table class="ref-table" id="table-vector">
+          <tr><th class="ref-num">D6</th><th>Vector</th></tr>
+        </table></div>
+      </div>
+
+      <div class="ref-block">
+        <h3>D8 &mdash; Delta Green's Cover Investigation</h3>
+        <div class="ref-table-wrap"><table class="ref-table" id="table-cover">
+          <tr><th class="ref-num">D8</th><th>Cover Investigation</th></tr>
+        </table></div>
+      </div>
+
+      <div class="ref-block">
+        <h3>D10 &mdash; Complication</h3>
+        <div class="ref-table-wrap"><table class="ref-table" id="table-complication">
+          <tr><th class="ref-num">D10</th><th>Complication</th></tr>
+        </table></div>
+      </div>
+    </div>
+
+    <div class="ref-block">
+      <h3>D12 &mdash; Incursion</h3>
+      <p class="ref-caption">An unnatural entity or phenomenon&hellip; (1&ndash;6) or a human being&hellip; (7&ndash;12)</p>
+      <div class="ref-table-wrap"><table class="ref-table" id="table-incursion">
+        <tr><th class="ref-num">D12</th><th>Incursion</th></tr>
+      </table></div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+  var incursionData = {
+    environment: [
+      'Urban', 'Suburban or exurban', 'Rural', 'Wilderness or ocean'
+    ],
+    vector: [
+      'A lone wolf', 'A family cult', 'A militant or corrupted religious sect',
+      'A linguistic or historical discovery', 'A scientific or technological discovery',
+      'A bystander exposed accidentally'
+    ],
+    cover: [
+      'Violent crime across state lines or on federal property', 'Terrorism',
+      'Theft or fraud', 'Drug trafficking', 'Environmental crime', 'Kidnapping',
+      'Natural disaster', 'Plane, train, or ship disaster or disappearance'
+    ],
+    complication: [
+      'Your Agent was badly hurt', 'Witness audio, video, or photos went online',
+      'Journalists had to be misled', 'First responders were hurt or killed',
+      'Bystanders were hurt or killed', 'Professional blowback',
+      'Legal or criminal repercussions', 'Part of the threat escaped',
+      'Evidence went to a non-Delta Green lab',
+      'Your Agent does not remember some of what happened'
+    ],
+    incursion: [
+      '…feeding on human flesh and blood', '…feeding on psychic energies',
+      '…reproducing', '…seeking servants', '…studying humanity',
+      '…taking physical form through human infestation',
+      '…seeking contact with an unnatural entity',
+      '…utilizing an unnatural artifact or device',
+      '…performing an unnatural ritual', '…transforming into something unnatural',
+      '…psychically possessed', '…studying the remnants of an unnatural incursion'
+    ]
+  };
+
+  function fillTable(tableId, key) {
+    var table = document.getElementById(tableId);
+    var list = incursionData[key];
+    for (var i = 0; i < list.length; i++) {
+      var tr = document.createElement('tr');
+      tr.id = tableId + '-row-' + (i + 1);
+      var tdNum = document.createElement('td');
+      tdNum.className = 'ref-num';
+      tdNum.textContent = i + 1;
+      var tdVal = document.createElement('td');
+      tdVal.textContent = list[i];
+      tr.appendChild(tdNum);
+      tr.appendChild(tdVal);
+      table.appendChild(tr);
+    }
+  }
+  fillTable('table-environment', 'environment');
+  fillTable('table-vector', 'vector');
+  fillTable('table-cover', 'cover');
+  fillTable('table-complication', 'complication');
+  fillTable('table-incursion', 'incursion');
+
+  function d(sides) { return Math.floor(Math.random() * sides) + 1; }
+
+  function highlightRow(tableId, num) {
+    var table = document.getElementById(tableId);
+    for (var i = 1; i <= table.rows.length; i++) {
+      var row = document.getElementById(tableId + '-row-' + i);
+      if (row) row.classList.toggle('rolled', i === num);
+    }
+  }
+
+  function rollIncursion() {
+    var envN = d(4), vecN = d(6), covN = d(8), compN = d(10), incN = d(12);
+    var env = incursionData.environment[envN - 1];
+    var vec = incursionData.vector[vecN - 1];
+    var cov = incursionData.cover[covN - 1];
+    var comp = incursionData.complication[compN - 1];
+    var inc = incursionData.incursion[incN - 1];
+
+    document.getElementById('il-die-environment').textContent = '(D4: ' + envN + ')';
+    document.getElementById('il-value-environment').textContent = env;
+    document.getElementById('il-die-vector').textContent = '(D6: ' + vecN + ')';
+    document.getElementById('il-value-vector').textContent = vec;
+    document.getElementById('il-die-cover').textContent = '(D8: ' + covN + ')';
+    document.getElementById('il-value-cover').textContent = cov;
+    document.getElementById('il-die-complication').textContent = '(D10: ' + compN + ')';
+    document.getElementById('il-value-complication').textContent = comp;
+    document.getElementById('il-die-incursion').textContent = '(D12: ' + incN + ')';
+    document.getElementById('il-value-incursion').textContent = inc;
+
+    function article(word) { return /^[aeiou]/i.test(word) ? 'an' : 'a'; }
+    var envLower = env.toLowerCase();
+
+    document.getElementById('incursion-summary').textContent =
+      'In ' + article(envLower) + ' ' + envLower + ' setting, ' + vec.toLowerCase() + ' led to an unnatural entity or human being ' +
+      inc.replace('…', '') + '. Delta Green covered it up as ' + cov.toLowerCase() + '. During the incident, ' +
+      comp.toLowerCase() + '.';
+
+    highlightRow('table-environment', envN);
+    highlightRow('table-vector', vecN);
+    highlightRow('table-cover', covN);
+    highlightRow('table-complication', compN);
+    highlightRow('table-incursion', incN);
+
+    document.getElementById('incursion-result').classList.add('show');
+  }
+</script>
+
+<script src="assets/table-radio.js"></script>
+<script src="assets/dice-roller.js?v=7"></script>
+</body>
+</html>
