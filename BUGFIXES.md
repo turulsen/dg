@@ -1924,3 +1924,41 @@ made the gap immediate: while Live Play is on, `.live-play`'s
 redefines to its own bright accent -- exactly the color the box was
 filling with. Added `#settings-panel textarea` (and its placeholder)
 alongside the existing button/select/input rules.
+
+**Live report: hundreds of dummy/test Agents ("Test Creation Lockout
+Agent", "Priya Anand" repeated, unnamed `AGNT-XXXX` placeholders) piled
+up in the live Characters sheet, far too many to delete one at a time
+through A-Cell's existing per-row Delete button (its own password
+re-entry per row).** Root cause found while investigating: of the 92
+functions in `test/run_tests.py`, 30 never set up their own
+`page.route("**/script.google.com/**", ...)` mock, and several of
+those fill in `#cs-name` with shared fixture names (most commonly
+"Priya Anand") -- which triggers `cloud-sync.js`'s real debounced
+auto-save. In this sandbox that's silently harmless (the hostname is
+already unreachable here by network policy, and those same unmocked
+tests already pass against that blocked network) -- but GitHub
+Actions CI has full internet access and runs this exact suite on
+every push to `main`/`firebase-migration`, so it has been writing a
+real row into the live Characters sheet on every single CI run this
+whole time. Fixed at the root rather than patching 30 call sites:
+`test/run_tests.py`'s `main()` now wraps `browser.new_page` once so
+every test's page defaults to aborting `**/script.google.com/**`
+outright; a test that sets up its own more specific mock afterward
+still wins (Playwright resolves the most-recently-registered handler
+first), so this can't quietly regress the next time a test is added
+without its own mock either.
+
+That stops new dummy rows, but doesn't clear the hundreds already
+there. Added bulk delete to A-Cell's Sheet tab: a checkbox per row,
+"Select Matching" (substring match against Agent Name) and "Select
+Unnamed" (matches a row whose Agent Name is still just its own Agent
+Code, e.g. `AGNT-87JW` -- never renamed, almost always one of these
+dummy rows) as one-click shortcuts, then a single password entry
+deletes every selected row instead of one prompt per row. Each
+selected row still gets the same soft-delete (`action:
+'delete_character'`, restorable from Recently Deleted for 24 hours)
+the single-row button already used, fired with bounded concurrency (4
+at a time) rather than one at a time, skipping the existing single-
+delete flow's own per-row re-verify step for speed -- one list refresh
+at the end shows whatever's left, and anything that failed to delete
+is still selectable and safe to retry.
