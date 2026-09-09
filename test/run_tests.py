@@ -2098,6 +2098,93 @@ def test_hub_cover_identity_veil(p):
     record("hub", "no JS exceptions", len(errs_all) == 0, "; ".join(errs_all))
     return errs_all
 
+def test_dice_roller_history_follows_agent_code_change(p):
+    """Real player report: "Roll history doesn't work." Root cause: the
+    app shell (hub.html) hoists ONE copy of the Dice Roller panel for the
+    whole tab's lifetime, but resolveRollContext() (assets/dice-roller.js)
+    only ever resolves and caches its {mode, agentCode, cellId} once, on
+    that one panel's build -- exactly the same staleness shape as the
+    Handler-mode watcher already guards against, but for the Agent Code
+    itself. A player who lands on Agent Hub before any Agent Code is
+    known on this device (mode: 'none', the "Load your Cover Identity..."
+    placeholder) then loads their character sheet elsewhere in the shell
+    -- which sets dg_stats_cloud_code -- never had that already-built
+    panel find out: history stayed stuck on the stale/absent identity for
+    the rest of the tab's life, looking exactly like "doesn't work."
+
+    This was fixed once before and reverted the same day (see
+    BUGFIXES.md, "Dice Roller identity/roll-history going stale inside
+    the shell") after the first attempt rebuilt the whole visible panel
+    on every change and caused a stuck duplicate panel plus a Firestore
+    permission-denied error. This test proves the new, narrower fix
+    (watchAgentCodeChange() in dice-roller.js, which only resets the
+    roll context + history listener, never the panel DOM) actually
+    detects a same-tab identity change and reattaches -- without
+    reproducing either of those old regressions."""
+    fake_agents = []
+
+    def fake_apps_script(route):
+        url = route.request.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            route.fulfill(status=200, content_type="application/javascript",
+                           body=f'{cb}({json.dumps({"status": "OK", "agents": fake_agents, "cells": []})})')
+            return
+        route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+
+    page = p.new_page()
+    page.set_default_timeout(10000)
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", fake_apps_script)
+    # Skip the Cover Identity veil prompt entirely -- this test is about
+    # the Dice Roller's own Agent Code tracking, not the veil, and a
+    # remembered identity boots straight through (see the veil test above).
+    page.add_init_script("try { localStorage.setItem('dg_cover_identity', 'Gergo'); } catch (e) {}")
+    page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+
+    record("dice-history", "the hoisted shell panel exists exactly once",
+           page.locator("#dr-panel").count() == 1, "")
+    record("dice-history", "with no Agent Code known yet, history shows the 'load your Cover Identity' placeholder",
+           "Cover Identity" in page.inner_text("#dr-history-list"), page.inner_text("#dr-history-list"))
+    record("dice-history", "no dice_rolls listener is attached yet (mode: none)",
+           page.evaluate("() => (window.__dgFirestoreListeners || []).some(l => l.path.indexOf('dice_rolls') !== -1)") == False, "")
+
+    # Simulate what a character-sheet page loaded elsewhere in the same
+    # shell/tab actually does: set the Cloud Save code in localStorage,
+    # with no reload of this already-built panel.
+    page.evaluate("() => localStorage.setItem('dg_stats_cloud_code', 'AGENT1')")
+
+    wait_for_condition(
+        lambda: page.evaluate(
+            "() => (window.__dgFirestoreListeners || []).some(l => l.path === 'dice_rolls/solo:AGENT1/rolls')"),
+        timeout_ms=4000)
+    record("dice-history", "the panel notices the new Agent Code and attaches a fresh dice_rolls listener for it",
+           page.evaluate(
+               "() => (window.__dgFirestoreListeners || []).some(l => l.path === 'dice_rolls/solo:AGENT1/rolls')"), "")
+    record("dice-history", "the panel is still exactly the same single node -- no duplicate panel from the switch",
+           page.locator("#dr-panel").count() == 1, "")
+
+    push_firestore_snapshot(page, "dice_rolls/solo:AGENT1/rolls", [], [
+        {"id": "roll1", "agent_code": "AGENT1", "agent_name": "Test Agent",
+         "roll_type": "percent", "label": "Search", "value": 42, "target": 60,
+         "tier": "success", "created_at": 1700000000000},
+    ])
+    page.wait_for_timeout(150)
+    record("dice-history", "a pushed roll actually renders in the history list",
+           page.locator("#dr-history-list .dr-history-row").count() == 1, page.inner_text("#dr-history-list"))
+    record("dice-history", "the rendered row shows the roll's own summary text",
+           "Search" in page.inner_text("#dr-history-list") and "42" in page.inner_text("#dr-history-list"),
+           page.inner_text("#dr-history-list"))
+
+    record("dice-history", "no JS exceptions (in particular no Firestore permission-denied from the identity switch)",
+           len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_agent_hub(p):
     """agent-hub.html (the Agent clearance branch): a folder look shared
     with the Agent File -- every Agent (plus a pinned "+ New Recruit")
@@ -9343,6 +9430,8 @@ def main():
         safe(test_hub_clearance_lands_in_shell, browser, area="hub")
 
         safe(test_hub_cover_identity_veil, browser, area="hub")
+
+        safe(test_dice_roller_history_follows_agent_code_change, browser, area="dice-history")
 
         safe(test_agent_hub, browser, area="hub")
 

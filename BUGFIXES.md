@@ -1962,3 +1962,63 @@ at a time) rather than one at a time, skipping the existing single-
 delete flow's own per-row re-verify step for speed -- one list refresh
 at the end shows whatever's left, and anything that failed to delete
 is still selectable and safe to retry.
+
+**The Cover Identity loading veil re-appeared on an ordinary shell-nav
+tab switch, including clicking A-Cell -- a live report, "this is
+horrible."** `assets/shell-nav.js`'s nav click handler used to call
+`window.dgShellShowLoadingVeil()` (== `armVeil()`) before every
+`iframe.src` swap, on the reasoning that the safety-cap fix above made
+it always resolve quickly regardless of destination. That reasoning
+didn't survive contact with actually using it: reappearing for a plain
+in-app tab switch (including toward A-Cell, which never even shows the
+Cover Identity prompt -- see `initial === 'agent-hub.html'`-gated logic
+in `hub.html`) read as an unwelcome wait for something that used to
+feel instant, not as reassurance the app hadn't frozen. Removed the
+veil re-arm from the nav click handler entirely -- `iframe.src` swap is
+now a plain, unguarded assignment, identical to any other in-page link
+the loaded page itself might fire -- and removed the now-dead
+`window.dgShellShowLoadingVeil` export from `hub.html`. The veil now
+only ever shows once, for the very first boot in from `index.html`'s
+Clearance screen, where there's genuinely nothing on screen yet to
+wait in front of.
+
+**Dice Roller roll history "doesn't work" -- a live report, and the
+same root cause as an earlier bug that was fixed once and then
+reverted.** See "Dice Roller identity/roll-history going stale inside
+the shell -- fixed, then reverted after it caused a worse regression"
+above: `resolveRollContext()` (`assets/dice-roller.js`) resolves and
+caches its `{mode, agentCode, cellId}` exactly once, on whichever panel
+build first calls it -- correct when every page load re-ran this
+script fresh, wrong once the app shell (`hub.html`) hoists one copy of
+this panel for the whole tab's lifetime. A player who reaches Agent Hub
+before any Agent Code is known on this device (mode: `'none'`, showing
+the "Load your Cover Identity..." placeholder) and only later loads a
+character sheet elsewhere in the same shell -- which sets
+`dg_stats_cloud_code` -- had that already-built panel never find out,
+leaving history stuck on the stale/absent identity for the rest of the
+tab's life. The first attempt at fixing this (same day as the original
+bug) rebuilt the whole visible panel on every Agent Code change, the
+same way the existing Handler-mode watcher does -- live testing found
+that left a stuck, duplicate panel plus a genuine Firestore
+permission-denied error (the old listener's query was still attached
+to the previous identity's Cell when the sign-in identity swapped out
+from under it mid-stream), so it was reverted the same day pending a
+proper fix backed by local testing instead of another live guess.
+
+This time: added `watchAgentCodeChange()`, a second poll alongside the
+existing `watchHandlerModeChange()`, that never touches the panel DOM
+at all -- the dice buttons/inputs don't depend on which Agent is
+active, only the history rows below them do, so there's nothing to
+rebuild. On a detected change it tears down the old Firestore listener
+first (`stopHistoryFeed()`, before anything else touches auth), resets
+the cached context/auth state, and re-resolves from scratch, the same
+sequence a genuinely fresh page load would follow. Verified locally
+with a Playwright test
+(`test_dice_roller_history_follows_agent_code_change`) that seeds no
+Agent Code on `hub.html`'s hoisted panel, sets `dg_stats_cloud_code`
+after the panel has already built, and confirms: a fresh
+`dice_rolls/{cellId}/rolls` Firestore listener actually attaches, the
+panel stays a single DOM node throughout (no duplicate), a pushed roll
+renders correctly, and no JS exceptions occur (in particular no
+permission-denied from the identity switch) -- the exact two failure
+modes the earlier attempt hit, absent this time.

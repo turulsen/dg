@@ -328,6 +328,47 @@
         }, 1500);
     }
 
+    // Same staleness problem as the Handler-mode watcher above, for the
+    // *Agent* Code -- and previously reported live as "Roll history
+    // doesn't work" after being fixed once already. resolveRollContext()
+    // resolves and caches once per panel build (see its own comment
+    // below), which was safe when every page load re-ran this script
+    // fresh, but not once the shell (hub.html) hoists a single copy of
+    // this panel for the whole tab's lifetime -- a player can land on
+    // Agent Hub with no Agent Code known yet (mode: 'none', the cached
+    // "Load your Cover Identity..." empty state), then have Cover
+    // Identity or a character-sheet visit set one moments later, with
+    // this already-built panel never finding out. A first attempt at
+    // this fix rebuilt the whole visible panel (buildPanel()) the same
+    // way the Handler-mode watcher above does, and was reverted the same
+    // day after live testing found it left a stuck, duplicate panel plus
+    // a Firestore permission-denied error -- the old listener's query
+    // was still attached to the previous identity's Cell when the
+    // sign-in swapped out from under it mid-stream. This version never
+    // touches the panel DOM at all: the dice buttons/inputs don't depend
+    // on which Agent is active, only the history rows below them do, so
+    // there's nothing to rebuild -- just tear down the old listener
+    // (stopHistoryFeed(), before anything else touches auth) and
+    // re-resolve context + re-attach fresh, same as a real fresh page
+    // load would.
+    let _lastAgentCode = null;
+    function watchAgentCodeChange() {
+        _lastAgentCode = currentAgentCode();
+        setInterval(() => {
+            if (!_e || !_e.panel || !_e.panel.isConnected) return;
+            if (isHandlerContext()) return; // handler mode has its own watcher above
+            const code = currentAgentCode();
+            if (code === _lastAgentCode) return;
+            _lastAgentCode = code;
+            stopHistoryFeed();
+            _rollContext = null;
+            _rollContextPromise = null;
+            _authPromise = null;
+            _authedCode = null;
+            initHistory();
+        }, 1500);
+    }
+
     // Highest priority: this exact page's own Cloud Save code (only
     // ever set on stats/index.html). Falls back to the shared Cover
     // Identity roster's most-recently-active Agent -- same precedence
@@ -1269,7 +1310,7 @@
         // OWN floating panel, which a suppressed instance never builds.
         wireSkillInputs();
         if (SUPPRESS_OWN_PANEL) return;
-        buildPanel(); initHistory(); watchHandlerModeChange();
+        buildPanel(); initHistory(); watchHandlerModeChange(); watchAgentCodeChange();
     };
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', dgInitDiceRoller);

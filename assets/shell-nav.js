@@ -63,11 +63,14 @@
   nav.addEventListener('click', function (e) {
     var btn = e.target.closest('button[data-target]');
     if (!btn) return;
-    // Brings hub.html's own loading veil back for this full page swap
-    // (A-Cell in particular has a real load chain of its own -- password
-    // gate, Firestore listeners, sheet fetch) -- see its definition in
-    // hub.html for why this doesn't fire for every in-page link too.
-    if (window.dgShellShowLoadingVeil) window.dgShellShowLoadingVeil();
+    // No loading veil here -- a real report asked for it explicitly:
+    // hub.html's terminal veil makes sense for the very first boot in
+    // from index.html's Clearance screen (there's genuinely nothing to
+    // look at yet), but reappearing for an ordinary in-app tab switch
+    // read as an unwelcome wait for something that used to feel
+    // instant. This plain iframe.src swap is unguarded/native now,
+    // same as any other in-page link the loaded page itself might
+    // fire.
     iframe.src = btn.getAttribute('data-target');
   });
 
