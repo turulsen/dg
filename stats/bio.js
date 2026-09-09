@@ -297,3 +297,74 @@ const bioData = {
     }
 };
 
+// ============================================================================
+// MOTIVATIONS DATA -- Briefing Documents' own random Motivation tables
+// ============================================================================
+// Rolled 1D12 (category) then 1D10 (the specific motivation within it) --
+// see generateRandomMotivation() in scripts.js. Table entries are stored
+// one per possible roll (index 0 = roll 1, etc.), including the source
+// tables' own merged rows (e.g. Principle's 3-4 both read "Doing what's
+// right") repeated at each index they cover, rather than collapsing them
+// -- keeps the roll-to-lookup mapping a flat array index everywhere,
+// Protection and Opposition included, instead of a special case per table.
+const motivationsData = {
+    // index 0 = a 1D12 roll of 1, ... index 11 = a roll of 12
+    categoryByD12: [
+        'Achievement', 'Understanding', 'Understanding', 'Principle', 'Principle',
+        'Protection', 'Protection', 'Relationships', 'Relationships',
+        'Opposition', 'Opposition', 'Solace'
+    ],
+    tables: {
+        Achievement: [
+            'Exploiting the Unnatural', 'Recognition for achievements', "Showing others how it's done",
+            'Correcting past mistakes', 'Success despite obstacles', 'Proving my worth',
+            'Getting the job done', 'Living up to expectations', 'Doing a job no one else can do',
+            'Constant improvement'
+        ],
+        Understanding: [
+            'Conspiracy theorizing', 'Making sense of a past tragedy', 'The thrill of discovery',
+            'Exploration', 'Solving a particular mystery', 'Understanding the Unnatural',
+            "Learning a group's secrets", 'Expanding human knowledge', 'Solving hard problems',
+            'Solving hard problems'
+        ],
+        Principle: [
+            'Survival at all costs', 'Professionalism', "Doing what's right", "Doing what's right",
+            'Following the law', 'Healing', 'Faith', 'Patriotism', 'Personal integrity', 'Atonement'
+        ],
+        Protection: [
+            'Protect a Bond (choose one)', 'Protect a Bond (choose one)',
+            'Protect my family', 'Protect my family', 'Protect my friends/colleagues',
+            'Protect an organization', 'Protect a community', 'Protect my country',
+            'Protect humanity', 'Protect innocents'
+        ],
+        Relationships: [
+            'Figuring out what people want to hear', 'Telling lies from the truth', 'Communication',
+            'Diplomacy', 'Family obligations', 'Knowing what makes people tick', "We can fix this",
+            'Never letting a particular Bond down (choose one)', 'New romance',
+            'Recruiting new Agents and Friendlies'
+        ],
+        Opposition: [
+            'Investigating…', 'Investigating…', 'Investigating…',
+            'Revenge against…', 'Revenge against…', 'Revenge against…',
+            'Staying one step ahead of…', 'Staying one step ahead of…',
+            'Stopping…', 'Stopping…'
+        ],
+        Solace: [
+            'A beloved pet', 'Favorite academic pursuit', 'Favorite art form', 'Favorite bad habit',
+            'Favorite hobby', 'Finding true meaning', 'Home', 'Sports', 'Intimacy',
+            'Anything for a sense of control'
+        ]
+    },
+    // "Protect Them From..." -- only rolled for a Protection result. 1D8.
+    protectionObjects: [
+        'The Unnatural', 'The Unnatural', 'Unwelcome truths', 'A dangerous enemy or rival',
+        'Failure', 'Harm', 'The future', 'Corruption'
+    ],
+    // "Object of Opposition..." -- only rolled for an Opposition result. 1D8.
+    oppositionObjects: [
+        'The Unnatural', 'The Unnatural', 'The Unnatural', 'The Unnatural',
+        'An individual (name them)', 'An individual (name them)',
+        'An organization (name it)', 'An organization (name it)'
+    ]
+};
+
