@@ -8305,6 +8305,103 @@ def test_notes_evidence_integration(p):
     return errs
 
 
+def test_notes_evidence_photo_loading_indicator(p):
+    """Live report: opening an Evidence item "feels slow" -- the actual
+    cause is the imgdata proxy round-trip (Code.gs fetching the Drive
+    file server-side and re-encoding it as base64) taking a real couple
+    of seconds, during which the photo slot used to just sit there as a
+    blank div. Added a flavor-text loading placeholder
+    (.dg-notes-evidence-loading) so that wait has something to look at.
+    Holds the imgdata response back deliberately (unlike the near-instant
+    mock in test_notes_evidence_integration above) and releases it
+    explicitly, so the loading state is actually observable rather than
+    resolving before the first assertion runs."""
+    page = p.new_page()
+    page.set_default_timeout(10000)
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    cell = {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"],
+            "member_names": {"OWEN-CS12": "Owen Castillo"}}
+    evidence_fixture = [
+        {"evidence_id": "ev1", "title": "Coroner's Report", "body": "Cause of death listed as accidental.",
+         "photo": "gdrive:fake123", "cell_id": "", "operation_id": "", "created_at": "2000"},
+    ]
+    fake_png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    # Held back rather than fulfilled synchronously, and released later
+    # from the main thread (see the wait_for_timeout below) -- calling
+    # route.fulfill() from a background Timer hits Playwright sync API's
+    # "Cannot switch to a different thread" greenlet error, since it
+    # isn't safe to drive the connection from anywhere but the thread
+    # that owns it.
+    held_imgdata_routes = []
+
+    def fake_apps_script(route):
+        req = route.request
+        url = req.url
+        if req.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        if "action=imgdata" in url:
+            held_imgdata_routes.append(route)
+            return
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=list_cells" in url:
+                res = {"status": "OK", "cells": [cell]}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.add_init_script("""
+        try {
+            localStorage.setItem('dg_agent_roster', JSON.stringify({
+                'OWEN-CS12': { code: 'OWEN-CS12', char_name: 'Owen Castillo', saved_at: Date.now() }
+            }));
+        } catch (e) {}
+    """)
+    page.goto(f"{BASE}/notes/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector(".dg-notes-identity-modal, #dg-notes-editor-mount", timeout=10000)
+    if page.query_selector(".dg-notes-identity-modal"):
+        page.click(".dg-notes-color-swatch")
+        page.click(".dg-notes-identity-confirm")
+
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 3, timeout_ms=8000)
+    push_firestore_snapshot(page, "cells/cell_1/notes", [["agent_code", "==", "OWEN-CS12"]], [])
+    push_firestore_snapshot(page, "cells/cell_1/notes", [["shared", "==", True]], [])
+    push_firestore_snapshot(page, "evidence", [["visible_to", "array-contains-any", ["OWEN-CS12", "ALL"]]],
+                             [dict(e, id=e["evidence_id"]) for e in evidence_fixture])
+
+    wait_for_condition(lambda: page.locator(".dg-notes-evidence-item").count() == 1, timeout_ms=8000)
+    page.click('[data-evidence-id="ev1"]')
+    wait_for_condition(lambda: page.is_visible(".dg-notes-evidence-modal"), timeout_ms=8000)
+    wait_for_condition(lambda: len(held_imgdata_routes) >= 1, timeout_ms=8000)
+
+    record("notes", "opening an Evidence item with a slow-to-resolve photo shows a loading placeholder, not a blank box",
+           page.is_visible(".dg-notes-evidence-loading") and page.inner_text(".dg-notes-evidence-loading").strip() != "",
+           page.inner_html(".dg-notes-evidence-body"))
+
+    # Release the held imgdata request now, simulating the real proxy's
+    # round-trip finally landing.
+    route = held_imgdata_routes.pop()
+    cb = route.request.url.split("callback=")[1].split("&")[0]
+    route.fulfill(status=200, content_type="application/javascript",
+                   body=f'{cb}({json.dumps({"status": "OK", "dataUri": fake_png})})')
+
+    wait_for_condition(lambda: page.locator(".dg-notes-evidence-photo-img").count() == 1, timeout_ms=8000)
+    record("notes", "the loading placeholder is gone once the photo actually resolves",
+           page.locator(".dg-notes-evidence-loading").count() == 0, "")
+
+    record("notes", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
+
 def test_notes_reload_shows_own_previous_blocks(p):
     """Regression test for a bug caught while building the Timeline
     view: mountEditor() necessarily mounts your own tab's live Editor.js
@@ -9176,6 +9273,8 @@ def main():
 
         safe(test_notes_v2_editorjs, browser, area="notes")
         safe(test_notes_evidence_integration, browser, area="notes")
+
+        safe(test_notes_evidence_photo_loading_indicator, browser, area="notes")
 
         safe(test_notes_reload_shows_own_previous_blocks, browser, area="notes")
         safe(test_notes_code_url_param, browser, area="notes")
