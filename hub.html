@@ -197,17 +197,43 @@
     // genuinely waiting on typing -- that wait is supposed to be
     // open-ended, not a hang to time out of.
     var veilTimeout = null;
+    var veilPoll = null;
+    function disarmVeil() {
+      if (veilTimeout) { clearTimeout(veilTimeout); veilTimeout = null; }
+      if (veilPoll) { clearInterval(veilPoll); veilPoll = null; }
+      if (veil) veil.classList.add('dg-shell-loading-hidden');
+    }
     function armVeil() {
       if (!veil) return;
       veil.classList.remove('dg-shell-loading-hidden');
       if (veilTimeout) clearTimeout(veilTimeout);
-      veilTimeout = setTimeout(function () {
-        veil.classList.add('dg-shell-loading-hidden');
-      }, 12000);
-    }
-    function disarmVeil() {
-      if (veilTimeout) { clearTimeout(veilTimeout); veilTimeout = null; }
-      if (veil) veil.classList.add('dg-shell-loading-hidden');
+      if (veilPoll) clearInterval(veilPoll);
+      // Belt and suspenders: the 'load' event is the primary signal, but
+      // the live report that led to this (agents_loaded showed in the
+      // veil's own log, so the page was genuinely reachable, yet the
+      // veil never cleared) points at that event occasionally just not
+      // firing on some real devices/connections. A 300ms poll of the
+      // iframe's own readyState catches that case directly instead of
+      // depending on the possibly-missed event -- same-origin, so this
+      // is always readable. Checking the URL too, not just readyState,
+      // is required, not decorative: an iframe with no prior navigation
+      // still has its original about:blank document sitting there
+      // already 'complete' the instant .src is assigned, before the
+      // real navigation has even committed -- readyState alone false-
+      // positived on that stale document within the first poll tick,
+      // hiding the veil almost immediately regardless of whether
+      // agent-hub.html/a-cell.html had actually loaded. The hard-cap
+      // timeout below still exists too, now short (6s) rather than a
+      // device-only fallback -- both exist so a genuinely slow load
+      // still gets the full benefit of the veil without a long,
+      // unexplained wait once the page is already sitting there ready.
+      veilPoll = setInterval(function () {
+        try {
+          if (iframe.contentDocument && iframe.contentDocument.readyState === 'complete'
+            && iframe.contentWindow.location.href.indexOf(initial) !== -1) disarmVeil();
+        } catch (e) { /* cross-origin somehow -- shouldn't happen, same-origin site */ }
+      }, 300);
+      veilTimeout = setTimeout(disarmVeil, 6000);
     }
     window.dgShellShowLoadingVeil = armVeil;
     if (veil) {
