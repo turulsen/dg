@@ -63,6 +63,11 @@
   nav.addEventListener('click', function (e) {
     var btn = e.target.closest('button[data-target]');
     if (!btn) return;
+    // Brings hub.html's own loading veil back for this full page swap
+    // (A-Cell in particular has a real load chain of its own -- password
+    // gate, Firestore listeners, sheet fetch) -- see its definition in
+    // hub.html for why this doesn't fire for every in-page link too.
+    if (window.dgShellShowLoadingVeil) window.dgShellShowLoadingVeil();
     iframe.src = btn.getAttribute('data-target');
   });
 
