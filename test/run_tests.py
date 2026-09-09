@@ -1884,6 +1884,13 @@ def test_hub_clearance_lands_in_shell(p):
     # test's own comment on the same fix.
     install_notes_firestore_stub(page)
     page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
+    # hub.html's shell now asks for a Cover Identity on its loading veil
+    # before booting the iframe to Agent Hub, UNLESS one's already
+    # remembered (a returning player) -- pre-seeding it here keeps this
+    # test's own concern (does the shell route to the right page?)
+    # decoupled from that separate prompt, which has its own coverage
+    # in test_hub_cover_identity_veil below.
+    page.add_init_script("try { localStorage.setItem('dg_cover_identity', 'Test Player'); } catch (e) {}")
     skip_boot_splash(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
@@ -1923,6 +1930,122 @@ def test_hub_clearance_lands_in_shell(p):
     record("hub", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
     return errs
+
+def test_hub_cover_identity_veil(p):
+    """hub.html's loading veil (black-screen/green-terminal, same
+    aesthetic as index.html's boot splash and a-cell.html's own gate --
+    a real report asked for that look specifically, after a first pass
+    used the destination page's own paper look instead) doubles as a
+    Cover Identity prompt for the Agent Hub branch only, so a player's
+    agents preload during the wait instead of after Agent Hub itself has
+    already painted an empty roster. A brand-new device (no remembered
+    identity) is actually asked and the iframe boot waits for that
+    input -- Enter with a name kicks off the preload and proceeds;
+    Enter with nothing just proceeds. A returning device (identity
+    already remembered) skips the prompt and preloads immediately,
+    matching "always preloads" without asking again every visit. The
+    A-Cell branch gets a plain loading line, no prompt -- it has its own
+    real password gate once it loads."""
+    errs_all = []
+    fake_agents = [{"code": "DANI-U8BM", "char_name": "Daniela Martinez", "codename": "", "sex": "female",
+                     "age_range": "41", "nationality": "Swedish", "saved_at": 1000, "player_name": "gergo"}]
+
+    def fake_apps_script(route):
+        url = route.request.url
+        if "action=find_by_player_name" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            route.fulfill(status=200, content_type="application/javascript",
+                           body=f'{cb}({json.dumps({"status": "OK", "agents": fake_agents})})')
+            return
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"OK"}})')
+            return
+        route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+
+    # Branch 1: no remembered identity -- prompt shows, boot waits for Enter.
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", fake_apps_script)
+    page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    record("hub", "a brand-new device is actually asked for a Cover Identity on the veil",
+           "enter_cover_identity" in page.inner_text("#dg-shell-loading-log"), page.inner_text("#dg-shell-loading-log"))
+    record("hub", "the iframe boot waits for that input instead of loading Agent Hub right away",
+           page.get_attribute("#dg-shell-content", "src") is None, "")
+    page.fill("#dg-shell-loading-ci-input", "Gergo")
+    page.press("#dg-shell-loading-ci-input", "Enter")
+    page.wait_for_function(
+        "() => { var f = document.getElementById('dg-shell-content'); "
+        "return f.contentDocument && f.contentDocument.readyState === 'complete'; }", timeout=10000)
+    record("hub", "typing a name and pressing Enter boots the iframe to Agent Hub",
+           "agent-hub.html" in (page.get_attribute("#dg-shell-content", "src") or ""), "")
+    wait_for_condition(lambda: "Daniela Martinez" in json.dumps(
+        json.loads(page.evaluate("localStorage.getItem('dg_agent_roster')") or "{}")), timeout_ms=5000)
+    record("hub", "the typed name's Agents are preloaded into dg_agent_roster during that wait",
+           "Daniela Martinez" in json.dumps(json.loads(page.evaluate("localStorage.getItem('dg_agent_roster')") or "{}")), "")
+    errs_all.extend(errs)
+    page.close()
+
+    # Branch 2: Enter with nothing typed just proceeds (not a real gate).
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", fake_apps_script)
+    page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    page.press("#dg-shell-loading-ci-input", "Enter")
+    page.wait_for_function(
+        "() => { var f = document.getElementById('dg-shell-content'); "
+        "return f.contentDocument && f.contentDocument.readyState === 'complete'; }", timeout=10000)
+    record("hub", "pressing Enter with nothing typed still proceeds -- not a real access gate",
+           "agent-hub.html" in (page.get_attribute("#dg-shell-content", "src") or ""), "")
+    errs_all.extend(errs)
+    page.close()
+
+    # Branch 3: a remembered identity skips the prompt and preloads immediately.
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", fake_apps_script)
+    page.add_init_script("try { localStorage.setItem('dg_cover_identity', 'Gergo'); } catch (e) {}")
+    page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(200)
+    record("hub", "a returning device (remembered identity) skips the prompt and boots right away",
+           "agent-hub.html" in (page.get_attribute("#dg-shell-content", "src") or ""), "")
+    wait_for_condition(lambda: "Daniela Martinez" in json.dumps(
+        json.loads(page.evaluate("localStorage.getItem('dg_agent_roster')") or "{}")), timeout_ms=5000)
+    record("hub", "the remembered identity's Agents are still preloaded, without asking again",
+           "Daniela Martinez" in json.dumps(json.loads(page.evaluate("localStorage.getItem('dg_agent_roster')") or "{}")), "")
+    errs_all.extend(errs)
+    page.close()
+
+    # Branch 4: A-Cell branch gets no identity prompt at all.
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", fake_apps_script)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
+    page.goto(f"{BASE}/hub.html?start=a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    record("hub", "the A-Cell branch shows a plain loading line, no Cover Identity prompt",
+           page.locator("#dg-shell-loading-input-line").is_visible() == False, "")
+    record("hub", "the A-Cell branch boots immediately regardless",
+           "a-cell.html" in (page.get_attribute("#dg-shell-content", "src") or ""), "")
+    errs_all.extend(errs)
+    page.close()
+
+    record("hub", "no JS exceptions", len(errs_all) == 0, "; ".join(errs_all))
+    return errs_all
 
 def test_agent_hub(p):
     """agent-hub.html (the Agent clearance branch): a folder look shared
@@ -5287,6 +5410,12 @@ def test_shell_content_swap_preserves_hoisted_widgets(p):
     # so a clean sign-in is the least surprising simulated state.
     install_notes_firestore_stub(page)
     page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
+    # hub.html's loading veil now asks for a Cover Identity before
+    # booting the iframe to Agent Hub, unless one's already remembered
+    # -- pre-seeding it here keeps this test's own concern (does the
+    # shell preserve its hoisted widgets across a page swap?) decoupled
+    # from that separate prompt.
+    page.add_init_script("try { localStorage.setItem('dg_cover_identity', 'Test Player'); } catch (e) {}")
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
@@ -5387,6 +5516,12 @@ def test_shell_nav_tracks_in_page_navigation(p):
     roster = {"OWEN-CS12": {"code": "OWEN-CS12", "char_name": "Owen Castillo", "codename": "Ferro",
                              "sex": "Male", "age_range": "Late 30s", "nationality": "American", "saved_at": 2000}}
     page.add_init_script(f"try {{ localStorage.setItem('dg_agent_roster', {json.dumps(json.dumps(roster))}); }} catch (e) {{}}")
+    # hub.html's loading veil now asks for a Cover Identity before
+    # booting the iframe to Agent Hub, unless one's already remembered --
+    # pre-seeding it here so the iframe actually loads instead of sitting
+    # on that prompt (this test is about in-page nav tracking, not that
+    # prompt, which has its own coverage in test_hub_cover_identity_veil).
+    page.add_init_script("try { localStorage.setItem('dg_cover_identity', 'Test Player'); } catch (e) {}")
 
     page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_function(
@@ -5450,6 +5585,11 @@ def test_shell_back_link_hidden_inside_shell(p):
     # comment on the same fix.
     install_notes_firestore_stub(page)
     page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
+    # hub.html's loading veil now asks for a Cover Identity before
+    # booting the iframe to Agent Hub, unless one's already remembered --
+    # pre-seeding it here so the iframe actually loads for this test's
+    # own concern (are back-links hidden inside the shell?).
+    page.add_init_script("try { localStorage.setItem('dg_cover_identity', 'Test Player'); } catch (e) {}")
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
@@ -5575,6 +5715,12 @@ def test_shell_hides_widgets_for_notes_popover(p):
             localStorage.setItem('dg_agent_roster', JSON.stringify({
                 'ELVI-HENC': { code: 'ELVI-HENC', char_name: 'Elvis Shantings', saved_at: Date.now() }
             }));
+            // hub.html's loading veil now asks for a Cover Identity before
+            // booting the iframe to Agent Hub, unless one's already
+            // remembered -- pre-seeding it here so the iframe actually
+            // loads for this test's own concern (do the hoisted widgets
+            // hide for a Notes popover?).
+            localStorage.setItem('dg_cover_identity', 'Test Player');
         } catch (e) {}
     """)
 
@@ -9144,6 +9290,8 @@ def main():
         safe(test_hub_clearance_branches, browser, area="hub")
 
         safe(test_hub_clearance_lands_in_shell, browser, area="hub")
+
+        safe(test_hub_cover_identity_veil, browser, area="hub")
 
         safe(test_agent_hub, browser, area="hub")
 
