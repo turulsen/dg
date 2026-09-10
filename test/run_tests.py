@@ -1019,8 +1019,20 @@ def test_foundry_import_profession_and_outfit(p):
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     captured = {}
     def capture(route):
-        if route.request.method == "POST":
-            captured["body"] = route.request.post_data
+        req = route.request
+        if req.method == "POST":
+            captured["body"] = req.post_data
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        # JSONP-aware fallback for any GET (cloud-sync.js's own background
+        # <script src=...&callback=X> calls) -- see route_apps_script_ok()'s
+        # docstring for why a bare JSON body here throws "Unexpected token
+        # ':'" instead of just being ignored.
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
+            return
         route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", capture)
 
@@ -1074,8 +1086,20 @@ def test_kappablack_toml_import(p):
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     captured = {}
     def capture(route):
-        if route.request.method == "POST":
-            captured["body"] = route.request.post_data
+        req = route.request
+        if req.method == "POST":
+            captured["body"] = req.post_data
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        # JSONP-aware fallback for any GET (cloud-sync.js's own background
+        # <script src=...&callback=X> calls) -- see route_apps_script_ok()'s
+        # docstring for why a bare JSON body here throws "Unexpected token
+        # ':'" instead of just being ignored.
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
+            return
         route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", capture)
 
@@ -1225,6 +1249,17 @@ def test_kappablack_toml_import_triggers_cloud_save(p):
                 posts.append(json.loads(req.post_data or "{}"))
             except Exception:
                 pass
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        # JSONP-aware fallback for any GET (cloud-sync.js's own background
+        # <script src=...&callback=X> calls) -- see route_apps_script_ok()'s
+        # docstring for why a bare JSON body here throws "Unexpected token
+        # ':'" instead of just being ignored.
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
+            return
         route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", capture)
 
@@ -1503,6 +1538,14 @@ def test_cloud_save(p):
                 body = f'{cb}({json.dumps({"status": "NOT_FOUND"})})'
             route.fulfill(status=200, content_type="application/javascript", body=body)
             return
+        # Any other GET with a callback= (e.g. a background lookup this
+        # test doesn't otherwise care about) still needs the JSONP-aware
+        # shape -- see route_apps_script_ok()'s docstring for why a bare
+        # JSON body loaded as a <script> tag throws "Unexpected token ':'".
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
+            return
         route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", route_apps_script)
 
@@ -1598,8 +1641,20 @@ def test_agent_file_export(p):
 
     captured = {}
     def capture(route):
-        if route.request.method == "POST":
-            captured["body"] = route.request.post_data
+        req = route.request
+        if req.method == "POST":
+            captured["body"] = req.post_data
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        # JSONP-aware fallback for any GET (cloud-sync.js's own background
+        # <script src=...&callback=X> calls) -- see route_apps_script_ok()'s
+        # docstring for why a bare JSON body here throws "Unexpected token
+        # ':'" instead of just being ignored.
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
+            return
         route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", capture)
 
@@ -1688,8 +1743,20 @@ def test_random_bio_cloud_code_race(p):
 
     captured = {}
     def capture(route):
-        if route.request.method == "POST":
-            captured["body"] = route.request.post_data
+        req = route.request
+        if req.method == "POST":
+            captured["body"] = req.post_data
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        # JSONP-aware fallback for any GET (cloud-sync.js's own background
+        # <script src=...&callback=X> calls) -- see route_apps_script_ok()'s
+        # docstring for why a bare JSON body here throws "Unexpected token
+        # ':'" instead of just being ignored.
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
+            return
         route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", capture)
 
@@ -6112,6 +6179,13 @@ def test_stats_load_by_code_query_param(p):
                           "csStats": {"STR": 14, "CON": 12, "DEX": 10, "INT": 16, "POW": 13, "CHA": 11}}
             body = f'{cb}({json.dumps({"status": "OK", "agent_code": "OWEN-CS12", "character_json": json.dumps(char_state)})})'
             route.fulfill(status=200, content_type="application/javascript", body=body)
+        elif "callback=" in url:
+            # JSONP-aware fallback for any other GET (cloud-sync.js's own
+            # background <script src=...&callback=X> calls) -- see
+            # route_apps_script_ok()'s docstring for why a bare JSON body
+            # here throws "Unexpected token ':'" instead of being ignored.
+            cb = url.split("callback=")[1].split("&")[0]
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
         else:
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", fake_apps_script)

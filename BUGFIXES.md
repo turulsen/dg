@@ -2327,3 +2327,33 @@ touch `notes/notes.css`, a `SHELL_FILES`-listed file). Full suite:
 (`test_mobile_notes_fullscreen`'s Play-pill visibility check) is the
 same already-documented flake noted earlier in this file, unrelated to
 either fix here.
+
+---
+
+## Test harness: two more `script.google.com` mocks missing the
+## JSONP-aware fallback (finishing an already-documented pattern)
+
+Found while running the full suite as part of preparing the 2026-09-10
+cutover (see "Deploy discipline" in `CLAUDE.md`): 7 assertions failed
+with the exact `pageerror: Unexpected token ':'` signature this file
+already diagnosed once (see "Second follow-up" above, and
+`route_apps_script_ok()`'s own docstring) -- a `<script
+src=...&callback=X>` JSONP call getting a bare, unwrapped JSON body
+back throws exactly this the instant the parser hits the first key's
+colon. Per `CLAUDE.md`'s bug-fixing protocol, this was recognized as
+the same already-documented pattern needing to be *finished*, not a
+new bug: two test-local mock functions (`test_foundry_import_
+profession_and_outfit`/`test_kappablack_toml_import`/`test_kappablack_
+toml_import_triggers_cloud_save`/`test_agent_file_export`/
+`test_random_bio_cloud_code_race`'s shared `capture()` idiom, and
+separately `test_cloud_save`'s and `test_stats_load_by_code_query_
+param`'s own otherwise-JSONP-aware mocks) still had a plain `else:
+route.fulfill(..., body='{"status":"OK"}')` fallback for any GET that
+didn't match their one specifically-handled case -- exactly the shape
+`route_apps_script_ok()`'s docstring already names as the bug class,
+just not yet swept from every remaining hand-rolled mock in the file.
+Made all seven JSONP-aware (checks `callback=` in the URL, wraps the
+response as `cb({...})` with `content_type: application/javascript`
+when present), preserving each test's own POST-capture side effects.
+Full suite: 773/773 passing, zero failures -- confirmed clean before
+proceeding with the 141-commit cutover to `main` this same session.
