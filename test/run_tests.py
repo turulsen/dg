@@ -254,6 +254,12 @@ NOTES_FIRESTORE_STUB = """
     q.doc = function (id) {
       return { collection: function (name) { return makeCollectionRef(path + '/' + id + '/' + name); } };
     };
+    // No-op passthrough, same shape as .limit()'s own -- dice-roller.js's
+    // recordRoll() calls this on a rolls subcollection ref to write a
+    // roll into history; nothing here needs to actually persist it, just
+    // not throw "add is not a function" the way an unmocked collection
+    // ref otherwise would once a test actually rolls dice.
+    q.add = function () { return Promise.resolve({ id: 'stub-doc-' + Date.now() }); };
     return q;
   }
 
@@ -1798,7 +1804,7 @@ def test_cover_ids_tab(p):
 
 def test_hub_boot_splash(p):
     """index.html's boot splash: black screen, green CRT-terminal text
-    (waiting_for_clearance / delta_green / acces_granted), then a fading
+    (waiting_for_clearance / delta_green / access_granted), then a fading
     Mars Technologies seal, revealing the clearance chooser underneath --
     runs ~8s total, capped at ~8.6s so it can never meaningfully overrun
     that. Session-gated via sessionStorage, not localStorage, so it plays once
@@ -1819,7 +1825,7 @@ def test_hub_boot_splash(p):
     record("hub", "boot splash starts typing the clearance terminal sequence",
            term_text.startswith(">"), repr(term_text))
 
-    # Splash types "waiting_for_clearance:", "delta_green", "acces_granted"
+    # Splash types "waiting_for_clearance:", "delta_green", "access_granted"
     # then fades in the Mars Technologies seal before fading out --
     # generously bounded wait, then assert it actually finished by the
     # ~8.6s hard cap this page enforces (never truly hangs past it).
@@ -5787,6 +5793,14 @@ def test_page_back_link_visible_standalone(p):
         cb = url.split("callback=")[1].split("&")[0]
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
     page.route("**/script.google.com/**", fake_apps_script)
+    # a-cell.html's own Evidence listener starts unconditionally on load
+    # (Phase 5) -- with the default Firestore stub making
+    # ensureFirebaseApi() resolve immediately (see browser.new_page's own
+    # comment), sign-in reaches its real "No A-Cell session" rejection
+    # synchronously. This test isn't about Handler auth at all, so
+    # seeding a password (same as other tests touching a-cell.html) for
+    # a clean sign-in is the least surprising simulated state.
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
 
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     record("shell", "Agent Hub's back-link is visible on a standalone visit",
@@ -7803,6 +7817,16 @@ def test_noindex(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    # a-cell.html's own Evidence listener starts unconditionally on load
+    # (Phase 5), regardless of anything this test is actually proving --
+    # with the default Firestore stub now making ensureFirebaseApi()
+    # resolve immediately (see browser.new_page's own comment), sign-in
+    # reaches its real "No A-Cell session" rejection synchronously rather
+    # than never getting that far. This test isn't about Handler auth at
+    # all, so seeding a password (same as other shell tests touching
+    # a-cell.html) for a clean sign-in is the least surprising simulated
+    # state.
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
     # JSONP-aware, not a plain JSON body -- these pages request Apps
     # Script data via <script src=...&callback=NAME>, so the response has
     # to come back as NAME({...}) or the browser trying to execute a bare
@@ -9377,6 +9401,31 @@ def main():
         def _new_page_blocking_live_backend(*a, **kw):
             page = _real_new_page(*a, **kw)
             page.route("**/script.google.com/**", lambda route: route.abort())
+            # Same reasoning as the script.google.com abort above, found
+            # the same way: dice-roller.js/table-radio.js/notes.js/
+            # agent-hub.html all eagerly call ensureFirebaseApi() on
+            # ordinary page load now that its script-tag loader actually
+            # has an onerror/timeout (a real fix -- see BUGFIXES.md,
+            # "Dice Roller roll history 'doesn't work'" and neighboring
+            # entries) -- previously a blocked gstatic.com request just
+            # hung forever with zero console output, which is why dozens
+            # of tests with no Firebase mock of their own never noticed
+            # they were touching a page that includes these widgets at
+            # all. Now the same blocked request correctly logs a
+            # console.error, which is exactly the fix working as
+            # intended for a real user -- but it fails every one of
+            # those unrelated tests' generic "no console errors" check,
+            # the same way the live gstatic.com/Firestore-listener gap
+            # already forced installing NOTES_FIRESTORE_STUB into more
+            # and more individual tests over time. Installing it here by
+            # default, once, means any of these widgets' own
+            # ensureFirebaseApi() sees `window.firebase` already
+            # "ready" and never attempts real network at all -- a test
+            # that wants specific Firestore behavior still calls
+            # install_notes_firestore_stub(page) itself afterward,
+            # which simply re-declares the identical stub (harmless),
+            # same override precedence as the route above.
+            page.add_init_script(NOTES_FIRESTORE_STUB)
             return page
         browser.new_page = _new_page_blocking_live_backend
 

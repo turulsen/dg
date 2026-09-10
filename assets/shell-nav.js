@@ -39,7 +39,15 @@
     if (pathname.indexOf('agent-hub.html') !== -1 ||
         pathname.indexOf('dg-agent-portal.html') !== -1 ||
         pathname.indexOf('/stats/') !== -1 ||
-        pathname.indexOf('/notes/') !== -1) return 'agent-hub';
+        pathname.indexOf('/notes/') !== -1 ||
+        // Added after these pages already existed and were already
+        // linked from agent-hub.html's own panel actions -- missed at
+        // the time, which cleared BOTH nav buttons (setActive(null))
+        // the moment a player followed one of those links, reading as
+        // the nav losing track of where they were.
+        pathname.indexOf('requisition.html') !== -1 ||
+        pathname.indexOf('rules-reference.html') !== -1 ||
+        pathname.indexOf('the-incursion.html') !== -1) return 'agent-hub';
     return null;
   }
 

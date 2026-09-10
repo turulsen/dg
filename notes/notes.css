@@ -381,6 +381,15 @@
    generic modern block editor, using its real class names (pinned
    version's own CSS, not guessed). ── */
 #dg-notes-editor-mount{ font-size:14px; line-height:1.55; }
+/* Sits above the editor mount while the first real Firestore snapshot
+   is still in flight -- see render()'s own comment in notes.js for why
+   Editor.js's "Start writing…" placeholder alone reads as "nothing here"
+   rather than "still loading" for an Agent who actually has saved notes. */
+.dg-notes-loading{
+  font-family:'Courier Prime',monospace; font-size:11px; letter-spacing:.04em;
+  color:var(--ink-3); opacity:.7; padding:4px 0 10px; font-style:italic;
+}
+
 #dg-notes-panel .codex-editor{ font-family:inherit; }
 #dg-notes-panel .ce-block__content,
 #dg-notes-panel .ce-toolbar__content{ max-width:none; margin:0; }

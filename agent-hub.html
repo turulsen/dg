@@ -436,11 +436,21 @@
     document.head.appendChild(s);
   }
 
-  // Async, per agent: does a cloud character sheet already exist? A
-  // check that errors or times out leaves the button as "Play" rather
-  // than risking a false "Recruit" label on a real character.
-  function checkCharacterExists(code) {
-    return new Promise(resolve => {
+  // Async, per agent: one shared `action=load_character` JSONP fetch,
+  // backing both the "does a cloud character sheet exist yet" check and
+  // the "is this Agent KIA" check below -- those used to be two
+  // independent functions each doing this exact same fetch, doubling
+  // the JSONP round-trips (and backend Sheets reads) on every roster
+  // render for no reason: neither result depends on the other, they're
+  // just two different things read off the same response. Memoized per
+  // code for the lifetime of one renderRoster() call (reset at its
+  // start, in loadCharacterCheckCache_) so a re-render still fetches
+  // fresh instead of trusting a stale answer forever.
+  let _characterCheckCache = {};
+  function loadCharacterCheckCache_() { _characterCheckCache = {}; }
+  function fetchCharacterCheck_(code) {
+    if (_characterCheckCache[code]) return _characterCheckCache[code];
+    const p = new Promise(resolve => {
       const cbName = '_ahCharCheck_' + code.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
       const timer = setTimeout(() => { delete window[cbName]; resolve(null); }, 6000);
       window[cbName] = function (res) {
@@ -448,41 +458,37 @@
         delete window[cbName];
         const s = document.getElementById('s-' + cbName);
         if (s) s.remove();
-        resolve(!!(res && res.status === 'OK'));
+        resolve(res);
       };
       const s = document.createElement('script');
       s.id = 's-' + cbName;
       s.src = APPS_SCRIPT_URL + '?action=load_character&code=' + encodeURIComponent(code) + '&callback=' + cbName;
       document.head.appendChild(s);
     });
+    _characterCheckCache[code] = p;
+    return p;
   }
 
-  // Async, per agent: a live read of the same saved character sheet
-  // checkCharacterExists() above already fetches -- mirrors
+  // Does a cloud character sheet already exist? A check that errors or
+  // times out (null) leaves the button as "Play" rather than risking a
+  // false "Recruit" label on a real character.
+  function checkCharacterExists(code) {
+    return fetchCharacterCheck_(code).then(res => res === null ? null : !!(res && res.status === 'OK'));
+  }
+
+  // Is this Agent KIA, per the same fetch above -- mirrors
   // dg-agent-portal.html's checkAgentKia(), which Agent File already
   // shows this same signal via. Not a separate persisted flag: heal the
   // Agent back above 0 and this clears on its own next time the roster
   // renders. Best-effort, same as everything else here -- a check that
   // errors or times out just leaves the name unmarked.
   function checkAgentKia(code) {
-    return new Promise(resolve => {
-      const cbName = '_ahKiaCheck_' + code.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
-      const timer = setTimeout(() => { delete window[cbName]; resolve(false); }, 6000);
-      window[cbName] = function (res) {
-        clearTimeout(timer);
-        delete window[cbName];
-        const s = document.getElementById('s-' + cbName);
-        if (s) s.remove();
-        if (!res || res.status !== 'OK' || !res.character_json) { resolve(false); return; }
-        let state;
-        try { state = JSON.parse(res.character_json); } catch (e) { resolve(false); return; }
-        const hp = state && state.derived && state.derived.hp;
-        resolve(typeof hp === 'number' && hp <= 0);
-      };
-      const s = document.createElement('script');
-      s.id = 's-' + cbName;
-      s.src = APPS_SCRIPT_URL + '?action=load_character&code=' + encodeURIComponent(code) + '&callback=' + cbName;
-      document.head.appendChild(s);
+    return fetchCharacterCheck_(code).then(res => {
+      if (!res || res.status !== 'OK' || !res.character_json) return false;
+      let state;
+      try { state = JSON.parse(res.character_json); } catch (e) { return false; }
+      const hp = state && state.derived && state.derived.hp;
+      return typeof hp === 'number' && hp <= 0;
     });
   }
 
@@ -523,6 +529,7 @@
   // after a re-render, falling back to the most recent Agent only if
   // that tab no longer exists.
   function renderRoster(preserveActiveCode) {
+    loadCharacterCheckCache_();
     tabStrip.querySelectorAll('.tw:not(.tw-new)').forEach(el => el.remove());
     folderBody.querySelectorAll('.tab-panel:not(#panel-new)').forEach(el => el.remove());
 
@@ -1059,20 +1066,40 @@
     appId: '1:464997490443:web:dad47a347ae7a64a9e4c0e'
   };
   let firebaseApiLoading = false;
-  let firebaseApiCallbacks = [];
-  function loadFirebaseScriptTag(src, cb) {
+  let firebaseApiCallbacks = []; // { ok, err } pairs
+  // s.onload with no s.onerror at all meant a script that failed to load --
+  // blocked, a dropped mobile connection, a flaky CDN response -- left
+  // `cb` never called and nothing else waiting on it either: the whole
+  // ensureFirebaseApi() chain (and therefore ensureAgentSignedInAs()'s
+  // promise) just hung forever, neither resolved nor rejected -- Evidence
+  // showed "Loading…" indefinitely with no error and no way to recover
+  // short of a full reload. Same fix already shipped for a-cell.html's
+  // Evidence block (see its own copy of this comment); backported here.
+  function loadFirebaseScriptTag(src, cb, onerror) {
     const s = document.createElement('script');
+    s.crossOrigin = 'anonymous';
     s.src = src;
-    s.onload = cb;
+    let done = false;
+    const timer = setTimeout(() => {
+      if (done) return; done = true;
+      onerror(new Error('Timed out loading ' + src + ' (15s) -- check network connection.'));
+    }, 15000);
+    s.onload = () => { if (done) return; done = true; clearTimeout(timer); cb(); };
+    s.onerror = () => { if (done) return; done = true; clearTimeout(timer); onerror(new Error('Failed to load ' + src + ' -- check network connection.')); };
     document.head.appendChild(s);
   }
-  function ensureFirebaseApi(cb) {
+  function ensureFirebaseApi(cb, onerror) {
     const ready = () => window.firebase && window.firebase.firestore && window.firebase.auth && window.firebase.functions;
     if (ready()) { cb(); return; }
-    firebaseApiCallbacks.push(cb);
+    firebaseApiCallbacks.push({ ok: cb, err: onerror || (() => {}) });
     if (firebaseApiLoading) return;
     firebaseApiLoading = true;
     const base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/';
+    function fail(err) {
+      firebaseApiLoading = false; // lets a later call actually retry once the network recovers
+      const cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
+      cbs.forEach(pair => pair.err(err));
+    }
     loadFirebaseScriptTag(base + 'firebase-app-compat.js', () => {
       loadFirebaseScriptTag(base + 'firebase-firestore-compat.js', () => {
         if (!window.firebase.apps.length) {
@@ -1090,11 +1117,11 @@
         loadFirebaseScriptTag(base + 'firebase-auth-compat.js', () => {
           loadFirebaseScriptTag(base + 'firebase-functions-compat.js', () => {
             const cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-            cbs.forEach(fn => fn());
-          });
-        });
-      });
-    });
+            cbs.forEach(pair => pair.ok());
+          }, fail);
+        }, fail);
+      }, fail);
+    }, fail);
   }
   // Per-Agent sign-in (exchangeAgentToken -- no real per-Agent secret,
   // see that function's own comment), keyed by code since this page can
@@ -1109,7 +1136,7 @@
           .then(result => window.firebase.auth().signInWithCustomToken(result.data.token))
           .then(cred => resolve(cred.user))
           .catch(err => { delete _authPromisesByCode[code]; reject(err); });
-      });
+      }, err => { delete _authPromisesByCode[code]; reject(err); });
     });
     _authPromisesByCode[code] = p;
     return p;

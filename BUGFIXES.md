@@ -2022,3 +2022,147 @@ panel stays a single DOM node throughout (no duplicate), a pushed roll
 renders correctly, and no JS exceptions occur (in particular no
 permission-denied from the identity switch) -- the exact two failure
 modes the earlier attempt hit, absent this time.
+
+**A full bug/performance/overengineering scrape across every player-facing
+page, run at the user's explicit request after the fixes above, and the
+whole resulting batch of fixes.** Four parallel investigations (character
+sheet, Agent Hub/Portal/shell, Notes/Dice Roller/Table Radio, reference
+pages) turned up two systemic patterns each hit independently in 3+
+places, plus several standalone bugs:
+
+**Systemic: `alert()`/`confirm()`/`prompt()` are silently disabled in an
+installed (standalone) iOS PWA -- a fix already made once project-wide
+(see "PWA / Cloud Save / standalone iOS" above), but never fully landed.**
+- `stats/save-load.js`'s `clearSave()`/`clearSheet()` still used raw
+  `confirm()` -- both buttons silently did nothing on an installed device
+  (`!confirm(...)` is always `true` when the dialog never shows). Switched
+  both to the existing in-page `dgConfirm()` this same file already
+  defines for exactly this reason.
+- `requisition.html`'s Submit button and "Ask Records" button used
+  `alert()` for validation messages -- an incomplete form on an installed
+  device just looked like the button did nothing. Replaced with inline
+  text (`#submitValidationError`, and the already-present `#ccResult`
+  line for Ask Records).
+- `assets/dice-roller.js`'s Handler "Show Live Rolls" gate used
+  `window.prompt()`/`window.alert()` -- a Handler on an installed iPad/
+  iPhone got a button that visibly did nothing. Replaced with a real
+  inline password field + inline error text (`#dr-handler-pw-row`,
+  `#dr-handler-pw-err`), same shape as the project's other native-dialog
+  replacements.
+
+**Systemic: on-demand `<script>` tag loaders for the Firebase SDK had no
+`onerror`/timeout anywhere except a-cell.html's own Evidence block (fixed
+once already, see "App Shell & Firebase Migration" above) -- never
+backported to any of the other four independent copies of this same
+loader.** A blocked or dropped script request left the loading chain's
+callback queue waiting forever, neither resolving nor rejecting -- roll
+history, Table Radio, Notes, Evidence (agent-hub.html), and Profiling/
+Plate uploads (dg-agent-portal.html) could all go silently, permanently
+inert with zero error and no way to recover short of a full reload.
+Backported the same fix (a 15s timeout, `s.onerror`, `s.crossOrigin =
+'anonymous'` so a real in-script error reports its actual message instead
+of a content-free "Script error.") to `agent-hub.html`, `dg-agent-portal.html`,
+`assets/dice-roller.js`, `assets/table-radio.js` (its YouTube/SoundCloud
+API loaders too, which have no promise/reject path of their own -- wired
+to a `#dg-radio-status` fallback message instead), and `notes/notes.js`.
+
+**Standalone fixes found in the same scrape:**
+- `assets/shell-nav.js`'s `classify()` never recognized `requisition.html`,
+  `rules-reference.html`, or `the-incursion.html` -- added after those
+  pages already existed and were already linked from `agent-hub.html`'s
+  own panel actions. Following one of those links from inside the shell
+  cleared both nav buttons (`setActive(null)`), reading as the nav losing
+  track of where the player was. Added all three.
+- `agent-hub.html`'s `checkCharacterExists()` and `checkAgentKia()` were
+  two independent functions each making the identical
+  `action=load_character` JSONP fetch for the same Agent -- doubling
+  backend load on every roster render for no reason, since neither result
+  depends on the other. Merged into one shared, per-render-memoized fetch
+  (`fetchCharacterCheck_()`) that both now derive from.
+- `index.html`'s boot splash typed "acces_granted" -- missing an "s".
+- `assets/table-radio.js`: switching channels or hitting Leave tore down
+  ambient loops (`applyAmbientLayers_([])`) but never stingers -- a
+  stinger a Handler had explicitly looped (`setStingerLoop_`) kept
+  playing in its now-orphaned `<audio>` element with no UI left to stop
+  it short of closing the tab. Added the matching `applyStingers_([])`
+  call at all three teardown sites (Tune In, Change Channel, Leave).
+- `notes/notes.js`'s `jsonpGet()` tracked its one script tag by a single
+  shared DOM id, removing whatever was there before appending a new one
+  -- fine for one call at a time, but this file's own poll tick fires
+  2-3 of these calls back-to-back in the same tick (`fetchOperations()`,
+  `fetchIdentities()`, `fetchEvidenceSeen()`), and each new call yanked
+  out the previous action's still-pending script before it could execute,
+  silently starving it until its own 20s timeout resolved `null`.
+  Operation names and author ink colors routinely failed to load on the
+  first attempt, repeating on every ~30s poll. Fixed by tracking each
+  call's own script element by closure instead of a shared id, so
+  concurrent calls no longer collide -- same fix applied to
+  `assets/dice-roller.js`'s own `jsonpGet()`, which additionally never
+  removed its script tag at all (a small, now-more-visible DOM/memory
+  leak since today's Agent-Code-change watcher, above, made it fire
+  repeatedly instead of once per page load).
+- `assets/dice-roller.js`'s two identity-watching polls
+  (`watchHandlerModeChange()`, `watchAgentCodeChange()`, both added this
+  session) could interact badly: the Agent-Code watcher skips its own
+  check entirely while in Handler mode, so its bookkeeping goes stale for
+  as long as Handler mode is active -- if the real Agent Code changed
+  during that window, the very next Agent-Code poll tick after Handler
+  mode ended saw a stale mismatch and immediately redid the reset the
+  Handler-mode watcher's own rebuild had just done, a redundant resign-in/
+  resubscribe and a visible history flash. Fixed by having the
+  Handler-mode watcher refresh the Agent-Code watcher's bookkeeping too
+  whenever it rebuilds.
+- `the-incursion.html`'s five Incursion dice rolls never reached the
+  shared roll-history feed, unlike `requisition.html`'s identical-purpose
+  roll -- a player rolling their Incursion and then checking "Recent
+  Rolls" saw nothing. Wired all five (`d4`/`d6`/`d8`/`d10`/`d12`) into
+  `window.dgDice.recordRoll()`.
+
+**A live report during this same pass, found via a real screenshot:
+Player Notes looked stuck/blank after the "Character Sheet" button
+appeared, with no sign anything was still coming.** Root cause:
+`mountEditor()` constructs the live Editor.js instance immediately, with
+whatever's in `notesByCode[agentCode]` at that exact moment -- which is
+always empty on the very first render, since the Firestore "own notes"
+listener hasn't delivered its first snapshot yet even for an Agent with
+real saved notes. Editor.js's own "Start writing…" placeholder then looks
+identical to a genuinely empty, first-time Agent, and the actual content
+only pops in later, once `loadOwnBlocksIntoEditor()` runs off the
+listener's first snapshot. Added a small "Loading notes…" line
+(`.dg-notes-loading`) that shows until that first snapshot actually
+lands, whether or not it turns out there's anything to load -- cleared on
+success, replaced with a real message on a sign-in failure, and backed by
+a 10s safety-cap that upgrades it to "taking longer than usual" rather
+than ever sitting there silently forever, the same "never hang with zero
+feedback" rule this app's other loading states already follow. Verified
+visually via a before/after screenshot with a held Firestore snapshot.
+
+**Test-harness fallout from the onerror/timeout fix above, found by
+running the real suite rather than stopping at "looks done."** The exact
+same class of gap this project has hit before (BUGFIXES.md's own "Second
+follow-up" entry, "invisible before because window.firebase simply didn't
+exist in those tests"): dozens of tests with no Firebase mock of their
+own never noticed they were touching a page that includes Dice Roller/
+Table Radio/Notes/Evidence, because a blocked gstatic.com request
+previously just hung forever with zero console output. The onerror fix
+makes that same blocked request correctly log a `console.error` -- exactly
+right for a real user, but it failed 23 of those tests' generic "no
+console errors" check on the very next run. Rather than patch each test
+individually (the same lesson `browser.new_page`'s existing
+`script.google.com` abort default already encodes), installed
+`NOTES_FIRESTORE_STUB` as a page-wide default via that same override, so
+every widget's `ensureFirebaseApi()` sees `window.firebase` already
+"ready" and never attempts real network by default; a test that wants
+specific Firestore behavior still calls `install_notes_firestore_stub(page)`
+itself, which simply re-declares the identical stub. That default surfaced
+two smaller, genuine gaps of its own, both fixed the same way established
+precedent already handles: `test_noindex` and
+`test_page_back_link_visible_standalone` now seed a Handler password
+(`dg_acell_pw`) so a-cell.html's Evidence listener gets a clean sign-in
+instead of hitting a real "No A-Cell session" rejection neither test is
+about; and the stub's `makeCollectionRef` gained a no-op `.add()`
+(matching its existing no-op `.limit()`) so `dice-roller.js`'s
+`recordRoll()` no longer throws "add is not a function" the moment any
+test actually rolls dice with the stub active. Full suite: 767/773 passing
+after all of the above, the same 6 pre-existing/unrelated "Unexpected
+token ':'" JSONP-mock-gap failures as before this whole pass, nothing new.

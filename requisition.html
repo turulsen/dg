@@ -520,6 +520,7 @@
     <div class="submit-row">
       <button class="stamp-btn" id="rollBtn">Submit for Processing</button>
     </div>
+    <div class="small-print" id="submitValidationError" style="color:var(--red);min-height:1.2em;"></div>
 
     <div class="counter" id="counter"></div>
 
@@ -1001,9 +1002,14 @@ const processNote = document.getElementById('processNote');
 
 // "Ask Records" – Luck roll to learn the cost center, at the cost of suspicion
 document.getElementById('askCostCenter').addEventListener('click', ()=>{
-  if(itemSel.value===""){ alert('Select an item first.'); return; }
-  const it = ITEMS[itemSel.value];
   const ccResult = document.getElementById('ccResult');
+  // alert() is silently disabled in an installed (standalone) iOS PWA --
+  // exactly this app's primary intended deployment -- so this used to
+  // read as the button just doing nothing at all there. #ccResult is
+  // already the inline message spot right under this button; reuse it
+  // instead of a dialog nobody would ever see.
+  if(itemSel.value===""){ ccResult.textContent = 'Select an item first.'; return; }
+  const it = ITEMS[itemSel.value];
   const success = Math.random() < 0.5; // Luck Roll, per the book: flat 50%
   if(success){
     document.getElementById('costCenter').value = it.cc;
@@ -1059,18 +1065,26 @@ function logRollToHistory(tier, val, skill){
   });
 }
 
+// alert() is silently disabled in an installed (standalone) iOS PWA --
+// exactly this app's primary intended deployment -- so a validation
+// failure here used to make Submit read as completely dead: no dialog,
+// no error, nothing. Shows the message inline under the button instead
+// (see #submitValidationError above), and clears it once a submit
+// actually gets past validation.
+const submitValidationError = document.getElementById('submitValidationError');
 rollBtn.addEventListener('click', ()=>{
-  if(!selectedRoute){ alert('Section II is not complete: select a method of acquisition.'); return; }
-  if(itemSel.value===""){ alert('Section I is not complete: select an item.'); return; }
+  if(!selectedRoute){ submitValidationError.textContent = 'Section II is not complete: select a method of acquisition.'; return; }
+  if(itemSel.value===""){ submitValidationError.textContent = 'Section I is not complete: select an item.'; return; }
   if(selectedRoute==='official' && !document.getElementById('agency').value){
-    alert('Section II is not complete: select the requesting agency.'); return;
+    submitValidationError.textContent = 'Section II is not complete: select the requesting agency.'; return;
   }
   if(selectedRoute==='favor' && !document.getElementById('bondType').value){
-    alert('Section II is not complete: select which Bond you are drawing on.'); return;
+    submitValidationError.textContent = 'Section II is not complete: select which Bond you are drawing on.'; return;
   }
   if(selectedRoute==='black' && !document.getElementById('contact').value){
-    alert('Section II is not complete: select who you know.'); return;
+    submitValidationError.textContent = 'Section II is not complete: select who you know.'; return;
   }
+  submitValidationError.textContent = '';
 
   let extraPenalty = 0;
   let note = null;

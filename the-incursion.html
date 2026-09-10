@@ -327,8 +327,33 @@
     }
   }
 
+  // Logs one already-rolled die into the shared cross-page dice roll
+  // history (assets/dice-roller.js), same fire-and-forget pattern
+  // requisition.html's logRollToHistory() already uses for its own
+  // Section III roll. This page's own floating Dice Roller widget shows
+  // a "Recent Rolls" panel with nothing in it otherwise -- rolling here
+  // never reached it.
+  function logIncursionRollToHistory(label, sides, value) {
+    if (!window.dgDice || typeof window.dgDice.recordRoll !== 'function') return;
+    window.dgDice.recordRoll({
+      roll_type: null,
+      label: 'Incursion — ' + label + ' (D' + sides + ')',
+      value: value,
+      target: null,
+      tier: null,
+      sides: sides,
+      expr: null,
+      breakdown: null,
+    });
+  }
+
   function rollIncursion() {
     var envN = d(4), vecN = d(6), covN = d(8), compN = d(10), incN = d(12);
+    logIncursionRollToHistory('Environment', 4, envN);
+    logIncursionRollToHistory('Vector', 6, vecN);
+    logIncursionRollToHistory('Cover', 8, covN);
+    logIncursionRollToHistory('Complication', 10, compN);
+    logIncursionRollToHistory('Incursion', 12, incN);
     var env = incursionData.environment[envN - 1];
     var vec = incursionData.vector[vecN - 1];
     var cov = incursionData.cover[covN - 1];
