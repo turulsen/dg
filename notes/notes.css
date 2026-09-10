@@ -177,8 +177,14 @@
 #dg-notes-panel .dg-notes-tag-btn:disabled{ opacity:.45; cursor:default; }
 #dg-notes-panel .dg-notes-tag-btn:not(:disabled):hover{ border-color:rgba(58,40,10,.5); }
 #dg-notes-panel .dg-notes-tag-btn.active{ background:rgba(183,121,31,.15); border-color:rgba(183,121,31,.45); color:#7a4f10; }
+/* Tag is the rightmost button in the toolbar (Circulate/Pin/Tag, in a
+   space-between row) -- anchoring this 220px-wide popover with left:0
+   grew it rightward off an already-right-edge trigger, running it off
+   the viewport on every phone width (clipped "NPC"/"Name…"/"No tags",
+   half off-screen, reported live). Anchored to the wrap's right edge
+   instead so it opens leftward, into the room the toolbar actually has. */
 #dg-notes-panel .dg-notes-tag-popover{
-  position:absolute; top:calc(100% + 6px); left:0; z-index:20; width:220px;
+  position:absolute; top:calc(100% + 6px); right:0; z-index:20; width:220px; max-width:calc(100vw - 32px);
   background:var(--paper); border:1px solid rgba(58,40,10,.3); border-radius:4px;
   box-shadow:0 8px 20px rgba(0,0,0,.25); padding:10px;
 }
@@ -431,12 +437,31 @@
    element, dynamically inserted on tap. Forcing each onto its own GPU
    compositing layer is the standard fix: it makes WebKit re-evaluate
    position:fixed against the real viewport instead of a stale scroll
-   snapshot. No visual change on browsers that don't have the bug. */
+   snapshot. No visual change on browsers that don't have the bug.
+
+   That GPU-layer promotion has its own well-known WebKit side effect
+   though (reported live, screenshot in hand): some of the popover's own
+   currentColor-stroked SVG icons (the Text/Heading rows, specifically)
+   painted as blank boxes -- label visible, icon glyph gone -- while
+   still being fully clickable, matching the classic "children of a
+   just-promoted compositing layer fail to paint correctly on first
+   composite" WebKit bug rather than anything wrong with the icon markup
+   itself (verified identical, currentColor-stroked inline <svg><path>
+   structure across every tool, working or not). Cannot be reproduced
+   here -- like the "stuck scroll offset" bug this whole block already
+   works around, it's WebKit-only and headless Chromium never shows it.
+   -webkit-backface-visibility:hidden is the standard second half of
+   this exact fix combo: it doesn't touch positioning (so it can't
+   regress the fix above) but makes WebKit manage the promoted layer's
+   own paint correctly instead of leaving some of its children
+   uncomposited. */
 @media (max-width: 650px){
   #dg-notes-panel .ce-popover__overlay,
   #dg-notes-panel .ce-popover__container{
     -webkit-transform:translateZ(0);
     transform:translateZ(0);
+    -webkit-backface-visibility:hidden;
+    backface-visibility:hidden;
   }
 }
 

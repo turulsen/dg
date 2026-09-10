@@ -2259,3 +2259,71 @@ documented permanent no-op, but this file's own header comment already
 weighs and explicitly accepts that exact tradeoff project-wide (see
 "Agent-token auth removed" above), so it wasn't treated as a new bug to
 fix unilaterally.
+
+---
+
+## Player Notes: Tag popover clipped off the right edge of the screen
+
+Real player report, screenshot in hand: opening the Tag popover on a
+phone showed it half cut off past the right edge of the screen ("NPC"
+chip sliced in half, "Name…" field and "No tags on this block yet."
+unreadable). Root cause: `.dg-notes-tag-popover` was `position:absolute;
+left:0` against `.dg-notes-tag-wrap` — but the Tag button is the
+rightmost item in the toolbar's Circulate/Pin/Tag row (a
+`justify-content:space-between` layout), so anchoring a 220px-wide
+popover to grow *rightward* from an already-right-edge trigger reliably
+ran it off the viewport on every phone width. Switched the anchor to
+`right:0` so it opens leftward into the room the toolbar actually has,
+and added `max-width:calc(100vw - 32px)` as a backstop for any width
+narrow enough that 220px still wouldn't fit either direction. Verified
+with a Playwright repro at a phone viewport width with the toolbar
+forced onto a single row (this sandbox can't load the real pinned
+Courier Prime font, which changes exactly where the toolbar wraps, so
+the repro pins the layout to match the reported screenshot rather than
+trusting whatever this environment's fallback font happens to wrap to).
+
+## Player Notes: block-type picker's Text/Heading icons rendering blank
+
+A second, related report, also with a screenshot: the mobile block-type
+picker (Text/Heading/Unordered List/Ordered List/Checklist/Delimiter)
+was rendering its item *labels* correctly but the icon glyph next to
+"Text" and "Heading" specifically was blank — not missing, not
+misaligned, just paint-empty — while the four icons below them (all
+built from wider horizontal-line shapes rather than compact letterform
+strokes) rendered fine, and every item was still fully clickable. Direct
+inspection (Playwright, real touch-tap sequence reproducing the actual
+open-popover code path) found the icon markup itself completely
+uniform across all six tools: identical inline `<svg><path
+stroke="currentColor">` structure, no plugin-specific icon wiring, no
+CSS rule anywhere in this app setting `fill`/`stroke`/`color` on `svg`,
+`path`, or `.ce-popover-item__icon` beyond a background tint — so this
+isn't a markup or CSS-authoring bug, and the working/broken split
+doesn't correlate with which Editor.js plugin bundle a tool's icon
+ships in (Header and the built-in Paragraph are the two showing blank,
+List/Checklist/Delimiter — three separate bundles between them — are
+not). That combination points at a known class of WebKit-only
+rendering bug: children of an element just promoted onto its own GPU
+compositing layer sometimes fail to paint correctly on first composite,
+most visibly for icons with thinner/more compact stroke geometry.
+That promotion is exactly what this same file's earlier "not dimming
+the background" fix (see above) deliberately did to `.ce-popover__container`
+and `.ce-popover__overlay`, via `transform:translateZ(0)`, to fix a
+*different* WebKit quirk (fixed-position elements sticking to a stale
+scroll offset). Rather than removing that transform — which would risk
+reopening the confirmed, previously-fixed positioning bug — added
+`-webkit-backface-visibility:hidden` alongside it, the standard second
+half of this exact WebKit compositing-layer fix combo: it doesn't touch
+positioning at all, so it can't regress the earlier fix, but gives
+WebKit a more explicit instruction for managing the promoted layer's
+own paint. **Caveat, stated plainly:** this is reasoned from a known
+WebKit bug class and applied because it's additive and low-risk, not
+confirmed against real iOS Safari — this sandbox's headless Chromium
+cannot reproduce either this bug or the original one it's paired with,
+same as every other fix in this section. Needs a real-device check.
+
+Bumped `sw.js`'s `CACHE_NAME` to `v92` in the same commit (both fixes
+touch `notes/notes.css`, a `SHELL_FILES`-listed file). Full suite:
+765/765 relevant assertions pass; the one pre-existing failure left
+(`test_mobile_notes_fullscreen`'s Play-pill visibility check) is the
+same already-documented flake noted earlier in this file, unrelated to
+either fix here.
