@@ -906,7 +906,22 @@
             ':root{--dg-widget-bg:#161a14;--dg-widget-ink:#c9d4b8;--dg-widget-border:#3a4432;',
             '--dg-widget-accent:#8fae5a;--dg-widget-accent-bright:#a8c890;',
             '--dg-widget-font:\'JetBrains Mono\',ui-monospace,monospace;}',
+            // GPU-layer promotion (translateZ(0) + backface-visibility)
+            // on top of position:fixed -- iOS Safari has a long-standing
+            // bug where a fixed element can freeze at a stale
+            // scroll-relative spot instead of tracking the real
+            // viewport (see buildPanel()'s own visibilitychange
+            // handler, which only papers over the tab-switch/lock case
+            // by forcing a reflow after the fact). Promoting the panel
+            // onto its own compositing layer up front means WebKit
+            // re-evaluates its fixed position against the real
+            // viewport continuously, instead of needing an event to
+            // notice and correct it -- the same fix already used for
+            // Notes' block-picker popover (notes/notes.css) for the
+            // identical WebKit quirk.
             '#dr-panel{position:fixed;bottom:58px;right:24px;width:270px;',
+            'transform:translateZ(0);-webkit-transform:translateZ(0);',
+            '-webkit-backface-visibility:hidden;backface-visibility:hidden;',
             'background:var(--dg-widget-bg);border:1px solid color-mix(in srgb,var(--dg-widget-accent) 45%,transparent);',
             'border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.5);',
             // z-index above table-radio.js's own #dg-radio (9998, see

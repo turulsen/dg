@@ -1962,3 +1962,72 @@ at a time) rather than one at a time, skipping the existing single-
 delete flow's own per-row re-verify step for speed -- one list refresh
 at the end shows whatever's left, and anything that failed to delete
 is still selectable and safe to retry.
+
+---
+
+## Dice Roller panel freezing mid-screen instead of staying docked
+
+Real player report: the hoisted Dice Roller widget (`#dr-panel`,
+position:fixed in the parent document via hub.html's shell, present on
+every page) would freeze floating mid-screen -- overlapping whatever
+page content happened to be there -- instead of staying docked at its
+real corner/bottom-sheet spot, on iOS Safari specifically. A full page
+reload always fixed it, which is the signature of this file's own
+already-documented WebKit bug: "position:fixed elements can freeze at
+a stale scroll-relative spot instead of staying docked" (see
+`buildPanel()`'s existing comment). The already-shipped fix only
+re-snapped the panel via a `visibilitychange` listener (forcing a
+reflow when the tab is backgrounded and returns) -- real, but partial:
+it only covers the tab-switch/lock-screen trigger, not whatever else
+(most likely plain scrolling) also desyncs a fixed element's position
+on WebKit. Added the same GPU-layer-promotion fix already used
+elsewhere in this project for the identical bug class (Notes' block-type
+picker popover, `notes/notes.css`): `transform:translateZ(0)` plus
+`backface-visibility:hidden` on `#dr-panel` itself, so WebKit
+continuously re-evaluates the fixed position against the real viewport
+instead of needing an event to notice and correct a stale one. Shipped
+as its own small, isolated fix on top of `main` (not the stalled
+141-commit branch) -- bumped `sw.js` to `v94`. Full suite: 765/765
+passing.
+
+## Post-mortem: what actually broke in the 2026-09-10 cutover attempt
+
+Investigated after rolling `main` back (see `CLAUDE.md`'s "Deploy
+discipline" section for the timeline). `a-cell.html` itself is
+byte-for-byte identical between the pre-cutover commit and the
+141-commit branch's tip -- confirmed via `git diff`, ruling it out
+directly. But `a-cell.html` is normally viewed *through* `hub.html`'s
+shell, which hoists `assets/dice-roller.js`'s and
+`assets/table-radio.js`'s widgets into the parent document as
+position:fixed elements present on every shell page, regardless of
+which content page is iframed -- so a bug in either of those two
+files would show up identically everywhere, matching what was
+reported (the same "Script error." flood and stuck widget on the
+clearance screen, A-Cell, and the character sheet alike).
+
+Both files got the identical change in this session's "missing
+onerror/timeout on Firebase script loaders" fix: `s.crossOrigin =
+'anonymous'` added to their `<script src="https://www.gstatic.com/
+firebasejs/...">` loader, specifically so a load failure would surface
+a real error instead of hanging silently forever. Leading hypothesis,
+NOT yet confirmed: if `www.gstatic.com` doesn't actually serve a
+matching `Access-Control-Allow-Origin` header for an anonymous-mode
+request to these specific SDK files, setting `crossOrigin` would make
+Safari refuse to run the script at all (a real load failure, not just
+reduced error detail) -- and with two independent widgets each on
+their own retry schedule after a failed Firebase init, that lines up
+with the observed ~2-second-paired repeating "Script error." flood
+better than any other change in the diff. Could not verify directly:
+this sandbox's own network policy blocks `www.gstatic.com` outright
+(confirmed via the agent-proxy's own status endpoint -- a policy
+denial, not a real response from Google), so there was no way to check
+gstatic's actual CORS headers for these files from here.
+
+Deliberately NOT re-attempted tonight: re-running the full 141-commit
+cutover blind, a second time, on the same night as the first incident.
+Before any future attempt, this specific hypothesis needs an actual
+check (does gstatic.com return CORS headers for these paths, tested
+from a real network) and, if confirmed, a fix that keeps the
+onerror/timeout logic (the real, valuable part of that change) while
+dropping the `crossOrigin` attribute if it turns out to be the
+regression.
