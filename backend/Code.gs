@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v83 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v82 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -286,66 +286,6 @@
 //   rename, cache key deliberately renamed to *_v2 so this can't be
 //   silently skipped by a stale "already migrated" flag from before
 //   this fix existed.
-// + Backend-wide bug/performance/overengineering scrape, one combined
-//   patch: doPost() now fails closed on an unrecognized data.action
-//   instead of silently falling through into the brief-submission
-//   upsert (a stale client or a future renamed action could otherwise
-//   write garbage into the Briefs sheet); doGet() gained the same
-//   top-level try/catch doPost() already had, so a transient Sheets
-//   error under concurrent load returns a real respond_()-wrapped JSONP
-//   error instead of Apps Script's own HTML error page (which a
-//   <script> tag can't execute, so the callback never fired and the
-//   caller just saw a generic timeout); doLookup()/updateAgentField()
-//   now do a targeted single-column scan to find the row instead of
-//   pulling every Agent's entire ~60-column row across the wire first
-//   (same fix doLookupCharacter()/updateCharacterField() already had
-//   for the Characters sheet, missed here on two of the highest-traffic
-//   paths in the app); deleteCell() now recomputes affected Evidence
-//   visible_to (and busts the member-map cache) the same way
-//   updateCellMembers() already does on a membership edit, closing a
-//   gap where a deleted Cell's former members could see its Evidence
-//   forever; createOperation()/updateOperation() now resolve columns by
-//   name with a requireColumns_() guard instead of a positional
-//   appendRow(), matching every sibling Evidence/Notes write (and
-//   closing the same header-drift failure mode that once broke Evidence
-//   entirely); seenEvidenceIdsFor_() gained the same short-TTL
-//   per-Agent cache its siblings (evidenceRawRows_/cellsMemberMap_)
-//   already needed for the identical "Evidence takes a while to load"
-//   reason; createEvidence() now guards against a duplicate row when a
-//   client-supplied evidence_id is retried (a fire-and-forget no-cors
-//   POST invites exactly that); updateEvidence() now only touches the
-//   photo field when the caller actually sent one, instead of treating
-//   an omitted field the same as an explicit clear; listTracks() now
-//   falls back to a track's last-known-good stored URL if
-//   GOOGLE_DRIVE_API_KEY is ever unset, instead of going silently dark
-//   for the whole Track Library; saveHandoutNote()'s upsert is now
-//   locked like every sibling scan-then-write in this file; every
-//   Table Radio/ambient-layer/stinger read-modify-write (setNowPlaying,
-//   pause/resumeNowPlaying, setNowPlayingLoop_, setChannelVolume_,
-//   updateSoundInstance_/removeSoundInstance_ -- which back 9 of the
-//   Soundboard's own actions between them --, setAmbientLayer_,
-//   triggerStinger_, seekNowPlaying_) is now locked too, closing a real
-//   race where two near-simultaneous Handler actions on the same
-//   channel could silently clobber each other; generateAppearancePrompt()
-//   no longer leaks the literal string "undefined" into the Claude
-//   prompt when an Agent is missing build/eye_color/eye_shape (string
-//   concatenation with an unset field used to survive the surrounding
-//   filter(Boolean), unlike every other field built the safer way);
-//   getOrCreateRadioSheet()'s migration-check cache key is now
-//   versioned (_v2), matching ensureBriefsColumns()'s own precedent, so
-//   a future column addition can't be silently skipped by a stale
-//   cached flag; playlist_json joined the same sheet's self-healing
-//   column list instead of needing the separate, easy-to-forget
-//   addPlaylistColumn() one-off. Deliberately NOT done in this pass:
-//   collapsing doPost()'s ~40 near-identical `if (action===X){authCheck;
-//   return fn()}` blocks into a dispatch table, and converting the many
-//   response sites that still hand-build ContentService output instead
-//   of using respond_()/safeCallback_() -- both are real, flagged
-//   duplication with no live bug behind them, but a blind mechanical
-//   rewrite of this file's single most heavily-used dispatcher, with no
-//   way to execute-test it before a real redeploy, was judged a worse
-//   trade than leaving the duplication in place; worth a dedicated,
-//   carefully-tested pass on its own if still wanted.
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -479,94 +419,6 @@ function withScriptLock(fn, callback) {
   } finally {
     try { lock.releaseLock(); } catch (e) { /* already released/expired */ }
   }
-}
-
-// TEMP DIAGNOSTIC (read-only, safe to delete after use): checks
-// whether "ELIF-SPMV" has a duplicate/shadowed row in the Briefs
-// sheet -- doLookup()/doGet() both return the FIRST row matching a
-// code (see the doPost() upsert comment above), so an old leftover
-// row from before the upsert-by-agent_code fix was deployed would
-// permanently shadow a real, later, fully-filled-in row and explain
-// "restoring by code still comes back blank" even though a genuine
-// submission clearly happened. Also spot-checks the Characters sheet
-// and the Firestore briefs/ mirror for the same code so a single run
-// covers Sheet-duplication, Sheet/Firestore mismatch, and "no row
-// exists at all" in one pass. Run via runDiagnoseEli_() below --
-// the Apps Script editor's function dropdown is unreliable on this
-// mobile UI, so select THAT wrapper specifically.
-function diagnoseEliAgentCode_() {
-  const CODE = 'ELIF-SPMV';
-  const out = [];
-
-  const ss = getOrCreateSheet();
-  const briefsSheet = ss.getSheetByName(SHEET_NAME);
-  const briefsValues = briefsSheet.getDataRange().getValues();
-  const briefsHeaders = briefsValues[0];
-  const briefsCodeCol = briefsHeaders.indexOf('Agent Code');
-  const briefsNameCol = briefsHeaders.indexOf('Char Name');
-
-  out.push('=== Briefs sheet ("' + SHEET_NAME + '") ===');
-  out.push('Agent Code column index: ' + briefsCodeCol + ', Char Name column index: ' + briefsNameCol);
-  let briefsMatches = 0;
-  for (let i = 1; i < briefsValues.length; i++) {
-    const rowCode = String(briefsValues[i][briefsCodeCol] || '').trim().toUpperCase();
-    if (rowCode === CODE) {
-      briefsMatches++;
-      out.push('Row ' + (i + 1) + ' (match #' + briefsMatches + (briefsMatches === 1 ? ', THE ONE doLookup() RETURNS' : ', SHADOWED -- never read') + '):');
-      out.push('  Char Name: ' + briefsValues[i][briefsNameCol]);
-      briefsHeaders.forEach(function (h, idx) {
-        if (h === 'Agent Code' || h === 'Char Name') return;
-        const v = briefsValues[i][idx];
-        if (v !== '' && v !== null && v !== undefined) out.push('  ' + h + ': ' + String(v).substring(0, 120));
-      });
-    }
-  }
-  out.push('Total Briefs rows matching ' + CODE + ': ' + briefsMatches);
-  if (briefsMatches === 0) out.push('*** NO BRIEFS ROW AT ALL for this code -- doLookup() would return NOT_FOUND. ***');
-  if (briefsMatches > 1) out.push('*** DUPLICATE ROWS CONFIRMED -- the first one above is what every restore-by-code sees. ***');
-
-  out.push('');
-  out.push('=== Characters sheet ("' + CHARACTERS_SHEET_NAME + '") ===');
-  const charSheet = getOrCreateCharactersSheet();
-  const charValues = charSheet.getDataRange().getValues();
-  const charHeaders = charValues[0];
-  const charCodeCol = charHeaders.indexOf('Agent Code');
-  let charMatches = 0;
-  for (let i = 1; i < charValues.length; i++) {
-    const rowCode = String(charValues[i][charCodeCol] || '').trim().toUpperCase();
-    if (rowCode === CODE) {
-      charMatches++;
-      out.push('Row ' + (i + 1) + ' matches. Row has ' + charValues[i].length + ' columns, character_json length: ' +
-        String(charValues[i][charHeaders.indexOf('character_json')] || '').length);
-    }
-  }
-  out.push('Total Characters rows matching ' + CODE + ': ' + charMatches);
-
-  out.push('');
-  out.push('=== Firestore briefs/' + CODE + ' mirror ===');
-  try {
-    const token = getFirestoreAccessToken_();
-    if (!token) {
-      out.push('Firestore dual-write not configured (no token) -- skipped.');
-    } else {
-      const resp = UrlFetchApp.fetch(firestoreDocUrl_('briefs', CODE), {
-        method: 'get',
-        headers: { Authorization: 'Bearer ' + token },
-        muteHttpExceptions: true
-      });
-      out.push('HTTP ' + resp.getResponseCode());
-      out.push(resp.getContentText().substring(0, 2000));
-    }
-  } catch (err) {
-    out.push('Error checking Firestore: ' + err.message);
-  }
-
-  Logger.log(out.join('\n'));
-  return out.join('\n');
-}
-
-function runDiagnoseEli_() {
-  diagnoseEliAgentCode_();
 }
 
 function generateAgentCode(name) {
@@ -961,25 +813,7 @@ function doGet(e) {
   e = e || {};
   e.parameter = e.parameter || {};
   const callback = e.parameter && e.parameter.callback;
-  // doPost() below wraps its whole body in try/catch; this function
-  // never did. Every action here is a <script src=...&callback=X> JSONP
-  // GET -- an uncaught exception (a transient Sheets API error under
-  // concurrent load, most likely, exactly the load this backend has
-  // already gone unresponsive under once) makes Apps Script return its
-  // own HTML error page instead of respond_()-wrapped JSON, which a
-  // <script> tag can't execute as a statement: the callback never
-  // fires, and the caller just sees its own generic connection-timeout
-  // message after ~7s, with the real cause invisible anywhere. Wrapping
-  // this the same way doPost() already is turns that into a real,
-  // JSONP-wrapped error response instead.
-  try {
-    return doGet_(e, callback);
-  } catch (err) {
-    return respond_({ status: 'ERROR', message: err.message }, callback);
-  }
-}
 
-function doGet_(e, callback) {
   // ── Image proxy (data URI approach) ─────────────────────────
   // ?action=imgdata&id=FILE_ID&callback=CALLBACK
   // Returns JSONP with base64 data URI so portal can set img.src
@@ -1459,26 +1293,6 @@ function doPost(e) {
       return saveHandoutNote(data);
     }
 
-    // Everything above this point is `data.action === 'some-known-string'`
-    // -- anything that doesn't match one of those checks used to fall
-    // straight through into the brief-submission upsert below, since
-    // that path itself never checks `data.action` at all (a real brief
-    // submission never sends one -- see dg-agent-portal.html's payload).
-    // That's fine for the genuinely actionless case, but a stale cached
-    // client sending a RENAMED or retired action (this app has real
-    // week-long stale-service-worker episodes on record, and this file's
-    // own header comment notes client+backend are always redeployed
-    // together with "no back-compat alias") would silently upsert
-    // whatever fields that old payload happens to carry into the Briefs
-    // sheet as if it were a real submission, instead of failing loudly.
-    // Failing closed here for any UNRECOGNIZED action string closes that
-    // gap without touching the legitimate no-action submission path.
-    if (data.action) {
-      return ContentService
-        .createTextOutput(JSON.stringify({ status: 'ERROR', message: 'unknown action: ' + data.action }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-
     // New agent submission -- also handles a returning Agent's "Update
     // Brief" resubmission. Upsert by agent_code: an existing row is
     // overwritten in place rather than appended alongside a duplicate.
@@ -1608,9 +1422,8 @@ function updateAgentField(data) {
   try {
     const ss = getOrCreateSheet();
     const sheet = ss.getSheetByName(SHEET_NAME);
-    const lastRow = sheet.getLastRow();
-    const lastCol = sheet.getLastColumn();
-    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    const rows = sheet.getDataRange().getValues();
+    const headers = rows[0];
     const codeCol = headers.indexOf('Agent Code');
 
     const FIELD_MAP = {
@@ -1670,26 +1483,12 @@ function updateAgentField(data) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    if (lastRow < 2) {
-      return ContentService
-        .createTextOutput(JSON.stringify({ status: 'NOT_FOUND' }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-    // Read only the Agent Code column first to find the row -- this hot
-    // write path (HP/SAN/medical-log/AAR updates, likely fired every
-    // combat round during live play) used to pull this Agent's -- and
-    // every OTHER Agent's -- entire ~60-column row (long text fields
-    // plus 16 per-era URL/prompt columns) across the wire just to write
-    // one cell. Same fix already applied to doLookupCharacter()/
-    // updateCharacterField() for the Characters sheet; this path never
-    // got it.
-    const codes = sheet.getRange(2, codeCol + 1, lastRow - 1, 1).getValues();
-    for (let i = 0; i < codes.length; i++) {
-      if (codes[i][0] === data.agent_code) {
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i][codeCol] === data.agent_code) {
         const value = data.action === 'update_medical' ? data.medical_log
           : data.action === 'update_aar' ? data.aar_log
           : data.value;
-        sheet.getRange(i + 2, fieldCol + 1).setValue(value);
+        sheet.getRange(i + 1, fieldCol + 1).setValue(value);
         return ContentService
           .createTextOutput(JSON.stringify({ status: 'OK' }))
           .setMimeType(ContentService.MimeType.JSON);
@@ -1727,30 +1526,16 @@ function doLookup(code) {
   try {
     const ss = getOrCreateSheet();
     const sheet = ss.getSheetByName(SHEET_NAME);
-    const lastRow = sheet.getLastRow();
-    const lastCol = sheet.getLastColumn();
-    if (lastRow < 2) {
-      return ContentService
-        .createTextOutput(JSON.stringify({ status: 'NOT_FOUND' }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
     const codeCol = headers.indexOf('Agent Code');
 
-    // Read only the Agent Code column first to find the row -- by this
-    // file's own comment just above, this is the single most-used
-    // unauthenticated read in the app, and it used to pull every Agent's
-    // entire ~60-column row (long text fields plus 16 per-era URL/prompt
-    // columns) across the wire just to find one. Same fix already
-    // applied to doLookupCharacter() for the Characters sheet.
-    const codes = sheet.getRange(2, codeCol + 1, lastRow - 1, 1).getValues();
-    for (let i = 0; i < codes.length; i++) {
-      if (codes[i][0] === code) {
-        const rowValues = sheet.getRange(i + 2, 1, 1, lastCol).getValues()[0];
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][codeCol] === code) {
         const row = {};
         headers.forEach((h, idx) => {
           const key = h.toLowerCase().replace(/\s+/g, '_');
-          row[key] = rowValues[idx];
+          row[key] = data[i][idx];
         });
         return ContentService
           .createTextOutput(JSON.stringify({ status: 'OK', data: row }))
@@ -2798,17 +2583,6 @@ function deleteCell(cellId) {
   for (let i = data.length - 1; i >= 1; i--) {
     if (data[i][idCol] === cellId) {
       sheet.deleteRow(i + 1);
-      // Every Evidence item scoped to this Cell has a visible_to that
-      // needs to clear entirely now -- updateCellMembers() already does
-      // this on a membership EDIT, but deleting the whole Cell skipped
-      // it, leaving former members able to see that Cell's Evidence in
-      // Firestore forever with no code path left to ever correct it
-      // short of manually running backfillEvidenceVisibleTo_(). Cache
-      // cleared first so the recompute below sees this Cell as gone
-      // (zero members), not whatever membership was cached before the
-      // delete -- same ordering updateCellMembers() itself relies on.
-      CacheService.getScriptCache().remove('cells_member_map');
-      recomputeEvidenceVisibleToForCell_(cellId);
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
@@ -3660,29 +3434,7 @@ function createEvidence(data) {
   row[cols.released] = data.released ? 1 : 0;
   const restrictedToStr = typeof data.restricted_to === 'string' ? data.restricted_to : '[]';
   row[cols.restricted_to] = restrictedToStr;
-
-  // A client-supplied evidence_id (the Storage-upload path above) can
-  // arrive twice: every write in this app is a fire-and-forget no-cors
-  // POST the client can never read a response from, exactly the shape
-  // that invites a client-side retry on a perceived timeout. Retrying
-  // with the same pre-generated id used to unconditionally append a
-  // second identical-id row -- updateEvidence()/deleteEvidence() only
-  // ever reach the FIRST matching row, leaving an orphaned duplicate
-  // behind forever. Only worth the extra scan on this specific
-  // retry-prone path; a server-generated id (no data.evidence_id sent)
-  // is freshly minted every call and can't collide with a retry.
-  let existingRow = -1;
-  if (data.evidence_id) {
-    const values = sheet.getDataRange().getValues();
-    for (let i = 1; i < values.length; i++) {
-      if (values[i][cols.evidence_id] === evidenceId) { existingRow = i + 1; break; }
-    }
-  }
-  if (existingRow !== -1) {
-    sheet.getRange(existingRow, 1, 1, row.length).setValues([row]);
-  } else {
-    sheet.appendRow(row);
-  }
+  sheet.appendRow(row);
   CacheService.getScriptCache().remove('evidence_raw');
   let restrictedToArr = [];
   try { restrictedToArr = JSON.parse(restrictedToStr); } catch (e) { restrictedToArr = []; }
@@ -3714,20 +3466,10 @@ function updateEvidence(data) {
       // Only re-resolves through Drive if the client actually sent a
       // fresh raw data URI (a new photo picked this edit) -- an
       // unchanged gdrive: link or empty string passes straight through,
-      // see resolveEvidencePhoto_(). `data.photo === undefined` (the
-      // field omitted entirely, not sent as '') means this caller isn't
-      // touching the photo at all -- a metadata-only edit -- and must
-      // keep whatever's already on file rather than have
-      // resolveEvidencePhoto_() treat the missing field the same as an
-      // explicit clear (a falsy photo resolves to ''). Every current
-      // caller already resends the item's existing photo value
-      // explicitly (see a-cell.html's toggleReleased()), so this only
-      // changes behavior for a caller that doesn't.
-      if (data.photo !== undefined) {
-        try { row[cols.photo] = resolveEvidencePhoto_(data.photo, data.title); } catch (err) {
-          return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'Image upload failed: ' + err.message }))
-            .setMimeType(ContentService.MimeType.JSON);
-        }
+      // see resolveEvidencePhoto_().
+      try { row[cols.photo] = resolveEvidencePhoto_(data.photo, data.title); } catch (err) {
+        return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'Image upload failed: ' + err.message }))
+          .setMimeType(ContentService.MimeType.JSON);
       }
       row[cols.cell_id] = data.cell_id || '';
       row[cols.operation_id] = data.operation_id || '';
@@ -3792,23 +3534,8 @@ function createOperation(data) {
       .setMimeType(ContentService.MimeType.JSON);
   }
   const sheet = getOrCreateOperationsSheet();
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const cols = headerMap_(headers);
-  // Resolved by column NAME against the sheet's real header row, not a
-  // fixed position -- every sibling create/save function in this file
-  // (saveNoteBlock, createEvidence, etc.) already writes this way after
-  // a drifted header row once caused the Evidence Locker to fail closed
-  // for its entire deploy lifetime (see that fix's own comment on
-  // getOrCreateEvidenceSheet()); this one function was missed.
-  const colErr = requireColumns_(cols, ['operation_id', 'cell_id', 'name', 'created_at']);
-  if (colErr) return colErr;
   const operationId = 'operation_' + new Date().getTime() + '_' + Math.floor(Math.random() * 100000).toString(36);
-  const row = new Array(headers.length).fill('');
-  row[cols.operation_id] = operationId;
-  row[cols.cell_id] = cellId;
-  row[cols.name] = name;
-  row[cols.created_at] = new Date().getTime();
-  sheet.appendRow(row);
+  sheet.appendRow([operationId, cellId, name, new Date().getTime()]);
   return ContentService.createTextOutput(JSON.stringify({ status: 'OK', operation_id: operationId })).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -3820,8 +3547,6 @@ function updateOperation(data) {
   const sheet = getOrCreateOperationsSheet();
   const values = sheet.getDataRange().getValues();
   const cols = headerMap_(values[0]);
-  const colErr = requireColumns_(cols, ['operation_id', 'name']);
-  if (colErr) return colErr;
   for (let i = 1; i < values.length; i++) {
     if (values[i][cols.operation_id] === data.operation_id) {
       sheet.getRange(i + 1, cols.name + 1).setValue((data.name || '').trim());
@@ -3872,23 +3597,11 @@ function getOrCreateEvidenceSeenSheet() {
 
 // Every evidence_id one Agent has ever opened, as a lookup map --
 // used by listEvidence() to bundle each item's own seen:bool without
-// a per-item extra read. Called unconditionally on every listEvidence()
-// hit for every player -- same "Evidence takes a while to load" shape
-// already found and fixed twice on this exact hot path (evidenceRawRows_
-// and cellsMemberMap_ above both gained the identical short-TTL cache
-// after being live-reported slow), but this sheet -- which only ever
-// grows, one row per Agent per item ever opened, across a whole
-// campaign's life -- never got the same treatment. Cached per-Agent
-// (not global, since each Agent's seen-set is different) with the same
-// 3s TTL, invalidated on write by markEvidenceSeen() below.
+// a per-item extra read.
 function seenEvidenceIdsFor_(agentCode) {
   const code = String(agentCode || '').trim().toUpperCase();
   const out = {};
   if (!code) return out;
-  const cache = CacheService.getScriptCache();
-  const cacheKey = 'evidence_seen_' + code;
-  const cached = cache.get(cacheKey);
-  if (cached) return JSON.parse(cached);
   const sheet = getOrCreateEvidenceSeenSheet();
   const data = sheet.getDataRange().getValues();
   const cols = headerMap_(data[0]);
@@ -3897,7 +3610,6 @@ function seenEvidenceIdsFor_(agentCode) {
       out[data[i][cols.evidence_id]] = true;
     }
   }
-  cache.put(cacheKey, JSON.stringify(out), 3);
   return out;
 }
 
@@ -3920,10 +3632,6 @@ function markEvidenceSeen(agentCode, evidenceId) {
       }
     }
     sheet.appendRow([code, evId, new Date().getTime()]);
-    // Keep seenEvidenceIdsFor_()'s own cache (above) from serving a
-    // stale (missing this item) seen-set for up to its own TTL right
-    // after this exact write.
-    CacheService.getScriptCache().remove('evidence_seen_' + code);
     return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
   });
 }
@@ -3992,19 +3700,12 @@ function listTracks(callback) {
     // Rebuilt from drive_file_id on every read, not read from the stored
     // url column -- so a track uploaded before driveDirectAudioUrl()'s
     // URL format changed self-heals the next time the library loads,
-    // with no separate migration step needed. driveDirectAudioUrl()
-    // itself returns '' if GOOGLE_DRIVE_API_KEY is ever unset (rotated,
-    // accidentally cleared -- its own comment explicitly invites
-    // rotating it) -- previously that empty string was used AS the URL
-    // outright whenever a fileId existed, going silently dark for every
-    // Drive-uploaded track at once instead of falling back to the
-    // last-known-good stored url this same row already carries.
+    // with no separate migration step needed.
     const fileId = fileIdCol !== -1 ? row[fileIdCol] : '';
-    const rebuiltUrl = fileId ? driveDirectAudioUrl(fileId) : '';
     tracks.push({
       track_id: row[idCol],
       title: row[titleCol] || '',
-      url: rebuiltUrl || (row[urlCol] || ''),
+      url: fileId ? driveDirectAudioUrl(fileId) : (row[urlCol] || ''),
       uploaded_at: row[uploadedCol] || ''
     });
   }
@@ -4157,38 +3858,29 @@ function saveHandoutNote(data) {
       .setMimeType(ContentService.MimeType.JSON);
   }
   const sheet = getOrCreateHandoutNotesSheet();
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0];
   const cols = headerMap_(headers);
   const missing = requireColumns_(cols, ['handout_id', 'agent_code', 'note', 'updated_at']);
   if (missing) return missing;
+  const now = new Date().getTime();
 
-  // Locked: an upsert scan-then-write with no lock, like every other
-  // one in this file (saveNoteBlock, markEvidenceSeen, etc). Two
-  // near-simultaneous saves for the same handout+agent -- a debounced
-  // autosave firing twice is the realistic case -- could both miss the
-  // not-yet-written row and both append, leaving a duplicate row that
-  // listHandoutNotes() then returns twice.
-  return withScriptLock(function () {
-    const values = sheet.getDataRange().getValues();
-    const now = new Date().getTime();
-
-    for (let i = 1; i < values.length; i++) {
-      if (values[i][cols.handout_id] === handoutId && String(values[i][cols.agent_code]).trim().toUpperCase() === agentCode) {
-        const row = values[i];
-        row[cols.note] = data.note || '';
-        row[cols.updated_at] = now;
-        sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
-        return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
-      }
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][cols.handout_id] === handoutId && String(values[i][cols.agent_code]).trim().toUpperCase() === agentCode) {
+      const row = values[i];
+      row[cols.note] = data.note || '';
+      row[cols.updated_at] = now;
+      sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
-    const newRow = new Array(headers.length).fill('');
-    newRow[cols.handout_id] = handoutId;
-    newRow[cols.agent_code] = agentCode;
-    newRow[cols.note] = data.note || '';
-    newRow[cols.updated_at] = now;
-    sheet.appendRow(newRow);
-    return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
-  });
+  }
+  const newRow = new Array(headers.length).fill('');
+  newRow[cols.handout_id] = handoutId;
+  newRow[cols.agent_code] = agentCode;
+  newRow[cols.note] = data.note || '';
+  newRow[cols.updated_at] = now;
+  sheet.appendRow(newRow);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
 }
 
 // A Cell's usual Table Radio channel -- lets the Music tab's "Cue For
@@ -4237,15 +3929,7 @@ function getOrCreateRadioSheet() {
   // clean, same reasoning as the SPREADSHEET_ID/Briefs-columns caches
   // above.
   const cache = CacheService.getScriptCache();
-  // Versioned key (_v2), matching the established convention elsewhere
-  // in this file (evidence_columns_ensured_v2, briefs_columns_ensured_v3)
-  // -- this flag's column list has already grown twice in this
-  // project's life (paused/loop, then track_volume/ambient_volume) with
-  // an unversioned key the whole time, meaning the next such addition
-  // would silently fail to retrofit onto any spreadsheet that already
-  // has the OLD flag cached, for up to its own 6h TTL, with no error
-  // surfaced anywhere.
-  if (cache.get('radio_columns_ensured_v2') !== '1') {
+  if (cache.get('radio_columns_ensured') !== '1') {
     let lastCol = sheet.getLastColumn();
     const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
     // track_kind: added for the Track Library (uploaded mp3s) -- Drive
@@ -4267,23 +3951,14 @@ function getOrCreateRadioSheet() {
     // listener at once, not just their own device's preview. Stingers
     // ride ambient_volume too (both are "soundscape" layers, distinct
     // from the one "music" track). See setChannelVolume_.
-    // playlist_json: was the one column on this sheet that wasn't
-    // self-healing -- it needed the separate, easy-to-forget
-    // addPlaylistColumn() one-off run by hand, and savePlaylist() hard-
-    // failed with "column missing" on any sheet where that step got
-    // skipped, even though every sibling Radio feature on the same
-    // sheet worked fine. Added here so a fresh or freshly-redeployed
-    // spreadsheet never needs that manual step at all; addPlaylistColumn()
-    // itself is left in place as a harmless no-op for anyone who already
-    // has it in muscle memory.
-    ['track_kind', 'paused', 'paused_at', 'loop', 'ambient_layers', 'stingers', 'track_volume', 'ambient_volume', 'playlist_json'].forEach(function (col) {
+    ['track_kind', 'paused', 'paused_at', 'loop', 'ambient_layers', 'stingers', 'track_volume', 'ambient_volume'].forEach(function (col) {
       if (headers.indexOf(col) === -1) {
         lastCol++;
         sheet.getRange(1, lastCol).setValue(col);
         headers.push(col);
       }
     });
-    cache.put('radio_columns_ensured_v2', '1', 21600);
+    cache.put('radio_columns_ensured', '1', 21600);
   }
   return sheet;
 }
@@ -4372,85 +4047,75 @@ function setNowPlaying(channel, trackUrl, trackTitle, trackKind, loop) {
   // possibly waiting out the rest of that cache window.
   CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
 
-  // Locked: every Radio/ambient/stinger read-modify-write in this
-  // section reads a channel's whole row, mutates one field in a local
-  // copy, then writes the whole row back -- with no lock, two
-  // near-simultaneous Handler actions on the same channel (pausing the
-  // main track while firing a stinger, or two rapid stinger presses)
-  // could each work from a stale copy and silently clobber each other's
-  // change. See withScriptLock()'s own comment for why this fails
-  // closed rather than falling back to running unlocked.
-  return withScriptLock(function () {
-    const sheet = getOrCreateRadioSheet();
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0];
-    const cols = headerMap_(headers);
-    const chCol = cols.channel;
-    const urlCol = cols.track_url;
-    const titleCol = cols.track_title;
-    const startedCol = cols.started_at;
-    const updatedCol = cols.updated_at;
-    const kindCol = cols.track_kind;
-    const pausedCol = cols.paused;
-    const pausedAtCol = cols.paused_at;
-    const loopCol = cols.loop;
-    const now = new Date().getTime();
-    const loopVal = loop === '1' || loop === true ? 1 : 0;
+  const sheet = getOrCreateRadioSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const cols = headerMap_(headers);
+  const chCol = cols.channel;
+  const urlCol = cols.track_url;
+  const titleCol = cols.track_title;
+  const startedCol = cols.started_at;
+  const updatedCol = cols.updated_at;
+  const kindCol = cols.track_kind;
+  const pausedCol = cols.paused;
+  const pausedAtCol = cols.paused_at;
+  const loopCol = cols.loop;
+  const now = new Date().getTime();
+  const loopVal = loop === '1' || loop === true ? 1 : 0;
 
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
-        // Mutate the row already fetched above and write it back in one
-        // call instead of up to 8 separate setValue() calls.
-        const row = data[i];
-        row[urlCol] = trackUrl || '';
-        row[titleCol] = trackTitle || '';
-        row[startedCol] = now;
-        row[updatedCol] = now;
-        if (kindCol !== undefined) row[kindCol] = trackKind || '';
-        // A fresh set_now_playing always restarts the track for everyone --
-        // any Pause left over from the previous track shouldn't carry
-        // forward onto this new one.
-        if (pausedCol !== undefined) row[pausedCol] = 0;
-        if (pausedAtCol !== undefined) row[pausedAtCol] = '';
-        if (loopCol !== undefined) row[loopCol] = loopVal;
-        // Firestore first -- every listener's actual playback is driven by
-        // its onSnapshot mirror, not this Sheet, so this is the write that
-        // determines how soon a Handler's action is actually audible.
-        // Sheets I/O (setValues() below) has its own real per-call latency
-        // in Apps Script; doing it second keeps it off that critical path
-        // without changing which one is the write of record -- the dual-
-        // write helpers already log-but-swallow their own errors, so a
-        // failure here still leaves the Sheet write (this function's real
-        // source of truth) unaffected.
-        firestoreDualWrite_('radio', channel, {
-          channel: channel, track_url: trackUrl || '', track_title: trackTitle || '',
-          started_at: now, updated_at: now, track_kind: trackKind || '',
-          paused: false, paused_at: '', loop: !!loopVal
-        });
-        sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
-        return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
-      }
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
+      // Mutate the row already fetched above and write it back in one
+      // call instead of up to 8 separate setValue() calls.
+      const row = data[i];
+      row[urlCol] = trackUrl || '';
+      row[titleCol] = trackTitle || '';
+      row[startedCol] = now;
+      row[updatedCol] = now;
+      if (kindCol !== undefined) row[kindCol] = trackKind || '';
+      // A fresh set_now_playing always restarts the track for everyone --
+      // any Pause left over from the previous track shouldn't carry
+      // forward onto this new one.
+      if (pausedCol !== undefined) row[pausedCol] = 0;
+      if (pausedAtCol !== undefined) row[pausedAtCol] = '';
+      if (loopCol !== undefined) row[loopCol] = loopVal;
+      // Firestore first -- every listener's actual playback is driven by
+      // its onSnapshot mirror, not this Sheet, so this is the write that
+      // determines how soon a Handler's action is actually audible.
+      // Sheets I/O (setValues() below) has its own real per-call latency
+      // in Apps Script; doing it second keeps it off that critical path
+      // without changing which one is the write of record -- the dual-
+      // write helpers already log-but-swallow their own errors, so a
+      // failure here still leaves the Sheet write (this function's real
+      // source of truth) unaffected.
+      firestoreDualWrite_('radio', channel, {
+        channel: channel, track_url: trackUrl || '', track_title: trackTitle || '',
+        started_at: now, updated_at: now, track_kind: trackKind || '',
+        paused: false, paused_at: '', loop: !!loopVal
+      });
+      sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
-    // Built by header position, not array-literal order -- a sheet that
-    // already picked up the playlist_json migration column before this
-    // track_kind one would otherwise leave a gap between them.
-    const newRow = new Array(headers.length).fill('');
-    newRow[chCol] = channel;
-    newRow[urlCol] = trackUrl || '';
-    newRow[titleCol] = trackTitle || '';
-    newRow[startedCol] = now;
-    newRow[updatedCol] = now;
-    if (kindCol !== undefined) newRow[kindCol] = trackKind || '';
-    if (pausedCol !== undefined) newRow[pausedCol] = 0;
-    if (loopCol !== undefined) newRow[loopCol] = loopVal;
-    firestoreDualWrite_('radio', channel, {
-      channel: channel, track_url: trackUrl || '', track_title: trackTitle || '',
-      started_at: now, updated_at: now, track_kind: trackKind || '',
-      paused: false, paused_at: '', loop: !!loopVal
-    });
-    sheet.appendRow(newRow);
-    return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  // Built by header position, not array-literal order -- a sheet that
+  // already picked up the playlist_json migration column before this
+  // track_kind one would otherwise leave a gap between them.
+  const newRow = new Array(headers.length).fill('');
+  newRow[chCol] = channel;
+  newRow[urlCol] = trackUrl || '';
+  newRow[titleCol] = trackTitle || '';
+  newRow[startedCol] = now;
+  newRow[updatedCol] = now;
+  if (kindCol !== undefined) newRow[kindCol] = trackKind || '';
+  if (pausedCol !== undefined) newRow[pausedCol] = 0;
+  if (loopCol !== undefined) newRow[loopCol] = loopVal;
+  firestoreDualWrite_('radio', channel, {
+    channel: channel, track_url: trackUrl || '', track_title: trackTitle || '',
+    started_at: now, updated_at: now, track_kind: trackKind || '',
+    paused: false, paused_at: '', loop: !!loopVal
   });
+  sheet.appendRow(newRow);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
 }
 
 // Pause/resume the CURRENT track in place for a channel, without
@@ -4467,34 +4132,30 @@ function pauseNowPlaying(channel) {
   }
   CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
 
-  // Locked -- see setNowPlaying()'s own comment on why every Radio/
-  // ambient/stinger read-modify-write in this section needs this.
-  return withScriptLock(function () {
-    const sheet = getOrCreateRadioSheet();
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0];
-    const cols = headerMap_(headers);
-    const chCol = cols.channel;
-    const pausedCol = cols.paused;
-    const pausedAtCol = cols.paused_at;
-    const updatedCol = cols.updated_at;
-    const now = new Date().getTime();
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
-        const row = data[i];
-        if (pausedCol !== undefined) row[pausedCol] = 1;
-        if (pausedAtCol !== undefined) row[pausedAtCol] = now;
-        if (updatedCol !== undefined) row[updatedCol] = now;
-        // Firestore first -- see setNowPlaying()'s own comment on this
-        // ordering.
-        firestoreDualPatch_('radio', channel, { paused: true, paused_at: now, updated_at: now });
-        sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
-        return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
-      }
+  const sheet = getOrCreateRadioSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const cols = headerMap_(headers);
+  const chCol = cols.channel;
+  const pausedCol = cols.paused;
+  const pausedAtCol = cols.paused_at;
+  const updatedCol = cols.updated_at;
+  const now = new Date().getTime();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
+      const row = data[i];
+      if (pausedCol !== undefined) row[pausedCol] = 1;
+      if (pausedAtCol !== undefined) row[pausedAtCol] = now;
+      if (updatedCol !== undefined) row[updatedCol] = now;
+      // Firestore first -- see setNowPlaying()'s own comment on this
+      // ordering.
+      firestoreDualPatch_('radio', channel, { paused: true, paused_at: now, updated_at: now });
+      sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'no track for that channel' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  });
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'no track for that channel' }))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 function resumeNowPlaying(channel) {
@@ -4505,39 +4166,35 @@ function resumeNowPlaying(channel) {
   }
   CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
 
-  // Locked -- see setNowPlaying()'s own comment on why every Radio/
-  // ambient/stinger read-modify-write in this section needs this.
-  return withScriptLock(function () {
-    const sheet = getOrCreateRadioSheet();
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0];
-    const cols = headerMap_(headers);
-    const chCol = cols.channel;
-    const startedCol = cols.started_at;
-    const pausedCol = cols.paused;
-    const pausedAtCol = cols.paused_at;
-    const updatedCol = cols.updated_at;
-    const now = new Date().getTime();
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
-        const pausedAt = (pausedAtCol !== undefined && data[i][pausedAtCol]) || now;
-        const startedAt = (startedCol !== undefined && data[i][startedCol]) || now;
-        const shiftedStart = startedAt + (now - pausedAt);
-        const row = data[i];
-        if (startedCol !== undefined) row[startedCol] = shiftedStart;
-        if (pausedCol !== undefined) row[pausedCol] = 0;
-        if (pausedAtCol !== undefined) row[pausedAtCol] = '';
-        if (updatedCol !== undefined) row[updatedCol] = now;
-        // Firestore first -- see setNowPlaying()'s own comment on this
-        // ordering.
-        firestoreDualPatch_('radio', channel, { started_at: shiftedStart, paused: false, paused_at: '', updated_at: now });
-        sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
-        return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
-      }
+  const sheet = getOrCreateRadioSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const cols = headerMap_(headers);
+  const chCol = cols.channel;
+  const startedCol = cols.started_at;
+  const pausedCol = cols.paused;
+  const pausedAtCol = cols.paused_at;
+  const updatedCol = cols.updated_at;
+  const now = new Date().getTime();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
+      const pausedAt = (pausedAtCol !== undefined && data[i][pausedAtCol]) || now;
+      const startedAt = (startedCol !== undefined && data[i][startedCol]) || now;
+      const shiftedStart = startedAt + (now - pausedAt);
+      const row = data[i];
+      if (startedCol !== undefined) row[startedCol] = shiftedStart;
+      if (pausedCol !== undefined) row[pausedCol] = 0;
+      if (pausedAtCol !== undefined) row[pausedAtCol] = '';
+      if (updatedCol !== undefined) row[updatedCol] = now;
+      // Firestore first -- see setNowPlaying()'s own comment on this
+      // ordering.
+      firestoreDualPatch_('radio', channel, { started_at: shiftedStart, paused: false, paused_at: '', updated_at: now });
+      sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'no track for that channel' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  });
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'no track for that channel' }))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 // Flips the CURRENT track's loop flag in place, without restarting it or
@@ -4552,31 +4209,27 @@ function setNowPlayingLoop_(channel, loop) {
   }
   CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
 
-  // Locked -- see setNowPlaying()'s own comment on why every Radio/
-  // ambient/stinger read-modify-write in this section needs this.
-  return withScriptLock(function () {
-    const sheet = getOrCreateRadioSheet();
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0];
-    const cols = headerMap_(headers);
-    const chCol = cols.channel;
-    const loopCol = cols.loop;
-    const updatedCol = cols.updated_at;
-    const now = new Date().getTime();
-    const loopVal = !!loop;
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
-        const row = data[i];
-        if (loopCol !== undefined) row[loopCol] = loopVal ? 1 : 0;
-        if (updatedCol !== undefined) row[updatedCol] = now;
-        firestoreDualPatch_('radio', channel, { loop: loopVal, updated_at: now });
-        sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
-        return ContentService.createTextOutput(JSON.stringify({ status: 'OK', loop: loopVal })).setMimeType(ContentService.MimeType.JSON);
-      }
+  const sheet = getOrCreateRadioSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const cols = headerMap_(headers);
+  const chCol = cols.channel;
+  const loopCol = cols.loop;
+  const updatedCol = cols.updated_at;
+  const now = new Date().getTime();
+  const loopVal = !!loop;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
+      const row = data[i];
+      if (loopCol !== undefined) row[loopCol] = loopVal ? 1 : 0;
+      if (updatedCol !== undefined) row[updatedCol] = now;
+      firestoreDualPatch_('radio', channel, { loop: loopVal, updated_at: now });
+      sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK', loop: loopVal })).setMimeType(ContentService.MimeType.JSON);
     }
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'no track for that channel' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  });
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'no track for that channel' }))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 // Sets a broadcast-wide mix level (0-100) for either the main track or
@@ -4599,24 +4252,20 @@ function setChannelVolume_(channel, field, volume) {
   volume = Math.max(0, Math.min(100, Math.round(Number(volume)) || 0));
   CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
 
-  // Locked -- see setNowPlaying()'s own comment on why every Radio/
-  // ambient/stinger read-modify-write in this section needs this.
-  return withScriptLock(function () {
-    const sheet = getOrCreateRadioSheet();
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0];
-    const cols = headerMap_(headers);
-    const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
-    const row = data[rowIdx];
-    const now = new Date().getTime();
-    row[cols[field]] = volume;
-    row[cols.updated_at] = now;
-    const patch = { updated_at: now };
-    patch[field] = volume;
-    firestoreDualPatch_('radio', channel, patch);
-    sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
-    return ContentService.createTextOutput(JSON.stringify({ status: 'OK', volume: volume })).setMimeType(ContentService.MimeType.JSON);
-  });
+  const sheet = getOrCreateRadioSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const cols = headerMap_(headers);
+  const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
+  const row = data[rowIdx];
+  const now = new Date().getTime();
+  row[cols[field]] = volume;
+  row[cols.updated_at] = now;
+  const patch = { updated_at: now };
+  patch[field] = volume;
+  firestoreDualPatch_('radio', channel, patch);
+  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK', volume: volume })).setMimeType(ContentService.MimeType.JSON);
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -4722,35 +4371,28 @@ function updateSoundInstance_(channel, field, matchKey, matchVal, mutateFn) {
   }
   CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
 
-  // Locked -- see setNowPlaying()'s own comment on why every Radio/
-  // ambient/stinger read-modify-write in this section needs this. This
-  // one function backs 8 different actions (every ambient/stinger
-  // pause/resume/seek/loop-toggle), so it's the single highest-traffic
-  // Soundboard write path.
-  return withScriptLock(function () {
-    const sheet = getOrCreateRadioSheet();
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0];
-    const cols = headerMap_(headers);
-    const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
-    const row = data[rowIdx];
-    let arr = parseJsonArray_(row[cols[field]]);
-    if (field === 'ambient_layers') arr = arr.map(normalizeAmbientLayer_);
-    const inst = findSoundInstance_(arr, matchKey, matchVal);
-    if (!inst) {
-      return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'not currently active' }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-    mutateFn(inst);
-    const now = new Date().getTime();
-    row[cols[field]] = JSON.stringify(arr);
-    row[cols.updated_at] = now;
-    const patch = { updated_at: now };
-    patch[field] = arr;
-    firestoreDualPatch_('radio', channel, patch);
-    sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
-    return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
-  });
+  const sheet = getOrCreateRadioSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const cols = headerMap_(headers);
+  const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
+  const row = data[rowIdx];
+  let arr = parseJsonArray_(row[cols[field]]);
+  if (field === 'ambient_layers') arr = arr.map(normalizeAmbientLayer_);
+  const inst = findSoundInstance_(arr, matchKey, matchVal);
+  if (!inst) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'not currently active' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  mutateFn(inst);
+  const now = new Date().getTime();
+  row[cols[field]] = JSON.stringify(arr);
+  row[cols.updated_at] = now;
+  const patch = { updated_at: now };
+  patch[field] = arr;
+  firestoreDualPatch_('radio', channel, patch);
+  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
 }
 
 // Same shape as updateSoundInstance_ but removes the instance entirely
@@ -4765,27 +4407,23 @@ function removeSoundInstance_(channel, field, matchKey, matchVal) {
   }
   CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
 
-  // Locked -- see setNowPlaying()'s own comment on why every Radio/
-  // ambient/stinger read-modify-write in this section needs this.
-  return withScriptLock(function () {
-    const sheet = getOrCreateRadioSheet();
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0];
-    const cols = headerMap_(headers);
-    const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
-    const row = data[rowIdx];
-    let arr = parseJsonArray_(row[cols[field]]);
-    if (field === 'ambient_layers') arr = arr.map(normalizeAmbientLayer_);
-    arr = arr.filter(function (inst) { return inst[matchKey] !== matchVal; });
-    const now = new Date().getTime();
-    row[cols[field]] = JSON.stringify(arr);
-    row[cols.updated_at] = now;
-    const patch = { updated_at: now };
-    patch[field] = arr;
-    firestoreDualPatch_('radio', channel, patch);
-    sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
-    return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
-  });
+  const sheet = getOrCreateRadioSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const cols = headerMap_(headers);
+  const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
+  const row = data[rowIdx];
+  let arr = parseJsonArray_(row[cols[field]]);
+  if (field === 'ambient_layers') arr = arr.map(normalizeAmbientLayer_);
+  arr = arr.filter(function (inst) { return inst[matchKey] !== matchVal; });
+  const now = new Date().getTime();
+  row[cols[field]] = JSON.stringify(arr);
+  row[cols.updated_at] = now;
+  const patch = { updated_at: now };
+  patch[field] = arr;
+  firestoreDualPatch_('radio', channel, patch);
+  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
 }
 
 // Toggles one ambient loop on/off for a channel. `active` decides
@@ -4810,35 +4448,31 @@ function setAmbientLayer_(channel, layerId, active) {
   }
   CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
 
-  // Locked -- see setNowPlaying()'s own comment on why every Radio/
-  // ambient/stinger read-modify-write in this section needs this.
-  return withScriptLock(function () {
-    const sheet = getOrCreateRadioSheet();
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0];
-    const cols = headerMap_(headers);
-    const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
-    const row = data[rowIdx];
-    // normalizeAmbientLayer_ upgrades any stale bare-string entry left
-    // over from before this field grew instance objects; filtering out
-    // every match (not just the first) when turning off is deliberate
-    // belt-and-suspenders against a channel that picked up a literal
-    // duplicate for the same id while that bug was live.
-    let layers = parseJsonArray_(row[cols.ambient_layers]).map(normalizeAmbientLayer_);
-    const now = new Date().getTime();
-    if (active) {
-      if (!layers.some(function (l) { return l.id === layerId; })) {
-        layers.push({ id: layerId, started_at: now, paused: false, paused_at: 0, loop: true });
-      }
-    } else {
-      layers = layers.filter(function (l) { return l.id !== layerId; });
+  const sheet = getOrCreateRadioSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const cols = headerMap_(headers);
+  const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
+  const row = data[rowIdx];
+  // normalizeAmbientLayer_ upgrades any stale bare-string entry left
+  // over from before this field grew instance objects; filtering out
+  // every match (not just the first) when turning off is deliberate
+  // belt-and-suspenders against a channel that picked up a literal
+  // duplicate for the same id while that bug was live.
+  let layers = parseJsonArray_(row[cols.ambient_layers]).map(normalizeAmbientLayer_);
+  const now = new Date().getTime();
+  if (active) {
+    if (!layers.some(function (l) { return l.id === layerId; })) {
+      layers.push({ id: layerId, started_at: now, paused: false, paused_at: 0, loop: true });
     }
-    row[cols.ambient_layers] = JSON.stringify(layers);
-    row[cols.updated_at] = now;
-    firestoreDualPatch_('radio', channel, { ambient_layers: layers, updated_at: now });
-    sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
-    return ContentService.createTextOutput(JSON.stringify({ status: 'OK', ambient_layers: layers })).setMimeType(ContentService.MimeType.JSON);
-  });
+  } else {
+    layers = layers.filter(function (l) { return l.id !== layerId; });
+  }
+  row[cols.ambient_layers] = JSON.stringify(layers);
+  row[cols.updated_at] = now;
+  firestoreDualPatch_('radio', channel, { ambient_layers: layers, updated_at: now });
+  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK', ambient_layers: layers })).setMimeType(ContentService.MimeType.JSON);
 }
 
 function pauseAmbientLayer_(channel, layerId) {
@@ -4907,28 +4541,24 @@ function triggerStinger_(channel, stingerId) {
   }
   CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
 
-  // Locked -- see setNowPlaying()'s own comment on why every Radio/
-  // ambient/stinger read-modify-write in this section needs this.
-  return withScriptLock(function () {
-    const sheet = getOrCreateRadioSheet();
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0];
-    const cols = headerMap_(headers);
-    const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
-    const row = data[rowIdx];
-    const now = new Date().getTime();
-    let stingers = parseJsonArray_(row[cols.stingers]);
-    stingers.push({ id: stingerId, fired_at: now, started_at: now, paused: false, paused_at: 0, loop: false, stopped: false });
-    const looping = stingers.filter(function (s) { return s.loop; });
-    let oneShot = stingers.filter(function (s) { return !s.loop; });
-    if (oneShot.length > STINGER_HISTORY_LENGTH) oneShot = oneShot.slice(-STINGER_HISTORY_LENGTH);
-    stingers = looping.concat(oneShot).sort(function (a, b) { return a.fired_at - b.fired_at; });
-    row[cols.stingers] = JSON.stringify(stingers);
-    row[cols.updated_at] = now;
-    firestoreDualPatch_('radio', channel, { stingers: stingers, updated_at: now });
-    sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
-    return ContentService.createTextOutput(JSON.stringify({ status: 'OK', stingers: stingers })).setMimeType(ContentService.MimeType.JSON);
-  });
+  const sheet = getOrCreateRadioSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const cols = headerMap_(headers);
+  const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
+  const row = data[rowIdx];
+  const now = new Date().getTime();
+  let stingers = parseJsonArray_(row[cols.stingers]);
+  stingers.push({ id: stingerId, fired_at: now, started_at: now, paused: false, paused_at: 0, loop: false, stopped: false });
+  const looping = stingers.filter(function (s) { return s.loop; });
+  let oneShot = stingers.filter(function (s) { return !s.loop; });
+  if (oneShot.length > STINGER_HISTORY_LENGTH) oneShot = oneShot.slice(-STINGER_HISTORY_LENGTH);
+  stingers = looping.concat(oneShot).sort(function (a, b) { return a.fired_at - b.fired_at; });
+  row[cols.stingers] = JSON.stringify(stingers);
+  row[cols.updated_at] = now;
+  firestoreDualPatch_('radio', channel, { stingers: stingers, updated_at: now });
+  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK', stingers: stingers })).setMimeType(ContentService.MimeType.JSON);
 }
 
 function pauseStinger_(channel, firedAt) {
@@ -4994,41 +4624,37 @@ function seekNowPlaying_(channel, positionMs) {
   }
   CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
 
-  // Locked -- see setNowPlaying()'s own comment on why every Radio/
-  // ambient/stinger read-modify-write in this section needs this.
-  return withScriptLock(function () {
-    const sheet = getOrCreateRadioSheet();
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0];
-    const cols = headerMap_(headers);
-    const chCol = cols.channel;
-    const startedCol = cols.started_at;
-    const pausedCol = cols.paused;
-    const pausedAtCol = cols.paused_at;
-    const updatedCol = cols.updated_at;
-    const now = new Date().getTime();
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
-        const row = data[i];
-        const wasPaused = pausedCol !== undefined && asBoolean_(row[pausedCol]);
-        const newStarted = now - positionMs;
-        row[startedCol] = newStarted;
-        // While paused, elapsed is (paused_at - started_at) rather than
-        // (now - started_at) -- stamping paused_at fresh too makes the
-        // seek take effect immediately for a paused track instead of only
-        // becoming visible once the Handler later hits Resume.
-        if (wasPaused && pausedAtCol !== undefined) row[pausedAtCol] = now;
-        if (updatedCol !== undefined) row[updatedCol] = now;
-        const patch = { started_at: newStarted, updated_at: now };
-        if (wasPaused) patch.paused_at = now;
-        firestoreDualPatch_('radio', channel, patch);
-        sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
-        return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
-      }
+  const sheet = getOrCreateRadioSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const cols = headerMap_(headers);
+  const chCol = cols.channel;
+  const startedCol = cols.started_at;
+  const pausedCol = cols.paused;
+  const pausedAtCol = cols.paused_at;
+  const updatedCol = cols.updated_at;
+  const now = new Date().getTime();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
+      const row = data[i];
+      const wasPaused = pausedCol !== undefined && asBoolean_(row[pausedCol]);
+      const newStarted = now - positionMs;
+      row[startedCol] = newStarted;
+      // While paused, elapsed is (paused_at - started_at) rather than
+      // (now - started_at) -- stamping paused_at fresh too makes the
+      // seek take effect immediately for a paused track instead of only
+      // becoming visible once the Handler later hits Resume.
+      if (wasPaused && pausedAtCol !== undefined) row[pausedAtCol] = now;
+      if (updatedCol !== undefined) row[updatedCol] = now;
+      const patch = { started_at: newStarted, updated_at: now };
+      if (wasPaused) patch.paused_at = now;
+      firestoreDualPatch_('radio', channel, patch);
+      sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
+      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'no track for that channel' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  });
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'no track for that channel' }))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 // One-time migration -- run this once by hand from the Apps Script
@@ -5332,29 +4958,18 @@ function generateAppearancePrompt(data) {
     const isOutfit = data.mode === 'outfit';
     const isSurveillance = data.mode === 'surveillance';
 
-    // Any of these fields can genuinely be missing -- a fresh import,
-    // or an Agent who hasn't filled in every Cover Identity field yet
-    // (this project's own history documents exactly this case: ~13
-    // physical-appearance fields never carrying over on import). Every
-    // OTHER piece here is built so a missing value drops out cleanly via
-    // filter(Boolean) on the outer array, but 'Build: ' + char.build and
-    // the eye descriptor below used to concatenate the raw (possibly
-    // undefined) value BEFORE that filter ever saw it -- string
-    // concatenation with undefined produces the literal, non-empty
-    // string "undefined", which survives filter(Boolean) and got sent
-    // to the model verbatim ("Build: undefined", "Face: ...,
-    // undefined undefined eyes, ...").
-    const eyeDesc = [char.eye_color, char.eye_shape].filter(Boolean).join(' ');
     const baseDesc = [
       char.age_range, char.sex, char.nationality,
-      char.build ? 'Build: ' + char.build : '',
-      'Face: ' + [char.face_shape, eyeDesc ? eyeDesc + ' eyes' : '', char.nose, char.lips, char.skin].filter(Boolean).join(', '),
+      'Build: ' + char.build,
+      'Face: ' + [char.face_shape, char.eye_color + ' ' + char.eye_shape + ' eyes', char.nose, char.lips, char.skin].filter(Boolean).join(', '),
       'Hair: ' + [char.hair_color, char.hair_style, char.hair_texture].filter(Boolean).join(', '),
       char.facial_hair,
       char.face_scars ? 'Scars: ' + char.face_scars : '',
       char.body_markers ? 'Body markers: ' + char.body_markers : '',
       char.posture ? 'Posture: ' + char.posture : ''
     ].filter(Boolean).join('. ');
+
+    const outfitDesc = isBase ? [char.jacket, char.shirt, char.trousers, char.footwear, char.accessories, char.jewelry].filter(Boolean).join(', ') : '';
 
     // What's actually visible from the chest up in a Mode 0 headshot --
     // the character's own jacket/shirt (outermost layer first, since a

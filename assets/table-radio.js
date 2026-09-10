@@ -211,67 +211,33 @@
 
   /* ── YouTube IFrame Player API, loaded on demand (only if/when a
      YouTube track actually plays) ── */
-  // Neither loader below had an onerror/timeout at all -- a blocked or
-  // dropped request left `cb` never called and nothing else waiting on
-  // it either: the YouTube/SoundCloud target div/iframe this widget
-  // already painted (see renderEmbed()) stayed empty forever, with no
-  // sound and no visible sign why, indistinguishable from "the Handler
-  // hasn't started a broadcast." Same fix already shipped for
-  // a-cell.html's Evidence block; backported here with a status-line
-  // fallback since neither API loader has its own promise/reject path
-  // to hang off of.
-  function ensureYouTubeApi(cb, onerror) {
+  function ensureYouTubeApi(cb) {
     if (window.YT && window.YT.Player) { cb(); return; }
     ytApiCallbacks.push(cb);
     if (ytApiLoading) return;
     ytApiLoading = true;
-    var done = false;
-    // The real "ready" signal is this global callback, fired by the
-    // script's OWN internal init sometime after it loads -- not the
-    // <script> tag's onload, which only means the tag itself arrived,
-    // not that the API finished setting itself up. The timeout has to
-    // stay armed until this actually fires.
     var prev = window.onYouTubeIframeAPIReady;
     window.onYouTubeIframeAPIReady = function () {
-      if (done) return; done = true; clearTimeout(timer);
       if (typeof prev === 'function') prev();
       var cbs = ytApiCallbacks; ytApiCallbacks = [];
       cbs.forEach(function (fn) { fn(); });
     };
     var s = document.createElement('script');
     s.src = 'https://www.youtube.com/iframe_api';
-    var timer = setTimeout(function () {
-      if (done) return; done = true; ytApiLoading = false;
-      if (onerror) onerror(new Error('Timed out loading the YouTube API (15s) -- check network connection.'));
-    }, 15000);
-    s.onerror = function () {
-      if (done) return; done = true; clearTimeout(timer); ytApiLoading = false;
-      if (onerror) onerror(new Error('Failed to load the YouTube API -- check network connection.'));
-    };
     document.head.appendChild(s);
   }
 
   /* ── SoundCloud Widget API, same on-demand loading ── */
-  function ensureSoundCloudApi(cb, onerror) {
+  function ensureSoundCloudApi(cb) {
     if (window.SC && window.SC.Widget) { cb(); return; }
     scApiCallbacks.push(cb);
     if (scApiLoading) return;
     scApiLoading = true;
     var s = document.createElement('script');
     s.src = 'https://w.soundcloud.com/player/api.js';
-    var done = false;
-    var timer = setTimeout(function () {
-      if (done) return; done = true; scApiLoading = false;
-      if (onerror) onerror(new Error('Timed out loading the SoundCloud API (15s) -- check network connection.'));
-    }, 15000);
     s.onload = function () {
-      if (done) return; done = true; clearTimeout(timer);
       var cbs = scApiCallbacks; scApiCallbacks = [];
       cbs.forEach(function (fn) { fn(); });
-    };
-    s.onerror = function () {
-      if (done) return; done = true; clearTimeout(timer); scApiLoading = false;
-      if (onerror) onerror(new Error('Failed to load the SoundCloud API -- check network connection.'));
     };
     document.head.appendChild(s);
   }
@@ -789,12 +755,6 @@
       lastPaused = false;
       seenStingerFires = null;
       applyAmbientLayers_([]);
-      // A stinger the Handler has explicitly looped (setStingerLoop_)
-      // kept playing in its now-orphaned <audio> element after tuning
-      // into a different channel -- only ambient loops were torn down
-      // here, never stingers, even though both are stopped identically
-      // by passing an empty list.
-      applyStingers_([]);
       renderTuned();
       startPolling();
     });
@@ -873,7 +833,6 @@
         lastPaused = false;
         seenStingerFires = null;
         applyAmbientLayers_([]);
-        applyStingers_([]); // see the Tune In handler's own comment above
         window._dgRadioLast = null;
         document.getElementById('dg-radio-ch-label').textContent = 'CH ' + newCh;
         document.getElementById('dg-radio-track').textContent = 'No signal yet.';
@@ -890,7 +849,6 @@
       window._dgRadioLast = null;
       seenStingerFires = null;
       applyAmbientLayers_([]);
-      applyStingers_([]); // see the Tune In handler's own comment above
       destroyActivePlayers();
       renderCollapsed();
     });
@@ -1036,10 +994,6 @@
             }
           }
         });
-      }, function (err) {
-        console.error('Table Radio: could not load YouTube API', err);
-        var statusEl = document.getElementById('dg-radio-status');
-        if (statusEl) statusEl.textContent = 'Could not load the player -- check network connection.';
       });
     } else if (!isLibraryAudio && isSoundCloud(np.track_url)) {
       currentEmbedKind = 'sc';
@@ -1061,10 +1015,6 @@
         scWidget.bind(window.SC.Widget.Events.PLAY_PROGRESS, function (e) {
           scPosition = e.currentPosition;
         });
-      }, function (err) {
-        console.error('Table Radio: could not load SoundCloud API', err);
-        var statusEl = document.getElementById('dg-radio-status');
-        if (statusEl) statusEl.textContent = 'Could not load the player -- check network connection.';
       });
     } else if (isLibraryAudio || isDirectAudio(np.track_url)) {
       currentEmbedKind = 'audio';
@@ -1149,38 +1099,18 @@
      pattern as the YouTube/SoundCloud APIs above, so pages that never
      tune in never pay for it. ── */
   var firebaseApiLoading = false;
-  var firebaseApiCallbacks = []; // { ok, err } pairs
-  // Neither script tag below had an onerror/timeout -- a blocked or
-  // dropped request left `cb` never called and nothing else waiting on
-  // it either: startPolling()'s onSnapshot listener never attached, and
-  // #dg-radio-status stayed on "Waiting for the Handler…" forever,
-  // indistinguishable from a genuinely quiet channel. Same fix already
-  // shipped for a-cell.html's Evidence block; backported here.
-  function loadFirebaseScriptTag_(src, cb, onerror) {
-    var s = document.createElement('script');
-    s.crossOrigin = 'anonymous';
-    s.src = src;
-    var done = false;
-    var timer = setTimeout(function () {
-      if (done) return; done = true;
-      onerror(new Error('Timed out loading ' + src + ' (15s) -- check network connection.'));
-    }, 15000);
-    s.onload = function () { if (done) return; done = true; clearTimeout(timer); cb(); };
-    s.onerror = function () { if (done) return; done = true; clearTimeout(timer); onerror(new Error('Failed to load ' + src + ' -- check network connection.')); };
-    document.head.appendChild(s);
-  }
-  function ensureFirebaseApi(cb, onerror) {
+  var firebaseApiCallbacks = [];
+  function ensureFirebaseApi(cb) {
     if (window.firebase && window.firebase.apps && window.firebase.apps.length) { cb(); return; }
-    firebaseApiCallbacks.push({ ok: cb, err: onerror || function () {} });
+    firebaseApiCallbacks.push(cb);
     if (firebaseApiLoading) return;
     firebaseApiLoading = true;
-    function fail(err) {
-      firebaseApiLoading = false; // lets a later call actually retry once the network recovers
-      var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-      cbs.forEach(function (pair) { pair.err(err); });
-    }
-    loadFirebaseScriptTag_('https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/firebase-app-compat.js', function () {
-      loadFirebaseScriptTag_('https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/firebase-firestore-compat.js', function () {
+    var appScript = document.createElement('script');
+    appScript.src = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/firebase-app-compat.js';
+    appScript.onload = function () {
+      var fsScript = document.createElement('script');
+      fsScript.src = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/firebase-firestore-compat.js';
+      fsScript.onload = function () {
         if (!window.firebase.apps.length) {
           window.firebase.initializeApp(FIREBASE_CONFIG);
           // Brave (and some ad-blocker extensions) silently blocks
@@ -1194,9 +1124,11 @@
           window.firebase.firestore().settings({ experimentalAutoDetectLongPolling: true });
         }
         var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-        cbs.forEach(function (pair) { pair.ok(); });
-      }, fail);
-    }, fail);
+        cbs.forEach(function (fn) { fn(); });
+      };
+      document.head.appendChild(fsScript);
+    };
+    document.head.appendChild(appScript);
   }
 
   // Given a radio/{channel} Firestore document's data (or null if it
@@ -1274,10 +1206,6 @@
         // own client handles reconnect/retry, no manual re-poll needed.
         console.error('Table Radio listener error:', err);
       });
-    }, function (err) {
-      console.error('Table Radio: could not load Firebase', err);
-      var statusEl = document.getElementById('dg-radio-status');
-      if (statusEl) statusEl.textContent = 'Could not connect -- check network connection.';
     });
   }
   function stopPolling() {

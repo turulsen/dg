@@ -39,15 +39,7 @@
     if (pathname.indexOf('agent-hub.html') !== -1 ||
         pathname.indexOf('dg-agent-portal.html') !== -1 ||
         pathname.indexOf('/stats/') !== -1 ||
-        pathname.indexOf('/notes/') !== -1 ||
-        // Added after these pages already existed and were already
-        // linked from agent-hub.html's own panel actions -- missed at
-        // the time, which cleared BOTH nav buttons (setActive(null))
-        // the moment a player followed one of those links, reading as
-        // the nav losing track of where they were.
-        pathname.indexOf('requisition.html') !== -1 ||
-        pathname.indexOf('rules-reference.html') !== -1 ||
-        pathname.indexOf('the-incursion.html') !== -1) return 'agent-hub';
+        pathname.indexOf('/notes/') !== -1) return 'agent-hub';
     return null;
   }
 
@@ -71,14 +63,11 @@
   nav.addEventListener('click', function (e) {
     var btn = e.target.closest('button[data-target]');
     if (!btn) return;
-    // No loading veil here -- a real report asked for it explicitly:
-    // hub.html's terminal veil makes sense for the very first boot in
-    // from index.html's Clearance screen (there's genuinely nothing to
-    // look at yet), but reappearing for an ordinary in-app tab switch
-    // read as an unwelcome wait for something that used to feel
-    // instant. This plain iframe.src swap is unguarded/native now,
-    // same as any other in-page link the loaded page itself might
-    // fire.
+    // Brings hub.html's own loading veil back for this full page swap
+    // (A-Cell in particular has a real load chain of its own -- password
+    // gate, Firestore listeners, sheet fetch) -- see its definition in
+    // hub.html for why this doesn't fire for every in-page link too.
+    if (window.dgShellShowLoadingVeil) window.dgShellShowLoadingVeil();
     iframe.src = btn.getAttribute('data-target');
   });
 

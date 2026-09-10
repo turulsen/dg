@@ -664,15 +664,8 @@ function matchProfessionKey(profStr) {
 
     let _clearing = false;
 
-    async function clearSave() {
-        // confirm() is silently disabled in an installed (standalone)
-        // iOS PWA -- exactly this app's primary intended deployment --
-        // so this button used to do nothing at all there: confirm()
-        // returns falsy immediately with no dialog shown, so `!confirm()`
-        // was always true and the whole function bailed silently. Use
-        // the real in-page dgConfirm() instead, same fix already applied
-        // elsewhere in this file (generateRandomBio(), startRecruitFlow()).
-        if (!(await dgConfirm('Clear all saved character data? This cannot be undone.'))) return;
+    function clearSave() {
+        if (!confirm('Clear all saved character data? This cannot be undone.')) return;
         _clearing = true;
         localStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem('dg-equipment-loadout');
@@ -726,10 +719,8 @@ function matchProfessionKey(profStr) {
         window.dgCharacterMode?.update?.();
     }
 
-    async function clearSheet() {
-        // Same fix as clearSave() above -- confirm() is a silent no-op
-        // in an installed iOS PWA.
-        if (!(await dgConfirm('Clear the entire sheet? All values will be reset. This cannot be undone.'))) return;
+    function clearSheet() {
+        if (!confirm('Clear the entire sheet? All values will be reset. This cannot be undone.')) return;
         _resetSheetFields();
         showToast('Sheet cleared.');
     }

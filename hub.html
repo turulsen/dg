@@ -170,15 +170,19 @@
     // scripts, initial synchronous render) has actually finished --
     // not a fixed timer, so a slow connection keeps the veil up for as
     // long as it genuinely needs to, and a fast one doesn't wait around
-    // for nothing. This veil only ever shows for THIS initial boot in
-    // from index.html's Clearance screen -- a real report asked for
-    // that specifically: shell-nav.js's own Agent Hub <-> A-Cell tab
-    // switch used to bring it back too, and a link clicked inside the
-    // loaded page (Agent File, Notes, etc.) never did, but reappearing
-    // for an ordinary in-app tab switch read as an unwelcome new wait
-    // for something that used to feel instant, not "makes sense" the
-    // way the very first entry does. armVeil() below is only ever
-    // called from this one boot sequence now.
+    // for nothing. This same handler also catches the load event fired
+    // by shell-nav.js's own Agent Hub <-> A-Cell tab switch (which
+    // reassigns iframe.src, same as this initial load does) -- see
+    // window.dgShellShowLoadingVeil below, which shell-nav.js calls
+    // right before that switch to bring the veil back for it (that
+    // path never re-runs the Cover Identity prompt below -- it's a
+    // once-per-tab-session boot beat, same as index.html's boot splash
+    // and a-cell.html's own gate). A link clicked INSIDE the loaded
+    // page (Agent File, Notes, etc.) also fires this same load event
+    // when it finishes, but nothing brings the veil back up for those
+    // -- deliberate, not an oversight: those are normal in-page
+    // navigations, not a full shell-level page swap, and veiling every
+    // single click would be more annoying than helpful.
     //
     // Hard cap, same reasoning as index.html's own boot splash ("no
     // matter how the animation above paces out, never hold the splash
@@ -231,6 +235,7 @@
       }, 300);
       veilTimeout = setTimeout(disarmVeil, 6000);
     }
+    window.dgShellShowLoadingVeil = armVeil;
     if (veil) {
       iframe.addEventListener('load', disarmVeil);
     }

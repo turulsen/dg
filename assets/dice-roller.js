@@ -238,40 +238,21 @@
        hasn't already; always ensures auth+functions on top, since
        neither of those is something Table Radio needs. ── */
     let firebaseApiLoading = false;
-    let firebaseApiCallbacks = []; // { ok, err } pairs
-    // s.onload with no s.onerror at all meant a script that failed to
-    // load -- blocked, a dropped mobile connection, a flaky CDN response
-    // -- left `cb` never called and nothing else waiting on it either:
-    // roll history/Handler sign-in just hung forever, neither resolving
-    // nor rejecting, with no error surfaced. Same fix already shipped
-    // for a-cell.html's Evidence block (see its own copy of this
-    // comment); backported here.
-    function loadScript(src, cb, onerror) {
+    let firebaseApiCallbacks = [];
+    function loadScript(src, cb) {
         const s = document.createElement('script');
-        s.crossOrigin = 'anonymous';
         s.src = src;
-        let done = false;
-        const timer = setTimeout(() => {
-            if (done) return; done = true;
-            onerror(new Error('Timed out loading ' + src + ' (15s) -- check network connection.'));
-        }, 15000);
-        s.onload = () => { if (done) return; done = true; clearTimeout(timer); cb(); };
-        s.onerror = () => { if (done) return; done = true; clearTimeout(timer); onerror(new Error('Failed to load ' + src + ' -- check network connection.')); };
+        s.onload = cb;
         document.head.appendChild(s);
     }
-    function ensureFirebaseApi(cb, onerror) {
+    function ensureFirebaseApi(cb) {
         const ready = () => window.firebase && window.firebase.firestore && window.firebase.auth && window.firebase.functions;
         if (ready()) { cb(); return; }
-        firebaseApiCallbacks.push({ ok: cb, err: onerror || (() => {}) });
+        firebaseApiCallbacks.push(cb);
         if (firebaseApiLoading) return;
         firebaseApiLoading = true;
         const base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/';
         const needApp = !(window.firebase && window.firebase.firestore);
-        function fail(err) {
-            firebaseApiLoading = false; // lets a later call actually retry once the network recovers
-            const cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-            cbs.forEach(pair => pair.err(err));
-        }
         const afterCore = () => {
             if (!window.firebase.apps.length) {
                 window.firebase.initializeApp(FIREBASE_CONFIG);
@@ -289,12 +270,12 @@
             loadScript(base + 'firebase-auth-compat.js', () => {
                 loadScript(base + 'firebase-functions-compat.js', () => {
                     const cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-                    cbs.forEach(pair => pair.ok());
-                }, fail);
-            }, fail);
+                    cbs.forEach(fn => fn());
+                });
+            });
         };
         if (needApp) {
-            loadScript(base + 'firebase-app-compat.js', () => loadScript(base + 'firebase-firestore-compat.js', afterCore, fail), fail);
+            loadScript(base + 'firebase-app-compat.js', () => loadScript(base + 'firebase-firestore-compat.js', afterCore));
         } else {
             afterCore();
         }
@@ -304,14 +285,13 @@
        uses for the same "which Cell is this Agent in" lookup. ── */
     function jsonpGet(action, params, cb) {
         const cbName = '_dgDiceJsonp_' + action + '_' + Date.now();
-        const s = document.createElement('script');
-        const cleanup = () => { delete window[cbName]; if (s.parentNode) s.parentNode.removeChild(s); };
-        const timer = setTimeout(() => { cleanup(); cb(null); }, 7000);
+        const timer = setTimeout(() => { delete window[cbName]; cb(null); }, 7000);
         window[cbName] = function (res) {
             clearTimeout(timer);
-            cleanup();
+            delete window[cbName];
             cb(res);
         };
+        const s = document.createElement('script');
         let qs = 'action=' + action + '&callback=' + cbName;
         Object.keys(params || {}).forEach(k => { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
         s.src = APPS_SCRIPT_URL + '?' + qs;
@@ -338,65 +318,12 @@
             if (!_e || !_e.panel || !_e.panel.isConnected) return;
             const nowHandler = isHandlerContext();
             if (nowHandler === _lastHandlerMode) return;
-            _lastHandlerMode = nowHandler;
             stopHistoryFeed();
             _rollContext = null;
             _rollContextPromise = null;
             _authPromise = null;
-            // watchAgentCodeChange() below skips its own check entirely
-            // while in handler mode, so its bookkeeping goes stale for
-            // as long as handler mode is active -- if the real Agent
-            // Code changed at any point during that window, leaving
-            // _lastAgentCode behind meant the very next agent-code poll
-            // tick (once handler mode ends) saw a mismatch against that
-            // stale value and immediately redid the reset this rebuild
-            // just did, a redundant resign-in/resubscribe and a visible
-            // history flash. Refreshing it here keeps the two watchers
-            // from fighting.
-            _lastAgentCode = currentAgentCode();
             _e.panel.remove();
             buildPanel();
-            initHistory();
-        }, 1500);
-    }
-
-    // Same staleness problem as the Handler-mode watcher above, for the
-    // *Agent* Code -- and previously reported live as "Roll history
-    // doesn't work" after being fixed once already. resolveRollContext()
-    // resolves and caches once per panel build (see its own comment
-    // below), which was safe when every page load re-ran this script
-    // fresh, but not once the shell (hub.html) hoists a single copy of
-    // this panel for the whole tab's lifetime -- a player can land on
-    // Agent Hub with no Agent Code known yet (mode: 'none', the cached
-    // "Load your Cover Identity..." empty state), then have Cover
-    // Identity or a character-sheet visit set one moments later, with
-    // this already-built panel never finding out. A first attempt at
-    // this fix rebuilt the whole visible panel (buildPanel()) the same
-    // way the Handler-mode watcher above does, and was reverted the same
-    // day after live testing found it left a stuck, duplicate panel plus
-    // a Firestore permission-denied error -- the old listener's query
-    // was still attached to the previous identity's Cell when the
-    // sign-in swapped out from under it mid-stream. This version never
-    // touches the panel DOM at all: the dice buttons/inputs don't depend
-    // on which Agent is active, only the history rows below them do, so
-    // there's nothing to rebuild -- just tear down the old listener
-    // (stopHistoryFeed(), before anything else touches auth) and
-    // re-resolve context + re-attach fresh, same as a real fresh page
-    // load would.
-    let _lastAgentCode = null;
-    function watchAgentCodeChange() {
-        _lastAgentCode = currentAgentCode();
-        setInterval(() => {
-            if (!_e || !_e.panel || !_e.panel.isConnected) return;
-            if (isHandlerContext()) return; // handler mode has its own watcher above
-            const code = currentAgentCode();
-            if (code === _lastAgentCode) return;
-            _lastAgentCode = code;
-            stopHistoryFeed();
-            _rollContext = null;
-            _rollContextPromise = null;
-            _authPromise = null;
-            _authedCode = null;
             initHistory();
         }, 1500);
     }
@@ -515,7 +442,7 @@
                     .then(result => auth.signInWithCustomToken(result.data.token))
                     .then(cred => resolve(cred.user))
                     .catch(err => { _authPromise = null; reject(err); });
-            }, err => { _authPromise = null; reject(err); });
+            });
         });
         return _authPromise;
     }
@@ -527,7 +454,7 @@
                     .then(result => auth.signInWithCustomToken(result.data.token))
                     .then(cred => resolve(cred.user))
                     .catch(reject);
-            }, reject);
+            });
         });
     }
 
@@ -708,7 +635,7 @@
                     }
                 }).catch(attemptSilentHandlerSignIn);
             });
-        }, err => showHistoryError('Could not load Firebase', err));
+        });
     }
     function initHistory() {
         resolveRollContext().then(ctx => {
@@ -1079,20 +1006,10 @@
             // precedent, styled to match the rest of this panel) ──
             '#dr-history-section{border-top:1px solid rgba(128,128,128,.25);padding-top:8px;display:flex;flex-direction:column;gap:5px;}',
             '#dr-history-head{font-size:9px;letter-spacing:.12em;opacity:.5;text-transform:uppercase;text-align:center;}',
-            '#dr-handler-gate-btn{width:100%;padding:6px;font-size:10px;letter-spacing:.06em;background:transparent;',
+            '#dr-handler-gate{width:100%;padding:6px;font-size:10px;letter-spacing:.06em;background:transparent;',
             'border:1px solid rgba(128,128,128,.35);border-radius:4px;color:inherit;font-family:inherit;cursor:pointer;}',
-            '#dr-handler-gate-btn:hover{border-color:var(--dg-widget-accent);}',
-            '#dr-handler-gate-btn:disabled{opacity:.5;cursor:default;}',
-            '#dr-handler-pw-row{display:flex;gap:6px;}',
-            '#dr-handler-pw{flex:1;padding:5px 8px;background:transparent;border:1px solid rgba(128,128,128,.35);',
-            'border-radius:4px;color:inherit;font-family:inherit;font-size:11px;min-width:0;}',
-            '#dr-handler-pw:focus{outline:none;border-color:var(--dg-widget-accent);}',
-            '#dr-handler-pw-go{padding:5px 14px;font-size:11px;letter-spacing:.08em;flex-shrink:0;',
-            'background:transparent;color:var(--dg-widget-accent);border:1px solid var(--dg-widget-accent);border-radius:4px;',
-            'font-family:inherit;cursor:pointer;}',
-            '#dr-handler-pw-go:hover{background:color-mix(in srgb,var(--dg-widget-accent) 12%,transparent);}',
-            '#dr-handler-pw-go:disabled,#dr-handler-pw:disabled{opacity:.5;cursor:default;}',
-            '#dr-handler-pw-err{font-size:9px;color:#ff6d00;text-align:center;min-height:1.2em;}',
+            '#dr-handler-gate:hover{border-color:var(--dg-widget-accent);}',
+            '#dr-handler-gate:disabled{opacity:.5;cursor:default;}',
             '#dr-history-list{display:flex;flex-direction:column;gap:4px;max-height:160px;overflow-y:auto;}',
             '.dr-history-empty{font-size:9px;opacity:.35;text-align:center;padding:4px 0;}',
             '.dr-history-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 6px;font-size:10px;',
@@ -1164,14 +1081,7 @@
   `}
   <div id="dr-history-section">
     <div id="dr-history-head">${handlerMode ? 'LIVE ROLLS -- ALL CELLS' : 'RECENT ROLLS'}</div>
-    ${handlerMode ? `<div id="dr-handler-gate" style="display:none;">
-      <button type="button" id="dr-handler-gate-btn">Show Live Rolls (Handler)</button>
-      <div id="dr-handler-pw-row" style="display:none;">
-        <input type="password" id="dr-handler-pw" placeholder="Handler password" autocomplete="off">
-        <button type="button" id="dr-handler-pw-go">Go</button>
-      </div>
-      <div id="dr-handler-pw-err"></div>
-    </div>` : ''}
+    ${handlerMode ? '<button type="button" id="dr-handler-gate" style="display:none;">Show Live Rolls (Handler)</button>' : ''}
     <div id="dr-history-list"><div class="dr-history-empty">${handlerMode ? '' : 'No rolls yet.'}</div></div>
   </div>
 </div>`;
@@ -1203,11 +1113,6 @@
             faceDivs: panel.querySelectorAll('.dr-die-face'),
             historyList: $('dr-history-list'),
             handlerGate: $('dr-handler-gate'),
-            handlerGateBtn: $('dr-handler-gate-btn'),
-            handlerPwRow: $('dr-handler-pw-row'),
-            handlerPwInput: $('dr-handler-pw'),
-            handlerPwGo: $('dr-handler-pw-go'),
-            handlerPwErr: $('dr-handler-pw-err'),
         };
 
         // Wire events via addEventListener — no global dgDice dependency in markup
@@ -1218,38 +1123,22 @@
             _e.manualEl.addEventListener('keydown', e => { if (e.key === 'Enter') rollManual(); });
         }
         if (_e.handlerGate) {
-            // window.prompt()/window.alert() are both silently disabled
-            // in an installed (standalone) iOS PWA -- exactly how this
-            // app is meant to be used -- so this button used to just do
-            // nothing at all on a Handler's home-screen-installed
-            // device, no dialog, no error, no feedback. Replaced with a
-            // real inline password field + inline error text, the same
-            // fix already applied project-wide to "Load by Code" and the
-            // recruit-flow confirmation (see BUGFIXES.md).
-            const attemptSignIn = () => {
-                const password = _e.handlerPwInput.value;
+            _e.handlerGate.addEventListener('click', () => {
+                const password = window.prompt('Handler password (same as A-Cell):');
                 if (!password) return;
-                _e.handlerPwGo.disabled = true;
-                _e.handlerPwInput.disabled = true;
-                _e.handlerPwErr.textContent = '';
+                _e.handlerGate.disabled = true;
+                _e.handlerGate.textContent = 'Signing in…';
                 signInAsHandler(password).then(() => {
                     _e.handlerGate.style.display = 'none';
                     startHandlerHistoryFeed();
                 }).catch(err => {
-                    _e.handlerPwGo.disabled = false;
-                    _e.handlerPwInput.disabled = false;
+                    _e.handlerGate.disabled = false;
+                    _e.handlerGate.textContent = 'Show Live Rolls (Handler)';
                     console.error('dice-roller: Handler sign-in failed', err);
                     const detail = (err && (err.code || err.message)) || String(err);
-                    _e.handlerPwErr.textContent = 'Wrong password, or Live Rolls is temporarily unreachable (' + detail + ').';
+                    window.alert('Wrong password, or Live Rolls is temporarily unreachable.\n\n(' + detail + ')');
                 });
-            };
-            _e.handlerGateBtn.addEventListener('click', () => {
-                _e.handlerGateBtn.style.display = 'none';
-                _e.handlerPwRow.style.display = '';
-                _e.handlerPwInput.focus();
             });
-            _e.handlerPwGo.addEventListener('click', attemptSignIn);
-            _e.handlerPwInput.addEventListener('keydown', e => { if (e.key === 'Enter') attemptSignIn(); });
         }
 
         // Start collapsed by default
@@ -1380,7 +1269,7 @@
         // OWN floating panel, which a suppressed instance never builds.
         wireSkillInputs();
         if (SUPPRESS_OWN_PANEL) return;
-        buildPanel(); initHistory(); watchHandlerModeChange(); watchAgentCodeChange();
+        buildPanel(); initHistory(); watchHandlerModeChange();
     };
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', dgInitDiceRoller);

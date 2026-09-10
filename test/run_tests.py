@@ -254,12 +254,6 @@ NOTES_FIRESTORE_STUB = """
     q.doc = function (id) {
       return { collection: function (name) { return makeCollectionRef(path + '/' + id + '/' + name); } };
     };
-    // No-op passthrough, same shape as .limit()'s own -- dice-roller.js's
-    // recordRoll() calls this on a rolls subcollection ref to write a
-    // roll into history; nothing here needs to actually persist it, just
-    // not throw "add is not a function" the way an unmocked collection
-    // ref otherwise would once a test actually rolls dice.
-    q.add = function () { return Promise.resolve({ id: 'stub-doc-' + Date.now() }); };
     return q;
   }
 
@@ -1019,20 +1013,8 @@ def test_foundry_import_profession_and_outfit(p):
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     captured = {}
     def capture(route):
-        req = route.request
-        if req.method == "POST":
-            captured["body"] = req.post_data
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        # JSONP-aware fallback for any GET (cloud-sync.js's own background
-        # <script src=...&callback=X> calls) -- see route_apps_script_ok()'s
-        # docstring for why a bare JSON body here throws "Unexpected token
-        # ':'" instead of just being ignored.
-        url = req.url
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
-            return
+        if route.request.method == "POST":
+            captured["body"] = route.request.post_data
         route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", capture)
 
@@ -1086,20 +1068,8 @@ def test_kappablack_toml_import(p):
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     captured = {}
     def capture(route):
-        req = route.request
-        if req.method == "POST":
-            captured["body"] = req.post_data
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        # JSONP-aware fallback for any GET (cloud-sync.js's own background
-        # <script src=...&callback=X> calls) -- see route_apps_script_ok()'s
-        # docstring for why a bare JSON body here throws "Unexpected token
-        # ':'" instead of just being ignored.
-        url = req.url
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
-            return
+        if route.request.method == "POST":
+            captured["body"] = route.request.post_data
         route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", capture)
 
@@ -1249,17 +1219,6 @@ def test_kappablack_toml_import_triggers_cloud_save(p):
                 posts.append(json.loads(req.post_data or "{}"))
             except Exception:
                 pass
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        # JSONP-aware fallback for any GET (cloud-sync.js's own background
-        # <script src=...&callback=X> calls) -- see route_apps_script_ok()'s
-        # docstring for why a bare JSON body here throws "Unexpected token
-        # ':'" instead of just being ignored.
-        url = req.url
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
-            return
         route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", capture)
 
@@ -1538,14 +1497,6 @@ def test_cloud_save(p):
                 body = f'{cb}({json.dumps({"status": "NOT_FOUND"})})'
             route.fulfill(status=200, content_type="application/javascript", body=body)
             return
-        # Any other GET with a callback= (e.g. a background lookup this
-        # test doesn't otherwise care about) still needs the JSONP-aware
-        # shape -- see route_apps_script_ok()'s docstring for why a bare
-        # JSON body loaded as a <script> tag throws "Unexpected token ':'".
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
-            return
         route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", route_apps_script)
 
@@ -1641,20 +1592,8 @@ def test_agent_file_export(p):
 
     captured = {}
     def capture(route):
-        req = route.request
-        if req.method == "POST":
-            captured["body"] = req.post_data
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        # JSONP-aware fallback for any GET (cloud-sync.js's own background
-        # <script src=...&callback=X> calls) -- see route_apps_script_ok()'s
-        # docstring for why a bare JSON body here throws "Unexpected token
-        # ':'" instead of just being ignored.
-        url = req.url
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
-            return
+        if route.request.method == "POST":
+            captured["body"] = route.request.post_data
         route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", capture)
 
@@ -1743,20 +1682,8 @@ def test_random_bio_cloud_code_race(p):
 
     captured = {}
     def capture(route):
-        req = route.request
-        if req.method == "POST":
-            captured["body"] = req.post_data
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        # JSONP-aware fallback for any GET (cloud-sync.js's own background
-        # <script src=...&callback=X> calls) -- see route_apps_script_ok()'s
-        # docstring for why a bare JSON body here throws "Unexpected token
-        # ':'" instead of just being ignored.
-        url = req.url
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
-            return
+        if route.request.method == "POST":
+            captured["body"] = route.request.post_data
         route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", capture)
 
@@ -1871,7 +1798,7 @@ def test_cover_ids_tab(p):
 
 def test_hub_boot_splash(p):
     """index.html's boot splash: black screen, green CRT-terminal text
-    (waiting_for_clearance / delta_green / access_granted), then a fading
+    (waiting_for_clearance / delta_green / acces_granted), then a fading
     Mars Technologies seal, revealing the clearance chooser underneath --
     runs ~8s total, capped at ~8.6s so it can never meaningfully overrun
     that. Session-gated via sessionStorage, not localStorage, so it plays once
@@ -1892,7 +1819,7 @@ def test_hub_boot_splash(p):
     record("hub", "boot splash starts typing the clearance terminal sequence",
            term_text.startswith(">"), repr(term_text))
 
-    # Splash types "waiting_for_clearance:", "delta_green", "access_granted"
+    # Splash types "waiting_for_clearance:", "delta_green", "acces_granted"
     # then fades in the Mars Technologies seal before fading out --
     # generously bounded wait, then assert it actually finished by the
     # ~8.6s hard cap this page enforces (never truly hangs past it).
@@ -2170,93 +2097,6 @@ def test_hub_cover_identity_veil(p):
 
     record("hub", "no JS exceptions", len(errs_all) == 0, "; ".join(errs_all))
     return errs_all
-
-def test_dice_roller_history_follows_agent_code_change(p):
-    """Real player report: "Roll history doesn't work." Root cause: the
-    app shell (hub.html) hoists ONE copy of the Dice Roller panel for the
-    whole tab's lifetime, but resolveRollContext() (assets/dice-roller.js)
-    only ever resolves and caches its {mode, agentCode, cellId} once, on
-    that one panel's build -- exactly the same staleness shape as the
-    Handler-mode watcher already guards against, but for the Agent Code
-    itself. A player who lands on Agent Hub before any Agent Code is
-    known on this device (mode: 'none', the "Load your Cover Identity..."
-    placeholder) then loads their character sheet elsewhere in the shell
-    -- which sets dg_stats_cloud_code -- never had that already-built
-    panel find out: history stayed stuck on the stale/absent identity for
-    the rest of the tab's life, looking exactly like "doesn't work."
-
-    This was fixed once before and reverted the same day (see
-    BUGFIXES.md, "Dice Roller identity/roll-history going stale inside
-    the shell") after the first attempt rebuilt the whole visible panel
-    on every change and caused a stuck duplicate panel plus a Firestore
-    permission-denied error. This test proves the new, narrower fix
-    (watchAgentCodeChange() in dice-roller.js, which only resets the
-    roll context + history listener, never the panel DOM) actually
-    detects a same-tab identity change and reattaches -- without
-    reproducing either of those old regressions."""
-    fake_agents = []
-
-    def fake_apps_script(route):
-        url = route.request.url
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            route.fulfill(status=200, content_type="application/javascript",
-                           body=f'{cb}({json.dumps({"status": "OK", "agents": fake_agents, "cells": []})})')
-            return
-        route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-
-    page = p.new_page()
-    page.set_default_timeout(10000)
-    errs = collect_errors(page)
-    install_notes_firestore_stub(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", fake_apps_script)
-    # Skip the Cover Identity veil prompt entirely -- this test is about
-    # the Dice Roller's own Agent Code tracking, not the veil, and a
-    # remembered identity boots straight through (see the veil test above).
-    page.add_init_script("try { localStorage.setItem('dg_cover_identity', 'Gergo'); } catch (e) {}")
-    page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(500)
-
-    record("dice-history", "the hoisted shell panel exists exactly once",
-           page.locator("#dr-panel").count() == 1, "")
-    record("dice-history", "with no Agent Code known yet, history shows the 'load your Cover Identity' placeholder",
-           "Cover Identity" in page.inner_text("#dr-history-list"), page.inner_text("#dr-history-list"))
-    record("dice-history", "no dice_rolls listener is attached yet (mode: none)",
-           page.evaluate("() => (window.__dgFirestoreListeners || []).some(l => l.path.indexOf('dice_rolls') !== -1)") == False, "")
-
-    # Simulate what a character-sheet page loaded elsewhere in the same
-    # shell/tab actually does: set the Cloud Save code in localStorage,
-    # with no reload of this already-built panel.
-    page.evaluate("() => localStorage.setItem('dg_stats_cloud_code', 'AGENT1')")
-
-    wait_for_condition(
-        lambda: page.evaluate(
-            "() => (window.__dgFirestoreListeners || []).some(l => l.path === 'dice_rolls/solo:AGENT1/rolls')"),
-        timeout_ms=4000)
-    record("dice-history", "the panel notices the new Agent Code and attaches a fresh dice_rolls listener for it",
-           page.evaluate(
-               "() => (window.__dgFirestoreListeners || []).some(l => l.path === 'dice_rolls/solo:AGENT1/rolls')"), "")
-    record("dice-history", "the panel is still exactly the same single node -- no duplicate panel from the switch",
-           page.locator("#dr-panel").count() == 1, "")
-
-    push_firestore_snapshot(page, "dice_rolls/solo:AGENT1/rolls", [], [
-        {"id": "roll1", "agent_code": "AGENT1", "agent_name": "Test Agent",
-         "roll_type": "percent", "label": "Search", "value": 42, "target": 60,
-         "tier": "success", "created_at": 1700000000000},
-    ])
-    page.wait_for_timeout(150)
-    record("dice-history", "a pushed roll actually renders in the history list",
-           page.locator("#dr-history-list .dr-history-row").count() == 1, page.inner_text("#dr-history-list"))
-    record("dice-history", "the rendered row shows the roll's own summary text",
-           "Search" in page.inner_text("#dr-history-list") and "42" in page.inner_text("#dr-history-list"),
-           page.inner_text("#dr-history-list"))
-
-    record("dice-history", "no JS exceptions (in particular no Firestore permission-denied from the identity switch)",
-           len(errs) == 0, "; ".join(errs))
-    page.close()
-    return errs
 
 def test_agent_hub(p):
     """agent-hub.html (the Agent clearance branch): a folder look shared
@@ -5860,14 +5700,6 @@ def test_page_back_link_visible_standalone(p):
         cb = url.split("callback=")[1].split("&")[0]
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
     page.route("**/script.google.com/**", fake_apps_script)
-    # a-cell.html's own Evidence listener starts unconditionally on load
-    # (Phase 5) -- with the default Firestore stub making
-    # ensureFirebaseApi() resolve immediately (see browser.new_page's own
-    # comment), sign-in reaches its real "No A-Cell session" rejection
-    # synchronously. This test isn't about Handler auth at all, so
-    # seeding a password (same as other tests touching a-cell.html) for
-    # a clean sign-in is the least surprising simulated state.
-    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
 
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     record("shell", "Agent Hub's back-link is visible on a standalone visit",
@@ -6179,13 +6011,6 @@ def test_stats_load_by_code_query_param(p):
                           "csStats": {"STR": 14, "CON": 12, "DEX": 10, "INT": 16, "POW": 13, "CHA": 11}}
             body = f'{cb}({json.dumps({"status": "OK", "agent_code": "OWEN-CS12", "character_json": json.dumps(char_state)})})'
             route.fulfill(status=200, content_type="application/javascript", body=body)
-        elif "callback=" in url:
-            # JSONP-aware fallback for any other GET (cloud-sync.js's own
-            # background <script src=...&callback=X> calls) -- see
-            # route_apps_script_ok()'s docstring for why a bare JSON body
-            # here throws "Unexpected token ':'" instead of being ignored.
-            cb = url.split("callback=")[1].split("&")[0]
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
         else:
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", fake_apps_script)
@@ -7891,16 +7716,6 @@ def test_noindex(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    # a-cell.html's own Evidence listener starts unconditionally on load
-    # (Phase 5), regardless of anything this test is actually proving --
-    # with the default Firestore stub now making ensureFirebaseApi()
-    # resolve immediately (see browser.new_page's own comment), sign-in
-    # reaches its real "No A-Cell session" rejection synchronously rather
-    # than never getting that far. This test isn't about Handler auth at
-    # all, so seeding a password (same as other shell tests touching
-    # a-cell.html) for a clean sign-in is the least surprising simulated
-    # state.
-    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
     # JSONP-aware, not a plain JSON body -- these pages request Apps
     # Script data via <script src=...&callback=NAME>, so the response has
     # to come back as NAME({...}) or the browser trying to execute a bare
@@ -9475,31 +9290,6 @@ def main():
         def _new_page_blocking_live_backend(*a, **kw):
             page = _real_new_page(*a, **kw)
             page.route("**/script.google.com/**", lambda route: route.abort())
-            # Same reasoning as the script.google.com abort above, found
-            # the same way: dice-roller.js/table-radio.js/notes.js/
-            # agent-hub.html all eagerly call ensureFirebaseApi() on
-            # ordinary page load now that its script-tag loader actually
-            # has an onerror/timeout (a real fix -- see BUGFIXES.md,
-            # "Dice Roller roll history 'doesn't work'" and neighboring
-            # entries) -- previously a blocked gstatic.com request just
-            # hung forever with zero console output, which is why dozens
-            # of tests with no Firebase mock of their own never noticed
-            # they were touching a page that includes these widgets at
-            # all. Now the same blocked request correctly logs a
-            # console.error, which is exactly the fix working as
-            # intended for a real user -- but it fails every one of
-            # those unrelated tests' generic "no console errors" check,
-            # the same way the live gstatic.com/Firestore-listener gap
-            # already forced installing NOTES_FIRESTORE_STUB into more
-            # and more individual tests over time. Installing it here by
-            # default, once, means any of these widgets' own
-            # ensureFirebaseApi() sees `window.firebase` already
-            # "ready" and never attempts real network at all -- a test
-            # that wants specific Firestore behavior still calls
-            # install_notes_firestore_stub(page) itself afterward,
-            # which simply re-declares the identical stub (harmless),
-            # same override precedence as the route above.
-            page.add_init_script(NOTES_FIRESTORE_STUB)
             return page
         browser.new_page = _new_page_blocking_live_backend
 
@@ -9553,8 +9343,6 @@ def main():
         safe(test_hub_clearance_lands_in_shell, browser, area="hub")
 
         safe(test_hub_cover_identity_veil, browser, area="hub")
-
-        safe(test_dice_roller_history_follows_agent_code_change, browser, area="dice-history")
 
         safe(test_agent_hub, browser, area="hub")
 

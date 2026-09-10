@@ -104,41 +104,20 @@
   // functions needed beyond exchangeAgentToken's own httpsCallable,
   // which functions-compat provides).
   let firebaseApiLoading = false;
-  let firebaseApiCallbacks = []; // { ok, err } pairs
-  // s.onload with no s.onerror at all meant a script that failed to load
-  // -- blocked, a dropped mobile connection, a flaky CDN response --
-  // left `cb` never called and nothing else waiting on it either: the
-  // whole ensureFirebaseApi() chain (and therefore
-  // ensureAgentSignedIn()'s promise) just hung forever, neither
-  // resolved nor rejected -- Notes/Shared just silently never loaded
-  // with no error and no way to recover short of a full reload. Same
-  // fix already shipped for a-cell.html's Evidence block; backported
-  // here.
-  function loadFirebaseScript_(src, cb, onerror) {
+  let firebaseApiCallbacks = [];
+  function loadFirebaseScript_(src, cb) {
     const s = document.createElement('script');
-    s.crossOrigin = 'anonymous';
     s.src = src;
-    let done = false;
-    const timer = setTimeout(() => {
-      if (done) return; done = true;
-      onerror(new Error('Timed out loading ' + src + ' (15s) -- check network connection.'));
-    }, 15000);
-    s.onload = () => { if (done) return; done = true; clearTimeout(timer); cb(); };
-    s.onerror = () => { if (done) return; done = true; clearTimeout(timer); onerror(new Error('Failed to load ' + src + ' -- check network connection.')); };
+    s.onload = cb;
     document.head.appendChild(s);
   }
-  function ensureFirebaseApi(cb, onerror) {
+  function ensureFirebaseApi(cb) {
     const ready = () => window.firebase && window.firebase.firestore && window.firebase.auth && window.firebase.functions;
     if (ready()) { cb(); return; }
-    firebaseApiCallbacks.push({ ok: cb, err: onerror || (() => {}) });
+    firebaseApiCallbacks.push(cb);
     if (firebaseApiLoading) return;
     firebaseApiLoading = true;
     const base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/';
-    function fail(err) {
-      firebaseApiLoading = false; // lets a later call actually retry once the network recovers
-      const cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-      cbs.forEach(pair => pair.err(err));
-    }
     loadFirebaseScript_(base + 'firebase-app-compat.js', () => {
       loadFirebaseScript_(base + 'firebase-firestore-compat.js', () => {
         if (!window.firebase.apps.length) {
@@ -156,11 +135,11 @@
         loadFirebaseScript_(base + 'firebase-auth-compat.js', () => {
           loadFirebaseScript_(base + 'firebase-functions-compat.js', () => {
             const cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-            cbs.forEach(pair => pair.ok());
-          }, fail);
-        }, fail);
-      }, fail);
-    }, fail);
+            cbs.forEach(fn => fn());
+          });
+        });
+      });
+    });
   }
   // Mints a Firebase sign-in from just the Agent Code (exchangeAgentToken
   // -- no real per-Agent secret, see that function's own comment) --
@@ -189,7 +168,7 @@
           .then(result => auth.signInWithCustomToken(result.data.token))
           .then(cred => resolve(cred.user))
           .catch(err => { _authPromise = null; reject(err); });
-      }, err => { _authPromise = null; reject(err); });
+      });
     });
     return _authPromise;
   }
@@ -271,28 +250,21 @@
     }
   }
 
-  // Used to track its one script tag by a single shared DOM id
-  // ('_dg_notes_jsonp_script'), removing whatever was there before
-  // appending a new one -- fine for one call at a time, but every one
-  // of this file's own poll ticks (pollTick_() fires fetchIdentities()
-  // and fetchEvidenceSeen() back to back; init() fires fetchOperations()
-  // right after) makes 2-3 of these calls in the same tick. Each new
-  // call yanked out the PREVIOUS action's still-pending script before it
-  // could ever execute, silently starving it until its own 20s timeout
-  // resolved null -- Operation names and author ink colors routinely
-  // failed to load on the first attempt, repeating on every poll.
-  // Tracking each call's own script element by closure instead of a
-  // shared id lets concurrent calls coexist.
+  // Same "remove the previous cycle's leftover script tag, then inject a
+  // fresh one" JSONP convention used by table-radio.js's polling and
+  // agent-hub.html's jsonpGet().
   function jsonpGet(action, params, cb) {
     const cbName = '_dgNotes_' + action + '_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
-    const s = document.createElement('script');
-    const cleanup = () => { delete window[cbName]; if (s.parentNode) s.parentNode.removeChild(s); };
-    const timer = setTimeout(() => { cleanup(); cb(null); }, 20000);
+    const prevScript = document.getElementById('_dg_notes_jsonp_script');
+    if (prevScript) prevScript.remove();
+    const timer = setTimeout(() => { delete window[cbName]; cb(null); }, 20000);
     window[cbName] = function (res) {
       clearTimeout(timer);
-      cleanup();
+      delete window[cbName];
       cb(res);
     };
+    const s = document.createElement('script');
+    s.id = '_dg_notes_jsonp_script';
     let qs = 'action=' + action + '&callback=' + cbName;
     Object.keys(params || {}).forEach(k => { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
     s.src = APPS_SCRIPT_URL + '?' + qs;
@@ -913,21 +885,8 @@
         '<button type="button" class="dg-notes-tab' + (activeCode === agentCode ? ' active' : '') + '" data-tab="' + escapeHtml(agentCode) + '"' + myInkStyle + '>' + escapeHtml(memberLabel(agentCode)) + '</button>';
 
       const isOwnTab = activeCode === agentCode;
-      // mountEditor() below constructs the live editor immediately, with
-      // whatever's in notesByCode[agentCode] right now -- empty, on the
-      // very first render, since the Firestore listener hasn't delivered
-      // its first snapshot yet even for an Agent with real saved notes.
-      // Editor.js's own "Start writing…" placeholder then looks
-      // identical to a genuinely empty, first-time Agent -- a real
-      // report: the page reads as stuck/blank with no sign anything is
-      // still coming. This small line disappears once the first
-      // snapshot actually lands (ownDataLoaded flips true -- see
-      // startNotesListeners()) whether or not it turns out there was
-      // anything to load, same as any other "waiting on first data"
-      // state elsewhere in this app.
       const bodyHtml = isOwnTab
-        ? '<div id="dg-notes-editor-mount"></div>' +
-          (ownDataLoaded ? '' : '<div class="dg-notes-loading" id="dg-notes-loading">Loading notes…</div>')
+        ? '<div id="dg-notes-editor-mount"></div>'
         : '<div class="dg-notes-readonly-feed" id="dg-notes-readonly-feed"></div>';
       const circulateBtnHtml = isOwnTab
         ? '<button type="button" class="dg-notes-circulate-btn" disabled>' +
@@ -1634,24 +1593,8 @@
       if (activeCode !== agentCode) refreshReadOnlyFeed();
     }
 
-    // Updates or clears the "Loading notes…" line (see render()'s own
-    // comment on why it exists) -- text=null removes it outright (the
-    // real content has arrived), any other text swaps it in place so a
-    // genuine failure or a slow connection doesn't just leave "Loading
-    // notes…" sitting there forever with no further sign of life, the
-    // same "never hang with zero feedback" rule the rest of this app's
-    // loading states already follow.
-    function setNotesLoadingIndicator_(text) {
-      const el = container.querySelector('#dg-notes-loading');
-      if (!el) return;
-      if (text === null) { el.remove(); return; }
-      el.textContent = text;
-    }
     function startNotesListeners() {
       if (!cellId) return;
-      const loadingTimeout = setTimeout(() => {
-        if (!ownDataLoaded) setNotesLoadingIndicator_('Still loading notes… this is taking longer than usual.');
-      }, 10000);
       ensureAgentSignedIn(agentCode).then(() => {
         const col = window.firebase.firestore().collection('cells').doc(cellId).collection('notes');
         _notesUnsubShared = col.where('shared', '==', true).onSnapshot(snap => {
@@ -1666,16 +1609,10 @@
           rebuildNotesAndRender_();
           if (isFirstOwnLoad) {
             ownDataLoaded = true;
-            clearTimeout(loadingTimeout);
-            setNotesLoadingIndicator_(null);
             if (activeCode === agentCode && editorInstance) loadOwnBlocksIntoEditor();
           }
         }, err => console.error('notes: own listener error', err));
-      }).catch(err => {
-        console.error('notes: sign-in failed', err);
-        clearTimeout(loadingTimeout);
-        setNotesLoadingIndicator_('Could not load notes: ' + ((err && (err.code || err.message)) || 'unknown error') + '.');
-      });
+      }).catch(err => console.error('notes: sign-in failed', err));
     }
     function stopNotesListeners() {
       if (_notesUnsubShared) { _notesUnsubShared(); _notesUnsubShared = null; }
