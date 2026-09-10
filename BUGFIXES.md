@@ -2166,3 +2166,96 @@ about; and the stub's `makeCollectionRef` gained a no-op `.add()`
 test actually rolls dice with the stub active. Full suite: 767/773 passing
 after all of the above, the same 6 pre-existing/unrelated "Unexpected
 token ':'" JSONP-mock-gap failures as before this whole pass, nothing new.
+
+**The same scrape, extended to `backend/Code.gs` at the user's explicit
+request, applied as one combined patch rather than piecemeal.** Three
+parallel investigations covering the whole file turned up a real,
+previously-unreported class of bug this project's own locking
+discipline exists specifically to prevent, plus several smaller
+correctness/performance gaps. Since `backend/Code.gs` in this repo is
+only a git-tracked mirror of the live Apps Script deployment (see this
+file's own standing note), none of this took effect until the whole
+file was pasted over the live project's Code.gs and redeployed by hand
+-- see `backend/Code.gs`'s own header comment for the full, itemized
+list of what changed. Highlights:
+
+- `doPost()` fell through into the brief-submission upsert for ANY
+  unrecognized `data.action` (that path never checks `action` at all,
+  since a real brief submission never sends one) -- a stale cached
+  client sending a renamed or retired action could silently write
+  garbage into the Briefs sheet instead of failing loudly. Now fails
+  closed on any unrecognized action.
+- `doGet()` never had `doPost()`'s own top-level try/catch -- every
+  JSONP read was one Sheets-API hiccup away from Apps Script returning
+  its own HTML error page, which a `<script src=...&callback=X>` tag
+  can't execute, silently breaking that widget with no error visible
+  anywhere. Now wrapped the same way.
+- `doLookup()`/`updateAgentField()` (the single most-used
+  unauthenticated read, and the write path behind every HP/SAN/medical-
+  log/AAR update -- likely the highest-frequency write in the whole
+  app during live play) still pulled every Agent's entire ~60-column
+  row across the wire just to find or touch one, the exact bug already
+  found and fixed for the Characters sheet's own doLookupCharacter()/
+  updateCharacterField() but never carried over here. Now do the same
+  targeted single-column scan first.
+- `deleteCell()` never recomputed affected Evidence `visible_to` the
+  way `updateCellMembers()` already does on a membership edit -- a
+  deleted Cell's former members could keep seeing its Evidence in
+  Firestore forever, with no code path left to ever correct it short
+  of a manual backfill. Fixed to match.
+- `createOperation()`/`updateOperation()` had no `requireColumns_()`
+  guard and wrote positionally -- a direct recurrence of the exact bug
+  shape that once made the entire Evidence Locker fail closed for its
+  whole deploy lifetime (see "Fixed Evidence unable to create/update AT
+  ALL" above), just on a sibling sheet that fix never reached.
+- No Radio/ambient-layer/stinger read-modify-write in the whole
+  Soundboard section was locked -- every Handler action (pause, resume,
+  volume, ambient toggle, stinger fire/pause/resume/seek/loop/stop, main
+  track seek) read a channel's whole row, mutated one field in a local
+  copy, and wrote the whole row back with no `withScriptLock()`, the
+  exact class of bug this project's own locking discipline exists to
+  prevent elsewhere in this file. Two near-simultaneous Handler actions
+  on the same channel (pausing the track while firing a stinger, two
+  rapid stinger presses) could silently clobber each other with no
+  error. All nine functions backing these actions now locked.
+- `generateAppearancePrompt()` could send the literal string
+  "undefined" to the AI portrait model (`"Build: undefined"`,
+  `"...undefined undefined eyes..."`) when an Agent was missing
+  build/eye_color/eye_shape -- exactly the "fresh import, ~13
+  appearance fields never carried over" case this project has hit
+  before (see "Agent File silently bounced to Profiling..." above) --
+  because those two fields concatenated the raw value before the
+  surrounding `filter(Boolean)` ever saw it, unlike every other field
+  built the safer way. Fixed to drop out cleanly instead.
+- Smaller fixes in the same pass: `seenEvidenceIdsFor_()` gained the
+  same short-TTL per-Agent cache its siblings already needed for the
+  identical "Evidence takes a while to load" reason; `createEvidence()`
+  now guards against a duplicate row on a retried write with a
+  client-supplied id; `updateEvidence()` no longer treats an omitted
+  photo field the same as an explicit clear; `listTracks()` now falls
+  back to a track's last-known-good URL instead of going silently dark
+  if the Drive API key is ever unset; `saveHandoutNote()`'s upsert is
+  now locked like every sibling in this file; `getOrCreateRadioSheet()`'s
+  migration-check cache key is now versioned, matching
+  `ensureBriefsColumns()`'s own precedent; `playlist_json` joined that
+  same sheet's self-healing column list instead of needing a separate,
+  easy-to-forget manual step; a small dead variable in
+  `generateAppearancePrompt()` was removed.
+
+Deliberately not done in this pass, and why: collapsing `doPost()`'s
+~40 near-identical `if (action===X){authCheck; return fn()}` blocks
+into a dispatch table, and converting the many response sites that
+still hand-build `ContentService` output instead of using the existing
+`respond_()`/`safeCallback_()` helpers -- both are real duplication
+with no live bug behind them (flagged as "overengineering," the lowest-
+severity category), but rewriting this file's single most heavily-used
+dispatcher by hand, with no way to execute-test the result before a
+real redeploy, was judged a worse trade than leaving the duplication in
+place. Worth its own dedicated, carefully-tested pass later if still
+wanted. Also deliberately left alone: `update_field`'s `FIELD_MAP`
+allowlist still includes `player_name` -- flagged by one of the three
+investigations as a theoretical risk given `requireAgentToken_()` is a
+documented permanent no-op, but this file's own header comment already
+weighs and explicitly accepts that exact tradeoff project-wide (see
+"Agent-token auth removed" above), so it wasn't treated as a new bug to
+fix unilaterally.
