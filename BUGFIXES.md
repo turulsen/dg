@@ -2163,3 +2163,38 @@ redeploy needed for this fix. Bumped `sw.js`'s `CACHE_NAME` to `v96`
 (five `SHELL_FILES`-listed files changed: `agent-hub.html`,
 `a-cell.html`, `notes/notes.js`, `assets/dice-roller.js`,
 `assets/table-radio.js`).
+
+## A permanently-deleted Agent (Charles Lee) still showed up as a full
+## roster tab in Agent Hub, on a device that had it cached
+
+A real report, found while testing the fix above: Agent Hub's roster
+tab strip showed a complete dossier -- name, cover, era, nationality,
+a "SAVED" date, a working PLAY button -- for an Agent the player
+themselves confirmed had been permanently deleted (not present in the
+live `Characters`/`Delta Green Briefs` sheets, nor in
+`DeletedCharacters`/`DeletedBriefs`, i.e. gone from the backend
+entirely, past the 24h undo window).
+
+Root cause: Agent Hub's roster (`dg_agent_roster` in `localStorage`,
+see `renderRoster()`) is built entirely from local cache, never
+invalidated against the backend on its own. `checkCharacterExists()`
+already existed and correctly detected this Agent had no character
+sheet -- but that check alone can't tell "really deleted" apart from
+"a legitimate new Agent that hasn't built a character sheet yet" (the
+normal, common state for a fresh Recruit), so it only ever relabeled
+the Play button to Recruit and left the stale tab (with all its cached
+bio data) up indefinitely.
+
+Added a second check, `checkAgentFileExists()` (the same bare
+`?code=` lookup the Cover tab's own restore box and `a-cell.html`'s
+`loadPlayPhoto()` already use), run only once `checkCharacterExists()`
+has already come back false. Every real entry in `dg_agent_roster`
+(unlike the pinned "+ New Recruit" tab, a client-only draft with no
+roster entry at all until it's submitted/exported) was put there by
+something that already talked to the backend, so it should have EITHER
+a character sheet or an Agent File, or both -- only when BOTH checks
+come back explicitly false (never on a timeout/error) is this Agent
+confirmed gone from the backend entirely, and `purgeIfFullyDeleted()`
+now removes it from the local roster and drops its tab instead of
+leaving a permanent ghost. Bumped `sw.js`'s `CACHE_NAME` to `v97`
+(`agent-hub.html` changed again).
