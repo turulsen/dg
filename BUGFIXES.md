@@ -2224,3 +2224,38 @@ still-default New Recruit UI in the meantime. Bumped the timeout to
 codebase for a load that's slow but likely to still succeed, rather
 than the old, apparently-too-tight 8s guess. Bumped `sw.js`'s
 `CACHE_NAME` to `v98` (`stats/cloud-sync.js` changed).
+
+## Dice rolls silently failed to save ("Roll not saved:
+## permission-denied") for an Agent who WAS actually in the Cell
+
+A real report on Safari: rolling dice for a real, Cell-assigned Agent
+showed `Roll not saved: permission-denied` and an empty roll history,
+every time.
+
+Root cause: `firestore.rules`' `isCellMember(cellId)` decides Cell
+membership by reading the `cells/{cellId}` document's own
+`member_codes` field directly in **Firestore** -- but `updateCellMembers()`
+in `backend/Code.gs`, the only function that has ever set Cell
+membership (via A-Cell's Sheet tab), only ever wrote that assignment
+to the **Sheet**. It never dual-wrote the `cells/{cellId}` document to
+Firestore at all. That document either didn't exist or reflected
+nobody for every Cell in the campaign, so `isCellMember()` failed for
+every real member of every real Cell, silently, since `dice_rolls`
+first shipped -- the app's Sheets-based `list_cells` (what every page
+actually uses to resolve which Cell an Agent belongs to) was always
+correct, which is exactly why this went unnoticed until a
+Firestore-gated write (a dice roll) actually needed the Firestore copy
+to agree.
+
+Fixed `updateCellMembers()` to dual-write the whole Cell row
+(name/handler/member_codes/channel) to Firestore on every membership
+change, same as every other Sheets write path in this file. Since this
+only takes effect going forward, added a one-shot repair,
+`backfillCellsToFirestore_()`/`runBackfillCellsToFirestoreNow()` (same
+pattern as the existing Evidence backfill), to mirror every *existing*
+Cell's current membership immediately rather than waiting for each
+one to happen to be re-saved through the now-fixed path. Backend
+version bumped to v85 -- **needs a manual redeploy to the live Apps
+Script project, then `runBackfillCellsToFirestoreNow()` run once from
+the Apps Script editor's Run dropdown**, before this actually takes
+effect for any existing Cell.
