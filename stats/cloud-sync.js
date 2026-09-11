@@ -463,7 +463,22 @@
                     : 'total: ' + total.toFixed(1) + 's (no response)';
             };
         }
-        setTimeout(() => { revealGate(); finishBadge(); }, 8000);
+        // A real report, 2026-09-11: the New Recruit box (the exact flash
+        // this whole gate exists to prevent -- see the inline script's own
+        // comment at the top of <body>) still showed for a few seconds
+        // before a real cloud character loaded in. Root cause: 8s is a
+        // "last resort" for a request that never resolves at all, but a
+        // load that's merely slow -- not stuck -- and takes longer than
+        // that (Apps Script cold starts, a large Character JSON payload,
+        // a slow mobile connection; see BUGFIXES.md for other backend/
+        // network slowness found the same day) hits this timeout first,
+        // prematurely revealing the still-default New Recruit UI a few
+        // seconds before the real onApplied/onSettled callback (which
+        // still fires independently and swaps in the real sheet moments
+        // later) ever gets the chance to. Matches the 15s standard used
+        // elsewhere in this codebase for a load that's slow but likely to
+        // still succeed, rather than the old 8s guess.
+        setTimeout(() => { revealGate(); finishBadge(); }, 15000);
 
         loadFromCloud(loadCode, {
             onResponseReceived,

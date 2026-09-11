@@ -2198,3 +2198,29 @@ confirmed gone from the backend entirely, and `purgeIfFullyDeleted()`
 now removes it from the local roster and drops its tab instead of
 leaving a permanent ghost. Bumped `sw.js`'s `CACHE_NAME` to `v97`
 (`agent-hub.html` changed again).
+
+## The New Recruit box flashed for a few seconds before a real cloud
+## character loaded in via Play, on the exact gate built to prevent it
+
+A real report, same testing session: opening Daniela's Agent File via
+Agent Hub's Play button (`stats/index.html?load=DANI-U8BM&live=1`)
+showed the blank "New Recruit" import UI for a few seconds before her
+real character sheet snapped in. This is precisely the flash a `?load=`
+gate (`body.dg-agent-loading`, added in an earlier session -- see the
+inline script at the top of `stats/index.html`'s `<body>` for its own
+extensive comment) already exists specifically to prevent.
+
+Root cause: that gate's own safety timeout -- 8 seconds, meant as a
+last resort for a request that never resolves at all -- was firing on
+loads that were merely slow, not stuck. Apps Script cold starts, a
+large Character JSON payload, or a slow mobile connection (see the
+other backend/network slowness entries logged the same day above) can
+legitimately take longer than 8s without anything being actually
+broken; the real `onApplied`/`onSettled` callback still fires and
+swaps in the correct sheet a moment later regardless, but the safety
+timeout had already prematurely lifted the gate and revealed the
+still-default New Recruit UI in the meantime. Bumped the timeout to
+15s, matching the timeout standard already used elsewhere in this
+codebase for a load that's slow but likely to still succeed, rather
+than the old, apparently-too-tight 8s guess. Bumped `sw.js`'s
+`CACHE_NAME` to `v98` (`stats/cloud-sync.js` changed).
