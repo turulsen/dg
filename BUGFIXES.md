@@ -2400,4 +2400,11 @@ to `v93` in the same commit, per this file's own standing rule.
 **Caveat:** no test environment available here serves from a repo-name
 subpath, so this fix is reasoned from reading `isShellRequest()`
 against README.md's documented Pages URL, not confirmed by reproducing
-the disabled-caching symptom directly against the real site.
+the disabled-caching symptom directly against the real site. One
+independent data point in the fix's favor, found by accident while
+pushing this exact commit: `git push` to this session's `dg-campaign`
+remote came back with "This repository moved. Please use the new
+location: https://github.com/turulsen/dg.git" -- GitHub itself
+confirming the canonical repo name is `dg`, matching README.md and
+this fix's assumption. Full suite: 773/773 passing, zero failures,
+including every `pwa ::` assertion.
