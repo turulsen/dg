@@ -238,44 +238,70 @@
        hasn't already; always ensures auth+functions on top, since
        neither of those is something Table Radio needs. ── */
     let firebaseApiLoading = false;
-    let firebaseApiCallbacks = [];
-    function loadScript(src, cb) {
+    let firebaseApiCallbacks = []; // { ok, err } pairs
+    // s.onload with no s.onerror at all meant a script that failed to
+    // load -- blocked, a dropped mobile connection, a flaky CDN response
+    // -- left this whole chain hung forever, neither resolved nor
+    // rejected: no error, no retry, this widget stuck mid-render with
+    // whatever it had drawn so far. Real live report, 2026-09-11:
+    // repeating cross-origin-obscured "Script error." on a mobile
+    // connection, this exact widget stuck mid-screen. Same fix as
+    // a-cell.html's own loadScriptTag(). crossOrigin is set so a real
+    // future throw from inside this script shows its actual message
+    // instead of the generic one that report saw.
+    function loadScript(src, cb, onerror) {
         const s = document.createElement('script');
+        s.crossOrigin = 'anonymous';
         s.src = src;
-        s.onload = cb;
+        let done = false;
+        const timer = setTimeout(() => {
+            if (done) return; done = true;
+            onerror(new Error('Timed out loading ' + src + ' (15s) -- check network connection.'));
+        }, 15000);
+        s.onload = () => { if (done) return; done = true; clearTimeout(timer); cb(); };
+        s.onerror = () => { if (done) return; done = true; clearTimeout(timer); onerror(new Error('Failed to load ' + src + ' -- check network connection.')); };
         document.head.appendChild(s);
     }
-    function ensureFirebaseApi(cb) {
+    function ensureFirebaseApi(cb, onerror) {
         const ready = () => window.firebase && window.firebase.firestore && window.firebase.auth && window.firebase.functions;
         if (ready()) { cb(); return; }
-        firebaseApiCallbacks.push(cb);
+        firebaseApiCallbacks.push({ ok: cb, err: onerror || (() => {}) });
         if (firebaseApiLoading) return;
         firebaseApiLoading = true;
         const base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/';
         const needApp = !(window.firebase && window.firebase.firestore);
+        function fail(err) {
+            firebaseApiLoading = false; // lets a later call actually retry once the network recovers
+            const cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
+            cbs.forEach(pair => pair.err(err));
+        }
         const afterCore = () => {
             if (!window.firebase.apps.length) {
                 window.firebase.initializeApp(FIREBASE_CONFIG);
-                // Brave (and some ad-blocker extensions) silently
-                // blocks Firestore's default streaming transport
-                // (WebChannel) -- it looks like a long-lived tracking
-                // connection -- which leaves every onSnapshot()
-                // listener permanently stuck with zero data and no
-                // error at all. Falls back to plain HTTP long-polling,
-                // which isn't blocked. See a-cell.html's own copy of
-                // this comment for the full report that traced this
-                // down (worked in Safari, silently empty in Brave).
-                window.firebase.firestore().settings({ experimentalAutoDetectLongPolling: true });
+                // Brave (and some ad-blocker extensions), and some mobile
+                // networks/carriers, silently block or interfere with
+                // Firestore's default streaming transport (WebChannel) --
+                // it looks like a long-lived tracking connection -- which
+                // leaves every onSnapshot() listener permanently stuck
+                // with zero data, and each failed reconnect attempt as an
+                // uncaught exception inside this cross-origin script (the
+                // repeating "Script error." flood the 2026-09-11 live
+                // report showed). Auto-detect means trying the streaming
+                // transport first and only falling back after it fails --
+                // forcing long-polling from the start skips that failing
+                // dance entirely on exactly the networks that need it, at
+                // the cost of slightly higher latency everywhere else.
+                window.firebase.firestore().settings({ experimentalForceLongPolling: true });
             }
             loadScript(base + 'firebase-auth-compat.js', () => {
                 loadScript(base + 'firebase-functions-compat.js', () => {
                     const cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-                    cbs.forEach(fn => fn());
-                });
-            });
+                    cbs.forEach(pair => pair.ok());
+                }, fail);
+            }, fail);
         };
         if (needApp) {
-            loadScript(base + 'firebase-app-compat.js', () => loadScript(base + 'firebase-firestore-compat.js', afterCore));
+            loadScript(base + 'firebase-app-compat.js', () => loadScript(base + 'firebase-firestore-compat.js', afterCore, fail), fail);
         } else {
             afterCore();
         }
@@ -442,7 +468,7 @@
                     .then(result => auth.signInWithCustomToken(result.data.token))
                     .then(cred => resolve(cred.user))
                     .catch(err => { _authPromise = null; reject(err); });
-            });
+            }, err => { _authPromise = null; reject(err); });
         });
         return _authPromise;
     }
@@ -454,7 +480,7 @@
                     .then(result => auth.signInWithCustomToken(result.data.token))
                     .then(cred => resolve(cred.user))
                     .catch(reject);
-            });
+            }, reject);
         });
     }
 
@@ -635,7 +661,7 @@
                     }
                 }).catch(attemptSilentHandlerSignIn);
             });
-        });
+        }, err => showHistoryError('Could not load Firebase', err));
     }
     function initHistory() {
         resolveRollContext().then(ctx => {

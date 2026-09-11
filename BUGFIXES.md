@@ -2094,3 +2094,72 @@ report is caught and dropped, never blocks or breaks the banner
 itself). Full suite re-run against this cutover's actual `main` tip
 (not just the working branch it was authored against): 773/773
 passing, zero failures.
+
+## Root cause of the 2026-09-10 incident (and its 2026-09-11 live
+## reproduction on the rolled-back `main`): unguarded Firebase SDK
+## script loaders + `experimentalAutoDetectLongPolling`
+
+The telemetry above is what finally surfaced this. A live report on
+2026-09-11 -- clearance loads fine, tapping through to Agent Hub
+leaves the Dice Roller widget stuck mid-screen with a black overlay
+behind it, after roughly 90 seconds of nothing -- reproduced on
+`main`, not the still-unmerged incident branch, ruling out that
+branch's 141 commits as the cause once and for all. The banner and
+`ClientErrors` sheet both showed the same repeating, content-free
+`Script error.` (the cross-origin-obscured-exception shape already
+documented above) firing every few seconds until the page was
+reloaded.
+
+Every page that talks to Firebase (`agent-hub.html`, `a-cell.html`
+(two independent loaders -- Evidence and Track Library), `notes.js`,
+`table-radio.js`, `dice-roller.js`) loads
+`firebase-app/firestore/auth/functions(/storage)-compat.js` itself,
+independently, via a hand-rolled `<script>` tag appender. Every one of
+those loaders set `s.onload` but never `s.onerror`, and had no
+timeout. A dropped request, a flaky mobile connection, or a blocked
+CDN response left `s.onload` simply never firing -- not an error, not
+a rejection, just silence -- and every downstream `ensureFirebaseApi()`
+caller sat on an unresolved, unrejected promise or an empty callback
+queue forever. That is exactly "stuck mid-screen, no error, needs a
+reload" with nothing else going on.
+
+Separately, every one of those same pages' Firestore `.settings()`
+call used `experimentalAutoDetectLongPolling: true` -- try the
+WebChannel streaming transport first, only fall back to long-polling
+after it fails. On networks/carriers that silently interfere with
+that transport (already documented above for Brave/ad-blockers, but
+evidently not limited to them), each failed reconnect attempt throws
+from inside the cross-origin `firebase-firestore-compat.js` script,
+which is exactly the repeating `Script error.` flood both the Sept 10
+reports and the Sept 11 ClientErrors rows showed -- auto-detect's own
+failing dance was the thing firing every few seconds, not a one-off
+crash.
+
+Fixed both, identically, in all five loaders:
+
+- Every `<script>`-tag loader (`loadScriptTag`/`loadFirebaseScriptTag`/
+  `loadFirebaseScript_`, one per file, plus `a-cell.html`'s second
+  Track Library copy) now takes an `onerror` callback, sets
+  `s.onerror`, and races a 15s `setTimeout` against both -- a failed
+  or stalled load now surfaces as a real, catchable error instead of
+  permanent silence. `ensureFirebaseApi()` in each file now queues
+  `{ok, err}` pairs instead of bare callbacks, and every caller
+  (`ensureAgentSignedIn`/`ensureAgentSignedInAs`/`signInAsHandler`/
+  `checkExistingHandlerSession`/`startPolling`/both of `a-cell.html`'s
+  `ensureHandlerSignedIn` copies) now wires a real `err` handler that
+  rejects/resets state instead of leaving a promise hanging -- Track
+  Library's own `ensureHandlerSignedIn` had no `err` argument at all
+  wired through before this fix, unlike the Evidence tab's copy right
+  above it in the same file.
+- `experimentalAutoDetectLongPolling: true` -> `experimentalForceLongPolling: true`
+  everywhere it appears (`agent-hub.html`, both `a-cell.html` loaders,
+  `notes.js`, `table-radio.js`, `dice-roller.js`) -- skips the
+  failing-transport-then-fallback dance entirely, at the cost of
+  slightly higher latency on networks that didn't need the fallback in
+  the first place.
+
+Purely client-side; no `backend/Code.gs` changes, so no Apps Script
+redeploy needed for this fix. Bumped `sw.js`'s `CACHE_NAME` to `v96`
+(five `SHELL_FILES`-listed files changed: `agent-hub.html`,
+`a-cell.html`, `notes/notes.js`, `assets/dice-roller.js`,
+`assets/table-radio.js`).

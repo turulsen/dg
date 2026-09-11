@@ -1060,42 +1060,69 @@
     appId: '1:464997490443:web:dad47a347ae7a64a9e4c0e'
   };
   let firebaseApiLoading = false;
-  let firebaseApiCallbacks = [];
-  function loadFirebaseScriptTag(src, cb) {
+  let firebaseApiCallbacks = []; // { ok, err } pairs
+  // s.onload with no s.onerror at all meant a script that failed to load
+  // -- blocked, a dropped mobile connection, a flaky CDN response -- left
+  // this whole chain hung forever, neither resolved nor rejected:
+  // Evidence stuck on whatever it last showed, no error, no retry. Real
+  // live report, 2026-09-11: repeating cross-origin-obscured "Script
+  // error." on a mobile connection, the hoisted Dice Roller stuck
+  // mid-screen and the shell showing black. Same fix as a-cell.html's
+  // own loadScriptTag(). crossOrigin is set so a real future throw from
+  // inside this script shows its actual message instead of the generic
+  // one that report saw.
+  function loadFirebaseScriptTag(src, cb, onerror) {
     const s = document.createElement('script');
+    s.crossOrigin = 'anonymous';
     s.src = src;
-    s.onload = cb;
+    let done = false;
+    const timer = setTimeout(() => {
+      if (done) return; done = true;
+      onerror(new Error('Timed out loading ' + src + ' (15s) -- check network connection.'));
+    }, 15000);
+    s.onload = () => { if (done) return; done = true; clearTimeout(timer); cb(); };
+    s.onerror = () => { if (done) return; done = true; clearTimeout(timer); onerror(new Error('Failed to load ' + src + ' -- check network connection.')); };
     document.head.appendChild(s);
   }
-  function ensureFirebaseApi(cb) {
+  function ensureFirebaseApi(cb, onerror) {
     const ready = () => window.firebase && window.firebase.firestore && window.firebase.auth && window.firebase.functions;
     if (ready()) { cb(); return; }
-    firebaseApiCallbacks.push(cb);
+    firebaseApiCallbacks.push({ ok: cb, err: onerror || (() => {}) });
     if (firebaseApiLoading) return;
     firebaseApiLoading = true;
     const base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/';
+    function fail(err) {
+      firebaseApiLoading = false; // lets a later call actually retry once the network recovers
+      const cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
+      cbs.forEach(pair => pair.err(err));
+    }
     loadFirebaseScriptTag(base + 'firebase-app-compat.js', () => {
       loadFirebaseScriptTag(base + 'firebase-firestore-compat.js', () => {
         if (!window.firebase.apps.length) {
           window.firebase.initializeApp(FIREBASE_CONFIG);
-          // Brave (and some ad-blocker extensions) silently blocks
-          // Firestore's default streaming transport (WebChannel) --
-          // it looks like a long-lived tracking connection -- which
-          // leaves every onSnapshot() listener permanently stuck with
-          // zero data and no error at all. Falls back to plain HTTP
-          // long-polling, which isn't blocked. See a-cell.html's own
-          // copy of this comment for the full report that traced this
-          // down (worked in Safari, silently empty in Brave).
-          window.firebase.firestore().settings({ experimentalAutoDetectLongPolling: true });
+          // Brave (and some ad-blocker extensions), and some mobile
+          // networks/carriers, silently block or interfere with
+          // Firestore's default streaming transport (WebChannel) -- it
+          // looks like a long-lived tracking connection -- which leaves
+          // every onSnapshot() listener permanently stuck with zero
+          // data, and each failed reconnect attempt as an uncaught
+          // exception inside this cross-origin script (the repeating
+          // "Script error." flood the 2026-09-11 live report showed).
+          // Auto-detect means trying the streaming transport first and
+          // only falling back after it fails -- forcing long-polling
+          // from the start skips that failing dance entirely on exactly
+          // the networks that need it, at the cost of slightly higher
+          // latency everywhere else.
+          window.firebase.firestore().settings({ experimentalForceLongPolling: true });
         }
         loadFirebaseScriptTag(base + 'firebase-auth-compat.js', () => {
           loadFirebaseScriptTag(base + 'firebase-functions-compat.js', () => {
             const cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-            cbs.forEach(fn => fn());
-          });
-        });
-      });
-    });
+            cbs.forEach(pair => pair.ok());
+          }, fail);
+        }, fail);
+      }, fail);
+    }, fail);
   }
   // Per-Agent sign-in (exchangeAgentToken -- no real per-Agent secret,
   // see that function's own comment), keyed by code since this page can
@@ -1110,7 +1137,7 @@
           .then(result => window.firebase.auth().signInWithCustomToken(result.data.token))
           .then(cred => resolve(cred.user))
           .catch(err => { delete _authPromisesByCode[code]; reject(err); });
-      });
+      }, err => { delete _authPromisesByCode[code]; reject(err); });
     });
     _authPromisesByCode[code] = p;
     return p;
