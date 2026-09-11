@@ -2031,3 +2031,66 @@ from a real network) and, if confirmed, a fix that keeps the
 onerror/timeout logic (the real, valuable part of that change) while
 dropping the `crossOrigin` attribute if it turns out to be the
 regression.
+
+---
+
+## Investigation tool: page-wide JS-error telemetry, generalized to every page
+
+Not a fix -- a debugging aid added while investigating the 2026-09-10
+production incident (see `CLAUDE.md`'s "Deploy discipline" section for
+that timeline). That incident's post-mortem, and a long follow-up
+investigation across this and several later sessions, ruled out every
+specific hypothesis checked against the code (the `crossOrigin`
+gstatic-CORS theory, backend `Code.gs`'s actual live-deployed content,
+Firestore rules/indexes, every `onSnapshot` listener, a cross-widget
+Firestore `.settings()` race that had genuinely broken `a-cell.html`
+once before but was already fixed pre-incident) without finding the
+actual cause. The one thing every one of those dead ends had in
+common: there was no way to see what a real device actually threw at
+the moment of failure. `a-cell.html` already had exactly this tool --
+a small `window.addEventListener('error'/'unhandledrejection', ...)`
+catcher showing a dismissible on-screen banner with the real message/
+stack, added months earlier during the original Evidence sign-in
+debugging -- but only on that one page, and with nowhere for the
+report to go except that one screen, at that one moment, if someone
+happened to be looking.
+
+Extracted into a shared `assets/js-error-banner.js` and added as the
+first script tag on all 11 pages (previously a-cell.html only), so a
+crash on the clearance/access screens, Dice Roller, or a character
+sheet -- everything the Sept 10 reports actually named -- gets the
+same visibility a-cell.html already had. Also now POSTs a best-effort
+report to a new `log_client_error` backend action (`ClientErrors`
+sheet, 14-day retention) -- a plain `fetch(..., {mode:'no-cors'})`
+with zero Firebase dependency, deliberately, so a failure IN Firebase
+loading itself is still reported instead of being the one class of
+bug most likely to also break the one channel that could report it.
+Self-limits against the exact "same error flooding every couple
+seconds" shape the incident showed: each distinct error/rejection
+(by kind+message+filename+line) stops both re-rendering the banner
+and reporting to the backend after 3 repeats, and every page load caps
+at 25 total backend reports regardless of how many distinct errors
+occur; the backend adds its own per-session_id cap (40/hour) as
+defense in depth. Bumped `sw.js`'s `CACHE_NAME` to `v95` (new
+`SHELL_FILES` entry) -- one further than this branch's own prior work
+(the crossOrigin investigation above never shipped a code change, so
+`main` was still at the Dice Roller iOS fix's `v94`).
+
+Cut over directly to `main` as its own isolated change (cherry-picked,
+not merged) rather than through the stalled 141-commit branch --
+that branch's actual incident cause is still unconfirmed, so nothing
+else from it rides along. `BUGFIXES.md`'s own history reflects that:
+this entry follows straight from `main`'s last one above, with none of
+the working branch's other intervening entries (a test-harness fix and
+a separate `sw.js` URL-prefix bug, neither reviewed or approved for
+`main` yet).
+
+**Not yet redeployed to the live Apps Script backend** -- per this
+file's own standing rule, `backend/Code.gs` is a git-tracked mirror
+only; `log_client_error` won't actually persist anything until this
+file is pasted into the Apps Script editor and redeployed. The
+client-side banner works regardless (degrades gracefully -- a failed
+report is caught and dropped, never blocks or breaks the banner
+itself). Full suite re-run against this cutover's actual `main` tip
+(not just the working branch it was authored against): 773/773
+passing, zero failures.

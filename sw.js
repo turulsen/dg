@@ -31,7 +31,7 @@
    through this whole migration -- not random flakiness, one bad path
    silently breaking the update mechanism itself.
    ══════════════════════════════════════════════ */
-const CACHE_NAME = 'dg-hub-shell-v94';
+const CACHE_NAME = 'dg-hub-shell-v95';
 
 const SHELL_FILES = [
   './',
@@ -50,6 +50,7 @@ const SHELL_FILES = [
   'assets/dice-roller.js',
   'assets/shell-nav.js',
   'assets/sw-update.js',
+  'assets/js-error-banner.js',
   'assets/agent-code.js',
   'assets/mars-tech-seal.png',
   'assets/restricted-stamp.png',
