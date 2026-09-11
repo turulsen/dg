@@ -31,7 +31,7 @@
    through this whole migration -- not random flakiness, one bad path
    silently breaking the update mechanism itself.
    ══════════════════════════════════════════════ */
-const CACHE_NAME = 'dg-hub-shell-v92';
+const CACHE_NAME = 'dg-hub-shell-v93';
 
 const SHELL_FILES = [
   './',
@@ -118,7 +118,19 @@ function isShellRequest(url) {
   // ?code=) that the page's own JS reads client-side -- match on path
   // only so e.g. stats/index.html?load=OWEN-CS12 still hits the cached
   // stats/index.html rather than falling through to the network.
-  const path = url.pathname.replace(/^\/dg-campaign\//, '').replace(/^\//, '');
+  //
+  // The site's own subpath (GitHub Pages project sites serve from
+  // /<repo-name>/, which has been "/dg/" and, before that, other names
+  // as the repo got renamed) used to be hardcoded here as a literal
+  // regex -- correct only until the next rename, silently wrong for
+  // every other place this same sw.js runs (a bare-origin Firebase
+  // preview channel, a local dev server). self.registration.scope is
+  // the one source of truth for that prefix everywhere this worker is
+  // ever registered, so strip that instead of guessing a literal.
+  const scopePath = new URL(self.registration.scope).pathname;
+  let path = url.pathname;
+  if (path.startsWith(scopePath)) path = path.slice(scopePath.length);
+  path = path.replace(/^\//, '');
   return SHELL_FILES.includes(path) || SHELL_FILES.includes(path.split('/').pop());
 }
 

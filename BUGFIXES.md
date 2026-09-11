@@ -2357,3 +2357,47 @@ response as `cb({...})` with `content_type: application/javascript`
 when present), preserving each test's own POST-capture side effects.
 Full suite: 773/773 passing, zero failures -- confirmed clean before
 proceeding with the 141-commit cutover to `main` this same session.
+
+---
+
+## `sw.js`: offline shell caching silently disabled on the real site's actual URL
+
+Found while chasing an unrelated single `Script error.` report on a
+Firebase Hosting preview channel: that channel's own URL has no path
+prefix at all (`https://<project>--<channel>.web.app/...`), so it
+couldn't have exercised this bug either way, but reasoning about *why*
+it couldn't led straight to a real, separate bug in the same file.
+`isShellRequest()` stripped a hardcoded `/^\/dg-campaign\//` prefix off
+every request's pathname before checking it against `SHELL_FILES` --
+but a GitHub Pages project site is served from `/<repo-name>/`, and
+this repo's actual name on GitHub is `dg`, not `dg-campaign` (README.md
+says as much directly: `https://turulsen.github.io/dg/`). The regex
+never matched anything on the real, live URL, so every asset request's
+pathname kept its leading `/dg/` segment, which then also failed the
+exact-match SHELL_FILES check, and the bare-basename fallback only ever
+matches SHELL_FILES entries that are themselves basenames (`index.html`,
+`hub.html`, ...) -- not `assets/`- or `stats/`-prefixed entries like
+`assets/dice-roller.js`. Net effect: every request for a nested shell
+asset silently fell through `isShellRequest()` to `return false`,
+which the fetch handler treats as "let the browser handle it
+natively" -- not a visible error, no console output, just the entire
+stale-while-revalidate offline strategy this file exists to provide
+quietly never applying on the one place it actually needed to. Local
+dev (bare origin, no subpath) and every Firebase preview channel
+happened to make this invisible, since neither serves from a repo-name
+subpath either -- which is exactly why this had never shown up in this
+sandbox's own test suite (`test_pwa_offline` runs against
+`DG_TEST_BASE`, always a bare origin) despite being wrong on production
+this whole time.
+
+Fixed by deriving the prefix from `self.registration.scope` instead of
+a hardcoded literal -- the one thing that's actually guaranteed correct
+everywhere this exact `sw.js` gets registered (bare-origin local dev,
+a Firebase preview channel, and whatever subpath GitHub Pages happens
+to serve from today or after any future repo rename), rather than
+re-guessing a string that already went stale once. Bumped `CACHE_NAME`
+to `v93` in the same commit, per this file's own standing rule.
+**Caveat:** no test environment available here serves from a repo-name
+subpath, so this fix is reasoned from reading `isShellRequest()`
+against README.md's documented Pages URL, not confirmed by reproducing
+the disabled-caching symptom directly against the real site.
