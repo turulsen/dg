@@ -1303,6 +1303,16 @@ function doPost(e) {
       return markEvidenceSeen(data.agent_code, data.evidence_id);
     }
 
+    // Client-side JS-error telemetry (assets/js-error-banner.js on
+    // every page) -- deliberately unauthenticated and best-effort,
+    // same reasoning as mark_evidence_seen above: nothing sensitive is
+    // at stake, and this specifically needs to keep working even when
+    // everything ELSE on the page (including Firebase) has failed, so
+    // it can't depend on any auth path that might itself be broken.
+    if (data.action === 'log_client_error') {
+      return logClientError(data);
+    }
+
     // A-Cell Admin: soft-delete an Agent (archives Characters + Briefs
     // rows so they can be restored, rather than removing them).
     if (data.action === 'delete_character') {
@@ -3924,6 +3934,80 @@ function markEvidenceSeen(agentCode, evidenceId) {
     // stale (missing this item) seen-set for up to its own TTL right
     // after this exact write.
     CacheService.getScriptCache().remove('evidence_seen_' + code);
+    return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+  });
+}
+
+// ── Client-side JS-error telemetry (assets/js-error-banner.js): a
+// persistent log of every uncaught error/unhandled rejection any page
+// throws, alongside the existing on-screen banner. Added after the
+// 2026-09-10 incident, where live players reported the app broken in
+// several different ways across several different pages at once, but
+// nothing recorded any of it anywhere -- the only on-screen error
+// visibility that existed was a banner on a-cell.html alone, which
+// only helps if someone happens to be watching that exact screen at
+// the exact moment. This is a debugging tool, not permanent data --
+// purgeOldClientErrors() below keeps it from growing unbounded. ──
+function getOrCreateClientErrorsSheet() {
+  const ss = getOrCreateSheet();
+  let sheet = ss.getSheetByName('ClientErrors');
+  if (!sheet) {
+    sheet = ss.insertSheet('ClientErrors');
+    sheet.getRange(1, 1, 1, 10).setValues([[
+      'logged_at', 'session_id', 'kind', 'message', 'filename', 'lineno',
+      'colno', 'stack', 'page', 'agent_code'
+    ]]);
+  }
+  return sheet;
+}
+
+const CLIENT_ERROR_RETENTION_MS = 14 * 24 * 60 * 60 * 1000; // 14 days -- a debugging aid, not an archive
+
+function purgeOldClientErrors_(sheet) {
+  const cutoff = new Date().getTime() - CLIENT_ERROR_RETENTION_MS;
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+  const values = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  let firstKeep = -1;
+  for (let i = 0; i < values.length; i++) {
+    if (new Date(values[i][0]).getTime() >= cutoff) { firstKeep = i; break; }
+  }
+  // Rows are appended in chronological order, so every expired row is a
+  // contiguous block at the top -- one deleteRows() call instead of a
+  // per-row scan-and-delete.
+  if (firstKeep === -1) { if (values.length) sheet.deleteRows(2, values.length); }
+  else if (firstKeep > 0) { sheet.deleteRows(2, firstKeep); }
+}
+
+// Per-session_id cap (not per-Agent/IP -- there's no reliable identity
+// here beyond what the client sends itself) so one runaway retry loop
+// on one device can't fill the sheet -- the client already self-caps
+// at 25 reports per page load, this is defense in depth against a
+// client that's been tampered with or a future bug in that cap itself.
+function logClientError(data) {
+  const sessionId = String(data.session_id || 'unknown').slice(0, 64);
+  const cache = CacheService.getScriptCache();
+  const rateKey = 'client_err_rl_' + sessionId;
+  const count = Number(cache.get(rateKey)) || 0;
+  if (count >= 40) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  cache.put(rateKey, String(count + 1), 3600);
+  return withScriptLock(function () {
+    const sheet = getOrCreateClientErrorsSheet();
+    purgeOldClientErrors_(sheet);
+    sheet.appendRow([
+      new Date().toISOString(),
+      sessionId,
+      String(data.kind || '').slice(0, 32),
+      String(data.message || '').slice(0, 2000),
+      String(data.filename || '').slice(0, 500),
+      Number(data.lineno) || 0,
+      Number(data.colno) || 0,
+      String(data.stack || '').slice(0, 4000),
+      String(data.page || '').slice(0, 500),
+      String(data.agent_code || '').slice(0, 32)
+    ]);
     return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
   });
 }
