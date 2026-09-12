@@ -293,11 +293,31 @@
   // desktop hover-capable browsers.
   choices.addEventListener('touchstart', function () {}, { passive: true });
   choices.querySelectorAll('.clearance-choice').forEach(function (card) {
-    card.addEventListener('click', function () {
+    card.addEventListener('click', function (e) {
+      // A real report: this "Opening…" feedback never actually became
+      // visible on tap. Root cause: nothing here ever paused the
+      // browser's own navigation, so the class/text changes below and
+      // the actual page unload for href both landed in the same tick --
+      // whether a repaint happened to squeeze in before the document
+      // tore down was pure timing luck, and hub.html loading fast (a
+      // warm service-worker cache, the exact thing this app is built to
+      // do) made that luck worse, not better. preventDefault() + a
+      // double rAF (one frame to apply the class, one more to guarantee
+      // the browser has actually painted it) forces a real paint before
+      // navigating on, same fix shape as this app's own dg-agent-loading
+      // gate elsewhere for "state changed but never got to render before
+      // something else took over."
+      e.preventDefault();
+      var href = card.getAttribute('href');
       choices.classList.add('cc-nav-pending');
       card.classList.add('cc-tapped');
       var go = card.querySelector('.cc-go');
       if (go) go.textContent = 'Opening…';
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          window.location.href = href;
+        });
+      });
     });
   });
 })();

@@ -2094,3 +2094,30 @@ report is caught and dropped, never blocks or breaks the banner
 itself). Full suite re-run against this cutover's actual `main` tip
 (not just the working branch it was authored against): 773/773
 passing, zero failures.
+
+## The clearance screen's "Opening…" tap feedback never actually became
+## visible on either card
+
+A real report: tapping either Clearance card on `index.html` (Agent or
+A-Cell) never showed the "Opening…" label swap/dim feedback that's
+been in this page since `2c9956c`, even though the underlying
+navigation itself worked fine.
+
+Root cause: the click handler applied its visual state (`cc-tapped`/
+`cc-nav-pending` classes, the "Opening…" text swap) and then did
+nothing to stop the card's own plain `<a href>` from navigating away in
+that same tick -- whether the browser actually painted the change
+before tearing down the document for the new page was pure timing
+luck, and a *faster*-loading destination (a warm service-worker cache
+for `hub.html`, exactly what this app is built to provide) made that
+luck worse, not better, since there was even less time for a repaint
+to sneak in.
+
+Fixed by calling `preventDefault()` on the click, then deferring the
+actual `window.location.href` navigation by a double
+`requestAnimationFrame` -- one frame to apply the class/text changes,
+a second to guarantee the browser has actually painted them -- before
+navigating on. Same fix shape as this app's own `dg-agent-loading` gate
+elsewhere for "a state change that never got the chance to render
+before something else took over." Bumped `sw.js`'s `CACHE_NAME` to
+`v100` (`index.html` is `SHELL_FILES`-listed).
