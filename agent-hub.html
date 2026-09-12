@@ -458,73 +458,6 @@
     });
   }
 
-  // Async, per agent: does an Agent File (Delta Green Briefs row) exist
-  // for this code? Bare ?code=CODE&callback=CB (doLookup() in Code.gs,
-  // the same endpoint the Cover tab's own "RETURNING AGENT" restore box
-  // and a-cell.html's loadPlayPhoto() already use) -- NOT_FOUND when no
-  // Brief row exists. Paired with checkCharacterExists() below to detect
-  // an Agent that's gone from the backend entirely (see its own comment
-  // for why neither check alone is a safe signal to purge on).
-  function checkAgentFileExists(code) {
-    return new Promise(resolve => {
-      const cbName = '_ahFileCheck_' + code.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
-      const timer = setTimeout(() => { delete window[cbName]; resolve(null); }, 6000);
-      window[cbName] = function (res) {
-        clearTimeout(timer);
-        delete window[cbName];
-        const s = document.getElementById('s-' + cbName);
-        if (s) s.remove();
-        resolve(!!(res && res.status === 'OK'));
-      };
-      const s = document.createElement('script');
-      s.id = 's-' + cbName;
-      s.src = APPS_SCRIPT_URL + '?code=' + encodeURIComponent(code) + '&callback=' + cbName;
-      document.head.appendChild(s);
-    });
-  }
-
-  // A real report: an Agent permanently deleted by a Handler (gone from
-  // both the live Characters/Briefs sheets AND their Deleted*
-  // counterparts, past the 24h undo window) still showed up as a full
-  // roster tab, with all its stale bio data, on any device that had
-  // ever cached it in dg_agent_roster -- this roster is pure local
-  // storage (see renderRoster() above), never invalidated against the
-  // backend on its own. checkCharacterExists() alone can't tell "really
-  // deleted" apart from "a legitimate new Agent with no character sheet
-  // yet" (the normal, common "Recruit" case) -- but every entry that
-  // actually lives in dg_agent_roster (unlike the pinned "+ New Recruit"
-  // tab, a client-only draft with no roster entry at all until it's
-  // submitted/exported) was put there by something that already talked
-  // to the backend, so it should have EITHER a character sheet or an
-  // Agent File, or both. Called only once the caller already knows
-  // hasChar === false (see its own checkCharacterExists().then() below,
-  // which needs that result anyway for the Play/Recruit label -- a
-  // second, separate checkCharacterExists() call here would just double
-  // the network request for no reason). Only when the Agent File check
-  // ALSO comes back false -- never on a timeout/error, checkAgentFileExists()
-  // resolving null leaves this Agent alone -- is it gone from the
-  // backend entirely, and the stale local entry is purged and its tab
-  // dropped.
-  function purgeIfFullyDeleted(code) {
-    checkAgentFileExists(code).then(hasFile => {
-      if (hasFile !== false) return;
-      const roster = rosterLoad();
-      if (!roster[code]) return; // already removed by a concurrent check
-      delete roster[code];
-      rosterSave(roster);
-      const wasActive = document.querySelector('.tw.active')?.dataset.tab === code;
-      const tab = tabStrip.querySelector('.tw[data-tab="' + CSS.escape(code) + '"]');
-      if (tab) tab.remove();
-      const panel = document.getElementById('panel-' + code);
-      if (panel) panel.remove();
-      agents = agents.filter(a => a.code !== code);
-      if (wasActive) {
-        setActiveTab(agents.length ? agents[0].code : 'new');
-        if (agents.length) loadHandouts();
-      }
-    });
-  }
-
   // Async, per agent: a live read of the same saved character sheet
   // checkCharacterExists() above already fetches -- mirrors
   // dg-agent-portal.html's checkAgentKia(), which Agent File already
@@ -694,7 +627,6 @@
         if (btn) { btn.textContent = 'Recruit'; btn.title = 'No character sheet on file yet for this Agent -- starts the Character Creation Wizard.'; }
         const stamps = document.getElementById(stampId);
         if (stamps) stamps.insertAdjacentHTML('beforeend', '<div class="stamp">No Character Sheet Yet</div>');
-        purgeIfFullyDeleted(a.code);
       });
 
       checkAgentKia(a.code).then(kia => {
@@ -1128,69 +1060,42 @@
     appId: '1:464997490443:web:dad47a347ae7a64a9e4c0e'
   };
   let firebaseApiLoading = false;
-  let firebaseApiCallbacks = []; // { ok, err } pairs
-  // s.onload with no s.onerror at all meant a script that failed to load
-  // -- blocked, a dropped mobile connection, a flaky CDN response -- left
-  // this whole chain hung forever, neither resolved nor rejected:
-  // Evidence stuck on whatever it last showed, no error, no retry. Real
-  // live report, 2026-09-11: repeating cross-origin-obscured "Script
-  // error." on a mobile connection, the hoisted Dice Roller stuck
-  // mid-screen and the shell showing black. Same fix as a-cell.html's
-  // own loadScriptTag(). crossOrigin is set so a real future throw from
-  // inside this script shows its actual message instead of the generic
-  // one that report saw.
-  function loadFirebaseScriptTag(src, cb, onerror) {
+  let firebaseApiCallbacks = [];
+  function loadFirebaseScriptTag(src, cb) {
     const s = document.createElement('script');
-    s.crossOrigin = 'anonymous';
     s.src = src;
-    let done = false;
-    const timer = setTimeout(() => {
-      if (done) return; done = true;
-      onerror(new Error('Timed out loading ' + src + ' (15s) -- check network connection.'));
-    }, 15000);
-    s.onload = () => { if (done) return; done = true; clearTimeout(timer); cb(); };
-    s.onerror = () => { if (done) return; done = true; clearTimeout(timer); onerror(new Error('Failed to load ' + src + ' -- check network connection.')); };
+    s.onload = cb;
     document.head.appendChild(s);
   }
-  function ensureFirebaseApi(cb, onerror) {
+  function ensureFirebaseApi(cb) {
     const ready = () => window.firebase && window.firebase.firestore && window.firebase.auth && window.firebase.functions;
     if (ready()) { cb(); return; }
-    firebaseApiCallbacks.push({ ok: cb, err: onerror || (() => {}) });
+    firebaseApiCallbacks.push(cb);
     if (firebaseApiLoading) return;
     firebaseApiLoading = true;
     const base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/';
-    function fail(err) {
-      firebaseApiLoading = false; // lets a later call actually retry once the network recovers
-      const cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-      cbs.forEach(pair => pair.err(err));
-    }
     loadFirebaseScriptTag(base + 'firebase-app-compat.js', () => {
       loadFirebaseScriptTag(base + 'firebase-firestore-compat.js', () => {
         if (!window.firebase.apps.length) {
           window.firebase.initializeApp(FIREBASE_CONFIG);
-          // Brave (and some ad-blocker extensions), and some mobile
-          // networks/carriers, silently block or interfere with
-          // Firestore's default streaming transport (WebChannel) -- it
-          // looks like a long-lived tracking connection -- which leaves
-          // every onSnapshot() listener permanently stuck with zero
-          // data, and each failed reconnect attempt as an uncaught
-          // exception inside this cross-origin script (the repeating
-          // "Script error." flood the 2026-09-11 live report showed).
-          // Auto-detect means trying the streaming transport first and
-          // only falling back after it fails -- forcing long-polling
-          // from the start skips that failing dance entirely on exactly
-          // the networks that need it, at the cost of slightly higher
-          // latency everywhere else.
-          window.firebase.firestore().settings({ experimentalForceLongPolling: true });
+          // Brave (and some ad-blocker extensions) silently blocks
+          // Firestore's default streaming transport (WebChannel) --
+          // it looks like a long-lived tracking connection -- which
+          // leaves every onSnapshot() listener permanently stuck with
+          // zero data and no error at all. Falls back to plain HTTP
+          // long-polling, which isn't blocked. See a-cell.html's own
+          // copy of this comment for the full report that traced this
+          // down (worked in Safari, silently empty in Brave).
+          window.firebase.firestore().settings({ experimentalAutoDetectLongPolling: true });
         }
         loadFirebaseScriptTag(base + 'firebase-auth-compat.js', () => {
           loadFirebaseScriptTag(base + 'firebase-functions-compat.js', () => {
             const cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-            cbs.forEach(pair => pair.ok());
-          }, fail);
-        }, fail);
-      }, fail);
-    }, fail);
+            cbs.forEach(fn => fn());
+          });
+        });
+      });
+    });
   }
   // Per-Agent sign-in (exchangeAgentToken -- no real per-Agent secret,
   // see that function's own comment), keyed by code since this page can
@@ -1205,7 +1110,7 @@
           .then(result => window.firebase.auth().signInWithCustomToken(result.data.token))
           .then(cred => resolve(cred.user))
           .catch(err => { delete _authPromisesByCode[code]; reject(err); });
-      }, err => { delete _authPromisesByCode[code]; reject(err); });
+      });
     });
     _authPromisesByCode[code] = p;
     return p;

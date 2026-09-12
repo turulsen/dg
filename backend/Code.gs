@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v85 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v84 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -301,20 +301,6 @@
 //   for a completely different change would revive exactly the
 //   version-number confusion that already cost real time sorting out
 //   which backend was actually live.
-// + v85 -- updateCellMembers() (the only place Cell membership is ever
-//   set) now dual-writes the whole cells/{cellId} row to Firestore
-//   (name/handler/member_codes/channel), fixing a real live report:
-//   "Roll not saved: permission-denied" (dice_rolls) for an Agent who
-//   WAS actually assigned to that Cell. firestore.rules' isCellMember()
-//   reads membership from cells/{cellId}'s OWN Firestore document --
-//   every Cell assignment ever made had only ever landed in the Sheet,
-//   so that check silently failed for every real member of every real
-//   Cell, project-wide, since dice_rolls first shipped. New one-shot
-//   backfillCellsToFirestore_()/runBackfillCellsToFirestoreNow() repairs
-//   every EXISTING Cell in one pass (run once, manually, from the Apps
-//   Script editor after redeploying) rather than waiting for each
-//   Cell's membership to happen to be re-saved again through the
-//   now-fixed path.
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -2577,36 +2563,13 @@ function updateCellMembers(cellId, memberCodes) {
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
   const idCol = headers.indexOf('cell_id');
-  const nameCol = headers.indexOf('name');
-  const handlerCol = headers.indexOf('handler');
   const membersCol = headers.indexOf('member_codes');
-  const channelCol = headers.indexOf('channel');
   const newMembers = memberCodes || [];
   for (let i = 1; i < data.length; i++) {
     if (data[i][idCol] === cellId) {
       let previousMembers = [];
       try { previousMembers = JSON.parse(data[i][membersCol] || '[]'); } catch (e) { previousMembers = []; }
       sheet.getRange(i + 1, membersCol + 1).setValue(JSON.stringify(newMembers));
-      // Real report, 2026-09-11: "Roll not saved: permission-denied"
-      // (dice_rolls) for an Agent who WAS actually assigned to this
-      // Cell. Root cause: firestore.rules' isCellMember(cellId) checks
-      // membership by reading cells/{cellId}'s OWN member_codes field in
-      // FIRESTORE -- but this function (the only place Cell membership
-      // is ever set) had never once dual-written that document. Every
-      // Cell assignment ever made landed only in the Sheet; the
-      // Firestore mirror isCellMember() actually reads either didn't
-      // exist at all or reflected nobody, so this check silently failed
-      // for every real member of every real Cell. Mirrors the whole row
-      // (not just member_codes) since firestoreDualWrite_ replaces the
-      // full document, and nothing else ever writes to this same
-      // cells/{cellId} doc (only its notes/{blockId} subcollection) to
-      // race with a partial write.
-      firestoreDualWrite_('cells', cellId, {
-        name: nameCol >= 0 ? (data[i][nameCol] || '') : '',
-        handler: handlerCol >= 0 ? (data[i][handlerCol] || '') : '',
-        member_codes: newMembers,
-        channel: channelCol >= 0 ? String(data[i][channelCol] || '') : ''
-      });
       // Keep cellIdsForAgent_()'s own cache (via cellsMemberMap_()) from
       // serving a stale membership list for up to its own TTL right
       // after the Handler just changed it -- a newly-assigned Agent
@@ -2629,48 +2592,6 @@ function updateCellMembers(cellId, memberCodes) {
     }
   }
   return ContentService.createTextOutput(JSON.stringify({ status: 'NOT_FOUND' })).setMimeType(ContentService.MimeType.JSON);
-}
-
-// ONE-SHOT REPAIR (safe to re-run; a no-op for cells already mirrored
-// correctly): re-sends every Cell's current row through the same
-// firestoreDualWrite_() call updateCellMembers() now makes on every
-// membership change -- see that function's own comment for why every
-// Cell assignment ever made before this fix landed only in the Sheet,
-// never in Firestore, silently breaking every isCellMember() check
-// (dice_rolls, and anything else Cell-membership-gated) for every real
-// member of every real Cell. This backfills every EXISTING Cell in one
-// pass rather than waiting for each one's membership to happen to be
-// re-saved again through the now-fixed path. Run via
-// runBackfillCellsToFirestoreNow(), NOT this function directly (Apps
-// Script's Run dropdown hides anything ending in '_').
-function backfillCellsToFirestore_() {
-  const sheet = getOrCreateCellsSheet();
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const idCol = headers.indexOf('cell_id');
-  const nameCol = headers.indexOf('name');
-  const handlerCol = headers.indexOf('handler');
-  const membersCol = headers.indexOf('member_codes');
-  const channelCol = headers.indexOf('channel');
-  let written = 0;
-  for (let i = 1; i < data.length; i++) {
-    const cellId = data[i][idCol];
-    if (!cellId) continue;
-    let members = [];
-    try { members = JSON.parse(data[i][membersCol] || '[]'); } catch (e) { members = []; }
-    firestoreDualWrite_('cells', cellId, {
-      name: nameCol >= 0 ? (data[i][nameCol] || '') : '',
-      handler: handlerCol >= 0 ? (data[i][handlerCol] || '') : '',
-      member_codes: members,
-      channel: channelCol >= 0 ? String(data[i][channelCol] || '') : ''
-    });
-    written++;
-  }
-  Logger.log('Re-sent ' + written + ' Cell rows to Firestore.');
-}
-
-function runBackfillCellsToFirestoreNow() {
-  backfillCellsToFirestore_();
 }
 
 // Deletes only the Cell grouping -- the member Agents' own rows in the
