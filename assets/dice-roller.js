@@ -1199,6 +1199,27 @@
             void panel.offsetHeight;
             panel.style.display = prevDisplay;
         });
+
+        // Same underlying iOS Safari position:fixed freeze, a second real
+        // trigger: live report, 2026-09-13 -- tapping an Agent from
+        // Clearance and scrolling while the new page is still settling
+        // left this panel stuck floating mid-screen instead of docked at
+        // its real fixed spot, same as the lock/unlock case above but
+        // without ever backgrounding the tab. Re-runs the same reflow
+        // trick once scrolling actually stops (debounced -- this must
+        // NOT run on every scroll tick, forcing layout that often would
+        // reintroduce the jank this panel is supposed to avoid).
+        let scrollReflowTimer = null;
+        window.addEventListener('scroll', () => {
+            clearTimeout(scrollReflowTimer);
+            scrollReflowTimer = setTimeout(() => {
+                if (!panel.isConnected) return;
+                const prevDisplay = panel.style.display;
+                panel.style.display = 'none';
+                void panel.offsetHeight;
+                panel.style.display = prevDisplay;
+            }, 150);
+        }, { passive: true });
     }
 
     /* ── Wire skill inputs ────────────────────────────────────────── */

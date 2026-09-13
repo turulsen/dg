@@ -2280,3 +2280,21 @@ this step -- that's step 4, shipped separately so each change gets
 its own live signal. Purely client-side, no backend/Code.gs changes,
 no Apps Script redeploy needed. Bumped `sw.js`'s `CACHE_NAME` to
 `v106` (five `SHELL_FILES`-listed files changed).
+
+## Dice Roller freezing mid-screen after a scroll, not just lock/unlock
+
+Live report, same session as the above: after tapping an Agent from
+Clearance and scrolling while the new page was still settling, the
+Dice Roller panel froze floating mid-screen instead of staying docked
+at its real fixed position -- the same underlying iOS Safari
+`position:fixed`-freeze bug `assets/dice-roller.js` already had a
+workaround for (forcing a reflow on `visibilitychange`, added for the
+screen lock/unlock case), but triggered here by a plain scroll instead
+of backgrounding the tab, which that listener never covered.
+
+Added a debounced `scroll` listener that reruns the same reflow trick
+(toggle `display` off and back on) once scrolling actually settles
+(150ms after the last scroll event) rather than on every tick, so this
+doesn't reintroduce the scroll jank the debounce exists to avoid.
+Purely client-side, `assets/dice-roller.js` only. `sw.js` `CACHE_NAME`
+bumped to `v107`.
