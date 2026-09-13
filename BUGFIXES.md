@@ -2206,3 +2206,18 @@ same lock, worst precisely when the backend was already struggling.
 
 Backend version bumped to v85. **Needs a manual redeploy to the live
 Apps Script project** before any of this takes effect.
+
+## Issue #8 shipping plan, step 1 (re-shipped): purge permanently-deleted
+## Agents from Agent Hub's local roster
+
+Re-applied `agent-hub.html`'s `checkAgentFileExists()`/
+`purgeIfFullyDeleted()` (originally shipped in `186982c`, reverted in
+`0e4c65b` when a Character Creation Wizard bug appeared right after
+its cache-bump). That investigation (see the Wizard fix above) proved
+this code wasn't the cause -- any commit bumping `sw.js`'s
+`CACHE_NAME` would have surfaced the same pre-existing, unrelated bug
+by forcing a fresh fetch of the already-buggy files -- so this is step
+1 of issue #8's plan to re-introduce the 4 originally-reverted commits
+one at a time, now that the actual root cause (the lock-contention fix
+directly above) is live. Bumped `sw.js`'s `CACHE_NAME` to `v105`
+(`agent-hub.html` changed).
