@@ -2121,3 +2121,45 @@ navigating on. Same fix shape as this app's own `dg-agent-loading` gate
 elsewhere for "a state change that never got the chance to render
 before something else took over." Bumped `sw.js`'s `CACHE_NAME` to
 `v100` (`index.html` is `SHELL_FILES`-listed).
+
+## A permanently-deleted Agent (Charles Lee) still showed up as a full
+## roster tab in Agent Hub, on a device that had it cached
+
+A real report: Agent Hub's roster tab strip showed a complete dossier
+-- name, cover, era, nationality, a "SAVED" date, a working PLAY button
+-- for an Agent the player themselves confirmed had been permanently
+deleted (not present in the live `Characters`/`Delta Green Briefs`
+sheets, nor in `DeletedCharacters`/`DeletedBriefs`, i.e. gone from the
+backend entirely, past the 24h undo window).
+
+Root cause: Agent Hub's roster (`dg_agent_roster` in `localStorage`,
+see `renderRoster()`) is built entirely from local cache, never
+invalidated against the backend on its own. `checkCharacterExists()`
+already existed and correctly detected this Agent had no character
+sheet -- but that check alone can't tell "really deleted" apart from
+"a legitimate new Agent that hasn't built a character sheet yet" (the
+normal, common state for a fresh Recruit), so it only ever relabeled
+the Play button to Recruit and left the stale tab (with all its cached
+bio data) up indefinitely.
+
+Added a second check, `checkAgentFileExists()` (the same bare
+`?code=` lookup the Cover tab's own restore box and `a-cell.html`'s
+`loadPlayPhoto()` already use), run only once `checkCharacterExists()`
+has already come back false. Every real entry in `dg_agent_roster`
+(unlike the pinned "+ New Recruit" tab, a client-only draft with no
+roster entry at all until it's submitted/exported) was put there by
+something that already talked to the backend, so it should have EITHER
+a character sheet or an Agent File, or both -- only when BOTH checks
+come back explicitly false (never on a timeout/error) is this Agent
+confirmed gone from the backend entirely, and `purgeIfFullyDeleted()`
+now removes it from the local roster and drops its tab instead of
+leaving a permanent ghost.
+
+Originally shipped alongside three other, unrelated fixes on
+2026-09-11 -- confirmed working live (Charles Lee's stale tab actually
+disappeared) before all four were reverted together the same day over
+a separate regression traced to a different one of the four (see
+GitHub issue #8). Re-shipped here in isolation, byte-identical to the
+confirmed-working version, per #8's feature-by-feature shipping plan --
+step 1 of 5. Bumped `sw.js`'s `CACHE_NAME` to `v102`
+(`agent-hub.html` changed).
