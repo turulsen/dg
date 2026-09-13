@@ -5162,8 +5162,13 @@
     appId: '1:464997490443:web:dad47a347ae7a64a9e4c0e'
   };
   var firebaseApiLoading = false;
-  var firebaseApiCallbacks = [];
-  function loadScriptTag(src, cb) {
+  var firebaseApiCallbacks = []; // { ok, err } pairs
+  // s.onload with no s.onerror at all meant a script that failed to load
+  // -- blocked, a dropped mobile connection, a flaky CDN response -- left
+  // this whole chain hung forever, neither resolved nor rejected. Same
+  // fix as the Evidence block's own loadScriptTag() above (crossOrigin
+  // was already here; onerror/timeout weren't).
+  function loadScriptTag(src, cb, onerror) {
     var s = document.createElement('script');
     // See the Evidence block's own copy of this comment above -- without
     // this, an error thrown from inside this cross-origin script reports
@@ -5171,7 +5176,13 @@
     // real message.
     s.crossOrigin = 'anonymous';
     s.src = src;
-    s.onload = cb;
+    var done = false;
+    var timer = setTimeout(function () {
+      if (done) return; done = true;
+      onerror(new Error('Timed out loading ' + src + ' (15s) -- check network connection.'));
+    }, 15000);
+    s.onload = function () { if (done) return; done = true; clearTimeout(timer); cb(); };
+    s.onerror = function () { if (done) return; done = true; clearTimeout(timer); onerror(new Error('Failed to load ' + src + ' -- check network connection.')); };
     document.head.appendChild(s);
   }
   // Loads only whichever product SDKs aren't already on the page --
@@ -5179,14 +5190,19 @@
   // page) may have already pulled in app/auth/functions themselves, and
   // this checks for each individually rather than assuming any one
   // widget's load order.
-  function ensureFirebaseApi(cb) {
+  function ensureFirebaseApi(cb, onerror) {
     var ready = function () { return window.firebase && window.firebase.storage && window.firebase.auth && window.firebase.functions && window.firebase.firestore; };
     if (ready()) { cb(); return; }
-    firebaseApiCallbacks.push(cb);
+    firebaseApiCallbacks.push({ ok: cb, err: onerror || function () {} });
     if (firebaseApiLoading) return;
     firebaseApiLoading = true;
     var base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/';
-    var loadIfMissing = function (check, url, next) { if (check()) { next(); } else { loadScriptTag(url, next); } };
+    function fail(err) {
+      firebaseApiLoading = false; // lets a later call actually retry once the network recovers
+      var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
+      cbs.forEach(function (pair) { pair.err(err); });
+    }
+    var loadIfMissing = function (check, url, next) { if (check()) { next(); } else { loadScriptTag(url, next, fail); } };
     loadIfMissing(function () { return window.firebase && window.firebase.apps; }, base + 'firebase-app-compat.js', function () {
       // Real bug, found live via a-cell.html's page-wide JS-error banner:
       // this used to call window.firebase.firestore().settings(...)
@@ -5215,17 +5231,18 @@
               // Firestore's default streaming transport (WebChannel) --
               // it looks like a long-lived tracking connection -- which
               // leaves every onSnapshot() listener permanently stuck with
-              // zero data and, worse, no error at all. Falls back to
-              // plain HTTP long-polling, which isn't blocked. Must be set
-              // before ANY other Firestore call on this page, and can
-              // only ever be called once -- isFirstInit still correctly
-              // gates that.
+              // zero data and, worse, no error at all (Safari on the same
+              // account/data worked fine, confirming this wasn't a real
+              // permissions or data problem). Falls back to plain HTTP
+              // long-polling, which isn't blocked. Must be set before ANY
+              // other Firestore call on this page, and can only ever be
+              // called once -- isFirstInit still correctly gates that.
               if (isFirstInit) window.firebase.firestore().settings({ experimentalAutoDetectLongPolling: true });
               var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-              cbs.forEach(function (fn) { fn(); });
-            });
-          });
-        });
+              cbs.forEach(function (pair) { pair.ok(); });
+            }, fail);
+          }, fail);
+        }, fail);
       });
     });
   }
@@ -5265,6 +5282,14 @@
           })
           .then(function (cred) { resolve(cred.user); })
           .catch(function (err) { _handlerAuthPromise = null; reject(err); });
+      }, function (err) {
+        // See the Evidence tab's own copy of this comment -- without this
+        // second argument, a Firebase SDK script failing or timing out to
+        // load left this whole promise hanging forever with no resolve or
+        // reject at all, i.e. Track Library's "Uploading..." stuck
+        // indefinitely with no error.
+        _handlerAuthPromise = null;
+        reject(err);
       });
     });
     return _handlerAuthPromise;

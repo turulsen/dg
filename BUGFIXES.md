@@ -2250,3 +2250,33 @@ Backend version bumped to v86. **Needs a manual redeploy to the live
 Apps Script project** (on top of the v85 redeploy already done), then
 run `runBackfillCellsToFirestoreNow()` once from the Apps Script
 editor's Run dropdown.
+
+**Both confirmed live** during an actual play session the same day:
+the Cell-membership backfill fixed the permission-denied roll error
+immediately, and the user reported the app "actually faster than
+before," not just unbroken.
+
+## Issue #8 shipping plan, step 3: Firebase script-tag loaders can hang
+## forever with no error
+
+Split out of originally-reverted commit `1b71af0` (that commit bundled
+this fix together with step 4's long-polling switch below; shipping
+them separately, per the plan, to isolate which one(s) actually
+caused the two prior reverts). Root cause of the 2026-09-10 incident
+and its 2026-09-11 live reproduction: every page's Firebase
+`<script>`-tag loader set `onload` but never `onerror`, so a
+dropped/blocked request left `ensureFirebaseApi()` callers hanging
+forever with no error at all -- exactly the "stuck mid-screen, no
+error, needs a reload" symptom reported live (Dice Roller stuck,
+black screen behind it).
+
+Adds `onerror` + a 15s timeout to every Firebase `<script>` loader
+(`agent-hub.html`, `a-cell.html`'s two independent loaders,
+`notes/notes.js`, `assets/table-radio.js`, `assets/dice-roller.js`)
+and wires a real `err` callback through every `ensureFirebaseApi()`
+caller so failures reject/reset state instead of hanging silently.
+Deliberately does NOT touch `experimentalAutoDetectLongPolling` in
+this step -- that's step 4, shipped separately so each change gets
+its own live signal. Purely client-side, no backend/Code.gs changes,
+no Apps Script redeploy needed. Bumped `sw.js`'s `CACHE_NAME` to
+`v106` (five `SHELL_FILES`-listed files changed).

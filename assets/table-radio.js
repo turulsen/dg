@@ -1099,18 +1099,43 @@
      pattern as the YouTube/SoundCloud APIs above, so pages that never
      tune in never pay for it. ── */
   var firebaseApiLoading = false;
-  var firebaseApiCallbacks = [];
-  function ensureFirebaseApi(cb) {
+  var firebaseApiCallbacks = []; // { ok, err } pairs
+  // s.onload with no s.onerror at all meant a script that failed to load --
+  // blocked, a dropped mobile connection, a flaky CDN response -- left
+  // this whole chain hung forever, neither resolved nor rejected: no
+  // error, no retry, #dg-radio-status stuck on "Waiting for the Handler…"
+  // indistinguishable from a genuinely quiet channel. Real live report,
+  // 2026-09-11: repeating cross-origin-obscured "Script error." on a
+  // mobile connection, hoisted Dice Roller stuck mid-screen, the shell
+  // never finishing its load -- this exact gap, on this exact class of
+  // network. Same fix as a-cell.html's own loadScriptTag(). crossOrigin
+  // is set so a real future throw from inside this script shows its
+  // actual message instead of the generic one that report saw.
+  function loadFirebaseScriptTag_(src, cb, onerror) {
+    var s = document.createElement('script');
+    s.crossOrigin = 'anonymous';
+    s.src = src;
+    var done = false;
+    var timer = setTimeout(function () {
+      if (done) return; done = true;
+      onerror(new Error('Timed out loading ' + src + ' (15s) -- check network connection.'));
+    }, 15000);
+    s.onload = function () { if (done) return; done = true; clearTimeout(timer); cb(); };
+    s.onerror = function () { if (done) return; done = true; clearTimeout(timer); onerror(new Error('Failed to load ' + src + ' -- check network connection.')); };
+    document.head.appendChild(s);
+  }
+  function ensureFirebaseApi(cb, onerror) {
     if (window.firebase && window.firebase.apps && window.firebase.apps.length) { cb(); return; }
-    firebaseApiCallbacks.push(cb);
+    firebaseApiCallbacks.push({ ok: cb, err: onerror || function () {} });
     if (firebaseApiLoading) return;
     firebaseApiLoading = true;
-    var appScript = document.createElement('script');
-    appScript.src = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/firebase-app-compat.js';
-    appScript.onload = function () {
-      var fsScript = document.createElement('script');
-      fsScript.src = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/firebase-firestore-compat.js';
-      fsScript.onload = function () {
+    function fail(err) {
+      firebaseApiLoading = false; // lets a later call actually retry once the network recovers
+      var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
+      cbs.forEach(function (pair) { pair.err(err); });
+    }
+    loadFirebaseScriptTag_('https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/firebase-app-compat.js', function () {
+      loadFirebaseScriptTag_('https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/firebase-firestore-compat.js', function () {
         if (!window.firebase.apps.length) {
           window.firebase.initializeApp(FIREBASE_CONFIG);
           // Brave (and some ad-blocker extensions) silently blocks
@@ -1124,11 +1149,9 @@
           window.firebase.firestore().settings({ experimentalAutoDetectLongPolling: true });
         }
         var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-        cbs.forEach(function (fn) { fn(); });
-      };
-      document.head.appendChild(fsScript);
-    };
-    document.head.appendChild(appScript);
+        cbs.forEach(function (pair) { pair.ok(); });
+      }, fail);
+    }, fail);
   }
 
   // Given a radio/{channel} Firestore document's data (or null if it
@@ -1206,6 +1229,10 @@
         // own client handles reconnect/retry, no manual re-poll needed.
         console.error('Table Radio listener error:', err);
       });
+    }, function (err) {
+      console.error('Table Radio: could not load Firebase', err);
+      var statusEl = document.getElementById('dg-radio-status');
+      if (statusEl) statusEl.textContent = 'Could not connect -- check network connection.';
     });
   }
   function stopPolling() {
