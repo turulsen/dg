@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v84 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v85 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -301,6 +301,24 @@
 //   for a completely different change would revive exactly the
 //   version-number confusion that already cost real time sorting out
 //   which backend was actually live.
+// + v85 -- saveCharacter() (runs on every autosave, ~4s debounce, while
+//   ANY player has a sheet open and is editing) used to read the ENTIRE
+//   Characters sheet -- every other character's full Character JSON
+//   blob included -- just to find one row by code, all while holding
+//   the shared script-wide lock, then made a synchronous Firestore
+//   network call still inside that same lock. Real reports traced to
+//   this: "Server is busy" even with only one real player online (that
+//   one browser's own concurrent requests colliding with each other),
+//   general backend lagginess, and very likely contributing to
+//   intermittent NOT_FOUND responses for real, existing characters.
+//   Now does a targeted single-column scan for the row (same fix shape
+//   as doLookupCharacter()'s own optimization), touches only the
+//   changed cells, and moves the Firestore dual-write to after the lock
+//   releases. Also removed withScriptLock() from logClientError() --
+//   a diagnostic-row append competing for the same lock as every real
+//   player write, worst during exactly the repeating-error bursts this
+//   telemetry exists to catch, had no correctness reason to be locked
+//   at all.
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -1630,65 +1648,89 @@ function saveCharacter(data) {
         .createTextOutput(JSON.stringify({ status: 'ERROR', message: 'agent_code is required.' }))
         .setMimeType(ContentService.MimeType.JSON);
     }
+    const now = new Date().toISOString();
+    const characterJson = typeof data.character_json === 'string'
+      ? data.character_json
+      : JSON.stringify(data.character_json || {});
+    const playerName = data.player_name || '';
+
     // Locked: several players can save/import within the same couple of
     // seconds during a live session, and this is a scan-for-existing-row
     // then write -- without a lock, two concurrent saves for two
     // different (or, worse, the same) codes can interleave their scans
     // against a mid-write sheet.
-    return withScriptLock(function () {
+    //
+    // Real report, 2026-09-13: this runs on every single autosave --
+    // every ~4s while ANYONE has a sheet open and is actively editing,
+    // see stats/cloud-sync.js's SYNC_DEBOUNCE_MS -- and used to read the
+    // ENTIRE Characters sheet (every OTHER character's full Character
+    // JSON blob included) just to find one row by code, all while
+    // holding this same script-wide lock. Any other locked write during
+    // that window (another player's save, a delete, an evidence mark,
+    // this app's own error telemetry) queued behind it, and enough
+    // queueing hits withScriptLock()'s 10s timeout as "Server is busy"
+    // -- even with only one real person online, since their own
+    // browser's several concurrent requests can collide with each
+    // other. Same fix shape as doLookupCharacter()'s own targeted
+    // single-column scan below: read only the Agent Code column to find
+    // the row, then touch only that row's own cells.
+    const lockResult = withScriptLock(function () {
       const sheet = getOrCreateCharactersSheet();
-      const values = sheet.getDataRange().getValues();
-      const headers = values[0];
+      const lastRow = sheet.getLastRow();
       // Header-based lookups, not hardcoded column positions -- Player
       // Name was added after this sheet already had rows in production,
       // so writes here can't assume a fixed 3-column layout any more.
+      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
       const cols = headerMap_(headers);
       const codeCol = cols['Agent Code'];
       const updatedCol = cols['Updated At'];
       const jsonCol = cols['Character JSON'];
       const playerNameCol = cols['Player Name'];
-      const now = new Date().toISOString();
-      const characterJson = typeof data.character_json === 'string'
-        ? data.character_json
-        : JSON.stringify(data.character_json || {});
-      const playerName = data.player_name || '';
 
-      for (let i = 1; i < values.length; i++) {
-        if (values[i][codeCol] === data.agent_code) {
-          // Existing row for this code -- overwrite in place (the
-          // upsert). Mutate the row already fetched above and write it
-          // back in one call instead of one setValue() per column.
-          const row = values[i];
-          row[updatedCol] = now;
-          row[jsonCol] = characterJson;
-          if (playerNameCol !== undefined) row[playerNameCol] = playerName;
-          sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
-          firestoreDualWrite_('characters', data.agent_code, {
-            agent_code: data.agent_code, updated_at: now, character_json: characterJson, player_name: playerName
-          });
-          return ContentService
-            .createTextOutput(JSON.stringify({ status: 'OK', agent_code: data.agent_code, updated_at: now }))
-            .setMimeType(ContentService.MimeType.JSON);
+      let rowIndex = -1;
+      if (lastRow >= 2) {
+        const codes = sheet.getRange(2, codeCol + 1, lastRow - 1, 1).getValues();
+        for (let i = 0; i < codes.length; i++) {
+          if (codes[i][0] === data.agent_code) { rowIndex = i + 2; break; }
         }
       }
 
-      // No existing row -- first save for this code. Built by header
-      // position (like setNowPlaying() further down), not array-literal
-      // order, so this stays correct regardless of where Player Name
-      // ended up relative to any other future column.
-      const newRow = new Array(headers.length).fill('');
-      newRow[codeCol] = data.agent_code;
-      newRow[updatedCol] = now;
-      newRow[jsonCol] = characterJson;
-      if (playerNameCol !== undefined) newRow[playerNameCol] = playerName;
-      sheet.appendRow(newRow);
-      firestoreDualWrite_('characters', data.agent_code, {
-        agent_code: data.agent_code, updated_at: now, character_json: characterJson, player_name: playerName
-      });
-      return ContentService
-        .createTextOutput(JSON.stringify({ status: 'OK', agent_code: data.agent_code, updated_at: now }))
-        .setMimeType(ContentService.MimeType.JSON);
+      if (rowIndex !== -1) {
+        // Existing row for this code -- overwrite in place (the
+        // upsert), touching only the cells that actually changed
+        // instead of rewriting the whole row.
+        sheet.getRange(rowIndex, updatedCol + 1).setValue(now);
+        sheet.getRange(rowIndex, jsonCol + 1).setValue(characterJson);
+        if (playerNameCol !== undefined) sheet.getRange(rowIndex, playerNameCol + 1).setValue(playerName);
+      } else {
+        // No existing row -- first save for this code. Built by header
+        // position (like setNowPlaying() further down), not
+        // array-literal order, so this stays correct regardless of
+        // where Player Name ended up relative to any other future
+        // column.
+        const newRow = new Array(headers.length).fill('');
+        newRow[codeCol] = data.agent_code;
+        newRow[updatedCol] = now;
+        newRow[jsonCol] = characterJson;
+        if (playerNameCol !== undefined) newRow[playerNameCol] = playerName;
+        sheet.appendRow(newRow);
+      }
+      return 'OK';
     });
+    if (lockResult !== 'OK') return lockResult; // busy -- nothing was written, so no dual-write either
+
+    // firestoreDualWrite_() is additive-only, independent, and
+    // already best-effort (its own try/catch swallows failures) --
+    // moved outside the lock above (it used to run inside it) since a
+    // real network round trip to Firestore has no business extending
+    // how long every other locked write has to wait its turn.
+    firestoreDualWrite_('characters', data.agent_code, {
+      agent_code: data.agent_code, updated_at: now, character_json: characterJson, player_name: playerName
+    });
+
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'OK', agent_code: data.agent_code, updated_at: now }))
+      .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     return ContentService
       .createTextOutput(JSON.stringify({ status: 'ERROR', message: err.message }))
@@ -3716,23 +3758,32 @@ function logClientError(data) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
   }
   cache.put(rateKey, String(count + 1), 3600);
-  return withScriptLock(function () {
-    const sheet = getOrCreateClientErrorsSheet();
-    purgeOldClientErrors_(sheet);
-    sheet.appendRow([
-      new Date().toISOString(),
-      sessionId,
-      String(data.kind || '').slice(0, 32),
-      String(data.message || '').slice(0, 2000),
-      String(data.filename || '').slice(0, 500),
-      Number(data.lineno) || 0,
-      Number(data.colno) || 0,
-      String(data.stack || '').slice(0, 4000),
-      String(data.page || '').slice(0, 500),
-      String(data.agent_code || '').slice(0, 32)
-    ]);
-    return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
-  });
+  // Real report, 2026-09-13: this used to run inside withScriptLock(),
+  // the same script-wide lock every real user write (saveCharacter,
+  // deleteCharacter, saveNoteBlock, markEvidenceSeen...) competes for.
+  // A diagnostic append -- especially one that fires in bursts of
+  // exactly the repeating-error shape this telemetry exists to catch --
+  // has no correctness need for exclusive locking, and doing it anyway
+  // meant every error report competed with real player writes for the
+  // same lock, worst of all during the exact moments the backend was
+  // already struggling. appendRow() is safe enough unlocked for a
+  // best-effort diagnostic log where a rare interleaved row is a
+  // non-issue.
+  const sheet = getOrCreateClientErrorsSheet();
+  purgeOldClientErrors_(sheet);
+  sheet.appendRow([
+    new Date().toISOString(),
+    sessionId,
+    String(data.kind || '').slice(0, 32),
+    String(data.message || '').slice(0, 2000),
+    String(data.filename || '').slice(0, 500),
+    Number(data.lineno) || 0,
+    Number(data.colno) || 0,
+    String(data.stack || '').slice(0, 4000),
+    String(data.page || '').slice(0, 500),
+    String(data.agent_code || '').slice(0, 32)
+  ]);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
 }
 
 // ── A-Cell Music: a persistent Track Library of mp3s the Handler

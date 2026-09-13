@@ -2160,3 +2160,49 @@ backend-latency/"busy" reports tracked in GitHub issue #9) -- this
 fix stops the wizard from getting stuck on screen when it happens,
 not the underlying false `NOT_FOUND`. Bumped `sw.js`'s `CACHE_NAME`
 to `v104` (`stats/cloud-sync.js` changed).
+
+## "Server is busy" with only one real player online, general
+## backend lagginess, and a likely contributor to false NOT_FOUND
+## character loads
+
+Traced from GitHub issue #9's report: a Handler logged in as a player
+(the only person online at the time) and got "Server is busy -- please
+try again in a moment" on the first load attempt. That exact text only
+ever comes from `withScriptLock()` failing to acquire
+`LockService.getScriptLock()` -- a single lock shared across *every*
+request this backend handles, not per-user.
+
+Root cause: `saveCharacter()` runs on every autosave (`SYNC_DEBOUNCE_MS`
+in `stats/cloud-sync.js` -- roughly every 4 seconds while anyone has a
+sheet open and is actively editing) and, while holding that same
+shared lock, used to (1) read the *entire* Characters sheet -- every
+other character's full Character JSON blob included -- just to find
+one row by Agent Code, the same expensive full-sheet-read pattern
+`doLookupCharacter()`'s own comment already documented fixing
+elsewhere, and (2) make a synchronous network call to Firestore
+(`firestoreDualWrite_()`) still inside the lock. Every other locked
+write in this file (another player's save, a delete, an evidence mark,
+this app's own error telemetry) had to queue behind whichever autosave
+happened to be mid-flight, and enough queueing hits the lock's 10s
+timeout -- explaining "busy" even with one person online, since a
+single browser's own several concurrent requests (radio polling,
+widget sign-ins, autosave) can collide with each other without any
+second real user involved. Also a plausible contributor to real
+characters intermittently coming back `NOT_FOUND` (see the Wizard fix
+above) if platform-level request congestion built up behind enough of
+these slow locked sections.
+
+Fixed `saveCharacter()` to do a targeted single-column scan for the
+row (same shape as `doLookupCharacter()`'s existing optimization) and
+touch only the changed cells, and moved the `firestoreDualWrite_()`
+call to run after the lock releases -- it's already documented as
+additive-only and best-effort, with no correctness reason to extend
+the locked critical section. Also removed `withScriptLock()` entirely
+from `logClientError()`: a diagnostic-row append doesn't need
+exclusive locking for correctness, and doing it anyway meant every
+error report -- including the exact repeating-error bursts this
+telemetry exists to catch -- competed with real player writes for the
+same lock, worst precisely when the backend was already struggling.
+
+Backend version bumped to v85. **Needs a manual redeploy to the live
+Apps Script project** before any of this takes effect.
