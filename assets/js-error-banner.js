@@ -44,6 +44,16 @@
   var totalReports = 0;
   var seenCounts = {};
 
+  // TEMPORARY, requested 2026-09-13: players found the on-screen banner
+  // itself distracting mid-session while a real regression (see GitHub
+  // issue #8) was still being isolated. Suppresses only the visible
+  // banner -- reportToBackend() below still runs untouched, so the
+  // ClientErrors sheet keeps recording everything for the shipping-plan
+  // testing in that issue. Re-enable by deleting this block (or just
+  // flipping the flag back to true) once that's done -- meant to come
+  // back Tuesday 2026-09-15, not stay off indefinitely.
+  var SHOW_BANNER = false;
+
   function showJsErrorBanner(label, detail) {
     var id = 'dg-jserror-banner';
     var bar = document.getElementById(id);
@@ -128,7 +138,7 @@
     var label = kind === 'error' ? 'JS error' : 'Unhandled promise rejection';
     var detail = message + (filename ? ' (' + filename + ':' + lineno + ')' : '');
     if (count === MAX_REPEATS_PER_KEY) detail += ' [repeating -- further copies of this one suppressed]';
-    showJsErrorBanner(label, detail);
+    if (SHOW_BANNER) showJsErrorBanner(label, detail);
     reportToBackend(kind, message, filename, lineno, colno, stack);
   }
 
