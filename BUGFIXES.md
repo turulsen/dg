@@ -2221,3 +2221,32 @@ by forcing a fresh fetch of the already-buggy files -- so this is step
 one at a time, now that the actual root cause (the lock-contention fix
 directly above) is live. Bumped `sw.js`'s `CACHE_NAME` to `v105`
 (`agent-hub.html` changed).
+
+## Issue #8 shipping plan, step 2: dice_rolls permission-denied --
+## Cell membership never reached Firestore
+
+Re-applied from originally-reverted commit `28e4871` (renumbered
+`v85`→`v86` in this backend since v85 was already used by the
+lock-contention fix above). Root cause: `firestore.rules`'
+`isCellMember(cellId)` checks membership by reading `cells/{cellId}`'s
+own `member_codes` field *in Firestore*, but `updateCellMembers()` --
+the only place Cell membership is ever set -- had only ever written
+that assignment to the Sheet. That Firestore document either didn't
+exist or reflected nobody for every Cell in the campaign, so the
+check silently failed for every real member of every real Cell since
+`dice_rolls` first shipped (live symptom: "Roll not saved:
+permission-denied" + empty roll history for an Agent who WAS actually
+in the Cell).
+
+`updateCellMembers()` now dual-writes the whole Cell row
+(name/handler/member_codes/channel) to Firestore on every membership
+change, matching every other Sheets write path in this file. Added a
+one-shot repair, `backfillCellsToFirestore_()`/
+`runBackfillCellsToFirestoreNow()`, to mirror every existing Cell's
+current membership immediately instead of waiting for each one to be
+re-saved through the now-fixed path.
+
+Backend version bumped to v86. **Needs a manual redeploy to the live
+Apps Script project** (on top of the v85 redeploy already done), then
+run `runBackfillCellsToFirestoreNow()` once from the Apps Script
+editor's Run dropdown.
