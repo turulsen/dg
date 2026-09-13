@@ -2121,3 +2121,42 @@ navigating on. Same fix shape as this app's own `dg-agent-loading` gate
 elsewhere for "a state change that never got the chance to render
 before something else took over." Bumped `sw.js`'s `CACHE_NAME` to
 `v100` (`index.html` is `SHELL_FILES`-listed).
+
+## The Character Creation Wizard sometimes stayed open, "Step 1 of 8",
+## with the real Agent's data already loaded and visible underneath it
+
+A real report, traced from two days of repeating `ClientErrors` rows
+all tied to one specific Agent Code across three different pages
+(`agent-hub.html`, `a-cell.html`, `hub.html`) -- a strong signal
+something about loading that one Agent's data was hitting the same
+broken path repeatedly, everywhere it was touched. Play → that Agent
+opened the multi-step Character Creation Wizard instead of the real
+sheet, but the real sheet's data was loading correctly underneath it
+(Live Play's own toggle showed "RETURN TO SHEET," meaning `?load=`
+itself had succeeded) -- the wizard was the wrong thing staying on
+screen, not a failed load.
+
+Root cause: a race between `?load=`'s two outcomes.
+`startRecruitFlow()` (`stats/cloud-sync.js`) opens the wizard when
+`?load=` reports `NOT_FOUND` for this Agent Code -- but nothing ever
+closed that wizard back down if a *real* character load for the same
+code landed moments later (a delayed/duplicate response, or this
+device's own local autosave restore finishing after the wizard had
+already opened). Once genuinely open, the wizard is its own DOM
+overlay, entirely separate from the simple New-Recruit-block-vs-
+character-sheet swap `dgCharacterMode.update()` already handles, so it
+had no way to know a real load had since succeeded and it should get
+out of the way.
+
+Fixed the symptom directly rather than chasing the exact race:
+`onApplied` (the `?load=` handler's own callback for "real character
+data was just successfully applied," `stats/cloud-sync.js`) now calls
+`window.dgWizard.deactivate()` unconditionally -- a successful real
+load is unambiguous proof this Agent isn't a new recruit, and
+`deactivate()` is already a safe no-op if the wizard was never open.
+Doesn't yet explain why `?load=` reported `NOT_FOUND` for an Agent
+with real data in the first place (possibly related to the general
+backend-latency/"busy" reports tracked in GitHub issue #9) -- this
+fix stops the wizard from getting stuck on screen when it happens,
+not the underlying false `NOT_FOUND`. Bumped `sw.js`'s `CACHE_NAME`
+to `v104` (`stats/cloud-sync.js` changed).

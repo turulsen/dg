@@ -477,6 +477,18 @@
             // silently stomped right along with it.
             onApplied: () => {
                 revealGate(); finishBadge();
+                // A real report: the Character Creation Wizard sometimes stayed
+                // open, showing "Step 1 of 8", with this Agent's real data
+                // already loaded and visible underneath it -- a race between
+                // startRecruitFlow()'s onNotFound path (below) opening the
+                // wizard and a real character load landing moments later
+                // (a delayed/duplicate response, or this device's own local
+                // autosave restore) with nothing to close the now-stale
+                // wizard it left behind. Whenever a real load actually
+                // succeeds, that's unambiguous proof this Agent isn't a new
+                // recruit -- deactivate() is a no-op if the wizard was never
+                // open, so this is safe to call unconditionally.
+                window.dgWizard?.deactivate?.();
                 if (wantLive && typeof setLivePlay === 'function') setLivePlay(true);
                 if (wantSplit && window.dgSplitView) window.dgSplitView.enter();
             },
