@@ -2345,3 +2345,41 @@ individually per issue #8's plan, now that the actual root cause (the
 `saveCharacter()`/`logClientError()` lock contention fixed earlier the
 same day) is confirmed live and working. Purely client-side. `sw.js`
 `CACHE_NAME` bumped to `v109`.
+
+## Every page's Clearance load / A-Cell password screen taking over a
+## minute to even appear, on a weak connection
+
+Live report, same night: entering A-Cell from Clearance took over a
+minute for the password screen itself to show up -- not a backend
+call, not auth, just the static HTML rendering. Root cause found by
+checking every page's `<head>`: every single page in this app
+(`index.html`, `agent-hub.html`, `a-cell.html`, `hub.html`,
+`stats/index.html`, `notes/index.html`) loads
+`assets/js-error-banner.js` as a plain, render-blocking `<script src>`
+tag with neither `async` nor `defer`, placed near the very top of
+`<head>`. A render-blocking script forces the browser to fully
+download AND execute it before continuing to parse the rest of the
+document at all -- on a weak connection, that one small file stalling
+holds up the ENTIRE page, including static content like a password
+`<input>` that's sitting right there in the HTML with nothing else to
+wait on.
+
+Added `async` (not `defer` -- see below) to all 6 copies of this
+script tag. `async` lets the browser keep parsing/rendering the rest
+of the page while this script downloads in the background, fixing the
+actual complaint, while still executing the script as soon as it's
+ready rather than deferred until the whole document finishes parsing.
+`defer` was considered and rejected: this file's whole job is catching
+early JS errors via `window.addEventListener('error'/'unhandledrejection',
+...)`, and several pages here have other, earlier, non-deferred inline
+`<script>` blocks -- deferring the error banner past all of those would
+create a blind spot for exactly the class of early-load error this
+telemetry exists to catch. `async` avoids that: for a small same-origin
+file, it should still attach its listeners very early, just without
+blocking the parser first. Verified safe against the script's own code
+-- it only attaches top-level event listeners, and its one immediate DOM
+touch already guards for `document.body` not existing yet
+(`document.body || document.documentElement`).
+
+Purely client-side, no backend changes. `sw.js` `CACHE_NAME` bumped to
+`v110` (6 `SHELL_FILES`-listed files changed).
