@@ -2298,3 +2298,29 @@ Added a debounced `scroll` listener that reruns the same reflow trick
 doesn't reintroduce the scroll jank the debounce exists to avoid.
 Purely client-side, `assets/dice-roller.js` only. `sw.js` `CACHE_NAME`
 bumped to `v107`.
+
+## Issue #8 shipping plan, step 4: force Firestore long-polling instead
+## of auto-detecting
+
+Split out of originally-reverted commit `1b71af0` (step 3 above shipped
+the other half of that commit). Switches every
+`experimentalAutoDetectLongPolling: true` to `experimentalForceLongPolling:
+true` across all 6 Firestore init sites (`agent-hub.html`, `a-cell.html`'s
+two independent loaders, `notes/notes.js`, `assets/table-radio.js`,
+`assets/dice-roller.js`). Auto-detect tries Firestore's default streaming
+transport (WebChannel) first and only falls back to long-polling after it
+fails; on Brave, some ad-blockers, and some mobile networks/carriers that
+silently block or interfere with WebChannel, that probe-then-fallback
+dance was itself throwing repeatedly from inside the cross-origin
+Firestore script -- the repeating "Script error." flood from the
+2026-09-11 incident reports and `ClientErrors` telemetry. Forcing
+long-polling from the start skips that failing dance entirely on exactly
+the networks that need it, at the cost of slightly higher latency
+everywhere else.
+
+This is the one change from the 4 originally-reverted commits with the
+least certain payoff -- it can only really be judged by whether reports
+of stuck/empty real-time listeners (Notes, Evidence, Table Radio, Dice
+history) drop off after this ships, not by anything visible in testing
+here. Purely client-side, no backend/Code.gs changes. `sw.js` `CACHE_NAME`
+bumped to `v108`.
