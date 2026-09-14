@@ -2451,3 +2451,41 @@ the CSS itself resolves.
 
 Purely client-side, no backend changes. `sw.js` `CACHE_NAME` bumped to
 `v112`.
+
+## A-Cell's Now Playing panel getting permanently stuck on the previous
+## track/pause state
+
+Live report during the same session: pressing Play on a Track Library
+entry (Combat) actually started the audio (table-radio.js's own
+Firestore `onSnapshot` listener picked up the change immediately, same
+as always) but A-Cell's own dedicated Now Playing panel kept showing
+the previous track (Abyss) indefinitely. Reloading the page (six times,
+confirmed) didn't help, ruling out a stale-session/cache explanation.
+Pause/Resume and the seek scrubber showed the same class of symptom --
+"nothing happens" after clicking, no recovery.
+
+Root cause: `setNowPlaying()`/`sendTransportAction_()`/`sendSeek_()` in
+this file each do their write, wait exactly 900ms, then make ONE
+`get_now_playing` check to confirm it landed and update the panel's
+`current` state -- with no retry if that single check fails. `mode:
+'no-cors'` POSTs can't be read to confirm success directly, so this
+verify step was the ONLY thing that ever updated the panel after a
+Handler action. If that one check happened to land before the Apps
+Script Sheets write had actually committed (`getNowPlaying()` reads the
+Sheet directly on every cache miss, and this file's own `jsonpGet()`
+has no retry of its own) -- entirely possible given real Apps Script
+write latency and every open tab on every page also polling
+`get_now_playing` every 2 seconds -- the panel was left stranded on
+stale state with **no other mechanism to ever self-correct**: the
+`setInterval` tick that keeps the scrubber moving only re-reads the
+already-stale local `current` object, it never re-fetches from the
+backend.
+
+Added a 2-attempt retry with backoff (matching
+`agent-hub.html`'s existing `CI_LOOKUP_RETRY_DELAYS_MS` pattern for the
+identical class of problem: a one-shot Apps Script check racing real
+write latency) to all three verify call sites
+(`verifyNowPlaying()`/`verifyTransportAction_()`/`verifySeek_()`)
+before actually giving up and showing the "backend didn't confirm"
+message. Purely client-side, `a-cell.html` only. `sw.js` `CACHE_NAME`
+bumped to `v113`.

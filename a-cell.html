@@ -4484,6 +4484,26 @@
     }
   }, 1000);
 
+  // Same one-shot-verify-with-no-retry bug as verifyNowPlaying() (see its
+  // own comment) -- retries before giving up.
+  function verifySeek_(ch, positionMs, attempt) {
+    attempt = attempt || 0;
+    jsonpGet('get_now_playing', { channel: ch }, function (res) {
+      isSeekDragging = false;
+      if (res && res.status === 'OK' && res.track_url) {
+        current.started_at = res.started_at || 0;
+        current.paused_at = res.paused_at || 0;
+        current.paused = !!res.paused;
+        statusEl.textContent = 'Seeked to ' + formatSeekTime_(positionMs / 1000) + ' on CH ' + ch + '.';
+        syncTransportUI_();
+      } else if (attempt < NOW_PLAYING_VERIFY_RETRY_DELAYS_MS.length) {
+        isSeekDragging = true; // keep suppressing the tick-driven re-sync while we retry
+        setTimeout(function () { verifySeek_(ch, positionMs, attempt + 1); }, NOW_PLAYING_VERIFY_RETRY_DELAYS_MS[attempt]);
+      } else {
+        statusEl.textContent = NOT_DEPLOYED_MSG;
+      }
+    });
+  }
   function sendSeek_(positionMs) {
     var ch = currentChannel;
     statusEl.textContent = 'Seeking…';
@@ -4492,17 +4512,7 @@
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({ action: 'seek_now_playing', channel: ch, position_ms: String(positionMs), handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
     }).then(function () {
-      setTimeout(function () {
-        jsonpGet('get_now_playing', { channel: ch }, function (res) {
-          isSeekDragging = false;
-          if (!res || res.status !== 'OK' || !res.track_url) { statusEl.textContent = NOT_DEPLOYED_MSG; return; }
-          current.started_at = res.started_at || 0;
-          current.paused_at = res.paused_at || 0;
-          current.paused = !!res.paused;
-          statusEl.textContent = 'Seeked to ' + formatSeekTime_(positionMs / 1000) + ' on CH ' + ch + '.';
-          syncTransportUI_();
-        });
-      }, 900);
+      setTimeout(function () { verifySeek_(ch, positionMs); }, 900);
     }).catch(function () { isSeekDragging = false; statusEl.textContent = 'Could not reach the backend.'; });
   }
 
@@ -4764,7 +4774,22 @@
     }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
   }
 
-  function verifyNowPlaying(ch, expectedUrl, expectedTitle) {
+  // Live report, 2026-09-14: a Handler pressing Play on a track sometimes
+  // saw the wrong (previous) track title stick in this panel indefinitely
+  // -- Combat audibly playing (table-radio.js's own onSnapshot listener,
+  // Firestore-driven, already caught the real update) while this panel
+  // still showed Abyss. Root cause: this was a single get_now_playing
+  // check 900ms after the write, with NO retry -- if that one poll lost
+  // the race against real Apps Script Sheets write latency (getNowPlaying()
+  // reads the Sheet directly on a cache miss, and this file's own
+  // jsonpGet() has no retry of its own), the panel was left stranded on
+  // stale state with no other mechanism to ever self-correct short of the
+  // Handler triggering some unrelated action. Retries a few more times
+  // with backoff before actually giving up, same shape as agent-hub.html's
+  // CI_LOOKUP_RETRY_DELAYS_MS for the identical class of problem.
+  var NOW_PLAYING_VERIFY_RETRY_DELAYS_MS = [1500, 3000];
+  function verifyNowPlaying(ch, expectedUrl, expectedTitle, attempt) {
+    attempt = attempt || 0;
     jsonpGet('get_now_playing', { channel: ch }, function (res) {
       var live = res && res.status === 'OK' ? (res.track_url || '') : '';
       if (live === expectedUrl) {
@@ -4776,6 +4801,8 @@
           : 'Stopped broadcasting to CH ' + ch + '.';
         setAirIndicator(!!expectedUrl);
         syncTransportUI_();
+      } else if (attempt < NOW_PLAYING_VERIFY_RETRY_DELAYS_MS.length) {
+        setTimeout(function () { verifyNowPlaying(ch, expectedUrl, expectedTitle, attempt + 1); }, NOW_PLAYING_VERIFY_RETRY_DELAYS_MS[attempt]);
       } else {
         statusEl.textContent = NOT_DEPLOYED_MSG;
       }
@@ -4791,6 +4818,27 @@
   // <audio>'s own play/pause events (see syncTransportUI_() above) --
   // whichever one the Handler actually clicks, the same real broadcast
   // action fires.
+  // Same one-shot-verify-with-no-retry bug as verifyNowPlaying() (see its
+  // own comment) -- a Pause/Resume click could lose the race against real
+  // Apps Script write latency and get permanently stuck showing the
+  // pre-click state. Retries with the same backoff.
+  function verifyTransportAction_(ch, wasPaused, attempt) {
+    attempt = attempt || 0;
+    jsonpGet('get_now_playing', { channel: ch }, function (res) {
+      var ok = res && res.status === 'OK' && res.track_url && !!res.paused !== wasPaused;
+      if (ok) {
+        current.paused = !!res.paused;
+        current.started_at = res.started_at || 0;
+        current.paused_at = res.paused_at || 0;
+        statusEl.textContent = (current.paused ? 'Paused on CH ' : 'Resumed on CH ') + ch + ': ' + (current.track_title || current.track_url);
+        syncTransportUI_();
+      } else if (attempt < NOW_PLAYING_VERIFY_RETRY_DELAYS_MS.length) {
+        setTimeout(function () { verifyTransportAction_(ch, wasPaused, attempt + 1); }, NOW_PLAYING_VERIFY_RETRY_DELAYS_MS[attempt]);
+      } else {
+        statusEl.textContent = NOT_DEPLOYED_MSG;
+      }
+    });
+  }
   function sendTransportAction_(action) {
     var ch = currentChannel;
     var wasPaused = current.paused;
@@ -4800,17 +4848,7 @@
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({ action: action, channel: ch, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
     }).then(function () {
-      setTimeout(function () {
-        jsonpGet('get_now_playing', { channel: ch }, function (res) {
-          var ok = res && res.status === 'OK' && res.track_url && !!res.paused !== wasPaused;
-          if (!ok) { statusEl.textContent = NOT_DEPLOYED_MSG; return; }
-          current.paused = !!res.paused;
-          current.started_at = res.started_at || 0;
-          current.paused_at = res.paused_at || 0;
-          statusEl.textContent = (current.paused ? 'Paused on CH ' : 'Resumed on CH ') + ch + ': ' + (current.track_title || current.track_url);
-          syncTransportUI_();
-        });
-      }, 900);
+      setTimeout(function () { verifyTransportAction_(ch, wasPaused); }, 900);
     }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
   }
 

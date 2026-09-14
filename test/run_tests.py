@@ -4505,7 +4505,10 @@ def test_acell_music_backend_not_deployed(p):
     page.wait_for_timeout(150)
     page.fill("#music-url-input", "https://youtube.com/watch?v=dQw4w9WgXcQ")
     page.click("#music-set-btn")
-    page.wait_for_timeout(1500)
+    # verifyNowPlaying() now retries twice with backoff (900ms + 1500ms +
+    # 3000ms) before giving up -- see a-cell.html's own comment -- so the
+    # final honest-failure message lands around 5.4s, not ~900ms.
+    page.wait_for_timeout(6000)
 
     status = page.inner_text("#music-status")
     record("acell", "an undeployed backend is reported honestly, not as a false 'Broadcasting' success",
