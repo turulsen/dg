@@ -2383,3 +2383,41 @@ touch already guards for `document.body` not existing yet
 
 Purely client-side, no backend changes. `sw.js` `CACHE_NAME` bumped to
 `v110` (6 `SHELL_FILES`-listed files changed).
+
+## Revert: forcing Firestore long-polling made Table Radio (and every
+## other real-time feature) badly laggy -- ~44s to start audio, ~10s
+## to pause
+
+Live report during an actual game session, hours after issue #8 step
+4 shipped `experimentalForceLongPolling` across all 6 Firestore init
+sites: choosing a track took ~44 seconds to actually start playing,
+and pausing had a ~10-second lag -- a feature the user explicitly
+described as previously snappy/immediate. Queueing a track (a
+local-only UI update, no round trip) stayed instant, isolating the
+regression to real-time sync latency specifically, not page load or
+backend writes (both already ruled out/fixed earlier the same night).
+
+Step 4's own justification undersold the cost: auto-detect tries
+Firestore's fast streaming transport (WebChannel) first and only
+falls back to long-polling if it fails, which is rare; forcing
+long-polling for every user trades that rare failure (silently stuck
+listeners on Brave/some ad-blockers/some mobile networks) for a
+universal, severe latency hit on every real-time update, on every
+network, for everyone -- "slightly higher latency" turned out to mean
+tens of seconds for the app's most latency-sensitive real-time feature
+(Table Radio), not a marginal cost.
+
+Reverted all 6 sites (`agent-hub.html`, `a-cell.html`'s two loaders,
+`notes/notes.js`, `assets/table-radio.js`, `assets/dice-roller.js`)
+back to `experimentalAutoDetectLongPolling`. The original 2026-09-11
+incident this was meant to fix (repeating cross-origin "Script error."
+floods, stuck listeners) is still covered by the loader `onerror`/
+timeout hardening from issue #8 step 3, which addresses the actual
+silent-hang symptom without touching every user's real-time latency.
+If a genuine Brave/ad-blocker WebChannel-block report resurfaces, it
+should be handled narrowly (e.g. detecting that specific failure and
+falling back per-client) rather than forcing degraded transport for
+every user up front.
+
+Purely client-side, no backend changes. `sw.js` `CACHE_NAME` bumped to
+`v111`.

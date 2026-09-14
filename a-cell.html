@@ -2420,12 +2420,13 @@
               // (captured above, before firestore-compat.js changed what
               // apps.length-based checks could tell us) still correctly
               // gates that.
-              // 2026-09-11 live report: repeated cross-origin-obscured
-              // "Script error." floods and permanently stuck listeners were
-              // traced to auto-detect's probe-then-fallback dance failing to
-              // ever settle on some mobile networks. Forcing long-polling
-              // straight away skips that dance entirely.
-              if (isFirstInit) window.firebase.firestore().settings({ experimentalForceLongPolling: true });
+              // REVERTED 2026-09-14, mid-live-session: forcing
+              // long-polling for everyone caused a real report of ~44s
+              // to start Table Radio audio and ~10s to pause, down from
+              // snappy/immediate on auto-detect -- see table-radio.js's
+              // matching comment. That regression outweighs the rarer
+              // Brave/ad-blocker WebChannel-block case this was for.
+              if (isFirstInit) window.firebase.firestore().settings({ experimentalAutoDetectLongPolling: true });
               var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
               cbs.forEach(function (pair) { pair.ok(); });
             });
@@ -5239,14 +5240,14 @@
               // zero data and, worse, no error at all (Safari on the same
               // account/data worked fine, confirming this wasn't a real
               // permissions or data problem).
-              // 2026-09-11 live report: repeated cross-origin-obscured
-              // "Script error." floods and permanently stuck listeners were
-              // traced to auto-detect's probe-then-fallback dance failing to
-              // ever settle on some mobile networks. Forcing long-polling
-              // straight away skips that dance entirely. Must be set before
-              // ANY other Firestore call on this page, and can only ever be
-              // called once -- isFirstInit still correctly gates that.
-              if (isFirstInit) window.firebase.firestore().settings({ experimentalForceLongPolling: true });
+              // REVERTED 2026-09-14, mid-live-session: see
+              // table-radio.js's matching comment -- forcing
+              // long-polling for everyone caused ~44s to start Table
+              // Radio audio and ~10s to pause, outweighing the rarer
+              // Brave/ad-blocker case this was for. Must be set before
+              // ANY other Firestore call on this page, and can only ever
+              // be called once -- isFirstInit still correctly gates that.
+              if (isFirstInit) window.firebase.firestore().settings({ experimentalAutoDetectLongPolling: true });
               var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
               cbs.forEach(function (pair) { pair.ok(); });
             }, fail);
