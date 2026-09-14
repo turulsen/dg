@@ -2923,30 +2923,21 @@ def test_acell_play(p):
         },
     }
 
-    def summary_for(code):
-        st = fake_full[code]
-        bio = st.get("bio", {})
-        derived = st.get("derived", {})
-        return {
-            "agent_code": code, "name": bio.get("name", ""), "profession": bio.get("profession", ""),
-            "nationality": bio.get("nationality", ""), "player_name": bio.get("player_name", ""),
-            "hp": derived.get("hp"), "wp": derived.get("wp"), "san": derived.get("san"), "bp": derived.get("bp"),
-            "updated_at": "",
-        }
-
     fake_cells = [
         {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Gergo", "member_codes": ["OWEN-CS12"]},
         {"cell_id": "cell_2", "name": "Cell Bravo", "handler": "Gergo", "member_codes": ["PRIY-AN34"]},
     ]
 
+    # Play's own roster/Cell-filter now come from live Firestore reads
+    # (characters/briefs/cells, all public-read) instead of
+    # list_characters/list_cells JSONP -- see startCharacterListeners()/
+    # startCellsListener() in a-cell.html. load_character (a single
+    # Agent's full sheet, fetched on demand) is untouched.
+    install_notes_firestore_stub(page)
+
     def fake_apps_script(route):
         url = route.request.url
-        if "action=list_characters" in url and "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            chars = [summary_for(c) for c in fake_order]
-            body = f'{cb}({json.dumps({"status": "OK", "characters": chars})})'
-            route.fulfill(status=200, content_type="application/javascript", body=body)
-        elif "action=load_character" in url and "callback=" in url:
+        if "action=load_character" in url and "callback=" in url:
             cb = url.split("callback=")[1].split("&")[0]
             code = url.split("code=")[1].split("&")[0]
             st = fake_full.get(code)
@@ -2954,10 +2945,6 @@ def test_acell_play(p):
                 body = f'{cb}({json.dumps({"status": "OK", "agent_code": code, "character_json": json.dumps(st)})})'
             else:
                 body = f'{cb}({json.dumps({"status": "NOT_FOUND"})})'
-            route.fulfill(status=200, content_type="application/javascript", body=body)
-        elif "action=list_cells" in url and "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            body = f'{cb}({json.dumps({"status": "OK", "cells": fake_cells})})'
             route.fulfill(status=200, content_type="application/javascript", body=body)
         elif "callback=" in url:
             # Other tab modules (Music, Sheet) fetch unconditionally on
@@ -2972,9 +2959,20 @@ def test_acell_play(p):
     page.route("**/script.google.com/**", fake_apps_script)
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(500)
 
-    names = page.eval_on_selector_all("#play-agent-list .pa-name", "els => els.map(e=>e.textContent)")
+    def char_doc(code):
+        st = fake_full[code]
+        bio = st.get("bio", {})
+        return {"id": code, "character_json": json.dumps({"bio": bio, "derived": st.get("derived", {})}),
+                "updated_at": "", "player_name": bio.get("player_name", "")}
+
+    wait_for_condition(lambda: any(l["path"] == "characters" for l in page.evaluate("() => window.__dgFirestoreListeners || []")), timeout_ms=8000)
+    push_firestore_snapshot(page, "characters", [], [char_doc(c) for c in fake_order])
+    push_firestore_snapshot(page, "briefs", [], [])
+    push_firestore_snapshot(page, "cells", [], [dict(c, id=c["cell_id"]) for c in fake_cells])
+
+    names = wait_for_condition(lambda: page.eval_on_selector_all("#play-agent-list .pa-name", "els => els.map(e=>e.textContent)")
+                                if "Owen Castillo" in page.inner_text("#play-agent-list") else None)
     record("acell", "Play lists every Agent on file, not just this browser's own roster",
            names == ["Owen Castillo", "Priya Anand", "Marcus Reyes"], str(names))
 
@@ -3003,18 +3001,23 @@ def test_acell_play(p):
     record("acell", "sticky header shows the Player Name so the Handler knows who made this Agent",
            "Gergo P" in page.inner_text("#play-view .pv-player"), "")
 
-    # Refresh re-fetches the roster (and, since the selected Agent's full
-    # sheet is now fetched on demand rather than sitting in the initial
-    # list payload, drops the cached copy so it re-fetches too) and
-    # keeps the selected Agent's panel showing their updated view,
-    # instead of dropping the selection.
+    # A live update (someone else's save landing in Firestore) now
+    # arrives automatically via the onSnapshot listener -- no Refresh
+    # click needed. renderList() re-opens the currently-selected Agent
+    # on every listener update (dropping their cached full sheet so it
+    # re-fetches), keeping the selected panel showing their updated view
+    # instead of going stale underneath an unrelated roster refresh.
     fake_full["OWEN-CS12"]["csStats"]["CHA"] = 99
-    page.click("#play-refresh-btn")
-    page.wait_for_timeout(500)
-    stat_vals_after = page.eval_on_selector_all("#play-view .pv-stat .val", "els => els.map(e=>e.textContent)")
-    record("acell", "Refresh pulls updated stats and keeps the same Agent's view open",
+    push_firestore_snapshot(page, "characters", [], [char_doc(c) for c in fake_order])
+    stat_vals_after = wait_for_condition(
+        lambda: (lambda v: v if v == ["12", "13", "14", "15", "10", "99"] else None)(
+            page.eval_on_selector_all("#play-view .pv-stat .val", "els => els.map(e=>e.textContent)")))
+    record("acell", "a live Firestore update refreshes an open Agent's view automatically, no Refresh click needed",
            stat_vals_after == ["12", "13", "14", "15", "10", "99"], str(stat_vals_after))
-    record("acell", "Refresh shows an 'Updated' timestamp note",
+
+    page.click("#play-refresh-btn")
+    page.wait_for_timeout(200)
+    record("acell", "Refresh (now just a re-render from already-live state) still shows an 'Updated' timestamp note",
            "Updated" in page.inner_text("#play-refresh-note"), "")
 
     # Cell filter: narrows the Play roster to one Cell's members, so a
@@ -3173,10 +3176,20 @@ def test_acell_handler_session_race(p):
     record("acell", "a saved Handler password silently re-logs in on page load",
            any(c.get("handler_password") == "letmein" for c in login_calls), str(login_calls))
 
+    # Play's roster is now a public-read Firestore listener (see
+    # test_acell_play's own comment), not the session-gated
+    # list_characters JSONP call this whole test is named for -- it has
+    # no session of its own to race at all anymore, a stronger guarantee
+    # than "recovers once a fresh session lands". Pushed immediately,
+    # not gated on the login race above, to prove that.
+    wait_for_condition(lambda: any(l["path"] == "characters" for l in page.evaluate("() => window.__dgFirestoreListeners || []")), timeout_ms=8000)
+    push_firestore_snapshot(page, "characters", [], [dict(c, id=c["agent_code"], character_json=json.dumps({"bio": {"name": c["name"]}, "derived": {}})) for c in chars_fixture])
+    push_firestore_snapshot(page, "briefs", [], [])
+    push_firestore_snapshot(page, "cells", [], [dict(c, id=c["cell_id"]) for c in cells_fixture])
     names = wait_for_condition(lambda: page.eval_on_selector_all("#play-agent-list .pa-name", "els => els.map(e=>e.textContent)")
                                 if "Owen Castillo" in page.inner_text("#play-agent-list") else None)
-    record("acell", "Play recovers and shows the roster once a fresh session lands, "
-                    "instead of getting stuck on whatever (possibly stale) session was already saved",
+    record("acell", "Play shows the roster immediately via its own Firestore listener, immune to the "
+                    "dg_acell_session race this test is named for (it has no session of its own to race)",
            names == ["Owen Castillo"], page.inner_text("#play-agent-list"))
 
     # Cells' own list_characters call (for the "add Agent" picker) needs

@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v86 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v87 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -333,6 +333,11 @@
 //   Script editor after redeploying) rather than waiting for each
 //   Cell's membership to happen to be re-saved again through the
 //   now-fixed path.
+// + createCell() now dual-writes cells/{cellId} to Firestore on
+//   creation, not just on the first membership change -- A-Cell's Play
+//   tab reads Cells live from Firestore now (see a-cell.html), and a
+//   brand-new empty Cell was invisible to that listener until someone
+//   assigned its first member.
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -2551,6 +2556,14 @@ function createCell(name, handler) {
   // than columns silently leaves the trailing cell blank rather than
   // erroring, so a short array here was an easy, invisible mismatch.
   sheet.appendRow([cellId, name, (handler || '').trim(), '[]', new Date().getTime(), '']);
+  // A-Cell's Play tab now reads Cells live from Firestore instead of
+  // polling this Sheet (see a-cell.html's startCellsListener()) -- but
+  // until now, only updateCellMembers() ever dual-wrote cells/{cellId},
+  // so a brand-new Cell with no members assigned yet was invisible to
+  // that listener until its first membership change. Mirrored here too
+  // so a newly created Cell shows up immediately, same as it always has
+  // in the Sheet-backed Cells tab.
+  firestoreDualWrite_('cells', cellId, { name: name, handler: (handler || '').trim(), member_codes: [], channel: '' });
   return ContentService.createTextOutput(JSON.stringify({ status: 'OK', cell_id: cellId })).setMimeType(ContentService.MimeType.JSON);
 }
 

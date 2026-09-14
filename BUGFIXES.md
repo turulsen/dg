@@ -2641,3 +2641,90 @@ Both fixes purely client-side, `a-cell.html` only. Full Playwright suite
 run afterward: 756/765, all 9 failures the known gstatic.com-blocked-by-
 sandbox-proxy ones, unrelated (148/148 a-cell tests passed). `sw.js`
 `CACHE_NAME` bumped to `v117`.
+
+## Handler feedback after the retry fixes above: "A-Cell dies" with
+## several players online -- retries alone weren't good enough
+
+Direct instruction from the Handler, after a full game session running
+the fixes above: "Play didn't work once from my three play sessions.
+This is not good enough when 4 players are online, A-Cell dies. Info
+doesn't load after Firebase migration also an issue: no tracks
+available, no cells. The only consistent and fast loading thing is
+Evidence." That last sentence is the actual diagnosis: Evidence (and
+Notes) were rewritten to read live from Firestore back in Phase 5 of
+this migration; the Play tab's Agent list and the Cells filter never
+were, and were still doing exactly what they'd always done -- polling
+Apps Script via JSONP, retries or not. More retries on a fundamentally
+un-scalable path (one Apps Script Web App dispatch per Handler, per
+poll, competing with every player's own requests) was never going to
+fix "dies under load" the way moving to a push-based Firestore listener
+already had for Evidence.
+
+Checked what's actually available before writing anything: `characters/
+{agentCode}`, `briefs/{agentCode}`, and `cells/{cellId}` are ALL already
+public-read in `firestore.rules` and already kept live-updated by every
+relevant Code.gs write (`saveCharacter()`, the Briefs submit handler,
+`updateCellMembers()`) via `firestoreDualWrite_`/`firestoreDualDelete_`
+-- this data was already there, just never read from that side for this
+one tab. Rewrote the Play tab's `fetchList()`/`fetchCells()` in
+`a-cell.html` into `startCharacterListeners()`/`startCellsListener()`:
+live `onSnapshot` reads on `characters` + `briefs` (merged client-side
+the same way `listCharacters()` already merges them server-side --
+`character_json` parsed for `bio`/`derived`, `briefs`' `face_plate_url`
+overlaid) and on `cells`, feeding the exact same `allCharacters`/`cells`
+shape `applyFilter()`/`renderList()`/`renderDashboard()` already
+expected, so none of that rendering code changed at all. No password or
+session needed for any of it (these reads were already public), so this
+tab is now also immune to the `dg_acell_session` staleness race a
+separate test (`test_acell_handler_session_race`) was written for --
+it never has a session to race in the first place. Refresh is no longer
+a real network call; onSnapshot already means every open tab sees a
+new/edited character or Cell mid-session, not on the next manual click
+or the next poll interval.
+
+One real, deliberately-accepted gap: `updateCellMembers()` was the ONLY
+place that ever dual-wrote `cells/{cellId}` -- `createCell()` itself
+never did, so a brand-new Cell with no members assigned yet was invisible
+to this new listener until its first membership change (the old JSONP
+path, reading the Sheet directly, always saw it immediately). Closed by
+adding the same `firestoreDualWrite_('cells', ...)` call to
+`createCell()` too (`backend/Code.gs`, bumped to v87) -- this one
+**does** need the usual manual paste-and-redeploy into the Apps Script
+editor before it takes effect; the `a-cell.html` changes need no
+redeploy at all.
+
+Track Library was NOT migrated the same way despite being named in the
+same report ("no tracks available") -- checked first, and unlike
+Characters/Cells, nothing ever dual-writes a `tracks/{trackId}`
+Firestore doc at all (the `firestore.rules` entry for it has sat unused
+since it was scaffolded). Migrating that read properly needs a real
+backend addition (dual-write in `uploadTrack()`/`deleteTrack()` plus a
+one-time backfill for tracks uploaded before it, same shape as the
+existing `backfillCellsToFirestore_()` repair) -- left for a follow-up
+pass rather than rushed in alongside this fix.
+
+Testing this uncovered a real gap in the test suite itself, not just
+the app: `test_acell_play` and `test_acell_handler_session_race` were
+still mocking the now-unused `list_characters`/`list_cells` JSONP
+endpoints for the Play tab specifically, so the first full run after
+this change showed ~20 tests silently missing (a crash from the
+un-mocked live `window.firebase.firestore()` calls hitting the real
+Firebase SDK loader with no network, aborting the rest of that test
+file) rather than a clean pass/fail count -- the kind of "count just
+looks a little off" signal that's easy to wave away as the
+already-known flaky mobile-notes test instead of a real regression.
+Confirmed which it was by re-running against the prior commit (clean)
+and against this change (consistently short by the same ~20) before
+concluding it was real. Fixed by pointing both tests at the SAME
+general-purpose Firestore stub Notes/Evidence already use
+(`install_notes_firestore_stub`/`push_firestore_snapshot`, no new stub
+code needed -- it already supports a plain `.collection(x).onSnapshot()`
+with no `.where()`), rewriting their fixtures to push `characters`/
+`briefs`/`cells` documents instead of faking the JSONP responses, and
+updating the "Refresh pulls updated stats" case to instead push an
+updated live snapshot and confirm the open Agent's view updates on its
+own -- the more accurate thing to test now that Refresh itself no
+longer re-fetches. Full suite after: 755/765, all 10 failures the known
+gstatic.com-sandbox-block ones plus one pre-existing sub-pixel color-
+rounding flake, 148/148 a-cell tests passing. `sw.js` `CACHE_NAME`
+bumped to `v118`.

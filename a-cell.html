@@ -1467,14 +1467,6 @@
   // is fetched on demand via load_character and cached here so
   // re-selecting the same Agent doesn't refetch it.
   var fullStateCache = {};
-  // Bumped at the start of every fetchList() call; a callback checks it's
-  // still current before touching allCharacters/re-rendering, so a slower
-  // superseded call (e.g. the stale-session attempt that fires immediately
-  // on load, racing the fresh-session retry once a saved password's
-  // silent re-login lands -- see the Handler-password module's own
-  // comment) can't land after a newer call already rendered and stomp
-  // good data back into an error, or vice versa.
-  var listFetchGen = 0;
 
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -1483,109 +1475,113 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
   }
 
-  // Same 2-attempt retry with backoff (1s, 1s) and 15s per-attempt
-  // timeout as the other 4 jsonpGet() copies elsewhere in this file --
-  // this fetch is hand-rolled rather than going through jsonpGet (it
-  // needs the listFetchGen staleness check below), so it had none of
-  // that reliability work and failed the same way under a weak signal:
-  // "Could not load the Agent list" live during play, same as Track
-  // Library before its own fix. myGen is captured once on the initial
-  // call (attempt undefined) and threaded through every retry so a
-  // superseded fetchList() call can't have its retries stomp a newer
-  // one's result.
-  var FETCH_LIST_RETRY_DELAYS_MS = [1000, 1000];
-  function fetchList(myGen, attempt) {
-    if (myGen === undefined) { myGen = ++listFetchGen; refreshBtn.disabled = true; }
-    attempt = attempt || 0;
-    var cbName = '_acellPlayList_' + Date.now() + '_' + attempt;
-    var timer = setTimeout(function () {
-      delete window[cbName];
-      if (myGen !== listFetchGen) return;
-      if (attempt < FETCH_LIST_RETRY_DELAYS_MS.length) {
-        setTimeout(function () { fetchList(myGen, attempt + 1); }, FETCH_LIST_RETRY_DELAYS_MS[attempt]);
-        return;
-      }
-      refreshBtn.disabled = false;
-      listEl.innerHTML = '<div class="play-error">Could not load the Agent list. (The A-Cell backend addition may not be deployed yet.)</div>';
-    }, 15000);
-    window[cbName] = function (res) {
-      clearTimeout(timer);
-      delete window[cbName];
-      var script = document.getElementById('_acell_play_list_script');
-      if (script) script.remove();
-      if (myGen !== listFetchGen) return;
-      refreshBtn.disabled = false;
-      if (!res || res.status !== 'OK' || !Array.isArray(res.characters)) {
-        listEl.innerHTML = '<div class="play-error">Could not load the Agent list.' +
-          (res && res.message ? ' (' + escapeHtml(res.message) + ')' : '') + '</div>';
-        return;
-      }
-      // list_characters now sends a flat summary, not the full
-      // character_json -- reshaped into the same {bio, derived} state
-      // shape the old full blob had so renderList()/renderDashboard()
-      // (which only ever read bio.name/profession and derived vitals)
-      // work completely unchanged. renderView()'s full-detail view is
-      // the one place that needs more than this and fetches it
-      // separately -- see fullStateCache above.
-      allCharacters = res.characters.map(function (c) {
-        if (!c.agent_code) return null;
-        return {
-          code: c.agent_code,
-          updatedAt: c.updated_at,
-          face_plate_url: c.face_plate_url || '',
-          state: {
-            bio: { name: c.name, profession: c.profession, nationality: c.nationality, player_name: c.player_name },
-            derived: { hp: c.hp, wp: c.wp, san: c.san, bp: c.bp }
-          }
-        };
-      }).filter(Boolean);
-      applyFilter();
-      refreshNote.textContent = 'Updated ' + new Date().toLocaleTimeString();
-    };
-    var s = document.createElement('script');
-    s.id = '_acell_play_list_script';
-    // list_characters needs a Handler session -- see
-    // requireHandlerSession_() in Code.gs. Every other tab's own
-    // jsonpGet() attaches this on every GET automatically; this one
-    // built its URL by hand and was missed when that Stage 4 hardening
-    // landed, so the Play tab's own Agent list 401'd unconditionally --
-    // regardless of password or session state -- until now.
-    var qs = 'action=list_characters&callback=' + cbName;
-    var acellSession = sessionStorage.getItem('dg_acell_session');
-    if (acellSession) qs += '&handler_session=' + encodeURIComponent(acellSession);
-    s.src = APPS_SCRIPT_URL + '?' + qs;
-    document.head.appendChild(s);
+  // Live Firestore reads instead of Apps Script JSONP -- post-game
+  // report: with several players online, this list ("A-Cell dies")
+  // failed to load, same for the Cells filter and Track Library, while
+  // Evidence (already Firestore-backed, see startEvidenceListener()
+  // elsewhere in this file) stayed "the only consistent and fast
+  // loading thing." characters/{agentCode}, briefs/{agentCode} and
+  // cells/{cellId} are ALL already public-read (see firestore.rules)
+  // and already kept live-updated by every save/delete/restore in
+  // Code.gs (firestoreDualWrite_/firestoreDualDelete_) -- this tab was
+  // just never rewritten to read from them, unlike Evidence/Notes.
+  // onSnapshot also means no polling, no retry/backoff logic needed at
+  // all: Firestore's own SDK handles reconnects, and every open A-Cell
+  // tab now sees a new/edited character or Cell the instant it's saved,
+  // not on the next manual Refresh.
+  //
+  // This block (Play tab) runs BEFORE the Evidence block later in this
+  // file that actually loads the Firebase SDK, so window.__dgEnsureFirebaseApi
+  // isn't set yet at the moment this script first runs -- waitForFirebaseApi_
+  // polls briefly (that block finishes executing microseconds later, same
+  // synchronous page load) rather than needing any script reordering.
+  function waitForFirebaseApi_(cb, onerror) {
+    if (window.__dgEnsureFirebaseApi) { window.__dgEnsureFirebaseApi(cb, onerror); return; }
+    setTimeout(function () { waitForFirebaseApi_(cb, onerror); }, 50);
   }
 
-  // Cells to filter by -- a lighter fetch than the Cells tab's own (just
+  var charsByCode = {};
+  var briefsByCode = {};
+  var cellsById = {};
+  var charsUnsub = null, briefsUnsub = null, cellsUnsub = null;
+
+  function rebuildAllCharacters() {
+    allCharacters = Object.keys(charsByCode).map(function (code) {
+      var charDoc = charsByCode[code];
+      var bio = {}, derived = {};
+      try {
+        var parsed = JSON.parse(charDoc.character_json || '{}');
+        bio = parsed.bio || {}; derived = parsed.derived || {};
+      } catch (e) { /* skip unparsable */ }
+      if (!charDoc.character_json) return null; // no character data at all yet, same as listCharacters()'s own skip
+      var briefDoc = briefsByCode[code] || {};
+      return {
+        code: code,
+        updatedAt: charDoc.updated_at || '',
+        face_plate_url: briefDoc.face_plate_url || '',
+        state: {
+          bio: {
+            name: bio.name, profession: bio.profession, nationality: bio.nationality,
+            // The dedicated Player Name field (kept in sync by saveCharacter())
+            // is authoritative -- bio.player_name is only a fallback for a
+            // doc saved before that field existed, same precedence
+            // listCharacters() itself uses server-side.
+            player_name: charDoc.player_name || bio.player_name
+          },
+          derived: { hp: derived.hp, wp: derived.wp, san: derived.san, bp: derived.bp }
+        }
+      };
+    }).filter(Boolean);
+    applyFilter();
+    refreshNote.textContent = 'Updated ' + new Date().toLocaleTimeString();
+  }
+
+  function startCharacterListeners() {
+    if (charsUnsub) return; // already live -- Firestore keeps this current on its own
+    waitForFirebaseApi_(function () {
+      var db = window.firebase.firestore();
+      refreshBtn.disabled = false;
+      charsUnsub = db.collection('characters').onSnapshot(function (snap) {
+        charsByCode = {};
+        snap.forEach(function (doc) { charsByCode[doc.id] = doc.data(); });
+        rebuildAllCharacters();
+      }, function (err) {
+        listEl.innerHTML = '<div class="play-error">Could not load the Agent list. (' + escapeHtml((err && err.message) || String(err)) + ')</div>';
+      });
+      briefsUnsub = db.collection('briefs').onSnapshot(function (snap) {
+        briefsByCode = {};
+        snap.forEach(function (doc) { briefsByCode[doc.id] = doc.data(); });
+        rebuildAllCharacters();
+      }, function () { /* face plates are a nice-to-have overlay -- a briefs listener failure shouldn't blank the roster */ });
+    }, function (err) {
+      listEl.innerHTML = '<div class="play-error">Could not load Firebase. (' + escapeHtml((err && err.message) || String(err)) + ')</div>';
+    });
+  }
+
+  // Cells to filter by -- a lighter read than the Cells tab's own (just
   // enough to populate the dropdown and know which Agent codes belong to
-  // the chosen Cell); doesn't block the Agent list from loading if it's
-  // slow or the addition isn't deployed, it just leaves "All Agents" as
-  // the only option.
-  var FETCH_CELLS_RETRY_DELAYS_MS = [1000, 1000];
-  function fetchCells(attempt) {
-    attempt = attempt || 0;
-    var cbName = '_acellPlayCells_' + Date.now() + '_' + attempt;
-    var timer = setTimeout(function () {
-      delete window[cbName];
-      if (attempt < FETCH_CELLS_RETRY_DELAYS_MS.length) {
-        setTimeout(function () { fetchCells(attempt + 1); }, FETCH_CELLS_RETRY_DELAYS_MS[attempt]);
-      }
-    }, 15000);
-    window[cbName] = function (res) {
-      clearTimeout(timer);
-      delete window[cbName];
-      var s = document.getElementById('_acell_play_cells_script');
-      if (s) s.remove();
-      if (res && res.status === 'OK' && Array.isArray(res.cells)) {
-        cells = res.cells;
+  // the chosen Cell). A brand-new Cell with no members assigned yet won't
+  // appear here until its first member is added (updateCellMembers() is
+  // the only place that dual-writes cells/{cellId} today) -- a narrow,
+  // accepted gap, not a regression: the old JSONP path always saw it
+  // immediately, but "All Agents" is still available as a fallback and a
+  // Handler realistically assigns members right after creating a Cell.
+  function startCellsListener() {
+    if (cellsUnsub) return;
+    waitForFirebaseApi_(function () {
+      cellsUnsub = window.firebase.firestore().collection('cells').onSnapshot(function (snap) {
+        cellsById = {};
+        snap.forEach(function (doc) { cellsById[doc.id] = doc.data(); });
+        cells = Object.keys(cellsById).map(function (id) {
+          var c = cellsById[id];
+          return { cell_id: id, name: c.name || '', handler: c.handler || '', member_codes: c.member_codes || [], channel: c.channel || '' };
+        });
         renderCellFilterOptions();
-      }
-    };
-    var s = document.createElement('script');
-    s.id = '_acell_play_cells_script';
-    s.src = APPS_SCRIPT_URL + '?action=list_cells&callback=' + cbName;
-    document.head.appendChild(s);
+        // A Cell dashboard currently on screen needs its roster
+        // re-filtered too if membership just changed underneath it.
+        applyFilter();
+      }, function () { /* leaves "All Agents" as the only option, same graceful fallback as before */ });
+    }, function () {});
   }
 
   function renderCellFilterOptions() {
@@ -1913,17 +1909,15 @@
     loadPlayPhoto(code, photoId);
   }
 
-  refreshBtn.addEventListener('click', function () { fetchList(); fetchCells(); });
+  // Refresh is no longer a real re-fetch -- onSnapshot already keeps
+  // allCharacters/cells live -- just a reassuring manual nudge that
+  // re-renders from current state and bumps the "Updated" timestamp.
+  refreshBtn.addEventListener('click', function () { rebuildAllCharacters(); });
   cellFilterEl.addEventListener('change', applyFilter);
-  fetchList();
-  fetchCells();
-  // fetchList() needs a valid Handler session (list_characters is one of
-  // the Admin-gated reads) -- if a saved password exists, the call just
-  // above can go out carrying an already-expired session, since the
-  // Handler-password module's own silent re-login is still an in-flight
-  // fetch at this point in page load (see its own comment). Retry once a
-  // fresh session actually lands rather than leaving the error up.
-  window.addEventListener('dg-acell-handler-ready', function () { fetchList(); });
+  refreshBtn.disabled = true;
+  listEl.innerHTML = '<div class="play-error">Loading…</div>';
+  startCharacterListeners();
+  startCellsListener();
 })();
 </script>
 
@@ -2556,6 +2550,12 @@
   // document run strictly in order with no async/defer, so this has
   // already run by the time the Track Library block below needs it.
   window.__dgHandlerAuth = ensureHandlerSignedIn;
+  // Same idea, one level down: exposes SDK-readiness alone (no sign-in)
+  // for the Play tab's own <script> block, which comes BEFORE this one
+  // in the document and reads public data (characters/briefs/cells are
+  // all public-read, see firestore.rules) that never needed a Handler
+  // session at all -- just Firebase itself being loaded.
+  window.__dgEnsureFirebaseApi = ensureFirebaseApi;
   function extensionForFile_(file) {
     var type = file.type || '';
     if (type === 'application/pdf') return '.pdf';
