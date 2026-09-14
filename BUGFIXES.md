@@ -2510,3 +2510,19 @@ Added the same 2-attempt retry with backoff (1s, 1s) to all 4
 `jsonpGet()` copies, so a single dropped request no longer means a
 permanent failure. Purely client-side, `a-cell.html` only. `sw.js`
 `CACHE_NAME` bumped to `v114`.
+
+## Follow-up: the retry above wasn't enough on a connection that can't
+## finish ANY single request within 7 seconds
+
+Confirmed live, same session, after two full reloads with the retry
+fix above already live: "Could not load the Track Library" still
+happening every time. Retrying a request 3 times at the same 7-second
+timeout doesn't help if the underlying connection genuinely can't
+complete a request within 7 seconds at all right now -- every attempt
+was doomed the same way, so more attempts at the same timeout just
+means failing slower, not succeeding. Bumped all 4 `jsonpGet()` copies'
+per-attempt timeout from 7s to 15s (retry count unchanged), giving a
+genuinely slow-but-eventually-successful request room to actually land
+instead of being cut off at exactly the point it might have finished.
+Purely client-side, `a-cell.html` only. `sw.js` `CACHE_NAME` bumped to
+`v115`.
