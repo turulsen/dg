@@ -2421,3 +2421,33 @@ every user up front.
 
 Purely client-side, no backend changes. `sw.js` `CACHE_NAME` bumped to
 `v111`.
+
+## Second render-blocking resource on every page: the Google Fonts
+## stylesheet
+
+Follow-up to the js-error-banner.js render-block fix above -- that fix
+helped (over a minute down to ~30-40s) but didn't fully solve it,
+because every page has a SECOND render-blocking resource: the Google
+Fonts stylesheet, loaded as a plain `<link rel="stylesheet"
+href="https://fonts.googleapis.com/css2?...">`. Unlike the same-origin
+error-banner script, this is cross-origin -- the browser needs a whole
+new DNS lookup + TLS handshake to a different server before it can even
+start fetching the CSS, on top of the fetch itself, all before it's
+allowed to render anything. `&display=swap` in the URL is a common
+point of confusion: it only controls how *text* renders using fallback
+fonts once this CSS has already loaded -- it does nothing to stop the
+`<link>` itself from blocking the page in the meantime.
+
+Applied the standard non-blocking pattern to all 6 pages (`index.html`,
+`agent-hub.html`, `a-cell.html`, `hub.html`, `stats/index.html`,
+`notes/index.html`): `media="print" onload="this.media='all'"` loads
+the stylesheet without blocking render, then applies it for real once
+it's ready (falls back to system fonts briefly on a slow connection,
+which is far preferable to blocking the whole page), with a
+`<noscript>` fallback for the no-JS case. Also added the missing
+`fonts.gstatic.com` preconnect (only `stats/index.html` had it) --
+that's the actual origin the font FILES load from, a third hop after
+the CSS itself resolves.
+
+Purely client-side, no backend changes. `sw.js` `CACHE_NAME` bumped to
+`v112`.

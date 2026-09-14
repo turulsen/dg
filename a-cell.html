@@ -26,7 +26,12 @@
 <meta name="twitter:card" content="summary">
 <meta name="twitter:image" content="https://turulsen.github.io/dg/assets/mars-tech-seal.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Non-blocking load -- see index.html's matching comment: a plain
+     <link rel="stylesheet"> here render-blocks the whole page behind
+     a cross-origin fetch, badly on a weak connection. -->
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet"></noscript>
 <link rel="stylesheet" href="assets/theme-folder.css">
 <style>
   :root{ --term-green:#3ef07a; --term-green-dim:#1e7a42; }

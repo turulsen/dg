@@ -17,7 +17,20 @@
 <meta name="twitter:card" content="summary">
 <meta name="twitter:image" content="https://turulsen.github.io/dg/assets/mars-tech-seal.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Render-blocking cross-origin stylesheet -- a real live report,
+     2026-09-14: on a weak connection, a plain <link rel="stylesheet">
+     here forces the browser to fully resolve/handshake/fetch a NEW
+     origin (fonts.googleapis.com) before it renders anything on the
+     page at all, same class of problem as js-error-banner.js's own
+     fix above but worse (cross-origin, not same-origin). The
+     media="print" trick loads it without blocking, then the onload
+     swap applies it for real once it's ready; <noscript> covers the
+     no-JS case. display=swap in the URL only controls how TEXT
+     renders once this CSS has already loaded -- it does nothing for
+     whether the <link> itself blocks the page. -->
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet"></noscript>
 <link rel="stylesheet" href="assets/theme-folder.css">
 <style>
   :root{
