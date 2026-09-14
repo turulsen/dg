@@ -2489,3 +2489,24 @@ write latency) to all three verify call sites
 before actually giving up and showing the "backend didn't confirm"
 message. Purely client-side, `a-cell.html` only. `sw.js` `CACHE_NAME`
 bumped to `v113`.
+
+## The same no-retry fragility, one level down: every A-Cell list load
+## (Track Library, Cells, Characters, Evidence) could fail permanently
+## on one dropped request
+
+Live report, same session: "Could not load the Track Library" recurred
+intermittently on a weak connection, unrelated to the Now Playing panel
+fix above. Root cause was the same class of bug, one layer deeper:
+`a-cell.html` has 4 independent copies of a `jsonpGet()` helper (one
+per tab section -- Cells, Evidence, Sheet/Admin, Music), and every one
+of them gave a JSONP request exactly one 7-second window to succeed,
+with no retry at all. A single dropped or slow request under a weak
+signal -- exactly the conditions reported all session -- permanently
+failed whatever list was loading (Track Library, Cells, Characters,
+Agent File Only, Deleted Characters, Evidence), with the Handler's only
+recourse being to switch tabs and back or reload.
+
+Added the same 2-attempt retry with backoff (1s, 1s) to all 4
+`jsonpGet()` copies, so a single dropped request no longer means a
+permanent failure. Purely client-side, `a-cell.html` only. `sw.js`
+`CACHE_NAME` bumped to `v114`.

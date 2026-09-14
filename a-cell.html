@@ -1951,9 +1951,25 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
   }
 
-  function jsonpGet(action, params, cb) {
-    var cbName = '_acellCells_' + action + '_' + Date.now();
-    var timer = setTimeout(function () { delete window[cbName]; cb(null); }, 7000);
+  // Live report, 2026-09-14: "Could not load the Track Library"/Cells/
+  // Characters intermittently, on a weak connection -- a single JSONP
+  // request had exactly one 7s window to succeed, no retry at all, so
+  // one dropped/slow request under a bad signal permanently failed
+  // whatever list was loading until the Handler manually retried some
+  // other way. Retries twice more (1s apart) before actually giving up,
+  // same shape as agent-hub.html's CI_LOOKUP_RETRY_DELAYS_MS.
+  var JSONP_GET_RETRY_DELAYS_MS = [1000, 1000];
+  function jsonpGet(action, params, cb, attempt) {
+    attempt = attempt || 0;
+    var cbName = '_acellCells_' + action + '_' + Date.now() + '_' + attempt;
+    var timer = setTimeout(function () {
+      delete window[cbName];
+      if (attempt < JSONP_GET_RETRY_DELAYS_MS.length) {
+        setTimeout(function () { jsonpGet(action, params, cb, attempt + 1); }, JSONP_GET_RETRY_DELAYS_MS[attempt]);
+      } else {
+        cb(null);
+      }
+    }, 7000);
     window[cbName] = function (res) {
       clearTimeout(timer);
       delete window[cbName];
@@ -2575,9 +2591,21 @@
     document.head.appendChild(s);
   }
 
-  function jsonpGet(action, params, cb) {
-    var cbName = '_acellEvidence_' + action + '_' + Date.now();
-    var timer = setTimeout(function () { delete window[cbName]; cb(null); }, 7000);
+  // Same retry-before-giving-up fix as the Cells tab's own jsonpGet()
+  // copy (see its comment) -- one dropped/slow request under a weak
+  // signal used to permanently fail whatever this call was loading.
+  var JSONP_GET_RETRY_DELAYS_MS = [1000, 1000];
+  function jsonpGet(action, params, cb, attempt) {
+    attempt = attempt || 0;
+    var cbName = '_acellEvidence_' + action + '_' + Date.now() + '_' + attempt;
+    var timer = setTimeout(function () {
+      delete window[cbName];
+      if (attempt < JSONP_GET_RETRY_DELAYS_MS.length) {
+        setTimeout(function () { jsonpGet(action, params, cb, attempt + 1); }, JSONP_GET_RETRY_DELAYS_MS[attempt]);
+      } else {
+        cb(null);
+      }
+    }, 7000);
     window[cbName] = function (res) {
       clearTimeout(timer);
       delete window[cbName];
@@ -3478,9 +3506,21 @@
       (name ? escapeHtml(name) : '<span class="sheet-empty-cell">&mdash; click to set</span>') + '</span>';
   }
 
-  function jsonpGet(action, params, cb) {
-    var cbName = '_acellSheet_' + action + '_' + Date.now();
-    var timer = setTimeout(function () { delete window[cbName]; cb(null); }, 7000);
+  // Same retry-before-giving-up fix as the Cells tab's own jsonpGet()
+  // copy (see its comment) -- one dropped/slow request under a weak
+  // signal used to permanently fail whatever this call was loading.
+  var JSONP_GET_RETRY_DELAYS_MS = [1000, 1000];
+  function jsonpGet(action, params, cb, attempt) {
+    attempt = attempt || 0;
+    var cbName = '_acellSheet_' + action + '_' + Date.now() + '_' + attempt;
+    var timer = setTimeout(function () {
+      delete window[cbName];
+      if (attempt < JSONP_GET_RETRY_DELAYS_MS.length) {
+        setTimeout(function () { jsonpGet(action, params, cb, attempt + 1); }, JSONP_GET_RETRY_DELAYS_MS[attempt]);
+      } else {
+        cb(null);
+      }
+    }, 7000);
     window[cbName] = function (res) {
       clearTimeout(timer);
       delete window[cbName];
@@ -4609,9 +4649,24 @@
     checkCurrent();
   });
 
-  function jsonpGet(action, params, cb) {
-    var cbName = '_acellMusic_' + action + '_' + Date.now();
-    var timer = setTimeout(function () { delete window[cbName]; cb(null); }, 7000);
+  // Live report, 2026-09-14: "Could not load the Track Library"
+  // intermittently, on a weak connection -- same underlying cause and
+  // fix as verifyNowPlaying()/verifyTransportAction_()/verifySeek_()
+  // above (see their own comments): a single JSONP request had exactly
+  // one 7s window to succeed, no retry at all. Retries twice more
+  // before actually giving up.
+  var JSONP_GET_RETRY_DELAYS_MS = [1000, 1000];
+  function jsonpGet(action, params, cb, attempt) {
+    attempt = attempt || 0;
+    var cbName = '_acellMusic_' + action + '_' + Date.now() + '_' + attempt;
+    var timer = setTimeout(function () {
+      delete window[cbName];
+      if (attempt < JSONP_GET_RETRY_DELAYS_MS.length) {
+        setTimeout(function () { jsonpGet(action, params, cb, attempt + 1); }, JSONP_GET_RETRY_DELAYS_MS[attempt]);
+      } else {
+        cb(null);
+      }
+    }, 7000);
     window[cbName] = function (res) {
       clearTimeout(timer);
       delete window[cbName];
