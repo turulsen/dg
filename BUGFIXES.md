@@ -2324,3 +2324,24 @@ of stuck/empty real-time listeners (Notes, Evidence, Table Radio, Dice
 history) drop off after this ships, not by anything visible in testing
 here. Purely client-side, no backend/Code.gs changes. `sw.js` `CACHE_NAME`
 bumped to `v108`.
+
+## Issue #8 shipping plan, step 5 (final): New Recruit box flashing
+## before a real cloud character loaded via Play
+
+Last of the 4 originally-reverted commits, re-applied unchanged from
+`ec86b65`. The `?load=` reveal-gate's own safety timeout -- 8s, meant
+as a last resort for a request that never resolves at all -- was
+firing on loads that were merely slow (Apps Script cold starts, a
+large Character JSON payload, a slow mobile connection), prematurely
+revealing the still-default New Recruit UI before the real
+`onApplied`/`onSettled` callback got the chance to swap in the correct
+sheet a moment later. Bumped the timeout in `stats/cloud-sync.js` from
+8s to 15s, matching the standard already used elsewhere in this
+codebase for a load that's slow but likely to still succeed.
+
+With this step, all 4 of the commits reverted after the original
+2026-09-11/12 incident are back on `main`, each re-shipped and tested
+individually per issue #8's plan, now that the actual root cause (the
+`saveCharacter()`/`logClientError()` lock contention fixed earlier the
+same day) is confirmed live and working. Purely client-side. `sw.js`
+`CACHE_NAME` bumped to `v109`.
