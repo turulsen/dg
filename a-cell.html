@@ -4082,6 +4082,11 @@
     { id: 'drone-dead', label: 'Drone: Dead' },
     { id: 'drone-low', label: 'Drone: Low' }
   ];
+  // Mirrors backend/Code.gs's own STINGER_HISTORY_LENGTH -- kept in sync
+  // manually since the direct-Firestore write below (fireStingerDirect_)
+  // duplicates that trim logic client-side instead of round-tripping
+  // through Apps Script for it.
+  var STINGER_HISTORY_LENGTH = 5;
   var STINGER_GROUPS = [
     { label: 'Screams & Laughter', stingers: [
       { id: 'scream-01', label: 'Scream 01' },
@@ -4696,13 +4701,36 @@
   }
 
   /* ── Soundboard: ambient loops (toggle) + one-shot stingers (fire).
-     Both dual-write straight onto the same radio/{channel} row/doc Now
-     Playing already lives on (setAmbientLayer_/triggerStinger_ in
-     Code.gs), so table-radio.js's existing onSnapshot listener picks up
-     every change instantly -- no separate listener needed on the player
-     side. Same `mode:'no-cors' POST, then a real GET to confirm` pattern
-     as every other Handler write here, since no-cors POSTs can't be
-     read back directly. ── */
+     These two write STRAIGHT to Firestore from the browser (no Apps
+     Script round trip at all) -- unlike every other Handler write in
+     this file, which POSTs to Apps Script and lets it dual-write Sheet
+     + Firestore. That indirection was the actual source of the ~8s
+     latency reported live: Apps Script's Web App dispatch/cold-start
+     cost gated the Firestore write that table-radio.js's onSnapshot
+     listeners are waiting on, even though firestore.rules already
+     allowed `isHandler()` to write radio/{channel} directly, and A-Cell
+     already holds a real Firebase Auth session with that claim
+     (ensureHandlerSignedIn(), used for Evidence/Track uploads). Fixed by
+     cutting Apps Script out of the critical path for exactly these two
+     actions: a Firestore transaction reads+merges the same
+     ambient_layers/stingers array Code.gs's setAmbientLayer_/
+     triggerStinger_ compute server-side, so playback is audible the
+     instant the transaction commits. The Sheet is intentionally NOT
+     updated by these two actions anymore -- calling the old Apps Script
+     action afterward as a "background sync" was tried and rejected: it
+     independently recomputes the array from the Sheet's (now stale)
+     state and overwrites Firestore with it a few seconds later, which
+     for a stinger means firing the SAME sound a second time (stingers
+     have no id-based idempotency -- see triggerStinger_'s own comment)
+     -- exactly the kind of duplicate-playback bug already fixed once
+     tonight. Everything else (main-track play/pause/resume/seek, and
+     pause/resume/seek/loop/stop of an ALREADY-active instance via the
+     Active Sounds panel below) is unchanged and still Apps-Script/Sheet
+     mediated -- out of scope for tonight's fix. ── */
+  function radioDocRef_(channel) {
+    return window.firebase.firestore().collection('radio').doc(channel);
+  }
+
   function renderAmbientGrid() {
     ambientGridEl.innerHTML = AMBIENT_LAYERS.map(function (a) {
       var isActive = activeAmbientLayers.some(function (l) { return l.id === a.id; });
@@ -4717,28 +4745,32 @@
         var ch = currentChannel;
         btn.classList.toggle('active', active);
         soundboardStatusEl.textContent = (active ? 'Starting ' : 'Stopping ') + label + '…';
-        fetch(APPS_SCRIPT_URL, {
-          method: 'POST', mode: 'no-cors', keepalive: true,
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({ action: 'set_ambient_layer', channel: ch, layer_id: layerId, active: active ? '1' : '0', handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
-        }).then(function () {
-          setTimeout(function () {
-            jsonpGet('get_now_playing', { channel: ch }, function (res) {
-              var layers = ((res && Array.isArray(res.ambient_layers)) ? res.ambient_layers : []).map(normalizeAmbientLayer_);
-              var landed = layers.some(function (l) { return l.id === layerId; });
-              if (landed !== active) {
-                soundboardStatusEl.textContent = NOT_DEPLOYED_MSG;
-                btn.classList.toggle('active', !active);
-                return;
+        ensureHandlerSignedIn().then(function () {
+          var db = window.firebase.firestore();
+          var docRef = radioDocRef_(ch);
+          var now = Date.now();
+          return db.runTransaction(function (tx) {
+            return tx.get(docRef).then(function (snap) {
+              var data = snap.exists ? snap.data() : {};
+              var layers = (Array.isArray(data.ambient_layers) ? data.ambient_layers : []).map(normalizeAmbientLayer_);
+              if (active) {
+                if (!layers.some(function (l) { return l.id === layerId; })) {
+                  layers.push({ id: layerId, started_at: now, paused: false, paused_at: 0, loop: true });
+                }
+              } else {
+                layers = layers.filter(function (l) { return l.id !== layerId; });
               }
-              activeAmbientLayers = layers;
-              activeStingers = (res && Array.isArray(res.stingers)) ? res.stingers : activeStingers;
-              renderActiveSounds_();
-              soundboardStatusEl.textContent = (active ? label + ' is now looping on CH ' : label + ' stopped on CH ') + ch + '.';
+              tx.set(docRef, { ambient_layers: layers, updated_at: now }, { merge: true });
+              return layers;
             });
-          }, 900);
-        }).catch(function () {
-          soundboardStatusEl.textContent = 'Could not reach the backend.';
+          });
+        }).then(function (layers) {
+          activeAmbientLayers = layers;
+          renderActiveSounds_();
+          soundboardStatusEl.textContent = (active ? label + ' is now looping on CH ' : label + ' stopped on CH ') + ch + '.';
+        }).catch(function (err) {
+          console.error('set_ambient_layer (direct Firestore) failed', err);
+          soundboardStatusEl.textContent = 'Could not reach Firestore — ' + (err && err.message ? err.message : 'not signed in as Handler') + '.';
           btn.classList.toggle('active', !active);
         });
       });
@@ -4760,22 +4792,31 @@
         btn.classList.add('firing');
         setTimeout(function () { btn.classList.remove('firing'); }, 200);
         soundboardStatusEl.textContent = 'Firing ' + label + ' on CH ' + ch + '…';
-        fetch(APPS_SCRIPT_URL, {
-          method: 'POST', mode: 'no-cors', keepalive: true,
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({ action: 'trigger_stinger', channel: ch, stinger_id: stingerId, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
-        }).then(function () {
-          soundboardStatusEl.textContent = label + ' fired on CH ' + ch + '.';
-          // See it (and be able to Stop/Loop/scrub it) in Active Sounds
-          // right away, not only after the next unrelated action.
-          setTimeout(function () {
-            jsonpGet('get_now_playing', { channel: ch }, function (res) {
-              activeStingers = (res && Array.isArray(res.stingers)) ? res.stingers : activeStingers;
-              activeAmbientLayers = (res && Array.isArray(res.ambient_layers)) ? res.ambient_layers.map(normalizeAmbientLayer_) : activeAmbientLayers;
-              renderActiveSounds_();
+        ensureHandlerSignedIn().then(function () {
+          var db = window.firebase.firestore();
+          var docRef = radioDocRef_(ch);
+          var now = Date.now();
+          return db.runTransaction(function (tx) {
+            return tx.get(docRef).then(function (snap) {
+              var data = snap.exists ? snap.data() : {};
+              var stingers = Array.isArray(data.stingers) ? data.stingers : [];
+              stingers.push({ id: stingerId, fired_at: now, started_at: now, paused: false, paused_at: 0, loop: false, stopped: false });
+              var looping = stingers.filter(function (s) { return s.loop; });
+              var oneShot = stingers.filter(function (s) { return !s.loop; });
+              if (oneShot.length > STINGER_HISTORY_LENGTH) oneShot = oneShot.slice(-STINGER_HISTORY_LENGTH);
+              stingers = looping.concat(oneShot).sort(function (a, b) { return a.fired_at - b.fired_at; });
+              tx.set(docRef, { stingers: stingers, updated_at: now }, { merge: true });
+              return stingers;
             });
-          }, 900);
-        }).catch(function () { soundboardStatusEl.textContent = 'Could not reach the backend.'; });
+          });
+        }).then(function (stingers) {
+          activeStingers = stingers;
+          renderActiveSounds_();
+          soundboardStatusEl.textContent = label + ' fired on CH ' + ch + '.';
+        }).catch(function (err) {
+          console.error('trigger_stinger (direct Firestore) failed', err);
+          soundboardStatusEl.textContent = 'Could not fire ' + label + ' — ' + (err && err.message ? err.message : 'not signed in as Handler') + '.';
+        });
       });
     });
   }

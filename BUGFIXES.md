@@ -2526,3 +2526,66 @@ genuinely slow-but-eventually-successful request room to actually land
 instead of being cut off at exactly the point it might have finished.
 Purely client-side, `a-cell.html` only. `sw.js` `CACHE_NAME` bumped to
 `v115`.
+
+## One-shot sound effects (and ambient loop toggles) kept the same ~8s
+## latency even after the Firestore-before-Sheets reorder above -- because
+## they were never actually writing to Firestore from the fast path at all
+
+Live report, same session, after Track Library was loading fine again:
+"Second play still lags 8s on short tracks... one shot sound effects
+has the same latency... that worked perfectly before." Per this repo's
+own protocol, checked `BUGFIXES.md` first for the earlier
+Firestore-before-Sheets reorder entry above, then verified against the
+current `backend/Code.gs`: `setAmbientLayer_`, `triggerStinger_`,
+`updateSoundInstance_`, and `removeSoundInstance_` all still correctly
+fire their `firestoreDualPatch_()` before `sheet.getRange(...).setValues()`
+-- no regression, that fix is intact. Checked git tag `v1.0.0` too, at
+the user's request -- byte-for-byte identical ordering there as well,
+confirmed via `git show v1.0.0:backend/Code.gs`. So the "it worked
+perfectly before" latency was never eliminated by that reorder, because
+the reorder only changed which write happens first WITHIN one Apps
+Script request -- it never removed Apps Script itself from the critical
+path. Every ambient/stinger action still went browser -> Apps Script
+(`doPost`) -> Firestore write -> Sheet write, so the one Web App
+dispatch/cold-start cost (spinning up the whole ~5000-line script) that
+gates the ENTIRE request sat in front of the Firestore write regardless
+of which write happened first inside it. Confirmed via git history that
+this was true from the very first commit that created these two
+functions (`53913bf`, "Add Table Radio soundboard..."), not a later
+regression -- `firestoreDualPatch_` was already being called there, just
+from server-side code, same as today.
+
+The actual fix: cut Apps Script out of the loop entirely for these two
+specific actions. `firestore.rules`' `match /radio/{channel} { allow
+write: if isHandler(); }` already permitted a Handler to write directly,
+and A-Cell already holds a real Firebase Auth session with that custom
+claim via `ensureHandlerSignedIn()`/`handlerLogin()` (used for Evidence
+and Track uploads) -- the groundwork was already in place, just never
+used for these two buttons. `renderAmbientGrid()`'s toggle handler and
+`renderStingerGroups()`'s fire handler in `a-cell.html` now open a
+Firestore `runTransaction()` straight against `radio/{channel}`,
+replicating the exact same read-merge-write logic `setAmbientLayer_`/
+`triggerStinger_` do server-side (including `STINGER_HISTORY_LENGTH`'s
+trim, mirrored client-side as a constant kept in sync by hand), so
+`table-radio.js`'s existing `onSnapshot` listener hears the change the
+instant the transaction commits -- no Apps Script round trip in the
+critical path at all.
+
+Deliberately did NOT also keep calling the old Apps Script action
+afterward as a "background Sheet sync": tried reasoning through it and
+rejected it -- that action independently recomputes the array from the
+Sheet's (now stale, since the client no longer updates it) state and
+overwrites Firestore with its own version a few seconds later, which
+for a stinger means firing the exact same sound a second time (stingers
+have no id-based idempotency by design -- see `triggerStinger_`'s own
+comment on always appending a fresh instance). That would have
+reintroduced the "sound plays twice" bug fixed earlier this same
+session, just via a new path. So the Sheet's `ambient_layers`/`stingers`
+columns are now stale/unused going forward -- an accepted tradeoff,
+since nothing else reads them (the Sheet was never a meaningful
+historical log for one-shot SFX). Main-track play/pause/resume/seek and
+the Active Sounds panel's per-instance pause/resume/seek/loop/stop
+controls are unchanged and still Apps-Script/Sheet mediated -- out of
+scope for this fix, since they weren't what was reported laggy tonight.
+Purely client-side, `a-cell.html` only, no backend/Code.gs change and
+no redeploy needed. `sw.js` `CACHE_NAME` bumped to `v116`.
