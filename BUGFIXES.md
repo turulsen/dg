@@ -2589,3 +2589,55 @@ controls are unchanged and still Apps-Script/Sheet mediated -- out of
 scope for this fix, since they weren't what was reported laggy tonight.
 Purely client-side, `a-cell.html` only, no backend/Code.gs change and
 no redeploy needed. `sw.js` `CACHE_NAME` bumped to `v116`.
+
+## Post-mortem from an actual live game session: A-Cell took several
+## tries to log in, and the Play tab's Agent list failed to load
+
+The Handler ran a full session on the fixes above and reported back a
+list of what was still broken, worst first: Track Library intermittently
+failing (already tracked), Live Rolls still permission-denied (already
+tracked, needs a deployment check outside this repo), Cells and the Play
+tab's Agent list failing to load, some ×5 skill rolls not working, and
+cross-device caching inconsistency on iOS/Mac. Two of these had concrete,
+fixable root causes in `a-cell.html`.
+
+**"Remove second handler authentication, unnecessary"** (the Handler's
+own words) pointed at something real: `a-cell.html` has always had TWO
+independent copies of `ensureFirebaseApi()`/`ensureHandlerSignedIn()` --
+one for the Evidence tab, one for the Track Library tab -- each in its
+own `<script>` block/IIFE (see this file's own history: an earlier
+attempt to delete the second copy outright broke Track Library, since
+each block's functions aren't visible from the other, restoring it).
+Two copies means opening A-Cell could fire the `handlerLogin()` Cloud
+Function TWICE in parallel the moment both the Evidence listener and the
+Track Library tab initialized -- two competing network calls (each with
+its own 20s timeout) instead of one, which under a weak signal at the
+table is a plausible explanation for "took me 4 tries to come in to
+A-Cell." Fixed properly this time instead of just deleting the
+duplicate: the Evidence block's `ensureHandlerSignedIn` is now exposed
+as `window.__dgHandlerAuth`, and the Track Library block's own copy is a
+thin function that delegates to it -- still a real, locally-scoped
+function (so the historical failure mode doesn't recur), just no longer
+duplicating the actual sign-in work. Removed the now-dead second copies
+of `ensureFirebaseApi()`/`loadScriptTag()`/`withTimeout_()`/
+`FIREBASE_CONFIG` alongside it.
+
+**"Could not load the Agent list"** in the Play tab, and no Cells in
+its filter dropdown, live during the session: `fetchList()`/
+`fetchCells()` (the Play tab's own hand-rolled JSONP calls, not the
+shared `jsonpGet()` helper) turned out to be two MORE copies of the
+exact no-retry, 7-second-timeout pattern already fixed everywhere else
+tonight (Cells tab, Evidence, Sheet/Admin, Music) -- missed earlier
+because they were deliberately out of scope when that fix shipped (the
+live complaint at the time was Track Library specifically). Added the
+same 2-attempt retry with backoff (1s, 1s) and bumped the timeout from
+7s to 15s, matching every other copy. `fetchList()`'s existing
+`listFetchGen` staleness guard (so a slow, superseded call can't stomp a
+newer one's result) is threaded through the retries via a `myGen`
+parameter rather than re-incremented on each attempt, so all retries of
+one logical fetch still share the same generation.
+
+Both fixes purely client-side, `a-cell.html` only. Full Playwright suite
+run afterward: 756/765, all 9 failures the known gstatic.com-blocked-by-
+sandbox-proxy ones, unrelated (148/148 a-cell tests passed). `sw.js`
+`CACHE_NAME` bumped to `v117`.

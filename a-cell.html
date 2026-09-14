@@ -1483,16 +1483,31 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
   }
 
-  function fetchList() {
-    refreshBtn.disabled = true;
-    var myGen = ++listFetchGen;
-    var cbName = '_acellPlayList_' + Date.now();
+  // Same 2-attempt retry with backoff (1s, 1s) and 15s per-attempt
+  // timeout as the other 4 jsonpGet() copies elsewhere in this file --
+  // this fetch is hand-rolled rather than going through jsonpGet (it
+  // needs the listFetchGen staleness check below), so it had none of
+  // that reliability work and failed the same way under a weak signal:
+  // "Could not load the Agent list" live during play, same as Track
+  // Library before its own fix. myGen is captured once on the initial
+  // call (attempt undefined) and threaded through every retry so a
+  // superseded fetchList() call can't have its retries stomp a newer
+  // one's result.
+  var FETCH_LIST_RETRY_DELAYS_MS = [1000, 1000];
+  function fetchList(myGen, attempt) {
+    if (myGen === undefined) { myGen = ++listFetchGen; refreshBtn.disabled = true; }
+    attempt = attempt || 0;
+    var cbName = '_acellPlayList_' + Date.now() + '_' + attempt;
     var timer = setTimeout(function () {
       delete window[cbName];
       if (myGen !== listFetchGen) return;
+      if (attempt < FETCH_LIST_RETRY_DELAYS_MS.length) {
+        setTimeout(function () { fetchList(myGen, attempt + 1); }, FETCH_LIST_RETRY_DELAYS_MS[attempt]);
+        return;
+      }
       refreshBtn.disabled = false;
       listEl.innerHTML = '<div class="play-error">Could not load the Agent list. (The A-Cell backend addition may not be deployed yet.)</div>';
-    }, 7000);
+    }, 15000);
     window[cbName] = function (res) {
       clearTimeout(timer);
       delete window[cbName];
@@ -1547,9 +1562,16 @@
   // the chosen Cell); doesn't block the Agent list from loading if it's
   // slow or the addition isn't deployed, it just leaves "All Agents" as
   // the only option.
-  function fetchCells() {
-    var cbName = '_acellPlayCells_' + Date.now();
-    var timer = setTimeout(function () { delete window[cbName]; }, 7000);
+  var FETCH_CELLS_RETRY_DELAYS_MS = [1000, 1000];
+  function fetchCells(attempt) {
+    attempt = attempt || 0;
+    var cbName = '_acellPlayCells_' + Date.now() + '_' + attempt;
+    var timer = setTimeout(function () {
+      delete window[cbName];
+      if (attempt < FETCH_CELLS_RETRY_DELAYS_MS.length) {
+        setTimeout(function () { fetchCells(attempt + 1); }, FETCH_CELLS_RETRY_DELAYS_MS[attempt]);
+      }
+    }, 15000);
     window[cbName] = function (res) {
       clearTimeout(timer);
       delete window[cbName];
@@ -2521,6 +2543,19 @@
     });
     return _handlerAuthPromise;
   }
+  // Exposed on window so the Track Library tab's own <script> block
+  // below (a separate IIFE -- function scopes don't cross <script>
+  // tags) can delegate to this SAME sign-in instead of running its own
+  // independent copy. The two used to be genuinely separate
+  // implementations, each with its own handlerLogin() call: opening
+  // A-Cell could fire that Cloud Function twice in parallel (Evidence's
+  // listener and Track Library's own init both racing to sign in), which
+  // under a weak signal looked like "took several tries to get in" --
+  // two competing 20s-timeout network calls instead of one. Assigned
+  // here (not just declared) because inline <script> blocks in the same
+  // document run strictly in order with no async/defer, so this has
+  // already run by the time the Track Library block below needs it.
+  window.__dgHandlerAuth = ensureHandlerSignedIn;
   function extensionForFile_(file) {
     var type = file.type || '';
     if (type === 'application/pdf') return '.pdf';
@@ -5287,161 +5322,34 @@
      any channel with one click instead of pasting a link every time.
      Phase 4 of the Firebase migration -- the file itself now goes
      straight from this browser to Firebase Storage (see
-     ensureFirebaseApi()/ensureHandlerSignedIn() below), and only a tiny
-     JSON {title, storage_url} POST reaches Code.gs to record the row.
-     Before this, the whole mp3's base64 rode inside that POST, which
-     is why the upload had to skip fetch's keepalive (a real mp3 easily
-     blows past its 64KiB cap, silently dropping the request) and why
+     ensureHandlerSignedIn() below), and only a tiny JSON {title,
+     storage_url} POST reaches Code.gs to record the row. Before this,
+     the whole mp3's base64 rode inside that POST, which is why the
+     upload had to skip fetch's keepalive (a real mp3 easily blows past
+     its 64KiB cap, silently dropping the request) and why
      verifyTrackUpload() below waits in increasingly long steps -- both
      still apply to a legacy Drive-hosted upload if that path is ever
      used again, but a Storage upload is already durably saved by the
      time this ever POSTs anything, so its own confirmation only has a
      tiny Sheet-row write left to wait on. ── */
-  var FIREBASE_SDK_VERSION = '12.18.0';
-  var FIREBASE_CONFIG = {
-    apiKey: 'AIzaSyBiFBvgmrjtacxXvh7FHa9a28BbwV0LnDQ',
-    authDomain: 'dg-app-b3447.firebaseapp.com',
-    projectId: 'dg-app-b3447',
-    storageBucket: 'dg-app-b3447.firebasestorage.app',
-    messagingSenderId: '464997490443',
-    appId: '1:464997490443:web:dad47a347ae7a64a9e4c0e'
-  };
-  var firebaseApiLoading = false;
-  var firebaseApiCallbacks = []; // { ok, err } pairs
-  // s.onload with no s.onerror at all meant a script that failed to load
-  // -- blocked, a dropped mobile connection, a flaky CDN response -- left
-  // this whole chain hung forever, neither resolved nor rejected. Same
-  // fix as the Evidence block's own loadScriptTag() above (crossOrigin
-  // was already here; onerror/timeout weren't).
-  function loadScriptTag(src, cb, onerror) {
-    var s = document.createElement('script');
-    // See the Evidence block's own copy of this comment above -- without
-    // this, an error thrown from inside this cross-origin script reports
-    // to window.onerror as a content-free "Script error." instead of the
-    // real message.
-    s.crossOrigin = 'anonymous';
-    s.src = src;
-    var done = false;
-    var timer = setTimeout(function () {
-      if (done) return; done = true;
-      onerror(new Error('Timed out loading ' + src + ' (15s) -- check network connection.'));
-    }, 15000);
-    s.onload = function () { if (done) return; done = true; clearTimeout(timer); cb(); };
-    s.onerror = function () { if (done) return; done = true; clearTimeout(timer); onerror(new Error('Failed to load ' + src + ' -- check network connection.')); };
-    document.head.appendChild(s);
-  }
-  // Loads only whichever product SDKs aren't already on the page --
-  // assets/table-radio.js and assets/dice-roller.js (both also on this
-  // page) may have already pulled in app/auth/functions themselves, and
-  // this checks for each individually rather than assuming any one
-  // widget's load order.
-  function ensureFirebaseApi(cb, onerror) {
-    var ready = function () { return window.firebase && window.firebase.storage && window.firebase.auth && window.firebase.functions && window.firebase.firestore; };
-    if (ready()) { cb(); return; }
-    firebaseApiCallbacks.push({ ok: cb, err: onerror || function () {} });
-    if (firebaseApiLoading) return;
-    firebaseApiLoading = true;
-    var base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/';
-    function fail(err) {
-      firebaseApiLoading = false; // lets a later call actually retry once the network recovers
-      var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-      cbs.forEach(function (pair) { pair.err(err); });
-    }
-    var loadIfMissing = function (check, url, next) { if (check()) { next(); } else { loadScriptTag(url, next, fail); } };
-    loadIfMissing(function () { return window.firebase && window.firebase.apps; }, base + 'firebase-app-compat.js', function () {
-      // Real bug, found live via a-cell.html's page-wide JS-error banner:
-      // this used to call window.firebase.firestore().settings(...)
-      // immediately after initializeApp(), right here -- but THIS load
-      // chain never requested firebase-firestore-compat.js at all (ready()
-      // above never checked for it either), so window.firebase.firestore
-      // was only ever defined by luck, if some OTHER script on the page
-      // (the Evidence tab's own ensureFirebaseApi(), earlier in this same
-      // file) happened to load it first. "TypeError: window.firebase.
-      // firestore is not a function" as an uncaught exception, not a
-      // catchable rejection, silently aborted this whole chain whenever
-      // this block won the race to initialize Firebase first -- which a
-      // completely fresh device with nothing pre-loaded makes far more
-      // likely, not less. isFirstInit is captured now, before firestore
-      // changes what an apps.length check could still tell us, and the
-      // settings() call itself is deferred to its own loadIfMissing step
-      // below so it only ever runs once firebase-firestore-compat.js has
-      // actually loaded.
-      var isFirstInit = !window.firebase.apps.length;
-      if (isFirstInit) window.firebase.initializeApp(FIREBASE_CONFIG);
-      loadIfMissing(function () { return !!window.firebase.auth; }, base + 'firebase-auth-compat.js', function () {
-        loadIfMissing(function () { return !!window.firebase.functions; }, base + 'firebase-functions-compat.js', function () {
-          loadIfMissing(function () { return !!window.firebase.storage; }, base + 'firebase-storage-compat.js', function () {
-            loadIfMissing(function () { return !!window.firebase.firestore; }, base + 'firebase-firestore-compat.js', function () {
-              // Brave (and some ad-blocker extensions) silently blocks
-              // Firestore's default streaming transport (WebChannel) --
-              // it looks like a long-lived tracking connection -- which
-              // leaves every onSnapshot() listener permanently stuck with
-              // zero data and, worse, no error at all (Safari on the same
-              // account/data worked fine, confirming this wasn't a real
-              // permissions or data problem).
-              // REVERTED 2026-09-14, mid-live-session: see
-              // table-radio.js's matching comment -- forcing
-              // long-polling for everyone caused ~44s to start Table
-              // Radio audio and ~10s to pause, outweighing the rarer
-              // Brave/ad-blocker case this was for. Must be set before
-              // ANY other Firestore call on this page, and can only ever
-              // be called once -- isFirstInit still correctly gates that.
-              if (isFirstInit) window.firebase.firestore().settings({ experimentalAutoDetectLongPolling: true });
-              var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-              cbs.forEach(function (pair) { pair.ok(); });
-            }, fail);
-          }, fail);
-        }, fail);
-      });
-    });
-  }
-  // The Evidence tab (a separate <script> block/IIFE above) has its own
-  // ensureHandlerSignedIn() for this exact same Handler-password-to-
-  // Firebase-custom-token exchange -- but each <script> tag in this file
-  // is its own IIFE with its own scope, so a function declared in one
-  // is NOT visible from another. A second copy of this function used to
-  // live right here and was removed on the mistaken assumption it was a
-  // redundant duplicate of the Evidence tab's -- that left the Track
-  // Library upload/delete flow below calling an undefined function,
-  // silently throwing before its own .then()/.catch() chain even
-  // attached (a real live "Uploading..." hangs forever, no error ever
-  // shown" report). Restored; this really does need its own copy.
-  var _handlerAuthPromise = null;
-  function withTimeout_(promise, ms, label) {
-    return new Promise(function (resolve, reject) {
-      var timer = setTimeout(function () { reject(new Error('Timed out: ' + label + ' (' + (ms / 1000) + 's) -- check network connection.')); }, ms);
-      promise.then(function (v) { clearTimeout(timer); resolve(v); }, function (e) { clearTimeout(timer); reject(e); });
-    });
-  }
+  // This used to be a second, independent copy of the Evidence tab's own
+  // ensureFirebaseApi()/ensureHandlerSignedIn() (each <script> block in
+  // this file is its own IIFE, so a function declared in one isn't
+  // visible from another) -- a prior attempt to delete it outright broke
+  // Track Library entirely ("Uploading..." hangs forever, no error"),
+  // since that left this block calling an undefined function. The two
+  // copies also meant opening A-Cell could fire the handlerLogin() Cloud
+  // Function TWICE in parallel -- once from whichever of Evidence/Track
+  // Library's init ran first, once from the other -- which under a weak
+  // signal looked like login flakiness ("took 4 tries to get in").
+  // Fixed properly this time: delegate to the Evidence block's own
+  // ensureHandlerSignedIn() via the window.__dgHandlerAuth reference it
+  // exposes, instead of re-declaring the whole exchange here. Still a
+  // real local function (satisfies this block's own scope, avoiding the
+  // exact failure mode above) -- it just no longer duplicates the work.
   function ensureHandlerSignedIn() {
-    if (_handlerAuthPromise) return _handlerAuthPromise;
-    _handlerAuthPromise = new Promise(function (resolve, reject) {
-      ensureFirebaseApi(function () {
-        var auth = window.firebase.auth();
-        // See the Evidence tab's own copy of this comment -- a stale
-        // Agent session from testing another page in this same browser
-        // must not be trusted just because *some* Firebase user is
-        // signed in.
-        if (auth.currentUser && auth.currentUser.uid === 'handler') { resolve(auth.currentUser); return; }
-        var password = sessionStorage.getItem('dg_acell_pw') || '';
-        if (!password) { _handlerAuthPromise = null; reject(new Error('No A-Cell session -- log in as Handler first.')); return; }
-        withTimeout_(window.firebase.functions().httpsCallable('handlerLogin')({ handler_password: password }), 20000, 'handlerLogin()')
-          .then(function (result) {
-            return withTimeout_(auth.signInWithCustomToken(result.data.token), 20000, 'signInWithCustomToken()');
-          })
-          .then(function (cred) { resolve(cred.user); })
-          .catch(function (err) { _handlerAuthPromise = null; reject(err); });
-      }, function (err) {
-        // See the Evidence tab's own copy of this comment -- without this
-        // second argument, a Firebase SDK script failing or timing out to
-        // load left this whole promise hanging forever with no resolve or
-        // reject at all, i.e. Track Library's "Uploading..." stuck
-        // indefinitely with no error.
-        _handlerAuthPromise = null;
-        reject(err);
-      });
-    });
-    return _handlerAuthPromise;
+    if (!window.__dgHandlerAuth) return Promise.reject(new Error('Handler auth not ready yet -- reload and try again.'));
+    return window.__dgHandlerAuth();
   }
 
   var trackLibTitleInput = document.getElementById('tracklib-title-input');
