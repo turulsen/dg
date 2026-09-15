@@ -304,7 +304,12 @@ NOTES_FIRESTORE_STUB = """
       return {
         get currentUser() { return window.__dgFirestoreAuthUser; },
         signInWithCustomToken: function (token) {
-          window.__dgFirestoreAuthUser = { uid: token };
+          // getIdToken() is real code's only way to get the id_token it
+          // now sends on every Handler-gated Apps Script write (see
+          // getHandlerIdToken_() in a-cell.html) -- without this mock
+          // method, that call throws "getIdToken is not a function" and
+          // every such write silently never fires under test.
+          window.__dgFirestoreAuthUser = { uid: token, getIdToken: function () { return Promise.resolve('fake-id-token-' + token); } };
           return Promise.resolve({ user: window.__dgFirestoreAuthUser });
         }
       };
@@ -3269,92 +3274,57 @@ def test_acell_play(p):
     return errs
 
 def test_acell_handler_session_race(p):
-    """Regression test for a real race: if a Handler already has
-    dg_acell_pw saved from a previous visit, the Handler-password
-    module's silent re-login (attempt(savedPw, true)) is still an
-    in-flight fetch when Play/Cells/Evidence's own <script> blocks run
-    moments later in the same page load and fire their first data fetch
-    using whatever (possibly stale/expired) dg_acell_session is already in
-    sessionStorage. Play/Cells used to just show the resulting 'invalid or
-    expired Handler session' error and sit there forever, even after the
-    silent re-login landed a valid new session a moment later; Evidence's
-    listEvidence() doesn't even error on an invalid session, it silently
-    degrades to the released-only player view, which is worse -- no
-    indication anything's missing. Fixed by having the Handler-password
-    module dispatch a 'dg-acell-handler-ready' event once it lands a
-    session, which Play/Cells/Evidence (and Sheet, covered by its own
-    render path) now listen for to retry. (Deliberately checks only the
-    end state, not an intermediate 'still showing the stale error' snapshot -- this
-    app's Playwright route mocking runs on a single dispatch thread, so
-    an artificial delay meant to widen the race window ends up
-    serializing every in-flight request behind it instead, making any
-    fixed-timeout snapshot of the intermediate state inherently
-    unreliable. The property that actually matters -- and that a
-    regression here would break -- is that it recovers at all.)"""
+    """Regression test, updated for the Handler-auth unification: this
+    used to cover a race around the old handler_login Apps Script
+    action's opaque dg_acell_session token going stale before Play/
+    Cells/Evidence's own reads landed. That whole backend (handler_login
+    action, dg_acell_session, requireHandlerSession_()) is gone --
+    Handler auth is now ONE Firebase sign-in (handlerLogin Cloud
+    Function -> ID token, see the shared Handler-auth block near the
+    top of a-cell.html), and Play/Cells/Evidence's own reads are public
+    Firestore listeners that never depended on a Handler session at all
+    (see each assertion's own comment below for why). What's still
+    worth testing here: (1) a saved dg_acell_pw from a previous visit
+    silently re-authenticates via that same Firebase flow on page load,
+    with no user interaction, and (2) a Handler-gated write made after
+    that silent re-login actually carries a real id_token end to end
+    (window.__dgGetHandlerIdToken() -> the Apps Script POST body), not
+    just that sign-in succeeded in isolation."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
-    # Evidence's own read side moved to a live Firestore listener since
-    # this test was written (Phase 5) -- the dg_acell_session race this
-    # test is named for was specific to the old JSONP list_evidence
-    # path, and Firestore's own Handler auth (ensureHandlerSignedIn(),
-    # cached in _handlerAuthPromise) is a separate mechanism that
-    # doesn't have that particular staleness problem. The Evidence
-    # check below still needs a working stub to show anything at all,
-    # it just isn't exercising a race anymore.
     install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     skip_acell_gate(page)
-    # Seed a saved Handler password + a stale session, exactly like a
-    # returning tab whose 6h server-side session has since expired.
+    # Seed a saved Handler password, exactly like a returning tab that
+    # signed in earlier this same browser session.
     page.add_init_script("""
-        try {
-          sessionStorage.setItem('dg_acell_pw', 'letmein');
-          sessionStorage.setItem('dg_acell_session', 'stale-session-token');
-        } catch (e) {}
+        try { sessionStorage.setItem('dg_acell_pw', 'letmein'); } catch (e) {}
     """)
 
     chars_fixture = [{"agent_code": "OWEN-CS12", "name": "Owen Castillo", "profession": "Federal Agent",
                        "nationality": "", "player_name": "", "hp": 10, "wp": 10, "san": 50, "bp": 40, "updated_at": ""}]
     cells_fixture = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": [], "channel": ""}]
-    # Unreleased -- only visible to an authenticated Handler (isHandler in
-    # listEvidence()), same as the real backend. A stale/invalid session
-    # doesn't error like list_characters does; it silently degrades to the
-    # released-only player view, which for this one unreleased item means
-    # an empty list -- exactly the "no error, just quietly wrong" gap
-    # Evidence's own retry-on-ready listener exists to close.
     evidence_fixture = [{"evidence_id": "ev1", "title": "Confidential Photo", "body": "", "photo": "",
                           "cell_id": "", "operation_id": "", "released": False, "restricted_to": [], "created_at": "1000"}]
-    login_calls = []
+    delete_cell_calls = []
 
     def fake_apps_script(route):
         req = route.request
         url = req.url
         if req.method == "POST":
             body = json.loads(req.post_data or "{}")
-            if body.get("action") == "handler_login":
-                login_calls.append(body)
-                route.fulfill(status=200, content_type="application/json",
-                               body=json.dumps({"status": "OK", "session": "fresh-session-token"}))
-                return
+            if body.get("action") == "delete_cell":
+                delete_cell_calls.append(body)
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         if "callback=" not in url:
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         cb = url.split("callback=")[1].split("&")[0]
-        if "action=list_characters" in url:
-            session = url.split("handler_session=")[1].split("&")[0] if "handler_session=" in url else ""
-            if session == "fresh-session-token":
-                res = {"status": "OK", "characters": chars_fixture}
-            else:
-                res = {"status": "ERROR", "message": "invalid or expired Handler session -- reload A-Cell"}
-        elif "action=list_cells" in url:
+        if "action=list_cells" in url:
             res = {"status": "OK", "cells": cells_fixture}
-        elif "action=list_evidence" in url:
-            session = url.split("handler_session=")[1].split("&")[0] if "handler_session=" in url else ""
-            res = {"status": "OK", "evidence": evidence_fixture if session == "fresh-session-token" else []}
         elif "action=list_operations" in url:
             res = {"status": "OK", "operations": []}
         else:
@@ -3364,45 +3334,48 @@ def test_acell_handler_session_race(p):
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
 
-    wait_for_condition(lambda: any(c.get("handler_password") == "letmein" for c in login_calls), timeout_ms=6000)
-    record("acell", "a saved Handler password silently re-logs in on page load",
-           any(c.get("handler_password") == "letmein" for c in login_calls), str(login_calls))
+    wait_for_condition(lambda: page.evaluate("() => window.__dgFirestoreAuthUser && window.__dgFirestoreAuthUser.uid") == "handler", timeout_ms=6000)
+    record("acell", "a saved Handler password silently signs into Firebase on page load, no interaction needed",
+           page.evaluate("() => window.__dgFirestoreAuthUser && window.__dgFirestoreAuthUser.uid") == "handler",
+           str(page.evaluate("() => window.__dgFirestoreAuthUser")))
 
-    # Play's roster is now a public-read Firestore listener (see
-    # test_acell_play's own comment), not the session-gated
-    # list_characters JSONP call this whole test is named for -- it has
-    # no session of its own to race at all anymore, a stronger guarantee
-    # than "recovers once a fresh session lands". Pushed immediately,
-    # not gated on the login race above, to prove that.
+    # Play's roster is a public-read Firestore listener -- it never
+    # depended on any Handler session at all, so it's immune to this
+    # whole class of race by construction. Checked on the default tab,
+    # before switching away below.
     wait_for_condition(lambda: any(l["path"] == "characters" for l in page.evaluate("() => window.__dgFirestoreListeners || []")), timeout_ms=8000)
     push_firestore_snapshot(page, "characters", [], [dict(c, id=c["agent_code"], character_json=json.dumps({"bio": {"name": c["name"]}, "derived": {}})) for c in chars_fixture])
     push_firestore_snapshot(page, "briefs", [], [])
     push_firestore_snapshot(page, "cells", [], [dict(c, id=c["cell_id"]) for c in cells_fixture])
     names = wait_for_condition(lambda: page.eval_on_selector_all("#play-agent-list .pa-name", "els => els.map(e=>e.textContent)")
                                 if "Owen Castillo" in page.inner_text("#play-agent-list") else None)
-    record("acell", "Play shows the roster immediately via its own Firestore listener, immune to the "
-                    "dg_acell_session race this test is named for (it has no session of its own to race)",
+    record("acell", "Play shows the roster immediately via its own public-read Firestore listener, no Handler session involved",
            names == ["Owen Castillo"], page.inner_text("#play-agent-list"))
 
-    # Cells' own reads are now the same plain, public-read
-    # characters/cells Firestore listeners Play uses (no more
-    # list_characters JSONP call needing a valid Handler session) -- a
-    # second, independent tab module that used to race the same silent
-    # re-login, and was missed the first time this fix went in. Now it
-    # simply isn't racing anything: the push_firestore_snapshot() calls
-    # above already reached this tab's own listeners too (registered at
-    # page load, not gated on the tab being clicked), well before this
-    # click.
+    # Cells' own reads are the same public-read characters/cells
+    # listeners Play uses -- the push above already reached this tab's
+    # own listeners too (registered at page load, not gated on the tab
+    # being clicked), well before this click.
     page.click('.tw[data-tab="cells"]')
     cells_text = wait_for_condition(lambda: page.inner_text("#cells-groups")
                                      if "Cell Alpha" in page.inner_text("#cells-groups") else None)
-    record("acell", "Cells shows the roster immediately too, immune to the dg_acell_session race this test is named for",
+    record("acell", "Cells shows the roster immediately too, no Handler session involved in the read",
            bool(cells_text) and "Cell Alpha" in cells_text, page.inner_text("#cells-groups"))
 
-    # Evidence itself now reads from its own live Firestore listener
-    # (Phase 5), independent of the dg_acell_session race this test is
-    # named for -- this just confirms the tab still renders correctly
-    # on a page that also happens to carry a stale Sheets-side session.
+    # Prove the id_token actually flows end to end for the one thing on
+    # this tab that IS Handler-gated: a write (Delete). Made right after
+    # the silent sign-in confirmed above, it should carry a real id_token
+    # sourced from that SAME sign-in, not the old handler_password field.
+    page.once("dialog", lambda d: d.accept())
+    page.click("[data-delete-cell]")
+    wait_for_condition(lambda: len(delete_cell_calls) >= 1, timeout_ms=6000)
+    record("acell", "a Handler write after silent re-login carries a real id_token (not the old handler_password)",
+           bool(delete_cell_calls) and bool(delete_cell_calls[0].get("id_token")) and "handler_password" not in delete_cell_calls[0],
+           str(delete_cell_calls))
+
+    # Evidence itself reads from its own live Firestore listener too,
+    # gated on isHandler() server-side for the id_token it now sends
+    # (see jsonpGet()'s own comment), not any session staleness here.
     page.click('.tw[data-tab="evidence"]')
     wait_for_condition(lambda: notes_firestore_listener_count(page) >= 1, timeout_ms=8000)
     push_firestore_snapshot(page, "evidence", [], [dict(e, id=e["evidence_id"]) for e in evidence_fixture])
@@ -3433,6 +3406,10 @@ def test_acell_cells(p):
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     skip_acell_gate(page)
+    # Cell writes (create/update_cell_members/delete_cell) are Handler-
+    # gated -- window.__dgGetHandlerIdToken() needs a signed-in Handler,
+    # which needs a saved password to silently sign in on load.
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
 
     fake_characters = [
         {"agent_code": "OWEN-CS12", "name": "Owen Castillo", "profession": "Federal Agent"},
@@ -4176,9 +4153,15 @@ def test_acell_sheet(p):
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
+    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     skip_acell_gate(page)
+    # Sheet's own writes (delete/restore_character, update_character_field)
+    # are Handler-gated -- window.__dgGetHandlerIdToken() needs a signed-in
+    # Handler, which needs a saved password to silently sign in on load
+    # (and a real window.firebase mock, hence the stub above).
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
 
     now_ms = 1700000000000
     # Deliberately ISO strings, not raw epoch millis -- that's what the
@@ -4723,9 +4706,14 @@ def test_acell_music_backend_not_deployed(p):
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
+    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     skip_acell_gate(page)
+    # Set Now Playing is Handler-gated -- window.__dgGetHandlerIdToken()
+    # needs a signed-in Handler, which needs a saved password to silently
+    # sign in on load (and a real window.firebase mock, hence the stub).
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
 
     def fake_apps_script(route):
         req = route.request
