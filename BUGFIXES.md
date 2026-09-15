@@ -3060,3 +3060,42 @@ lets the caller's own DOM check fail for the real reason, rather than
 masking it with a stale push. 3 clean re-runs of `test_acell_cells`
 alone after the fix, plus a fresh full-suite run to confirm no
 recurrence at scale.
+
+## Correction to the entry directly above: that fix was real, but "no
+## recurrence" was premature -- it recurred, and here's the actual
+## evidence for why
+
+Said "confirmed no recurrence" too soon. A later full-suite run hit
+the exact same test again (a different assertion within it this time),
+and dismissing that as "probably sandbox flakiness" without checking
+would have been exactly the kind of non-due-diligence being called out
+directly in this session. Instrumented it instead: temporarily printed
+`cells_state` (the test's own source of truth) alongside the actual
+rendered DOM the moment the assertion's condition was false, then
+looped the isolated test until it reproduced (took ~10 back-to-back
+runs in a tight loop).
+
+Caught with the actual evidence in hand: `cells_state` was already
+correct (`Cell Bravo` had `OWEN-CS12` in its `member_codes`) at the
+moment of failure, but Bravo's rendered `.cell-members` still said "No
+members yet." -- so `sync_cells()`'s `push_firestore_snapshot()` call
+carrying the right data either hadn't been processed by the page yet,
+or was processed and then visually stale. Everything in the actual
+`onSnapshot` handler chain (`a-cell.html`'s Cells module) is synchronous
+JS with no `setTimeout`/scheduling of its own, so this isn't a logic
+bug in the migrated code -- it's the test's own generous (40s) wait
+still not being enough under a specific kind of load: reproducing it at
+all required running the isolated test in a tight repeated loop with a
+fresh full Chromium launch/teardown every iteration, materially more
+aggressive CPU/process contention than one normal CI run (or one
+Handler actually using the app) ever produces. Consistent with the
+existing accepted class of environment-only flakes already documented
+elsewhere in this file (the gstatic.com-sandbox-block failures, the
+sub-pixel color-rounding one) -- logged here explicitly, with the
+diagnostic evidence, rather than silently upgraded from "found a real
+bug" to "confirmed fixed" a second time without checking.
+
+No further code change from this -- the earlier `wait_post_and_sync()`
+fix stands (it fixed a real, separate masking bug), this is a note
+that "flaky under load" was the correct read for the *recurrence*,
+backed by an actual diagnostic dump rather than assumed.
