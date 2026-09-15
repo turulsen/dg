@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v88 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v89 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -2748,6 +2748,12 @@ function deleteCell(cellId) {
   for (let i = data.length - 1; i >= 1; i--) {
     if (data[i][idCol] === cellId) {
       sheet.deleteRow(i + 1);
+      // Only createCell()/updateCellMembers() ever dual-wrote cells/{cellId}
+      // -- this function never mirrored a delete, so a-cell.html's Cells
+      // tab (now reading cells/ live from Firestore, same as the Play
+      // tab) would keep showing a Cell forever after it was deleted from
+      // the Sheet. Mirrored here too so the live listener actually drops it.
+      firestoreDualDelete_('cells', cellId);
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }

@@ -6429,6 +6429,86 @@ input[type="checkbox"]:checked+label {
     display: none;
 }
 
+/* Photo + Initiative (DEX) + Agent File -- prepended/appended to the
+   tracker bar so a photo and this Agent's DEX-based initiative score are
+   visible at the table, with a one-tap way back to the Agent File for
+   taking/regenerating that photo. Same tracker-item shell as HP/WP/SAN/BP
+   above, so it inherits the bar's theme tokens automatically. */
+.lp-track-photo {
+    flex: 0 0 auto;
+    padding: 6px 8px;
+}
+
+.lp-tracker-photo-box {
+    width: 38px;
+    height: 38px;
+    border-radius: 2px;
+    overflow: hidden;
+    background: var(--lp-tracker-bg);
+    border: 1px solid var(--lp-tracker-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.lp-tracker-photo-box img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.lp-tracker-photo-missing {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-family: var(--lp-font-mono);
+    font-size: 6px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--lp-tracker-label);
+    text-decoration: none;
+    padding: 2px;
+    box-sizing: border-box;
+    line-height: 1.15;
+}
+
+.lp-tracker-photo-missing:hover {
+    color: var(--lp-tracker-value);
+}
+
+.lp-track-dex {
+    flex: 0 0 auto;
+}
+
+.lp-track-dex .lp-tracker-inner {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 4px;
+}
+
+.lp-track-dex .lp-tracker-current {
+    font-size: 1.2rem;
+}
+
+.lp-track-file {
+    flex: 0 0 auto;
+    padding: 6px 8px;
+}
+
+.lp-file-btn {
+    width: auto !important;
+    height: 26px !important;
+    padding: 0 10px !important;
+    font-size: 0.6rem !important;
+    letter-spacing: 0.1em !important;
+    text-transform: uppercase !important;
+    white-space: nowrap;
+}
+
 /* ──────────────────────────────────────────────────────────────────   LP SHEET — DD FORM 315 STYLED LIVE SHEET   ────────────────────────────────────────────────────────────────── */
 #lp-sheet {
     display: none;
@@ -8126,6 +8206,25 @@ input[type="checkbox"]:checked+label {
     }
     .lp-tracker-label {
         font-size: 0.46rem;
+    }
+
+    /* The tracker bar is already packed tight enough on a 390px screen
+       to drop the dice-quick button entirely (see the big comment above)
+       -- Photo and the Agent File button are conveniences, not something
+       needed mid-roll, so they drop here too rather than squeezing HP/WP/
+       SAN/BP/SAN ROLL any further. DEX stays (same shrink-to-content
+       shape as BP, no extra width pressure) since Initiative order is
+       actually useful to see at a glance during play. Both drop to
+       Settings -> Open Agent File, already reachable on mobile. */
+    .lp-track-photo,
+    .lp-track-file {
+        display: none;
+    }
+    .lp-track-dex .lp-tracker-current {
+        font-size: 0.95rem;
+    }
+    .lp-track-dex .lp-tracker-label {
+        font-size: 0.55rem;
     }
 
     /* Dice Roller widget: fixed at 270px wide and bottom:24px/right:24px

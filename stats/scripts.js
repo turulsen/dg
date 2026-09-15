@@ -3804,6 +3804,11 @@ function lpSyncBar() {
     setText('lp-cur-wp', wp);
     setText('lp-cur-san', san);
     setText('lp-cur-bp', bp);
+    // DEX itself isn't a resource pool like HP/WP/SAN/BP -- just the
+    // score Delta Green's own initiative order is based on, read
+    // straight off the same stat span everything else here uses.
+    setText('lp-cur-dex', getStat('DEX'));
+    if (typeof dgSyncTrackerPhoto === 'function') dgSyncTrackerPhoto();
 
     // ── Tracker bar: max values ────────────────────────────────────
     setText('lp-bar-max-hp', maxHp);

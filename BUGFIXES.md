@@ -2897,3 +2897,134 @@ replacing Table Radio + Dice Roller everywhere but A-Cell; the
 terminal-gated "five tenets" onboarding flow; Requisition/Radio/Notes/
 Settings folded into the widget's own tabs). Tracked separately --
 this entry covers only the initiative tracker slice.
+
+## Priority reset, per explicit direction: bugs/performance/Sheet
+## removal first, notebook widget v2 only once that's done and tested
+
+User's own framing: "I never want to see again errors like cell
+couldn't load, track couldn't load, agents couldn't load." Read as a
+standing bar, not a one-time complaint -- fixed the first concrete
+instance found (below) rather than only reassuring that it's already
+handled.
+
+**A-Cell's Cells tab (Handler-side Cell/membership admin, separate
+from the already-migrated Play tab) was STILL reading `list_cells`/
+`list_characters` over JSONP**, with only a 3-attempt retry (added
+2026-09-14) standing between it and exactly this "Could not load
+Cells" message on a weak connection -- the retry narrowed the window,
+it didn't close it. Migrated its reads the same way Play's already
+went (`db.collection('characters').onSnapshot(...)` /
+`db.collection('cells').onSnapshot(...)`, both public-read per
+`firestore.rules`): no more JSONP round trip for this tab's reads at
+all, and no Handler session needed before it can show anything either
+(previously it wouldn't load until `list_characters`'s own session
+check passed). Writes (`create_cell`/`update_cell_members`/
+`delete_cell`) stay Apps Script POSTs -- Handler actions need the
+server-side password check -- but confirming one landed no longer
+needs a second JSONP read-back: the live listener already keeps
+`cells` current, so `waitForCellsCondition_()` just polls that
+already-live in-memory array instead.
+
+**Real gap this migration surfaced and fixed**: `deleteCell()` in
+`Code.gs` never dual-wrote its delete to Firestore at all --
+`createCell()` and `updateCellMembers()` both mirror to
+`cells/{cellId}`, but nothing ever mirrored a *delete*. Harmless while
+the Cells tab still read from the Sheet, but under the new live
+listener it would have meant a deleted Cell never actually
+disappearing from the Handler's own screen. Added
+`firestoreDualDelete_('cells', cellId)` right after the Sheet row
+delete (Code.gs bumped to v89 -- needs the usual manual
+paste-and-redeploy).
+
+**Bug caught mid-implementation, not shipped**: the test rewrite for
+this (`test_acell_cells`) needed the shared Firestore stub
+(`install_notes_firestore_stub`) extended for a second time today --
+`push_firestore_snapshot()` only ever delivered a snapshot to the
+FIRST listener matching a given collection path/`where()` chain, which
+was fine while at most one tab ever listened to a given query at once.
+Now that both Play and Cells independently listen to plain
+`characters`/`cells` with no `where()` at all, only one of the two ever
+saw a pushed snapshot in a test, silently starving whichever tab's
+listener wasn't first in the list -- exactly the kind of thing that
+would never show up outside a test (real Firestore already fans one
+write out to every matching listener). Fixed by having
+`push_firestore_snapshot()` deliver to every matching listener, not
+just `.find()`'s first hit.
+
+Also spent a while chasing what looked like real flakiness in the
+rewritten test (different assertions failing on different runs, same
+code) before finding the actual, boring cause: this test's own
+Apps-Script route mock had dropped JSONP-callback wrapping for GET
+requests entirely (a bare JSON body loaded via `<script src>` throws
+"Unexpected token ':'" -- see `route_apps_script_ok`'s own comment) --
+other tab modules on the same page (Evidence, Sheet, Music) still fire
+JSONP GETs unconditionally on load regardless of which tab is visible,
+so this threw a real, repeated pageerror on every run, which was
+apparently enough event-loop noise to make the test's own POST/listener
+timing genuinely unreliable. Fixed by restoring the JSONP-aware
+fallback; 4 clean back-to-back runs after, versus roughly 1-in-3
+failing before.
+
+Full suite: 760/770, the same 10 pre-existing gstatic.com-sandbox-block
+failures as before this change, nothing new.
+
+Two more `fetchAll()`-style JSONP read sites remain elsewhere in
+`a-cell.html` (noticed while doing this one, not yet migrated) -- next
+in line for the same treatment if the "get rid of the Sheet where
+possible" direction continues.
+
+## Character sheet: Photo + Initiative (DEX) + Agent File, in the Live
+## Play tracker bar (first slice of the character-sheet side of the
+## Field Notes Widget architecture)
+
+Design settled via two direct questions rather than guessing: (1)
+extend the existing sticky Live Play tracker bar (photo + DEX item
+prepended, Agent File button appended) rather than a new always-on
+element, so the plain stat-building screen stays uncluttered and only
+the "at the table" view gains this; (2) Agent File opens as a plain
+link to `dg-agent-portal.html`, same navigation Agent Hub's own button
+already uses, not an inline modal.
+
+- **DEX/Initiative**: reads the same `#DEX-value` stat span
+  `lpSyncBar()` already reads for HP/WP/SAN's max values -- one more
+  `setText()` call in an existing, already-frequently-invoked sync
+  function, no new state or event needed.
+- **Photo**: new `stats/lp-tracker-photo.js` -- a live
+  `briefs/{code}.face_plate_url` Firestore doc read, public-read same
+  as `characters`/`cells` (see `firestore.rules`), so no per-Agent
+  sign-in needed, unlike Evidence. Keyed off `window.dgCloudSave.
+  getCloudCode()`; re-checked (not just read once) from inside
+  `lpSyncBar()` too, since that's the only hook already firing
+  whenever a fresh Cloud Save code gets minted for a just-named
+  character. Legacy Drive-hosted face plates (`gdrive:FILE_ID`)
+  resolve through the same `imgdata` JSONP proxy `a-cell.html`'s own
+  `resolveFacePlateInto()` uses, for the same Drive-access-rules
+  reason.
+- **Agent File button**: reuses the existing global `dgGoToAgentFile()`
+  (agent-portal-export.js) already wired to the settings cog's own
+  "Open Agent File" -- not a new navigation path, just a second, more
+  visible way to reach the same one.
+
+This is the first page on the character-sheet side of the app to load
+the Firebase SDK at all (Cloud Save itself is still plain Apps Script
+JSONP) -- deliberately the same lazy on-demand loader pattern every
+other widget here already uses (a plain `window.firebase.firestore`
+check first, real network fetch only if nothing else on the page has
+already loaded it), so this doesn't cost a real user anything until
+they've actually got a Cloud Save code to look up a photo for.
+
+Mobile: the tracker bar was already packed tight enough to drop its
+dice-quick-roll button entirely on a 390px screen (see that rule's own
+comment). Photo and the Agent File button drop too there for the same
+reason -- conveniences, not something needed mid-roll -- while DEX
+stays (same shrink-to-content shape as BP, no width pressure); both
+already reachable via Settings -> Open Agent File on mobile regardless.
+
+New `test_lp_tracker_photo_dex_agent_file`: placeholder-before-naming,
+DEX match, button presence, and the live photo update once a Face
+Plate lands in Firestore. `sw.js` `CACHE_NAME` bumped to `v121`
+(`stats/lp-tracker-photo.js` added to `SHELL_FILES`).
+
+Not yet built, still gated on finishing the bugs/performance/Sheet-
+removal pass first per explicit direction: the rest of the Notebook
+Widget itself (see the entry above).

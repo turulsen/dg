@@ -628,6 +628,19 @@
                 <div id="character-sheet">
                     <!-- ── Live Play Sticky Tracker Bar (Field Document theme only) ── -->
                     <div id="lp-tracker-bar" class="lp-only">
+                        <!-- Photo + Initiative (DEX) + a quick way back to the
+                             Agent File for taking/regenerating a photo without
+                             hunting through Settings -- see stats/lp-tracker-photo.js
+                             for the photo's own live Firestore read. -->
+                        <div class="lp-tracker-item lp-track-photo" id="lp-track-photo">
+                            <div class="lp-tracker-photo-box" id="lp-tracker-photo-box"></div>
+                        </div>
+                        <div class="lp-tracker-item lp-track-dex" id="lp-track-dex">
+                            <div class="lp-tracker-inner">
+                                <span class="lp-tracker-label">DEX</span>
+                                <span class="lp-tracker-current" id="lp-cur-dex">—</span>
+                            </div>
+                        </div>
                         <div class="lp-tracker-item" id="lp-track-hp">
                             <button type="button" class="lp-tracker-btn" onclick="lpAdjust('cs-hp',-1)"
                                 title="Reduce HP by 1">−</button>
@@ -687,6 +700,10 @@
                             <button type="button" class="lp-tracker-btn lp-dice-quick" onclick="lpQuickRoll()"
                                 title="Roll D%"></button>
                             <span class="lp-dice-result" id="lp-dice-result"></span>
+                        </div>
+                        <div class="lp-tracker-item lp-track-file">
+                            <button type="button" class="lp-tracker-btn lp-file-btn" onclick="dgGoToAgentFile()"
+                                title="Open this Agent's File -- take/regenerate a photo, business ID, and more">AGENT FILE</button>
                         </div>
                     </div>
                     <!-- ── Full live-play sheet (Field Document theme only) ── -->
@@ -1072,6 +1089,7 @@
         <script src="save-load.js"></script>
         <script src="agent-portal-export.js"></script>
         <script src="cloud-sync.js"></script>
+        <script src="lp-tracker-photo.js"></script>
         <script src="../assets/dice-roller.js?v=7"></script>
         <script src="equipment-data.js"></script>
         <script src="equipment-picker.js"></script>

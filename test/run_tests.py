@@ -359,26 +359,35 @@ def push_firestore_snapshot(page, path, wheres, docs):
     """Delivers a fake Firestore snapshot (the full current result set,
     same as a real listener's first callback) to whichever registered
     listener matches the given collection path and .where() chain
-    exactly. Must be called after the app has actually subscribed --
-    poll notes_firestore_listener_count() first, same reasoning as
+    exactly. Delivers to EVERY listener that matches, not just the
+    first -- two independent tabs (e.g. a-cell.html's Play tab and its
+    Cells tab both now listen to plain 'characters'/'cells' with no
+    where() at all) can each hold their own separate onSnapshot on the
+    exact same query, same as real Firestore fanning one write out to
+    every matching listener; a test would otherwise silently starve
+    whichever tab's listener didn't happen to be first in the list.
+    Must be called after the app has actually subscribed -- poll
+    notes_firestore_listener_count() first, same reasoning as
     push_radio_now_playing()'s own "must be called after the widget has
     actually subscribed" note. docs is a list of dicts, each needing an
     'id' key plus whatever fields the real CellNotes/Evidence row has."""
     page.evaluate(
         """([path, wheres, docs]) => {
-            var match = (window.__dgFirestoreListeners || []).find(function (l) {
+            var matches = (window.__dgFirestoreListeners || []).filter(function (l) {
                 return l.path === path && JSON.stringify(l.wheres) === JSON.stringify(wheres);
             });
-            if (!match) throw new Error('no Firestore listener registered for ' + path + ' where=' + JSON.stringify(wheres));
+            if (!matches.length) throw new Error('no Firestore listener registered for ' + path + ' where=' + JSON.stringify(wheres));
             var wrapped = docs.map(function (d) {
                 var id = d.id;
                 var data = Object.assign({}, d);
                 delete data.id;
                 return { id: id, data: function () { return data; } };
             });
-            match.success({
-                docChanges: function () { return wrapped.map(function (d) { return { type: 'added', doc: d }; }); },
-                forEach: function (fn) { wrapped.forEach(fn); }
+            matches.forEach(function (match) {
+                match.success({
+                    docChanges: function () { return wrapped.map(function (d) { return { type: 'added', doc: d }; }); },
+                    forEach: function (fn) { wrapped.forEach(fn); }
+                });
             });
         }""",
         [path, wheres, docs],
@@ -567,6 +576,56 @@ def test_stat_generator(p):
     page.wait_for_timeout(150)
     record("stats-terminal", "no JS exceptions across the whole run", len(errs)==0, "; ".join(errs))
 
+    page.close()
+    return errs
+
+def test_lp_tracker_photo_dex_agent_file(p):
+    """Live Play tracker bar additions: a Face Plate photo box and a DEX/
+    Initiative readout prepended to the bar, and an Agent File button
+    appended -- the first slice of the character-sheet side of the
+    Field Notes Widget architecture (design settled: extend the existing
+    tracker bar rather than a new persistent element, plain link to the
+    Agent Portal rather than an inline modal). Photo is a live,
+    public-read briefs/{code} Firestore doc listener (see
+    stats/lp-tracker-photo.js), same posture as agent-hub.html's own
+    Initiative post-it -- no per-Agent sign-in needed."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+
+    record("stats-terminal", "before naming an Agent, the tracker photo box shows a Take Photo placeholder",
+           "Take Photo" in page.inner_text("#lp-tracker-photo-box"), page.inner_text("#lp-tracker-photo-box"))
+
+    page.fill("#cs-name", "Owen Castillo")
+    page.dispatch_event("#cs-name", "input")
+    page.wait_for_timeout(300)
+    code = page.evaluate("() => window.dgCloudSave && window.dgCloudSave.getCloudCode && window.dgCloudSave.getCloudCode()")
+    record("stats-terminal", "naming the Agent mints a Cloud Save code the tracker photo can key off of",
+           bool(code), str(code))
+
+    page.click("#random-point-buy")
+    dex_val = page.text_content("#DEX-value")
+    page.click("#character-mode-toggle")
+    page.wait_for_timeout(300)
+    record("stats-terminal", "the tracker bar's DEX/Initiative readout matches the sheet's own DEX stat",
+           page.text_content("#lp-cur-dex") == dex_val, f"lp-cur-dex={page.text_content('#lp-cur-dex')} DEX-value={dex_val}")
+    record("stats-terminal", "Agent File button is present in the tracker bar",
+           page.locator(".lp-file-btn").count() == 1, "")
+
+    wait_for_condition(lambda: any(l.get("isDoc") and l["path"] == "briefs/" + code
+                                    for l in page.evaluate("() => window.__dgFirestoreListeners || []")), timeout_ms=8000)
+    push_firestore_doc_snapshot(page, "briefs/" + code, True, {"face_plate_url": "https://example.com/fake-face.png"})
+    photo_html = wait_for_condition(lambda: (page.inner_html("#lp-tracker-photo-box")
+                                              if "<img" in page.inner_html("#lp-tracker-photo-box") else None))
+    record("stats-terminal", "once a Face Plate exists in Firestore, the tracker photo box shows it live",
+           bool(photo_html) and "fake-face.png" in photo_html, photo_html or "")
+
+    record("stats-terminal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
     return errs
 
@@ -3325,14 +3384,19 @@ def test_acell_handler_session_race(p):
                     "dg_acell_session race this test is named for (it has no session of its own to race)",
            names == ["Owen Castillo"], page.inner_text("#play-agent-list"))
 
-    # Cells' own list_characters call (for the "add Agent" picker) needs
-    # the same valid session -- it's a second, independent tab module
-    # racing the same silent re-login, and was missed the first time
-    # this fix went in.
+    # Cells' own reads are now the same plain, public-read
+    # characters/cells Firestore listeners Play uses (no more
+    # list_characters JSONP call needing a valid Handler session) -- a
+    # second, independent tab module that used to race the same silent
+    # re-login, and was missed the first time this fix went in. Now it
+    # simply isn't racing anything: the push_firestore_snapshot() calls
+    # above already reached this tab's own listeners too (registered at
+    # page load, not gated on the tab being clicked), well before this
+    # click.
     page.click('.tw[data-tab="cells"]')
     cells_text = wait_for_condition(lambda: page.inner_text("#cells-groups")
                                      if "Cell Alpha" in page.inner_text("#cells-groups") else None)
-    record("acell", "Cells recovers and shows the roster too, instead of 'Could not load Cells' forever",
+    record("acell", "Cells shows the roster immediately too, immune to the dg_acell_session race this test is named for",
            bool(cells_text) and "Cell Alpha" in cells_text, page.inner_text("#cells-groups"))
 
     # Evidence itself now reads from its own live Firestore listener
@@ -3353,15 +3417,19 @@ def test_acell_handler_session_race(p):
 def test_acell_cells(p):
     """a-cell.html's Cells tab: real named Cell groups (a Handler + a
     set of member Agents picked from the full roster), not a per-Agent
-    text tag -- backed by new list_cells/create_cell/update_cell_members
-    actions (acell-cell-groups-addition.txt, handed over separately).
-    One Agent can belong to more than one Cell; an Agent in none shows
-    up under "Unassigned Agents". Like every other write in this app,
-    create_cell/update_cell_members are no-cors POSTs verified by a
-    real list_cells read-back before the UI shows the change."""
+    text tag. One Agent can belong to more than one Cell; an Agent in
+    none shows up under "Unassigned Agents". Reads (cells/characters)
+    are now live, public-read Firestore listeners -- same pattern as
+    the Play tab -- so this test pushes snapshots instead of mocking
+    list_cells/list_characters JSONP. Writes (create_cell/
+    update_cell_members/delete_cell) still go through Apps Script as
+    no-cors POSTs that dual-write to Firestore server-side; simulated
+    here by updating cells_state once the POST lands and re-pushing a
+    cells/ snapshot, standing in for that dual-write actually landing."""
     page = p.new_page()
     page.set_default_timeout(30000)
     errs = collect_errors(page)
+    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     skip_acell_gate(page)
@@ -3372,11 +3440,13 @@ def test_acell_cells(p):
         {"agent_code": "MARC-9XQ2", "name": "Marcus Reyes", "profession": "Pilot"},
     ]
     cells_state = []
+    posts = []
 
     def fake_apps_script(route):
         req = route.request
         if req.method == "POST":
             body = json.loads(req.post_data or "{}")
+            posts.append(body)
             if body.get("action") == "create_cell":
                 cell_id = "cell_" + str(len(cells_state) + 1)
                 cells_state.append({"cell_id": cell_id, "name": body.get("name"), "handler": body.get("handler", ""), "member_codes": []})
@@ -3390,29 +3460,43 @@ def test_acell_cells(p):
             return
         url = req.url
         if "callback=" in url:
+            # Other tab modules (Evidence/Sheet/Music) still fire their own
+            # JSONP GETs unconditionally on page load regardless of which
+            # tab is visible -- a bare JSON body loaded via <script src>
+            # throws "Unexpected token ':'" (see route_apps_script_ok's own
+            # comment above), which this test hit for real before this was
+            # JSONP-aware: real, repeated pageerrors that made the whole
+            # test's POST/listener timing visibly flaky.
             cb = url.split("callback=")[1].split("&")[0]
-            if "action=list_characters" in url:
-                res = {"status": "OK", "characters": fake_characters}
-            elif "action=list_cells" in url:
-                res = {"status": "OK", "cells": cells_state}
-            else:
-                res = {"status": "OK"}
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"OK"}})')
         else:
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", fake_apps_script)
 
+    def sync_cells():
+        push_firestore_snapshot(page, "cells", [], [dict(c, id=c["cell_id"]) for c in cells_state])
+
+    def wait_post_and_sync(predicate):
+        wait_for_condition(lambda: any(predicate(b) for b in posts))
+        sync_cells()
+
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(500)
+    wait_for_condition(lambda: any(l["path"] == "characters" for l in page.evaluate("() => window.__dgFirestoreListeners || []"))
+                        and any(l["path"] == "cells" for l in page.evaluate("() => window.__dgFirestoreListeners || []")),
+                        timeout_ms=8000)
+    push_firestore_snapshot(page, "characters", [],
+                             [{"id": c["agent_code"], "character_json": json.dumps({"bio": {"name": c["name"]}})} for c in fake_characters])
+    sync_cells()
     # Cells lives behind its own folder tab now (Play is active by default).
     page.click('.tw[data-tab="cells"]')
-    page.wait_for_timeout(500)
+    page.wait_for_timeout(300)
 
     record("acell", "Cells starts empty with a prompt to create one",
            "No Cells yet" in page.inner_text("#cells-groups"), "")
-    unassigned = page.inner_text("#cells-unassigned")
+    unassigned = wait_for_condition(lambda: (page.inner_text("#cells-unassigned")
+                                              if "Owen Castillo" in page.inner_text("#cells-unassigned") else None))
     record("acell", "every Agent on file starts out Unassigned",
-           "Owen Castillo" in unassigned and "Priya Anand" in unassigned and "Marcus Reyes" in unassigned, unassigned)
+           bool(unassigned) and "Priya Anand" in unassigned and "Marcus Reyes" in unassigned, unassigned or "")
 
     # Clicking an Unassigned Agent chip before any Cell exists should
     # open the assign popup with a clear "create one first" message,
@@ -3437,6 +3521,7 @@ def test_acell_cells(p):
     page.fill("#cells-new-name", "Cell Alpha")
     page.fill("#cells-new-handler", "Sam")
     page.click("#cells-new-confirm")
+    wait_post_and_sync(lambda b: b.get("action") == "create_cell" and b.get("name") == "Cell Alpha")
     groups_text = wait_for_condition(lambda: page.inner_text("#cells-groups")
                                       if "Cell Alpha" in page.inner_text("#cells-groups") else None)
     record("acell", "creating a Cell shows it with its name and Handler once the backend confirms it",
@@ -3448,8 +3533,11 @@ def test_acell_cells(p):
     # includes every NOT-yet-added Agent's name, so a plain "is Owen's
     # name anywhere in this card" check is already true before the add
     # even happens (he's sitting right there as an unselected option).
+    alpha_id = cells_state[0]["cell_id"]
     page.select_option('[data-add-select="0"]', "OWEN-CS12")
     page.click('[data-add-btn="0"]')
+    wait_post_and_sync(lambda b: b.get("action") == "update_cell_members" and b.get("cell_id") == alpha_id
+                        and set(b.get("member_codes", [])) == {"OWEN-CS12"})
     def alpha_members():
         return page.inner_text('.cell-card[data-i="0"] .cell-members')
     alpha_text = wait_for_condition(lambda: alpha_members() if "Owen Castillo" in alpha_members() else None)
@@ -3464,9 +3552,13 @@ def test_acell_cells(p):
     page.fill("#cells-new-name", "Cell Bravo")
     page.fill("#cells-new-handler", "Jo")
     page.click("#cells-new-confirm")
+    wait_post_and_sync(lambda b: b.get("action") == "create_cell" and b.get("name") == "Cell Bravo")
     wait_for_condition(lambda: page.locator('.cell-card[data-i="1"]').count() > 0)
+    bravo_id = cells_state[1]["cell_id"]
     page.select_option('[data-add-select="1"]', "OWEN-CS12")
     page.click('[data-add-btn="1"]')
+    wait_post_and_sync(lambda b: b.get("action") == "update_cell_members" and b.get("cell_id") == bravo_id
+                        and set(b.get("member_codes", [])) == {"OWEN-CS12"})
     def bravo_members():
         return page.inner_text('.cell-card[data-i="1"] .cell-members')
     wait_for_condition(lambda: "Owen Castillo" in bravo_members())
@@ -3476,6 +3568,8 @@ def test_acell_cells(p):
     # Remove Owen from Cell Alpha -- he should still show in Cell Bravo,
     # and still not be Unassigned (Bravo still has him).
     page.click('.cell-card[data-i="0"] button[data-remove-agent="OWEN-CS12"]')
+    wait_post_and_sync(lambda b: b.get("action") == "update_cell_members" and b.get("cell_id") == alpha_id
+                        and set(b.get("member_codes", [])) == set())
     wait_for_condition(lambda: "Owen Castillo" not in alpha_members())
     record("acell", "removing an Agent from one Cell doesn't remove them from a different Cell",
            "Owen Castillo" not in alpha_members() and "Owen Castillo" in bravo_members(), "")
@@ -3490,6 +3584,8 @@ def test_acell_cells(p):
            add_select.evaluate("el => el.multiple") is True, "")
     add_select.select_option(["PRIY-AN34", "MARC-9XQ2"])
     page.click('[data-add-btn="1"]')
+    wait_post_and_sync(lambda b: b.get("action") == "update_cell_members" and b.get("cell_id") == bravo_id
+                        and set(b.get("member_codes", [])) == {"OWEN-CS12", "PRIY-AN34", "MARC-9XQ2"})
     wait_for_condition(lambda: "Priya Anand" in bravo_members() and "Marcus Reyes" in bravo_members())
     record("acell", "selecting more than one Agent and Add Selected adds them all in one action",
            "Priya Anand" in bravo_members() and "Marcus Reyes" in bravo_members() and "Owen Castillo" in bravo_members(),
@@ -3506,6 +3602,7 @@ def test_acell_cells(p):
 
     page.once("dialog", lambda d: d.accept())
     page.click('.cell-card[data-i="1"] .cell-delete-btn')
+    wait_post_and_sync(lambda b: b.get("action") == "delete_cell" and b.get("cell_id") == bravo_id)
     wait_for_condition(lambda: "Cell Bravo" not in page.inner_text("#cells-groups"))
     record("acell", "accepting Delete Cell removes the grouping",
            "Cell Bravo" not in page.inner_text("#cells-groups"), page.inner_text("#cells-groups"))
@@ -3522,6 +3619,8 @@ def test_acell_cells(p):
     record("acell", "the assign popup lists existing Cells as options once at least one exists",
            "Cell Alpha" in page.inner_text("#cell-assign-backdrop"), page.inner_text("#cell-assign-backdrop"))
     page.click('#cell-assign-backdrop [data-assign-cell-i="0"]')
+    wait_post_and_sync(lambda b: b.get("action") == "update_cell_members" and b.get("cell_id") == alpha_id
+                        and set(b.get("member_codes", [])) == {"PRIY-AN34"})
     wait_for_condition(lambda: "Priya Anand" in alpha_members())
     record("acell", "picking a Cell from the assign popup adds the Agent to it",
            "Priya Anand" in alpha_members(), alpha_members())
@@ -9428,6 +9527,8 @@ def main():
                 return None
 
         safe(test_stat_generator, browser, area="stats-terminal")
+
+        safe(test_lp_tracker_photo_dex_agent_file, browser, area="stats-terminal")
 
         safe(test_live_play_themed_skins, browser, area="stats-terminal")
 
