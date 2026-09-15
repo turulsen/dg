@@ -3028,3 +3028,35 @@ Plate lands in Firestore. `sw.js` `CACHE_NAME` bumped to `v121`
 Not yet built, still gated on finishing the bugs/performance/Sheet-
 removal pass first per explicit direction: the rest of the Notebook
 Widget itself (see the entry above).
+
+## Follow-up: `test_acell_cells`'s bulk-add assertion really was flaky,
+## not just sandbox noise — found the actual bug in `wait_post_and_sync`
+
+Raised directly: "I start to suspect that issues surface that we fixed
+before because you are not doing proper due diligence." Fair, and this
+is exactly the kind of thing that check is for — a full-suite run
+after the Cells migration above showed `test_acell_cells`'s bulk-add
+assertion failing once in ~776 checks, on a step that passed cleanly
+every time in isolation. Traced instead of shrugged off as noise.
+
+Root cause: `wait_post_and_sync()` (the test helper simulating a
+Handler write's server-side dual-write landing) called
+`wait_for_condition()` once (default 25s), then called `sync_cells()`
+**unconditionally** afterward — including on a timeout. If the POST
+genuinely took longer than 25s to arrive under a loaded full-suite run
+(plausible after several hundred prior Chromium page contexts, even
+though each closes cleanly), the helper would silently push whatever
+`cells_state` already held, still missing the write it was meant to be
+waiting for, with nothing marking that the wait had actually failed.
+Every later DOM-level `wait_for_condition()` in the test then had
+nothing left to ever succeed on, so the failure surfaced as a
+generic-looking assertion failure tens of seconds later, nowhere near
+its real cause.
+
+Fixed by merging the wait and the sync into one retry loop (40s total)
+that only calls `sync_cells()` once the expected POST is actually
+observed — a timeout now correctly leaves `cells_state` untouched and
+lets the caller's own DOM check fail for the real reason, rather than
+masking it with a stale push. 3 clean re-runs of `test_acell_cells`
+alone after the fix, plus a fresh full-suite run to confirm no
+recurrence at scale.

@@ -13,11 +13,16 @@ or trying to roll anything back; it assumes you've already read
 Before any of this, the codebase already had two ad hoc counters:
 
 - `backend/Code.gs`'s own header comment (`// Google Apps Script backend
-  v82 — ...`), bumped by convention whenever the backend changes in a way
-  worth tracking.
-- `sw.js`'s `CACHE_NAME` (`dg-hub-shell-v65`), bumped on every
-  `SHELL_FILES`-listed change so returning visitors don't get stuck on
-  stale JS.
+  v89 — ...` as of this writing), bumped by convention whenever the
+  backend changes in a way worth tracking.
+- `sw.js`'s `CACHE_NAME` (`dg-hub-shell-v121` as of this writing), bumped
+  on every `SHELL_FILES`-listed change so returning visitors don't get
+  stuck on stale JS.
+
+These two numbers move constantly (multiple times per session some
+days) — treat the specific values above as "as of this writing," not
+something to keep byte-for-byte current in this file; check the actual
+files for the live number instead of trusting this paragraph's digits.
 
 Neither of those is a *release* marker — they're deployment-unit
 counters for two things that version independently of each other and of
@@ -50,11 +55,18 @@ anything for).
   that would earn a major bump when it happens. Ordinary feature work
   doesn't.
 
-**v1.0.0** marks the current `main` HEAD as of 2026-09-06 — a
-deliberate starting line, not a reconstruction of the 260 commits
-before it. Don't backfill v0.x tags onto old commits; it's not worth
-the archaeology and there's no consumer depending on that history being
-versioned.
+**v1.0.0** marks a deliberate starting line as of 2026-09-06, not a
+reconstruction of the 260 commits before it — don't backfill v0.x tags
+onto old commits, it's not worth the archaeology and there's no
+consumer depending on that history being versioned. Latest tag as of
+this writing is **v1.2.1**, cut 2026-09-14 — the tagging discipline
+below (tag right after every push) has **not** actually been followed
+since: `main` is currently several commits and a full day ahead of it
+(the Live Rolls fix, the Track Library/Play-tab/Cells-tab Firestore
+migrations, the DEX Initiative Tracker, and the character-sheet Photo/
+Agent-File addition all shipped untagged). Treat "latest tag" as a
+lower bound on what's live, not an accurate picture of it, until a new
+tag catches this up.
 
 ### When to cut a tag
 
@@ -96,9 +108,10 @@ existing cutover-merge pattern. Two jobs:
    happening for real (the Aug 27 `stats/dice-roller.js` move breaking
    every install for over a week) — now enforced instead of only
    remembered.
-2. **QA harness** (`test/run_tests.py`) — the existing 550+-check
-   Playwright suite, run headless against a local static server. Fails
-   the push on any non-zero exit.
+2. **QA harness** (`test/run_tests.py`) — the existing Playwright suite
+   (96 test functions, 750+ individual checks as of this writing), run
+   headless against a local static server. Fails the push on any
+   non-zero exit.
 
 **Deliberately not checked:** whether `backend/Code.gs`'s own version
 comment was bumped, and whether Apps Script was actually redeployed.
@@ -115,11 +128,12 @@ changes to a PR-based one.
 
 ## 4. Rollback plan
 
-This app has **two independently-deployed halves that roll back
-differently** — the frontend (static site) and the backend (Apps
-Script). Rolling back one does *not* roll back the other. Mixing this
-up is the single most likely way a rollback attempt makes things worse
-instead of better.
+This app now has **three independently-deployed surfaces that roll
+back differently** — the frontend (static site), the Apps Script
+backend, and Firebase/Firestore (rules, indexes, Storage rules, Cloud
+Functions). Rolling back one does *not* roll back the others. Mixing
+this up is the single most likely way a rollback attempt makes things
+worse instead of better.
 
 ### 4a. Frontend (the static site GitHub Pages serves from `main`)
 
@@ -176,15 +190,54 @@ Either way, a backend rollback is a manual action a human takes in the
 Apps Script editor. Nothing in this repo's CI or git history can do it
 automatically, and no amount of `git revert` on `main` touches it.
 
-### 4c. When frontend and backend disagree
+### 4c. Firebase / Firestore (rules, indexes, Storage rules, Cloud Functions)
 
-A rolled-back frontend talking to a NOT-rolled-back backend (or vice
-versa) is the actual dangerous state — e.g. a rolled-back
+`firestore.rules`, `firestore.indexes.json`, and `storage.rules` in
+this repo are **mirrors only**, exactly like `backend/Code.gs` — a
+`git revert`/`git checkout` on `main` changes nothing live. The actual
+deploy is a manual `firebase deploy --only firestore:rules` (or
+`storage:rules`, `firestore:indexes`, `functions`) run by hand from a
+checkout that has the change. There is currently no equivalent of Apps
+Script's "Manage Deployments" version history for this side — Firebase
+CLI deploys don't keep a browsable rollback list the way Apps Script
+does — so the only rollback path is: check out the last-known-good
+commit, then re-run the matching `firebase deploy --only ...` command
+from that checkout.
+
+**This is a real, previously-hit failure mode, not a hypothetical**:
+the Live Rolls collection-group rule was verified live via a direct
+REST call once, then broke later with no corresponding change in this
+repo's `firestore.rules` — the leading explanation (see `BUGFIXES.md`)
+is a later deploy of a stale rules file for an unrelated fix, pushed
+from a checkout that predated this rule, silently reverting it live
+with nothing in git to show for it. When a Firestore permission error
+doesn't match what `firestore.rules` says in this repo, suspect a
+missed or stale deploy before suspecting the rule text itself — and
+always `firebase deploy --only firestore:rules` from a fresh, current
+checkout, not from whatever local state happens to be lying around.
+
+Cloud Functions (`exchangeAgentToken`, `handlerLogin`) roll back the
+same way as rules: no version history to pick from, just redeploy an
+older checkout's `functions/` source with `firebase deploy --only
+functions`.
+
+### 4d. When the three surfaces disagree
+
+A rolled-back frontend talking to a NOT-rolled-back Apps Script backend
+(or vice versa) is the actual dangerous state — e.g. a rolled-back
 `a-cell.html` sending an old action shape to a backend that only
-understands the new one, or the reverse. Before considering a rollback
-finished, check both halves are actually at versions meant to talk to
-each other (the tag message's "Backend: vNN (redeployed: yes/no)" line
-from §2 is what makes this checkable after the fact).
+understands the new one, or the reverse. The same applies to Firestore
+rules: a frontend that now reads/writes a collection directly (see the
+Firebase/Firestore migration — Play tab, Cells tab, Track Library,
+Notes, Evidence, and more all do this today) rolled back to a version
+that still expected an Apps Script round trip for that same data, or a
+rules deploy that's out of step with what either code path actually
+sends. Before considering a rollback finished, check all three surfaces
+are actually at versions meant to talk to each other (the tag message's
+"Backend: vNN (redeployed: yes/no)" line from §2 covers Apps Script;
+there's no equivalent tracked line for Firestore rules/functions yet,
+so that side needs an explicit manual check — diff the live rules
+against what the rolled-back frontend commit actually expects).
 
 ## 5. Bug tracking: Issues vs. `BUGFIXES.md` vs. `FEATURES.md` §13
 

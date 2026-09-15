@@ -3476,9 +3476,27 @@ def test_acell_cells(p):
     def sync_cells():
         push_firestore_snapshot(page, "cells", [], [dict(c, id=c["cell_id"]) for c in cells_state])
 
-    def wait_post_and_sync(predicate):
-        wait_for_condition(lambda: any(predicate(b) for b in posts))
-        sync_cells()
+    def wait_post_and_sync(predicate, timeout_ms=40000):
+        # Real bug found running this under a loaded full suite (not a
+        # one-off): the previous version called wait_for_condition() once
+        # (default 25s) then called sync_cells() unconditionally --
+        # including on a timeout, silently pushing whatever cells_state
+        # already held (possibly still missing the write this call was
+        # waiting for) with no signal that the wait had actually failed.
+        # Every later DOM-level wait_for_condition() then had nothing left
+        # to ever succeed on, so this failure surfaced tens of seconds
+        # later on an unrelated-looking assertion. Retries in its own
+        # loop instead of a single wait+sync, so a POST landing anywhere
+        # up to timeout_ms still gets picked up; only gives up (leaving
+        # the caller's own DOM check to report the real failure) after
+        # that.
+        import time
+        deadline = time.monotonic() + timeout_ms / 1000
+        while time.monotonic() < deadline:
+            if any(predicate(b) for b in posts):
+                sync_cells()
+                return
+            time.sleep(0.2)
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     wait_for_condition(lambda: any(l["path"] == "characters" for l in page.evaluate("() => window.__dgFirestoreListeners || []"))
