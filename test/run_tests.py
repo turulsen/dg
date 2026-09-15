@@ -3369,15 +3369,11 @@ def test_acell_handler_session_race(p):
     cells_fixture = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": [], "channel": ""}]
     evidence_fixture = [{"evidence_id": "ev1", "title": "Confidential Photo", "body": "", "photo": "",
                           "cell_id": "", "operation_id": "", "released": False, "restricted_to": [], "created_at": "1000"}]
-    delete_cell_calls = []
 
     def fake_apps_script(route):
         req = route.request
         url = req.url
         if req.method == "POST":
-            body = json.loads(req.post_data or "{}")
-            if body.get("action") == "delete_cell":
-                delete_cell_calls.append(body)
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         if "callback=" not in url:
@@ -3423,16 +3419,19 @@ def test_acell_handler_session_race(p):
     record("acell", "Cells shows the roster immediately too, no Handler session involved in the read",
            bool(cells_text) and "Cell Alpha" in cells_text, page.inner_text("#cells-groups"))
 
-    # Prove the id_token actually flows end to end for the one thing on
-    # this tab that IS Handler-gated: a write (Delete). Made right after
-    # the silent sign-in confirmed above, it should carry a real id_token
-    # sourced from that SAME sign-in, not the old handler_password field.
+    # Prove the SAME silent sign-in confirmed above is what authorizes
+    # the one thing on this tab that's Handler-gated: a write (Delete Cell,
+    # a direct Firestore delete via ensureHandlerSignedIn() -- see the
+    # Cells tab's own header comment in a-cell.html). No id_token/
+    # handler_password Apps Script POST is involved at all anymore; the
+    # race this test exists for would show up here as either the delete
+    # never landing (a second, failed sign-in attempt) or a permission-
+    # denied error (the wrong/no auth.currentUser by the time it fires).
     page.once("dialog", lambda d: d.accept())
     page.click("[data-delete-cell]")
-    wait_for_condition(lambda: len(delete_cell_calls) >= 1, timeout_ms=6000)
-    record("acell", "a Handler write after silent re-login carries a real id_token (not the old handler_password)",
-           bool(delete_cell_calls) and bool(delete_cell_calls[0].get("id_token")) and "handler_password" not in delete_cell_calls[0],
-           str(delete_cell_calls))
+    delete_write = wait_for_condition(lambda: next((w for w in firestore_writes(page, "cells/") if w["path"] == "cells/cell_1" and w["op"] == "delete"), None), timeout_ms=6000)
+    record("acell", "a Handler write after silent re-login succeeds via the same cached Firebase sign-in",
+           bool(delete_write), str(delete_write))
 
     # Evidence itself reads from its own live Firestore listener too,
     # gated on isHandler() server-side for the id_token it now sends
@@ -3455,11 +3454,14 @@ def test_acell_cells(p):
     none shows up under "Unassigned Agents". Reads (cells/characters)
     are now live, public-read Firestore listeners -- same pattern as
     the Play tab -- so this test pushes snapshots instead of mocking
-    list_cells/list_characters JSONP. Writes (create_cell/
-    update_cell_members/delete_cell) still go through Apps Script as
-    no-cors POSTs that dual-write to Firestore server-side; simulated
-    here by updating cells_state once the POST lands and re-pushing a
-    cells/ snapshot, standing in for that dual-write actually landing."""
+    list_cells/list_characters JSONP. Create/Delete Cell write straight
+    to Firestore now (no server-side side effect beyond that one doc);
+    simulated here by reading the write back off the stub and re-pushing
+    a cells/ snapshot, same as create_cell/delete_cell's real dual-write
+    landing. update_cell_members deliberately stays Apps Script-mediated
+    (it also carries forward solo Notes and recomputes Evidence
+    visibility -- see the Cells tab's own header comment in a-cell.html)
+    -- still a no-cors POST simulated the same way as before."""
     page = p.new_page()
     page.set_default_timeout(30000)
     errs = collect_errors(page)
@@ -3484,16 +3486,19 @@ def test_acell_cells(p):
         req = route.request
         if req.method == "POST":
             body = json.loads(req.post_data or "{}")
-            posts.append(body)
-            if body.get("action") == "create_cell":
-                cell_id = "cell_" + str(len(cells_state) + 1)
-                cells_state.append({"cell_id": cell_id, "name": body.get("name"), "handler": body.get("handler", ""), "member_codes": []})
-            elif body.get("action") == "update_cell_members":
+            # Mutate cells_state BEFORE appending to posts -- wait_post_and_sync()
+            # polls `posts` from a separate loop and calls sync_cells() the
+            # instant it sees a match, so if the append happened first, a poll
+            # landing between these two lines could push a snapshot still
+            # missing this very mutation (a real, if narrow, race -- caught
+            # via a flaky "adding an Agent to a Cell" failure while testing
+            # the Create/Delete Cell migration above, even though this
+            # ordering issue predates it and applies to any action here).
+            if body.get("action") == "update_cell_members":
                 for c in cells_state:
                     if c["cell_id"] == body.get("cell_id"):
                         c["member_codes"] = body.get("member_codes", [])
-            elif body.get("action") == "delete_cell":
-                cells_state[:] = [c for c in cells_state if c["cell_id"] != body.get("cell_id")]
+            posts.append(body)
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         url = req.url
@@ -3536,6 +3541,36 @@ def test_acell_cells(p):
                 return
             time.sleep(0.2)
 
+    # Same "poll instead of one wait+sync" discipline as wait_post_and_sync
+    # above, for Create/Delete Cell's direct Firestore write instead of an
+    # Apps Script POST -- match_write identifies the one top-level
+    # cells/{cellId} write (create: a 'set'; delete: a 'delete') this
+    # particular action produced, out of everything firestore_writes()
+    # has accumulated so far. Mutates cells_state to reflect it (merging
+    # a create's fields in, or dropping a deleted cell_id) and re-pushes,
+    # same as sync_cells() above. Returns the cell_id found, or None on
+    # timeout.
+    def wait_cell_write_and_sync(match_write, timeout_ms=40000):
+        import time
+        deadline = time.monotonic() + timeout_ms / 1000
+        while time.monotonic() < deadline:
+            top_level_writes = [w for w in firestore_writes(page, "cells/") if w["path"].count("/") == 1]
+            match = next((w for w in top_level_writes if match_write(w)), None)
+            if match:
+                cell_id = match["path"].split("/")[-1]
+                if match["op"] == "delete":
+                    cells_state[:] = [c for c in cells_state if c["cell_id"] != cell_id]
+                else:
+                    existing = next((c for c in cells_state if c["cell_id"] == cell_id), None)
+                    if existing:
+                        existing.update(match["data"])
+                    else:
+                        cells_state.append(dict({"cell_id": cell_id, "name": "", "handler": "", "member_codes": [], "channel": ""}, **match["data"]))
+                sync_cells()
+                return cell_id
+            time.sleep(0.2)
+        return None
+
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     wait_for_condition(lambda: any(l["path"] == "characters" for l in page.evaluate("() => window.__dgFirestoreListeners || []"))
                         and any(l["path"] == "cells" for l in page.evaluate("() => window.__dgFirestoreListeners || []")),
@@ -3567,17 +3602,15 @@ def test_acell_cells(p):
            page.locator("#cell-assign-backdrop").count() == 0, "")
 
     # Create a Cell. Polls for the confirmed state instead of a fixed
-    # sleep -- create_cell is a no-cors POST verified by a list_cells
-    # read-back 900ms later, and under system load that round trip can
-    # take longer than any one fixed wait, so poll up to a generous cap
-    # rather than risk a flaky false failure (or wasting time when it's
-    # fast).
+    # sleep -- a direct Firestore write under system load can still take
+    # longer than any one fixed wait, so poll up to a generous cap rather
+    # than risk a flaky false failure (or wasting time when it's fast).
     page.click("#cells-create-btn")
     page.wait_for_timeout(150)
     page.fill("#cells-new-name", "Cell Alpha")
     page.fill("#cells-new-handler", "Sam")
     page.click("#cells-new-confirm")
-    wait_post_and_sync(lambda b: b.get("action") == "create_cell" and b.get("name") == "Cell Alpha")
+    alpha_id = wait_cell_write_and_sync(lambda w: w["data"].get("name") == "Cell Alpha")
     groups_text = wait_for_condition(lambda: page.inner_text("#cells-groups")
                                       if "Cell Alpha" in page.inner_text("#cells-groups") else None)
     record("acell", "creating a Cell shows it with its name and Handler once the backend confirms it",
@@ -3589,7 +3622,6 @@ def test_acell_cells(p):
     # includes every NOT-yet-added Agent's name, so a plain "is Owen's
     # name anywhere in this card" check is already true before the add
     # even happens (he's sitting right there as an unselected option).
-    alpha_id = cells_state[0]["cell_id"]
     page.select_option('[data-add-select="0"]', "OWEN-CS12")
     page.click('[data-add-btn="0"]')
     wait_post_and_sync(lambda b: b.get("action") == "update_cell_members" and b.get("cell_id") == alpha_id
@@ -3608,9 +3640,8 @@ def test_acell_cells(p):
     page.fill("#cells-new-name", "Cell Bravo")
     page.fill("#cells-new-handler", "Jo")
     page.click("#cells-new-confirm")
-    wait_post_and_sync(lambda b: b.get("action") == "create_cell" and b.get("name") == "Cell Bravo")
+    bravo_id = wait_cell_write_and_sync(lambda w: w["data"].get("name") == "Cell Bravo")
     wait_for_condition(lambda: page.locator('.cell-card[data-i="1"]').count() > 0)
-    bravo_id = cells_state[1]["cell_id"]
     page.select_option('[data-add-select="1"]', "OWEN-CS12")
     page.click('[data-add-btn="1"]')
     wait_post_and_sync(lambda b: b.get("action") == "update_cell_members" and b.get("cell_id") == bravo_id
@@ -3658,7 +3689,7 @@ def test_acell_cells(p):
 
     page.once("dialog", lambda d: d.accept())
     page.click('.cell-card[data-i="1"] .cell-delete-btn')
-    wait_post_and_sync(lambda b: b.get("action") == "delete_cell" and b.get("cell_id") == bravo_id)
+    wait_cell_write_and_sync(lambda w: w["path"] == "cells/" + bravo_id and w["op"] == "delete")
     wait_for_condition(lambda: "Cell Bravo" not in page.inner_text("#cells-groups"))
     record("acell", "accepting Delete Cell removes the grouping",
            "Cell Bravo" not in page.inner_text("#cells-groups"), page.inner_text("#cells-groups"))

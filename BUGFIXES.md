@@ -3494,3 +3494,65 @@ didn't even have the Firestore stub installed before this, since it
 never used to need one) to check `firestore_writes()`/
 `get_firestore_doc()` instead of a mocked Apps Script `posts` list. Full
 Notes batch: 74/74 passing.
+
+## Phase 2 (Sheets removal), continued: A-Cell Cells tab Create/Delete off Apps Script/Sheet, straight to Firestore
+
+Per the ordering the "map remaining surfaces" research pass suggested:
+`createCell()`/`deleteCell()` were already fully Firestore-dual-written
+and `cells/{cellId}`'s own rules (`isHandler()`-gated write) were already
+in place, making these the next-cheapest surface. `updateCellMembers()`
+(adding/removing a Cell member) deliberately stays Apps Script-mediated
+-- reading its actual body (not just the researcher's summary) showed it
+also carries forward a newly-assigned Agent's solo Notes
+(`migrateSoloNotesToCell_()`) and recomputes every Evidence item's
+`visible_to` for the whole Cell (`recomputeEvidenceVisibleToForCell_()`)
+-- real server-side side effects a plain client-side `member_codes`
+write would silently drop. Caught by reading the function body, not by
+trusting the earlier research summary at face value.
+
+**`a-cell.html` (Cells tab):** added `ensureHandlerSignedIn()`/
+`cellDocRef_()`; Create Cell now mints its own `cell_id` (same
+`'cell_' + timestamp + '_' + random` shape Code.gs used to) and
+`.set()`s it directly; Delete Cell is a plain `.delete()`. Both resolve
+their status text off the write's own Promise instead of polling
+`list_cells` for the expected state. Cue For Cell (`cellAssignBtn`, on
+the Music tab) also migrated while touching this same doc shape --
+writes `channel` straight to `cells/{cellId}` now (see the backend
+dual-write added below), with the local `cells` array in that tab
+updated optimistically off the write's result since that tab has no
+live `cells/` listener of its own to just re-render from.
+
+**`backend/Code.gs`:** added the dual-write `setCellChannel()` was
+missing -- same gap `updateCellMembers()` itself once had (see this
+file's own "Fix Live Rolls permission-denied" entry): only
+`createCell`/`updateCellMembers`/`deleteCell` ever mirrored
+`cells/{cellId}` into Firestore, so a channel assigned via Cue For Cell
+sat invisible to any direct-Firestore reader until that Cell's
+membership next happened to change.
+
+**Test-infrastructure work, and a real (if narrow) race found while
+chasing a flaky assertion:** rewrote `test_acell_cells`'s Create/Delete
+Cell steps around a new `wait_cell_write_and_sync()` helper (the
+Firestore-write equivalent of the existing `wait_post_and_sync()`, for
+a mock backend that still handles `update_cell_members` as a real POST
+alongside a direct Firestore write for Create/Delete). While stabilizing
+this, found `wait_post_and_sync`'s own Apps Script mock appended a POST
+to `posts` BEFORE mutating `cells_state` to reflect it -- since
+`wait_post_and_sync` polls `posts` from a separate loop and calls
+`sync_cells()` the instant it sees a match, a poll landing between those
+two lines could push a snapshot still missing the very mutation it was
+supposed to confirm. Fixed by mutating `cells_state` first. This did not
+fully eliminate an existing, lower-rate flakiness in `update_cell_members`-
+dependent assertions specifically (`test_acell_cells`'s own git history
+already has an entry for this same test's bulk-add assertion being
+"really flaky, not just sandbox noise") -- confirmed via repeated runs
+that every failure observed continued to cluster exclusively in
+`update_cell_members`-dependent checks, never once in the Create/Delete
+Cell assertions this pass actually touched, which passed cleanly across
+every run. Left as a known, pre-existing test-harness synchronization
+issue (specific to the mocked `posts`-list/`cells_state` handoff, not
+the real app) rather than a regression from this migration. Also fixed
+`test_acell_handler_session_race`'s own Delete-Cell assertion
+(previously checking an `id_token` on a `delete_cell` POST that no
+longer exists) to instead check the direct Firestore delete landed via
+the same cached Handler sign-in.

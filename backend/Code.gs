@@ -4036,6 +4036,14 @@ function setCellChannel(cellId, channel) {
   for (let i = 1; i < data.length; i++) {
     if (data[i][cols.cell_id] === cellId) {
       sheet.getRange(i + 1, cols.channel + 1).setValue(channel || '');
+      // Same gap updateCellMembers() already had before it was fixed
+      // (see that function's own comment) -- only createCell()/
+      // updateCellMembers()/deleteCell() ever touched cells/{cellId} in
+      // Firestore, so a channel assigned here stayed invisible to any
+      // direct-Firestore reader (a-cell.html's Cue For Cell picker
+      // reads the Cells listener's own cached row, not a fresh Sheet
+      // read) until the Cell's membership next happened to change.
+      firestoreDualPatch_('cells', cellId, { channel: channel || '' });
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }

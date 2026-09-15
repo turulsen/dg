@@ -2115,12 +2115,18 @@
    CELLS -- real named groups: a Cell has its own name and Handler,
    plus a list of member Agents picked from the full roster (not a
    text tag typed per Agent) -- one Agent can belong to several Cells
-   at once, or none yet. Backed by list_cells / create_cell /
-   update_cell_members / delete_cell (acell-cell-groups-addition.txt,
-   handed over separately) plus the existing list_characters (for
-   Agent names to show/pick from). Like every other write in this app,
-   these are no-cors POSTs, so a Cell only shows a change once a real
-   read-back (list_cells) confirms it landed.
+   at once, or none yet. Create/Delete Cell write straight to Firestore
+   (cells/{cellId}) now -- see createCellFirestore_()/deleteCellFirestore_()
+   below -- since neither has a server-side side effect beyond that one
+   doc. Adding/removing a MEMBER (saveMembers() below) deliberately stays
+   Apps Script-mediated (update_cell_members, acell-cell-groups-
+   addition.txt): updateCellMembers() in Code.gs also carries forward a
+   newly-assigned Agent's solo Notes (migrateSoloNotesToCell_()) and
+   recomputes every Evidence item's visible_to for the whole Cell
+   (recomputeEvidenceVisibleToForCell_()) -- real side effects a plain
+   client-side member_codes write would silently drop, not something
+   this pass migrates. list_characters (for Agent names to show/pick
+   from) is already live off Firestore too, see startListeners() below.
 
    The Add row is a multi-select (not one Agent at a time) so adding a
    whole squad to a Cell is one Add Selected click, not N repeats of
@@ -2129,7 +2135,14 @@
 (function () {
   "use strict";
   var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
-  var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm it. Check that the Cells addition (list_cells / create_cell / update_cell_members / delete_cell) is pasted into Apps Script and redeployed.';
+  var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm it. Check that the Cells addition (list_cells / update_cell_members) is pasted into Apps Script and redeployed.';
+  function ensureHandlerSignedIn() {
+    if (!window.__dgHandlerAuth) return Promise.reject(new Error('Handler auth not ready yet -- reload and try again.'));
+    return window.__dgHandlerAuth();
+  }
+  function cellDocRef_(cellId) {
+    return window.firebase.firestore().collection('cells').doc(cellId);
+  }
 
   var groupsEl = document.getElementById('cells-groups');
   var unassignedEl = document.getElementById('cells-unassigned');
@@ -2212,12 +2225,13 @@
     });
   }
 
-  // Writes still go through Apps Script (create_cell/update_cell_members/
-  // delete_cell dual-write to Firestore server-side already -- see
-  // Code.gs) -- but confirming one landed no longer needs its own fresh
-  // JSONP read-back: the live listeners above already keep `cells`
-  // current, so polling that same in-memory array for the expected
-  // change is both simpler and faster than a second network round trip.
+  // Only saveMembers() (update_cell_members, see the header comment's
+  // own reasoning) still needs this -- confirming a membership change
+  // landed no longer needs its own fresh JSONP read-back: the live
+  // listeners above already keep `cells` current, so polling that same
+  // in-memory array for the expected change is both simpler and faster
+  // than a second network round trip. Create/Delete Cell resolve their
+  // own status text straight off the write's Promise now instead.
   function waitForCellsCondition_(predicate, onSuccess, onTimeout, attempt) {
     attempt = attempt || 0;
     if (predicate()) { onSuccess(); return; }
@@ -2372,17 +2386,13 @@
   function deleteCell(cellObj) {
     if (!confirm('Delete "' + cellObj.name + '"? Its Agents stay on file -- this only removes the grouping.')) return;
     statusEl.textContent = 'Deleting…';
-    window.__dgGetHandlerIdToken().then(function (idToken) {
-      return fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors', keepalive: true,
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'delete_cell', cell_id: cellObj.cell_id, id_token: idToken }),
-      });
+    ensureHandlerSignedIn().then(function () {
+      return cellDocRef_(cellObj.cell_id).delete();
     }).then(function () {
-      waitForCellsCondition_(function () {
-        return !cells.some(function (c) { return c.cell_id === cellObj.cell_id; });
-      }, function () { statusEl.textContent = 'Deleted ' + cellObj.name + '.'; }, function () { statusEl.textContent = NOT_DEPLOYED_MSG; });
-    }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+      statusEl.textContent = 'Deleted ' + cellObj.name + '.';
+    }).catch(function (err) {
+      statusEl.textContent = 'Could not reach Firestore — ' + (err && err.message ? err.message : 'not signed in as Handler') + '.';
+    });
   }
 
   function showCreateForm() {
@@ -2402,17 +2412,15 @@
       var errEl = document.getElementById('cells-new-error');
       if (!name) { errEl.textContent = 'Give the Cell a name first.'; return; }
       statusEl.textContent = 'Creating…';
-      window.__dgGetHandlerIdToken().then(function (idToken) {
-        return fetch(APPS_SCRIPT_URL, {
-          method: 'POST', mode: 'no-cors', keepalive: true,
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({ action: 'create_cell', name: name, handler: handler, id_token: idToken }),
-        });
+      ensureHandlerSignedIn().then(function () {
+        var cellId = 'cell_' + Date.now() + '_' + Math.floor(Math.random() * 100000).toString(36);
+        return cellDocRef_(cellId).set({ name: name, handler: handler, member_codes: [], channel: '' });
       }).then(function () {
-        waitForCellsCondition_(function () {
-          return cells.some(function (c) { return c.name === name && c.handler === handler; });
-        }, function () { statusEl.textContent = ''; createFormSlot.innerHTML = ''; }, function () { statusEl.textContent = NOT_DEPLOYED_MSG; });
-      }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+        statusEl.textContent = '';
+        createFormSlot.innerHTML = '';
+      }).catch(function (err) {
+        statusEl.textContent = 'Could not reach Firestore — ' + (err && err.message ? err.message : 'not signed in as Handler') + '.';
+      });
     });
   }
 
@@ -4004,10 +4012,12 @@
    for the migration this replaced (a `mode:'no-cors'` POST + a delayed
    GET read-back, which could report false success if the Apps Script
    addition wasn't deployed, and had already been fixed once for the
-   soundboard for the identical ~8s-latency reason). Only the Cue List
-   (get_playlist/save_playlist) and Cue For Cell (set_cell_channel,
-   writing to the Cells sheet) are still Apps-Script-mediated -- separate
-   surfaces, out of scope here.
+   soundboard for the identical ~8s-latency reason). Cue For Cell writes
+   straight to Firestore too now (cells/{cellId}'s channel field, same
+   doc the Cells tab's own create/delete write directly -- see
+   cellAssignBtn's own comment below). Only the Cue List
+   (get_playlist/save_playlist) is still Apps-Script-mediated -- a
+   separate surface, out of scope here.
 
    The whole tab is styled as one field-radio unit (chassis, recessed
    screen, numbered sections) rather than a form dropped on paper --
@@ -4815,10 +4825,11 @@
      startNowPlayingListener_/setNowPlaying/sendTransportAction_/
      sendSeek_/sendLoopToggle_ below, migrated the same way), have all
      since been deleted from Code.gs -- see BUGFIXES.md's Radio
-     main-track entry. Only the Cue List (get_playlist/save_playlist)
-     and Cue For Cell (set_cell_channel) are still Apps-Script-mediated
-     now -- separate surfaces, out of scope here (see the Music tab's
-     own header comment above). ── */
+     main-track entry. Cue For Cell writes straight to Firestore now too
+     (see cellAssignBtn's own comment below). Only the Cue List
+     (get_playlist/save_playlist) is still Apps-Script-mediated now --
+     a separate surface, out of scope here (see the Music tab's own
+     header comment above). ── */
   function radioDocRef_(channel) {
     return window.firebase.firestore().collection('radio').doc(channel);
   }
@@ -5368,10 +5379,12 @@
 
   /* ── Cue For Cell: a Cell (from the Cells tab) can carry its own
      usual channel, so cueing "this table's ambience" is picking a name
-     from a dropdown instead of remembering a number. Reads/writes the
-     same Cells sheet the Cells tab uses (list_cells / a new
-     set_cell_channel action, acell-cell-groups-addition.txt) -- a Cell
-     with no channel set yet just shows a note instead of auto-tuning. ── */
+     from a dropdown instead of remembering a number. The list itself is
+     still `list_cells` JSONP (unaffected by this migration -- see the
+     Music tab's own header comment); Assign below writes the channel
+     straight to Firestore now, same doc the Cells tab's own create/
+     delete write directly. A Cell with no channel set yet just shows a
+     note instead of auto-tuning. ── */
   function fetchCells() {
     jsonpGet('list_cells', {}, function (res) {
       if (!res || res.status !== 'OK' || !Array.isArray(res.cells)) return;
@@ -5400,26 +5413,21 @@
     if (!cell) { cellNote.textContent = 'Select a Cell first.'; return; }
     var ch = currentChannel;
     cellNote.textContent = 'Assigning…';
-    window.__dgGetHandlerIdToken().then(function (idToken) {
-      return fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors', keepalive: true,
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'set_cell_channel', cell_id: cell.cell_id, channel: ch, id_token: idToken }),
-      });
+    // Direct Firestore write now (cells/{cellId}, merge on just the
+    // channel field) -- Code.gs's setCellChannel() dual-writes the same
+    // field, so a Handler-run-from-the-old-Sheet-path still works too.
+    // No live cells/ listener in THIS tab (unlike the Cells tab's own
+    // startListeners()), so the local `cells` array is updated
+    // optimistically off the write's own resolved Promise instead of a
+    // fresh list_cells read-back.
+    ensureHandlerSignedIn().then(function () {
+      return window.firebase.firestore().collection('cells').doc(cell.cell_id).set({ channel: ch }, { merge: true });
     }).then(function () {
-      setTimeout(function () {
-        jsonpGet('list_cells', {}, function (res) {
-          var updated = res && res.status === 'OK' && Array.isArray(res.cells) &&
-            res.cells.some(function (c) { return c.cell_id === cell.cell_id && c.channel === ch; });
-          if (!updated) {
-            cellNote.textContent = 'Sent, but the backend didn\'t confirm it. Check that the Cells addition (set_cell_channel) is pasted into Apps Script and redeployed.';
-            return;
-          }
-          cells = res.cells;
-          cellNote.textContent = cell.name + ' is now cued to CH ' + ch + '.';
-        });
-      }, 900);
-    }).catch(function () { cellNote.textContent = 'Could not reach the backend.'; });
+      cell.channel = ch;
+      cellNote.textContent = cell.name + ' is now cued to CH ' + ch + '.';
+    }).catch(function (err) {
+      cellNote.textContent = 'Could not reach Firestore — ' + (err && err.message ? err.message : 'not signed in as Handler') + '.';
+    });
   });
 
   setBtn.addEventListener('click', function () {
