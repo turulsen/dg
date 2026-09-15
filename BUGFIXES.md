@@ -3181,3 +3181,94 @@ location: https://github.com/turulsen/dg.git" -- GitHub itself
 confirming the canonical repo name is `dg`, matching README.md and
 this fix's assumption. Full suite: 773/773 passing, zero failures,
 including every `pwa ::` assertion.
+
+---
+
+## Handler auth unification: one Firebase sign-in, no more parallel session scheme
+
+Direct response to a due-diligence question ("do you also remove the
+double handler auth?"): confirmed yes, this repo genuinely had TWO
+independent Handler auth backends running side by side. (1) A legacy
+Apps Script session -- `handler_login` POST action ->
+`handlerLogin_()` -> an opaque UUID cached via `CacheService` as
+`handler_session_<uuid>` (6h TTL), checked by `requireHandlerSession_()`
+(GET/JSONP reads) or the old `requireHandlerAuth_()` (POST, raw
+password check against the `HANDLER_PASSWORD` Script Property). (2) A
+Firebase custom-token sign-in -- `ensureHandlerSignedIn()` client-side
+calling the `handlerLogin` Cloud Function, minting a token for
+uid:'handler'/claim `{handler:true}`, checked by Firestore's own rules
+via `isHandler()`. A prior pass ("Consolidate A-Cell's two duplicate
+Handler Firebase-Auth sign-in flows") only deduplicated multiple
+in-page COPIES of mechanism (2) -- it never touched (1), so both
+schemes kept running in parallel the whole time.
+
+Removed (1) entirely, backend and client:
+
+**`backend/Code.gs` (v90):** deleted `handlerLogin_()`,
+`requireHandlerSession_()`, `HANDLER_SESSION_TTL_SECONDS`, the
+`handler_login` POST action dispatch, and every
+`CacheService`-backed `handler_session_<uuid>` read (including one
+hand-rolled inline copy inside `listEvidence()` that wasn't going
+through any shared helper, and would have kept the old scheme alive on
+its own even after everything else was removed). New
+`verifyHandlerIdToken_(idToken)` verifies a Firebase ID token directly
+via Identity Toolkit's `accounts:lookup` REST endpoint (no Admin SDK
+needed -- Apps Script can't run it) and checks its `handler:true`
+custom claim; `requireHandlerAuth_()` now calls this instead of the
+old raw-password/session checks. Every GET/JSONP listing read that
+used to send `handler_session=TOKEN` now sends `id_token=...` instead.
+
+**`a-cell.html`:** the old "HANDLER PASSWORD" module called the
+`handler_login` Apps Script action and cached the resulting opaque
+`dg_acell_session`. It's replaced by a new shared Handler-auth block,
+placed right after the Clearance gate (before the password box, so
+it's the FIRST thing that can ever call `handlerLogin`) -- typing the
+password there now calls the `handlerLogin` Cloud Function directly
+and signs into Firebase. That's the same credential Firestore's rules
+already checked; now it's also the only thing Apps Script checks.
+`dg_acell_pw` stays cached in sessionStorage only so a same-tab reload
+can silently re-sign-in without retyping -- Code.gs never sees it.
+All ~25 Handler-gated call sites across Cells, Evidence/Operations,
+Character Admin (delete/restore/rename), Radio/Music transport
+(play/pause/seek/loop/volume/playlist/channel-assign), and the three
+Admin GET/JSONP listings were converted from `handler_password`/
+`handler_session` fields to a freshly-fetched `id_token`
+(`window.__dgGetHandlerIdToken()`). The Evidence tab's own Firebase
+loader/sign-in, previously a real second copy of the loader (just no
+longer double-firing `handlerLogin()`, per the prior consolidation
+pass), now delegates to the new shared block too, the same way the
+Track Library tab's copy already did -- one loader, one sign-in flow,
+for real this time.
+
+**Deliberately kept as its own thing:** the Sheet tab's per-Agent
+delete re-confirmation (retyping "the A-Cell password") still checks
+the Clearance gate's public `MASTICATE` value, not a real credential.
+This was always pure client-side friction on top of an
+already-Handler-gated action, not a second security boundary, and
+matches the explicit instruction to keep exactly one extra
+confirmation step on Agent deletion specifically.
+
+**Test fixture gap found in the process:** the shared Firestore/
+Firebase Playwright stub's mocked signed-in user had no `getIdToken()`
+method -- every converted call site would have silently just never
+fired its POST under test (the promise rejects, falls into a `.catch`,
+looks like "Could not reach the backend" with no other signal).
+Fixed by adding a real (fake-value) `getIdToken()` to the mock.
+`test_acell_handler_session_race` (named for a race in the now-deleted
+scheme) rewritten to check the actually-relevant properties: a saved
+password silently re-authenticates via Firebase with no interaction,
+and a Handler write made afterward carries a real `id_token`, not the
+old field. Three tests exercising Handler writes
+(`test_acell_cells`, `test_acell_sheet`,
+`test_acell_music_backend_not_deployed`) were missing the Firestore
+stub and/or a saved password entirely -- previously harmless, since
+the old scheme's writes fired regardless of credential validity
+against this suite's mocks, but a real gap once a write legitimately
+needs to be signed in first to get a token at all. Full suite:
+758/769 passing; the 11 failures are all `console.error`s from
+`notes.js`/`dice-roller.js` failing to load the Firebase SDK from
+`www.gstatic.com`, confirmed via a direct Playwright navigation to
+that exact URL to be this sandbox's own egress policy blocking that
+host (`net::ERR_TUNNEL_CONNECTION_FAILED`), not a code regression --
+none of the 11 touch `a-cell.html`, `Code.gs`, or anything this change
+touched.
