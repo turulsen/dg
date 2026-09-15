@@ -3444,3 +3444,53 @@ sandbox -- a `test_acell_soundboard` click timeout that reproduces
 identically at the same position against the unmodified pre-migration
 code, confirmed by running both side by side -- is not a regression from
 this change).
+
+## Phase 2 (Sheets removal), continued: Player Notes block content off Apps Script/Sheet, straight to Firestore
+
+Per the user's "finish it" directive continuing the broader Sheets-
+removal plan. Unlike the Radio surfaces above, Notes CONTENT
+(`saveNoteBlock`/`deleteNoteBlock`) had already been fully Firestore-
+dual-written for a while (see this file's own "Add Firestore dual-write
+to Player Notes" entry, and the Notes CONTENT read side's own onSnapshot
+migration) -- reads were already live off `cells/{cellId}/notes`, and
+`firestore.rules` already had a complete, correctly-scoped ownership
+model for `notes/{blockId}` (create: the signed-in Agent's own code must
+match; update/delete: the EXISTING doc's `agent_code` must match). This
+made it the cheapest remaining surface: a pure client-side swap, no new
+schema or rules work needed, unlike several of the surfaces still ahead
+(see below).
+
+**`notes/notes.js`:** added `noteBlockDocRef_()`/
+`saveNoteBlockFirestore_()`/`deleteNoteBlockFirestore_()`, reusing the
+same `ensureAgentSignedIn()` per-Agent Firebase custom-token sign-in the
+read side already establishes (via `exchangeAgentToken`) and the same
+`db.runTransaction()` read-modify-write shape the Table Radio soundboard
+already uses -- reading the existing doc first lets `created_at` survive
+an edit unchanged (only a genuinely new block, or one this Agent doesn't
+already own, gets a fresh one), and lets `firestore.rules`' own ownership
+check reject a write outright rather than needing a server-side "not
+your block" check duplicated client-side. All four write call sites
+(the main Editor.js `persistBlockFromSaved()`/`deleteBlockRemote()`, and
+the Evidence-remark add/delete pair in the Evidence modal) now call
+these instead of the old `postAction({action: 'save_note_block', ...})`/
+`delete_note_block` no-cors POSTs.
+
+**`backend/Code.gs` (v93):** removed the now-fully-unreachable
+`saveNoteBlock()`/`deleteNoteBlock()` function bodies and their
+`doPost` dispatch cases. `CellNotes` itself (the sheet) is unaffected --
+`listCellNotes()` (still serving the identities/legacy poll) and
+`migrateSoloNotesToCell_()` (invoked from `updateCellMembers()` when a
+Handler assigns a solo Agent to a real Cell) still read/write it
+normally; only the two player-facing write actions are gone.
+
+**Test-infrastructure work:** added a `clear_firestore_writes()` helper
+(empties `window.__dgFirestoreWrites`, the Firestore-write equivalent of
+a plain `posts.clear()` on an Apps Script capture list) alongside the
+existing `firestore_writes()`/`get_firestore_doc()` helpers. Updated
+`test_notes_v2_editorjs` (the typing-save, Circulate, Pin, and Tag
+assertions), `test_notes_evidence_integration` (the remark add/delete
+assertions), and `test_notes_solo_mode_for_unassigned_agent` (which
+didn't even have the Firestore stub installed before this, since it
+never used to need one) to check `firestore_writes()`/
+`get_firestore_doc()` instead of a mocked Apps Script `posts` list. Full
+Notes batch: 74/74 passing.

@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v92 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v93 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -403,6 +403,24 @@
 //   now (set_now_playing included) -- only getPlaylist/savePlaylist (a
 //   channel's separate playlist_json field, untouched by this
 //   migration) still touch RadioChannels.
+// + Player Notes CONTENT off Apps Script/Sheet entirely (v93):
+//   save_note_block/delete_note_block actions removed, along with the
+//   now-unreachable saveNoteBlock()/deleteNoteBlock() function bodies --
+//   notes/notes.js writes note block content (including the paragraph/
+//   header/list blocks Editor.js produces, the Circulate/Pin/Tag flags,
+//   and evidence_remark blocks) straight to Firestore now
+//   (cells/{cellId}/notes/{blockId}, via a client-side transaction that
+//   preserves created_at on an edit), gated by firestore.rules' own
+//   ownership check (create: the signed-in Agent's own code must match;
+//   update/delete: the EXISTING doc's agent_code must match) instead of
+//   requireAgentToken_() + a server-side "not your block" check. This
+//   was already fully Firestore-dual-written from an earlier pass (see
+//   BUGFIXES.md's own "Add Firestore dual-write to Player Notes" entry)
+//   and already had a rules-ready ownership model, so this was a pure
+//   client-side swap -- no schema or rules change needed. CellNotes
+//   itself is unaffected: listCellNotes() (the identities/legacy poll)
+//   and migrateSoloNotesToCell_() (a Handler assigning a solo Agent to
+//   a real Cell) still read/write it normally.
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -1171,18 +1189,15 @@ function doPost(e) {
       return deleteCell(data.cell_id);
     }
 
-    // Player Notes: save (create or update) one note block.
-    if (data.action === 'save_note_block') {
-      const authErr = requireAgentToken_(data);
-      if (authErr) return authErr;
-      return saveNoteBlock(data);
-    }
-
-    if (data.action === 'delete_note_block') {
-      const authErr = requireAgentToken_(data);
-      if (authErr) return authErr;
-      return deleteNoteBlock(data);
-    }
+    // save_note_block/delete_note_block removed -- notes/notes.js writes
+    // note block CONTENT straight to Firestore now (see
+    // saveNoteBlockFirestore_()/deleteNoteBlockFirestore_() there),
+    // gated by firestore.rules' own ownership check instead of
+    // requireAgentToken_() + saveNoteBlock()'s/deleteNoteBlock()'s own
+    // "not your block" check. migrateSoloNotesToCell_() (called from
+    // updateCellMembers() when a Handler assigns a solo Agent to a real
+    // Cell) still writes CellNotes + dual-writes Firestore directly,
+    // unaffected -- it's server-side-only and never dispatched here.
 
     // Player Notes: save an Agent's chosen color/handwriting font.
     if (data.action === 'save_agent_identity') {
@@ -2819,135 +2834,13 @@ function listCellNotes(cellId, agentCode, callback) {
   return respond_(result, callback);
 }
 
-// Upserts by block_id (blank/unknown -> mints a new one). Wrapped in
-// withScriptLock() since several players can be editing different
-// blocks in the same Cell within the same few seconds during a live
-// session -- the same class of concurrent-write race saveCharacter()
-// already guards against.
-function saveNoteBlock(data) {
-  const cellId = (data.cell_id || '').trim();
-  const agentCode = (data.agent_code || '').trim().toUpperCase();
-  if (!cellId || !agentCode) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'cell_id and agent_code are required' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  return withScriptLock(function () {
-    const sheet = getOrCreateCellNotesSheet();
-    const values = sheet.getDataRange().getValues();
-    const headers = values[0];
-    const cols = headerMap_(headers);
-    const missing = requireColumns_(cols, ['block_id', 'cell_id', 'agent_code', 'block_type', 'text', 'shared', 'sort_order', 'created_at', 'updated_at']);
-    if (missing) return missing;
-    const now = new Date().getTime();
-    const blockType = data.block_type || 'paragraph';
-    const shared = data.shared ? 1 : 0;
-    const pinned = data.pinned ? 1 : 0;
-    // tags arrives as an already-JSON-stringified array from the
-    // client -- stored as opaque text here, same treatment as `text`
-    // itself (parsed/interpreted client-side only).
-    const tags = typeof data.tags === 'string' ? data.tags : '[]';
-    const sortOrder = Number(data.sort_order) || 0;
-
-    let blockId = (data.block_id || '').trim();
-    if (blockId) {
-      for (let i = 1; i < values.length; i++) {
-        if (values[i][cols.block_id] === blockId) {
-          // A valid token only proves who the requester is, not that
-          // this block is theirs -- without this check, any Cell member
-          // could overwrite anyone else's SHARED block by reusing its
-          // block_id (visible to the whole Cell in the combined Shared
-          // feed). See the matching check in deleteNoteBlock().
-          if (String(values[i][cols.agent_code] || '').trim().toUpperCase() !== agentCode) {
-            return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'not your block' }))
-              .setMimeType(ContentService.MimeType.JSON);
-          }
-          const row = values[i];
-          const createdAt = (cols.created_at !== undefined && row[cols.created_at]) || now;
-          row[cols.block_type] = blockType;
-          row[cols.text] = data.text || '';
-          row[cols.shared] = shared;
-          row[cols.sort_order] = sortOrder;
-          row[cols.updated_at] = now;
-          if (cols.pinned !== undefined) row[cols.pinned] = pinned;
-          if (cols.tags !== undefined) row[cols.tags] = tags;
-          sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
-          CacheService.getScriptCache().remove('cell_notes_raw_' + cellId);
-          firestoreDualWrite_('cells', cellId + '/notes/' + blockId, {
-            agent_code: agentCode, block_type: blockType, text: data.text || '',
-            shared: !!shared, sort_order: sortOrder, created_at: createdAt,
-            updated_at: now, pinned: !!pinned, tags: tags
-          });
-          return ContentService.createTextOutput(JSON.stringify({ status: 'OK', block_id: blockId })).setMimeType(ContentService.MimeType.JSON);
-        }
-      }
-    }
-    // No existing row matched -- this is a brand-new block. If the
-    // client already minted an id (notes.js always does, so a poll
-    // landing before this write is confirmed echoes back the exact
-    // same id the client is already showing, instead of a second,
-    // server-minted one the client would never learn about under
-    // no-cors), keep it; only mint a fresh one if none was sent.
-    if (!blockId) blockId = 'block_' + now + '_' + Math.floor(Math.random() * 100000).toString(36);
-    const newRow = new Array(headers.length).fill('');
-    newRow[cols.block_id] = blockId;
-    newRow[cols.cell_id] = cellId;
-    newRow[cols.agent_code] = agentCode;
-    newRow[cols.block_type] = blockType;
-    newRow[cols.text] = data.text || '';
-    newRow[cols.shared] = shared;
-    newRow[cols.sort_order] = sortOrder;
-    newRow[cols.created_at] = now;
-    newRow[cols.updated_at] = now;
-    if (cols.pinned !== undefined) newRow[cols.pinned] = pinned;
-    if (cols.tags !== undefined) newRow[cols.tags] = tags;
-    sheet.appendRow(newRow);
-    CacheService.getScriptCache().remove('cell_notes_raw_' + cellId);
-    firestoreDualWrite_('cells', cellId + '/notes/' + blockId, {
-      agent_code: agentCode, block_type: blockType, text: data.text || '',
-      shared: !!shared, sort_order: sortOrder, created_at: now,
-      updated_at: now, pinned: !!pinned, tags: tags
-    });
-    return ContentService.createTextOutput(JSON.stringify({ status: 'OK', block_id: blockId })).setMimeType(ContentService.MimeType.JSON);
-  });
-}
-
-// Now that requireAgentToken_() gates this action, deletion is also
-// checked against the block's own agent_code -- a valid token only
-// proves who the requester IS, not that the block they named is
-// theirs. Without this, any Cell member could delete anyone else's
-// SHARED block just by reusing its block_id (visible to the whole Cell
-// in the combined Shared feed).
-function deleteNoteBlock(data) {
-  const blockId = (data.block_id || '').trim();
-  const cellId = (data.cell_id || '').trim();
-  const agentCode = (data.agent_code || '').trim().toUpperCase();
-  if (!blockId || !agentCode) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'block_id and agent_code are required' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  const sheet = getOrCreateCellNotesSheet();
-  const values = sheet.getDataRange().getValues();
-  const idCol = values[0].indexOf('block_id');
-  const codeCol = values[0].indexOf('agent_code');
-  const cellCol = values[0].indexOf('cell_id');
-  for (let i = values.length - 1; i >= 1; i--) {
-    if (values[i][idCol] === blockId) {
-      if (codeCol !== -1 && String(values[i][codeCol] || '').trim().toUpperCase() !== agentCode) {
-        return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'not your block' }))
-          .setMimeType(ContentService.MimeType.JSON);
-      }
-      // Prefer the row's own cell_id (always accurate) over the
-      // client-sent one (optional, and notes.js doesn't always have it
-      // handy) so the Firestore mirror gets cleaned up either way.
-      const rowCellId = cellId || (cellCol !== -1 ? String(values[i][cellCol] || '').trim() : '');
-      sheet.deleteRow(i + 1);
-      if (rowCellId) CacheService.getScriptCache().remove('cell_notes_raw_' + rowCellId);
-      if (rowCellId) firestoreDualDelete_('cells', rowCellId + '/notes/' + blockId);
-      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
-    }
-  }
-  return ContentService.createTextOutput(JSON.stringify({ status: 'NOT_FOUND' })).setMimeType(ContentService.MimeType.JSON);
-}
+// saveNoteBlock()/deleteNoteBlock() removed -- notes/notes.js writes
+// note block CONTENT straight to Firestore now (see
+// saveNoteBlockFirestore_()/deleteNoteBlockFirestore_() there and the
+// doPost dispatch comment above). CellNotes itself is still read here
+// (listCellNotes(), for the identities/legacy poll) and written by
+// migrateSoloNotesToCell_() when a Handler assigns a solo Agent to a
+// real Cell -- only the two player-facing write actions are gone.
 
 // ── Player Notes identity: each Agent picks a color (and a handwriting
 // font) once, the first time they open Notes -- used to attribute their

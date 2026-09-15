@@ -398,6 +398,14 @@ def firestore_writes(page, path_prefix=None):
         return writes
     return [w for w in writes if w["path"].startswith(path_prefix)]
 
+def clear_firestore_writes(page):
+    """Empties window.__dgFirestoreWrites -- same role as a plain Python
+    `posts.clear()` on an Apps Script `posts` list, for a test that wants
+    to isolate "the write my NEXT action makes" from everything already
+    accumulated (writes never expire from the stub's own list otherwise,
+    unlike a fresh Apps Script POST capture per test)."""
+    page.evaluate("() => { window.__dgFirestoreWrites = []; }")
+
 def get_firestore_doc(page, path):
     """Reads the stub's own in-memory doc store (window.__dgFirestoreDocs)
     at the given full path (e.g. 'radio/1') -- the same backing store
@@ -8404,26 +8412,13 @@ def test_notes_v2_editorjs(p):
     ]
     identities = {"PRIY-AN34": {"color": "#2f855a", "font": "kalam"}}
     posts = []
-    next_id = [3]
 
     def fake_apps_script(route):
         req = route.request
         if req.method == "POST":
             body = json.loads(req.post_data or "{}")
             posts.append(body)
-            if body.get("action") == "save_note_block":
-                bid = body.get("block_id") or ""
-                existing = next((b for b in blocks_state if b["block_id"] == bid), None)
-                if existing:
-                    existing.update({"block_type": body.get("block_type"), "text": body.get("text"),
-                                      "shared": bool(body.get("shared")), "sort_order": body.get("sort_order")})
-                else:
-                    bid = bid or ("b" + str(next_id[0])); next_id[0] += 1
-                    blocks_state.append({"block_id": bid, "agent_code": body.get("agent_code"),
-                                          "block_type": body.get("block_type"), "text": body.get("text"),
-                                          "shared": bool(body.get("shared")), "sort_order": body.get("sort_order"),
-                                          "created_at": 1, "updated_at": 1})
-            elif body.get("action") == "save_agent_identity":
+            if body.get("action") == "save_agent_identity":
                 identities[body.get("agent_code")] = {"color": body.get("color"), "font": body.get("font")}
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
@@ -8501,11 +8496,11 @@ def test_notes_v2_editorjs(p):
     # markup string).
     page.click(".ce-block [contenteditable]")
     page.keyboard.type("Session 3 Notes")
-    saved = wait_for_condition(lambda: (page.evaluate("1"), next((x for x in posts if x.get("action") == "save_note_block" and x.get("agent_code") == "OWEN-CS12"), None))[1], timeout_ms=25000)
-    record("notes", "typing fires a debounced save_note_block with the right per-block JSON shape",
-           bool(saved) and saved.get("cell_id") == "cell_1" and saved.get("block_type") == "paragraph"
-           and json.loads(saved.get("text") or "{}").get("text") == "Session 3 Notes" and saved.get("shared") is False,
-           json.dumps(saved) if saved else "no POST captured")
+    saved = wait_for_condition(lambda: next((w for w in firestore_writes(page, "cells/cell_1/notes/") if w["data"].get("agent_code") == "OWEN-CS12"), None), timeout_ms=25000)
+    record("notes", "typing fires a debounced save writing the right per-block shape straight to Firestore",
+           bool(saved) and saved["data"].get("block_type") == "paragraph"
+           and json.loads(saved["data"].get("text") or "{}").get("text") == "Session 3 Notes" and saved["data"].get("shared") is False,
+           json.dumps(saved) if saved else "no Firestore write captured")
 
     # No per-member tabs -- only Shared and your own. A member's own
     # tab only ever showed their SHARED blocks anyway (their private
@@ -8587,11 +8582,11 @@ def test_notes_v2_editorjs(p):
     wait_for_condition(lambda: (page.evaluate("1"), circulate.get_attribute("disabled") is None)[1], timeout_ms=8000)
     record("notes", "clicking into a block enables the Circulate button",
            circulate.get_attribute("disabled") is None, "")
-    posts.clear()
+    clear_firestore_writes(page)
     circulate.click()
-    toggled = wait_for_condition(lambda: (page.evaluate("1"), next((x for x in posts if x.get("action") == "save_note_block" and x.get("agent_code") == "OWEN-CS12"), None))[1], timeout_ms=25000)
+    toggled = wait_for_condition(lambda: next((w for w in firestore_writes(page, "cells/cell_1/notes/") if w["data"].get("agent_code") == "OWEN-CS12"), None), timeout_ms=25000)
     record("notes", "toggling Circulate on the focused block saves shared:true",
-           bool(toggled) and toggled.get("shared") is True, json.dumps(toggled) if toggled else "no POST captured")
+           bool(toggled) and toggled["data"].get("shared") is True, json.dumps(toggled) if toggled else "no Firestore write captured")
     record("notes", "the Circulate button shows an active state once toggled on",
            "active" in (circulate.get_attribute("class") or ""), "")
 
@@ -8601,11 +8596,11 @@ def test_notes_v2_editorjs(p):
     pin_btn = page.locator(".dg-notes-pin-btn")
     record("notes", "the Pin button is enabled once a block is focused",
            pin_btn.get_attribute("disabled") is None, "")
-    posts.clear()
+    clear_firestore_writes(page)
     pin_btn.click()
-    pinned_post = wait_for_condition(lambda: (page.evaluate("1"), next((x for x in posts if x.get("action") == "save_note_block" and x.get("agent_code") == "OWEN-CS12"), None))[1], timeout_ms=25000)
+    pinned_post = wait_for_condition(lambda: next((w for w in firestore_writes(page, "cells/cell_1/notes/") if w["data"].get("agent_code") == "OWEN-CS12"), None), timeout_ms=25000)
     record("notes", "toggling Pin on the focused block saves pinned:true",
-           bool(pinned_post) and pinned_post.get("pinned") is True, json.dumps(pinned_post) if pinned_post else "no POST captured")
+           bool(pinned_post) and pinned_post["data"].get("pinned") is True, json.dumps(pinned_post) if pinned_post else "no Firestore write captured")
     record("notes", "the Pin button shows an active state once toggled on",
            "active" in (pin_btn.get_attribute("class") or ""), "")
     # .dg-notes-toc-subhead is CSS-uppercased, same as .dg-notes-toc-label.
@@ -8624,12 +8619,12 @@ def test_notes_v2_editorjs(p):
            page.locator(".dg-notes-tag-type-chip").count() == 3, "")
     page.click('.dg-notes-tag-type-chip[data-type="location"]')
     page.fill(".dg-notes-tag-input", "Old Lighthouse")
-    posts.clear()
+    clear_firestore_writes(page)
     page.click(".dg-notes-tag-add-btn")
-    tag_post = wait_for_condition(lambda: (page.evaluate("1"), next((x for x in posts if x.get("action") == "save_note_block" and x.get("agent_code") == "OWEN-CS12"), None))[1], timeout_ms=25000)
+    tag_post = wait_for_condition(lambda: next((w for w in firestore_writes(page, "cells/cell_1/notes/") if w["data"].get("agent_code") == "OWEN-CS12"), None), timeout_ms=25000)
     record("notes", "adding a tag saves it as {type, label} in the block's tags field",
-           bool(tag_post) and json.loads(tag_post.get("tags") or "[]") == [{"type": "location", "label": "Old Lighthouse"}],
-           json.dumps(tag_post) if tag_post else "no POST captured")
+           bool(tag_post) and json.loads(tag_post["data"].get("tags") or "[]") == [{"type": "location", "label": "Old Lighthouse"}],
+           json.dumps(tag_post) if tag_post else "no Firestore write captured")
     record("notes", "the added tag shows as a chip in the popover",
            "Old Lighthouse" in (page.locator(".dg-notes-tag-current").inner_text() or ""), "")
     record("notes", "the Tag button shows an active state once the block has a tag",
@@ -8791,21 +8786,7 @@ def test_notes_evidence_integration(p):
             body = json.loads(req.post_data or "{}")
             posts.append(body)
             action = body.get("action")
-            if action == "save_note_block":
-                bid = body.get("block_id") or ""
-                existing = next((b for b in notes_blocks if b["block_id"] == bid), None)
-                if existing:
-                    existing.update({"block_type": body.get("block_type"), "text": body.get("text"), "shared": bool(body.get("shared"))})
-                else:
-                    notes_blocks.append({
-                        "block_id": bid, "agent_code": body.get("agent_code"), "block_type": body.get("block_type"),
-                        "text": body.get("text"), "shared": bool(body.get("shared")),
-                        "sort_order": body.get("sort_order", 0), "created_at": 9000, "updated_at": 9000,
-                    })
-            elif action == "delete_note_block":
-                bid = body.get("block_id")
-                notes_blocks[:] = [b for b in notes_blocks if b["block_id"] != bid]
-            elif action == "mark_evidence_seen":
+            if action == "mark_evidence_seen":
                 seen_map[body.get("evidence_id")] = True
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
@@ -8907,14 +8888,14 @@ def test_notes_evidence_integration(p):
     record("notes", "the resolved Evidence photo is still showing after two poll ticks, not blanked back to loading",
            page.locator(".dg-notes-evidence-photo-img").count() == 1, "")
 
-    posts.clear()
+    clear_firestore_writes(page)
     page.fill(".dg-notes-evidence-remark-input", "Check the neighbor's alibi.")
     page.click(".dg-notes-evidence-remark-add")
-    page.wait_for_timeout(300)
-    record("notes", "adding a remark (Share unchecked) posts save_note_block as a private evidence_remark",
-           any(x.get("action") == "save_note_block" and x.get("block_type") == "evidence_remark"
-               and json.loads(x.get("text") or "{}").get("evidence_id") == "ev1" and x.get("shared") is False
-               for x in posts), str(posts))
+    remark_write = wait_for_condition(lambda: next((w for w in firestore_writes(page, "cells/cell_1/notes/")
+                                                      if w["data"].get("block_type") == "evidence_remark"), None))
+    record("notes", "adding a remark (Share unchecked) writes a private evidence_remark block straight to Firestore",
+           bool(remark_write) and json.loads(remark_write["data"].get("text") or "{}").get("evidence_id") == "ev1"
+           and remark_write["data"].get("shared") is False, str(remark_write))
     record("notes", "the new remark appears in the thread immediately, marked Private",
            "Check the neighbor's alibi" in page.inner_text(".dg-notes-evidence-remarks-list")
            and "PRIVATE" in page.inner_text(".dg-notes-evidence-remarks-list").upper(), "")
@@ -8922,11 +8903,11 @@ def test_notes_evidence_integration(p):
     del_btn = page.locator(".dg-notes-evidence-remark-del")
     record("notes", "only your own remark shows a delete control, not a Cell-mate's",
            del_btn.count() == 1, "")
-    posts.clear()
+    clear_firestore_writes(page)
     del_btn.click()
-    page.wait_for_timeout(300)
-    record("notes", "deleting your own remark posts delete_note_block",
-           any(x.get("action") == "delete_note_block" for x in posts), str(posts))
+    delete_write = wait_for_condition(lambda: next((w for w in firestore_writes(page, "cells/cell_1/notes/") if w["op"] == "delete"), None))
+    record("notes", "deleting your own remark deletes it straight from Firestore",
+           bool(delete_write), str(delete_write))
     record("notes", "the deleted remark is gone from the thread, the Cell-mate's stays",
            "Check the neighbor's alibi" not in page.inner_text(".dg-notes-evidence-remarks-list")
            and "blood spatter" in page.inner_text(".dg-notes-evidence-remarks-list"), "")
@@ -9225,6 +9206,7 @@ def test_notes_solo_mode_for_unassigned_agent(p):
     page = p.new_page()
     page.set_default_timeout(15000)
     errs = collect_errors(page)
+    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
@@ -9282,18 +9264,12 @@ def test_notes_solo_mode_for_unassigned_agent(p):
 
     page.click(".ce-block [contenteditable]")
     page.keyboard.type("Working alone for now")
-    # The page.evaluate("1") is a pump, not a real check -- wait_for_condition's
-    # own time.sleep() doesn't flush Playwright's sync API connection, so
-    # without a real page call inside the polled lambda the pending
-    # no-cors POST this debounce fires never actually lands before the
-    # timeout (same idiom test_notes_v2_editorjs already uses above).
     saved = wait_for_condition(
-        lambda: (page.evaluate("1"), next((x for x in posts if x.get("action") == "save_note_block" and x.get("agent_code") == "ELVI-HENC"), None))[1],
+        lambda: next((w for w in firestore_writes(page, "cells/solo:ELVI-HENC/notes/") if w["data"].get("agent_code") == "ELVI-HENC"), None),
         timeout_ms=25000)
-    record("notes", "writing in solo mode actually saves, keyed under the synthesized solo:<code> pseudo-cell",
-           bool(saved) and saved.get("cell_id") == "solo:ELVI-HENC"
-           and json.loads(saved.get("text") or "{}").get("text") == "Working alone for now",
-           json.dumps(saved) if saved else "no POST captured")
+    record("notes", "writing in solo mode actually saves straight to Firestore, keyed under the synthesized solo:<code> pseudo-cell",
+           bool(saved) and json.loads(saved["data"].get("text") or "{}").get("text") == "Working alone for now",
+           json.dumps(saved) if saved else "no Firestore write captured")
 
     record("notes", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
