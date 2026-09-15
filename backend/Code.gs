@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v89 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v90 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -344,6 +344,27 @@
 //   delete_track calls from the new client code at all), so every track
 //   uploaded before this shipped needs mirroring once. uploadTrack()/
 //   deleteTrack() themselves are untouched.
+// + Handler auth unification (v90): removed the second, parallel
+//   Handler auth backend entirely -- handlerLogin_(), the handler_login
+//   POST action, requireHandlerSession_(), HANDLER_SESSION_TTL_SECONDS,
+//   and the whole CacheService-backed handler_session_<uuid> opaque
+//   token scheme (stage 4 above) are gone. The Firebase custom-token
+//   sign-in that already existed client-side for Firestore rules
+//   (functions/index.js's handlerLogin Cloud Function, minting
+//   uid:'handler'/claim {handler:true}) is now the ONLY Handler
+//   credential anywhere: requireHandlerAuth_() and every GET/JSONP
+//   listing read that used to call requireHandlerSession_() (list_
+//   characters/list_deleted_characters/list_agent_file_only) now call
+//   the new verifyHandlerIdToken_(idToken), which posts the token to
+//   identitytoolkit.googleapis.com's accounts:lookup REST endpoint
+//   (public Web API key -- Apps Script can't run the Admin SDK) and
+//   checks its handler:true custom claim. listEvidence()'s own inline,
+//   not-shared-helper session check got the same fix -- it was
+//   hand-rolling the exact same CacheService lookup requireHandlerAuth_()
+//   already did elsewhere, so it silently kept the old scheme alive as
+//   a fifth call site otherwise. Client-side single Clearance-then-
+//   password gate + the id_token plumbing through a-cell.html's ~30+
+//   Handler-auth call sites lands separately.
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -570,84 +591,86 @@ function checkRateLimit_(agentCode, bucket, maxCalls, windowSeconds) {
   return null;
 }
 
-// Validates data.handler_password against the HANDLER_PASSWORD Script
-// Property. Fails closed (rejects) if the property was never set,
-// rather than leaving every Handler/admin action open by accident from
-// a forgotten setup step.
-function requireHandlerAuth_(data) {
-  const expected = PropertiesService.getScriptProperties().getProperty('HANDLER_PASSWORD');
-  if (!expected) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'Handler auth is not configured on the server' }))
-      .setMimeType(ContentService.MimeType.JSON);
+// The Firebase Web API key -- public by design (every client file in
+// this app already ships it inline in FIREBASE_CONFIG, same value),
+// not a secret needing Script Property setup. Used only to verify a
+// Handler ID token via Identity Toolkit's accounts:lookup REST
+// endpoint below -- the Apps Script equivalent of what the Admin SDK's
+// verifyIdToken() would do, since Apps Script has no way to run the
+// Admin SDK itself.
+const FIREBASE_WEB_API_KEY_ = 'AIzaSyBiFBvgmrjtacxXvh7FHa9a28BbwV0LnDQ';
+
+// Auth unification (single login, right after Clearance): the Handler
+// password itself is now ONLY ever checked by the handlerLogin Cloud
+// Function (functions/index.js) -- Code.gs never sees the raw password
+// at all anymore, and doesn't need its own HANDLER_PASSWORD Script
+// Property. What every remaining Handler-gated Apps Script action gets
+// instead is the Firebase ID token that sign-in produces, carrying the
+// handler:true custom claim -- the SAME credential Firestore's own
+// security rules already check via isHandler(). One login, one
+// credential, checked two different ways only because Apps Script and
+// Firestore rules are two different runtimes, not because there are
+// two systems to keep in sync anymore.
+//
+// accounts:lookup returns the signed-in user's record (including
+// customAttributes, a JSON string of custom claims) for a valid,
+// unexpired ID token, or an error for an invalid/expired one -- no
+// local JWT/RSA verification needed.
+function verifyHandlerIdToken_(idToken) {
+  if (!idToken) return false;
+  try {
+    const resp = UrlFetchApp.fetch(
+      'https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + FIREBASE_WEB_API_KEY_,
+      {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify({ idToken: idToken }),
+        muteHttpExceptions: true
+      }
+    );
+    if (resp.getResponseCode() !== 200) return false;
+    const body = JSON.parse(resp.getContentText());
+    const user = body.users && body.users[0];
+    if (!user) return false;
+    const claims = user.customAttributes ? JSON.parse(user.customAttributes) : {};
+    return claims.handler === true;
+  } catch (e) {
+    return false;
   }
-  if (String((data && data.handler_password) || '') !== expected) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'invalid Handler password' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  return null;
+}
+
+// Checks data.id_token (POST body) or params.id_token (GET query
+// string, JSONP) against verifyHandlerIdToken_() above -- one function
+// for both call shapes, since the only difference is how the error
+// needs to be delivered: a GET/JSONP caller needs respond_()'s
+// callback wrapping (a bare JSON body handed to a <script src> tag is
+// an invalid JS statement and fails silently), a POST caller gets a
+// plain ContentService response. Pass the params/data object's own
+// .callback through explicitly for the GET path.
+function requireHandlerAuth_(paramsOrData) {
+  if (verifyHandlerIdToken_(paramsOrData && paramsOrData.id_token)) return null;
+  const payload = { status: 'ERROR', message: 'invalid or expired Handler session -- sign in again' };
+  const callback = paramsOrData && paramsOrData.callback;
+  if (callback) return respond_(payload, callback);
+  return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);
 }
 
 // A handful of player-owned writes (e.g. save_character) are ALSO
 // legitimately editable directly by the Handler -- A-Cell's Sheet tab
 // lets the Handler correct any Agent's Player Name inline, which has
 // no way to carry that Agent's own token since the Handler isn't that
-// player. Either credential is accepted: the Handler password (checked
+// player. Either credential is accepted: the Handler ID token (checked
 // first, but only when the caller actually sent one, so a normal
-// player request with no handler_password field at all goes straight
-// to the token check instead of failing on a "wrong Handler password"
-// it never claimed to have) or the Agent's own token.
+// player request with no id_token field at all goes straight to the
+// token check instead of failing on a Handler check it never claimed
+// to pass) or the Agent's own token.
 function requireAgentOrHandlerAuth_(data) {
-  if (data && data.handler_password) {
+  if (data && data.id_token) {
     const handlerErr = requireHandlerAuth_(data);
     if (!handlerErr) return null;
     return handlerErr;
   }
   return requireAgentToken_(data);
-}
-
-// ── Handler sessions (stage 4): a handful of A-Cell Admin reads --
-// list_characters, list_agent_file_only, list_deleted_characters --
-// return every Agent's full data with no auth at all, but they're
-// GET/JSONP (a <script src=...> tag), and the only credential this app
-// has is the Handler password. Putting that raw password in a URL
-// query string would land it in browser history and any server access
-// log -- worse than the problem it's fixing. A short-lived, revocable
-// session token sidesteps that: the password is only ever POSTed once
-// (handler_login below), and everything after that trades in an opaque
-// token that's useless once it expires. CacheService is a natural fit
-// -- it already expires entries on its own, so there's no separate
-// sheet or cleanup job to maintain. ──
-
-const HANDLER_SESSION_TTL_SECONDS = 21600; // 6h -- CacheService's own max
-
-// POST-only: the one place the real Handler password is ever sent.
-// Mints an opaque session token good for HANDLER_SESSION_TTL_SECONDS
-// and returns it; the client stores it for the rest of the tab's
-// session and sends it on every subsequent Admin listing GET instead
-// of the password itself.
-function handlerLogin_(data) {
-  const authErr = requireHandlerAuth_(data);
-  if (authErr) return authErr;
-  const session = Utilities.getUuid();
-  CacheService.getScriptCache().put('handler_session_' + session, '1', HANDLER_SESSION_TTL_SECONDS);
-  return ContentService.createTextOutput(JSON.stringify({ status: 'OK', session: session, expires_in: HANDLER_SESSION_TTL_SECONDS }))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-// Validates params.handler_session against the cache. Works for both a
-// POST body (data) and GET query params (e.parameter) -- same shape
-// either way, just a field to read. All three current callers are
-// GET/JSONP, so an error routes through respond_() with params.callback
-// (e.parameter always carries the real one) -- bare JSON handed to a
-// <script src=...> tag is invalid as a JS statement, so the tag fails
-// silently and the caller just sees its own generic connection-timeout
-// message after ~7s instead of the real "session expired" reason.
-function requireHandlerSession_(params) {
-  const session = String((params && params.handler_session) || '').trim();
-  if (!session || !CacheService.getScriptCache().get('handler_session_' + session)) {
-    return respond_({ status: 'ERROR', message: 'invalid or expired Handler session -- reload A-Cell' }, params && params.callback);
-  }
-  return null;
 }
 
 // ── Shared header-lookup helpers (this round's hygiene pass). Most
@@ -898,7 +921,7 @@ function doGet(e) {
   // ── A-Cell: every saved character, for Play/Cells/Sheet/Admin ──
   // ?action=list_characters&callback=CALLBACK
   if (e.parameter && e.parameter.action === 'list_characters') {
-    const authErr = requireHandlerSession_(e.parameter);
+    const authErr = requireHandlerAuth_(e.parameter);
     if (authErr) return authErr;
     return listCharacters(callback);
   }
@@ -933,7 +956,7 @@ function doGet(e) {
   // ── A-Cell Admin: every soft-deleted Agent, for Recently Deleted ──
   // ?action=list_deleted_characters&callback=CALLBACK
   if (e.parameter && e.parameter.action === 'list_deleted_characters') {
-    const authErr = requireHandlerSession_(e.parameter);
+    const authErr = requireHandlerAuth_(e.parameter);
     if (authErr) return authErr;
     return listDeletedCharacters(callback);
   }
@@ -946,7 +969,7 @@ function doGet(e) {
   // Delta Green Briefs sheet by hand. ──
   // ?action=list_agent_file_only&callback=CALLBACK
   if (e.parameter && e.parameter.action === 'list_agent_file_only') {
-    const authErr = requireHandlerSession_(e.parameter);
+    const authErr = requireHandlerAuth_(e.parameter);
     if (authErr) return authErr;
     return listAgentFileOnly(callback);
   }
@@ -963,7 +986,7 @@ function doGet(e) {
   // list_cells/doLookup's existing reasoning -- see their own
   // comments), it just then only returns already-released,
   // unrestricted items. ──
-  // ?action=list_evidence&agent_code=CODE&handler_session=TOKEN&callback=CALLBACK
+  // ?action=list_evidence&agent_code=CODE&id_token=FIREBASE_ID_TOKEN&callback=CALLBACK
   if (e.parameter && e.parameter.action === 'list_evidence') {
     return listEvidence(e.parameter, callback);
   }
@@ -1033,14 +1056,6 @@ function doPost(e) {
     else if (e.parameter) rawData = JSON.stringify(e.parameter);
 
     const data = JSON.parse(rawData);
-
-    // A-Cell: exchange the Handler password for a short-lived session
-    // token (see the "Handler sessions" block above) -- the one action
-    // that ever sees the real password, so every Admin listing read can
-    // trade in the opaque token instead.
-    if (data.action === 'handler_login') {
-      return handlerLogin_(data);
-    }
 
     if (data.action === 'update_medical' || data.action === 'update_aar' || data.action === 'update_field') {
       const authErr = requireAgentToken_(data);
@@ -3336,7 +3351,7 @@ function listOperations(callback) {
 }
 
 // A-Cell Evidence Locker: two-tier read, same shape listCellNotes()
-// established. A valid Handler session (params.handler_session) sees
+// established. A valid Handler id_token (verifyHandlerIdToken_) sees
 // every item, including still-unreleased ones and each item's full
 // restricted_to list -- needed for the management UI to actually let
 // the Handler toggle those things. Without one, this filters to
@@ -3386,8 +3401,7 @@ function evidenceRawRows_() {
 function listEvidence(params, callback) {
   const rawRows = evidenceRawRows_();
 
-  const session = String((params && params.handler_session) || '').trim();
-  const isHandler = !!(session && CacheService.getScriptCache().get('handler_session_' + session));
+  const isHandler = verifyHandlerIdToken_(params && params.id_token);
   const requesterCode = String((params && params.agent_code) || '').trim().toUpperCase();
   const requesterCells = isHandler ? null : cellIdsForAgent_(requesterCode);
 
