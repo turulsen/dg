@@ -3099,3 +3099,545 @@ No further code change from this -- the earlier `wait_post_and_sync()`
 fix stands (it fixed a real, separate masking bug), this is a note
 that "flaky under load" was the correct read for the *recurrence*,
 backed by an actual diagnostic dump rather than assumed.
+
+---
+
+## JSONP-unaware test mocks resurfacing the already-diagnosed `Unexpected token ':'` pattern
+
+Found while running the full suite as part of preparing the 2026-09-10
+cutover (see "Deploy discipline" in `CLAUDE.md`): 7 assertions failed
+with the exact `pageerror: Unexpected token ':'` signature this file
+already diagnosed once (see "Second follow-up" above, and
+`route_apps_script_ok()`'s own docstring) -- a `<script
+src=...&callback=X>` JSONP call getting a bare, unwrapped JSON body
+back throws exactly this the instant the parser hits the first key's
+colon. Per `CLAUDE.md`'s bug-fixing protocol, this was recognized as
+the same already-documented pattern needing to be *finished*, not a
+new bug: two test-local mock functions (`test_foundry_import_
+profession_and_outfit`/`test_kappablack_toml_import`/`test_kappablack_
+toml_import_triggers_cloud_save`/`test_agent_file_export`/
+`test_random_bio_cloud_code_race`'s shared `capture()` idiom, and
+separately `test_cloud_save`'s and `test_stats_load_by_code_query_
+param`'s own otherwise-JSONP-aware mocks) still had a plain `else:
+route.fulfill(..., body='{"status":"OK"}')` fallback for any GET that
+didn't match their one specifically-handled case -- exactly the shape
+`route_apps_script_ok()`'s docstring already names as the bug class,
+just not yet swept from every remaining hand-rolled mock in the file.
+Made all seven JSONP-aware (checks `callback=` in the URL, wraps the
+response as `cb({...})` with `content_type: application/javascript`
+when present), preserving each test's own POST-capture side effects.
+Full suite: 773/773 passing, zero failures -- confirmed clean before
+proceeding with the 141-commit cutover to `main` this same session.
+
+---
+
+## `sw.js`: offline shell caching silently disabled on the real site's actual URL
+
+Found while chasing an unrelated single `Script error.` report on a
+Firebase Hosting preview channel: that channel's own URL has no path
+prefix at all (`https://<project>--<channel>.web.app/...`), so it
+couldn't have exercised this bug either way, but reasoning about *why*
+it couldn't led straight to a real, separate bug in the same file.
+`isShellRequest()` stripped a hardcoded `/^\/dg-campaign\//` prefix off
+every request's pathname before checking it against `SHELL_FILES` --
+but a GitHub Pages project site is served from `/<repo-name>/`, and
+this repo's actual name on GitHub is `dg`, not `dg-campaign` (README.md
+says as much directly: `https://turulsen.github.io/dg/`). The regex
+never matched anything on the real, live URL, so every asset request's
+pathname kept its leading `/dg/` segment, which then also failed the
+exact-match SHELL_FILES check, and the bare-basename fallback only ever
+matches SHELL_FILES entries that are themselves basenames (`index.html`,
+`hub.html`, ...) -- not `assets/`- or `stats/`-prefixed entries like
+`assets/dice-roller.js`. Net effect: every request for a nested shell
+asset silently fell through `isShellRequest()` to `return false`,
+which the fetch handler treats as "let the browser handle it
+natively" -- not a visible error, no console output, just the entire
+stale-while-revalidate offline strategy this file exists to provide
+quietly never applying on the one place it actually needed to. Local
+dev (bare origin, no subpath) and every Firebase preview channel
+happened to make this invisible, since neither serves from a repo-name
+subpath either -- which is exactly why this had never shown up in this
+sandbox's own test suite (`test_pwa_offline` runs against
+`DG_TEST_BASE`, always a bare origin) despite being wrong on production
+this whole time.
+
+Fixed by deriving the prefix from `self.registration.scope` instead of
+a hardcoded literal -- the one thing that's actually guaranteed correct
+everywhere this exact `sw.js` gets registered (bare-origin local dev,
+a Firebase preview channel, and whatever subpath GitHub Pages happens
+to serve from today or after any future repo rename), rather than
+re-guessing a string that already went stale once. Bumped `CACHE_NAME`
+to `v93` in the same commit, per this file's own standing rule
+(re-landed here as `v122`, since `main` had moved on independently
+between when this fix was authored and when it was rebased in).
+**Caveat:** no test environment available here serves from a repo-name
+subpath, so this fix is reasoned from reading `isShellRequest()`
+against README.md's documented Pages URL, not confirmed by reproducing
+the disabled-caching symptom directly against the real site. One
+independent data point in the fix's favor, found by accident while
+pushing this exact commit: `git push` to this session's `dg-campaign`
+remote came back with "This repository moved. Please use the new
+location: https://github.com/turulsen/dg.git" -- GitHub itself
+confirming the canonical repo name is `dg`, matching README.md and
+this fix's assumption. Full suite: 773/773 passing, zero failures,
+including every `pwa ::` assertion.
+
+---
+
+## Handler auth unification: one Firebase sign-in, no more parallel session scheme
+
+Direct response to a due-diligence question ("do you also remove the
+double handler auth?"): confirmed yes, this repo genuinely had TWO
+independent Handler auth backends running side by side. (1) A legacy
+Apps Script session -- `handler_login` POST action ->
+`handlerLogin_()` -> an opaque UUID cached via `CacheService` as
+`handler_session_<uuid>` (6h TTL), checked by `requireHandlerSession_()`
+(GET/JSONP reads) or the old `requireHandlerAuth_()` (POST, raw
+password check against the `HANDLER_PASSWORD` Script Property). (2) A
+Firebase custom-token sign-in -- `ensureHandlerSignedIn()` client-side
+calling the `handlerLogin` Cloud Function, minting a token for
+uid:'handler'/claim `{handler:true}`, checked by Firestore's own rules
+via `isHandler()`. A prior pass ("Consolidate A-Cell's two duplicate
+Handler Firebase-Auth sign-in flows") only deduplicated multiple
+in-page COPIES of mechanism (2) -- it never touched (1), so both
+schemes kept running in parallel the whole time.
+
+Removed (1) entirely, backend and client:
+
+**`backend/Code.gs` (v90):** deleted `handlerLogin_()`,
+`requireHandlerSession_()`, `HANDLER_SESSION_TTL_SECONDS`, the
+`handler_login` POST action dispatch, and every
+`CacheService`-backed `handler_session_<uuid>` read (including one
+hand-rolled inline copy inside `listEvidence()` that wasn't going
+through any shared helper, and would have kept the old scheme alive on
+its own even after everything else was removed). New
+`verifyHandlerIdToken_(idToken)` verifies a Firebase ID token directly
+via Identity Toolkit's `accounts:lookup` REST endpoint (no Admin SDK
+needed -- Apps Script can't run it) and checks its `handler:true`
+custom claim; `requireHandlerAuth_()` now calls this instead of the
+old raw-password/session checks. Every GET/JSONP listing read that
+used to send `handler_session=TOKEN` now sends `id_token=...` instead.
+
+**`a-cell.html`:** the old "HANDLER PASSWORD" module called the
+`handler_login` Apps Script action and cached the resulting opaque
+`dg_acell_session`. It's replaced by a new shared Handler-auth block,
+placed right after the Clearance gate (before the password box, so
+it's the FIRST thing that can ever call `handlerLogin`) -- typing the
+password there now calls the `handlerLogin` Cloud Function directly
+and signs into Firebase. That's the same credential Firestore's rules
+already checked; now it's also the only thing Apps Script checks.
+`dg_acell_pw` stays cached in sessionStorage only so a same-tab reload
+can silently re-sign-in without retyping -- Code.gs never sees it.
+All ~25 Handler-gated call sites across Cells, Evidence/Operations,
+Character Admin (delete/restore/rename), Radio/Music transport
+(play/pause/seek/loop/volume/playlist/channel-assign), and the three
+Admin GET/JSONP listings were converted from `handler_password`/
+`handler_session` fields to a freshly-fetched `id_token`
+(`window.__dgGetHandlerIdToken()`). The Evidence tab's own Firebase
+loader/sign-in, previously a real second copy of the loader (just no
+longer double-firing `handlerLogin()`, per the prior consolidation
+pass), now delegates to the new shared block too, the same way the
+Track Library tab's copy already did -- one loader, one sign-in flow,
+for real this time.
+
+**Deliberately kept as its own thing:** the Sheet tab's per-Agent
+delete re-confirmation (retyping "the A-Cell password") still checks
+the Clearance gate's public `MASTICATE` value, not a real credential.
+This was always pure client-side friction on top of an
+already-Handler-gated action, not a second security boundary, and
+matches the explicit instruction to keep exactly one extra
+confirmation step on Agent deletion specifically.
+
+**Test fixture gap found in the process:** the shared Firestore/
+Firebase Playwright stub's mocked signed-in user had no `getIdToken()`
+method -- every converted call site would have silently just never
+fired its POST under test (the promise rejects, falls into a `.catch`,
+looks like "Could not reach the backend" with no other signal).
+Fixed by adding a real (fake-value) `getIdToken()` to the mock.
+`test_acell_handler_session_race` (named for a race in the now-deleted
+scheme) rewritten to check the actually-relevant properties: a saved
+password silently re-authenticates via Firebase with no interaction,
+and a Handler write made afterward carries a real `id_token`, not the
+old field. Three tests exercising Handler writes
+(`test_acell_cells`, `test_acell_sheet`,
+`test_acell_music_backend_not_deployed`) were missing the Firestore
+stub and/or a saved password entirely -- previously harmless, since
+the old scheme's writes fired regardless of credential validity
+against this suite's mocks, but a real gap once a write legitimately
+needs to be signed in first to get a token at all. Full suite:
+758/769 passing; the 11 failures are all `console.error`s from
+`notes.js`/`dice-roller.js` failing to load the Firebase SDK from
+`www.gstatic.com`, confirmed via a direct Playwright navigation to
+that exact URL to be this sandbox's own egress policy blocking that
+host (`net::ERR_TUNNEL_CONNECTION_FAILED`), not a code regression --
+none of the 11 touch `a-cell.html`, `Code.gs`, or anything this change
+touched.
+
+---
+
+## Phase 2 (Sheets removal): Active Sounds panel off Apps Script/Sheet, straight to Firestore
+
+First concrete target of the Sheets-removal phase, per the user's own
+framing: this was the clearest remaining "partial migration" example
+-- ambient-layer toggle and stinger-fire already wrote straight to
+Firestore from an earlier pass, but the Active Sounds panel's own
+per-instance transport (pause/resume/seek/loop/stop an already-active
+loop or stinger) still round-tripped through Apps Script, AND its own
+confirmation step polled a fresh `get_now_playing` JSONP call ~900ms
+after every action instead of just reading the write it had already
+made.
+
+**`a-cell.html`:** added `updateSoundInstanceFirestore_()`/
+`removeSoundInstanceFirestore_()` (direct Firestore-transaction
+equivalents of Code.gs's `updateSoundInstance_()`/
+`removeSoundInstance_()`, same field semantics copied deliberately so
+a paused loop's elapsed-time math -- `started_at`/`paused_at` shifting
+on resume -- stays identical either way a write lands) and
+`setAmbientLayerActive_()` (factored out of the ambient grid's own
+toggle handler so the Active Sounds panel's Stop button for an ambient
+row calls the SAME transaction instead of a second, parallel writer
+for the identical "turn this loop off" action -- the grid's button
+used to write on/off; the Active Sounds Stop button used to route
+through the OLD `set_ambient_layer` Apps Script action for the exact
+same effect). `sendActiveSoundAction_()` rewritten to dispatch all
+nine actions (pause/resume/seek/loop x{ambient,stinger}, plus ambient
+stop and stinger stop) to these, then use the transaction's own
+resolved array as the new state directly -- no separate confirm-via-
+GET needed.
+
+**`backend/Code.gs` (v91):** the now-fully-unreachable
+`pause_ambient_layer`/`resume_ambient_layer`/`seek_ambient_layer`/
+`set_ambient_layer_loop`/`pause_stinger`/`resume_stinger`/
+`seek_stinger`/`set_stinger_loop`/`stop_stinger` Apps Script actions
+(and their shared `updateSoundInstance_`/`removeSoundInstance_`/
+`findSoundInstance_` helpers) were removed entirely, not just
+deprecated -- confirmed via a repo-wide grep that no client code
+anywhere still sends any of these action names. While auditing that,
+found `set_ambient_layer`/`trigger_stinger` themselves (the toggle/
+fire actions) were ALSO already fully unreachable, left over from an
+earlier session's direct-Firestore migration that never removed the
+now-dead server implementations (`setAmbientLayer_`/`triggerStinger_`)
+-- removed those too, in the same pass, for the same reason. The Sheet
+no longer receives any ambient/stinger write at all now; `getNowPlaying()`'s
+own read of the Sheet's `ambient_layers`/`stingers` columns is kept
+(a channel toggled before this migration may still have a legacy
+bare-string entry there) but that response field has no remaining
+client consumer either.
+
+**Test-infrastructure gap found and fixed:** this whole surface --
+ambient toggle, stinger fire, AND Active Sounds transport -- had ZERO
+Playwright coverage before this change. The shared Firestore test stub
+had no `runTransaction()` mock at all and no persistent in-memory doc
+store (`docRef.set()` only ever logged the write, never actually
+stored it for a later `docRef.get()`/`tx.get()` to see) -- meaning a
+click on the ambient toggle button would have thrown
+`TypeError: db.runTransaction is not a function` the instant any test
+tried it. Added `window.__dgFirestoreDocs` (a tiny in-memory doc store
+shared by plain `docRef.get()/.set()` and `runTransaction()`'s
+`tx.get()/tx.set()`) plus `get_firestore_doc()`/`set_firestore_doc()`
+test helpers, and a new `test_acell_soundboard` (15 assertions)
+exercising the full toggle/fire/pause/resume/seek/loop/stop cycle for
+both an ambient layer and a stinger, asserting on the stub's own doc
+store directly and confirming zero Apps Script POSTs are sent for any
+of it. Full A-Cell batch + `test_table_radio_widget`: 175/175 passing.
+
+## Phase 2 (Sheets removal): main-track transport off Apps Script/Sheet, straight to Firestore
+
+Direct follow-on to the Active Sounds panel entry above, per the user's
+own question ("why do you need to do the main track transport? I have
+already done that manually, uploading them to Firestore") and follow-up
+directive ("It need to work immaculately"). Investigation confirmed the
+user was right that `setNowPlaying()`/`pauseNowPlaying()`/
+`resumeNowPlaying()` already dual-wrote Firestore-first (a real, already-
+shipped latency fix from an earlier pass) -- but the Now Playing panel's
+OWN client-side read path was still the old `set_now_playing` no-cors
+POST followed by a `get_now_playing` JSONP read-back 900ms later (with a
+retry ladder for pause/resume/seek/loop too), the same "confirmation
+step can lose the race, or silently report false success if the backend
+addition isn't deployed" class of problem the soundboard's own pass
+already fixed for ambient/stinger transport.
+
+**`a-cell.html`:** `checkCurrent()` (the dial's channel-switch handler,
+polling `get_now_playing` on every switch) replaced with
+`startNowPlayingListener_(ch)`, a live `radio/{channel}` `onSnapshot`
+listener -- same pattern `startTracksListener()` and the Active Sounds
+panel already use, and literally the same document the soundboard
+writes `ambient_layers`/`stingers`/mix volumes onto, so one listener now
+drives the WHOLE Music tab's live state (status line, on-air indicator,
+Pause/Resume label, loop indicator, scrubber, AND the ambient grid/
+Active Sounds panel/mix sliders that `checkCurrent()` used to re-sync on
+every channel switch too). `setNowPlaying()` rewritten to a plain
+`radioDocRef_(ch).set(..., {merge:true})`; `sendTransportAction_()`
+(pause/resume) and `sendSeek_()` rewritten to `db.runTransaction()`,
+computing the same `shiftedStart`/`started_at - positionMs` math the
+old, now-removed Apps Script `resumeNowPlaying()`/`seekNowPlaying_()`
+used to server-side, just committed directly from the browser;
+`sendLoopToggle_()` and `sendMixVolume_()` (broadcast-wide mix,
+signature simplified to take the real Firestore field name directly)
+likewise reduced to a single `.set({...}, {merge:true})`. Removed
+`verifyNowPlaying()`, `verifyTransportAction_()`, `verifySeek_()`, and
+the shared `NOW_PLAYING_VERIFY_RETRY_DELAYS_MS` retry ladder they used
+-- the live listener is what actually confirms a write landed now, so
+there's nothing left to verify. The Music-tab-local `NOT_DEPLOYED_MSG`
+(the "addition not deployed" message these verify functions fell back
+to) went with them, since nothing else in this tab used it either. Only
+the Cue List (`get_playlist`/`save_playlist`) and Cue For Cell
+(`set_cell_channel`) remain Apps-Script-mediated in this tab now --
+separate surfaces, genuinely out of scope for a "get music playback off
+Sheets" pass.
+
+**`backend/Code.gs` (v92):** `get_now_playing`/`set_now_playing`/
+`pause_now_playing`/`resume_now_playing`/`seek_now_playing`/
+`set_now_playing_loop`/`set_track_volume`/`set_ambient_volume` Apps
+Script actions removed, along with the now-fully-unreachable
+`getNowPlaying()`/`setNowPlaying()`/`pauseNowPlaying()`/
+`resumeNowPlaying()`/`setNowPlayingLoop_()`/`seekNowPlaying_()`/
+`setChannelVolume_()` function bodies and their own now-orphaned helpers
+(`parseJsonArray_`, `normalizeAmbientLayer_`, `findOrCreateRadioRow_`) --
+confirmed via a repo-wide grep that nothing else called any of them.
+`getOrCreateRadioSheet()` is still called (by `getPlaylist`/
+`savePlaylist`), just no longer on every 2-second poll from every open
+tab -- that was its own original reason for a migration-check cache-skip
+guard, which no longer applies at this call frequency but is harmless to
+keep. `RadioChannels` no longer receives ANY main-track transport write
+at all now -- only a channel's separate `playlist_json` field
+(`get_playlist`/`save_playlist`) still touches that sheet.
+
+**A real regression caught by testing, not by inspection:** the actual
+client-side rewrite described above had been reported complete in an
+earlier pass of this same session (and the backend dispatch cases were
+in fact already removed), but the JS itself had never actually been
+applied -- `checkCurrent()`/`verifyNowPlaying()`/`verifyTransportAction_()`/
+`verifySeek_()`/the old POST-based `setNowPlaying()`/`sendTransportAction_()`/
+`sendLoopToggle_()`/`sendMixVolume_()` were all still present and wired
+to the UI, meaning every one of those buttons was silently POSTing an
+action Code.gs no longer dispatched. This was caught only because
+rewriting `test_acell_music` for the new architecture and actually
+running it against the real file surfaced a hard failure (the write
+never landed in Firestore) rather than a false pass -- underscoring why
+"described as done in a prior turn" is not the same as "verified against
+the file on disk," and why this pass ends with the tests actually run,
+not just written.
+
+**Test-infrastructure work:** `test_acell_music` substantially rewritten
+-- it used to drive a stateful mock Apps Script backend
+(`set_now_playing`/`pause_now_playing`/`resume_now_playing`/
+`get_now_playing` against a `backend_state` dict); now seeds/reads via
+`get_firestore_doc()`/`push_firestore_doc_snapshot()` (a new helper
+alongside the soundboard's own `get_firestore_doc`/`set_firestore_doc`,
+delivering a fake single-document snapshot to whichever `radioDocRef_(ch)
+.onSnapshot()` listener is registered for that channel -- the same
+"simulate the write's own onSnapshot echo landing" step `sync_radio()`
+wraps for every assertion that depends on the live listener having
+actually fired, since the test stub's writes don't feed a listener
+automatically the way real Firestore's local-cache echo would).
+`test_acell_music_backend_not_deployed` repurposed for the equivalent
+new-architecture failure mode: rather than an Apps Script action that
+silently no-ops, the write is a real `Promise` that can reject (exercised
+by deliberately not seeding a Handler session, so `ensureHandlerSignedIn()`
+rejects immediately) -- the status line must report that honestly
+instead of claiming success, same spirit as the original bug report, just
+against the new failure surface. Full A-Cell batch (`test_acell_music`:
+40 assertions) + `test_acell_soundboard` + `test_table_radio_widget`:
+174/174 passing (one known, pre-existing, environment-only flake in this
+sandbox -- a `test_acell_soundboard` click timeout that reproduces
+identically at the same position against the unmodified pre-migration
+code, confirmed by running both side by side -- is not a regression from
+this change).
+
+## Phase 2 (Sheets removal), continued: Player Notes block content off Apps Script/Sheet, straight to Firestore
+
+Per the user's "finish it" directive continuing the broader Sheets-
+removal plan. Unlike the Radio surfaces above, Notes CONTENT
+(`saveNoteBlock`/`deleteNoteBlock`) had already been fully Firestore-
+dual-written for a while (see this file's own "Add Firestore dual-write
+to Player Notes" entry, and the Notes CONTENT read side's own onSnapshot
+migration) -- reads were already live off `cells/{cellId}/notes`, and
+`firestore.rules` already had a complete, correctly-scoped ownership
+model for `notes/{blockId}` (create: the signed-in Agent's own code must
+match; update/delete: the EXISTING doc's `agent_code` must match). This
+made it the cheapest remaining surface: a pure client-side swap, no new
+schema or rules work needed, unlike several of the surfaces still ahead
+(see below).
+
+**`notes/notes.js`:** added `noteBlockDocRef_()`/
+`saveNoteBlockFirestore_()`/`deleteNoteBlockFirestore_()`, reusing the
+same `ensureAgentSignedIn()` per-Agent Firebase custom-token sign-in the
+read side already establishes (via `exchangeAgentToken`) and the same
+`db.runTransaction()` read-modify-write shape the Table Radio soundboard
+already uses -- reading the existing doc first lets `created_at` survive
+an edit unchanged (only a genuinely new block, or one this Agent doesn't
+already own, gets a fresh one), and lets `firestore.rules`' own ownership
+check reject a write outright rather than needing a server-side "not
+your block" check duplicated client-side. All four write call sites
+(the main Editor.js `persistBlockFromSaved()`/`deleteBlockRemote()`, and
+the Evidence-remark add/delete pair in the Evidence modal) now call
+these instead of the old `postAction({action: 'save_note_block', ...})`/
+`delete_note_block` no-cors POSTs.
+
+**`backend/Code.gs` (v93):** removed the now-fully-unreachable
+`saveNoteBlock()`/`deleteNoteBlock()` function bodies and their
+`doPost` dispatch cases. `CellNotes` itself (the sheet) is unaffected --
+`listCellNotes()` (still serving the identities/legacy poll) and
+`migrateSoloNotesToCell_()` (invoked from `updateCellMembers()` when a
+Handler assigns a solo Agent to a real Cell) still read/write it
+normally; only the two player-facing write actions are gone.
+
+**Test-infrastructure work:** added a `clear_firestore_writes()` helper
+(empties `window.__dgFirestoreWrites`, the Firestore-write equivalent of
+a plain `posts.clear()` on an Apps Script capture list) alongside the
+existing `firestore_writes()`/`get_firestore_doc()` helpers. Updated
+`test_notes_v2_editorjs` (the typing-save, Circulate, Pin, and Tag
+assertions), `test_notes_evidence_integration` (the remark add/delete
+assertions), and `test_notes_solo_mode_for_unassigned_agent` (which
+didn't even have the Firestore stub installed before this, since it
+never used to need one) to check `firestore_writes()`/
+`get_firestore_doc()` instead of a mocked Apps Script `posts` list. Full
+Notes batch: 74/74 passing.
+
+## Phase 2 (Sheets removal), continued: A-Cell Cells tab Create/Delete off Apps Script/Sheet, straight to Firestore
+
+Per the ordering the "map remaining surfaces" research pass suggested:
+`createCell()`/`deleteCell()` were already fully Firestore-dual-written
+and `cells/{cellId}`'s own rules (`isHandler()`-gated write) were already
+in place, making these the next-cheapest surface. `updateCellMembers()`
+(adding/removing a Cell member) deliberately stays Apps Script-mediated
+-- reading its actual body (not just the researcher's summary) showed it
+also carries forward a newly-assigned Agent's solo Notes
+(`migrateSoloNotesToCell_()`) and recomputes every Evidence item's
+`visible_to` for the whole Cell (`recomputeEvidenceVisibleToForCell_()`)
+-- real server-side side effects a plain client-side `member_codes`
+write would silently drop. Caught by reading the function body, not by
+trusting the earlier research summary at face value.
+
+**`a-cell.html` (Cells tab):** added `ensureHandlerSignedIn()`/
+`cellDocRef_()`; Create Cell now mints its own `cell_id` (same
+`'cell_' + timestamp + '_' + random` shape Code.gs used to) and
+`.set()`s it directly; Delete Cell is a plain `.delete()`. Both resolve
+their status text off the write's own Promise instead of polling
+`list_cells` for the expected state. Cue For Cell (`cellAssignBtn`, on
+the Music tab) also migrated while touching this same doc shape --
+writes `channel` straight to `cells/{cellId}` now (see the backend
+dual-write added below), with the local `cells` array in that tab
+updated optimistically off the write's result since that tab has no
+live `cells/` listener of its own to just re-render from.
+
+**`backend/Code.gs`:** added the dual-write `setCellChannel()` was
+missing -- same gap `updateCellMembers()` itself once had (see this
+file's own "Fix Live Rolls permission-denied" entry): only
+`createCell`/`updateCellMembers`/`deleteCell` ever mirrored
+`cells/{cellId}` into Firestore, so a channel assigned via Cue For Cell
+sat invisible to any direct-Firestore reader until that Cell's
+membership next happened to change.
+
+**Test-infrastructure work, and a real (if narrow) race found while
+chasing a flaky assertion:** rewrote `test_acell_cells`'s Create/Delete
+Cell steps around a new `wait_cell_write_and_sync()` helper (the
+Firestore-write equivalent of the existing `wait_post_and_sync()`, for
+a mock backend that still handles `update_cell_members` as a real POST
+alongside a direct Firestore write for Create/Delete). While stabilizing
+this, found `wait_post_and_sync`'s own Apps Script mock appended a POST
+to `posts` BEFORE mutating `cells_state` to reflect it -- since
+`wait_post_and_sync` polls `posts` from a separate loop and calls
+`sync_cells()` the instant it sees a match, a poll landing between those
+two lines could push a snapshot still missing the very mutation it was
+supposed to confirm. Fixed by mutating `cells_state` first. This did not
+fully eliminate an existing, lower-rate flakiness in `update_cell_members`-
+dependent assertions specifically (`test_acell_cells`'s own git history
+already has an entry for this same test's bulk-add assertion being
+"really flaky, not just sandbox noise") -- confirmed via repeated runs
+that every failure observed continued to cluster exclusively in
+`update_cell_members`-dependent checks, never once in the Create/Delete
+Cell assertions this pass actually touched, which passed cleanly across
+every run. Left as a known, pre-existing test-harness synchronization
+issue (specific to the mocked `posts`-list/`cells_state` handoff, not
+the real app) rather than a regression from this migration. Also fixed
+`test_acell_handler_session_race`'s own Delete-Cell assertion
+(previously checking an `id_token` on a `delete_cell` POST that no
+longer exists) to instead check the direct Firestore delete landed via
+the same cached Handler sign-in.
+
+## Phase 2 (Sheets removal), investigated but deliberately NOT migrated: Evidence Locker content CRUD
+
+Following the same "map remaining surfaces" ordering, Evidence content
+(`create_evidence`/`update_evidence`/`delete_evidence`) looked like the
+next-cheapest surface: photos already upload straight to Firebase
+Storage (Phase 4), `evidence/{evidenceId}` already has a working dual-write
+and a correct Handler-only `firestore.rules` entry, and the read side has
+been a live `onSnapshot` listener since Phase 5. A client-side rewrite
+(new `evidenceDocRef_()`/a client copy of `evidenceVisibleTo_()` mirroring
+Code.gs's own, direct `.set()`/`.delete()` calls replacing the
+`create_evidence`/`update_evidence`/`delete_evidence` POSTs, `toggleReleased()`
+and the create/edit form's confirm handler rewritten the same way as the
+Cells tab) was written and worked in isolation -- but before committing it,
+re-reading `recomputeEvidenceVisibleToForCell_()` (called from
+`updateCellMembers()`, which stays Apps Script-mediated, every time a
+Handler adds/removes a Cell member) showed it works by scanning the
+**Evidence Sheet**, not Firestore, to find every evidence item scoped to
+that Cell and recompute its `visible_to`. If `createEvidence()`/
+`updateEvidence()`/`deleteEvidence()` stopped writing to Sheets (the whole
+point of this migration), any Evidence item created or edited afterward
+would have no row in that Sheet at all -- invisible to
+`recomputeEvidenceVisibleToForCell_()` forever, meaning its `visible_to`
+would silently go stale the very next time that Cell's membership changed,
+with no error anywhere. Exactly the kind of side-effect-dropping gap
+`updateCellMembers()` itself was already correctly left alone for (see the
+entry above) -- caught here the same way, by reading the function body
+instead of assuming a fully-Firestore-mirrored collection had no more
+Sheet dependents.
+
+Fixing this properly means giving Code.gs an actual Firestore *query*
+capability (`recomputeEvidenceVisibleToForCell_()` needs to list every
+`evidence/*` doc where `cell_id` matches, which the existing
+`firestoreDualWrite_`/`firestoreDualPatch_`/`firestoreDualDelete_` helpers
+don't do -- they only ever address one document at a time by id). That's
+a real, new piece of infrastructure (a Firestore REST `:runQuery` call,
+plus converting its typed-value response shape back to plain JS), not a
+"while we're at it" swap, and one with no way to exercise it end-to-end
+through this repo's own Python/Playwright test suite (it only runs against
+a mocked Apps Script backend, not a real GCP project) -- a bug in it would
+surface only against the live Firestore project, in the worst possible
+place: a function that already runs today, silently, inside a frequently-used
+action. Reverted the a-cell.html/Code.gs changes rather than ship that
+risk into the same batch as everything else this session. Evidence content
+CRUD stays exactly as it already was (Apps Script-mediated writes,
+Firestore-dual-written, live-listener reads) until that query capability
+gets built and tested as its own piece of work.
+
+## Fixed a real `firestore.rules` gap: `characters/{agentCode}` delete was never actually Handler-gated
+
+While scoping the next Phase 2 (Sheets removal) surface, re-checked the
+`characters/{agentCode}` gap a research pass had already flagged: this
+file's own top-of-file header has always claimed "Handler-owned data
+(Cells, Evidence, Operations, Radio, Tracks, **Character delete/restore**,
+update_character_field): gated on the `handler` custom-claim boolean" --
+but the actual rule below it was just `allow write: if isSignedIn();` for
+the whole document, delete included. `save_character` (create/update) IS
+correctly Agent-or-Handler in Code.gs (`requireAgentOrHandlerAuth_`, no
+real per-Agent secret, matches the header's own "Agent-owned data" section
+-- that part was fine as-is), but `delete_character`/`restore_character`
+are Handler-only (`requireHandlerAuth_`) and the rule never enforced that
+split. Anyone with a valid Agent Firebase Auth session (minted by the
+existing `exchangeAgentToken` bridge off nothing more than a known Agent
+Code) could call `.delete()` on any OTHER Agent's `characters/{agentCode}`
+doc directly from the browser console -- no legitimate client code takes
+this path today (every real `characters/` write in this repo is Code.gs's
+own service-account-authenticated dual-write, which bypasses Security
+Rules entirely, same as every other `firestoreDualWrite_`/
+`firestoreDualPatch_`/`firestoreDualDelete_` call), so this was dormant
+against the actual live app, but a real gap against anyone who opened dev
+tools -- worth closing given how little it takes to know another Agent's
+Code in a small campaign.
+
+Split the rule to actually match what the header already claimed:
+`allow create, update: if isSignedIn();` (unchanged behavior) and
+`allow delete: if isHandler();` (the fix). Pure `firestore.rules` change,
+no client code touched, no `sw.js` cache bump needed (rules deploy to
+Firebase directly, never fetched by a browser) -- but per this repo's own
+"mirror only" convention for `firestore.rules`/`storage.rules`/
+`backend/Code.gs` (see README.md/VERSIONING.md), this still needs a manual
+`firebase deploy --only firestore:rules` to actually take effect live; a
+`git push` alone does nothing here. Not covered by this repo's own test
+suite either -- it mocks Firestore entirely rather than running a real
+rules-emulator check, so there's no automated way to regression-test a
+rules file in-repo today.

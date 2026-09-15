@@ -258,22 +258,45 @@ NOTES_FIRESTORE_STUB = """
       }
     };
   }
+  // Tiny in-memory doc store, keyed by full path -- backs plain
+  // docRef.get()/.set() AND runTransaction()'s tx.get()/tx.set() below
+  // with the SAME state, so a-cell.html's read-modify-write soundboard
+  // transactions (ambient/stinger toggle/fire/pause/resume/seek/loop/
+  // stop) see their own previous write on the next call, the same way
+  // real Firestore would. No real transactional isolation (single-
+  // threaded JS test, nothing else can interleave) -- just persistence.
+  window.__dgFirestoreDocs = {};
+  function docSnapshot(docPath) {
+    var exists = Object.prototype.hasOwnProperty.call(window.__dgFirestoreDocs, docPath);
+    return { exists: exists, id: docPath.split('/').pop(), data: function () { return window.__dgFirestoreDocs[docPath]; } };
+  }
+  function writeDoc(op, docPath, data, opts) {
+    window.__dgFirestoreWrites.push({ op: op, path: docPath, data: data, opts: opts });
+    if (op === 'delete') { delete window.__dgFirestoreDocs[docPath]; return; }
+    if (op === 'update' || (opts && opts.merge)) {
+      window.__dgFirestoreDocs[docPath] = Object.assign({}, window.__dgFirestoreDocs[docPath] || {}, data);
+    } else {
+      window.__dgFirestoreDocs[docPath] = data;
+    }
+  }
   function makeCollectionRef(path) {
     var q = makeQuery(path, []);
     q.doc = function (id) {
       var docPath = path + '/' + id;
       return {
+        __path: docPath,
         collection: function (name) { return makeCollectionRef(docPath + '/' + name); },
+        get: function () { return Promise.resolve(docSnapshot(docPath)); },
         set: function (data, opts) {
-          window.__dgFirestoreWrites.push({ op: 'set', path: docPath, data: data, opts: opts });
+          writeDoc('set', docPath, data, opts);
           return Promise.resolve();
         },
         update: function (data) {
-          window.__dgFirestoreWrites.push({ op: 'update', path: docPath, data: data });
+          writeDoc('update', docPath, data);
           return Promise.resolve();
         },
         delete: function () {
-          window.__dgFirestoreWrites.push({ op: 'delete', path: docPath });
+          writeDoc('delete', docPath);
           return Promise.resolve();
         },
         // Single-doc listener (agent-hub.html's characters/{code} DEX
@@ -298,13 +321,33 @@ NOTES_FIRESTORE_STUB = """
     apps: [{}],
     initializeApp: function () {},
     firestore: function () {
-      return { settings: function () {}, collection: function (name) { return makeCollectionRef(name); } };
+      return {
+        settings: function () {},
+        collection: function (name) { return makeCollectionRef(name); },
+        // a-cell.html's soundboard writes straight to Firestore via
+        // db.runTransaction(fn(tx) => tx.get(docRef).then(...tx.set...)) --
+        // no real transactional isolation here (see docSnapshot/writeDoc
+        // above), just the same read-then-write shape against the same
+        // backing store a plain docRef.get()/.set() would use.
+        runTransaction: function (updateFn) {
+          var tx = {
+            get: function (docRef) { return Promise.resolve(docSnapshot(docRef.__path)); },
+            set: function (docRef, data, opts) { writeDoc('set', docRef.__path, data, opts); }
+          };
+          return Promise.resolve(updateFn(tx));
+        }
+      };
     },
     auth: function () {
       return {
         get currentUser() { return window.__dgFirestoreAuthUser; },
         signInWithCustomToken: function (token) {
-          window.__dgFirestoreAuthUser = { uid: token };
+          // getIdToken() is real code's only way to get the id_token it
+          // now sends on every Handler-gated Apps Script write (see
+          // getHandlerIdToken_() in a-cell.html) -- without this mock
+          // method, that call throws "getIdToken is not a function" and
+          // every such write silently never fires under test.
+          window.__dgFirestoreAuthUser = { uid: token, getIdToken: function () { return Promise.resolve('fake-id-token-' + token); } };
           return Promise.resolve({ user: window.__dgFirestoreAuthUser });
         }
       };
@@ -354,6 +397,29 @@ def firestore_writes(page, path_prefix=None):
     if path_prefix is None:
         return writes
     return [w for w in writes if w["path"].startswith(path_prefix)]
+
+def clear_firestore_writes(page):
+    """Empties window.__dgFirestoreWrites -- same role as a plain Python
+    `posts.clear()` on an Apps Script `posts` list, for a test that wants
+    to isolate "the write my NEXT action makes" from everything already
+    accumulated (writes never expire from the stub's own list otherwise,
+    unlike a fresh Apps Script POST capture per test)."""
+    page.evaluate("() => { window.__dgFirestoreWrites = []; }")
+
+def get_firestore_doc(page, path):
+    """Reads the stub's own in-memory doc store (window.__dgFirestoreDocs)
+    at the given full path (e.g. 'radio/1') -- the same backing store
+    docRef.get()/.set() and runTransaction()'s tx.get()/tx.set() share,
+    so this sees whatever the page's own code last wrote via either.
+    None if the doc doesn't exist."""
+    return page.evaluate("(path) => (window.__dgFirestoreDocs || {})[path]", path)
+
+def set_firestore_doc(page, path, data):
+    """Seeds the stub's in-memory doc store directly (test setup only) --
+    e.g. so a-cell.html's soundboard transactions see a pre-existing
+    radio/{channel} doc on their first tx.get() instead of starting from
+    nothing."""
+    page.evaluate("([path, data]) => { (window.__dgFirestoreDocs = window.__dgFirestoreDocs || {})[path] = data; }", [path, data])
 
 def push_firestore_snapshot(page, path, wheres, docs):
     """Delivers a fake Firestore snapshot (the full current result set,
@@ -3269,92 +3335,53 @@ def test_acell_play(p):
     return errs
 
 def test_acell_handler_session_race(p):
-    """Regression test for a real race: if a Handler already has
-    dg_acell_pw saved from a previous visit, the Handler-password
-    module's silent re-login (attempt(savedPw, true)) is still an
-    in-flight fetch when Play/Cells/Evidence's own <script> blocks run
-    moments later in the same page load and fire their first data fetch
-    using whatever (possibly stale/expired) dg_acell_session is already in
-    sessionStorage. Play/Cells used to just show the resulting 'invalid or
-    expired Handler session' error and sit there forever, even after the
-    silent re-login landed a valid new session a moment later; Evidence's
-    listEvidence() doesn't even error on an invalid session, it silently
-    degrades to the released-only player view, which is worse -- no
-    indication anything's missing. Fixed by having the Handler-password
-    module dispatch a 'dg-acell-handler-ready' event once it lands a
-    session, which Play/Cells/Evidence (and Sheet, covered by its own
-    render path) now listen for to retry. (Deliberately checks only the
-    end state, not an intermediate 'still showing the stale error' snapshot -- this
-    app's Playwright route mocking runs on a single dispatch thread, so
-    an artificial delay meant to widen the race window ends up
-    serializing every in-flight request behind it instead, making any
-    fixed-timeout snapshot of the intermediate state inherently
-    unreliable. The property that actually matters -- and that a
-    regression here would break -- is that it recovers at all.)"""
+    """Regression test, updated for the Handler-auth unification: this
+    used to cover a race around the old handler_login Apps Script
+    action's opaque dg_acell_session token going stale before Play/
+    Cells/Evidence's own reads landed. That whole backend (handler_login
+    action, dg_acell_session, requireHandlerSession_()) is gone --
+    Handler auth is now ONE Firebase sign-in (handlerLogin Cloud
+    Function -> ID token, see the shared Handler-auth block near the
+    top of a-cell.html), and Play/Cells/Evidence's own reads are public
+    Firestore listeners that never depended on a Handler session at all
+    (see each assertion's own comment below for why). What's still
+    worth testing here: (1) a saved dg_acell_pw from a previous visit
+    silently re-authenticates via that same Firebase flow on page load,
+    with no user interaction, and (2) a Handler-gated write made after
+    that silent re-login actually carries a real id_token end to end
+    (window.__dgGetHandlerIdToken() -> the Apps Script POST body), not
+    just that sign-in succeeded in isolation."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
-    # Evidence's own read side moved to a live Firestore listener since
-    # this test was written (Phase 5) -- the dg_acell_session race this
-    # test is named for was specific to the old JSONP list_evidence
-    # path, and Firestore's own Handler auth (ensureHandlerSignedIn(),
-    # cached in _handlerAuthPromise) is a separate mechanism that
-    # doesn't have that particular staleness problem. The Evidence
-    # check below still needs a working stub to show anything at all,
-    # it just isn't exercising a race anymore.
     install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     skip_acell_gate(page)
-    # Seed a saved Handler password + a stale session, exactly like a
-    # returning tab whose 6h server-side session has since expired.
+    # Seed a saved Handler password, exactly like a returning tab that
+    # signed in earlier this same browser session.
     page.add_init_script("""
-        try {
-          sessionStorage.setItem('dg_acell_pw', 'letmein');
-          sessionStorage.setItem('dg_acell_session', 'stale-session-token');
-        } catch (e) {}
+        try { sessionStorage.setItem('dg_acell_pw', 'letmein'); } catch (e) {}
     """)
 
     chars_fixture = [{"agent_code": "OWEN-CS12", "name": "Owen Castillo", "profession": "Federal Agent",
                        "nationality": "", "player_name": "", "hp": 10, "wp": 10, "san": 50, "bp": 40, "updated_at": ""}]
     cells_fixture = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": [], "channel": ""}]
-    # Unreleased -- only visible to an authenticated Handler (isHandler in
-    # listEvidence()), same as the real backend. A stale/invalid session
-    # doesn't error like list_characters does; it silently degrades to the
-    # released-only player view, which for this one unreleased item means
-    # an empty list -- exactly the "no error, just quietly wrong" gap
-    # Evidence's own retry-on-ready listener exists to close.
     evidence_fixture = [{"evidence_id": "ev1", "title": "Confidential Photo", "body": "", "photo": "",
                           "cell_id": "", "operation_id": "", "released": False, "restricted_to": [], "created_at": "1000"}]
-    login_calls = []
 
     def fake_apps_script(route):
         req = route.request
         url = req.url
         if req.method == "POST":
-            body = json.loads(req.post_data or "{}")
-            if body.get("action") == "handler_login":
-                login_calls.append(body)
-                route.fulfill(status=200, content_type="application/json",
-                               body=json.dumps({"status": "OK", "session": "fresh-session-token"}))
-                return
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         if "callback=" not in url:
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         cb = url.split("callback=")[1].split("&")[0]
-        if "action=list_characters" in url:
-            session = url.split("handler_session=")[1].split("&")[0] if "handler_session=" in url else ""
-            if session == "fresh-session-token":
-                res = {"status": "OK", "characters": chars_fixture}
-            else:
-                res = {"status": "ERROR", "message": "invalid or expired Handler session -- reload A-Cell"}
-        elif "action=list_cells" in url:
+        if "action=list_cells" in url:
             res = {"status": "OK", "cells": cells_fixture}
-        elif "action=list_evidence" in url:
-            session = url.split("handler_session=")[1].split("&")[0] if "handler_session=" in url else ""
-            res = {"status": "OK", "evidence": evidence_fixture if session == "fresh-session-token" else []}
         elif "action=list_operations" in url:
             res = {"status": "OK", "operations": []}
         else:
@@ -3364,45 +3391,51 @@ def test_acell_handler_session_race(p):
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
 
-    wait_for_condition(lambda: any(c.get("handler_password") == "letmein" for c in login_calls), timeout_ms=6000)
-    record("acell", "a saved Handler password silently re-logs in on page load",
-           any(c.get("handler_password") == "letmein" for c in login_calls), str(login_calls))
+    wait_for_condition(lambda: page.evaluate("() => window.__dgFirestoreAuthUser && window.__dgFirestoreAuthUser.uid") == "handler", timeout_ms=6000)
+    record("acell", "a saved Handler password silently signs into Firebase on page load, no interaction needed",
+           page.evaluate("() => window.__dgFirestoreAuthUser && window.__dgFirestoreAuthUser.uid") == "handler",
+           str(page.evaluate("() => window.__dgFirestoreAuthUser")))
 
-    # Play's roster is now a public-read Firestore listener (see
-    # test_acell_play's own comment), not the session-gated
-    # list_characters JSONP call this whole test is named for -- it has
-    # no session of its own to race at all anymore, a stronger guarantee
-    # than "recovers once a fresh session lands". Pushed immediately,
-    # not gated on the login race above, to prove that.
+    # Play's roster is a public-read Firestore listener -- it never
+    # depended on any Handler session at all, so it's immune to this
+    # whole class of race by construction. Checked on the default tab,
+    # before switching away below.
     wait_for_condition(lambda: any(l["path"] == "characters" for l in page.evaluate("() => window.__dgFirestoreListeners || []")), timeout_ms=8000)
     push_firestore_snapshot(page, "characters", [], [dict(c, id=c["agent_code"], character_json=json.dumps({"bio": {"name": c["name"]}, "derived": {}})) for c in chars_fixture])
     push_firestore_snapshot(page, "briefs", [], [])
     push_firestore_snapshot(page, "cells", [], [dict(c, id=c["cell_id"]) for c in cells_fixture])
     names = wait_for_condition(lambda: page.eval_on_selector_all("#play-agent-list .pa-name", "els => els.map(e=>e.textContent)")
                                 if "Owen Castillo" in page.inner_text("#play-agent-list") else None)
-    record("acell", "Play shows the roster immediately via its own Firestore listener, immune to the "
-                    "dg_acell_session race this test is named for (it has no session of its own to race)",
+    record("acell", "Play shows the roster immediately via its own public-read Firestore listener, no Handler session involved",
            names == ["Owen Castillo"], page.inner_text("#play-agent-list"))
 
-    # Cells' own reads are now the same plain, public-read
-    # characters/cells Firestore listeners Play uses (no more
-    # list_characters JSONP call needing a valid Handler session) -- a
-    # second, independent tab module that used to race the same silent
-    # re-login, and was missed the first time this fix went in. Now it
-    # simply isn't racing anything: the push_firestore_snapshot() calls
-    # above already reached this tab's own listeners too (registered at
-    # page load, not gated on the tab being clicked), well before this
-    # click.
+    # Cells' own reads are the same public-read characters/cells
+    # listeners Play uses -- the push above already reached this tab's
+    # own listeners too (registered at page load, not gated on the tab
+    # being clicked), well before this click.
     page.click('.tw[data-tab="cells"]')
     cells_text = wait_for_condition(lambda: page.inner_text("#cells-groups")
                                      if "Cell Alpha" in page.inner_text("#cells-groups") else None)
-    record("acell", "Cells shows the roster immediately too, immune to the dg_acell_session race this test is named for",
+    record("acell", "Cells shows the roster immediately too, no Handler session involved in the read",
            bool(cells_text) and "Cell Alpha" in cells_text, page.inner_text("#cells-groups"))
 
-    # Evidence itself now reads from its own live Firestore listener
-    # (Phase 5), independent of the dg_acell_session race this test is
-    # named for -- this just confirms the tab still renders correctly
-    # on a page that also happens to carry a stale Sheets-side session.
+    # Prove the SAME silent sign-in confirmed above is what authorizes
+    # the one thing on this tab that's Handler-gated: a write (Delete Cell,
+    # a direct Firestore delete via ensureHandlerSignedIn() -- see the
+    # Cells tab's own header comment in a-cell.html). No id_token/
+    # handler_password Apps Script POST is involved at all anymore; the
+    # race this test exists for would show up here as either the delete
+    # never landing (a second, failed sign-in attempt) or a permission-
+    # denied error (the wrong/no auth.currentUser by the time it fires).
+    page.once("dialog", lambda d: d.accept())
+    page.click("[data-delete-cell]")
+    delete_write = wait_for_condition(lambda: next((w for w in firestore_writes(page, "cells/") if w["path"] == "cells/cell_1" and w["op"] == "delete"), None), timeout_ms=6000)
+    record("acell", "a Handler write after silent re-login succeeds via the same cached Firebase sign-in",
+           bool(delete_write), str(delete_write))
+
+    # Evidence itself reads from its own live Firestore listener too,
+    # gated on isHandler() server-side for the id_token it now sends
+    # (see jsonpGet()'s own comment), not any session staleness here.
     page.click('.tw[data-tab="evidence"]')
     wait_for_condition(lambda: notes_firestore_listener_count(page) >= 1, timeout_ms=8000)
     push_firestore_snapshot(page, "evidence", [], [dict(e, id=e["evidence_id"]) for e in evidence_fixture])
@@ -3421,11 +3454,14 @@ def test_acell_cells(p):
     none shows up under "Unassigned Agents". Reads (cells/characters)
     are now live, public-read Firestore listeners -- same pattern as
     the Play tab -- so this test pushes snapshots instead of mocking
-    list_cells/list_characters JSONP. Writes (create_cell/
-    update_cell_members/delete_cell) still go through Apps Script as
-    no-cors POSTs that dual-write to Firestore server-side; simulated
-    here by updating cells_state once the POST lands and re-pushing a
-    cells/ snapshot, standing in for that dual-write actually landing."""
+    list_cells/list_characters JSONP. Create/Delete Cell write straight
+    to Firestore now (no server-side side effect beyond that one doc);
+    simulated here by reading the write back off the stub and re-pushing
+    a cells/ snapshot, same as create_cell/delete_cell's real dual-write
+    landing. update_cell_members deliberately stays Apps Script-mediated
+    (it also carries forward solo Notes and recomputes Evidence
+    visibility -- see the Cells tab's own header comment in a-cell.html)
+    -- still a no-cors POST simulated the same way as before."""
     page = p.new_page()
     page.set_default_timeout(30000)
     errs = collect_errors(page)
@@ -3433,6 +3469,10 @@ def test_acell_cells(p):
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     skip_acell_gate(page)
+    # Cell writes (create/update_cell_members/delete_cell) are Handler-
+    # gated -- window.__dgGetHandlerIdToken() needs a signed-in Handler,
+    # which needs a saved password to silently sign in on load.
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
 
     fake_characters = [
         {"agent_code": "OWEN-CS12", "name": "Owen Castillo", "profession": "Federal Agent"},
@@ -3446,16 +3486,19 @@ def test_acell_cells(p):
         req = route.request
         if req.method == "POST":
             body = json.loads(req.post_data or "{}")
-            posts.append(body)
-            if body.get("action") == "create_cell":
-                cell_id = "cell_" + str(len(cells_state) + 1)
-                cells_state.append({"cell_id": cell_id, "name": body.get("name"), "handler": body.get("handler", ""), "member_codes": []})
-            elif body.get("action") == "update_cell_members":
+            # Mutate cells_state BEFORE appending to posts -- wait_post_and_sync()
+            # polls `posts` from a separate loop and calls sync_cells() the
+            # instant it sees a match, so if the append happened first, a poll
+            # landing between these two lines could push a snapshot still
+            # missing this very mutation (a real, if narrow, race -- caught
+            # via a flaky "adding an Agent to a Cell" failure while testing
+            # the Create/Delete Cell migration above, even though this
+            # ordering issue predates it and applies to any action here).
+            if body.get("action") == "update_cell_members":
                 for c in cells_state:
                     if c["cell_id"] == body.get("cell_id"):
                         c["member_codes"] = body.get("member_codes", [])
-            elif body.get("action") == "delete_cell":
-                cells_state[:] = [c for c in cells_state if c["cell_id"] != body.get("cell_id")]
+            posts.append(body)
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         url = req.url
@@ -3498,6 +3541,36 @@ def test_acell_cells(p):
                 return
             time.sleep(0.2)
 
+    # Same "poll instead of one wait+sync" discipline as wait_post_and_sync
+    # above, for Create/Delete Cell's direct Firestore write instead of an
+    # Apps Script POST -- match_write identifies the one top-level
+    # cells/{cellId} write (create: a 'set'; delete: a 'delete') this
+    # particular action produced, out of everything firestore_writes()
+    # has accumulated so far. Mutates cells_state to reflect it (merging
+    # a create's fields in, or dropping a deleted cell_id) and re-pushes,
+    # same as sync_cells() above. Returns the cell_id found, or None on
+    # timeout.
+    def wait_cell_write_and_sync(match_write, timeout_ms=40000):
+        import time
+        deadline = time.monotonic() + timeout_ms / 1000
+        while time.monotonic() < deadline:
+            top_level_writes = [w for w in firestore_writes(page, "cells/") if w["path"].count("/") == 1]
+            match = next((w for w in top_level_writes if match_write(w)), None)
+            if match:
+                cell_id = match["path"].split("/")[-1]
+                if match["op"] == "delete":
+                    cells_state[:] = [c for c in cells_state if c["cell_id"] != cell_id]
+                else:
+                    existing = next((c for c in cells_state if c["cell_id"] == cell_id), None)
+                    if existing:
+                        existing.update(match["data"])
+                    else:
+                        cells_state.append(dict({"cell_id": cell_id, "name": "", "handler": "", "member_codes": [], "channel": ""}, **match["data"]))
+                sync_cells()
+                return cell_id
+            time.sleep(0.2)
+        return None
+
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     wait_for_condition(lambda: any(l["path"] == "characters" for l in page.evaluate("() => window.__dgFirestoreListeners || []"))
                         and any(l["path"] == "cells" for l in page.evaluate("() => window.__dgFirestoreListeners || []")),
@@ -3529,17 +3602,15 @@ def test_acell_cells(p):
            page.locator("#cell-assign-backdrop").count() == 0, "")
 
     # Create a Cell. Polls for the confirmed state instead of a fixed
-    # sleep -- create_cell is a no-cors POST verified by a list_cells
-    # read-back 900ms later, and under system load that round trip can
-    # take longer than any one fixed wait, so poll up to a generous cap
-    # rather than risk a flaky false failure (or wasting time when it's
-    # fast).
+    # sleep -- a direct Firestore write under system load can still take
+    # longer than any one fixed wait, so poll up to a generous cap rather
+    # than risk a flaky false failure (or wasting time when it's fast).
     page.click("#cells-create-btn")
     page.wait_for_timeout(150)
     page.fill("#cells-new-name", "Cell Alpha")
     page.fill("#cells-new-handler", "Sam")
     page.click("#cells-new-confirm")
-    wait_post_and_sync(lambda b: b.get("action") == "create_cell" and b.get("name") == "Cell Alpha")
+    alpha_id = wait_cell_write_and_sync(lambda w: w["data"].get("name") == "Cell Alpha")
     groups_text = wait_for_condition(lambda: page.inner_text("#cells-groups")
                                       if "Cell Alpha" in page.inner_text("#cells-groups") else None)
     record("acell", "creating a Cell shows it with its name and Handler once the backend confirms it",
@@ -3551,7 +3622,6 @@ def test_acell_cells(p):
     # includes every NOT-yet-added Agent's name, so a plain "is Owen's
     # name anywhere in this card" check is already true before the add
     # even happens (he's sitting right there as an unselected option).
-    alpha_id = cells_state[0]["cell_id"]
     page.select_option('[data-add-select="0"]', "OWEN-CS12")
     page.click('[data-add-btn="0"]')
     wait_post_and_sync(lambda b: b.get("action") == "update_cell_members" and b.get("cell_id") == alpha_id
@@ -3570,9 +3640,8 @@ def test_acell_cells(p):
     page.fill("#cells-new-name", "Cell Bravo")
     page.fill("#cells-new-handler", "Jo")
     page.click("#cells-new-confirm")
-    wait_post_and_sync(lambda b: b.get("action") == "create_cell" and b.get("name") == "Cell Bravo")
+    bravo_id = wait_cell_write_and_sync(lambda w: w["data"].get("name") == "Cell Bravo")
     wait_for_condition(lambda: page.locator('.cell-card[data-i="1"]').count() > 0)
-    bravo_id = cells_state[1]["cell_id"]
     page.select_option('[data-add-select="1"]', "OWEN-CS12")
     page.click('[data-add-btn="1"]')
     wait_post_and_sync(lambda b: b.get("action") == "update_cell_members" and b.get("cell_id") == bravo_id
@@ -3620,7 +3689,7 @@ def test_acell_cells(p):
 
     page.once("dialog", lambda d: d.accept())
     page.click('.cell-card[data-i="1"] .cell-delete-btn')
-    wait_post_and_sync(lambda b: b.get("action") == "delete_cell" and b.get("cell_id") == bravo_id)
+    wait_cell_write_and_sync(lambda w: w["path"] == "cells/" + bravo_id and w["op"] == "delete")
     wait_for_condition(lambda: "Cell Bravo" not in page.inner_text("#cells-groups"))
     record("acell", "accepting Delete Cell removes the grouping",
            "Cell Bravo" not in page.inner_text("#cells-groups"), page.inner_text("#cells-groups"))
@@ -4176,9 +4245,15 @@ def test_acell_sheet(p):
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
+    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     skip_acell_gate(page)
+    # Sheet's own writes (delete/restore_character, update_character_field)
+    # are Handler-gated -- window.__dgGetHandlerIdToken() needs a signed-in
+    # Handler, which needs a saved password to silently sign in on load
+    # (and a real window.firebase mock, hence the stub above).
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
 
     now_ms = 1700000000000
     # Deliberately ISO strings, not raw epoch millis -- that's what the
@@ -4404,15 +4479,20 @@ def test_acell_sheet(p):
 
 def test_acell_music(p):
     """a-cell.html's Music tab: the Handler's broadcast side of Table
-    Radio. Setting a channel + track URL posts set_now_playing (an Apps
-    Script action, part of acell-table-radio-addition.txt handed over
-    separately); Stop posts the same action with an empty track_url.
-    set_now_playing is a no-cors POST, so a genuine backend failure
-    (addition not deployed, wrong action name, etc.) would otherwise
-    look identical to success -- the status line only claims
-    "Broadcasting" once a real GET read-back (get_now_playing) confirms
-    the track actually landed, exercised here against a stateful mock
-    backend that behaves like the real Apps Script action pair."""
+    Radio. Setting a channel + track URL, pausing/resuming, restarting,
+    looping, and stopping now all write STRAIGHT to radio/{channel} via
+    a client-side Firestore transaction (see startNowPlayingListener_/
+    setNowPlaying/sendTransportAction_/sendLoopToggle_ in a-cell.html) --
+    no Apps Script POST or GET read-back involved at all anymore, same
+    architecture as the Active Sounds panel (test_acell_soundboard).
+    Cue For Cell (set_cell_channel) and the Cue List (get_playlist/
+    save_playlist) are the only Music tab surfaces still Apps-Script-
+    mediated, exercised here unchanged. This had NO coverage at all
+    against the new architecture before now: nothing had exercised
+    startNowPlayingListener_'s own onSnapshot actually driving the panel's
+    UI (on-air indicator, Pause/Resume label) off a pushed snapshot, the
+    same way it does in production -- a plain write-then-read-back
+    assertion wouldn't have caught a broken listener wire-up at all."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -4421,7 +4501,8 @@ def test_acell_music(p):
     # a-cell.html's startTracksListener()'s own comment) -- no Apps
     # Script involved in a track's write path at all anymore, reads
     # included. install_notes_firestore_stub gives both the Storage mock
-    # and the tracks/{trackId} onSnapshot/set/delete surface this needs.
+    # and the tracks/{trackId} AND radio/{channel} onSnapshot/set/
+    # runTransaction surface this test needs.
     install_notes_firestore_stub(page)
     page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
@@ -4429,7 +4510,6 @@ def test_acell_music(p):
     skip_acell_gate(page)
 
     posts = []
-    backend_state = {"track_url": "", "track_title": "", "track_kind": "", "paused": False, "loop": False}
     fake_cells = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": [], "channel": "4"}]
 
     def fake_apps_script(route):
@@ -4437,17 +4517,7 @@ def test_acell_music(p):
         if req.method == "POST":
             body = json.loads(req.post_data or "{}")
             posts.append(body)
-            if body.get("action") == "set_now_playing":
-                backend_state["track_url"] = body.get("track_url", "")
-                backend_state["track_title"] = body.get("track_title", "")
-                backend_state["track_kind"] = body.get("track_kind", "")
-                backend_state["loop"] = body.get("loop") == "1"
-                backend_state["paused"] = False
-            elif body.get("action") == "pause_now_playing":
-                backend_state["paused"] = True
-            elif body.get("action") == "resume_now_playing":
-                backend_state["paused"] = False
-            elif body.get("action") == "set_cell_channel":
+            if body.get("action") == "set_cell_channel":
                 for c in fake_cells:
                     if c["cell_id"] == body.get("cell_id"):
                         c["channel"] = body.get("channel", "")
@@ -4456,16 +4526,7 @@ def test_acell_music(p):
         url = req.url
         if "callback=" in url:
             cb = url.split("callback=")[1].split("&")[0]
-            if "action=get_now_playing" in url:
-                if backend_state["track_url"]:
-                    res = {"status": "OK", "track_url": backend_state["track_url"],
-                           "track_title": backend_state["track_title"], "started_at": 1700000000000,
-                           "track_kind": backend_state["track_kind"],
-                           "paused": backend_state["paused"], "paused_at": 1700000000000 if backend_state["paused"] else 0,
-                           "loop": backend_state["loop"]}
-                else:
-                    res = {"status": "NOT_FOUND"}
-            elif "action=get_playlist" in url:
+            if "action=get_playlist" in url:
                 res = {"status": "OK", "playlist": []}
             elif "action=list_cells" in url:
                 res = {"status": "OK", "cells": fake_cells}
@@ -4479,6 +4540,19 @@ def test_acell_music(p):
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.click('.tw[data-tab="music"]')
     page.wait_for_timeout(150)
+
+    def sync_radio(ch):
+        """Simulates startNowPlayingListener_'s live radio/{channel}
+        listener picking up the doc's current state -- a real Firestore
+        write fires the SAME tab's own onSnapshot almost immediately, but
+        the stub's runTransaction()/set() don't feed a listener
+        automatically (see NOTES_FIRESTORE_STUB's own comment), so any
+        assertion driven by the panel's UI (rather than a direct
+        get_firestore_doc read) needs this pushed by hand first."""
+        wait_for_condition(lambda: any(l.get("isDoc") and l["path"] == "radio/" + ch
+                                        for l in page.evaluate("() => window.__dgFirestoreListeners || []")) or None)
+        doc = get_firestore_doc(page, "radio/" + ch)
+        push_firestore_doc_snapshot(page, "radio/" + ch, doc is not None, doc)
 
     # startTracksListener() shows "Loading..." until the first snapshot
     # (even an empty one) actually arrives -- deliver it now, same as
@@ -4499,77 +4573,94 @@ def test_acell_music(p):
     page.fill("#music-url-input", "https://youtube.com/watch?v=dQw4w9WgXcQ")
     page.fill("#music-title-input", "Table Theme")
     page.click("#music-set-btn")
-    page.wait_for_timeout(1500)
-
-    set_posts = [p_ for p_ in posts if p_.get("action") == "set_now_playing"]
-    record("acell", "Set Now Playing posts the dialed channel, track URL, and title",
-           len(set_posts) == 1 and set_posts[0].get("channel") == "2"
-           and set_posts[0].get("track_url") == "https://youtube.com/watch?v=dQw4w9WgXcQ"
-           and set_posts[0].get("track_title") == "Table Theme", str(set_posts))
-    record("acell", "status line confirms broadcasting only after a real read-back (get_now_playing) verifies it",
+    doc = wait_for_condition(lambda: get_firestore_doc(page, "radio/2") or None)
+    record("acell", "Set Now Playing writes the dialed channel, track URL, and title straight to radio/{channel}",
+           doc.get("channel") == "2" and doc.get("track_url") == "https://youtube.com/watch?v=dQw4w9WgXcQ"
+           and doc.get("track_title") == "Table Theme", str(doc))
+    record("acell", "Set Now Playing sends no Apps Script POST at all",
+           not any(pp.get("action") == "set_now_playing" for pp in posts), str(posts))
+    record("acell", "status line confirms broadcasting once the write resolves",
            "CH 2" in page.inner_text("#music-status") and "Table Theme" in page.inner_text("#music-status"), page.inner_text("#music-status"))
     record("acell", "the dialed channel is remembered for next time",
            page.evaluate("() => localStorage.getItem('dg_acell_broadcast_channel')") == "2", "")
-    record("acell", "the on-air indicator shows On Air once broadcasting is confirmed",
-           page.inner_text("#music-air-indicator").strip().lower() == "on air", page.inner_text("#music-air-indicator"))
     record("acell", "Set Now Playing defaults to loop off when the checkbox is unchecked",
-           set_posts[0].get("loop") == "0", str(set_posts))
+           doc.get("loop") is False, str(doc))
+
+    # `current` (and the on-air indicator, which only startNowPlayingListener_
+    # itself sets) is only kept in sync by the live listener -- push the
+    # write's own result back through it now, same as production's own
+    # near-instant local-write echo.
+    sync_radio("2")
+    record("acell", "the on-air indicator shows On Air once the live listener confirms it",
+           wait_for_condition(lambda: page.inner_text("#music-air-indicator").strip().lower() == "on air" or None), "")
 
     # Pause/Resume: freezes the current track in place for everyone tuned
     # in without restarting it from 0:00, unlike a fresh Set Now Playing.
+    # sendTransportAction_ decides pause-vs-resume off `current.paused`,
+    # so each click below only sends the action it should because the
+    # prior sync_radio() call already brought `current` up to date --
+    # without it, a second click here would re-send the SAME action.
     page.click("#music-pause-btn")
-    page.wait_for_timeout(1200)
-    pause_posts = [p_ for p_ in posts if p_.get("action") == "pause_now_playing"]
-    record("acell", "Pause posts pause_now_playing for the dialed channel",
-           len(pause_posts) == 1 and pause_posts[0].get("channel") == "2", str(pause_posts))
-    record("acell", "status line confirms Paused once a read-back verifies it",
+    paused_doc = wait_for_condition(lambda: (get_firestore_doc(page, "radio/2") or {})
+                                     if (get_firestore_doc(page, "radio/2") or {}).get("paused") else None)
+    record("acell", "Pause writes paused:true directly to radio/{channel} via a transaction",
+           bool(paused_doc), str(paused_doc))
+    record("acell", "no pause_now_playing Apps Script POST was sent either",
+           not any(pp.get("action") == "pause_now_playing" for pp in posts), str(posts))
+    sync_radio("2")
+    record("acell", "status line confirms Paused once the write resolves",
            "Paused" in page.inner_text("#music-status"), page.inner_text("#music-status"))
     # An icon-only SVG button now (no visible text) -- Pause/Resume state
     # is reflected in its title/aria-label instead, see syncTransportUI_.
-    record("acell", "the Pause button flips to Resume once paused",
-           page.get_attribute("#music-pause-btn", "title") == "Resume", "")
+    record("acell", "the Pause button flips to Resume once the live listener confirms it's paused",
+           wait_for_condition(lambda: page.get_attribute("#music-pause-btn", "title") == "Resume" or None), "")
 
+    started_before = paused_doc["started_at"]
     page.click("#music-pause-btn")
-    page.wait_for_timeout(1200)
-    resume_posts = [p_ for p_ in posts if p_.get("action") == "resume_now_playing"]
-    record("acell", "clicking the same button again (now labeled Resume) posts resume_now_playing",
-           len(resume_posts) == 1 and resume_posts[0].get("channel") == "2", str(resume_posts))
+    resumed_doc = wait_for_condition(lambda: (get_firestore_doc(page, "radio/2") or {})
+                                      if not (get_firestore_doc(page, "radio/2") or {}).get("paused") else None)
+    record("acell", "clicking the same button again (now labeled Resume) shifts started_at forward instead of resetting position",
+           bool(resumed_doc) and resumed_doc["started_at"] >= started_before, str(resumed_doc))
+    sync_radio("2")
     record("acell", "the button flips back to Pause once resumed",
-           page.get_attribute("#music-pause-btn", "title") == "Pause", "")
+           wait_for_condition(lambda: page.get_attribute("#music-pause-btn", "title") == "Pause" or None), "")
 
     # Restart: re-broadcasts the currently confirmed track from 0:00 even
     # with the form fields cleared -- it works off the last known
-    # now-playing state, not whatever happens to be typed in the boxes.
+    # now-playing state (`current`, kept in sync by the live listener via
+    # the sync_radio() call above), not whatever happens to be typed in
+    # the boxes.
     page.fill("#music-url-input", "")
     page.fill("#music-title-input", "")
     page.click("#music-restart-btn")
-    page.wait_for_timeout(1500)
-    restart_posts = [p_ for p_ in posts if p_.get("action") == "set_now_playing"
-                      and p_.get("track_url") == "https://youtube.com/watch?v=dQw4w9WgXcQ"]
+    restart_writes = wait_for_condition(lambda: [w for w in firestore_writes(page, "radio/2")
+                                                  if w["data"].get("track_url") == "https://youtube.com/watch?v=dQw4w9WgXcQ"] or None)
     record("acell", "Restart re-broadcasts the currently playing track with the form fields cleared",
-           len(restart_posts) == 2, str(restart_posts))
+           len(restart_writes) == 2, str(restart_writes))
 
-    # Loop: checked before Set Now Playing sends loop:'1'.
+    # Loop: checked before Set Now Playing writes loop: true. (Doesn't
+    # depend on `current` -- reads the checkbox/inputs directly -- so no
+    # sync_radio() needed before this click.)
     page.check("#music-loop-input")
     page.fill("#music-url-input", "https://youtube.com/watch?v=anotherid1234")
     page.fill("#music-title-input", "Looping Ambience")
     page.click("#music-set-btn")
-    page.wait_for_timeout(1500)
-    loop_posts = [p_ for p_ in posts if p_.get("action") == "set_now_playing"
-                  and p_.get("track_url") == "https://youtube.com/watch?v=anotherid1234"]
-    record("acell", "checking Loop before Set Now Playing sends loop: '1'",
-           len(loop_posts) == 1 and loop_posts[0].get("loop") == "1", str(loop_posts))
+    loop_doc = wait_for_condition(lambda: (get_firestore_doc(page, "radio/2") or {})
+                                   if (get_firestore_doc(page, "radio/2") or {}).get("track_url") == "https://youtube.com/watch?v=anotherid1234" else None)
+    record("acell", "checking Loop before Set Now Playing writes loop: true",
+           bool(loop_doc) and loop_doc.get("loop") is True, str(loop_doc))
     page.uncheck("#music-loop-input")
 
     page.click("#music-stop-btn")
-    page.wait_for_timeout(1500)
-    stop_posts = [p_ for p_ in posts if p_.get("action") == "set_now_playing" and p_.get("track_url") == ""]
-    record("acell", "Stop posts set_now_playing with an empty track_url for the same channel",
-           len(stop_posts) == 1 and stop_posts[0].get("channel") == "2", str(stop_posts))
+    stop_doc = wait_for_condition(lambda: (get_firestore_doc(page, "radio/2") or {})
+                                   if (get_firestore_doc(page, "radio/2") or {}).get("track_url") == "" else None)
+    record("acell", "Stop writes an empty track_url for the same channel directly",
+           bool(stop_doc) and stop_doc.get("channel") == "2", str(stop_doc))
     record("acell", "status line confirms broadcasting stopped",
            "Stopped" in page.inner_text("#music-status"), "")
+    sync_radio("2")
     record("acell", "the on-air indicator drops back to Off Air once stopped",
-           page.inner_text("#music-air-indicator").strip().lower() == "off air", page.inner_text("#music-air-indicator"))
+           wait_for_condition(lambda: page.inner_text("#music-air-indicator").strip().lower() == "off air" or None), "")
 
     # Cue For Cell: Cell Alpha already has channel 4 assigned -- selecting
     # it should tune the dial straight there.
@@ -4666,16 +4757,22 @@ def test_acell_music(p):
 
     # Playing a library track sets track_kind: 'audio' -- a Drive
     # download link has no .mp3 extension, so the player widget needs
-    # this explicit flag rather than sniffing the URL.
+    # this explicit flag rather than sniffing the URL. Checked directly
+    # against the Firestore doc (radio/5 -- the Cue For Cell assignment
+    # above left the dial there), not the UI: an 'audio'-kind snapshot
+    # would drive a real preview <audio> element, which this test has no
+    # need to exercise (see test_table_radio_widget for actual playback).
     page.click('[data-tracklib-play="0"]')
     play_status = wait_for_condition(lambda: page.inner_text("#music-status")
                                       if "Rain Loop" in page.inner_text("#music-status") else None)
     record("acell", "Play on a library track broadcasts it to the current channel",
            bool(play_status) and "Rain Loop" in play_status, play_status or "")
-    record("acell", "playing a library track sends track_kind: 'audio' so the player doesn't have to guess from the URL",
-           backend_state["track_kind"] == "audio", backend_state["track_kind"])
+    doc5 = wait_for_condition(lambda: (get_firestore_doc(page, "radio/5") or {})
+                               if (get_firestore_doc(page, "radio/5") or {}).get("track_kind") == "audio" else None)
+    record("acell", "playing a library track writes track_kind: 'audio' so the player doesn't have to guess from the URL",
+           bool(doc5), str(doc5))
     record("acell", "Play on a library track defaults to loop off",
-           backend_state["loop"] is False, backend_state["loop"])
+           bool(doc5) and doc5.get("loop") is False, str(doc5))
 
     # Regression test: looping an uploaded track technically worked
     # before this (Play already read the shared #music-loop-input
@@ -4684,9 +4781,10 @@ def test_acell_music(p):
     # checkbox here is what a Handler would actually expect to find.
     page.check('[data-tracklib-loop="0"]')
     page.click('[data-tracklib-play="0"]')
-    page.wait_for_timeout(300)
-    record("acell", "checking a library track's own Loop box before Play sends loop: '1'",
-           backend_state["loop"] is True, backend_state["loop"])
+    looped_doc5 = wait_for_condition(lambda: (get_firestore_doc(page, "radio/5") or {})
+                                      if (get_firestore_doc(page, "radio/5") or {}).get("loop") is True else None)
+    record("acell", "checking a library track's own Loop box before Play writes loop: true",
+           bool(looped_doc5), str(looped_doc5))
 
     # Delete: dismiss then accept.
     page.once("dialog", lambda d: d.dismiss())
@@ -4712,31 +4810,47 @@ def test_acell_music(p):
     page.close()
     return errs
 
-def test_acell_music_backend_not_deployed(p):
-    """Bug report: the Music tab said "Broadcasting" while the player
-    widget said "Waiting for the Handler" -- because set_now_playing is
-    a no-cors POST, fetch() resolves "successfully" even when the
-    backend addition isn't deployed and never actually saved anything.
-    Against a backend that only ever reports NOT_FOUND (simulating the
-    addition not being installed), the status line must say so
-    honestly instead of claiming success."""
+def test_acell_soundboard(p):
+    """a-cell.html's Music tab Soundboard: ambient-loop toggle, one-shot
+    stinger fire, and the Active Sounds panel's own per-instance
+    transport (pause/resume/seek/loop/stop) for an already-active
+    loop/stinger. All of these write straight to Firestore (radio/
+    {channel}) via a client-side transaction -- no Apps Script POST at
+    all, unlike every other Handler write in this file -- see the
+    Soundboard header comment in a-cell.html for why (the ~8s latency
+    Apps Script's own dispatch/cold-start added was audible). This had
+    no test coverage at all before: db.runTransaction() wasn't even
+    mocked, so a click on the ambient toggle would have thrown
+    "db.runTransaction is not a function" under test the moment anyone
+    tried."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     skip_acell_gate(page)
 
+    posts = []
     def fake_apps_script(route):
         req = route.request
         if req.method == "POST":
+            posts.append(json.loads(req.post_data or "{}"))
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         url = req.url
         if "callback=" in url:
             cb = url.split("callback=")[1].split("&")[0]
-            route.fulfill(status=200, content_type="application/javascript",
-                           body=f'{cb}({json.dumps({"status": "NOT_FOUND"})})')
+            if "action=get_now_playing" in url:
+                res = {"status": "NOT_FOUND"}
+            elif "action=get_playlist" in url:
+                res = {"status": "OK", "playlist": []}
+            elif "action=list_cells" in url:
+                res = {"status": "OK", "cells": []}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
         else:
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
     page.route("**/script.google.com/**", fake_apps_script)
@@ -4744,16 +4858,145 @@ def test_acell_music_backend_not_deployed(p):
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.click('.tw[data-tab="music"]')
     page.wait_for_timeout(150)
+
+    # Ambient toggle: turn a loop on -- straight Firestore write to
+    # radio/1 (channel dial defaults to 1), no Apps Script POST.
+    page.click('[data-layer="alien-lunch"]')
+    wait_for_condition(lambda: get_firestore_doc(page, "radio/1") is not None)
+    doc = get_firestore_doc(page, "radio/1")
+    layers = (doc or {}).get("ambient_layers", [])
+    record("soundboard", "toggling an ambient layer on writes it to radio/{channel} directly",
+           any(l.get("id") == "alien-lunch" for l in layers), str(doc))
+    record("soundboard", "the ambient toggle sends no Apps Script POST at all",
+           len(posts) == 0, str(posts))
+    wait_for_condition(lambda: page.locator('[data-layer="alien-lunch"]').get_attribute("class") and
+                        "active" in page.locator('[data-layer="alien-lunch"]').get_attribute("class"))
+    record("soundboard", "the ambient grid button shows active once the write lands",
+           "active" in (page.locator('[data-layer="alien-lunch"]').get_attribute("class") or ""), "")
+
+    # Active Sounds panel should now show a row for it.
+    active_row = wait_for_condition(lambda: page.locator(".rdo-active-row").first
+                                     if page.locator(".rdo-active-row").count() > 0 else None)
+    record("soundboard", "the Active Sounds panel shows a row for the active ambient loop",
+           active_row is not None and "Alien Lunch" in page.inner_text(".rdo-active-row"), page.inner_text("#soundboard-active-list"))
+
+    # Pause it from the Active Sounds row.
+    page.click('.rdo-active-row [data-action="playpause"]')
+    def paused_state():
+        d = get_firestore_doc(page, "radio/1")
+        l = next((x for x in (d or {}).get("ambient_layers", []) if x.get("id") == "alien-lunch"), None)
+        return l if (l and l.get("paused")) else None
+    paused_layer = wait_for_condition(paused_state)
+    record("soundboard", "pausing an active ambient loop sets paused:true directly in Firestore",
+           bool(paused_layer), str(get_firestore_doc(page, "radio/1")))
+    record("soundboard", "no Apps Script POST was sent for pause_ambient_layer either",
+           not any(pp.get("action") == "pause_ambient_layer" for pp in posts), str(posts))
+
+    # Resume it -- started_at should shift forward by roughly the paused
+    # duration (preserving position), not reset to now.
+    started_before = paused_layer["started_at"]
+    paused_at_before = paused_layer["paused_at"]
+    page.click('.rdo-active-row [data-action="playpause"]')
+    def resumed_state():
+        d = get_firestore_doc(page, "radio/1")
+        l = next((x for x in (d or {}).get("ambient_layers", []) if x.get("id") == "alien-lunch"), None)
+        return l if (l and not l.get("paused")) else None
+    resumed_layer = wait_for_condition(resumed_state)
+    record("soundboard", "resuming clears paused and shifts started_at instead of resetting position",
+           bool(resumed_layer) and resumed_layer["started_at"] >= started_before and resumed_layer["paused_at"] == 0,
+           str(resumed_layer))
+
+    # Loop toggle on the Active Sounds row.
+    page.click('.rdo-active-row [data-action="loop"]')
+    def loop_off():
+        d = get_firestore_doc(page, "radio/1")
+        l = next((x for x in (d or {}).get("ambient_layers", []) if x.get("id") == "alien-lunch"), None)
+        return l if (l and l.get("loop") is False) else None
+    unlooped = wait_for_condition(loop_off)
+    record("soundboard", "toggling Loop off on the Active Sounds row writes loop:false directly",
+           bool(unlooped), str(get_firestore_doc(page, "radio/1")))
+
+    # Stop it -- same write path the grid's own toggle-off button uses,
+    # not a separate one for the identical "turn this loop off" action.
+    page.click('.rdo-active-row [data-action="stop"]')
+    def layer_gone():
+        d = get_firestore_doc(page, "radio/1")
+        return d if (d and not any(x.get("id") == "alien-lunch" for x in d.get("ambient_layers", []))) else None
+    stopped_doc = wait_for_condition(layer_gone)
+    record("soundboard", "Stop on an ambient row removes it from ambient_layers via the same path as the grid toggle",
+           stopped_doc is not None, str(stopped_doc))
+    record("soundboard", "the ambient grid button drops back to inactive once the row is stopped",
+           "active" not in (page.locator('[data-layer="alien-lunch"]').get_attribute("class") or ""), "")
+
+    # Stinger: fire one, then pause/seek/loop/stop it the same way.
+    page.click('[data-stinger="scream-01"]')
+    wait_for_condition(lambda: len((get_firestore_doc(page, "radio/1") or {}).get("stingers", [])) > 0)
+    stingers = (get_firestore_doc(page, "radio/1") or {}).get("stingers", [])
+    record("soundboard", "firing a stinger appends it to radio/{channel}'s stingers array directly",
+           any(s.get("id") == "scream-01" for s in stingers), str(stingers))
+    record("soundboard", "firing a stinger sends no Apps Script POST either",
+           not any(pp.get("action") == "trigger_stinger" for pp in posts), str(posts))
+
+    stinger_row = wait_for_condition(lambda: page.locator(".rdo-active-row", has_text="Scream 01")
+                                      if page.locator(".rdo-active-row", has_text="Scream 01").count() > 0 else None)
+    record("soundboard", "the fired stinger shows its own Active Sounds row",
+           stinger_row is not None, page.inner_text("#soundboard-active-list"))
+
+    page.locator(".rdo-active-row", has_text="Scream 01").locator('[data-action="playpause"]').click()
+    def stinger_paused():
+        d = get_firestore_doc(page, "radio/1")
+        s = next((x for x in (d or {}).get("stingers", []) if x.get("id") == "scream-01"), None)
+        return s if (s and s.get("paused")) else None
+    record("soundboard", "pausing an active stinger sets paused:true directly, matched by its fired_at identity",
+           bool(wait_for_condition(stinger_paused)), str(get_firestore_doc(page, "radio/1")))
+
+    page.locator(".rdo-active-row", has_text="Scream 01").locator('[data-action="stop"]').click()
+    def stinger_gone():
+        d = get_firestore_doc(page, "radio/1")
+        return d if (d and not any(x.get("id") == "scream-01" for x in d.get("stingers", []))) else None
+    record("soundboard", "Stop on a stinger row removes it entirely (no on/off toggle the way ambient has)",
+           wait_for_condition(stinger_gone) is not None, "")
+
+    page.close()
+    return errs
+
+def test_acell_music_backend_not_deployed(p):
+    """Bug report, revisited for the direct-Firestore architecture: the
+    Music tab used to say "Broadcasting" while the player widget said
+    "Waiting for the Handler", because the old set_now_playing was a
+    no-cors POST -- fetch() resolved "successfully" even when the Apps
+    Script addition wasn't deployed, and only a separate GET read-back
+    could ever catch that the write hadn't actually landed. setNowPlaying()
+    writes straight to Firestore via a real Promise now (see
+    a-cell.html), so the equivalent failure mode is that Promise
+    rejecting -- exercised here by deliberately never seeding a Handler
+    session (dg_acell_pw), which makes ensureHandlerSignedIn() reject
+    immediately with "No A-Cell session...". The status line must report
+    that honestly instead of claiming success."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    skip_acell_gate(page)
+    # Deliberately NOT seeding dg_acell_pw -- ensureHandlerSignedIn()
+    # rejects the moment anything tries to write, simulating a write that
+    # never reaches Firestore at all. get_playlist/list_cells still fire
+    # on tab load regardless, so route_apps_script_ok keeps those quiet.
+    route_apps_script_ok(page)
+
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.click('.tw[data-tab="music"]')
+    page.wait_for_timeout(150)
     page.fill("#music-url-input", "https://youtube.com/watch?v=dQw4w9WgXcQ")
     page.click("#music-set-btn")
-    # verifyNowPlaying() now retries twice with backoff (900ms + 1500ms +
-    # 3000ms) before giving up -- see a-cell.html's own comment -- so the
-    # final honest-failure message lands around 5.4s, not ~900ms.
-    page.wait_for_timeout(6000)
 
-    status = page.inner_text("#music-status")
-    record("acell", "an undeployed backend is reported honestly, not as a false 'Broadcasting' success",
-           "Broadcasting" not in status and ("confirm" in status.lower() or "deploy" in status.lower()), status)
+    status = wait_for_condition(lambda: page.inner_text("#music-status")
+                                 if ("Broadcasting" in page.inner_text("#music-status")
+                                     or "Could not reach" in page.inner_text("#music-status")) else None)
+    record("acell", "a write that never reaches Firestore (not signed in as Handler) is reported honestly, not as a false 'Broadcasting' success",
+           bool(status) and "Broadcasting" not in status and "Could not reach" in status, status or page.inner_text("#music-status"))
 
     page.close()
     return errs
@@ -8200,26 +8443,13 @@ def test_notes_v2_editorjs(p):
     ]
     identities = {"PRIY-AN34": {"color": "#2f855a", "font": "kalam"}}
     posts = []
-    next_id = [3]
 
     def fake_apps_script(route):
         req = route.request
         if req.method == "POST":
             body = json.loads(req.post_data or "{}")
             posts.append(body)
-            if body.get("action") == "save_note_block":
-                bid = body.get("block_id") or ""
-                existing = next((b for b in blocks_state if b["block_id"] == bid), None)
-                if existing:
-                    existing.update({"block_type": body.get("block_type"), "text": body.get("text"),
-                                      "shared": bool(body.get("shared")), "sort_order": body.get("sort_order")})
-                else:
-                    bid = bid or ("b" + str(next_id[0])); next_id[0] += 1
-                    blocks_state.append({"block_id": bid, "agent_code": body.get("agent_code"),
-                                          "block_type": body.get("block_type"), "text": body.get("text"),
-                                          "shared": bool(body.get("shared")), "sort_order": body.get("sort_order"),
-                                          "created_at": 1, "updated_at": 1})
-            elif body.get("action") == "save_agent_identity":
+            if body.get("action") == "save_agent_identity":
                 identities[body.get("agent_code")] = {"color": body.get("color"), "font": body.get("font")}
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
@@ -8297,11 +8527,11 @@ def test_notes_v2_editorjs(p):
     # markup string).
     page.click(".ce-block [contenteditable]")
     page.keyboard.type("Session 3 Notes")
-    saved = wait_for_condition(lambda: (page.evaluate("1"), next((x for x in posts if x.get("action") == "save_note_block" and x.get("agent_code") == "OWEN-CS12"), None))[1], timeout_ms=25000)
-    record("notes", "typing fires a debounced save_note_block with the right per-block JSON shape",
-           bool(saved) and saved.get("cell_id") == "cell_1" and saved.get("block_type") == "paragraph"
-           and json.loads(saved.get("text") or "{}").get("text") == "Session 3 Notes" and saved.get("shared") is False,
-           json.dumps(saved) if saved else "no POST captured")
+    saved = wait_for_condition(lambda: next((w for w in firestore_writes(page, "cells/cell_1/notes/") if w["data"].get("agent_code") == "OWEN-CS12"), None), timeout_ms=25000)
+    record("notes", "typing fires a debounced save writing the right per-block shape straight to Firestore",
+           bool(saved) and saved["data"].get("block_type") == "paragraph"
+           and json.loads(saved["data"].get("text") or "{}").get("text") == "Session 3 Notes" and saved["data"].get("shared") is False,
+           json.dumps(saved) if saved else "no Firestore write captured")
 
     # No per-member tabs -- only Shared and your own. A member's own
     # tab only ever showed their SHARED blocks anyway (their private
@@ -8383,11 +8613,11 @@ def test_notes_v2_editorjs(p):
     wait_for_condition(lambda: (page.evaluate("1"), circulate.get_attribute("disabled") is None)[1], timeout_ms=8000)
     record("notes", "clicking into a block enables the Circulate button",
            circulate.get_attribute("disabled") is None, "")
-    posts.clear()
+    clear_firestore_writes(page)
     circulate.click()
-    toggled = wait_for_condition(lambda: (page.evaluate("1"), next((x for x in posts if x.get("action") == "save_note_block" and x.get("agent_code") == "OWEN-CS12"), None))[1], timeout_ms=25000)
+    toggled = wait_for_condition(lambda: next((w for w in firestore_writes(page, "cells/cell_1/notes/") if w["data"].get("agent_code") == "OWEN-CS12"), None), timeout_ms=25000)
     record("notes", "toggling Circulate on the focused block saves shared:true",
-           bool(toggled) and toggled.get("shared") is True, json.dumps(toggled) if toggled else "no POST captured")
+           bool(toggled) and toggled["data"].get("shared") is True, json.dumps(toggled) if toggled else "no Firestore write captured")
     record("notes", "the Circulate button shows an active state once toggled on",
            "active" in (circulate.get_attribute("class") or ""), "")
 
@@ -8397,11 +8627,11 @@ def test_notes_v2_editorjs(p):
     pin_btn = page.locator(".dg-notes-pin-btn")
     record("notes", "the Pin button is enabled once a block is focused",
            pin_btn.get_attribute("disabled") is None, "")
-    posts.clear()
+    clear_firestore_writes(page)
     pin_btn.click()
-    pinned_post = wait_for_condition(lambda: (page.evaluate("1"), next((x for x in posts if x.get("action") == "save_note_block" and x.get("agent_code") == "OWEN-CS12"), None))[1], timeout_ms=25000)
+    pinned_post = wait_for_condition(lambda: next((w for w in firestore_writes(page, "cells/cell_1/notes/") if w["data"].get("agent_code") == "OWEN-CS12"), None), timeout_ms=25000)
     record("notes", "toggling Pin on the focused block saves pinned:true",
-           bool(pinned_post) and pinned_post.get("pinned") is True, json.dumps(pinned_post) if pinned_post else "no POST captured")
+           bool(pinned_post) and pinned_post["data"].get("pinned") is True, json.dumps(pinned_post) if pinned_post else "no Firestore write captured")
     record("notes", "the Pin button shows an active state once toggled on",
            "active" in (pin_btn.get_attribute("class") or ""), "")
     # .dg-notes-toc-subhead is CSS-uppercased, same as .dg-notes-toc-label.
@@ -8420,12 +8650,12 @@ def test_notes_v2_editorjs(p):
            page.locator(".dg-notes-tag-type-chip").count() == 3, "")
     page.click('.dg-notes-tag-type-chip[data-type="location"]')
     page.fill(".dg-notes-tag-input", "Old Lighthouse")
-    posts.clear()
+    clear_firestore_writes(page)
     page.click(".dg-notes-tag-add-btn")
-    tag_post = wait_for_condition(lambda: (page.evaluate("1"), next((x for x in posts if x.get("action") == "save_note_block" and x.get("agent_code") == "OWEN-CS12"), None))[1], timeout_ms=25000)
+    tag_post = wait_for_condition(lambda: next((w for w in firestore_writes(page, "cells/cell_1/notes/") if w["data"].get("agent_code") == "OWEN-CS12"), None), timeout_ms=25000)
     record("notes", "adding a tag saves it as {type, label} in the block's tags field",
-           bool(tag_post) and json.loads(tag_post.get("tags") or "[]") == [{"type": "location", "label": "Old Lighthouse"}],
-           json.dumps(tag_post) if tag_post else "no POST captured")
+           bool(tag_post) and json.loads(tag_post["data"].get("tags") or "[]") == [{"type": "location", "label": "Old Lighthouse"}],
+           json.dumps(tag_post) if tag_post else "no Firestore write captured")
     record("notes", "the added tag shows as a chip in the popover",
            "Old Lighthouse" in (page.locator(".dg-notes-tag-current").inner_text() or ""), "")
     record("notes", "the Tag button shows an active state once the block has a tag",
@@ -8587,21 +8817,7 @@ def test_notes_evidence_integration(p):
             body = json.loads(req.post_data or "{}")
             posts.append(body)
             action = body.get("action")
-            if action == "save_note_block":
-                bid = body.get("block_id") or ""
-                existing = next((b for b in notes_blocks if b["block_id"] == bid), None)
-                if existing:
-                    existing.update({"block_type": body.get("block_type"), "text": body.get("text"), "shared": bool(body.get("shared"))})
-                else:
-                    notes_blocks.append({
-                        "block_id": bid, "agent_code": body.get("agent_code"), "block_type": body.get("block_type"),
-                        "text": body.get("text"), "shared": bool(body.get("shared")),
-                        "sort_order": body.get("sort_order", 0), "created_at": 9000, "updated_at": 9000,
-                    })
-            elif action == "delete_note_block":
-                bid = body.get("block_id")
-                notes_blocks[:] = [b for b in notes_blocks if b["block_id"] != bid]
-            elif action == "mark_evidence_seen":
+            if action == "mark_evidence_seen":
                 seen_map[body.get("evidence_id")] = True
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
@@ -8703,14 +8919,14 @@ def test_notes_evidence_integration(p):
     record("notes", "the resolved Evidence photo is still showing after two poll ticks, not blanked back to loading",
            page.locator(".dg-notes-evidence-photo-img").count() == 1, "")
 
-    posts.clear()
+    clear_firestore_writes(page)
     page.fill(".dg-notes-evidence-remark-input", "Check the neighbor's alibi.")
     page.click(".dg-notes-evidence-remark-add")
-    page.wait_for_timeout(300)
-    record("notes", "adding a remark (Share unchecked) posts save_note_block as a private evidence_remark",
-           any(x.get("action") == "save_note_block" and x.get("block_type") == "evidence_remark"
-               and json.loads(x.get("text") or "{}").get("evidence_id") == "ev1" and x.get("shared") is False
-               for x in posts), str(posts))
+    remark_write = wait_for_condition(lambda: next((w for w in firestore_writes(page, "cells/cell_1/notes/")
+                                                      if w["data"].get("block_type") == "evidence_remark"), None))
+    record("notes", "adding a remark (Share unchecked) writes a private evidence_remark block straight to Firestore",
+           bool(remark_write) and json.loads(remark_write["data"].get("text") or "{}").get("evidence_id") == "ev1"
+           and remark_write["data"].get("shared") is False, str(remark_write))
     record("notes", "the new remark appears in the thread immediately, marked Private",
            "Check the neighbor's alibi" in page.inner_text(".dg-notes-evidence-remarks-list")
            and "PRIVATE" in page.inner_text(".dg-notes-evidence-remarks-list").upper(), "")
@@ -8718,11 +8934,11 @@ def test_notes_evidence_integration(p):
     del_btn = page.locator(".dg-notes-evidence-remark-del")
     record("notes", "only your own remark shows a delete control, not a Cell-mate's",
            del_btn.count() == 1, "")
-    posts.clear()
+    clear_firestore_writes(page)
     del_btn.click()
-    page.wait_for_timeout(300)
-    record("notes", "deleting your own remark posts delete_note_block",
-           any(x.get("action") == "delete_note_block" for x in posts), str(posts))
+    delete_write = wait_for_condition(lambda: next((w for w in firestore_writes(page, "cells/cell_1/notes/") if w["op"] == "delete"), None))
+    record("notes", "deleting your own remark deletes it straight from Firestore",
+           bool(delete_write), str(delete_write))
     record("notes", "the deleted remark is gone from the thread, the Cell-mate's stays",
            "Check the neighbor's alibi" not in page.inner_text(".dg-notes-evidence-remarks-list")
            and "blood spatter" in page.inner_text(".dg-notes-evidence-remarks-list"), "")
@@ -9021,6 +9237,7 @@ def test_notes_solo_mode_for_unassigned_agent(p):
     page = p.new_page()
     page.set_default_timeout(15000)
     errs = collect_errors(page)
+    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
@@ -9078,18 +9295,12 @@ def test_notes_solo_mode_for_unassigned_agent(p):
 
     page.click(".ce-block [contenteditable]")
     page.keyboard.type("Working alone for now")
-    # The page.evaluate("1") is a pump, not a real check -- wait_for_condition's
-    # own time.sleep() doesn't flush Playwright's sync API connection, so
-    # without a real page call inside the polled lambda the pending
-    # no-cors POST this debounce fires never actually lands before the
-    # timeout (same idiom test_notes_v2_editorjs already uses above).
     saved = wait_for_condition(
-        lambda: (page.evaluate("1"), next((x for x in posts if x.get("action") == "save_note_block" and x.get("agent_code") == "ELVI-HENC"), None))[1],
+        lambda: next((w for w in firestore_writes(page, "cells/solo:ELVI-HENC/notes/") if w["data"].get("agent_code") == "ELVI-HENC"), None),
         timeout_ms=25000)
-    record("notes", "writing in solo mode actually saves, keyed under the synthesized solo:<code> pseudo-cell",
-           bool(saved) and saved.get("cell_id") == "solo:ELVI-HENC"
-           and json.loads(saved.get("text") or "{}").get("text") == "Working alone for now",
-           json.dumps(saved) if saved else "no POST captured")
+    record("notes", "writing in solo mode actually saves straight to Firestore, keyed under the synthesized solo:<code> pseudo-cell",
+           bool(saved) and json.loads(saved["data"].get("text") or "{}").get("text") == "Working alone for now",
+           json.dumps(saved) if saved else "no Firestore write captured")
 
     record("notes", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
@@ -9620,6 +9831,8 @@ def main():
         safe(test_acell_sheet, browser, area="acell")
 
         safe(test_acell_music, browser, area="acell")
+
+        safe(test_acell_soundboard, browser, area="acell")
 
         safe(test_acell_music_backend_not_deployed, browser, area="acell")
 

@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v89 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v93 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -344,6 +344,83 @@
 //   delete_track calls from the new client code at all), so every track
 //   uploaded before this shipped needs mirroring once. uploadTrack()/
 //   deleteTrack() themselves are untouched.
+// + Handler auth unification (v90): removed the second, parallel
+//   Handler auth backend entirely -- handlerLogin_(), the handler_login
+//   POST action, requireHandlerSession_(), HANDLER_SESSION_TTL_SECONDS,
+//   and the whole CacheService-backed handler_session_<uuid> opaque
+//   token scheme (stage 4 above) are gone. The Firebase custom-token
+//   sign-in that already existed client-side for Firestore rules
+//   (functions/index.js's handlerLogin Cloud Function, minting
+//   uid:'handler'/claim {handler:true}) is now the ONLY Handler
+//   credential anywhere: requireHandlerAuth_() and every GET/JSONP
+//   listing read that used to call requireHandlerSession_() (list_
+//   characters/list_deleted_characters/list_agent_file_only) now call
+//   the new verifyHandlerIdToken_(idToken), which posts the token to
+//   identitytoolkit.googleapis.com's accounts:lookup REST endpoint
+//   (public Web API key -- Apps Script can't run the Admin SDK) and
+//   checks its handler:true custom claim. listEvidence()'s own inline,
+//   not-shared-helper session check got the same fix -- it was
+//   hand-rolling the exact same CacheService lookup requireHandlerAuth_()
+//   already did elsewhere, so it silently kept the old scheme alive as
+//   a fifth call site otherwise. Client-side single Clearance-then-
+//   password gate + the id_token plumbing through a-cell.html's ~30+
+//   Handler-auth call sites lands separately.
+// + Soundboard per-instance transport off Apps Script/Sheet entirely
+//   (v91): pause_ambient_layer/resume_ambient_layer/seek_ambient_layer/
+//   set_ambient_layer_loop/pause_stinger/resume_stinger/seek_stinger/
+//   set_stinger_loop/stop_stinger actions removed -- a-cell.html's
+//   Active Sounds panel now writes these straight to Firestore via its
+//   own client-side transaction (same pattern set_ambient_layer/
+//   trigger_stinger already used), so a pause/resume/seek/loop/stop
+//   click reacts instantly instead of waiting on Apps Script's own
+//   dispatch/cold-start latency, and the confirmation step (previously
+//   a fresh get_now_playing JSONP poll ~900ms after every action) is
+//   just the transaction's own resolved result -- no separate read
+//   needed. Their shared updateSoundInstance_/removeSoundInstance_/
+//   findSoundInstance_ helpers, now unreferenced, were removed too.
+//   The Sheet no longer receives ANY ambient/stinger transport writes
+//   at all (only the initial toggle/fire ever did, from an earlier
+//   pass) -- one more surface off Code.gs.getOrCreateRadioSheet()'s
+//   write path.
+// + Main-track transport off Apps Script/Sheet entirely (v92):
+//   set_now_playing/pause_now_playing/resume_now_playing/
+//   seek_now_playing/set_now_playing_loop/set_track_volume/
+//   set_ambient_volume actions removed, along with get_now_playing
+//   (already removed in v91's own pass but the function bodies were
+//   left behind until now) -- a-cell.html's Now Playing panel reads
+//   radio/{channel} via a live onSnapshot listener and writes play/
+//   pause/resume/seek/loop/volume straight to that same document via
+//   its own client-side transaction, matching the Active Sounds panel's
+//   now-identical architecture. getNowPlaying/setNowPlaying/
+//   pauseNowPlaying/resumeNowPlaying/setNowPlayingLoop_/
+//   seekNowPlaying_/setChannelVolume_ and their now-unreferenced
+//   helpers (parseJsonArray_, normalizeAmbientLayer_,
+//   findOrCreateRadioRow_) were deleted. getOrCreateRadioSheet() is
+//   still called (by getPlaylist/savePlaylist), just no longer on every
+//   2-second poll from every open tab -- that was this function's own
+//   original reason for existing, and it no longer applies. The Sheet
+//   is no longer written to by ANY main-track transport action at all
+//   now (set_now_playing included) -- only getPlaylist/savePlaylist (a
+//   channel's separate playlist_json field, untouched by this
+//   migration) still touch RadioChannels.
+// + Player Notes CONTENT off Apps Script/Sheet entirely (v93):
+//   save_note_block/delete_note_block actions removed, along with the
+//   now-unreachable saveNoteBlock()/deleteNoteBlock() function bodies --
+//   notes/notes.js writes note block content (including the paragraph/
+//   header/list blocks Editor.js produces, the Circulate/Pin/Tag flags,
+//   and evidence_remark blocks) straight to Firestore now
+//   (cells/{cellId}/notes/{blockId}, via a client-side transaction that
+//   preserves created_at on an edit), gated by firestore.rules' own
+//   ownership check (create: the signed-in Agent's own code must match;
+//   update/delete: the EXISTING doc's agent_code must match) instead of
+//   requireAgentToken_() + a server-side "not your block" check. This
+//   was already fully Firestore-dual-written from an earlier pass (see
+//   BUGFIXES.md's own "Add Firestore dual-write to Player Notes" entry)
+//   and already had a rules-ready ownership model, so this was a pure
+//   client-side swap -- no schema or rules change needed. CellNotes
+//   itself is unaffected: listCellNotes() (the identities/legacy poll)
+//   and migrateSoloNotesToCell_() (a Handler assigning a solo Agent to
+//   a real Cell) still read/write it normally.
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -570,84 +647,86 @@ function checkRateLimit_(agentCode, bucket, maxCalls, windowSeconds) {
   return null;
 }
 
-// Validates data.handler_password against the HANDLER_PASSWORD Script
-// Property. Fails closed (rejects) if the property was never set,
-// rather than leaving every Handler/admin action open by accident from
-// a forgotten setup step.
-function requireHandlerAuth_(data) {
-  const expected = PropertiesService.getScriptProperties().getProperty('HANDLER_PASSWORD');
-  if (!expected) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'Handler auth is not configured on the server' }))
-      .setMimeType(ContentService.MimeType.JSON);
+// The Firebase Web API key -- public by design (every client file in
+// this app already ships it inline in FIREBASE_CONFIG, same value),
+// not a secret needing Script Property setup. Used only to verify a
+// Handler ID token via Identity Toolkit's accounts:lookup REST
+// endpoint below -- the Apps Script equivalent of what the Admin SDK's
+// verifyIdToken() would do, since Apps Script has no way to run the
+// Admin SDK itself.
+const FIREBASE_WEB_API_KEY_ = 'AIzaSyBiFBvgmrjtacxXvh7FHa9a28BbwV0LnDQ';
+
+// Auth unification (single login, right after Clearance): the Handler
+// password itself is now ONLY ever checked by the handlerLogin Cloud
+// Function (functions/index.js) -- Code.gs never sees the raw password
+// at all anymore, and doesn't need its own HANDLER_PASSWORD Script
+// Property. What every remaining Handler-gated Apps Script action gets
+// instead is the Firebase ID token that sign-in produces, carrying the
+// handler:true custom claim -- the SAME credential Firestore's own
+// security rules already check via isHandler(). One login, one
+// credential, checked two different ways only because Apps Script and
+// Firestore rules are two different runtimes, not because there are
+// two systems to keep in sync anymore.
+//
+// accounts:lookup returns the signed-in user's record (including
+// customAttributes, a JSON string of custom claims) for a valid,
+// unexpired ID token, or an error for an invalid/expired one -- no
+// local JWT/RSA verification needed.
+function verifyHandlerIdToken_(idToken) {
+  if (!idToken) return false;
+  try {
+    const resp = UrlFetchApp.fetch(
+      'https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + FIREBASE_WEB_API_KEY_,
+      {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify({ idToken: idToken }),
+        muteHttpExceptions: true
+      }
+    );
+    if (resp.getResponseCode() !== 200) return false;
+    const body = JSON.parse(resp.getContentText());
+    const user = body.users && body.users[0];
+    if (!user) return false;
+    const claims = user.customAttributes ? JSON.parse(user.customAttributes) : {};
+    return claims.handler === true;
+  } catch (e) {
+    return false;
   }
-  if (String((data && data.handler_password) || '') !== expected) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'invalid Handler password' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  return null;
+}
+
+// Checks data.id_token (POST body) or params.id_token (GET query
+// string, JSONP) against verifyHandlerIdToken_() above -- one function
+// for both call shapes, since the only difference is how the error
+// needs to be delivered: a GET/JSONP caller needs respond_()'s
+// callback wrapping (a bare JSON body handed to a <script src> tag is
+// an invalid JS statement and fails silently), a POST caller gets a
+// plain ContentService response. Pass the params/data object's own
+// .callback through explicitly for the GET path.
+function requireHandlerAuth_(paramsOrData) {
+  if (verifyHandlerIdToken_(paramsOrData && paramsOrData.id_token)) return null;
+  const payload = { status: 'ERROR', message: 'invalid or expired Handler session -- sign in again' };
+  const callback = paramsOrData && paramsOrData.callback;
+  if (callback) return respond_(payload, callback);
+  return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);
 }
 
 // A handful of player-owned writes (e.g. save_character) are ALSO
 // legitimately editable directly by the Handler -- A-Cell's Sheet tab
 // lets the Handler correct any Agent's Player Name inline, which has
 // no way to carry that Agent's own token since the Handler isn't that
-// player. Either credential is accepted: the Handler password (checked
+// player. Either credential is accepted: the Handler ID token (checked
 // first, but only when the caller actually sent one, so a normal
-// player request with no handler_password field at all goes straight
-// to the token check instead of failing on a "wrong Handler password"
-// it never claimed to have) or the Agent's own token.
+// player request with no id_token field at all goes straight to the
+// token check instead of failing on a Handler check it never claimed
+// to pass) or the Agent's own token.
 function requireAgentOrHandlerAuth_(data) {
-  if (data && data.handler_password) {
+  if (data && data.id_token) {
     const handlerErr = requireHandlerAuth_(data);
     if (!handlerErr) return null;
     return handlerErr;
   }
   return requireAgentToken_(data);
-}
-
-// ── Handler sessions (stage 4): a handful of A-Cell Admin reads --
-// list_characters, list_agent_file_only, list_deleted_characters --
-// return every Agent's full data with no auth at all, but they're
-// GET/JSONP (a <script src=...> tag), and the only credential this app
-// has is the Handler password. Putting that raw password in a URL
-// query string would land it in browser history and any server access
-// log -- worse than the problem it's fixing. A short-lived, revocable
-// session token sidesteps that: the password is only ever POSTed once
-// (handler_login below), and everything after that trades in an opaque
-// token that's useless once it expires. CacheService is a natural fit
-// -- it already expires entries on its own, so there's no separate
-// sheet or cleanup job to maintain. ──
-
-const HANDLER_SESSION_TTL_SECONDS = 21600; // 6h -- CacheService's own max
-
-// POST-only: the one place the real Handler password is ever sent.
-// Mints an opaque session token good for HANDLER_SESSION_TTL_SECONDS
-// and returns it; the client stores it for the rest of the tab's
-// session and sends it on every subsequent Admin listing GET instead
-// of the password itself.
-function handlerLogin_(data) {
-  const authErr = requireHandlerAuth_(data);
-  if (authErr) return authErr;
-  const session = Utilities.getUuid();
-  CacheService.getScriptCache().put('handler_session_' + session, '1', HANDLER_SESSION_TTL_SECONDS);
-  return ContentService.createTextOutput(JSON.stringify({ status: 'OK', session: session, expires_in: HANDLER_SESSION_TTL_SECONDS }))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-// Validates params.handler_session against the cache. Works for both a
-// POST body (data) and GET query params (e.parameter) -- same shape
-// either way, just a field to read. All three current callers are
-// GET/JSONP, so an error routes through respond_() with params.callback
-// (e.parameter always carries the real one) -- bare JSON handed to a
-// <script src=...> tag is invalid as a JS statement, so the tag fails
-// silently and the caller just sees its own generic connection-timeout
-// message after ~7s instead of the real "session expired" reason.
-function requireHandlerSession_(params) {
-  const session = String((params && params.handler_session) || '').trim();
-  if (!session || !CacheService.getScriptCache().get('handler_session_' + session)) {
-    return respond_({ status: 'ERROR', message: 'invalid or expired Handler session -- reload A-Cell' }, params && params.callback);
-  }
-  return null;
 }
 
 // ── Shared header-lookup helpers (this round's hygiene pass). Most
@@ -898,7 +977,7 @@ function doGet(e) {
   // ── A-Cell: every saved character, for Play/Cells/Sheet/Admin ──
   // ?action=list_characters&callback=CALLBACK
   if (e.parameter && e.parameter.action === 'list_characters') {
-    const authErr = requireHandlerSession_(e.parameter);
+    const authErr = requireHandlerAuth_(e.parameter);
     if (authErr) return authErr;
     return listCharacters(callback);
   }
@@ -933,7 +1012,7 @@ function doGet(e) {
   // ── A-Cell Admin: every soft-deleted Agent, for Recently Deleted ──
   // ?action=list_deleted_characters&callback=CALLBACK
   if (e.parameter && e.parameter.action === 'list_deleted_characters') {
-    const authErr = requireHandlerSession_(e.parameter);
+    const authErr = requireHandlerAuth_(e.parameter);
     if (authErr) return authErr;
     return listDeletedCharacters(callback);
   }
@@ -946,7 +1025,7 @@ function doGet(e) {
   // Delta Green Briefs sheet by hand. ──
   // ?action=list_agent_file_only&callback=CALLBACK
   if (e.parameter && e.parameter.action === 'list_agent_file_only') {
-    const authErr = requireHandlerSession_(e.parameter);
+    const authErr = requireHandlerAuth_(e.parameter);
     if (authErr) return authErr;
     return listAgentFileOnly(callback);
   }
@@ -963,7 +1042,7 @@ function doGet(e) {
   // list_cells/doLookup's existing reasoning -- see their own
   // comments), it just then only returns already-released,
   // unrestricted items. ──
-  // ?action=list_evidence&agent_code=CODE&handler_session=TOKEN&callback=CALLBACK
+  // ?action=list_evidence&agent_code=CODE&id_token=FIREBASE_ID_TOKEN&callback=CALLBACK
   if (e.parameter && e.parameter.action === 'list_evidence') {
     return listEvidence(e.parameter, callback);
   }
@@ -977,11 +1056,10 @@ function doGet(e) {
     return listOperations(callback);
   }
 
-  // ── Table Radio: current track for a channel ─────────────────
-  // ?action=get_now_playing&channel=CH&callback=CALLBACK
-  if (e.parameter && e.parameter.action === 'get_now_playing') {
-    return getNowPlaying(e.parameter.channel, callback);
-  }
+  // get_now_playing removed -- a-cell.html's Now Playing panel reads
+  // radio/{channel} via a live Firestore listener now (see
+  // startNowPlayingListener_ in a-cell.html; table-radio.js's player
+  // widget already did). getNowPlaying() went with it.
 
   // ── Table Radio: saved playlist for a channel ─────────────────
   // ?action=get_playlist&channel=CH&callback=CALLBACK
@@ -1033,14 +1111,6 @@ function doPost(e) {
     else if (e.parameter) rawData = JSON.stringify(e.parameter);
 
     const data = JSON.parse(rawData);
-
-    // A-Cell: exchange the Handler password for a short-lived session
-    // token (see the "Handler sessions" block above) -- the one action
-    // that ever sees the real password, so every Admin listing read can
-    // trade in the opaque token instead.
-    if (data.action === 'handler_login') {
-      return handlerLogin_(data);
-    }
 
     if (data.action === 'update_medical' || data.action === 'update_aar' || data.action === 'update_field') {
       const authErr = requireAgentToken_(data);
@@ -1119,18 +1189,15 @@ function doPost(e) {
       return deleteCell(data.cell_id);
     }
 
-    // Player Notes: save (create or update) one note block.
-    if (data.action === 'save_note_block') {
-      const authErr = requireAgentToken_(data);
-      if (authErr) return authErr;
-      return saveNoteBlock(data);
-    }
-
-    if (data.action === 'delete_note_block') {
-      const authErr = requireAgentToken_(data);
-      if (authErr) return authErr;
-      return deleteNoteBlock(data);
-    }
+    // save_note_block/delete_note_block removed -- notes/notes.js writes
+    // note block CONTENT straight to Firestore now (see
+    // saveNoteBlockFirestore_()/deleteNoteBlockFirestore_() there),
+    // gated by firestore.rules' own ownership check instead of
+    // requireAgentToken_() + saveNoteBlock()'s/deleteNoteBlock()'s own
+    // "not your block" check. migrateSoloNotesToCell_() (called from
+    // updateCellMembers() when a Handler assigns a solo Agent to a real
+    // Cell) still writes CellNotes + dual-writes Firestore directly,
+    // unaffected -- it's server-side-only and never dispatched here.
 
     // Player Notes: save an Agent's chosen color/handwriting font.
     if (data.action === 'save_agent_identity') {
@@ -1220,120 +1287,15 @@ function doPost(e) {
       return restoreCharacter(data.agent_code);
     }
 
-    // Table Radio: Handler sets (or clears) the current track for a channel.
-    if (data.action === 'set_now_playing') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return setNowPlaying(data.channel, data.track_url, data.track_title, data.track_kind, data.loop);
-    }
-
-    // Table Radio: Handler pauses/resumes the current track for a channel
-    // without restarting it (set_now_playing always restarts from 0:00).
-    if (data.action === 'pause_now_playing') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return pauseNowPlaying(data.channel);
-    }
-    if (data.action === 'resume_now_playing') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return resumeNowPlaying(data.channel);
-    }
-
-    // Table Radio Soundboard: Handler toggles an ambient loop on/off, or
-    // fires a one-shot stinger, for a channel.
-    if (data.action === 'set_ambient_layer') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return setAmbientLayer_(data.channel, data.layer_id, data.active === '1' || data.active === true);
-    }
-    if (data.action === 'trigger_stinger') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return triggerStinger_(data.channel, data.stinger_id);
-    }
-    // Table Radio Soundboard: per-instance transport for an already-
-    // active ambient loop or already-firing stinger, from A-Cell's
-    // Active Sounds panel -- same Pause/Resume/Seek/Loop/Stop the main
-    // track already has, just addressed at one specific sound instead
-    // of the channel's single Now Playing track.
-    if (data.action === 'pause_ambient_layer') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return pauseAmbientLayer_(data.channel, data.layer_id);
-    }
-    if (data.action === 'resume_ambient_layer') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return resumeAmbientLayer_(data.channel, data.layer_id);
-    }
-    if (data.action === 'seek_ambient_layer') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return seekAmbientLayer_(data.channel, data.layer_id, data.position_ms);
-    }
-    if (data.action === 'set_ambient_layer_loop') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return setAmbientLayerLoop_(data.channel, data.layer_id, data.loop === '1' || data.loop === true);
-    }
-    if (data.action === 'pause_stinger') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return pauseStinger_(data.channel, data.fired_at);
-    }
-    if (data.action === 'resume_stinger') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return resumeStinger_(data.channel, data.fired_at);
-    }
-    if (data.action === 'seek_stinger') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return seekStinger_(data.channel, data.fired_at, data.position_ms);
-    }
-    if (data.action === 'set_stinger_loop') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return setStingerLoop_(data.channel, data.fired_at, data.loop === '1' || data.loop === true);
-    }
-    // The only way to end a stinger before it finishes on its own --
-    // cuts it off for every player tuned in, not just this device's own
-    // local monitoring (see stopStinger_'s own comment).
-    if (data.action === 'stop_stinger') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return stopStinger_(data.channel, data.fired_at);
-    }
-    // Table Radio: Handler drags the media-player scrubber to jump the
-    // current track to a new position. Handler-only -- see
-    // seekNowPlaying_'s own comment for why players don't get this.
-    if (data.action === 'seek_now_playing') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return seekNowPlaying_(data.channel, data.position_ms);
-    }
-    // Table Radio: Handler toggles Loop on the CURRENT track in place,
-    // e.g. from the Now Playing panel's transport row, without restarting
-    // playback for anyone.
-    if (data.action === 'set_now_playing_loop') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return setNowPlayingLoop_(data.channel, data.loop === '1' || data.loop === true);
-    }
-    // Table Radio: Handler drags the broadcast-wide Music/Ambient mix
-    // sliders -- see setChannelVolume_'s own comment for why this is
-    // separate from each listener's own local volume control.
-    if (data.action === 'set_track_volume') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return setChannelVolume_(data.channel, 'track_volume', data.volume);
-    }
-    if (data.action === 'set_ambient_volume') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return setChannelVolume_(data.channel, 'ambient_volume', data.volume);
-    }
+    // set_now_playing/pause_now_playing/resume_now_playing/
+    // seek_now_playing/set_now_playing_loop/set_track_volume/
+    // set_ambient_volume (main-track transport + broadcast-wide mix)
+    // removed -- a-cell.html's Now Playing panel writes these straight
+    // to Firestore now too, same as the ambient/stinger soundboard and
+    // its Active Sounds panel above (see BUGFIXES.md's Radio
+    // main-track entry). setNowPlaying/pauseNowPlaying/
+    // resumeNowPlaying/seekNowPlaying_/setNowPlayingLoop_/
+    // setChannelVolume_ went with them, since nothing else called them.
 
     // Table Radio: Handler saves the playlist for a channel.
     if (data.action === 'save_playlist') {
@@ -1729,10 +1691,9 @@ function saveCharacter(data) {
         if (playerNameCol !== undefined) sheet.getRange(rowIndex, playerNameCol + 1).setValue(playerName);
       } else {
         // No existing row -- first save for this code. Built by header
-        // position (like setNowPlaying() further down), not
-        // array-literal order, so this stays correct regardless of
-        // where Player Name ended up relative to any other future
-        // column.
+        // position, not array-literal order, so this stays correct
+        // regardless of where Player Name ended up relative to any
+        // other future column.
         const newRow = new Array(headers.length).fill('');
         newRow[codeCol] = data.agent_code;
         newRow[updatedCol] = now;
@@ -2802,7 +2763,7 @@ function getOrCreateCellNotesSheet() {
 // Every open notes panel polls this every ~5s. Caches the RAW
 // (unfiltered) row set per Cell for a few seconds so a burst of
 // simultaneous polls from several players' browsers shares one Sheets
-// read -- same reasoning as getNowPlaying()'s cache -- then filters on
+// read -- same reasoning as getPlaylist()'s cache -- then filters on
 // every single call, cached or not: the requester's own blocks come
 // back in full, every other Agent's blocks are filtered to shared
 // blocks only. The raw cache is never itself sent to a browser, so
@@ -2873,135 +2834,13 @@ function listCellNotes(cellId, agentCode, callback) {
   return respond_(result, callback);
 }
 
-// Upserts by block_id (blank/unknown -> mints a new one). Wrapped in
-// withScriptLock() since several players can be editing different
-// blocks in the same Cell within the same few seconds during a live
-// session -- the same class of concurrent-write race saveCharacter()
-// already guards against.
-function saveNoteBlock(data) {
-  const cellId = (data.cell_id || '').trim();
-  const agentCode = (data.agent_code || '').trim().toUpperCase();
-  if (!cellId || !agentCode) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'cell_id and agent_code are required' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  return withScriptLock(function () {
-    const sheet = getOrCreateCellNotesSheet();
-    const values = sheet.getDataRange().getValues();
-    const headers = values[0];
-    const cols = headerMap_(headers);
-    const missing = requireColumns_(cols, ['block_id', 'cell_id', 'agent_code', 'block_type', 'text', 'shared', 'sort_order', 'created_at', 'updated_at']);
-    if (missing) return missing;
-    const now = new Date().getTime();
-    const blockType = data.block_type || 'paragraph';
-    const shared = data.shared ? 1 : 0;
-    const pinned = data.pinned ? 1 : 0;
-    // tags arrives as an already-JSON-stringified array from the
-    // client -- stored as opaque text here, same treatment as `text`
-    // itself (parsed/interpreted client-side only).
-    const tags = typeof data.tags === 'string' ? data.tags : '[]';
-    const sortOrder = Number(data.sort_order) || 0;
-
-    let blockId = (data.block_id || '').trim();
-    if (blockId) {
-      for (let i = 1; i < values.length; i++) {
-        if (values[i][cols.block_id] === blockId) {
-          // A valid token only proves who the requester is, not that
-          // this block is theirs -- without this check, any Cell member
-          // could overwrite anyone else's SHARED block by reusing its
-          // block_id (visible to the whole Cell in the combined Shared
-          // feed). See the matching check in deleteNoteBlock().
-          if (String(values[i][cols.agent_code] || '').trim().toUpperCase() !== agentCode) {
-            return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'not your block' }))
-              .setMimeType(ContentService.MimeType.JSON);
-          }
-          const row = values[i];
-          const createdAt = (cols.created_at !== undefined && row[cols.created_at]) || now;
-          row[cols.block_type] = blockType;
-          row[cols.text] = data.text || '';
-          row[cols.shared] = shared;
-          row[cols.sort_order] = sortOrder;
-          row[cols.updated_at] = now;
-          if (cols.pinned !== undefined) row[cols.pinned] = pinned;
-          if (cols.tags !== undefined) row[cols.tags] = tags;
-          sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
-          CacheService.getScriptCache().remove('cell_notes_raw_' + cellId);
-          firestoreDualWrite_('cells', cellId + '/notes/' + blockId, {
-            agent_code: agentCode, block_type: blockType, text: data.text || '',
-            shared: !!shared, sort_order: sortOrder, created_at: createdAt,
-            updated_at: now, pinned: !!pinned, tags: tags
-          });
-          return ContentService.createTextOutput(JSON.stringify({ status: 'OK', block_id: blockId })).setMimeType(ContentService.MimeType.JSON);
-        }
-      }
-    }
-    // No existing row matched -- this is a brand-new block. If the
-    // client already minted an id (notes.js always does, so a poll
-    // landing before this write is confirmed echoes back the exact
-    // same id the client is already showing, instead of a second,
-    // server-minted one the client would never learn about under
-    // no-cors), keep it; only mint a fresh one if none was sent.
-    if (!blockId) blockId = 'block_' + now + '_' + Math.floor(Math.random() * 100000).toString(36);
-    const newRow = new Array(headers.length).fill('');
-    newRow[cols.block_id] = blockId;
-    newRow[cols.cell_id] = cellId;
-    newRow[cols.agent_code] = agentCode;
-    newRow[cols.block_type] = blockType;
-    newRow[cols.text] = data.text || '';
-    newRow[cols.shared] = shared;
-    newRow[cols.sort_order] = sortOrder;
-    newRow[cols.created_at] = now;
-    newRow[cols.updated_at] = now;
-    if (cols.pinned !== undefined) newRow[cols.pinned] = pinned;
-    if (cols.tags !== undefined) newRow[cols.tags] = tags;
-    sheet.appendRow(newRow);
-    CacheService.getScriptCache().remove('cell_notes_raw_' + cellId);
-    firestoreDualWrite_('cells', cellId + '/notes/' + blockId, {
-      agent_code: agentCode, block_type: blockType, text: data.text || '',
-      shared: !!shared, sort_order: sortOrder, created_at: now,
-      updated_at: now, pinned: !!pinned, tags: tags
-    });
-    return ContentService.createTextOutput(JSON.stringify({ status: 'OK', block_id: blockId })).setMimeType(ContentService.MimeType.JSON);
-  });
-}
-
-// Now that requireAgentToken_() gates this action, deletion is also
-// checked against the block's own agent_code -- a valid token only
-// proves who the requester IS, not that the block they named is
-// theirs. Without this, any Cell member could delete anyone else's
-// SHARED block just by reusing its block_id (visible to the whole Cell
-// in the combined Shared feed).
-function deleteNoteBlock(data) {
-  const blockId = (data.block_id || '').trim();
-  const cellId = (data.cell_id || '').trim();
-  const agentCode = (data.agent_code || '').trim().toUpperCase();
-  if (!blockId || !agentCode) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'block_id and agent_code are required' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  const sheet = getOrCreateCellNotesSheet();
-  const values = sheet.getDataRange().getValues();
-  const idCol = values[0].indexOf('block_id');
-  const codeCol = values[0].indexOf('agent_code');
-  const cellCol = values[0].indexOf('cell_id');
-  for (let i = values.length - 1; i >= 1; i--) {
-    if (values[i][idCol] === blockId) {
-      if (codeCol !== -1 && String(values[i][codeCol] || '').trim().toUpperCase() !== agentCode) {
-        return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'not your block' }))
-          .setMimeType(ContentService.MimeType.JSON);
-      }
-      // Prefer the row's own cell_id (always accurate) over the
-      // client-sent one (optional, and notes.js doesn't always have it
-      // handy) so the Firestore mirror gets cleaned up either way.
-      const rowCellId = cellId || (cellCol !== -1 ? String(values[i][cellCol] || '').trim() : '');
-      sheet.deleteRow(i + 1);
-      if (rowCellId) CacheService.getScriptCache().remove('cell_notes_raw_' + rowCellId);
-      if (rowCellId) firestoreDualDelete_('cells', rowCellId + '/notes/' + blockId);
-      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
-    }
-  }
-  return ContentService.createTextOutput(JSON.stringify({ status: 'NOT_FOUND' })).setMimeType(ContentService.MimeType.JSON);
-}
+// saveNoteBlock()/deleteNoteBlock() removed -- notes/notes.js writes
+// note block CONTENT straight to Firestore now (see
+// saveNoteBlockFirestore_()/deleteNoteBlockFirestore_() there and the
+// doPost dispatch comment above). CellNotes itself is still read here
+// (listCellNotes(), for the identities/legacy poll) and written by
+// migrateSoloNotesToCell_() when a Handler assigns a solo Agent to a
+// real Cell -- only the two player-facing write actions are gone.
 
 // ── Player Notes identity: each Agent picks a color (and a handwriting
 // font) once, the first time they open Notes -- used to attribute their
@@ -3184,8 +3023,8 @@ function resolveEvidencePhoto_(photo, title) {
 // cell_id blank).
 // Called on every single listEvidence() request for every player (see
 // below) -- was a full, uncached Cells sheet scan every time, unlike
-// every other hot read path in this file (getNowPlaying/listCellNotes/
-// getPlaylist/getAgentIdentitiesMap all cache their own raw scan for a
+// every other hot read path in this file (listCellNotes/getPlaylist/
+// getAgentIdentitiesMap all cache their own raw scan for a
 // few seconds; this one never did). Live-reported as "Evidence takes a
 // while to load" on agent-hub.html. Caches the {cell_id: [member_codes]}
 // shape (not the final per-agent boolean map, which would need its own
@@ -3336,7 +3175,7 @@ function listOperations(callback) {
 }
 
 // A-Cell Evidence Locker: two-tier read, same shape listCellNotes()
-// established. A valid Handler session (params.handler_session) sees
+// established. A valid Handler id_token (verifyHandlerIdToken_) sees
 // every item, including still-unreleased ones and each item's full
 // restricted_to list -- needed for the management UI to actually let
 // the Handler toggle those things. Without one, this filters to
@@ -3350,7 +3189,7 @@ function listOperations(callback) {
 // same "cache the raw scan, filter fresh on every call" pattern
 // listCellNotes() already uses for the identical reason (its response
 // also differs per requester, so the FINAL filtered JSON can't be the
-// cache value the way getNowPlaying's can). Was a fresh full-sheet
+// cache value the way getPlaylist's can). Was a fresh full-sheet
 // scan on every single Evidence read before this -- for every player,
 // every load -- live-reported as "Evidence takes a while to load" on
 // agent-hub.html.
@@ -3386,8 +3225,7 @@ function evidenceRawRows_() {
 function listEvidence(params, callback) {
   const rawRows = evidenceRawRows_();
 
-  const session = String((params && params.handler_session) || '').trim();
-  const isHandler = !!(session && CacheService.getScriptCache().get('handler_session_' + session));
+  const isHandler = verifyHandlerIdToken_(params && params.id_token);
   const requesterCode = String((params && params.agent_code) || '').trim().toUpperCase();
   const requesterCells = isHandler ? null : cellIdsForAgent_(requesterCode);
 
@@ -4198,6 +4036,14 @@ function setCellChannel(cellId, channel) {
   for (let i = 1; i < data.length; i++) {
     if (data[i][cols.cell_id] === cellId) {
       sheet.getRange(i + 1, cols.channel + 1).setValue(channel || '');
+      // Same gap updateCellMembers() already had before it was fixed
+      // (see that function's own comment) -- only createCell()/
+      // updateCellMembers()/deleteCell() ever touched cells/{cellId} in
+      // Firestore, so a channel assigned here stayed invisible to any
+      // direct-Firestore reader (a-cell.html's Cue For Cell picker
+      // reads the Cells listener's own cached row, not a fresh Sheet
+      // read) until the Cell's membership next happened to change.
+      firestoreDualPatch_('cells', cellId, { channel: channel || '' });
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
@@ -4219,14 +4065,14 @@ function getOrCreateRadioSheet() {
     sheet = ss.insertSheet('RadioChannels');
     sheet.getRange(1, 1, 1, 5).setValues([['channel', 'track_url', 'track_title', 'started_at', 'updated_at']]);
   }
-  // This function is called by getNowPlaying(), which every open tab on
-  // every page polls every 2 seconds -- re-verifying 4 migration columns
-  // with a fresh read each (5 reads total per poll, before this fix) on
-  // every single one of those ticks was a large, entirely avoidable chunk
-  // of the load a live session with several players puts on this
-  // backend. A cache flag skips the checks entirely once confirmed
-  // clean, same reasoning as the SPREADSHEET_ID/Briefs-columns caches
-  // above.
+  // Was called by getNowPlaying() on every 2-second poll from every open
+  // tab before that function moved to a live Firestore listener (see
+  // BUGFIXES.md's Radio main-track entry) -- re-verifying migration
+  // columns with a fresh read on every one of those ticks was a large,
+  // entirely avoidable chunk of the load a live session puts on this
+  // backend. Still called (just far less often now) by getPlaylist/
+  // savePlaylist, so the cache flag stays: same reasoning as the
+  // SPREADSHEET_ID/Briefs-columns caches above.
   const cache = CacheService.getScriptCache();
   if (cache.get('radio_columns_ensured') !== '1') {
     let lastCol = sheet.getLastColumn();
@@ -4239,10 +4085,11 @@ function getOrCreateRadioSheet() {
     // broadcast in place -- set_now_playing always restarts a track from
     // 0:00, which isn't the right tool for either of those.
     // ambient_layers/stingers: the Table Radio soundboard -- JSON arrays
-    // (active layer ids; recent {id, fired_at} stinger fires) rather than
-    // their own sheet tabs, so they upsert onto the exact same row/doc
-    // Now Playing already lives on and ride the existing dual-write +
-    // onSnapshot plumbing for free. See setAmbientLayer_/triggerStinger_.
+    // (active layer ids; recent {id, fired_at} stinger fires). Column
+    // still lives on this same row for read compatibility, but nothing
+    // writes to it from here anymore -- a-cell.html's soundboard writes
+    // both fields straight onto the radio/{channel} Firestore doc
+    // client-side now (see BUGFIXES.md's soundboard entry).
     // track_volume/ambient_volume: a broadcast-wide mix level (0-100,
     // defaults to 100/unmixed when absent) applied on TOP of each
     // listener's own local volume slider -- lets a Handler fade the main
@@ -4262,310 +4109,14 @@ function getOrCreateRadioSheet() {
   return sheet;
 }
 
-// Reads the current track for a channel. Server-stamped started_at
-// means every player computes elapsed time against the same clock,
-// regardless of the Handler's or their own device's clock skew.
-function getNowPlaying(channel, callback) {
-  let result = { status: 'NOT_FOUND' };
-  channel = (channel || '').trim();
-  if (channel) {
-    // Every open tab on every page polls this every 2 seconds -- caching
-    // the response per channel for a couple of seconds means a burst of
-    // simultaneous polls from several players' browsers (the exact
-    // situation during a live session) shares one Sheets read instead of
-    // each triggering its own, without ever serving anything staler than
-    // the poll interval itself already tolerates.
-    const cache = CacheService.getScriptCache();
-    const cacheKey = 'now_playing_' + channel.toLowerCase();
-    const cached = cache.get(cacheKey);
-    if (cached) {
-      return respond_(JSON.parse(cached), callback);
-    }
-
-    const sheet = getOrCreateRadioSheet();
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0];
-    const chCol = headers.indexOf('channel');
-    const urlCol = headers.indexOf('track_url');
-    const titleCol = headers.indexOf('track_title');
-    const startedCol = headers.indexOf('started_at');
-    const kindCol = headers.indexOf('track_kind');
-    const pausedCol = headers.indexOf('paused');
-    const pausedAtCol = headers.indexOf('paused_at');
-    const loopCol = headers.indexOf('loop');
-    const ambientCol = headers.indexOf('ambient_layers');
-    const stingersCol = headers.indexOf('stingers');
-    const trackVolCol = headers.indexOf('track_volume');
-    const ambientVolCol = headers.indexOf('ambient_volume');
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
-        const trackUrl = data[i][urlCol] || '';
-        // Ambient layers/stingers/mix volumes are independent of whether a
-        // track is set (a Handler can layer ambience onto a silent
-        // channel, or pre-set a mix balance before broadcasting), so
-        // these are read and returned regardless of the `if (trackUrl)`
-        // gate below that guards the rest of the Now Playing fields.
-        result.ambient_layers = parseJsonArray_(ambientCol !== -1 && data[i][ambientCol]).map(normalizeAmbientLayer_);
-        result.stingers = parseJsonArray_(stingersCol !== -1 && data[i][stingersCol]);
-        result.track_volume = (trackVolCol !== -1 && data[i][trackVolCol] !== '' && data[i][trackVolCol] != null) ? Number(data[i][trackVolCol]) : 100;
-        result.ambient_volume = (ambientVolCol !== -1 && data[i][ambientVolCol] !== '' && data[i][ambientVolCol] != null) ? Number(data[i][ambientVolCol]) : 100;
-        if (trackUrl) {
-          result.status = 'OK';
-          result.channel = data[i][chCol];
-          result.track_url = trackUrl;
-          result.track_title = data[i][titleCol] || '';
-          result.started_at = data[i][startedCol] || 0;
-          result.track_kind = (kindCol !== -1 && data[i][kindCol]) || '';
-          result.paused = pausedCol !== -1 && asBoolean_(data[i][pausedCol]);
-          result.paused_at = (pausedAtCol !== -1 && data[i][pausedAtCol]) || 0;
-          result.loop = loopCol !== -1 && asBoolean_(data[i][loopCol]);
-        }
-        break;
-      }
-    }
-    cache.put(cacheKey, JSON.stringify(result), 2);
-  }
-  return respond_(result, callback);
-}
-
-// Sets (or clears, if track_url is empty) the current track for a
-// channel. Upserts by channel, case-insensitive (the dial only ever
-// sends "1".."5", but this doesn't hardcode that). trackKind is '' for
-// a pasted URL (the player sniffs YouTube/SoundCloud/direct-audio from
-// the URL itself, same as always) or 'audio' for a Track Library pick,
-// whose Drive download link has no .mp3 extension for that sniffing to
-// catch.
-function setNowPlaying(channel, trackUrl, trackTitle, trackKind, loop) {
-  channel = (channel || '').trim();
-  if (!channel) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  // Invalidate getNowPlaying()'s short-lived read cache for this channel
-  // so listeners get the new track on their very next poll instead of
-  // possibly waiting out the rest of that cache window.
-  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
-
-  const sheet = getOrCreateRadioSheet();
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const cols = headerMap_(headers);
-  const chCol = cols.channel;
-  const urlCol = cols.track_url;
-  const titleCol = cols.track_title;
-  const startedCol = cols.started_at;
-  const updatedCol = cols.updated_at;
-  const kindCol = cols.track_kind;
-  const pausedCol = cols.paused;
-  const pausedAtCol = cols.paused_at;
-  const loopCol = cols.loop;
-  const now = new Date().getTime();
-  const loopVal = loop === '1' || loop === true ? 1 : 0;
-
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
-      // Mutate the row already fetched above and write it back in one
-      // call instead of up to 8 separate setValue() calls.
-      const row = data[i];
-      row[urlCol] = trackUrl || '';
-      row[titleCol] = trackTitle || '';
-      row[startedCol] = now;
-      row[updatedCol] = now;
-      if (kindCol !== undefined) row[kindCol] = trackKind || '';
-      // A fresh set_now_playing always restarts the track for everyone --
-      // any Pause left over from the previous track shouldn't carry
-      // forward onto this new one.
-      if (pausedCol !== undefined) row[pausedCol] = 0;
-      if (pausedAtCol !== undefined) row[pausedAtCol] = '';
-      if (loopCol !== undefined) row[loopCol] = loopVal;
-      // Firestore first -- every listener's actual playback is driven by
-      // its onSnapshot mirror, not this Sheet, so this is the write that
-      // determines how soon a Handler's action is actually audible.
-      // Sheets I/O (setValues() below) has its own real per-call latency
-      // in Apps Script; doing it second keeps it off that critical path
-      // without changing which one is the write of record -- the dual-
-      // write helpers already log-but-swallow their own errors, so a
-      // failure here still leaves the Sheet write (this function's real
-      // source of truth) unaffected.
-      firestoreDualWrite_('radio', channel, {
-        channel: channel, track_url: trackUrl || '', track_title: trackTitle || '',
-        started_at: now, updated_at: now, track_kind: trackKind || '',
-        paused: false, paused_at: '', loop: !!loopVal
-      });
-      sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
-      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
-    }
-  }
-  // Built by header position, not array-literal order -- a sheet that
-  // already picked up the playlist_json migration column before this
-  // track_kind one would otherwise leave a gap between them.
-  const newRow = new Array(headers.length).fill('');
-  newRow[chCol] = channel;
-  newRow[urlCol] = trackUrl || '';
-  newRow[titleCol] = trackTitle || '';
-  newRow[startedCol] = now;
-  newRow[updatedCol] = now;
-  if (kindCol !== undefined) newRow[kindCol] = trackKind || '';
-  if (pausedCol !== undefined) newRow[pausedCol] = 0;
-  if (loopCol !== undefined) newRow[loopCol] = loopVal;
-  firestoreDualWrite_('radio', channel, {
-    channel: channel, track_url: trackUrl || '', track_title: trackTitle || '',
-    started_at: now, updated_at: now, track_kind: trackKind || '',
-    paused: false, paused_at: '', loop: !!loopVal
-  });
-  sheet.appendRow(newRow);
-  return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
-}
-
-// Pause/resume the CURRENT track in place for a channel, without
-// restarting it (set_now_playing always resets started_at to now, which
-// would jump the track back to 0:00). Resuming shifts started_at forward
-// by however long the pause lasted, so every listener's elapsed-time
-// calculation (now - started_at) keeps landing on the same spot the track
-// was paused at, rather than skipping ahead by the pause duration.
-function pauseNowPlaying(channel) {
-  channel = (channel || '').trim();
-  if (!channel) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
-
-  const sheet = getOrCreateRadioSheet();
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const cols = headerMap_(headers);
-  const chCol = cols.channel;
-  const pausedCol = cols.paused;
-  const pausedAtCol = cols.paused_at;
-  const updatedCol = cols.updated_at;
-  const now = new Date().getTime();
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
-      const row = data[i];
-      if (pausedCol !== undefined) row[pausedCol] = 1;
-      if (pausedAtCol !== undefined) row[pausedAtCol] = now;
-      if (updatedCol !== undefined) row[updatedCol] = now;
-      // Firestore first -- see setNowPlaying()'s own comment on this
-      // ordering.
-      firestoreDualPatch_('radio', channel, { paused: true, paused_at: now, updated_at: now });
-      sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
-      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
-    }
-  }
-  return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'no track for that channel' }))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-function resumeNowPlaying(channel) {
-  channel = (channel || '').trim();
-  if (!channel) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
-
-  const sheet = getOrCreateRadioSheet();
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const cols = headerMap_(headers);
-  const chCol = cols.channel;
-  const startedCol = cols.started_at;
-  const pausedCol = cols.paused;
-  const pausedAtCol = cols.paused_at;
-  const updatedCol = cols.updated_at;
-  const now = new Date().getTime();
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
-      const pausedAt = (pausedAtCol !== undefined && data[i][pausedAtCol]) || now;
-      const startedAt = (startedCol !== undefined && data[i][startedCol]) || now;
-      const shiftedStart = startedAt + (now - pausedAt);
-      const row = data[i];
-      if (startedCol !== undefined) row[startedCol] = shiftedStart;
-      if (pausedCol !== undefined) row[pausedCol] = 0;
-      if (pausedAtCol !== undefined) row[pausedAtCol] = '';
-      if (updatedCol !== undefined) row[updatedCol] = now;
-      // Firestore first -- see setNowPlaying()'s own comment on this
-      // ordering.
-      firestoreDualPatch_('radio', channel, { started_at: shiftedStart, paused: false, paused_at: '', updated_at: now });
-      sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
-      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
-    }
-  }
-  return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'no track for that channel' }))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-// Flips the CURRENT track's loop flag in place, without restarting it or
-// touching started_at/paused -- a Handler deciding mid-playback that a
-// track should (or shouldn't) repeat when it ends shouldn't have to
-// re-fire set_now_playing and jump everyone back to 0:00 just to set it.
-function setNowPlayingLoop_(channel, loop) {
-  channel = (channel || '').trim();
-  if (!channel) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
-
-  const sheet = getOrCreateRadioSheet();
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const cols = headerMap_(headers);
-  const chCol = cols.channel;
-  const loopCol = cols.loop;
-  const updatedCol = cols.updated_at;
-  const now = new Date().getTime();
-  const loopVal = !!loop;
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
-      const row = data[i];
-      if (loopCol !== undefined) row[loopCol] = loopVal ? 1 : 0;
-      if (updatedCol !== undefined) row[updatedCol] = now;
-      firestoreDualPatch_('radio', channel, { loop: loopVal, updated_at: now });
-      sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
-      return ContentService.createTextOutput(JSON.stringify({ status: 'OK', loop: loopVal })).setMimeType(ContentService.MimeType.JSON);
-    }
-  }
-  return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'no track for that channel' }))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-// Sets a broadcast-wide mix level (0-100) for either the main track or
-// the ambient/stinger layer on a channel -- applied by every listener
-// ON TOP OF their own local volume slider (see applyLiveMuteVolume() in
-// table-radio.js), not just previewed on the Handler's own device. Lets
-// a Handler fade the music down while bringing ambient up (or the
-// reverse) for the whole table at once. `field` is 'track_volume' or
-// 'ambient_volume'.
-function setChannelVolume_(channel, field, volume) {
-  channel = (channel || '').trim();
-  if (!channel) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  if (field !== 'track_volume' && field !== 'ambient_volume') {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'unknown volume field: ' + field }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  volume = Math.max(0, Math.min(100, Math.round(Number(volume)) || 0));
-  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
-
-  const sheet = getOrCreateRadioSheet();
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const cols = headerMap_(headers);
-  const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
-  const row = data[rowIdx];
-  const now = new Date().getTime();
-  row[cols[field]] = volume;
-  row[cols.updated_at] = now;
-  const patch = { updated_at: now };
-  patch[field] = volume;
-  firestoreDualPatch_('radio', channel, patch);
-  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
-  return ContentService.createTextOutput(JSON.stringify({ status: 'OK', volume: volume })).setMimeType(ContentService.MimeType.JSON);
-}
+// getNowPlaying/setNowPlaying/pauseNowPlaying/resumeNowPlaying/
+// setNowPlayingLoop_/setChannelVolume_ (the main-track transport +
+// broadcast-wide mix) removed -- a-cell.html's Now Playing panel reads
+// and writes radio/{channel} directly via Firestore now, same as the
+// ambient/stinger soundboard and its Active Sounds panel above (see
+// BUGFIXES.md's Radio main-track entry). getNowPlaying()'s two helpers
+// that had no other caller (parseJsonArray_, normalizeAmbientLayer_) and
+// setChannelVolume_'s own findOrCreateRadioRow_ went with them.
 
 // ════════════════════════════════════════════════════════════════
 // Table Radio Soundboard: ambient loops + layered one-shot stingers.
@@ -4592,369 +4143,26 @@ const STINGER_IDS = [
 // elements rather than only ever hearing the latest one.
 const STINGER_HISTORY_LENGTH = 5;
 
-function parseJsonArray_(val) {
-  if (!val) return [];
-  try {
-    const parsed = JSON.parse(val);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (e) {
-    return [];
-  }
-}
+// parseJsonArray_/normalizeAmbientLayer_ (getNowPlaying()'s own read
+// helpers) and findOrCreateRadioRow_ (setChannelVolume_'s row lookup)
+// removed alongside the functions that were their only callers -- see
+// the comment above where getNowPlaying/setChannelVolume_ used to be.
 
-// Upgrades a bare ambient-layer id (the ORIGINAL, pre-instance-object
-// shape this field used before it grew started_at/paused/paused_at/loop
-// -- see setAmbientLayer_'s own comment) into the full object shape on
-// the fly. Applied everywhere ambient_layers is read for mutation or
-// returned to a client: without this, a stale plain string already
-// sitting in a channel's row from before this migration (any channel a
-// Handler had toggled ambient on for prior to this deploy) has no `id`
-// property, so `l.id === layerId` never matches it -- Stop/pause/seek/
-// loop-toggle silently no-op against it forever, while the audio
-// (started from whenever it WAS a bare string, or restarted via a
-// duplicate object entry pushed alongside it) just keeps playing with
-// no way to reach it. Idempotent -- an already-upgraded object passes
-// through unchanged -- and self-healing: the next write that touches
-// this array serializes the now-upgraded shape back to the sheet, so no
-// separate one-time migration script is needed.
-function normalizeAmbientLayer_(entry) {
-  if (typeof entry === 'string') {
-    return { id: entry, started_at: new Date().getTime(), paused: false, paused_at: 0, loop: true };
-  }
-  return entry;
-}
+// set_ambient_layer/trigger_stinger's old implementations
+// (setAmbientLayer_/triggerStinger_) removed -- a-cell.html's
+// soundboard writes both straight to Firestore client-side now (see
+// the soundboard entry in BUGFIXES.md), matching the per-instance
+// transport actions removed above. AMBIENT_LAYER_IDS/STINGER_IDS (the
+// validation lists these two used) are unused server-side now but kept
+// as-is -- table-radio.js and a-cell.html's own AMBIENT_LAYERS/
+// STINGER_GROUPS are the client-side source of truth for what's valid
+// to write, checked implicitly (an unrecognized id just plays a 404'd
+// mp3, same failure mode as a typo in either list ever had).
 
-// Finds a channel's row in RadioChannels, appending an empty one (no
-// track) if it doesn't exist yet -- ambient layers and stingers are
-// independent of whether music is currently set, so a Handler can layer
-// ambience onto a silent channel without first pushing a track.
-function findOrCreateRadioRow_(sheet, data, headers, cols, channel) {
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][cols.channel]).trim().toLowerCase() === channel.toLowerCase()) {
-      return i;
-    }
-  }
-  const newRow = new Array(headers.length).fill('');
-  newRow[cols.channel] = channel;
-  sheet.appendRow(newRow);
-  data.push(newRow);
-  return data.length - 1;
-}
-
-// Finds an object by matchKey===matchVal in an array of sound-instance
-// objects (an ambient_layers entry or a stingers entry) -- shared by
-// every pause/resume/seek/loop-toggle action below, which all differ
-// only in which array/field and which key identifies "the one instance
-// being controlled": ambient matches by `id` (only one instance of a
-// given loop can be active on a channel at once), stinger matches by
-// `fired_at` (the same stinger id can have several independent
-// instances firing close together, each needing its own identity).
-function findSoundInstance_(arr, matchKey, matchVal) {
-  for (let i = 0; i < arr.length; i++) {
-    if (arr[i][matchKey] === matchVal) return arr[i];
-  }
-  return null;
-}
-
-// Shared read-modify-write for one sound instance living in a JSON-array
-// column (ambient_layers or stingers) on a channel's RadioChannels row.
-// Every pause/resume/seek/loop-toggle action below is this exact same
-// shape -- find the row, find the instance, mutate it in place, write
-// the whole array back -- just with a different field/matchKey/mutation,
-// so this is the one place that pattern needs to be gotten right.
-function updateSoundInstance_(channel, field, matchKey, matchVal, mutateFn) {
-  channel = (channel || '').trim();
-  if (!channel) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
-
-  const sheet = getOrCreateRadioSheet();
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const cols = headerMap_(headers);
-  const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
-  const row = data[rowIdx];
-  let arr = parseJsonArray_(row[cols[field]]);
-  if (field === 'ambient_layers') arr = arr.map(normalizeAmbientLayer_);
-  const inst = findSoundInstance_(arr, matchKey, matchVal);
-  if (!inst) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'not currently active' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  mutateFn(inst);
-  const now = new Date().getTime();
-  row[cols[field]] = JSON.stringify(arr);
-  row[cols.updated_at] = now;
-  const patch = { updated_at: now };
-  patch[field] = arr;
-  firestoreDualPatch_('radio', channel, patch);
-  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
-  return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
-}
-
-// Same shape as updateSoundInstance_ but removes the instance entirely
-// (Stop) instead of mutating it in place -- a stinger has no separate
-// on/off toggle the way an ambient layer does, so this is the only way
-// to end one before it finishes on its own.
-function removeSoundInstance_(channel, field, matchKey, matchVal) {
-  channel = (channel || '').trim();
-  if (!channel) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
-
-  const sheet = getOrCreateRadioSheet();
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const cols = headerMap_(headers);
-  const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
-  const row = data[rowIdx];
-  let arr = parseJsonArray_(row[cols[field]]);
-  if (field === 'ambient_layers') arr = arr.map(normalizeAmbientLayer_);
-  arr = arr.filter(function (inst) { return inst[matchKey] !== matchVal; });
-  const now = new Date().getTime();
-  row[cols[field]] = JSON.stringify(arr);
-  row[cols.updated_at] = now;
-  const patch = { updated_at: now };
-  patch[field] = arr;
-  firestoreDualPatch_('radio', channel, patch);
-  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
-  return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
-}
-
-// Toggles one ambient loop on/off for a channel. `active` decides
-// membership rather than the caller having to know the current state
-// first (a dumb toggle button on the A-Cell side would otherwise need
-// its own extra round-trip just to read that state before flipping it).
-// Each active entry is a full instance object (started_at/paused/
-// paused_at/loop), not a bare id -- lets a Handler pause, seek, or
-// un-loop a SPECIFIC already-playing ambient loop from A-Cell's Active
-// Sounds panel via pauseAmbientLayer_/resumeAmbientLayer_/
-// seekAmbientLayer_/setAmbientLayerLoop_ below, the same way the main
-// track already supports pause/resume/seek.
-function setAmbientLayer_(channel, layerId, active) {
-  channel = (channel || '').trim();
-  if (!channel) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  if (AMBIENT_LAYER_IDS.indexOf(layerId) === -1) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'unknown ambient layer: ' + layerId }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
-
-  const sheet = getOrCreateRadioSheet();
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const cols = headerMap_(headers);
-  const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
-  const row = data[rowIdx];
-  // normalizeAmbientLayer_ upgrades any stale bare-string entry left
-  // over from before this field grew instance objects; filtering out
-  // every match (not just the first) when turning off is deliberate
-  // belt-and-suspenders against a channel that picked up a literal
-  // duplicate for the same id while that bug was live.
-  let layers = parseJsonArray_(row[cols.ambient_layers]).map(normalizeAmbientLayer_);
-  const now = new Date().getTime();
-  if (active) {
-    if (!layers.some(function (l) { return l.id === layerId; })) {
-      layers.push({ id: layerId, started_at: now, paused: false, paused_at: 0, loop: true });
-    }
-  } else {
-    layers = layers.filter(function (l) { return l.id !== layerId; });
-  }
-  row[cols.ambient_layers] = JSON.stringify(layers);
-  row[cols.updated_at] = now;
-  firestoreDualPatch_('radio', channel, { ambient_layers: layers, updated_at: now });
-  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
-  return ContentService.createTextOutput(JSON.stringify({ status: 'OK', ambient_layers: layers })).setMimeType(ContentService.MimeType.JSON);
-}
-
-function pauseAmbientLayer_(channel, layerId) {
-  const now = new Date().getTime();
-  return updateSoundInstance_(channel, 'ambient_layers', 'id', layerId, function (inst) {
-    inst.paused = true;
-    inst.paused_at = now;
-  });
-}
-
-// Same shiftedStart math as resumeNowPlaying()/resumeStinger_() below --
-// preserves the loop's current position across the pause instead of
-// jumping back to wherever it happened to be when paused_at was
-// stamped.
-function resumeAmbientLayer_(channel, layerId) {
-  const now = new Date().getTime();
-  return updateSoundInstance_(channel, 'ambient_layers', 'id', layerId, function (inst) {
-    const pausedAt = inst.paused_at || now;
-    const startedAt = inst.started_at || now;
-    inst.started_at = startedAt + (now - pausedAt);
-    inst.paused = false;
-    inst.paused_at = 0;
-  });
-}
-
-function seekAmbientLayer_(channel, layerId, positionMs) {
-  const now = new Date().getTime();
-  positionMs = Math.max(0, Number(positionMs) || 0);
-  return updateSoundInstance_(channel, 'ambient_layers', 'id', layerId, function (inst) {
-    inst.started_at = now - positionMs;
-    if (inst.paused) inst.paused_at = now;
-  });
-}
-
-function setAmbientLayerLoop_(channel, layerId, loop) {
-  return updateSoundInstance_(channel, 'ambient_layers', 'id', layerId, function (inst) {
-    inst.loop = !!loop;
-  });
-}
-
-// Fires a one-shot stinger for a channel. Always appends a fresh
-// instance, even for a repeated stinger_id -- a second press of the
-// same button (e.g. two gunshots back to back) is a deliberate replay,
-// not a no-op, so it must get its own identity rather than updating an
-// existing entry in place. `fired_at` is that stable identity, used by
-// every client to dedupe which fires it's already played and by every
-// pause/resume/seek/loop/stop action below to address one exact
-// instance -- it's set once here and never changes; `started_at` is a
-// SEPARATE field for elapsed-time math (same started_at/paused_at
-// pattern as the main track and ambient layers) that resumeStinger_()
-// is free to shift on resume without disturbing that identity.
-// Non-looping instances are trimmed to the most recent
-// STINGER_HISTORY_LENGTH so the document doesn't grow unbounded over a
-// long session; an instance a Handler has explicitly turned into a loop
-// (setStingerLoop_) is exempt from that trim and stays until explicitly
-// stopped, same as an ambient layer.
-function triggerStinger_(channel, stingerId) {
-  channel = (channel || '').trim();
-  if (!channel) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  if (STINGER_IDS.indexOf(stingerId) === -1) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'unknown stinger: ' + stingerId }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
-
-  const sheet = getOrCreateRadioSheet();
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const cols = headerMap_(headers);
-  const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
-  const row = data[rowIdx];
-  const now = new Date().getTime();
-  let stingers = parseJsonArray_(row[cols.stingers]);
-  stingers.push({ id: stingerId, fired_at: now, started_at: now, paused: false, paused_at: 0, loop: false, stopped: false });
-  const looping = stingers.filter(function (s) { return s.loop; });
-  let oneShot = stingers.filter(function (s) { return !s.loop; });
-  if (oneShot.length > STINGER_HISTORY_LENGTH) oneShot = oneShot.slice(-STINGER_HISTORY_LENGTH);
-  stingers = looping.concat(oneShot).sort(function (a, b) { return a.fired_at - b.fired_at; });
-  row[cols.stingers] = JSON.stringify(stingers);
-  row[cols.updated_at] = now;
-  firestoreDualPatch_('radio', channel, { stingers: stingers, updated_at: now });
-  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
-  return ContentService.createTextOutput(JSON.stringify({ status: 'OK', stingers: stingers })).setMimeType(ContentService.MimeType.JSON);
-}
-
-function pauseStinger_(channel, firedAt) {
-  const now = new Date().getTime();
-  return updateSoundInstance_(channel, 'stingers', 'fired_at', Number(firedAt), function (inst) {
-    inst.paused = true;
-    inst.paused_at = now;
-  });
-}
-
-function resumeStinger_(channel, firedAt) {
-  const now = new Date().getTime();
-  return updateSoundInstance_(channel, 'stingers', 'fired_at', Number(firedAt), function (inst) {
-    const pausedAt = inst.paused_at || now;
-    const startedAt = inst.started_at || now;
-    inst.started_at = startedAt + (now - pausedAt);
-    inst.paused = false;
-    inst.paused_at = 0;
-  });
-}
-
-function seekStinger_(channel, firedAt, positionMs) {
-  const now = new Date().getTime();
-  positionMs = Math.max(0, Number(positionMs) || 0);
-  return updateSoundInstance_(channel, 'stingers', 'fired_at', Number(firedAt), function (inst) {
-    inst.started_at = now - positionMs;
-    if (inst.paused) inst.paused_at = now;
-  });
-}
-
-function setStingerLoop_(channel, firedAt, loop) {
-  return updateSoundInstance_(channel, 'stingers', 'fired_at', Number(firedAt), function (inst) {
-    inst.loop = !!loop;
-  });
-}
-
-// The only way to end a stinger before it finishes on its own -- unlike
-// ambient (an explicit on/off toggle), a fired stinger has no natural
-// "off" state to flip back to. Removes the instance outright rather
-// than just marking it stopped, so it stops counting against
-// STINGER_HISTORY_LENGTH's trim too.
-function stopStinger_(channel, firedAt) {
-  return removeSoundInstance_(channel, 'stingers', 'fired_at', Number(firedAt));
-}
-
-// Handler-draggable media-player scrubber: jumps the CURRENT track to an
-// arbitrary position without restarting it (set_now_playing always
-// resets to 0:00) and without a pause/resume round-trip first. started_at
-// is recomputed so every listener's own elapsed-time formula (now -
-// started_at while playing, paused_at - started_at while paused --
-// see table-radio.js's liveElapsedSeconds_) lands on positionMs, the
-// same trick resumeNowPlaying() uses to preserve position across a
-// pause. Handler-only and intentionally not exposed to players (see the
-// approved design): a read-only progress display keeps everyone
-// provably in sync instead of letting each listener drift by scrubbing
-// their own local copy.
-function seekNowPlaying_(channel, positionMs) {
-  channel = (channel || '').trim();
-  positionMs = Math.max(0, Number(positionMs) || 0);
-  if (!channel) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
-
-  const sheet = getOrCreateRadioSheet();
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const cols = headerMap_(headers);
-  const chCol = cols.channel;
-  const startedCol = cols.started_at;
-  const pausedCol = cols.paused;
-  const pausedAtCol = cols.paused_at;
-  const updatedCol = cols.updated_at;
-  const now = new Date().getTime();
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][chCol]).trim().toLowerCase() === channel.toLowerCase()) {
-      const row = data[i];
-      const wasPaused = pausedCol !== undefined && asBoolean_(row[pausedCol]);
-      const newStarted = now - positionMs;
-      row[startedCol] = newStarted;
-      // While paused, elapsed is (paused_at - started_at) rather than
-      // (now - started_at) -- stamping paused_at fresh too makes the
-      // seek take effect immediately for a paused track instead of only
-      // becoming visible once the Handler later hits Resume.
-      if (wasPaused && pausedAtCol !== undefined) row[pausedAtCol] = now;
-      if (updatedCol !== undefined) row[updatedCol] = now;
-      const patch = { started_at: newStarted, updated_at: now };
-      if (wasPaused) patch.paused_at = now;
-      firestoreDualPatch_('radio', channel, patch);
-      sheet.getRange(i + 1, 1, 1, headers.length).setValues([row]);
-      return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
-    }
-  }
-  return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'no track for that channel' }))
-    .setMimeType(ContentService.MimeType.JSON);
-}
+// seekNowPlaying_ (the Handler-draggable media-player scrubber) removed
+// -- a-cell.html's Now Playing panel writes started_at/paused_at straight
+// to Firestore for a seek now too, same as the rest of the main-track
+// transport above.
 
 // One-time migration -- run this once by hand from the Apps Script
 // editor (pick "addPlaylistColumn" from the function dropdown at the

@@ -53,10 +53,12 @@
    The Circulate flag is deliberately never stored inside Editor.js's
    own block `data` or persisted through its Tunes save mechanism --
    it's tracked in this module's own `sharedByBlockId` map and synced
-   through the exact same save_note_block action as everything else,
-   as a plain top-level field. That's what keeps the backend's
-   server-side privacy filter (listCellNotes() in Code.gs) completely
-   unaffected by this migration -- it was never reading anything out
+   through the exact same saveNoteBlockFirestore_() write as everything
+   else, as a plain top-level field. That's what keeps the backend's
+   server-side privacy filter (listCellNotes() in Code.gs, still used by
+   the identities/legacy poll -- see startNotesListeners()'s own
+   comment) completely unaffected by this migration -- it was never
+   reading anything out
    of the block's own data to begin with.
 
    Every CSS class here (including the ones for Editor.js's own chrome,
@@ -199,6 +201,42 @@
     return _authPromise;
   }
 
+  // Direct Firestore writes for a note block -- replaces the old
+  // save_note_block/delete_note_block Apps Script actions (which
+  // already dual-wrote into this exact cells/{cellId}/notes/{blockId}
+  // doc server-side; see saveNoteBlock()/deleteNoteBlock() in Code.gs).
+  // firestore.rules' own ownership check (create: request.resource.data
+  // .agent_code == the signed-in Agent; update/delete: the EXISTING
+  // resource.data.agent_code must match) is what the old requireAgentToken_()
+  // + "not your block" checks did server-side -- reading the doc inside
+  // a transaction before writing means Firestore itself refuses the
+  // write if this Agent doesn't already own an existing block, same
+  // protection, no extra client-side check needed.
+  function noteBlockDocRef_(cellId, blockId) {
+    return window.firebase.firestore().collection('cells').doc(cellId).collection('notes').doc(blockId);
+  }
+  function saveNoteBlockFirestore_(cellId, agentCode, blockId, blockType, text, shared, pinned, tags, sortOrder) {
+    return ensureAgentSignedIn(agentCode).then(() => {
+      const db = window.firebase.firestore();
+      const docRef = noteBlockDocRef_(cellId, blockId);
+      return db.runTransaction(tx => tx.get(docRef).then(snap => {
+        const now = Date.now();
+        // Preserve the original created_at on an edit -- only a brand
+        // new block (or one this Agent doesn't already own, which the
+        // rule will reject anyway) gets a fresh one.
+        const createdAt = (snap.exists && snap.data().created_at) || now;
+        tx.set(docRef, {
+          agent_code: agentCode, block_type: blockType, text: text || '',
+          shared: !!shared, sort_order: sortOrder, created_at: createdAt,
+          updated_at: now, pinned: !!pinned, tags: tags,
+        }, { merge: true });
+      }));
+    });
+  }
+  function deleteNoteBlockFirestore_(cellId, agentCode, blockId) {
+    return ensureAgentSignedIn(agentCode).then(() => noteBlockDocRef_(cellId, blockId).delete());
+  }
+
   // Each Agent picks one of these once -- their "ink" -- to mark their
   // contributions in the combined Shared feed and on their own tab.
   const AGENT_COLORS = ['#2b6cb0', '#2f855a', '#b7791f', '#805ad5', '#c53030', '#d53f8c', '#2c7a7b', '#4a5568'];
@@ -312,9 +350,13 @@
     const cellId = opts.cellId;
     const soloMode = !!opts.soloMode;
     const agentCode = (opts.agentCode || '').trim().toUpperCase();
-    // Backend hardening: list_cell_notes/save_note_block/
-    // delete_note_block/save_agent_identity now need this Agent's own
-    // secret token (see requireAgentToken_() in Code.gs). Sourced from
+    // Backend hardening: list_cell_notes/save_agent_identity (still Apps
+    // Script-mediated) need this Agent's own secret token (see
+    // requireAgentToken_() in Code.gs) -- save/delete of note block
+    // CONTENT write straight to Firestore now instead (see
+    // saveNoteBlockFirestore_()/deleteNoteBlockFirestore_() above),
+    // gated by ensureAgentSignedIn()'s Firebase custom-token identity,
+    // not this token. Sourced from
     // opts rather than minted in here -- notes/index.html already reads
     // the same dg_agent_roster entry to auto-load the Cover Identity in
     // the first place, so it mints/persists the token there and just
@@ -794,11 +836,9 @@
           data: { evidence_id: evidenceId, text: text }, shared: shared, pinned: false,
           tags: [], sort_order: sortOrder, created_at: now, updated_at: now,
         });
-        postAction({
-          action: 'save_note_block', block_id: blockId, cell_id: cellId, agent_code: agentCode, token: agentToken,
-          block_type: 'evidence_remark', text: JSON.stringify({ evidence_id: evidenceId, text: text }),
-          shared: shared, pinned: false, tags: '[]', sort_order: sortOrder,
-        }).catch(() => { });
+        saveNoteBlockFirestore_(cellId, agentCode, blockId, 'evidence_remark',
+          JSON.stringify({ evidence_id: evidenceId, text: text }), shared, false, '[]', sortOrder
+        ).catch(() => { });
         renderEvidenceModalBody_(evidenceId);
       });
       body.querySelectorAll('.dg-notes-evidence-remark-del').forEach(btn => {
@@ -807,7 +847,7 @@
           const list = notesByCode[agentCode] || [];
           const idx = list.findIndex(x => x.block_id === blockId);
           if (idx !== -1) list.splice(idx, 1);
-          postAction({ action: 'delete_note_block', block_id: blockId, cell_id: cellId, agent_code: agentCode, token: agentToken }).catch(() => { });
+          deleteNoteBlockFirestore_(cellId, agentCode, blockId).catch(() => { });
           renderEvidenceModalBody_(evidenceId);
         });
       });
@@ -1516,8 +1556,8 @@
 
     // Shared by syncBlock(), resyncOrder(), and unmountEditor()'s final
     // flush -- given an already-fetched editor.save() result, updates
-    // local bookkeeping and fires the actual save_note_block POST for
-    // one block. A no-op if the block was deleted before this ran.
+    // local bookkeeping and fires the actual Firestore write for one
+    // block. A no-op if the block was deleted before this ran.
     function persistBlockFromSaved(out, blockId) {
       const b = out.blocks.find(x => x.id === blockId);
       if (!b) return;
@@ -1526,10 +1566,8 @@
       const pinned = !!pinnedByBlockId[blockId];
       const tags = tagsByBlockId[blockId] || [];
       const meta = upsertLocalMeta(agentCode, blockId, { type: b.type, data: b.data, shared, pinned, tags, sort_order: idx * 1000 });
-      postAction({
-        action: 'save_note_block', block_id: blockId, cell_id: cellId, agent_code: agentCode, token: agentToken,
-        block_type: b.type, text: JSON.stringify(b.data), shared, pinned, tags: JSON.stringify(tags), sort_order: meta.sort_order,
-      }).catch(() => { });
+      saveNoteBlockFirestore_(cellId, agentCode, blockId, b.type, JSON.stringify(b.data), shared, pinned, JSON.stringify(tags), meta.sort_order)
+        .catch(() => { });
     }
 
     function syncBlock(blockId) {
@@ -1559,7 +1597,7 @@
       delete pinnedByBlockId[blockId];
       delete tagsByBlockId[blockId];
       clearTimeout(saveTimers[blockId]);
-      postAction({ action: 'delete_note_block', block_id: blockId, cell_id: cellId, agent_code: agentCode, token: agentToken }).catch(() => { });
+      deleteNoteBlockFirestore_(cellId, agentCode, blockId).catch(() => { });
       refreshChrome();
     }
 
@@ -1572,11 +1610,13 @@
        can only prove a LIST query safe when its security rule checks
        the exact field the query already filtered on -- a single mixed
        query couldn't be proven safe against a privacy rule that depends
-       on WHICH agent is asking. Writes are unchanged: still
-       save_note_block/delete_note_block through Code.gs (see
-       scheduleNoteSave_() etc. below), which dual-writes into the same
-       collection these listeners watch. identities/Evidence still poll
-       -- see fetchIdentities()/fetchEvidence() below pollTick_(). ── */
+       on WHICH agent is asking. Writes go straight to Firestore now too
+       (see saveNoteBlockFirestore_()/deleteNoteBlockFirestore_() above,
+       and persistBlockFromSaved()/deleteBlockRemote() below) -- the old
+       save_note_block/delete_note_block Apps Script actions these used
+       to POST to, which dual-wrote into this exact collection, have
+       been removed from Code.gs entirely. identities/Evidence still
+       poll -- see fetchIdentities()/fetchEvidence() below pollTick_(). ── */
     let ownDataLoaded = false; // has the "mine" listener fired at least once yet
     let _ownBlocksById = {};
     let _sharedBlocksById = {};

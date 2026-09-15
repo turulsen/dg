@@ -661,8 +661,9 @@
      display column (not the narrow 220px controls rail), so there's
      actually room for a real embedded scrubber. Shows whichever track
      is live for the dialed channel and swaps to a new one automatically
-     the moment a different track starts (checkCurrent()/verifyNowPlaying()
-     drive it, same as the status line already did). ── */
+     the moment a different track starts (startNowPlayingListener_()'s
+     live radio/{channel} onSnapshot drives it, same as the status line
+     already did). ── */
   .rdo-nowplaying-panel{
     border:1px solid #2a3020; border-radius:4px; padding:14px; margin-bottom:14px;
     background:#0e1209;
@@ -785,11 +786,12 @@
      currently looping under the broadcast); stinger buttons are a
      one-shot fire, styled like a transport button rather than a toggle
      since there's no "on" state to reflect. Both write straight onto
-     the same radio/{channel} row/doc Now Playing already lives on (see
-     setAmbientLayer_/triggerStinger_ in Code.gs), so a fresh page load
-     of this tab -- or a second Handler device -- always reflects the
-     live state via get_now_playing rather than only this tab's own
-     memory of what it last clicked. ── */
+     the same radio/{channel} doc Now Playing already lives on (see
+     setAmbientLayerActive_/the stinger-fire transaction below), so a
+     fresh page load of this tab -- or a second Handler device -- always
+     reflects the live state via startNowPlayingListener_()'s own
+     onSnapshot rather than only this tab's own memory of what it last
+     clicked. ── */
   .acell-radio-soundboard{
     border-top:1px solid #1a2214; padding:14px; background:#0e1209;
     position:relative; z-index:2;
@@ -1342,20 +1344,157 @@
 
 <script>
 /* ══════════════════════════════════════════════
-   HANDLER PASSWORD -- the real credential (HANDLER_PASSWORD Script
-   Property, set privately by the campaign owner), exchanged once per
-   tab for a short-lived session token via handler_login (see
-   requireHandlerAuth_()/requireHandlerSession_()/handlerLogin_() in
-   Code.gs). Every Handler write and the three Admin-only listing reads
-   need this; nothing here needs the clearance gate's own MASTICATE
-   value, which is a separate, hardcoded, public flavor password (see
-   that script block's header comment). Session-cached in sessionStorage
-   (dg_acell_pw / dg_acell_session) so it's typed at most once per tab,
-   silently re-exchanged for a fresh session on reload since the server
-   session expires after 6h but the saved password doesn't.
+   HANDLER AUTH -- shared Firebase sign-in machinery, moved up here
+   (right after Clearance, before the password box below) so it's the
+   FIRST thing to ever call handlerLogin: one password prompt, one
+   sign-in, immediately after Clearance. The resulting Firebase ID
+   token (carrying the handler:true custom claim) is now the ONLY
+   Handler credential anywhere -- Firestore rules already check it via
+   isHandler(), and every remaining Handler-gated Apps Script action
+   verifies the SAME token server-side via verifyHandlerIdToken_() (see
+   Code.gs). The old separate handler_login Apps Script action and its
+   dg_acell_session opaque CacheService token are gone entirely --
+   Code.gs never sees the raw password at all anymore.
+
+   Exposed on window (__dgHandlerAuth / __dgEnsureFirebaseApi /
+   __dgGetHandlerIdToken) so every later <script> block in this file
+   (Evidence's own listener, Track Library's upload/delete, Cells/
+   Music Handler writes) shares this ONE sign-in flow instead of each
+   re-implementing it -- see the Track Library block further down for
+   why that used to matter (two independent copies meant handlerLogin()
+   could fire twice in parallel on page load, which under a weak
+   signal looked like login flakiness).
    ══════════════════════════════════════════════ */
 (function () {
-  var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
+  "use strict";
+  var FIREBASE_SDK_VERSION = '12.18.0';
+  var FIREBASE_CONFIG = {
+    apiKey: 'AIzaSyBiFBvgmrjtacxXvh7FHa9a28BbwV0LnDQ',
+    authDomain: 'dg-app-b3447.firebaseapp.com',
+    projectId: 'dg-app-b3447',
+    storageBucket: 'dg-app-b3447.firebasestorage.app',
+    messagingSenderId: '464997490443',
+    appId: '1:464997490443:web:dad47a347ae7a64a9e4c0e'
+  };
+  var firebaseApiLoading = false;
+  var firebaseApiCallbacks = []; // { ok, err } pairs
+  // s.onload with no s.onerror at all meant a script that failed to load
+  // left `cb` never called and nothing else waiting on it either -- the
+  // whole ensureFirebaseApi() chain (and therefore ensureHandlerSignedIn()'s
+  // promise) just hung forever. A 15s timeout backstops onerror itself not
+  // firing reliably for every possible failure mode.
+  function loadScriptTag(src, cb, onerror) {
+    var s = document.createElement('script');
+    s.crossOrigin = 'anonymous';
+    s.src = src;
+    var done = false;
+    var timer = setTimeout(function () {
+      if (done) return; done = true;
+      onerror(new Error('Timed out loading ' + src + ' (15s) -- check network connection.'));
+    }, 15000);
+    s.onload = function () { if (done) return; done = true; clearTimeout(timer); cb(); };
+    s.onerror = function () { if (done) return; done = true; clearTimeout(timer); onerror(new Error('Failed to load ' + src + ' -- check network connection.')); };
+    document.head.appendChild(s);
+  }
+  function ensureFirebaseApi(cb, onerror) {
+    var ready = function () { return window.firebase && window.firebase.storage && window.firebase.auth && window.firebase.functions && window.firebase.firestore; };
+    if (ready()) { cb(); return; }
+    firebaseApiCallbacks.push({ ok: cb, err: onerror || function () {} });
+    if (firebaseApiLoading) return;
+    firebaseApiLoading = true;
+    var base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/';
+    function fail(err) {
+      firebaseApiLoading = false; // lets a later call actually retry once the network recovers
+      var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
+      cbs.forEach(function (pair) { pair.err(err); });
+    }
+    var loadIfMissing = function (check, url, next) { if (check()) { next(); } else { loadScriptTag(url, next, fail); } };
+    loadIfMissing(function () { return window.firebase && window.firebase.apps; }, base + 'firebase-app-compat.js', function () {
+      var isFirstInit = !window.firebase.apps.length;
+      if (isFirstInit) window.firebase.initializeApp(FIREBASE_CONFIG);
+      loadIfMissing(function () { return !!window.firebase.auth; }, base + 'firebase-auth-compat.js', function () {
+        loadIfMissing(function () { return !!window.firebase.functions; }, base + 'firebase-functions-compat.js', function () {
+          loadIfMissing(function () { return !!window.firebase.storage; }, base + 'firebase-storage-compat.js', function () {
+            loadIfMissing(function () { return !!window.firebase.firestore; }, base + 'firebase-firestore-compat.js', function () {
+              // See table-radio.js's matching comment: forcing long-polling
+              // for everyone (a Brave/ad-blocker WebChannel workaround) was
+              // reverted after a live report of ~44s to start Table Radio
+              // audio -- auto-detect stays default.
+              var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
+              cbs.forEach(function (pair) { pair.ok(); });
+            });
+          });
+        });
+      });
+    });
+  }
+  // Wraps a promise with its own hard deadline -- the Firebase SDK's own
+  // default timeout for httpsCallable (70s) is far too long to sit
+  // silently on before a device with no devtools has any idea something
+  // is even wrong, and signInWithCustomToken has no documented timeout
+  // guarantee at all.
+  function withTimeout_(promise, ms, label) {
+    return new Promise(function (resolve, reject) {
+      var timer = setTimeout(function () { reject(new Error('Timed out: ' + label + ' (' + (ms / 1000) + 's) -- check network connection.')); }, ms);
+      promise.then(function (v) { clearTimeout(timer); resolve(v); }, function (e) { clearTimeout(timer); reject(e); });
+    });
+  }
+  var _handlerAuthPromise = null;
+  function ensureHandlerSignedIn() {
+    if (_handlerAuthPromise) return _handlerAuthPromise;
+    _handlerAuthPromise = new Promise(function (resolve, reject) {
+      ensureFirebaseApi(function () {
+        var auth = window.firebase.auth();
+        // Firebase Auth sessions persist per-origin across page loads
+        // (IndexedDB, not per-page) -- a bare `if (auth.currentUser)`
+        // would trust WHOEVER happened to already be signed in, including
+        // a leftover Agent session from testing agent-hub.html/notes/ in
+        // this same browser. handlerLogin_() sets the token's uid to a
+        // known value ('handler') -- checking it costs nothing (already
+        // on the cached user object, no extra round trip).
+        if (auth.currentUser && auth.currentUser.uid === 'handler') { resolve(auth.currentUser); return; }
+        var password = sessionStorage.getItem('dg_acell_pw') || '';
+        if (!password) { _handlerAuthPromise = null; reject(new Error('No A-Cell session -- log in as Handler first.')); return; }
+        withTimeout_(window.firebase.functions().httpsCallable('handlerLogin')({ handler_password: password }), 20000, 'handlerLogin()')
+          .then(function (result) {
+            return withTimeout_(auth.signInWithCustomToken(result.data.token), 20000, 'signInWithCustomToken()');
+          })
+          .then(function (cred) { resolve(cred.user); })
+          .catch(function (err) { _handlerAuthPromise = null; reject(err); });
+      }, function (err) {
+        _handlerAuthPromise = null;
+        reject(err);
+      });
+    });
+    return _handlerAuthPromise;
+  }
+  // Fresh Firebase ID token for the currently signed-in Handler -- every
+  // remaining Handler-gated Apps Script action sends this (id_token)
+  // instead of the old raw handler_password. getIdToken() returns the
+  // cached token as-is unless it's within 5 minutes of expiry, in which
+  // case the SDK silently refreshes it first -- cheap to call per-request.
+  function getHandlerIdToken_() {
+    return ensureHandlerSignedIn().then(function (user) { return user.getIdToken(); });
+  }
+  window.__dgHandlerAuth = ensureHandlerSignedIn;
+  window.__dgEnsureFirebaseApi = ensureFirebaseApi;
+  window.__dgGetHandlerIdToken = getHandlerIdToken_;
+})();
+</script>
+
+<script>
+/* ══════════════════════════════════════════════
+   HANDLER PASSWORD -- the real credential (HANDLER_PASSWORD Firebase
+   Secret, set privately by the campaign owner and checked only by the
+   handlerLogin Cloud Function). Typed once per tab, right after
+   Clearance; nothing here needs the clearance gate's own MASTICATE
+   value, which is a separate, hardcoded, public flavor password (see
+   that script block's header comment). The password itself is cached
+   in sessionStorage (dg_acell_pw) only so a page reload can silently
+   re-sign-in without retyping -- Code.gs never sees it; the sign-in
+   call above (window.__dgHandlerAuth) is what actually validates it.
+   ══════════════════════════════════════════════ */
+(function () {
   var wrap = document.getElementById('acell-handler-auth');
   var label = document.getElementById('acell-handler-auth-label');
   var input = document.getElementById('acell-handler-pw-input');
@@ -1378,35 +1517,29 @@
     errEl.textContent = msg || '';
   }
 
+  function setPending() {
+    label.textContent = 'Signing in…';
+    errEl.textContent = '';
+  }
+
   // silent=true is used for the on-load retry of a previously-saved
-  // password -- a stale/expired one there shouldn't flash an error the
+  // password -- a stale/wrong one there shouldn't flash an error the
   // Handler never asked to see, just fall back to the normal locked
   // state until they type it again.
   function attempt(pw, silent) {
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'handler_login', handler_password: pw }),
-    }).then(function (r) { return r.json(); }).then(function (res) {
-      if (res && res.status === 'OK' && res.session) {
-        try {
-          sessionStorage.setItem('dg_acell_session', res.session);
-          sessionStorage.setItem('dg_acell_pw', pw);
-        } catch (e) { /* best effort */ }
-        setUnlocked();
-        // Play/Sheet's own fetchAll(false) fires synchronously as soon as
-        // their own <script> block runs, further down this same page load
-        // -- if a saved password exists, this attempt() call is still an
-        // in-flight fetch at that moment, so their first fetch goes out
-        // carrying whatever (possibly stale/expired) session was already
-        // in sessionStorage, and neither tab retries on its own once a
-        // fresh session lands here a moment later. Let them know.
-        window.dispatchEvent(new Event('dg-acell-handler-ready'));
-      } else if (!silent) {
-        setLocked((res && res.message) || 'invalid Handler password');
-      }
-    }).catch(function () {
-      if (!silent) setLocked('Could not reach the backend.');
+    if (!silent) setPending();
+    try { sessionStorage.setItem('dg_acell_pw', pw); } catch (e) { /* best effort */ }
+    window.__dgHandlerAuth().then(function () {
+      setUnlocked();
+      // Play/Sheet's own fetchAll(false) fires synchronously as soon as
+      // their own <script> block runs, further down this same page load
+      // -- if a saved password exists, this attempt() call is still an
+      // in-flight sign-in at that moment. Let them know once it lands.
+      window.dispatchEvent(new Event('dg-acell-handler-ready'));
+    }).catch(function (err) {
+      try { sessionStorage.removeItem('dg_acell_pw'); } catch (e) { /* best effort */ }
+      if (!silent) setLocked((err && err.message) || 'invalid Handler password');
+      else setLocked();
     });
   }
 
@@ -1518,11 +1651,11 @@
   // tab now sees a new/edited character or Cell the instant it's saved,
   // not on the next manual Refresh.
   //
-  // This block (Play tab) runs BEFORE the Evidence block later in this
-  // file that actually loads the Firebase SDK, so window.__dgEnsureFirebaseApi
-  // isn't set yet at the moment this script first runs -- waitForFirebaseApi_
-  // polls briefly (that block finishes executing microseconds later, same
-  // synchronous page load) rather than needing any script reordering.
+  // window.__dgEnsureFirebaseApi is set by the shared Handler-auth block
+  // near the top of this file (right after Clearance), which runs before
+  // this one -- but waitForFirebaseApi_ still polls rather than assuming
+  // that ordering, since script tag order is an implementation detail
+  // this block shouldn't have to know about.
   function waitForFirebaseApi_(cb, onerror) {
     if (window.__dgEnsureFirebaseApi) { window.__dgEnsureFirebaseApi(cb, onerror); return; }
     setTimeout(function () { waitForFirebaseApi_(cb, onerror); }, 50);
@@ -1982,12 +2115,18 @@
    CELLS -- real named groups: a Cell has its own name and Handler,
    plus a list of member Agents picked from the full roster (not a
    text tag typed per Agent) -- one Agent can belong to several Cells
-   at once, or none yet. Backed by list_cells / create_cell /
-   update_cell_members / delete_cell (acell-cell-groups-addition.txt,
-   handed over separately) plus the existing list_characters (for
-   Agent names to show/pick from). Like every other write in this app,
-   these are no-cors POSTs, so a Cell only shows a change once a real
-   read-back (list_cells) confirms it landed.
+   at once, or none yet. Create/Delete Cell write straight to Firestore
+   (cells/{cellId}) now -- see createCellFirestore_()/deleteCellFirestore_()
+   below -- since neither has a server-side side effect beyond that one
+   doc. Adding/removing a MEMBER (saveMembers() below) deliberately stays
+   Apps Script-mediated (update_cell_members, acell-cell-groups-
+   addition.txt): updateCellMembers() in Code.gs also carries forward a
+   newly-assigned Agent's solo Notes (migrateSoloNotesToCell_()) and
+   recomputes every Evidence item's visible_to for the whole Cell
+   (recomputeEvidenceVisibleToForCell_()) -- real side effects a plain
+   client-side member_codes write would silently drop, not something
+   this pass migrates. list_characters (for Agent names to show/pick
+   from) is already live off Firestore too, see startListeners() below.
 
    The Add row is a multi-select (not one Agent at a time) so adding a
    whole squad to a Cell is one Add Selected click, not N repeats of
@@ -1996,7 +2135,14 @@
 (function () {
   "use strict";
   var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
-  var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm it. Check that the Cells addition (list_cells / create_cell / update_cell_members / delete_cell) is pasted into Apps Script and redeployed.';
+  var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm it. Check that the Cells addition (list_cells / update_cell_members) is pasted into Apps Script and redeployed.';
+  function ensureHandlerSignedIn() {
+    if (!window.__dgHandlerAuth) return Promise.reject(new Error('Handler auth not ready yet -- reload and try again.'));
+    return window.__dgHandlerAuth();
+  }
+  function cellDocRef_(cellId) {
+    return window.firebase.firestore().collection('cells').doc(cellId);
+  }
 
   var groupsEl = document.getElementById('cells-groups');
   var unassignedEl = document.getElementById('cells-unassigned');
@@ -2079,12 +2225,13 @@
     });
   }
 
-  // Writes still go through Apps Script (create_cell/update_cell_members/
-  // delete_cell dual-write to Firestore server-side already -- see
-  // Code.gs) -- but confirming one landed no longer needs its own fresh
-  // JSONP read-back: the live listeners above already keep `cells`
-  // current, so polling that same in-memory array for the expected
-  // change is both simpler and faster than a second network round trip.
+  // Only saveMembers() (update_cell_members, see the header comment's
+  // own reasoning) still needs this -- confirming a membership change
+  // landed no longer needs its own fresh JSONP read-back: the live
+  // listeners above already keep `cells` current, so polling that same
+  // in-memory array for the expected change is both simpler and faster
+  // than a second network round trip. Create/Delete Cell resolve their
+  // own status text straight off the write's Promise now instead.
   function waitForCellsCondition_(predicate, onSuccess, onTimeout, attempt) {
     attempt = attempt || 0;
     if (predicate()) { onSuccess(); return; }
@@ -2217,10 +2364,12 @@
 
   function saveMembers(cellObj, newMembers) {
     statusEl.textContent = 'Saving…';
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors', keepalive: true,
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'update_cell_members', cell_id: cellObj.cell_id, member_codes: newMembers, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+    window.__dgGetHandlerIdToken().then(function (idToken) {
+      return fetch(APPS_SCRIPT_URL, {
+        method: 'POST', mode: 'no-cors', keepalive: true,
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'update_cell_members', cell_id: cellObj.cell_id, member_codes: newMembers, id_token: idToken }),
+      });
     }).then(function () {
       waitForCellsCondition_(function () {
         var c = cells.filter(function (x) { return x.cell_id === cellObj.cell_id; })[0];
@@ -2237,15 +2386,13 @@
   function deleteCell(cellObj) {
     if (!confirm('Delete "' + cellObj.name + '"? Its Agents stay on file -- this only removes the grouping.')) return;
     statusEl.textContent = 'Deleting…';
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors', keepalive: true,
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'delete_cell', cell_id: cellObj.cell_id, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+    ensureHandlerSignedIn().then(function () {
+      return cellDocRef_(cellObj.cell_id).delete();
     }).then(function () {
-      waitForCellsCondition_(function () {
-        return !cells.some(function (c) { return c.cell_id === cellObj.cell_id; });
-      }, function () { statusEl.textContent = 'Deleted ' + cellObj.name + '.'; }, function () { statusEl.textContent = NOT_DEPLOYED_MSG; });
-    }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+      statusEl.textContent = 'Deleted ' + cellObj.name + '.';
+    }).catch(function (err) {
+      statusEl.textContent = 'Could not reach Firestore — ' + (err && err.message ? err.message : 'not signed in as Handler') + '.';
+    });
   }
 
   function showCreateForm() {
@@ -2265,15 +2412,15 @@
       var errEl = document.getElementById('cells-new-error');
       if (!name) { errEl.textContent = 'Give the Cell a name first.'; return; }
       statusEl.textContent = 'Creating…';
-      fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors', keepalive: true,
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'create_cell', name: name, handler: handler, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+      ensureHandlerSignedIn().then(function () {
+        var cellId = 'cell_' + Date.now() + '_' + Math.floor(Math.random() * 100000).toString(36);
+        return cellDocRef_(cellId).set({ name: name, handler: handler, member_codes: [], channel: '' });
       }).then(function () {
-        waitForCellsCondition_(function () {
-          return cells.some(function (c) { return c.name === name && c.handler === handler; });
-        }, function () { statusEl.textContent = ''; createFormSlot.innerHTML = ''; }, function () { statusEl.textContent = NOT_DEPLOYED_MSG; });
-      }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+        statusEl.textContent = '';
+        createFormSlot.innerHTML = '';
+      }).catch(function (err) {
+        statusEl.textContent = 'Could not reach Firestore — ' + (err && err.message ? err.message : 'not signed in as Handler') + '.';
+      });
     });
   }
 
@@ -2281,7 +2428,7 @@
   // Refresh is now just a re-render off already-live state, same as the
   // Play tab's own -- cells/characters are both public-read, so this
   // tab no longer waits on a Handler session at all before its reads
-  // start (only the write actions still need dg_acell_pw).
+  // start (only the write actions still need a Handler ID token).
   refreshBtn.addEventListener('click', function () { renderAll(); refreshNote.textContent = 'Updated ' + new Date().toLocaleTimeString(); });
   startListeners();
 })();
@@ -2363,213 +2510,21 @@
   var formPhotoExisting = null;
 
   /* ── Firebase Storage: direct client upload for Evidence photos/PDFs
-     (Phase 4). Self-contained copy of the same loader/sign-in pattern
-     assets/table-radio.js, assets/dice-roller.js, and this page's own
-     MUSIC section (Track Library) each already use independently --
-     every script block on this page is deliberately self-contained
-     rather than sharing state across sections, so this is its own
-     small copy, not a shared import. ── */
-  var FIREBASE_SDK_VERSION = '12.18.0';
-  var FIREBASE_CONFIG = {
-    apiKey: 'AIzaSyBiFBvgmrjtacxXvh7FHa9a28BbwV0LnDQ',
-    authDomain: 'dg-app-b3447.firebaseapp.com',
-    projectId: 'dg-app-b3447',
-    storageBucket: 'dg-app-b3447.firebasestorage.app',
-    messagingSenderId: '464997490443',
-    appId: '1:464997490443:web:dad47a347ae7a64a9e4c0e'
-  };
-  var firebaseApiLoading = false;
-  var firebaseApiCallbacks = []; // { ok, err } pairs
-  // s.onload with no s.onerror at all meant a script that failed to load --
-  // blocked, a dropped mobile connection, a flaky CDN response -- left
-  // `cb` never called and nothing else waiting on it either: the whole
-  // ensureFirebaseApi() chain (and therefore ensureHandlerSignedIn()'s
-  // promise) just hung forever, neither resolved nor rejected, showing
-  // "signing in..." indefinitely with no error and no way to recover
-  // short of a full reload -- and if the same flaky connection caused it,
-  // not even that. A 15s timeout backstops onerror itself not firing
-  // reliably for every possible failure mode.
-  function loadScriptTag(src, cb, onerror) {
-    var s = document.createElement('script');
-    // Without this, a runtime error thrown from INSIDE this
-    // cross-origin script (gstatic.com, a different origin than this
-    // page) reports to window.onerror as the browser's generic,
-    // content-free "Script error." -- no message, no file, no line --
-    // instead of the real detail, defeating the whole point of the
-    // page-wide JS-error banner for exactly the scripts most likely to
-    // throw something worth seeing. gstatic.com serves these with
-    // Access-Control-Allow-Origin already, so this costs nothing.
-    s.crossOrigin = 'anonymous';
-    s.src = src;
-    var done = false;
-    var timer = setTimeout(function () {
-      if (done) return; done = true;
-      onerror(new Error('Timed out loading ' + src + ' (15s) -- check network connection.'));
-    }, 15000);
-    s.onload = function () { if (done) return; done = true; clearTimeout(timer); cb(); };
-    s.onerror = function () { if (done) return; done = true; clearTimeout(timer); onerror(new Error('Failed to load ' + src + ' -- check network connection.')); };
-    document.head.appendChild(s);
-  }
+     (Phase 4). Firebase loading/sign-in itself now lives in the shared
+     Handler-auth block near the top of the page (right after
+     Clearance) -- ensureHandlerSignedIn()/ensureFirebaseApi() here just
+     delegate to it via window.__dgHandlerAuth/__dgEnsureFirebaseApi,
+     same as the Track Library block further down, instead of each tab
+     keeping its own independent copy of the loader/sign-in pattern. ── */
   function ensureFirebaseApi(cb, onerror) {
-    var ready = function () { return window.firebase && window.firebase.storage && window.firebase.auth && window.firebase.functions && window.firebase.firestore; };
-    if (ready()) { cb(); return; }
-    firebaseApiCallbacks.push({ ok: cb, err: onerror || function () {} });
-    if (firebaseApiLoading) return;
-    firebaseApiLoading = true;
-    var base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/';
-    function fail(err) {
-      firebaseApiLoading = false; // lets a later call actually retry once the network recovers
-      var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-      cbs.forEach(function (pair) { pair.err(err); });
-    }
-    var loadIfMissing = function (check, url, next) { if (check()) { next(); } else { loadScriptTag(url, next, fail); } };
-    loadIfMissing(function () { return window.firebase && window.firebase.apps; }, base + 'firebase-app-compat.js', function () {
-      // Captured HERE, not re-checked later -- firebase-firestore-compat.js
-      // (loaded last, see below) attaches window.firebase.firestore as a
-      // side effect, which would make a later `!window.firebase.apps.length`
-      // check meaningless as an "is this truly the first init" signal
-      // even though apps.length itself doesn't change from loading more
-      // SDK pieces. This boolean is the actual "was this genuinely the
-      // first initializeApp() call" fact, frozen at the only point it's
-      // still knowable.
-      var isFirstInit = !window.firebase.apps.length;
-      if (isFirstInit) window.firebase.initializeApp(FIREBASE_CONFIG);
-      loadIfMissing(function () { return !!window.firebase.auth; }, base + 'firebase-auth-compat.js', function () {
-        loadIfMissing(function () { return !!window.firebase.functions; }, base + 'firebase-functions-compat.js', function () {
-          loadIfMissing(function () { return !!window.firebase.storage; }, base + 'firebase-storage-compat.js', function () {
-            // firestore-compat (Phase 5): the Handler's live, full
-            // (unfiltered by visible_to -- isHandler() bypasses that)
-            // Evidence collection listener, see startEvidenceListener()
-            // below. Loaded last/on demand like the others rather than
-            // reordering them.
-            loadIfMissing(function () { return !!window.firebase.firestore; }, base + 'firebase-firestore-compat.js', function () {
-              // Real bug, not a guess: this settings() call used to sit
-              // right after initializeApp() above, BEFORE
-              // firebase-firestore-compat.js (loaded last in this whole
-              // chain) had ever actually loaded -- window.firebase.firestore
-              // was genuinely undefined at that point, throwing
-              // "window.firebase.firestore is not a function" as an
-              // UNCAUGHT exception (not a promise rejection anything
-              // downstream could catch), permanently aborting this whole
-              // load chain silently. It only ever worked when some OTHER
-              // widget on the page (Table Radio, Dice Roller) happened to
-              // finish initializing Firebase (all pieces) first, which
-              // skipped this block entirely via the apps.length guard --
-              // load-order luck, not a real fix. A completely fresh device
-              // with nothing pre-loaded made this script's own chain race
-              // to go first every time, crashing on every single load.
-              //
-              // Brave (and some ad-blocker extensions) silently blocks
-              // Firestore's default streaming transport (WebChannel) -- it
-              // looks like a long-lived tracking connection -- which leaves
-              // every onSnapshot() listener permanently stuck with zero data
-              // and, worse, no error at all (Safari on the same account/data
-              // worked fine, confirming this wasn't a real permissions or
-              // data problem). Falls back to plain HTTP long-polling, which
-              // isn't blocked. Must be set before ANY other Firestore call
-              // on this page, and can only ever be called once -- isFirstInit
-              // (captured above, before firestore-compat.js changed what
-              // apps.length-based checks could tell us) still correctly
-              // gates that.
-              // REVERTED 2026-09-14, mid-live-session: forcing
-              // long-polling for everyone caused a real report of ~44s
-              // to start Table Radio audio and ~10s to pause, down from
-              // snappy/immediate on auto-detect -- see table-radio.js's
-              // matching comment. That regression outweighs the rarer
-              // Brave/ad-blocker WebChannel-block case this was for.
-              if (isFirstInit) window.firebase.firestore().settings({ experimentalAutoDetectLongPolling: true });
-              var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-              cbs.forEach(function (pair) { pair.ok(); });
-            });
-          });
-        });
-      });
-    });
-  }
-  // Reuses the SAME Handler password A-Cell's own login already put in
-  // sessionStorage (dg_acell_pw) to sign into Firebase transparently --
-  // no separate password prompt, unlike Dice Roller's own opt-in Live
-  // Rolls gate, since this only ever runs from inside an already-active
-  // A-Cell Handler session. Shared by the Evidence listener below and
-  // the Track Library upload/delete flow further down this file.
-  var _handlerAuthPromise = null;
-  // Wraps a promise with its own hard deadline -- the Firebase SDK's own
-  // default timeout for httpsCallable (70s) is far too long to sit
-  // silently on before a device with no devtools has any idea something
-  // is even wrong, and signInWithCustomToken has no documented timeout
-  // guarantee at all. Used below so EITHER live network call after the
-  // SDK itself has already loaded (see loadScriptTag()'s own 15s
-  // timeout for that earlier stage) surfaces a real, visible failure
-  // within a reasonable wait instead of an open-ended hang.
-  function withTimeout_(promise, ms, label) {
-    return new Promise(function (resolve, reject) {
-      var timer = setTimeout(function () { reject(new Error('Timed out: ' + label + ' (' + (ms / 1000) + 's) -- check network connection.')); }, ms);
-      promise.then(function (v) { clearTimeout(timer); resolve(v); }, function (e) { clearTimeout(timer); reject(e); });
-    });
+    if (window.__dgEnsureFirebaseApi) { window.__dgEnsureFirebaseApi(cb, onerror); return; }
+    setTimeout(function () { ensureFirebaseApi(cb, onerror); }, 50);
   }
   function ensureHandlerSignedIn() {
-    if (_handlerAuthPromise) return _handlerAuthPromise;
-    setFsStatus('Firestore: loading SDK…');
-    _handlerAuthPromise = new Promise(function (resolve, reject) {
-      ensureFirebaseApi(function () {
-        var auth = window.firebase.auth();
-        // Firebase Auth sessions persist per-origin across page loads
-        // (IndexedDB, not per-page) -- a bare `if (auth.currentUser)`
-        // trusted WHOEVER happened to already be signed in, including a
-        // leftover Agent session from testing agent-hub.html/notes/ in
-        // this same browser. Firestore's rules then correctly denied
-        // most of the Evidence collection (that Agent isn't the
-        // Handler), which looked like "Evidence is just empty" with no
-        // error, and survived reloads since the stale session lives in
-        // IndexedDB, not the page. handlerLogin_()/exchangeAgentToken
-        // both set the token's uid to a known value ('handler' here) --
-        // checking it costs nothing (already on the cached user object,
-        // no extra round trip) and catches exactly this case.
-        if (auth.currentUser && auth.currentUser.uid === 'handler') { resolve(auth.currentUser); return; }
-        var password = sessionStorage.getItem('dg_acell_pw') || '';
-        if (!password) { _handlerAuthPromise = null; reject(new Error('No A-Cell session -- log in as Handler first.')); return; }
-        setFsStatus('Firestore: SDK loaded — calling handlerLogin()…');
-        withTimeout_(window.firebase.functions().httpsCallable('handlerLogin')({ handler_password: password }), 20000, 'handlerLogin()')
-          .then(function (result) {
-            setFsStatus('Firestore: got token — exchanging for a session…');
-            return withTimeout_(auth.signInWithCustomToken(result.data.token), 20000, 'signInWithCustomToken()');
-          })
-          .then(function (cred) { resolve(cred.user); })
-          .catch(function (err) { _handlerAuthPromise = null; reject(err); });
-      }, function (err) {
-        // A Firebase SDK script failed or timed out loading -- see
-        // loadScriptTag()'s own comment. Without this second argument,
-        // that failure left this whole promise hanging forever with no
-        // resolve or reject at all, which is exactly what "signing
-        // in..." getting stuck indefinitely (no error, ever) turned out
-        // to be: a flaky mobile connection dropping one Firebase SDK
-        // script request, silently, with nothing downstream able to
-        // notice or recover short of a full reload.
-        _handlerAuthPromise = null;
-        reject(err);
-      });
-    });
-    return _handlerAuthPromise;
+    if (!window.__dgHandlerAuth) return Promise.reject(new Error('Handler auth not ready yet -- reload and try again.'));
+    setFsStatus('Firestore: signing in…');
+    return window.__dgHandlerAuth();
   }
-  // Exposed on window so the Track Library tab's own <script> block
-  // below (a separate IIFE -- function scopes don't cross <script>
-  // tags) can delegate to this SAME sign-in instead of running its own
-  // independent copy. The two used to be genuinely separate
-  // implementations, each with its own handlerLogin() call: opening
-  // A-Cell could fire that Cloud Function twice in parallel (Evidence's
-  // listener and Track Library's own init both racing to sign in), which
-  // under a weak signal looked like "took several tries to get in" --
-  // two competing 20s-timeout network calls instead of one. Assigned
-  // here (not just declared) because inline <script> blocks in the same
-  // document run strictly in order with no async/defer, so this has
-  // already run by the time the Track Library block below needs it.
-  window.__dgHandlerAuth = ensureHandlerSignedIn;
-  // Same idea, one level down: exposes SDK-readiness alone (no sign-in)
-  // for the Play tab's own <script> block, which comes BEFORE this one
-  // in the document and reads public data (characters/briefs/cells are
-  // all public-read, see firestore.rules) that never needed a Handler
-  // session at all -- just Firebase itself being loaded.
-  window.__dgEnsureFirebaseApi = ensureFirebaseApi;
   function extensionForFile_(file) {
     var type = file.type || '';
     if (type === 'application/pdf') return '.pdf';
@@ -2647,35 +2602,39 @@
   function jsonpGet(action, params, cb, attempt) {
     attempt = attempt || 0;
     var cbName = '_acellEvidence_' + action + '_' + Date.now() + '_' + attempt;
-    var timer = setTimeout(function () {
-      delete window[cbName];
-      if (attempt < JSONP_GET_RETRY_DELAYS_MS.length) {
-        setTimeout(function () { jsonpGet(action, params, cb, attempt + 1); }, JSONP_GET_RETRY_DELAYS_MS[attempt]);
-      } else {
-        cb(null);
-      }
-    }, 15000);
-    window[cbName] = function (res) {
-      clearTimeout(timer);
-      delete window[cbName];
-      var s = document.getElementById('s-' + cbName);
-      if (s) s.remove();
-      cb(res);
-    };
-    var s = document.createElement('script');
-    s.id = 's-' + cbName;
-    var qs = 'action=' + action + '&callback=' + cbName;
-    // Admin listing reads (list_characters/list_agent_file_only/
-    // list_deleted_characters) need a Handler session -- see
-    // requireHandlerSession_() in Code.gs. Attached to every GET here
-    // rather than special-cased per action: harmless extra param for
-    // the ones that don't check it, one less thing to keep in sync
-    // across this file's several independent jsonpGet() copies.
-    var acellSession = sessionStorage.getItem('dg_acell_session');
-    if (acellSession) qs += '&handler_session=' + encodeURIComponent(acellSession);
-    Object.keys(params || {}).forEach(function (k) { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
-    s.src = APPS_SCRIPT_URL + '?' + qs;
-    document.head.appendChild(s);
+    function doRequest(idToken) {
+      var timer = setTimeout(function () {
+        delete window[cbName];
+        if (attempt < JSONP_GET_RETRY_DELAYS_MS.length) {
+          setTimeout(function () { jsonpGet(action, params, cb, attempt + 1); }, JSONP_GET_RETRY_DELAYS_MS[attempt]);
+        } else {
+          cb(null);
+        }
+      }, 15000);
+      window[cbName] = function (res) {
+        clearTimeout(timer);
+        delete window[cbName];
+        var s = document.getElementById('s-' + cbName);
+        if (s) s.remove();
+        cb(res);
+      };
+      var s = document.createElement('script');
+      s.id = 's-' + cbName;
+      var qs = 'action=' + action + '&callback=' + cbName;
+      // The full, unfiltered Evidence Locker view (list_evidence) needs
+      // a Handler ID token -- see verifyHandlerIdToken_() in Code.gs.
+      // Attached to every GET here rather than special-cased per
+      // action: harmless extra param for the ones that don't check it,
+      // one less thing to keep in sync across this file's several
+      // independent jsonpGet() copies. Best-effort -- proceeds with no
+      // token at all if not signed in yet, same as before.
+      if (idToken) qs += '&id_token=' + encodeURIComponent(idToken);
+      Object.keys(params || {}).forEach(function (k) { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
+      s.src = APPS_SCRIPT_URL + '?' + qs;
+      document.head.appendChild(s);
+    }
+    if (window.__dgGetHandlerIdToken) window.__dgGetHandlerIdToken().then(doRequest, function () { doRequest(null); });
+    else doRequest(null);
   }
 
   function cellName(cellId) {
@@ -2887,10 +2846,12 @@
           document.getElementById('evidence-op-edit-cancel').disabled = true;
           confirmBtn.textContent = 'Saving…';
           statusEl.textContent = 'Renaming Operation…';
-          fetch(APPS_SCRIPT_URL, {
-            method: 'POST', mode: 'no-cors', keepalive: true,
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({ action: 'update_operation', operation_id: opId, name: newName, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+          window.__dgGetHandlerIdToken().then(function (idToken) {
+            return fetch(APPS_SCRIPT_URL, {
+              method: 'POST', mode: 'no-cors', keepalive: true,
+              headers: { 'Content-Type': 'text/plain' },
+              body: JSON.stringify({ action: 'update_operation', operation_id: opId, name: newName, id_token: idToken }),
+            });
           }).then(function () {
             setTimeout(function () {
               refreshOperations(function () {
@@ -2917,10 +2878,12 @@
         if (!o || !confirm('Delete Operation "' + o.name + '"? Evidence filed under it becomes Unfiled, not deleted.')) return;
         x.style.pointerEvents = 'none'; // same double-submit guard as Create/Rename, see their own comments
         statusEl.textContent = 'Deleting Operation…';
-        fetch(APPS_SCRIPT_URL, {
-          method: 'POST', mode: 'no-cors', keepalive: true,
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({ action: 'delete_operation', operation_id: opId, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+        window.__dgGetHandlerIdToken().then(function (idToken) {
+          return fetch(APPS_SCRIPT_URL, {
+            method: 'POST', mode: 'no-cors', keepalive: true,
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ action: 'delete_operation', operation_id: opId, id_token: idToken }),
+          });
         }).then(function () {
           setTimeout(function () {
             refreshOperations(function () {
@@ -3095,15 +3058,17 @@
     var next = cb.checked;
     cb.disabled = true;
     statusEl.textContent = 'Saving…';
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors', keepalive: true,
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        action: 'update_evidence', evidence_id: h.evidence_id, title: h.title, body: h.body,
-        photo: h.photo || '', cell_id: h.cell_id || '', operation_id: h.operation_id || '',
-        released: next, restricted_to: JSON.stringify(h.restricted_to || []),
-        handler_password: sessionStorage.getItem('dg_acell_pw') || '',
-      }),
+    window.__dgGetHandlerIdToken().then(function (idToken) {
+      return fetch(APPS_SCRIPT_URL, {
+        method: 'POST', mode: 'no-cors', keepalive: true,
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          action: 'update_evidence', evidence_id: h.evidence_id, title: h.title, body: h.body,
+          photo: h.photo || '', cell_id: h.cell_id || '', operation_id: h.operation_id || '',
+          released: next, restricted_to: JSON.stringify(h.restricted_to || []),
+          id_token: idToken,
+        }),
+      });
     }).then(function () {
       setTimeout(function () {
         jsonpGet('list_evidence', {}, function (res) {
@@ -3147,10 +3112,12 @@
     // paths.
     if (btn) { btn.disabled = true; btn.textContent = 'Deleting…'; }
     statusEl.textContent = 'Deleting…';
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors', keepalive: true,
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'delete_evidence', evidence_id: h.evidence_id, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+    window.__dgGetHandlerIdToken().then(function (idToken) {
+      return fetch(APPS_SCRIPT_URL, {
+        method: 'POST', mode: 'no-cors', keepalive: true,
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'delete_evidence', evidence_id: h.evidence_id, id_token: idToken }),
+      });
     }).then(function () {
       setTimeout(function () {
         jsonpGet('list_evidence', {}, function (res) {
@@ -3323,7 +3290,6 @@
         document.querySelectorAll('#evidence-new-restrict-wrap input:checked'), function (cb) { return cb.value; });
       var errEl = document.getElementById('evidence-new-error');
       if (!title) { errEl.textContent = 'Give the evidence a title first.'; return; }
-      var handlerPw = sessionStorage.getItem('dg_acell_pw') || '';
       var originalLabel = confirmBtn.textContent;
       confirmBtn.disabled = true;
       confirmBtn.textContent = formPhotoFile ? 'Uploading…' : (editingEvidence ? 'Saving…' : 'Creating…');
@@ -3335,10 +3301,11 @@
       var evidenceId = editingEvidence ? editingEvidence.evidence_id
         : ('evidence_' + Date.now() + '_' + Math.floor(Math.random() * 100000).toString(36));
       statusEl.textContent = formPhotoFile ? 'Uploading…' : (editingEvidence ? 'Saving…' : 'Creating…');
-      uploadEvidencePhotoIfNeeded_(evidenceId).then(function (photoToSave) {
+      Promise.all([window.__dgGetHandlerIdToken(), uploadEvidencePhotoIfNeeded_(evidenceId)]).then(function (results) {
+        var idToken = results[0], photoToSave = results[1];
         var payload = editingEvidence
-          ? { action: 'update_evidence', evidence_id: evidenceId, title: title, body: body, photo: photoToSave, cell_id: cellId, operation_id: opId, released: released, restricted_to: JSON.stringify(restrictedTo), handler_password: handlerPw }
-          : { action: 'create_evidence', evidence_id: evidenceId, title: title, body: body, photo: photoToSave, cell_id: cellId, operation_id: opId, released: released, restricted_to: JSON.stringify(restrictedTo), handler_password: handlerPw };
+          ? { action: 'update_evidence', evidence_id: evidenceId, title: title, body: body, photo: photoToSave, cell_id: cellId, operation_id: opId, released: released, restricted_to: JSON.stringify(restrictedTo), id_token: idToken }
+          : { action: 'create_evidence', evidence_id: evidenceId, title: title, body: body, photo: photoToSave, cell_id: cellId, operation_id: opId, released: released, restricted_to: JSON.stringify(restrictedTo), id_token: idToken };
         confirmBtn.textContent = editingEvidence ? 'Saving…' : 'Creating…';
         statusEl.textContent = editingEvidence ? 'Saving…' : 'Creating…';
         // No keepalive here, unlike every other POST in this file: keepalive
@@ -3402,10 +3369,12 @@
       newCancelBtn.disabled = true;
       newConfirmBtn.textContent = 'Creating…';
       statusEl.textContent = 'Creating Operation…';
-      fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors', keepalive: true,
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'create_operation', name: name, cell_id: filterCellId, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+      window.__dgGetHandlerIdToken().then(function (idToken) {
+        return fetch(APPS_SCRIPT_URL, {
+          method: 'POST', mode: 'no-cors', keepalive: true,
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({ action: 'create_operation', name: name, cell_id: filterCellId, id_token: idToken }),
+        });
       }).then(function () {
         setTimeout(function () {
           jsonpGet('list_operations', {}, function (res) {
@@ -3562,35 +3531,40 @@
   function jsonpGet(action, params, cb, attempt) {
     attempt = attempt || 0;
     var cbName = '_acellSheet_' + action + '_' + Date.now() + '_' + attempt;
-    var timer = setTimeout(function () {
-      delete window[cbName];
-      if (attempt < JSONP_GET_RETRY_DELAYS_MS.length) {
-        setTimeout(function () { jsonpGet(action, params, cb, attempt + 1); }, JSONP_GET_RETRY_DELAYS_MS[attempt]);
-      } else {
-        cb(null);
-      }
-    }, 15000);
-    window[cbName] = function (res) {
-      clearTimeout(timer);
-      delete window[cbName];
-      var s = document.getElementById('s-' + cbName);
-      if (s) s.remove();
-      cb(res);
-    };
-    var s = document.createElement('script');
-    s.id = 's-' + cbName;
-    var qs = 'action=' + action + '&callback=' + cbName;
-    // Admin listing reads (list_characters/list_agent_file_only/
-    // list_deleted_characters) need a Handler session -- see
-    // requireHandlerSession_() in Code.gs. Attached to every GET here
-    // rather than special-cased per action: harmless extra param for
-    // the ones that don't check it, one less thing to keep in sync
-    // across this file's several independent jsonpGet() copies.
-    var acellSession = sessionStorage.getItem('dg_acell_session');
-    if (acellSession) qs += '&handler_session=' + encodeURIComponent(acellSession);
-    Object.keys(params || {}).forEach(function (k) { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
-    s.src = APPS_SCRIPT_URL + '?' + qs;
-    document.head.appendChild(s);
+    function doRequest(idToken) {
+      var timer = setTimeout(function () {
+        delete window[cbName];
+        if (attempt < JSONP_GET_RETRY_DELAYS_MS.length) {
+          setTimeout(function () { jsonpGet(action, params, cb, attempt + 1); }, JSONP_GET_RETRY_DELAYS_MS[attempt]);
+        } else {
+          cb(null);
+        }
+      }, 15000);
+      window[cbName] = function (res) {
+        clearTimeout(timer);
+        delete window[cbName];
+        var s = document.getElementById('s-' + cbName);
+        if (s) s.remove();
+        cb(res);
+      };
+      var s = document.createElement('script');
+      s.id = 's-' + cbName;
+      var qs = 'action=' + action + '&callback=' + cbName;
+      // Admin listing reads (list_characters/list_agent_file_only/
+      // list_deleted_characters) need a Handler ID token -- see
+      // verifyHandlerIdToken_() in Code.gs. Attached to every GET here
+      // rather than special-cased per action: harmless extra param for
+      // the ones that don't check it, one less thing to keep in sync
+      // across this file's several independent jsonpGet() copies.
+      // Best-effort -- proceeds with no token at all if not signed in
+      // yet, same as before.
+      if (idToken) qs += '&id_token=' + encodeURIComponent(idToken);
+      Object.keys(params || {}).forEach(function (k) { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
+      s.src = APPS_SCRIPT_URL + '?' + qs;
+      document.head.appendChild(s);
+    }
+    if (window.__dgGetHandlerIdToken) window.__dgGetHandlerIdToken().then(doRequest, function () { doRequest(null); });
+    else doRequest(null);
   }
 
   function fetchAll(isRefresh) {
@@ -3782,10 +3756,12 @@
     function next() {
       if (idx >= codes.length) return;
       var code = codes[idx++];
-      fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors', keepalive: true,
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'delete_character', agent_code: code, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+      window.__dgGetHandlerIdToken().then(function (idToken) {
+        return fetch(APPS_SCRIPT_URL, {
+          method: 'POST', mode: 'no-cors', keepalive: true,
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({ action: 'delete_character', agent_code: code, id_token: idToken }),
+        });
       }).then(afterOne).catch(afterOne);
     }
     function afterOne() {
@@ -3841,13 +3817,18 @@
   // see updateCharacterField()'s own comment in Code.gs.
   function savePlayerName(row, value) {
     row.playerName = value;
-    var body = row.isBriefsOnly
-      ? { action: 'update_field', agent_code: row.code, field: 'player_name', value: value }
-      : { action: 'update_character_field', agent_code: row.code, field: 'player_name', value: value, handler_password: sessionStorage.getItem('dg_acell_pw') || '' };
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors', keepalive: true,
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(body),
+    // Agent-File-only rows (update_field) are the Agent's own write, no
+    // Handler credential needed -- only the Characters-row path
+    // (update_character_field) is Handler-gated.
+    (row.isBriefsOnly ? Promise.resolve(null) : window.__dgGetHandlerIdToken()).then(function (idToken) {
+      var body = row.isBriefsOnly
+        ? { action: 'update_field', agent_code: row.code, field: 'player_name', value: value }
+        : { action: 'update_character_field', agent_code: row.code, field: 'player_name', value: value, id_token: idToken };
+      return fetch(APPS_SCRIPT_URL, {
+        method: 'POST', mode: 'no-cors', keepalive: true,
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(body),
+      });
     }).then(function () { fetchAll(); }).catch(function () { fetchAll(); });
   }
 
@@ -3889,10 +3870,12 @@
 
   function doDelete(row, slot) {
     slot.innerHTML = '<div class="admin-confirm"><p>Deleting…</p></div>';
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors', keepalive: true,
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'delete_character', agent_code: row.code, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+    window.__dgGetHandlerIdToken().then(function (idToken) {
+      return fetch(APPS_SCRIPT_URL, {
+        method: 'POST', mode: 'no-cors', keepalive: true,
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'delete_character', agent_code: row.code, id_token: idToken }),
+      });
     }).then(function () {
       setTimeout(function () { verifyDelete(row, slot); }, 900);
     }).catch(function () {
@@ -3962,10 +3945,12 @@
     var agent = deletedAgents[i];
     if (!agent) return;
     statusEl.textContent = 'Restoring…';
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors', keepalive: true,
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'restore_character', agent_code: agent.code, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+    window.__dgGetHandlerIdToken().then(function (idToken) {
+      return fetch(APPS_SCRIPT_URL, {
+        method: 'POST', mode: 'no-cors', keepalive: true,
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'restore_character', agent_code: agent.code, id_token: idToken }),
+      });
     }).then(function () {
       setTimeout(function () { verifyRestore(agent); }, 900);
     }).catch(function () {
@@ -4006,40 +3991,46 @@
 
 <script>
 /* ══════════════════════════════════════════════
-   MUSIC -- the Handler's broadcast side of Table Radio. Sets a track
-   for a channel via set_now_playing; players dial that same numbered
-   channel (1-5) on the small widget on every Hub page (see
-   assets/table-radio.js). The channel is picked with the same rotary
-   dial UI as the player-facing widget, not typed -- a free-text
-   channel name let two players land on "sam" vs "Sam" and never hear
-   each other. Both share the set_now_playing / get_now_playing Apps
-   Script actions (acell-table-radio-addition.txt) plus get_playlist /
-   save_playlist (acell-table-radio-playlist-addition.txt), both handed
-   over separately.
+   MUSIC -- the Handler's broadcast side of Table Radio. Sets a track for
+   a channel; players dial that same numbered channel (1-5) on the small
+   widget on every Hub page (see assets/table-radio.js). The channel is
+   picked with the same rotary dial UI as the player-facing widget, not
+   typed -- a free-text channel name let two players land on "sam" vs
+   "Sam" and never hear each other.
 
-   set_now_playing is a `mode:'no-cors'` POST (needed to avoid a CORS
-   error against Apps Script), which means the browser genuinely cannot
-   tell whether the server understood the request -- fetch() resolves
-   "successfully" even if the backend addition isn't deployed yet, or
-   the action isn't recognized. So every write here is followed by a
-   real GET read-back (which CAN see the actual response) before the
-   status line claims success -- "Broadcasting" only appears once
-   get_now_playing / get_playlist confirms the change actually landed.
+   Setting/pausing/resuming/restarting/seeking/looping the main track,
+   the ambient-loop/stinger soundboard below, and the broadcast-wide mix
+   sliders all write STRAIGHT to the radio/{channel} Firestore doc from
+   the browser (db.runTransaction()/docRef.set(), via
+   ensureHandlerSignedIn()) -- no Apps Script round trip, no no-cors
+   POST whose success a browser can't actually verify. startNowPlaying
+   Listener_()'s own onSnapshot on that same doc is what actually
+   confirms a write landed and drives every bit of this tab's live
+   state (status line, on-air indicator, Pause/Resume label, scrubber),
+   immediately and without a fixed confirm-delay or a retry ladder that
+   can still lose the race -- see BUGFIXES.md's Radio main-track entry
+   for the migration this replaced (a `mode:'no-cors'` POST + a delayed
+   GET read-back, which could report false success if the Apps Script
+   addition wasn't deployed, and had already been fixed once for the
+   soundboard for the identical ~8s-latency reason). Cue For Cell writes
+   straight to Firestore too now (cells/{cellId}'s channel field, same
+   doc the Cells tab's own create/delete write directly -- see
+   cellAssignBtn's own comment below). Only the Cue List
+   (get_playlist/save_playlist) is still Apps-Script-mediated -- a
+   separate surface, out of scope here.
 
    The whole tab is styled as one field-radio unit (chassis, recessed
    screen, numbered sections) rather than a form dropped on paper --
    same tactile approach as the Cover ID Fabricator's tablet in
    dg-agent-portal.html, in the dial's existing dark olive-green
    palette. "Cue For Cell" lets a Cell (from the Cells tab) carry its
-   own usual channel (set_cell_channel, same addition file) so tuning
-   to "this table's ambience" is picking a name from a dropdown
-   instead of remembering a number.
+   own usual channel so tuning to "this table's ambience" is picking a
+   name from a dropdown instead of remembering a number.
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
   var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
   var CHANNEL_KEY = 'dg_acell_broadcast_channel';
-  var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm it. Check that the Table Radio addition (set_now_playing / get_now_playing) is pasted into Apps Script and redeployed.';
   // Fixed numbered channels, turned on a dial rather than typed -- five
   // slots, no typos, no two players landing on "sam" vs "Sam".
   var CHANNELS = ['1', '2', '3', '4', '5'];
@@ -4209,31 +4200,78 @@
   }
 
   // Sends a per-instance transport action (pause/resume/seek/loop/stop)
-  // for one active ambient layer or stinger, then confirms via a real
-  // GET and re-renders both the ambient grid (its "active" class) and
-  // the Active Sounds panel -- same no-cors-POST-then-confirm-GET
-  // discipline every other Handler write in this app already uses.
+  // for one active ambient layer or stinger straight to Firestore (see
+  // the Soundboard header comment above updateSoundInstanceFirestore_/
+  // removeSoundInstanceFirestore_/setAmbientLayerActive_ for why) --
+  // the transaction's own resolved array IS the confirmed new state, so
+  // there's no separate confirm-via-GET step needed the way every other
+  // Apps-Script-mediated write in this file still has.
   function sendActiveSoundAction_(row, action, extraParams) {
     var ch = currentChannel;
-    var body = { action: action, channel: ch, handler_password: sessionStorage.getItem('dg_acell_pw') || '' };
-    if (row.kind === 'ambient') body.layer_id = row.refId; else body.fired_at = String(row.refId);
-    Object.keys(extraParams || {}).forEach(function (k) { body[k] = extraParams[k]; });
+    var field = row.kind === 'ambient' ? 'ambient_layers' : 'stingers';
+    var matchKey = row.kind === 'ambient' ? 'id' : 'fired_at';
+    var matchVal = row.refId;
     soundboardStatusEl.textContent = 'Working…';
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors', keepalive: true,
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(body),
-    }).then(function () {
-      setTimeout(function () {
-        jsonpGet('get_now_playing', { channel: ch }, function (res) {
-          activeAmbientLayers = ((res && Array.isArray(res.ambient_layers)) ? res.ambient_layers : []).map(normalizeAmbientLayer_);
-          activeStingers = (res && Array.isArray(res.stingers)) ? res.stingers : [];
-          renderAmbientGrid();
-          renderActiveSounds_();
-          soundboardStatusEl.textContent = 'Updated.';
+    var promise;
+    switch (action) {
+      case 'pause_ambient_layer':
+      case 'pause_stinger':
+        promise = updateSoundInstanceFirestore_(ch, field, matchKey, matchVal, function (inst) {
+          inst.paused = true;
+          inst.paused_at = Date.now();
         });
-      }, 900);
-    }).catch(function () { soundboardStatusEl.textContent = 'Could not reach the backend.'; });
+        break;
+      case 'resume_ambient_layer':
+      case 'resume_stinger':
+        // Same shiftedStart math as Code.gs's resumeAmbientLayer_/
+        // resumeStinger_ -- preserves the instance's current position
+        // across the pause instead of jumping back to wherever it
+        // happened to be when paused_at was stamped.
+        promise = updateSoundInstanceFirestore_(ch, field, matchKey, matchVal, function (inst) {
+          var now = Date.now();
+          var pausedAt = inst.paused_at || now;
+          var startedAt = inst.started_at || now;
+          inst.started_at = startedAt + (now - pausedAt);
+          inst.paused = false;
+          inst.paused_at = 0;
+        });
+        break;
+      case 'seek_ambient_layer':
+      case 'seek_stinger':
+        promise = updateSoundInstanceFirestore_(ch, field, matchKey, matchVal, function (inst) {
+          var now = Date.now();
+          var positionMs = Math.max(0, Number(extraParams.position_ms) || 0);
+          inst.started_at = now - positionMs;
+          if (inst.paused) inst.paused_at = now;
+        });
+        break;
+      case 'set_ambient_layer_loop':
+      case 'set_stinger_loop':
+        promise = updateSoundInstanceFirestore_(ch, field, matchKey, matchVal, function (inst) {
+          inst.loop = extraParams.loop === '1';
+        });
+        break;
+      case 'set_ambient_layer':
+        // Stop, for an ambient row -- same transaction the toggle grid's
+        // own button already uses, not a separate writer for the
+        // identical "turn this loop off" action.
+        promise = setAmbientLayerActive_(ch, matchVal, false);
+        break;
+      case 'stop_stinger':
+        promise = removeSoundInstanceFirestore_(ch, field, matchKey, matchVal);
+        break;
+      default:
+        promise = Promise.reject(new Error('unknown active-sound action: ' + action));
+    }
+    promise.then(function (arr) {
+      if (row.kind === 'ambient') activeAmbientLayers = arr; else activeStingers = arr;
+      renderAmbientGrid();
+      renderActiveSounds_();
+      soundboardStatusEl.textContent = 'Updated.';
+    }).catch(function (err) {
+      console.error(action + ' (direct Firestore) failed', err);
+      soundboardStatusEl.textContent = 'Could not reach Firestore — ' + (err && err.message ? err.message : 'not signed in as Handler') + '.';
+    });
   }
 
   // Builds the DOM + headless preview <audio> for one Active Sounds row
@@ -4339,9 +4377,9 @@
   // creating/removing rows as instances start/stop, and refreshing
   // every still-active row's controls/scrubber to match its current
   // instance state. Called after every ambient/stinger action and every
-  // checkCurrent() (channel switch) -- this tab has no live listener for
-  // Now Playing, so "currently playing" here means "as of the last
-  // confirmed read," same as every other status line in this tab.
+  // startNowPlayingListener_() snapshot (including on a channel switch),
+  // so "currently playing" here always reflects the live radio/{channel}
+  // doc, not a stale poll.
   function renderActiveSounds_() {
     var wanted = {};
     activeAmbientLayers.forEach(function (l) { wanted['ambient:' + l.id] = { kind: 'ambient', inst: l, label: ambientLabel_(l.id) }; });
@@ -4563,11 +4601,11 @@
   });
 
   // Ticks the slider/preview forward every second so it reads as a live,
-  // playing transport rather than a snapshot frozen at the last
-  // checkCurrent()/verify call -- same idea as table-radio.js's own
-  // progress display, just driven by this tab's own `current` state
-  // instead of a fresh Firestore snapshot each time. The native preview
-  // element already advances its own currentTime during normal
+  // playing transport between radio/{channel} snapshots, rather than a
+  // frozen frame -- same idea as table-radio.js's own progress display,
+  // just driven by this tab's own `current` state instead of computing
+  // fresh off each snapshot directly. The native preview element already
+  // advances its own currentTime during normal
   // playback -- this only re-syncs the FALLBACK slider display, since
   // syncTransportUI_()'s preview branch above deliberately skips
   // reseeking on a tick where nothing actually changed.
@@ -4578,36 +4616,37 @@
     }
   }, 1000);
 
-  // Same one-shot-verify-with-no-retry bug as verifyNowPlaying() (see its
-  // own comment) -- retries before giving up.
-  function verifySeek_(ch, positionMs, attempt) {
-    attempt = attempt || 0;
-    jsonpGet('get_now_playing', { channel: ch }, function (res) {
-      isSeekDragging = false;
-      if (res && res.status === 'OK' && res.track_url) {
-        current.started_at = res.started_at || 0;
-        current.paused_at = res.paused_at || 0;
-        current.paused = !!res.paused;
-        statusEl.textContent = 'Seeked to ' + formatSeekTime_(positionMs / 1000) + ' on CH ' + ch + '.';
-        syncTransportUI_();
-      } else if (attempt < NOW_PLAYING_VERIFY_RETRY_DELAYS_MS.length) {
-        isSeekDragging = true; // keep suppressing the tick-driven re-sync while we retry
-        setTimeout(function () { verifySeek_(ch, positionMs, attempt + 1); }, NOW_PLAYING_VERIFY_RETRY_DELAYS_MS[attempt]);
-      } else {
-        statusEl.textContent = NOT_DEPLOYED_MSG;
-      }
-    });
-  }
+  // Direct Firestore transaction, matching the Active Sounds panel's own
+  // per-instance seek -- read paused/started_at atomically (not from the
+  // possibly-stale local `current`) so this can't race a concurrent
+  // write from another open Handler tab, then shift started_at (and
+  // paused_at, if currently paused) the same way the old, now-removed
+  // Apps Script seekNowPlaying_() used to server-side. The radio/
+  // {channel} listener above picks up the result immediately -- no
+  // confirm-via-GET, no retry ladder.
   function sendSeek_(positionMs) {
     var ch = currentChannel;
     statusEl.textContent = 'Seeking…';
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors', keepalive: true,
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'seek_now_playing', channel: ch, position_ms: String(positionMs), handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+    ensureHandlerSignedIn().then(function () {
+      var db = window.firebase.firestore();
+      var docRef = radioDocRef_(ch);
+      return db.runTransaction(function (tx) {
+        return tx.get(docRef).then(function (snap) {
+          var data = snap.exists ? snap.data() : {};
+          var now = Date.now();
+          var wasPaused = !!data.paused;
+          var patch = { started_at: now - positionMs, updated_at: now };
+          if (wasPaused) patch.paused_at = now;
+          tx.set(docRef, patch, { merge: true });
+        });
+      });
     }).then(function () {
-      setTimeout(function () { verifySeek_(ch, positionMs); }, 900);
-    }).catch(function () { isSeekDragging = false; statusEl.textContent = 'Could not reach the backend.'; });
+      isSeekDragging = false;
+      statusEl.textContent = 'Seeked to ' + formatSeekTime_(positionMs / 1000) + ' on CH ' + ch + '.';
+    }).catch(function (err) {
+      isSeekDragging = false;
+      statusEl.textContent = 'Could not reach Firestore — ' + (err && err.message ? err.message : 'not signed in as Handler') + '.';
+    });
   }
 
   seekSlider.addEventListener('input', function () {
@@ -4700,48 +4739,50 @@
   var dialApi = wireDial(dialPanel, currentChannel, function (ch) {
     currentChannel = ch;
     try { localStorage.setItem(CHANNEL_KEY, ch); } catch (e) { /* best effort */ }
-    checkCurrent();
+    startNowPlayingListener_(ch);
+    loadPlaylist(ch);
   });
 
   // Live report, 2026-09-14: "Could not load the Track Library"
-  // intermittently, on a weak connection -- same underlying cause and
-  // fix as verifyNowPlaying()/verifyTransportAction_()/verifySeek_()
-  // above (see their own comments): a single JSONP request had exactly
-  // one 7s window to succeed, no retry at all. Retries twice more
-  // before actually giving up.
+  // intermittently, on a weak connection -- a single JSONP request (get_
+  // playlist/list_cells, the only reads left in this tab that still go
+  // through Apps Script) had exactly one 7s window to succeed, no retry
+  // at all. Retries twice more before actually giving up.
   var JSONP_GET_RETRY_DELAYS_MS = [1000, 1000];
   function jsonpGet(action, params, cb, attempt) {
     attempt = attempt || 0;
     var cbName = '_acellMusic_' + action + '_' + Date.now() + '_' + attempt;
-    var timer = setTimeout(function () {
-      delete window[cbName];
-      if (attempt < JSONP_GET_RETRY_DELAYS_MS.length) {
-        setTimeout(function () { jsonpGet(action, params, cb, attempt + 1); }, JSONP_GET_RETRY_DELAYS_MS[attempt]);
-      } else {
-        cb(null);
-      }
-    }, 15000);
-    window[cbName] = function (res) {
-      clearTimeout(timer);
-      delete window[cbName];
-      var s = document.getElementById('s-' + cbName);
-      if (s) s.remove();
-      cb(res);
-    };
-    var s = document.createElement('script');
-    s.id = 's-' + cbName;
-    var qs = 'action=' + action + '&callback=' + cbName;
-    // Admin listing reads (list_characters/list_agent_file_only/
-    // list_deleted_characters) need a Handler session -- see
-    // requireHandlerSession_() in Code.gs. Attached to every GET here
-    // rather than special-cased per action: harmless extra param for
-    // the ones that don't check it, one less thing to keep in sync
-    // across this file's several independent jsonpGet() copies.
-    var acellSession = sessionStorage.getItem('dg_acell_session');
-    if (acellSession) qs += '&handler_session=' + encodeURIComponent(acellSession);
-    Object.keys(params || {}).forEach(function (k) { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
-    s.src = APPS_SCRIPT_URL + '?' + qs;
-    document.head.appendChild(s);
+    function doRequest(idToken) {
+      var timer = setTimeout(function () {
+        delete window[cbName];
+        if (attempt < JSONP_GET_RETRY_DELAYS_MS.length) {
+          setTimeout(function () { jsonpGet(action, params, cb, attempt + 1); }, JSONP_GET_RETRY_DELAYS_MS[attempt]);
+        } else {
+          cb(null);
+        }
+      }, 15000);
+      window[cbName] = function (res) {
+        clearTimeout(timer);
+        delete window[cbName];
+        var s = document.getElementById('s-' + cbName);
+        if (s) s.remove();
+        cb(res);
+      };
+      var s = document.createElement('script');
+      s.id = 's-' + cbName;
+      var qs = 'action=' + action + '&callback=' + cbName;
+      // Neither of this tab's own remaining reads (get_playlist/
+      // list_cells) need Handler auth, but a Handler ID token is
+      // attached whenever one's already available anyway -- harmless,
+      // and one less thing to keep in sync across this file's several
+      // independent jsonpGet() copies.
+      if (idToken) qs += '&id_token=' + encodeURIComponent(idToken);
+      Object.keys(params || {}).forEach(function (k) { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
+      s.src = APPS_SCRIPT_URL + '?' + qs;
+      document.head.appendChild(s);
+    }
+    if (window.__dgGetHandlerIdToken) window.__dgGetHandlerIdToken().then(doRequest, function () { doRequest(null); });
+    else doRequest(null);
   }
 
   function setAirIndicator(onAir) {
@@ -4749,35 +4790,136 @@
     airEl.classList.toggle('on-air', !!onAir);
   }
 
-  /* ── Soundboard: ambient loops (toggle) + one-shot stingers (fire).
-     These two write STRAIGHT to Firestore from the browser (no Apps
-     Script round trip at all) -- unlike every other Handler write in
-     this file, which POSTs to Apps Script and lets it dual-write Sheet
-     + Firestore. That indirection was the actual source of the ~8s
-     latency reported live: Apps Script's Web App dispatch/cold-start
-     cost gated the Firestore write that table-radio.js's onSnapshot
-     listeners are waiting on, even though firestore.rules already
-     allowed `isHandler()` to write radio/{channel} directly, and A-Cell
-     already holds a real Firebase Auth session with that claim
-     (ensureHandlerSignedIn(), used for Evidence/Track uploads). Fixed by
-     cutting Apps Script out of the critical path for exactly these two
-     actions: a Firestore transaction reads+merges the same
-     ambient_layers/stingers array Code.gs's setAmbientLayer_/
-     triggerStinger_ compute server-side, so playback is audible the
-     instant the transaction commits. The Sheet is intentionally NOT
-     updated by these two actions anymore -- calling the old Apps Script
-     action afterward as a "background sync" was tried and rejected: it
-     independently recomputes the array from the Sheet's (now stale)
-     state and overwrites Firestore with it a few seconds later, which
-     for a stinger means firing the SAME sound a second time (stingers
-     have no id-based idempotency -- see triggerStinger_'s own comment)
-     -- exactly the kind of duplicate-playback bug already fixed once
-     tonight. Everything else (main-track play/pause/resume/seek, and
-     pause/resume/seek/loop/stop of an ALREADY-active instance via the
-     Active Sounds panel below) is unchanged and still Apps-Script/Sheet
-     mediated -- out of scope for tonight's fix. ── */
+  /* ── Soundboard: ambient loops (toggle), one-shot stingers (fire), and
+     per-instance transport (pause/resume/seek/loop/stop, from the
+     Active Sounds panel below) all write STRAIGHT to Firestore from the
+     browser (no Apps Script round trip at all) -- unlike every other
+     Handler write in this file, which POSTs to Apps Script and lets it
+     dual-write Sheet + Firestore. That indirection was the actual
+     source of the ~8s latency reported live: Apps Script's Web App
+     dispatch/cold-start cost gated the Firestore write that
+     table-radio.js's onSnapshot listeners are waiting on, even though
+     firestore.rules already allowed `isHandler()` to write
+     radio/{channel} directly, and A-Cell already holds a real Firebase
+     Auth session with that claim (ensureHandlerSignedIn(), used for
+     Evidence/Track uploads). Fixed by cutting Apps Script out of the
+     critical path entirely for every one of these actions: a Firestore
+     transaction reads+mutates the same ambient_layers/stingers array
+     Code.gs's setAmbientLayer_/triggerStinger_/updateSoundInstance_/
+     removeSoundInstance_ compute server-side (same field semantics,
+     copied deliberately rather than re-derived, so a paused loop's
+     elapsed-time math stays identical either way a write happens to
+     land), so playback is audible/reacts the instant the transaction
+     commits, not after a further ~900ms confirmation poll. The Sheet is
+     intentionally NOT updated by any of these actions anymore --
+     calling the old Apps Script actions afterward as a "background
+     sync" was tried and rejected for the toggle/fire pair (see the
+     original version of this comment): it independently recomputes the
+     array from the Sheet's now-stale state and overwrites Firestore
+     with it a few seconds later, which for a stinger means firing the
+     SAME sound a second time. The pause_ambient_layer/resume_ambient_layer/
+     seek_ambient_layer/set_ambient_layer_loop/pause_stinger/
+     resume_stinger/seek_stinger/set_stinger_loop/stop_stinger Apps
+     Script actions this made unreachable, and later the main track's
+     own set/pause/resume/seek/loop_now_playing actions too (see
+     startNowPlayingListener_/setNowPlaying/sendTransportAction_/
+     sendSeek_/sendLoopToggle_ below, migrated the same way), have all
+     since been deleted from Code.gs -- see BUGFIXES.md's Radio
+     main-track entry. Cue For Cell writes straight to Firestore now too
+     (see cellAssignBtn's own comment below). Only the Cue List
+     (get_playlist/save_playlist) is still Apps-Script-mediated now --
+     a separate surface, out of scope here (see the Music tab's own
+     header comment above). ── */
   function radioDocRef_(channel) {
     return window.firebase.firestore().collection('radio').doc(channel);
+  }
+
+  // Finds one ambient_layers/stingers array entry by its stable key
+  // (layer id, or a stinger's fired_at) -- same matching Code.gs's own
+  // findSoundInstance_() does server-side.
+  function findSoundInstance_(arr, matchKey, matchVal) {
+    for (var i = 0; i < arr.length; i++) { if (arr[i][matchKey] === matchVal) return arr[i]; }
+    return null;
+  }
+
+  // Shared Firestore transaction for a per-instance transport mutation
+  // (pause/resume/seek/loop) -- mutateFn edits the matched instance
+  // in place, same shape as Code.gs's updateSoundInstance_(), just
+  // committed directly from the browser instead of via an Apps Script
+  // round trip. Rejects if the instance is no longer active (already
+  // stopped/expired elsewhere) rather than silently no-oping.
+  function updateSoundInstanceFirestore_(channel, field, matchKey, matchVal, mutateFn) {
+    return ensureHandlerSignedIn().then(function () {
+      var db = window.firebase.firestore();
+      var docRef = radioDocRef_(channel);
+      return db.runTransaction(function (tx) {
+        return tx.get(docRef).then(function (snap) {
+          var data = snap.exists ? snap.data() : {};
+          var arr = Array.isArray(data[field]) ? data[field] : [];
+          if (field === 'ambient_layers') arr = arr.map(normalizeAmbientLayer_);
+          var inst = findSoundInstance_(arr, matchKey, matchVal);
+          if (!inst) throw new Error('not currently active');
+          mutateFn(inst);
+          var now = Date.now();
+          var patch = { updated_at: now };
+          patch[field] = arr;
+          tx.set(docRef, patch, { merge: true });
+          return arr;
+        });
+      });
+    });
+  }
+
+  // Same shape as updateSoundInstanceFirestore_ but removes the
+  // instance entirely (Stop for a stinger, which has no separate on/off
+  // toggle the way an ambient layer does) -- mirrors Code.gs's
+  // removeSoundInstance_().
+  function removeSoundInstanceFirestore_(channel, field, matchKey, matchVal) {
+    return ensureHandlerSignedIn().then(function () {
+      var db = window.firebase.firestore();
+      var docRef = radioDocRef_(channel);
+      return db.runTransaction(function (tx) {
+        return tx.get(docRef).then(function (snap) {
+          var data = snap.exists ? snap.data() : {};
+          var arr = Array.isArray(data[field]) ? data[field] : [];
+          if (field === 'ambient_layers') arr = arr.map(normalizeAmbientLayer_);
+          arr = arr.filter(function (inst) { return inst[matchKey] !== matchVal; });
+          var now = Date.now();
+          var patch = { updated_at: now };
+          patch[field] = arr;
+          tx.set(docRef, patch, { merge: true });
+          return arr;
+        });
+      });
+    });
+  }
+
+  // Shared by the ambient grid's own toggle button AND the Active
+  // Sounds panel's Stop button for an ambient row -- both ultimately
+  // mean the same thing (turn this loop off), so both call the same
+  // transaction instead of the Active Sounds path duplicating it via a
+  // second, parallel writer.
+  function setAmbientLayerActive_(channel, layerId, active) {
+    return ensureHandlerSignedIn().then(function () {
+      var db = window.firebase.firestore();
+      var docRef = radioDocRef_(channel);
+      var now = Date.now();
+      return db.runTransaction(function (tx) {
+        return tx.get(docRef).then(function (snap) {
+          var data = snap.exists ? snap.data() : {};
+          var layers = (Array.isArray(data.ambient_layers) ? data.ambient_layers : []).map(normalizeAmbientLayer_);
+          if (active) {
+            if (!layers.some(function (l) { return l.id === layerId; })) {
+              layers.push({ id: layerId, started_at: now, paused: false, paused_at: 0, loop: true });
+            }
+          } else {
+            layers = layers.filter(function (l) { return l.id !== layerId; });
+          }
+          tx.set(docRef, { ambient_layers: layers, updated_at: now }, { merge: true });
+          return layers;
+        });
+      });
+    });
   }
 
   function renderAmbientGrid() {
@@ -4794,26 +4936,7 @@
         var ch = currentChannel;
         btn.classList.toggle('active', active);
         soundboardStatusEl.textContent = (active ? 'Starting ' : 'Stopping ') + label + '…';
-        ensureHandlerSignedIn().then(function () {
-          var db = window.firebase.firestore();
-          var docRef = radioDocRef_(ch);
-          var now = Date.now();
-          return db.runTransaction(function (tx) {
-            return tx.get(docRef).then(function (snap) {
-              var data = snap.exists ? snap.data() : {};
-              var layers = (Array.isArray(data.ambient_layers) ? data.ambient_layers : []).map(normalizeAmbientLayer_);
-              if (active) {
-                if (!layers.some(function (l) { return l.id === layerId; })) {
-                  layers.push({ id: layerId, started_at: now, paused: false, paused_at: 0, loop: true });
-                }
-              } else {
-                layers = layers.filter(function (l) { return l.id !== layerId; });
-              }
-              tx.set(docRef, { ambient_layers: layers, updated_at: now }, { merge: true });
-              return layers;
-            });
-          });
-        }).then(function (layers) {
+        setAmbientLayerActive_(ch, layerId, active).then(function (layers) {
           activeAmbientLayers = layers;
           renderActiveSounds_();
           soundboardStatusEl.textContent = (active ? label + ' is now looping on CH ' : label + ' stopped on CH ') + ch + '.';
@@ -4870,87 +4993,80 @@
     });
   }
 
-  function checkCurrent() {
-    var ch = currentChannel;
-    jsonpGet('get_now_playing', { channel: ch }, function (res) {
-      if (res && res.status === 'OK' && res.track_url) {
-        current = { track_url: res.track_url, track_title: res.track_title || '', track_kind: res.track_kind || '', loop: !!res.loop, paused: !!res.paused, started_at: res.started_at || 0, paused_at: res.paused_at || 0 };
-        statusEl.textContent = (current.paused ? 'Paused on CH ' : 'Currently broadcasting to CH ') + ch + ': ' + (current.track_title || current.track_url);
-        setAirIndicator(true);
-      } else {
-        current = { track_url: '', track_title: '', track_kind: '', loop: false, paused: false, started_at: 0, paused_at: 0 };
-        statusEl.textContent = 'Nothing currently broadcasting to CH ' + ch + '.';
-        setAirIndicator(false);
-      }
-      // Ambient layers/stingers are per-channel state independent of the
-      // track -- re-synced on every channel switch (checkCurrent() is
-      // the dial's onChange handler) so the grid/Active Sounds always
-      // reflect THIS channel's sounds, not whichever channel was last
-      // dialed.
-      activeAmbientLayers = ((res && Array.isArray(res.ambient_layers)) ? res.ambient_layers : []).map(normalizeAmbientLayer_);
-      activeStingers = (res && Array.isArray(res.stingers)) ? res.stingers : [];
-      // Broadcast-wide mix levels are per-channel state too, same as
-      // ambient_layers/stingers above -- re-synced on every channel
-      // switch so the sliders show THIS channel's mix, not whichever
-      // channel was last dialed.
-      var trackVol = (res && res.track_volume != null) ? res.track_volume : 100;
-      var ambientVol = (res && res.ambient_volume != null) ? res.ambient_volume : 100;
-      mixTrackSlider.value = trackVol;
-      mixTrackValueEl.textContent = trackVol;
-      mixAmbientSlider.value = ambientVol;
-      mixAmbientValueEl.textContent = ambientVol;
-      renderAmbientGrid();
-      renderActiveSounds_();
-      syncTransportUI_();
+  // Live radio/{channel} listener -- replaces the old get_now_playing
+  // JSONP poll (and its whole verify-with-retry family below) with the
+  // SAME onSnapshot pattern table-radio.js's player-facing widget and
+  // this tab's own Active Sounds panel already use. No Handler sign-in
+  // needed to read -- radio/{channel} is public-read (see
+  // firestore.rules) -- just the SDK loaded (waitForFirebaseApi_).
+  // Every field this tab displays (main track AND ambient_layers/
+  // stingers/mix volumes) lives on this one doc, so one listener drives
+  // all of it: re-subscribed on every channel switch, and it's the
+  // single source of truth current/activeAmbientLayers/activeStingers
+  // get updated from -- a write's own optimistic UI update is a head
+  // start, not a substitute; this listener is what actually confirms it
+  // landed, immediately and without a fixed ~900ms wait or a retry
+  // ladder that can still lose the race.
+  var nowPlayingUnsub_ = null;
+  function startNowPlayingListener_(ch) {
+    if (nowPlayingUnsub_) { nowPlayingUnsub_(); nowPlayingUnsub_ = null; }
+    waitForFirebaseApi_(function () {
+      // A channel switch mid-load could mean this callback fires after
+      // currentChannel has already moved on again -- only attach if
+      // we're still subscribing for the channel this call was for.
+      if (ch !== currentChannel) return;
+      nowPlayingUnsub_ = radioDocRef_(ch).onSnapshot(function (snap) {
+        var data = snap.exists ? snap.data() : {};
+        if (data.track_url) {
+          current = { track_url: data.track_url, track_title: data.track_title || '', track_kind: data.track_kind || '', loop: !!data.loop, paused: !!data.paused, started_at: data.started_at || 0, paused_at: data.paused_at || 0 };
+          statusEl.textContent = (current.paused ? 'Paused on CH ' : 'Currently broadcasting to CH ') + ch + ': ' + (current.track_title || current.track_url);
+          setAirIndicator(!current.paused);
+        } else {
+          current = { track_url: '', track_title: '', track_kind: '', loop: false, paused: false, started_at: 0, paused_at: 0 };
+          statusEl.textContent = 'Nothing currently broadcasting to CH ' + ch + '.';
+          setAirIndicator(false);
+        }
+        // Ambient layers/stingers are per-channel state independent of
+        // the track -- re-synced on every snapshot of THIS channel's own
+        // doc, not whichever channel was last dialed.
+        activeAmbientLayers = (Array.isArray(data.ambient_layers) ? data.ambient_layers : []).map(normalizeAmbientLayer_);
+        activeStingers = Array.isArray(data.stingers) ? data.stingers : [];
+        // Broadcast-wide mix levels are per-channel state too, same as
+        // ambient_layers/stingers above.
+        var trackVol = (data.track_volume != null) ? data.track_volume : 100;
+        var ambientVol = (data.ambient_volume != null) ? data.ambient_volume : 100;
+        mixTrackSlider.value = trackVol;
+        mixTrackValueEl.textContent = trackVol;
+        mixAmbientSlider.value = ambientVol;
+        mixAmbientValueEl.textContent = ambientVol;
+        renderAmbientGrid();
+        renderActiveSounds_();
+        syncTransportUI_();
+      }, function (err) {
+        statusEl.textContent = 'Could not reach Firestore — ' + (err && err.message ? err.message : 'listener error') + '.';
+      });
     });
-    loadPlaylist(ch);
   }
 
+  // Direct Firestore write -- the radio/{channel} listener above picks
+  // it up immediately, no confirm-via-GET needed. A fresh broadcast
+  // always resets paused/started_at, matching what the old, now-removed
+  // Apps Script setNowPlaying() used to do server-side.
   function setNowPlaying(trackUrl, trackTitle, trackKind, loop) {
     var ch = currentChannel;
     statusEl.textContent = 'Saving…';
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors', keepalive: true,
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'set_now_playing', channel: ch, track_url: trackUrl, track_title: trackTitle, track_kind: trackKind || '', loop: loop ? '1' : '0', handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+    ensureHandlerSignedIn().then(function () {
+      var now = Date.now();
+      return radioDocRef_(ch).set({
+        channel: ch, track_url: trackUrl || '', track_title: trackTitle || '', track_kind: trackKind || '',
+        started_at: now, updated_at: now, paused: false, paused_at: '', loop: !!loop
+      }, { merge: true });
     }).then(function () {
-      statusEl.textContent = 'Saved — checking…';
-      setTimeout(function () { verifyNowPlaying(ch, trackUrl, trackTitle); }, 900);
-    }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
-  }
-
-  // Live report, 2026-09-14: a Handler pressing Play on a track sometimes
-  // saw the wrong (previous) track title stick in this panel indefinitely
-  // -- Combat audibly playing (table-radio.js's own onSnapshot listener,
-  // Firestore-driven, already caught the real update) while this panel
-  // still showed Abyss. Root cause: this was a single get_now_playing
-  // check 900ms after the write, with NO retry -- if that one poll lost
-  // the race against real Apps Script Sheets write latency (getNowPlaying()
-  // reads the Sheet directly on a cache miss, and this file's own
-  // jsonpGet() has no retry of its own), the panel was left stranded on
-  // stale state with no other mechanism to ever self-correct short of the
-  // Handler triggering some unrelated action. Retries a few more times
-  // with backoff before actually giving up, same shape as agent-hub.html's
-  // CI_LOOKUP_RETRY_DELAYS_MS for the identical class of problem.
-  var NOW_PLAYING_VERIFY_RETRY_DELAYS_MS = [1500, 3000];
-  function verifyNowPlaying(ch, expectedUrl, expectedTitle, attempt) {
-    attempt = attempt || 0;
-    jsonpGet('get_now_playing', { channel: ch }, function (res) {
-      var live = res && res.status === 'OK' ? (res.track_url || '') : '';
-      if (live === expectedUrl) {
-        current = (res && res.status === 'OK')
-          ? { track_url: res.track_url || '', track_title: res.track_title || '', track_kind: res.track_kind || '', loop: !!res.loop, paused: !!res.paused, started_at: res.started_at || 0, paused_at: res.paused_at || 0 }
-          : { track_url: '', track_title: '', track_kind: '', loop: false, paused: false, started_at: 0, paused_at: 0 };
-        statusEl.textContent = expectedUrl
-          ? 'Broadcasting to CH ' + ch + ': ' + (expectedTitle || expectedUrl)
-          : 'Stopped broadcasting to CH ' + ch + '.';
-        setAirIndicator(!!expectedUrl);
-        syncTransportUI_();
-      } else if (attempt < NOW_PLAYING_VERIFY_RETRY_DELAYS_MS.length) {
-        setTimeout(function () { verifyNowPlaying(ch, expectedUrl, expectedTitle, attempt + 1); }, NOW_PLAYING_VERIFY_RETRY_DELAYS_MS[attempt]);
-      } else {
-        statusEl.textContent = NOT_DEPLOYED_MSG;
-      }
+      statusEl.textContent = trackUrl
+        ? 'Broadcasting to CH ' + ch + ': ' + (trackTitle || trackUrl)
+        : 'Stopped broadcasting to CH ' + ch + '.';
+    }).catch(function (err) {
+      statusEl.textContent = 'Could not reach Firestore — ' + (err && err.message ? err.message : 'not signed in as Handler') + '.';
     });
   }
 
@@ -4962,39 +5078,40 @@
   // Shared by the icon Pause/Resume button AND the native preview
   // <audio>'s own play/pause events (see syncTransportUI_() above) --
   // whichever one the Handler actually clicks, the same real broadcast
-  // action fires.
-  // Same one-shot-verify-with-no-retry bug as verifyNowPlaying() (see its
-  // own comment) -- a Pause/Resume click could lose the race against real
-  // Apps Script write latency and get permanently stuck showing the
-  // pre-click state. Retries with the same backoff.
-  function verifyTransportAction_(ch, wasPaused, attempt) {
-    attempt = attempt || 0;
-    jsonpGet('get_now_playing', { channel: ch }, function (res) {
-      var ok = res && res.status === 'OK' && res.track_url && !!res.paused !== wasPaused;
-      if (ok) {
-        current.paused = !!res.paused;
-        current.started_at = res.started_at || 0;
-        current.paused_at = res.paused_at || 0;
-        statusEl.textContent = (current.paused ? 'Paused on CH ' : 'Resumed on CH ') + ch + ': ' + (current.track_title || current.track_url);
-        syncTransportUI_();
-      } else if (attempt < NOW_PLAYING_VERIFY_RETRY_DELAYS_MS.length) {
-        setTimeout(function () { verifyTransportAction_(ch, wasPaused, attempt + 1); }, NOW_PLAYING_VERIFY_RETRY_DELAYS_MS[attempt]);
-      } else {
-        statusEl.textContent = NOT_DEPLOYED_MSG;
-      }
-    });
-  }
+  // action fires. Direct Firestore transaction, same shiftedStart math
+  // as the old, now-removed Apps Script resumeNowPlaying() -- reads
+  // paused_at/started_at atomically so a resume can't race a concurrent
+  // write from another open Handler tab.
   function sendTransportAction_(action) {
     var ch = currentChannel;
-    var wasPaused = current.paused;
-    statusEl.textContent = action === 'resume_now_playing' ? 'Resuming…' : 'Pausing…';
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: action, channel: ch, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+    var pausing = action === 'pause_now_playing';
+    statusEl.textContent = pausing ? 'Pausing…' : 'Resuming…';
+    ensureHandlerSignedIn().then(function () {
+      var db = window.firebase.firestore();
+      var docRef = radioDocRef_(ch);
+      return db.runTransaction(function (tx) {
+        return tx.get(docRef).then(function (snap) {
+          var data = snap.exists ? snap.data() : {};
+          var now = Date.now();
+          var patch = { updated_at: now };
+          if (pausing) {
+            patch.paused = true;
+            patch.paused_at = now;
+          } else {
+            var pausedAt = data.paused_at || now;
+            var startedAt = data.started_at || now;
+            patch.started_at = startedAt + (now - pausedAt);
+            patch.paused = false;
+            patch.paused_at = '';
+          }
+          tx.set(docRef, patch, { merge: true });
+        });
+      });
     }).then(function () {
-      setTimeout(function () { verifyTransportAction_(ch, wasPaused); }, 900);
-    }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+      statusEl.textContent = (pausing ? 'Paused on CH ' : 'Resumed on CH ') + ch + ': ' + (current.track_title || current.track_url);
+    }).catch(function (err) {
+      statusEl.textContent = 'Could not reach Firestore — ' + (err && err.message ? err.message : 'not signed in as Handler') + '.';
+    });
   }
 
   pauseBtn.addEventListener('click', function () {
@@ -5009,27 +5126,19 @@
 
   // Flips Loop on the CURRENT track in place -- no restart, no jump back
   // to 0:00, unlike the "Loop this track" checkbox in the Broadcast form
-  // above (which only applies on the NEXT Set Now Playing).
+  // above (which only applies on the NEXT Set Now Playing). Direct
+  // Firestore write, same as setNowPlaying above.
   function sendLoopToggle_() {
     var ch = currentChannel;
     var nextLoop = !current.loop;
     statusEl.textContent = nextLoop ? 'Turning loop on…' : 'Turning loop off…';
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors', keepalive: true,
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'set_now_playing_loop', channel: ch, loop: nextLoop ? '1' : '0', handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+    ensureHandlerSignedIn().then(function () {
+      return radioDocRef_(ch).set({ loop: nextLoop, updated_at: Date.now() }, { merge: true });
     }).then(function () {
-      setTimeout(function () {
-        jsonpGet('get_now_playing', { channel: ch }, function (res) {
-          var ok = res && res.status === 'OK' && res.track_url && !!res.loop === nextLoop;
-          if (!ok) { statusEl.textContent = NOT_DEPLOYED_MSG; return; }
-          current.loop = !!res.loop;
-          if (previewAudio) previewAudio.loop = current.loop;
-          statusEl.textContent = (current.loop ? 'Looping CH ' : 'Loop off on CH ') + ch + ': ' + (current.track_title || current.track_url);
-          syncTransportUI_();
-        });
-      }, 900);
-    }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+      statusEl.textContent = (nextLoop ? 'Looping CH ' : 'Loop off on CH ') + ch + ': ' + (current.track_title || current.track_url);
+    }).catch(function (err) {
+      statusEl.textContent = 'Could not reach Firestore — ' + (err && err.message ? err.message : 'not signed in as Handler') + '.';
+    });
   }
 
   loopBtn.addEventListener('click', function () {
@@ -5038,29 +5147,31 @@
   });
 
   /* ── Broadcast-wide Mix: fades the main track vs. ambient/stingers for
-     every listener at once (set_track_volume/set_ambient_volume),
-     unlike the Now Playing panel's own volume slider above (Handler-
-     local preview only, muted by default). Debounced so dragging the
-     slider doesn't fire a POST on every pixel of movement, same
-     reasoning as any other live-drag control talking to Apps Script. ── */
+     every listener at once, unlike the Now Playing panel's own volume
+     slider above (Handler-local preview only, muted by default). Direct
+     Firestore write, debounced so dragging the slider doesn't fire one
+     per pixel of movement -- `field` is the actual doc field name
+     ('track_volume'/'ambient_volume'), also used as the debounce timer
+     key. ── */
   var mixSendTimers = {};
-  function sendMixVolume_(field, action, value) {
+  function sendMixVolume_(field, value) {
     clearTimeout(mixSendTimers[field]);
     mixSendTimers[field] = setTimeout(function () {
-      fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors', keepalive: true,
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: action, channel: currentChannel, volume: String(value), handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+      var volume = Math.max(0, Math.min(100, Math.round(Number(value)) || 0));
+      ensureHandlerSignedIn().then(function () {
+        var patch = { updated_at: Date.now() };
+        patch[field] = volume;
+        return radioDocRef_(currentChannel).set(patch, { merge: true });
       }).catch(function () { /* best effort, same as every other live-drag control */ });
     }, 150);
   }
   mixTrackSlider.addEventListener('input', function () {
     mixTrackValueEl.textContent = mixTrackSlider.value;
-    sendMixVolume_('track', 'set_track_volume', mixTrackSlider.value);
+    sendMixVolume_('track_volume', mixTrackSlider.value);
   });
   mixAmbientSlider.addEventListener('input', function () {
     mixAmbientValueEl.textContent = mixAmbientSlider.value;
-    sendMixVolume_('ambient', 'set_ambient_volume', mixAmbientSlider.value);
+    sendMixVolume_('ambient_volume', mixAmbientSlider.value);
   });
 
   /* ── Auto-advance: steps through the Cue List in order when the
@@ -5214,8 +5325,9 @@
 
   /* ── Playlist: a saved list of tracks per channel, so the Handler
      doesn't have to re-paste a URL every time -- click one to make it
-     the current track. Same read-back-to-confirm discipline as
-     set_now_playing above. ── */
+     the current track (via setNowPlaying above, straight to Firestore).
+     Still Apps-Script-mediated itself (get_playlist/save_playlist,
+     unaffected by the main-track transport's own migration). ── */
   function renderPlaylist() {
     if (!playlist.length) {
       playlistEl.innerHTML = '<div class="rdo-playlist-empty">No saved tracks yet -- paste a URL and hit "+ Playlist".</div>';
@@ -5256,19 +5368,23 @@
 
   function savePlaylist() {
     var ch = currentChannel;
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors', keepalive: true,
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'save_playlist', channel: ch, playlist_json: JSON.stringify(playlist), handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+    window.__dgGetHandlerIdToken().then(function (idToken) {
+      return fetch(APPS_SCRIPT_URL, {
+        method: 'POST', mode: 'no-cors', keepalive: true,
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'save_playlist', channel: ch, playlist_json: JSON.stringify(playlist), id_token: idToken }),
+      });
     }).catch(function () { /* best effort, same as every other Apps Script write here */ });
   }
 
   /* ── Cue For Cell: a Cell (from the Cells tab) can carry its own
      usual channel, so cueing "this table's ambience" is picking a name
-     from a dropdown instead of remembering a number. Reads/writes the
-     same Cells sheet the Cells tab uses (list_cells / a new
-     set_cell_channel action, acell-cell-groups-addition.txt) -- a Cell
-     with no channel set yet just shows a note instead of auto-tuning. ── */
+     from a dropdown instead of remembering a number. The list itself is
+     still `list_cells` JSONP (unaffected by this migration -- see the
+     Music tab's own header comment); Assign below writes the channel
+     straight to Firestore now, same doc the Cells tab's own create/
+     delete write directly. A Cell with no channel set yet just shows a
+     note instead of auto-tuning. ── */
   function fetchCells() {
     jsonpGet('list_cells', {}, function (res) {
       if (!res || res.status !== 'OK' || !Array.isArray(res.cells)) return;
@@ -5297,24 +5413,21 @@
     if (!cell) { cellNote.textContent = 'Select a Cell first.'; return; }
     var ch = currentChannel;
     cellNote.textContent = 'Assigning…';
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors', keepalive: true,
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'set_cell_channel', cell_id: cell.cell_id, channel: ch, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+    // Direct Firestore write now (cells/{cellId}, merge on just the
+    // channel field) -- Code.gs's setCellChannel() dual-writes the same
+    // field, so a Handler-run-from-the-old-Sheet-path still works too.
+    // No live cells/ listener in THIS tab (unlike the Cells tab's own
+    // startListeners()), so the local `cells` array is updated
+    // optimistically off the write's own resolved Promise instead of a
+    // fresh list_cells read-back.
+    ensureHandlerSignedIn().then(function () {
+      return window.firebase.firestore().collection('cells').doc(cell.cell_id).set({ channel: ch }, { merge: true });
     }).then(function () {
-      setTimeout(function () {
-        jsonpGet('list_cells', {}, function (res) {
-          var updated = res && res.status === 'OK' && Array.isArray(res.cells) &&
-            res.cells.some(function (c) { return c.cell_id === cell.cell_id && c.channel === ch; });
-          if (!updated) {
-            cellNote.textContent = 'Sent, but the backend didn\'t confirm it. Check that the Cells addition (set_cell_channel) is pasted into Apps Script and redeployed.';
-            return;
-          }
-          cells = res.cells;
-          cellNote.textContent = cell.name + ' is now cued to CH ' + ch + '.';
-        });
-      }, 900);
-    }).catch(function () { cellNote.textContent = 'Could not reach the backend.'; });
+      cell.channel = ch;
+      cellNote.textContent = cell.name + ' is now cued to CH ' + ch + '.';
+    }).catch(function (err) {
+      cellNote.textContent = 'Could not reach Firestore — ' + (err && err.message ? err.message : 'not signed in as Handler') + '.';
+    });
   });
 
   setBtn.addEventListener('click', function () {
@@ -5346,21 +5459,18 @@
      used again, but a Storage upload is already durably saved by the
      time this ever POSTs anything, so its own confirmation only has a
      tiny Sheet-row write left to wait on. ── */
-  // This used to be a second, independent copy of the Evidence tab's own
-  // ensureFirebaseApi()/ensureHandlerSignedIn() (each <script> block in
-  // this file is its own IIFE, so a function declared in one isn't
-  // visible from another) -- a prior attempt to delete it outright broke
-  // Track Library entirely ("Uploading..." hangs forever, no error"),
-  // since that left this block calling an undefined function. The two
-  // copies also meant opening A-Cell could fire the handlerLogin() Cloud
-  // Function TWICE in parallel -- once from whichever of Evidence/Track
-  // Library's init ran first, once from the other -- which under a weak
-  // signal looked like login flakiness ("took 4 tries to get in").
-  // Fixed properly this time: delegate to the Evidence block's own
-  // ensureHandlerSignedIn() via the window.__dgHandlerAuth reference it
-  // exposes, instead of re-declaring the whole exchange here. Still a
-  // real local function (satisfies this block's own scope, avoiding the
-  // exact failure mode above) -- it just no longer duplicates the work.
+  // Delegates to the shared Handler-auth block near the top of the page
+  // (right after Clearance) via window.__dgHandlerAuth, same as the
+  // Evidence tab's own ensureHandlerSignedIn() further up -- each
+  // <script> block in this file is its own IIFE (a function declared in
+  // one isn't visible from another), so this stays a real local
+  // function to satisfy this block's own scope, it just no longer
+  // duplicates the sign-in exchange itself. (A prior version of this
+  // page had two genuinely independent copies of the loader/sign-in
+  // logic, which could fire the handlerLogin() Cloud Function TWICE in
+  // parallel on page load -- once from whichever of Evidence/Track
+  // Library's init ran first. That's the failure this delegation
+  // avoids.)
   function ensureHandlerSignedIn() {
     if (!window.__dgHandlerAuth) return Promise.reject(new Error('Handler auth not ready yet -- reload and try again.'));
     return window.__dgHandlerAuth();
@@ -5544,7 +5654,8 @@
   });
 
   renderStingerGroups();
-  checkCurrent();
+  startNowPlayingListener_(currentChannel);
+  loadPlaylist(currentChannel);
   fetchCells();
   trackLibListEl.innerHTML = '<div class="rdo-track-empty">Loading…</div>';
   startTracksListener();
