@@ -3556,3 +3556,50 @@ the real app) rather than a regression from this migration. Also fixed
 (previously checking an `id_token` on a `delete_cell` POST that no
 longer exists) to instead check the direct Firestore delete landed via
 the same cached Handler sign-in.
+
+## Phase 2 (Sheets removal), investigated but deliberately NOT migrated: Evidence Locker content CRUD
+
+Following the same "map remaining surfaces" ordering, Evidence content
+(`create_evidence`/`update_evidence`/`delete_evidence`) looked like the
+next-cheapest surface: photos already upload straight to Firebase
+Storage (Phase 4), `evidence/{evidenceId}` already has a working dual-write
+and a correct Handler-only `firestore.rules` entry, and the read side has
+been a live `onSnapshot` listener since Phase 5. A client-side rewrite
+(new `evidenceDocRef_()`/a client copy of `evidenceVisibleTo_()` mirroring
+Code.gs's own, direct `.set()`/`.delete()` calls replacing the
+`create_evidence`/`update_evidence`/`delete_evidence` POSTs, `toggleReleased()`
+and the create/edit form's confirm handler rewritten the same way as the
+Cells tab) was written and worked in isolation -- but before committing it,
+re-reading `recomputeEvidenceVisibleToForCell_()` (called from
+`updateCellMembers()`, which stays Apps Script-mediated, every time a
+Handler adds/removes a Cell member) showed it works by scanning the
+**Evidence Sheet**, not Firestore, to find every evidence item scoped to
+that Cell and recompute its `visible_to`. If `createEvidence()`/
+`updateEvidence()`/`deleteEvidence()` stopped writing to Sheets (the whole
+point of this migration), any Evidence item created or edited afterward
+would have no row in that Sheet at all -- invisible to
+`recomputeEvidenceVisibleToForCell_()` forever, meaning its `visible_to`
+would silently go stale the very next time that Cell's membership changed,
+with no error anywhere. Exactly the kind of side-effect-dropping gap
+`updateCellMembers()` itself was already correctly left alone for (see the
+entry above) -- caught here the same way, by reading the function body
+instead of assuming a fully-Firestore-mirrored collection had no more
+Sheet dependents.
+
+Fixing this properly means giving Code.gs an actual Firestore *query*
+capability (`recomputeEvidenceVisibleToForCell_()` needs to list every
+`evidence/*` doc where `cell_id` matches, which the existing
+`firestoreDualWrite_`/`firestoreDualPatch_`/`firestoreDualDelete_` helpers
+don't do -- they only ever address one document at a time by id). That's
+a real, new piece of infrastructure (a Firestore REST `:runQuery` call,
+plus converting its typed-value response shape back to plain JS), not a
+"while we're at it" swap, and one with no way to exercise it end-to-end
+through this repo's own Python/Playwright test suite (it only runs against
+a mocked Apps Script backend, not a real GCP project) -- a bug in it would
+surface only against the live Firestore project, in the worst possible
+place: a function that already runs today, silently, inside a frequently-used
+action. Reverted the a-cell.html/Code.gs changes rather than ship that
+risk into the same batch as everything else this session. Evidence content
+CRUD stays exactly as it already was (Apps Script-mediated writes,
+Firestore-dual-written, live-listener reads) until that query capability
+gets built and tested as its own piece of work.
