@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v87 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v88 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -338,6 +338,12 @@
 //   tab reads Cells live from Firestore now (see a-cell.html), and a
 //   brand-new empty Cell was invisible to that listener until someone
 //   assigned its first member.
+// + New backfillTracksToFirestore_()/runBackfillTracksToFirestoreNow()
+//   one-shot repair -- a-cell.html's Track Library now reads and writes
+//   tracks/{trackId} directly (no more list_tracks/upload_track/
+//   delete_track calls from the new client code at all), so every track
+//   uploaded before this shipped needs mirroring once. uploadTrack()/
+//   deleteTrack() themselves are untouched.
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -4052,6 +4058,51 @@ function deleteTrack(trackId) {
     }
   }
   return ContentService.createTextOutput(JSON.stringify({ status: 'NOT_FOUND' })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ONE-SHOT REPAIR (safe to re-run; a no-op for tracks already mirrored):
+// a-cell.html's Track Library now reads tracks/{trackId} live from
+// Firestore instead of polling list_tracks (post-game report: "no
+// tracks available" -- same root cause and fix as the Play tab's Agent
+// list, see createCell()'s own comment above). uploadTrack()/
+// deleteTrack() above are UNCHANGED and still work for any caller still
+// using them, but the new client code writes/deletes tracks/{trackId}
+// directly from the browser and never calls either action anymore --
+// so every track uploaded before this shipped needs mirroring once,
+// same as backfillCellsToFirestore_() above. Run via
+// runBackfillTracksToFirestoreNow(), NOT this function directly (Apps
+// Script's Run dropdown hides anything ending in '_').
+function backfillTracksToFirestore_() {
+  const sheet = getOrCreateTracksSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idCol = headers.indexOf('track_id');
+  const titleCol = headers.indexOf('title');
+  const fileIdCol = headers.indexOf('drive_file_id');
+  const urlCol = headers.indexOf('url');
+  const uploadedCol = headers.indexOf('uploaded_at');
+  let written = 0;
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const trackId = idCol >= 0 ? row[idCol] : '';
+    if (!trackId) continue;
+    const fileId = fileIdCol !== -1 ? row[fileIdCol] : '';
+    firestoreDualWrite_('tracks', trackId, {
+      track_id: trackId,
+      title: titleCol >= 0 ? (row[titleCol] || '') : '',
+      // Same rebuild-from-drive_file_id-on-every-read rule as
+      // listTracks() itself, so a legacy row self-heals through this
+      // backfill the same way it already does through that action.
+      url: fileId ? driveDirectAudioUrl(fileId) : (urlCol >= 0 ? (row[urlCol] || '') : ''),
+      uploaded_at: uploadedCol >= 0 ? (row[uploadedCol] || '') : ''
+    });
+    written++;
+  }
+  Logger.log('Re-sent ' + written + ' Track rows to Firestore.');
+}
+
+function runBackfillTracksToFirestoreNow() {
+  backfillTracksToFirestore_();
 }
 
 // ── Agent Hub: a player's private notes on a Handout, synced so they

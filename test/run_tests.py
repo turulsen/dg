@@ -233,6 +233,15 @@ NOTES_FIRESTORE_STUB = """
   window.__dgFirestoreListeners = [];
   window.__dgFirestoreAuthUser = null;
   window.__dgStorageUploads = [];
+  // Doc-level writes (set/update/delete) a test can inspect the same
+  // way `posts` inspects Apps Script POSTs -- for surfaces that write
+  // straight to Firestore from the client instead of going through
+  // Apps Script at all (Track Library, ambient/stinger soundboard).
+  // Doesn't feed a listener automatically: a test still calls
+  // push_firestore_snapshot() itself to simulate the write having
+  // landed and the listener having picked it up, same as every other
+  // use of this stub.
+  window.__dgFirestoreWrites = [];
 
   function makeQuery(path, wheres) {
     return {
@@ -252,7 +261,22 @@ NOTES_FIRESTORE_STUB = """
   function makeCollectionRef(path) {
     var q = makeQuery(path, []);
     q.doc = function (id) {
-      return { collection: function (name) { return makeCollectionRef(path + '/' + id + '/' + name); } };
+      var docPath = path + '/' + id;
+      return {
+        collection: function (name) { return makeCollectionRef(docPath + '/' + name); },
+        set: function (data, opts) {
+          window.__dgFirestoreWrites.push({ op: 'set', path: docPath, data: data, opts: opts });
+          return Promise.resolve();
+        },
+        update: function (data) {
+          window.__dgFirestoreWrites.push({ op: 'update', path: docPath, data: data });
+          return Promise.resolve();
+        },
+        delete: function () {
+          window.__dgFirestoreWrites.push({ op: 'delete', path: docPath });
+          return Promise.resolve();
+        }
+      };
     };
     return q;
   }
@@ -307,6 +331,16 @@ def install_notes_firestore_stub(page):
 
 def notes_firestore_listener_count(page):
     return page.evaluate("() => (window.__dgFirestoreListeners || []).length")
+
+def firestore_writes(page, path_prefix=None):
+    """Returns every doc-level Firestore write (set/update/delete) the
+    page has made through the stub above, optionally filtered to paths
+    starting with path_prefix (e.g. 'tracks/'). For surfaces that write
+    straight to Firestore instead of going through Apps Script."""
+    writes = page.evaluate("() => window.__dgFirestoreWrites || []")
+    if path_prefix is None:
+        return writes
+    return [w for w in writes if w["path"].startswith(path_prefix)]
 
 def push_firestore_snapshot(page, path, wheres, docs):
     """Delivers a fake Firestore snapshot (the full current result set,
@@ -4166,11 +4200,12 @@ def test_acell_music(p):
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
-    # Track Library uploads go straight to Firebase Storage now (Phase 4,
-    # trackLibUploadBtn's handler -- ensureHandlerSignedIn() then
-    # window.firebase.storage().ref(...).put(file,...).getDownloadURL())
-    # rather than riding the upload_track POST body; no Firestore
-    # listener involved here (unlike Evidence), just Auth+Storage.
+    # Track Library uploads go straight to Firebase Storage (Phase 4),
+    # then straight to Firestore for the {title, url} doc itself (see
+    # a-cell.html's startTracksListener()'s own comment) -- no Apps
+    # Script involved in a track's write path at all anymore, reads
+    # included. install_notes_firestore_stub gives both the Storage mock
+    # and the tracks/{trackId} onSnapshot/set/delete surface this needs.
     install_notes_firestore_stub(page)
     page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
@@ -4180,8 +4215,6 @@ def test_acell_music(p):
     posts = []
     backend_state = {"track_url": "", "track_title": "", "track_kind": "", "paused": False, "loop": False}
     fake_cells = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": [], "channel": "4"}]
-    tracks_state = []
-    slow_landing_get_count = {"n": 0}
 
     def fake_apps_script(route):
         req = route.request
@@ -4202,15 +4235,6 @@ def test_acell_music(p):
                 for c in fake_cells:
                     if c["cell_id"] == body.get("cell_id"):
                         c["channel"] = body.get("channel", "")
-            elif body.get("action") == "upload_track":
-                tid = "track_" + str(len(tracks_state) + 1)
-                tracks_state.append({
-                    "track_id": tid, "title": body.get("title", ""),
-                    "url": "https://drive.google.com/uc?export=download&id=fake" + tid,
-                    "uploaded_at": "1000",
-                })
-            elif body.get("action") == "delete_track":
-                tracks_state[:] = [t for t in tracks_state if t["track_id"] != body.get("track_id")]
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         url = req.url
@@ -4229,18 +4253,6 @@ def test_acell_music(p):
                 res = {"status": "OK", "playlist": []}
             elif "action=list_cells" in url:
                 res = {"status": "OK", "cells": fake_cells}
-            elif "action=list_tracks" in url:
-                visible = list(tracks_state)
-                # Simulates a real upload that's genuinely still landing
-                # server-side (DriveApp.createFile() on a multi-MB file
-                # is slow) rather than a failed one -- withheld from the
-                # first two list_tracks reads after it exists, then
-                # visible from the third read onward.
-                if any(t["title"] == "Slow Landing" for t in tracks_state):
-                    slow_landing_get_count["n"] += 1
-                    if slow_landing_get_count["n"] <= 2:
-                        visible = [t for t in visible if t["title"] != "Slow Landing"]
-                res = {"status": "OK", "tracks": visible}
             else:
                 res = {"status": "OK"}
             route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
@@ -4251,6 +4263,12 @@ def test_acell_music(p):
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.click('.tw[data-tab="music"]')
     page.wait_for_timeout(150)
+
+    # startTracksListener() shows "Loading..." until the first snapshot
+    # (even an empty one) actually arrives -- deliver it now, same as
+    # every other Firestore-backed listener's tests do.
+    wait_for_condition(lambda: any(l["path"] == "tracks" for l in page.evaluate("() => window.__dgFirestoreListeners || []")), timeout_ms=8000)
+    push_firestore_snapshot(page, "tracks", [], [])
 
     record("acell", "the channel dial defaults to channel 1 (no free-text channel field anymore)",
            page.eval_on_selector("#music-dial-panel .dgr-dial-ch", "el => el.textContent") == "1", "")
@@ -4407,17 +4425,28 @@ def test_acell_music(p):
     page.fill("#tracklib-title-input", "Rain Loop")
     page.set_input_files("#tracklib-file-input", oversized_mp3_path)
     page.click("#tracklib-upload-btn")
-    tracklib_text = wait_for_condition(lambda: page.inner_text("#tracklib-list")
-                                       if "Rain Loop" in page.inner_text("#tracklib-list") else None)
-    record("acell", "uploading a real-sized (>64KiB) mp3 still reaches the backend and appears in the library",
-           bool(tracklib_text) and "Rain Loop" in tracklib_text
-           and "Could not reach the backend" not in page.inner_text("#tracklib-status"),
-           page.inner_text("#tracklib-status"))
+    upload_write = wait_for_condition(lambda: (firestore_writes(page, "tracks/") or [None])[-1])
+    record("acell", "uploading a track writes straight to Firestore (tracks/{trackId}), no Apps Script involved",
+           bool(upload_write) and upload_write["op"] == "set" and upload_write["data"].get("title") == "Rain Loop",
+           str(upload_write))
     os.unlink(oversized_mp3_path)
+    track_id = upload_write["path"].split("/")[-1]
 
     upload_posts = [p_ for p_ in posts if p_.get("action") == "upload_track"]
-    record("acell", "the upload POST does not use keepalive (would silently cap the body at 64KiB)",
-           len(upload_posts) == 1, "")
+    record("acell", "no legacy upload_track Apps Script POST is sent anymore",
+           len(upload_posts) == 0, str(posts))
+
+    # onSnapshot picking up that write is simulated here (same as every
+    # other Firestore-backed surface's tests) -- push the live listener a
+    # snapshot containing the just-uploaded track.
+    push_firestore_snapshot(page, "tracks", [], [{
+        "id": track_id, "title": "Rain Loop",
+        "url": upload_write["data"].get("url"), "uploaded_at": upload_write["data"].get("uploaded_at"),
+    }])
+    tracklib_text = wait_for_condition(lambda: page.inner_text("#tracklib-list")
+                                       if "Rain Loop" in page.inner_text("#tracklib-list") else None)
+    record("acell", "once the listener delivers the write, the track appears in the library",
+           bool(tracklib_text) and "Rain Loop" in tracklib_text, page.inner_text("#tracklib-status"))
 
     # Playing a library track sets track_kind: 'audio' -- a Drive
     # download link has no .mp3 extension, so the player widget needs
@@ -4452,34 +4481,17 @@ def test_acell_music(p):
 
     page.once("dialog", lambda d: d.accept())
     page.click('[data-tracklib-delete="0"]')
-    wait_for_condition(lambda: "No tracks uploaded yet" in page.inner_text("#tracklib-list"))
-    record("acell", "accepting Delete removes the track from the library",
-           "No tracks uploaded yet" in page.inner_text("#tracklib-list"), "")
+    delete_write = wait_for_condition(lambda: next((w for w in firestore_writes(page, "tracks/") if w["op"] == "delete"), None))
+    record("acell", "accepting Delete writes a Firestore delete for that track, no Apps Script POST",
+           bool(delete_write) and delete_write["path"] == "tracks/" + track_id, str(delete_write))
+    delete_posts = [p_ for p_ in posts if p_.get("action") == "delete_track"]
+    record("acell", "no legacy delete_track Apps Script POST is sent anymore",
+           len(delete_posts) == 0, str(posts))
 
-    # Regression: a live report was a false "Sent, but the backend
-    # didn't confirm it" on a real (if modest, ~3 minute) mp3 -- traced
-    # to the upload verify step checking list_tracks exactly once, 1.5s
-    # after the POST resolved, with no retry. DriveApp.createFile() on
-    # a real file is genuinely slower than every other write in this
-    # app; the fix retries with increasing delays instead of giving up
-    # on the first miss. The mock above withholds "Slow Landing" from
-    # the first two list_tracks reads after it's uploaded to simulate
-    # exactly that -- this must NOT show the "didn't confirm" message
-    # and must eventually show the track once the retries catch up.
-    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
-        f.write(os.urandom(150_000))
-        slow_mp3_path = f.name
-    page.fill("#tracklib-title-input", "Slow Landing")
-    page.set_input_files("#tracklib-file-input", slow_mp3_path)
-    page.click("#tracklib-upload-btn")
-    tracklib_text = wait_for_condition(lambda: page.inner_text("#tracklib-list")
-                                       if "Slow Landing" in page.inner_text("#tracklib-list") else None,
-                                       timeout_ms=20000)
-    record("acell", "a slow-to-land upload does not falsely report 'backend didn't confirm it' -- it retries and succeeds",
-           bool(tracklib_text) and "Slow Landing" in tracklib_text
-           and "didn't confirm" not in page.inner_text("#tracklib-status"),
-           page.inner_text("#tracklib-status"))
-    os.unlink(slow_mp3_path)
+    push_firestore_snapshot(page, "tracks", [], [])
+    wait_for_condition(lambda: "No tracks uploaded yet" in page.inner_text("#tracklib-list"))
+    record("acell", "once the listener delivers the deletion, the track is gone from the library",
+           "No tracks uploaded yet" in page.inner_text("#tracklib-list"), "")
 
     page.close()
     return errs

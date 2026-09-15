@@ -5351,6 +5351,14 @@
     if (!window.__dgHandlerAuth) return Promise.reject(new Error('Handler auth not ready yet -- reload and try again.'));
     return window.__dgHandlerAuth();
   }
+  // Same delegation, for SDK-readiness alone (no sign-in) -- the Track
+  // Library listener below reads tracks/{trackId}, which is public-read
+  // (see firestore.rules) and needs Firebase loaded but no Handler
+  // session at all.
+  function waitForFirebaseApi_(cb, onerror) {
+    if (window.__dgEnsureFirebaseApi) { window.__dgEnsureFirebaseApi(cb, onerror); return; }
+    setTimeout(function () { waitForFirebaseApi_(cb, onerror); }, 50);
+  }
 
   var trackLibTitleInput = document.getElementById('tracklib-title-input');
   var trackLibFileInput = document.getElementById('tracklib-file-input');
@@ -5412,80 +5420,64 @@
     });
   }
 
-  function fetchTracks() {
-    jsonpGet('list_tracks', {}, function (res) {
-      if (!res || res.status !== 'OK' || !Array.isArray(res.tracks)) {
-        trackLibListEl.innerHTML = '<div class="rdo-track-empty">Could not load the Track Library. (The Track Library addition may not be deployed yet.)</div>';
-        return;
-      }
-      tracks = res.tracks;
-      renderTrackLibrary();
+  // Live Firestore read instead of list_tracks JSONP -- post-game
+  // report: "no tracks available", same root cause and same fix as the
+  // Play tab's Agent list (see startCharacterListeners()'s own comment
+  // earlier in this file). tracks/{trackId} is public-read (see
+  // firestore.rules), already mirrored for every track uploaded through
+  // uploadTrack()/backfillTracksToFirestore_() up to this point, and
+  // from here on is the ONLY place a track's metadata is written at all
+  // -- see the upload/delete handlers below, which no longer touch the
+  // Sheet or Apps Script for a Storage-hosted track. A legacy Drive-
+  // hosted track (drive_file_id set, from before Phase 4) has no
+  // Firestore doc unless it went through the one-time backfill, but
+  // there should be none left uncovered once that's been run.
+  var tracksUnsub = null;
+  function startTracksListener() {
+    if (tracksUnsub) return;
+    waitForFirebaseApi_(function () {
+      tracksUnsub = window.firebase.firestore().collection('tracks').onSnapshot(function (snap) {
+        tracks = [];
+        snap.forEach(function (doc) {
+          var d = doc.data();
+          tracks.push({ track_id: doc.id, title: d.title || '', url: d.url || '', uploaded_at: d.uploaded_at || '' });
+        });
+        tracks.sort(function (a, b) { return (a.uploaded_at || 0) - (b.uploaded_at || 0); });
+        renderTrackLibrary();
+      }, function (err) {
+        trackLibListEl.innerHTML = '<div class="rdo-track-empty">Could not load the Track Library. (' + escapeHtml((err && err.message) || String(err)) + ')</div>';
+      });
+    }, function (err) {
+      trackLibListEl.innerHTML = '<div class="rdo-track-empty">Could not load Firebase. (' + escapeHtml((err && err.message) || String(err)) + ')</div>';
     });
   }
 
   function deleteTrack(t) {
     if (!confirm('Delete "' + t.title + '"? This cannot be undone.')) return;
     trackLibStatus.textContent = 'Deleting…';
-    // A Storage-hosted track (Phase 4 upload) needs its own object
-    // deleted from Storage first -- a legacy Drive-hosted one's file is
-    // already handled entirely server-side by deleteTrack() in Code.gs
-    // (unchanged), so this is skipped for those. Firebase Storage
-    // download URLs are always served from firebasestorage.googleapis.com,
-    // which is what tells the two apart -- track_id + the same fixed
-    // tracks/{track_id}.mp3 naming this same file used on upload is
-    // enough to reconstruct the path without storing it separately.
+    // A Storage-hosted track (Phase 4+ upload) needs its own object
+    // deleted from Storage too -- Firebase Storage download URLs are
+    // always served from firebasestorage.googleapis.com, which is what
+    // tells a Storage-hosted track apart from a legacy Drive-hosted one
+    // (which has no Storage object to clean up here at all -- its Drive
+    // file, if any, would need deleting via DriveApp server-side, which
+    // no longer happens for any NEW delete since this no longer calls
+    // Apps Script -- a real gap for the small number of tracks still on
+    // Drive specifically, accepted the same way the ambient/stinger
+    // cutover accepted the Sheet going stale for those two actions).
     var isStorageTrack = t.url && t.url.indexOf('firebasestorage.googleapis.com') !== -1;
-    var storageDeletion = isStorageTrack
-      ? ensureHandlerSignedIn().then(function () {
-        return window.firebase.storage().ref('tracks/' + t.track_id + '.mp3').delete();
-      }).catch(function () { /* best effort -- the Sheet row removal below is what actually stops it being offered to players either way */ })
-      : Promise.resolve();
-    storageDeletion.then(function () {
-      return fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'delete_track', track_id: t.track_id, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
+    ensureHandlerSignedIn().then(function () {
+      var storageDeletion = isStorageTrack
+        ? window.firebase.storage().ref('tracks/' + t.track_id + '.mp3').delete()
+          .catch(function () { /* best effort -- the Firestore doc removal below is what actually stops it being offered to players either way */ })
+        : Promise.resolve();
+      return storageDeletion.then(function () {
+        return window.firebase.firestore().collection('tracks').doc(t.track_id).delete();
       });
     }).then(function () {
-      setTimeout(function () {
-        jsonpGet('list_tracks', {}, function (res) {
-          var stillThere = res && res.status === 'OK' && Array.isArray(res.tracks) &&
-            res.tracks.some(function (x) { return x.track_id === t.track_id; });
-          if (stillThere) { trackLibStatus.textContent = 'Sent, but the backend didn\'t confirm it. Check that the Track Library addition (delete_track) is pasted into Apps Script and redeployed.'; return; }
-          if (res && res.status === 'OK' && Array.isArray(res.tracks)) tracks = res.tracks;
-          trackLibStatus.textContent = 'Deleted ' + t.title + '.';
-          renderTrackLibrary();
-        });
-      }, 900);
-    }).catch(function () { trackLibStatus.textContent = 'Could not reach the backend.'; });
-  }
-
-  // Used to need long, increasing delays here because DriveApp.createFile()
-  // on a multi-MB base64 payload inside uploadTrack() was itself the slow
-  // step -- a real mp3 could still be uploading server-side well after
-  // this POST returned. A Storage upload is already durably saved before
-  // this ever POSTs anything (see the upload handler below), so all
-  // that's left to wait on is one Sheet-row append, same as every other
-  // near-instant write in this app -- shorter delays, kept as retries
-  // (not a single fixed wait) only for ordinary network jitter.
-  var TRACK_UPLOAD_VERIFY_DELAYS_MS = [500, 1000, 2000];
-  function verifyTrackUpload(title, attempt) {
-    jsonpGet('list_tracks', {}, function (res) {
-      var ok = res && res.status === 'OK' && Array.isArray(res.tracks) &&
-        res.tracks.some(function (x) { return x.title === title; });
-      if (ok) {
-        tracks = res.tracks;
-        trackLibStatus.textContent = '';
-        trackLibTitleInput.value = '';
-        trackLibFileInput.value = '';
-        renderTrackLibrary();
-        return;
-      }
-      if (attempt < TRACK_UPLOAD_VERIFY_DELAYS_MS.length) {
-        setTimeout(function () { verifyTrackUpload(title, attempt + 1); }, TRACK_UPLOAD_VERIFY_DELAYS_MS[attempt]);
-        return;
-      }
-      trackLibStatus.textContent = 'Sent, but the backend still hasn\'t confirmed it after several checks. Either the Track Library addition (upload_track) isn\'t pasted into Apps Script and redeployed yet, or this file is having trouble uploading (try a shorter clip or a lower-bitrate export).';
+      trackLibStatus.textContent = 'Deleted ' + t.title + '.';
+    }).catch(function (err) {
+      trackLibStatus.textContent = 'Could not delete — ' + ((err && err.message) || 'not signed in as Handler') + '.';
     });
   }
 
@@ -5500,7 +5492,7 @@
     var file = trackLibFileInput.files[0];
     if (!title) { trackLibStatus.textContent = 'Give the track a title first.'; return; }
     if (!file) { trackLibStatus.textContent = 'Choose an mp3 file first.'; return; }
-    // Generated here, not by Code.gs, so the Storage path is known
+    // Generated here, not server-side, so the Storage path is known
     // before the upload starts -- deleteTrack() above reconstructs the
     // same tracks/{track_id}.mp3 path from this same id later.
     var trackId = 'track_' + new Date().getTime() + '_' + Math.floor(Math.random() * 100000).toString(36);
@@ -5513,27 +5505,35 @@
     }).then(function (snapshot) {
       return snapshot.ref.getDownloadURL();
     }).then(function (downloadUrl) {
-      return fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'upload_track', track_id: trackId, title: title, storage_url: downloadUrl, handler_password: sessionStorage.getItem('dg_acell_pw') || '' }),
-      });
+      var now = Date.now();
+      // Writes straight to Firestore -- no Apps Script/Sheet involved
+      // in recording a new track at all anymore, same reasoning as the
+      // ambient/stinger soundboard cutover earlier tonight: Apps Script
+      // was never doing anything here but recording a tiny
+      // {title, storage_url} row, and the onSnapshot listener above
+      // means every open A-Cell tab (and eventually a Firestore-backed
+      // player-facing list, if one's ever added) sees the new track the
+      // instant this write commits.
+      return window.firebase.firestore().collection('tracks').doc(trackId)
+        .set({ track_id: trackId, title: title, url: downloadUrl, uploaded_at: now });
     }).then(function () {
       trackLibUploadBtn.disabled = false;
       trackLibUploadBtn.textContent = originalUploadLabel;
-      trackLibStatus.textContent = 'Uploaded — checking…';
-      setTimeout(function () { verifyTrackUpload(title, 0); }, 500);
+      trackLibStatus.textContent = '';
+      trackLibTitleInput.value = '';
+      trackLibFileInput.value = '';
     }).catch(function (err) {
       trackLibUploadBtn.disabled = false;
       trackLibUploadBtn.textContent = originalUploadLabel;
-      trackLibStatus.textContent = 'Upload failed: ' + ((err && err.message) || 'could not reach Firebase Storage.');
+      trackLibStatus.textContent = 'Upload failed: ' + ((err && err.message) || 'could not reach Firebase.');
     });
   });
 
   renderStingerGroups();
   checkCurrent();
   fetchCells();
-  fetchTracks();
+  trackLibListEl.innerHTML = '<div class="rdo-track-empty">Loading…</div>';
+  startTracksListener();
 })();
 </script>
 

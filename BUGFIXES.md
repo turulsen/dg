@@ -2728,3 +2728,89 @@ longer re-fetches. Full suite after: 755/765, all 10 failures the known
 gstatic.com-sandbox-block ones plus one pre-existing sub-pixel color-
 rounding flake, 148/148 a-cell tests passing. `sw.js` `CACHE_NAME`
 bumped to `v118`.
+
+## Track Library ("no tracks available"), migrated to Firestore the
+## same way, per explicit direction: "yes, migrate, this should have
+## been done"
+
+Direct follow-up to the Play tab migration above. Unlike Characters/
+Cells, `tracks/{trackId}` had a `firestore.rules` entry (public read,
+Handler-only write) that had sat completely unused since it was
+scaffolded -- nothing in `Code.gs` ever wrote to it, `uploadTrack()`/
+`deleteTrack()` only ever touched the Sheet. Track Library was already
+the furthest along toward Firestore of anything in this app (Phase 4:
+the mp3 file itself already goes straight from the browser to Firebase
+Storage, bypassing Apps Script entirely for the upload itself) -- the
+only thing still routing through Apps Script was the tiny
+`{title, storage_url}` metadata record.
+
+Went further than a dual-write mirror here, per the standing direction
+("I don't want [the Sheet] if it only creates issues"): new uploads and
+deletes now write/delete `tracks/{trackId}` in Firestore **directly**
+from the browser (`ensureHandlerSignedIn()` then
+`firestore().collection('tracks').doc(trackId).set(...)`/`.delete()`),
+with **no Apps Script POST at all** in either path anymore --
+`uploadTrack()`/`deleteTrack()` in `Code.gs` are untouched but no
+longer called by the new client code. The list itself (`fetchTracks()`
+→ `startTracksListener()`) is a plain `onSnapshot` on `tracks`, public-
+read, no Handler session needed to view it. A one-shot
+`backfillTracksToFirestore_()`/`runBackfillTracksToFirestoreNow()`
+(Code.gs v88, same shape as the Cells backfill) mirrors every track
+uploaded before this shipped, including rebuilding a legacy Drive-
+hosted track's URL from `drive_file_id` the same way `listTracks()`
+itself already does, so nothing existing goes missing. **Needs the
+usual manual paste-and-redeploy, then run
+`runBackfillTracksToFirestoreNow()` once from the Apps Script editor.**
+
+One real, accepted gap: deleting a legacy Drive-hosted track (uploaded
+before Phase 4) no longer trashes its Drive file, since that requires
+`DriveApp` and only `Code.gs`'s own (now-bypassed) `deleteTrack()` can
+do that -- the Firestore doc is still correctly removed either way, so
+it disappears from the Library and stops being offered to players, it
+just leaves an orphaned file sitting in Drive. Same tradeoff already
+accepted for the ambient/stinger soundboard cutover earlier tonight.
+
+Testing this required extending the shared Firestore test stub
+(`install_notes_firestore_stub`, used by Notes/Evidence/Radio/Play):
+its collection-ref mock only ever supported `.onSnapshot()` on a
+collection/query, never a doc-level `.set()`/`.update()`/`.delete()`
+write, because nothing tested here had ever written straight to
+Firestore from a test page before. Added those three, recorded into a
+new `window.__dgFirestoreWrites` array (mirrors the existing `posts`
+list already used to inspect Apps Script POSTs) plus a
+`firestore_writes()` Python helper -- general-purpose, not
+tracks-specific, so the next surface that writes Firestore directly
+doesn't need to repeat this. Rewrote `test_acell_music`'s Track Library
+section to assert on those writes plus an explicit
+`push_firestore_snapshot()` (simulating the listener picking the write
+up) instead of the old Apps Script POST/`list_tracks` mocking, and
+dropped the "slow-landing upload retries" regression test entirely --
+it tested `DriveApp`-specific latency and a retry loop that no longer
+exist in this path. Full suite: 756/767, only the same two pre-existing,
+unrelated failure categories. `sw.js` `CACHE_NAME` bumped to `v119`.
+
+## Aside, in response to "if [Live Rolls permission-denied] was never
+## deployed, why did it work before?" -- it did, and the rule hasn't
+## changed since
+
+Checked per the standing protocol before answering. Commit `2d341ed`
+("Firestore rules: fix Handler's Live Rolls collection-group query",
+2026-08-27) added the exact `match /{path=**}/rolls/{rollId} { allow
+read: if isHandler(); }` rule current `firestore.rules` still has today
+-- confirmed byte-identical via `git show 2d341ed:firestore.rules` vs.
+the live file, zero diff. That commit's own message states it was
+"Verified via a direct REST round-trip against the **deployed** rules"
+at the time -- so this genuinely did work once, refuting the "maybe it
+was never deployed" theory from earlier tonight. Since the rule text in
+git hasn't moved since, and Evidence (which depends on the exact same
+`ensureHandlerSignedIn()`/`isHandler()` custom-claim machinery) works
+fine, a code-level regression is now the least likely explanation.
+Left unresolved, but the most likely remaining one: `firestore.rules`
+deploys are just as manual as Apps Script's (`firebase deploy --only
+firestore:rules`, never triggered by `git push`) -- a later deploy for
+some unrelated change (Evidence's `visible_to` fix, the per-Cell
+`dice_rolls` membership fix, etc.) could plausibly have been pushed
+from a checkout that predated this rule, silently reverting it on the
+live project with nothing in git to show for it. Not fixable from this
+repo -- needs a fresh `firebase deploy --only firestore:rules` from the
+current file to rule this out for certain.
