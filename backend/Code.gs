@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v90 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v91 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -365,6 +365,23 @@
 //   a fifth call site otherwise. Client-side single Clearance-then-
 //   password gate + the id_token plumbing through a-cell.html's ~30+
 //   Handler-auth call sites lands separately.
+// + Soundboard per-instance transport off Apps Script/Sheet entirely
+//   (v91): pause_ambient_layer/resume_ambient_layer/seek_ambient_layer/
+//   set_ambient_layer_loop/pause_stinger/resume_stinger/seek_stinger/
+//   set_stinger_loop/stop_stinger actions removed -- a-cell.html's
+//   Active Sounds panel now writes these straight to Firestore via its
+//   own client-side transaction (same pattern set_ambient_layer/
+//   trigger_stinger already used), so a pause/resume/seek/loop/stop
+//   click reacts instantly instead of waiting on Apps Script's own
+//   dispatch/cold-start latency, and the confirmation step (previously
+//   a fresh get_now_playing JSONP poll ~900ms after every action) is
+//   just the transaction's own resolved result -- no separate read
+//   needed. Their shared updateSoundInstance_/removeSoundInstance_/
+//   findSoundInstance_ helpers, now unreferenced, were removed too.
+//   The Sheet no longer receives ANY ambient/stinger transport writes
+//   at all (only the initial toggle/fire ever did, from an earlier
+//   pass) -- one more surface off Code.gs.getOrCreateRadioSheet()'s
+//   write path.
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -1255,71 +1272,18 @@ function doPost(e) {
       return resumeNowPlaying(data.channel);
     }
 
-    // Table Radio Soundboard: Handler toggles an ambient loop on/off, or
-    // fires a one-shot stinger, for a channel.
-    if (data.action === 'set_ambient_layer') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return setAmbientLayer_(data.channel, data.layer_id, data.active === '1' || data.active === true);
-    }
-    if (data.action === 'trigger_stinger') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return triggerStinger_(data.channel, data.stinger_id);
-    }
-    // Table Radio Soundboard: per-instance transport for an already-
-    // active ambient loop or already-firing stinger, from A-Cell's
-    // Active Sounds panel -- same Pause/Resume/Seek/Loop/Stop the main
-    // track already has, just addressed at one specific sound instead
-    // of the channel's single Now Playing track.
-    if (data.action === 'pause_ambient_layer') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return pauseAmbientLayer_(data.channel, data.layer_id);
-    }
-    if (data.action === 'resume_ambient_layer') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return resumeAmbientLayer_(data.channel, data.layer_id);
-    }
-    if (data.action === 'seek_ambient_layer') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return seekAmbientLayer_(data.channel, data.layer_id, data.position_ms);
-    }
-    if (data.action === 'set_ambient_layer_loop') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return setAmbientLayerLoop_(data.channel, data.layer_id, data.loop === '1' || data.loop === true);
-    }
-    if (data.action === 'pause_stinger') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return pauseStinger_(data.channel, data.fired_at);
-    }
-    if (data.action === 'resume_stinger') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return resumeStinger_(data.channel, data.fired_at);
-    }
-    if (data.action === 'seek_stinger') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return seekStinger_(data.channel, data.fired_at, data.position_ms);
-    }
-    if (data.action === 'set_stinger_loop') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return setStingerLoop_(data.channel, data.fired_at, data.loop === '1' || data.loop === true);
-    }
-    // The only way to end a stinger before it finishes on its own --
-    // cuts it off for every player tuned in, not just this device's own
-    // local monitoring (see stopStinger_'s own comment).
-    if (data.action === 'stop_stinger') {
-      const authErr = requireHandlerAuth_(data);
-      if (authErr) return authErr;
-      return stopStinger_(data.channel, data.fired_at);
-    }
+    // set_ambient_layer/trigger_stinger (toggle an ambient loop on/off,
+    // fire a one-shot stinger) removed too -- a-cell.html's soundboard
+    // writes these straight to Firestore client-side as well, same as
+    // the per-instance transport actions below.
+    // pause_ambient_layer/resume_ambient_layer/seek_ambient_layer/
+    // set_ambient_layer_loop/pause_stinger/resume_stinger/seek_stinger/
+    // set_stinger_loop/stop_stinger (Active Sounds panel per-instance
+    // transport) removed -- a-cell.html writes these straight to
+    // Firestore now, same as set_ambient_layer/trigger_stinger above
+    // (see the soundboard entry in BUGFIXES.md). Their shared
+    // updateSoundInstance_/removeSoundInstance_/findSoundInstance_
+    // helpers went with them, since nothing else called them.
     // Table Radio: Handler drags the media-player scrubber to jump the
     // current track to a new position. Handler-only -- see
     // seekNowPlaying_'s own comment for why players don't get this.
@@ -4253,10 +4217,11 @@ function getOrCreateRadioSheet() {
     // broadcast in place -- set_now_playing always restarts a track from
     // 0:00, which isn't the right tool for either of those.
     // ambient_layers/stingers: the Table Radio soundboard -- JSON arrays
-    // (active layer ids; recent {id, fired_at} stinger fires) rather than
-    // their own sheet tabs, so they upsert onto the exact same row/doc
-    // Now Playing already lives on and ride the existing dual-write +
-    // onSnapshot plumbing for free. See setAmbientLayer_/triggerStinger_.
+    // (active layer ids; recent {id, fired_at} stinger fires). Column
+    // still lives on this same row for read compatibility, but nothing
+    // writes to it from here anymore -- a-cell.html's soundboard writes
+    // both fields straight onto the radio/{channel} Firestore doc
+    // client-side now (see BUGFIXES.md's soundboard entry).
     // track_volume/ambient_volume: a broadcast-wide mix level (0-100,
     // defaults to 100/unmixed when absent) applied on TOP of each
     // listener's own local volume slider -- lets a Handler fade the main
@@ -4617,20 +4582,14 @@ function parseJsonArray_(val) {
 }
 
 // Upgrades a bare ambient-layer id (the ORIGINAL, pre-instance-object
-// shape this field used before it grew started_at/paused/paused_at/loop
-// -- see setAmbientLayer_'s own comment) into the full object shape on
-// the fly. Applied everywhere ambient_layers is read for mutation or
-// returned to a client: without this, a stale plain string already
-// sitting in a channel's row from before this migration (any channel a
-// Handler had toggled ambient on for prior to this deploy) has no `id`
-// property, so `l.id === layerId` never matches it -- Stop/pause/seek/
-// loop-toggle silently no-op against it forever, while the audio
-// (started from whenever it WAS a bare string, or restarted via a
-// duplicate object entry pushed alongside it) just keeps playing with
-// no way to reach it. Idempotent -- an already-upgraded object passes
-// through unchanged -- and self-healing: the next write that touches
-// this array serializes the now-upgraded shape back to the sheet, so no
-// separate one-time migration script is needed.
+// shape this field used before it grew started_at/paused/paused_at/loop)
+// into the full object shape on the fly. Only remaining server-side
+// caller is getNowPlaying()'s own read -- a-cell.html's soundboard does
+// its own client-side normalization now that it writes ambient_layers
+// directly, but a Sheet row from before that migration can still hold
+// a bare-string entry, and this keeps that old data from throwing
+// `l.id` errors when the read path maps over it. Idempotent -- an
+// already-upgraded object passes through unchanged.
 function normalizeAmbientLayer_(entry) {
   if (typeof entry === 'string') {
     return { id: entry, started_at: new Date().getTime(), paused: false, paused_at: 0, loop: true };
@@ -4655,267 +4614,16 @@ function findOrCreateRadioRow_(sheet, data, headers, cols, channel) {
   return data.length - 1;
 }
 
-// Finds an object by matchKey===matchVal in an array of sound-instance
-// objects (an ambient_layers entry or a stingers entry) -- shared by
-// every pause/resume/seek/loop-toggle action below, which all differ
-// only in which array/field and which key identifies "the one instance
-// being controlled": ambient matches by `id` (only one instance of a
-// given loop can be active on a channel at once), stinger matches by
-// `fired_at` (the same stinger id can have several independent
-// instances firing close together, each needing its own identity).
-function findSoundInstance_(arr, matchKey, matchVal) {
-  for (let i = 0; i < arr.length; i++) {
-    if (arr[i][matchKey] === matchVal) return arr[i];
-  }
-  return null;
-}
-
-// Shared read-modify-write for one sound instance living in a JSON-array
-// column (ambient_layers or stingers) on a channel's RadioChannels row.
-// Every pause/resume/seek/loop-toggle action below is this exact same
-// shape -- find the row, find the instance, mutate it in place, write
-// the whole array back -- just with a different field/matchKey/mutation,
-// so this is the one place that pattern needs to be gotten right.
-function updateSoundInstance_(channel, field, matchKey, matchVal, mutateFn) {
-  channel = (channel || '').trim();
-  if (!channel) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
-
-  const sheet = getOrCreateRadioSheet();
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const cols = headerMap_(headers);
-  const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
-  const row = data[rowIdx];
-  let arr = parseJsonArray_(row[cols[field]]);
-  if (field === 'ambient_layers') arr = arr.map(normalizeAmbientLayer_);
-  const inst = findSoundInstance_(arr, matchKey, matchVal);
-  if (!inst) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'not currently active' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  mutateFn(inst);
-  const now = new Date().getTime();
-  row[cols[field]] = JSON.stringify(arr);
-  row[cols.updated_at] = now;
-  const patch = { updated_at: now };
-  patch[field] = arr;
-  firestoreDualPatch_('radio', channel, patch);
-  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
-  return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
-}
-
-// Same shape as updateSoundInstance_ but removes the instance entirely
-// (Stop) instead of mutating it in place -- a stinger has no separate
-// on/off toggle the way an ambient layer does, so this is the only way
-// to end one before it finishes on its own.
-function removeSoundInstance_(channel, field, matchKey, matchVal) {
-  channel = (channel || '').trim();
-  if (!channel) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
-
-  const sheet = getOrCreateRadioSheet();
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const cols = headerMap_(headers);
-  const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
-  const row = data[rowIdx];
-  let arr = parseJsonArray_(row[cols[field]]);
-  if (field === 'ambient_layers') arr = arr.map(normalizeAmbientLayer_);
-  arr = arr.filter(function (inst) { return inst[matchKey] !== matchVal; });
-  const now = new Date().getTime();
-  row[cols[field]] = JSON.stringify(arr);
-  row[cols.updated_at] = now;
-  const patch = { updated_at: now };
-  patch[field] = arr;
-  firestoreDualPatch_('radio', channel, patch);
-  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
-  return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
-}
-
-// Toggles one ambient loop on/off for a channel. `active` decides
-// membership rather than the caller having to know the current state
-// first (a dumb toggle button on the A-Cell side would otherwise need
-// its own extra round-trip just to read that state before flipping it).
-// Each active entry is a full instance object (started_at/paused/
-// paused_at/loop), not a bare id -- lets a Handler pause, seek, or
-// un-loop a SPECIFIC already-playing ambient loop from A-Cell's Active
-// Sounds panel via pauseAmbientLayer_/resumeAmbientLayer_/
-// seekAmbientLayer_/setAmbientLayerLoop_ below, the same way the main
-// track already supports pause/resume/seek.
-function setAmbientLayer_(channel, layerId, active) {
-  channel = (channel || '').trim();
-  if (!channel) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  if (AMBIENT_LAYER_IDS.indexOf(layerId) === -1) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'unknown ambient layer: ' + layerId }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
-
-  const sheet = getOrCreateRadioSheet();
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const cols = headerMap_(headers);
-  const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
-  const row = data[rowIdx];
-  // normalizeAmbientLayer_ upgrades any stale bare-string entry left
-  // over from before this field grew instance objects; filtering out
-  // every match (not just the first) when turning off is deliberate
-  // belt-and-suspenders against a channel that picked up a literal
-  // duplicate for the same id while that bug was live.
-  let layers = parseJsonArray_(row[cols.ambient_layers]).map(normalizeAmbientLayer_);
-  const now = new Date().getTime();
-  if (active) {
-    if (!layers.some(function (l) { return l.id === layerId; })) {
-      layers.push({ id: layerId, started_at: now, paused: false, paused_at: 0, loop: true });
-    }
-  } else {
-    layers = layers.filter(function (l) { return l.id !== layerId; });
-  }
-  row[cols.ambient_layers] = JSON.stringify(layers);
-  row[cols.updated_at] = now;
-  firestoreDualPatch_('radio', channel, { ambient_layers: layers, updated_at: now });
-  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
-  return ContentService.createTextOutput(JSON.stringify({ status: 'OK', ambient_layers: layers })).setMimeType(ContentService.MimeType.JSON);
-}
-
-function pauseAmbientLayer_(channel, layerId) {
-  const now = new Date().getTime();
-  return updateSoundInstance_(channel, 'ambient_layers', 'id', layerId, function (inst) {
-    inst.paused = true;
-    inst.paused_at = now;
-  });
-}
-
-// Same shiftedStart math as resumeNowPlaying()/resumeStinger_() below --
-// preserves the loop's current position across the pause instead of
-// jumping back to wherever it happened to be when paused_at was
-// stamped.
-function resumeAmbientLayer_(channel, layerId) {
-  const now = new Date().getTime();
-  return updateSoundInstance_(channel, 'ambient_layers', 'id', layerId, function (inst) {
-    const pausedAt = inst.paused_at || now;
-    const startedAt = inst.started_at || now;
-    inst.started_at = startedAt + (now - pausedAt);
-    inst.paused = false;
-    inst.paused_at = 0;
-  });
-}
-
-function seekAmbientLayer_(channel, layerId, positionMs) {
-  const now = new Date().getTime();
-  positionMs = Math.max(0, Number(positionMs) || 0);
-  return updateSoundInstance_(channel, 'ambient_layers', 'id', layerId, function (inst) {
-    inst.started_at = now - positionMs;
-    if (inst.paused) inst.paused_at = now;
-  });
-}
-
-function setAmbientLayerLoop_(channel, layerId, loop) {
-  return updateSoundInstance_(channel, 'ambient_layers', 'id', layerId, function (inst) {
-    inst.loop = !!loop;
-  });
-}
-
-// Fires a one-shot stinger for a channel. Always appends a fresh
-// instance, even for a repeated stinger_id -- a second press of the
-// same button (e.g. two gunshots back to back) is a deliberate replay,
-// not a no-op, so it must get its own identity rather than updating an
-// existing entry in place. `fired_at` is that stable identity, used by
-// every client to dedupe which fires it's already played and by every
-// pause/resume/seek/loop/stop action below to address one exact
-// instance -- it's set once here and never changes; `started_at` is a
-// SEPARATE field for elapsed-time math (same started_at/paused_at
-// pattern as the main track and ambient layers) that resumeStinger_()
-// is free to shift on resume without disturbing that identity.
-// Non-looping instances are trimmed to the most recent
-// STINGER_HISTORY_LENGTH so the document doesn't grow unbounded over a
-// long session; an instance a Handler has explicitly turned into a loop
-// (setStingerLoop_) is exempt from that trim and stays until explicitly
-// stopped, same as an ambient layer.
-function triggerStinger_(channel, stingerId) {
-  channel = (channel || '').trim();
-  if (!channel) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'channel is required' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  if (STINGER_IDS.indexOf(stingerId) === -1) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'unknown stinger: ' + stingerId }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  CacheService.getScriptCache().remove('now_playing_' + channel.toLowerCase());
-
-  const sheet = getOrCreateRadioSheet();
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const cols = headerMap_(headers);
-  const rowIdx = findOrCreateRadioRow_(sheet, data, headers, cols, channel);
-  const row = data[rowIdx];
-  const now = new Date().getTime();
-  let stingers = parseJsonArray_(row[cols.stingers]);
-  stingers.push({ id: stingerId, fired_at: now, started_at: now, paused: false, paused_at: 0, loop: false, stopped: false });
-  const looping = stingers.filter(function (s) { return s.loop; });
-  let oneShot = stingers.filter(function (s) { return !s.loop; });
-  if (oneShot.length > STINGER_HISTORY_LENGTH) oneShot = oneShot.slice(-STINGER_HISTORY_LENGTH);
-  stingers = looping.concat(oneShot).sort(function (a, b) { return a.fired_at - b.fired_at; });
-  row[cols.stingers] = JSON.stringify(stingers);
-  row[cols.updated_at] = now;
-  firestoreDualPatch_('radio', channel, { stingers: stingers, updated_at: now });
-  sheet.getRange(rowIdx + 1, 1, 1, headers.length).setValues([row]);
-  return ContentService.createTextOutput(JSON.stringify({ status: 'OK', stingers: stingers })).setMimeType(ContentService.MimeType.JSON);
-}
-
-function pauseStinger_(channel, firedAt) {
-  const now = new Date().getTime();
-  return updateSoundInstance_(channel, 'stingers', 'fired_at', Number(firedAt), function (inst) {
-    inst.paused = true;
-    inst.paused_at = now;
-  });
-}
-
-function resumeStinger_(channel, firedAt) {
-  const now = new Date().getTime();
-  return updateSoundInstance_(channel, 'stingers', 'fired_at', Number(firedAt), function (inst) {
-    const pausedAt = inst.paused_at || now;
-    const startedAt = inst.started_at || now;
-    inst.started_at = startedAt + (now - pausedAt);
-    inst.paused = false;
-    inst.paused_at = 0;
-  });
-}
-
-function seekStinger_(channel, firedAt, positionMs) {
-  const now = new Date().getTime();
-  positionMs = Math.max(0, Number(positionMs) || 0);
-  return updateSoundInstance_(channel, 'stingers', 'fired_at', Number(firedAt), function (inst) {
-    inst.started_at = now - positionMs;
-    if (inst.paused) inst.paused_at = now;
-  });
-}
-
-function setStingerLoop_(channel, firedAt, loop) {
-  return updateSoundInstance_(channel, 'stingers', 'fired_at', Number(firedAt), function (inst) {
-    inst.loop = !!loop;
-  });
-}
-
-// The only way to end a stinger before it finishes on its own -- unlike
-// ambient (an explicit on/off toggle), a fired stinger has no natural
-// "off" state to flip back to. Removes the instance outright rather
-// than just marking it stopped, so it stops counting against
-// STINGER_HISTORY_LENGTH's trim too.
-function stopStinger_(channel, firedAt) {
-  return removeSoundInstance_(channel, 'stingers', 'fired_at', Number(firedAt));
-}
+// set_ambient_layer/trigger_stinger's old implementations
+// (setAmbientLayer_/triggerStinger_) removed -- a-cell.html's
+// soundboard writes both straight to Firestore client-side now (see
+// the soundboard entry in BUGFIXES.md), matching the per-instance
+// transport actions removed above. AMBIENT_LAYER_IDS/STINGER_IDS (the
+// validation lists these two used) are unused server-side now but kept
+// as-is -- table-radio.js and a-cell.html's own AMBIENT_LAYERS/
+// STINGER_GROUPS are the client-side source of truth for what's valid
+// to write, checked implicitly (an unrecognized id just plays a 404'd
+// mp3, same failure mode as a typo in either list ever had).
 
 // Handler-draggable media-player scrubber: jumps the CURRENT track to an
 // arbitrary position without restarting it (set_now_playing always

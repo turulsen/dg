@@ -3272,3 +3272,71 @@ that exact URL to be this sandbox's own egress policy blocking that
 host (`net::ERR_TUNNEL_CONNECTION_FAILED`), not a code regression --
 none of the 11 touch `a-cell.html`, `Code.gs`, or anything this change
 touched.
+
+---
+
+## Phase 2 (Sheets removal): Active Sounds panel off Apps Script/Sheet, straight to Firestore
+
+First concrete target of the Sheets-removal phase, per the user's own
+framing: this was the clearest remaining "partial migration" example
+-- ambient-layer toggle and stinger-fire already wrote straight to
+Firestore from an earlier pass, but the Active Sounds panel's own
+per-instance transport (pause/resume/seek/loop/stop an already-active
+loop or stinger) still round-tripped through Apps Script, AND its own
+confirmation step polled a fresh `get_now_playing` JSONP call ~900ms
+after every action instead of just reading the write it had already
+made.
+
+**`a-cell.html`:** added `updateSoundInstanceFirestore_()`/
+`removeSoundInstanceFirestore_()` (direct Firestore-transaction
+equivalents of Code.gs's `updateSoundInstance_()`/
+`removeSoundInstance_()`, same field semantics copied deliberately so
+a paused loop's elapsed-time math -- `started_at`/`paused_at` shifting
+on resume -- stays identical either way a write lands) and
+`setAmbientLayerActive_()` (factored out of the ambient grid's own
+toggle handler so the Active Sounds panel's Stop button for an ambient
+row calls the SAME transaction instead of a second, parallel writer
+for the identical "turn this loop off" action -- the grid's button
+used to write on/off; the Active Sounds Stop button used to route
+through the OLD `set_ambient_layer` Apps Script action for the exact
+same effect). `sendActiveSoundAction_()` rewritten to dispatch all
+nine actions (pause/resume/seek/loop x{ambient,stinger}, plus ambient
+stop and stinger stop) to these, then use the transaction's own
+resolved array as the new state directly -- no separate confirm-via-
+GET needed.
+
+**`backend/Code.gs` (v91):** the now-fully-unreachable
+`pause_ambient_layer`/`resume_ambient_layer`/`seek_ambient_layer`/
+`set_ambient_layer_loop`/`pause_stinger`/`resume_stinger`/
+`seek_stinger`/`set_stinger_loop`/`stop_stinger` Apps Script actions
+(and their shared `updateSoundInstance_`/`removeSoundInstance_`/
+`findSoundInstance_` helpers) were removed entirely, not just
+deprecated -- confirmed via a repo-wide grep that no client code
+anywhere still sends any of these action names. While auditing that,
+found `set_ambient_layer`/`trigger_stinger` themselves (the toggle/
+fire actions) were ALSO already fully unreachable, left over from an
+earlier session's direct-Firestore migration that never removed the
+now-dead server implementations (`setAmbientLayer_`/`triggerStinger_`)
+-- removed those too, in the same pass, for the same reason. The Sheet
+no longer receives any ambient/stinger write at all now; `getNowPlaying()`'s
+own read of the Sheet's `ambient_layers`/`stingers` columns is kept
+(a channel toggled before this migration may still have a legacy
+bare-string entry there) but that response field has no remaining
+client consumer either.
+
+**Test-infrastructure gap found and fixed:** this whole surface --
+ambient toggle, stinger fire, AND Active Sounds transport -- had ZERO
+Playwright coverage before this change. The shared Firestore test stub
+had no `runTransaction()` mock at all and no persistent in-memory doc
+store (`docRef.set()` only ever logged the write, never actually
+stored it for a later `docRef.get()`/`tx.get()` to see) -- meaning a
+click on the ambient toggle button would have thrown
+`TypeError: db.runTransaction is not a function` the instant any test
+tried it. Added `window.__dgFirestoreDocs` (a tiny in-memory doc store
+shared by plain `docRef.get()/.set()` and `runTransaction()`'s
+`tx.get()/tx.set()`) plus `get_firestore_doc()`/`set_firestore_doc()`
+test helpers, and a new `test_acell_soundboard` (15 assertions)
+exercising the full toggle/fire/pause/resume/seek/loop/stop cycle for
+both an ambient layer and a stinger, asserting on the stub's own doc
+store directly and confirming zero Apps Script POSTs are sent for any
+of it. Full A-Cell batch + `test_table_radio_widget`: 175/175 passing.

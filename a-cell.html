@@ -4184,33 +4184,78 @@
   }
 
   // Sends a per-instance transport action (pause/resume/seek/loop/stop)
-  // for one active ambient layer or stinger, then confirms via a real
-  // GET and re-renders both the ambient grid (its "active" class) and
-  // the Active Sounds panel -- same no-cors-POST-then-confirm-GET
-  // discipline every other Handler write in this app already uses.
+  // for one active ambient layer or stinger straight to Firestore (see
+  // the Soundboard header comment above updateSoundInstanceFirestore_/
+  // removeSoundInstanceFirestore_/setAmbientLayerActive_ for why) --
+  // the transaction's own resolved array IS the confirmed new state, so
+  // there's no separate confirm-via-GET step needed the way every other
+  // Apps-Script-mediated write in this file still has.
   function sendActiveSoundAction_(row, action, extraParams) {
     var ch = currentChannel;
+    var field = row.kind === 'ambient' ? 'ambient_layers' : 'stingers';
+    var matchKey = row.kind === 'ambient' ? 'id' : 'fired_at';
+    var matchVal = row.refId;
     soundboardStatusEl.textContent = 'Working…';
-    window.__dgGetHandlerIdToken().then(function (idToken) {
-      var body = { action: action, channel: ch, id_token: idToken };
-      if (row.kind === 'ambient') body.layer_id = row.refId; else body.fired_at = String(row.refId);
-      Object.keys(extraParams || {}).forEach(function (k) { body[k] = extraParams[k]; });
-      return fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors', keepalive: true,
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify(body),
-      });
-    }).then(function () {
-      setTimeout(function () {
-        jsonpGet('get_now_playing', { channel: ch }, function (res) {
-          activeAmbientLayers = ((res && Array.isArray(res.ambient_layers)) ? res.ambient_layers : []).map(normalizeAmbientLayer_);
-          activeStingers = (res && Array.isArray(res.stingers)) ? res.stingers : [];
-          renderAmbientGrid();
-          renderActiveSounds_();
-          soundboardStatusEl.textContent = 'Updated.';
+    var promise;
+    switch (action) {
+      case 'pause_ambient_layer':
+      case 'pause_stinger':
+        promise = updateSoundInstanceFirestore_(ch, field, matchKey, matchVal, function (inst) {
+          inst.paused = true;
+          inst.paused_at = Date.now();
         });
-      }, 900);
-    }).catch(function () { soundboardStatusEl.textContent = 'Could not reach the backend.'; });
+        break;
+      case 'resume_ambient_layer':
+      case 'resume_stinger':
+        // Same shiftedStart math as Code.gs's resumeAmbientLayer_/
+        // resumeStinger_ -- preserves the instance's current position
+        // across the pause instead of jumping back to wherever it
+        // happened to be when paused_at was stamped.
+        promise = updateSoundInstanceFirestore_(ch, field, matchKey, matchVal, function (inst) {
+          var now = Date.now();
+          var pausedAt = inst.paused_at || now;
+          var startedAt = inst.started_at || now;
+          inst.started_at = startedAt + (now - pausedAt);
+          inst.paused = false;
+          inst.paused_at = 0;
+        });
+        break;
+      case 'seek_ambient_layer':
+      case 'seek_stinger':
+        promise = updateSoundInstanceFirestore_(ch, field, matchKey, matchVal, function (inst) {
+          var now = Date.now();
+          var positionMs = Math.max(0, Number(extraParams.position_ms) || 0);
+          inst.started_at = now - positionMs;
+          if (inst.paused) inst.paused_at = now;
+        });
+        break;
+      case 'set_ambient_layer_loop':
+      case 'set_stinger_loop':
+        promise = updateSoundInstanceFirestore_(ch, field, matchKey, matchVal, function (inst) {
+          inst.loop = extraParams.loop === '1';
+        });
+        break;
+      case 'set_ambient_layer':
+        // Stop, for an ambient row -- same transaction the toggle grid's
+        // own button already uses, not a separate writer for the
+        // identical "turn this loop off" action.
+        promise = setAmbientLayerActive_(ch, matchVal, false);
+        break;
+      case 'stop_stinger':
+        promise = removeSoundInstanceFirestore_(ch, field, matchKey, matchVal);
+        break;
+      default:
+        promise = Promise.reject(new Error('unknown active-sound action: ' + action));
+    }
+    promise.then(function (arr) {
+      if (row.kind === 'ambient') activeAmbientLayers = arr; else activeStingers = arr;
+      renderAmbientGrid();
+      renderActiveSounds_();
+      soundboardStatusEl.textContent = 'Updated.';
+    }).catch(function (err) {
+      console.error(action + ' (direct Firestore) failed', err);
+      soundboardStatusEl.textContent = 'Could not reach Firestore — ' + (err && err.message ? err.message : 'not signed in as Handler') + '.';
+    });
   }
 
   // Builds the DOM + headless preview <audio> for one Active Sounds row
@@ -4729,35 +4774,130 @@
     airEl.classList.toggle('on-air', !!onAir);
   }
 
-  /* ── Soundboard: ambient loops (toggle) + one-shot stingers (fire).
-     These two write STRAIGHT to Firestore from the browser (no Apps
-     Script round trip at all) -- unlike every other Handler write in
-     this file, which POSTs to Apps Script and lets it dual-write Sheet
-     + Firestore. That indirection was the actual source of the ~8s
-     latency reported live: Apps Script's Web App dispatch/cold-start
-     cost gated the Firestore write that table-radio.js's onSnapshot
-     listeners are waiting on, even though firestore.rules already
-     allowed `isHandler()` to write radio/{channel} directly, and A-Cell
-     already holds a real Firebase Auth session with that claim
-     (ensureHandlerSignedIn(), used for Evidence/Track uploads). Fixed by
-     cutting Apps Script out of the critical path for exactly these two
-     actions: a Firestore transaction reads+merges the same
-     ambient_layers/stingers array Code.gs's setAmbientLayer_/
-     triggerStinger_ compute server-side, so playback is audible the
-     instant the transaction commits. The Sheet is intentionally NOT
-     updated by these two actions anymore -- calling the old Apps Script
-     action afterward as a "background sync" was tried and rejected: it
-     independently recomputes the array from the Sheet's (now stale)
-     state and overwrites Firestore with it a few seconds later, which
-     for a stinger means firing the SAME sound a second time (stingers
-     have no id-based idempotency -- see triggerStinger_'s own comment)
-     -- exactly the kind of duplicate-playback bug already fixed once
-     tonight. Everything else (main-track play/pause/resume/seek, and
-     pause/resume/seek/loop/stop of an ALREADY-active instance via the
-     Active Sounds panel below) is unchanged and still Apps-Script/Sheet
-     mediated -- out of scope for tonight's fix. ── */
+  /* ── Soundboard: ambient loops (toggle), one-shot stingers (fire), and
+     per-instance transport (pause/resume/seek/loop/stop, from the
+     Active Sounds panel below) all write STRAIGHT to Firestore from the
+     browser (no Apps Script round trip at all) -- unlike every other
+     Handler write in this file, which POSTs to Apps Script and lets it
+     dual-write Sheet + Firestore. That indirection was the actual
+     source of the ~8s latency reported live: Apps Script's Web App
+     dispatch/cold-start cost gated the Firestore write that
+     table-radio.js's onSnapshot listeners are waiting on, even though
+     firestore.rules already allowed `isHandler()` to write
+     radio/{channel} directly, and A-Cell already holds a real Firebase
+     Auth session with that claim (ensureHandlerSignedIn(), used for
+     Evidence/Track uploads). Fixed by cutting Apps Script out of the
+     critical path entirely for every one of these actions: a Firestore
+     transaction reads+mutates the same ambient_layers/stingers array
+     Code.gs's setAmbientLayer_/triggerStinger_/updateSoundInstance_/
+     removeSoundInstance_ compute server-side (same field semantics,
+     copied deliberately rather than re-derived, so a paused loop's
+     elapsed-time math stays identical either way a write happens to
+     land), so playback is audible/reacts the instant the transaction
+     commits, not after a further ~900ms confirmation poll. The Sheet is
+     intentionally NOT updated by any of these actions anymore --
+     calling the old Apps Script actions afterward as a "background
+     sync" was tried and rejected for the toggle/fire pair (see the
+     original version of this comment): it independently recomputes the
+     array from the Sheet's now-stale state and overwrites Firestore
+     with it a few seconds later, which for a stinger means firing the
+     SAME sound a second time. The now-unreachable pause_ambient_layer/
+     resume_ambient_layer/seek_ambient_layer/set_ambient_layer_loop/
+     pause_stinger/resume_stinger/seek_stinger/set_stinger_loop/
+     stop_stinger Apps Script actions in Code.gs are left in place for
+     now (dead code, not yet deleted) rather than removed in the same
+     pass as this client change. Only the main track's own play/pause/
+     resume/seek/loop is still Apps-Script/Sheet mediated. ── */
   function radioDocRef_(channel) {
     return window.firebase.firestore().collection('radio').doc(channel);
+  }
+
+  // Finds one ambient_layers/stingers array entry by its stable key
+  // (layer id, or a stinger's fired_at) -- same matching Code.gs's own
+  // findSoundInstance_() does server-side.
+  function findSoundInstance_(arr, matchKey, matchVal) {
+    for (var i = 0; i < arr.length; i++) { if (arr[i][matchKey] === matchVal) return arr[i]; }
+    return null;
+  }
+
+  // Shared Firestore transaction for a per-instance transport mutation
+  // (pause/resume/seek/loop) -- mutateFn edits the matched instance
+  // in place, same shape as Code.gs's updateSoundInstance_(), just
+  // committed directly from the browser instead of via an Apps Script
+  // round trip. Rejects if the instance is no longer active (already
+  // stopped/expired elsewhere) rather than silently no-oping.
+  function updateSoundInstanceFirestore_(channel, field, matchKey, matchVal, mutateFn) {
+    return ensureHandlerSignedIn().then(function () {
+      var db = window.firebase.firestore();
+      var docRef = radioDocRef_(channel);
+      return db.runTransaction(function (tx) {
+        return tx.get(docRef).then(function (snap) {
+          var data = snap.exists ? snap.data() : {};
+          var arr = Array.isArray(data[field]) ? data[field] : [];
+          if (field === 'ambient_layers') arr = arr.map(normalizeAmbientLayer_);
+          var inst = findSoundInstance_(arr, matchKey, matchVal);
+          if (!inst) throw new Error('not currently active');
+          mutateFn(inst);
+          var now = Date.now();
+          var patch = { updated_at: now };
+          patch[field] = arr;
+          tx.set(docRef, patch, { merge: true });
+          return arr;
+        });
+      });
+    });
+  }
+
+  // Same shape as updateSoundInstanceFirestore_ but removes the
+  // instance entirely (Stop for a stinger, which has no separate on/off
+  // toggle the way an ambient layer does) -- mirrors Code.gs's
+  // removeSoundInstance_().
+  function removeSoundInstanceFirestore_(channel, field, matchKey, matchVal) {
+    return ensureHandlerSignedIn().then(function () {
+      var db = window.firebase.firestore();
+      var docRef = radioDocRef_(channel);
+      return db.runTransaction(function (tx) {
+        return tx.get(docRef).then(function (snap) {
+          var data = snap.exists ? snap.data() : {};
+          var arr = Array.isArray(data[field]) ? data[field] : [];
+          if (field === 'ambient_layers') arr = arr.map(normalizeAmbientLayer_);
+          arr = arr.filter(function (inst) { return inst[matchKey] !== matchVal; });
+          var now = Date.now();
+          var patch = { updated_at: now };
+          patch[field] = arr;
+          tx.set(docRef, patch, { merge: true });
+          return arr;
+        });
+      });
+    });
+  }
+
+  // Shared by the ambient grid's own toggle button AND the Active
+  // Sounds panel's Stop button for an ambient row -- both ultimately
+  // mean the same thing (turn this loop off), so both call the same
+  // transaction instead of the Active Sounds path duplicating it via a
+  // second, parallel writer.
+  function setAmbientLayerActive_(channel, layerId, active) {
+    return ensureHandlerSignedIn().then(function () {
+      var db = window.firebase.firestore();
+      var docRef = radioDocRef_(channel);
+      var now = Date.now();
+      return db.runTransaction(function (tx) {
+        return tx.get(docRef).then(function (snap) {
+          var data = snap.exists ? snap.data() : {};
+          var layers = (Array.isArray(data.ambient_layers) ? data.ambient_layers : []).map(normalizeAmbientLayer_);
+          if (active) {
+            if (!layers.some(function (l) { return l.id === layerId; })) {
+              layers.push({ id: layerId, started_at: now, paused: false, paused_at: 0, loop: true });
+            }
+          } else {
+            layers = layers.filter(function (l) { return l.id !== layerId; });
+          }
+          tx.set(docRef, { ambient_layers: layers, updated_at: now }, { merge: true });
+          return layers;
+        });
+      });
+    });
   }
 
   function renderAmbientGrid() {
@@ -4774,26 +4914,7 @@
         var ch = currentChannel;
         btn.classList.toggle('active', active);
         soundboardStatusEl.textContent = (active ? 'Starting ' : 'Stopping ') + label + '…';
-        ensureHandlerSignedIn().then(function () {
-          var db = window.firebase.firestore();
-          var docRef = radioDocRef_(ch);
-          var now = Date.now();
-          return db.runTransaction(function (tx) {
-            return tx.get(docRef).then(function (snap) {
-              var data = snap.exists ? snap.data() : {};
-              var layers = (Array.isArray(data.ambient_layers) ? data.ambient_layers : []).map(normalizeAmbientLayer_);
-              if (active) {
-                if (!layers.some(function (l) { return l.id === layerId; })) {
-                  layers.push({ id: layerId, started_at: now, paused: false, paused_at: 0, loop: true });
-                }
-              } else {
-                layers = layers.filter(function (l) { return l.id !== layerId; });
-              }
-              tx.set(docRef, { ambient_layers: layers, updated_at: now }, { merge: true });
-              return layers;
-            });
-          });
-        }).then(function (layers) {
+        setAmbientLayerActive_(ch, layerId, active).then(function (layers) {
           activeAmbientLayers = layers;
           renderActiveSounds_();
           soundboardStatusEl.textContent = (active ? label + ' is now looping on CH ' : label + ' stopped on CH ') + ch + '.';

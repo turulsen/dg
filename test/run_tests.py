@@ -258,22 +258,45 @@ NOTES_FIRESTORE_STUB = """
       }
     };
   }
+  // Tiny in-memory doc store, keyed by full path -- backs plain
+  // docRef.get()/.set() AND runTransaction()'s tx.get()/tx.set() below
+  // with the SAME state, so a-cell.html's read-modify-write soundboard
+  // transactions (ambient/stinger toggle/fire/pause/resume/seek/loop/
+  // stop) see their own previous write on the next call, the same way
+  // real Firestore would. No real transactional isolation (single-
+  // threaded JS test, nothing else can interleave) -- just persistence.
+  window.__dgFirestoreDocs = {};
+  function docSnapshot(docPath) {
+    var exists = Object.prototype.hasOwnProperty.call(window.__dgFirestoreDocs, docPath);
+    return { exists: exists, id: docPath.split('/').pop(), data: function () { return window.__dgFirestoreDocs[docPath]; } };
+  }
+  function writeDoc(op, docPath, data, opts) {
+    window.__dgFirestoreWrites.push({ op: op, path: docPath, data: data, opts: opts });
+    if (op === 'delete') { delete window.__dgFirestoreDocs[docPath]; return; }
+    if (op === 'update' || (opts && opts.merge)) {
+      window.__dgFirestoreDocs[docPath] = Object.assign({}, window.__dgFirestoreDocs[docPath] || {}, data);
+    } else {
+      window.__dgFirestoreDocs[docPath] = data;
+    }
+  }
   function makeCollectionRef(path) {
     var q = makeQuery(path, []);
     q.doc = function (id) {
       var docPath = path + '/' + id;
       return {
+        __path: docPath,
         collection: function (name) { return makeCollectionRef(docPath + '/' + name); },
+        get: function () { return Promise.resolve(docSnapshot(docPath)); },
         set: function (data, opts) {
-          window.__dgFirestoreWrites.push({ op: 'set', path: docPath, data: data, opts: opts });
+          writeDoc('set', docPath, data, opts);
           return Promise.resolve();
         },
         update: function (data) {
-          window.__dgFirestoreWrites.push({ op: 'update', path: docPath, data: data });
+          writeDoc('update', docPath, data);
           return Promise.resolve();
         },
         delete: function () {
-          window.__dgFirestoreWrites.push({ op: 'delete', path: docPath });
+          writeDoc('delete', docPath);
           return Promise.resolve();
         },
         // Single-doc listener (agent-hub.html's characters/{code} DEX
@@ -298,7 +321,22 @@ NOTES_FIRESTORE_STUB = """
     apps: [{}],
     initializeApp: function () {},
     firestore: function () {
-      return { settings: function () {}, collection: function (name) { return makeCollectionRef(name); } };
+      return {
+        settings: function () {},
+        collection: function (name) { return makeCollectionRef(name); },
+        // a-cell.html's soundboard writes straight to Firestore via
+        // db.runTransaction(fn(tx) => tx.get(docRef).then(...tx.set...)) --
+        // no real transactional isolation here (see docSnapshot/writeDoc
+        // above), just the same read-then-write shape against the same
+        // backing store a plain docRef.get()/.set() would use.
+        runTransaction: function (updateFn) {
+          var tx = {
+            get: function (docRef) { return Promise.resolve(docSnapshot(docRef.__path)); },
+            set: function (docRef, data, opts) { writeDoc('set', docRef.__path, data, opts); }
+          };
+          return Promise.resolve(updateFn(tx));
+        }
+      };
     },
     auth: function () {
       return {
@@ -359,6 +397,21 @@ def firestore_writes(page, path_prefix=None):
     if path_prefix is None:
         return writes
     return [w for w in writes if w["path"].startswith(path_prefix)]
+
+def get_firestore_doc(page, path):
+    """Reads the stub's own in-memory doc store (window.__dgFirestoreDocs)
+    at the given full path (e.g. 'radio/1') -- the same backing store
+    docRef.get()/.set() and runTransaction()'s tx.get()/tx.set() share,
+    so this sees whatever the page's own code last wrote via either.
+    None if the doc doesn't exist."""
+    return page.evaluate("(path) => (window.__dgFirestoreDocs || {})[path]", path)
+
+def set_firestore_doc(page, path, data):
+    """Seeds the stub's in-memory doc store directly (test setup only) --
+    e.g. so a-cell.html's soundboard transactions see a pre-existing
+    radio/{channel} doc on their first tx.get() instead of starting from
+    nothing."""
+    page.evaluate("([path, data]) => { (window.__dgFirestoreDocs = window.__dgFirestoreDocs || {})[path] = data; }", [path, data])
 
 def push_firestore_snapshot(page, path, wheres, docs):
     """Delivers a fake Firestore snapshot (the full current result set,
@@ -4691,6 +4744,156 @@ def test_acell_music(p):
     wait_for_condition(lambda: "No tracks uploaded yet" in page.inner_text("#tracklib-list"))
     record("acell", "once the listener delivers the deletion, the track is gone from the library",
            "No tracks uploaded yet" in page.inner_text("#tracklib-list"), "")
+
+    page.close()
+    return errs
+
+def test_acell_soundboard(p):
+    """a-cell.html's Music tab Soundboard: ambient-loop toggle, one-shot
+    stinger fire, and the Active Sounds panel's own per-instance
+    transport (pause/resume/seek/loop/stop) for an already-active
+    loop/stinger. All of these write straight to Firestore (radio/
+    {channel}) via a client-side transaction -- no Apps Script POST at
+    all, unlike every other Handler write in this file -- see the
+    Soundboard header comment in a-cell.html for why (the ~8s latency
+    Apps Script's own dispatch/cold-start added was audible). This had
+    no test coverage at all before: db.runTransaction() wasn't even
+    mocked, so a click on the ambient toggle would have thrown
+    "db.runTransaction is not a function" under test the moment anyone
+    tried."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    skip_acell_gate(page)
+
+    posts = []
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            posts.append(json.loads(req.post_data or "{}"))
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=get_now_playing" in url:
+                res = {"status": "NOT_FOUND"}
+            elif "action=get_playlist" in url:
+                res = {"status": "OK", "playlist": []}
+            elif "action=list_cells" in url:
+                res = {"status": "OK", "cells": []}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.click('.tw[data-tab="music"]')
+    page.wait_for_timeout(150)
+
+    # Ambient toggle: turn a loop on -- straight Firestore write to
+    # radio/1 (channel dial defaults to 1), no Apps Script POST.
+    page.click('[data-layer="alien-lunch"]')
+    wait_for_condition(lambda: get_firestore_doc(page, "radio/1") is not None)
+    doc = get_firestore_doc(page, "radio/1")
+    layers = (doc or {}).get("ambient_layers", [])
+    record("soundboard", "toggling an ambient layer on writes it to radio/{channel} directly",
+           any(l.get("id") == "alien-lunch" for l in layers), str(doc))
+    record("soundboard", "the ambient toggle sends no Apps Script POST at all",
+           len(posts) == 0, str(posts))
+    wait_for_condition(lambda: page.locator('[data-layer="alien-lunch"]').get_attribute("class") and
+                        "active" in page.locator('[data-layer="alien-lunch"]').get_attribute("class"))
+    record("soundboard", "the ambient grid button shows active once the write lands",
+           "active" in (page.locator('[data-layer="alien-lunch"]').get_attribute("class") or ""), "")
+
+    # Active Sounds panel should now show a row for it.
+    active_row = wait_for_condition(lambda: page.locator(".rdo-active-row").first
+                                     if page.locator(".rdo-active-row").count() > 0 else None)
+    record("soundboard", "the Active Sounds panel shows a row for the active ambient loop",
+           active_row is not None and "Alien Lunch" in page.inner_text(".rdo-active-row"), page.inner_text("#soundboard-active-list"))
+
+    # Pause it from the Active Sounds row.
+    page.click('.rdo-active-row [data-action="playpause"]')
+    def paused_state():
+        d = get_firestore_doc(page, "radio/1")
+        l = next((x for x in (d or {}).get("ambient_layers", []) if x.get("id") == "alien-lunch"), None)
+        return l if (l and l.get("paused")) else None
+    paused_layer = wait_for_condition(paused_state)
+    record("soundboard", "pausing an active ambient loop sets paused:true directly in Firestore",
+           bool(paused_layer), str(get_firestore_doc(page, "radio/1")))
+    record("soundboard", "no Apps Script POST was sent for pause_ambient_layer either",
+           not any(pp.get("action") == "pause_ambient_layer" for pp in posts), str(posts))
+
+    # Resume it -- started_at should shift forward by roughly the paused
+    # duration (preserving position), not reset to now.
+    started_before = paused_layer["started_at"]
+    paused_at_before = paused_layer["paused_at"]
+    page.click('.rdo-active-row [data-action="playpause"]')
+    def resumed_state():
+        d = get_firestore_doc(page, "radio/1")
+        l = next((x for x in (d or {}).get("ambient_layers", []) if x.get("id") == "alien-lunch"), None)
+        return l if (l and not l.get("paused")) else None
+    resumed_layer = wait_for_condition(resumed_state)
+    record("soundboard", "resuming clears paused and shifts started_at instead of resetting position",
+           bool(resumed_layer) and resumed_layer["started_at"] >= started_before and resumed_layer["paused_at"] == 0,
+           str(resumed_layer))
+
+    # Loop toggle on the Active Sounds row.
+    page.click('.rdo-active-row [data-action="loop"]')
+    def loop_off():
+        d = get_firestore_doc(page, "radio/1")
+        l = next((x for x in (d or {}).get("ambient_layers", []) if x.get("id") == "alien-lunch"), None)
+        return l if (l and l.get("loop") is False) else None
+    unlooped = wait_for_condition(loop_off)
+    record("soundboard", "toggling Loop off on the Active Sounds row writes loop:false directly",
+           bool(unlooped), str(get_firestore_doc(page, "radio/1")))
+
+    # Stop it -- same write path the grid's own toggle-off button uses,
+    # not a separate one for the identical "turn this loop off" action.
+    page.click('.rdo-active-row [data-action="stop"]')
+    def layer_gone():
+        d = get_firestore_doc(page, "radio/1")
+        return d if (d and not any(x.get("id") == "alien-lunch" for x in d.get("ambient_layers", []))) else None
+    stopped_doc = wait_for_condition(layer_gone)
+    record("soundboard", "Stop on an ambient row removes it from ambient_layers via the same path as the grid toggle",
+           stopped_doc is not None, str(stopped_doc))
+    record("soundboard", "the ambient grid button drops back to inactive once the row is stopped",
+           "active" not in (page.locator('[data-layer="alien-lunch"]').get_attribute("class") or ""), "")
+
+    # Stinger: fire one, then pause/seek/loop/stop it the same way.
+    page.click('[data-stinger="scream-01"]')
+    wait_for_condition(lambda: len((get_firestore_doc(page, "radio/1") or {}).get("stingers", [])) > 0)
+    stingers = (get_firestore_doc(page, "radio/1") or {}).get("stingers", [])
+    record("soundboard", "firing a stinger appends it to radio/{channel}'s stingers array directly",
+           any(s.get("id") == "scream-01" for s in stingers), str(stingers))
+    record("soundboard", "firing a stinger sends no Apps Script POST either",
+           not any(pp.get("action") == "trigger_stinger" for pp in posts), str(posts))
+
+    stinger_row = wait_for_condition(lambda: page.locator(".rdo-active-row", has_text="Scream 01")
+                                      if page.locator(".rdo-active-row", has_text="Scream 01").count() > 0 else None)
+    record("soundboard", "the fired stinger shows its own Active Sounds row",
+           stinger_row is not None, page.inner_text("#soundboard-active-list"))
+
+    page.locator(".rdo-active-row", has_text="Scream 01").locator('[data-action="playpause"]').click()
+    def stinger_paused():
+        d = get_firestore_doc(page, "radio/1")
+        s = next((x for x in (d or {}).get("stingers", []) if x.get("id") == "scream-01"), None)
+        return s if (s and s.get("paused")) else None
+    record("soundboard", "pausing an active stinger sets paused:true directly, matched by its fired_at identity",
+           bool(wait_for_condition(stinger_paused)), str(get_firestore_doc(page, "radio/1")))
+
+    page.locator(".rdo-active-row", has_text="Scream 01").locator('[data-action="stop"]').click()
+    def stinger_gone():
+        d = get_firestore_doc(page, "radio/1")
+        return d if (d and not any(x.get("id") == "scream-01" for x in d.get("stingers", []))) else None
+    record("soundboard", "Stop on a stinger row removes it entirely (no on/off toggle the way ambient has)",
+           wait_for_condition(stinger_gone) is not None, "")
 
     page.close()
     return errs
@@ -9608,6 +9811,8 @@ def main():
         safe(test_acell_sheet, browser, area="acell")
 
         safe(test_acell_music, browser, area="acell")
+
+        safe(test_acell_soundboard, browser, area="acell")
 
         safe(test_acell_music_backend_not_deployed, browser, area="acell")
 
