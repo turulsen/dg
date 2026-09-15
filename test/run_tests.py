@@ -275,6 +275,19 @@ NOTES_FIRESTORE_STUB = """
         delete: function () {
           window.__dgFirestoreWrites.push({ op: 'delete', path: docPath });
           return Promise.resolve();
+        },
+        // Single-doc listener (agent-hub.html's characters/{code} DEX
+        // post-it, etc.) -- a different shape from the collection-query
+        // listeners above (a lone doc snapshot has .exists/.data(), not
+        // .forEach()), so tracked separately via isDoc rather than
+        // reusing the collection entry shape.
+        onSnapshot: function (success, error) {
+          var entry = { path: docPath, isDoc: true, success: success, error: error };
+          window.__dgFirestoreListeners.push(entry);
+          return function () {
+            var i = window.__dgFirestoreListeners.indexOf(entry);
+            if (i !== -1) window.__dgFirestoreListeners.splice(i, 1);
+          };
         }
       };
     };
@@ -369,6 +382,23 @@ def push_firestore_snapshot(page, path, wheres, docs):
             });
         }""",
         [path, wheres, docs],
+    )
+
+def push_firestore_doc_snapshot(page, path, exists, data=None):
+    """Delivers a fake single-document Firestore snapshot (characters/{code}
+    DEX post-it, etc.) to whichever registered doc-level listener matches
+    the given full doc path exactly -- see the stub's onSnapshot on doc()
+    above. Must be called after the app has actually subscribed, same
+    reasoning as push_firestore_snapshot()."""
+    page.evaluate(
+        """([path, exists, data]) => {
+            var match = (window.__dgFirestoreListeners || []).find(function (l) {
+                return l.isDoc && l.path === path;
+            });
+            if (!match) throw new Error('no Firestore doc listener registered for ' + path);
+            match.success({ exists: exists, data: function () { return data; } });
+        }""",
+        [path, exists, data],
     )
 
 def fill_cover_form(page, agent, form_selector="#dg-form"):
@@ -2729,6 +2759,51 @@ def test_agent_hub_handout_notes(p):
     page.close()
     return errs
 
+def test_agent_hub_dex_postit(p):
+    """agent-hub.html's Initiative/DEX post-it (yellow sticky note in each
+    Agent's dossier header, mirroring a-cell.html's own Cell-wide
+    Initiative Tracker) -- a live characters/{code} doc listener, since
+    characters is public-read (see firestore.rules) and needs no
+    per-Agent sign-in unlike the Evidence listener. Empty/missing DEX
+    just leaves the post-it blank (:empty hides it), not an error."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", lambda route: route.fulfill(
+        status=200, content_type="application/json", body='{"status":"OK"}') if "callback=" not in route.request.url
+        else route.fulfill(status=200, content_type="application/javascript",
+                            body=f'{route.request.url.split("callback=")[1].split("&")[0]}({{"status":"OK"}})'))
+
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    roster = {
+        "OWEN-CS12": {"code": "OWEN-CS12", "char_name": "Owen Castillo", "codename": "Ferro", "saved_at": 2000},
+        "PRIY-AN34": {"code": "PRIY-AN34", "char_name": "Priya Anand", "codename": "", "saved_at": 1000},
+    }
+    page.evaluate("(r) => localStorage.setItem('dg_agent_roster', JSON.stringify(r))", roster)
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_timeout(500)
+
+    wait_for_condition(lambda: any(l["path"] == "characters/OWEN-CS12" for l in page.evaluate("() => window.__dgFirestoreListeners || []"))
+                        and any(l["path"] == "characters/PRIY-AN34" for l in page.evaluate("() => window.__dgFirestoreListeners || []")),
+                        timeout_ms=8000)
+    push_firestore_doc_snapshot(page, "characters/OWEN-CS12", True,
+                                 {"character_json": json.dumps({"csStats": {"DEX": 14}})})
+    push_firestore_doc_snapshot(page, "characters/PRIY-AN34", False, None)
+
+    owen_dex = wait_for_condition(lambda: (page.inner_text("#ah-dex-OWEN-CS12") or None))
+    record("hub", "an Agent's Initiative post-it shows their live DEX score",
+           owen_dex is not None and "14" in owen_dex, owen_dex)
+    priya_postit = page.inner_text("#ah-dex-PRIY-AN34")
+    record("hub", "an Agent with no character sheet yet shows an empty (hidden) post-it, not an error",
+           priya_postit.strip() == "", repr(priya_postit))
+
+    errs_all = list(errs)
+    page.close()
+    return errs_all
+
 def test_agent_hub_recruit_flag(p):
     """Bug fix: an Agent File can exist (submitted via Cover form /
     Agent File export) before that Agent has an actual character sheet
@@ -2997,7 +3072,7 @@ def test_acell_play(p):
     def char_doc(code):
         st = fake_full[code]
         bio = st.get("bio", {})
-        return {"id": code, "character_json": json.dumps({"bio": bio, "derived": st.get("derived", {})}),
+        return {"id": code, "character_json": json.dumps({"bio": bio, "derived": st.get("derived", {}), "csStats": st.get("csStats", {})}),
                 "updated_at": "", "player_name": bio.get("player_name", "")}
 
     wait_for_condition(lambda: any(l["path"] == "characters" for l in page.evaluate("() => window.__dgFirestoreListeners || []")), timeout_ms=8000)
@@ -3088,6 +3163,30 @@ def test_acell_play(p):
            "Priya Anand" in page.inner_text("#play-view .pv-bio"), "")
     record("acell", "clicking a Dashboard row highlights that Agent in the left-hand list too",
            "active" in (page.eval_on_selector('.play-agent-btn:has-text("Priya Anand")', "el => el.className") or ""), "")
+
+    # Cell-wide Initiative Tracker: a yellow post-it above the vitals
+    # rows, everyone in the filtered Cell ranked by DEX descending
+    # (Delta Green's own initiative order) -- reads the same csStats.DEX
+    # rebuildAllCharacters() already pulled out of the live characters/
+    # snapshot, no extra fetch. A Cell with 2+ members actually exercises
+    # the sort; deliberately excludes Priya (still selected from the
+    # click above) so the filter switch clears the stale selection and
+    # actually shows the Dashboard instead of her still-in-view dossier
+    # (see renderList()'s own "still there" comment in a-cell.html).
+    fake_cells_with_charlie = fake_cells + [
+        {"cell_id": "cell_3", "name": "Cell Charlie", "handler": "Gergo",
+         "member_codes": ["OWEN-CS12", "MARC-9XQ2"]}
+    ]
+    push_firestore_snapshot(page, "cells", [], [dict(c, id=c["cell_id"]) for c in fake_cells_with_charlie])
+    wait_for_condition(lambda: "Cell Charlie" in (page.eval_on_selector_all(
+        "#play-cell-filter option", "els => els.map(e=>e.textContent)") or []))
+    page.select_option("#play-cell-filter", label="Cell Charlie")
+    page.wait_for_timeout(200)
+    initiative_names = page.eval_on_selector_all("#play-view .cdb-initiative-row .nm", "els => els.map(e=>e.textContent)")
+    initiative_dex = page.eval_on_selector_all("#play-view .cdb-initiative-row .dx", "els => els.map(e=>e.textContent)")
+    record("acell", "Cell Dashboard shows an Initiative Tracker ranked by DEX descending",
+           initiative_names == ["Owen Castillo", "Marcus Reyes"] and initiative_dex == ["14", "10"],
+           str((initiative_names, initiative_dex)))
 
     page.select_option("#play-cell-filter", label="All Agents")
     page.wait_for_timeout(200)
@@ -9385,6 +9484,8 @@ def main():
         safe(test_agent_hub_handouts, browser, area="hub")
 
         safe(test_agent_hub_handout_notes, browser, area="hub")
+
+        safe(test_agent_hub_dex_postit, browser, area="hub")
 
         safe(test_acell_gate, browser, area="acell")
 

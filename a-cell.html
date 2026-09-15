@@ -231,6 +231,34 @@
   .cdb-vital .lbl{ font-size:9px; color:var(--ink-3); letter-spacing:.1em; font-family:'Courier Prime',monospace; display:block; }
   .cdb-vital .val{ font-family:'Special Elite',monospace; font-size:15px; color:var(--ink); }
 
+  /* ── Initiative Tracker: same yellow sticky-note look as the Handler
+     Password note / agent-hub.html's Cover Identity note above -- DEX
+     order is Delta Green's own initiative order, highest first. Sits
+     above the vitals rows in the Cell Dashboard, live off the same
+     character_json read as everything else here (see rebuildAllCharacters()). ── */
+  .cdb-initiative{
+    background:#f0e87a; box-shadow:1px 3px 8px rgba(0,0,0,.35);
+    padding:var(--s3) var(--s4); margin:16px 22px; position:relative;
+    transform:rotate(-.4deg);
+  }
+  .cdb-initiative::before{
+    content:''; position:absolute; top:-6px; left:50%; transform:translateX(-50%);
+    width:48px; height:12px; background:rgba(255,255,255,.55); border-radius:1px;
+    box-shadow:0 1px 3px rgba(0,0,0,.12);
+  }
+  .cdb-initiative-label{
+    font-family:'Special Elite',monospace; font-size:8px; letter-spacing:.16em;
+    text-transform:uppercase; color:#5a4a10; margin-bottom:var(--s2); display:block;
+  }
+  .cdb-initiative-rows{ display:flex; flex-direction:column; gap:3px; }
+  .cdb-initiative-row{
+    display:flex; align-items:center; gap:10px;
+    font-family:'Courier Prime',monospace; font-size:12px; color:#1c1405;
+  }
+  .cdb-initiative-row .ord{ font-family:'Special Elite',monospace; font-size:11px; color:#5a4a10; width:16px; }
+  .cdb-initiative-row .nm{ flex:1; overflow-wrap:anywhere; }
+  .cdb-initiative-row .dx{ font-family:'Special Elite',monospace; font-weight:bold; }
+
   /* ── Sticky header: photo, name, and the vitals that move during
      play (HP/WP/SAN/BP) -- mirrors Live Play's own tracker bar, kept
      visible while scrolling the dossier dropdown below it. ── */
@@ -1508,10 +1536,14 @@
   function rebuildAllCharacters() {
     allCharacters = Object.keys(charsByCode).map(function (code) {
       var charDoc = charsByCode[code];
-      var bio = {}, derived = {};
+      var bio = {}, derived = {}, csStats = {};
       try {
         var parsed = JSON.parse(charDoc.character_json || '{}');
         bio = parsed.bio || {}; derived = parsed.derived || {};
+        // Same character_json blob renderView() already reads csStats
+        // out of for the full dossier's Stats block -- DEX from here is
+        // what drives the Initiative Tracker below, no extra fetch.
+        csStats = parsed.csStats || parsed.stats || {};
       } catch (e) { /* skip unparsable */ }
       if (!charDoc.character_json) return null; // no character data at all yet, same as listCharacters()'s own skip
       var briefDoc = briefsByCode[code] || {};
@@ -1528,7 +1560,8 @@
             // listCharacters() itself uses server-side.
             player_name: charDoc.player_name || bio.player_name
           },
-          derived: { hp: derived.hp, wp: derived.wp, san: derived.san, bp: derived.bp }
+          derived: { hp: derived.hp, wp: derived.wp, san: derived.san, bp: derived.bp },
+          dex: csStats.DEX
         }
       };
     }).filter(Boolean);
@@ -1676,11 +1709,34 @@
     }
   }
 
+  // Cell-wide Initiative Tracker -- a yellow post-it (same look as the
+  // Handler Password note above / agent-hub.html's Cover Identity note)
+  // listing every Agent in this Cell in DEX order, highest first, which
+  // is Delta Green's own initiative order. Reads the DEX rebuildAllCharacters()
+  // already pulled out of the same character_json blob it parses for
+  // HP/WP/SAN/BP, so this is free -- no extra Firestore read.
+  function initiativeTrackerHtml() {
+    var ranked = characters
+      .map(function (c) { return { name: (c.state.bio || {}).name || 'Unknown Agent', dex: (c.state || {}).dex }; })
+      .filter(function (r) { return typeof r.dex === 'number'; })
+      .sort(function (a, b) { return b.dex - a.dex; });
+    if (!ranked.length) return '';
+    return '<div class="cdb-initiative">' +
+      '<div class="cdb-initiative-label">Initiative Order (DEX)</div>' +
+      '<div class="cdb-initiative-rows">' +
+      ranked.map(function (r, i) {
+        return '<div class="cdb-initiative-row"><span class="ord">' + (i + 1) + '</span>' +
+          '<span class="nm">' + escapeHtml(r.name) + '</span><span class="dx">' + r.dex + '</span></div>';
+      }).join('') +
+      '</div></div>';
+  }
+
   function renderDashboard() {
     var cellObj = cells.filter(function (c) { return c.cell_id === cellFilterEl.value; })[0];
     var title = cellObj ? cellObj.name : 'Cell';
     viewEl.innerHTML =
       '<div class="cdb-head">' + escapeHtml(title) + ' Dashboard</div>' +
+      initiativeTrackerHtml() +
       '<div class="cdb-rows">' +
       characters.map(function (c, i) {
         var bio = c.state.bio || {};

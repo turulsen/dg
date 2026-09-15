@@ -2814,3 +2814,86 @@ from a checkout that predated this rule, silently reverting it on the
 live project with nothing in git to show for it. Not fixable from this
 repo -- needs a fresh `firebase deploy --only firestore:rules` from the
 current file to rule this out for certain.
+
+## Initiative Tracker (DEX), first slice of the Field Notes Widget
+## architecture -- Agent Hub post-it + A-Cell Cell-wide Dashboard
+
+First concrete piece of the larger Notebook Widget rework the user
+scoped out (Clearance -> Agent Hub terminal login -> Agent Roster,
+persistent yellow-post-it initiative tracker on both the Roster and
+A-Cell's own Play tab). Shipped standalone since it's self-contained
+and testable on its own, ahead of the widget shell itself.
+
+Both surfaces read `csStats.DEX` out of the exact same `character_json`
+blob already being parsed for other fields -- no new Firestore read,
+no new backend action:
+
+- **a-cell.html (Cell Dashboard)**: `rebuildAllCharacters()` now also
+  pulls `state.dex` out of the same parsed `character_json` it already
+  reads `bio`/`derived` from. `renderDashboard()` gets a new
+  `initiativeTrackerHtml()` block -- a yellow sticky note (same look as
+  the Handler Password note above it) listing every Cell member ranked
+  by DEX descending, which is Delta Green's own initiative order.
+  Renders above the existing HP/WP/SAN/BP rows; empty when nobody in
+  the filtered Cell has a numeric DEX yet (e.g. no character sheet).
+
+- **agent-hub.html (Agent Roster)**: a new `startDexListenerFor(code)`,
+  structurally mirroring the existing `startEvidenceListenerFor(code)`
+  right below it, but simpler -- `characters/{code}` is public-read
+  (see `firestore.rules`), so this needs no per-Agent
+  `exchangeAgentToken` sign-in, just a plain
+  `.collection('characters').doc(code).onSnapshot(...)`. Renders into a
+  small `.dex-postit` (same yellow sticky-note CSS language as Cover
+  Identity) in each Agent's dossier header; `:empty` hides it entirely
+  for an Agent with no character sheet on file yet, so it never shows a
+  bare label with nothing after it.
+
+**Bug caught during testing, not shipped**: the first version called
+`startDexListenerFor(a.code)` directly inside `renderRoster()`'s own
+`agents.forEach` loop. `renderRoster()` is invoked once at the top of
+the page's `<script>` block on every load -- and on a returning visit
+where `dg_agent_roster` already has Agents in it (i.e. almost every
+real visit), that first call happens synchronously, before the script's
+own execution pointer has reached the `const dexListenerStartedByCode`
+declaration further down the same file. That's a same-scope temporal-
+dead-zone `ReferenceError`, thrown synchronously inside the `forEach`
+callback -- which aborts the whole loop immediately, silently dropping
+every Agent tab after whichever one was being built when it threw.
+Reproduced locally: a two-Agent roster rendered only the first Agent's
+tab, no console-visible symptom beyond a `pageerror` most manual
+testing wouldn't be watching for. The existing `startEvidenceListenerFor`
+right next to it never hits this same trap because `loadHandouts()`
+only ever calls it from inside an async JSONP callback, which always
+fires after the whole script has finished its first synchronous pass
+top to bottom (real callback timing did the ordering work for it,
+by accident). Fixed by deferring the new call the same way
+(`setTimeout(() => startDexListenerFor(a.code), 0)`) rather than
+reordering the file -- gets the same "runs after the script's own
+top-level execution finishes" effect the Evidence path already relied
+on, without moving a large, working block of code around to chase a
+declaration-order dependency.
+
+Testing this required extending the shared Firestore test stub
+(`install_notes_firestore_stub` in `test/run_tests.py`) again: its
+`doc()` mock only ever supported `.set()`/`.update()`/`.delete()`
+(added for the Track Library direct-write cutover) -- nothing tested
+here had ever listened to a single DOC before, only collection queries.
+Added `.onSnapshot()` on the doc mock (tracked via an `isDoc` flag in
+the same `window.__dgFirestoreListeners` array) plus a
+`push_firestore_doc_snapshot()` Python helper, mirroring
+`push_firestore_snapshot()`'s collection-query version. New
+`test_agent_hub_dex_postit` covers both the live-DEX and no-character-
+sheet-yet cases; `test_acell_play` gained a DEX-sorted multi-member
+Cell Dashboard assertion (deliberately excluding the Agent already
+selected from an earlier step in that same test, so the Cell-filter
+switch actually clears the stale single-Agent view and shows the
+Dashboard rather than leaving her dossier on screen -- see
+`renderList()`'s own "still there" comment in `a-cell.html`). `sw.js`
+`CACHE_NAME` bumped to `v120`.
+
+Not yet built: the rest of the Field Notes Widget architecture this
+was scoped out of (the persistent cross-page notebook widget itself,
+replacing Table Radio + Dice Roller everywhere but A-Cell; the
+terminal-gated "five tenets" onboarding flow; Requisition/Radio/Notes/
+Settings folded into the widget's own tabs). Tracked separately --
+this entry covers only the initiative tracker slice.

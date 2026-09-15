@@ -88,6 +88,22 @@
     font-style:italic; width:100%; margin-top:var(--s1);
   }
 
+  /* Initiative / DEX -- same yellow sticky-note look as Cover Identity
+     above, one per Agent tab's dossier, showing the DEX score Delta
+     Green initiative order is based on. Small and inline in the header
+     rather than full-width -- it's a glance-value, not a form. */
+  .dex-postit{
+    background:#f0e87a; box-shadow:1px 3px 8px rgba(0,0,0,.35);
+    padding:5px 12px; position:relative; transform:rotate(-.6deg);
+    display:inline-flex; align-items:baseline; gap:6px; margin:8px 0 0;
+  }
+  .dex-postit .lbl{
+    font-family:'Special Elite',monospace; font-size:8px; letter-spacing:.14em;
+    text-transform:uppercase; color:#5a4a10;
+  }
+  .dex-postit .val{ font-family:'Special Elite',monospace; font-size:15px; color:#1c1405; }
+  .dex-postit:empty{ display:none; }
+
   .paper-header .lead{ display:flex; align-items:center; gap:14px; }
   .paper-photo{
     width:56px; height:56px; flex-shrink:0; border-radius:2px; overflow:hidden;
@@ -664,6 +680,7 @@
           </div>
           <div class="stamps" id="${stampId}">${era ? `<div class="stamp">${escapeHtml(era)}</div>` : ''}</div>
           ${meta ? `<div class="dossier-line">${meta}</div>` : ''}
+          <div class="dex-postit" id="ah-dex-${a.code}"></div>
           <div class="paper-actions">
             <a class="paper-btn primary" id="${playBtnId}" href="stats/index.html?load=${encodeURIComponent(a.code)}&live=1">Play</a>
             <a class="paper-btn" href="dg-agent-portal.html?code=${encodeURIComponent(a.code)}#agent">Agent File</a>
@@ -692,6 +709,17 @@
       if (eraseBtn) eraseBtn.addEventListener('click', () => openEraseModal(a.code));
 
       if (a.face_plate_url) loadFacePlate(a.code, a.face_plate_url, photoId);
+      // Deferred, not a direct call: renderRoster() itself runs
+      // synchronously once at page load (line below), which on a
+      // returning visit with agents already in dg_agent_roster reaches
+      // this forEach before the script's own execution pointer has
+      // gotten past startDexListenerFor's const declaration further
+      // down the file -- a same-scope TDZ ReferenceError. The Evidence
+      // listener right below never hits this because loadHandouts()
+      // only calls it from inside an async JSONP callback; a setTimeout
+      // here gets the same "run after the whole script has finished
+      // executing once" effect without restructuring the file.
+      setTimeout(function () { startDexListenerFor(a.code); }, 0);
 
       checkCharacterExists(a.code).then(exists => {
         if (exists !== false) return; // true (has a sheet) or null (check failed) -> leave as Play
@@ -1248,6 +1276,32 @@
   // everything, 'UNFILED' shows only items with no Operation, or a
   // real operation_id narrows to just that folder.
   const opFilterByCode = {};
+
+  // Initiative / DEX post-it -- characters/{code} is public-read (see
+  // firestore.rules, same doc a-cell.html's Play tab reads for its own
+  // Cell-wide Initiative Tracker), so this needs no per-Agent sign-in,
+  // unlike the Evidence listener below.
+  const dexListenerStartedByCode = {};
+  function startDexListenerFor(code) {
+    if (dexListenerStartedByCode[code]) return;
+    dexListenerStartedByCode[code] = true;
+    ensureFirebaseApi(() => {
+      window.firebase.firestore().collection('characters').doc(code).onSnapshot(doc => {
+        var el = document.getElementById('ah-dex-' + code);
+        if (!el) return;
+        var dex;
+        try {
+          var parsed = JSON.parse((doc.data() || {}).character_json || '{}');
+          var stats = parsed.csStats || parsed.stats || {};
+          dex = stats.DEX;
+        } catch (e) { /* leave dex undefined -- post-it stays empty via :empty */ }
+        el.innerHTML = (typeof dex === 'number')
+          ? '<span class="lbl">Initiative &middot; DEX</span><span class="val">' + dex + '</span>'
+          : '';
+      }, () => { dexListenerStartedByCode[code] = false; });
+    }, () => { dexListenerStartedByCode[code] = false; });
+  }
+
   // code -> true once its listener is attached or an attach attempt is
   // in flight -- reset back to false only on a failed sign-in, so a
   // later loadHandouts() call can retry without ever double-attaching a
