@@ -63,10 +63,25 @@ service cloud.firestore {
 
     // characters/{agentCode} -- mirrors the Characters sheet row.
     // Read is public today (Cover Identity search, ?load=CODE) --
-    // stays public. Write requires sign-in only (see header note).
+    // stays public. save_character (create/update) requires sign-in
+    // only (see header note) -- matches requireAgentOrHandlerAuth_(),
+    // no ownership check beyond that. delete_character/restore_character
+    // are Handler-only in Code.gs (requireHandlerAuth_) -- this file's
+    // own header already said so ("Character delete/restore... gated
+    // on the `handler` custom-claim"), but the rule below had never
+    // actually implemented that split: it was `allow write:
+    // if isSignedIn()` for everything, delete included, letting any
+    // signed-in Agent's own Firebase Auth session delete or overwrite
+    // ANY OTHER Agent's character doc directly via the client SDK --
+    // no legitimate client code exercises this today (every characters/
+    // write in this repo is a Code.gs dual-write, authenticated as a
+    // GCP service account that bypasses these rules entirely), but nothing
+    // stopped a signed-in Agent from doing it by hand. Split delete out
+    // to close that gap and actually match the header's own claim.
     match /characters/{agentCode} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isHandler();
     }
 
     // briefs/{agentCode} -- mirrors DeltaGreenBriefs. Same posture as

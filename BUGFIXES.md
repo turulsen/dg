@@ -3603,3 +3603,41 @@ risk into the same batch as everything else this session. Evidence content
 CRUD stays exactly as it already was (Apps Script-mediated writes,
 Firestore-dual-written, live-listener reads) until that query capability
 gets built and tested as its own piece of work.
+
+## Fixed a real `firestore.rules` gap: `characters/{agentCode}` delete was never actually Handler-gated
+
+While scoping the next Phase 2 (Sheets removal) surface, re-checked the
+`characters/{agentCode}` gap a research pass had already flagged: this
+file's own top-of-file header has always claimed "Handler-owned data
+(Cells, Evidence, Operations, Radio, Tracks, **Character delete/restore**,
+update_character_field): gated on the `handler` custom-claim boolean" --
+but the actual rule below it was just `allow write: if isSignedIn();` for
+the whole document, delete included. `save_character` (create/update) IS
+correctly Agent-or-Handler in Code.gs (`requireAgentOrHandlerAuth_`, no
+real per-Agent secret, matches the header's own "Agent-owned data" section
+-- that part was fine as-is), but `delete_character`/`restore_character`
+are Handler-only (`requireHandlerAuth_`) and the rule never enforced that
+split. Anyone with a valid Agent Firebase Auth session (minted by the
+existing `exchangeAgentToken` bridge off nothing more than a known Agent
+Code) could call `.delete()` on any OTHER Agent's `characters/{agentCode}`
+doc directly from the browser console -- no legitimate client code takes
+this path today (every real `characters/` write in this repo is Code.gs's
+own service-account-authenticated dual-write, which bypasses Security
+Rules entirely, same as every other `firestoreDualWrite_`/
+`firestoreDualPatch_`/`firestoreDualDelete_` call), so this was dormant
+against the actual live app, but a real gap against anyone who opened dev
+tools -- worth closing given how little it takes to know another Agent's
+Code in a small campaign.
+
+Split the rule to actually match what the header already claimed:
+`allow create, update: if isSignedIn();` (unchanged behavior) and
+`allow delete: if isHandler();` (the fix). Pure `firestore.rules` change,
+no client code touched, no `sw.js` cache bump needed (rules deploy to
+Firebase directly, never fetched by a browser) -- but per this repo's own
+"mirror only" convention for `firestore.rules`/`storage.rules`/
+`backend/Code.gs` (see README.md/VERSIONING.md), this still needs a manual
+`firebase deploy --only firestore:rules` to actually take effect live; a
+`git push` alone does nothing here. Not covered by this repo's own test
+suite either -- it mocks Firestore entirely rather than running a real
+rules-emulator check, so there's no automated way to regression-test a
+rules file in-repo today.
