@@ -3167,7 +3167,9 @@ everywhere this exact `sw.js` gets registered (bare-origin local dev,
 a Firebase preview channel, and whatever subpath GitHub Pages happens
 to serve from today or after any future repo rename), rather than
 re-guessing a string that already went stale once. Bumped `CACHE_NAME`
-to `v93` in the same commit, per this file's own standing rule.
+to `v93` in the same commit, per this file's own standing rule
+(re-landed here as `v122`, since `main` had moved on independently
+between when this fix was authored and when it was rebased in).
 **Caveat:** no test environment available here serves from a repo-name
 subpath, so this fix is reasoned from reading `isShellRequest()`
 against README.md's documented Pages URL, not confirmed by reproducing
