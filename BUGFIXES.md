@@ -3641,3 +3641,102 @@ Firebase directly, never fetched by a browser) -- but per this repo's own
 suite either -- it mocks Firestore entirely rather than running a real
 rules-emulator check, so there's no automated way to regression-test a
 rules file in-repo today.
+
+## Clearance gate IS the Handler login now -- collapsed the two Handler password prompts into one
+
+Direct user report after the PR above merged: "I only want to enter the
+password once at Clearance" -- and after actually walking through
+a-cell.html's login sequence, the complaint was right. Two SEPARATE
+password concepts sat back to back on the same page: the black-terminal
+Clearance gate (a client-side-only, hardcoded, public flavor password,
+`MASTICATE`, pure in-fiction dressing -- see its own header comment) and,
+immediately below it once the gate cleared, a second, real "Handler
+Password" box (a sticky-note styled form) that's what actually called
+`handlerLogin` and signed into Firebase. A Handler landing on A-Cell for
+the first time in a session genuinely typed two different passwords in a
+row -- unifying the several independent per-tab Handler sign-in flows
+into one shared `window.__dgHandlerAuth` (the earlier "Handler auth
+unification" entry above) never touched this specific redundancy, since
+both boxes already called the same shared function.
+
+Folded the two into one: the Clearance gate's own input is now what the
+Handler types their REAL password into, and pressing Enter both signs
+into Firebase (via the same `window.__dgHandlerAuth`) AND clears the
+gate on success -- no second box anywhere in A-Cell. Specifics:
+- The gate no longer compares against a hardcoded string at all; it sets
+  `sessionStorage.dg_acell_pw` to whatever was typed and calls
+  `window.__dgHandlerAuth()`, showing "authenticating…" while it waits.
+  A rejection shows the REAL reason (e.g. "invalid Handler password"
+  from `handlerLogin`, or a network timeout message) instead of a fixed
+  "access_denied" string -- more useful for a real Handler troubleshooting
+  a real credential than the old flavor gate's canned message ever was.
+- The Handler Auth machinery block (shared Firebase sign-in helpers) now
+  sits ABOVE the Clearance gate in file order, since the gate is what
+  calls it first -- previously it came after, relying on script-execution
+  ordering rather than reader-visible ordering to guarantee
+  `window.__dgHandlerAuth` existed by the time anyone could type and hit
+  Enter.
+- The old separate "Handler Password" sticky-note box (HTML, CSS, and its
+  own script block -- `#acell-handler-auth` and friends) is deleted
+  outright, not just hidden. Its one other job -- silently re-signing in
+  on a same-tab reload using the password cached from an earlier
+  successful login, since `dg_acell_unlocked` skips the gate on reload --
+  moved into the Handler Auth block itself. On a stale/rejected silent
+  re-auth (e.g. the real Handler password changed mid-session), both
+  `dg_acell_pw` and `dg_acell_unlocked` are cleared now, so the NEXT
+  reload shows the Clearance gate fresh instead of leaving the shell
+  looking unlocked while every Handler action silently fails with no way
+  back in short of manually clearing storage.
+
+**Real bug found while testing this, unrelated to the merge itself but
+only ever exposed by it:** `ensureHandlerSignedIn()`'s memoized
+`_handlerAuthPromise` was supposed to reset to `null` on any failure so
+a retry actually retries, but the reset lived INSIDE the promise
+executor (`_handlerAuthPromise = null; reject(...);`), while the promise
+itself was assigned via `_handlerAuthPromise = new Promise(executor)` --
+when `executor` runs SYNCHRONOUSLY (which it does every time
+`ensureFirebaseApi`'s `ready()` check is already true, i.e. every call
+after the Firebase SDK has loaded once on that page), the executor's own
+`_handlerAuthPromise = null` completes BEFORE the outer assignment does,
+so the outer assignment immediately clobbers it back to a permanently-
+rejected promise. Once poisoned, every future call anywhere on the page
+returned that same stale rejection instead of trying again -- meaning a
+Handler who mistyped their password once, or whose page happened to run
+some other Handler-gated read before ever signing in (Evidence's own
+`fetchAll()` does exactly this at page load), could get stuck unable to
+successfully sign in for the rest of that page load, full reload
+required. Never caught before because every other test (and, in
+practice, most real page loads) either pre-seeds a correct password
+before the page ever loads or hits `ensureFirebaseApi` with the SDK not
+yet loaded (a genuinely async first call) -- this test being the first
+to deliberately exercise a WRONG-then-RIGHT password sequence with the
+SDK already mocked as instantly ready is what surfaced it. Fixed by
+moving the reset to a `.catch()` chained onto the already-assigned
+promise object instead of a reject callback inside the executor, which
+can't race the assignment no matter how synchronously it resolves.
+
+**Test fallout, once the above surfaced it:** `test_acell_gate` rewritten
+end to end -- it now installs the shared Firestore/Firebase mock (the
+gate performs a real, if mocked, `handlerLogin` call now) and types
+`testpw` instead of `MASTICATE`; the mock's own `handlerLogin` was
+upgraded to actually check the password (`payload.handler_password ===
+'testpw'`, rejecting anything else) instead of always succeeding, since
+a fixed-success mock can't exercise a wrong-password path at all. The
+old "case-insensitive password" assertion is gone -- that was a property
+of the client-side string compare (`.toUpperCase()`), which no longer
+exists now that this is a real credential check (deliberately NOT
+case-insensitive, same as any other password). `test_acell_handler_session_race`
+had its own seeded password (`'letmein'`) updated to `'testpw'` for the
+same reason -- caught immediately by this rewrite since it's the other
+test exercising a silent on-load re-auth. Also found and fixed a second,
+unrelated pre-existing gap while running the full regression pass:
+`test_acell_music`'s Cue For Cell assertion still checked for a
+`set_cell_channel` Apps Script POST, left behind by the EARLIER Cue For
+Cell migration (see the "A-Cell Create/Delete Cell + Cue For Cell"
+entry above) having updated the Cells tab's own tests but missing this
+one -- now checks the real `cells/{cellId}` Firestore write instead.
+`test_acell_cells`'s two known-flaky `update_cell_members` assertions
+and `test_acell_soundboard`'s unrelated `[data-layer="alien-lunch"]`
+timeout were both confirmed, by running the identical test against the
+pre-merge code, to be pre-existing and untouched by any of this --
+left alone rather than chased further under this entry.

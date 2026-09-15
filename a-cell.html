@@ -40,12 +40,14 @@
   /* ══════════════════════════════════════════════
      A-CELL GATE -- same black-screen green-terminal aesthetic as the
      hub's boot splash (index.html), but interactive: the Handler types
-     the clearance password (MASTICATE) and presses Enter. Session-gated
+     the real Handler password and presses Enter, which both clears this
+     gate and signs them in (see the Clearance Gate script block's own
+     header comment for why this used to be a separate flavor-only step
+     with its own hardcoded public password, MASTICATE). Session-gated
      like the boot splash. Deliberately kept as its own distinct
      black-terminal moment even though the rest of the page below now
      uses the folder/paper look -- this is the "before you're let in"
-     beat, not the working UI. Client-side flavor gate for in-fiction
-     "clearance", not real access control.
+     beat, not the working UI.
      ══════════════════════════════════════════════ */
   #acell-gate{
     position:fixed; inset:0; z-index:9999; background:#000;
@@ -104,56 +106,6 @@
   }
   .hub-header p{ font-family:'Courier Prime',monospace; font-size:13px; color:#b7b09a; max-width:62ch; line-height:1.7; margin:0; }
 
-  /* Handler Password -- the real HANDLER_PASSWORD Script Property
-     credential (see the a-cell.html header comment above the clearance
-     gate script for why this is deliberately separate from that gate).
-     Same sticky-note look as agent-hub.html's Cover Identity note
-     (.ci-row/.ci-label/.ci-fields/.ci-input/.ci-btn there) -- yellow
-     paper, black tab-button, rather than a plain inline form. Compact
-     and out of the way once unlocked (input/button hidden by JS, see
-     setUnlocked() below, just the label line stays). */
-  .acell-handler-auth{
-    background:#f0e87a;
-    box-shadow:1px 3px 8px rgba(0,0,0,.35);
-    padding:var(--s3) var(--s4);
-    margin-top:14px;
-    position:relative;
-    transform:rotate(-.4deg);
-    display:inline-block;
-    max-width:420px;
-  }
-  .acell-handler-auth::before{
-    content:'';
-    position:absolute;
-    top:-6px; left:50%; transform:translateX(-50%);
-    width:48px; height:12px;
-    background:rgba(255,255,255,.55);
-    border-radius:1px;
-    box-shadow:0 1px 3px rgba(0,0,0,.12);
-  }
-  .acell-handler-auth-label{
-    font-family:'Special Elite',monospace; font-size:8px; letter-spacing:.16em;
-    text-transform:uppercase; color:#5a4a10; display:block; margin-bottom:var(--s2);
-  }
-  .acell-handler-auth.acell-handler-auth-ok .acell-handler-auth-label{ color:#2f6b3a; margin-bottom:0; }
-  .acell-handler-auth-fields{ display:flex; align-items:center; gap:var(--s2); flex-wrap:wrap; }
-  .acell-handler-auth #acell-handler-pw-input{
-    flex:1; min-width:110px;
-    background:transparent; border:none; border-bottom:1.5px solid rgba(90,74,16,.4);
-    padding:4px 0; font-family:'Courier Prime',monospace; font-size:13px;
-    color:#1c1405; outline:none; border-radius:0; -webkit-appearance:none;
-  }
-  .acell-handler-auth #acell-handler-pw-input::placeholder{ color:rgba(90,74,16,.45); font-style:italic; }
-  .acell-handler-pw-btn{
-    font-family:'Special Elite',monospace; font-size:8px; letter-spacing:.1em; text-transform:uppercase;
-    background:#3a2a04; color:#f0e87a; border:none; padding:6px 12px; cursor:pointer;
-    border-radius:1px; box-shadow:0 1px 3px rgba(0,0,0,.3); transition:opacity 120ms;
-  }
-  .acell-handler-pw-btn:hover{ opacity:.85; }
-  .acell-handler-auth-err{
-    color:#8b1a1a; font-size:10px; font-style:italic; width:100%; margin-top:var(--s1);
-    font-family:'Courier Prime',monospace; display:block;
-  }
   .folder-wrap{ max-width:900px; margin:26px auto 0; padding:0 6px; }
 
   /* ── Play: agent list + simplified read-only view ── */
@@ -1007,14 +959,6 @@
   <div class="stamp">Clearance: A-Cell</div>
   <h1>A-Cell</h1>
   <p>Handler tools — run Play from a simplified agent view, organize every Agent on file into Cells, and curate the table's music.</p>
-  <div class="acell-handler-auth" id="acell-handler-auth">
-    <span class="acell-handler-auth-label" id="acell-handler-auth-label">Handler session: not set</span>
-    <div class="acell-handler-auth-fields">
-      <input type="text" id="acell-handler-pw-input" placeholder="Handler password" autocomplete="off">
-      <button type="button" class="acell-handler-pw-btn" id="acell-handler-pw-btn">Unlock</button>
-    </div>
-    <span class="acell-handler-auth-err" id="acell-handler-auth-err"></span>
-  </div>
 </div>
 
 <div class="folder-wrap">
@@ -1257,113 +1201,24 @@
 
 <script>
 /* ══════════════════════════════════════════════
-   A-CELL CLEARANCE GATE
-   Client-side only -- a flavor gate for in-fiction "clearance", not
-   real security. Password: MASTICATE (case-insensitive), hardcoded and
-   public (it's sitting right here in a public repo) on purpose --
-   session-gated via sessionStorage, matching index.html's boot splash:
-   unlocks once per tab, not on every repeat visit within the same
-   session.
-
-   Deliberately NOT the same secret as the real HANDLER_PASSWORD Script
-   Property that Code.gs's requireHandlerAuth_()/requireHandlerSession_()
-   check -- that one's private, set by the campaign owner, and gates the
-   actual writes/Admin listing reads. An earlier version of this gate
-   fed its own MASTICATE value on as that credential, which meant every
-   Handler action silently 401'd the moment HANDLER_PASSWORD was set to
-   anything other than the literal string "MASTICATE" -- see the
-   separate Handler Password control below the header instead, which is
-   the only thing that ever sends a value on to handler_login.
-   ══════════════════════════════════════════════ */
-(function () {
-  var PASSWORD = 'MASTICATE';
-  var gate = document.getElementById('acell-gate');
-  var log = document.getElementById('acell-term-log');
-  var inputLine = document.getElementById('acell-input-line');
-  var input = document.getElementById('acell-pw-input');
-  var logo = document.getElementById('acell-logo');
-
-  function unlock(skipAnim) {
-    document.body.classList.remove('acell-lock');
-    if (skipAnim) { gate.remove(); return; }
-    gate.classList.add('acell-hidden');
-    setTimeout(function () { if (gate.parentNode) gate.remove(); }, 550);
-  }
-
-  if (sessionStorage.getItem('dg_acell_unlocked')) {
-    unlock(true);
-    return;
-  }
-
-  function addLine(text, cls) {
-    var div = document.createElement('div');
-    div.className = 'term-line' + (cls ? ' ' + cls : '');
-    div.textContent = '>' + text;
-    log.appendChild(div);
-  }
-
-  addLine('enter_clearance_code:');
-  input.focus();
-
-  // Used to mask with X's (a custom scheme, since native type="password"
-  // dots didn't match the terminal aesthetic) -- removed on request:
-  // masking was hiding real mistyped-password mistakes with no way to
-  // proofread before hitting Enter. input.value is now the real typed
-  // value directly, no separate shadow-tracking needed.
-  function grantAccess() {
-    input.disabled = true;
-    inputLine.style.display = 'none';
-    addLine('acces_granted');
-    try { sessionStorage.setItem('dg_acell_unlocked', '1'); } catch (e) { /* best effort */ }
-    setTimeout(function () {
-      logo.classList.add('acell-logo-in');
-      setTimeout(unlock, 1400);
-    }, 300);
-  }
-
-  function denyAccess() {
-    addLine('access_denied', 'term-denied');
-    input.value = '';
-  }
-
-  input.addEventListener('keydown', function (e) {
-    if (e.key !== 'Enter') return;
-    var val = input.value.trim().toUpperCase();
-    if (!val) return;
-    if (val === PASSWORD) grantAccess();
-    else denyAccess();
-  });
-
-  // Re-focus the password field whenever the page regains focus, so a
-  // Handler who clicked elsewhere doesn't have to click back into it.
-  document.addEventListener('click', function () {
-    if (!input.disabled) input.focus();
-  });
-})();
-</script>
-
-<script>
-/* ══════════════════════════════════════════════
-   HANDLER AUTH -- shared Firebase sign-in machinery, moved up here
-   (right after Clearance, before the password box below) so it's the
-   FIRST thing to ever call handlerLogin: one password prompt, one
-   sign-in, immediately after Clearance. The resulting Firebase ID
-   token (carrying the handler:true custom claim) is now the ONLY
-   Handler credential anywhere -- Firestore rules already check it via
-   isHandler(), and every remaining Handler-gated Apps Script action
-   verifies the SAME token server-side via verifyHandlerIdToken_() (see
-   Code.gs). The old separate handler_login Apps Script action and its
-   dg_acell_session opaque CacheService token are gone entirely --
-   Code.gs never sees the raw password at all anymore.
+   HANDLER AUTH -- shared Firebase sign-in machinery. Comes first now
+   (ahead of the Clearance gate below) since the gate itself is what
+   calls handlerLogin -- one password prompt, one sign-in, no second
+   box anywhere in A-Cell. The resulting Firebase ID token (carrying the
+   handler:true custom claim) is the ONLY Handler credential anywhere --
+   Firestore rules already check it via isHandler(), and every remaining
+   Handler-gated Apps Script action verifies the SAME token server-side
+   via verifyHandlerIdToken_() (see Code.gs). Code.gs never sees the raw
+   password at all.
 
    Exposed on window (__dgHandlerAuth / __dgEnsureFirebaseApi /
    __dgGetHandlerIdToken) so every later <script> block in this file
    (Evidence's own listener, Track Library's upload/delete, Cells/
-   Music Handler writes) shares this ONE sign-in flow instead of each
-   re-implementing it -- see the Track Library block further down for
-   why that used to matter (two independent copies meant handlerLogin()
-   could fire twice in parallel on page load, which under a weak
-   signal looked like login flakiness).
+   Music Handler writes, and the Clearance gate right below) shares this
+   ONE sign-in flow instead of each re-implementing it -- see the Track
+   Library block further down for why that used to matter (two
+   independent copies meant handlerLogin() could fire twice in parallel
+   on page load, which under a weak signal looked like login flakiness).
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
@@ -1442,7 +1297,20 @@
   var _handlerAuthPromise = null;
   function ensureHandlerSignedIn() {
     if (_handlerAuthPromise) return _handlerAuthPromise;
-    _handlerAuthPromise = new Promise(function (resolve, reject) {
+    // Resetting _handlerAuthPromise back to null on failure has to happen
+    // via a .catch() chained onto the promise itself (below), NOT from a
+    // reject() callback inside the executor -- when ensureFirebaseApi's
+    // cb fires SYNCHRONOUSLY (which it always does once the Firebase SDK
+    // has already loaded once this page, i.e. every call after the
+    // first), the executor runs to completion, including any
+    // `_handlerAuthPromise = null` inside it, BEFORE the
+    // `_handlerAuthPromise = new Promise(...)` assignment below even
+    // happens -- so that assignment clobbers the reset right back to a
+    // permanently-rejected promise. Caught live: a Handler who mistyped
+    // the password once could never successfully sign in afterward
+    // without a full page reload, since every retry just returned that
+    // same stale rejection instead of trying again.
+    var promise = new Promise(function (resolve, reject) {
       ensureFirebaseApi(function () {
         var auth = window.firebase.auth();
         // Firebase Auth sessions persist per-origin across page loads
@@ -1454,19 +1322,20 @@
         // on the cached user object, no extra round trip).
         if (auth.currentUser && auth.currentUser.uid === 'handler') { resolve(auth.currentUser); return; }
         var password = sessionStorage.getItem('dg_acell_pw') || '';
-        if (!password) { _handlerAuthPromise = null; reject(new Error('No A-Cell session -- log in as Handler first.')); return; }
+        if (!password) { reject(new Error('No A-Cell session -- log in as Handler first.')); return; }
         withTimeout_(window.firebase.functions().httpsCallable('handlerLogin')({ handler_password: password }), 20000, 'handlerLogin()')
           .then(function (result) {
             return withTimeout_(auth.signInWithCustomToken(result.data.token), 20000, 'signInWithCustomToken()');
           })
           .then(function (cred) { resolve(cred.user); })
-          .catch(function (err) { _handlerAuthPromise = null; reject(err); });
-      }, function (err) {
-        _handlerAuthPromise = null;
-        reject(err);
-      });
+          .catch(reject);
+      }, reject);
     });
-    return _handlerAuthPromise;
+    _handlerAuthPromise = promise;
+    promise.catch(function () {
+      if (_handlerAuthPromise === promise) _handlerAuthPromise = null;
+    });
+    return promise;
   }
   // Fresh Firebase ID token for the currently signed-in Handler -- every
   // remaining Handler-gated Apps Script action sends this (id_token)
@@ -1479,80 +1348,118 @@
   window.__dgHandlerAuth = ensureHandlerSignedIn;
   window.__dgEnsureFirebaseApi = ensureFirebaseApi;
   window.__dgGetHandlerIdToken = getHandlerIdToken_;
+
+  // Same-tab reload once already unlocked: the Clearance gate below
+  // skips itself entirely when dg_acell_unlocked is set, so nothing else
+  // would ever re-trigger a sign-in with the password the gate cached in
+  // dg_acell_pw on its earlier success. This is what actually re-
+  // establishes the Firebase session in that case, silently -- no error
+  // shown here even on failure (e.g. the real Handler password changed
+  // since this tab unlocked); the next real Handler action will surface
+  // that on its own, and clearing both flags means the NEXT reload shows
+  // the Clearance gate fresh instead of leaving the shell looking
+  // unlocked while every Handler action silently fails.
+  var savedPw = sessionStorage.getItem('dg_acell_pw');
+  if (savedPw) {
+    ensureHandlerSignedIn().then(function () {
+      window.dispatchEvent(new Event('dg-acell-handler-ready'));
+    }).catch(function () {
+      try { sessionStorage.removeItem('dg_acell_pw'); sessionStorage.removeItem('dg_acell_unlocked'); } catch (e) { /* best effort */ }
+    });
+  }
 })();
 </script>
 
 <script>
 /* ══════════════════════════════════════════════
-   HANDLER PASSWORD -- the real credential (HANDLER_PASSWORD Firebase
-   Secret, set privately by the campaign owner and checked only by the
-   handlerLogin Cloud Function). Typed once per tab, right after
-   Clearance; nothing here needs the clearance gate's own MASTICATE
-   value, which is a separate, hardcoded, public flavor password (see
-   that script block's header comment). The password itself is cached
-   in sessionStorage (dg_acell_pw) only so a page reload can silently
-   re-sign-in without retyping -- Code.gs never sees it; the sign-in
-   call above (window.__dgHandlerAuth) is what actually validates it.
+   A-CELL CLEARANCE GATE
+   Used to be a flavor-only step (hardcoded public password MASTICATE,
+   no real security) ahead of a SEPARATE, real Handler-password prompt
+   further down the page -- collapsed into one prompt on request: typing
+   the real Handler password here both clears the gate AND signs in as
+   Handler in the same action, via window.__dgHandlerAuth (the shared
+   machinery above) instead of a client-side string compare against a
+   public constant. No second password box anywhere else in A-Cell now.
+
+   Still session-gated via sessionStorage (dg_acell_unlocked): unlocks
+   once per tab, not on every repeat visit within the same session --
+   see the Handler Auth block above for what a same-tab reload does once
+   already unlocked (a silent re-sign-in using the password this gate
+   cached, not a re-prompt).
    ══════════════════════════════════════════════ */
 (function () {
-  var wrap = document.getElementById('acell-handler-auth');
-  var label = document.getElementById('acell-handler-auth-label');
-  var input = document.getElementById('acell-handler-pw-input');
-  var btn = document.getElementById('acell-handler-pw-btn');
-  var errEl = document.getElementById('acell-handler-auth-err');
+  var gate = document.getElementById('acell-gate');
+  var log = document.getElementById('acell-term-log');
+  var inputLine = document.getElementById('acell-input-line');
+  var input = document.getElementById('acell-pw-input');
+  var logo = document.getElementById('acell-logo');
 
-  function setUnlocked() {
-    wrap.classList.add('acell-handler-auth-ok');
-    label.textContent = 'Handler session active';
-    input.style.display = 'none';
-    btn.style.display = 'none';
-    errEl.textContent = '';
+  function unlock(skipAnim) {
+    document.body.classList.remove('acell-lock');
+    if (skipAnim) { gate.remove(); return; }
+    gate.classList.add('acell-hidden');
+    setTimeout(function () { if (gate.parentNode) gate.remove(); }, 550);
   }
 
-  function setLocked(msg) {
-    wrap.classList.remove('acell-handler-auth-ok');
-    label.textContent = 'Handler session: not set';
-    input.style.display = '';
-    btn.style.display = '';
-    errEl.textContent = msg || '';
+  if (sessionStorage.getItem('dg_acell_unlocked')) {
+    unlock(true);
+    return;
   }
 
-  function setPending() {
-    label.textContent = 'Signing in…';
-    errEl.textContent = '';
+  function addLine(text, cls) {
+    var div = document.createElement('div');
+    div.className = 'term-line' + (cls ? ' ' + cls : '');
+    div.textContent = '>' + text;
+    log.appendChild(div);
   }
 
-  // silent=true is used for the on-load retry of a previously-saved
-  // password -- a stale/wrong one there shouldn't flash an error the
-  // Handler never asked to see, just fall back to the normal locked
-  // state until they type it again.
-  function attempt(pw, silent) {
-    if (!silent) setPending();
-    try { sessionStorage.setItem('dg_acell_pw', pw); } catch (e) { /* best effort */ }
+  addLine('enter_clearance_code:');
+  input.focus();
+
+  // Used to mask with X's (a custom scheme, since native type="password"
+  // dots didn't match the terminal aesthetic) -- removed on request:
+  // masking was hiding real mistyped-password mistakes with no way to
+  // proofread before hitting Enter. input.value is now the real typed
+  // value directly, no separate shadow-tracking needed.
+  function grantAccess() {
+    input.disabled = true;
+    inputLine.style.display = 'none';
+    addLine('acces_granted');
+    try { sessionStorage.setItem('dg_acell_unlocked', '1'); } catch (e) { /* best effort */ }
+    setTimeout(function () {
+      logo.classList.add('acell-logo-in');
+      setTimeout(unlock, 1400);
+    }, 300);
+  }
+
+  function denyAccess(msg) {
+    addLine(msg || 'access_denied', 'term-denied');
+    input.value = '';
+    input.disabled = false;
+    input.focus();
+  }
+
+  input.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return;
+    var val = input.value.trim();
+    if (!val || input.disabled) return;
+    input.disabled = true;
+    addLine('authenticating…');
+    try { sessionStorage.setItem('dg_acell_pw', val); } catch (e2) { /* best effort */ }
+    if (!window.__dgHandlerAuth) { denyAccess('handler auth not ready -- reload and try again'); return; }
     window.__dgHandlerAuth().then(function () {
-      setUnlocked();
-      // Play/Sheet's own fetchAll(false) fires synchronously as soon as
-      // their own <script> block runs, further down this same page load
-      // -- if a saved password exists, this attempt() call is still an
-      // in-flight sign-in at that moment. Let them know once it lands.
-      window.dispatchEvent(new Event('dg-acell-handler-ready'));
+      grantAccess();
     }).catch(function (err) {
-      try { sessionStorage.removeItem('dg_acell_pw'); } catch (e) { /* best effort */ }
-      if (!silent) setLocked((err && err.message) || 'invalid Handler password');
-      else setLocked();
+      try { sessionStorage.removeItem('dg_acell_pw'); } catch (e3) { /* best effort */ }
+      denyAccess((err && err.message) || 'access_denied');
     });
-  }
-
-  btn.addEventListener('click', function () {
-    var pw = input.value;
-    if (!pw) return;
-    attempt(pw, false);
   });
-  input.addEventListener('keydown', function (e) { if (e.key === 'Enter') btn.click(); });
 
-  var savedPw = sessionStorage.getItem('dg_acell_pw');
-  if (savedPw) attempt(savedPw, true);
-  else setLocked();
+  // Re-focus the password field whenever the page regains focus, so a
+  // Handler who clicked elsewhere doesn't have to click back into it.
+  document.addEventListener('click', function () {
+    if (!input.disabled) input.focus();
+  });
 })();
 </script>
 
