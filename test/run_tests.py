@@ -357,7 +357,17 @@ NOTES_FIRESTORE_STUB = """
         httpsCallable: function (name) {
           return function (payload) {
             if (name === 'exchangeAgentToken') return Promise.resolve({ data: { token: payload.agent_code } });
-            if (name === 'handlerLogin') return Promise.resolve({ data: { token: 'handler' } });
+            // Actually checks the password now (real handlerLogin does
+            // too, see functions/index.js) rather than always succeeding
+            // -- needed once the Clearance gate itself started calling
+            // this directly (see BUGFIXES.md), so a wrong-password test
+            // has something real to fail against. 'testpw' is the value
+            // every test's own add_init_script pre-seeds dg_acell_pw
+            // with.
+            if (name === 'handlerLogin') {
+              if (payload && payload.handler_password === 'testpw') return Promise.resolve({ data: { token: 'handler' } });
+              return Promise.reject({ message: 'invalid Handler password' });
+            }
             return Promise.resolve({ data: {} });
           };
         }
@@ -2990,19 +3000,27 @@ def test_agent_hub_recruit_flag(p):
 def test_acell_gate(p):
     """a-cell.html: the Handler's clearance branch. Same black-screen
     green-terminal aesthetic as index.html's boot splash, but
-    interactive -- the Handler types the password (MASTICATE,
-    case-insensitive) and presses Enter. A client-side flavor gate for
-    in-fiction "clearance", not real access control. Wrong password ->
-    access_denied, gate stays up, retry. Right password -> acces_granted,
-    the Delta Green triangle logo fades in, then the gate clears to
-    reveal the A-Cell hub (Play / Cells / Music sections). Session-gated
-    like the boot splash: unlocks once per tab, re-asks in a fresh
-    session."""
+    interactive -- the Handler types the REAL Handler password (used to
+    be a separate, client-side-only, hardcoded public flavor password
+    here, MASTICATE, with a second real-password prompt further down the
+    page -- collapsed into one on request, see BUGFIXES.md) and presses
+    Enter, which calls the real (mocked) handlerLogin Cloud Function.
+    Wrong password -> shows the real handlerLogin rejection reason
+    (e.g. "invalid Handler password"), gate stays up, retry. Right
+    password -> acces_granted, the Delta Green triangle logo fades in,
+    then the gate clears to reveal the A-Cell hub (Play / Cells / Music
+    sections) ALREADY Handler-signed-in, no second prompt anywhere.
+    Session-gated like the boot splash: unlocks once per tab, re-asks in
+    a fresh session. The mock's handlerLogin only accepts 'testpw' now
+    (see NOTES_FIRESTORE_STUB's own comment) -- unlike the old flavor
+    gate, this is a real credential check, so it is deliberately NOT
+    case-insensitive."""
     errs_all = []
 
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
+    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
@@ -3022,15 +3040,22 @@ def test_acell_gate(p):
     record("acell", "the password field is a plain text input, not the browser's own type=password dots",
            page.eval_on_selector("#acell-pw-input", "el => el.type") == "text", "")
     page.press("#acell-pw-input", "Enter")
-    page.wait_for_timeout(200)
-    record("acell", "wrong password shows access_denied and keeps the gate up",
-           "access_denied" in page.inner_text("#acell-term-log") and page.is_visible("#acell-gate"), "")
+    page.wait_for_timeout(300)
+    # Shows the real handlerLogin rejection reason now (e.g. "invalid
+    # Handler password") rather than a generic "access_denied" -- more
+    # useful for a real Handler troubleshooting a real credential than
+    # the old flavor gate's fixed string ever was.
+    record("acell", "wrong password shows the real rejection reason and keeps the gate up",
+           "invalid Handler password" in page.inner_text("#acell-term-log") and page.is_visible("#acell-gate"), "")
+    record("acell", "the input is re-enabled after a wrong password so the Handler can retry",
+           not page.eval_on_selector("#acell-pw-input", "el => el.disabled"), "")
 
-    # Correct password (case-insensitive) -> granted, logo, gate clears.
-    page.fill("#acell-pw-input", "masticate")
+    # Correct password -> granted, logo, gate clears, AND the same action
+    # signed the Handler in (no separate password box left anywhere).
+    page.fill("#acell-pw-input", "testpw")
     page.press("#acell-pw-input", "Enter")
-    page.wait_for_timeout(200)
-    record("acell", "correct password (case-insensitive) shows acces_granted",
+    page.wait_for_timeout(300)
+    record("acell", "correct password shows acces_granted",
            "acces_granted" in page.inner_text("#acell-term-log"), "")
     page.wait_for_timeout(2500)
     record("acell", "gate is removed from the DOM after unlock",
@@ -3039,6 +3064,10 @@ def test_acell_gate(p):
            page.is_visible("text=Play") and page.is_visible("text=Cells") and page.is_visible("text=Music"), "")
     record("acell", "body scroll lock is released after unlock",
            not page.eval_on_selector("body", "el => el.classList.contains('acell-lock')"), "")
+    record("acell", "no separate Handler-password box exists anywhere on the page",
+           page.query_selector("#acell-handler-auth") is None, "")
+    record("acell", "the gate's own password sign-in already authenticated as Handler (a-cell.html's shared Firebase Auth mock)",
+           page.evaluate("() => window.__dgFirestoreAuthUser && window.__dgFirestoreAuthUser.uid") == "handler", "")
 
     errs_all.extend(errs)
     page.close()
@@ -3054,13 +3083,14 @@ def test_acell_gate(p):
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
+    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
-    page.locator("#acell-pw-input").press_sequentially("MASTICATE", delay=30)
+    page.locator("#acell-pw-input").press_sequentially("testpw", delay=30)
     page.press("#acell-pw-input", "Enter")
-    page.wait_for_timeout(200)
+    page.wait_for_timeout(300)
     record("acell", "typing the password character-by-character (not pasting) still grants access",
            "acces_granted" in page.inner_text("#acell-term-log"), page.inner_text("#acell-term-log"))
     errs_all.extend(errs)
@@ -3068,42 +3098,48 @@ def test_acell_gate(p):
 
     # Mid-string backspace while typing -- the beforeinput fix tracks edits
     # by selection position, not just appends at the end, so this needs its
-    # own check: type "MASTICATT", backspace out the wrong "TT" and the
-    # correct char before it, then finish with the right ending.
+    # own check: type "testpww", backspace out the wrong trailing "w"s,
+    # then finish with the right ending.
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
+    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
     pw_input = page.locator("#acell-pw-input")
-    pw_input.press_sequentially("MASTICATT", delay=20)
-    for _ in range(3):
-        page.press("#acell-pw-input", "Backspace")
-    pw_input.press_sequentially("ATE", delay=20)
+    pw_input.press_sequentially("testpww", delay=20)
+    page.press("#acell-pw-input", "Backspace")
     page.press("#acell-pw-input", "Enter")
-    page.wait_for_timeout(200)
+    page.wait_for_timeout(300)
     record("acell", "typing with a mid-entry correction (backspace) still resolves to the right value",
            "acces_granted" in page.inner_text("#acell-term-log"), page.inner_text("#acell-term-log"))
     errs_all.extend(errs)
     page.close()
 
-    # Same-tab reload -> gate skipped (sessionStorage-gated, like the boot splash).
+    # Same-tab reload -> gate skipped (sessionStorage-gated, like the boot
+    # splash), and the Handler session itself is silently re-established
+    # from the password the gate cached (see the Handler Auth block's own
+    # "Same-tab reload once already unlocked" comment) -- no re-prompt of
+    # any kind.
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
+    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
-    page.fill("#acell-pw-input", "MASTICATE")
+    page.fill("#acell-pw-input", "testpw")
     page.press("#acell-pw-input", "Enter")
     page.wait_for_timeout(2500)
     page.reload(wait_until="domcontentloaded")
     page.wait_for_timeout(300)
     record("acell", "gate is skipped on a same-tab reload once unlocked",
            page.query_selector("#acell-gate") is None, "")
+    record("acell", "the Handler session is silently re-established on reload, no re-prompt",
+           page.evaluate("() => window.__dgFirestoreAuthUser && window.__dgFirestoreAuthUser.uid") == "handler", "")
     errs_all.extend(errs)
     page.close()
 
@@ -3359,9 +3395,12 @@ def test_acell_handler_session_race(p):
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     skip_acell_gate(page)
     # Seed a saved Handler password, exactly like a returning tab that
-    # signed in earlier this same browser session.
+    # signed in earlier this same browser session. Must be 'testpw' --
+    # the shared Firebase mock's handlerLogin now actually checks the
+    # password (see NOTES_FIRESTORE_STUB's own comment) instead of
+    # always succeeding, and only accepts that one value.
     page.add_init_script("""
-        try { sessionStorage.setItem('dg_acell_pw', 'letmein'); } catch (e) {}
+        try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}
     """)
 
     chars_fixture = [{"agent_code": "OWEN-CS12", "name": "Owen Castillo", "profession": "Federal Agent",
@@ -4485,14 +4524,16 @@ def test_acell_music(p):
     setNowPlaying/sendTransportAction_/sendLoopToggle_ in a-cell.html) --
     no Apps Script POST or GET read-back involved at all anymore, same
     architecture as the Active Sounds panel (test_acell_soundboard).
-    Cue For Cell (set_cell_channel) and the Cue List (get_playlist/
-    save_playlist) are the only Music tab surfaces still Apps-Script-
-    mediated, exercised here unchanged. This had NO coverage at all
-    against the new architecture before now: nothing had exercised
-    startNowPlayingListener_'s own onSnapshot actually driving the panel's
-    UI (on-air indicator, Pause/Resume label) off a pushed snapshot, the
-    same way it does in production -- a plain write-then-read-back
-    assertion wouldn't have caught a broken listener wire-up at all."""
+    Cue For Cell also writes straight to cells/{cellId} now (a plain
+    merge, not a transaction) -- only the Cue List (get_playlist/
+    save_playlist) and the Cell list itself (list_cells) are still
+    Apps-Script-mediated on this tab, exercised here unchanged. This had
+    NO coverage at all against the new architecture before now: nothing
+    had exercised startNowPlayingListener_'s own onSnapshot actually
+    driving the panel's UI (on-air indicator, Pause/Resume label) off a
+    pushed snapshot, the same way it does in production -- a plain
+    write-then-read-back assertion wouldn't have caught a broken
+    listener wire-up at all."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -4517,10 +4558,6 @@ def test_acell_music(p):
         if req.method == "POST":
             body = json.loads(req.post_data or "{}")
             posts.append(body)
-            if body.get("action") == "set_cell_channel":
-                for c in fake_cells:
-                    if c["cell_id"] == body.get("cell_id"):
-                        c["channel"] = body.get("channel", "")
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
             return
         url = req.url
@@ -4676,11 +4713,11 @@ def test_acell_music(p):
     page.wait_for_timeout(100)
     page.click("#music-cell-assign-btn")
     page.wait_for_timeout(1500)
-    assign_posts = [p_ for p_ in posts if p_.get("action") == "set_cell_channel"]
-    record("acell", "Assign CH to Cell sends set_cell_channel for the selected Cell and current dial position",
-           len(assign_posts) == 1 and assign_posts[0].get("cell_id") == "cell_1" and assign_posts[0].get("channel") == "5",
-           str(assign_posts))
-    record("acell", "the note confirms the assignment once a real read-back verifies it",
+    assign_write = next((w for w in firestore_writes(page, "cells/") if w["path"] == "cells/cell_1"), None)
+    record("acell", "Assign CH to Cell writes the new channel straight to cells/{cellId}",
+           bool(assign_write) and assign_write["data"].get("channel") == "5",
+           str(assign_write))
+    record("acell", "the note confirms the assignment once the write's own Promise resolves",
            "cued to CH 5" in page.inner_text("#music-cell-note"), page.inner_text("#music-cell-note"))
 
     # Playlist: add a track, see it rendered, then remove it.
