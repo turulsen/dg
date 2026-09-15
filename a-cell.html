@@ -661,8 +661,9 @@
      display column (not the narrow 220px controls rail), so there's
      actually room for a real embedded scrubber. Shows whichever track
      is live for the dialed channel and swaps to a new one automatically
-     the moment a different track starts (checkCurrent()/verifyNowPlaying()
-     drive it, same as the status line already did). ── */
+     the moment a different track starts (startNowPlayingListener_()'s
+     live radio/{channel} onSnapshot drives it, same as the status line
+     already did). ── */
   .rdo-nowplaying-panel{
     border:1px solid #2a3020; border-radius:4px; padding:14px; margin-bottom:14px;
     background:#0e1209;
@@ -785,11 +786,12 @@
      currently looping under the broadcast); stinger buttons are a
      one-shot fire, styled like a transport button rather than a toggle
      since there's no "on" state to reflect. Both write straight onto
-     the same radio/{channel} row/doc Now Playing already lives on (see
-     setAmbientLayer_/triggerStinger_ in Code.gs), so a fresh page load
-     of this tab -- or a second Handler device -- always reflects the
-     live state via get_now_playing rather than only this tab's own
-     memory of what it last clicked. ── */
+     the same radio/{channel} doc Now Playing already lives on (see
+     setAmbientLayerActive_/the stinger-fire transaction below), so a
+     fresh page load of this tab -- or a second Handler device -- always
+     reflects the live state via startNowPlayingListener_()'s own
+     onSnapshot rather than only this tab's own memory of what it last
+     clicked. ── */
   .acell-radio-soundboard{
     border-top:1px solid #1a2214; padding:14px; background:#0e1209;
     position:relative; z-index:2;
@@ -3981,40 +3983,44 @@
 
 <script>
 /* ══════════════════════════════════════════════
-   MUSIC -- the Handler's broadcast side of Table Radio. Sets a track
-   for a channel via set_now_playing; players dial that same numbered
-   channel (1-5) on the small widget on every Hub page (see
-   assets/table-radio.js). The channel is picked with the same rotary
-   dial UI as the player-facing widget, not typed -- a free-text
-   channel name let two players land on "sam" vs "Sam" and never hear
-   each other. Both share the set_now_playing / get_now_playing Apps
-   Script actions (acell-table-radio-addition.txt) plus get_playlist /
-   save_playlist (acell-table-radio-playlist-addition.txt), both handed
-   over separately.
+   MUSIC -- the Handler's broadcast side of Table Radio. Sets a track for
+   a channel; players dial that same numbered channel (1-5) on the small
+   widget on every Hub page (see assets/table-radio.js). The channel is
+   picked with the same rotary dial UI as the player-facing widget, not
+   typed -- a free-text channel name let two players land on "sam" vs
+   "Sam" and never hear each other.
 
-   set_now_playing is a `mode:'no-cors'` POST (needed to avoid a CORS
-   error against Apps Script), which means the browser genuinely cannot
-   tell whether the server understood the request -- fetch() resolves
-   "successfully" even if the backend addition isn't deployed yet, or
-   the action isn't recognized. So every write here is followed by a
-   real GET read-back (which CAN see the actual response) before the
-   status line claims success -- "Broadcasting" only appears once
-   get_now_playing / get_playlist confirms the change actually landed.
+   Setting/pausing/resuming/restarting/seeking/looping the main track,
+   the ambient-loop/stinger soundboard below, and the broadcast-wide mix
+   sliders all write STRAIGHT to the radio/{channel} Firestore doc from
+   the browser (db.runTransaction()/docRef.set(), via
+   ensureHandlerSignedIn()) -- no Apps Script round trip, no no-cors
+   POST whose success a browser can't actually verify. startNowPlaying
+   Listener_()'s own onSnapshot on that same doc is what actually
+   confirms a write landed and drives every bit of this tab's live
+   state (status line, on-air indicator, Pause/Resume label, scrubber),
+   immediately and without a fixed confirm-delay or a retry ladder that
+   can still lose the race -- see BUGFIXES.md's Radio main-track entry
+   for the migration this replaced (a `mode:'no-cors'` POST + a delayed
+   GET read-back, which could report false success if the Apps Script
+   addition wasn't deployed, and had already been fixed once for the
+   soundboard for the identical ~8s-latency reason). Only the Cue List
+   (get_playlist/save_playlist) and Cue For Cell (set_cell_channel,
+   writing to the Cells sheet) are still Apps-Script-mediated -- separate
+   surfaces, out of scope here.
 
    The whole tab is styled as one field-radio unit (chassis, recessed
    screen, numbered sections) rather than a form dropped on paper --
    same tactile approach as the Cover ID Fabricator's tablet in
    dg-agent-portal.html, in the dial's existing dark olive-green
    palette. "Cue For Cell" lets a Cell (from the Cells tab) carry its
-   own usual channel (set_cell_channel, same addition file) so tuning
-   to "this table's ambience" is picking a name from a dropdown
-   instead of remembering a number.
+   own usual channel so tuning to "this table's ambience" is picking a
+   name from a dropdown instead of remembering a number.
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
   var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
   var CHANNEL_KEY = 'dg_acell_broadcast_channel';
-  var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm it. Check that the Table Radio addition (set_now_playing / get_now_playing) is pasted into Apps Script and redeployed.';
   // Fixed numbered channels, turned on a dial rather than typed -- five
   // slots, no typos, no two players landing on "sam" vs "Sam".
   var CHANNELS = ['1', '2', '3', '4', '5'];
@@ -4361,9 +4367,9 @@
   // creating/removing rows as instances start/stop, and refreshing
   // every still-active row's controls/scrubber to match its current
   // instance state. Called after every ambient/stinger action and every
-  // checkCurrent() (channel switch) -- this tab has no live listener for
-  // Now Playing, so "currently playing" here means "as of the last
-  // confirmed read," same as every other status line in this tab.
+  // startNowPlayingListener_() snapshot (including on a channel switch),
+  // so "currently playing" here always reflects the live radio/{channel}
+  // doc, not a stale poll.
   function renderActiveSounds_() {
     var wanted = {};
     activeAmbientLayers.forEach(function (l) { wanted['ambient:' + l.id] = { kind: 'ambient', inst: l, label: ambientLabel_(l.id) }; });
@@ -4585,11 +4591,11 @@
   });
 
   // Ticks the slider/preview forward every second so it reads as a live,
-  // playing transport rather than a snapshot frozen at the last
-  // checkCurrent()/verify call -- same idea as table-radio.js's own
-  // progress display, just driven by this tab's own `current` state
-  // instead of a fresh Firestore snapshot each time. The native preview
-  // element already advances its own currentTime during normal
+  // playing transport between radio/{channel} snapshots, rather than a
+  // frozen frame -- same idea as table-radio.js's own progress display,
+  // just driven by this tab's own `current` state instead of computing
+  // fresh off each snapshot directly. The native preview element already
+  // advances its own currentTime during normal
   // playback -- this only re-syncs the FALLBACK slider display, since
   // syncTransportUI_()'s preview branch above deliberately skips
   // reseeking on a tick where nothing actually changed.
@@ -4600,38 +4606,37 @@
     }
   }, 1000);
 
-  // Same one-shot-verify-with-no-retry bug as verifyNowPlaying() (see its
-  // own comment) -- retries before giving up.
-  function verifySeek_(ch, positionMs, attempt) {
-    attempt = attempt || 0;
-    jsonpGet('get_now_playing', { channel: ch }, function (res) {
-      isSeekDragging = false;
-      if (res && res.status === 'OK' && res.track_url) {
-        current.started_at = res.started_at || 0;
-        current.paused_at = res.paused_at || 0;
-        current.paused = !!res.paused;
-        statusEl.textContent = 'Seeked to ' + formatSeekTime_(positionMs / 1000) + ' on CH ' + ch + '.';
-        syncTransportUI_();
-      } else if (attempt < NOW_PLAYING_VERIFY_RETRY_DELAYS_MS.length) {
-        isSeekDragging = true; // keep suppressing the tick-driven re-sync while we retry
-        setTimeout(function () { verifySeek_(ch, positionMs, attempt + 1); }, NOW_PLAYING_VERIFY_RETRY_DELAYS_MS[attempt]);
-      } else {
-        statusEl.textContent = NOT_DEPLOYED_MSG;
-      }
-    });
-  }
+  // Direct Firestore transaction, matching the Active Sounds panel's own
+  // per-instance seek -- read paused/started_at atomically (not from the
+  // possibly-stale local `current`) so this can't race a concurrent
+  // write from another open Handler tab, then shift started_at (and
+  // paused_at, if currently paused) the same way the old, now-removed
+  // Apps Script seekNowPlaying_() used to server-side. The radio/
+  // {channel} listener above picks up the result immediately -- no
+  // confirm-via-GET, no retry ladder.
   function sendSeek_(positionMs) {
     var ch = currentChannel;
     statusEl.textContent = 'Seeking…';
-    window.__dgGetHandlerIdToken().then(function (idToken) {
-      return fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors', keepalive: true,
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'seek_now_playing', channel: ch, position_ms: String(positionMs), id_token: idToken }),
+    ensureHandlerSignedIn().then(function () {
+      var db = window.firebase.firestore();
+      var docRef = radioDocRef_(ch);
+      return db.runTransaction(function (tx) {
+        return tx.get(docRef).then(function (snap) {
+          var data = snap.exists ? snap.data() : {};
+          var now = Date.now();
+          var wasPaused = !!data.paused;
+          var patch = { started_at: now - positionMs, updated_at: now };
+          if (wasPaused) patch.paused_at = now;
+          tx.set(docRef, patch, { merge: true });
+        });
       });
     }).then(function () {
-      setTimeout(function () { verifySeek_(ch, positionMs); }, 900);
-    }).catch(function () { isSeekDragging = false; statusEl.textContent = 'Could not reach the backend.'; });
+      isSeekDragging = false;
+      statusEl.textContent = 'Seeked to ' + formatSeekTime_(positionMs / 1000) + ' on CH ' + ch + '.';
+    }).catch(function (err) {
+      isSeekDragging = false;
+      statusEl.textContent = 'Could not reach Firestore — ' + (err && err.message ? err.message : 'not signed in as Handler') + '.';
+    });
   }
 
   seekSlider.addEventListener('input', function () {
@@ -4724,15 +4729,15 @@
   var dialApi = wireDial(dialPanel, currentChannel, function (ch) {
     currentChannel = ch;
     try { localStorage.setItem(CHANNEL_KEY, ch); } catch (e) { /* best effort */ }
-    checkCurrent();
+    startNowPlayingListener_(ch);
+    loadPlaylist(ch);
   });
 
   // Live report, 2026-09-14: "Could not load the Track Library"
-  // intermittently, on a weak connection -- same underlying cause and
-  // fix as verifyNowPlaying()/verifyTransportAction_()/verifySeek_()
-  // above (see their own comments): a single JSONP request had exactly
-  // one 7s window to succeed, no retry at all. Retries twice more
-  // before actually giving up.
+  // intermittently, on a weak connection -- a single JSONP request (get_
+  // playlist/list_cells, the only reads left in this tab that still go
+  // through Apps Script) had exactly one 7s window to succeed, no retry
+  // at all. Retries twice more before actually giving up.
   var JSONP_GET_RETRY_DELAYS_MS = [1000, 1000];
   function jsonpGet(action, params, cb, attempt) {
     attempt = attempt || 0;
@@ -4756,10 +4761,11 @@
       var s = document.createElement('script');
       s.id = 's-' + cbName;
       var qs = 'action=' + action + '&callback=' + cbName;
-      // None of this tab's own reads (get_now_playing/get_playlist) need
-      // Handler auth, but a Handler ID token is attached whenever one's
-      // already available anyway -- harmless, and one less thing to keep
-      // in sync across this file's several independent jsonpGet() copies.
+      // Neither of this tab's own remaining reads (get_playlist/
+      // list_cells) need Handler auth, but a Handler ID token is
+      // attached whenever one's already available anyway -- harmless,
+      // and one less thing to keep in sync across this file's several
+      // independent jsonpGet() copies.
       if (idToken) qs += '&id_token=' + encodeURIComponent(idToken);
       Object.keys(params || {}).forEach(function (k) { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
       s.src = APPS_SCRIPT_URL + '?' + qs;
@@ -4801,13 +4807,18 @@
      original version of this comment): it independently recomputes the
      array from the Sheet's now-stale state and overwrites Firestore
      with it a few seconds later, which for a stinger means firing the
-     SAME sound a second time. The now-unreachable pause_ambient_layer/
-     resume_ambient_layer/seek_ambient_layer/set_ambient_layer_loop/
-     pause_stinger/resume_stinger/seek_stinger/set_stinger_loop/
-     stop_stinger Apps Script actions in Code.gs are left in place for
-     now (dead code, not yet deleted) rather than removed in the same
-     pass as this client change. Only the main track's own play/pause/
-     resume/seek/loop is still Apps-Script/Sheet mediated. ── */
+     SAME sound a second time. The pause_ambient_layer/resume_ambient_layer/
+     seek_ambient_layer/set_ambient_layer_loop/pause_stinger/
+     resume_stinger/seek_stinger/set_stinger_loop/stop_stinger Apps
+     Script actions this made unreachable, and later the main track's
+     own set/pause/resume/seek/loop_now_playing actions too (see
+     startNowPlayingListener_/setNowPlaying/sendTransportAction_/
+     sendSeek_/sendLoopToggle_ below, migrated the same way), have all
+     since been deleted from Code.gs -- see BUGFIXES.md's Radio
+     main-track entry. Only the Cue List (get_playlist/save_playlist)
+     and Cue For Cell (set_cell_channel) are still Apps-Script-mediated
+     now -- separate surfaces, out of scope here (see the Music tab's
+     own header comment above). ── */
   function radioDocRef_(channel) {
     return window.firebase.firestore().collection('radio').doc(channel);
   }
@@ -4971,89 +4982,80 @@
     });
   }
 
-  function checkCurrent() {
-    var ch = currentChannel;
-    jsonpGet('get_now_playing', { channel: ch }, function (res) {
-      if (res && res.status === 'OK' && res.track_url) {
-        current = { track_url: res.track_url, track_title: res.track_title || '', track_kind: res.track_kind || '', loop: !!res.loop, paused: !!res.paused, started_at: res.started_at || 0, paused_at: res.paused_at || 0 };
-        statusEl.textContent = (current.paused ? 'Paused on CH ' : 'Currently broadcasting to CH ') + ch + ': ' + (current.track_title || current.track_url);
-        setAirIndicator(true);
-      } else {
-        current = { track_url: '', track_title: '', track_kind: '', loop: false, paused: false, started_at: 0, paused_at: 0 };
-        statusEl.textContent = 'Nothing currently broadcasting to CH ' + ch + '.';
-        setAirIndicator(false);
-      }
-      // Ambient layers/stingers are per-channel state independent of the
-      // track -- re-synced on every channel switch (checkCurrent() is
-      // the dial's onChange handler) so the grid/Active Sounds always
-      // reflect THIS channel's sounds, not whichever channel was last
-      // dialed.
-      activeAmbientLayers = ((res && Array.isArray(res.ambient_layers)) ? res.ambient_layers : []).map(normalizeAmbientLayer_);
-      activeStingers = (res && Array.isArray(res.stingers)) ? res.stingers : [];
-      // Broadcast-wide mix levels are per-channel state too, same as
-      // ambient_layers/stingers above -- re-synced on every channel
-      // switch so the sliders show THIS channel's mix, not whichever
-      // channel was last dialed.
-      var trackVol = (res && res.track_volume != null) ? res.track_volume : 100;
-      var ambientVol = (res && res.ambient_volume != null) ? res.ambient_volume : 100;
-      mixTrackSlider.value = trackVol;
-      mixTrackValueEl.textContent = trackVol;
-      mixAmbientSlider.value = ambientVol;
-      mixAmbientValueEl.textContent = ambientVol;
-      renderAmbientGrid();
-      renderActiveSounds_();
-      syncTransportUI_();
+  // Live radio/{channel} listener -- replaces the old get_now_playing
+  // JSONP poll (and its whole verify-with-retry family below) with the
+  // SAME onSnapshot pattern table-radio.js's player-facing widget and
+  // this tab's own Active Sounds panel already use. No Handler sign-in
+  // needed to read -- radio/{channel} is public-read (see
+  // firestore.rules) -- just the SDK loaded (waitForFirebaseApi_).
+  // Every field this tab displays (main track AND ambient_layers/
+  // stingers/mix volumes) lives on this one doc, so one listener drives
+  // all of it: re-subscribed on every channel switch, and it's the
+  // single source of truth current/activeAmbientLayers/activeStingers
+  // get updated from -- a write's own optimistic UI update is a head
+  // start, not a substitute; this listener is what actually confirms it
+  // landed, immediately and without a fixed ~900ms wait or a retry
+  // ladder that can still lose the race.
+  var nowPlayingUnsub_ = null;
+  function startNowPlayingListener_(ch) {
+    if (nowPlayingUnsub_) { nowPlayingUnsub_(); nowPlayingUnsub_ = null; }
+    waitForFirebaseApi_(function () {
+      // A channel switch mid-load could mean this callback fires after
+      // currentChannel has already moved on again -- only attach if
+      // we're still subscribing for the channel this call was for.
+      if (ch !== currentChannel) return;
+      nowPlayingUnsub_ = radioDocRef_(ch).onSnapshot(function (snap) {
+        var data = snap.exists ? snap.data() : {};
+        if (data.track_url) {
+          current = { track_url: data.track_url, track_title: data.track_title || '', track_kind: data.track_kind || '', loop: !!data.loop, paused: !!data.paused, started_at: data.started_at || 0, paused_at: data.paused_at || 0 };
+          statusEl.textContent = (current.paused ? 'Paused on CH ' : 'Currently broadcasting to CH ') + ch + ': ' + (current.track_title || current.track_url);
+          setAirIndicator(!current.paused);
+        } else {
+          current = { track_url: '', track_title: '', track_kind: '', loop: false, paused: false, started_at: 0, paused_at: 0 };
+          statusEl.textContent = 'Nothing currently broadcasting to CH ' + ch + '.';
+          setAirIndicator(false);
+        }
+        // Ambient layers/stingers are per-channel state independent of
+        // the track -- re-synced on every snapshot of THIS channel's own
+        // doc, not whichever channel was last dialed.
+        activeAmbientLayers = (Array.isArray(data.ambient_layers) ? data.ambient_layers : []).map(normalizeAmbientLayer_);
+        activeStingers = Array.isArray(data.stingers) ? data.stingers : [];
+        // Broadcast-wide mix levels are per-channel state too, same as
+        // ambient_layers/stingers above.
+        var trackVol = (data.track_volume != null) ? data.track_volume : 100;
+        var ambientVol = (data.ambient_volume != null) ? data.ambient_volume : 100;
+        mixTrackSlider.value = trackVol;
+        mixTrackValueEl.textContent = trackVol;
+        mixAmbientSlider.value = ambientVol;
+        mixAmbientValueEl.textContent = ambientVol;
+        renderAmbientGrid();
+        renderActiveSounds_();
+        syncTransportUI_();
+      }, function (err) {
+        statusEl.textContent = 'Could not reach Firestore — ' + (err && err.message ? err.message : 'listener error') + '.';
+      });
     });
-    loadPlaylist(ch);
   }
 
+  // Direct Firestore write -- the radio/{channel} listener above picks
+  // it up immediately, no confirm-via-GET needed. A fresh broadcast
+  // always resets paused/started_at, matching what the old, now-removed
+  // Apps Script setNowPlaying() used to do server-side.
   function setNowPlaying(trackUrl, trackTitle, trackKind, loop) {
     var ch = currentChannel;
     statusEl.textContent = 'Saving…';
-    window.__dgGetHandlerIdToken().then(function (idToken) {
-      return fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors', keepalive: true,
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'set_now_playing', channel: ch, track_url: trackUrl, track_title: trackTitle, track_kind: trackKind || '', loop: loop ? '1' : '0', id_token: idToken }),
-      });
+    ensureHandlerSignedIn().then(function () {
+      var now = Date.now();
+      return radioDocRef_(ch).set({
+        channel: ch, track_url: trackUrl || '', track_title: trackTitle || '', track_kind: trackKind || '',
+        started_at: now, updated_at: now, paused: false, paused_at: '', loop: !!loop
+      }, { merge: true });
     }).then(function () {
-      statusEl.textContent = 'Saved — checking…';
-      setTimeout(function () { verifyNowPlaying(ch, trackUrl, trackTitle); }, 900);
-    }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
-  }
-
-  // Live report, 2026-09-14: a Handler pressing Play on a track sometimes
-  // saw the wrong (previous) track title stick in this panel indefinitely
-  // -- Combat audibly playing (table-radio.js's own onSnapshot listener,
-  // Firestore-driven, already caught the real update) while this panel
-  // still showed Abyss. Root cause: this was a single get_now_playing
-  // check 900ms after the write, with NO retry -- if that one poll lost
-  // the race against real Apps Script Sheets write latency (getNowPlaying()
-  // reads the Sheet directly on a cache miss, and this file's own
-  // jsonpGet() has no retry of its own), the panel was left stranded on
-  // stale state with no other mechanism to ever self-correct short of the
-  // Handler triggering some unrelated action. Retries a few more times
-  // with backoff before actually giving up, same shape as agent-hub.html's
-  // CI_LOOKUP_RETRY_DELAYS_MS for the identical class of problem.
-  var NOW_PLAYING_VERIFY_RETRY_DELAYS_MS = [1500, 3000];
-  function verifyNowPlaying(ch, expectedUrl, expectedTitle, attempt) {
-    attempt = attempt || 0;
-    jsonpGet('get_now_playing', { channel: ch }, function (res) {
-      var live = res && res.status === 'OK' ? (res.track_url || '') : '';
-      if (live === expectedUrl) {
-        current = (res && res.status === 'OK')
-          ? { track_url: res.track_url || '', track_title: res.track_title || '', track_kind: res.track_kind || '', loop: !!res.loop, paused: !!res.paused, started_at: res.started_at || 0, paused_at: res.paused_at || 0 }
-          : { track_url: '', track_title: '', track_kind: '', loop: false, paused: false, started_at: 0, paused_at: 0 };
-        statusEl.textContent = expectedUrl
-          ? 'Broadcasting to CH ' + ch + ': ' + (expectedTitle || expectedUrl)
-          : 'Stopped broadcasting to CH ' + ch + '.';
-        setAirIndicator(!!expectedUrl);
-        syncTransportUI_();
-      } else if (attempt < NOW_PLAYING_VERIFY_RETRY_DELAYS_MS.length) {
-        setTimeout(function () { verifyNowPlaying(ch, expectedUrl, expectedTitle, attempt + 1); }, NOW_PLAYING_VERIFY_RETRY_DELAYS_MS[attempt]);
-      } else {
-        statusEl.textContent = NOT_DEPLOYED_MSG;
-      }
+      statusEl.textContent = trackUrl
+        ? 'Broadcasting to CH ' + ch + ': ' + (trackTitle || trackUrl)
+        : 'Stopped broadcasting to CH ' + ch + '.';
+    }).catch(function (err) {
+      statusEl.textContent = 'Could not reach Firestore — ' + (err && err.message ? err.message : 'not signed in as Handler') + '.';
     });
   }
 
@@ -5065,41 +5067,40 @@
   // Shared by the icon Pause/Resume button AND the native preview
   // <audio>'s own play/pause events (see syncTransportUI_() above) --
   // whichever one the Handler actually clicks, the same real broadcast
-  // action fires.
-  // Same one-shot-verify-with-no-retry bug as verifyNowPlaying() (see its
-  // own comment) -- a Pause/Resume click could lose the race against real
-  // Apps Script write latency and get permanently stuck showing the
-  // pre-click state. Retries with the same backoff.
-  function verifyTransportAction_(ch, wasPaused, attempt) {
-    attempt = attempt || 0;
-    jsonpGet('get_now_playing', { channel: ch }, function (res) {
-      var ok = res && res.status === 'OK' && res.track_url && !!res.paused !== wasPaused;
-      if (ok) {
-        current.paused = !!res.paused;
-        current.started_at = res.started_at || 0;
-        current.paused_at = res.paused_at || 0;
-        statusEl.textContent = (current.paused ? 'Paused on CH ' : 'Resumed on CH ') + ch + ': ' + (current.track_title || current.track_url);
-        syncTransportUI_();
-      } else if (attempt < NOW_PLAYING_VERIFY_RETRY_DELAYS_MS.length) {
-        setTimeout(function () { verifyTransportAction_(ch, wasPaused, attempt + 1); }, NOW_PLAYING_VERIFY_RETRY_DELAYS_MS[attempt]);
-      } else {
-        statusEl.textContent = NOT_DEPLOYED_MSG;
-      }
-    });
-  }
+  // action fires. Direct Firestore transaction, same shiftedStart math
+  // as the old, now-removed Apps Script resumeNowPlaying() -- reads
+  // paused_at/started_at atomically so a resume can't race a concurrent
+  // write from another open Handler tab.
   function sendTransportAction_(action) {
     var ch = currentChannel;
-    var wasPaused = current.paused;
-    statusEl.textContent = action === 'resume_now_playing' ? 'Resuming…' : 'Pausing…';
-    window.__dgGetHandlerIdToken().then(function (idToken) {
-      return fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: action, channel: ch, id_token: idToken }),
+    var pausing = action === 'pause_now_playing';
+    statusEl.textContent = pausing ? 'Pausing…' : 'Resuming…';
+    ensureHandlerSignedIn().then(function () {
+      var db = window.firebase.firestore();
+      var docRef = radioDocRef_(ch);
+      return db.runTransaction(function (tx) {
+        return tx.get(docRef).then(function (snap) {
+          var data = snap.exists ? snap.data() : {};
+          var now = Date.now();
+          var patch = { updated_at: now };
+          if (pausing) {
+            patch.paused = true;
+            patch.paused_at = now;
+          } else {
+            var pausedAt = data.paused_at || now;
+            var startedAt = data.started_at || now;
+            patch.started_at = startedAt + (now - pausedAt);
+            patch.paused = false;
+            patch.paused_at = '';
+          }
+          tx.set(docRef, patch, { merge: true });
+        });
       });
     }).then(function () {
-      setTimeout(function () { verifyTransportAction_(ch, wasPaused); }, 900);
-    }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+      statusEl.textContent = (pausing ? 'Paused on CH ' : 'Resumed on CH ') + ch + ': ' + (current.track_title || current.track_url);
+    }).catch(function (err) {
+      statusEl.textContent = 'Could not reach Firestore — ' + (err && err.message ? err.message : 'not signed in as Handler') + '.';
+    });
   }
 
   pauseBtn.addEventListener('click', function () {
@@ -5114,29 +5115,19 @@
 
   // Flips Loop on the CURRENT track in place -- no restart, no jump back
   // to 0:00, unlike the "Loop this track" checkbox in the Broadcast form
-  // above (which only applies on the NEXT Set Now Playing).
+  // above (which only applies on the NEXT Set Now Playing). Direct
+  // Firestore write, same as setNowPlaying above.
   function sendLoopToggle_() {
     var ch = currentChannel;
     var nextLoop = !current.loop;
     statusEl.textContent = nextLoop ? 'Turning loop on…' : 'Turning loop off…';
-    window.__dgGetHandlerIdToken().then(function (idToken) {
-      return fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors', keepalive: true,
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'set_now_playing_loop', channel: ch, loop: nextLoop ? '1' : '0', id_token: idToken }),
-      });
+    ensureHandlerSignedIn().then(function () {
+      return radioDocRef_(ch).set({ loop: nextLoop, updated_at: Date.now() }, { merge: true });
     }).then(function () {
-      setTimeout(function () {
-        jsonpGet('get_now_playing', { channel: ch }, function (res) {
-          var ok = res && res.status === 'OK' && res.track_url && !!res.loop === nextLoop;
-          if (!ok) { statusEl.textContent = NOT_DEPLOYED_MSG; return; }
-          current.loop = !!res.loop;
-          if (previewAudio) previewAudio.loop = current.loop;
-          statusEl.textContent = (current.loop ? 'Looping CH ' : 'Loop off on CH ') + ch + ': ' + (current.track_title || current.track_url);
-          syncTransportUI_();
-        });
-      }, 900);
-    }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
+      statusEl.textContent = (nextLoop ? 'Looping CH ' : 'Loop off on CH ') + ch + ': ' + (current.track_title || current.track_url);
+    }).catch(function (err) {
+      statusEl.textContent = 'Could not reach Firestore — ' + (err && err.message ? err.message : 'not signed in as Handler') + '.';
+    });
   }
 
   loopBtn.addEventListener('click', function () {
@@ -5145,31 +5136,31 @@
   });
 
   /* ── Broadcast-wide Mix: fades the main track vs. ambient/stingers for
-     every listener at once (set_track_volume/set_ambient_volume),
-     unlike the Now Playing panel's own volume slider above (Handler-
-     local preview only, muted by default). Debounced so dragging the
-     slider doesn't fire a POST on every pixel of movement, same
-     reasoning as any other live-drag control talking to Apps Script. ── */
+     every listener at once, unlike the Now Playing panel's own volume
+     slider above (Handler-local preview only, muted by default). Direct
+     Firestore write, debounced so dragging the slider doesn't fire one
+     per pixel of movement -- `field` is the actual doc field name
+     ('track_volume'/'ambient_volume'), also used as the debounce timer
+     key. ── */
   var mixSendTimers = {};
-  function sendMixVolume_(field, action, value) {
+  function sendMixVolume_(field, value) {
     clearTimeout(mixSendTimers[field]);
     mixSendTimers[field] = setTimeout(function () {
-      window.__dgGetHandlerIdToken().then(function (idToken) {
-        return fetch(APPS_SCRIPT_URL, {
-          method: 'POST', mode: 'no-cors', keepalive: true,
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({ action: action, channel: currentChannel, volume: String(value), id_token: idToken }),
-        });
+      var volume = Math.max(0, Math.min(100, Math.round(Number(value)) || 0));
+      ensureHandlerSignedIn().then(function () {
+        var patch = { updated_at: Date.now() };
+        patch[field] = volume;
+        return radioDocRef_(currentChannel).set(patch, { merge: true });
       }).catch(function () { /* best effort, same as every other live-drag control */ });
     }, 150);
   }
   mixTrackSlider.addEventListener('input', function () {
     mixTrackValueEl.textContent = mixTrackSlider.value;
-    sendMixVolume_('track', 'set_track_volume', mixTrackSlider.value);
+    sendMixVolume_('track_volume', mixTrackSlider.value);
   });
   mixAmbientSlider.addEventListener('input', function () {
     mixAmbientValueEl.textContent = mixAmbientSlider.value;
-    sendMixVolume_('ambient', 'set_ambient_volume', mixAmbientSlider.value);
+    sendMixVolume_('ambient_volume', mixAmbientSlider.value);
   });
 
   /* ── Auto-advance: steps through the Cue List in order when the
@@ -5323,8 +5314,9 @@
 
   /* ── Playlist: a saved list of tracks per channel, so the Handler
      doesn't have to re-paste a URL every time -- click one to make it
-     the current track. Same read-back-to-confirm discipline as
-     set_now_playing above. ── */
+     the current track (via setNowPlaying above, straight to Firestore).
+     Still Apps-Script-mediated itself (get_playlist/save_playlist,
+     unaffected by the main-track transport's own migration). ── */
   function renderPlaylist() {
     if (!playlist.length) {
       playlistEl.innerHTML = '<div class="rdo-playlist-empty">No saved tracks yet -- paste a URL and hit "+ Playlist".</div>';
@@ -5654,7 +5646,8 @@
   });
 
   renderStingerGroups();
-  checkCurrent();
+  startNowPlayingListener_(currentChannel);
+  loadPlaylist(currentChannel);
   fetchCells();
   trackLibListEl.innerHTML = '<div class="rdo-track-empty">Loading…</div>';
   startTracksListener();

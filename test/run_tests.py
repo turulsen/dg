@@ -4440,15 +4440,20 @@ def test_acell_sheet(p):
 
 def test_acell_music(p):
     """a-cell.html's Music tab: the Handler's broadcast side of Table
-    Radio. Setting a channel + track URL posts set_now_playing (an Apps
-    Script action, part of acell-table-radio-addition.txt handed over
-    separately); Stop posts the same action with an empty track_url.
-    set_now_playing is a no-cors POST, so a genuine backend failure
-    (addition not deployed, wrong action name, etc.) would otherwise
-    look identical to success -- the status line only claims
-    "Broadcasting" once a real GET read-back (get_now_playing) confirms
-    the track actually landed, exercised here against a stateful mock
-    backend that behaves like the real Apps Script action pair."""
+    Radio. Setting a channel + track URL, pausing/resuming, restarting,
+    looping, and stopping now all write STRAIGHT to radio/{channel} via
+    a client-side Firestore transaction (see startNowPlayingListener_/
+    setNowPlaying/sendTransportAction_/sendLoopToggle_ in a-cell.html) --
+    no Apps Script POST or GET read-back involved at all anymore, same
+    architecture as the Active Sounds panel (test_acell_soundboard).
+    Cue For Cell (set_cell_channel) and the Cue List (get_playlist/
+    save_playlist) are the only Music tab surfaces still Apps-Script-
+    mediated, exercised here unchanged. This had NO coverage at all
+    against the new architecture before now: nothing had exercised
+    startNowPlayingListener_'s own onSnapshot actually driving the panel's
+    UI (on-air indicator, Pause/Resume label) off a pushed snapshot, the
+    same way it does in production -- a plain write-then-read-back
+    assertion wouldn't have caught a broken listener wire-up at all."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -4457,7 +4462,8 @@ def test_acell_music(p):
     # a-cell.html's startTracksListener()'s own comment) -- no Apps
     # Script involved in a track's write path at all anymore, reads
     # included. install_notes_firestore_stub gives both the Storage mock
-    # and the tracks/{trackId} onSnapshot/set/delete surface this needs.
+    # and the tracks/{trackId} AND radio/{channel} onSnapshot/set/
+    # runTransaction surface this test needs.
     install_notes_firestore_stub(page)
     page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
@@ -4465,7 +4471,6 @@ def test_acell_music(p):
     skip_acell_gate(page)
 
     posts = []
-    backend_state = {"track_url": "", "track_title": "", "track_kind": "", "paused": False, "loop": False}
     fake_cells = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": [], "channel": "4"}]
 
     def fake_apps_script(route):
@@ -4473,17 +4478,7 @@ def test_acell_music(p):
         if req.method == "POST":
             body = json.loads(req.post_data or "{}")
             posts.append(body)
-            if body.get("action") == "set_now_playing":
-                backend_state["track_url"] = body.get("track_url", "")
-                backend_state["track_title"] = body.get("track_title", "")
-                backend_state["track_kind"] = body.get("track_kind", "")
-                backend_state["loop"] = body.get("loop") == "1"
-                backend_state["paused"] = False
-            elif body.get("action") == "pause_now_playing":
-                backend_state["paused"] = True
-            elif body.get("action") == "resume_now_playing":
-                backend_state["paused"] = False
-            elif body.get("action") == "set_cell_channel":
+            if body.get("action") == "set_cell_channel":
                 for c in fake_cells:
                     if c["cell_id"] == body.get("cell_id"):
                         c["channel"] = body.get("channel", "")
@@ -4492,16 +4487,7 @@ def test_acell_music(p):
         url = req.url
         if "callback=" in url:
             cb = url.split("callback=")[1].split("&")[0]
-            if "action=get_now_playing" in url:
-                if backend_state["track_url"]:
-                    res = {"status": "OK", "track_url": backend_state["track_url"],
-                           "track_title": backend_state["track_title"], "started_at": 1700000000000,
-                           "track_kind": backend_state["track_kind"],
-                           "paused": backend_state["paused"], "paused_at": 1700000000000 if backend_state["paused"] else 0,
-                           "loop": backend_state["loop"]}
-                else:
-                    res = {"status": "NOT_FOUND"}
-            elif "action=get_playlist" in url:
+            if "action=get_playlist" in url:
                 res = {"status": "OK", "playlist": []}
             elif "action=list_cells" in url:
                 res = {"status": "OK", "cells": fake_cells}
@@ -4515,6 +4501,19 @@ def test_acell_music(p):
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.click('.tw[data-tab="music"]')
     page.wait_for_timeout(150)
+
+    def sync_radio(ch):
+        """Simulates startNowPlayingListener_'s live radio/{channel}
+        listener picking up the doc's current state -- a real Firestore
+        write fires the SAME tab's own onSnapshot almost immediately, but
+        the stub's runTransaction()/set() don't feed a listener
+        automatically (see NOTES_FIRESTORE_STUB's own comment), so any
+        assertion driven by the panel's UI (rather than a direct
+        get_firestore_doc read) needs this pushed by hand first."""
+        wait_for_condition(lambda: any(l.get("isDoc") and l["path"] == "radio/" + ch
+                                        for l in page.evaluate("() => window.__dgFirestoreListeners || []")) or None)
+        doc = get_firestore_doc(page, "radio/" + ch)
+        push_firestore_doc_snapshot(page, "radio/" + ch, doc is not None, doc)
 
     # startTracksListener() shows "Loading..." until the first snapshot
     # (even an empty one) actually arrives -- deliver it now, same as
@@ -4535,77 +4534,94 @@ def test_acell_music(p):
     page.fill("#music-url-input", "https://youtube.com/watch?v=dQw4w9WgXcQ")
     page.fill("#music-title-input", "Table Theme")
     page.click("#music-set-btn")
-    page.wait_for_timeout(1500)
-
-    set_posts = [p_ for p_ in posts if p_.get("action") == "set_now_playing"]
-    record("acell", "Set Now Playing posts the dialed channel, track URL, and title",
-           len(set_posts) == 1 and set_posts[0].get("channel") == "2"
-           and set_posts[0].get("track_url") == "https://youtube.com/watch?v=dQw4w9WgXcQ"
-           and set_posts[0].get("track_title") == "Table Theme", str(set_posts))
-    record("acell", "status line confirms broadcasting only after a real read-back (get_now_playing) verifies it",
+    doc = wait_for_condition(lambda: get_firestore_doc(page, "radio/2") or None)
+    record("acell", "Set Now Playing writes the dialed channel, track URL, and title straight to radio/{channel}",
+           doc.get("channel") == "2" and doc.get("track_url") == "https://youtube.com/watch?v=dQw4w9WgXcQ"
+           and doc.get("track_title") == "Table Theme", str(doc))
+    record("acell", "Set Now Playing sends no Apps Script POST at all",
+           not any(pp.get("action") == "set_now_playing" for pp in posts), str(posts))
+    record("acell", "status line confirms broadcasting once the write resolves",
            "CH 2" in page.inner_text("#music-status") and "Table Theme" in page.inner_text("#music-status"), page.inner_text("#music-status"))
     record("acell", "the dialed channel is remembered for next time",
            page.evaluate("() => localStorage.getItem('dg_acell_broadcast_channel')") == "2", "")
-    record("acell", "the on-air indicator shows On Air once broadcasting is confirmed",
-           page.inner_text("#music-air-indicator").strip().lower() == "on air", page.inner_text("#music-air-indicator"))
     record("acell", "Set Now Playing defaults to loop off when the checkbox is unchecked",
-           set_posts[0].get("loop") == "0", str(set_posts))
+           doc.get("loop") is False, str(doc))
+
+    # `current` (and the on-air indicator, which only startNowPlayingListener_
+    # itself sets) is only kept in sync by the live listener -- push the
+    # write's own result back through it now, same as production's own
+    # near-instant local-write echo.
+    sync_radio("2")
+    record("acell", "the on-air indicator shows On Air once the live listener confirms it",
+           wait_for_condition(lambda: page.inner_text("#music-air-indicator").strip().lower() == "on air" or None), "")
 
     # Pause/Resume: freezes the current track in place for everyone tuned
     # in without restarting it from 0:00, unlike a fresh Set Now Playing.
+    # sendTransportAction_ decides pause-vs-resume off `current.paused`,
+    # so each click below only sends the action it should because the
+    # prior sync_radio() call already brought `current` up to date --
+    # without it, a second click here would re-send the SAME action.
     page.click("#music-pause-btn")
-    page.wait_for_timeout(1200)
-    pause_posts = [p_ for p_ in posts if p_.get("action") == "pause_now_playing"]
-    record("acell", "Pause posts pause_now_playing for the dialed channel",
-           len(pause_posts) == 1 and pause_posts[0].get("channel") == "2", str(pause_posts))
-    record("acell", "status line confirms Paused once a read-back verifies it",
+    paused_doc = wait_for_condition(lambda: (get_firestore_doc(page, "radio/2") or {})
+                                     if (get_firestore_doc(page, "radio/2") or {}).get("paused") else None)
+    record("acell", "Pause writes paused:true directly to radio/{channel} via a transaction",
+           bool(paused_doc), str(paused_doc))
+    record("acell", "no pause_now_playing Apps Script POST was sent either",
+           not any(pp.get("action") == "pause_now_playing" for pp in posts), str(posts))
+    sync_radio("2")
+    record("acell", "status line confirms Paused once the write resolves",
            "Paused" in page.inner_text("#music-status"), page.inner_text("#music-status"))
     # An icon-only SVG button now (no visible text) -- Pause/Resume state
     # is reflected in its title/aria-label instead, see syncTransportUI_.
-    record("acell", "the Pause button flips to Resume once paused",
-           page.get_attribute("#music-pause-btn", "title") == "Resume", "")
+    record("acell", "the Pause button flips to Resume once the live listener confirms it's paused",
+           wait_for_condition(lambda: page.get_attribute("#music-pause-btn", "title") == "Resume" or None), "")
 
+    started_before = paused_doc["started_at"]
     page.click("#music-pause-btn")
-    page.wait_for_timeout(1200)
-    resume_posts = [p_ for p_ in posts if p_.get("action") == "resume_now_playing"]
-    record("acell", "clicking the same button again (now labeled Resume) posts resume_now_playing",
-           len(resume_posts) == 1 and resume_posts[0].get("channel") == "2", str(resume_posts))
+    resumed_doc = wait_for_condition(lambda: (get_firestore_doc(page, "radio/2") or {})
+                                      if not (get_firestore_doc(page, "radio/2") or {}).get("paused") else None)
+    record("acell", "clicking the same button again (now labeled Resume) shifts started_at forward instead of resetting position",
+           bool(resumed_doc) and resumed_doc["started_at"] >= started_before, str(resumed_doc))
+    sync_radio("2")
     record("acell", "the button flips back to Pause once resumed",
-           page.get_attribute("#music-pause-btn", "title") == "Pause", "")
+           wait_for_condition(lambda: page.get_attribute("#music-pause-btn", "title") == "Pause" or None), "")
 
     # Restart: re-broadcasts the currently confirmed track from 0:00 even
     # with the form fields cleared -- it works off the last known
-    # now-playing state, not whatever happens to be typed in the boxes.
+    # now-playing state (`current`, kept in sync by the live listener via
+    # the sync_radio() call above), not whatever happens to be typed in
+    # the boxes.
     page.fill("#music-url-input", "")
     page.fill("#music-title-input", "")
     page.click("#music-restart-btn")
-    page.wait_for_timeout(1500)
-    restart_posts = [p_ for p_ in posts if p_.get("action") == "set_now_playing"
-                      and p_.get("track_url") == "https://youtube.com/watch?v=dQw4w9WgXcQ"]
+    restart_writes = wait_for_condition(lambda: [w for w in firestore_writes(page, "radio/2")
+                                                  if w["data"].get("track_url") == "https://youtube.com/watch?v=dQw4w9WgXcQ"] or None)
     record("acell", "Restart re-broadcasts the currently playing track with the form fields cleared",
-           len(restart_posts) == 2, str(restart_posts))
+           len(restart_writes) == 2, str(restart_writes))
 
-    # Loop: checked before Set Now Playing sends loop:'1'.
+    # Loop: checked before Set Now Playing writes loop: true. (Doesn't
+    # depend on `current` -- reads the checkbox/inputs directly -- so no
+    # sync_radio() needed before this click.)
     page.check("#music-loop-input")
     page.fill("#music-url-input", "https://youtube.com/watch?v=anotherid1234")
     page.fill("#music-title-input", "Looping Ambience")
     page.click("#music-set-btn")
-    page.wait_for_timeout(1500)
-    loop_posts = [p_ for p_ in posts if p_.get("action") == "set_now_playing"
-                  and p_.get("track_url") == "https://youtube.com/watch?v=anotherid1234"]
-    record("acell", "checking Loop before Set Now Playing sends loop: '1'",
-           len(loop_posts) == 1 and loop_posts[0].get("loop") == "1", str(loop_posts))
+    loop_doc = wait_for_condition(lambda: (get_firestore_doc(page, "radio/2") or {})
+                                   if (get_firestore_doc(page, "radio/2") or {}).get("track_url") == "https://youtube.com/watch?v=anotherid1234" else None)
+    record("acell", "checking Loop before Set Now Playing writes loop: true",
+           bool(loop_doc) and loop_doc.get("loop") is True, str(loop_doc))
     page.uncheck("#music-loop-input")
 
     page.click("#music-stop-btn")
-    page.wait_for_timeout(1500)
-    stop_posts = [p_ for p_ in posts if p_.get("action") == "set_now_playing" and p_.get("track_url") == ""]
-    record("acell", "Stop posts set_now_playing with an empty track_url for the same channel",
-           len(stop_posts) == 1 and stop_posts[0].get("channel") == "2", str(stop_posts))
+    stop_doc = wait_for_condition(lambda: (get_firestore_doc(page, "radio/2") or {})
+                                   if (get_firestore_doc(page, "radio/2") or {}).get("track_url") == "" else None)
+    record("acell", "Stop writes an empty track_url for the same channel directly",
+           bool(stop_doc) and stop_doc.get("channel") == "2", str(stop_doc))
     record("acell", "status line confirms broadcasting stopped",
            "Stopped" in page.inner_text("#music-status"), "")
+    sync_radio("2")
     record("acell", "the on-air indicator drops back to Off Air once stopped",
-           page.inner_text("#music-air-indicator").strip().lower() == "off air", page.inner_text("#music-air-indicator"))
+           wait_for_condition(lambda: page.inner_text("#music-air-indicator").strip().lower() == "off air" or None), "")
 
     # Cue For Cell: Cell Alpha already has channel 4 assigned -- selecting
     # it should tune the dial straight there.
@@ -4702,16 +4718,22 @@ def test_acell_music(p):
 
     # Playing a library track sets track_kind: 'audio' -- a Drive
     # download link has no .mp3 extension, so the player widget needs
-    # this explicit flag rather than sniffing the URL.
+    # this explicit flag rather than sniffing the URL. Checked directly
+    # against the Firestore doc (radio/5 -- the Cue For Cell assignment
+    # above left the dial there), not the UI: an 'audio'-kind snapshot
+    # would drive a real preview <audio> element, which this test has no
+    # need to exercise (see test_table_radio_widget for actual playback).
     page.click('[data-tracklib-play="0"]')
     play_status = wait_for_condition(lambda: page.inner_text("#music-status")
                                       if "Rain Loop" in page.inner_text("#music-status") else None)
     record("acell", "Play on a library track broadcasts it to the current channel",
            bool(play_status) and "Rain Loop" in play_status, play_status or "")
-    record("acell", "playing a library track sends track_kind: 'audio' so the player doesn't have to guess from the URL",
-           backend_state["track_kind"] == "audio", backend_state["track_kind"])
+    doc5 = wait_for_condition(lambda: (get_firestore_doc(page, "radio/5") or {})
+                               if (get_firestore_doc(page, "radio/5") or {}).get("track_kind") == "audio" else None)
+    record("acell", "playing a library track writes track_kind: 'audio' so the player doesn't have to guess from the URL",
+           bool(doc5), str(doc5))
     record("acell", "Play on a library track defaults to loop off",
-           backend_state["loop"] is False, backend_state["loop"])
+           bool(doc5) and doc5.get("loop") is False, str(doc5))
 
     # Regression test: looping an uploaded track technically worked
     # before this (Play already read the shared #music-loop-input
@@ -4720,9 +4742,10 @@ def test_acell_music(p):
     # checkbox here is what a Handler would actually expect to find.
     page.check('[data-tracklib-loop="0"]')
     page.click('[data-tracklib-play="0"]')
-    page.wait_for_timeout(300)
-    record("acell", "checking a library track's own Loop box before Play sends loop: '1'",
-           backend_state["loop"] is True, backend_state["loop"])
+    looped_doc5 = wait_for_condition(lambda: (get_firestore_doc(page, "radio/5") or {})
+                                      if (get_firestore_doc(page, "radio/5") or {}).get("loop") is True else None)
+    record("acell", "checking a library track's own Loop box before Play writes loop: true",
+           bool(looped_doc5), str(looped_doc5))
 
     # Delete: dismiss then accept.
     page.once("dialog", lambda d: d.dismiss())
@@ -4899,13 +4922,18 @@ def test_acell_soundboard(p):
     return errs
 
 def test_acell_music_backend_not_deployed(p):
-    """Bug report: the Music tab said "Broadcasting" while the player
-    widget said "Waiting for the Handler" -- because set_now_playing is
-    a no-cors POST, fetch() resolves "successfully" even when the
-    backend addition isn't deployed and never actually saved anything.
-    Against a backend that only ever reports NOT_FOUND (simulating the
-    addition not being installed), the status line must say so
-    honestly instead of claiming success."""
+    """Bug report, revisited for the direct-Firestore architecture: the
+    Music tab used to say "Broadcasting" while the player widget said
+    "Waiting for the Handler", because the old set_now_playing was a
+    no-cors POST -- fetch() resolved "successfully" even when the Apps
+    Script addition wasn't deployed, and only a separate GET read-back
+    could ever catch that the write hadn't actually landed. setNowPlaying()
+    writes straight to Firestore via a real Promise now (see
+    a-cell.html), so the equivalent failure mode is that Promise
+    rejecting -- exercised here by deliberately never seeding a Handler
+    session (dg_acell_pw), which makes ensureHandlerSignedIn() reject
+    immediately with "No A-Cell session...". The status line must report
+    that honestly instead of claiming success."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -4913,38 +4941,23 @@ def test_acell_music_backend_not_deployed(p):
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     skip_acell_gate(page)
-    # Set Now Playing is Handler-gated -- window.__dgGetHandlerIdToken()
-    # needs a signed-in Handler, which needs a saved password to silently
-    # sign in on load (and a real window.firebase mock, hence the stub).
-    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
-
-    def fake_apps_script(route):
-        req = route.request
-        if req.method == "POST":
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        url = req.url
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            route.fulfill(status=200, content_type="application/javascript",
-                           body=f'{cb}({json.dumps({"status": "NOT_FOUND"})})')
-        else:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", fake_apps_script)
+    # Deliberately NOT seeding dg_acell_pw -- ensureHandlerSignedIn()
+    # rejects the moment anything tries to write, simulating a write that
+    # never reaches Firestore at all. get_playlist/list_cells still fire
+    # on tab load regardless, so route_apps_script_ok keeps those quiet.
+    route_apps_script_ok(page)
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.click('.tw[data-tab="music"]')
     page.wait_for_timeout(150)
     page.fill("#music-url-input", "https://youtube.com/watch?v=dQw4w9WgXcQ")
     page.click("#music-set-btn")
-    # verifyNowPlaying() now retries twice with backoff (900ms + 1500ms +
-    # 3000ms) before giving up -- see a-cell.html's own comment -- so the
-    # final honest-failure message lands around 5.4s, not ~900ms.
-    page.wait_for_timeout(6000)
 
-    status = page.inner_text("#music-status")
-    record("acell", "an undeployed backend is reported honestly, not as a false 'Broadcasting' success",
-           "Broadcasting" not in status and ("confirm" in status.lower() or "deploy" in status.lower()), status)
+    status = wait_for_condition(lambda: page.inner_text("#music-status")
+                                 if ("Broadcasting" in page.inner_text("#music-status")
+                                     or "Could not reach" in page.inner_text("#music-status")) else None)
+    record("acell", "a write that never reaches Firestore (not signed in as Handler) is reported honestly, not as a false 'Broadcasting' success",
+           bool(status) and "Broadcasting" not in status and "Could not reach" in status, status or page.inner_text("#music-status"))
 
     page.close()
     return errs

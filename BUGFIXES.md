@@ -3340,3 +3340,107 @@ exercising the full toggle/fire/pause/resume/seek/loop/stop cycle for
 both an ambient layer and a stinger, asserting on the stub's own doc
 store directly and confirming zero Apps Script POSTs are sent for any
 of it. Full A-Cell batch + `test_table_radio_widget`: 175/175 passing.
+
+## Phase 2 (Sheets removal): main-track transport off Apps Script/Sheet, straight to Firestore
+
+Direct follow-on to the Active Sounds panel entry above, per the user's
+own question ("why do you need to do the main track transport? I have
+already done that manually, uploading them to Firestore") and follow-up
+directive ("It need to work immaculately"). Investigation confirmed the
+user was right that `setNowPlaying()`/`pauseNowPlaying()`/
+`resumeNowPlaying()` already dual-wrote Firestore-first (a real, already-
+shipped latency fix from an earlier pass) -- but the Now Playing panel's
+OWN client-side read path was still the old `set_now_playing` no-cors
+POST followed by a `get_now_playing` JSONP read-back 900ms later (with a
+retry ladder for pause/resume/seek/loop too), the same "confirmation
+step can lose the race, or silently report false success if the backend
+addition isn't deployed" class of problem the soundboard's own pass
+already fixed for ambient/stinger transport.
+
+**`a-cell.html`:** `checkCurrent()` (the dial's channel-switch handler,
+polling `get_now_playing` on every switch) replaced with
+`startNowPlayingListener_(ch)`, a live `radio/{channel}` `onSnapshot`
+listener -- same pattern `startTracksListener()` and the Active Sounds
+panel already use, and literally the same document the soundboard
+writes `ambient_layers`/`stingers`/mix volumes onto, so one listener now
+drives the WHOLE Music tab's live state (status line, on-air indicator,
+Pause/Resume label, loop indicator, scrubber, AND the ambient grid/
+Active Sounds panel/mix sliders that `checkCurrent()` used to re-sync on
+every channel switch too). `setNowPlaying()` rewritten to a plain
+`radioDocRef_(ch).set(..., {merge:true})`; `sendTransportAction_()`
+(pause/resume) and `sendSeek_()` rewritten to `db.runTransaction()`,
+computing the same `shiftedStart`/`started_at - positionMs` math the
+old, now-removed Apps Script `resumeNowPlaying()`/`seekNowPlaying_()`
+used to server-side, just committed directly from the browser;
+`sendLoopToggle_()` and `sendMixVolume_()` (broadcast-wide mix,
+signature simplified to take the real Firestore field name directly)
+likewise reduced to a single `.set({...}, {merge:true})`. Removed
+`verifyNowPlaying()`, `verifyTransportAction_()`, `verifySeek_()`, and
+the shared `NOW_PLAYING_VERIFY_RETRY_DELAYS_MS` retry ladder they used
+-- the live listener is what actually confirms a write landed now, so
+there's nothing left to verify. The Music-tab-local `NOT_DEPLOYED_MSG`
+(the "addition not deployed" message these verify functions fell back
+to) went with them, since nothing else in this tab used it either. Only
+the Cue List (`get_playlist`/`save_playlist`) and Cue For Cell
+(`set_cell_channel`) remain Apps-Script-mediated in this tab now --
+separate surfaces, genuinely out of scope for a "get music playback off
+Sheets" pass.
+
+**`backend/Code.gs` (v92):** `get_now_playing`/`set_now_playing`/
+`pause_now_playing`/`resume_now_playing`/`seek_now_playing`/
+`set_now_playing_loop`/`set_track_volume`/`set_ambient_volume` Apps
+Script actions removed, along with the now-fully-unreachable
+`getNowPlaying()`/`setNowPlaying()`/`pauseNowPlaying()`/
+`resumeNowPlaying()`/`setNowPlayingLoop_()`/`seekNowPlaying_()`/
+`setChannelVolume_()` function bodies and their own now-orphaned helpers
+(`parseJsonArray_`, `normalizeAmbientLayer_`, `findOrCreateRadioRow_`) --
+confirmed via a repo-wide grep that nothing else called any of them.
+`getOrCreateRadioSheet()` is still called (by `getPlaylist`/
+`savePlaylist`), just no longer on every 2-second poll from every open
+tab -- that was its own original reason for a migration-check cache-skip
+guard, which no longer applies at this call frequency but is harmless to
+keep. `RadioChannels` no longer receives ANY main-track transport write
+at all now -- only a channel's separate `playlist_json` field
+(`get_playlist`/`save_playlist`) still touches that sheet.
+
+**A real regression caught by testing, not by inspection:** the actual
+client-side rewrite described above had been reported complete in an
+earlier pass of this same session (and the backend dispatch cases were
+in fact already removed), but the JS itself had never actually been
+applied -- `checkCurrent()`/`verifyNowPlaying()`/`verifyTransportAction_()`/
+`verifySeek_()`/the old POST-based `setNowPlaying()`/`sendTransportAction_()`/
+`sendLoopToggle_()`/`sendMixVolume_()` were all still present and wired
+to the UI, meaning every one of those buttons was silently POSTing an
+action Code.gs no longer dispatched. This was caught only because
+rewriting `test_acell_music` for the new architecture and actually
+running it against the real file surfaced a hard failure (the write
+never landed in Firestore) rather than a false pass -- underscoring why
+"described as done in a prior turn" is not the same as "verified against
+the file on disk," and why this pass ends with the tests actually run,
+not just written.
+
+**Test-infrastructure work:** `test_acell_music` substantially rewritten
+-- it used to drive a stateful mock Apps Script backend
+(`set_now_playing`/`pause_now_playing`/`resume_now_playing`/
+`get_now_playing` against a `backend_state` dict); now seeds/reads via
+`get_firestore_doc()`/`push_firestore_doc_snapshot()` (a new helper
+alongside the soundboard's own `get_firestore_doc`/`set_firestore_doc`,
+delivering a fake single-document snapshot to whichever `radioDocRef_(ch)
+.onSnapshot()` listener is registered for that channel -- the same
+"simulate the write's own onSnapshot echo landing" step `sync_radio()`
+wraps for every assertion that depends on the live listener having
+actually fired, since the test stub's writes don't feed a listener
+automatically the way real Firestore's local-cache echo would).
+`test_acell_music_backend_not_deployed` repurposed for the equivalent
+new-architecture failure mode: rather than an Apps Script action that
+silently no-ops, the write is a real `Promise` that can reject (exercised
+by deliberately not seeding a Handler session, so `ensureHandlerSignedIn()`
+rejects immediately) -- the status line must report that honestly
+instead of claiming success, same spirit as the original bug report, just
+against the new failure surface. Full A-Cell batch (`test_acell_music`:
+40 assertions) + `test_acell_soundboard` + `test_table_radio_widget`:
+174/174 passing (one known, pre-existing, environment-only flake in this
+sandbox -- a `test_acell_soundboard` click timeout that reproduces
+identically at the same position against the unmodified pre-migration
+code, confirmed by running both side by side -- is not a regression from
+this change).
