@@ -352,18 +352,21 @@ NOTES_FIRESTORE_STUB = """
           // method, that call throws "getIdToken is not a function" and
           // every such write silently never fires under test.
           //
-          // getIdTokenResult() is ensureHandlerSignedIn()'s own re-check
-          // that an already-cached 'handler' session still actually
-          // carries the claim (see that function's own comment on the
-          // stale-claims regression this guards against) -- a real
-          // signInWithCustomToken() always mints a token carrying
-          // whatever claims the custom token had, so this mock always
-          // reports handler: true for the 'handler' uid, matching a
-          // genuinely fresh sign-in.
+          // getIdTokenResult() is ensureHandlerSignedIn()'s/
+          // ensureAgentSignedIn()'s own re-check that an already-cached
+          // session still actually carries its claim (see either
+          // function's own comment on the stale-claims regression this
+          // guards against) -- a real signInWithCustomToken() always
+          // mints a token carrying whatever claims the custom token
+          // had, so this mock reports the claim matching whichever
+          // identity actually signed in, same as a genuinely fresh
+          // sign-in would.
           window.__dgFirestoreAuthUser = {
             uid: token,
             getIdToken: function () { return Promise.resolve('fake-id-token-' + token); },
-            getIdTokenResult: function () { return Promise.resolve({ claims: { handler: token === 'handler' } }); }
+            getIdTokenResult: function () {
+              return Promise.resolve({ claims: token === 'handler' ? { handler: true } : { agentCode: token } });
+            }
           };
           return Promise.resolve({ user: window.__dgFirestoreAuthUser });
         }

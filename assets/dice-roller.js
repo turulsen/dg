@@ -457,6 +457,12 @@
         _authPromise = new Promise((resolve, reject) => {
             ensureFirebaseApi(() => {
                 const auth = window.firebase.auth();
+                function reauth() {
+                    window.firebase.functions().httpsCallable('exchangeAgentToken')({ agent_code: agentCode })
+                        .then(result => auth.signInWithCustomToken(result.data.token))
+                        .then(cred => resolve(cred.user))
+                        .catch(err => { _authPromise = null; reject(err); });
+                }
                 // Firebase Auth sessions persist per-origin across page
                 // loads (IndexedDB, not per-page) -- a bare
                 // `if (auth.currentUser)` trusted whoever happened to
@@ -465,11 +471,33 @@
                 // page earlier). exchangeAgentToken sets the token's uid
                 // to the Agent Code itself, so checking it costs nothing
                 // and catches exactly this case.
-                if (auth.currentUser && auth.currentUser.uid === agentCode) { resolve(auth.currentUser); return; }
-                window.firebase.functions().httpsCallable('exchangeAgentToken')({ agent_code: agentCode })
-                    .then(result => auth.signInWithCustomToken(result.data.token))
-                    .then(cred => resolve(cred.user))
-                    .catch(err => { _authPromise = null; reject(err); });
+                //
+                // uid alone isn't enough, though -- same root cause as
+                // a-cell.html's ensureHandlerSignedIn() (see that
+                // function's own comment): this fast path can keep being
+                // taken indefinitely once a device has ever signed in as
+                // this Agent Code even once, since Firebase Auth's own
+                // session persists across page loads independent of
+                // anything this app tracks. If that first sign-in
+                // happened before functions/index.js's
+                // ensurePersistedClaims_() existed, the agentCode claim
+                // was never actually persisted, and every silent token
+                // refresh since then regenerates from that same
+                // claims-less record -- permission-denied on every
+                // claim-gated write (recordRoll() below, the Live Rolls
+                // feed), with no reload ever reaching the fix.
+                // getIdTokenResult() reads the already-cached token's
+                // decoded claims locally (no extra round trip), and
+                // self-heals permanently the first time it forces one
+                // real exchangeAgentToken() call.
+                if (auth.currentUser && auth.currentUser.uid === agentCode) {
+                    auth.currentUser.getIdTokenResult().then(result => {
+                        if (result.claims && result.claims.agentCode === agentCode) { resolve(auth.currentUser); return; }
+                        reauth();
+                    }).catch(reauth);
+                    return;
+                }
+                reauth();
             }, err => { _authPromise = null; reject(err); });
         });
         return _authPromise;
