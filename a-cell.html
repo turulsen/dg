@@ -4496,6 +4496,19 @@
       previewDurationEl.textContent = formatSeekTime_(previewAudio.duration);
     }
   });
+  // Live report: a track showed "broadcasting" with Pause/Resume doing
+  // visibly nothing and the scrubber frozen at 0:00 forever. Root cause
+  // -- an unreachable src (broken URL, network hiccup, anything) never
+  // fires 'loadedmetadata', and applyPreviewState() above (which is what
+  // actually calls .play()/.pause() on this element) only ever runs from
+  // that event -- so the whole transport silently hung waiting for an
+  // event that was never coming, with no visible failure anywhere. Same
+  // fix table-radio.js's own player-facing <audio> already had for the
+  // same failure mode (see its 'error' listener) -- this Handler-side
+  // preview element never had the equivalent.
+  previewAudio.addEventListener('error', function () {
+    statusEl.textContent = 'Playback failed -- this track isn\'t reachable right now.';
+  });
   previewAudio.addEventListener('timeupdate', function () {
     if (suppressPreviewEvents || isPreviewSeekDragging) return;
     previewSlider.value = previewAudio.currentTime;
@@ -5473,6 +5486,81 @@
     });
   }
 
+  // Firebase Storage's own getDownloadURL() (used at upload time below)
+  // embeds a one-time access token in the URL -- a property of the
+  // STORAGE OBJECT, not the underlying bytes, that goes stale (a
+  // byte-identical, still-present file becomes "unreachable") whenever
+  // that token is regenerated or the object gets replaced in place from
+  // outside this app. storage.rules already grants public read on
+  // tracks/** (see that file's own comment), so the token buys nothing
+  // here -- reconstructing the plain, token-free REST download URL from
+  // the known tracks/{track_id}.mp3 path on every read makes an
+  // already-uploaded track self-heal the same way the old Drive-file-ID
+  // rebuild did for the previous Google Drive-hosted Track Library (see
+  // BUGFIXES.md), instead of trusting whatever URL happened to get
+  // written into Firestore at upload time. Live report this fixes:
+  // "broadcasting" per the status line but frozen at 0:00, Pause/Resume
+  // doing nothing -- the underlying file was fine, its stored URL's
+  // token wasn't.
+  function canonicalTrackUrl_(trackId) {
+    var bucket = window.firebase.app().options.storageBucket;
+    return 'https://firebasestorage.googleapis.com/v0/b/' + bucket +
+      '/o/' + encodeURIComponent('tracks/' + trackId + '.mp3') + '?alt=media';
+  }
+
+  // Live report: an upload finished (file genuinely sitting in Storage,
+  // confirmed in the console) but never appeared in the Track Library at
+  // all. uploadTrack()'s Storage-put-then-Firestore-write chain below
+  // isn't atomic -- an interruption between those two steps (this
+  // session's earlier custom-claims-refresh bug was one concrete way
+  // that happened) leaves a real object in tracks/ with no Firestore doc
+  // pointing at it, permanently invisible to this listener since it only
+  // ever reads Firestore. Cross-checking Storage's own listing once per
+  // page load and creating any missing doc closes that gap without
+  // anyone having to know which upload silently failed or go compare
+  // URLs by hand -- same self-healing spirit as canonicalTrackUrl_ above,
+  // just for a missing doc instead of a stale one.
+  var storageSyncDone = false;
+  function syncOrphanedStorageTracks_(knownIds) {
+    if (storageSyncDone) return;
+    storageSyncDone = true;
+    waitForFirebaseApi_(function () {
+      window.firebase.storage().ref('tracks').listAll().then(function (res) {
+        var orphans = res.items.filter(function (item) {
+          return knownIds.indexOf(item.name.replace(/\.mp3$/i, '')) === -1;
+        });
+        if (!orphans.length) return Promise.resolve();
+        return ensureHandlerSignedIn().then(function () {
+          return orphans.reduce(function (chain, item) {
+            var id = item.name.replace(/\.mp3$/i, '');
+            return chain.then(function () {
+              return item.getMetadata().then(function (meta) {
+                // customMetadata.title is set on every NEW upload below
+                // specifically so this recovery path can name the track
+                // correctly even if Firestore never got the title. A
+                // pre-existing orphan predates that and has nothing to
+                // recover a title from -- window.prompt() would be the
+                // obvious fallback, but prompt()/confirm()/alert() are
+                // dead entirely in an installed (standalone) iOS PWA,
+                // exactly how A-Cell is meant to run (see BUGFIXES.md,
+                // "PWA / Cloud Save / standalone iOS"), so it would
+                // silently no-op there instead of asking anything.
+                // Falling back to the plain filename instead keeps this
+                // fully automatic -- the track becomes playable again
+                // immediately, just under a generic name the Handler can
+                // fix by deleting and re-uploading it with the right
+                // title if it matters.
+                var title = (meta.customMetadata && meta.customMetadata.title) || item.name;
+                return window.firebase.firestore().collection('tracks').doc(id)
+                  .set({ track_id: id, title: title, url: canonicalTrackUrl_(id), uploaded_at: Date.now() });
+              });
+            });
+          }, Promise.resolve());
+        });
+      }).catch(function () { /* best effort -- Track Library still works off Firestore alone if this fails */ });
+    }, function () { /* best effort */ });
+  }
+
   // Live Firestore read instead of list_tracks JSONP -- post-game
   // report: "no tracks available", same root cause and same fix as the
   // Play tab's Agent list (see startCharacterListeners()'s own comment
@@ -5493,10 +5581,22 @@
         tracks = [];
         snap.forEach(function (doc) {
           var d = doc.data();
-          tracks.push({ track_id: doc.id, title: d.title || '', url: d.url || '', uploaded_at: d.uploaded_at || '' });
+          // Only rebuild the URL for a Storage-hosted track (see
+          // canonicalTrackUrl_ above) -- a surviving legacy Drive-hosted
+          // track (backfilled from the Sheet pre-Phase-4, no Storage
+          // object to rebuild a path from at all) keeps whatever Drive
+          // URL its own self-heal already wrote, same as before.
+          var isStorageTrack = (d.url || '').indexOf('firebasestorage.googleapis.com') !== -1;
+          tracks.push({
+            track_id: doc.id,
+            title: d.title || '',
+            url: isStorageTrack ? canonicalTrackUrl_(doc.id) : (d.url || ''),
+            uploaded_at: d.uploaded_at || ''
+          });
         });
         tracks.sort(function (a, b) { return (a.uploaded_at || 0) - (b.uploaded_at || 0); });
         renderTrackLibrary();
+        syncOrphanedStorageTracks_(tracks.map(function (t) { return t.track_id; }));
       }, function (err) {
         trackLibListEl.innerHTML = '<div class="rdo-track-empty">Could not load the Track Library. (' + escapeHtml((err && err.message) || String(err)) + ')</div>';
       });
@@ -5554,10 +5654,15 @@
     trackLibUploadBtn.textContent = 'Uploading…';
     trackLibStatus.textContent = 'Uploading…';
     ensureHandlerSignedIn().then(function () {
-      return window.firebase.storage().ref('tracks/' + trackId + '.mp3').put(file, { contentType: 'audio/mpeg' });
-    }).then(function (snapshot) {
-      return snapshot.ref.getDownloadURL();
-    }).then(function (downloadUrl) {
+      // customMetadata.title rides along on the Storage object itself,
+      // committed in this SAME put() call -- so if the Firestore write
+      // below ever fails partway (this is exactly how Abyss went
+      // missing: a genuinely-uploaded file with no Firestore doc
+      // pointing at it), syncOrphanedStorageTracks_() above can recover
+      // the real title instead of falling back to the bare filename.
+      return window.firebase.storage().ref('tracks/' + trackId + '.mp3')
+        .put(file, { contentType: 'audio/mpeg', customMetadata: { title: title } });
+    }).then(function () {
       var now = Date.now();
       // Writes straight to Firestore -- no Apps Script/Sheet involved
       // in recording a new track at all anymore, same reasoning as the
@@ -5566,9 +5671,12 @@
       // {title, storage_url} row, and the onSnapshot listener above
       // means every open A-Cell tab (and eventually a Firestore-backed
       // player-facing list, if one's ever added) sees the new track the
-      // instant this write commits.
+      // instant this write commits. Stores the plain, token-free URL
+      // (see canonicalTrackUrl_ above) -- the listener rebuilds it fresh
+      // on every read anyway, but writing the same real value here keeps
+      // the stored doc honest for anything reading Firestore directly.
       return window.firebase.firestore().collection('tracks').doc(trackId)
-        .set({ track_id: trackId, title: title, url: downloadUrl, uploaded_at: now });
+        .set({ track_id: trackId, title: title, url: canonicalTrackUrl_(trackId), uploaded_at: now });
     }).then(function () {
       trackLibUploadBtn.disabled = false;
       trackLibUploadBtn.textContent = originalUploadLabel;

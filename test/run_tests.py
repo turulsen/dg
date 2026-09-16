@@ -320,6 +320,10 @@ NOTES_FIRESTORE_STUB = """
   window.firebase = {
     apps: [{}],
     initializeApp: function () {},
+    // a-cell.html's canonicalTrackUrl_() reads options.storageBucket off
+    // this to rebuild a Storage-hosted track's URL -- see Track
+    // Library's own self-heal comment there.
+    app: function () { return { options: { storageBucket: 'fake-bucket.appspot.com' } }; },
     firestore: function () {
       return {
         settings: function () {},
@@ -383,7 +387,13 @@ NOTES_FIRESTORE_STUB = """
                 ref: { getDownloadURL: function () { return Promise.resolve('https://fake-storage.example/' + path); } }
               });
             },
-            delete: function () { return Promise.resolve(); }
+            delete: function () { return Promise.resolve(); },
+            // syncOrphanedStorageTracks_() in a-cell.html calls this on
+            // every Music tab load to find a Storage object with no
+            // Firestore doc -- empty by default (no test currently
+            // exercises the recovery path itself), just enough surface
+            // for that call to resolve instead of throwing.
+            listAll: function () { return Promise.resolve({ items: [] }); }
           };
         }
       };
