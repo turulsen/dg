@@ -15,6 +15,35 @@ initializeApp();
 // same one value living in two places until Sheets/Apps Script is retired.
 const HANDLER_PASSWORD = defineSecret('HANDLER_PASSWORD');
 
+// Persists a custom claim onto the Firebase Auth USER RECORD itself,
+// not just the one-shot custom token about to be minted below --
+// required for the claim to survive this session's automatic ID token
+// refresh. createCustomToken()'s own `additionalClaims` argument only
+// ever lands on the FIRST ID token exchanged from that specific custom
+// token; Firebase silently refreshes ID tokens roughly every hour using
+// the refresh token, and that refreshed token is regenerated from the
+// user record's OWN persisted custom claims, not from whatever
+// createCustomToken() happened to be called with at sign-in time. Real
+// live report that traced back to exactly this: a Handler (or Agent)
+// session that worked fine right after signing in started failing
+// every Handler-gated (or Agent-gated) Firestore read/write about an
+// hour later with "Missing or insufficient permissions", no sign-out
+// or other action involved at all -- the silently-refreshed token had
+// simply lost the claim. setCustomUserClaims() requires the user
+// record to already exist; on a brand-new uid's very first-ever sign-in
+// it doesn't yet (Firebase auto-provisions the record lazily, the first
+// time the client actually calls signInWithCustomToken()) -- that one
+// first session still gets a working (if refresh-fragile) token via
+// createCustomToken()'s own additionalClaims below, and every session
+// from the next call onward persists correctly.
+async function ensurePersistedClaims_(uid, claims) {
+  try {
+    await getAuth().setCustomUserClaims(uid, claims);
+  } catch (err) {
+    if (err.code !== 'auth/user-not-found') throw err;
+  }
+}
+
 // ════════════════════════════════════════════════════════════════
 // exchangeAgentToken -- mints a Firebase custom auth token for an Agent
 // Code, so the client can sign in once per session and let Firestore
@@ -58,6 +87,7 @@ exports.exchangeAgentToken = onCall(async (request) => {
     throw new HttpsError('invalid-argument', 'agent_code is not a recognizable Agent Code.');
   }
 
+  await ensurePersistedClaims_(agentCode, { agentCode: agentCode });
   const token = await getAuth().createCustomToken(agentCode, { agentCode: agentCode });
   return { token: token };
 });
@@ -83,6 +113,7 @@ exports.handlerLogin = onCall({ secrets: [HANDLER_PASSWORD] }, async (request) =
   // is exactly one Handler credential in this campaign (same as
   // Code.gs's single HANDLER_PASSWORD Script Property), not one per
   // person.
+  await ensurePersistedClaims_('handler', { handler: true });
   const token = await getAuth().createCustomToken('handler', { handler: true });
   return { token: token };
 });

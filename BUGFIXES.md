@@ -3759,3 +3759,50 @@ width line whenever the controls don't fit beside it, so it's always
 readable as normal wrapped text (word boundaries only, via
 `overflow-wrap:break-word` now) instead of being crushed. `sw.js` cache
 bumped alongside it (v129).
+
+## Handler/Agent sessions silently losing their custom claim ~an hour in -- "Missing or insufficient permissions" with no sign-out involved
+
+Live report during testing: Evidence showed "Firestore: listener error
+-- Missing or insufficient permissions", then Music tab's Set Now
+Playing/Assign CH to Cell started failing the same way -- all mid-
+session, no sign-out, no password re-entry, nothing the Handler did to
+themselves. Reproduced the mechanism by reading `functions/index.js`:
+both `handlerLogin` and `exchangeAgentToken` mint a Firebase custom
+token via `getAuth().createCustomToken(uid, additionalClaims)`, and
+that `additionalClaims` argument (`{handler:true}` /
+`{agentCode:...}`) is what `firestore.rules`' `isHandler()`/
+`agentCode()` checks read off `request.auth.token`.
+
+The bug: `createCustomToken()`'s `additionalClaims` are a property of
+that ONE custom token, not of the user record. The FIRST ID token
+exchanged from it (via the client's `signInWithCustomToken()`) carries
+the claim correctly -- but Firebase Auth silently refreshes ID tokens
+roughly every hour using the refresh token, and that refreshed token is
+regenerated from the user record's OWN persisted custom claims via the
+Admin SDK's `setCustomUserClaims()`, not from whatever
+`createCustomToken()` happened to be called with at sign-in time.
+Since neither function ever called `setCustomUserClaims()`, the claim
+was never actually persisted anywhere -- it evaporated on the first
+silent refresh, silently turning `isHandler()`/`agentCode()` false for
+the rest of that browser session with no error, no prompt, and no
+action from the user until the next Firestore call failed. This means
+every Agent session was equally exposed, not just Handler's -- Notes,
+Evidence remarks, character saves, anything gated on `agentCode()`
+would have quietly broken the same way after roughly an hour signed in,
+just less noticeable than a Handler's more actively-used session.
+
+Fixed by adding `ensurePersistedClaims_(uid, claims)` -- calls
+`getAuth().setCustomUserClaims(uid, claims)` before minting the custom
+token in both functions, so the claim lives on the user record and
+survives every future silent refresh, not just the first token.
+`setCustomUserClaims()` requires the user record to already exist,
+which it doesn't yet on a brand-new uid's very first-ever sign-in
+(Firebase auto-provisions it lazily, the first time the client actually
+calls `signInWithCustomToken()`) -- guarded with a catch on
+`auth/user-not-found` so that one first session still works via
+`createCustomToken()`'s own claims (refresh-fragile only for that one
+session), and every session from the next call onward persists
+correctly. Needs `firebase deploy --only functions` to take effect --
+this is a Cloud Functions change, a different deploy target than
+`firestore:rules` or Apps Script's `Code.gs`, and none of this session's
+earlier deploy steps covered it.
