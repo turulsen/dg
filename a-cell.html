@@ -1319,6 +1319,16 @@
     var promise = new Promise(function (resolve, reject) {
       ensureFirebaseApi(function () {
         var auth = window.firebase.auth();
+        function reauth() {
+          var password = sessionStorage.getItem('dg_acell_pw') || '';
+          if (!password) { reject(new Error('No A-Cell session -- log in as Handler first.')); return; }
+          withTimeout_(window.firebase.functions().httpsCallable('handlerLogin')({ handler_password: password }), 20000, 'handlerLogin()')
+            .then(function (result) {
+              return withTimeout_(auth.signInWithCustomToken(result.data.token), 20000, 'signInWithCustomToken()');
+            })
+            .then(function (cred) { resolve(cred.user); })
+            .catch(reject);
+        }
         // Firebase Auth sessions persist per-origin across page loads
         // (IndexedDB, not per-page) -- a bare `if (auth.currentUser)`
         // would trust WHOEVER happened to already be signed in, including
@@ -1326,15 +1336,36 @@
         // this same browser. handlerLogin_() sets the token's uid to a
         // known value ('handler') -- checking it costs nothing (already
         // on the cached user object, no extra round trip).
-        if (auth.currentUser && auth.currentUser.uid === 'handler') { resolve(auth.currentUser); return; }
-        var password = sessionStorage.getItem('dg_acell_pw') || '';
-        if (!password) { reject(new Error('No A-Cell session -- log in as Handler first.')); return; }
-        withTimeout_(window.firebase.functions().httpsCallable('handlerLogin')({ handler_password: password }), 20000, 'handlerLogin()')
-          .then(function (result) {
-            return withTimeout_(auth.signInWithCustomToken(result.data.token), 20000, 'signInWithCustomToken()');
-          })
-          .then(function (cred) { resolve(cred.user); })
-          .catch(reject);
+        //
+        // uid alone isn't enough, though -- live report, recurring:
+        // Evidence (and only Evidence, the one collection actually gated
+        // by isHandler() in firestore.rules) failing with "Missing or
+        // insufficient permissions" on a device that had ALREADY signed
+        // in as 'handler' at some point in the past, sometimes hours or
+        // days earlier. Firebase Auth's own persisted session means
+        // auth.currentUser.uid === 'handler' can stay true indefinitely
+        // across page loads and even new tabs, without this fast path
+        // ever re-running handlerLogin() again -- so a 'handler' user
+        // record whose custom claim was set before ensurePersistedClaims_
+        // existed (functions/index.js), or whose claim was ever lost for
+        // any other reason, stays permanently claims-less: every silent
+        // token refresh regenerates from that SAME claims-less record,
+        // and this fast path keeps trusting the uid without ever
+        // checking whether the claim actually made it onto the token.
+        // getIdTokenResult() reads the already-cached token's decoded
+        // claims locally (no network round trip unless the SDK also
+        // needs to silently refresh it) -- cheap enough to check every
+        // time, and self-heals permanently the first time it forces one
+        // real handlerLogin() call, since setCustomUserClaims() persists
+        // on the user record from then on.
+        if (auth.currentUser && auth.currentUser.uid === 'handler') {
+          auth.currentUser.getIdTokenResult().then(function (result) {
+            if (result.claims && result.claims.handler === true) { resolve(auth.currentUser); return; }
+            reauth();
+          }).catch(reauth);
+          return;
+        }
+        reauth();
       }, reject);
     });
     _handlerAuthPromise = promise;

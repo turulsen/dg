@@ -3983,3 +3983,44 @@ failing to load, anything) with no visible trace at all -- if it wasn't
 actually finding an orphaned upload, there was no way to tell whether it
 ran and found nothing, or never ran at all. Now logs to the console and
 surfaces a status-line message on failure instead of failing silently.
+
+## Evidence permanently stuck on "Missing or insufficient permissions" for a device that had EVER signed in as Handler before, no matter how many times it re-logs in
+
+Live report, same session as the claims-persistence fix above: Evidence
+went back to `Firestore: listener error — Missing or insufficient
+permissions` -- the exact symptom that fix was supposed to have closed
+for good -- while Cells, Play, and Tracks (all public-read, no
+`isHandler()` check) kept working fine on the same device at the same
+time, and the actual Firestore database, checked directly in the
+Console, still had every document intact. That split (one Handler-
+gated collection failing, everything public-read fine, data
+provably present) ruled out both a real outage and real data loss --
+it pointed straight back at this one device's own Handler session.
+
+Root cause: `ensureHandlerSignedIn()`'s fast path trusted
+`auth.currentUser.uid === 'handler'` alone to skip re-running
+`handlerLogin()` -- reasonable for avoiding a needless round trip on
+every call, except Firebase Auth's own session persists per-origin
+across page loads, new tabs, and even browser restarts (separate from
+this app's own `sessionStorage` gate), so once a device had EVER
+signed in as Handler even one single time, this fast path could keep
+being taken indefinitely, forever skipping `handlerLogin()` -- and with
+it, forever skipping `ensurePersistedClaims_()` (functions/index.js).
+If that device's very first-ever Handler sign-in happened before that
+Cloud Functions fix was deployed, the `handler` user record's custom
+claim was never actually persisted, and no amount of closing tabs,
+opening new ones, or waiting for `dg_acell_pw` to force a fresh sign-in
+attempt ever mattered: the fast path kept trusting the cached session
+before ever reaching the code that would have fixed it. Every silent
+token refresh regenerated from that same claims-less record forever.
+
+Fixed by checking the cached session's actual claims, not just its
+uid: `auth.currentUser.getIdTokenResult()` reads the already-cached
+token's decoded claims locally (no extra network round trip beyond
+whatever the SDK already needs for its own silent refresh), and only
+takes the fast path if `claims.handler === true`; otherwise it falls
+through to a real `handlerLogin()` call. This self-heals permanently
+the very first time it runs on an affected device, since
+`setCustomUserClaims()` persists on the user record from then on --
+no re-login, no cache-clearing, no new deploy needed beyond this one
+client-side check.
