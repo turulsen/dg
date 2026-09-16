@@ -4024,3 +4024,37 @@ the very first time it runs on an affected device, since
 `setCustomUserClaims()` persists on the user record from then on --
 no re-login, no cache-clearing, no new deploy needed beyond this one
 client-side check.
+
+**Audit, same session:** the request afterward was to find every other
+place this exact bug pattern could be hiding rather than wait for each
+one to surface live. `ensureAgentSignedIn()` exists as three
+independent copies (`notes/notes.js`, `assets/dice-roller.js`,
+`dg-agent-portal.html`) plus a fourth differently-shaped one
+(`agent-hub.html`'s `ensureAgentSignedInAs()`) -- the Handler-side
+consolidation this session's earlier work did (see "A-Cell Handler auth
+reused the wrong password" era fixes) never touched the Agent side, so
+each copy had to be checked on its own.
+
+- `notes/notes.js` and `assets/dice-roller.js` had the IDENTICAL bug:
+  `if (auth.currentUser && auth.currentUser.uid === agentCode) resolve(...)`
+  with no claims check, for the exact same reason as `a-cell.html`'s
+  Handler version -- any device that had ever signed in as that Agent
+  Code before `ensurePersistedClaims_()` existed would stay permanently
+  claims-less, silently permission-denied on every write gated by
+  `agentCode()` (Player Notes' own blocks, `dice_rolls`'s Live Rolls
+  feed -- issue #85's "fix" at the time addressed a symptom of this
+  same root cause without this specific check). Fixed identically:
+  `getIdTokenResult()` before trusting the cached uid, falling through
+  to a real `exchangeAgentToken()` when the claim's missing.
+- `dg-agent-portal.html`'s `ensureAgentSignedIn()` and `agent-hub.html`'s
+  `ensureAgentSignedInAs()` were already safe -- neither has a
+  `currentUser`-trusting fast path at all; both call
+  `exchangeAgentToken()` unconditionally every time their own (in-
+  memory, per-page-load only) promise cache misses, so they can never
+  coast on a stale cross-session Firebase Auth session the way the
+  three fixed functions could.
+- `dice-roller.js`'s separate `signInAsHandler()` (used for its own
+  opt-in Live Rolls Handler view) was also already safe -- no caching,
+  no `currentUser` check, calls `handlerLogin()` fresh every time.
+
+No other Firebase Auth entry point in the codebase has this shape.
