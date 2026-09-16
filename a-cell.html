@@ -1455,6 +1455,22 @@
     if (!window.__dgHandlerAuth) { denyAccess('handler auth not ready -- reload and try again'); return; }
     window.__dgHandlerAuth().then(function () {
       grantAccess();
+      // Every tab that reads/writes Handler-gated data (Evidence's own
+      // listener, Play/Cells/Sheet's own fetchAll) already tried once at
+      // page load, before any password existed, and failed -- each one
+      // only retries on this event (see their own "dg-acell-handler-ready"
+      // listener). The Handler Auth block's own on-load silent-reauth
+      // branch dispatches this too, but ONLY for a same-tab reload where
+      // dg_acell_pw was already saved from a PRIOR successful gate submit
+      // -- it runs synchronously at page load, before this fresh,
+      // interactive submission has happened, so it can't cover this path.
+      // Missing this dispatch here left Evidence (and anything else that
+      // only listens for this event, rather than retrying on its own
+      // click) permanently stuck on its pre-login failure after a brand
+      // new sign-in, even though the sign-in itself, and every OTHER
+      // Handler action that calls ensureHandlerSignedIn() fresh on its
+      // own click, worked fine.
+      window.dispatchEvent(new Event('dg-acell-handler-ready'));
     }).catch(function (err) {
       try { sessionStorage.removeItem('dg_acell_pw'); } catch (e3) { /* best effort */ }
       denyAccess((err && err.message) || 'access_denied');
