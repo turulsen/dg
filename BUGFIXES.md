@@ -4087,3 +4087,29 @@ resolves assertion) that did not reproduce in any local run this
 session. Too infrequent to root-cause from the log evidence alone --
 flagged here for whoever picks this up next rather than assumed fixed
 by the same timeout change.
+
+**Update -- the timeout guess was wrong, and the real bug was found.**
+Widening the wait to 40s did NOT fix CI (checked directly: same failure,
+full 40s elapsed). Two more rounds of instrumenting the test itself
+(reading the iframe's raw `contentDocument` state, then an independent
+`fetch()` of the iframe's own resolved `src`) got real evidence instead
+of a fourth guess: the target URL served perfectly fine on its own
+(`fetchStatus: 200`, real content, `notes-play-btn` present in the raw
+HTML) -- but the iframe's `contentWindow.location.href` stayed
+`'about:blank'` the entire time. The page it was pointed at was never
+actually navigated to at all.
+
+Root cause, in app code, not the test: `enterNotesFullscreen()`
+(`stats/scripts.js`) unconditionally calls `exitSplitView()` first,
+which sets this SAME iframe's `src` to `'about:blank'` -- then, in the
+same synchronous call, `enterNotesFullscreen()` immediately sets that
+same iframe's `src` to the real Notes URL. Two rapid, synchronous
+navigations on one `loading="lazy"` iframe, fired even when Split View
+was never active in the first place (the common case, and the one this
+test exercises) -- a real race that some Chromium builds resolve fine
+and others (confirmed: GitHub Actions' freshly-installed one, every
+single time) leave stuck on the first (blank) navigation permanently.
+Fixed by only calling `exitSplitView()` when Split View is actually
+currently active (`document.body.classList.contains('dg-split-active')`),
+removing the redundant double-navigation for the common case outright
+rather than trying to out-time a race in either app code or the test.
