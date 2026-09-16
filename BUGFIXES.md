@@ -3806,3 +3806,52 @@ correctly. Needs `firebase deploy --only functions` to take effect --
 this is a Cloud Functions change, a different deploy target than
 `firestore:rules` or Apps Script's `Code.gs`, and none of this session's
 earlier deploy steps covered it.
+
+Deploying this also surfaced two more, purely GCP-side gaps this
+project hadn't needed before tonight (both one-time IAM grants, not
+code): the Cloud Build service account was missing
+`roles/cloudbuild.builds.builder` on the compute default service
+account (blocked the function from building at all -- the deploy
+tooling's own error pointed at a possible org policy change), and once
+that was fixed, `ensurePersistedClaims_()`'s new `setCustomUserClaims()`
+call itself needed `roles/firebaseauth.admin` on that same service
+account -- a strictly stronger permission than `createCustomToken()`
+alone ever required, so this gap was always latent, just never
+exercised before this fix started calling that specific operation.
+Also needed `firebase deploy --only functions --force` (and, when even
+that still reported "Skipped (No changes detected)", deleting both
+functions outright and letting a plain deploy recreate them) to
+actually get the CLI to re-push the code at all, after an earlier
+failed deploy attempt (the Cloud Build permission gap) left a stale
+"already tried this source" marker that a normal deploy's own
+change-detection trusted over what had actually landed.
+
+## Clearance gate's fresh (non-reload) sign-in never told other tabs it was ready -- Evidence stuck on its pre-login failure forever
+
+Regression from the Clearance-gate merge above, caught live during
+testing right after deploying the claim-persistence fix: Evidence kept
+showing "No A-Cell session -- log in as Handler first" even in a brand
+new tab, freshly signed in, gate showing "acces_granted" -- while Music
+tab actions (Set Now Playing, Cue For Cell) worked fine in that exact
+same tab. That split is the tell: Evidence's own `startEvidenceListener()`
+(and Play/Cells/Sheet's own `fetchAll()`) run once, unconditionally, at
+page load -- before the Clearance gate has been submitted at all -- so
+their first attempt always fails with no password yet, and they only
+ever retry on the `dg-acell-handler-ready` event, never on their own.
+Music tab's buttons, by contrast, call `ensureHandlerSignedIn()` fresh
+on every click, so they work correctly as long as the sign-in
+eventually succeeds by the time you click, event or no event.
+
+The Handler Auth block's own "silent reauth on load" branch (added by
+the same merge) dispatches that event -- but only from a same-tab
+RELOAD where `dg_acell_pw` was already saved from an earlier session;
+it runs synchronously at page load, before a brand-new, interactive
+gate submission has even happened, so it can't cover that path. The
+gate's own success handler never dispatched the event at all -- an
+oversight introducing this bug, not present before the merge (the old
+Handler Password box's `attempt()` function dispatched it on every
+successful sign-in, silent or interactive, since one function handled
+both paths; splitting the gate and the on-load reauth into two places
+dropped that on the interactive side). Fixed by dispatching
+`dg-acell-handler-ready` from the gate's own success handler too, right
+after `grantAccess()`.
