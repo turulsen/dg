@@ -722,10 +722,16 @@
   .rdo-tracklib-upload .rdo-btn{ flex:none; }
   #tracklib-list{ display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:2px 20px; }
   .rdo-track-row{
-    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    display:flex; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:4px 10px;
     border-bottom:1px dotted #2a3020; padding:8px 0; font-size:11px;
   }
-  .rdo-track-title{ color:#c9d4b8; overflow-wrap:anywhere; }
+  /* flex-basis:100% forces this onto its own line in the wrapping row
+     above whenever the Loop checkbox + Play/+Queue/Delete buttons
+     (neither of which shrink) don't leave room for it beside them --
+     without this, a plain flex title item gets squeezed into whatever
+     sliver is left and overflow-wrap:anywhere used to break it at
+     literally every character rather than word boundaries. */
+  .rdo-track-title{ color:#c9d4b8; overflow-wrap:break-word; flex:1 1 100%; min-width:0; }
   .rdo-track-empty{ font-family:'Courier Prime',monospace; font-size:11px; color:#5a6a48; font-style:italic; }
   .rpr-title{ color:#c9d4b8; overflow-wrap:anywhere; font-family:'Courier Prime',monospace; }
   .rpr-actions{ display:flex; gap:6px; flex-shrink:0; }

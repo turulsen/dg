@@ -3740,3 +3740,22 @@ and `test_acell_soundboard`'s unrelated `[data-layer="alien-lunch"]`
 timeout were both confirmed, by running the identical test against the
 pre-merge code, to be pre-existing and untouched by any of this --
 left alone rather than chased further under this entry.
+
+## Track Library titles wrapping one character per line
+
+Found live during testing: short titles like "Combat" rendered as a
+single letter or two per line, stacked vertically, in the Music tab's
+Track Library. Root cause: `.rdo-track-row` lays the title, a Loop
+checkbox, and Play/+Queue/Delete out as flex siblings, none of the
+latter three shrink, and the title had no `flex-basis`/`min-width` of
+its own -- in a narrow grid column (`minmax(240px,1fr)`) the checkbox +
+three buttons alone can eat most of that width, so the title flex item
+gets squeezed into whatever sliver is left. `overflow-wrap:anywhere`
+then did exactly what it says: broke the text at literally any
+character to fit that sliver, rather than at word boundaries. Fixed by
+giving the row `flex-wrap:wrap` and the title `flex:1 1 100%;
+min-width:0` -- flex-basis:100% forces the title onto its own full-
+width line whenever the controls don't fit beside it, so it's always
+readable as normal wrapped text (word boundaries only, via
+`overflow-wrap:break-word` now) instead of being crushed. `sw.js` cache
+bumped alongside it (v129).
