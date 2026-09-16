@@ -9702,7 +9702,17 @@ def test_mobile_notes_fullscreen(p):
     # DOM says the button exists and isn't display:none, but
     # frame_locator().is_visible() isn't true yet) was intermittently
     # failing the very next check under a slower/colder CI runner.
-    wait_for_condition(lambda: frame.locator("#notes-play-btn").is_visible(), timeout_ms=20000)
+    #
+    # 20s was still not enough -- this exact assertion has been the sole
+    # failure on every real GitHub Actions CI run checked across the
+    # last several days of merges (confirmed via the Actions API, not
+    # assumed), while a fresh, isolated local run of this same test
+    # passes cleanly every time. That split matches the same "flakes
+    # under a long-lived shared CI runner, not in isolation" pattern
+    # test_acell_cells's own wait_post_and_sync() was already widened to
+    # 40s for -- same remedy applied here instead of re-guessing a new
+    # one.
+    wait_for_condition(lambda: frame.locator("#notes-play-btn").is_visible(), timeout_ms=40000)
     record("stats", "Notes' own Agent Hub link is hidden while embedded this way",
            frame.locator("#notes-back-link").is_visible() is False, "")
     record("stats", "Notes shows its own Play pill instead, docked at the Notes widget's exact spot",
