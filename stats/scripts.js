@@ -3654,7 +3654,20 @@ function enterNotesFullscreen() {
         if (window.showToast) window.showToast('Name and save your Agent first — Notes needs a Cloud Save code to know which Agent it belongs to.');
         return;
     }
-    exitSplitView();
+    // Only actually exit Split View if it's active -- exitSplitView()
+    // unconditionally resets THIS SAME iframe's src to 'about:blank'
+    // before the real notes URL gets assigned two lines down, and firing
+    // that reset when Split View was never even on forces two rapid,
+    // synchronous navigations on one iframe (blank, then real) for no
+    // reason. Real-world impact confirmed live: on some Chromium builds
+    // that double-assignment leaves the iframe stuck on about:blank
+    // forever -- contentWindow.location never advances past it even
+    // though the target URL serves fine on its own (confirmed directly:
+    // a plain fetch() of the same URL the iframe was pointed at returned
+    // 200 with the real page content). Guarding this to the one case
+    // that actually needs it removes the race outright instead of
+    // trying to out-time it.
+    if (document.body.classList.contains('dg-split-active')) exitSplitView();
     window.dgSettingsPanel?.close?.();
     document.body.classList.add('dg-notes-fullscreen-active');
     const iframe = document.getElementById('dg-split-notes-frame');
