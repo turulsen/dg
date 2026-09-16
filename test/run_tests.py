@@ -9708,20 +9708,32 @@ def test_mobile_notes_fullscreen(p):
     # guessing at a third timeout value.
     got_it = wait_for_condition(lambda: frame.locator("#notes-play-btn").is_visible(), timeout_ms=15000)
     if not got_it:
-        raw_state = page.evaluate("""() => {
+        raw_state = page.evaluate("""async () => {
             var f = document.getElementById('dg-split-notes-frame');
             if (!f) return {frameFound: false};
-            var doc; try { doc = f.contentDocument; } catch (e) { return {frameFound: true, contentDocumentError: String(e)}; }
-            if (!doc) return {frameFound: true, contentDocument: null};
+            var out = {frameFound: true, liveSrcAttr: f.getAttribute('src'), resolvedSrc: f.src, outerHref: location.href};
+            try { out.contentWindowHref = f.contentWindow.location.href; } catch (e) { out.contentWindowHrefError = String(e); }
+            var doc; try { doc = f.contentDocument; } catch (e) { out.contentDocumentError = String(e); return out; }
+            if (!doc) { out.contentDocument = null; return out; }
             var btn = doc.getElementById('notes-play-btn');
-            return {
-                frameFound: true,
-                readyState: doc.readyState,
-                bodyHTMLLength: doc.body ? doc.body.innerHTML.length : null,
-                btnFound: !!btn,
-                btnDisplay: btn ? getComputedStyle(btn).display : null,
-                btnComputedVisible: btn ? getComputedStyle(btn).display !== 'none' : null,
-            };
+            out.readyState = doc.readyState;
+            out.bodyHTMLLength = doc.body ? doc.body.innerHTML.length : null;
+            out.btnFound = !!btn;
+            out.btnDisplay = btn ? getComputedStyle(btn).display : null;
+            // Independent of iframe-navigation semantics entirely -- a
+            // direct fetch of the resolved src tells us whether the
+            // SERVER is even returning the right content for this exact
+            // URL on this environment, ruling out (or confirming) a
+            // static-file-serving difference rather than a browser/
+            // iframe-timing one.
+            try {
+                var res = await fetch(f.src);
+                var text = await res.text();
+                out.fetchStatus = res.status;
+                out.fetchBodyLength = text.length;
+                out.fetchHasPlayBtn = text.indexOf('id="notes-play-btn"') !== -1;
+            } catch (e) { out.fetchError = String(e); }
+            return out;
         }""")
         record("stats", "Notes shows its own Play pill instead, docked at the Notes widget's exact spot",
                False, f"raw iframe DOM state: {raw_state}; page JS errors so far: {errs}")
