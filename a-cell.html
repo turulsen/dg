@@ -1347,9 +1347,18 @@
   // remaining Handler-gated Apps Script action sends this (id_token)
   // instead of the old raw handler_password. getIdToken() returns the
   // cached token as-is unless it's within 5 minutes of expiry, in which
-  // case the SDK silently refreshes it first -- cheap to call per-request.
+  // case the SDK silently refreshes it first -- a real network call at
+  // that point, same class of risk as handlerLogin()/
+  // signInWithCustomToken() above, but this one had no withTimeout_() at
+  // all. Live report this explains: editing an Evidence item got stuck
+  // on "Saving..." forever, no error, nothing -- every caller of this
+  // function (Evidence, Cells, Sheet, Track Library, Music -- anything
+  // Handler-gated) funnels through this exact getIdToken() call, so a
+  // single stalled token refresh (a network hiccup right at the ~5-
+  // minute expiry boundary) hangs literally any save in the app with no
+  // way to recover short of reloading the page.
   function getHandlerIdToken_() {
-    return ensureHandlerSignedIn().then(function (user) { return user.getIdToken(); });
+    return ensureHandlerSignedIn().then(function (user) { return withTimeout_(user.getIdToken(), 20000, 'getIdToken()'); });
   }
   window.__dgHandlerAuth = ensureHandlerSignedIn;
   window.__dgEnsureFirebaseApi = ensureFirebaseApi;
