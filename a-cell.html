@@ -4465,9 +4465,23 @@
         previewKey = key;
         var applyPreviewState = function () {
           suppressPreviewEvents = true;
-          try { previewAudio.currentTime = liveElapsedSeconds_(); } catch (e) { /* not seekable yet */ }
-          previewSlider.value = liveElapsedSeconds_();
-          previewElapsedEl.textContent = formatSeekTime_(liveElapsedSeconds_());
+          // liveElapsedSeconds_() is pure wall-clock math off started_at --
+          // it has no idea how long the track actually is, so a broadcast
+          // left running (or never explicitly stopped) longer than the
+          // track's own duration produces an elapsed reading past the end
+          // entirely. Un-clamped, that used to show an absurd elapsed time
+          // (e.g. 25970:31 on a 53:45 track -- ~18 real days since
+          // started_at) and hand the <audio> element a currentTime beyond
+          // its own duration, which the browser silently clamps to the
+          // very end -- so .play() below immediately hit 'ended' and
+          // visibly "did nothing" on Pause/Resume. Clamping to the real,
+          // known duration keeps the readout honest and actually seekable
+          // instead of parked past the finish line.
+          var elapsed = liveElapsedSeconds_();
+          if (isFinite(previewAudio.duration) && elapsed > previewAudio.duration) elapsed = previewAudio.duration;
+          try { previewAudio.currentTime = elapsed; } catch (e) { /* not seekable yet */ }
+          previewSlider.value = elapsed;
+          previewElapsedEl.textContent = formatSeekTime_(elapsed);
           if (current.paused) {
             previewAudio.pause();
           } else {
@@ -5566,8 +5580,19 @@
             });
           }, Promise.resolve());
         });
-      }).catch(function () { /* best effort -- Track Library still works off Firestore alone if this fails */ });
-    }, function () { /* best effort */ });
+      }).catch(function (err) {
+        // Was a silent catch-all before -- Track Library still works off
+        // Firestore alone if this fails, but a swallowed error here means
+        // a genuinely orphaned track (like Abyss) stays invisible with no
+        // way to tell whether this ran and found nothing, or didn't run
+        // at all (e.g. a storage.rules permission gap on listAll(), or
+        // Storage failing to load). Surfacing it costs nothing and turns
+        // "still missing after this shipped" from a mystery into a
+        // visible reason.
+        console.error('a-cell: Track Library orphan sync failed', err);
+        trackLibStatus.textContent = 'Could not check Storage for untracked uploads: ' + ((err && err.message) || String(err));
+      });
+    }, function (err) { console.error('a-cell: Track Library orphan sync could not load Firebase', err); });
   }
 
   // Live Firestore read instead of list_tracks JSONP -- post-game

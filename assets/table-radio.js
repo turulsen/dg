@@ -270,7 +270,19 @@
   function seekAudioToLive_(audioEl, np, then) {
     if (!audioEl || !np) { if (then) then(); return; }
     function apply() {
-      try { audioEl.currentTime = liveElapsedSeconds_(np); } catch (e) { /* not seekable yet */ }
+      // liveElapsedSeconds_() is pure wall-clock math off started_at, with
+      // no idea how long the track actually is -- a broadcast left running
+      // (or never explicitly stopped) past the track's own duration
+      // produces an elapsed reading beyond the end entirely. Assigning
+      // that straight to currentTime gets silently clamped to the very
+      // end by the browser, so play() immediately hits 'ended' and a
+      // listener tuning in hears nothing at all, with no error anywhere.
+      // Clamping to the real, known duration keeps a stale broadcast at
+      // least seekable/audible up to its own end instead of silently dead
+      // air.
+      var elapsed = liveElapsedSeconds_(np);
+      if (isFinite(audioEl.duration) && elapsed > audioEl.duration) elapsed = audioEl.duration;
+      try { audioEl.currentTime = elapsed; } catch (e) { /* not seekable yet */ }
       if (then) then();
     }
     if (audioEl.readyState >= 1) { apply(); return; }
