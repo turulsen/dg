@@ -3916,3 +3916,29 @@ Both fixes are pure a-cell.html client-side changes (no rules,
 Functions, or Apps Script changes needed) and run automatically on the
 next Music tab load -- no manual Storage/Firestore console work, and no
 comparing one track's URL against another by hand.
+
+## Editing Evidence (or any other Handler-gated save) could hang on "Saving..." forever, no error
+
+Live report: editing an existing Evidence item stuck the Save button
+and the status line on "Saving…" indefinitely -- no error, no timeout,
+nothing to do but reload the page. Evidence's own live list (the
+Firestore `onSnapshot` listener) was working fine at the time, which is
+the tell: reading authenticates once and stays subscribed, but every
+*write* -- Evidence, Cells, Sheet, Track Library, Music, anything
+Handler-gated -- calls `getHandlerIdToken_()` fresh each time to attach
+a current Firebase ID token to the Apps Script POST.
+
+`getHandlerIdToken_()` was the one remaining fragile Firebase call in
+this file with no `withTimeout_()` around it. `getIdToken()` returns
+the cached token instantly unless it's within 5 minutes of expiry, in
+which case the SDK silently does a real network round-trip to refresh
+it first -- the exact same class of risk `handlerLogin()` and
+`signInWithCustomToken()` already got `withTimeout_()` protection for,
+just missed here. A stalled refresh (any ordinary network hiccup
+landing right at that expiry boundary) left the returned promise never
+resolving OR rejecting, so every save built on top of it hung forever
+with no way to recover short of a reload -- and since literally every
+Handler-gated write funnels through this one function, this wasn't an
+Evidence-specific bug, just the first place it happened to surface.
+Wrapped the same way as the other two: `withTimeout_(user.getIdToken(),
+20000, 'getIdToken()')`.
