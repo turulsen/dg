@@ -3942,3 +3942,44 @@ Handler-gated write funnels through this one function, this wasn't an
 Evidence-specific bug, just the first place it happened to surface.
 Wrapped the same way as the other two: `withTimeout_(user.getIdToken(),
 20000, 'getIdToken()')`.
+
+## A track that outlived its own duration wouldn't play at all -- for anyone
+
+Live report: Phantom's Now Playing panel showed an elapsed time of
+"25970:31" against a real duration of "53:45" -- roughly 18 real days
+since that channel's `started_at` was last written, since nothing had
+explicitly Stopped or replaced it since (this campaign's testing spans
+many separate sessions across many real days, and nothing auto-clears
+a broadcast just because its own track finished). Pause/Resume did
+nothing, and the scrubber sat pinned at the far right.
+
+`liveElapsedSeconds_()` (both this file's own copy and
+table-radio.js's identical twin) is pure wall-clock math off
+`started_at`/`paused_at` -- it has no idea how long the actual track
+is, so once real elapsed time exceeds the track's own duration, it just
+keeps counting up forever. That raw number was being assigned straight
+to an `<audio>` element's `currentTime`, which the browser silently
+clamps to the track's own end -- so `.play()` immediately hit `ended`
+with nothing audible and no error anywhere. This isn't Handler-preview-
+only: table-radio.js's `seekAudioToLive_()` (the function that actually
+seeks a PLAYER's radio for real) has the exact same unclamped call, so
+any listener tuning in to a channel whose track had quietly outlived
+its own length this way would hear nothing either, silently.
+
+Fixed in both places by clamping the elapsed value to the audio
+element's own known `duration` before assigning `currentTime` (and, in
+a-cell.html's preview panel, before it feeds the scrubber/elapsed-text
+display too, so the readout itself stays honest instead of showing an
+absurd number). Doesn't touch the underlying stale `started_at` --
+Stop then re-Play (or Restart) still writes a fresh one the normal way,
+this just stops a stale one from silently killing playback for anyone
+in the meantime.
+
+## Track Library's Storage-orphan recovery had a silent catch-all, making a still-missing track undiagnosable
+
+Follow-up to the Track Library fix above: `syncOrphanedStorageTracks_()`
+swallowed any failure (a `storage.rules` gap on `listAll()`, Storage
+failing to load, anything) with no visible trace at all -- if it wasn't
+actually finding an orphaned upload, there was no way to tell whether it
+ran and found nothing, or never ran at all. Now logs to the console and
+surfaces a status-line message on failure instead of failing silently.
