@@ -9694,25 +9694,40 @@ def test_mobile_notes_fullscreen(p):
            f"{iframe_src} vs code={state['code']}")
 
     frame = page.frame_locator("#dg-split-notes-frame")
-    # Polling via frame_locator itself (Playwright's own cross-frame API)
-    # rather than a raw contentDocument eval_on_selector -- the two can
-    # disagree briefly right after the iframe's src is set, since
-    # Playwright's own frame-attachment bookkeeping can lag a tick
-    # behind a plain DOM read into contentDocument. That mismatch (raw
-    # DOM says the button exists and isn't display:none, but
-    # frame_locator().is_visible() isn't true yet) was intermittently
-    # failing the very next check under a slower/colder CI runner.
-    #
-    # 20s was still not enough -- this exact assertion has been the sole
-    # failure on every real GitHub Actions CI run checked across the
-    # last several days of merges (confirmed via the Actions API, not
-    # assumed), while a fresh, isolated local run of this same test
-    # passes cleanly every time. That split matches the same "flakes
-    # under a long-lived shared CI runner, not in isolation" pattern
-    # test_acell_cells's own wait_post_and_sync() was already widened to
-    # 40s for -- same remedy applied here instead of re-guessing a new
-    # one.
-    wait_for_condition(lambda: frame.locator("#notes-play-btn").is_visible(), timeout_ms=40000)
+    # A prior comment here blamed this on frame_locator/contentDocument
+    # attachment lag under "a slower/colder CI runner" and widened the
+    # wait from 20s to 40s on that theory -- turned out wrong. Checked
+    # directly: even 40s of real wait time on an actual GitHub Actions
+    # run never got frame.locator("#notes-play-btn").is_visible() to
+    # become true, while a fresh local run passes this in well under a
+    # second every time. That is not a margin problem, it is a real
+    # divergence between the two environments, so this now gathers
+    # actual diagnostic evidence (the JS errors collect_errors() already
+    # tracks, plus the iframe's own raw DOM state read directly rather
+    # than through Playwright's frame-attachment bookkeeping) instead of
+    # guessing at a third timeout value.
+    got_it = wait_for_condition(lambda: frame.locator("#notes-play-btn").is_visible(), timeout_ms=15000)
+    if not got_it:
+        raw_state = page.evaluate("""() => {
+            var f = document.getElementById('dg-split-notes-frame');
+            if (!f) return {frameFound: false};
+            var doc; try { doc = f.contentDocument; } catch (e) { return {frameFound: true, contentDocumentError: String(e)}; }
+            if (!doc) return {frameFound: true, contentDocument: null};
+            var btn = doc.getElementById('notes-play-btn');
+            return {
+                frameFound: true,
+                readyState: doc.readyState,
+                bodyHTMLLength: doc.body ? doc.body.innerHTML.length : null,
+                btnFound: !!btn,
+                btnDisplay: btn ? getComputedStyle(btn).display : null,
+                btnComputedVisible: btn ? getComputedStyle(btn).display !== 'none' : null,
+            };
+        }""")
+        record("stats", "Notes shows its own Play pill instead, docked at the Notes widget's exact spot",
+               False, f"raw iframe DOM state: {raw_state}; page JS errors so far: {errs}")
+        record("stats", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+        page.close()
+        return errs
     record("stats", "Notes' own Agent Hub link is hidden while embedded this way",
            frame.locator("#notes-back-link").is_visible() is False, "")
     record("stats", "Notes shows its own Play pill instead, docked at the Notes widget's exact spot",
