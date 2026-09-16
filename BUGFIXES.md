@@ -3855,3 +3855,64 @@ both paths; splitting the gate and the on-load reauth into two places
 dropped that on the interactive side). Fixed by dispatching
 `dg-acell-handler-ready` from the gate's own success handler too, right
 after `grantAccess()`.
+
+## Track Library: a track already sitting in Storage went missing or wouldn't play, for two different real reasons
+
+Live report, same session as the two fixes above: "Abyss" was uploaded
+(confirmed present in the Storage console) but never showed up in the
+Track Library list at all, and separately "Phantom" showed
+"broadcasting" in the Music tab's status line with the scrubber frozen
+at 0:00 and Pause/Resume doing visibly nothing. Both trace back to real
+gaps in this same upload/playback path, not one shared bug -- diagnosed
+by reading that path end to end instead of inspecting either track's
+own stored URL by hand.
+
+**Missing track (Abyss).** `uploadTrack`'s Storage-put-then-Firestore-
+write chain isn't atomic. An interruption between those two steps (this
+session's own claims-persistence bug, fixed earlier tonight, was one
+concrete way that happened before the fix shipped) leaves a real
+object sitting in `tracks/` in Storage with no Firestore doc pointing
+at it -- permanently invisible to `startTracksListener()`, which only
+ever reads Firestore. Fixed with `syncOrphanedStorageTracks_()`: once
+per Music tab load, after the first `tracks` snapshot arrives, lists
+Storage's own `tracks/` folder directly (`ref('tracks').listAll()`,
+allowed by storage.rules' existing public read) and creates any
+missing Firestore doc it finds. The upload handler now also writes
+`customMetadata.title` onto the Storage object itself, in the SAME
+`put()` call as the upload -- so if the Firestore write ever fails
+again, this recovery path can restore the real title instead of
+falling back to the bare filename. (The obvious fallback for a track
+with no recoverable title -- `window.prompt()`ing the Handler for one --
+was deliberately not used: `prompt()`/`confirm()`/`alert()` are already
+known dead entirely in an installed standalone iOS PWA, exactly how
+A-Cell is meant to run, see "PWA / Cloud Save / standalone iOS" above.)
+
+**Frozen playback (Phantom).** Two independent gaps stacked here. First,
+`getDownloadURL()`'s URL embeds an access token that's a property of
+the Storage object, not its bytes -- it goes stale (a byte-identical,
+still-present file becomes "unreachable") whenever that token gets
+regenerated or the object is replaced in place from outside the app.
+storage.rules already grants `tracks/**` public read, so the token was
+never actually needed; `startTracksListener()` now reconstructs a
+plain, token-free download URL from the known `tracks/{track_id}.mp3`
+path on every read instead of trusting whatever got written at upload
+time (`canonicalTrackUrl_()`), the same self-healing approach the old
+Google Drive-hosted Track Library used for its own file-ID URLs. Second
+-- and this is what actually explains "broadcasting but frozen, buttons
+doing nothing" rather than a clean failure -- the Handler-side Now
+Playing panel's headless preview `<audio>` element had no `'error'`
+listener at all. `applyPreviewState()` (the function that actually
+calls `.play()`/`.pause()`/seeks the element) only ever runs off a
+`'loadedmetadata'` event; an unreachable src (this stale-token case, or
+any other network failure) never fires that event, so the whole
+transport just hangs forever waiting on an event that isn't coming,
+with the status line still confidently saying "broadcasting" and both
+buttons appearing dead. table-radio.js's own player-facing `<audio>`
+already had the equivalent listener for this exact failure mode; the
+Handler's own preview element never did. Added it, surfacing "Playback
+failed -- this track isn't reachable right now" the same way.
+
+Both fixes are pure a-cell.html client-side changes (no rules,
+Functions, or Apps Script changes needed) and run automatically on the
+next Music tab load -- no manual Storage/Firestore console work, and no
+comparing one track's URL against another by hand.
