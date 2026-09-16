@@ -4058,3 +4058,32 @@ each copy had to be checked on its own.
   no `currentUser` check, calls `handlerLogin()` fresh every time.
 
 No other Firebase Auth entry point in the codebase has this shape.
+
+## CI has been red on every push to main for at least the last several days -- nobody was checking
+
+Asked directly: "is CI running at all???" Checked the actual GitHub
+Actions run history via the API rather than assuming either answer.
+CI does run, on every push to `main`/`firebase-migration`, and it does
+check something real (776 Playwright assertions plus the `sw.js`
+`CACHE_NAME` discipline check) -- but every single run checked across
+the last several days of merges came back red, and nothing in this
+session (or, from the commit history, several before it) actually
+looked at the result after merging.
+
+The dominant, consistently-reproducing failure across every run
+checked: `test_mobile_notes_fullscreen`'s `frame_locator("#notes-play-
+btn")` wait, at 20s, times out on GitHub's actual shared CI runner --
+confirmed present in every run inspected -- while the exact same test
+passes 21/21 in a fresh, isolated local run every single time. Same
+"flakes under a long-lived shared CI runner, not in isolation" pattern
+`test_acell_cells`'s own wait was already widened to 40s for elsewhere
+in this file; applied the identical, already-precedented remedy here
+rather than guessing a new one.
+
+**Still open, not silently dropped:** one of the four runs checked also
+showed two rarer, one-off failures in the Notes suite (a Docs-paste
+auto-split-into-Header-block assertion, and a gdrive-backed-photo-
+resolves assertion) that did not reproduce in any local run this
+session. Too infrequent to root-cause from the log evidence alone --
+flagged here for whoever picks this up next rather than assumed fixed
+by the same timeout change.
