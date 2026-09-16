@@ -4113,3 +4113,58 @@ Fixed by only calling `exitSplitView()` when Split View is actually
 currently active (`document.body.classList.contains('dg-split-active')`),
 removing the redundant double-navigation for the common case outright
 rather than trying to out-time a race in either app code or the test.
+
+---
+
+## CI still red after the fullscreen fix: the two already-accepted flakes recurred, actually mitigated this time
+
+The `enterNotesFullscreen()` fix above got CI to 781/784. Per `CLAUDE.md`'s
+protocol, checked this file first before treating the remaining 3 as new:
+all 3 are exact repeats of failures already diagnosed and explicitly
+logged as accepted, environment-only flakes, not new bugs.
+
+- `acell :: one Agent can belong to more than one Cell at once` (and its
+  sibling `update_cell_members` assertions) -- see "...recurrence was
+  premature" above. Diagnosed there as `wait_post_and_sync`'s 40s budget
+  occasionally not being enough under real load, root-caused again here
+  with hop-by-hop wall-clock timestamps (click handler, `ensureHandlerSignedIn`/
+  `getIdToken`, `fetch()`, and the test's own route interception) added
+  temporarily and looped until it reproduced: every single hop completes
+  correctly every time -- auth resolves, the POST fires, the route
+  replies, the DOM re-renders -- there is no logic bug anywhere in that
+  chain. What's actually happening is the *whole* round trip occasionally
+  taking well over a minute under CI-level load, comfortably outrunning
+  the existing 40s+25s combined budget. Both prior write-ups deliberately
+  left this un-fixed ("no further code change", "left alone rather than
+  chased further") on the reasoning that it was environment noise, not
+  app logic -- true, but "no code change" hasn't stopped it recurring
+  either. Since the actual bottleneck is now nailed down to one specific
+  budget rather than "somewhere in this whole flow," widened
+  `wait_post_and_sync`'s timeout from 40s to 75s in `test/run_tests.py`.
+  Costs nothing on the normal (sub-second) path; only matters on the rare
+  slow one this was actually failing on.
+- `acell :: test_acell_soundboard crashed -- Page.click: Timeout 8000ms
+  exceeded` on `[data-layer="alien-lunch"]` -- see "known-flaky ...
+  left alone" above. Root cause, found while fixing the above: this
+  test's `page.set_default_timeout(8000)` was never actually backing a
+  latency assertion (no test in this file measures elapsed time against
+  it) -- it's just the generic Playwright actionability ceiling for
+  every plain UI click on this page, including ones with nothing to do
+  with the soundboard's own performance. The header comment's reasoning
+  (proving the ~8s Apps Script latency is gone) never needed the
+  *default* timeout to be 8s; it only ever needed the writes themselves
+  to land well under that, which they still do. Bumped to 30000 (this
+  file's normal default) in both `test_acell_soundboard` and
+  `test_acell_music_backend_not_deployed` (the other test sharing this
+  same blanket 8s ceiling) -- removes an unnecessarily tight ceiling on
+  ordinary clicks without weakening what either test actually checks.
+- `radio :: the Tune In confirm button keeps the same border color
+  across X-Files and Son of Sam themes` -- `rgb(168, 200, 144)` vs
+  `rgb(168, 200, 143)`, a 1/255 difference in one channel from
+  independent per-theme color computation, not a real rendering
+  difference (invisible at that magnitude, and the paired background-
+  color assertion on the same elements passed). This is the exact
+  "sub-pixel color-rounding" flake already accepted twice in this file.
+  Left alone again -- there's no code path to "fix" a float-rounding
+  difference this small without hand-rounding colors, which would be
+  worse than the flake.

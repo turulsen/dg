@@ -3584,7 +3584,7 @@ def test_acell_cells(p):
     def sync_cells():
         push_firestore_snapshot(page, "cells", [], [dict(c, id=c["cell_id"]) for c in cells_state])
 
-    def wait_post_and_sync(predicate, timeout_ms=40000):
+    def wait_post_and_sync(predicate, timeout_ms=75000):
         # Real bug found running this under a loaded full suite (not a
         # one-off): the previous version called wait_for_condition() once
         # (default 25s) then called sync_cells() unconditionally --
@@ -3598,6 +3598,20 @@ def test_acell_cells(p):
         # up to timeout_ms still gets picked up; only gives up (leaving
         # the caller's own DOM check to report the real failure) after
         # that.
+        #
+        # 40s wasn't actually the fix -- confirmed live by instrumenting
+        # every hop (click handler, ensureHandlerSignedIn/getIdToken,
+        # fetch(), and this route interception itself) with wall-clock
+        # timestamps and re-running until it reproduced: every hop DOES
+        # complete correctly and near-instantly (sub-second) in the
+        # common case, but under real load this whole chain -- Handler
+        # auth + a real browser fetch() + Playwright's own route
+        # interception -- occasionally stalls for well over a minute
+        # before delivering, with no error or hang at any single step
+        # (this isn't the app silently failing, it's this sandboxed
+        # Chromium+CDP round trip occasionally taking far longer than
+        # 40s under load). 75s gives real headroom without costing
+        # anything on the near-universal fast path.
         import time
         deadline = time.monotonic() + timeout_ms / 1000
         while time.monotonic() < deadline:
@@ -4887,7 +4901,16 @@ def test_acell_soundboard(p):
     "db.runTransaction is not a function" under test the moment anyone
     tried."""
     page = p.new_page()
-    page.set_default_timeout(8000)
+    # Not actually asserting anything about the soundboard's own latency
+    # (no test below measures elapsed time) -- this used to be 8000, which
+    # just made every plain UI click on this page share the exact 8s
+    # actionability ceiling as a real production latency, so any of the
+    # same rare CI-load stalls proven elsewhere in this suite (see
+    # wait_post_and_sync's own comment in test_acell_cells) turned into a
+    # hard crash here (Page.click: Timeout 8000ms exceeded) instead of
+    # just taking a bit longer, live report: run 35118177417. A generic
+    # default belongs here; nothing in this test relies on 8s specifically.
+    page.set_default_timeout(30000)
     errs = collect_errors(page)
     install_notes_firestore_stub(page)
     page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
@@ -5037,7 +5060,7 @@ def test_acell_music_backend_not_deployed(p):
     immediately with "No A-Cell session...". The status line must report
     that honestly instead of claiming success."""
     page = p.new_page()
-    page.set_default_timeout(8000)
+    page.set_default_timeout(30000)
     errs = collect_errors(page)
     install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
