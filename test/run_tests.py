@@ -4942,6 +4942,20 @@ def test_acell_soundboard(p):
     page.route("**/script.google.com/**", fake_apps_script)
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    # a-cell.html's own radio/{channel} listener (startNowPlayingListener_)
+    # subscribes unconditionally at load, independent of which tab is
+    # active -- but renderAmbientGrid()/renderActiveSounds_() only ever
+    # run from INSIDE that listener's callback, so the ambient toggle
+    # buttons (including [data-layer="alien-lunch"] below) don't exist in
+    # the DOM at all until a first snapshot is delivered. Every real
+    # Firestore listener always delivers one almost immediately -- this
+    # stub never does on its own, so this test has to seed it itself, the
+    # same way every other a-cell.html test seeds its own Firestore state
+    # before interacting. Missing this seed is the actual cause of this
+    # test's long-reported "click timeout" -- not CI load, not a flake.
+    wait_for_condition(lambda: any(l.get("isDoc") and l.get("path") == "radio/1"
+                                    for l in page.evaluate("() => window.__dgFirestoreListeners || []")))
+    push_firestore_doc_snapshot(page, "radio/1", False)
     page.click('.tw[data-tab="music"]')
     page.wait_for_timeout(150)
 
@@ -5042,6 +5056,31 @@ def test_acell_soundboard(p):
         return d if (d and not any(x.get("id") == "scream-01" for x in d.get("stingers", []))) else None
     record("soundboard", "Stop on a stinger row removes it entirely (no on/off toggle the way ambient has)",
            wait_for_condition(stinger_gone) is not None, "")
+
+    # GitHub issue #4: "I pressed Scream 03 once, and it plays [visually]
+    # again every ~15 seconds, though I could only hear it the first
+    # time." Root cause: the Active Sounds row's own 'ended' handler only
+    # ever cleaned up LOCAL state, never writing the removal back to
+    # Firestore the way Stop does -- so a naturally-finished stinger sat
+    # in radio/{channel}'s stingers array forever, and the next unrelated
+    # write to that same doc (anything on the Music tab) resurrected its
+    # row via the live listener. Fire a fresh one and let it finish on
+    # its own (dispatching 'ended' on its own preview <audio>, same as a
+    # real short stinger reaching the end of its own runtime) instead of
+    # Stop, to cover the path Stop was never exercising.
+    page.click('[data-stinger="scream-01"]')
+    wait_for_condition(lambda: len((get_firestore_doc(page, "radio/1") or {}).get("stingers", [])) > 0)
+    wait_for_condition(lambda: page.locator(".rdo-active-row", has_text="Scream 01").count() > 0)
+    page.evaluate("""() => {
+        var row = Array.from(document.querySelectorAll('.rdo-active-row')).find(r => r.textContent.includes('Scream 01'));
+        var audioEl = row && row.querySelector('audio');
+        if (audioEl) audioEl.dispatchEvent(new Event('ended'));
+    }""")
+    def stinger_gone_after_natural_end():
+        d = get_firestore_doc(page, "radio/1")
+        return d if (d and not any(x.get("id") == "scream-01" for x in d.get("stingers", []))) else None
+    record("soundboard", "a stinger finishing naturally also removes it from Firestore, not just local state",
+           wait_for_condition(stinger_gone_after_natural_end) is not None, str(get_firestore_doc(page, "radio/1")))
 
     page.close()
     return errs

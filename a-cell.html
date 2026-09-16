@@ -4301,10 +4301,24 @@
       row.elapsedEl.textContent = formatSeekTime_(audioEl.currentTime);
     });
     // Reaching the end while NOT looping means this instance is
-    // genuinely done -- clean it out of local state immediately rather
-    // than waiting for the next server round-trip (which may not come
-    // until some other action happens, since this tab has no live
-    // listener for Now Playing).
+    // genuinely done -- clean it out of local state immediately so the
+    // row disappears right away, not waiting on a round-trip.
+    //
+    // Live report, GitHub issue #4: "I pressed Scream 03 once, and it
+    // plays [visually] again every ~15 seconds, though I could only hear
+    // it the first time." Root cause found here: this local cleanup was
+    // never also written back to Firestore, unlike Stop
+    // (removeSoundInstanceFirestore_ below) -- so a naturally-finished
+    // stinger stayed sitting in radio/{channel}'s own `stingers` array
+    // forever (or until STINGER_HISTORY_LENGTH trimmed it out). This tab
+    // DOES have a live listener on that doc (startNowPlayingListener_,
+    // despite what an older version of this comment claimed) -- so the
+    // very next write to it for ANY reason (another stinger, an ambient
+    // toggle, a main-track seek) redelivered the stale, never-removed
+    // entry and resurrected this row, with no fixed interval involved:
+    // just however often something else happened to touch that document.
+    // table-radio.js's own seenStingerFires guard is why players never
+    // actually heard it again -- this was a Handler-UI-only ghost.
     audioEl.addEventListener('ended', function () {
       if (audioEl.loop) return;
       if (kind === 'ambient') {
@@ -4314,6 +4328,10 @@
         activeStingers = activeStingers.filter(function (s) { return s.fired_at !== refId; });
       }
       renderActiveSounds_();
+      var field = kind === 'ambient' ? 'ambient_layers' : 'stingers';
+      var matchKey = kind === 'ambient' ? 'id' : 'fired_at';
+      removeSoundInstanceFirestore_(currentChannel, field, matchKey, refId)
+        .catch(function () { /* best effort -- local state is already clean either way */ });
     });
     row.sliderEl.addEventListener('input', function () {
       row.isSeekDragging = true;

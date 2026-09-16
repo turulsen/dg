@@ -4168,3 +4168,73 @@ logged as accepted, environment-only flakes, not new bugs.
   Left alone again -- there's no code path to "fix" a float-rounding
   difference this small without hand-rounding colors, which would be
   worse than the flake.
+
+---
+
+## GitHub issue #4: Scream 03 stinger "still visually active" ~15s after it finishes -- found and fixed
+
+Live-recurring report ("I pressed Scream 03 once, and it plays again
+every 15 seconds, though I could only hear it the first time -- pressing
+Stop stopped it") pointed back at issue #4, previously investigated
+twice with no code-level cause found. Both earlier passes searched for a
+literal `15000`ms timer in `assets/table-radio.js`/`a-cell.html` and
+found none -- correct as far as it went, but the actual bug was never a
+timer at all.
+
+**Root cause**: a-cell.html's Active Sounds panel row for a stinger has
+its own headless preview `<audio>` element, and its `'ended'` handler
+(fires once the stinger's own short runtime is up) only ever removed the
+finished instance from LOCAL state (`activeStingers = activeStingers.
+filter(...)`) before re-rendering. It never wrote that removal back to
+Firestore, unlike Stop (`removeSoundInstanceFirestore_()`), which does.
+So a naturally-finished stinger stayed sitting in `radio/{channel}`'s own
+`stingers` array indefinitely (only ever trimmed once enough OTHER
+stingers pushed it out via `STINGER_HISTORY_LENGTH`). This tab's own
+`startNowPlayingListener_()` keeps a live `onSnapshot` on that exact doc
+(despite an older, now-corrected version of the `'ended'` handler's own
+comment claiming "this tab has no live listener for Now Playing" -- true
+when that comment was written, stale by the time this bug shipped) --
+so the very next write to that doc for ANY reason at all (another
+stinger, an ambient toggle, a main-track seek) redelivered the still-
+present, never-removed entry and resurrected its Active Sounds row. No
+fixed interval was ever involved; "every ~15 seconds" was just how often
+something else on the Music tab happened to touch that document during
+actual play that night.
+
+Confirmed real audio was never replaying: `table-radio.js`'s
+`applyStingers_()` (the code actually driving what PLAYERS hear) has its
+own `seenStingerFires`/`alreadySeen` guard that correctly blocks
+re-triggering an already-finished one-shot -- this was a Handler-UI-only
+ghost the whole time, exactly matching "I could only hear it the first
+time."
+
+**Fix**: the `'ended'` handler now also calls
+`removeSoundInstanceFirestore_()` (the same function Stop already uses)
+for both stingers and ambient layers, so natural completion cleans up
+Firestore the same way an explicit Stop does.
+
+**A second, real bug found while verifying this**: `test_acell_soundboard`'s
+long-reported "known-flaky `alien-lunch` click timeout" (confirmed
+"pre-existing" across at least three separate PRs in this file) was never
+actually a flake -- it was a genuine, 100%-reproducing gap in the test
+itself. `renderAmbientGrid()` (which builds the ambient toggle buttons,
+including `[data-layer="alien-lunch"]`) only ever runs from inside
+`startNowPlayingListener_()`'s `onSnapshot` callback, and the test stub
+never auto-delivers an initial snapshot the way real Firestore always
+does almost immediately -- so those buttons simply never existed in the
+DOM under test, no matter how long the timeout was set to (proven by
+raising it to 30s in the previous commit and watching it still fail
+100% of the time locally). Every prior "confirmed pre-existing, left
+alone" note calling this an environment flake was checking whether it
+still failed, not why -- and it always would have, forever, until
+something seeded `radio/1`'s snapshot. Fixed by adding the missing
+`push_firestore_doc_snapshot(page, "radio/1", False)` seed before the
+Music tab is even clicked, the same seeding discipline every other
+a-cell.html test already follows. Confirmed clean (3/3 local runs,
+16/16 assertions each including a new one covering the natural-
+completion Firestore write above) after the fix, and confirmed it fails
+identically on the pre-fix code with either the old 8s or the new 30s
+timeout (ruling out "just needed more time" as ever having been the
+answer).
+
+`sw.js` `CACHE_NAME` bumped (`a-cell.html` is `SHELL_FILES`-listed).
