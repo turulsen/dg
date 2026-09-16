@@ -4113,3 +4113,128 @@ Fixed by only calling `exitSplitView()` when Split View is actually
 currently active (`document.body.classList.contains('dg-split-active')`),
 removing the redundant double-navigation for the common case outright
 rather than trying to out-time a race in either app code or the test.
+
+---
+
+## CI still red after the fullscreen fix: the two already-accepted flakes recurred, actually mitigated this time
+
+The `enterNotesFullscreen()` fix above got CI to 781/784. Per `CLAUDE.md`'s
+protocol, checked this file first before treating the remaining 3 as new:
+all 3 are exact repeats of failures already diagnosed and explicitly
+logged as accepted, environment-only flakes, not new bugs.
+
+- `acell :: one Agent can belong to more than one Cell at once` (and its
+  sibling `update_cell_members` assertions) -- see "...recurrence was
+  premature" above. Diagnosed there as `wait_post_and_sync`'s 40s budget
+  occasionally not being enough under real load, root-caused again here
+  with hop-by-hop wall-clock timestamps (click handler, `ensureHandlerSignedIn`/
+  `getIdToken`, `fetch()`, and the test's own route interception) added
+  temporarily and looped until it reproduced: every single hop completes
+  correctly every time -- auth resolves, the POST fires, the route
+  replies, the DOM re-renders -- there is no logic bug anywhere in that
+  chain. What's actually happening is the *whole* round trip occasionally
+  taking well over a minute under CI-level load, comfortably outrunning
+  the existing 40s+25s combined budget. Both prior write-ups deliberately
+  left this un-fixed ("no further code change", "left alone rather than
+  chased further") on the reasoning that it was environment noise, not
+  app logic -- true, but "no code change" hasn't stopped it recurring
+  either. Since the actual bottleneck is now nailed down to one specific
+  budget rather than "somewhere in this whole flow," widened
+  `wait_post_and_sync`'s timeout from 40s to 75s in `test/run_tests.py`.
+  Costs nothing on the normal (sub-second) path; only matters on the rare
+  slow one this was actually failing on.
+- `acell :: test_acell_soundboard crashed -- Page.click: Timeout 8000ms
+  exceeded` on `[data-layer="alien-lunch"]` -- see "known-flaky ...
+  left alone" above. Root cause, found while fixing the above: this
+  test's `page.set_default_timeout(8000)` was never actually backing a
+  latency assertion (no test in this file measures elapsed time against
+  it) -- it's just the generic Playwright actionability ceiling for
+  every plain UI click on this page, including ones with nothing to do
+  with the soundboard's own performance. The header comment's reasoning
+  (proving the ~8s Apps Script latency is gone) never needed the
+  *default* timeout to be 8s; it only ever needed the writes themselves
+  to land well under that, which they still do. Bumped to 30000 (this
+  file's normal default) in both `test_acell_soundboard` and
+  `test_acell_music_backend_not_deployed` (the other test sharing this
+  same blanket 8s ceiling) -- removes an unnecessarily tight ceiling on
+  ordinary clicks without weakening what either test actually checks.
+- `radio :: the Tune In confirm button keeps the same border color
+  across X-Files and Son of Sam themes` -- `rgb(168, 200, 144)` vs
+  `rgb(168, 200, 143)`, a 1/255 difference in one channel from
+  independent per-theme color computation, not a real rendering
+  difference (invisible at that magnitude, and the paired background-
+  color assertion on the same elements passed). This is the exact
+  "sub-pixel color-rounding" flake already accepted twice in this file.
+  Left alone again -- there's no code path to "fix" a float-rounding
+  difference this small without hand-rounding colors, which would be
+  worse than the flake.
+
+---
+
+## GitHub issue #4: Scream 03 stinger "still visually active" ~15s after it finishes -- found and fixed
+
+Live-recurring report ("I pressed Scream 03 once, and it plays again
+every 15 seconds, though I could only hear it the first time -- pressing
+Stop stopped it") pointed back at issue #4, previously investigated
+twice with no code-level cause found. Both earlier passes searched for a
+literal `15000`ms timer in `assets/table-radio.js`/`a-cell.html` and
+found none -- correct as far as it went, but the actual bug was never a
+timer at all.
+
+**Root cause**: a-cell.html's Active Sounds panel row for a stinger has
+its own headless preview `<audio>` element, and its `'ended'` handler
+(fires once the stinger's own short runtime is up) only ever removed the
+finished instance from LOCAL state (`activeStingers = activeStingers.
+filter(...)`) before re-rendering. It never wrote that removal back to
+Firestore, unlike Stop (`removeSoundInstanceFirestore_()`), which does.
+So a naturally-finished stinger stayed sitting in `radio/{channel}`'s own
+`stingers` array indefinitely (only ever trimmed once enough OTHER
+stingers pushed it out via `STINGER_HISTORY_LENGTH`). This tab's own
+`startNowPlayingListener_()` keeps a live `onSnapshot` on that exact doc
+(despite an older, now-corrected version of the `'ended'` handler's own
+comment claiming "this tab has no live listener for Now Playing" -- true
+when that comment was written, stale by the time this bug shipped) --
+so the very next write to that doc for ANY reason at all (another
+stinger, an ambient toggle, a main-track seek) redelivered the still-
+present, never-removed entry and resurrected its Active Sounds row. No
+fixed interval was ever involved; "every ~15 seconds" was just how often
+something else on the Music tab happened to touch that document during
+actual play that night.
+
+Confirmed real audio was never replaying: `table-radio.js`'s
+`applyStingers_()` (the code actually driving what PLAYERS hear) has its
+own `seenStingerFires`/`alreadySeen` guard that correctly blocks
+re-triggering an already-finished one-shot -- this was a Handler-UI-only
+ghost the whole time, exactly matching "I could only hear it the first
+time."
+
+**Fix**: the `'ended'` handler now also calls
+`removeSoundInstanceFirestore_()` (the same function Stop already uses)
+for both stingers and ambient layers, so natural completion cleans up
+Firestore the same way an explicit Stop does.
+
+**A second, real bug found while verifying this**: `test_acell_soundboard`'s
+long-reported "known-flaky `alien-lunch` click timeout" (confirmed
+"pre-existing" across at least three separate PRs in this file) was never
+actually a flake -- it was a genuine, 100%-reproducing gap in the test
+itself. `renderAmbientGrid()` (which builds the ambient toggle buttons,
+including `[data-layer="alien-lunch"]`) only ever runs from inside
+`startNowPlayingListener_()`'s `onSnapshot` callback, and the test stub
+never auto-delivers an initial snapshot the way real Firestore always
+does almost immediately -- so those buttons simply never existed in the
+DOM under test, no matter how long the timeout was set to (proven by
+raising it to 30s in the previous commit and watching it still fail
+100% of the time locally). Every prior "confirmed pre-existing, left
+alone" note calling this an environment flake was checking whether it
+still failed, not why -- and it always would have, forever, until
+something seeded `radio/1`'s snapshot. Fixed by adding the missing
+`push_firestore_doc_snapshot(page, "radio/1", False)` seed before the
+Music tab is even clicked, the same seeding discipline every other
+a-cell.html test already follows. Confirmed clean (3/3 local runs,
+16/16 assertions each including a new one covering the natural-
+completion Firestore write above) after the fix, and confirmed it fails
+identically on the pre-fix code with either the old 8s or the new 30s
+timeout (ruling out "just needed more time" as ever having been the
+answer).
+
+`sw.js` `CACHE_NAME` bumped (`a-cell.html` is `SHELL_FILES`-listed).
