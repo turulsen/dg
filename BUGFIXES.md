@@ -4569,3 +4569,46 @@ and_loop` -- all passing.
 
 `sw.js` `CACHE_NAME` bumped (`assets/table-radio.js` is
 `SHELL_FILES`-listed).
+
+---
+
+## The mix/volume debug readout just shipped above couldn't actually be turned on -- real bug in its own boot order
+
+Live report: `?radiodebug=1`, multiple full reloads, even a full "clear
+web history" on the reporting device -- the readout never appeared.
+Before assuming a caching problem again, checked the diagnostic's own
+code and found a real, confirmed order-of-operations bug in it.
+
+`isDebugOn_()` does two things: reads `?radiodebug=1` off the URL and
+persists it to `localStorage`, AND reports whether the flag is
+currently on. It was only ever called from inside `renderTuned()`'s
+own HTML template string. `renderTuned()` only runs when a channel is
+already selected (`getChannel()` truthy) -- a brand new device, or one
+that just had all its site data cleared, boots into
+`renderCollapsed()`'s plain "Tune In" pill instead, which never calls
+`isDebugOn_()` at all. So on exactly the device state the reporter was
+actually in (freshly cleared, no channel picked yet), `?radiodebug=1`
+in the URL was silently never read -- the flag never got written to
+`localStorage` in the first place. By the time a channel got tuned in
+(a separate click, sometimes a separate later page load), the query
+param was long gone from the address bar, and no number of subsequent
+reloads could ever turn it on.
+
+Fixed by calling `isDebugOn_()` once, unconditionally, at the very top
+of the widget's boot sequence -- before the tuned-vs-collapsed branch --
+so the URL is read the same way regardless of which state the widget
+happens to boot into.
+
+New regression test `test_table_radio_debug_flag_survives_untuned_
+first_load` reproduces the exact reported device state (no channel
+ever tuned, matching a full data clear) and confirms the flag is
+captured even while still showing the collapsed pill. Verified failing
+without the fix (fails on the very first assertion, matching the live
+report exactly) and passing with it. Full regression:
+`test_table_radio_debug_flag_survives_untuned_first_load`,
+`test_table_radio_mix_debug_readout`, `test_table_radio_audio_volume`,
+`test_table_radio_widget`, `test_table_radio_pause_and_loop` -- all
+passing.
+
+`sw.js` `CACHE_NAME` bumped (`assets/table-radio.js` is
+`SHELL_FILES`-listed).

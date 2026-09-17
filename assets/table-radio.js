@@ -1305,6 +1305,19 @@
     if (radioUnsubscribe) { radioUnsubscribe(); radioUnsubscribe = null; }
   }
 
+  // Real bug found from a live report: isDebugOn_() (which both reads
+  // AND writes the ?radiodebug=1 flag) was only ever called from inside
+  // renderTuned()'s own template string -- so on a fresh/cleared device
+  // with no channel picked yet, the widget boots straight into
+  // renderCollapsed()'s "Tune In" pill instead, and the flag never got
+  // read from the URL at all. By the time a channel was picked (a
+  // separate click, sometimes a separate page load), ?radiodebug=1 was
+  // long gone from the address bar and the reporter's device could
+  // never turn the readout on no matter how many times they reloaded.
+  // Called here, unconditionally, on every load regardless of which
+  // state the widget boots into.
+  isDebugOn_();
+
   if (getChannel()) {
     renderTuned();
     startPolling();
