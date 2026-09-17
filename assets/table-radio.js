@@ -1221,7 +1221,33 @@
       if (volSlider) volSlider.style.display = '';
       wrap.innerHTML = '<audio id="dg-radio-audio" src="' + escapeHtml(np.track_url) + '"></audio>';
       var audioEl = document.getElementById('dg-radio-audio');
-      trackGainNode = attachGain_(audioEl);
+      // REVERTED, live emergency: routing this element through Web Audio
+      // (attachGain_) produced confirmed TOTAL SILENCE on both Safari and
+      // Brave -- ctx=running, gain= exactly matching the mix math, real
+      // <audio> element genuinely present, and still nothing audible.
+      // The main track's URL (Firebase Storage, Drive, YouTube-hosted
+      // files, anything a Handler pastes or uploads) is very often
+      // cross-origin, unlike the ambient/stinger files below (bundled in
+      // this repo, always same-origin) -- confirmed live for "The Void":
+      // hosted on firebasestorage.googleapis.com, which sends no CORS
+      // headers at all for an anonymous cross-origin GET. WebKit is
+      // documented to silence -- not just restrict introspection on, the
+      // way Chrome does -- audio routed through createMediaElementSource
+      // from a cross-origin, non-CORS resource; Brave's own anti-
+      // fingerprinting shields plausibly clamp Web Audio output for
+      // cross-origin media independently, on top of that. Setting
+      // .crossOrigin on the element isn't a safe fix either -- Firebase
+      // Storage's default download URLs send no CORS headers at all
+      // (confirmed directly), so requesting it with credentials-free CORS
+      // mode would just make the browser refuse to load it at all.
+      // trackGainNode stays null -- setAudioLevel_() below always sets
+      // el.muted/el.volume regardless, so this is exactly the pre-#35
+      // behavior for the main track specifically: audible again
+      // (uncontrolled by the mix on iOS, the original bug) rather than
+      // silent outright. Needs bucket-level CORS configuration (gsutil
+      // cors set on the Storage bucket, allowing this origin) before
+      // Web Audio routing can be safely reintroduced here.
+      trackGainNode = null;
       setAudioLevel_(audioEl, trackGainNode, mixedVolumePercent_('track'), muted);
       audioEl.loop = loop;
       refreshDebugLine_();

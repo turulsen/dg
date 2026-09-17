@@ -5720,21 +5720,25 @@ def test_table_radio_debug_readout_shows_ambient_and_stinger_state(p):
     page.close()
     return errs
 
-def test_table_radio_gain_node_drives_real_volume(p):
-    """The actual root cause behind the "Handler set Music mix to 0,
-    still heard the track at full volume, un-Muting played it again"
-    live reports: iOS Safari silently ignores HTMLMediaElement.volume
-    for real audio output (only .muted is honored there -- output volume
-    is tied to the hardware buttons). el.volume happily stores and reads
-    back whatever's assigned, which is exactly why the debug readout
-    could show a correct track.volume=0.00 while the phone kept playing
-    at full blast -- the property write was never the bug, its total
-    lack of effect on iOS was. GainNode.gain, a real Web Audio DSP node,
-    IS honored there. table-radio.js now routes the main track and every
-    ambient/stinger <audio> element through one; this confirms the gain
-    values genuinely track the mix math (not just el.volume, which a
-    real iOS device can't be trusted to act on) through a mute/un-mute
-    cycle matching the exact live report."""
+def test_table_radio_main_track_does_not_use_gain_node(p):
+    """The GainNode routing this test used to confirm (see git history --
+    it briefly replaced this one) was REVERTED for the main track as a
+    live emergency: confirmed directly on a real device, routing "The
+    Void" (hosted cross-origin on firebasestorage.googleapis.com, which
+    sends no CORS headers) through createMediaElementSource produced
+    TOTAL SILENCE on both Safari and Brave -- ctx=running, gain= exactly
+    matching the mix math, and still nothing audible. WebKit is known to
+    silence (not just restrict introspection on, the way Chrome does)
+    audio routed through Web Audio from a cross-origin, non-CORS
+    resource; sound is worse than uncontrolled volume. Ambient/stinger
+    files are exempt -- they're bundled in this repo, always same-origin,
+    genuinely safe -- and keep their own GainNode routing.
+
+    Confirms the main track's <audio> element falls back to plain
+    .volume/.muted (no `gain=` in the debug readout for it) -- the exact
+    pre-existing, audible-but-iOS-can't-scale-it behavior -- while an
+    active ambient layer on the SAME channel still gets a real gain node,
+    proving the revert is scoped to the main track only."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -5750,42 +5754,21 @@ def test_table_radio_gain_node_drives_real_volume(p):
     page.reload(wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
 
-    # Exact live-reported scenario: Handler's Music mix at 0, this
-    # listener's own volume left at the default 70, widget still MUTED
-    # (the default until the first Sound tap -- see isMuted()'s comment).
-    push_radio_now_playing(page, "1", {
-        "channel": "1", "track_url": "https://example.com/ambience.mp3",
-        "track_title": "The Void", "started_at": 1700000000000, "track_volume": 0, "ambient_volume": 100,
-    })
-    page.wait_for_timeout(400)
-    debug_text = page.inner_text("#dg-radio-debug")
-    record("radio", "a gain node is wired for the main track and starts silent while mix track=0",
-           "gain=0.00" in debug_text, debug_text)
-
-    # This is literally "press Sound": the exact click the live report
-    # said made the track "play again" despite the Handler's mix being 0.
-    # On a real iOS device the old el.volume-only path would have let it
-    # through at full, uncontrolled volume; the gain node must stay at
-    # 0 regardless, since it -- not el.volume -- is what's now actually
-    # wired to the speaker.
-    page.click("#dg-radio-mute")
-    page.wait_for_timeout(150)
-    debug_text = page.inner_text("#dg-radio-debug")
-    record("radio", "un-muting (pressing Sound) with mix track still 0 keeps the real gain at 0, not just el.volume",
-           "SOUND" == page.eval_on_selector("#dg-radio-mute", "el => el.textContent") and "gain=0.00" in debug_text,
-           debug_text)
-
-    # Now raise the Handler's mix -- the gain should track it exactly
-    # like el.volume always claimed to (my vol defaults to 70, so
-    # track_volume=50 mix -> round(70 * 0.5) = 35 -> gain 0.35).
     push_radio_now_playing(page, "1", {
         "channel": "1", "track_url": "https://example.com/ambience.mp3",
         "track_title": "The Void", "started_at": 1700000000000, "track_volume": 50, "ambient_volume": 100,
+        "ambient_layers": [{"id": "alien-lunch", "started_at": 1700000000000, "paused": False, "paused_at": 0, "loop": True}],
     })
-    page.wait_for_timeout(400)
+    page.wait_for_timeout(500)
     debug_text = page.inner_text("#dg-radio-debug")
-    record("radio", "raising the Handler's mix moves the real gain, matching the mix math exactly",
-           "gain=0.35" in debug_text, debug_text)
+    real_volume = page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.volume")
+    track_segment = next((seg for seg in debug_text.split(" | ") if seg.startswith("track.volume=")), "")
+    record("radio", "the main track's <audio> element still gets the plain .volume fallback, matching the mix",
+           abs(real_volume - 0.35) < 0.01, "real=" + str(real_volume) + " / " + debug_text)
+    record("radio", "the main track has no gain= entry -- no Web Audio routing for it anymore",
+           track_segment != "" and "gain=" not in track_segment, debug_text)
+    record("radio", "an active ambient layer on the same channel still gets a real gain node",
+           "ambient x1=alien-lunch:" in debug_text and "/gain=" in debug_text, debug_text)
 
     page.close()
     return errs
@@ -10530,7 +10513,7 @@ def main():
 
         safe(test_table_radio_debug_readout_shows_ambient_and_stinger_state, browser, area="radio")
 
-        safe(test_table_radio_gain_node_drives_real_volume, browser, area="radio")
+        safe(test_table_radio_main_track_does_not_use_gain_node, browser, area="radio")
 
         safe(test_table_radio_finished_track_does_not_restart_from_beginning, browser, area="radio")
 
