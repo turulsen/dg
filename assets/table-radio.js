@@ -922,7 +922,31 @@
       'mix track=' + mixTrackVolume + ' ambient=' + mixAmbientVolume,
       'my vol=' + getVolume() + (isMuted() ? ' (MUTED)' : '')
     ];
-    if (audioEl) parts.push('audio.volume=' + audioEl.volume.toFixed(2) + (audioEl.muted ? ' (el.muted)' : ''));
+    if (audioEl) parts.push('track.volume=' + audioEl.volume.toFixed(2) + (audioEl.muted ? ' (el.muted)' : ''));
+    // Real blind spot found from a live report of "no volume control is
+    // working, on any channel": ambientAudioEls/stingerAudioEls live as
+    // direct document.body children (see applyAmbientLayers_/
+    // applyStingers_ above), entirely OUTSIDE #dg-radio-embed-wrap --
+    // the debug line above only ever reported the MAIN TRACK's own
+    // element, completely blind to an ambient loop or stinger actually
+    // playing. Ambient's own mix defaults to 100 (full, unreduced)
+    // unless a Handler explicitly lowers it -- a live ambient loop left
+    // running would be exactly as loud as "no volume control works"
+    // sounds like, regardless of what the Music mix or main track says.
+    var ambientIds = Object.keys(ambientAudioEls);
+    if (ambientIds.length) {
+      parts.push('ambient x' + ambientIds.length + '=' + ambientIds.map(function (id) {
+        var e = ambientAudioEls[id].el;
+        return id + ':' + e.volume.toFixed(2) + (e.paused ? '(paused)' : '(playing)') + (e.muted ? '(muted)' : '');
+      }).join(','));
+    }
+    var stingerIds = Object.keys(stingerAudioEls);
+    if (stingerIds.length) {
+      parts.push('stinger x' + stingerIds.length + '=' + stingerIds.map(function (firedAt) {
+        var e = stingerAudioEls[firedAt].el;
+        return e.volume.toFixed(2) + (e.paused ? '(paused)' : '(playing)') + (e.muted ? '(muted)' : '');
+      }).join(','));
+    }
     el.textContent = parts.join(' | ');
   }
 
@@ -1235,13 +1259,17 @@
     var mixChanged = newTrackVol !== mixTrackVolume || newAmbientVol !== mixAmbientVolume;
     mixTrackVolume = newTrackVol;
     mixAmbientVolume = newAmbientVol;
-    refreshDebugLine_();
     // Ambient loops/stingers are independent of the main track -- applied
     // unconditionally, before the no-track early return below, so a
     // Handler can layer ambience onto a silent channel.
     applyAmbientLayers_(np && np.ambient_layers);
     applyStingers_(np && np.stingers);
     if (mixChanged) applyLiveMuteVolume();
+    // Refreshed AFTER the ambient/stinger calls above (not before) so it
+    // reflects any element they just created or tore down this tick --
+    // see refreshDebugLine_()'s own comment for why ambient/stinger
+    // state matters here and was missing before.
+    refreshDebugLine_();
     var statusEl = document.getElementById('dg-radio-status');
     var trackEl = document.getElementById('dg-radio-track');
     var miniTrackEl = document.getElementById('dg-radio-mini-track');
