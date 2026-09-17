@@ -4696,3 +4696,73 @@ readout`, `test_table_radio_debug_readout_present_before_tuning_in`,
 
 `sw.js` `CACHE_NAME` bumped (`assets/table-radio.js` is
 `SHELL_FILES`-listed).
+
+---
+
+## Root cause found: iOS Safari ignores HTMLMediaElement.volume entirely -- the actual source of "no volume control works, on any channel"
+
+Follow-up to the three entries above, and the actual root cause behind
+all of them. Live report, confirmed directly rather than assumed: a
+Handler's Music mix at 0, the listener's own volume at 100, MUTED --
+the debug readout correctly showed `track.volume=0.00 (el.muted)`, and
+the reporter confirmed it really was silent in that exact state. Then,
+un-Muting ("pressing Sound") played the track anyway, at full,
+uncontrolled volume, with the Handler's Music mix still confirmed at 0
+in A-Cell at that same moment -- ruling out "the mix just moved" as the
+explanation.
+
+Every number this investigation instrumented over the last three
+entries was correct: the Firestore write, the mix arithmetic, and the
+`<audio>` element's own `.volume`/`.muted` properties, read directly
+off the reporter's phone via the debug readout. The bug was never in
+any of that math -- it was in the assumption that setting
+`HTMLMediaElement.volume` has any effect on real audio output at all.
+It doesn't, on iOS Safari: `.volume` is a fully cosmetic property
+there, silently storing and returning whatever's assigned without
+touching what's actually audible -- real output volume on iOS is tied
+exclusively to the hardware volume buttons. Only `.muted` is honored,
+which is exactly why "Mute always worked" while every gradation in
+between (the Handler's mix, the listener's own slider) did nothing on
+a real device, and why un-Muting always snapped straight to full,
+uncontrolled volume regardless of what the mix math said `.volume`
+should be. This also explains why nothing here was ever reproducible
+in this sandbox's own Playwright/Chromium testing (which has no such
+restriction) despite every individual number checking out -- the gap
+was never in the code's math, it was in a platform behavior no amount
+of Chromium testing could ever have surfaced.
+
+Fixed by routing every `<audio>` element this widget plays through --
+the main track, and every ambient loop/stinger -- through the Web
+Audio API instead of relying on the native property at all:
+`ctx.createMediaElementSource(el)` into a `GainNode`, with
+`gainNode.gain.value` as the thing that actually gets scaled by the
+Handler's mix x this listener's own volume, exactly the standard,
+widely-used workaround for this exact iOS limitation. `.volume`/
+`.muted` are still set alongside it (harmless, and keeps every existing
+property-based assertion/readback meaningful) but are no longer what
+real output depends on. Falls back to the old `.volume`/`.muted`-only
+path if Web Audio itself isn't available for any reason -- a listener
+stuck with the old, iOS-limited behavior beats no audio at all.
+
+The debug readout now also prints `gain=X.XX` next to `track.volume=`
+(and inside each `ambient x`/`stinger x` entry) specifically so a
+future report can show at a glance whether the two ever disagree again
+-- the whole reason the earlier "iOS ignores el.volume" bug was
+invisible for as long as it was is that `el.volume` alone gave no way
+to tell the difference between "the code is wrong" and "the code is
+right but the platform ignores it."
+
+New regression test `test_table_radio_gain_node_drives_real_volume`
+confirms the gain node stays at `0.00` through the exact reported
+mute-then-un-mute cycle while the Handler's mix is 0, and that raising
+the mix moves the real gain value to match the mix math exactly (`my
+vol=70 x track_volume=50% -> gain=0.35`). Full regression: the new
+test plus `test_table_radio_mix_debug_readout`, `test_table_radio_
+debug_readout_shows_ambient_and_stinger_state`, `test_table_radio_
+debug_readout_present_before_tuning_in`, `test_table_radio_audio_
+volume`, `test_table_radio_widget`, `test_table_radio_pause_and_loop`,
+`test_table_radio_library_track_kind`, `test_table_radio_yt_volume_
+reliability` -- all 69 radio-area checks passing.
+
+`sw.js` `CACHE_NAME` bumped (`assets/table-radio.js` is
+`SHELL_FILES`-listed).
