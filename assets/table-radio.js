@@ -366,15 +366,39 @@
       // liveElapsedSeconds_() is pure wall-clock math off started_at, with
       // no idea how long the track actually is -- a broadcast left running
       // (or never explicitly stopped) past the track's own duration
-      // produces an elapsed reading beyond the end entirely. Assigning
-      // that straight to currentTime gets silently clamped to the very
-      // end by the browser, so play() immediately hits 'ended' and a
-      // listener tuning in hears nothing at all, with no error anywhere.
-      // Clamping to the real, known duration keeps a stale broadcast at
-      // least seekable/audible up to its own end instead of silently dead
-      // air.
+      // produces an elapsed reading beyond the end entirely.
       var elapsed = liveElapsedSeconds_(np);
-      if (isFinite(audioEl.duration) && elapsed > audioEl.duration) elapsed = audioEl.duration;
+      var duration = audioEl.duration;
+      var overran = isFinite(duration) && duration > 0 && elapsed >= duration;
+      if (overran) {
+        if (np.loop) {
+          // Still legitimately on its Nth loop -- land on the actual
+          // position within the CURRENT loop, not parked at the end,
+          // matching what every listener who's been tuned in the whole
+          // time is actually hearing right now.
+          elapsed = elapsed % duration;
+        } else {
+          // Genuinely over, not looping. Live report + direct
+          // reproduction: clamping elapsed to exactly `duration` (an
+          // earlier fix, meant to keep a stale broadcast "at least
+          // seekable/audible up to its own end instead of silently dead
+          // air") lands currentTime EXACTLY on the media element's own
+          // "effective end" -- and calling .play() from there makes the
+          // browser itself seek back to the earliest position first, per
+          // the HTMLMediaElement play() algorithm ("if the current
+          // playback position is the same as the effective end of the
+          // media resource, seek to the earliest possible position").
+          // That's why a broadcast that had simply run past a short
+          // track's own length kept audibly restarting from the
+          // beginning on every late tune-in or Handler resume, instead
+          // of just staying silent as a finished, non-looping track
+          // should. Not invoking `then` (what actually calls .play()) is
+          // the fix -- still seeks to the end so the scrubber/duration
+          // reads correctly, just never plays from there.
+          elapsed = duration;
+          then = null;
+        }
+      }
       try { audioEl.currentTime = elapsed; } catch (e) { /* not seekable yet */ }
       if (then) then();
     }

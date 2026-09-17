@@ -4766,3 +4766,59 @@ reliability` -- all 69 radio-area checks passing.
 
 `sw.js` `CACHE_NAME` bumped (`assets/table-radio.js` is
 `SHELL_FILES`-listed).
+
+---
+
+## A finished, non-looping track restarted itself from 0:00 on a late tune-in or a Handler Resume
+
+Live report, immediately after the gain-node fix above shipped: "if the
+song is over in a cell but i tap on resume play, the radio widget
+starts to play the song from the start only in the widget." Reproduced
+directly (not guessed) with a real, short (~2.9s) repo-bundled stinger
+file standing in for a track, pushed with a `started_at` a full minute
+in the past: a fresh tune-in to that broadcast started audibly playing
+from 0:00, confirmed via the real `<audio>` element's own `currentTime`
+climbing from 0 exactly in step with real elapsed wait time -- not
+parked silently at the end as a finished track should be.
+
+Root cause: `seekAudioToLive_()`'s own existing overrun clamp (added
+for an earlier, different bug -- see its own comment) sets `currentTime`
+to EXACTLY `audioEl.duration` when a broadcast has run longer than the
+track itself, then calls `.play()`. Landing exactly on the media
+element's own "effective end" and then calling `.play()` is specifically
+covered by the HTMLMediaElement spec: "if the current playback position
+is the same as the effective end of the media resource, then seek to
+the earliest possible position of the media resource" -- i.e. the
+browser itself restarts from 0 as part of `.play()`'s own algorithm,
+regardless of how `currentTime` got to the end. This fires on a plain
+late tune-in AND on a Handler Pause-then-Resume of an already-finished
+track (`sendTransportAction_()`'s resume math shifts `started_at`
+forward by only however long the pause itself lasted, nowhere near
+enough to stop the broadcast being "over" if it already was) -- exactly
+the reported sequence. `a-cell.html`'s own Now Playing preview
+(`applyPreviewState()`) has the identical clamp-then-play pattern and
+was fixed the same way, even though the live report didn't call it out
+there -- same root cause, same fix, before it gets reported separately.
+
+Fixed in both places: an overrun broadcast that isn't looping now seeks
+to the end WITHOUT ever calling `.play()` from there (a finished,
+non-looping track should just be silent, not replayed) -- silently
+skips invoking the callback that would have started playback. An
+overrun LOOPING broadcast now correctly lands on `elapsed % duration`
+(its actual position within the current loop) instead of being clamped
+to the very end and hitting this same restart-to-0 quirk every single
+lap.
+
+New regression test `test_table_radio_finished_track_does_not_restart_
+from_beginning` confirms, using a real audio file with a real finite
+duration (the other radio tests' fake empty-body mp3 responses never
+load real metadata, so this exact path was completely untested until
+now): a late tune-in to a finished broadcast doesn't play, a Handler
+Pause-then-Resume on one doesn't either, and a looped broadcast that's
+overrun a single play-through keeps playing rather than going silent.
+Full regression: the new test plus the full `test_acell_music`/
+`test_acell_soundboard` suites (45 checks, previewAudio's own identical
+fix) and all 69 pre-existing radio-area checks -- all passing.
+
+`sw.js` `CACHE_NAME` bumped (`assets/table-radio.js`/`a-cell.html` are
+both `SHELL_FILES`-listed).

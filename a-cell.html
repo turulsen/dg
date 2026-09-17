@@ -4529,15 +4529,38 @@
           // started_at) and hand the <audio> element a currentTime beyond
           // its own duration, which the browser silently clamps to the
           // very end -- so .play() below immediately hit 'ended' and
-          // visibly "did nothing" on Pause/Resume. Clamping to the real,
-          // known duration keeps the readout honest and actually seekable
-          // instead of parked past the finish line.
+          // visibly "did nothing" on Pause/Resume.
           var elapsed = liveElapsedSeconds_();
-          if (isFinite(previewAudio.duration) && elapsed > previewAudio.duration) elapsed = previewAudio.duration;
+          var duration = previewAudio.duration;
+          var overran = isFinite(duration) && duration > 0 && elapsed >= duration;
+          var playThisTime = !current.paused;
+          if (overran) {
+            if (current.loop) {
+              // Still legitimately on its Nth loop -- land on the actual
+              // position within the CURRENT loop, matching table-radio.js's
+              // own identical fix in seekAudioToLive_().
+              elapsed = elapsed % duration;
+            } else {
+              // Genuinely over, not looping. table-radio.js's own
+              // seekAudioToLive_() had this exact bug, confirmed by direct
+              // reproduction: setting currentTime to exactly `duration`
+              // then calling .play() lands on the media element's own
+              // "effective end", which makes .play() itself seek back to
+              // 0 before playing (per the HTMLMediaElement play()
+              // algorithm) -- so a Pause/Resume on a broadcast that had
+              // simply run past a short track's own length restarted it
+              // from the beginning instead of leaving it silent at the
+              // end, exactly like the player-facing widget did. Still
+              // seeks to the end so the scrubber/duration reads
+              // correctly, just never (re-)plays from there.
+              elapsed = duration;
+              playThisTime = false;
+            }
+          }
           try { previewAudio.currentTime = elapsed; } catch (e) { /* not seekable yet */ }
           previewSlider.value = elapsed;
           previewElapsedEl.textContent = formatSeekTime_(elapsed);
-          if (current.paused) {
+          if (!playThisTime) {
             previewAudio.pause();
           } else {
             var p = previewAudio.play();
