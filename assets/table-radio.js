@@ -84,6 +84,28 @@
   var MUTED_KEY = 'dg_radio_muted';
   var VOLUME_KEY = 'dg_radio_volume';
   var EXPANDED_KEY = 'dg_radio_expanded';
+  var DEBUG_KEY = 'dg_radio_debug';
+  // Live report: a Handler set the broadcast-wide Music mix to 0 and
+  // still heard the track at full volume. The write (confirmed directly
+  // in Firestore) and the mix math (confirmed by direct code execution)
+  // both checked out in isolation, but there was no way to see the
+  // REAL, live numbers on the actual device in question -- no Mac
+  // available for Web Inspector on iOS Safari, so browser devtools
+  // were never an option here. Rather than keep guessing from outside,
+  // this puts the actual live numbers directly on screen: visiting any
+  // page once with ?radiodebug=1 flips this on and remembers it (same
+  // one-time-flip-then-persist pattern DEBUG flags use elsewhere in
+  // this codebase), showing mix/local-volume/mute state and the real
+  // <audio> element's own .volume next to the status line -- a number
+  // to read off the phone directly, not a console command that needs
+  // one.
+  function isDebugOn_() {
+    try {
+      if (/[?&]radiodebug=1\b/.test(window.location.search)) localStorage.setItem(DEBUG_KEY, '1');
+      if (/[?&]radiodebug=0\b/.test(window.location.search)) localStorage.removeItem(DEBUG_KEY);
+      return localStorage.getItem(DEBUG_KEY) === '1';
+    } catch (e) { return false; }
+  }
   // Fixed numbered channels, picked by turning a dial rather than typing a
   // name -- five slots, no typos, no two players landing on "sam" vs "Sam".
   var CHANNELS = ['1', '2', '3', '4', '5'];
@@ -802,12 +824,14 @@
       '<div class="dgr-progress-label" id="dg-radio-progress-label"></div>' +
       '</div>' +
       '<div id="dg-radio-status">Waiting for the Handler…</div>' +
+      (isDebugOn_() ? '<div id="dg-radio-debug" style="font-size:9px;color:#5a6a48;margin-top:2px;"></div>' : '') +
       '<button type="button" id="dg-radio-resume">Tap to resume audio</button>' +
       '</div>' +
       '<div id="dg-radio-embed-wrap"></div>' +
       '</div>';
 
     applyExpandedClass();
+    refreshDebugLine_();
 
     document.getElementById('dg-radio-mute').addEventListener('click', function () {
       setMuted(!isMuted());
@@ -887,6 +911,24 @@
   // false when nothing live-controllable is active (generic iframe, or
   // nothing playing yet), so the caller can fall back to a full
   // renderEmbed() rebuild where that's the only option.
+  // Live report: a Handler set the Music mix to 0 and still heard the
+  // track at full volume; the Firestore write and the mix arithmetic
+  // both checked out fine in isolation, with no way to see the actual
+  // live numbers on the reporter's own device (no Mac for iOS Safari's
+  // Web Inspector). Puts the real, current numbers on screen instead --
+  // see isDebugOn_() above for how it's switched on.
+  function refreshDebugLine_() {
+    var el = document.getElementById('dg-radio-debug');
+    if (!el) return;
+    var audioEl = document.querySelector('#dg-radio-embed-wrap audio');
+    var parts = [
+      'mix track=' + mixTrackVolume + ' ambient=' + mixAmbientVolume,
+      'my vol=' + getVolume() + (isMuted() ? ' (MUTED)' : '')
+    ];
+    if (audioEl) parts.push('audio.volume=' + audioEl.volume.toFixed(2) + (audioEl.muted ? ' (el.muted)' : ''));
+    el.textContent = parts.join(' | ');
+  }
+
   function applyLiveMuteVolume() {
     var muted = isMuted();
     // Ambient loops and any looped stinger share this listener's own
@@ -906,16 +948,18 @@
     if (currentEmbedKind === 'yt' && ytPlayer && ytPlayerReady) {
       try {
         if (muted) { ytPlayer.mute(); } else { ytPlayer.unMute(); ytPlayer.setVolume(trackVol); }
+        refreshDebugLine_();
         return true;
-      } catch (e) { return false; }
+      } catch (e) { refreshDebugLine_(); return false; }
     }
     if (currentEmbedKind === 'sc' && scWidget) {
-      try { scWidget.setVolume(muted ? 0 : trackVol); return true; } catch (e) { return false; }
+      try { scWidget.setVolume(muted ? 0 : trackVol); refreshDebugLine_(); return true; } catch (e) { refreshDebugLine_(); return false; }
     }
     if (currentEmbedKind === 'audio') {
       var audioEl = document.getElementById('dg-radio-audio');
-      if (audioEl) { audioEl.muted = muted; audioEl.volume = trackVol / 100; return true; }
+      if (audioEl) { audioEl.muted = muted; audioEl.volume = trackVol / 100; refreshDebugLine_(); return true; }
     }
+    refreshDebugLine_();
     return false;
   }
 
@@ -1037,6 +1081,7 @@
       audioEl.muted = muted;
       audioEl.volume = mixedVolumePercent_('track') / 100;
       audioEl.loop = loop;
+      refreshDebugLine_();
       // A bad/unreachable src (e.g. a broken Drive hotlink) otherwise
       // fails completely silently -- no sound, no visible sign why.
       audioEl.addEventListener('error', function () {
@@ -1193,6 +1238,7 @@
     var mixChanged = newTrackVol !== mixTrackVolume || newAmbientVol !== mixAmbientVolume;
     mixTrackVolume = newTrackVol;
     mixAmbientVolume = newAmbientVol;
+    refreshDebugLine_();
     // Ambient loops/stingers are independent of the main track -- applied
     // unconditionally, before the no-track early return below, so a
     // Handler can layer ambience onto a silent channel.

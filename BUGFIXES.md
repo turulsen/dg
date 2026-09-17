@@ -4512,3 +4512,60 @@ backend_not_deployed`, `test_table_radio_widget`, `test_table_radio_
 pause_and_loop`, `test_table_radio_library_track_kind` -- all passing.
 
 `sw.js` `CACHE_NAME` bumped (`a-cell.html` is `SHELL_FILES`-listed).
+
+---
+
+## Live report: Music mix slider at 0, track still audible at full volume -- not yet confirmed as a code bug, so instrumented instead of "fixed"
+
+Live report: setting the broadcast-wide Music mix (`track_volume`) to 0
+still let a track play at full volume. Deliberately NOT logging this as
+a fixed bug, on the same "don't guess" standard as everything else in
+this file -- every mechanism actually checked out correct:
+
+- The write: read the live `radio/{channel}` Firestore doc directly
+  (Firebase Console equivalent, via the REST API) and confirmed
+  `track_volume: 0` genuinely landed -- the Handler's slider drag is
+  not silently failing to write.
+- The math: `mixedVolumePercent_()` (`assets/table-radio.js`) is
+  `getVolume() * (mix / 100)` -- executed directly against real code
+  with `mix: 0`, it always produces `0`, regardless of the listener's
+  own volume.
+- The exact reported scenario (Handler's own device, tuned in via the
+  hoisted widget on the same page as the Music tab, not a separate
+  preview) was reproduced directly: dragging the real Music mix slider
+  to 20 against a real widget instance correctly dropped a real
+  `<audio>` element's real `.volume` from 0.7 to 0.14 (0.7 x 0.20,
+  exact).
+
+None of that rules out a real bug specific to the reporter's own
+device/session -- it just means the failure, if real, is in a place
+this session's testing (sandboxed Firestore mocks, and a live-data
+check that can't run a real browser against it -- this sandbox's
+network policy blocks the Firebase SDK loader for a live page load,
+confirmed via the proxy's own status log, `www.gstatic.com` getting a
+policy-level 403) couldn't reach. No Mac was available either, so iOS
+Safari's Web Inspector wasn't an option to read the live numbers
+directly off the reporting device.
+
+Rather than keep proposing theories with no way to confirm or rule
+them out, added an on-screen diagnostic instead of another guess:
+`?radiodebug=1` (once; remembered via `localStorage`, same pattern as
+`EXPANDED_KEY`/`MUTED_KEY`) shows a live line under the widget's status
+text with the real current mix, the listener's own local volume/mute
+state, AND the actual `<audio>` element's real `.volume` -- refreshed
+on every mix change, mute toggle, volume drag, and Firestore snapshot.
+This turns "is the mix actually being applied on THIS device right
+now" from a question requiring devtools into something readable
+directly off the phone.
+
+New regression test `test_table_radio_mix_debug_readout` confirms the
+readout is off by default, turns on via the query param, persists
+across a reload with no query param needed again, and -- most
+importantly -- that its stated `audio.volume` figure matches the real
+element's real `.volume`, not just whatever the UI sliders claim. Full
+regression: `test_table_radio_mix_debug_readout`, `test_table_radio_
+audio_volume`, `test_table_radio_widget`, `test_table_radio_pause_
+and_loop` -- all passing.
+
+`sw.js` `CACHE_NAME` bumped (`assets/table-radio.js` is
+`SHELL_FILES`-listed).
