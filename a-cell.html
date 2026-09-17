@@ -5556,11 +5556,58 @@
         '<span class="rdo-track-title">' + escapeHtml(t.title || t.url) + '</span>' +
         '<label class="rdo-checkbox-row" style="flex:none;"><input type="checkbox" data-tracklib-loop="' + i + '"> Loop</label>' +
         '<span class="rpr-actions">' +
+        '<button type="button" class="rdo-btn rdo-btn-ghost rdo-btn-sm" data-tracklib-rename="' + i + '" title="Rename">Rename</button>' +
         '<button type="button" class="rdo-btn rdo-btn-ghost rdo-btn-sm" data-tracklib-play="' + i + '">Play</button>' +
         '<button type="button" class="rdo-btn rdo-btn-ghost rdo-btn-sm" data-tracklib-add="' + i + '">+ Queue</button>' +
         '<button type="button" class="rdo-btn rdo-btn-ghost rdo-btn-sm" data-tracklib-delete="' + i + '">Delete</button>' +
         '</span></div>';
     }).join('');
+    // A track's title was set once at upload time (or, for a Storage
+    // orphan recovered with no customMetadata.title -- see
+    // syncOrphanedStorageTracks_() above -- from its raw filename, e.g.
+    // "track_1787911311134_izx.mp3") with no way to ever change it. Live
+    // report: this was exactly how "Abyss" (an upload interrupted before
+    // its Firestore doc write, recovered by that same orphan-sync path)
+    // ended up permanently stuck under an unreadable generated name.
+    // window.prompt() would be the obvious one-liner here, but
+    // prompt()/confirm()/alert() are already known dead entirely in an
+    // installed (standalone) iOS PWA -- exactly how A-Cell is meant to
+    // run -- so this uses the same inline input + Save/Cancel pattern as
+    // Evidence's own Operation rename above, not a prompt.
+    Array.prototype.forEach.call(trackLibListEl.querySelectorAll('[data-tracklib-rename]'), function (btn) {
+      btn.addEventListener('click', function () {
+        var t = tracks[parseInt(btn.dataset.tracklibRename, 10)];
+        if (!t) return;
+        var row = btn.closest('.rdo-track-row');
+        row.innerHTML =
+          '<input type="text" class="rdo-input" id="tracklib-rename-input" style="flex:1;min-width:140px;" value="' + escapeHtml(t.title || '') + '">' +
+          '<span class="rpr-actions">' +
+          '<button type="button" class="rdo-btn rdo-btn-ghost rdo-btn-sm" id="tracklib-rename-save">Save</button>' +
+          '<button type="button" class="rdo-btn rdo-btn-ghost rdo-btn-sm" id="tracklib-rename-cancel">Cancel</button>' +
+          '</span>';
+        var input = row.querySelector('#tracklib-rename-input');
+        input.focus();
+        input.select();
+        row.querySelector('#tracklib-rename-cancel').addEventListener('click', renderTrackLibrary);
+        var save = function () {
+          var newTitle = input.value.trim();
+          if (!newTitle || newTitle === t.title) { renderTrackLibrary(); return; }
+          input.disabled = true;
+          row.querySelector('#tracklib-rename-save').disabled = true;
+          trackLibStatus.textContent = 'Renaming…';
+          ensureHandlerSignedIn().then(function () {
+            return window.firebase.firestore().collection('tracks').doc(t.track_id).update({ title: newTitle });
+          }).then(function () {
+            trackLibStatus.textContent = '';
+          }).catch(function (err) {
+            trackLibStatus.textContent = 'Could not rename — ' + ((err && err.message) || 'not signed in as Handler') + '.';
+            renderTrackLibrary();
+          });
+        };
+        row.querySelector('#tracklib-rename-save').addEventListener('click', save);
+        input.addEventListener('keydown', function (e) { if (e.key === 'Enter') save(); });
+      });
+    });
     Array.prototype.forEach.call(trackLibListEl.querySelectorAll('[data-tracklib-play]'), function (btn) {
       btn.addEventListener('click', function () {
         var t = tracks[parseInt(btn.dataset.tracklibPlay, 10)];
