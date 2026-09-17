@@ -4920,6 +4920,24 @@ def test_acell_music(p):
     record("acell", "checking a library track's own Loop box before Play writes loop: true",
            bool(looped_doc5), str(looped_doc5))
 
+    # Rename: live report -- "Abyss" (an upload interrupted before its
+    # Firestore doc write, recovered by syncOrphanedStorageTracks_()'s
+    # orphan-sync path with no way to know its real title) stayed stuck
+    # under an unreadable generated name (its raw Storage filename)
+    # indefinitely, because the Track Library had no rename control at
+    # all. Uses an inline input + Save, not window.prompt() (already
+    # known dead entirely in an installed standalone iOS PWA).
+    page.click('[data-tracklib-rename="0"]')
+    page.fill("#tracklib-rename-input", "Abyss")
+    page.click("#tracklib-rename-save")
+    renamed_doc = wait_for_condition(lambda: (get_firestore_doc(page, "tracks/" + track_id) or {})
+                                      if (get_firestore_doc(page, "tracks/" + track_id) or {}).get("title") == "Abyss" else None)
+    record("acell", "Rename writes the new title straight to tracks/{trackId}, no Apps Script POST",
+           bool(renamed_doc), str(renamed_doc))
+    push_firestore_snapshot(page, "tracks", [], [dict(get_firestore_doc(page, "tracks/" + track_id) or {}, id=track_id)])
+    record("acell", "the renamed title shows in the Track Library once the listener delivers it",
+           wait_for_condition(lambda: "Abyss" in page.inner_text("#tracklib-list") or None), page.inner_text("#tracklib-list"))
+
     # Delete: dismiss then accept.
     page.once("dialog", lambda d: d.dismiss())
     page.click('[data-tracklib-delete="0"]')

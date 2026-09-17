@@ -4478,3 +4478,37 @@ passing with it. Full regression: `test_acell_gate`, `test_acell_play`,
 `test_table_radio_library_track_kind` -- all passing, no regressions.
 
 `sw.js` `CACHE_NAME` bumped (`a-cell.html` is `SHELL_FILES`-listed).
+
+---
+
+## Track Library had no way to rename a track -- "Abyss" stuck under an unreadable generated name since the very first report of this session
+
+This closes the loop on the session's very first live report ("How can
+I rename Abyss?"), never actually addressed while other bugs took
+priority. Follow-up to the two entries just above: the track playing
+under the auto-generated title `track_1787911311134_izx.mp3` (confirmed
+live, via the tab's own now-playing audio indicator) IS Abyss --
+recovered by `syncOrphanedStorageTracks_()`'s orphan-sync path after an
+earlier interrupted upload left it with no Firestore doc and no
+recoverable title, so it fell back to its raw Storage filename. There
+was no way to fix that afterward: the Track Library had Play/+Queue/
+Delete per track, but nothing to rename one.
+
+Added a Rename button per row in `renderTrackLibrary()`, writing
+straight to `tracks/{trackId}`'s `title` field (`isHandler()`-gated in
+`firestore.rules`, matching Play/Delete's existing pattern -- no Apps
+Script involved). Uses an inline text input + Save/Cancel, the same
+pattern already used for Evidence's own Operation rename -- not
+`window.prompt()`, which is already known dead entirely in an installed
+standalone iOS PWA (see "PWA / Cloud Save / standalone iOS" above).
+
+New regression test extends `test_acell_music`'s existing Track Library
+coverage: renames the uploaded track to "Abyss", confirms the write
+lands on `tracks/{trackId}` with no Apps Script POST, and confirms the
+new title actually renders once the listener delivers it. Full
+regression: `test_acell_music` (41/41), `test_acell_music_broadcast_
+error_not_clobbered`, `test_acell_soundboard`, `test_acell_music_
+backend_not_deployed`, `test_table_radio_widget`, `test_table_radio_
+pause_and_loop`, `test_table_radio_library_track_kind` -- all passing.
+
+`sw.js` `CACHE_NAME` bumped (`a-cell.html` is `SHELL_FILES`-listed).
