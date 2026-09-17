@@ -1795,5 +1795,57 @@
     };
   }
 
-  window.dgNotesPanel = { init };
+  // Reads every Cell straight from Firestore, once -- for
+  // notes/index.html's own inline script to resolve which Cell an Agent
+  // belongs to (solo vs. shared routing), same fix as
+  // assets/dice-roller.js's resolveRollContext(): that lookup used to go
+  // through the legacy list_cells JSONP action, which only ever reads
+  // the Google Sheet. Live report (dice-roller.js's case): a Cell's
+  // Firestore doc can be correct while the Sheet is stale or missing for
+  // any number of reasons (a Cell created after Cells moved to write
+  // straight to Firestore has no Sheet row at all; an older Cell can
+  // simply drift out of sync) -- `isCellMember()` in firestore.rules
+  // checks Firestore, so that's the only copy worth trusting. `cells` is
+  // public-read (see that rule's own comment), so this needs no
+  // Handler/Agent session either, same as list_cells never did.
+  // Also resolves each Cell's member_names (agent_code -> display name),
+  // straight from Firestore's own `characters` collection -- the
+  // Sheet-backed list_cells JSONP action used to compute this
+  // server-side (buildCharNameMap_() in Code.gs) since the Sheet had no
+  // other source for it; the Firestore `cells` doc itself never stored
+  // names at all, only codes. Same name-resolution shape a-cell.html's
+  // own startCellsListener() already uses for its Play tab roster.
+  // Without this, memberLabel() below would silently fall back to
+  // showing raw Agent Codes instead of names in the Remarks
+  // thread/author badges -- not a crash, but a real, visible regression
+  // this fix would otherwise have introduced quietly.
+  function getAllCellsOnce() {
+    return new Promise((resolve, reject) => {
+      ensureFirebaseApi(() => {
+        const db = window.firebase.firestore();
+        Promise.all([db.collection('cells').get(), db.collection('characters').get()]).then(([cellsSnap, charsSnap]) => {
+          const nameByCode = {};
+          charsSnap.forEach(doc => {
+            let name = doc.id;
+            try {
+              const parsed = JSON.parse(doc.data().character_json || '{}');
+              if (parsed.bio && parsed.bio.name) name = parsed.bio.name;
+            } catch (e) { /* fall back to the Agent Code as the display name */ }
+            nameByCode[doc.id] = name;
+          });
+          const cells = [];
+          cellsSnap.forEach(doc => {
+            const d = doc.data();
+            const memberCodes = d.member_codes || [];
+            const memberNames = {};
+            memberCodes.forEach(code => { if (nameByCode[code]) memberNames[code] = nameByCode[code]; });
+            cells.push({ cell_id: doc.id, name: d.name || '', handler: d.handler || '', member_codes: memberCodes, channel: d.channel || '', member_names: memberNames });
+          });
+          resolve(cells);
+        }).catch(reject);
+      }, reject);
+    });
+  }
+
+  window.dgNotesPanel = { init, getAllCellsOnce };
 })();
