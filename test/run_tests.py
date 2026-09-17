@@ -9,7 +9,7 @@ Usage:
     python3 -m http.server 8949 &
     python3 test/run_tests.py
 """
-import json, os, sys
+import json, os, sys, time
 from playwright.sync_api import sync_playwright
 
 BASE = os.environ.get("DG_TEST_BASE", "http://127.0.0.1:8949")
@@ -5790,6 +5790,106 @@ def test_table_radio_gain_node_drives_real_volume(p):
     page.close()
     return errs
 
+def test_table_radio_finished_track_does_not_restart_from_beginning(p):
+    """Live report: "if the song is over in a cell but i tap on resume
+    play, the radio widget starts to play the song from the start only
+    in the widget." Direct reproduction confirmed the mechanism: a
+    broadcast that's simply run past its (short) track's own real
+    duration hits seekAudioToLive_()'s existing overrun clamp, which
+    sets currentTime to EXACTLY audioEl.duration -- landing precisely on
+    the media element's own "effective end". Calling .play() from there
+    makes the browser itself seek back to position 0 first, per the
+    HTMLMediaElement play() algorithm ("if the current playback position
+    is the same as the effective end of the media resource, seek to the
+    earliest possible position") -- so a late tune-in OR a Handler
+    Pause-then-Resume on a track that's already finished both restarted
+    it audibly from the beginning instead of leaving it silent, as a
+    finished non-looping track should be. Uses a real, short (~2.9s)
+    repo-bundled stinger file so a genuine finite .duration is available
+    to overrun against -- the other radio tests' fake empty-body mp3
+    responses never load real metadata, so this exact path was
+    completely untested until now."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+    install_radio_firestore_stub(page)
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
+    page.reload(wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+
+    now = int(time.time() * 1000)
+    # manic-laugh-01.mp3's real duration is ~2.93s -- started a full
+    # minute ago, so plainly, unambiguously over.
+    started_at = now - 60000
+    push_radio_now_playing(page, "1", {
+        "channel": "1", "track_url": "assets/stingers/manic-laugh-01.mp3",
+        "track_title": "Manic Laugh", "track_kind": "audio",
+        "started_at": started_at, "paused": False, "paused_at": "",
+        "track_volume": 100, "ambient_volume": 100,
+    })
+    page.wait_for_timeout(800)
+    state = page.evaluate("""() => {
+        var el = document.querySelector('#dg-radio-embed-wrap audio');
+        return el ? { paused: el.paused, duration: el.duration } : null;
+    }""")
+    record("radio", "a late tune-in to an already-finished, non-looping broadcast does not play at all",
+           state is not None and state["paused"] is True, state)
+
+    # The exact reported sequence: Handler pauses (started_at untouched),
+    # then resumes shortly after (started_at shifted forward by only the
+    # few seconds the pause lasted -- sendTransportAction_()'s real math
+    # in a-cell.html) -- still nowhere near catching up to the real
+    # overrun, so still genuinely over.
+    paused_at = now
+    push_radio_now_playing(page, "1", {
+        "channel": "1", "track_url": "assets/stingers/manic-laugh-01.mp3",
+        "track_title": "Manic Laugh", "track_kind": "audio",
+        "started_at": started_at, "paused": True, "paused_at": paused_at,
+        "track_volume": 100, "ambient_volume": 100,
+    })
+    page.wait_for_timeout(200)
+    resume_now = paused_at + 3000
+    shifted_started_at = started_at + (resume_now - paused_at)
+    push_radio_now_playing(page, "1", {
+        "channel": "1", "track_url": "assets/stingers/manic-laugh-01.mp3",
+        "track_title": "Manic Laugh", "track_kind": "audio",
+        "started_at": shifted_started_at, "paused": False, "paused_at": "",
+        "track_volume": 100, "ambient_volume": 100,
+    })
+    page.wait_for_timeout(800)
+    state = page.evaluate("""() => {
+        var el = document.querySelector('#dg-radio-embed-wrap audio');
+        return el ? { paused: el.paused } : null;
+    }""")
+    record("radio", "a Handler Pause-then-Resume on a track that finished long ago does not restart it either",
+           state is not None and state["paused"] is True, state)
+
+    # Loop is the one case that's SUPPOSED to keep playing past a single
+    # play-through -- confirms the fix didn't just make every overrun
+    # broadcast go silent regardless of loop.
+    push_radio_now_playing(page, "1", {
+        "channel": "1", "track_url": "assets/stingers/manic-laugh-01.mp3",
+        "track_title": "Manic Laugh", "track_kind": "audio", "loop": True,
+        "started_at": now - 7000, "paused": False, "paused_at": "",
+        "track_volume": 100, "ambient_volume": 100,
+    })
+    page.wait_for_timeout(500)
+    state = page.evaluate("""() => {
+        var el = document.querySelector('#dg-radio-embed-wrap audio');
+        return el ? { paused: el.paused, loop: el.loop } : null;
+    }""")
+    record("radio", "a looped track that's overrun a single play-through keeps playing, not silenced",
+           state is not None and state["paused"] is False and state["loop"] is True, state)
+
+    page.close()
+    return errs
+
 def test_table_radio_debug_readout_present_before_tuning_in(p):
     """A completely fresh device with no channel ever tuned in yet (e.g.
     right after clearing all site data) boots into renderCollapsed()'s
@@ -10431,6 +10531,8 @@ def main():
         safe(test_table_radio_debug_readout_shows_ambient_and_stinger_state, browser, area="radio")
 
         safe(test_table_radio_gain_node_drives_real_volume, browser, area="radio")
+
+        safe(test_table_radio_finished_track_does_not_restart_from_beginning, browser, area="radio")
 
         safe(test_table_radio_debug_readout_present_before_tuning_in, browser, area="radio")
 
