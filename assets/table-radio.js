@@ -114,6 +114,11 @@
   // drives whether a mute/volume change can be applied in place (cheap,
   // no reload) or needs a full renderEmbed() rebuild.
   var currentEmbedKind = null; // 'yt' | 'sc' | 'audio' | 'generic' | null
+  // The GainNode currently driving #dg-radio-audio's real output, when
+  // Web Audio routing is active for it -- see attachGain_() below for
+  // why this exists at all. Reset to null in destroyActivePlayers()
+  // alongside currentEmbedKind.
+  var trackGainNode = null;
   // True only while the CURRENT broadcast state is a real Handler-
   // paused one (applyLivePauseState(true)/renderEmbed() loading an
   // already-paused np) -- set alongside every intentional pause of
@@ -172,6 +177,75 @@
   function mixedVolumePercent_(bucket) {
     var mix = bucket === 'track' ? mixTrackVolume : mixAmbientVolume;
     return Math.round(getVolume() * (mix / 100));
+  }
+
+  // Live report, confirmed via the debug readout (see refreshDebugLine_'s
+  // own comment below): a Handler's Music mix at 0, this listener's own
+  // volume at 100, MUTED -- the readout correctly showed track.volume=
+  // 0.00 (el.muted), yet un-muting still played the track at full,
+  // uncontrolled volume. The property write was never the problem --
+  // iOS Safari has silently ignored HTMLMediaElement.volume for real
+  // playback output for as long as it's existed (only .muted is
+  // honored; actual output volume is tied to the hardware buttons).
+  // .volume still happily stores and reads back whatever's assigned --
+  // that's why the debug line could read exactly right while the actual
+  // sound coming out of the phone was completely uncontrolled by it.
+  // GainNode.gain, a real node in the Web Audio graph rather than a
+  // cosmetic media-element property, IS honored on iOS -- this is the
+  // standard, widely-used workaround. ensureAudioCtx_()/attachGain_()
+  // wire every <audio> element (main track, ambient loops, stingers)
+  // through one, with setAudioLevel_() falling back to the old .volume/
+  // .muted path if Web Audio itself isn't available at all.
+  var audioCtx = null;
+  function ensureAudioCtx_() {
+    try {
+      if (!audioCtx) {
+        var Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return null;
+        audioCtx = new Ctx();
+      }
+      // iOS suspends a freshly-created (or backgrounded-and-returned-to)
+      // context until a real user gesture resumes it -- the same class of
+      // restriction already handled for <audio>.play() elsewhere in this
+      // file. Every call site here (mute/volume slider input, the Resume
+      // tap, and each element's own creation, which only ever happens
+      // from a live snapshot after the widget's already been interacted
+      // with once) is a reasonable place to nudge it awake.
+      if (audioCtx.state === 'suspended') audioCtx.resume().catch(function () { /* best effort */ });
+    } catch (e) { return null; }
+    return audioCtx;
+  }
+  // Wires one <audio> element through a GainNode. Can only ever be
+  // called once per element (a second call on the same node throws) --
+  // safe here because every call site is right after that exact
+  // element is freshly created. Returns null (caller falls back to the
+  // old .volume/.muted path) if Web Audio isn't available at all, or if
+  // wiring it up throws for any other reason -- better a listener stuck
+  // with the old, known-limited-on-iOS behavior than no audio at all.
+  function attachGain_(el) {
+    var ctx = ensureAudioCtx_();
+    if (!ctx) return null;
+    try {
+      var source = ctx.createMediaElementSource(el);
+      var gain = ctx.createGain();
+      source.connect(gain);
+      gain.connect(ctx.destination);
+      return gain;
+    } catch (e) { return null; }
+  }
+  // Single place that actually applies a computed mute+volume level to
+  // one element. Always sets the native .muted/.volume too, even when a
+  // gainNode is also driving the real output -- harmless where Web Audio
+  // routing works (the graph is the one actually heard), and it's what
+  // keeps every existing readback/assertion of the native properties
+  // meaningful, plus gives the debug readout's two numbers (el.volume
+  // and gain) something to agree on unless a NEW bug ever splits them.
+  function setAudioLevel_(el, gainNode, mixedPercent, muted) {
+    el.muted = muted;
+    el.volume = mixedPercent / 100;
+    if (gainNode) {
+      gainNode.gain.value = muted ? 0 : (mixedPercent / 100);
+    }
   }
   // Which stinger fired_at values have already been played on THIS
   // client, so a fresh onSnapshot (page load, reconnect, channel
@@ -343,6 +417,7 @@
       } catch (e) { /* already gone */ }
     }
     currentEmbedKind = null;
+    trackGainNode = null;
   }
 
   // Same elapsed-time formula as liveElapsedSeconds_(np) above, just
@@ -397,11 +472,11 @@
       if (!entry) {
         var el = document.createElement('audio');
         el.src = 'assets/ambient/' + layer.id + '.mp3';
-        el.muted = isMuted();
-        el.volume = mixedVolumePercent_('ambient') / 100;
         el.style.display = 'none';
         document.body.appendChild(el);
-        entry = { el: el, key: '' };
+        var ambientGain = attachGain_(el);
+        setAudioLevel_(el, ambientGain, mixedVolumePercent_('ambient'), isMuted());
+        entry = { el: el, key: '', gain: ambientGain };
         ambientAudioEls[layer.id] = entry;
       }
       entry.el.loop = !!layer.loop;
@@ -468,15 +543,15 @@
       if (!entry) {
         var el = document.createElement('audio');
         el.src = 'assets/stingers/' + s.id + '.mp3';
-        el.muted = isMuted();
-        el.volume = mixedVolumePercent_('ambient') / 100;
         el.style.display = 'none';
         document.body.appendChild(el);
+        var stingerGain = attachGain_(el);
+        setAudioLevel_(el, stingerGain, mixedVolumePercent_('ambient'), isMuted());
         el.addEventListener('ended', function () {
           try { el.remove(); } catch (e) { /* already gone */ }
           delete stingerAudioEls[s.fired_at];
         });
-        entry = { el: el, key: '' };
+        entry = { el: el, key: '', gain: stingerGain };
         stingerAudioEls[s.fired_at] = entry;
       }
       entry.el.loop = !!s.loop;
@@ -922,7 +997,15 @@
       'mix track=' + mixTrackVolume + ' ambient=' + mixAmbientVolume,
       'my vol=' + getVolume() + (isMuted() ? ' (MUTED)' : '')
     ];
-    if (audioEl) parts.push('track.volume=' + audioEl.volume.toFixed(2) + (audioEl.muted ? ' (el.muted)' : ''));
+    if (audioEl) {
+      parts.push('track.volume=' + audioEl.volume.toFixed(2) + (audioEl.muted ? ' (el.muted)' : ''));
+      // The whole reason trackGainNode exists: on iOS, el.volume above can
+      // read back exactly right while doing NOTHING to real output --
+      // gain=X.XX is the number that actually governs what's audible when
+      // Web Audio routing is active, so a future live report can tell at a
+      // glance whether the two numbers ever disagree again.
+      if (trackGainNode) parts.push('gain=' + trackGainNode.gain.value.toFixed(2));
+    }
     // Real blind spot found from a live report of "no volume control is
     // working, on any channel": ambientAudioEls/stingerAudioEls live as
     // direct document.body children (see applyAmbientLayers_/
@@ -936,21 +1019,30 @@
     var ambientIds = Object.keys(ambientAudioEls);
     if (ambientIds.length) {
       parts.push('ambient x' + ambientIds.length + '=' + ambientIds.map(function (id) {
-        var e = ambientAudioEls[id].el;
-        return id + ':' + e.volume.toFixed(2) + (e.paused ? '(paused)' : '(playing)') + (e.muted ? '(muted)' : '');
+        var entry = ambientAudioEls[id];
+        var e = entry.el;
+        return id + ':' + e.volume.toFixed(2) + (entry.gain ? '/gain=' + entry.gain.gain.value.toFixed(2) : '') +
+          (e.paused ? '(paused)' : '(playing)') + (e.muted ? '(muted)' : '');
       }).join(','));
     }
     var stingerIds = Object.keys(stingerAudioEls);
     if (stingerIds.length) {
       parts.push('stinger x' + stingerIds.length + '=' + stingerIds.map(function (firedAt) {
-        var e = stingerAudioEls[firedAt].el;
-        return e.volume.toFixed(2) + (e.paused ? '(paused)' : '(playing)') + (e.muted ? '(muted)' : '');
+        var entry = stingerAudioEls[firedAt];
+        var e = entry.el;
+        return e.volume.toFixed(2) + (entry.gain ? '/gain=' + entry.gain.gain.value.toFixed(2) : '') +
+          (e.paused ? '(paused)' : '(playing)') + (e.muted ? '(muted)' : '');
       }).join(','));
     }
     el.textContent = parts.join(' | ');
   }
 
   function applyLiveMuteVolume() {
+    // Called directly from the mute button / volume slider's own click/
+    // input handlers -- a real user gesture, and exactly the moment a
+    // suspended AudioContext (backgrounded tab, etc.) needs re-waking so
+    // the gain nodes below actually take effect again.
+    ensureAudioCtx_();
     var muted = isMuted();
     // Ambient loops and any looped stinger share this listener's own
     // mute toggle with the main track, but scale against the Handler's
@@ -959,12 +1051,10 @@
     var ambientVol = mixedVolumePercent_('ambient');
     var trackVol = mixedVolumePercent_('track');
     Object.keys(ambientAudioEls).forEach(function (id) {
-      ambientAudioEls[id].el.muted = muted;
-      ambientAudioEls[id].el.volume = ambientVol / 100;
+      setAudioLevel_(ambientAudioEls[id].el, ambientAudioEls[id].gain, ambientVol, muted);
     });
     Object.keys(stingerAudioEls).forEach(function (firedAt) {
-      stingerAudioEls[firedAt].el.muted = muted;
-      stingerAudioEls[firedAt].el.volume = ambientVol / 100;
+      setAudioLevel_(stingerAudioEls[firedAt].el, stingerAudioEls[firedAt].gain, ambientVol, muted);
     });
     if (currentEmbedKind === 'yt' && ytPlayer && ytPlayerReady) {
       try {
@@ -978,7 +1068,7 @@
     }
     if (currentEmbedKind === 'audio') {
       var audioEl = document.getElementById('dg-radio-audio');
-      if (audioEl) { audioEl.muted = muted; audioEl.volume = trackVol / 100; refreshDebugLine_(); return true; }
+      if (audioEl) { setAudioLevel_(audioEl, trackGainNode, trackVol, muted); refreshDebugLine_(); return true; }
     }
     refreshDebugLine_();
     return false;
@@ -1099,8 +1189,8 @@
       if (volSlider) volSlider.style.display = '';
       wrap.innerHTML = '<audio id="dg-radio-audio" src="' + escapeHtml(np.track_url) + '"></audio>';
       var audioEl = document.getElementById('dg-radio-audio');
-      audioEl.muted = muted;
-      audioEl.volume = mixedVolumePercent_('track') / 100;
+      trackGainNode = attachGain_(audioEl);
+      setAudioLevel_(audioEl, trackGainNode, mixedVolumePercent_('track'), muted);
       audioEl.loop = loop;
       refreshDebugLine_();
       // A bad/unreachable src (e.g. a broken Drive hotlink) otherwise

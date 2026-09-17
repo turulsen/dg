@@ -5720,6 +5720,76 @@ def test_table_radio_debug_readout_shows_ambient_and_stinger_state(p):
     page.close()
     return errs
 
+def test_table_radio_gain_node_drives_real_volume(p):
+    """The actual root cause behind the "Handler set Music mix to 0,
+    still heard the track at full volume, un-Muting played it again"
+    live reports: iOS Safari silently ignores HTMLMediaElement.volume
+    for real audio output (only .muted is honored there -- output volume
+    is tied to the hardware buttons). el.volume happily stores and reads
+    back whatever's assigned, which is exactly why the debug readout
+    could show a correct track.volume=0.00 while the phone kept playing
+    at full blast -- the property write was never the bug, its total
+    lack of effect on iOS was. GainNode.gain, a real Web Audio DSP node,
+    IS honored there. table-radio.js now routes the main track and every
+    ambient/stinger <audio> element through one; this confirms the gain
+    values genuinely track the mix math (not just el.volume, which a
+    real iOS device can't be trusted to act on) through a mute/un-mute
+    cycle matching the exact live report."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+    install_radio_firestore_stub(page)
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    page.route("**/ambience.mp3", lambda r: r.fulfill(status=200, content_type="audio/mpeg", body=""))
+
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
+    page.reload(wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+
+    # Exact live-reported scenario: Handler's Music mix at 0, this
+    # listener's own volume left at the default 70, widget still MUTED
+    # (the default until the first Sound tap -- see isMuted()'s comment).
+    push_radio_now_playing(page, "1", {
+        "channel": "1", "track_url": "https://example.com/ambience.mp3",
+        "track_title": "The Void", "started_at": 1700000000000, "track_volume": 0, "ambient_volume": 100,
+    })
+    page.wait_for_timeout(400)
+    debug_text = page.inner_text("#dg-radio-debug")
+    record("radio", "a gain node is wired for the main track and starts silent while mix track=0",
+           "gain=0.00" in debug_text, debug_text)
+
+    # This is literally "press Sound": the exact click the live report
+    # said made the track "play again" despite the Handler's mix being 0.
+    # On a real iOS device the old el.volume-only path would have let it
+    # through at full, uncontrolled volume; the gain node must stay at
+    # 0 regardless, since it -- not el.volume -- is what's now actually
+    # wired to the speaker.
+    page.click("#dg-radio-mute")
+    page.wait_for_timeout(150)
+    debug_text = page.inner_text("#dg-radio-debug")
+    record("radio", "un-muting (pressing Sound) with mix track still 0 keeps the real gain at 0, not just el.volume",
+           "SOUND" == page.eval_on_selector("#dg-radio-mute", "el => el.textContent") and "gain=0.00" in debug_text,
+           debug_text)
+
+    # Now raise the Handler's mix -- the gain should track it exactly
+    # like el.volume always claimed to (my vol defaults to 70, so
+    # track_volume=50 mix -> round(70 * 0.5) = 35 -> gain 0.35).
+    push_radio_now_playing(page, "1", {
+        "channel": "1", "track_url": "https://example.com/ambience.mp3",
+        "track_title": "The Void", "started_at": 1700000000000, "track_volume": 50, "ambient_volume": 100,
+    })
+    page.wait_for_timeout(400)
+    debug_text = page.inner_text("#dg-radio-debug")
+    record("radio", "raising the Handler's mix moves the real gain, matching the mix math exactly",
+           "gain=0.35" in debug_text, debug_text)
+
+    page.close()
+    return errs
+
 def test_table_radio_debug_readout_present_before_tuning_in(p):
     """A completely fresh device with no channel ever tuned in yet (e.g.
     right after clearing all site data) boots into renderCollapsed()'s
@@ -10359,6 +10429,8 @@ def main():
         safe(test_table_radio_mix_debug_readout, browser, area="radio")
 
         safe(test_table_radio_debug_readout_shows_ambient_and_stinger_state, browser, area="radio")
+
+        safe(test_table_radio_gain_node_drives_real_volume, browser, area="radio")
 
         safe(test_table_radio_debug_readout_present_before_tuning_in, browser, area="radio")
 
