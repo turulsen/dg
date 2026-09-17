@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v93 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v94 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -421,6 +421,20 @@
 //   itself is unaffected: listCellNotes() (the identities/legacy poll)
 //   and migrateSoloNotesToCell_() (a Handler assigning a solo Agent to
 //   a real Cell) still read/write it normally.
+// + updateCellMembers() no longer silently no-ops for a Cell that has
+//   no matching Sheet row (v94): every Cell created via the Firestore-
+//   native createCellFirestore_() path (current default) has no Cells
+//   sheet row for this function's old Sheet-search-then-write logic to
+//   find, so adding/removing members on any such Cell returned
+//   {status:'NOT_FOUND'} and wrote nothing -- Firestore's member_codes
+//   (the field firestore.rules' isCellMember() actually checks) never
+//   updated, so a newly-added member kept hitting permission-denied on
+//   rolls/notes/evidence for that Cell until it was fixed by hand. Now
+//   falls back to a direct Firestore patch (firestoreDualPatch_) when
+//   no Sheet row exists, reading the previous member list first (new
+//   firestoreGetCellMemberCodes_() helper, a plain Firestore REST GET)
+//   so newly-added members still get their solo notes migrated in and
+//   Evidence visibility recomputed, same as the Sheet-backed path.
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
