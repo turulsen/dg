@@ -5612,6 +5612,66 @@ def test_table_radio_audio_volume(p):
     page.close()
     return errs
 
+def test_table_radio_mix_debug_readout(p):
+    """Live report: a Handler set the broadcast-wide Music mix to 0 and
+    still heard the track at full volume. The Firestore write and the
+    mix arithmetic both checked out fine in isolation, but there was no
+    way to see the real, live numbers on the reporter's own device (no
+    Mac available for iOS Safari's Web Inspector). ?radiodebug=1 (once,
+    then remembered via localStorage same as EXPANDED_KEY/MUTED_KEY)
+    puts the actual live mix/volume numbers directly on screen instead
+    of requiring devtools -- this confirms the readout itself is
+    accurate and reflects the real <audio> element's real .volume, not
+    just what the UI sliders claim."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+    install_radio_firestore_stub(page)
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    page.route("**/ambience.mp3", lambda r: r.fulfill(status=200, content_type="audio/mpeg", body=""))
+
+    record("radio", "the debug readout is off by default (no query param, no prior opt-in)",
+           (lambda: (page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000),
+                     page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')"),
+                     page.reload(wait_until="domcontentloaded", timeout=15000),
+                     page.wait_for_timeout(300))
+            and page.query_selector("#dg-radio-debug") is None)(), "")
+
+    page.goto(f"{BASE}/agent-hub.html?radiodebug=1", wait_until="domcontentloaded", timeout=15000)
+    page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
+    page.reload(wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    record("radio", "?radiodebug=1 turns the readout on",
+           page.query_selector("#dg-radio-debug") is not None, "")
+
+    push_radio_now_playing(page, "1", {
+        "channel": "1", "track_url": "https://example.com/ambience.mp3",
+        "track_title": "The Void", "started_at": 1700000000000, "track_volume": 0, "ambient_volume": 100,
+    })
+    page.wait_for_timeout(400)
+    debug_text = page.inner_text("#dg-radio-debug")
+    real_volume = page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.volume")
+    record("radio", "the readout's stated mix matches the doc that was actually pushed",
+           "mix track=0 ambient=100" in debug_text, debug_text)
+    record("radio", "the readout's audio.volume figure matches the real <audio> element's real .volume",
+           real_volume == 0 and "audio.volume=0.00" in debug_text, debug_text + " / real=" + str(real_volume))
+
+    page.click("#dg-radio-mute")
+    page.wait_for_timeout(150)
+    record("radio", "the readout updates live when Mute is toggled, without needing a fresh snapshot",
+           "(el.muted)" not in page.inner_text("#dg-radio-debug"), page.inner_text("#dg-radio-debug"))
+
+    page.reload(wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(300)
+    record("radio", "the opt-in persists across a reload with no query param needed a second time",
+           page.query_selector("#dg-radio-debug") is not None, "")
+
+    page.close()
+    return errs
+
 def test_table_radio_pause_and_loop(p):
     """Table Radio: the Handler can Pause/Resume a broadcast in place
     (set_now_playing always restarts a track from 0:00, which isn't the
@@ -10217,6 +10277,8 @@ def main():
         safe(test_table_radio_widget, browser, area="radio")
 
         safe(test_table_radio_audio_volume, browser, area="radio")
+
+        safe(test_table_radio_mix_debug_readout, browser, area="radio")
 
         safe(test_table_radio_pause_and_loop, browser, area="radio")
 
