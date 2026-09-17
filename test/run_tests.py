@@ -4944,6 +4944,91 @@ def test_acell_music(p):
     page.close()
     return errs
 
+def test_acell_music_broadcast_error_not_clobbered(p):
+    """Live report: a legacy Google-Drive-hosted track (Combat/The
+    Conspiracy/The Schism/Phantom) had gone permanently unplayable --
+    confirmed directly against the real Firestore data and the actual
+    Drive API response ("API key expired. Please renew the API key.") --
+    yet the Handler's own Music tab showed a confident "Currently
+    broadcasting" with a live Pause icon and no error anywhere. The
+    preview <audio>'s own 'error' listener (added for an earlier,
+    similar-looking "frozen playback" bug -- see BUGFIXES.md) DOES fire
+    and DOES set #music-status to "Playback failed...". The bug was that
+    startNowPlayingListener_'s onSnapshot callback unconditionally
+    overwrote that same element with "Currently broadcasting..." on
+    EVERY write to the channel's radio/{ch} doc, including ones totally
+    unrelated to the track itself (an ambient layer toggle, a stinger, a
+    volume drag) -- and that doc gets touched constantly during real
+    play, so the real error was visible for at most a moment before
+    being silently re-hidden. previewAudioBroken is what fixes this."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    # Simulates the real failure mode confirmed live: a request for the
+    # track's own URL comes back as an error instead of audio bytes
+    # (there, an expired Drive API key's HTTP 400; here, a generic
+    # abort) -- either way the <audio> element's own 'error' event fires.
+    page.route("**/broken-track.mp3", lambda r: r.abort())
+    skip_acell_gate(page)
+
+    def fake_apps_script(route):
+        req = route.request
+        if req.method == "POST":
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        url = req.url
+        if "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            if "action=get_playlist" in url:
+                res = {"status": "OK", "playlist": []}
+            elif "action=list_cells" in url:
+                res = {"status": "OK", "cells": []}
+            else:
+                res = {"status": "OK"}
+            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.click('.tw[data-tab="music"]')
+    page.wait_for_timeout(150)
+    wait_for_condition(lambda: any(l["path"] == "tracks" for l in page.evaluate("() => window.__dgFirestoreListeners || []")), timeout_ms=8000)
+    push_firestore_snapshot(page, "tracks", [], [])
+
+    page.fill("#music-url-input", "https://example.com/broken-track.mp3")
+    page.fill("#music-title-input", "Old Broadcast")
+    page.click("#music-set-btn")
+    wait_for_condition(lambda: get_firestore_doc(page, "radio/1") or None)
+
+    def sync_radio():
+        doc = get_firestore_doc(page, "radio/1")
+        push_firestore_doc_snapshot(page, "radio/1", doc is not None, doc)
+
+    sync_radio()
+    record("acell", "an unreachable track's 'error' event surfaces a failure message",
+           wait_for_condition(lambda: "Playback failed" in page.inner_text("#music-status") or None, timeout_ms=6000) is not None,
+           page.inner_text("#music-status"))
+
+    # An UNRELATED write to the same doc -- an ambient layer toggle here,
+    # a stinger or a volume drag in production -- is exactly what
+    # startNowPlayingListener_'s onSnapshot fires on. Before the fix, this
+    # re-ran the unconditional "Currently broadcasting" line and silently
+    # erased the real error underneath it.
+    doc = get_firestore_doc(page, "radio/1")
+    doc["ambient_layers"] = [{"id": "amb1", "started_at": 111, "paused": False, "paused_at": 0, "loop": True}]
+    push_firestore_doc_snapshot(page, "radio/1", True, doc)
+    page.wait_for_timeout(200)
+    record("acell", "an unrelated write to the same doc does not clobber a real playback failure back to 'Currently broadcasting'",
+           "Playback failed" in page.inner_text("#music-status"), page.inner_text("#music-status"))
+
+    page.close()
+    return errs
+
 def test_acell_soundboard(p):
     """a-cell.html's Music tab Soundboard: ambient-loop toggle, one-shot
     stinger fire, and the Active Sounds panel's own per-instance
@@ -10104,6 +10189,8 @@ def main():
         safe(test_acell_sheet, browser, area="acell")
 
         safe(test_acell_music, browser, area="acell")
+
+        safe(test_acell_music_broadcast_error_not_clobbered, browser, area="acell")
 
         safe(test_acell_soundboard, browser, area="acell")
 
