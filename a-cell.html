@@ -4477,6 +4477,11 @@
   // an active drag, same reasoning as isSeekDragging for the fallback
   // slider below.
   var isPreviewSeekDragging = false;
+  // True once the preview <audio>'s own 'error' listener below has fired
+  // for the CURRENTLY loaded track_url -- see that listener's comment for
+  // why a broken src needs this tracked at all, rather than just setting
+  // statusEl.textContent directly and trusting it to stick.
+  var previewAudioBroken = false;
 
   function syncTransportUI_() {
     var hasTrack = !!current.track_url;
@@ -4506,6 +4511,7 @@
       if (urlChanged) {
         previewLoadedUrl = current.track_url;
         previewKey = '';
+        previewAudioBroken = false;
         previewAudio.src = current.track_url;
         previewAudio.load();
       }
@@ -4549,6 +4555,7 @@
     } else if (previewLoadedUrl) {
       previewLoadedUrl = '';
       previewKey = '';
+      previewAudioBroken = false;
       try { previewAudio.pause(); previewAudio.removeAttribute('src'); previewAudio.load(); } catch (e) { /* already gone */ }
     }
 
@@ -4578,7 +4585,24 @@
   // fix table-radio.js's own player-facing <audio> already had for the
   // same failure mode (see its 'error' listener) -- this Handler-side
   // preview element never had the equivalent.
+  //
+  // That fix was real but incomplete: this message got overwritten within
+  // moments of ever actually being seen. startNowPlayingListener_()'s own
+  // onSnapshot callback unconditionally sets statusEl back to "Currently
+  // broadcasting..."/"Paused..." on every single update to this channel's
+  // Firestore doc -- and that doc gets written by far more than just this
+  // track (any ambient layer toggle, any stinger fire, a volume slider
+  // drag all touch the same doc). Live report confirmed this exact shape:
+  // an expired Google Drive API key left several legacy tracks (Combat,
+  // The Conspiracy, The Schism, Phantom) permanently unplayable, yet the
+  // Handler's own Music tab showed a confident "Currently broadcasting"
+  // with a live Pause icon and no error in sight -- because whatever this
+  // listener DID manage to show got clobbered by the next unrelated write
+  // to the doc, often within seconds during real play. previewAudioBroken
+  // is checked by that listener now so a real failure for the CURRENTLY
+  // loaded track stays visible instead of being silently re-hidden.
   previewAudio.addEventListener('error', function () {
+    previewAudioBroken = true;
     statusEl.textContent = 'Playback failed -- this track isn\'t reachable right now.';
   });
   previewAudio.addEventListener('timeupdate', function () {
@@ -5032,8 +5056,18 @@
       nowPlayingUnsub_ = radioDocRef_(ch).onSnapshot(function (snap) {
         var data = snap.exists ? snap.data() : {};
         if (data.track_url) {
+          // See previewAudioBroken's own comment above: a still-broken
+          // CURRENT track must not have this "all clear" message written
+          // back over its real error on every unrelated write to this
+          // doc (an ambient toggle, a stinger, a volume drag). A genuinely
+          // NEW track_url gets the benefit of the doubt -- it hasn't
+          // failed yet -- and syncTransportUI_() below will reset the flag
+          // for it via the urlChanged branch regardless.
+          var sameBrokenTrack = previewAudioBroken && current.track_url === data.track_url;
           current = { track_url: data.track_url, track_title: data.track_title || '', track_kind: data.track_kind || '', loop: !!data.loop, paused: !!data.paused, started_at: data.started_at || 0, paused_at: data.paused_at || 0 };
-          statusEl.textContent = (current.paused ? 'Paused on CH ' : 'Currently broadcasting to CH ') + ch + ': ' + (current.track_title || current.track_url);
+          if (!sameBrokenTrack) {
+            statusEl.textContent = (current.paused ? 'Paused on CH ' : 'Currently broadcasting to CH ') + ch + ': ' + (current.track_title || current.track_url);
+          }
           setAirIndicator(!current.paused);
         } else {
           current = { track_url: '', track_title: '', track_kind: '', loop: false, paused: false, started_at: 0, paused_at: 0 };
