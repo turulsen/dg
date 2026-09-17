@@ -4858,3 +4858,60 @@ unlocking Web Audio on iOS, and free of downside either way.
 
 `sw.js` `CACHE_NAME` bumped (`assets/table-radio.js` is
 `SHELL_FILES`-listed).
+
+---
+
+## GainNode routing produced TOTAL SILENCE on the main track -- reverted for it specifically
+
+Follow-up to the `ctx=` instrumentation above, confirmed within minutes
+of it shipping: the reporter tuned in, and the debug readout read
+`ctx=running`, `gain=0.94` -- exactly matching the mix math -- with
+NO sound at all, on both Safari and Brave. Ruled out the AudioContext-
+suspended theory outright with hard evidence rather than continuing to
+guess at it.
+
+Pulled the real Firestore `radio/3` document directly to check what was
+actually playing: `track_url` is
+`https://firebasestorage.googleapis.com/...` -- a different origin than
+`turulsen.github.io`. A direct `curl` with an `Origin` header against
+that exact URL confirmed it: **no `Access-Control-Allow-Origin` header
+at all**. WebKit is documented to fully silence (not just restrict
+introspection on, the way Chrome does) audio routed through
+`createMediaElementSource` from a cross-origin resource without CORS;
+Brave's own anti-fingerprinting shields plausibly clamp Web Audio
+output for cross-origin media independently on top of that -- which is
+why both browsers went silent while this sandbox's own Chromium-based
+Playwright suite never could have caught it (Chromium just restricts
+introspection on tainted audio, it doesn't silence playback).
+
+The main track's URL is whatever a Handler pastes or uploads --
+Firebase Storage, Google Drive, YouTube-hosted files -- and is very
+often cross-origin. Ambient/stinger files are NOT: they're bundled in
+this repo's own `assets/ambient/`/`assets/stingers/`, always
+same-origin, genuinely safe. Reverted Web Audio routing for the main
+track specifically (`trackGainNode` stays `null` there always now) --
+`setAudioLevel_()` already falls back to the plain `.volume`/`.muted`
+path whenever no gain node is present, so this is exactly the pre-
+GainNode-fix behavior for the main track only: audible again
+(uncontrolled by the mix on iOS, the original reported bug) rather than
+silent outright. Ambient/stinger layers keep their own GainNode routing
+-- unaffected, still safe.
+
+Setting `.crossOrigin` on the element is NOT a safe alternative fix
+here -- since Firebase Storage's default download URLs send no CORS
+headers at all (confirmed directly above), requesting the resource in
+CORS mode would just make the browser refuse to load it entirely
+instead of merely losing volume control. The real fix -- configuring
+CORS on the Storage bucket itself (`gsutil cors set`, allowlisting this
+origin) -- is an infrastructure change outside this repo, not attempted
+here.
+
+Renamed/repurposed `test_table_radio_gain_node_drives_real_volume` to
+`test_table_radio_main_track_does_not_use_gain_node`, confirming the
+main track's element gets the plain `.volume` fallback (no `gain=` in
+its debug segment) while an active ambient layer on the SAME channel
+still gets a real gain node -- proving the revert is scoped correctly.
+Full local radio suite (72 checks) passing.
+
+`sw.js` `CACHE_NAME` bumped (`assets/table-radio.js` is
+`SHELL_FILES`-listed).
