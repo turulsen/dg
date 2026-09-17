@@ -147,13 +147,13 @@
 <script src="vendor/editorjs-marker.umd.js"></script>
 <script src="notes.js"></script>
 <script>
-  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
   // Same key agent-hub.html's own Cover Identity roster writes to --
   // reading it here means a player's Agent auto-loads in Notes exactly
   // like it does on their own hub tab, with no manual code entry.
   // Cells are never player-chosen (a Handler assigns Cell membership
   // in A-Cell, players never see the roster of Cells) -- the Cell is
-  // always resolved automatically from list_cells' member_codes, never
+  // always resolved automatically from each Cell's own member_codes
+  // (read from Firestore, see getAllCellsOnce() in notes.js), never
   // offered as a picker.
   const ROSTER_KEY = 'dg_agent_roster';
 
@@ -177,21 +177,6 @@
   // which Agent's sheet to open, replacing the old "Change Agent"
   // button that lived in the same spot.
   let currentAgentCode = '';
-
-  function jsonpGet(action, params, cb) {
-    const cbName = '_dgNotesIdx_' + action + '_' + Date.now();
-    const timer = setTimeout(() => { delete window[cbName]; cb(null); }, 7000);
-    window[cbName] = function (res) {
-      clearTimeout(timer);
-      delete window[cbName];
-      cb(res);
-    };
-    const s = document.createElement('script');
-    let qs = 'action=' + action + '&callback=' + cbName;
-    Object.keys(params || {}).forEach(k => { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
-    s.src = APPS_SCRIPT_URL + '?' + qs;
-    document.head.appendChild(s);
-  }
 
   function rosterAgentsSorted() {
     let roster;
@@ -231,8 +216,21 @@
 
   function init() {
     myAgents = rosterAgentsSorted();
-    jsonpGet('list_cells', {}, res => {
-      cellsList = (res && res.status === 'OK') ? (res.cells || []) : [];
+    // Was jsonpGet('list_cells', ...) -- the Sheet-backed copy of this
+    // same lookup, which firestore.rules' isCellMember() never actually
+    // checks (it reads cells/{cellId} in Firestore). Live report, same
+    // bug: an Agent whose Cell WAS correct in Firestore still hit
+    // permission-denied/wrong-Cell routing elsewhere because the reader
+    // was asking the wrong data source -- see assets/dice-roller.js's
+    // resolveRollContext() for the fuller writeup. window.dgNotesPanel
+    // (notes.js, loaded above) already has the Firebase API loader this
+    // needs; reusing it here rather than a fourth copy of the same
+    // Firebase-loading boilerplate this app already has three of.
+    window.dgNotesPanel.getAllCellsOnce().then(cells => {
+      cellsList = cells;
+      proceed();
+    }).catch(() => {
+      cellsList = [];
       proceed();
     });
   }

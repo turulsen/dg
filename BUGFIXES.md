@@ -4329,3 +4329,83 @@ lands under that Cell's real id, not the solo: fallback.
 
 `sw.js` `CACHE_NAME` bumped (`assets/dice-roller.js` is
 `SHELL_FILES`-listed).
+
+---
+
+## Follow-up: confirmed live, and the same stale-Sheet-lookup bug fixed in notes/index.html too
+
+Direct pushback, worth recording verbatim because it changed the
+diagnosis: "Daniela was in not a new cell. I didn't create any new
+cells since the migration. Are you sure this was the cause?" The
+"Firestore-native Cell has no Sheet row" mechanism in the entry above
+was real and independently verified, but it doesn't require a newly-
+created Cell to explain a stale Sheet read -- it only requires the
+Sheet and Firestore to have drifted apart for *any* reason, which can
+happen to an old Cell just as easily as a new one. Asked for the one
+piece of evidence that would settle it either way: Firebase Console →
+Firestore → `cells` → Daniela's Cell's own document → is she actually
+in `member_codes`? Confirmed yes. That's decisive: the WRITE side was
+never broken for her Cell -- `assets/dice-roller.js` was simply asking
+the wrong data source (the Sheet, via `list_cells`) instead of the one
+`firestore.rules` actually checks (Firestore itself). The fix already
+shipped for `dice-roller.js` is what was needed for her case, no
+Apps Script redeploy required for it specifically (that redeploy still
+matters for the *separate*, also-real write-side gap for brand-new
+Cells documented above).
+
+This reframes the real root cause one level up from the previous entry:
+it was never really about "Cell age." It's that this codebase has no
+single place that answers "which Cell is this Agent in" -- at least
+three independent copies of that lookup exist
+(`assets/dice-roller.js`, `notes/index.html`, `agent-hub.html`), and
+whichever ones still read the Sheet stay exposed to this same failure
+mode indefinitely, regardless of how many times any ONE of them gets
+patched. Given that, fixed `notes/index.html`'s copy too rather than
+leave a second live landmine now that the pattern is confirmed, not
+just suspected -- it drives the exact same solo-vs-shared Cell-routing
+decision Notes depends on, unreported but structurally identical.
+
+`notes/index.html`'s `init()` resolved `cellsList` via `jsonpGet('list_cells', ...)`;
+now calls a new `window.dgNotesPanel.getAllCellsOnce()` (`notes/notes.js`),
+which reads the `cells` collection straight from Firestore (public-read,
+no session needed, same as `list_cells` never required one). Removed
+the now-dead `jsonpGet()`/`APPS_SCRIPT_URL` this left with no remaining
+caller in `notes/index.html`.
+
+One real wrinkle surfaced by the regression suite, not by inspection:
+`member_names` (the display-name label the Remarks thread/author badges
+use, e.g. "Priya Anand" instead of "PRIY-AN34") was never actually a
+field on the Firestore `cells/{cellId}` doc at all -- it was a
+label `listCells()` computed server-side from Character data purely for
+the Sheet-backed JSONP response, and this fix would have silently
+regressed every author name in Notes back to raw Agent Codes if shipped
+without noticing. `getAllCellsOnce()` now also reads `characters` and
+resolves each Cell's `member_names` the same way `a-cell.html`'s own
+`startCellsListener()` already does (parsing `character_json.bio.name`,
+falling back to the code itself), so the label keeps working with no
+visible change to the Notes UI.
+
+`agent-hub.html` has a third copy of `list_cells` too, but it's used
+there only to label a Cell's *name* on an Evidence Handout card --
+nothing gated on it, no write, no membership decision. Left alone:
+stale, it shows the wrong or missing label, a display bug, not a
+`permission-denied`/data-integrity one, and fixing something not
+actually confirmed broken risks exactly the kind of unrequested scope
+creep this investigation was explicitly trying to avoid.
+
+Not chased further right now, on the same reasoning: `firestore.rules`
+and Cloud Functions deploys are each independently manual too, and this
+file has a standing, never-conclusively-ruled-out entry ("Aside, in
+response to...") theorizing that an unrelated deploy from a stale
+checkout could silently revert a rules fix on the live project with
+nothing in git to show for it. If a `permission-denied` symptom shows
+up again after this and everything above checks out in Firestore, that
+theory -- not another code path -- is next.
+
+Full regression after both `dice-roller.js` and `notes/index.html`
+changes: 264/264 passing (`test_acell_*`, `test_table_radio_widget`,
+`test_agent_hub`, `test_dice_roller_firestore_native_cell`, every
+`test_notes_*`).
+
+`sw.js` `CACHE_NAME` bumped (`notes/index.html` and `notes/notes.js`
+are both `SHELL_FILES`-listed).

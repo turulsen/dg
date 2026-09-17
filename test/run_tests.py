@@ -446,6 +446,38 @@ NOTES_FIRESTORE_STUB = """
 def install_notes_firestore_stub(page):
     page.add_init_script(NOTES_FIRESTORE_STUB)
 
+def seed_cells_docs(page, cells_list):
+    """Seeds the `cells/{cellId}` doc store directly (window.__dgFirestoreDocs),
+    for notes/notes.js's getAllCellsOnce() -- a one-time .get() on the
+    `cells` collection, not an onSnapshot -- to see on page load. Must be
+    called before page.goto() (uses add_init_script); install_notes_firestore_stub()
+    must have already been called on this same page so __dgFirestoreDocs
+    exists for this to populate. cells_list is a list of dicts each
+    needing a 'cell_id' key plus whatever fields a real Cell doc has
+    (name/handler/member_codes/channel)."""
+    docs = {}
+    for c in cells_list:
+        data = dict(c)
+        cell_id = data.pop("cell_id")
+        docs["cells/" + cell_id] = data
+    page.add_init_script(
+        "window.__dgFirestoreDocs = Object.assign(window.__dgFirestoreDocs || {}, " + json.dumps(docs) + ");"
+    )
+
+def seed_characters_docs(page, characters_list):
+    """Seeds the `characters/{agentCode}` doc store directly, for
+    notes/notes.js's getAllCellsOnce() -- a one-time .get() on the
+    `characters` collection (used purely for Cell member_names/display-
+    name resolution), not an onSnapshot. Must be called after
+    install_notes_firestore_stub() on this page, before page.goto().
+    characters_list is a list of dicts with 'agent_code' and 'name'."""
+    docs = {}
+    for c in characters_list:
+        docs["characters/" + c["agent_code"]] = {"character_json": json.dumps({"bio": {"name": c["name"]}})}
+    page.add_init_script(
+        "window.__dgFirestoreDocs = Object.assign(window.__dgFirestoreDocs || {}, " + json.dumps(docs) + ");"
+    )
+
 def notes_firestore_listener_count(page):
     return page.evaluate("() => (window.__dgFirestoreListeners || []).length")
 
@@ -8577,6 +8609,11 @@ def test_notes_v2_editorjs(p):
 
     cell = {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam",
             "member_codes": ["OWEN-CS12", "PRIY-AN34"]}
+    # notes.js's getAllCellsOnce() reads this straight from Firestore
+    # now, not list_cells (see that function's own comment) -- the
+    # list_cells mock below is kept for other unrelated JSONP actions
+    # this page still uses, but Cell resolution itself needs this seed.
+    seed_cells_docs(page, [cell])
     # (block_id, owner, type, data, shared) -- `text` on the wire is a
     # JSON-stringified Editor.js block `data` object as of this v2 schema.
     blocks_state = [
@@ -8941,6 +8978,8 @@ def test_notes_evidence_integration(p):
 
     cell = {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12", "PRIY-AN34"],
             "member_names": {"OWEN-CS12": "Owen Castillo", "PRIY-AN34": "Priya Anand"}}
+    seed_cells_docs(page, [cell])
+    seed_characters_docs(page, [{"agent_code": "OWEN-CS12", "name": "Owen Castillo"}, {"agent_code": "PRIY-AN34", "name": "Priya Anand"}])
     notes_blocks = [
         {"block_id": "b1", "agent_code": "OWEN-CS12", "block_type": "header",
          "text": json.dumps({"text": "Meadowbrook", "level": 1}), "shared": False, "sort_order": 100, "created_at": 1, "updated_at": 1},
@@ -9132,6 +9171,7 @@ def test_notes_evidence_photo_loading_indicator(p):
 
     cell = {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"],
             "member_names": {"OWEN-CS12": "Owen Castillo"}}
+    seed_cells_docs(page, [cell])
     evidence_fixture = [
         {"evidence_id": "ev1", "title": "Coroner's Report", "body": "Cause of death listed as accidental.",
          "photo": "gdrive:fake123", "cell_id": "", "operation_id": "", "created_at": "2000"},
@@ -9235,6 +9275,7 @@ def test_notes_reload_shows_own_previous_blocks(p):
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
     cell = {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"]}
+    seed_cells_docs(page, [cell])
     blocks_state = [
         {"block_id": "b0", "agent_code": "OWEN-CS12", "block_type": "paragraph",
          "text": json.dumps({"text": "Notes from last session, saved before this page ever loaded"}),
