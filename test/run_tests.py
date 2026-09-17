@@ -5656,13 +5656,66 @@ def test_table_radio_mix_debug_readout(p):
     real_volume = page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.volume")
     record("radio", "the readout's stated mix matches the doc that was actually pushed",
            "mix track=0 ambient=100" in debug_text, debug_text)
-    record("radio", "the readout's audio.volume figure matches the real <audio> element's real .volume",
-           real_volume == 0 and "audio.volume=0.00" in debug_text, debug_text + " / real=" + str(real_volume))
+    record("radio", "the readout's track.volume figure matches the real <audio> element's real .volume",
+           real_volume == 0 and "track.volume=0.00" in debug_text, debug_text + " / real=" + str(real_volume))
 
     page.click("#dg-radio-mute")
     page.wait_for_timeout(150)
     record("radio", "the readout updates live when Mute is toggled, without needing a fresh snapshot",
            "(el.muted)" not in page.inner_text("#dg-radio-debug"), page.inner_text("#dg-radio-debug"))
+
+    page.close()
+    return errs
+
+def test_table_radio_debug_readout_shows_ambient_and_stinger_state(p):
+    """Real blind spot found from a live report of "no volume control is
+    working, on any channel": ambientAudioEls/stingerAudioEls are
+    appended straight to document.body (see applyAmbientLayers_/
+    applyStingers_), entirely outside #dg-radio-embed-wrap -- the debug
+    readout only ever reported the MAIN TRACK's own element, completely
+    blind to an ambient loop or stinger actually playing. Ambient's own
+    mix defaults to 100 (full, unreduced) unless a Handler explicitly
+    lowers it, so a live ambient loop left running on a channel would be
+    exactly as loud as "no volume control works" sounds like, regardless
+    of what the Music mix or main track's own volume says. Confirms the
+    readout now surfaces ambient layer state (id + real .volume) that it
+    previously omitted entirely."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+    install_radio_firestore_stub(page)
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.click("#dg-radio-pill")
+    page.wait_for_timeout(150)
+    page.click('.dgr-tick[data-ch="3"]')
+    page.wait_for_timeout(150)
+    page.click("#dg-radio-confirm-tune")
+    page.wait_for_timeout(300)
+
+    record("radio", "no ambient/stinger section shown when nothing is active",
+           "ambient x" not in page.inner_text("#dg-radio-debug") and "stinger x" not in page.inner_text("#dg-radio-debug"),
+           page.inner_text("#dg-radio-debug"))
+
+    # Music silenced, Ambient left at the default 100 (untouched), with a
+    # real ambient loop active -- the exact reported live scenario.
+    push_radio_now_playing(page, "3", {
+        "channel": "3", "track_url": "", "track_volume": 0, "ambient_volume": 100,
+        "ambient_layers": [{"id": "alien-lunch", "started_at": 1700000000000, "paused": False, "paused_at": 0, "loop": True}],
+    })
+    page.wait_for_timeout(500)
+    debug_text = page.inner_text("#dg-radio-debug")
+    real_ambient_volume = page.evaluate("() => { var els = document.body.querySelectorAll('audio'); for (var i = 0; i < els.length; i++) { if (els[i].src.indexOf('alien-lunch') !== -1) return els[i].volume; } return null; }")
+    record("radio", "the readout now surfaces the active ambient layer's id and its real .volume",
+           "ambient x1=alien-lunch:" in debug_text, debug_text)
+    record("radio", "the readout's stated ambient volume matches the actual <audio> element's real .volume",
+           real_ambient_volume is not None and abs(real_ambient_volume - 0.70) < 0.01
+           and ("alien-lunch:" + format(real_ambient_volume, ".2f")) in debug_text,
+           debug_text + " / real=" + str(real_ambient_volume))
 
     page.close()
     return errs
@@ -10304,6 +10357,8 @@ def main():
         safe(test_table_radio_audio_volume, browser, area="radio")
 
         safe(test_table_radio_mix_debug_readout, browser, area="radio")
+
+        safe(test_table_radio_debug_readout_shows_ambient_and_stinger_state, browser, area="radio")
 
         safe(test_table_radio_debug_readout_present_before_tuning_in, browser, area="radio")
 

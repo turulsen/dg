@@ -4646,3 +4646,53 @@ immediately once one is. Full regression: both updated/renamed tests,
 
 `sw.js` `CACHE_NAME` bumped (`assets/table-radio.js` is
 `SHELL_FILES`-listed).
+
+---
+
+## Found it: the debug readout itself was blind to ambient/stinger audio -- "no volume control is working, on any channel"
+
+Follow-up to the two entries above. Live report, stated plainly: close
+Safari and the sound stops, tune in and it plays, and no volume control
+-- not the Handler's mix, not the listener's own slider -- has any
+effect on any channel, in A-Cell or as a player. That's a real, sharp,
+correct observation, and it pointed straight at a real gap in the
+debug readout itself, not a phantom.
+
+`ambientAudioEls`/`stingerAudioEls` (`applyAmbientLayers_()`/
+`applyStingers_()`) are appended straight to `document.body`, entirely
+outside `#dg-radio-embed-wrap`. `refreshDebugLine_()` only ever
+queried `#dg-radio-embed-wrap audio` -- the MAIN TRACK's own element --
+so it was structurally blind to an ambient loop or stinger actually
+playing, no matter how much of the main track's own volume math got
+verified. Ambient's own mix (`ambient_volume`) defaults to 100 --
+full, unreduced -- unless a Handler explicitly lowers it, same as the
+live readout's own repeated `ambient=100` throughout this whole
+investigation. A leftover ambient loop from earlier testing, still
+active on a channel, would play at full, completely un-mixed volume
+regardless of anything done to the Music mix or the main track --
+exactly matching "no volume control works, on any channel."
+
+`refreshDebugLine_()` now also reports every active ambient layer and
+stinger by id with its own real `.volume`/paused/muted state, moved to
+run AFTER `applyAmbientLayers_()`/`applyStingers_()`/
+`applyLiveMuteVolume()` in `handleNowPlaying()` (not before, which
+would have shown stale state) so it reflects whatever those calls just
+created or tore down. Renamed the main track's own figure from
+`audio.volume` to `track.volume` for clarity now that ambient/stinger
+entries exist alongside it.
+
+New regression test `test_table_radio_debug_readout_shows_ambient_and_
+stinger_state` confirms the readout stays quiet when nothing ambient
+is active, then correctly surfaces an active ambient layer's id and
+matches its real `<audio>` element's real `.volume` once one is
+pushed. This is still instrumentation, not a confirmed fix for the
+live report -- the actual next step is reading this new readout on the
+reporter's own device while the unexplained sound is playing, to see
+directly whether an ambient layer (or stinger) is the real source.
+Full regression: the new test plus `test_table_radio_mix_debug_
+readout`, `test_table_radio_debug_readout_present_before_tuning_in`,
+`test_table_radio_audio_volume`, `test_table_radio_widget`,
+`test_table_radio_pause_and_loop` -- all passing.
+
+`sw.js` `CACHE_NAME` bumped (`assets/table-radio.js` is
+`SHELL_FILES`-listed).
