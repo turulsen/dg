@@ -2650,7 +2650,62 @@ function updateCellMembers(cellId, memberCodes) {
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
-  return ContentService.createTextOutput(JSON.stringify({ status: 'NOT_FOUND' })).setMimeType(ContentService.MimeType.JSON);
+  // No matching Sheet row -- this Cell was created straight in Firestore
+  // (a-cell.html's createCellFirestore_(), the Phase 2 Sheets-removal
+  // work) and never had one, so the loop above can never find it. The
+  // old behavior here was to return NOT_FOUND and write nothing at all,
+  // silently dropping every membership change for any such Cell on the
+  // floor -- this file's own "Issue #8 shipping plan, step 2" entry
+  // already root-caused and fixed this EXACT failure mode once for
+  // Sheet-sourced Cells ("Roll not saved: permission-denied" + empty
+  // roll history for an Agent who WAS actually in the Cell, because
+  // isCellMember() reads cells/{cellId}'s member_codes in Firestore, and
+  // nothing had ever written it there). It recurred here because this
+  // function's only write path required a Sheet row to already exist --
+  // a Firestore-native Cell has no such row, so it silently kept failing
+  // the same way as before that fix, just for a newer class of Cell.
+  // Firestore itself is this Cell's actual source of truth now (its
+  // name/handler/channel already live there, written at creation), so
+  // this only ever needs to patch member_codes, not the whole document.
+  const previousMembers = firestoreGetCellMemberCodes_(cellId);
+  firestoreDualPatch_('cells', cellId, { member_codes: newMembers });
+  CacheService.getScriptCache().remove('cells_member_map');
+  newMembers.forEach(function (code) {
+    if (previousMembers.indexOf(code) === -1) {
+      migrateSoloNotesToCell_(String(code).trim().toUpperCase(), cellId);
+    }
+  });
+  recomputeEvidenceVisibleToForCell_(cellId);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Reads a Cell's current member_codes straight from Firestore -- used by
+// updateCellMembers() above only for a Firestore-native Cell (no Sheet
+// row to read the "previous" list off instead), to compute the same
+// newly-assigned-vs-already-member diff every Sheet-backed Cell gets.
+// Empty array (not an error) on any failure -- worst case, an
+// already-a-member Agent's solo Notes get redundantly "migrated" again
+// (migrateSoloNotesToCell_ is itself safe to re-run), which is a far
+// smaller problem than never writing member_codes at all.
+function firestoreGetCellMemberCodes_(cellId) {
+  try {
+    const token = getFirestoreAccessToken_();
+    if (!token) return [];
+    const resp = UrlFetchApp.fetch(firestoreDocUrl_('cells', cellId), {
+      method: 'get',
+      headers: { Authorization: 'Bearer ' + token },
+      muteHttpExceptions: true
+    });
+    if (resp.getResponseCode() < 200 || resp.getResponseCode() >= 300) return [];
+    const doc = JSON.parse(resp.getContentText());
+    const values = doc.fields && doc.fields.member_codes && doc.fields.member_codes.arrayValue
+      && doc.fields.member_codes.arrayValue.values;
+    if (!values) return [];
+    return values.map(function (v) { return v.stringValue; }).filter(Boolean);
+  } catch (err) {
+    console.error('firestoreGetCellMemberCodes_ failed for ' + cellId + ': ' + err.message);
+    return [];
+  }
 }
 
 // ONE-SHOT REPAIR (safe to re-run; a no-op for cells already mirrored

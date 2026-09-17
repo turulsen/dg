@@ -248,6 +248,19 @@ NOTES_FIRESTORE_STUB = """
       where: function (field, op, value) { return makeQuery(path, wheres.concat([[field, op, value]])); },
       orderBy: function () { return makeQuery(path, wheres); },
       limit: function () { return makeQuery(path, wheres); },
+      // One-time read (assets/dice-roller.js's resolveRollContext() reads
+      // `cells` this way, not via onSnapshot) -- reads straight off the
+      // same in-memory doc store docRef.set()/runTransaction() already
+      // write to, so a test can seed a Cell via push_firestore_snapshot()
+      // OR via a plain docRef.set() and have .get() see either. Ignores
+      // `wheres` (no test needs a real filtered query yet).
+      get: function () {
+        var prefix = path + '/';
+        var docs = Object.keys(window.__dgFirestoreDocs || {})
+          .filter(function (p) { return p.indexOf(prefix) === 0 && p.slice(prefix.length).indexOf('/') === -1; })
+          .map(function (p) { return { id: p.slice(prefix.length), data: function () { return window.__dgFirestoreDocs[p]; } }; });
+        return Promise.resolve({ forEach: function (fn) { docs.forEach(fn); }, docs: docs, empty: docs.length === 0 });
+      },
       onSnapshot: function (success, error) {
         var entry = { path: path, wheres: wheres, success: success, error: error };
         window.__dgFirestoreListeners.push(entry);
@@ -279,8 +292,20 @@ NOTES_FIRESTORE_STUB = """
       window.__dgFirestoreDocs[docPath] = data;
     }
   }
+  var _dgAutoIdCounter = 0;
   function makeCollectionRef(path) {
     var q = makeQuery(path, []);
+    // Auto-ID create -- assets/dice-roller.js's recordRoll() is the only
+    // caller of this today (dice_rolls/{cellId}/rolls), a plain
+    // Firestore addDoc()-equivalent that mints its own id rather than
+    // the caller picking one via .doc(id).set(). Deterministic per-page
+    // counter is enough for a test to find what it wrote afterward.
+    q.add = function (data) {
+      var id = 'auto_' + (++_dgAutoIdCounter);
+      var docPath = path + '/' + id;
+      writeDoc('set', docPath, data);
+      return Promise.resolve({ id: id });
+    };
     q.doc = function (id) {
       var docPath = path + '/' + id;
       return {
@@ -9851,6 +9876,51 @@ def test_mobile_notes_fullscreen(p):
     page.close()
     return errs
 
+def test_dice_roller_firestore_native_cell(p):
+    """GitHub issue live report: "Roll not saved: permission-denied" for
+    an Agent actually in a real, current Cell. Root cause:
+    resolveRollContext() (assets/dice-roller.js) used to resolve "which
+    Cell is this Agent in" via the legacy list_cells JSONP action, which
+    only ever reads the Sheet -- but Cells now create/delete straight in
+    Firestore (a-cell.html's createCellFirestore_(), Phase 2 Sheets-
+    removal), so any Cell made since that migration has no Sheet row at
+    all and was invisible to that lookup, silently misfiling every roll
+    under a 'solo:<agentCode>' pseudo-cell instead of the Agent's real
+    one (or, for a stale Sheet-only cell_id with no matching Firestore
+    doc, throwing inside firestore.rules' isCellMember() and denying the
+    write outright). Fixed by reading the `cells` collection straight
+    from Firestore (already public-read) instead of the Sheet. This
+    covers the "real Cell, no Sheet row" case; solo-fallback behavior
+    itself is exercised implicitly by every other Dice Roller-touching
+    test that never seeds a `cells` doc at all."""
+    page = p.new_page()
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    page.add_init_script("try { localStorage.setItem('dg_stats_cloud_code', 'OWEN-CS12'); } catch (e) {}")
+    # Runs after install_notes_firestore_stub()'s own init script, so
+    # window.__dgFirestoreDocs already exists -- seeds a Cell with no
+    # Sheet counterpart at all, present before dgInitDiceRoller() ever
+    # calls resolveRollContext() on load.
+    page.add_init_script("""
+        window.__dgFirestoreDocs = window.__dgFirestoreDocs || {};
+        window.__dgFirestoreDocs['cells/cell_firestore_native_1'] = { member_codes: ['OWEN-CS12'], name: 'Cell Alpha' };
+    """)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+
+    page.evaluate("() => window.dgDice.roll(50, 'Accounting')")
+    wait_for_condition(lambda: len(page.evaluate("() => window.__dgFirestoreWrites || []")) > 0, timeout_ms=6000)
+    writes = page.evaluate("() => (window.__dgFirestoreWrites || []).map(w => w.path)")
+    record("dice-roller", "a roll from an Agent in a Firestore-native Cell (no Sheet row) saves under that Cell's real id",
+           any(w.startswith("dice_rolls/cell_firestore_native_1/rolls/") for w in writes), str(writes))
+    record("dice-roller", "the roll is NOT misfiled under the solo: pseudo-cell fallback",
+           not any("solo:" in w for w in writes), str(writes))
+    record("dice-roller", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
 
 def main():
     with sync_playwright() as p:
@@ -10107,6 +10177,8 @@ def main():
         safe(test_split_view_tablet_breakpoint, browser, area="stats")
 
         safe(test_mobile_notes_fullscreen, browser, area="stats")
+
+        safe(test_dice_roller_firestore_native_cell, browser, area="dice-roller")
 
         browser.close()
 

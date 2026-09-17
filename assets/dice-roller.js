@@ -212,7 +212,6 @@
        rolling or a result from showing, even if Firestore is fully
        unreachable. See this file's own header comment for the design.
        ════════════════════════════════════════════════════════════════ */
-    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
     const FIREBASE_SDK_VERSION = '12.18.0';
     const FIREBASE_CONFIG = {
         apiKey: 'AIzaSyBiFBvgmrjtacxXvh7FHa9a28BbwV0LnDQ',
@@ -309,23 +308,6 @@
         }
     }
 
-    /* ── list_cells JSONP, same helper shape notes/index.html already
-       uses for the same "which Cell is this Agent in" lookup. ── */
-    function jsonpGet(action, params, cb) {
-        const cbName = '_dgDiceJsonp_' + action + '_' + Date.now();
-        const timer = setTimeout(() => { delete window[cbName]; cb(null); }, 7000);
-        window[cbName] = function (res) {
-            clearTimeout(timer);
-            delete window[cbName];
-            cb(res);
-        };
-        const s = document.createElement('script');
-        let qs = 'action=' + action + '&callback=' + cbName;
-        Object.keys(params || {}).forEach(k => { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
-        s.src = APPS_SCRIPT_URL + '?' + qs;
-        document.head.appendChild(s);
-    }
-
     function isHandlerContext() {
         try { return !!sessionStorage.getItem(ACELL_SESSION_KEY); } catch (e) { return false; }
     }
@@ -376,9 +358,6 @@
     function soloCellId(agentCode) {
         return 'solo:' + agentCode;
     }
-    function findCellForAgent(cellsList, agentCode) {
-        return cellsList.find(c => (c.member_codes || []).indexOf(agentCode) !== -1) || null;
-    }
 
     // window.dgSaveLoad only exists on stats/index.html itself (the one
     // page that loads stats/save-load.js) -- on every other Hub page this
@@ -402,10 +381,25 @@
     }
 
     // Resolved once per page load and cached -- an Agent's Cell doesn't
-    // change mid-session, and re-fetching list_cells on every single
-    // roll would be wasteful. { mode: 'agent', agentCode, cellId } |
-    // { mode: 'handler' } | { mode: 'none' } (no Agent Code known yet
-    // on this device -- rolling still works, just isn't persisted).
+    // change mid-session, and re-querying on every single roll would be
+    // wasteful. { mode: 'agent', agentCode, cellId } | { mode: 'handler' }
+    // | { mode: 'none' } (no Agent Code known yet on this device --
+    // rolling still works, just isn't persisted).
+    //
+    // Used to resolve this via the legacy list_cells JSONP action (Sheet-
+    // backed) -- live report: "Roll not saved: permission-denied" for an
+    // Agent actually in a real, current Cell. Root cause: Cells now
+    // create/delete straight in Firestore (a-cell.html's
+    // createCellFirestore_(), Phase 2 Sheets-removal) with no Sheet row
+    // at all, so list_cells (which only ever reads the Sheet) can't see
+    // them -- findCellForAgent() came back null for any Cell made since
+    // that migration, and for an OLDER Sheet-only cell_id that no longer
+    // has a matching Firestore doc, isCellMember()'s own get() on that
+    // doc throws inside the security rule, which Firestore treats as a
+    // denied rule, not a fallthrough -- permission-denied, not just a
+    // wrong cellId. firestore.rules already makes `cells` public-read
+    // (see isCellMember()'s own comment there), so reading it directly
+    // needs no Handler/Agent session either, same as list_cells never did.
     let _rollContext = null;
     let _rollContextPromise = null;
     function resolveRollContext() {
@@ -422,16 +416,21 @@
                 resolve(_rollContext);
                 return;
             }
-            jsonpGet('list_cells', {}, res => {
-                const cellsList = (res && res.status === 'OK') ? (res.cells || []) : [];
-                const cell = findCellForAgent(cellsList, agentCode);
-                _rollContext = {
-                    mode: 'agent',
-                    agentCode: agentCode,
-                    cellId: cell ? cell.cell_id : soloCellId(agentCode),
-                };
+            const finish = cellId => {
+                _rollContext = { mode: 'agent', agentCode: agentCode, cellId: cellId || soloCellId(agentCode) };
                 resolve(_rollContext);
-            });
+            };
+            ensureFirebaseApi(() => {
+                window.firebase.firestore().collection('cells').get().then(snap => {
+                    let found = null;
+                    snap.forEach(doc => {
+                        if (found) return;
+                        const members = doc.data().member_codes || [];
+                        if (members.indexOf(agentCode) !== -1) found = doc.id;
+                    });
+                    finish(found);
+                }).catch(() => finish(null));
+            }, () => finish(null));
         });
         return _rollContextPromise;
     }

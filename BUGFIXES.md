@@ -4238,3 +4238,94 @@ timeout (ruling out "just needed more time" as ever having been the
 answer).
 
 `sw.js` `CACHE_NAME` bumped (`a-cell.html` is `SHELL_FILES`-listed).
+
+---
+
+## Dice rolls silently misfiled or denied for an Agent in a real, current Cell -- for the SAME reason this was already fixed once, recurring for a newer class of Cell
+
+Live report: "Stat x5 rolls don't work" plus "Roll not saved:
+permission-denied" plus roll history not showing when switching from
+A-Cell to Agent Hub. User confirmed the Cloud Functions claims fix
+(`ensurePersistedClaims_`) was already deployed, ruling out the obvious
+suspect from earlier today -- so this needed an actual root cause, not a
+repeat of that answer.
+
+This file already has an entry for the exact symptom ("Issue #8 shipping
+plan, step 2"): `firestore.rules`' `isCellMember(cellId)` checks
+membership by reading `cells/{cellId}`'s own `member_codes` field *in
+Firestore*, and at the time, `updateCellMembers()` (the only place Cell
+membership was ever set) had never once written that to Firestore, only
+to the Sheet -- fixed by dual-writing it there too, plus a one-shot
+backfill for every Cell that already existed.
+
+**It recurred anyway, for a Cell created after that fix**, because of
+something that changed later in the same migration: Create/Delete Cell
+moved to write straight to Firestore from `a-cell.html`
+(`createCellFirestore_()`/`deleteCellFirestore_()`, this session's own
+Phase 2 Sheets-removal work) with no Sheet row at all, while
+`update_cell_members` deliberately stayed Apps-Script-mediated (it still
+needs to carry forward solo Notes and recompute Evidence visibility --
+see the Cells tab's own header comment). `updateCellMembers()`'s only
+write path required first finding a matching row *in the Sheet* -- for a
+Cell that only ever existed in Firestore, that loop never matches, so it
+returned `NOT_FOUND` and wrote nothing at all, silently, the exact same
+failure this file already diagnosed once, just for a Cell the earlier
+fix's Sheet-row assumption didn't anticipate.
+
+Two separate, compounding gaps, both fixed:
+
+- **`backend/Code.gs`'s `updateCellMembers()`**: when no Sheet row
+  matches, it now patches `member_codes` straight into the Firestore
+  `cells/{cellId}` doc instead of returning `NOT_FOUND` and doing
+  nothing (`firestoreDualPatch_`, not a full-document write -- name/
+  handler/channel already live correctly in Firestore from creation and
+  don't need touching). Added `firestoreGetCellMemberCodes_()` to read
+  the *previous* member list straight from Firestore for this path (no
+  Sheet row to read it off instead), so the newly-assigned-vs-already-
+  member diff that drives `migrateSoloNotesToCell_()` still works the
+  same way it does for a Sheet-backed Cell.
+- **`assets/dice-roller.js`'s `resolveRollContext()`**: this (and, not
+  yet fixed, the identically-shaped lookup in `notes/index.html` and
+  `agent-hub.html`) resolved "which Cell is this Agent in" via the
+  legacy `list_cells` JSONP action -- which only ever reads the Sheet,
+  so it can't see a Firestore-native Cell either, same root cause as
+  above but on the READ side. For any Agent in such a Cell, this always
+  fell back to a `'solo:<agentCode>'` pseudo-cell id -- which explains
+  the *specific* failure mode: `isCellMember()` always allows a write to
+  one's own solo id, so this alone wouldn't produce permission-denied
+  (just a silently wrong cell, which would explain the missing history
+  on its own). The permission-denied specifically needs `list_cells` to
+  return a *stale but non-null* Sheet-only cell_id for this Agent -- a
+  `get()` on a Firestore doc that doesn't exist for that id throws
+  inside the security rule, which Firestore treats as a denied rule, not
+  a fallthrough to the OR branch. Either way, the fix is the same:
+  `resolveRollContext()` now reads the `cells` collection straight from
+  Firestore (already public-read, no session needed, same as
+  `list_cells` never required one) instead of the Sheet, so both a
+  Firestore-native Cell and a since-recreated Sheet-only cell_id resolve
+  correctly. Removed the now-dead `jsonpGet()`/`findCellForAgent()`/
+  `APPS_SCRIPT_URL` this left with no remaining caller.
+- **"Stat x5 rolls don't work"** was very likely this same bug wearing a
+  different face, not a separate defect: the roll itself still animates
+  and shows a result regardless (rolling is pure client-side dice math,
+  gated on nothing) -- what actually fails silently afterward is only
+  the *save*, which is what both other symptoms describe directly.
+
+**Needs a manual redeploy to the live Apps Script project** for the
+`updateCellMembers()` half (git push alone never updates it -- see this
+file's own repeated notes on that). The `dice-roller.js` half is a plain
+static-file change, live as soon as it's served and the service worker
+picks up the new `CACHE_NAME`.
+
+**Test infrastructure gap found alongside this**: nothing had ever
+exercised `recordRoll()`'s actual Firestore write before (`.get()` on a
+collection query and `.add()`'s auto-ID create were both entirely
+unmocked in the shared test stub) -- a click on any skill/stat value
+would have thrown under test the moment anyone tried. Added both to
+`NOTES_FIRESTORE_STUB` plus a new regression test
+(`test_dice_roller_firestore_native_cell`) covering the exact case this
+fixes: a roll from an Agent in a Cell that only exists in Firestore
+lands under that Cell's real id, not the solo: fallback.
+
+`sw.js` `CACHE_NAME` bumped (`assets/dice-roller.js` is
+`SHELL_FILES`-listed).
