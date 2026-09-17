@@ -1021,6 +1021,14 @@
       'mix track=' + mixTrackVolume + ' ambient=' + mixAmbientVolume,
       'my vol=' + getVolume() + (isMuted() ? ' (MUTED)' : '')
     ];
+    // A `gain=` that reads exactly right while real device output stays
+    // unaffected -- confirmed live -- points straight at the AudioContext
+    // itself never actually leaving iOS's 'suspended' state (it only
+    // unlocks from inside a genuine user gesture; the graph's own
+    // gain.value is a correct number the whole time regardless of
+    // whether the context is actually running). Surfacing it here is the
+    // same instrumentation-first move as gain= itself was for el.volume.
+    if (audioCtx) parts.push('ctx=' + audioCtx.state);
     if (audioEl) {
       parts.push('track.volume=' + audioEl.volume.toFixed(2) + (audioEl.muted ? ' (el.muted)' : ''));
       // The whole reason trackGainNode exists: on iOS, el.volume above can
@@ -1450,4 +1458,29 @@
   } else {
     renderCollapsed();
   }
+
+  // Live report, immediately after the GainNode fix above shipped: the
+  // debug readout showed a perfectly correct, mix-matching `gain=`
+  // value, yet the real device's audible volume never actually changed
+  // with it -- the exact same shape as the original el.volume bug this
+  // was meant to fix, just one level deeper. iOS only ever unlocks a
+  // Web Audio graph from a real, direct user gesture -- every place
+  // this file itself calls ensureAudioCtx_() (the mute button, the
+  // volume slider, each element's own creation) is already inside a
+  // real click/input handler, but the FIRST ever tap the widget sees
+  // could just as easily be somewhere else entirely on the page (the
+  // dice roller, a nav link, anything) before the widget's own controls
+  // are ever touched -- an AudioContext created earlier from a Firestore
+  // snapshot callback (never a user gesture) stays suspended until some
+  // real tap resumes it, and this file had no listener for a tap that
+  // wasn't on its own controls. One page-wide, fire-once-and-remove
+  // listener on the very first pointer/touch anywhere covers that gap
+  // without waiting on the widget's own buttons specifically.
+  function unlockAudioCtxOnce_() {
+    document.removeEventListener('pointerdown', unlockAudioCtxOnce_, true);
+    document.removeEventListener('touchend', unlockAudioCtxOnce_, true);
+    ensureAudioCtx_();
+  }
+  document.addEventListener('pointerdown', unlockAudioCtxOnce_, true);
+  document.addEventListener('touchend', unlockAudioCtxOnce_, true);
 })();

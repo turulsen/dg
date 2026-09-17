@@ -4822,3 +4822,39 @@ fix) and all 69 pre-existing radio-area checks -- all passing.
 
 `sw.js` `CACHE_NAME` bumped (`assets/table-radio.js`/`a-cell.html` are
 both `SHELL_FILES`-listed).
+
+---
+
+## Not confirmed yet: the GainNode fix's `gain=` reads correct but real device output still doesn't scale with it
+
+Live report, immediately after the GainNode fix above shipped: dragging
+the widget's own volume slider correctly moved `my vol=` in the debug
+readout, and `gain=` moved with it exactly matching the mix math (`mix
+track=91`, `my vol=30` -> `gain=0.27`) -- but the actual audible volume
+on the reporter's device didn't change at all. Same shape of bug as the
+original `el.volume` report, one level deeper: a number that's provably
+correct doing nothing to real output.
+
+Not root-caused yet -- no way to attach real devtools to the reporter's
+iOS Safari, same limitation noted throughout this whole investigation.
+The strongest working theory: an `AudioContext` only ever unlocks from
+inside a genuine, direct user gesture on iOS. Every call to
+`ensureAudioCtx_()` in this file already happens inside a real handler
+(the mute button, the volume slider, each element's own creation) --
+but the very FIRST `AudioContext` this widget ever creates can just as
+easily happen from a Firestore snapshot callback (tuning in already
+broadcasting, not a gesture at all) well before the reporter ever
+touches the widget's own controls, and nothing resumed it after that.
+
+Instrumented, not blindly "fixed", per this investigation's own
+established discipline: the debug readout now also prints `ctx=<state>`
+(`running`/`suspended`) whenever an `AudioContext` exists, so the next
+report can show directly whether this theory holds. Also hardened,
+regardless of whether it turns out to be the whole story: a page-wide,
+fire-once `pointerdown`/`touchend` listener now nudges
+`ensureAudioCtx_()` awake on the very first tap anywhere on the page,
+not just on the widget's own controls -- standard practice for
+unlocking Web Audio on iOS, and free of downside either way.
+
+`sw.js` `CACHE_NAME` bumped (`assets/table-radio.js` is
+`SHELL_FILES`-listed).
