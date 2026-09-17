@@ -5617,12 +5617,19 @@ def test_table_radio_mix_debug_readout(p):
     still heard the track at full volume. The Firestore write and the
     mix arithmetic both checked out fine in isolation, but there was no
     way to see the real, live numbers on the reporter's own device (no
-    Mac available for iOS Safari's Web Inspector). ?radiodebug=1 (once,
-    then remembered via localStorage same as EXPANDED_KEY/MUTED_KEY)
-    puts the actual live mix/volume numbers directly on screen instead
-    of requiring devtools -- this confirms the readout itself is
-    accurate and reflects the real <audio> element's real .volume, not
-    just what the UI sliders claim."""
+    Mac available for iOS Safari's Web Inspector). This readout puts the
+    actual live mix/volume numbers directly on screen instead of
+    requiring devtools -- confirms the readout is accurate and reflects
+    the real <audio> element's real .volume, not just what the UI
+    sliders claim.
+
+    Originally gated behind a ?radiodebug=1 URL flag, persisted via
+    localStorage -- but a live report of the flag still not taking
+    effect even after a full close-Safari-and-reopen cycle (ruling out
+    caching) meant the URL-param mechanism itself was an unverifiable
+    point of failure on the reporter's own device. Simplified to
+    always-on (see isDebugOn_()'s own comment) -- this test now just
+    confirms the readout is present unconditionally and stays accurate."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -5633,19 +5640,12 @@ def test_table_radio_mix_debug_readout(p):
     page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
     page.route("**/ambience.mp3", lambda r: r.fulfill(status=200, content_type="audio/mpeg", body=""))
 
-    record("radio", "the debug readout is off by default (no query param, no prior opt-in)",
+    record("radio", "the debug readout is present on a plain load, no query param or prior opt-in needed",
            (lambda: (page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000),
                      page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')"),
                      page.reload(wait_until="domcontentloaded", timeout=15000),
                      page.wait_for_timeout(300))
-            and page.query_selector("#dg-radio-debug") is None)(), "")
-
-    page.goto(f"{BASE}/agent-hub.html?radiodebug=1", wait_until="domcontentloaded", timeout=15000)
-    page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
-    page.reload(wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(300)
-    record("radio", "?radiodebug=1 turns the readout on",
-           page.query_selector("#dg-radio-debug") is not None, "")
+            and page.query_selector("#dg-radio-debug") is not None)(), "")
 
     push_radio_now_playing(page, "1", {
         "channel": "1", "track_url": "https://example.com/ambience.mp3",
@@ -5664,28 +5664,15 @@ def test_table_radio_mix_debug_readout(p):
     record("radio", "the readout updates live when Mute is toggled, without needing a fresh snapshot",
            "(el.muted)" not in page.inner_text("#dg-radio-debug"), page.inner_text("#dg-radio-debug"))
 
-    page.reload(wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(300)
-    record("radio", "the opt-in persists across a reload with no query param needed a second time",
-           page.query_selector("#dg-radio-debug") is not None, "")
-
     page.close()
     return errs
 
-def test_table_radio_debug_flag_survives_untuned_first_load(p):
-    """Real bug found from a live report, distinct from the coverage
-    above: isDebugOn_() (which reads ?radiodebug=1 off the URL and
-    persists it) was only ever called from inside renderTuned()'s own
-    template string. A completely fresh device with no channel ever
-    tuned in yet (e.g. right after clearing all site data, exactly what
-    the reporter did) boots into renderCollapsed()'s "Tune In" pill
-    instead -- so the flag was never read from the URL at all on that
-    first load. By the time a channel got picked (a separate click,
-    sometimes a separate later page load), ?radiodebug=1 was long gone
-    from the address bar, and reloading -- however many times -- could
-    never turn the readout on. Fixed by calling isDebugOn_() once,
-    unconditionally, at the very top of boot, before the tuned-vs-
-    collapsed branch."""
+def test_table_radio_debug_readout_present_before_tuning_in(p):
+    """A completely fresh device with no channel ever tuned in yet (e.g.
+    right after clearing all site data) boots into renderCollapsed()'s
+    "Tune In" pill, not renderTuned() -- the debug readout only exists
+    inside renderTuned()'s own template, so confirms it shows up as soon
+    as a channel is picked, on a device with no prior state at all."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -5694,25 +5681,17 @@ def test_table_radio_debug_flag_survives_untuned_first_load(p):
     page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
     install_radio_firestore_stub(page)
 
-    # No pre-set localStorage channel -- this is the "cleared all site
-    # data" starting point, deliberately.
-    page.goto(f"{BASE}/agent-hub.html?radiodebug=1", wait_until="domcontentloaded", timeout=15000)
+    # No pre-set localStorage channel -- a genuinely fresh device.
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
-    record("radio", "?radiodebug=1 is captured into localStorage even while the widget is still showing the collapsed Tune In pill",
-           page.evaluate("() => localStorage.getItem('dg_radio_debug')") == "1", "")
+    record("radio", "no debug element exists yet while still on the collapsed Tune In pill (nothing to show)",
+           page.query_selector("#dg-radio-debug") is None, "")
 
     page.click("#dg-radio-pill")
     page.wait_for_timeout(150)
     page.click("#dg-radio-confirm-tune")
     page.wait_for_timeout(300)
-    record("radio", "the debug readout appears once tuned in, same page load",
-           page.query_selector("#dg-radio-debug") is not None, "")
-
-    # The exact reported step: a LATER reload with the query param long
-    # gone from the address bar.
-    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(300)
-    record("radio", "the readout is still on after a later reload with no query param, opt-in already having been captured on first load",
+    record("radio", "the debug readout appears immediately once tuned in, no query param or prior state needed",
            page.query_selector("#dg-radio-debug") is not None, "")
 
     page.close()
@@ -10326,7 +10305,7 @@ def main():
 
         safe(test_table_radio_mix_debug_readout, browser, area="radio")
 
-        safe(test_table_radio_debug_flag_survives_untuned_first_load, browser, area="radio")
+        safe(test_table_radio_debug_readout_present_before_tuning_in, browser, area="radio")
 
         safe(test_table_radio_pause_and_loop, browser, area="radio")
 

@@ -4612,3 +4612,37 @@ passing.
 
 `sw.js` `CACHE_NAME` bumped (`assets/table-radio.js` is
 `SHELL_FILES`-listed).
+
+---
+
+## The mix/volume debug readout's ?radiodebug=1 flag still never turned on -- removed the flag entirely
+
+Follow-up to the entry just above. Live report: even a full close-
+Safari-and-reopen cycle (fully closing the tab, fully closing Safari
+itself, reopening fresh) never made the readout appear. That thoroughly
+rules out caching as the explanation a second time -- there is nothing
+left for a stale service worker or stale JS to survive across a
+complete app close-and-reopen.
+
+Rather than propose a third unverifiable theory about exactly how the
+query param was or wasn't reaching this specific device, removed the
+opt-in mechanism entirely. `isDebugOn_()` now always returns `true`;
+the readout shows unconditionally, no `?radiodebug=1`, no
+`localStorage` flag, nothing that depends on a URL surviving a
+navigation correctly. It's small (9px gray text) and this is a trusted-
+table home campaign, not a public deployment, so an always-visible
+technical readout costs nothing real.
+
+Updated `test_table_radio_mix_debug_readout` to drop its now-obsolete
+opt-in/persistence assertions (replaced with a single "present on a
+plain load" check) and replaced `test_table_radio_debug_flag_survives_
+untuned_first_load` (which specifically tested the query-param
+mechanism just removed) with `test_table_radio_debug_readout_present_
+before_tuning_in`, confirming the readout still correctly waits for a
+channel to be tuned before it has anything to show, then appears
+immediately once one is. Full regression: both updated/renamed tests,
+`test_table_radio_audio_volume`, `test_table_radio_widget`,
+`test_table_radio_pause_and_loop` -- all passing.
+
+`sw.js` `CACHE_NAME` bumped (`assets/table-radio.js` is
+`SHELL_FILES`-listed).

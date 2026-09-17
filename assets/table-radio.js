@@ -84,28 +84,25 @@
   var MUTED_KEY = 'dg_radio_muted';
   var VOLUME_KEY = 'dg_radio_volume';
   var EXPANDED_KEY = 'dg_radio_expanded';
-  var DEBUG_KEY = 'dg_radio_debug';
   // Live report: a Handler set the broadcast-wide Music mix to 0 and
   // still heard the track at full volume. The write (confirmed directly
   // in Firestore) and the mix math (confirmed by direct code execution)
   // both checked out in isolation, but there was no way to see the
   // REAL, live numbers on the actual device in question -- no Mac
-  // available for Web Inspector on iOS Safari, so browser devtools
-  // were never an option here. Rather than keep guessing from outside,
-  // this puts the actual live numbers directly on screen: visiting any
-  // page once with ?radiodebug=1 flips this on and remembers it (same
-  // one-time-flip-then-persist pattern DEBUG flags use elsewhere in
-  // this codebase), showing mix/local-volume/mute state and the real
-  // <audio> element's own .volume next to the status line -- a number
-  // to read off the phone directly, not a console command that needs
-  // one.
-  function isDebugOn_() {
-    try {
-      if (/[?&]radiodebug=1\b/.test(window.location.search)) localStorage.setItem(DEBUG_KEY, '1');
-      if (/[?&]radiodebug=0\b/.test(window.location.search)) localStorage.removeItem(DEBUG_KEY);
-      return localStorage.getItem(DEBUG_KEY) === '1';
-    } catch (e) { return false; }
-  }
+  // available for Web Inspector on iOS Safari, so browser devtools were
+  // never an option here. This puts the actual live numbers directly on
+  // screen: mix/local-volume/mute state and the real <audio> element's
+  // own .volume next to the status line, a number to read off the phone
+  // directly. Originally gated behind a ?radiodebug=1 URL flag (see
+  // BUGFIXES.md for two real bugs found in that gating mechanism
+  // itself), but a live report of the flag still not taking effect
+  // after a full close-Safari-and-reopen cycle -- ruling out caching --
+  // meant the URL-param approach itself was the remaining point of
+  // failure, unverifiable from outside the reporter's own device.
+  // Simplified to always-on: the line is small, unobtrusive, and this
+  // is a trusted-table home campaign, not a public deployment where a
+  // stray technical readout would be a real concern.
+  function isDebugOn_() { return true; }
   // Fixed numbered channels, picked by turning a dial rather than typing a
   // name -- five slots, no typos, no two players landing on "sam" vs "Sam".
   var CHANNELS = ['1', '2', '3', '4', '5'];
@@ -1304,19 +1301,6 @@
   function stopPolling() {
     if (radioUnsubscribe) { radioUnsubscribe(); radioUnsubscribe = null; }
   }
-
-  // Real bug found from a live report: isDebugOn_() (which both reads
-  // AND writes the ?radiodebug=1 flag) was only ever called from inside
-  // renderTuned()'s own template string -- so on a fresh/cleared device
-  // with no channel picked yet, the widget boots straight into
-  // renderCollapsed()'s "Tune In" pill instead, and the flag never got
-  // read from the URL at all. By the time a channel was picked (a
-  // separate click, sometimes a separate page load), ?radiodebug=1 was
-  // long gone from the address bar and the reporter's device could
-  // never turn the readout on no matter how many times they reloaded.
-  // Called here, unconditionally, on every load regardless of which
-  // state the widget boots into.
-  isDebugOn_();
 
   if (getChannel()) {
     renderTuned();
