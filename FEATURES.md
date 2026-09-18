@@ -718,11 +718,19 @@ full reasoning on the split (Issues = live status board, `BUGFIXES.md`
 = narrative archive of what shipped, this section = closed/decided
 matters worth a permanent note).
 
-As of this writing, two open tracked issues: #4 (Scream 03 stinger
-reported as "still visually active" ~15s after it finishes — extensively
-investigated, not yet reproduced), #5 (Handler-facing access control —
-shared A-Cell password, dossiers reachable by Agent Code, no per-player
-identity).
+As of this writing, five open tracked issues: #5 (Handler-facing access
+control — shared A-Cell password, dossiers reachable by Agent Code, no
+per-player identity), #8 (Agent Hub: long load screen then empty
+character sheet — a regression from four commits already reverted off
+`main`, root cause not yet confirmed), #9 (app feels laggy/unresponsive
+overall on phone, incl. a "backend is busy" error with only one real
+user online), #10 (Play → an existing Agent sometimes shows the
+Character Creation Wizard instead of the real sheet), #39 (Table
+Radio's main-track volume/mix control still doesn't work on iOS Safari
+and Brave — root-caused to a cross-origin Firebase Storage URL with no
+CORS headers silencing Web Audio output entirely on WebKit; needs a
+Storage bucket CORS config change, outside this repo, before the
+GainNode fix already built for it can be safely re-enabled).
 
 **Resolved, kept here as a permanent record (not re-opened as issues):**
 

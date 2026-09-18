@@ -13,9 +13,9 @@ or trying to roll anything back; it assumes you've already read
 Before any of this, the codebase already had two ad hoc counters:
 
 - `backend/Code.gs`'s own header comment (`// Google Apps Script backend
-  v89 — ...` as of this writing), bumped by convention whenever the
+  v94 — ...` as of this writing), bumped by convention whenever the
   backend changes in a way worth tracking.
-- `sw.js`'s `CACHE_NAME` (`dg-hub-shell-v121` as of this writing), bumped
+- `sw.js`'s `CACHE_NAME` (`dg-hub-shell-v149` as of this writing), bumped
   on every `SHELL_FILES`-listed change so returning visitors don't get
   stuck on stale JS.
 
@@ -59,14 +59,17 @@ anything for).
 reconstruction of the 260 commits before it — don't backfill v0.x tags
 onto old commits, it's not worth the archaeology and there's no
 consumer depending on that history being versioned. Latest tag as of
-this writing is **v1.2.1**, cut 2026-09-14 — the tagging discipline
-below (tag right after every push) has **not** actually been followed
-since: `main` is currently several commits and a full day ahead of it
-(the Live Rolls fix, the Track Library/Play-tab/Cells-tab Firestore
-migrations, the DEX Initiative Tracker, and the character-sheet Photo/
-Agent-File addition all shipped untagged). Treat "latest tag" as a
-lower bound on what's live, not an accurate picture of it, until a new
-tag catches this up.
+this writing is **v1.3.0**, cut 2026-09-18 — catching up everything
+that had shipped untagged since v1.2.1 (2026-09-14): the Live Rolls
+fix, the Track Library/Play-tab/Cells-tab Firestore migrations, the
+Phase 2 (Sheets removal) work on the Active Sounds panel/main-track
+transport/Player Notes/Cells tab, the DEX Initiative Tracker, the
+character-sheet Photo/Agent-File addition, and the Table Radio
+volume/mix investigation (a real iOS `HTMLMediaElement.volume` bug
+fixed via a Web Audio GainNode, then partially reverted for the main
+track after that fix caused total silence on cross-origin tracks — see
+`BUGFIXES.md` and Issue #39). As always, check `git tag --sort=-v:refname`
+for the actual latest before assuming this paragraph is current.
 
 ### When to cut a tag
 
