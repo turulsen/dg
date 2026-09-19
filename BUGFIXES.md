@@ -4915,3 +4915,78 @@ Full local radio suite (72 checks) passing.
 
 `sw.js` `CACHE_NAME` bumped (`assets/table-radio.js` is
 `SHELL_FILES`-listed).
+
+---
+
+## Handler session evicted every couple of minutes -- shared cross-tab Firebase Auth persistence
+
+Real live report, during actual play: Evidence started failing with
+"Missing or insufficient permissions", Cue For Cell failed the same
+way, and every Table Radio track refused to play with "this track
+isn't reachable right now" -- for tracks confirmed freshly uploaded,
+ruling out the already-known expired-Drive-link failure mode. All
+three symptoms traced to the same cause via a from-scratch Firestore
+write test targeting `cells/{cellId}` specifically (`allow write: if
+isHandler();`, no `resource.data` fallback to muddy the result) --
+that write also failed, ruling out a malformed Evidence document or a
+stale rules deploy, since neither of those could touch a genuinely
+unrelated collection. A full Handler logout + fresh password re-login
+fixed all three instantly, confirming the Handler's Firebase Auth
+session/claim itself had gone bad mid-session, not any one feature.
+
+The open question the user actually asked -- "is this optimal that
+every 2 minutes I need to shut down and open up?" -- pointed straight
+at the real root cause once framed that way: it's much too frequent to
+be the already-fixed hourly-token-refresh claims bug (see this file's
+own earlier entry on `ensurePersistedClaims_()`), and needed an
+explanation for why it happens on ANY tab activity elsewhere, not just
+elapsed time.
+
+Confirmed via `grep` across every page that calls
+`window.firebase.initializeApp(FIREBASE_CONFIG)`
+(`a-cell.html`, `agent-hub.html`, `dg-agent-portal.html`,
+`notes/notes.js`, `assets/dice-roller.js`): none of them ever call
+`setPersistence()`, so all five default to Firebase Auth's
+`browserLocalPersistence` -- IndexedDB-backed, and deliberately shared
+across every tab of the same origin. `turulsen.github.io` is one
+origin for all of them. The moment ANY tab signs in as a different
+Firebase Auth identity -- a player opening their character sheet or
+Notes as an Agent, in a completely different browser tab -- Firebase
+silently evicts whatever identity was previously signed in from that
+shared slot, in EVERY open tab of that origin at once, including the
+Handler's A-Cell tab, with no event any of this code was listening
+for. A live table with even one player opening their sheet or Notes
+mid-session is enough to knock the Handler's session out from under
+them with zero warning -- easily "every 2 minutes" at a real table.
+
+Fixed by calling
+`window.firebase.auth().setPersistence(window.firebase.auth.Auth.Persistence.SESSION)`
+once on every page, immediately after `firebase-auth-compat.js` loads
+and strictly before any sign-in call. `SESSION` persistence is
+backed by `sessionStorage` instead of IndexedDB, so it never leaves
+the one tab it was set in -- this actually matches what each of these
+pages already assumed for its OWN login state (A-Cell's own
+`dg_acell_pw`/`dg_acell_unlocked` flags were already `sessionStorage`-
+based; the Firebase Auth SDK underneath them was just never told to
+match). Every one of the five loaders has its own hand-rolled,
+differently-shaped nested-callback script loader, so this needed a
+separate, structure-specific edit per file rather than one shared fix
+-- confirmed each edit didn't change the loaders' async ordering by
+extracting every inline `<script>` block from each `.html` file (and
+running `node --check` directly on the two `.js` files) and checking
+for zero syntax errors, then running the full local Playwright suite.
+
+`notes/notes.js`'s `ensureAgentSignedIn()` already had a self-healing
+uid/claims re-check for exactly this class of eviction (see that
+function's own comment) -- a real, working mitigation, but one that
+only ever fires on the NEXT sign-in attempt after an eviction has
+already happened, not a fix for the eviction itself; a `Notes`
+`onSnapshot` listener already running when the eviction hit would
+still have dropped mid-stream. This fix stops the eviction from
+happening in the first place, on every page, rather than only
+recovering from it on the one page that happened to already guard for
+it.
+
+`sw.js` `CACHE_NAME` bumped (`a-cell.html`, `agent-hub.html`,
+`dg-agent-portal.html`, `assets/dice-roller.js`, and `notes/notes.js`
+are all `SHELL_FILES`-listed).

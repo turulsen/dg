@@ -1274,6 +1274,29 @@
       var isFirstInit = !window.firebase.apps.length;
       if (isFirstInit) window.firebase.initializeApp(FIREBASE_CONFIG);
       loadIfMissing(function () { return !!window.firebase.auth; }, base + 'firebase-auth-compat.js', function () {
+        // Real live report: Handler-gated reads/writes started failing
+        // with "Missing or insufficient permissions" mid-session, with no
+        // sign-out or token-expiry-length delay involved -- reproduced as
+        // often as every couple of minutes. Root cause: Firebase Auth's
+        // DEFAULT persistence (browserLocalPersistence) is deliberately
+        // shared across every open tab of this origin via IndexedDB, and
+        // every page here (a-cell.html, agent-hub.html, notes/notes.js,
+        // dice-roller.js, dg-agent-portal.html) signs into the SAME
+        // default Firebase app. The moment any OTHER tab of this app --
+        // an Agent's character sheet, Agent Hub, Notes -- signs in as
+        // that Agent, Firebase Auth silently evicts the Handler identity
+        // from that shared slot and replaces it with the Agent's, in
+        // EVERY tab including this one, with no event this file was
+        // listening for. SESSION persistence keeps each tab's sign-in
+        // local to that tab (backed by sessionStorage, matching this
+        // file's own dg_acell_pw/dg_acell_unlocked, which were already
+        // tab-scoped) so another tab signing in as an Agent can never
+        // clobber this one's Handler session again. Must be set before
+        // any sign-in call -- chained here, before the rest of the SDK
+        // even finishes loading, rather than fired-and-forgotten.
+        window.firebase.auth().setPersistence(window.firebase.auth.Auth.Persistence.SESSION).catch(function (err) {
+          console.error('a-cell: could not set SESSION auth persistence (falling back to default, cross-tab-shared behavior)', err);
+        }).then(function () {
         loadIfMissing(function () { return !!window.firebase.functions; }, base + 'firebase-functions-compat.js', function () {
           loadIfMissing(function () { return !!window.firebase.storage; }, base + 'firebase-storage-compat.js', function () {
             loadIfMissing(function () { return !!window.firebase.firestore; }, base + 'firebase-firestore-compat.js', function () {
@@ -1285,6 +1308,7 @@
               cbs.forEach(function (pair) { pair.ok(); });
             });
           });
+        });
         });
       });
     });

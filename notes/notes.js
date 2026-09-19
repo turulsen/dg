@@ -161,10 +161,28 @@
           window.firebase.firestore().settings({ experimentalAutoDetectLongPolling: true });
         }
         loadFirebaseScript_(base + 'firebase-auth-compat.js', () => {
-          loadFirebaseScript_(base + 'firebase-functions-compat.js', () => {
-            const cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-            cbs.forEach(pair => pair.ok());
-          }, fail);
+          // Real live report: Handler-gated reads/writes started failing
+          // with "Missing or insufficient permissions" mid-session, as
+          // often as every couple of minutes -- root cause: Firebase
+          // Auth's DEFAULT persistence (browserLocalPersistence) is
+          // shared across every open tab of this origin via IndexedDB,
+          // so any tab signing in as an Agent (this page) silently
+          // evicts a Handler session signed in from a-cell.html in
+          // another tab, and vice versa. SESSION persistence keeps each
+          // tab's sign-in local to that tab. Must be set before any
+          // sign-in call -- see a-cell.html's own copy of this comment
+          // for the full mechanism. The uid/claims re-check in
+          // ensureAgentSignedIn() above already self-heals from an
+          // eviction that already happened; this stops it from
+          // happening in the first place.
+          window.firebase.auth().setPersistence(window.firebase.auth.Auth.Persistence.SESSION).catch(err => {
+            console.error('notes: could not set SESSION auth persistence (falling back to default, cross-tab-shared behavior)', err);
+          }).then(() => {
+            loadFirebaseScript_(base + 'firebase-functions-compat.js', () => {
+              const cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
+              cbs.forEach(pair => pair.ok());
+            }, fail);
+          });
         }, fail);
       }, fail);
     }, fail);

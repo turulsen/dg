@@ -295,10 +295,26 @@
                 window.firebase.firestore().settings({ experimentalAutoDetectLongPolling: true });
             }
             loadScript(base + 'firebase-auth-compat.js', () => {
-                loadScript(base + 'firebase-functions-compat.js', () => {
-                    const cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-                    cbs.forEach(pair => pair.ok());
-                }, fail);
+                // Real live report: Handler-gated reads/writes started
+                // failing with "Missing or insufficient permissions"
+                // mid-session, as often as every couple of minutes --
+                // root cause: Firebase Auth's DEFAULT persistence
+                // (browserLocalPersistence) is shared across every open
+                // tab of this origin via IndexedDB, so any tab signing
+                // in as an Agent (this page) silently evicts a Handler
+                // session signed in from a-cell.html in another tab, and
+                // vice versa. SESSION persistence keeps each tab's
+                // sign-in local to that tab. Must be set before any
+                // sign-in call -- see a-cell.html's own copy of this
+                // comment for the full mechanism.
+                window.firebase.auth().setPersistence(window.firebase.auth.Auth.Persistence.SESSION).catch(err => {
+                    console.error('dice-roller: could not set SESSION auth persistence (falling back to default, cross-tab-shared behavior)', err);
+                }).then(() => {
+                    loadScript(base + 'firebase-functions-compat.js', () => {
+                        const cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
+                        cbs.forEach(pair => pair.ok());
+                    }, fail);
+                });
             }, fail);
         };
         if (needApp) {

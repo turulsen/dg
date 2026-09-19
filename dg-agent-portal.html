@@ -2871,11 +2871,25 @@ function ensureFirebaseApi(cb) {
   loadIfMissing(function () { return window.firebase && window.firebase.apps; }, base + 'firebase-app-compat.js', function () {
     if (!window.firebase.apps.length) window.firebase.initializeApp(FIREBASE_CONFIG);
     loadIfMissing(function () { return !!window.firebase.auth; }, base + 'firebase-auth-compat.js', function () {
+      // Real live report: Handler-gated reads/writes started failing
+      // with "Missing or insufficient permissions" mid-session, as
+      // often as every couple of minutes -- root cause: Firebase Auth's
+      // DEFAULT persistence (browserLocalPersistence) is shared across
+      // every open tab of this origin via IndexedDB, so any tab signing
+      // in as an Agent (this page) silently evicts a Handler session
+      // signed in from a-cell.html in another tab, and vice versa.
+      // SESSION persistence keeps each tab's sign-in local to that tab.
+      // Must be set before any sign-in call -- see a-cell.html's own
+      // copy of this comment for the full mechanism.
+      window.firebase.auth().setPersistence(window.firebase.auth.Auth.Persistence.SESSION).catch(function (err) {
+        console.error('dg-agent-portal: could not set SESSION auth persistence (falling back to default, cross-tab-shared behavior)', err);
+      }).then(function () {
       loadIfMissing(function () { return !!window.firebase.functions; }, base + 'firebase-functions-compat.js', function () {
         loadIfMissing(function () { return !!window.firebase.storage; }, base + 'firebase-storage-compat.js', function () {
           var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
           cbs.forEach(function (fn) { fn(); });
         });
+      });
       });
     });
   });
