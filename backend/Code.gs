@@ -3613,7 +3613,9 @@ function createOperation(data) {
   }
   const sheet = getOrCreateOperationsSheet();
   const operationId = 'operation_' + new Date().getTime() + '_' + Math.floor(Math.random() * 100000).toString(36);
-  sheet.appendRow([operationId, cellId, name, new Date().getTime()]);
+  const createdAt = new Date().getTime();
+  sheet.appendRow([operationId, cellId, name, createdAt]);
+  firestoreDualWrite_('operations', operationId, { operation_id: operationId, cell_id: cellId, name: name, created_at: createdAt });
   return ContentService.createTextOutput(JSON.stringify({ status: 'OK', operation_id: operationId })).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -3627,7 +3629,9 @@ function updateOperation(data) {
   const cols = headerMap_(values[0]);
   for (let i = 1; i < values.length; i++) {
     if (values[i][cols.operation_id] === data.operation_id) {
-      sheet.getRange(i + 1, cols.name + 1).setValue((data.name || '').trim());
+      const name = (data.name || '').trim();
+      sheet.getRange(i + 1, cols.name + 1).setValue(name);
+      firestoreDualPatch_('operations', data.operation_id, { name: name });
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }
@@ -3652,6 +3656,7 @@ function deleteOperation(operationId) {
   for (let i = data.length - 1; i >= 1; i--) {
     if (data[i][idCol] === operationId) {
       sheet.deleteRow(i + 1);
+      firestoreDualDelete_('operations', operationId);
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
   }

@@ -4990,3 +4990,48 @@ it.
 `sw.js` `CACHE_NAME` bumped (`a-cell.html`, `agent-hub.html`,
 `dg-agent-portal.html`, `assets/dice-roller.js`, and `notes/notes.js`
 are all `SHELL_FILES`-listed).
+
+---
+
+## Operations (Evidence folders) never dual-wrote to Firestore
+
+Found (not reported live) while investigating the Handler-session-
+eviction bug above: a direct Firestore REST query against the
+`operations` collection turned up only 2 stale documents, both dated
+2026-08-26 -- the one-time historical mirror migration, and nothing
+since. `createOperation()`/`updateOperation()`/`deleteOperation()` in
+`backend/Code.gs` only ever touched the `Operations` Sheet
+(`sheet.appendRow(...)`/`sheet.getRange(...).setValue(...)`/
+`sheet.deleteRow(...)`) with no `firestoreDualWrite_`/
+`firestoreDualPatch_`/`firestoreDualDelete_` call at all, unlike every
+other Sheet-backed entity this migration has touched (Characters,
+Evidence, Notes) -- an oversight from whenever Operations was first
+added, not a regression.
+
+Not the same bug as the eviction fix above and not a cause of any of
+the symptoms in that report (Evidence's own `visible_to` computation
+doesn't depend on `operation_id` at all -- confirmed by reading
+`evidenceVisibleTo_()` directly), but a real, separate gap: any
+Firestore-side reader of `operations` (a future direct-to-Firestore
+client, once Evidence Locker CRUD migrates off Sheets per the
+Phase 2 roadmap item) would see none of the Operations actually
+created, renamed, or deleted through the live app, only two years-old
+migration leftovers.
+
+Fixed by adding the same dual-write calls every other entity already
+has: `firestoreDualWrite_('operations', ...)` in `createOperation()`
+(full document, same shape `tools/firestore-mirror/mirror.js` already
+uses: `operation_id`, `cell_id`, `name`, `created_at`),
+`firestoreDualPatch_('operations', operationId, { name })` in
+`updateOperation()` (partial -- the Sheet-side code only ever updates
+the `name` column, so a full-document `firestoreDualWrite_` would
+have silently clobbered `cell_id`/`created_at` with `updateOperation`'s
+own request body, which never sends them), and
+`firestoreDualDelete_('operations', operationId)` in
+`deleteOperation()`. Verified with `node --check` against a copy of
+`Code.gs` saved as `.js` (Apps Script files can't be checked directly
+by that extension).
+
+As with every other `backend/Code.gs` change, this needs a manual
+paste-and-redeploy into the Apps Script editor -- pushing to GitHub
+alone does not update the live backend.
