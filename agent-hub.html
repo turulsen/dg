@@ -1223,10 +1223,31 @@
           window.firebase.firestore().settings({ experimentalAutoDetectLongPolling: true });
         }
         loadFirebaseScriptTag(base + 'firebase-auth-compat.js', () => {
-          loadFirebaseScriptTag(base + 'firebase-functions-compat.js', () => {
-            const cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
-            cbs.forEach(pair => pair.ok());
-          }, fail);
+          // Real live report: Handler-gated reads/writes started failing
+          // with "Missing or insufficient permissions" mid-session, as
+          // often as every couple of minutes -- root cause: Firebase
+          // Auth's DEFAULT persistence (browserLocalPersistence) is
+          // shared across every open tab of this origin via IndexedDB,
+          // so any tab signing in as an Agent (this page) silently
+          // evicts a Handler session signed in from a-cell.html in
+          // another tab, and vice versa. SESSION persistence keeps each
+          // tab's sign-in local to that tab. Must be set before any
+          // sign-in call -- see a-cell.html's own copy of this comment
+          // for the full mechanism. This page holds several Agents'
+          // sign-ins at once (see ensureAgentSignedInAs below); SESSION
+          // persistence still lets them coexist within this one tab,
+          // since Firebase Auth only ever holds one active user, and
+          // each of this page's own signInWithCustomToken() calls
+          // updates that shared slot the same way switching Agents
+          // already relied on it doing before this change.
+          window.firebase.auth().setPersistence(window.firebase.auth.Auth.Persistence.SESSION).catch(err => {
+            console.error('agent-hub: could not set SESSION auth persistence (falling back to default, cross-tab-shared behavior)', err);
+          }).then(() => {
+            loadFirebaseScriptTag(base + 'firebase-functions-compat.js', () => {
+              const cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
+              cbs.forEach(pair => pair.ok());
+            }, fail);
+          });
         }, fail);
       }, fail);
     }, fail);
