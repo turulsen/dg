@@ -323,7 +323,27 @@
           var val = input.value.trim();
           input.disabled = true;
           inputLine.style.display = 'none';
-          if (val) { addLine(val); runCiPreload(val); } else { addLine('(skipped)'); }
+          if (val) {
+            addLine(val);
+            // Real live report: on a brand-new device, typing a Cover
+            // Identity here didn't stick -- going back into Agent Hub
+            // asked again. Root cause: this was only ever persisted
+            // inside runCiPreload()'s OWN success callback below, so a
+            // slow/cold-started/failed first request (exactly the kind
+            // of backend hiccup a brand-new device's very first hit is
+            // most likely to trigger) silently dropped the identity the
+            // user actually typed, even though they'd already moved on.
+            // It also broke this comment's own "fallback" claim just
+            // above (agent-hub.html's lookupCoverIdentity() retries hard
+            // on load, but only ever runs at all if dg_cover_identity
+            // was already saved to read back) -- with nothing saved yet,
+            // that fallback never got a chance to fire either. Saving it
+            // here, the instant it's typed, makes "remember what the
+            // user entered" independent of whether the preload lookup
+            // that follows happens to succeed.
+            try { localStorage.setItem('dg_cover_identity', val); } catch (e) { /* best effort */ }
+            runCiPreload(val);
+          } else { addLine('(skipped)'); }
           bootIframe();
         });
       }
