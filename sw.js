@@ -31,7 +31,7 @@
    through this whole migration -- not random flakiness, one bad path
    silently breaking the update mechanism itself.
    ══════════════════════════════════════════════ */
-const CACHE_NAME = 'dg-hub-shell-v153';
+const CACHE_NAME = 'dg-hub-shell-v154';
 
 const SHELL_FILES = [
   './',
@@ -75,6 +75,7 @@ const SHELL_FILES = [
   'stats/agent-portal-export.js',
   'stats/cloud-sync.js',
   'stats/lp-tracker-photo.js',
+  'stats/lp-initiative.js',
   'stats/equipment-data.js',
   'stats/equipment-picker.js',
   'stats/wizard.js',

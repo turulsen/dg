@@ -627,19 +627,17 @@
             <div class="stats-section">
                 <div id="character-sheet">
                     <!-- ── Live Play Sticky Tracker Bar (Field Document theme only) ── -->
+                    <!-- Cell initiative order, above the tracker bar -- only shown
+                         in Live Play when this Agent's Cell has other players.
+                         See stats/lp-initiative.js. -->
+                    <div id="lp-initiative" aria-label="Initiative order"></div>
                     <div id="lp-tracker-bar" class="lp-only">
-                        <!-- Photo + Initiative (DEX) + a quick way back to the
-                             Agent File for taking/regenerating a photo without
-                             hunting through Settings -- see stats/lp-tracker-photo.js
-                             for the photo's own live Firestore read. -->
+                        <!-- Photo + a quick way back to the Agent File for
+                             taking/regenerating a photo without hunting through
+                             Settings -- see stats/lp-tracker-photo.js for the
+                             photo's own live Firestore read. -->
                         <div class="lp-tracker-item lp-track-photo" id="lp-track-photo">
                             <div class="lp-tracker-photo-box" id="lp-tracker-photo-box"></div>
-                        </div>
-                        <div class="lp-tracker-item lp-track-dex" id="lp-track-dex">
-                            <div class="lp-tracker-inner">
-                                <span class="lp-tracker-label">DEX</span>
-                                <span class="lp-tracker-current" id="lp-cur-dex">—</span>
-                            </div>
                         </div>
                         <div class="lp-tracker-item" id="lp-track-hp">
                             <button type="button" class="lp-tracker-btn" onclick="lpAdjust('cs-hp',-1)"
@@ -1090,6 +1088,7 @@
         <script src="agent-portal-export.js"></script>
         <script src="cloud-sync.js"></script>
         <script src="lp-tracker-photo.js"></script>
+        <script src="lp-initiative.js"></script>
         <script src="../assets/dice-roller.js?v=7"></script>
         <script src="equipment-data.js"></script>
         <script src="equipment-picker.js"></script>
