@@ -96,6 +96,15 @@
     function setCloudCode(code) {
         try { localStorage.setItem(CLOUD_CODE_KEY, code); } catch (e) { /* best effort */ }
         renderStatus();
+        // assets/dice-roller.js's own initHistory() runs at page load,
+        // which on a ?load=CODE visit (Agent Hub's "Play" link) is
+        // always well before this ever fires -- the cloud fetch is a
+        // real network round trip, this is a synchronous local write.
+        // Without this event, that widget's roll-history feed (and,
+        // until its own retry fix, recorded rolls too) permanently
+        // treated a fully-loaded Agent as "no Agent Code known" for the
+        // rest of the page's life, since it only ever checked once.
+        window.dispatchEvent(new CustomEvent('dg-cloud-code-set', { detail: { code } }));
     }
 
     function renderStatus(msg) {

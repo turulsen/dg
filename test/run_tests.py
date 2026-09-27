@@ -10311,6 +10311,78 @@ def test_mobile_notes_fullscreen(p):
     page.close()
     return errs
 
+def test_dice_roller_recovers_from_load_race(p):
+    """Real live report: "stat x5 rolls didn't work again" plus "no roll
+    history" -- on Agent Hub's own "Play" link
+    (stats/index.html?load=CODE&live=1). Root cause, reproduced directly:
+    assets/dice-roller.js's dgInitDiceRoller() (and therefore
+    resolveRollContext()'s and initHistory()'s own FIRST calls) runs at
+    page load, well before the ?load= JSONP round trip -- a real network
+    fetch, even mocked here -- has a chance to call cloud-sync.js's
+    setCloudCode(), which is what actually makes currentAgentCode() find
+    anything. resolveRollContext() legitimately resolved { mode: 'none'
+    } at that instant, correct for THAT moment, but used to memoize it
+    forever: reproduced by seeding a real Firestore-native Cell, loading
+    via ?load= with a mocked backend, and clicking a stat -- zero
+    Firestore writes, history panel stuck on "Load your Cover Identity
+    on this device to save roll history" even once the Agent's real data
+    had fully loaded and was on screen. Fixed by excluding a 'none'
+    outcome from the cache (retried fresh on every call instead) and by
+    having setCloudCode() dispatch a 'dg-cloud-code-set' event that
+    re-runs initHistory() once a code actually becomes known, rather
+    than only self-healing on the next roll attempt."""
+    page = p.new_page()
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    page.add_init_script("""
+        window.__dgFirestoreDocs = window.__dgFirestoreDocs || {};
+        window.__dgFirestoreDocs['cells/cell_1'] = { member_codes: ['OWEN-CS12'], name: 'Cell Alpha' };
+    """)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+    def fake_apps_script(route):
+        url = route.request.url
+        if "action=load_character" in url and "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            char_state = {"v": 1, "bio": {"name": "Owen Castillo", "profession": ""},
+                          "stats": {"STR": 14, "CON": 12, "DEX": 10, "INT": 16, "POW": 13, "CHA": 11},
+                          "csStats": {"STR": 14, "CON": 12, "DEX": 10, "INT": 16, "POW": 13, "CHA": 11}}
+            body = f'{cb}({json.dumps({"status": "OK", "agent_code": "OWEN-CS12", "character_json": json.dumps(char_state)})})'
+            route.fulfill(status=200, content_type="application/javascript", body=body)
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/stats/index.html?load=OWEN-CS12&live=1", wait_until="domcontentloaded", timeout=15000)
+    # Gives the mocked ?load= round trip (JSONP callback + cloud-sync.js's
+    # own 250ms post-apply delay) time to actually complete and call
+    # setCloudCode() -- this test is specifically about what happens
+    # to dice-roller.js's state AFTER that already-raced-past point,
+    # not about the race's timing itself.
+    page.wait_for_timeout(1000)
+
+    record("dice-roller", "the history feed re-subscribes to the real Cell's rolls once the cloud load actually completes",
+           page.evaluate("() => (window.__dgFirestoreListeners || []).filter(l => l.path === 'dice_rolls/cell_1/rolls').length") > 0, "")
+
+    page.click("#lp-stat-STR-x5")
+    wait_for_condition(lambda: len(page.evaluate("() => window.__dgFirestoreWrites || []")) > 0, timeout_ms=6000)
+    writes = page.evaluate("() => (window.__dgFirestoreWrites || []).map(w => w.path)")
+    record("dice-roller", "a stat x5 roll made AFTER the cloud load completes still saves, not silently dropped",
+           any(w.startswith("dice_rolls/cell_1/rolls/") for w in writes), str(writes))
+
+    push_firestore_snapshot(page, "dice_rolls/cell_1/rolls", [],
+                             [{"id": "roll1", "agent_code": "OWEN-CS12", "agent_name": "Owen Castillo",
+                               "label": "STR x5", "value": 42, "target": 70, "tier": "success", "created_at": 0}])
+    history_html = wait_for_condition(lambda: (page.inner_html("#dr-history-list")
+                                                if "Owen Castillo" in page.inner_html("#dr-history-list") else None))
+    record("dice-roller", "the recovered history feed actually renders a pushed roll, not just subscribes silently",
+           bool(history_html), history_html or "")
+
+    record("dice-roller", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_dice_roller_firestore_native_cell(p):
     """GitHub issue live report: "Roll not saved: permission-denied" for
     an Agent actually in a real, current Cell. Root cause:
@@ -10626,6 +10698,7 @@ def main():
         safe(test_mobile_notes_fullscreen, browser, area="stats")
 
         safe(test_dice_roller_firestore_native_cell, browser, area="dice-roller")
+        safe(test_dice_roller_recovers_from_load_race, browser, area="dice-roller")
 
         browser.close()
 

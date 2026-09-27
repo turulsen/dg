@@ -3347,6 +3347,22 @@ textarea {
     border-color: #4a9a4a;
 }
 
+/* Live report: this button kept a highlighted outline ring after being
+   tapped, even once its own state (standby green vs. active red) had
+   already switched correctly -- confirmed the class toggle itself is
+   correct (dg-mode-active gets added/removed cleanly in setLivePlay()),
+   so this targets the browser's own default tap/focus ring rather than
+   a state bug. :focus-visible (not plain :focus) keeps a real outline
+   for keyboard/switch-control navigation -- only a touch or mouse tap,
+   which browsers don't consider "visible-focus-worthy," loses it. */
+.dg-mode-toggle {
+    -webkit-tap-highlight-color: transparent;
+}
+
+.dg-mode-toggle:focus:not(:focus-visible) {
+    outline: none;
+}
+
 .dg-mode-toggle-dot {
     width: 8px;
     height: 8px;
@@ -8227,21 +8243,26 @@ input[type="checkbox"]:checked+label {
         font-size: 0.55rem;
     }
 
-    /* Dice Roller widget: fixed at 270px wide and bottom:24px/right:24px
-       with no default-collapsed state, it covers roughly the bottom half
-       of a phone screen -- including, when Live Play is active, the
-       skills table underneath it -- for as long as it's open. Anchor it
-       full-width along the bottom instead of floating over content, and
-       shrink its padding/die-button grid to fit without its own overflow. */
-    #dr-panel {
-        left: 12px;
-        right: 12px;
-        bottom: 12px;
-        width: auto;
-        max-height: 60vh;
-        overflow-y: auto;
-    }
+    /* Dead at every width a real phone actually reports (<=600px):
+       assets/dice-roller.js injects its OWN <style> tag with an
+       identically-specific #dr-panel selector inside its own
+       @media(max-width:600px), added to <head> at runtime -- AFTER this
+       stylesheet finishes parsing, so it always wins the cascade for any
+       property both define, on top of the ~600-700px range where this
+       rule would otherwise be the only one active. Confirmed via direct
+       browser rule enumeration, not assumed: measured #dr-panel's live
+       bottom/left/right on a 390px viewport and got dice-roller.js's
+       own full-bleed bottom-sheet values (0/0/0), not this rule's
+       12px-margin ones. Its max-height/overflow-y (this rule's one
+       actually-load-bearing addition, since dice-roller.js's own
+       version never set either) moved to dice-roller.js's injected
+       style instead, so an expanded panel taller than 60% of the
+       viewport still scrolls internally rather than pushing content
+       (or itself) off-screen uncontrolled -- deleted here rather than
+       left as dead code that would keep confusing the next person
+       trying to change this widget's mobile layout. */
 }
+
 
 /* ── Creation-only tools retire once an Agent is committed ────────────
    .agent-committed is added to <body> the first time this character
