@@ -540,11 +540,19 @@
     // IMPORTANT: We must wait until after save-load.js has finished restoring state
     // (theme, skills, etc.) before activating the wizard. save-load uses a 200ms
     // setTimeout inside its 'load' listener, so we wait 400ms to be safe.
+    // dg-wiz-step is device-wide, not tied to any one Agent: abandoning a
+    // New Recruit wizard and then opening an existing Agent (Agent Hub's
+    // ?load=CODE) used to reopen the wizard on top of that Agent's real,
+    // fully-loaded sheet (GitHub issue #10).
+    if (new URLSearchParams(window.location.search).has('load')) {
+        localStorage.removeItem('dg-wiz-step');
+    }
     if (localStorage.getItem('dg-wiz-step') !== null) {
         if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 
         window.addEventListener('load', function () {
             setTimeout(function () {
+                if (localStorage.getItem('dg-wiz-step') === null) return;
                 activate();
                 requestAnimationFrame(function () {
                     requestAnimationFrame(function () {

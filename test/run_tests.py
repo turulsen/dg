@@ -10311,6 +10311,57 @@ def test_mobile_notes_fullscreen(p):
     page.close()
     return errs
 
+def test_wizard_does_not_reopen_over_loaded_agent(p):
+    """GitHub issue #10: Play on an existing Agent showed the Character
+    Creation Wizard ("Step 1 of 8 -- Statistics") on top of that Agent's
+    real, fully-loaded sheet. Root cause: stats/wizard.js saves its step
+    in a device-wide dg-wiz-step key and auto-reopens on any later page
+    load while it's set -- so abandoning a New Recruit wizard and then
+    opening any existing Agent via ?load=CODE reopened it over them.
+    Also checks the auto-restore still works for its real purpose (a
+    mid-creation refresh with no ?load=)."""
+    def fake(route):
+        url = route.request.url
+        if "action=load_character" in url and "callback=" in url:
+            cb = url.split("callback=")[1].split("&")[0]
+            st = {"v": 1, "bio": {"name": "Daniela Martinez", "profession": ""},
+                  "stats": {"STR": 14, "CON": 12, "DEX": 13, "INT": 16, "POW": 11, "CHA": 11},
+                  "csStats": {"STR": 14, "CON": 12, "DEX": 13, "INT": 16, "POW": 11, "CHA": 11}}
+            route.fulfill(status=200, content_type="application/javascript",
+                          body=f'{cb}({json.dumps({"status": "OK", "agent_code": "DANI-U8BM", "character_json": json.dumps(st)})})')
+        else:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+
+    page = p.new_page()
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    page.add_init_script("try { localStorage.setItem('dg-wiz-step', '0'); } catch (e) {}")
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", fake)
+    page.goto(f"{BASE}/stats/index.html?load=DANI-U8BM&live=1", wait_until="load", timeout=20000)
+    page.wait_for_timeout(1500)
+    record("stats-terminal", "a leftover wizard step does not reopen the wizard over an Agent opened via ?load=",
+           page.locator("#wiz-outer").count() == 0 and page.eval_on_selector("#cs-name", "el => el.value") == "Daniela Martinez",
+           page.locator("#wiz-step-label").text_content() if page.locator("#wiz-step-label").count() else "")
+    record("stats-terminal", "the leftover wizard step is cleared once an existing Agent is opened",
+           page.evaluate("() => localStorage.getItem('dg-wiz-step')") is None, "")
+    record("stats-terminal", "no JS exceptions (wizard over loaded Agent)", len(errs) == 0, "; ".join(errs))
+    page.close()
+
+    page = p.new_page()
+    page.add_init_script("try { localStorage.setItem('dg-wiz-step', '2'); } catch (e) {}")
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", lambda r: r.abort())
+    page.goto(f"{BASE}/stats/index.html", wait_until="load", timeout=20000)
+    wait_for_condition(lambda: page.locator("#wiz-step-label").count() > 0, timeout_ms=5000)
+    lbl = page.locator("#wiz-step-label")
+    record("stats-terminal", "a genuine mid-creation refresh (no ?load=) still reopens the wizard on its saved step",
+           lbl.count() > 0 and "Step 3 of 8" in (lbl.text_content() or ""), lbl.text_content() if lbl.count() else "")
+    page.close()
+    return errs
+
 def test_dice_roller_recovers_from_load_race(p):
     """Real live report: "stat x5 rolls didn't work again" plus "no roll
     history" -- on Agent Hub's own "Play" link
@@ -10699,6 +10750,7 @@ def main():
 
         safe(test_dice_roller_firestore_native_cell, browser, area="dice-roller")
         safe(test_dice_roller_recovers_from_load_race, browser, area="dice-roller")
+        safe(test_wizard_does_not_reopen_over_loaded_agent, browser, area="stats-terminal")
 
         browser.close()
 

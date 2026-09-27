@@ -5194,3 +5194,56 @@ the next time Tab reaches this button.
 
 `sw.js` `CACHE_NAME` bumped (`stats/styles.css` and `stats/scripts.js`
 are both `SHELL_FILES`-listed).
+
+---
+
+## Issue #10's actual root cause: the wizard auto-reopened itself from a device-wide leftover step
+
+**This finishes the earlier "Character Creation Wizard sometimes stayed
+open, Step 1 of 8" entry above, which was an incomplete fix.** That
+entry attributed the bug to a false `NOT_FOUND` racing a real load and
+added `window.dgWizard.deactivate()` to `?load=`'s `onApplied`. The
+bug recurred on a brand-new iPhone with the backend confirmed live at
+v94 (lock-contention fix included), so the backend was ruled out and
+the client re-examined.
+
+Real root cause: `stats/wizard.js` saves its current step in a
+device-wide `localStorage` key, `dg-wiz-step`, and on every page load
+auto-reopens the wizard (window `load` + 400ms) whenever that key is
+set. The key isn't tied to any Agent. The live sequence: tap New
+Recruit (wizard opens, key set) → navigate back to Agent Hub without
+finishing or exiting the wizard (key stays set) → Play an existing
+Agent (`stats/index.html?load=CODE&live=1`) → wizard reopens on top of
+that Agent's real, fully-loaded sheet. Consistent with no "no cloud
+save found" confirm dialog ever appearing -- that dialog only guards
+the `startRecruitFlow()` path, which this never went through.
+
+Why the earlier fix never worked: `deactivate()` returns early when the
+wizard isn't open yet, without clearing `dg-wiz-step`. `onApplied`
+fires after the JSONP response + 250ms, which is usually before window
+`load` (which waits on every subresource, fonts and Table Radio
+included) + 400ms -- so it deactivated nothing, left the key in
+place, and the auto-reopen fired afterwards.
+
+Reproduced directly with Playwright: `dg-wiz-step=0` seeded, then
+`?load=DANI-U8BM&live=1` with a mocked backend → "Step 1 of 8 --
+Statistics" over "Daniela Martinez"; the same load without the seeded
+key showed her sheet correctly.
+
+Fixed in `stats/wizard.js`: on any `?load=` URL (every path that opens
+an existing Agent -- Agent Hub's Play, Agent Portal, Notes' Split
+View/back link -- uses it), the leftover key is cleared at script parse
+time and no auto-reopen is scheduled. The auto-reopen also re-checks
+the key is still set at fire time.
+
+A first attempt also made `deactivate()` clear the key before its early
+return; that broke the wizard's legitimate mid-creation-refresh
+restore (theme restore on page load calls `deactivate()` too), caught
+by testing that case explicitly, and reverted.
+
+Added `test_wizard_does_not_reopen_over_loaded_agent`, covering both
+the reported bug and the legitimate mid-creation refresh ("Step 3 of 8
+-- Biography" still reopens with no `?load=`). The `onApplied`
+deactivate from the earlier entry stays as harmless defense-in-depth.
+
+`sw.js` `CACHE_NAME` bumped (`stats/wizard.js` is `SHELL_FILES`-listed).

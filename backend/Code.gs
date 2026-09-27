@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v94 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v95 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -435,6 +435,12 @@
 //   firestoreGetCellMemberCodes_() helper, a plain Firestore REST GET)
 //   so newly-added members still get their solo notes migrated in and
 //   Evidence visibility recomputed, same as the Sheet-backed path.
+// + v95 -- createOperation()/updateOperation()/deleteOperation() now
+//   dual-write to Firestore's operations/{operationId} (they only ever
+//   touched the Operations Sheet before, leaving Firestore with just two
+//   stale migration-era docs). Shipped in git without a version bump at
+//   first, which made "v94 is live" ambiguous -- labelled v95 here so
+//   the deployed version says whether this is in.
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
