@@ -5035,3 +5035,51 @@ by that extension).
 As with every other `backend/Code.gs` change, this needs a manual
 paste-and-redeploy into the Apps Script editor -- pushing to GitHub
 alone does not update the live backend.
+
+---
+
+## Cover Identity typed on a brand-new device didn't stick
+
+Real live report: on a whole new iPhone's very first visit, typing a
+Cover Identity into Agent Hub's one-time shell prompt and moving on,
+then navigating back into Agent Hub, showed the prompt again instead
+of remembering it -- despite the prompt's own code comment claiming
+"Stored locally once entered so a returning visit refreshes
+automatically without retyping."
+
+Root cause, confirmed by reading `hub.html`'s `runCiPreload()`:
+`localStorage.setItem('dg_cover_identity', ...)` only ever ran INSIDE
+that function's own JSONP success callback -- i.e. only after the
+`find_by_player_name` lookup itself came back with `status: 'OK'` and
+at least one matching Agent. A cold-started, slow, or outright failed
+first request (exactly what a brand-new device's very first hit to
+this campaign's shared Apps Script backend is most likely to trigger --
+see this file's many other entries on Apps Script cold-start/lock-
+contention latency) silently dropped the identity the user had already
+typed and moved on from, with nothing surfacing an error either. Worse,
+this broke the code's own stated fallback plan: `agent-hub.html` has
+its OWN, properly hardened `lookupCoverIdentity()` with 3 retries over
+up to 14s, meant to run on load using whatever `dg_cover_identity`
+already holds as "the source of truth" -- but with nothing ever saved
+to read, that fallback never got a chance to fire either.
+
+Reproduced directly with Playwright: typed a name into the shell
+prompt with every `script.google.com` request routed to
+`route.abort()` (simulating a hard backend failure, the same class of
+condition a genuine cold start or dropped connection produces) --
+`dg_cover_identity` came back `null` on the unfixed code, confirming
+the bug without guessing.
+
+Fixed by saving `dg_cover_identity` the instant the user types and
+submits a name, in the `Enter` keydown handler itself, decoupled
+entirely from whether the roster-preload JSONP call that follows
+happens to succeed. "Remembering what the user typed" and "prefetching
+their Agent roster as a convenience" are two different concerns that
+had been accidentally coupled to the same success path; now the first
+can never fail because of the second. Re-ran the same Playwright
+reproduction against the fix: `dg_cover_identity` now correctly reads
+back `'Gergo'` even with every backend request aborted. Full local
+suite still green (821 checks; same 10 pre-existing sandbox-network
+failures as every other run this session, none new).
+
+`sw.js` `CACHE_NAME` bumped (`hub.html` is `SHELL_FILES`-listed).
