@@ -2601,6 +2601,20 @@ textarea.bond-entry-field {
     display: none;
 }
 
+/* Absolutely centred over the row, the hint only fits between the
+   profession name and BONDS on a wide screen -- on a phone it was drawn
+   straight over both ("LICK FOR FULL PROFESSION DESCRIPTION & SKI" on top
+   of "Federal Agent" and "BONDS: 3"). Own wrapped line instead. */
+@media (max-width: 960px) {
+    .prof-expand-hint {
+        position: static;
+        transform: none;
+        white-space: normal;
+        flex-basis: 100%;
+        order: 3;
+    }
+}
+
 .profession-details-text {
     background: rgba(0, 0, 0, 0.18);
     border-top: 1px solid rgba(255, 255, 255, 0.08);
@@ -2826,6 +2840,11 @@ fieldset {
     padding: var(--spacing-lg) var(--spacing-md) var(--spacing-md);
     margin-top: var(--spacing-md);
     border-radius: var(--radius-md);
+    /* Browsers default fieldset to min-width: min-content, so a wide row
+       inside (the Equipment picker's search + category controls) stretched
+       it past its container -- the whole sheet scrolled sideways on an
+       iPad in portrait (1053px wide at 768). Was only reset below 700px. */
+    min-width: 0;
 }
 
 legend {
@@ -4751,7 +4770,10 @@ input[type="checkbox"]:checked+label {
 
 .eq-panels {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    /* minmax(0, 1fr), not plain 1fr: a plain 1fr column can't shrink below
+       its content's min-content width, and item names are nowrap, so the
+       catalog grew and pushed the loadout column off-screen (834-1280px). */
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 12px;
     align-items: start;
 }
@@ -4991,6 +5013,13 @@ input[type="checkbox"]:checked+label {
     font-size: 0.82em;
     white-space: nowrap;
     flex-shrink: 0;
+}
+
+/* The phone-width `button { width: 100% }` rule made this 322px on a
+   390px screen and left the custom item name box 24px wide -- too small
+   to type in. Two classes to outrank that one-element rule. */
+.eq-custom-add-row .eq-custom-add-btn {
+    width: auto;
 }
 
 .eq-card-name {
@@ -5253,7 +5282,8 @@ input[type="checkbox"]:checked+label {
 .theme-field-notes .panel-skills,
 .theme-field-notes .panel-bonus-skills,
 .theme-field-notes #cs-bonds-fieldset,
-.theme-field-notes #eq-picker-fieldset {
+.theme-field-notes #eq-picker-fieldset,
+.theme-field-notes #wiz-content > #bio-profession-row {
     --primary-color: #1c1608;
     background-color: #f4eed8;
     background-image:
@@ -5278,6 +5308,16 @@ input[type="checkbox"]:checked+label {
     border-bottom-right-radius: 30px !important;
     overflow: hidden;
     position: relative;
+}
+
+/* The wizard's Profession step lifts #bio-profession-row out of the
+   Biography panel onto the dark page, where its dark ink was nearly
+   invisible -- the selector list above gives it the same paper; this
+   adds the padding a fieldset would have had. */
+.theme-field-notes #wiz-content > #bio-profession-row {
+    padding: var(--spacing-lg) var(--spacing-md) var(--spacing-md);
+    margin-top: var(--spacing-md);
+    color: #1c1608;
 }
 
 /* Alternating left/right offsets — staggered notebook page effect */
@@ -6232,10 +6272,96 @@ input[type="checkbox"]:checked+label {
     margin-bottom: 8px;
     position: sticky;
     /* Stacks right below the sticky #character-mode-toggle (Edit button)
-       above it, rather than both trying to occupy top:0 at once. */
-    top: var(--dg-mode-toggle-h);
+       and, when shown, the #lp-initiative row between them. */
+    top: calc(var(--dg-mode-toggle-h) + var(--lp-init-h, 0px));
     z-index: 100;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Cell initiative order (stats/lp-initiative.js) ─────────────────────
+   Sticky right under the RETURN TO SHEET toggle, above the tracker bar.
+   Hidden unless Live Play is on AND this Agent's Cell has other players
+   (lp-initiative.js sets body.lp-has-initiative). Wraps rather than
+   scrolling sideways: a hidden 4th/5th player behind a swipe defeats the
+   point of seeing initiative at a glance. The tracker bar's sticky top
+   follows the row's real height (--lp-init-h, remeasured on resize). */
+#lp-initiative {
+    display: none;
+}
+
+.live-play.lp-has-initiative #lp-initiative {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    position: sticky;
+    top: var(--dg-mode-toggle-h);
+    z-index: 100;
+    background: var(--lp-tracker-bg);
+    border-bottom: 1px solid var(--lp-tracker-border);
+    padding: 5px 10px;
+}
+
+.lp-init-label {
+    font-family: var(--lp-font-mono);
+    font-size: 0.58rem;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--lp-tracker-label);
+    flex: 0 0 auto;
+}
+
+.lp-init-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.lp-init-row {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    font-family: var(--lp-font-mono);
+    font-size: 0.8rem;
+    color: var(--lp-tracker-value);
+    border: 1px solid var(--lp-tracker-border);
+    border-radius: 3px;
+    padding: 2px 7px;
+    flex: 0 0 auto;
+}
+
+.lp-init-ord {
+    font-size: 0.62rem;
+    color: var(--lp-tracker-label);
+}
+
+.lp-init-dex {
+    font-weight: 700;
+}
+
+@media (max-width: 600px) {
+    .live-play.lp-has-initiative #lp-initiative {
+        gap: 6px;
+        padding: 4px 8px;
+    }
+
+    .lp-init-label {
+        letter-spacing: 0.1em;
+    }
+
+    .lp-init-row {
+        font-size: 0.74rem;
+        padding: 2px 5px;
+        gap: 3px;
+    }
+}
+
+.lp-init-row.lp-init-me {
+    border-color: var(--lp-tracker-value);
+    box-shadow: inset 0 0 0 1px var(--lp-tracker-value);
 }
 
 .lp-tracker-item {
@@ -6494,20 +6620,6 @@ input[type="checkbox"]:checked+label {
 
 .lp-tracker-photo-missing:hover {
     color: var(--lp-tracker-value);
-}
-
-.lp-track-dex {
-    flex: 0 0 auto;
-}
-
-.lp-track-dex .lp-tracker-inner {
-    flex-direction: row;
-    align-items: baseline;
-    gap: 4px;
-}
-
-.lp-track-dex .lp-tracker-current {
-    font-size: 1.2rem;
 }
 
 .lp-track-file {
@@ -7672,6 +7784,33 @@ input[type="checkbox"]:checked+label {
     gap: 0;
 }
 
+/* The <=960px rule above makes #wiz-outer a single column, but the
+   unscoped grid-column: 2 just above (later in source, same specificity)
+   still won -- the grid grew an implicit second column and put the
+   shell back beside the tips, squeezing every step into half a phone
+   screen (clipped stat cards, Next pushed off-screen on Bonus Skills). */
+@media (max-width: 960px) {
+    #wiz-shell {
+        grid-column: 1;
+        order: 1;
+    }
+
+    /* Step first, tips under Back/Next: stacked above, the tips were a
+       full screen of text before any control on a phone, and goTo()'s
+       scroll-to-#wiz-header jumped past them on every step anyway. */
+    #wiz-tips {
+        order: 2;
+    }
+
+    /* goTo() scrolls this header to the top of the screen, right under
+       the fixed settings cog (top-right) -- which sat on the step title.
+       #wiz-shell prefix: #wiz-header's own padding shorthand comes later
+       in this file and would otherwise win. */
+    #wiz-shell #wiz-header {
+        padding-right: 64px;
+    }
+}
+
 /* ── Header: step label + progress bar ─────────────────────────────── */
 #wiz-header {
     background: var(--primary-color, #333);
@@ -7735,16 +7874,6 @@ input[type="checkbox"]:checked+label {
 
 /* ── Undo mobile single-column overrides inside the shell ───────────── */
 
-/* Skills: restore 3-column grid */
-#wiz-shell #cs-skills {
-    grid-template-columns: repeat(3, 1fr) !important;
-    gap: var(--spacing-xs) 30px !important;
-}
-
-#wiz-shell #cs-skills .cs-skill-pair {
-    grid-column: auto !important;
-    grid-row: auto !important;
-}
 
 /* Specialty skills: single column, dropdown gets all available space */
 #wiz-shell #cs-specialty-skills {
@@ -7816,23 +7945,7 @@ input[type="checkbox"]:checked+label {
     line-height: 1.5;
 }
 
-/* Bonus skill dropdowns: restore 2-col × 4-row column-flow layout */
-#wiz-shell #bonus-dropdowns {
-    grid-template-columns: repeat(2, 1fr) !important;
-    grid-template-rows: repeat(4, auto) !important;
-    grid-auto-flow: column !important;
-    justify-items: center !important;
-    text-align: center !important;
-}
 
-#wiz-shell #bonus-dropdowns label {
-    align-items: center !important;
-}
-
-/* Bonds: restore 2-col layout (text/canvas left, entries right) */
-#wiz-shell .bonds-layout {
-    grid-template-columns: 1fr 1fr !important;
-}
 
 #wiz-shell .bonds-right {
     border: 2px solid var(--primary-color) !important;
@@ -7840,9 +7953,47 @@ input[type="checkbox"]:checked+label {
     min-height: 150px !important;
 }
 
-/* Equipment: restore 2-col layout */
-#wiz-shell .eq-panels {
-    grid-template-columns: 1fr 1fr !important;
+
+/* Column-count restores for the desktop wizard only. These were written
+   for the side-by-side layout (tips beside the shell, >960px); unscoped,
+   they also forced 3 skill columns and 2 equipment columns onto a phone
+   (labels running together, item names cut to "Light pis..."). Below
+   961px the wizard is single-column, full width, so the page's own
+   responsive layout for that width applies unchanged. */
+@media (min-width: 961px) {
+    /* Skills: restore 3-column grid */
+    #wiz-shell #cs-skills {
+        grid-template-columns: repeat(3, 1fr) !important;
+        gap: var(--spacing-xs) 30px !important;
+    }
+
+    #wiz-shell #cs-skills .cs-skill-pair {
+        grid-column: auto !important;
+        grid-row: auto !important;
+    }
+
+    /* Bonus skill dropdowns: restore 2-col × 4-row column-flow layout */
+    #wiz-shell #bonus-dropdowns {
+        grid-template-columns: repeat(2, 1fr) !important;
+        grid-template-rows: repeat(4, auto) !important;
+        grid-auto-flow: column !important;
+        justify-items: center !important;
+        text-align: center !important;
+    }
+
+    #wiz-shell #bonus-dropdowns label {
+        align-items: center !important;
+    }
+
+    /* Bonds: restore 2-col layout (text/canvas left, entries right) */
+    #wiz-shell .bonds-layout {
+        grid-template-columns: 1fr 1fr !important;
+    }
+
+    /* Equipment: restore 2-col layout */
+    #wiz-shell .eq-panels {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    }
 }
 
 /* Equipment text: restore overflow handling */
@@ -8228,19 +8379,11 @@ input[type="checkbox"]:checked+label {
        to drop the dice-quick button entirely (see the big comment above)
        -- Photo and the Agent File button are conveniences, not something
        needed mid-roll, so they drop here too rather than squeezing HP/WP/
-       SAN/BP/SAN ROLL any further. DEX stays (same shrink-to-content
-       shape as BP, no extra width pressure) since Initiative order is
-       actually useful to see at a glance during play. Both drop to
+       SAN/BP/SAN ROLL any further. Both drop to
        Settings -> Open Agent File, already reachable on mobile. */
     .lp-track-photo,
     .lp-track-file {
         display: none;
-    }
-    .lp-track-dex .lp-tracker-current {
-        font-size: 0.95rem;
-    }
-    .lp-track-dex .lp-tracker-label {
-        font-size: 0.55rem;
     }
 
     /* Dead at every width a real phone actually reports (<=600px):
@@ -8298,4 +8441,25 @@ body.agent-committed #creation-tools-unlock-row {
    leaving a dead half-empty column. */
 body.agent-committed:not(.creation-tools-unlocked) .bonds-layout {
     grid-template-columns: 1fr;
+}
+/* ── Clearance for the floating widgets ─────────────────────────────────
+   Table Radio's Tune In pill, the Notes pill and the collapsed Dice Roller
+   are position:fixed along the bottom of the screen -- in the Hub shell the
+   Dice Roller and Tune In belong to the OUTER page and float over this one.
+   With only the default 20px of body padding, the last thing on the page
+   could never scroll out from under them: measured at full scroll, the
+   Character Creation Wizard's Next/Back sat under the Dice Roller bar or a
+   pill on all 8 steps on a phone, and under Tune In on several steps on
+   tablet/desktop. Measured highest widget edge: 110px from the bottom on
+   phones (Notes/Tune In pills), 96px wider (collapsed Dice Roller card).
+   Kept last in the file so it wins over the <=600px `padding` shorthand. */
+body {
+    padding-bottom: 130px;
+}
+
+/* ?embed= pages (Split View's sheet pane, mobile Notes fullscreen) hide
+   every one of those widgets -- see body.dg-embedded's own rule. */
+body.dg-embedded,
+body.dg-notes-fullscreen-active {
+    padding-bottom: var(--spacing-lg);
 }

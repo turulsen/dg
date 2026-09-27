@@ -3829,11 +3829,8 @@ function lpSyncBar() {
     setText('lp-cur-wp', wp);
     setText('lp-cur-san', san);
     setText('lp-cur-bp', bp);
-    // DEX itself isn't a resource pool like HP/WP/SAN/BP -- just the
-    // score Delta Green's own initiative order is based on, read
-    // straight off the same stat span everything else here uses.
-    setText('lp-cur-dex', getStat('DEX'));
     if (typeof dgSyncTrackerPhoto === 'function') dgSyncTrackerPhoto();
+    if (typeof dgSyncInitiative === 'function') dgSyncInitiative();
 
     // ── Tracker bar: max values ────────────────────────────────────
     setText('lp-bar-max-hp', maxHp);
@@ -4982,7 +4979,11 @@ function generateRandomBond() {
     const bondButton = document.getElementById('bonds-button');
     bondButton.disabled = true;
 
-    const selectedCategories = Array.from(document.querySelectorAll('input[name="bond-category"]:checked')).map(checkbox => checkbox.value);
+    const checkedCategories = Array.from(document.querySelectorAll('input[name="bond-category"]:checked')).map(checkbox => checkbox.value);
+    // Every category box starts unticked, so a new player's first tap on
+    // Generate Bond used to show "No bond available." -- no ticks now
+    // means no preference: draw from every category.
+    const selectedCategories = checkedCategories.length ? checkedCategories : Object.keys(bonds);
     const availableBonds = selectedCategories.flatMap(category => bonds[category] || []);
 
     const bondTextElement = document.getElementById('bondText');
@@ -5132,7 +5133,9 @@ function addEmptyBond() {
  */
 function addBondToSheet() {
     if (!appState.currentBond) {
-        alert('Generate a bond first!');
+        // alert() is silently dead in an iOS home-screen PWA (see dgConfirm
+        // in save-load.js) -- same toast the bond-limit message below uses.
+        window.dgSaveLoad?.showToast?.('Generate a bond first!');
         return;
     }
     const _limit = _wizardBondLimit();

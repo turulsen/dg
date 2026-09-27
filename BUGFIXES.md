@@ -5247,3 +5247,107 @@ the reported bug and the legitimate mid-creation refresh ("Step 3 of 8
 deactivate from the earlier entry stays as harmless defense-in-depth.
 
 `sw.js` `CACHE_NAME` bumped (`stats/wizard.js` is `SHELL_FILES`-listed).
+
+---
+
+## Character Creation Wizard, walked step by step on a phone: nine real bugs
+
+Live report after demoing on a brand-new iPhone: New Recruit "looks
+cramped", "the roller stuck", "no more basic issues". Walked all 8 wizard
+steps with real taps inside the Hub shell (Playwright hit-tests across the
+iframe, so a floating widget on a button fails the tap), at 375/390/430/
+768/1280px, in all three themes, fully scrolled as well as where each step
+lands. Found and fixed:
+
+1. **Two squeezed columns on every phone.** The `<=960px` rule making the
+   wizard a single column (tips stacked above) never worked: `#wiz-shell`'s
+   unscoped `grid-column: 2`, later in the file at equal specificity, still
+   won, the grid grew an implicit second column, and every step rendered in
+   half a phone screen -- stat cards clipped ("CO", "Bedridder"), Bonus
+   Skills 479px wide on a 390px screen with Next off-screen. Scoped
+   `grid-column: 1` inside the same breakpoint, after the unscoped rule.
+2. **Tips as a full screen of text before any control.** On narrow screens
+   the step (header, controls, Back/Next) now comes first and the tips
+   follow -- `goTo()` already scrolled past the tips to `#wiz-header` on
+   every step, so they were effectively invisible up there anyway.
+3. **Desktop column counts forced onto phones.** A block of `!important`
+   "restore" rules (3 skill columns, 2 bonus-dropdown/Bonds/Equipment
+   columns) written for the side-by-side desktop wizard applied at every
+   width -- skill labels ran together ("Accounting:Alertness:Anthropol"),
+   equipment names cut to "Light pis...". Scoped to `min-width: 961px`.
+4. **Floating widgets on Next/Back.** At full scroll, Next/Back sat under
+   the shell's Dice Roller bar or the Tune In/Notes pills on all 8 steps on
+   a phone, and under Tune In on several steps wider. `body` only reserved
+   20px; the widgets reach 110px up on phones, 96px wider (measured).
+   `body { padding-bottom: 130px }` (reset on `?embed=` pages, which hide
+   those widgets). **Correction of an earlier call in this same session:**
+   I'd added this once, then reverted it as "normal floating-button
+   overlap" after checking only the top of an unscrolled page. That was the
+   wrong test -- the problem is the end of the page, which could never be
+   scrolled out from under the widgets. Every other hub page was checked the
+   same way (Agent Hub, A-Cell, Live Play, Notes, Agent Portal,
+   Requisition, Incursion, Rules, ID Creator) at phone/iPad/laptop widths:
+   nothing else stuck.
+5. **Profession dropdown dark-on-dark** (the step the tips call "your
+   biggest decision"). Field Notes gives each section a paper panel via a
+   fixed selector list; the wizard lifts `#bio-profession-row` out of the
+   Biography panel onto the dark page. Added it to that list when it's in
+   `#wiz-content`.
+6. **Profession hint drawn over its own name.** "Click for full profession
+   description & skills" is absolutely centred over the row -- fine between
+   the name and BONDS on a wide screen, drawn over both on a phone. Own
+   wrapped line below 961px. Also affected the normal sheet.
+7. **Settings cog over every step title**, since `goTo()` scrolls the
+   header to the top of the screen right under it. Right padding on the
+   header below 961px (`#wiz-shell #wiz-header`, to outrank the header's
+   own later padding shorthand).
+8. **Generate Bond showed "No bond available."** on first use: every
+   category box starts unticked and the generator drew only from ticked
+   ones. No ticks now means all categories. "Add to Sheet" with no bond
+   also used `alert()`, dead in an iOS home-screen PWA -- now the toast the
+   same function already uses for its bond-limit message. An existing test
+   (`test_stat_generator_creation_lockout`) was already relying on this
+   producing "a real bond"; it never did.
+9. **Sideways scrolling.** The whole sheet was 1053px wide on an iPad in
+   portrait: `fieldset` defaults to `min-width: min-content` and was only
+   reset below 700px. Equipment was wider than the screen at 834-1280px:
+   `1fr 1fr` columns can't shrink below their nowrap item names -- now
+   `minmax(0, 1fr)`. Plus the Equipment custom-item name box, 24px wide on
+   every phone because the `<=600px` `button { width: 100% }` rule gave the
+   Add button the whole row.
+
+Not bugs, checked and ruled out: Random Point Buy/Random Bio appearing
+untappable in the first automated runs was Playwright's own pre-tap
+auto-scroll fighting the site's `scroll-behavior: smooth` ("element is not
+stable"); disabled smooth scrolling in the test only. Every remaining
+narrow input is a deliberately narrow 2-3 digit number box.
+
+New tests: `test_wizard_full_run_in_shell` (35 checks -- every step, real
+taps, floating-widget coverage, title/cog, legibility, overlap, bond,
+finish) and `test_no_sideways_scroll_any_width` (sheet, Live Play and all
+8 wizard steps at 360-1280px). Against the pre-fix code they fail on 16
+checks, one per bug above. A 15-way matrix (5 widths × 3 themes) of the
+full wizard run passes with zero problems.
+
+`sw.js` `CACHE_NAME` bumped (`stats/styles.css`, `stats/scripts.js`,
+`stats/index.html` are `SHELL_FILES`-listed).
+
+---
+
+## Live Play: DEX readout replaced with a real Cell initiative order
+
+Not a bug fix, recorded here because it replaces a shipped behaviour the
+user rejected: "i wanted an initiative tracker, not an extra stat. It
+should be above the line if there are other players in the cell." The
+tracker bar's own DEX item is gone. `stats/lp-initiative.js` adds a slim
+sticky row between RETURN TO SHEET and the tracker bar listing every Agent
+in this Agent's Cell by DEX, highest first, this Agent highlighted --
+hidden entirely when the Agent is alone in their Cell or not in one. Reads
+public-read `cells` + `characters/{code}` live (no sign-in), using the same
+"first Cell that lists this Agent" rule as `dice-roller.js`'s
+`resolveRollContext()` so the roll feed and the initiative row agree; this
+Agent's own row reads the sheet's live DEX so editing re-orders instantly.
+The tracker bar's sticky `top` now adds the row's height
+(`--lp-init-h`). Covered by `test_lp_initiative_order`; the DEX assertion
+in `test_lp_tracker_photo_dex_agent_file` was removed with the item.
+`stats/lp-initiative.js` added to `SHELL_FILES`.

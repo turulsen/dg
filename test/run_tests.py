@@ -739,8 +739,9 @@ def test_stat_generator(p):
     return errs
 
 def test_lp_tracker_photo_dex_agent_file(p):
-    """Live Play tracker bar additions: a Face Plate photo box and a DEX/
-    Initiative readout prepended to the bar, and an Agent File button
+    """Live Play tracker bar additions: a Face Plate photo box prepended to
+    the bar (its DEX readout has since become test_lp_initiative_order's
+    Cell initiative row), and an Agent File button
     appended -- the first slice of the character-sheet side of the
     Field Notes Widget architecture (design settled: extend the existing
     tracker bar rather than a new persistent element, plain link to the
@@ -768,11 +769,10 @@ def test_lp_tracker_photo_dex_agent_file(p):
            bool(code), str(code))
 
     page.click("#random-point-buy")
-    dex_val = page.text_content("#DEX-value")
     page.click("#character-mode-toggle")
     page.wait_for_timeout(300)
-    record("stats-terminal", "the tracker bar's DEX/Initiative readout matches the sheet's own DEX stat",
-           page.text_content("#lp-cur-dex") == dex_val, f"lp-cur-dex={page.text_content('#lp-cur-dex')} DEX-value={dex_val}")
+    # DEX moved out of the tracker bar into the Cell initiative row -- see
+    # test_lp_initiative_order.
     record("stats-terminal", "Agent File button is present in the tracker bar",
            page.locator(".lp-file-btn").count() == 1, "")
 
@@ -10311,6 +10311,204 @@ def test_mobile_notes_fullscreen(p):
     page.close()
     return errs
 
+WIZ_TAPPABLE_JS = """([sel]) => {
+  const f = document.getElementById('dg-shell-content'); const d = f.contentDocument;
+  const el = d.querySelector(sel); if (!el) return 'missing';
+  const r = el.getBoundingClientRect(), fr = f.getBoundingClientRect();
+  for (const [x, y] of [[r.left + r.width/2, r.top + r.height/2], [r.left + 6, r.top + 6], [r.right - 6, r.bottom - 6]]) {
+    const oy = y + fr.top; if (oy < fr.top || oy > innerHeight) return 'offscreen';
+    const o = document.elementFromPoint(x + fr.left, oy);
+    if (o !== f) return 'covered by shell ' + (o.id || o.className);
+    const i = d.elementFromPoint(x, y);
+    if (!(i === el || el.contains(i))) return 'covered by ' + (i.id || i.className);
+  }
+  return 'ok';
+}"""
+
+def test_wizard_full_run_in_shell(p):
+    """A new player's whole Character Creation Wizard, inside the Hub shell
+    on a phone, with real taps (Playwright hit-tests across the iframe, so a
+    floating widget -- the shell's Dice Roller/Tune In, the page's own
+    Notes pill -- sitting on a button fails the tap). Live report: "cramped",
+    "the roller stuck"; walking every step found the wizard squeezed into
+    two side-by-side columns on phones (Next pushed off-screen on Bonus
+    Skills), Next/Back under the floating widgets on every step, 3/2-column
+    Skills/Equipment layouts forced onto a phone, the Profession dropdown
+    dark-on-dark, the profession hint drawn over its own name, the settings
+    cog on every step title, and Generate Bond showing "No bond available."
+    with the default (all unticked) categories."""
+    ctx = p.new_context(viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True)
+    # Test-only: Playwright's own pre-tap auto-scroll + the site's
+    # scroll-behavior:smooth loop into "element is not stable" forever.
+    ctx.add_init_script("document.addEventListener('DOMContentLoaded', () => { const st = document.createElement('style'); st.textContent = 'html{scroll-behavior:auto !important}'; document.head.appendChild(st); });")
+    page = ctx.new_page()
+    errs = collect_errors(page)
+    for pat in ["**/fonts.googleapis.com/**", "**/fonts.gstatic.com/**", "**/script.google.com/**"]:
+        page.route(pat, lambda r: r.abort())
+    page.add_init_script("try{localStorage.setItem('dg_cover_identity','Tester');sessionStorage.setItem('dg_boot_seen','1');}catch(e){}")
+    page.goto(f"{BASE}/hub.html", wait_until="load", timeout=20000)
+    page.wait_for_timeout(1200)
+    page.evaluate("document.getElementById('dg-shell-content').src = 'stats/index.html?new=1'")
+    frame = None
+    for _ in range(60):  # page.wait_for_timeout, not time.sleep: page.frames only updates while Playwright pumps events
+        page.wait_for_timeout(250)
+        frame = next((f for f in page.frames if "stats/index.html" in (f.url or "") and f.locator("#wiz-toggle-btn").count()), None)
+        if frame: break
+    page.wait_for_timeout(800)
+
+    def settle(sel):
+        last = None
+        for _ in range(30):
+            cur = frame.evaluate("([s]) => { const r = document.querySelector(s).getBoundingClientRect(); return [Math.round(r.top), Math.round(scrollY)]; }", [sel])
+            if cur == last: return
+            last = cur; page.wait_for_timeout(120)
+    def tap(sel, what):
+        frame.evaluate("([s]) => document.querySelector(s).scrollIntoView({block:'center', behavior:'instant'})", [sel]); settle(sel)
+        hit = page.evaluate(WIZ_TAPPABLE_JS, [sel])
+        record("wizard", f"{what} is tappable, not under a floating widget", hit == "ok", hit)
+        frame.locator(sel).first.click(timeout=8000)
+        page.wait_for_timeout(400)
+        if frame.evaluate("!!document.querySelector('#dg-confirm-backdrop.dg-confirm-open')"):
+            frame.locator("#dg-confirm-ok").click(timeout=5000); page.wait_for_timeout(300)
+
+    tap("#wiz-toggle-btn", "New Recruit's wizard button")
+    for step in range(1, 9):
+        settle("#wiz-step-label")
+        label = frame.locator("#wiz-step-label").text_content()
+        title_hit = frame.evaluate("""() => { const el = document.getElementById('wiz-step-label'); const rg = document.createRange(); rg.selectNodeContents(el); const r = rg.getBoundingClientRect();
+            const h = document.elementFromPoint(r.right - 4, r.top + r.height / 2); const c = h && (h.closest('button, [id]') || h); return c ? (c.id || c.tagName) : null; }""")
+        width = frame.evaluate("document.documentElement.scrollWidth")
+        record("wizard", f"step {step}: on the right step, title clear of the settings cog, no sideways scroll",
+               label.startswith(f"Step {step} of 8") and title_hit in ("wiz-step-label", "wiz-header") and width <= 390,
+               f"label={label!r} title_hit={title_hit} width={width}")
+        if step == 1:
+            tap("#random-point-buy", "Random Point Buy")
+            record("wizard", "Random Point Buy sets the stats", frame.evaluate("document.getElementById('STR-value').textContent") != "3", "")
+        elif step == 2:
+            record("wizard", "Profession dropdown is legible (not dark-on-dark)",
+                   frame.evaluate("""() => { const s = document.getElementById('cs-profession-select'); const row = document.getElementById('bio-profession-row');
+                        const lum = c => { const m = c.match(/\\d+(\\.\\d+)?/g).map(Number); return (0.299*m[0] + 0.587*m[1] + 0.114*m[2]); };
+                        let bg = getComputedStyle(row).backgroundColor; let n = row; while (bg === 'rgba(0, 0, 0, 0)' && n.parentElement) { n = n.parentElement; bg = getComputedStyle(n).backgroundColor; }
+                        return Math.abs(lum(getComputedStyle(s).color) - lum(bg)) > 100; }"""), "")
+            frame.locator("#cs-profession-select").select_option("federal_agent"); page.wait_for_timeout(600)
+            hint = frame.evaluate("""() => { const h = document.querySelector('.prof-expand-hint'), n = document.querySelector('.prof-name-pill'); if (!h || !n) return 'missing';
+                const a = h.getBoundingClientRect(), b = n.getBoundingClientRect(); return (a.bottom <= b.top || a.top >= b.bottom || a.right <= b.left || a.left >= b.right) ? 'ok' : 'overlaps'; }""")
+            record("wizard", "profession hint doesn't overlap the profession name", hint == "ok", hint)
+            if frame.locator(".optional-skill-label").count():
+                tap(".optional-skill-label", "an optional profession skill")
+            tap("#apply-profession-button", "Apply Professional Skills")
+        elif step == 3:
+            tap("#random-bio-button", "Random Bio")
+            record("wizard", "Random Bio fills the name", frame.evaluate("document.getElementById('cs-name').value") not in ("", "Agent"), "")
+        elif step == 5:
+            tap("#prepare-bonus-button", "Prepare Skills for Bonus Points")
+            frame.locator("#bonus-package-select").select_option(index=1); page.wait_for_timeout(300)
+            tap("#bonus-package-row button", "Fill Dropdowns")
+        elif step == 6:
+            tap("#bonds-button", "Generate Bond (no categories ticked)")
+            record("wizard", "Generate Bond with no categories ticked still gives a bond",
+                   "No bond available" not in frame.evaluate("document.getElementById('bond-text-content').textContent"), "")
+            tap("#add-bond-button", "Add to Sheet")
+            record("wizard", "the generated bond lands on the sheet", frame.evaluate("(window.bondsOnSheet || []).length") >= 1, "")
+        elif step == 7:
+            tap(".eq-add-btn", "an equipment item's +")
+        tap("#wiz-next", "Finish" if step == 8 else f"Next on step {step}")
+    record("wizard", "Finish closes the wizard and leaves no saved step behind",
+           frame.locator("#wiz-outer").count() == 0 and frame.evaluate("localStorage.getItem('dg-wiz-step')") is None, "")
+    record("wizard", "the finished Agent keeps name and profession",
+           frame.evaluate("document.getElementById('cs-name').value") not in ("", "Agent") and frame.evaluate("document.getElementById('cs-profession-select').value") == "federal_agent", "")
+    record("wizard", "no JS exceptions (full wizard run)", len(errs) == 0, "; ".join(errs))
+    ctx.close()
+    return errs
+
+def test_no_sideways_scroll_any_width(p):
+    """Sheet, Live Play and all 8 wizard steps must fit the screen at every
+    common width. Found broken: the whole sheet 1053px wide on an iPad in
+    portrait (fieldset min-width: min-content, reset only below 700px), and
+    the Equipment step wider than the screen at 834-1280px (1fr columns
+    can't shrink below their nowrap item names)."""
+    bad = []
+    for W in [360, 390, 600, 768, 834, 1024, 1280]:
+        page = p.new_page(viewport={"width": W, "height": 900})
+        for pat in ["**/fonts.googleapis.com/**", "**/fonts.gstatic.com/**", "**/script.google.com/**"]:
+            page.route(pat, lambda r: r.abort())
+        page.goto(f"{BASE}/stats/index.html", wait_until="load", timeout=20000)
+        page.wait_for_timeout(700)
+        widths = {"sheet": page.evaluate("document.documentElement.scrollWidth")}
+        page.evaluate("window.dgWizard.activate()"); page.wait_for_timeout(200)
+        for s in range(8):
+            page.evaluate(f"window.dgWizard.goTo({s})"); page.wait_for_timeout(150)
+            widths[f"wizard {s+1}"] = page.evaluate("document.documentElement.scrollWidth")
+        page.evaluate("() => { window.dgWizard.deactivate(); const n = document.getElementById('cs-name'); n.value = 'X'; window.setLivePlay(true); }"); page.wait_for_timeout(300)
+        widths["live play"] = page.evaluate("document.documentElement.scrollWidth")
+        bad += [f"{W}px {k}={v}" for k, v in widths.items() if v > W]
+        page.close()
+    record("stats-terminal", "sheet, Live Play and every wizard step fit the screen at 360-1280px", not bad, "; ".join(bad))
+    return []
+
+def test_lp_initiative_order(p):
+    """Live Play's initiative row (stats/lp-initiative.js): replaced the
+    bare DEX readout in the tracker bar with an actual initiative order
+    for this Agent's Cell -- every member sorted by DEX, highest first,
+    this Agent highlighted -- shown above the tracker bar only when the
+    Cell has other players. Reads cells + characters/{code} (both
+    public-read) live; this Agent's own row uses the sheet's live DEX."""
+    import json as _json
+    def char(name, dex):
+        return {"character_json": _json.dumps({"bio": {"name": name}, "csStats": {"DEX": dex}})}
+
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    page.add_init_script("try { localStorage.setItem('dg_stats_cloud_code', 'OWEN-CS12'); } catch (e) {}")
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.route("**/script.google.com/**", lambda r: r.abort())
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+    page.fill("#cs-name", "Owen Castillo")
+    page.dispatch_event("#cs-name", "input")
+    page.evaluate("() => { document.getElementById('DEX-value').textContent = '11'; window.setLivePlay(true); }")
+    page.wait_for_timeout(300)
+
+    record("stats-terminal", "the tracker bar no longer carries a bare DEX readout",
+           page.locator("#lp-cur-dex").count() == 0, "")
+    wait_for_condition(lambda: any(l["path"] == "cells" for l in page.evaluate("() => window.__dgFirestoreListeners || []")), timeout_ms=6000)
+    push_firestore_snapshot(page, "cells", [], [{"id": "cell_solo", "member_codes": ["OWEN-CS12"], "name": "Solo"}])
+    page.wait_for_timeout(200)
+    record("stats-terminal", "initiative row stays hidden when this Agent is alone in the Cell",
+           not page.is_visible("#lp-initiative"), "")
+
+    push_firestore_snapshot(page, "cells", [], [{"id": "cell_a", "member_codes": ["OWEN-CS12", "PRIY-AN34", "DANI-U8BM"], "name": "Cell A"}])
+    wait_for_condition(lambda: page.evaluate("() => (window.__dgFirestoreListeners || []).filter(l => l.isDoc && l.path.indexOf('characters/') === 0).length") >= 2, timeout_ms=6000)
+    push_firestore_doc_snapshot(page, "characters/PRIY-AN34", True, char("Priya Anand", 14))
+    push_firestore_doc_snapshot(page, "characters/DANI-U8BM", True, char("Daniela Martinez", 9))
+    page.wait_for_timeout(200)
+    names = page.eval_on_selector_all("#lp-initiative .lp-init-name", "els => els.map(e => e.textContent)")
+    record("stats-terminal", "initiative row shows the whole Cell in DEX order, highest first",
+           page.is_visible("#lp-initiative") and names == ["Priya", "Owen", "Daniela"], str(names))
+    record("stats-terminal", "this Agent's own row is highlighted",
+           page.eval_on_selector("#lp-initiative .lp-init-me .lp-init-name", "e => e.textContent") == "Owen", "")
+
+    page.evaluate("() => { document.getElementById('DEX-value').textContent = '16'; lpSyncBar(); }")
+    page.wait_for_timeout(100)
+    names = page.eval_on_selector_all("#lp-initiative .lp-init-name", "els => els.map(e => e.textContent)")
+    record("stats-terminal", "raising this Agent's own DEX re-orders initiative immediately",
+           names[0] == "Owen", str(names))
+
+    bar_top = page.evaluate("() => getComputedStyle(document.getElementById('lp-tracker-bar')).top")
+    init_h = page.evaluate("() => document.getElementById('lp-initiative').offsetHeight")
+    record("stats-terminal", "the tracker bar sticks below the initiative row, not on top of it",
+           bar_top == f"{48 + init_h}px", f"bar top={bar_top} init h={init_h}")
+
+    page.evaluate("() => window.setLivePlay(false)")
+    page.wait_for_timeout(150)
+    record("stats-terminal", "initiative row is Live Play only",
+           not page.is_visible("#lp-initiative"), "")
+    record("stats-terminal", "no JS exceptions (initiative)", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_wizard_does_not_reopen_over_loaded_agent(p):
     """GitHub issue #10: Play on an existing Agent showed the Character
     Creation Wizard ("Step 1 of 8 -- Statistics") on top of that Agent's
@@ -10751,6 +10949,9 @@ def main():
         safe(test_dice_roller_firestore_native_cell, browser, area="dice-roller")
         safe(test_dice_roller_recovers_from_load_race, browser, area="dice-roller")
         safe(test_wizard_does_not_reopen_over_loaded_agent, browser, area="stats-terminal")
+        safe(test_lp_initiative_order, browser, area="stats-terminal")
+        safe(test_no_sideways_scroll_any_width, browser, area="stats-terminal")
+        safe(test_wizard_full_run_in_shell, browser, area="wizard")
 
         browser.close()
 
