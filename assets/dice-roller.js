@@ -416,10 +416,34 @@
     // wrong cellId. firestore.rules already makes `cells` public-read
     // (see isCellMember()'s own comment there), so reading it directly
     // needs no Handler/Agent session either, same as list_cells never did.
+    // Real, reproduced live bug: on stats/index.html?load=CODE (Agent
+    // Hub's own "Play" link), this widget's init -- and therefore this
+    // function's FIRST call, from initHistory() below -- runs at page
+    // load, well before the ?load= JSONP round trip (plus its own 250ms
+    // post-apply delay, see cloud-sync.js's runPastInitHazards) has had
+    // a chance to actually set dg_stats_cloud_code. currentAgentCode()
+    // legitimately found nothing at that exact moment, resolved
+    // { mode: 'none' } -- correct for THAT instant -- but memoizing it
+    // forever meant every later roll and the history feed kept treating
+    // a fully-loaded, real Agent as if none was ever known, for the
+    // rest of that page's life. Reproduced directly: seeded a real
+    // Firestore Cell, loaded via ?load= with a mocked (instant) backend
+    // response, clicked a stat -- zero Firestore writes, history panel
+    // stuck on "Load your Cover Identity on this device to save roll
+    // history." An 'agent'/'handler' outcome is safe to cache for the
+    // session (an Agent's own identity and Cell don't change mid-visit)
+    // but 'none' only ever means "not resolvable YET", not "never" --
+    // so it's deliberately excluded from the cache and retried fresh on
+    // every call, cheap since it's just two synchronous localStorage
+    // reads with nothing async in that branch.
     let _rollContext = null;
     let _rollContextPromise = null;
     function resolveRollContext() {
         if (_rollContextPromise) return _rollContextPromise;
+        if (!isHandlerContext() && !currentAgentCode()) {
+            _rollContext = { mode: 'none' };
+            return Promise.resolve(_rollContext);
+        }
         _rollContextPromise = new Promise(resolve => {
             if (isHandlerContext()) {
                 _rollContext = { mode: 'handler' };
@@ -427,11 +451,6 @@
                 return;
             }
             const agentCode = currentAgentCode();
-            if (!agentCode) {
-                _rollContext = { mode: 'none' };
-                resolve(_rollContext);
-                return;
-            }
             const finish = cellId => {
                 _rollContext = { mode: 'agent', agentCode: agentCode, cellId: cellId || soloCellId(agentCode) };
                 resolve(_rollContext);
@@ -1105,7 +1124,8 @@
             '.dr-history-summary{flex:1;min-width:60px;opacity:.9;}',
             '.dr-history-time{font-size:8px;opacity:.4;flex-shrink:0;}',
             '@media (max-width:600px){#dr-panel{right:0;bottom:0;left:0;width:100%;border-radius:12px 12px 0 0;',
-            'border-left:none;border-right:none;border-bottom:none;}#dr-die-pills{gap:5px;}.dr-die-btn{max-width:none;flex:1;}}',
+            'border-left:none;border-right:none;border-bottom:none;max-height:60vh;overflow-y:auto;}',
+            '#dr-die-pills{gap:5px;}.dr-die-btn{max-width:none;flex:1;}}',
         ].join('');
         document.head.appendChild(style);
     }
@@ -1377,6 +1397,20 @@
         wireSkillInputs();
         if (SUPPRESS_OWN_PANEL) return;
         buildPanel(); initHistory(); watchHandlerModeChange();
+        // See resolveRollContext()'s own comment: initHistory() runs at
+        // page load, ahead of a ?load=CODE cloud fetch that sets
+        // dg_stats_cloud_code moments later via cloud-sync.js's
+        // setCloudCode(). Re-running initHistory() once that fires
+        // actually starts the history feed once a real Agent Code
+        // becomes known, rather than leaving it stuck on the initial
+        // "no Agent Code known yet" read until the next roll attempt
+        // happens to retry it.
+        window.addEventListener('dg-cloud-code-set', () => {
+            stopHistoryFeed();
+            _rollContext = null;
+            _rollContextPromise = null;
+            initHistory();
+        });
     };
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', dgInitDiceRoller);

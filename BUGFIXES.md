@@ -5083,3 +5083,114 @@ suite still green (821 checks; same 10 pre-existing sandbox-network
 failures as every other run this session, none new).
 
 `sw.js` `CACHE_NAME` bumped (`hub.html` is `SHELL_FILES`-listed).
+
+---
+
+## Stat x5 rolls silently not saved, and roll history stuck on "no Agent Code known" -- a genuine load-order race, reproduced and fixed directly
+
+Live report: "no roll history, stat x5 rolls didnt work again" -- a
+recurrence of a symptom this file already has an entry for ("Dice
+rolls silently misfiled or denied for an Agent in a real, current
+Cell"), so per this repo's own working protocol this got checked
+against that earlier fix before treating it as new. That earlier fix
+(reading the `cells` collection straight from Firestore instead of the
+Sheet-backed `list_cells`) was confirmed still correct and unrelated --
+this is a different bug in the same file.
+
+Reproduced directly rather than guessed at: seeded a real Firestore
+Cell containing an Agent, loaded that Agent via
+`stats/index.html?load=CODE&live=1` (Agent Hub's own "Play" link) with
+a mocked backend, and clicked a Live Play stat x5 span. Zero Firestore
+writes, and the history panel showed "Load your Cover Identity on this
+device to save roll history" the entire time -- despite the Agent's
+real data being fully loaded and on screen.
+
+Root cause: `assets/dice-roller.js`'s `resolveRollContext()` memoizes
+its result forever after its FIRST call, and that first call happens
+at page load (`dgInitDiceRoller()`'s own `initHistory()`) -- well
+before a `?load=CODE` visit's JSONP round trip (plus
+`cloud-sync.js`'s own 250ms post-apply delay) has had any chance to
+call `setCloudCode()`, which is what actually makes
+`currentAgentCode()` find anything. `{ mode: 'none' }` was the
+genuinely correct answer at that exact instant -- the bug was treating
+it as permanent instead of "not resolvable YET." Every later roll
+attempt and the history feed itself kept reading that same stale,
+memoized `'none'` for the rest of the page's life, even once the real
+Agent Code had been sitting in `localStorage` for seconds.
+
+Two-part fix:
+
+- `resolveRollContext()` now excludes a `'none'` outcome from its own
+  cache -- only `'agent'`/`'handler'` (both stable for the rest of the
+  session) get memoized; `'none'` is recomputed fresh on every call,
+  cheap since that branch is just two synchronous `localStorage` reads
+  with nothing async in it.
+- That alone only self-heals on the NEXT roll attempt, not the history
+  feed itself (nothing re-triggers `initHistory()` on its own).
+  `cloud-sync.js`'s `setCloudCode()` now dispatches a
+  `dg-cloud-code-set` `CustomEvent`; `dice-roller.js` listens for it
+  and re-runs `initHistory()` (after resetting its own now-stale
+  cached context), so the history feed actually starts live once a
+  real Agent Code becomes known, instead of waiting on a roll click
+  that might not come for a while.
+
+Added `test_dice_roller_recovers_from_load_race`, covering exactly the
+reproduction above: confirmed it fails against the pre-fix code (all
+three of its assertions) and passes against the fix. Full suite
+otherwise unchanged from every other run this session -- the *same*
+pre-existing sandbox-network failures (blocked `gstatic.com`) now
+additionally appear in several previously-silent tests, because this
+fix's whole point is that dice-roller.js retries reaching Firebase in
+cases it used to silently give up on forever; confirmed via a direct
+before/after comparison that the pre-fix code fails this specific
+regression test's three assertions and nothing else changed. A real
+browser with working internet (or GitHub Actions CI, which has full
+internet access per this suite's own header comment) never sees these
+particular failures at all.
+
+`sw.js` `CACHE_NAME` bumped (`assets/dice-roller.js` and
+`stats/cloud-sync.js` are both `SHELL_FILES`-listed).
+
+---
+
+## Dice Roller mobile CSS: a dead rule, a missing height cap, and a defensive fix for a lingering focus ring
+
+Found alongside the above while checking a live report of general
+mobile layout roughness ("no hiccups, no layout issues" bar). Direct
+browser rule enumeration (not assumed) showed `stats/styles.css`'s own
+`@media (max-width: 700px) { #dr-panel { left: 12px; right: 12px;
+bottom: 12px; ... } }` never actually takes effect on any width a real
+phone reports: `assets/dice-roller.js` injects its OWN `<style>` tag
+with an identically-specific `#dr-panel` selector inside its own
+`@media (max-width: 600px)`, added to `<head>` at runtime -- AFTER
+this stylesheet finishes parsing, so it always wins the cascade for
+any property both define. Measured directly on a 390px viewport:
+`#dr-panel`'s live `bottom`/`left`/`right` matched dice-roller.js's own
+full-bleed bottom-sheet values (0/0/0), never this rule's 12px-margin
+ones. The one genuinely load-bearing thing that dead rule provided --
+`max-height: 60vh; overflow-y: auto`, so an expanded panel taller than
+60% of the viewport scrolls internally instead of growing
+uncontrolled -- was never actually reaching a real phone either. Moved
+those two properties into dice-roller.js's own injected style (the
+one that actually wins) and deleted the now-fully-dead rule from
+`stats/styles.css` rather than leave it as confusing dead code for the
+next person touching this widget's mobile layout.
+
+Also added a defensive (not fully confirmed -- couldn't reproduce the
+exact symptom in this sandbox's Chromium, see below) fix for a
+reported lingering highlight ring on the Live Play "ENTER LIVE
+PLAY"/"RETURN TO SHEET" toggle button after being tapped, even once
+its own active/standby state had already switched correctly.
+Confirmed via Playwright that the state-class toggle itself
+(`dg-mode-active`) is clean -- no dual-state bug -- so this targets the
+browser's own default tap/focus ring instead: `-webkit-tap-highlight-
+color: transparent` plus a `:focus:not(:focus-visible) { outline: none
+}` guard (keeps a real outline for keyboard/switch-control navigation,
+only drops it for a touch/mouse tap), and a `toggle.blur()` call right
+after the state change in `setLivePlay()` as belt-and-suspenders for
+older iOS Safari `:focus-visible` inconsistency. Zero regression risk
+either way -- a keyboard user still gets a fresh, correct focus ring
+the next time Tab reaches this button.
+
+`sw.js` `CACHE_NAME` bumped (`stats/styles.css` and `stats/scripts.js`
+are both `SHELL_FILES`-listed).

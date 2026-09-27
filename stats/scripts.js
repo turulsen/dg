@@ -3726,7 +3726,19 @@ function setLivePlay(on, { skipSave = false } = {}) {
         localStorage.setItem('dg_live_play', on ? '1' : '0');
         const toggle = document.getElementById('character-mode-toggle');
         const toggleLabel = document.getElementById('character-mode-toggle-label');
-        if (toggle) toggle.classList.toggle('dg-mode-active', on);
+        if (toggle) {
+            toggle.classList.toggle('dg-mode-active', on);
+            // Real live report: this button kept a highlighted ring after
+            // being tapped. The CSS :focus-visible guard (styles.css)
+            // should already stop that, but iOS Safari's :focus-visible
+            // support has historically been inconsistent across versions
+            // -- blurring right after a real state change is the standard
+            // belt-and-suspenders fix for a toggle/icon button tapped on
+            // touch devices, and can't cause any regression on desktop
+            // (keyboard users still get a fresh, correct focus ring the
+            // next time Tab reaches this button).
+            toggle.blur();
+        }
         if (toggleLabel) toggleLabel.textContent = on ? '✎ RETURN TO SHEET' : '▶ ENTER LIVE PLAY';
 
         // Show download/upload buttons only in Live Play; show copy/clear in the full form
