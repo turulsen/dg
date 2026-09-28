@@ -35,6 +35,13 @@
  * NOT wired into A-Cell's existing login form, to avoid touching that
  * already-critical, actively-used code path for a secondary viewing
  * feature.
+ *
+ * Friendly (friendly.html, one-shot pregens): the page marks itself with
+ * <html data-dice-friendly> and says who is rolling through
+ * dgDice.setIdentity({ code, name, cellId }) -- never this device's own
+ * roster, which may belong to someone else entirely. With a cellId (the
+ * Handler put that pregen in a Cell) rolls go to that Cell's feed like
+ * any Agent's; without one they stay on this device (session only).
  */
 (function () {
     'use strict';
@@ -69,6 +76,7 @@
     // own outer/non-embedded page) via postMessage, same mechanism this
     // file already used for Split View alone before this fix widened it
     // to also cover the shell.
+    const FRIENDLY_PAGE = document.documentElement.hasAttribute('data-dice-friendly');
     const SUPPRESS_OWN_PANEL = !!(window.frameElement &&
         (window.frameElement.id === 'dg-shell-content' || window.frameElement.id === 'dg-split-sheet-frame'));
 
@@ -331,7 +339,23 @@
         }
     }
 
+    function friendlyIdentity() {
+        return FRIENDLY_PAGE ? (window.dgDiceIdentity || null) : null;
+    }
+    const LOCAL_HISTORY_KEY = 'dg_friendly_rolls';
+    function readLocalHistory() {
+        try { return JSON.parse(sessionStorage.getItem(LOCAL_HISTORY_KEY) || '[]'); } catch (e) { return []; }
+    }
+    function pushLocalHistory(entry) {
+        const list = [entry].concat(readLocalHistory()).slice(0, HISTORY_LIMIT);
+        try { sessionStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(list)); } catch (e) { /* private mode */ }
+        renderHistoryList(list);
+    }
+
     function isHandlerContext() {
+        // A table's shared tablet can still hold the Handler's A-Cell
+        // session in this tab -- the Friendly page is never the Handler's feed.
+        if (FRIENDLY_PAGE) return false;
         try { return !!sessionStorage.getItem(ACELL_SESSION_KEY); } catch (e) { return false; }
     }
 
@@ -367,6 +391,7 @@
     // notes/index.html already uses for the same "who am I on this
     // page" question.
     function currentAgentCode() {
+        if (FRIENDLY_PAGE) return (friendlyIdentity() || {}).code || '';
         try {
             const direct = localStorage.getItem(CLOUD_CODE_KEY);
             if (direct) return direct;
@@ -391,6 +416,7 @@
     // so it's the fallback; dgSaveLoad's live value is still preferred
     // when available since it reflects an unsaved in-progress edit.
     function currentAgentName() {
+        if (FRIENDLY_PAGE) return (friendlyIdentity() || {}).name || '';
         try {
             const s = window.dgSaveLoad && window.dgSaveLoad.collectState && window.dgSaveLoad.collectState();
             const live = s && s.bio && s.bio.name;
@@ -448,6 +474,17 @@
     let _rollContextFor = ''; // the Agent Code the current/in-flight resolution is for
     function resolveRollContext() {
         if (_rollContextPromise) return _rollContextPromise;
+        if (FRIENDLY_PAGE) {
+            const id = friendlyIdentity();
+            if (!id || !id.code || !id.cellId) {
+                _rollContext = { mode: 'local' };
+                return Promise.resolve(_rollContext);
+            }
+            _rollContextFor = id.code;
+            _rollContext = { mode: 'agent', agentCode: id.code, cellId: id.cellId, pinned: true };
+            _rollContextPromise = Promise.resolve(_rollContext);
+            return _rollContextPromise;
+        }
         if (!isHandlerContext() && !currentAgentCode()) {
             _rollContext = { mode: 'none' };
             return Promise.resolve(_rollContext);
@@ -564,6 +601,10 @@
     // top, never a gate on rolling itself.
     function recordRoll(rollData) {
         resolveRollContext().then(ctx => {
+            if (ctx.mode === 'local') {
+                pushLocalHistory(Object.assign({ agent_name: currentAgentName() || 'Friendly', created_at: Date.now() }, rollData));
+                return;
+            }
             if (ctx.mode !== 'agent') return;
             return ensureAgentSignedIn(ctx.agentCode).then(() => {
                 const db = window.firebase.firestore();
@@ -663,6 +704,7 @@
                 }, err => showHistoryError('History feed error', err));
         };
         listenRolls();
+        if (ctx.pinned) { _historyUnsubscribe = () => { if (rollsUnsub) rollsUnsub(); }; return; }
         // The Cell was looked up once, when this context resolved -- so a
         // player the Handler added to a Cell mid-session (the normal way a
         // new player joins) kept rolling into, and reading, their solo
@@ -765,6 +807,8 @@
             if (ctx.mode === 'agent') {
                 ensureAgentSignedIn(ctx.agentCode).then(() => startAgentHistoryFeed(ctx))
                     .catch(err => showHistoryError('Sign-in failed', err));
+            } else if (ctx.mode === 'local' && _e.historyList) {
+                renderHistoryList(readLocalHistory());
             } else if (ctx.mode === 'handler' && _e.handlerGate) {
                 checkExistingHandlerSession();
             } else if (ctx.mode === 'none' && _e.historyList) {
@@ -885,7 +929,7 @@
     }
 
     /* ── Expression roll ─────────────────────────────────────────────── */
-    function rollExpr(expr) {
+    function rollExpr(expr, label) {
         if (_rolling) return;
         _rolling = true;
 
@@ -898,7 +942,7 @@
         if (facePct) facePct.style.display = 'none';
         if (faceSingle) faceSingle.style.display = 'flex';
 
-        if (nameEl) nameEl.textContent = '';
+        if (nameEl) nameEl.textContent = label || '';
         if (targetDisp) targetDisp.textContent = '';
         if (resultLabel) { resultLabel.textContent = ''; resultLabel.style.color = ''; }
         if (resultBox) resultBox.className = 'dr-result-box dr-rolling';
@@ -938,7 +982,7 @@
             _rolling = false;
             recordRoll({
                 roll_type: 'expr',
-                label: null,
+                label: label || null,
                 value: total,
                 target: null,
                 tier: null,
@@ -949,6 +993,25 @@
         });
 
         if (_e.panel?.classList.contains('dr-collapsed')) togglePanel();
+    }
+
+    // A dice expression from page code ("1d10", "2d6+1") -- friendly.html's
+    // weapon damage buttons. Returns false for anything parseExpr() won't
+    // take (a lethality rating, say) so the page can fall back.
+    function rollExpression(str, label) {
+        const expr = parseExpr(String(str || ''));
+        if (!expr) return false;
+        if (SUPPRESS_OWN_PANEL) return false;
+        if (_e && _e.panel && _e.panel.classList.contains('dr-collapsed')) togglePanel();
+        rollExpr(expr, label);
+        return true;
+    }
+    function setIdentity(id) {
+        window.dgDiceIdentity = id || null;
+        stopHistoryFeed();
+        _rollContext = null;
+        _rollContextPromise = null;
+        if (_e && _e.panel) initHistory();
     }
 
     /* ── Manual roll button ───────────────────────────────────────── */
@@ -1394,7 +1457,10 @@
     // percentile roll) logs that exact roll into the shared history here
     // without triggering a second, independent roll of its own the way
     // roll()/rollPercent() would (which animates and rolls fresh dice).
-    window.dgDice = { roll: rollPercent, rollManual, recordRoll, _toggle: togglePanel, _select: selectDie };
+    window.dgDice = {
+        roll: rollPercent, rollManual, recordRoll, rollExpr: rollExpression, setIdentity,
+        firebase: ensureFirebaseApi, _toggle: togglePanel, _select: selectDie,
+    };
 
     /* ── Relay listener: only an instance with a real panel of its own
        should listen -- a SUPPRESS_OWN_PANEL instance has no built _e to
@@ -1467,7 +1533,7 @@
         // from the one it's using (first code, or Play on another Agent).
         window.addEventListener('storage', e => {
             if (e.key !== CLOUD_CODE_KEY && e.key !== ROSTER_KEY && e.key !== null) return;
-            if (isHandlerContext()) return;
+            if (isHandlerContext() || FRIENDLY_PAGE) return;
             const code = currentAgentCode();
             const using = _rollContextPromise ? _rollContextFor : '';
             if (code !== using) reresolve();

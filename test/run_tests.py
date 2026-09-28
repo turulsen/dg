@@ -2117,7 +2117,7 @@ def test_hub_boot_splash(p):
     record("hub", "boot splash resolves and clears the DOM within its ~8.6s cap",
            page.locator("#boot-splash").count() == 0, "")
     record("hub", "clearance chooser is visible once the splash clears",
-           page.locator(".clearance-choice").count() == 2, "")
+           page.locator(".clearance-choice").count() == 3, "")
     record("hub", "boot-lock no longer blocks page scrolling once revealed",
            "boot-lock" not in page.eval_on_selector("body", "el => el.className"), "")
 
@@ -2129,7 +2129,7 @@ def test_hub_boot_splash(p):
     record("hub", "boot splash does not replay on a same-tab reload (sessionStorage-gated)",
            page.locator("#boot-splash").count() == 0, "")
     record("hub", "clearance chooser is immediately visible on the repeat load",
-           page.locator(".clearance-choice").count() == 2, "")
+           page.locator(".clearance-choice").count() == 3, "")
 
     page.close()
     return errs
@@ -2142,7 +2142,9 @@ def test_hub_clearance_branches(p):
     Both are routed through the app shell (hub.html) now, Phase 4 of the
     shell plan -- Agent opens the shell at its default (Agent Hub),
     A-Cell opens it with ?start=a-cell.html so the shell's content
-    iframe goes straight there instead of Agent Hub first."""
+    iframe goes straight there instead of Agent Hub first. Friendly (the
+    third branch) deliberately skips the shell: a one-shot player has no
+    Cover Identity for the shell's opening prompt to ask about."""
     page = p.new_page()
     page.set_default_timeout(5000)
     errs = collect_errors(page)
@@ -2150,8 +2152,8 @@ def test_hub_clearance_branches(p):
     page.goto(f"{BASE}/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(200)
     hrefs = page.eval_on_selector_all(".clearance-choice", "els => els.map(e=>e.getAttribute('href'))")
-    record("hub", "hub has exactly 2 clearance branches (Agent, A-Cell), both routed through the shell",
-           hrefs == ["hub.html", "hub.html?start=a-cell.html"], str(hrefs))
+    record("hub", "hub has exactly 3 clearance branches: Agent and A-Cell through the shell, Friendly direct",
+           hrefs == ["hub.html", "friendly.html", "hub.html?start=a-cell.html"], str(hrefs))
     page.close()
     return errs
 
@@ -3426,9 +3428,12 @@ def test_acell_play(p):
     # click above) so the filter switch clears the stale selection and
     # actually shows the Dashboard instead of her still-in-view dossier
     # (see renderList()'s own "still there" comment in a-cell.html).
+    # Plus a walk-in Friendly (friendly.html): no characters/ doc, its
+    # DEX comes from friendly/pregens.json.
+    fr = json.load(open(os.path.join(HERE, "..", "friendly", "pregens.json")))["pregens"][0]
     fake_cells_with_charlie = fake_cells + [
         {"cell_id": "cell_3", "name": "Cell Charlie", "handler": "Gergo",
-         "member_codes": ["OWEN-CS12", "MARC-9XQ2"]}
+         "member_codes": ["OWEN-CS12", "MARC-9XQ2", fr["id"]]}
     ]
     push_firestore_snapshot(page, "cells", [], [dict(c, id=c["cell_id"]) for c in fake_cells_with_charlie])
     wait_for_condition(lambda: "Cell Charlie" in (page.eval_on_selector_all(
@@ -3437,8 +3442,10 @@ def test_acell_play(p):
     page.wait_for_timeout(200)
     initiative_names = page.eval_on_selector_all("#play-view .cdb-initiative-row .nm", "els => els.map(e=>e.textContent)")
     initiative_dex = page.eval_on_selector_all("#play-view .cdb-initiative-row .dx", "els => els.map(e=>e.textContent)")
-    record("acell", "Cell Dashboard shows an Initiative Tracker ranked by DEX descending",
-           initiative_names == ["Owen Castillo", "Marcus Reyes"] and initiative_dex == ["14", "10"],
+    expected = sorted([("Owen Castillo", 14), ("Marcus Reyes", 10), (fr["name"] + " (Friendly)", fr["stats"]["DEX"]["value"])],
+                      key=lambda r: -r[1])
+    record("acell", "Cell Dashboard shows an Initiative Tracker ranked by DEX descending, Friendlies included",
+           initiative_names == [r[0] for r in expected] and initiative_dex == [str(r[1]) for r in expected],
            str((initiative_names, initiative_dex)))
 
     page.select_option("#play-cell-filter", label="All Agents")
@@ -10509,6 +10516,16 @@ def test_lp_initiative_order(p):
     record("stats-terminal", "raising this Agent's own DEX re-orders initiative immediately",
            names[0] == "Owen", str(names))
 
+    # A walk-in Friendly (friendly.html) in the same Cell has no
+    # characters/ doc -- its name and DEX come from friendly/pregens.json.
+    fr = _json.load(open(os.path.join(HERE, "..", "friendly", "pregens.json")))["pregens"][0]
+    push_firestore_snapshot(page, "cells", [], [{"id": "cell_a", "member_codes": ["OWEN-CS12", "PRIY-AN34", "DANI-U8BM", fr["id"]], "name": "Cell A"}])
+    fr_first = fr["name"].split()[0]
+    wait_for_condition(lambda: fr_first in page.eval_on_selector_all("#lp-initiative .lp-init-name", "els => els.map(e => e.textContent)"), timeout_ms=6000)
+    rows = page.eval_on_selector_all("#lp-initiative .lp-init-row", "els => els.map(e => [e.querySelector('.lp-init-name').textContent, e.querySelector('.lp-init-dex').textContent])")
+    record("stats-terminal", "a Friendly pregen in the Cell takes its place in initiative with its sheet's DEX",
+           [fr_first, str(fr["stats"]["DEX"]["value"])] in rows, str(rows))
+
     bar_top = page.evaluate("() => getComputedStyle(document.getElementById('lp-tracker-bar')).top")
     init_h = page.evaluate("() => document.getElementById('lp-initiative').offsetHeight")
     record("stats-terminal", "the tracker bar sticks below the initiative row, not on top of it",
@@ -11154,6 +11171,226 @@ def test_auto_created_brief_uses_titles_and_player(p):
     return errs
 
 
+def test_friendly_clearance(p):
+    """Friendly: a one-shot player picks a pregen and plays. Out of the box
+    it must be at most three clicks from Clearance to a roll (it's two:
+    the card, then an Agent), rolls must never be filed under whatever
+    Agent this device's own roster happens to hold, and a pregen the
+    Handler put in a Cell rolls into that Cell's feed."""
+    errs = []
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    errs += collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    route_apps_script_ok(page)
+    page.add_init_script("""try {
+      sessionStorage.setItem('dg_boot_seen', '1');
+      localStorage.setItem('dg_agent_roster', JSON.stringify({'MARA-0001': {code: 'MARA-0001', char_name: 'Robert Wright', saved_at: 1}}));
+    } catch (e) {}""")
+    page.goto(f"{BASE}/index.html", wait_until="load", timeout=15000)
+    clicks = 0
+    page.click("a.cc-friendly"); clicks += 1
+    page.wait_for_url("**/friendly.html", timeout=10000)
+    _pump_until(page, lambda: page.locator(".fr-card").count() > 0)
+    record("friendly", "Friendly card on Clearance opens the pregen picker", page.locator(".fr-card").count() > 0,
+           page.inner_text("#fr-grid")[:120])
+    record("friendly", "no Cell filter shown while no Cell holds a Friendly", not page.is_visible("#fr-toolbar"), "")
+    page.locator(".fr-card").first.click(); clicks += 1
+    page.wait_for_timeout(300)
+    record("friendly", "an Agent is playable within three clicks of Clearance",
+           clicks <= 3 and page.is_visible("#fr-view .pv-bio") and page.locator("#fr-skills .roll").count() > 10,
+           f"clicks={clicks}")
+    name = page.inner_text("#fr-view .pv-bio")
+    zero = page.eval_on_selector_all("#fr-skills .sv", "els => els.filter(e => e.textContent === '0%').length")
+    record("friendly", "0% skills are left off the sheet", zero == 0 and page.locator("#fr-skills .roll").count() > 10, str(zero))
+    fit = page.evaluate("""() => {
+      const bar = document.getElementById('dr-panel').getBoundingClientRect();
+      const more = document.querySelector('.fr-more > summary').getBoundingClientRect();
+      const pill = document.getElementById('dg-radio-pill');
+      const pr = pill ? pill.getBoundingClientRect() : null;
+      const hit = pr ? document.elementFromPoint(pr.left + pr.width / 2, pr.top + pr.height / 2) : null;
+      return { moreBottom: more.bottom, barTop: bar.top, pillInBar: !!pr && pr.top >= bar.top && pr.bottom <= bar.bottom + 1,
+               pillOnTop: !!hit && hit.id === 'dg-radio-pill', scrollX: document.documentElement.scrollWidth <= innerWidth };
+    }""")
+    record("friendly", "on a phone the whole playable sheet (stats, skills, weapons, Bonds) fits the first screen",
+           fit["moreBottom"] <= fit["barTop"] and fit["scrollX"], str(fit))
+    record("friendly", "on a phone Tune In docks inside the collapsed Dice Roller bar instead of over the sheet",
+           fit["pillInBar"] and fit["pillOnTop"], str(fit))
+    page.click('#fr-skills .roll[data-label="Alertness"]')
+    _pump_until(page, lambda: "Alertness" in page.inner_text("#dr-history-list"))
+    hist = page.inner_text("#dr-history-list")
+    record("friendly", "a skill tap rolls and lists under the pregen's name", "Alertness" in hist and name in hist, hist[:160])
+    writes = page.evaluate("window.__dgFirestoreWrites.map(w => w.path + ':' + JSON.stringify(w.data || {}))")
+    record("friendly", "a Friendly roll outside a Cell is never filed under this device's own Agent",
+           not any("MARA-0001" in w or "dice_rolls" in w for w in writes), str(writes)[:200])
+    record("friendly", "the dice panel opened for the roll", not page.evaluate("document.getElementById('dr-panel').classList.contains('dr-collapsed')"), "")
+    page.click("#fr-view .pv-bio"); page.wait_for_timeout(200)
+    record("friendly", "on a phone, tapping the sheet puts the dice panel away again",
+           page.evaluate("document.getElementById('dr-panel').classList.contains('dr-collapsed')"), "")
+    dmg = page.locator("[data-damage]").first
+    label = dmg.get_attribute("data-label")
+    dmg.click()
+    _pump_until(page, lambda: label in page.inner_text("#dr-history-list"))
+    record("friendly", "weapon damage rolls its dice expression", label in page.inner_text("#dr-history-list"), page.inner_text("#dr-history-list")[:160])
+    page.reload(wait_until="load")
+    _pump_until(page, lambda: page.is_visible("#fr-view .pv-bio"))
+    record("friendly", "a reload keeps this tab's Agent and its roll history",
+           page.is_visible("#fr-view .pv-bio") and "Alertness" in page.inner_text("#dr-history-list"), "")
+    record("friendly", "HP/WP/SAN are shown as starting values for the paper sheet, not editable",
+           page.locator("#fr-view input").count() == 0 and "paper" in page.inner_text(".fr-paper-note"), "")
+    page.close()
+
+    # A Cell holding a Friendly: the filter appears preselected from the
+    # Cell link, only that Cell's Friendlies show, and the roll lands in
+    # dice_rolls/{cell}/rolls attributed to the pregen.
+    pregens = json.load(open(os.path.join(HERE, "..", "friendly", "pregens.json")))["pregens"]
+    pid = pregens[0]["id"]
+    page = p.new_page(viewport={"width": 1280, "height": 900})
+    errs += collect_errors(page)
+    install_notes_firestore_stub(page)
+    seed_cells_docs(page, [
+        {"cell_id": "cell_oneshot", "name": "One-Shot Table", "handler": "H", "member_codes": [pid], "channel": ""},
+        {"cell_id": "cell_regular", "name": "Night Shift", "handler": "H", "member_codes": ["MARA-0001"], "channel": ""},
+    ])
+    _block_fonts(page)
+    route_apps_script_ok(page)
+    page.goto(f"{BASE}/friendly.html?cell=cell_oneshot", wait_until="load", timeout=15000)
+    _pump_until(page, lambda: page.is_visible("#fr-toolbar"))
+    opts = page.eval_on_selector_all("#fr-cell-filter option", "os => os.map(o => o.textContent)")
+    record("friendly", "the Cell filter lists only Cells that hold a Friendly, preselected from ?cell=",
+           page.input_value("#fr-cell-filter") == "cell_oneshot" and "Night Shift" not in opts, str(opts))
+    page.locator(".fr-card").first.click(); page.wait_for_timeout(300)
+    record("friendly", "the dossier says rolls go to the Cell", "One-Shot Table" in page.inner_text(".pv-cell"), page.inner_text(".pv-cell"))
+    page.locator("#fr-skills .roll").first.click()
+    _pump_until(page, lambda: page.evaluate("window.__dgFirestoreWrites.some(w => w.path.indexOf('dice_rolls/cell_oneshot/rolls/') === 0)"))
+    w = page.evaluate("(window.__dgFirestoreWrites.filter(w => w.path.indexOf('dice_rolls/') === 0)[0] || {}).data || null")
+    record("friendly", "a Friendly in a Cell rolls into that Cell's feed as the pregen",
+           bool(w) and w.get("agent_code") == pid, str(w)[:200])
+    page.close()
+
+    # Slow connection: pregens.json landing before dice-roller.js (a later
+    # script) had downloaded used to skip the Cells read entirely, so the
+    # Cell filter never appeared. Serve dice-roller.js 2.5s late.
+    import threading, http.server, functools, socket
+    class _Slow(http.server.SimpleHTTPRequestHandler):
+        def do_GET(self):
+            time.sleep(2.5)
+            return super().do_GET()
+        def log_message(self, *a):
+            pass
+    sock = socket.socket(); sock.bind(("127.0.0.1", 0)); slow_port = sock.getsockname()[1]; sock.close()
+    slow = http.server.ThreadingHTTPServer(("127.0.0.1", slow_port), functools.partial(_Slow, directory=os.path.join(HERE, "..")))
+    threading.Thread(target=slow.serve_forever, daemon=True).start()
+    try:
+        page = p.new_page(viewport={"width": 1280, "height": 900})
+        errs += collect_errors(page)
+        install_notes_firestore_stub(page)
+        seed_cells_docs(page, [{"cell_id": "cell_oneshot", "name": "One-Shot Table", "handler": "H", "member_codes": [pid], "channel": ""}])
+        _block_fonts(page)
+        route_apps_script_ok(page)
+        page.route("**/assets/dice-roller.js*", lambda r: r.fulfill(response=r.fetch(
+            url=f"http://127.0.0.1:{slow_port}/assets/dice-roller.js")))
+        page.goto(f"{BASE}/friendly.html?cell=cell_oneshot", wait_until="load", timeout=20000)
+        _pump_until(page, lambda: page.is_visible("#fr-toolbar"))
+        record("friendly", "the Cell filter still appears when dice-roller.js loads after the pregens",
+               page.is_visible("#fr-toolbar") and page.input_value("#fr-cell-filter") == "cell_oneshot", "")
+        page.close()
+    finally:
+        slow.shutdown()
+
+    # A-Cell: a Handler can add Friendlies to a Cell, and gets its table link.
+    page = p.new_page(viewport={"width": 1280, "height": 900})
+    errs += collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    route_apps_script_ok(page)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_unlocked', '1'); sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
+    page.goto(f"{BASE}/a-cell.html", wait_until="load", timeout=15000)
+    page.click('.tw[data-tab="cells"]')
+    page.wait_for_timeout(500)
+    _pump_until(page, lambda: page.evaluate(
+        "(window.__dgFirestoreListeners || []).filter(l => l.path === 'cells' || l.path === 'characters').length >= 2"))
+    push_firestore_snapshot(page, "characters", [], [])
+    push_firestore_snapshot(page, "cells", [], [
+        {"id": "cell_oneshot", "name": "One-Shot Table", "handler": "H", "member_codes": [pid], "channel": ""},
+        {"id": "cell_new", "name": "Next Week", "handler": "H", "member_codes": [], "channel": ""},
+    ])
+    _pump_until(page, lambda: page.locator(".cell-card").count() == 2)
+    one = page.locator(".cell-card", has_text="One-Shot Table")
+    nxt = page.locator(".cell-card", has_text="Next Week")
+    record("friendly", "A-Cell names a Friendly member instead of showing its raw code",
+           "Friendly:" in one.inner_text() and pregens[0]["name"] in one.inner_text(), one.inner_text()[:160])
+    record("friendly", "A-Cell shows the Cell's Friendly table link",
+           one.locator('a[href*="friendly.html?cell=cell_oneshot"]').count() == 1, "")
+    record("friendly", "A-Cell offers Friendlies in a Cell's add list",
+           nxt.locator('optgroup[label^="Friendlies"] option[value="' + pid + '"]').count() == 1, "")
+    page.close()
+
+    record("friendly", "no JS errors across the Friendly flow", not errs, "; ".join(errs)[:300])
+
+
+def test_friendly_pregen_builder(p=None):
+    """scripts/pregens/build.js: deterministic (a re-run after adding PDFs
+    must not rename an Agent a player already met), fills every blank the
+    sheet leaves, respects the sheet's own numbers, adds bonus points only
+    to a sheet that hasn't spent them, and publishes no verbatim sheet
+    notes."""
+    import re, subprocess, tempfile
+    raw = [{
+        "file": "x.pdf", "title": "Federal Agent", "id": "FR-FA", "profession": "Federal Agent",
+        "employer": "", "name": "", "nationality": "", "sex": "", "age_dob": "", "education": "",
+        "physical": "", "motivations": "", "wounds": "",
+        "gear": "Badge and ID card, medium pistol in a belt holster, handcuffs, body armor.",
+        "notes": "UNIQUE-VERBATIM-NOTES-TEXT", "developments": "",
+        "stats": {"STR": 11, "CON": 12, "DEX": 10, "INT": 13, "POW": 12, "CHA": 11},
+        "features": {k: "" for k in ["STR", "CON", "DEX", "INT", "POW", "CHA"]},
+        "bonds": [{"name": "", "score": 11}, {"name": "", "score": 11}],
+        "derived": {"hp": 12, "wp": 12, "san_max": 99, "san": 60, "bp": 48},
+        "skills": [{"name": "Alertness", "base": 20, "value": 50}, {"name": "Criminology", "base": 10, "value": 50},
+                   {"name": "Firearms", "base": 20, "value": 50}, {"name": "Forensics", "base": 0, "value": 30},
+                   {"name": "Law", "base": 0, "value": 30}, {"name": "Search", "base": 20, "value": 50},
+                   {"name": "Accounting", "base": 10, "value": 10}, {"name": "Bureaucracy", "base": 10, "value": 40},
+                   {"name": "Computer Science", "base": 0, "value": 0}, {"name": "Pharmacy", "base": 0, "value": 0}],
+        "specialties": [], "other_skills": [], "weapons": [{"name": "Pistol", "skill": 50, "range": "15 m", "damage": "1d10",
+                                                            "ap": "", "kill_damage": "", "kill_radius": "", "ammo": "15"}],
+        "special_training": [], "missing": ["name", "sex"],
+    }]
+    root = os.path.join(HERE, "..")
+    with tempfile.TemporaryDirectory() as d:
+        src = os.path.join(d, "raw.json"); json.dump(raw, open(src, "w"))
+        outs = []
+        for i in range(2):
+            out = os.path.join(d, f"out{i}.json")
+            r = subprocess.run(["node", os.path.join(root, "scripts", "pregens", "build.js"), src, "-o", out],
+                               capture_output=True, text=True, timeout=60)
+            if r.returncode != 0:
+                record("friendly", "pregen builder runs", False, r.stderr[:300]); return
+            outs.append(open(out).read())
+    data = json.loads(outs[0])
+    pg = data["pregens"][0]
+    record("friendly", "pregen builder is deterministic", outs[0] == outs[1], "")
+    record("friendly", "pregen builder fills name, sex, age, nationality, education, physical, bonds, motivations",
+           all([pg["name"], pg["sex"], pg["age"], pg["dob"], pg["nationality"], pg["education"], pg["physical"],
+                len(pg["bonds"]) == 2 and all(b["name"] and b["relationship"] for b in pg["bonds"]), len(pg["motivations"]) == 3]),
+           json.dumps({k: pg[k] for k in ("name", "sex", "age", "nationality", "bonds", "motivations")})[:300])
+    record("friendly", "pregen builder keeps the sheet's own numbers",
+           pg["derived"] == {"hp": 12, "wp": 12, "san": 60, "san_max": 99, "bp": 48} and pg["stats"]["INT"]["value"] == 13
+           and all(b["score"] == 11 for b in pg["bonds"]), str(pg["derived"]))
+    skills = {s["name"]: s["value"] for s in pg["skills"]}
+    record("friendly", "pregen builder adds the catalog's bonus package to a sheet that hasn't spent one (+20, max 80)",
+           pg["bonus"]["package"] == "Criminalist" and skills["Criminology"] == 70 and skills["Accounting"] == 30
+           and all(v <= 80 for v in skills.values()), str(pg["bonus"]))
+    record("friendly", "pregen builder publishes no verbatim sheet notes", "UNIQUE-VERBATIM-NOTES-TEXT" not in outs[0], "")
+    record("friendly", "pregen builder lists the catalog's unextracted sheets as pending",
+           "Federal Agent" not in data["pending"] and len(data["pending"]) > 10, str(len(data["pending"])))
+    # The shipped data itself: every pregen carries what the page reads.
+    shipped = json.load(open(os.path.join(root, "friendly", "pregens.json")))
+    bad = [q["id"] for q in shipped["pregens"] if not (q["name"] and q["skills"] and q["stats"] and q["bonds"]
+                                                       and re.match(r"^[A-Z0-9-]{3,32}$", q["id"]))]
+    record("friendly", "friendly/pregens.json: every pregen is complete and its id is a valid Agent Code",
+           shipped["pregens"] and not bad, str(bad))
+
+
 def main():
     with sync_playwright() as p:
         # Chrome's own background-tab timer throttling policy applies to a
@@ -11252,6 +11489,8 @@ def main():
         safe(test_new_agent_carries_cover_identity, browser, area="journey")
         safe(test_theme_survives_new_recruit_and_cloud_load, browser, area="journey")
         safe(test_player_pages_use_in_page_dialogs, browser, area="journey")
+        safe(test_friendly_clearance, browser, area="friendly")
+        safe(test_friendly_pregen_builder, browser, area="friendly")
         safe(test_hub_dice_roller_learns_agent_from_iframe, browser, area="dice-roller")
         safe(test_agent_file_storage_plates_and_refresh, browser, area="journey")
         safe(test_auto_created_brief_uses_titles_and_player, browser, area="journey")

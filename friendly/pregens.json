@@ -1,0 +1,342 @@
+{
+ "version": 1,
+ "pregens": [
+  {
+   "id": "FR-USSS-PPD",
+   "title": "USSS - Personal Protective Detail",
+   "profession": "Federal Agent",
+   "employer": "U.S. Secret Service - Personal Protective Detail Division",
+   "name": "Karen M. Anderson",
+   "sex": "Female",
+   "age": 26,
+   "dob": "23 Jan 2000",
+   "nationality": "American",
+   "education": "Bachelor's in Law. 4 years with U.S. Secret Service.",
+   "physical": "Fit and rangy, neither tall nor short. Dirty blonde tied back hair, ice blue eyes. Clean hands but worn clothes — cares about function, not appearance.",
+   "stats": {
+    "STR": {
+     "value": 13,
+     "x5": 65,
+     "feature": "Muscular"
+    },
+    "CON": {
+     "value": 14,
+     "x5": 70,
+     "feature": "Perfect health"
+    },
+    "DEX": {
+     "value": 12,
+     "x5": 60,
+     "feature": "Average"
+    },
+    "INT": {
+     "value": 10,
+     "x5": 50,
+     "feature": "Average"
+    },
+    "POW": {
+     "value": 13,
+     "x5": 65,
+     "feature": "Strong willed"
+    },
+    "CHA": {
+     "value": 10,
+     "x5": 50,
+     "feature": "Average"
+    }
+   },
+   "derived": {
+    "hp": 14,
+    "wp": 13,
+    "san": 65,
+    "san_max": 99,
+    "bp": 52
+   },
+   "skills": [
+    {
+     "name": "Accounting",
+     "value": 10
+    },
+    {
+     "name": "Alertness",
+     "value": 60
+    },
+    {
+     "name": "Anthropology",
+     "value": 0
+    },
+    {
+     "name": "Archeology",
+     "value": 0
+    },
+    {
+     "name": "Artillery",
+     "value": 0
+    },
+    {
+     "name": "Athletics",
+     "value": 50
+    },
+    {
+     "name": "Bureaucracy",
+     "value": 30
+    },
+    {
+     "name": "Computer Science",
+     "value": 0
+    },
+    {
+     "name": "Criminology",
+     "value": 50
+    },
+    {
+     "name": "Demolitions",
+     "value": 40
+    },
+    {
+     "name": "Disguise",
+     "value": 10
+    },
+    {
+     "name": "Dodge",
+     "value": 50
+    },
+    {
+     "name": "Drive",
+     "value": 50
+    },
+    {
+     "name": "Firearms",
+     "value": 60
+    },
+    {
+     "name": "First Aid",
+     "value": 40
+    },
+    {
+     "name": "Forensics",
+     "value": 20
+    },
+    {
+     "name": "Heavy Machinery",
+     "value": 10
+    },
+    {
+     "name": "Heavy Weapons",
+     "value": 50
+    },
+    {
+     "name": "History",
+     "value": 10
+    },
+    {
+     "name": "HUMINT",
+     "value": 80
+    },
+    {
+     "name": "Law",
+     "value": 20
+    },
+    {
+     "name": "Medicine",
+     "value": 0
+    },
+    {
+     "name": "Melee Weapons",
+     "value": 50
+    },
+    {
+     "name": "Navigate",
+     "value": 50
+    },
+    {
+     "name": "Occult",
+     "value": 10
+    },
+    {
+     "name": "Persuade",
+     "value": 40
+    },
+    {
+     "name": "Pharmacy",
+     "value": 0
+    },
+    {
+     "name": "Psychotherapy",
+     "value": 10
+    },
+    {
+     "name": "Ride",
+     "value": 10
+    },
+    {
+     "name": "Search",
+     "value": 50
+    },
+    {
+     "name": "SIGINT",
+     "value": 0
+    },
+    {
+     "name": "Stealth",
+     "value": 60
+    },
+    {
+     "name": "Surgery",
+     "value": 0
+    },
+    {
+     "name": "Survival",
+     "value": 50
+    },
+    {
+     "name": "Swim",
+     "value": 50
+    },
+    {
+     "name": "Unarmed Combat",
+     "value": 60
+    },
+    {
+     "name": "Unnatural",
+     "value": 0
+    }
+   ],
+   "bonds": [
+    {
+     "name": "Brandon Anderson",
+     "relationship": "Father",
+     "score": 10
+    }
+   ],
+   "motivations": [
+    "Recruiting new Agents and Friendlies",
+    "Conspiracy theorizing",
+    "Living up to expectations"
+   ],
+   "weapons": [
+    {
+     "name": "Unarmed",
+     "skill": 60,
+     "damage": "1d4-1"
+    },
+    {
+     "name": "Pistol",
+     "skill": 60,
+     "range": "15 m",
+     "damage": "1d10",
+     "ammo": "15"
+    },
+    {
+     "name": "Carbine",
+     "skill": 60,
+     "range": "100 m",
+     "damage": "1d12",
+     "ap": "3",
+     "ammo": "30"
+    }
+   ],
+   "gear": [
+    "Agency badge",
+    "Identification card",
+    "Medium pistol",
+    "Two spare magazines",
+    "Tactical light",
+    "Handcuffs",
+    "Kevlar vest",
+    "Windbreaker jacket",
+    "Encrypted smartphone",
+    "Police-band radio",
+    "Throat microphone",
+    "Small evidence-collection kit",
+    "Light pistol",
+    "Tactical body armor",
+    "Kevlar helmet",
+    "Encrypted laptop",
+    "First aid kit",
+    "Portable fire extinguisher"
+   ],
+   "special_training": [],
+   "bonus": {
+    "package": "Athlete",
+    "applied": [],
+    "points_over_base": 690,
+    "already_spent": true
+   },
+   "generated": [
+    "name",
+    "nationality",
+    "sex",
+    "age_dob",
+    "education",
+    "physical",
+    "motivations",
+    "features",
+    "bond_names"
+   ]
+  }
+ ],
+ "pending": [
+  "ATF - Criminal Investigative Analyst",
+  "ATF - Explosives Specialist",
+  "ATF - Tactical Canine Program",
+  "ATF - Tactical Operations",
+  "Anthropologist or Historian",
+  "Army - 10th Mtn Div",
+  "Army - 1st Brigade 1st Cav",
+  "CACI - Targeting Officer",
+  "CBP - Border Search Trauma Rescue",
+  "CBP - Border Tactical Unit",
+  "CBP - Detection Canine Program",
+  "CBP - Marine Interdiction",
+  "CIA SAD-PAG",
+  "CIA SAD-SOG",
+  "Computer Scientist",
+  "Criminal",
+  "DEA - FAST",
+  "EPA - OCEFT",
+  "EPA - Regional Office Specialist",
+  "FBI - HRT",
+  "Federal Agent",
+  "Firefighter",
+  "Foreign Service Officer",
+  "ICE - SRT",
+  "Intelligence Analyst",
+  "Intelligence Case Officer",
+  "Lawyer or Business Executive",
+  "Marines - Combat Camera",
+  "Marines - Force Recon",
+  "Marines - MSPF",
+  "Marines - Security Force",
+  "Marshals - SOG",
+  "Media Specialist",
+  "NASA - Astronaut Corps Pilot",
+  "NPS - Interpretive Ranger",
+  "NSA - Cryptoanalysis Unit",
+  "NSA - Remote Devices",
+  "NSA - TAO",
+  "Navy - EOD",
+  "Navy - Hospital Corps",
+  "Nurse or Paramedic",
+  "Physician",
+  "Pilot or Sailor",
+  "Police Officer",
+  "Program Manager",
+  "SOCOM - 160th SOAR (A)",
+  "SOCOM - 4th MIST",
+  "SOCOM - 720th Special Tactics Group",
+  "SOCOM - Green Beret",
+  "SOCOM - ISA",
+  "SOCOM - Marine Raider",
+  "SOCOM - Navy SEAL",
+  "Scientist",
+  "Soldier or Marine",
+  "Special Operator",
+  "USCG - HITRON",
+  "USCG - MSRT",
+  "USCG - MSST",
+  "USCG - Search and Rescue",
+  "USCG - TACLET",
+  "USSS - Counter Assault Team"
+ ]
+}

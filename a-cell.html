@@ -1841,9 +1841,21 @@
   // is Delta Green's own initiative order. Reads the DEX rebuildAllCharacters()
   // already pulled out of the same character_json blob it parses for
   // HP/WP/SAN/BP, so this is free -- no extra Firestore read.
+  // Friendly pregens in this Cell have no characters/ doc -- their DEX
+  // comes from friendly/pregens.json (see friendly.html), loaded once.
+  var friendlyPregens = {};
+  fetch('friendly/pregens.json').then(function (r) { return r.ok ? r.json() : { pregens: [] }; }).then(function (data) {
+    (data.pregens || []).forEach(function (p) { friendlyPregens[p.id] = p; });
+  }).catch(function () { /* initiative just lists Agents */ });
+  function cellFriendlies() {
+    var cell = cells.filter(function (c) { return c.cell_id === cellFilterEl.value; })[0];
+    return ((cell && cell.member_codes) || []).map(function (code) { return friendlyPregens[code]; }).filter(Boolean);
+  }
+
   function initiativeTrackerHtml() {
     var ranked = characters
       .map(function (c) { return { name: (c.state.bio || {}).name || 'Unknown Agent', dex: (c.state || {}).dex }; })
+      .concat(cellFriendlies().map(function (p) { return { name: p.name + ' (Friendly)', dex: p.stats.DEX.value }; }))
       .filter(function (r) { return typeof r.dex === 'number'; })
       .sort(function (a, b) { return b.dex - a.dex; });
     if (!ranked.length) return '';
@@ -2148,6 +2160,21 @@
   var cells = [];
   var agents = []; // { code, name }
   var agentsByCode = {};
+  // Friendly pregens (friendly/pregens.json) can sit in a Cell too: their
+  // id is a valid Agent Code shape, so update_cell_members and
+  // exchangeAgentToken take it as-is, and a Friendly playing from that
+  // Cell's link rolls straight into the Cell's feed (see friendly.html).
+  var friendlies = []; // { code, name }
+  var friendliesByCode = {};
+  fetch('friendly/pregens.json').then(function (r) { return r.ok ? r.json() : { pregens: [] }; }).then(function (data) {
+    friendlies = (data.pregens || []).map(function (p) { return { code: p.id, name: p.name + ' (' + p.title + ')' }; });
+    friendlies.forEach(function (f) { friendliesByCode[f.code] = f; });
+    // Late arrival (slow connection) while the Handler has Agents picked
+    // in an Add list: leave the cards alone, the next Cells snapshot
+    // redraws with Friendlies included. Otherwise the listeners' own
+    // first render picks these up.
+    if (cellsUnsub && !groupsEl.querySelector('select option:checked')) renderAll();
+  }).catch(function () { /* no Friendlies offered, nothing else changes */ });
 
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -2158,7 +2185,9 @@
 
   function agentName(code) {
     var a = agentsByCode[code];
-    return a ? a.name : code;
+    if (a) return a.name;
+    var f = friendliesByCode[code];
+    return f ? 'Friendly: ' + f.name : code;
   }
 
   // Live reads: a plain Firestore onSnapshot on cells/characters (both
@@ -2251,6 +2280,18 @@
       var options = available.map(function (a) {
         return '<option value="' + escapeHtml(a.code) + '">' + escapeHtml(a.name) + '</option>';
       }).join('');
+      var availableFriendlies = friendlies.filter(function (f) { return c.member_codes.indexOf(f.code) === -1; });
+      if (availableFriendlies.length) {
+        options = (options ? '<optgroup label="Agents">' + options + '</optgroup>' : '') +
+          '<optgroup label="Friendlies (one-shot pregens)">' + availableFriendlies.map(function (f) {
+            return '<option value="' + escapeHtml(f.code) + '">' + escapeHtml(f.name) + '</option>';
+          }).join('') + '</optgroup>';
+      }
+      var addCount = available.length + availableFriendlies.length;
+      var hasFriendly = c.member_codes.some(function (code) { return friendliesByCode[code]; });
+      var friendlyLink = hasFriendly
+        ? new URL('friendly.html?cell=' + encodeURIComponent(c.cell_id), location.href).href
+        : '';
       return '<div class="cell-card" data-i="' + i + '">' +
         '<div class="cell-card-head">' +
         '<div class="cell-card-head-info"><div class="cell-card-name">' + escapeHtml(c.name) + '</div>' +
@@ -2258,8 +2299,12 @@
         '<button type="button" class="paper-btn cell-delete-btn" data-delete-cell="' + i + '">Delete Cell</button>' +
         '</div>' +
         '<div class="cell-members">' + members + '</div>' +
-        (available.length
-          ? '<div class="cell-add-row"><select data-add-select="' + i + '" multiple size="' + Math.min(available.length, 5) + '">' + options + '</select>' +
+        (friendlyLink
+          ? '<p class="cell-add-note">Friendly table link (players pick from this Cell\'s Friendlies, rolls land in its feed): ' +
+            '<a href="' + escapeHtml(friendlyLink) + '" target="_blank" rel="noopener">' + escapeHtml(friendlyLink) + '</a></p>'
+          : '') +
+        (addCount
+          ? '<div class="cell-add-row"><select data-add-select="' + i + '" multiple size="' + Math.min(addCount + (availableFriendlies.length ? 2 : 0), 8) + '">' + options + '</select>' +
             '<button type="button" class="paper-btn" data-add-btn="' + i + '">Add Selected</button>' +
             '<p class="cell-add-note">Ctrl/Cmd-click (or shift-click a range) to pick more than one before Add Selected.</p></div>'
           : '') +
@@ -5929,7 +5974,7 @@
 </script>
 
 <script src="assets/table-radio.js"></script>
-<script src="assets/dice-roller.js?v=8"></script>
+<script src="assets/dice-roller.js?v=9"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>
 
 </body>

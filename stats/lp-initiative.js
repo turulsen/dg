@@ -117,8 +117,30 @@
     document.body.style.setProperty('--lp-init-h', el.offsetHeight + 'px');
   }
 
+  // Friendly pregens (friendly.html) sit in a Cell under their pregen id
+  // with no characters/ doc -- their name and DEX come from the pregen
+  // file instead, so a walk-in player still gets a place in the order.
+  let friendliesPromise = null;
+  function friendlyFor(m) {
+    if (!friendliesPromise) {
+      friendliesPromise = fetch('../friendly/pregens.json')
+        .then(r => (r.ok ? r.json() : { pregens: [] }))
+        .catch(() => ({ pregens: [] }));
+    }
+    return friendliesPromise.then(data => (data.pregens || []).filter(p => p.id === m)[0] || null);
+  }
+
   function watchMember(m) {
     if (memberUnsubs[m]) return;
+    if (m.indexOf('FR-') === 0) {
+      memberUnsubs[m] = () => {};
+      friendlyFor(m).then(p => {
+        if (!memberUnsubs[m]) return; // left the Cell meanwhile
+        memberData[m] = p ? { name: p.name, dex: p.stats.DEX.value } : { name: m, dex: null };
+        render();
+      });
+      return;
+    }
     memberUnsubs[m] = window.firebase.firestore().collection('characters').doc(m).onSnapshot(doc => {
       let name = m, dex = null;
       try {

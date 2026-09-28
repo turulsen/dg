@@ -137,6 +137,7 @@
     position:relative; z-index:1; transition:background .15s;
   }
   .clearance-choice.cc-acell .cc-tab{ color:var(--red); }
+  .clearance-choice.cc-friendly .cc-tab{ color:#7a5a12; }
   .clearance-choice:hover .cc-tab{ background:var(--tab-active); }
   .cc-body{
     background:var(--paper); box-shadow:var(--paper-shadow);
@@ -147,6 +148,7 @@
   .cc-body::before{ content:''; position:absolute; inset:0 0 auto 0; height:3px; }
   .clearance-choice.cc-agent .cc-body::before{ background:var(--ink-3); }
   .clearance-choice.cc-acell .cc-body::before{ background:var(--red); }
+  .clearance-choice.cc-friendly .cc-body::before{ background:#c9a15a; }
   .cc-title{ font-family:'Special Elite',monospace; font-size:19px; letter-spacing:.02em; }
   .clearance-choice p{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.65; margin:0; }
   .cc-go{
@@ -213,6 +215,18 @@
                 <span class="cc-go">-&gt; Enter as Agent</span>
               </span>
             </a>
+            <!-- Friendly: a direct page, not through the hub.html shell --
+                 the shell opens with a Cover Identity prompt, and a
+                 one-shot player has none. Two taps from here to rolling:
+                 this card, then an Agent. -->
+            <a class="clearance-choice cc-friendly" href="friendly.html">
+              <span class="cc-tab">Clearance: Friendly</span>
+              <span class="cc-body">
+                <span class="cc-title">FRIENDLY</span>
+                <p>First time, or just one night? Pick a ready-made Agent — name, skills, gear all filled in — and start rolling. No sign-up.</p>
+                <span class="cc-go">-&gt; Play a Friendly</span>
+              </span>
+            </a>
             <a class="clearance-choice cc-acell" href="hub.html?start=a-cell.html">
               <span class="cc-tab">Clearance: A-Cell</span>
               <span class="cc-body">
@@ -227,6 +241,7 @@
             <h3>Notes</h3>
             <ul>
               <li>Players should use <strong>AGENT</strong> — that's the character creator, your submitted agent files, and the cover ID fabricator.</li>
+              <li>Here for a single session? <strong>FRIENDLY</strong> hands you a finished Agent in two taps — keep HP and SAN on paper.</li>
               <li><strong>A-CELL</strong> is for the Handler only, and asks for a password before showing anything.</li>
             </ul>
           </div>
@@ -337,7 +352,7 @@
 </script>
 
 <script src="assets/table-radio.js"></script>
-<script src="assets/dice-roller.js?v=8"></script>
+<script src="assets/dice-roller.js?v=9"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>
 
 </body>
