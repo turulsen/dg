@@ -525,6 +525,11 @@
     function finish() {
         localStorage.removeItem('dg-wiz-step');
         deactivate();
+        // The page used to stay wherever the last step had scrolled it --
+        // on a phone that left the finished Agent half-way down with the
+        // "Enter Live Play" button cut off under the Hub's header. Start
+        // the finished sheet from the top instead.
+        window.scrollTo({ top: 0, behavior: 'auto' });
     }
 
     /* ── Public API ───────────────────────────────────────────────────────── */

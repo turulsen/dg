@@ -1906,7 +1906,7 @@
     viewEl.innerHTML = '<div class="play-view-empty">Loading…</div>';
     var cbName = '_acellPlayFull_' + c.code.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
     var timer = setTimeout(function () {
-      delete window[cbName];
+      window[cbName] = function () { delete window[cbName]; }; // a late reply must not throw
       if (selectedCode === c.code) viewEl.innerHTML = '<div class="play-view-empty">Could not load this Agent’s full sheet.</div>';
     }, 7000);
     window[cbName] = function (res) {
@@ -2597,7 +2597,7 @@
     var cbName = '_acellEvidence_' + action + '_' + Date.now() + '_' + attempt;
     function doRequest(idToken) {
       var timer = setTimeout(function () {
-        delete window[cbName];
+        window[cbName] = function () { delete window[cbName]; }; // a late reply must not throw
         if (attempt < JSONP_GET_RETRY_DELAYS_MS.length) {
           setTimeout(function () { jsonpGet(action, params, cb, attempt + 1); }, JSONP_GET_RETRY_DELAYS_MS[attempt]);
         } else {
@@ -3526,7 +3526,7 @@
     var cbName = '_acellSheet_' + action + '_' + Date.now() + '_' + attempt;
     function doRequest(idToken) {
       var timer = setTimeout(function () {
-        delete window[cbName];
+        window[cbName] = function () { delete window[cbName]; }; // a late reply must not throw
         if (attempt < JSONP_GET_RETRY_DELAYS_MS.length) {
           setTimeout(function () { jsonpGet(action, params, cb, attempt + 1); }, JSONP_GET_RETRY_DELAYS_MS[attempt]);
         } else {
@@ -4839,7 +4839,7 @@
     var cbName = '_acellMusic_' + action + '_' + Date.now() + '_' + attempt;
     function doRequest(idToken) {
       var timer = setTimeout(function () {
-        delete window[cbName];
+        window[cbName] = function () { delete window[cbName]; }; // a late reply must not throw
         if (attempt < JSONP_GET_RETRY_DELAYS_MS.length) {
           setTimeout(function () { jsonpGet(action, params, cb, attempt + 1); }, JSONP_GET_RETRY_DELAYS_MS[attempt]);
         } else {
@@ -5480,16 +5480,34 @@
      straight to Firestore now, same doc the Cells tab's own create/
      delete write directly. A Cell with no channel set yet just shows a
      note instead of auto-tuning. ── */
+  function renderCellOptions(list) {
+    cells = list;
+    var prevValue = cellSelect.value;
+    cellSelect.innerHTML = '<option value="">-- Select a Cell --</option>' + cells.map(function (c) {
+      return '<option value="' + escapeHtml(c.cell_id) + '">' + escapeHtml(c.name) + '</option>';
+    }).join('');
+    if (prevValue && cells.some(function (c) { return c.cell_id === prevValue; })) cellSelect.value = prevValue;
+  }
+  // The Cells tab creates Cells straight in Firestore now, so the
+  // Sheet-backed list_cells never lists a Cell made since -- "Cue For
+  // Cell" showed only "-- Select a Cell --". Read Firestore (the same
+  // docs the Cells tab and Assign below use); list_cells as fallback.
   function fetchCells() {
-    jsonpGet('list_cells', {}, function (res) {
-      if (!res || res.status !== 'OK' || !Array.isArray(res.cells)) return;
-      cells = res.cells;
-      var prevValue = cellSelect.value;
-      cellSelect.innerHTML = '<option value="">-- Select a Cell --</option>' + cells.map(function (c) {
-        return '<option value="' + escapeHtml(c.cell_id) + '">' + escapeHtml(c.name) + '</option>';
-      }).join('');
-      if (prevValue && cells.some(function (c) { return c.cell_id === prevValue; })) cellSelect.value = prevValue;
-    });
+    function viaSheet() {
+      jsonpGet('list_cells', {}, function (res) {
+        if (!res || res.status !== 'OK' || !Array.isArray(res.cells)) return;
+        renderCellOptions(res.cells);
+      });
+    }
+    ensureHandlerSignedIn().then(function () {
+      return window.firebase.firestore().collection('cells').get();
+    }).then(function (snap) {
+      var list = [];
+      snap.forEach(function (d) { list.push(Object.assign({ cell_id: d.id }, d.data())); });
+      if (!list.length) { viaSheet(); return; } // nothing mirrored yet -- the Sheet is all there is
+      list.sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || '')); });
+      renderCellOptions(list);
+    }).catch(viaSheet);
   }
 
   cellSelect.addEventListener('change', function () {
@@ -5911,7 +5929,7 @@
 </script>
 
 <script src="assets/table-radio.js"></script>
-<script src="assets/dice-roller.js?v=7"></script>
+<script src="assets/dice-roller.js?v=8"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>
 
 </body>

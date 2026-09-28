@@ -1000,9 +1000,24 @@ const outcomeBody = document.getElementById('outcomeBody');
 const bondLine = document.getElementById('bondLine');
 const processNote = document.getElementById('processNote');
 
+// In-page notice instead of alert(): alert() shows nothing at all in an
+// iOS home-screen (standalone) install, so a player tapping Submit with a
+// section unfilled just saw nothing happen.
+function reqNotice(msg){
+  let t = document.getElementById('req-toast');
+  if(!t){
+    t = document.createElement('div');
+    t.id = 'req-toast'; t.setAttribute('role','alert');
+    t.style.cssText = 'position:fixed;left:50%;bottom:130px;transform:translateX(-50%);z-index:100000;max-width:min(520px,calc(100vw - 32px));width:max-content;box-sizing:border-box;background:#1c1608;color:#f4eed8;border:1px solid #8a7a5a;padding:10px 18px;font:13px/1.45 Courier Prime,monospace;text-align:center;opacity:0;transition:opacity .25s;pointer-events:none;';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg; t.style.opacity = '1';
+  clearTimeout(t._h); t._h = setTimeout(()=>{ t.style.opacity = '0'; }, 4000);
+}
+
 // "Ask Records" – Luck roll to learn the cost center, at the cost of suspicion
 document.getElementById('askCostCenter').addEventListener('click', ()=>{
-  if(itemSel.value===""){ alert('Select an item first.'); return; }
+  if(itemSel.value===""){ reqNotice('Select an item first.'); return; }
   const it = ITEMS[itemSel.value];
   const ccResult = document.getElementById('ccResult');
   const success = Math.random() < 0.5; // Luck Roll, per the book: flat 50%
@@ -1061,16 +1076,16 @@ function logRollToHistory(tier, val, skill){
 }
 
 rollBtn.addEventListener('click', ()=>{
-  if(!selectedRoute){ alert('Section II is not complete: select a method of acquisition.'); return; }
-  if(itemSel.value===""){ alert('Section I is not complete: select an item.'); return; }
+  if(!selectedRoute){ reqNotice('Section II is not complete: select a method of acquisition.'); return; }
+  if(itemSel.value===""){ reqNotice('Section I is not complete: select an item.'); return; }
   if(selectedRoute==='official' && !document.getElementById('agency').value){
-    alert('Section II is not complete: select the requesting agency.'); return;
+    reqNotice('Section II is not complete: select the requesting agency.'); return;
   }
   if(selectedRoute==='favor' && !document.getElementById('bondType').value){
-    alert('Section II is not complete: select which Bond you are drawing on.'); return;
+    reqNotice('Section II is not complete: select which Bond you are drawing on.'); return;
   }
   if(selectedRoute==='black' && !document.getElementById('contact').value){
-    alert('Section II is not complete: select who you know.'); return;
+    reqNotice('Section II is not complete: select who you know.'); return;
   }
 
   let extraPenalty = 0;
@@ -1328,6 +1343,6 @@ function applyAgentSkills(state){
 })();
 </script>
 <script src="assets/table-radio.js"></script>
-<script src="assets/dice-roller.js?v=7"></script>
+<script src="assets/dice-roller.js?v=8"></script>
 </body>
 </html>

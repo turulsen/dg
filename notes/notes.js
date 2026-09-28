@@ -264,18 +264,32 @@
     return ensureAgentSignedIn(agentCode).then(() => {
       const db = window.firebase.firestore();
       const docRef = noteBlockDocRef_(cellId, blockId);
+      const fields = (createdAt, now) => ({
+        agent_code: agentCode, block_type: blockType, text: text || '',
+        shared: !!shared, sort_order: sortOrder, created_at: createdAt,
+        updated_at: now, pinned: !!pinned, tags: tags,
+      });
       return db.runTransaction(tx => tx.get(docRef).then(snap => {
         const now = Date.now();
         // Preserve the original created_at on an edit -- only a brand
         // new block (or one this Agent doesn't already own, which the
         // rule will reject anyway) gets a fresh one.
         const createdAt = (snap.exists && snap.data().created_at) || now;
-        tx.set(docRef, {
-          agent_code: agentCode, block_type: blockType, text: text || '',
-          shared: !!shared, sort_order: sortOrder, created_at: createdAt,
-          updated_at: now, pinned: !!pinned, tags: tags,
-        }, { merge: true });
-      }));
+        tx.set(docRef, fields(createdAt, now), { merge: true });
+      })).catch(err => {
+        // A BRAND-NEW block never saved: the read above is of a doc that
+        // doesn't exist yet, and the notes read rule (resource.data.shared
+        // / resource.data.agent_code) can't be evaluated on a missing doc,
+        // so Firestore denies the read and the whole transaction before
+        // the write is even tried. Every new note since the move to
+        // Firestore hit this (only a rules-less test stub ever saw it
+        // "work"). A doc this Agent can't read is either missing or
+        // someone else's; create it directly -- the create/update rules
+        // still refuse the second case.
+        if (!err || err.code !== 'permission-denied') throw err;
+        const now = Date.now();
+        return docRef.set(fields(now, now), { merge: true });
+      });
     });
   }
   function deleteNoteBlockFirestore_(cellId, agentCode, blockId) {
@@ -366,7 +380,7 @@
     const cbName = '_dgNotes_' + action + '_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
     const prevScript = document.getElementById('_dg_notes_jsonp_script');
     if (prevScript) prevScript.remove();
-    const timer = setTimeout(() => { delete window[cbName]; cb(null); }, 20000);
+    const timer = setTimeout(() => { window[cbName] = function () { delete window[cbName]; }; cb(null); }, 20000);
     window[cbName] = function (res) {
       clearTimeout(timer);
       delete window[cbName];
