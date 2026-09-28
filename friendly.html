@@ -137,7 +137,7 @@
   }
   .roll .sv{ font-family:'Special Elite',monospace; color:var(--ink); flex-shrink:0; }
   .roll.strong{ color:var(--ink); font-weight:700; }
-  .roll.untrained{ opacity:.6; }
+  .roll .sn{ min-width:0; overflow-wrap:anywhere; }
   .fr-weapons{ width:100%; border-collapse:collapse; font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); }
   .fr-weapons th{ text-align:left; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); font-weight:400; padding:4px 6px 4px 0; }
   .fr-weapons td{ padding:4px 6px 4px 0; border-top:1px dotted var(--rule); vertical-align:middle; }
@@ -150,6 +150,72 @@
   .pv-list{ margin:0; padding-left:18px; font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.7; }
   .pv-text{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.7; margin:0; }
   .fr-actions{ display:flex; gap:10px; flex-wrap:wrap; margin-top:22px; }
+  .pv-row .bn{ text-align:left; }
+  /* Desktop: the paper form's own two-column spread -- what gets rolled
+     on the left, the rest on the right -- so the whole sheet is one
+     screen instead of a long scroll. */
+  body.fr-playing .hub-header h1, body.fr-playing .hub-header p{ display:none; }
+  body.fr-playing .hub-header{ padding-bottom:10px; }
+  @media (min-width:861px){
+    .pv-body{ display:grid; grid-template-columns:minmax(0,1.55fr) minmax(0,1fr); gap:0 26px; align-items:start; }
+    .pv-skills{ grid-template-columns:repeat(3,minmax(0,1fr)); }
+    .roll{ min-height:30px; padding:4px 4px; }
+    .fr-col-side .pv-sec-hd:first-child, .fr-col-main .pv-sec-hd:first-child{ margin-top:14px; }
+    .fr-col-side .fr-weapons .opt{ display:none; }
+  }
+  .fr-more{ margin-top:14px; }
+  .fr-more > summary{
+    cursor:pointer; list-style:none; font-family:'Special Elite',monospace; font-size:11px;
+    letter-spacing:.08em; color:var(--red); padding:8px 0; border-bottom:1px solid var(--rule);
+  }
+  .fr-more > summary::-webkit-details-marker{ display:none; }
+  .fr-more > summary::before{ content:'> '; }
+  .fr-more[open] > summary::before{ content:'v '; }
+
+  /* ── Phone: the playable sheet on one screen. Header text, the photo
+     and the stat descriptors go; everything shrinks to a paper sheet's
+     density; skills run three across. Rolls are still real buttons. ── */
+  @media (max-width:560px){
+    body.folder-theme{ padding:10px 6px 60px; }
+    body.fr-playing .hub-header h1, body.fr-playing .hub-header p{ display:none; }
+    body.fr-playing .hub-header{ padding:4px 6px 8px; display:flex; align-items:center; gap:12px; }
+    body.fr-playing .hub-header .stamp{ margin:0; padding:2px 8px; font-size:8px; }
+    .folder-wrap{ padding:0; }
+    .folder-body{ padding:8px 6px 10px; }
+    .tab-strip{ padding-left:16px; }
+    .pv-sticky{ padding:8px 10px 6px; gap:8px; }
+    .pv-photo{ display:none; }
+    .pv-bio{ font-size:16px; }
+    .pv-sub{ font-size:9.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .pv-cell{ font-size:9.5px; margin-top:1px; }
+    .pv-vitals{ gap:9px; }
+    .pv-vital .lbl{ font-size:8px; }
+    .pv-vital .val{ font-size:15px; }
+    .fr-paper-note{ margin:6px 10px 0; padding:3px 8px; font-size:10px; transform:none; }
+    .pv-body{ padding:0 10px 12px; }
+    .pv-sec-hd{ margin:9px 0 4px; padding-bottom:3px; font-size:9px; }
+    .pv-stats{ grid-template-columns:repeat(6,1fr); gap:4px; }
+    .pv-stat{ padding:3px 1px; }
+    .pv-stat .val{ font-size:15px; line-height:1.1; }
+    .pv-stat .lbl, .pv-stat .x5{ font-size:9px; }
+    .pv-stat .ft{ display:none; }
+    .pv-skills{ grid-template-columns:repeat(3,minmax(0,1fr)); gap:0 6px; }
+    .roll{ font-size:10px; line-height:1.15; padding:2px 1px; min-height:28px; gap:3px; letter-spacing:-.02em; }
+    .roll .sn{ overflow-wrap:normal; hyphens:auto; }
+    .fr-weapons{ font-size:11px; }
+    .fr-weapons td{ padding:2px 6px 2px 0; }
+    .fr-weapons .roll{ min-height:26px; padding:1px 8px; font-size:11px; }
+    .fr-weapons th{ padding:2px 6px 2px 0; }
+    .pv-row{ font-size:11px; padding:3px 0; }
+    .fr-actions{ margin-top:12px; }
+    /* Table Radio's Tune In pill floated over the sheet's right-hand
+       value column; here it docks inside the collapsed Dice Roller bar
+       instead (the roller sits above it when open). Only the pill --
+       once tuned in, the radio's own bar keeps its normal spot. */
+    #dg-radio:has(> #dg-radio-pill){ bottom:4px; right:44px; width:auto; z-index:10000; }
+    body:has(#dr-panel:not(.dr-collapsed)) #dg-radio:has(> #dg-radio-pill){ display:none; }
+    #dg-radio-pill{ padding:4px 12px; font-size:11px; }
+  }
 </style>
 </head>
 <body class="folder-theme">
@@ -265,6 +331,7 @@
       window.dgDiceIdentity = { code: p.id, name: p.name, cellId: current.cellId };
     }
     renderDossier();
+    document.body.classList.add('fr-playing');
     dossierTab.hidden = false;
     document.getElementById('fr-dossier-tab-label').textContent = p.name.split(' ').slice(-1)[0];
     showTab('dossier');
@@ -297,13 +364,12 @@
         '<div class="x5">' + s.x5 + '%</div><div class="ft">' + esc(s.feature) + '</div></button>';
     }).join('');
 
-    var skills = p.skills.map(function (s) {
-      var cls = 'roll' + (s.value >= 50 ? ' strong' : '') + (s.value === 0 ? ' untrained' : '');
-      return '<button type="button" class="' + cls + '"' + (s.value === 0 ? ' hidden' : '') +
-        ' data-roll="' + s.value + '" data-label="' + esc(s.name) + '"><span>' + esc(s.name) + '</span><span class="sv">' + s.value + '%</span></button>';
+    // A 0% skill can't succeed, so it isn't on the sheet at all.
+    var skills = p.skills.filter(function (s) { return s.value > 0; }).map(function (s) {
+      return '<button type="button" class="roll' + (s.value >= 50 ? ' strong' : '') + '"' +
+        ' data-roll="' + s.value + '" data-label="' + esc(s.name) + '"><span class="sn">' + esc(s.name) + '</span><span class="sv">' + s.value + '%</span></button>';
     }).join('');
-    skills += '<button type="button" class="roll" data-roll="50" data-label="Luck"><span>Luck</span><span class="sv">50%</span></button>';
-    var untrained = p.skills.filter(function (s) { return s.value === 0; }).length;
+    skills += '<button type="button" class="roll" data-roll="50" data-label="Luck"><span class="sn">Luck</span><span class="sv">50%</span></button>';
 
     var weapons = p.weapons.length ? '<table class="fr-weapons"><thead><tr><th>Weapon</th><th>Skill</th><th>Damage</th><th class="opt">Range</th><th class="opt">AP</th><th class="opt">Ammo</th></tr></thead><tbody>' +
       p.weapons.map(function (w) {
@@ -315,7 +381,7 @@
       }).join('') + '</tbody></table>' : '<p class="pv-text">None.</p>';
 
     var bonds = p.bonds.map(function (b) {
-      return '<div class="pv-row"><span class="v" style="text-align:left">' + esc(b.name) + ' <span class="k">· ' + esc(b.relationship) + '</span></span><span class="k">' + esc(b.score) + '</span></div>';
+      return '<div class="pv-row"><span class="v bn">' + esc(b.name) + ' <span class="k">· ' + esc(b.relationship) + '</span></span><span class="k">' + esc(b.score) + '</span></div>';
     }).join('');
 
     viewEl.innerHTML =
@@ -328,29 +394,29 @@
         '</div>' +
         '<div class="pv-vitals">' + vital('HP', d.hp) + vital('WP', d.wp) + vital('SAN', d.san) + vital('BP', d.bp) + '</div>' +
       '</div>' +
-      '<div class="fr-paper-note">Starting values. Keep track of HP, WP and SAN on your paper sheet — this page only rolls.</div>' +
-      '<div class="pv-body">' +
-        '<div class="pv-sec-hd">Statistics <span>tap for ×5 roll</span></div><div class="pv-stats">' + stats + '</div>' +
-        '<div class="pv-sec-hd">Skills' + (untrained ? ' <button type="button" id="fr-toggle-untrained">show ' + untrained + ' untrained</button>' : '') + '</div>' +
+      '<div class="fr-paper-note">Start values · keep HP/WP/SAN on paper · tap to roll</div>' +
+      '<div class="pv-body"><div class="fr-col-main">' +
+        '<div class="pv-sec-hd">Statistics <span>×5</span></div><div class="pv-stats">' + stats + '</div>' +
+        '<div class="pv-sec-hd">Skills</div>' +
         '<div class="pv-skills" id="fr-skills">' + skills + '</div>' +
+        '</div><div class="fr-col-side">' +
         '<div class="pv-sec-hd">Weapons</div>' + weapons +
         '<div class="pv-sec-hd">Bonds</div>' + bonds +
+        // Everything the table rarely rolls against, folded away so the
+        // playable part is one screen, phone or desktop.
+        '<details class="fr-more" id="fr-more">' +
+        '<summary>Background, motivations &amp; gear</summary>' +
         '<div class="pv-sec-hd">Motivations</div><ul class="pv-list">' + p.motivations.map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('') + '</ul>' +
         '<div class="pv-sec-hd">Personal Data</div>' +
           row('Profession', p.profession) + row('Employer', p.employer) + row('Sex', p.sex) +
           row('Age / DOB', p.age + ' (' + p.dob + ')') + row('Nationality', p.nationality) + row('Education', p.education) +
         '<div class="pv-sec-hd">Physical Description</div><p class="pv-text">' + esc(p.physical) + '</p>' +
-        (p.gear.length ? '<div class="pv-sec-hd">Armor and Gear</div><ul class="pv-list">' + p.gear.map(function (g) { return '<li>' + esc(g) + '</li>'; }).join('') + '</ul>' : '') +
+        (p.gear.length ? '<div class="pv-sec-hd">Armor and Gear</div><p class="pv-text">' + p.gear.map(esc).join(' · ') + '</p>' : '') +
         (p.special_training.length ? '<div class="pv-sec-hd">Special Training</div>' + p.special_training.map(function (t) { return row(esc(t.training), t.skill); }).join('') : '') +
+        '</details>' +
         '<div class="fr-actions"><button type="button" class="paper-btn" id="fr-change">Choose a different Agent</button></div>' +
-      '</div>';
+      '</div></div>';
 
-    var toggle = document.getElementById('fr-toggle-untrained');
-    if (toggle) toggle.addEventListener('click', function () {
-      var hidden = viewEl.querySelectorAll('#fr-skills .roll.untrained[hidden]');
-      viewEl.querySelectorAll('#fr-skills .roll.untrained').forEach(function (b) { b.hidden = !hidden.length; });
-      toggle.textContent = hidden.length ? 'hide untrained' : 'show ' + untrained + ' untrained';
-    });
     document.getElementById('fr-change').addEventListener('click', function () { showTab('pick'); window.scrollTo(0, 0); });
   }
   viewEl.addEventListener('click', function (e) {
@@ -378,7 +444,14 @@
   // does -- a walk-in player never sees a control they don't need.
   // ?cell=ID (the link A-Cell's Cells tab shows) preselects one.
   function loadCells() {
-    if (!(window.dgDice && window.dgDice.firebase)) return;
+    // pregens.json can land before dice-roller.js (a separate script
+    // further down) has even downloaded on a slow connection -- this used
+    // to just return then, and the Cell filter never appeared. Every
+    // parser-blocking script has run by DOMContentLoaded, so wait for it.
+    if (!(window.dgDice && window.dgDice.firebase)) {
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loadCells, { once: true });
+      return;
+    }
     window.dgDice.firebase(function () {
       window.firebase.firestore().collection('cells').get().then(function (snap) {
         cells = [];

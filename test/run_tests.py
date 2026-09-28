@@ -2117,7 +2117,7 @@ def test_hub_boot_splash(p):
     record("hub", "boot splash resolves and clears the DOM within its ~8.6s cap",
            page.locator("#boot-splash").count() == 0, "")
     record("hub", "clearance chooser is visible once the splash clears",
-           page.locator(".clearance-choice").count() == 2, "")
+           page.locator(".clearance-choice").count() == 3, "")
     record("hub", "boot-lock no longer blocks page scrolling once revealed",
            "boot-lock" not in page.eval_on_selector("body", "el => el.className"), "")
 
@@ -2129,7 +2129,7 @@ def test_hub_boot_splash(p):
     record("hub", "boot splash does not replay on a same-tab reload (sessionStorage-gated)",
            page.locator("#boot-splash").count() == 0, "")
     record("hub", "clearance chooser is immediately visible on the repeat load",
-           page.locator(".clearance-choice").count() == 2, "")
+           page.locator(".clearance-choice").count() == 3, "")
 
     page.close()
     return errs
@@ -2142,7 +2142,9 @@ def test_hub_clearance_branches(p):
     Both are routed through the app shell (hub.html) now, Phase 4 of the
     shell plan -- Agent opens the shell at its default (Agent Hub),
     A-Cell opens it with ?start=a-cell.html so the shell's content
-    iframe goes straight there instead of Agent Hub first."""
+    iframe goes straight there instead of Agent Hub first. Friendly (the
+    third branch) deliberately skips the shell: a one-shot player has no
+    Cover Identity for the shell's opening prompt to ask about."""
     page = p.new_page()
     page.set_default_timeout(5000)
     errs = collect_errors(page)
@@ -2150,8 +2152,8 @@ def test_hub_clearance_branches(p):
     page.goto(f"{BASE}/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(200)
     hrefs = page.eval_on_selector_all(".clearance-choice", "els => els.map(e=>e.getAttribute('href'))")
-    record("hub", "hub has exactly 2 clearance branches (Agent, A-Cell), both routed through the shell",
-           hrefs == ["hub.html", "hub.html?start=a-cell.html"], str(hrefs))
+    record("hub", "hub has exactly 3 clearance branches: Agent and A-Cell through the shell, Friendly direct",
+           hrefs == ["hub.html", "friendly.html", "hub.html?start=a-cell.html"], str(hrefs))
     page.close()
     return errs
 
@@ -11199,6 +11201,21 @@ def test_friendly_clearance(p):
            clicks <= 3 and page.is_visible("#fr-view .pv-bio") and page.locator("#fr-skills .roll").count() > 10,
            f"clicks={clicks}")
     name = page.inner_text("#fr-view .pv-bio")
+    zero = page.eval_on_selector_all("#fr-skills .sv", "els => els.filter(e => e.textContent === '0%').length")
+    record("friendly", "0% skills are left off the sheet", zero == 0 and page.locator("#fr-skills .roll").count() > 10, str(zero))
+    fit = page.evaluate("""() => {
+      const bar = document.getElementById('dr-panel').getBoundingClientRect();
+      const more = document.querySelector('.fr-more > summary').getBoundingClientRect();
+      const pill = document.getElementById('dg-radio-pill');
+      const pr = pill ? pill.getBoundingClientRect() : null;
+      const hit = pr ? document.elementFromPoint(pr.left + pr.width / 2, pr.top + pr.height / 2) : null;
+      return { moreBottom: more.bottom, barTop: bar.top, pillInBar: !!pr && pr.top >= bar.top && pr.bottom <= bar.bottom + 1,
+               pillOnTop: !!hit && hit.id === 'dg-radio-pill', scrollX: document.documentElement.scrollWidth <= innerWidth };
+    }""")
+    record("friendly", "on a phone the whole playable sheet (stats, skills, weapons, Bonds) fits the first screen",
+           fit["moreBottom"] <= fit["barTop"] and fit["scrollX"], str(fit))
+    record("friendly", "on a phone Tune In docks inside the collapsed Dice Roller bar instead of over the sheet",
+           fit["pillInBar"] and fit["pillOnTop"], str(fit))
     page.click('#fr-skills .roll[data-label="Alertness"]')
     _pump_until(page, lambda: "Alertness" in page.inner_text("#dr-history-list"))
     hist = page.inner_text("#dr-history-list")
@@ -11250,6 +11267,36 @@ def test_friendly_clearance(p):
     record("friendly", "a Friendly in a Cell rolls into that Cell's feed as the pregen",
            bool(w) and w.get("agent_code") == pid, str(w)[:200])
     page.close()
+
+    # Slow connection: pregens.json landing before dice-roller.js (a later
+    # script) had downloaded used to skip the Cells read entirely, so the
+    # Cell filter never appeared. Serve dice-roller.js 2.5s late.
+    import threading, http.server, functools, socket
+    class _Slow(http.server.SimpleHTTPRequestHandler):
+        def do_GET(self):
+            time.sleep(2.5)
+            return super().do_GET()
+        def log_message(self, *a):
+            pass
+    sock = socket.socket(); sock.bind(("127.0.0.1", 0)); slow_port = sock.getsockname()[1]; sock.close()
+    slow = http.server.ThreadingHTTPServer(("127.0.0.1", slow_port), functools.partial(_Slow, directory=os.path.join(HERE, "..")))
+    threading.Thread(target=slow.serve_forever, daemon=True).start()
+    try:
+        page = p.new_page(viewport={"width": 1280, "height": 900})
+        errs += collect_errors(page)
+        install_notes_firestore_stub(page)
+        seed_cells_docs(page, [{"cell_id": "cell_oneshot", "name": "One-Shot Table", "handler": "H", "member_codes": [pid], "channel": ""}])
+        _block_fonts(page)
+        route_apps_script_ok(page)
+        page.route("**/assets/dice-roller.js*", lambda r: r.fulfill(response=r.fetch(
+            url=f"http://127.0.0.1:{slow_port}/assets/dice-roller.js")))
+        page.goto(f"{BASE}/friendly.html?cell=cell_oneshot", wait_until="load", timeout=20000)
+        _pump_until(page, lambda: page.is_visible("#fr-toolbar"))
+        record("friendly", "the Cell filter still appears when dice-roller.js loads after the pregens",
+               page.is_visible("#fr-toolbar") and page.input_value("#fr-cell-filter") == "cell_oneshot", "")
+        page.close()
+    finally:
+        slow.shutdown()
 
     # A-Cell: a Handler can add Friendlies to a Cell, and gets its table link.
     page = p.new_page(viewport={"width": 1280, "height": 900})

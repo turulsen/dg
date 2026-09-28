@@ -2169,7 +2169,11 @@
   fetch('friendly/pregens.json').then(function (r) { return r.ok ? r.json() : { pregens: [] }; }).then(function (data) {
     friendlies = (data.pregens || []).map(function (p) { return { code: p.id, name: p.name + ' (' + p.title + ')' }; });
     friendlies.forEach(function (f) { friendliesByCode[f.code] = f; });
-    if (cellsUnsub) renderAll(); // else the listeners' own first render picks these up
+    // Late arrival (slow connection) while the Handler has Agents picked
+    // in an Add list: leave the cards alone, the next Cells snapshot
+    // redraws with Friendlies included. Otherwise the listeners' own
+    // first render picks these up.
+    if (cellsUnsub && !groupsEl.querySelector('select option:checked')) renderAll();
   }).catch(function () { /* no Friendlies offered, nothing else changes */ });
 
   function escapeHtml(str) {
