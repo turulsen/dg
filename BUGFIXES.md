@@ -5581,3 +5581,55 @@ the dossier fits everything rollable on a 390x844 phone for all 62
 a 1280x900 desktop. Regression tests: `test_friendly_pregen_builder`
 (rewritten around the notes-driven rules), `test_friendly_clearance`
 (chips, deal, Stun, 62-Agent fit).
+
+## Issue #39, finished: main-track volume on iOS, without the silence that forced the revert
+
+This finishes the GainNode fix above ("iOS Safari ignores
+HTMLMediaElement.volume entirely") rather than being a new bug. That
+fix was right about iOS -- only a Web Audio gain node changes what's
+audible there -- but was reverted for the main track because routing a
+cross-origin, non-CORS file through `createMediaElementSource` played
+as total silence on WebKit and Brave. Ambient loops and stingers
+(same-origin, bundled in the repo) kept it the whole time.
+
+Verified first, on WebKitGTK, with a two-origin test page and an
+AnalyserNode after the gain node, instead of taking the old diagnosis on
+trust: no CORS headers -> the track plays (currentTime advances) but the
+graph outputs peak 0.000; CORS headers + `crossorigin="anonymous"` ->
+peak 0.35; `crossorigin="anonymous"` on a host with no CORS headers ->
+media error 4, the track never loads. So neither "always Web Audio" nor
+"always crossorigin" is safe while track URLs can be anything a Handler
+pastes.
+
+Fix (`assets/table-radio.js`): before loading the main track, the
+widget asks its URL once with a CORS request (headers only, body
+aborted, 2.5 s cap). Allowed -> `crossorigin="anonymous"` + gain node;
+not allowed, no answer, or no Web Audio -> the plain `<audio>` exactly as
+before. Same-origin files skip the question. A "yes" is remembered per
+Storage bucket for the tab (sessionStorage), a "no" only for the page,
+so configuring the bucket takes effect on the next load with no code
+change. If a remembered "yes" stops holding, the CORS-mode load error
+drops the track back to plain playback and forgets the "yes" -- never
+silence. The Resume tap wakes the AudioContext inside the gesture (the
+rebuild may land after the probe answers). The debug line shows
+`route=webaudio` / `route=element`.
+
+End to end on WebKit through the real widget (Firestore emulator Now
+Playing doc, track on a second origin with CORS headers, SOUND tapped):
+`route=webaudio`, crossorigin set, real signal peak 0.285 at gain 0.56;
+the Handler dropping the mix 80 -> 20 moved gain to 0.14 and the signal
+to 0.057 -- the volume control iOS never had. A host without CORS
+headers still plays via the plain element. (One early run saw a network
+error on both the CORS load and its plain fallback while the no-CORS
+case in the same run played; it didn't recur in the next nine runs,
+three of them cold starts.)
+
+**Still needs the bucket CORS config** (`storage.cors.json`, applied
+once by hand -- see README "Storage CORS"). Until then Firebase Storage
+answers "no", so tracks play exactly as they do today.
+
+Regression test `test_table_radio_main_track_gain_only_with_cors`
+(replaces `test_table_radio_main_track_does_not_use_gain_node`) uses two
+real local origins -- Playwright's `route.fulfill()` skips the browser's
+CORS check, so it can't stand in -- and fails on both "skip the probe"
+and "gain node without crossorigin" (the original silence bug).

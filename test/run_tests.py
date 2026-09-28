@@ -5736,57 +5736,129 @@ def test_table_radio_debug_readout_shows_ambient_and_stinger_state(p):
     page.close()
     return errs
 
-def test_table_radio_main_track_does_not_use_gain_node(p):
-    """The GainNode routing this test used to confirm (see git history --
-    it briefly replaced this one) was REVERTED for the main track as a
-    live emergency: confirmed directly on a real device, routing "The
-    Void" (hosted cross-origin on firebasestorage.googleapis.com, which
-    sends no CORS headers) through createMediaElementSource produced
-    TOTAL SILENCE on both Safari and Brave -- ctx=running, gain= exactly
-    matching the mix math, and still nothing audible. WebKit is known to
-    silence (not just restrict introspection on, the way Chrome does)
-    audio routed through Web Audio from a cross-origin, non-CORS
-    resource; sound is worse than uncontrolled volume. Ambient/stinger
-    files are exempt -- they're bundled in this repo, always same-origin,
-    genuinely safe -- and keep their own GainNode routing.
+def test_table_radio_main_track_gain_only_with_cors(p):
+    """Issue #39. The main track only goes through Web Audio (the gain
+    node, the one volume control iOS honours) when that is audible:
+    WebKit plays a cross-origin, non-CORS file routed through
+    createMediaElementSource as pure silence (the live "ctx=running,
+    gain=0.94, nothing audible" report), and crossorigin="anonymous" on a
+    host that sends no CORS headers stops the file loading at all. Both
+    verified on WebKitGTK with a two-origin test. So the widget asks the
+    track's URL first:
+      no CORS headers -> plain <audio>, exactly the old behaviour;
+      CORS headers    -> crossorigin="anonymous" + gain node, gain follows
+                         the mix; the "yes" is remembered for the bucket;
+      same origin     -> gain node, no crossorigin needed;
+      a remembered "yes" that no longer holds -> the load error drops it
+                         back to plain <audio> instead of silence.
+    Ambient layers keep their own gain nodes throughout."""
+    # Two real media origins (other ports on this machine): Playwright's own
+    # route.fulfill() skips the browser's CORS check, so it can't stand in
+    # for a host that does or doesn't send the headers.
+    import threading, http.server, functools, socket
+    stingers = os.path.join(HERE, "..", "assets", "stingers")
+    clip_name = sorted(os.listdir(stingers))[0]
+    probes = []
+    cors_mode_audio = []  # <audio> fetches made in CORS mode (they carry Origin)
 
-    Confirms the main track's <audio> element falls back to plain
-    .volume/.muted (no `gain=` in the debug readout for it) -- the exact
-    pre-existing, audible-but-iOS-can't-scale-it behavior -- while an
-    active ambient layer on the SAME channel still gets a real gain node,
-    proving the revert is scoped to the main track only."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
-    install_radio_firestore_stub(page)
-    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
-    page.route("**/ambience.mp3", lambda r: r.fulfill(status=200, content_type="audio/mpeg", body=""))
+    def media_server(send_cors):
+        class H(http.server.SimpleHTTPRequestHandler):
+            def end_headers(self):
+                if send_cors:
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                super().end_headers()
+            def do_GET(self):
+                if self.headers.get("Sec-Fetch-Dest") == "empty":
+                    probes.append(self.path)
+                elif self.headers.get("Origin") and not send_cors:
+                    cors_mode_audio.append(self.path)
+                return super().do_GET()
+            def log_message(self, *a):
+                pass
+        sock = socket.socket(); sock.bind(("127.0.0.1", 0)); port = sock.getsockname()[1]; sock.close()
+        srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), functools.partial(H, directory=stingers))
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        return srv, f"http://127.0.0.1:{port}"
+    cors_srv, CORS = media_server(True)
+    nocors_srv, NOCORS = media_server(False)
 
-    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
-    page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
-    page.reload(wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(300)
+    def fresh_page():
+        page = p.new_page()
+        page.set_default_timeout(8000)
+        errs = collect_errors(page)
+        page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+        page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+        page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+        install_radio_firestore_stub(page)
+        page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+        page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+        page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
+        page.reload(wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_timeout(300)
+        return page, errs
 
-    push_radio_now_playing(page, "1", {
-        "channel": "1", "track_url": "https://example.com/ambience.mp3",
-        "track_title": "The Void", "started_at": 1700000000000, "track_volume": 50, "ambient_volume": 100,
-        "ambient_layers": [{"id": "alien-lunch", "started_at": 1700000000000, "paused": False, "paused_at": 0, "loop": True}],
-    })
-    page.wait_for_timeout(500)
-    debug_text = page.inner_text("#dg-radio-debug")
+    starts = [1700000000000]
+    def play(page, url, extra=None):
+        # A new started_at per track: the widget treats a repeat of the
+        # same started_at as the same broadcast and doesn't rebuild.
+        starts[0] += 1000
+        np = {"channel": "1", "track_url": url, "track_title": "The Void", "started_at": starts[0],
+              "track_volume": 50, "ambient_volume": 100, "track_kind": "audio"}
+        np.update(extra or {})
+        push_radio_now_playing(page, "1", np)
+        _pump_until(page, lambda: page.evaluate("(u) => { const a = document.querySelector('#dg-radio-embed-wrap audio'); return !!a && a.src === new URL(u, location.href).href; }", url)
+                    and "route=" in page.inner_text("#dg-radio-debug"), timeout_ms=5000)
+        page.wait_for_timeout(300)
+        dbg = page.inner_text("#dg-radio-debug")
+        seg = next((x for x in dbg.split(" | ") if x.startswith("track.volume=")), "")
+        return dbg, seg, page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.getAttribute('crossorigin')")
+
+    errs = []
+    page, e = fresh_page(); errs += e
+    dbg, seg, xo = play(page, f"{NOCORS}/{clip_name}", {
+        "ambient_layers": [{"id": "alien-lunch", "started_at": 1700000000000, "paused": False, "paused_at": 0, "loop": True}]})
     real_volume = page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.volume")
-    track_segment = next((seg for seg in debug_text.split(" | ") if seg.startswith("track.volume=")), "")
-    record("radio", "the main track's <audio> element still gets the plain .volume fallback, matching the mix",
-           abs(real_volume - 0.35) < 0.01, "real=" + str(real_volume) + " / " + debug_text)
-    record("radio", "the main track has no gain= entry -- no Web Audio routing for it anymore",
-           track_segment != "" and "gain=" not in track_segment, debug_text)
-    record("radio", "an active ambient layer on the same channel still gets a real gain node",
-           "ambient x1=alien-lunch:" in debug_text and "/gain=" in debug_text, debug_text)
+    record("radio", "#39: a host without CORS headers keeps the plain <audio> -- no gain node, no crossorigin",
+           "route=element" in dbg and "gain=" not in seg and xo is None and abs(real_volume - 0.35) < 0.01, dbg)
+    record("radio", "#39: the widget asks before loading -- a no-CORS track is never fetched in CORS mode",
+           not cors_mode_audio and probes, f"cors-mode audio fetches={cors_mode_audio} probes={probes}")
+    record("radio", "#39: an ambient layer on the same channel still gets its own gain node",
+           "ambient x1=alien-lunch:" in dbg and "/gain=" in dbg, dbg)
 
+    dbg, seg, xo = play(page, f"{CORS}/{clip_name}")
+    page.click("#dg-radio-mute")  # SOUND: the gain should now follow the mix (my vol 70 x track 50%)
+    page.wait_for_timeout(200)
+    dbg = page.inner_text("#dg-radio-debug")
+    seg = next((x for x in dbg.split(" | ") if x.startswith("track.volume=")), "")
+    gains = [x for x in dbg.split(" | ") if x.startswith("gain=")]
+    record("radio", "#39: a host that sends CORS headers gets crossorigin + the gain node, gain = the mix",
+           "route=webaudio" in dbg and gains == ["gain=0.35"] and xo == "anonymous", dbg + " crossorigin=" + str(xo))
+    n = len(probes)
+    dbg, seg, xo = play(page, f"{CORS}/{clip_name}?second")
+    record("radio", "#39: the CORS answer is remembered per host -- the next track doesn't ask again",
+           len(probes) == n and "route=webaudio" in dbg, f"probes before={n} after={len(probes)}")
+
+    dbg, seg, xo = play(page, f"{BASE}/assets/stingers/" + sorted(os.listdir(os.path.join(HERE, "..", "assets", "stingers")))[0])
+    record("radio", "#39: a same-origin file goes through the gain node without needing crossorigin",
+           "route=webaudio" in dbg and xo is None, dbg)
     page.close()
+
+    # A remembered "yes" that no longer holds (the bucket's CORS config was
+    # removed): the load fails in CORS mode, and the widget falls back to
+    # plain <audio> rather than going silent.
+    page, e = fresh_page(); errs += e
+    del cors_mode_audio[:]
+    page.evaluate("(o) => sessionStorage.setItem('dg_radio_cors_ok', JSON.stringify({[o]: true}))", NOCORS)
+    push_radio_now_playing(page, "1", {"channel": "1", "track_url": f"{NOCORS}/{clip_name}",
+                                       "track_title": "The Void", "started_at": 1700000000000, "track_volume": 50, "track_kind": "audio"})
+    _pump_until(page, lambda: "route=element" in page.inner_text("#dg-radio-debug"), timeout_ms=6000)
+    xo = page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.getAttribute('crossorigin')")
+    remembered = page.evaluate("() => sessionStorage.getItem('dg_radio_cors_ok')")
+    record("radio", "#39: a stale remembered CORS 'yes' falls back to plain <audio> and is forgotten",
+           "route=element" in page.inner_text("#dg-radio-debug") and xo is None and NOCORS not in (remembered or ""),
+           page.inner_text("#dg-radio-debug") + " / " + str(remembered))
+    page.close()
+    cors_srv.shutdown(); nocors_srv.shutdown()
     return errs
 
 def test_table_radio_finished_track_does_not_restart_from_beginning(p):
@@ -11652,7 +11724,7 @@ def main():
 
         safe(test_table_radio_debug_readout_shows_ambient_and_stinger_state, browser, area="radio")
 
-        safe(test_table_radio_main_track_does_not_use_gain_node, browser, area="radio")
+        safe(test_table_radio_main_track_gain_only_with_cors, browser, area="radio")
 
         safe(test_table_radio_finished_track_does_not_restart_from_beginning, browser, area="radio")
 

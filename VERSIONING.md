@@ -15,7 +15,7 @@ Before any of this, the codebase already had two ad hoc counters:
 - `backend/Code.gs`'s own header comment (`// Google Apps Script backend
   v96 — ...` as of this writing), bumped by convention whenever the
   backend changes in a way worth tracking.
-- `sw.js`'s `CACHE_NAME` (`dg-hub-shell-v157` as of this writing), bumped
+- `sw.js`'s `CACHE_NAME` (`dg-hub-shell-v158` as of this writing), bumped
   on every `SHELL_FILES`-listed change so returning visitors don't get
   stuck on stale JS.
 
@@ -194,6 +194,13 @@ Apps Script editor. Nothing in this repo's CI or git history can do it
 automatically, and no amount of `git revert` on `main` touches it.
 
 ### 4c. Firebase / Firestore (rules, indexes, Storage rules, Cloud Functions)
+
+`storage.cors.json` is the Storage bucket's CORS config (issue #39); it is
+applied once by hand with `gcloud storage buckets update
+gs://dg-app-b3447.firebasestorage.app --cors-file=storage.cors.json` and
+has nothing to do with `firebase deploy`. Rolling it back is
+`gcloud storage buckets update gs://dg-app-b3447.firebasestorage.app --clear-cors`;
+the Table Radio widget falls back to plain playback on its own.
 
 `firestore.rules`, `firestore.indexes.json`, and `storage.rules` in
 this repo are **mirrors only**, exactly like `backend/Code.gs` — a
