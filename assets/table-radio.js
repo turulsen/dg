@@ -247,6 +247,85 @@
       gainNode.gain.value = muted ? 0 : (mixedPercent / 100);
     }
   }
+
+  /* ── Issue #39: when the MAIN track may go through Web Audio ──────
+     The gain node above is the only volume control iOS honours, but
+     routing a cross-origin <audio> through it is only audible when the
+     file is served with CORS headers AND the element asked for them
+     (crossorigin="anonymous"). Verified on WebKit with a two-origin
+     test: no CORS -> the track plays but the graph outputs pure silence
+     (the live "ctx=running, gain=0.94, nothing audible" report);
+     crossorigin="anonymous" on a host that sends no CORS headers -> the
+     track fails to load at all. Firebase Storage sends CORS headers only
+     once the bucket has a CORS config (see storage.cors.json).
+     So the main track asks first: one CORS request to its URL (headers
+     only, body aborted). Allowed -> crossorigin + gain node, volume
+     works on iOS. Anything else -> the plain element, exactly as before
+     this change. Same-origin files need no asking. A "yes" is
+     remembered per Storage bucket for this tab (sessionStorage), a "no"
+     only for this page -- so configuring the bucket takes effect on the
+     next page load with no code change. ── */
+  var CORS_OK_KEY = 'dg_radio_cors_ok';
+  var corsKnown = {};   // key -> true | false (this page)
+  var corsWaiting = {}; // key -> [callbacks] while a probe is in flight
+  function corsKey_(url) {
+    var m = /^(https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/[^/]+\/)/.exec(url) ||
+      /^(https:\/\/storage\.googleapis\.com\/[^/]+\/)/.exec(url);
+    if (m) return m[1];
+    try { return new URL(url, location.href).origin; } catch (e) { return String(url); }
+  }
+  function isSameOrigin_(url) {
+    try { return new URL(url, location.href).origin === location.origin; } catch (e) { return false; }
+  }
+  function readCorsOk_() {
+    try { return JSON.parse(sessionStorage.getItem(CORS_OK_KEY) || '{}'); } catch (e) { return {}; }
+  }
+  function rememberCors_(key, ok) {
+    corsKnown[key] = ok;
+    try {
+      var saved = readCorsOk_();
+      if (ok) saved[key] = true; else delete saved[key];
+      sessionStorage.setItem(CORS_OK_KEY, JSON.stringify(saved));
+    } catch (e) { /* private mode: this page still remembers */ }
+  }
+  // cb(route): 'webaudio' (gain node, crossorigin only if cross-origin)
+  // or 'element' (plain <audio>, the pre-#39 behaviour). Synchronous
+  // when the answer is already known.
+  function mainTrackRoute_(url, cb) {
+    if (!(window.AudioContext || window.webkitAudioContext)) { cb('element'); return; }
+    if (isSameOrigin_(url)) { cb('webaudio'); return; }
+    if (!window.fetch) { cb('element'); return; }
+    var key = corsKey_(url);
+    if (!(key in corsKnown) && readCorsOk_()[key]) corsKnown[key] = true;
+    if (key in corsKnown) { cb(corsKnown[key] ? 'webaudio' : 'element'); return; }
+    if (corsWaiting[key]) { corsWaiting[key].push(cb); return; }
+    corsWaiting[key] = [cb];
+    var settled = false;
+    function finish(ok, definite) {
+      if (settled) return;
+      settled = true;
+      if (definite) rememberCors_(key, ok);
+      var cbs = corsWaiting[key] || [];
+      delete corsWaiting[key];
+      cbs.forEach(function (f) { f(ok ? 'webaudio' : 'element'); });
+    }
+    var ctrl = window.AbortController ? new AbortController() : null;
+    // A slow answer plays the track the old way now and asks again next
+    // time -- never holds the music hostage to the probe.
+    var timer = setTimeout(function () { if (ctrl) ctrl.abort(); finish(false, false); }, 2500);
+    fetch(url, { mode: 'cors', credentials: 'omit', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
+      .then(function (res) {
+        clearTimeout(timer);
+        if (ctrl) ctrl.abort(); // headers are the answer; skip the body
+        finish(res.ok, true);
+      })
+      .catch(function () { clearTimeout(timer); finish(false, true); });
+  }
+  // Which route the current main track took, for the debug readout.
+  var trackRoute = null;
+  // Bumped by destroyActivePlayers(): a probe answering for a track that
+  // has since been replaced must not build its <audio> over the new one.
+  var audioBuildSeq = 0;
   // Which stinger fired_at values have already been played on THIS
   // client, so a fresh onSnapshot (page load, reconnect, channel
   // re-tune) doesn't replay the last few minutes' worth of one-shot
@@ -442,6 +521,8 @@
     }
     currentEmbedKind = null;
     trackGainNode = null;
+    trackRoute = null;
+    audioBuildSeq++;
   }
 
   // Same elapsed-time formula as liveElapsedSeconds_(np) above, just
@@ -992,6 +1073,10 @@
       renderCollapsed();
     });
     document.getElementById('dg-radio-resume').addEventListener('click', function () {
+      // Wake the AudioContext inside the tap itself: renderEmbed() may
+      // wait on the main track's CORS answer (issue #39) and so build the
+      // gain-routed <audio> after the gesture has ended.
+      ensureAudioCtx_();
       setMuted(false);
       var muteBtn = document.getElementById('dg-radio-mute');
       if (muteBtn) muteBtn.textContent = 'SOUND';
@@ -1044,6 +1129,10 @@
       // Web Audio routing is active, so a future live report can tell at a
       // glance whether the two numbers ever disagree again.
       if (trackGainNode) parts.push('gain=' + trackGainNode.gain.value.toFixed(2));
+      // #39: which way the main track is wired. route=element on iOS
+      // means the Handler's mix can't change its loudness (only mute);
+      // it's what a track on a host without CORS headers gets.
+      if (trackRoute) parts.push('route=' + trackRoute);
     }
     // Real blind spot found from a live report of "no volume control is
     // working, on any channel": ambientAudioEls/stingerAudioEls live as
@@ -1226,91 +1315,87 @@
       currentEmbedKind = 'audio';
       intentionalPause = isPaused;
       if (volSlider) volSlider.style.display = '';
-      wrap.innerHTML = '<audio id="dg-radio-audio" src="' + escapeHtml(np.track_url) + '"></audio>';
-      var audioEl = document.getElementById('dg-radio-audio');
-      // REVERTED, live emergency: routing this element through Web Audio
-      // (attachGain_) produced confirmed TOTAL SILENCE on both Safari and
-      // Brave -- ctx=running, gain= exactly matching the mix math, real
-      // <audio> element genuinely present, and still nothing audible.
-      // The main track's URL (Firebase Storage, Drive, YouTube-hosted
-      // files, anything a Handler pastes or uploads) is very often
-      // cross-origin, unlike the ambient/stinger files below (bundled in
-      // this repo, always same-origin) -- confirmed live for "The Void":
-      // hosted on firebasestorage.googleapis.com, which sends no CORS
-      // headers at all for an anonymous cross-origin GET. WebKit is
-      // documented to silence -- not just restrict introspection on, the
-      // way Chrome does -- audio routed through createMediaElementSource
-      // from a cross-origin, non-CORS resource; Brave's own anti-
-      // fingerprinting shields plausibly clamp Web Audio output for
-      // cross-origin media independently, on top of that. Setting
-      // .crossOrigin on the element isn't a safe fix either -- Firebase
-      // Storage's default download URLs send no CORS headers at all
-      // (confirmed directly), so requesting it with credentials-free CORS
-      // mode would just make the browser refuse to load it at all.
-      // trackGainNode stays null -- setAudioLevel_() below always sets
-      // el.muted/el.volume regardless, so this is exactly the pre-#35
-      // behavior for the main track specifically: audible again
-      // (uncontrolled by the mix on iOS, the original bug) rather than
-      // silent outright. Needs bucket-level CORS configuration (gsutil
-      // cors set on the Storage bucket, allowing this origin) before
-      // Web Audio routing can be safely reintroduced here.
-      trackGainNode = null;
-      setAudioLevel_(audioEl, trackGainNode, mixedVolumePercent_('track'), muted);
-      audioEl.loop = loop;
-      refreshDebugLine_();
-      // A bad/unreachable src (e.g. a broken Drive hotlink) otherwise
-      // fails completely silently -- no sound, no visible sign why.
-      audioEl.addEventListener('error', function () {
-        var statusEl = document.getElementById('dg-radio-status');
-        if (statusEl) statusEl.textContent = 'Playback failed -- this track isn\'t reachable right now.';
-      });
-      // iOS Safari can pause tab-wide <audio> playback on ANY iframe
-      // navigation elsewhere on the page -- a known WebKit quirk, not
-      // something this element being outside #dg-shell-content protects
-      // against, confirmed live: the shell's own single hoisted widget
-      // (this element) still stopped and stayed stopped on a content
-      // swap. Nothing here ever calls audioEl.pause() except a real
-      // Handler-paused broadcast (applyLivePauseState(), which sets
-      // intentionalPause first) -- any OTHER 'pause' event is the
-      // browser's own doing, so resume immediately rather than leaving
-      // the table silently stuck.
-      audioEl.addEventListener('pause', function () {
-        if (!intentionalPause && !audioEl.ended) {
-          // The same WebKit interruption that fires this unprompted
-          // pause can also silently evict the element's buffered audio,
-          // which resets currentTime back toward 0 once play() actually
-          // starts fetching again -- reseek to the CURRENT live position
-          // (recomputed from wall-clock, not whatever renderEmbed()
-          // computed when the track first loaded) so a resume lands back
-          // where the broadcast actually is now, not at the beginning.
-          // window._dgRadioLast is the last known now-playing doc; a
-          // real Handler pause would have set intentionalPause first, so
-          // reaching here with .paused true would be a stale reference,
-          // hence the belt-and-suspenders check.
-          function resumeAfterInterruption() {
-            var p = audioEl.play();
-            if (p && p.catch) {
-              // Genuinely can't resume without a fresh user gesture --
-              // same fallback the initial play() attempt below already
-              // offers, not a new failure mode.
-              p.catch(function () { resumeBtn.style.display = 'block'; });
+      wrap.innerHTML = '';
+      var buildSeq = audioBuildSeq;
+      // route: 'webaudio' -> through the gain node (the only volume iOS
+      // honours), with crossorigin="anonymous" when the file is on
+      // another origin; 'element' -> plain <audio>. See
+      // mainTrackRoute_() for how that's decided (issue #39).
+      var buildAudio = function (route) {
+        if (buildSeq !== audioBuildSeq) return; // this track was replaced while we asked
+        var askCors = route === 'webaudio' && !isSameOrigin_(np.track_url);
+        wrap.innerHTML = '<audio id="dg-radio-audio"' + (askCors ? ' crossorigin="anonymous"' : '') +
+          ' src="' + escapeHtml(np.track_url) + '"></audio>';
+        var audioEl = document.getElementById('dg-radio-audio');
+        trackGainNode = route === 'webaudio' ? attachGain_(audioEl) : null;
+        trackRoute = trackGainNode ? 'webaudio' : 'element';
+        setAudioLevel_(audioEl, trackGainNode, mixedVolumePercent_('track'), muted);
+        audioEl.loop = loop;
+        refreshDebugLine_();
+        // A bad/unreachable src (e.g. a broken Drive hotlink) otherwise
+        // fails completely silently -- no sound, no visible sign why.
+        audioEl.addEventListener('error', function () {
+          // Asked for CORS on the strength of a remembered "yes" that no
+          // longer holds (the bucket's CORS config was removed, or this
+          // host answers differently per file): forget it and play the
+          // plain way -- never leave the table silent over volume control.
+          if (askCors && buildSeq === audioBuildSeq) {
+            rememberCors_(corsKey_(np.track_url), false);
+            buildAudio('element');
+            return;
+          }
+          var statusEl = document.getElementById('dg-radio-status');
+          if (statusEl) statusEl.textContent = 'Playback failed -- this track isn\'t reachable right now.';
+        });
+        // iOS Safari can pause tab-wide <audio> playback on ANY iframe
+        // navigation elsewhere on the page -- a known WebKit quirk, not
+        // something this element being outside #dg-shell-content protects
+        // against, confirmed live: the shell's own single hoisted widget
+        // (this element) still stopped and stayed stopped on a content
+        // swap. Nothing here ever calls audioEl.pause() except a real
+        // Handler-paused broadcast (applyLivePauseState(), which sets
+        // intentionalPause first) -- any OTHER 'pause' event is the
+        // browser's own doing, so resume immediately rather than leaving
+        // the table silently stuck.
+        audioEl.addEventListener('pause', function () {
+          if (!intentionalPause && !audioEl.ended) {
+            // The same WebKit interruption that fires this unprompted
+            // pause can also silently evict the element's buffered audio,
+            // which resets currentTime back toward 0 once play() actually
+            // starts fetching again -- reseek to the CURRENT live position
+            // (recomputed from wall-clock, not whatever renderEmbed()
+            // computed when the track first loaded) so a resume lands back
+            // where the broadcast actually is now, not at the beginning.
+            // window._dgRadioLast is the last known now-playing doc; a
+            // real Handler pause would have set intentionalPause first, so
+            // reaching here with .paused true would be a stale reference,
+            // hence the belt-and-suspenders check.
+            function resumeAfterInterruption() {
+              var p = audioEl.play();
+              if (p && p.catch) {
+                // Genuinely can't resume without a fresh user gesture --
+                // same fallback the initial play() attempt below already
+                // offers, not a new failure mode.
+                p.catch(function () { resumeBtn.style.display = 'block'; });
+              }
+            }
+            if (window._dgRadioLast && !window._dgRadioLast.paused) {
+              seekAudioToLive_(audioEl, window._dgRadioLast, resumeAfterInterruption);
+            } else {
+              resumeAfterInterruption();
             }
           }
-          if (window._dgRadioLast && !window._dgRadioLast.paused) {
-            seekAudioToLive_(audioEl, window._dgRadioLast, resumeAfterInterruption);
-          } else {
-            resumeAfterInterruption();
+        });
+        seekAudioToLive_(audioEl, np, function () {
+          if (!isPaused) {
+            var playPromise = audioEl.play();
+            if (playPromise && playPromise.catch) {
+              playPromise.catch(function () { resumeBtn.style.display = 'block'; });
+            }
           }
-        }
-      });
-      seekAudioToLive_(audioEl, np, function () {
-        if (!isPaused) {
-          var playPromise = audioEl.play();
-          if (playPromise && playPromise.catch) {
-            playPromise.catch(function () { resumeBtn.style.display = 'block'; });
-          }
-        }
-      });
+        });
+      };
+      mainTrackRoute_(np.track_url, buildAudio);
     } else {
       // Generic embeddable URL, neither YouTube, SoundCloud, nor direct
       // audio -- no API, cross-origin, never controllable from here
