@@ -5537,3 +5537,47 @@ for real Firebase; and `test_agent_file_era_prompt_includes_era` waits on
 its condition instead of a fixed 1.2s (it missed that window once under
 full-suite load; 0/4 failures alone). Full suite: 886/914, the remaining
 28 being this sandbox's blocked-gstatic failures (unchanged class).
+
+## Friendly pregens: the full 62 Dossiers, finished the way each sheet says
+
+Extracting all 62 Agent Dossiers (not just the one sample) showed the
+first build had misread them:
+
+1. **Bonus skills were guessed, and the guess was wrong.** The sample sheet
+   (USSS PPD) spends 690 points over base, so the first build treated
+   "690 > profession package + bonus" as "already done" and added a bonus
+   package only below 560. But 51 of the 62 sheets say in their own
+   Personal Details notes exactly what's left: "Choose two from the
+   following skills: » Drive 60% …" (optional profession skills not yet on
+   the sheet) and "Bonus skill points: Add +20% each to any six skills"
+   (1 to 8 picks). `build.js` now parses and follows those instead; the 11
+   sheets with neither are complete as printed (PPD among them, so its
+   numbers didn't change).
+2. **Blank lines on the form.** "Language 50%", "Language (_____)",
+   "Science (Choose One) 60%", "Pilot ( ) 40%" — now named per profession.
+3. **Police Officer: Unnatural 60%.** Its Unarmed Combat 60% (the
+   profession package value) was typed one line down into Unnatural, with
+   Unarmed Combat left at base and SAN max still 99. Moved back; the rule
+   is general (Unnatural on a new sheet with SAN max 99 is a slip).
+4. **18 employers were "Select or Enter Employer Name"** — the EMPLOYER box
+   is a dropdown and those sheets leave it on its placeholder. One of the
+   sheet's own options is picked. Two sheets name that box `Dropdown5`
+   instead of `3 EMPLOYER`; the extractor reads both.
+5. **fill.py dropped every bonus on the printout.** Its "keep what the
+   sheet already printed" filter also swallowed changed skill values, so a
+   bonus on a skill the sheet filled (Alertness 60 -> 80) never reached the
+   paper. Only identity fields are protected now; a read-back of all 62
+   printouts matches every generated value.
+6. **Flashbang "Stun" was a button** that rolled nothing; damage is a
+   button only when it's dice or a lethality %.
+
+Also: bonds fit the job (no "Teammate from the unit" for a Scientist, one
+partner at most), "An individual (name them)" motivations get a name, no
+first name repeats across the roster, three sheets whose printed HP is one
+over the rule are kept and flagged. Picker: six category chips and "Deal
+me an Agent" (phone scroll 9,912px -> ~4,000px, a category fits a screen);
+the dossier fits everything rollable on a 390x844 phone for all 62
+(checked per Agent in `test_friendly_clearance`) and the whole sheet on
+a 1280x900 desktop. Regression tests: `test_friendly_pregen_builder`
+(rewritten around the notes-driven rules), `test_friendly_clearance`
+(chips, deal, Stun, 62-Agent fit).

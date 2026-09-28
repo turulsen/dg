@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* Friendly pregens, step 2: fill in what the Agent Dossiers leave blank.
 
-     node scripts/pregens/build.js pregens-raw.json [-o friendly/pregens.json] [--report REPORT.md] [--force-bonus]
+     node scripts/pregens/build.js pregens-raw.json [-o friendly/pregens.json] [--report REPORT.md]
 
    Input is extract.py's output. For every sheet this keeps the game
    mechanics (stats, derived attributes, skills, weapons) and generates
@@ -14,13 +14,18 @@
    after adding more PDFs never reshuffles an Agent a player already met.
    Bump SEED_SALT below to re-roll everyone.
 
-   Bonus skill points: the book's optional 8 x +20% package (stats/
-   scripts.js BONUS_PACKAGES), picked per sheet in catalog.json. Some
-   Dossiers already spend more than a profession package plus bonus
-   points (USSS PPD: +690 over base vs. Federal Agent's 400 + 160), so a
-   package is only added to a sheet whose skills sit below that line --
-   see BONUS_ALREADY_SPENT and the report's "points over base" column.
-   --force-bonus adds the package to every sheet regardless.
+   Skills: each Dossier's own Personal Details notes say what is still
+   the player's to do, and this follows them to the letter --
+     "Choose two from the following skills: >> Drive 60% >> ..." -> the two
+       options that raise the Agent most (a "(choose one)" option gets a
+       specialty that fits the profession);
+     "Bonus skill points: Add +20% each to any six skills" -> exactly six
+       +20% picks, max 80%, led by the profession's bonus package
+       (catalog.json, stats/scripts.js BONUS_PACKAGES) and then the
+       Agent's own strongest skills.
+   Sheets whose notes say neither are complete as printed. Placeholder
+   skills on the form ("Language 50%", "Science (Choose One) 60%",
+   "Pilot ( ) 40%") get a specific specialty too.
 
    Output is public (GitHub Pages): no verbatim sheet text goes in it --
    gear is reduced to an item list and the Personal Details notes are
@@ -32,7 +37,6 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..', '..');
 const SEED_SALT = 'friendly-v1';
 const REF_YEAR = 2026;           // DOB = REF_YEAR - age
-const BONUS_ALREADY_SPENT = 560; // a typical profession package (400) + 8 x 20 bonus
 
 function loadGlobals(file, names) {
   const src = fs.readFileSync(path.join(ROOT, file), 'utf8');
@@ -113,12 +117,75 @@ function profileFor(rec) {
 }
 
 const TACTICAL = /seal|beret|raider|special tactics|isa|sad-sog|special operator|recon|160th|hrt|fast|srt|sog|counter assault|tactical|hitron|msrt|border tactical|mspf|taclet/i;
-const FAMILY = ['Spouse', 'Wife', 'Husband', 'Daughter', 'Son', 'Mother', 'Father', 'Brother', 'Sister'];
-const OTHER_BONDS = [
-  'Ex-spouse', 'Best friend since college', 'Former partner on the job', 'Mentor at the academy',
-  'Childhood friend', 'Estranged father', 'Grandmother who raised them', 'Teammate from the unit',
-  'Priest at the family parish', 'Neighbor who watches the kids', 'Old roommate', 'Therapist',
+const PARTNERS = ['Wife', 'Husband', 'Spouse'];
+const FAMILY = ['Daughter', 'Son', 'Mother', 'Father', 'Brother', 'Sister'];
+const OTHER_BONDS = ['Ex-spouse', 'Best friend since college', 'Childhood friend', 'Grandmother who raised them',
+  'Priest at the family parish', 'Old roommate', 'Therapist'];
+// People only this line of work gives you.
+function workBonds(title) {
+  if (/socom|marines|army|navy|soldier|special operator|sad-sog|seal|uscg|160th|720th/i.test(title)) return ['Teammate from the unit', 'Former squad leader', 'Buddy from basic training'];
+  if (/\b(fbi|dea|atf|ice|cbp|usss|marshals|police|oceft|hrt|srt)\b|federal agent/i.test(title)) return ['Former partner on the job', 'Mentor at the academy', 'Witness they once protected'];
+  if (/scientist|nsa|computer|epa|anthropolog|historian|nasa/i.test(title)) return ['Doctoral advisor', 'Research partner', 'Colleague from the lab'];
+  if (/physician|nurse|hospital|trauma|firefighter/i.test(title)) return ['Colleague from the ER', 'Crew chief', 'Former patient'];
+  if (/\b(cia|caci|mist)\b|intelligence|foreign service/i.test(title)) return ['Former station chief', 'Asset they recruited', 'Colleague from the agency'];
+  return ['Business partner', 'Mentor from their first job'];
+}
+// No agency printed: the sheet's dropdown, preferring an entry that fits
+// the job (the Firefighter's list starts with ATF/CBP/DEA field offices
+// but also offers FEMA Urban Search and Rescue); else the agency in the
+// title; else the Creator's employer table.
+const EMPLOYER_HINTS = [
+  [/firefighter/i, /fema|fire|rescue/i], [/pilot|sailor/i, /pilot|air|naval|usaf/i],
+  [/physician|nurse|paramedic/i, /medical|health|paramed|cdc|fema/i], [/scientist/i, /research|scien|cdc|darpa|nasa/i],
+  [/police/i, /ranger|police|protective/i], [/computer/i, /digital|engineer|technology|research/i],
 ];
+const TITLE_AGENCIES = { ATF: 'Bureau of Alcohol, Tobacco, Firearms and Explosives', CBP: 'Customs and Border Protection',
+  DEA: 'Drug Enforcement Administration', FBI: 'FBI', EPA: 'Environmental Protection Agency', NSA: 'National Security Agency' };
+function employerFor(r, rec, profile) {
+  const opts = rec.employer_options || [];
+  if (opts.length) {
+    const hint = EMPLOYER_HINTS.filter(h => h[0].test(rec.title))[0];
+    const fit = hint ? opts.filter(o => hint[1].test(o)) : [];
+    return pick(r, fit.length ? fit : opts);
+  }
+  const agency = /^([A-Z]{2,5})\b/.exec(rec.title);
+  if (agency && TITLE_AGENCIES[agency[1]]) return TITLE_AGENCIES[agency[1]];
+  return pick(r, profile.employers);
+}
+// "Central Intelligence Agency - Special Activities Division" -> "CIA":
+// the education line has one short box on the paper form.
+const AGENCY_SHORT = {
+  'Central Intelligence Agency': 'CIA', 'Bureau of Alcohol, Tobacco, Firearms and Explosives': 'ATF',
+  'Drug Enforcement Administration': 'DEA', 'Customs and Border Protection': 'CBP', 'Environmental Protection Agency': 'EPA',
+  'National Security Agency': 'NSA', 'Immigrations and Customs Enforcement': 'ICE', 'U.S. Secret Service': 'the Secret Service',
+  'U.S. Marshals Service': 'the Marshals', 'U.S. Coast Guard': 'the Coast Guard', 'National Parks Service': 'the Park Service',
+  'U.S. Marine Corps': 'the Marines', 'U.S. Army': 'the Army', 'U.S. Navy': 'the Navy', 'U.S. Air Force': 'the Air Force',
+};
+function agencyShort(employer) {
+  let e = String(employer).split(/\s+-\s+|,\s+(?=[A-Z][a-z]+ (?:Directorate|Division|Operations))|\s+\(/)[0].trim();
+  e = e.replace(/^ATF\b.*/, 'ATF');
+  if (AGENCY_SHORT[e]) return AGENCY_SHORT[e];
+  const hit = Object.keys(AGENCY_SHORT).filter(k => e.indexOf(k) === 0)[0];
+  if (hit) return AGENCY_SHORT[hit];
+  return e.length > 28 ? e.split(/\s+or\s+/)[0] : e;
+}
+const NEMESES = ['who walked free', 'who knows what they did', 'who vanished with the evidence', 'who got their partner killed'];
+const ORGANIZATIONS = ['a private military contractor', 'a doomsday cult', 'a biotech firm with no public address',
+  'a cartel that owns a county sheriff', 'a think tank that funds strange research', 'a militia in the hills'];
+// The picker's category chips. Order matters: a tactical team inside a
+// police agency (FBI HRT, ATF Tactical Operations) plays as special ops.
+const GROUPS = [
+  ['Medical & Rescue', /hospital corps|nurse|physician|trauma rescue|search and rescue|firefighter/i],
+  ['Intelligence', /\b(nsa|caci)\b|sad-pag|intelligence|foreign service/i],
+  ['Special Ops & Tactical', /socom - (?!4th)|special operator|sad-sog|force recon|mspf|\b(hrt|fast|srt|sog)\b|counter assault|tactical operations|border tactical|msrt|hitron|taclet/i],
+  ['Military', /army|marines|navy|soldier|uscg|socom/i],
+  ['Federal Agents & Police', /\b(atf|cbp|dea|usss|ice|fbi)\b|oceft|federal agent|police|marshals/i],
+];
+function groupFor(title) {
+  const g = GROUPS.filter(x => x[1].test(title))[0];
+  return g ? g[0] : 'Civilians & Specialists';
+}
+function isPartner(rel) { return PARTNERS.indexOf(rel) !== -1; }
 const LANGUAGES = ['Spanish', 'Arabic', 'French', 'Russian', 'Mandarin', 'Pashto', 'German', 'Portuguese', 'Korean', 'Farsi'];
 
 function pick(r, arr) { return arr[Math.floor(r() * arr.length)]; }
@@ -131,48 +198,191 @@ function skillKeyToName(key, skills) {
   return hit ? hit.name : null;
 }
 
-// Adds a package's 8 x +20 (capped at 80, per the rulebook) and says
-// what it did, so the sheet can show the bonus as its own line.
-function applyBonus(r, rec, skills, pkgLabel) {
-  const pkg = BONUS_PACKAGES.find(p => p.label === pkgLabel);
-  if (!pkg) return { package: pkgLabel, applied: [], note: 'unknown package' };
-  const applied = [];
-  const bump = (name) => {
-    let s = skills.find(x => x.name === name);
-    if (!s) { s = { name, value: 0 }; skills.push(s); }
-    const before = s.value;
-    s.value = Math.min(80, s.value + 20);
-    if (s.value > before) applied.push(name);
-  };
-  const used = new Set();
-  pkg.skills.forEach(k => {
-    let name = null;
-    if (k === '?foreign_language') {
-      const lang = LANGUAGES.find(l => !used.has(l) && !skills.some(s => s.name === 'Foreign Language (' + l + ')')) || pick(r, LANGUAGES);
-      used.add(lang);
-      name = 'Foreign Language (' + lang + ')';
-    } else if (k === '?military_science') {
-      name = /navy|uscg|seal/i.test(rec.title) ? 'Military Science (Sea)' : /air|soar|720th|pilot/i.test(rec.title) ? 'Military Science (Air)' : 'Military Science (Land)';
-    } else if (k === '?art') {
-      name = /camera|media/i.test(rec.title) ? 'Art (Photography)' : 'Art (Creative Writing)';
-    } else if (k === '?craft') {
-      name = /eod|explosive/i.test(rec.title) ? 'Craft (Microelectronics)' : 'Craft (Mechanic)';
-    } else if (k === '?anthro_arch') {
-      name = 'Anthropology';
-    } else if (k.charAt(0) === '?') {
-      // "choose any": the Agent's best professional skill still under 80
-      const cand = skills.filter(s => s.value < 80 && !used.has(s.name)).sort((a, b) => b.value - a.value)[0];
-      name = cand && cand.name;
-    } else if (/\(/.test(k)) {
-      name = k;
-    } else {
-      name = skillKeyToName(k, skills);
+const NUMBER_WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+function countWord(w) { return NUMBER_WORDS[String(w).toLowerCase()] || parseInt(w, 10) || 0; }
+
+// What the sheet's notes leave for the player: "Choose N ...: >> Skill X%"
+// groups and the number of +20% bonus picks. Returns nothing for a sheet
+// whose notes say neither (it's complete as printed).
+function parseInstructions(notes) {
+  const lines = String(notes || '').split(/\n/).map(l => l.trim());
+  const choices = [];
+  let bonusPicks = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const c = /^Choose\s+(?:any\s+)?(\w+)\b(.*)$/i.exec(lines[i]);
+    if (c && countWord(c[1])) {
+      const options = [];
+      for (let k = i + 1; k < lines.length && /^»/.test(lines[k]); k++) {
+        const o = /^»\s*(.+?)\s+(\d+)\s*%/.exec(lines[k]);
+        if (o) options.push({ name: o[1].trim(), value: parseInt(o[2], 10) });
+      }
+      if (options.length) choices.push({ count: countWord(c[1]), onlyNew: /already have/i.test(c[2]), options });
     }
-    if (!name) return;
-    used.add(name);
-    bump(name);
+    const b = /^Bonus skill points:.*?\bany\s+(\w+)\s+skills?/i.exec(lines[i]);
+    if (b) bonusPicks = countWord(b[1]);
+  }
+  return { choices, bonusPicks };
+}
+
+// Specialties for a "(choose one)" option or a blank on the form, by
+// what the Agent actually does.
+function languagesFor(title) {
+  if (/cbp|ice|uscg|dea|police|marshals|atf|fbi|epa/i.test(title)) return ['Spanish', 'Portuguese', 'French', 'Mandarin'];
+  if (/nsa|caci/i.test(title)) return ['Russian', 'Mandarin', 'Arabic', 'Korean', 'Farsi'];
+  if (/anthropolog|historian/i.test(title)) return ['Latin', 'Ancient Greek', 'Arabic', 'French', 'German'];
+  if (/scientist|physician|nurse|program|lawyer|computer|media/i.test(title)) return ['Spanish', 'French', 'German', 'Mandarin'];
+  return ['Arabic', 'Russian', 'Pashto', 'Farsi', 'Mandarin', 'French', 'Spanish', 'Korean'];
+}
+function sciencesFor(title) {
+  if (/nsa|computer|caci/i.test(title)) return ['Mathematics', 'Physics', 'Engineering'];
+  if (/epa/i.test(title)) return ['Chemistry', 'Biology', 'Geology'];
+  if (/ranger/i.test(title)) return ['Biology', 'Geology', 'Botany'];
+  if (/physician|nurse|hospital|trauma/i.test(title)) return ['Chemistry', 'Pharmacology', 'Biology'];
+  if (/anthropolog|historian/i.test(title)) return ['Geology', 'Biology'];
+  return ['Chemistry', 'Physics', 'Biology', 'Geology', 'Astronomy'];
+}
+function craftsFor(title) {
+  if (/eod|explosive|nsa|computer/i.test(title)) return ['Microelectronics', 'Electrician', 'Mechanic'];
+  if (/criminal|isa/i.test(title)) return ['Locksmithing', 'Electrician', 'Mechanic'];
+  return ['Mechanic', 'Electrician', 'Carpentry', 'Microelectronics'];
+}
+const MORE_CRAFTS = ['Microelectronics', 'Electrician', 'Mechanic', 'Locksmithing', 'Gunsmithing', 'Carpentry', 'Plumbing'];
+function artsFor(title) {
+  if (/camera|media/i.test(title)) return ['Photography', 'Creative Writing', 'Videography'];
+  if (/mist/i.test(title)) return ['Graphic Design', 'Photography', 'Creative Writing'];
+  return ['Creative Writing', 'Photography', 'Painting'];
+}
+function militaryScienceFor(title) {
+  if (/navy|uscg|seal|sailor/i.test(title)) return ['Sea', 'Land'];
+  if (/soar|720th|pilot|nasa/i.test(title)) return ['Air', 'Land'];
+  return ['Land', 'Sea'];
+}
+function pilotsFor(title) {
+  if (/navy|uscg|seal|raider|sailor|marine interdiction/i.test(title)) return ['Small Boat', 'Helicopter', 'Airplane'];
+  if (/soar|hitron/i.test(title)) return ['Helicopter', 'Airplane'];
+  return ['Airplane', 'Helicopter', 'Small Boat'];
+}
+const SPECIALTY_POOLS = {
+  'Foreign Language': languagesFor, 'Science': sciencesFor,
+  'Craft': title => craftsFor(title).concat(MORE_CRAFTS.filter(c => craftsFor(title).indexOf(c) === -1)),
+  'Art': artsFor, 'Military Science': militaryScienceFor, 'Pilot': pilotsFor,
+};
+// "Language (Spanish)" / "Language" / "Science (   )" / "Pilot ()" ->
+// { kind, spec } with spec '' when the form left it blank.
+function splitSpecialty(name) {
+  const m = /^(Foreign Language|Language|Science|Craft|Art|Military Science|Pilot)\s*(?:\((.*)\))?\s*$/i.exec(String(name).trim());
+  if (!m) return null;
+  let kind = m[1].toLowerCase() === 'language' ? 'Foreign Language' : m[1].replace(/\b\w/g, ch => ch.toUpperCase()).replace('Of', 'of');
+  if (/^military science$/i.test(kind)) kind = 'Military Science';
+  if (/^foreign language$/i.test(kind)) kind = 'Foreign Language';
+  let spec = (m[2] || '').replace(/_+/g, '').trim();
+  if (/^\(?choose (one|another|any)\)?$/i.test(spec)) spec = '';
+  return { kind, spec: spec ? cap(spec) : '' };
+}
+// First specialty from the profession's pool the Agent doesn't have
+// yet, or null when every one is taken (the option is then skipped).
+function freshSpecialty(r, kind, title, skills) {
+  const pool = (SPECIALTY_POOLS[kind] || (() => []))(title);
+  const free = pool.filter(sp => !skills.some(s => s.name === kind + ' (' + sp + ')'));
+  return free.length ? free[0] : null;
+}
+
+// Every skill on the form (base value when blank), specialties and extra
+// skills with their blanks filled, then the notes' choices and bonus.
+function buildSkills(r, rec, pkgLabel) {
+  const title = rec.title;
+  const skills = rec.skills.map(s => ({ name: s.name, value: s.value, base: s.base }));
+  const filled = [];
+  const addSpecial = (raw, value) => {
+    const sp = splitSpecialty(raw);
+    if (!sp) { skills.push({ name: raw, value, base: 0 }); return; }
+    let spec = sp.spec;
+    if (!spec) { spec = freshSpecialty(r, sp.kind, title, skills) || 'Other'; filled.push(sp.kind + ' (' + spec + ')'); }
+    skills.push({ name: sp.kind + ' (' + spec + ')', value, base: 0 });
+  };
+  rec.specialties.forEach(s => addSpecial(s.kind + ' (' + (s.name || '') + ')', s.value || 0));
+  rec.other_skills.forEach(s => addSpecial(s.name, s.value || 0));
+
+  const get = name => skills.find(s => s.name === name);
+  const resolve = name => {
+    const sp = splitSpecialty(name);
+    if (!sp) return name;
+    const spec = sp.spec || freshSpecialty(r, sp.kind, title, skills);
+    return spec ? sp.kind + ' (' + spec + ')' : null;
+  };
+
+  // A new Agent never has Unnatural. A sheet showing it with SAN max still
+  // at 99 (real Unnatural lowers it) is a slip into the neighbouring field
+  // -- on the Police Officer sheet the profession's Unarmed Combat 60% sat
+  // in Unnatural while Unarmed Combat stayed at base.
+  const fixes = [];
+  const unnatural = get('Unnatural');
+  if (unnatural && unnatural.value > 0 && (rec.derived.san_max == null || rec.derived.san_max === 99)) {
+    const unarmed = get('Unarmed Combat');
+    if (unarmed && unarmed.value === unarmed.base && unnatural.value > unarmed.value) {
+      fixes.push('Unnatural ' + unnatural.value + '% on the sheet is Unarmed Combat');
+      unarmed.value = unnatural.value;
+    } else {
+      fixes.push('Unnatural ' + unnatural.value + '% on the sheet dropped (SAN max is 99)');
+    }
+    unnatural.value = 0;
+  }
+  const { choices, bonusPicks } = parseInstructions(rec.notes);
+
+  // "Choose N": the options that raise the Agent most; ties broken by a
+  // seeded shuffle so two sheets with the same list don't all match.
+  const chosen = [];
+  choices.forEach(group => {
+    const opts = group.options.map(o => ({ o, k: r() })).sort((a, b) => a.k - b.k).map(x => x.o)
+      .map(o => {
+        const name = resolve(o.name);
+        if (!name) return { skip: true };
+        const cur = get(name);
+        const have = cur && cur.value > (cur.base || 0);
+        return { name, value: o.value, gain: o.value - (cur ? cur.value : 0), skip: group.onlyNew && have };
+      })
+      .filter(o => !o.skip && o.gain > 0 && !chosen.includes(o.name))
+      .sort((a, b) => b.gain - a.gain);
+    opts.slice(0, group.count).forEach(o => {
+      const cur = get(o.name);
+      if (cur) cur.value = o.value; else skills.push({ name: o.name, value: o.value, base: 0 });
+      chosen.push(o.name + ' ' + o.value + '%');
+    });
   });
-  return { package: pkg.label, applied };
+
+  // Bonus: exactly the number of +20% picks the notes allow, one per
+  // skill, never past 80 -- profession package first, then the Agent's
+  // own strongest skills.
+  const bumped = [];
+  const bump = name => {
+    const cur = get(name);
+    if (!cur || name === 'Unnatural' || cur.value >= 80 || bumped.includes(name) || bumped.length >= bonusPicks) return;
+    cur.value = Math.min(80, cur.value + 20);
+    bumped.push(name);
+  };
+  if (bonusPicks) {
+    const pkg = BONUS_PACKAGES.find(p => p.label === pkgLabel);
+    (pkg ? pkg.skills : []).forEach(k => {
+      let name = null;
+      if (k === '?foreign_language') name = skills.filter(s => /^Foreign Language/.test(s.name) && s.value < 80).map(s => s.name)[0] || null;
+      else if (k === '?military_science') name = skills.filter(s => /^Military Science/.test(s.name)).map(s => s.name)[0] || null;
+      else if (k === '?art') name = skills.filter(s => /^Art \(/.test(s.name)).map(s => s.name)[0] || null;
+      else if (k === '?craft') name = skills.filter(s => /^Craft \(/.test(s.name)).map(s => s.name)[0] || null;
+      else if (k === '?anthro_arch') name = 'Anthropology';
+      else if (k.charAt(0) === '?') name = null;
+      else if (/\(/.test(k)) name = get(k) ? k : null;
+      else name = skillKeyToName(k, skills);
+      // Only what the Agent is already trained in (30%+): a package's
+      // Ride 10 -> 30 is a wasted pick for a Coast Guard rescuer.
+      if (name && get(name) && get(name).value >= 30) bump(name);
+    });
+    skills.filter(s => s.value > 0 && s.value < 80).sort((a, b) => b.value - a.value || a.name.localeCompare(b.name))
+      .forEach(s => bump(s.name));
+  }
+  return {
+    skills: skills.map(s => ({ name: s.name, value: s.value })),
+    report: { filled, chose: chosen, fixes, bonus: { package: pkgLabel || null, picks: bonusPicks, applied: bumped } },
+  };
 }
 
 // "Agency badge and identification card, medium pistol (usually .40 or
@@ -206,8 +416,18 @@ function build(rec, opts) {
   const sexRoll = r();
   const sex = rec.sex || (sexRoll < 0.58 ? 'Male' : sexRoll < 0.98 ? 'Female' : 'Non-binary');
   const nameKey = sex === 'Male' ? 'male' : sex === 'Female' ? 'female' : 'non-binary';
-  const first = pick(r, bioData.firstNames[nameKey]);
-  const last = pick(r, bioData.lastNames);
+  // Across the roster: no first name twice, no surname more than twice
+  // -- five "Evans" at one table is confusing. opts.names carries what
+  // the Agents built before this one already use.
+  const names = opts.names || { first: {}, last: {} };
+  let first, last;
+  for (let tries = 0; tries < 40; tries++) {
+    first = pick(r, bioData.firstNames[nameKey]);
+    last = pick(r, bioData.lastNames);
+    if (rec.name || (!names.first[first] && (names.last[last] || 0) < 2)) break;
+  }
+  names.first[first] = (names.first[first] || 0) + 1;
+  names.last[last] = (names.last[last] || 0) + 1;
   const mi = String.fromCharCode(65 + Math.floor(r() * 26));
   const name = rec.name || (first + ' ' + mi + '. ' + last);
 
@@ -217,8 +437,10 @@ function build(rec, opts) {
 
   const profile = profileFor(rec);
   const years = Math.max(2, Math.min(age - 22, 3 + Math.floor(r() * 14)));
-  const employer = rec.employer || pick(r, profile.employers);
-  const education = rec.education || (pick(r, profile.educations) + '. ' + years + ' years with ' + employer.replace(/\s*-\s*.*$/, '') + '.');
+  // The sheet's own agency when it pins one; else one of the agencies its
+  // EMPLOYER dropdown offers; else the Creator's employer table.
+  const employer = rec.employer || employerFor(r, rec, profile);
+  const education = rec.education || (pick(r, profile.educations) + '. ' + years + ' years with ' + agencyShort(employer).replace(/\.$/, '') + '.');
 
   // Physical description -- stats/scripts.js generateRandomBio()'s own
   // STR+CON banding and sentence shapes, rolled on the same tables.
@@ -237,17 +459,26 @@ function build(rec, opts) {
   // sheet's own score (= CHA by the rules).
   const bondCount = Math.max(1, rec.bonds.length);
   const bonds = [];
-  const usedRel = new Set();
+  // Family, the people this job puts in your life, and old friends --
+  // one partner at most, no relationship twice.
+  const usedRel = [];
+  const partner = pick(r, PARTNERS);
+  const pools = [[partner].concat(FAMILY), workBonds(rec.title), OTHER_BONDS];
   for (let i = 0; i < bondCount; i++) {
     const src = rec.bonds[i] || {};
-    let rel;
-    do { rel = r() < 0.6 ? pick(r, FAMILY) : pick(r, OTHER_BONDS); } while (usedRel.has(rel) && usedRel.size < 12);
-    usedRel.add(rel);
+    let rel = null;
+    for (let tries = 0; tries < 40 && !rel; tries++) {
+      const roll = r();
+      const cand = pick(r, pools[roll < 0.55 ? 0 : roll < 0.8 ? 1 : 2]);
+      if (usedRel.indexOf(cand) === -1) rel = cand;
+    }
+    rel = rel || 'Old friend';
+    usedRel.push(rel);
     const relSex = /wife|mother|daughter|sister|grandmother/i.test(rel) ? 'female' : /husband|father|son|brother|priest/i.test(rel) ? 'male' : (r() < 0.5 ? 'male' : 'female');
     const bFirst = pick(r, bioData.firstNames[relSex]);
-    const bLast = FAMILY.indexOf(rel) !== -1 && !/spouse|wife|husband/i.test(rel) ? last : pick(r, bioData.lastNames);
+    const bLast = (FAMILY.indexOf(rel) !== -1 || isPartner(rel)) ? last : pick(r, bioData.lastNames);
     bonds.push({
-      name: src.name || (bFirst + ' ' + (/spouse|wife|husband/i.test(rel) ? last : bLast)),
+      name: src.name || (bFirst + ' ' + bLast),
       relationship: rel,
       score: src.score != null ? src.score : stats.CHA.value,
     });
@@ -264,30 +495,32 @@ function build(rec, opts) {
       if (cats.has(c)) continue;
       cats.add(c);
       let t = motivationsData.tables[c][Math.floor(r() * 10)];
-      t = t.replace(/a (particular )?Bond \(choose one\)/i, bonds[0].name);
-      if (c === 'Protection' && !/Protect/.test(t)) t += ' - from ' + pick(r, motivationsData.protectionObjects);
-      if (c === 'Opposition') t += ': ' + pick(r, motivationsData.oppositionObjects);
+      // "Protect a Bond (choose one)", "Never letting a particular Bond
+      // down (choose one)": one of this Agent's own Bonds.
+      const bondName = pick(r, bonds).name;
+      t = t.replace(/\s*\(choose one\)/i, '').replace(/a (particular )?Bond\b/i, bondName);
+      // "Protect my family" -> "... from failure"; "Revenge against…" ->
+      // "Revenge against the Unnatural". An individual or organization
+      // the table leaves to the player gets a name here.
+      const object = what => {
+        if (/individual/i.test(what)) return pick(r, bioData.firstNames[r() < 0.5 ? 'male' : 'female']) + ' ' + pick(r, bioData.lastNames) + ', ' + pick(r, NEMESES);
+        if (/organization/i.test(what)) return pick(r, ORGANIZATIONS);
+        return what.charAt(0).toLowerCase() + what.slice(1);
+      };
+      if (c === 'Protection') t += ' from ' + object(pick(r, motivationsData.protectionObjects.filter(o => !/future/i.test(o))));
+      if (c === 'Opposition') t = t.replace(/\s*(…|\.\.\.)\s*$/, '') + ' ' + object(pick(r, motivationsData.oppositionObjects));
       motivations.push(t);
     }
   }
 
-  // Skills: every skill on the form (base value when left blank), then
-  // the sheet's specialties and extra languages, then any bonus points.
-  const skills = rec.skills.map(s => ({ name: s.name, value: s.value }));
-  rec.specialties.forEach(s => skills.push({ name: s.kind + ' (' + (s.name || '?') + ')', value: s.value || 0 }));
-  rec.other_skills.forEach(s => skills.push({ name: s.name, value: s.value || 0 }));
-  const overBase = rec.skills.reduce((t, s) => t + (s.value - s.base), 0) +
-    rec.specialties.reduce((t, s) => t + (s.value || 0), 0) +
-    rec.other_skills.reduce((t, s) => t + (s.value || 0), 0);
-  let bonus = { package: cat.bonus || null, applied: [], points_over_base: overBase, already_spent: overBase >= BONUS_ALREADY_SPENT };
-  if (cat.bonus && (opts.forceBonus || !bonus.already_spent)) {
-    Object.assign(bonus, applyBonus(r, rec, skills, cat.bonus));
-  }
+  const built = buildSkills(r, rec, cat.bonus);
+  const skills = built.skills;
   skills.sort((a, b) => a.name.localeCompare(b.name));
 
   return {
     id: rec.id,
     title: rec.title,
+    group: groupFor(rec.title),
     profession: rec.profession,
     employer,
     name,
@@ -315,8 +548,14 @@ function build(rec, opts) {
     }),
     gear: gearItems(rec.gear),
     special_training: rec.special_training,
-    bonus,
+    // What was the player's to decide, and what this build decided --
+    // skill names only, nothing from the sheet's own prose.
     generated: rec.missing,
+    filled: built.report.filled,
+    chose: built.report.chose,
+    fixes: built.report.fixes,
+    bonus: built.report.bonus,
+    hp_rule: Math.ceil((stats.STR.value + stats.CON.value) / 2),
   };
 }
 
@@ -327,23 +566,34 @@ function main() {
   const out = opt('-o', path.join(ROOT, 'friendly', 'pregens.json'));
   const report = opt('--report', null);
   const raw = JSON.parse(fs.readFileSync(args[0], 'utf8'));
-  const forceBonus = args.indexOf('--force-bonus') !== -1;
-  const pregens = raw.map(rec => build(rec, { forceBonus })).sort((a, b) => a.title.localeCompare(b.title));
+  // Built in catalog.json order, so name de-duplication is stable: a sheet
+  // added later (appended to the catalog) can't rename an earlier Agent.
+  const order = Object.keys(catalog);
+  const rank = t => (order.indexOf(t) === -1 ? 1e6 : order.indexOf(t));
+  const names = { first: {}, last: {} };
+  const pregens = raw.slice().sort((a, b) => rank(a.title) - rank(b.title) || a.title.localeCompare(b.title))
+    .map(rec => build(rec, { names })).sort((a, b) => a.title.localeCompare(b.title));
   const have = new Set(pregens.map(p => p.title));
   const pending = Object.keys(catalog).filter(t => !have.has(t)).sort();
-  fs.writeFileSync(out, JSON.stringify({ version: 1, pregens, pending }, null, 1) + '\n');
+  // One pregen per line: small to download, still diffable.
+  fs.writeFileSync(out, '{"version":1,"pending":' + JSON.stringify(pending) + ',"pregens":[\n' +
+    pregens.map(p => JSON.stringify(p)).join(',\n') + '\n]}\n');
   console.log(pregens.length + ' pregens, ' + pending.length + ' pending -> ' + out);
 
   if (report) {
     const lines = ['# Friendly pregens: what each sheet was missing', '',
-      '| Sheet | Generated | Points over base | Bonus package |', '|---|---|---|---|'];
+      '| Sheet | Agent | Blanks filled | "Choose N" taken | Bonus +20% | Check |', '|---|---|---|---|---|---|'];
     pregens.forEach(p => {
       const b = p.bonus;
-      const bonusCell = !b.package ? 'none set in catalog.json'
-        : !b.applied.length ? 'not added (' + b.package + '): sheet already over ' + BONUS_ALREADY_SPENT
-          : b.package + ': +20 to ' + b.applied.join(', ');
-      lines.push('| ' + p.title + ' | ' + p.generated.join(', ') + ' | ' + b.points_over_base + ' | ' + bonusCell + ' |');
+      const bonusCell = !b.picks ? 'none (complete as printed)'
+        : b.applied.length + '/' + b.picks + ' (' + (b.package || 'own skills') + '): ' + b.applied.join(', ');
+      const check = [p.derived.hp !== p.hp_rule ? 'sheet HP ' + p.derived.hp + ', rule gives ' + p.hp_rule + ' (kept sheet)' : '']
+        .concat(p.fixes).filter(Boolean).join('; ');
+      lines.push('| ' + [p.title, p.name + ', ' + p.sex + ', ' + p.age, p.filled.join(', ') || '-',
+        p.chose.join(', ') || '-', bonusCell, check].join(' | ') + ' |');
     });
+    lines.push('', 'Every sheet also got: name, sex, age/DOB, nationality, education (unless printed), physical description, ' +
+      'distinguishing features (unless printed), Bond names and relationships, three Motivations.');
     if (pending.length) lines.push('', 'Still to extract (' + pending.length + '): ' + pending.join('; '));
     fs.writeFileSync(report, lines.join('\n') + '\n');
   }

@@ -43,6 +43,30 @@ def val(fields, key):
     return v.replace('\r\n', '\n').replace('\r', '\n').strip()
 
 
+def employer(fields):
+    """(value, options): EMPLOYER is a dropdown. Some sheets pin one
+    agency; the generic professions leave it on the 'Select or Enter
+    Employer Name' placeholder with a list of agencies to pick from."""
+    f = fields.get(employer_field(fields)) or {}
+    opts = []
+    for o in f.get('/Opt') or []:
+        o = o if isinstance(o, str) else o[-1]
+        o = str(o).strip()
+        if o and not PLACEHOLDER.search(o):
+            opts.append(o)
+    v = val(fields, employer_field(fields))
+    return ('' if PLACEHOLDER.search(v) else v), opts
+
+
+def employer_field(fields):
+    # Two sheets (ATF Criminal Investigative Analyst, Intelligence
+    # Analyst) name the box 'Dropdown5'; every other field matches.
+    return '3 EMPLOYER' if '3 EMPLOYER' in fields else 'Dropdown5'
+
+
+PLACEHOLDER = re.compile(r'select or enter', re.I)
+
+
 def num(s):
     m = re.search(r'-?\d+', s or '')
     return int(m.group(0)) if m else None
@@ -77,7 +101,9 @@ def extract(path):
         'title': title,
         'id': 'FR-' + slug(title),
         'profession': val(fields, '2 PROFESSION RANK IF APPLICABLE'),
-        'employer': val(fields, '3 EMPLOYER'),
+        'employer': employer(fields)[0],
+        'employer_options': employer(fields)[1],
+        'employer_field': employer_field(fields),
         'name': val(fields, '1 LAST NAME FIRST NAME MIDDLE INITIAL'),
         'nationality': val(fields, '4 NATIONALITY'),
         'sex': val(fields, 'SEX'),
@@ -125,7 +151,7 @@ def extract(path):
         name = val(fields, 'Foreign Languages and Other Skills %d' % i)
         score = num(val(fields, 'Foreign Languages and Other Skills %d Score' % i))
         if name or score:
-            rec['other_skills'].append({'name': name, 'value': score})
+            rec['other_skills'].append({'name': name, 'value': score, 'slot': i})
     for c in 'abcdefg':
         w = {
             'name': val(fields, 'WEAPON' + c),

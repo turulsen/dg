@@ -13,6 +13,7 @@ had are left alone. Output is for printing only -- keep it out of git.
 import argparse
 import json
 import os
+import re
 import sys
 
 from pypdf import PdfReader, PdfWriter
@@ -46,15 +47,95 @@ def values_for(p, raw):
     for i, b in enumerate(p['bonds'][:6], 1):
         v['BOND %d' % i] = '%s (%s)' % (b['name'], b['relationship'])
         v['BOND %d SCORE' % i] = str(b['score'])
-    # Bonus points: only skills whose value changed from the sheet's own.
-    sheet = {s['name']: s for s in raw['skills']}
-    for s in p['skills']:
-        src = sheet.get(s['name'])
-        if src and s['value'] != src['value']:
-            v['%s %d' % (s['name'], src['base'])] = str(s['value'])
-    # Keep whatever the sheet already says.
-    filled = {k for k, x in raw.get('_filled', {}).items() if x}
-    return {k: x for k, x in v.items() if k not in filled and x not in (None, '')}
+    # Identity fields the sheet already filled in stay as printed.
+    printed = {k for k, x in raw.get('_filled', {}).items() if x}
+    v = {k: x for k, x in v.items() if k not in printed and x not in (None, '')}
+    if not raw.get('employer') and p.get('employer'):
+        v[raw.get('employer_field') or '3 EMPLOYER'] = p['employer']
+    v.update(skill_values(p, raw))
+    return v
+
+
+SPECIALTY_KINDS = ['Art', 'Craft', 'Military Science', 'Pilot', 'Science']
+SPEC_RE = re.compile(r'^(Foreign Language|Language|Science|Craft|Art|Military Science|Pilot)\s*(?:\((.*)\))?\s*$', re.I)
+
+
+def normalize(name):
+    """Same naming as build.js splitSpecialty(): 'Language (Spanish)' ->
+    ('Foreign Language', 'Spanish'); a blank or '(Choose One)' -> spec ''."""
+    m = SPEC_RE.match((name or '').strip())
+    if not m:
+        return None, name
+    kind = m.group(1).title().replace('Of', 'of')
+    kind = 'Foreign Language' if kind.lower() in ('language', 'foreign language') else kind
+    spec = re.sub(r'_+', '', m.group(2) or '').strip()
+    if re.match(r'^\(?choose (one|another|any)\)?$', spec, re.I):
+        spec = ''
+    return kind, (spec[:1].upper() + spec[1:]) if spec else ''
+
+
+def slot_label(name):
+    """The Other Skills box is narrow and headed 'Foreign Languages and
+    Other Skills' -- a language goes in as just its name."""
+    m = re.match(r'^Foreign Language \((.+)\)$', name)
+    return m.group(1) if m else name
+
+
+def skill_values(p, raw):
+    """Every skill value the build changed or added, in the form's own
+    boxes: a plain skill's box, the one specialty line per kind, or the
+    six 'Foreign Languages and Other Skills' slots."""
+    gen = {s['name']: s['value'] for s in p['skills']}
+    used, out = set(), {}
+    # build.js names the form's blank lines in form order -- specialty
+    # lines first, then the Other Skills slots -- and lists them in
+    # p['filled'] in that same order, so walking the form in that order
+    # pairs each blank with its name (a value can't: bonus points move it).
+    filled = list(p.get('filled') or [])
+
+    def take(kind, spec, value):
+        if spec:
+            name = '%s (%s)' % (kind, spec)
+            return name if name in gen else None
+        name = filled.pop(0) if filled else None
+        return name if name in gen else None
+
+    for s in raw['skills']:
+        if s['name'] in gen:
+            used.add(s['name'])
+            if gen[s['name']] != s['value']:
+                out['%s %d' % (s['name'], s['base'])] = str(gen[s['name']])
+    spec_line = {x['kind']: x for x in raw['specialties']}
+    for kind in SPECIALTY_KINDS:
+        line = spec_line.get(kind)
+        name = None
+        if line:
+            k, spec = normalize('%s (%s)' % (kind, line['name'] or ''))
+            name = take(kind, spec, line['value'] or 0)
+        else:  # an empty line: room for a specialty the build chose
+            name = next((n for n in gen if n.startswith(kind + ' (') and n not in used), None)
+        if name:
+            used.add(name)
+            out[kind] = name[len(kind) + 2:-1]
+            out[kind + ' 0'] = str(gen[name])
+    taken_slots = set()
+    for o in raw['other_skills']:
+        kind, spec = normalize(o['name'])
+        name = take(kind, spec, o['value'] or 0) if kind else (o['name'] if o['name'] in gen else None)
+        taken_slots.add(o['slot'])
+        if name:
+            used.add(name)
+            out['Foreign Languages and Other Skills %d' % o['slot']] = slot_label(name)
+            out['Foreign Languages and Other Skills %d Score' % o['slot']] = str(gen[name])
+    free = [i for i in range(1, 7) if i not in taken_slots]
+    for name, val in sorted(gen.items()):
+        if name in used or val <= 0 or not free:
+            continue
+        slot = free.pop(0)
+        out['Foreign Languages and Other Skills %d' % slot] = slot_label(name)
+        out['Foreign Languages and Other Skills %d Score' % slot] = str(val)
+        used.add(name)
+    return out
 
 
 def main():

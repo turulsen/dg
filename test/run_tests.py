@@ -11326,35 +11326,106 @@ def test_friendly_clearance(p):
            nxt.locator('optgroup[label^="Friendlies"] option[value="' + pid + '"]').count() == 1, "")
     page.close()
 
+    # 62 dossiers: category chips narrow the picker, "Deal me an Agent"
+    # deals from what's showing, and a damage entry that isn't dice or a
+    # lethality % ("Stun") is text, not a button that does nothing.
+    shipped = json.load(open(os.path.join(HERE, "..", "friendly", "pregens.json")))["pregens"]
+    medics = [q for q in shipped if q["group"] == "Medical & Rescue"]
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    errs += collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    route_apps_script_ok(page)
+    page.goto(f"{BASE}/friendly.html", wait_until="load", timeout=15000)
+    _pump_until(page, lambda: page.locator(".fr-chip").count() > 1)
+    page.click('.fr-chip[data-group="Medical & Rescue"]')
+    page.wait_for_timeout(150)
+    record("friendly", "a category chip narrows the picker to that kind of Agent",
+           page.locator(".fr-card").count() == len(medics) > 0, str(page.locator(".fr-card").count()))
+    page.click("#fr-deal")
+    page.wait_for_timeout(300)
+    dealt = page.inner_text("#fr-view .pv-bio")
+    record("friendly", "Deal me an Agent deals one Agent from the chosen category, in one tap",
+           dealt in [q["name"] for q in medics], dealt)
+    stun = next((q["id"] for q in shipped if any((w.get("damage") or "").lower() == "stun" for w in q["weapons"])), None)
+    if stun:
+        page.goto(f"{BASE}/friendly.html?agent={stun}", wait_until="load", timeout=15000)
+        _pump_until(page, lambda: page.is_visible("#fr-view .pv-bio"))
+        record("friendly", "a 'Stun' weapon shows its effect as text, not a button that rolls nothing",
+               page.locator('[data-damage="stun"], [data-damage="Stun"]').count() == 0
+               and "Stun" in page.inner_text(".fr-weapons").title(), "")
+    page.close()
+
+    # One page, every Agent: on a 390x844 phone, everything the player
+    # rolls (stats, skills, weapons) must sit above the Dice Roller bar
+    # without scrolling -- checked for all 62 so a data rebuild can't
+    # quietly push one off the screen.
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    errs += collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    route_apps_script_ok(page)
+    over = []
+    for q in shipped:
+        page.goto(f"{BASE}/friendly.html?agent={q['id']}", wait_until="load", timeout=15000)
+        _pump_until(page, lambda: page.is_visible("#fr-view .pv-bio"))
+        m = page.evaluate("""() => {
+          const q = s => document.querySelector(s);
+          const wpn = q('.fr-weapons') || q('.fr-col-side .pv-text');
+          return { bottom: Math.max(q('.fr-col-main').getBoundingClientRect().bottom, wpn ? wpn.getBoundingClientRect().bottom : 0),
+                   bar: q('#dr-panel').getBoundingClientRect().top, sw: document.documentElement.scrollWidth };
+        }""")
+        if m["bottom"] > m["bar"] or m["sw"] > 390:
+            over.append((q["id"], round(m["bottom"] - m["bar"])))
+    record("friendly", "on a phone, every Agent's rollable sheet fits the first screen (all 62)", not over, str(over[:6]))
+    page.close()
+
     record("friendly", "no JS errors across the Friendly flow", not errs, "; ".join(errs)[:300])
 
 
 def test_friendly_pregen_builder(p=None):
-    """scripts/pregens/build.js: deterministic (a re-run after adding PDFs
-    must not rename an Agent a player already met), fills every blank the
-    sheet leaves, respects the sheet's own numbers, adds bonus points only
-    to a sheet that hasn't spent them, and publishes no verbatim sheet
-    notes."""
+    """scripts/pregens/build.js follows each Dossier's own notes: exactly
+    the "Choose N" picks and the number of +20% bonus picks they allow
+    (never past 80, never Unnatural), names the form's blank "Language"
+    lines, picks an employer from the sheet's own dropdown, repairs the
+    Unnatural/Unarmed Combat slip, leaves a sheet with no instructions as
+    printed, stays deterministic, and publishes none of the notes' prose.
+    The notes below are written for this test in the sheets' format."""
     import re, subprocess, tempfile
-    raw = [{
-        "file": "x.pdf", "title": "Federal Agent", "id": "FR-FA", "profession": "Federal Agent",
-        "employer": "", "name": "", "nationality": "", "sex": "", "age_dob": "", "education": "",
-        "physical": "", "motivations": "", "wounds": "",
-        "gear": "Badge and ID card, medium pistol in a belt holster, handcuffs, body armor.",
-        "notes": "UNIQUE-VERBATIM-NOTES-TEXT", "developments": "",
-        "stats": {"STR": 11, "CON": 12, "DEX": 10, "INT": 13, "POW": 12, "CHA": 11},
-        "features": {k: "" for k in ["STR", "CON", "DEX", "INT", "POW", "CHA"]},
-        "bonds": [{"name": "", "score": 11}, {"name": "", "score": 11}],
-        "derived": {"hp": 12, "wp": 12, "san_max": 99, "san": 60, "bp": 48},
-        "skills": [{"name": "Alertness", "base": 20, "value": 50}, {"name": "Criminology", "base": 10, "value": 50},
-                   {"name": "Firearms", "base": 20, "value": 50}, {"name": "Forensics", "base": 0, "value": 30},
-                   {"name": "Law", "base": 0, "value": 30}, {"name": "Search", "base": 20, "value": 50},
-                   {"name": "Accounting", "base": 10, "value": 10}, {"name": "Bureaucracy", "base": 10, "value": 40},
-                   {"name": "Computer Science", "base": 0, "value": 0}, {"name": "Pharmacy", "base": 0, "value": 0}],
-        "specialties": [], "other_skills": [], "weapons": [{"name": "Pistol", "skill": 50, "range": "15 m", "damage": "1d10",
-                                                            "ap": "", "kill_damage": "", "kill_radius": "", "ammo": "15"}],
-        "special_training": [], "missing": ["name", "sex"],
-    }]
+
+    def sheet(title, sid, notes, skills, **extra):
+        rec = {
+            "file": "x.pdf", "title": title, "id": sid, "profession": "Federal Agent",
+            "employer": "", "employer_options": [], "name": "", "nationality": "", "sex": "", "age_dob": "",
+            "education": "", "physical": "", "motivations": "", "wounds": "",
+            "gear": "Badge and ID card, medium pistol in a belt holster, handcuffs, body armor.",
+            "notes": notes, "developments": "",
+            "stats": {"STR": 11, "CON": 12, "DEX": 10, "INT": 13, "POW": 12, "CHA": 11},
+            "features": {k: "" for k in ["STR", "CON", "DEX", "INT", "POW", "CHA"]},
+            "bonds": [{"name": "", "score": 11}, {"name": "", "score": 11}],
+            "derived": {"hp": 12, "wp": 12, "san_max": 99, "san": 60, "bp": 48},
+            "skills": [{"name": n, "base": b, "value": v} for n, b, v in skills],
+            "specialties": [], "other_skills": [],
+            "weapons": [{"name": "Pistol", "skill": 50, "range": "15 m", "damage": "1d10",
+                         "ap": "", "kill_damage": "", "kill_radius": "", "ammo": "15"}],
+            "special_training": [], "missing": ["name", "sex"],
+        }
+        rec.update(extra)
+        return rec
+    base_skills = [("Alertness", 20, 50), ("Criminology", 10, 50), ("Firearms", 20, 50), ("Forensics", 0, 30),
+                   ("Law", 0, 30), ("Search", 20, 50), ("Accounting", 10, 10), ("Bureaucracy", 10, 40),
+                   ("Computer Science", 0, 0), ("Pharmacy", 0, 0), ("Unarmed Combat", 40, 40), ("Unnatural", 0, 60)]
+    notes_a = ("A test paragraph about the job. UNIQUE-VERBATIM-NOTES-TEXT\n\n"
+               "Choose one additional skill from this list:\n» Accounting 60%\n» Computer Science 50%\n"
+               "» Foreign Language (choose one) 50%\n\n"
+               "Bonus skill points: Add +20% to each of any three skills (up to a maximum of 80%).")
+    raw = [
+        sheet("Federal Agent", "FR-FA", notes_a, base_skills,
+              employer_options=["DOS - Bureau of Diplomatic Security", "FBI - Criminal Investigative Division"],
+              other_skills=[{"name": "Language", "value": 40, "slot": 1}]),
+        sheet("USSS - Personal Protective Detail", "FR-USSS-PPD", "Only a description, no instructions.",
+              [("Alertness", 20, 60), ("HUMINT", 10, 80), ("Firearms", 20, 60)], employer="U.S. Secret Service"),
+    ]
     root = os.path.join(HERE, "..")
     with tempfile.TemporaryDirectory() as d:
         src = os.path.join(d, "raw.json"); json.dump(raw, open(src, "w"))
@@ -11367,7 +11438,8 @@ def test_friendly_pregen_builder(p=None):
                 record("friendly", "pregen builder runs", False, r.stderr[:300]); return
             outs.append(open(out).read())
     data = json.loads(outs[0])
-    pg = data["pregens"][0]
+    pg = next(q for q in data["pregens"] if q["id"] == "FR-FA")
+    ppd = next(q for q in data["pregens"] if q["id"] == "FR-USSS-PPD")
     record("friendly", "pregen builder is deterministic", outs[0] == outs[1], "")
     record("friendly", "pregen builder fills name, sex, age, nationality, education, physical, bonds, motivations",
            all([pg["name"], pg["sex"], pg["age"], pg["dob"], pg["nationality"], pg["education"], pg["physical"],
@@ -11377,18 +11449,40 @@ def test_friendly_pregen_builder(p=None):
            pg["derived"] == {"hp": 12, "wp": 12, "san": 60, "san_max": 99, "bp": 48} and pg["stats"]["INT"]["value"] == 13
            and all(b["score"] == 11 for b in pg["bonds"]), str(pg["derived"]))
     skills = {s["name"]: s["value"] for s in pg["skills"]}
-    record("friendly", "pregen builder adds the catalog's bonus package to a sheet that hasn't spent one (+20, max 80)",
-           pg["bonus"]["package"] == "Criminalist" and skills["Criminology"] == 70 and skills["Accounting"] == 30
+    record("friendly", "pregen builder takes exactly one option from the sheet's 'Choose one' list",
+           len(pg["chose"]) == 1 and re.match(r"^(Accounting 60%|Computer Science 50%|Foreign Language \(\w[\w ]*\) 50%)$", pg["chose"][0]),
+           str(pg["chose"]))
+    raised = {n: v for n, v in skills.items() if n in dict((x[0], x[2]) for x in base_skills) and v > dict((x[0], x[2]) for x in base_skills)[n]}
+    record("friendly", "pregen builder adds exactly the three +20% bonus picks the notes allow, max 80, never Unnatural",
+           len(pg["bonus"]["applied"]) == 3 and "Unnatural" not in pg["bonus"]["applied"]
            and all(v <= 80 for v in skills.values()), str(pg["bonus"]))
-    record("friendly", "pregen builder publishes no verbatim sheet notes", "UNIQUE-VERBATIM-NOTES-TEXT" not in outs[0], "")
+    record("friendly", "pregen builder repairs Unnatural typed into the sheet's Unarmed Combat line",
+           skills.get("Unnatural") == 0 and skills.get("Unarmed Combat", 0) >= 60 and pg["fixes"], str(pg["fixes"]))
+    langs = [n for n in skills if n.startswith("Foreign Language (")]
+    record("friendly", "pregen builder names the form's blank 'Language' line",
+           "Language" not in skills and any(skills[n] >= 40 for n in langs) and pg["filled"], str(langs))
+    record("friendly", "pregen builder picks the employer from the sheet's own dropdown",
+           pg["employer"] in ("DOS - Bureau of Diplomatic Security", "FBI - Criminal Investigative Division"), pg["employer"])
+    record("friendly", "a sheet whose notes say nothing stays exactly as printed",
+           {s["name"]: s["value"] for s in ppd["skills"]} == {"Alertness": 60, "HUMINT": 80, "Firearms": 60}
+           and not ppd["chose"] and not ppd["bonus"]["applied"], str(ppd["bonus"]))
+    record("friendly", "pregen builder never gives two Agents the same first name",
+           pg["name"].split()[0] != ppd["name"].split()[0], pg["name"] + " / " + ppd["name"])
+    record("friendly", "pregen builder publishes no verbatim sheet notes",
+           "UNIQUE-VERBATIM-NOTES-TEXT" not in outs[0] and "Bonus skill points" not in outs[0], "")
     record("friendly", "pregen builder lists the catalog's unextracted sheets as pending",
-           "Federal Agent" not in data["pending"] and len(data["pending"]) > 10, str(len(data["pending"])))
+           "Federal Agent" not in data["pending"] and len(data["pending"]) == 60, str(len(data["pending"])))
     # The shipped data itself: every pregen carries what the page reads.
     shipped = json.load(open(os.path.join(root, "friendly", "pregens.json")))
     bad = [q["id"] for q in shipped["pregens"] if not (q["name"] and q["skills"] and q["stats"] and q["bonds"]
                                                        and re.match(r"^[A-Z0-9-]{3,32}$", q["id"]))]
     record("friendly", "friendly/pregens.json: every pregen is complete and its id is a valid Agent Code",
            shipped["pregens"] and not bad, str(bad))
+    record("friendly", "friendly/pregens.json carries all 62 Agent Dossiers, none pending",
+           len(shipped["pregens"]) == 62 and not shipped["pending"], str(len(shipped["pregens"])))
+    over = [(q["id"], s["name"], s["value"]) for q in shipped["pregens"] for s in q["skills"]
+            if s["value"] > 80 or (s["name"] == "Unnatural" and s["value"])]
+    record("friendly", "friendly/pregens.json: no skill above 80% and no Unnatural on any pregen", not over, str(over[:5]))
 
 
 def main():

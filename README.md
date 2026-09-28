@@ -46,7 +46,7 @@ built on.
 
 ### Friendly pregens
 
-`friendly/pregens.json` is built from the Handler's fillable DD Form 315 pregens (the Arc Dream *Agent Dossiers* PDFs) in two steps, both in `scripts/pregens/` (see its README): `extract.py` reads each PDF's form fields and reports what the sheet leaves blank; `build.js` fills those blanks — name, sex, age/DOB, nationality, education, physical description, distinguishing features, Bond names, Motivations — with the same tables the Creator's Random Bio / Random Motivation use, seeded per sheet so a rebuild never renames an Agent. It also adds the book's optional bonus skill package (picked per sheet in `catalog.json`) to any sheet that hasn't already spent those points. The PDFs and the raw extract stay out of the repo (the site is public); only game numbers plus generated flavour are published.
+`friendly/pregens.json` is built from the Handler's fillable DD Form 315 pregens (the Arc Dream *Agent Dossiers* PDFs) in two steps, both in `scripts/pregens/` (see its README): `extract.py` reads each PDF's form fields and reports what the sheet leaves blank; `build.js` fills those blanks — name, sex, age/DOB, nationality, employer, education, physical description, distinguishing features, Bond names, Motivations — with the same tables the Creator's Random Bio / Random Motivation use, seeded per sheet, and finishes each sheet the way its own notes say ("Choose two from the following skills…", "Bonus skill points: Add +20% each to any six skills"). All 62 Dossiers ship; the picker groups them into six categories and has a one-tap "Deal me an Agent". The PDFs and the raw extract stay out of the repo (the site is public); only game numbers plus generated flavour are published.
 
 ### Offline support (PWA)
 
