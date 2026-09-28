@@ -60,6 +60,17 @@
     padding:7px 9px; font-family:'Courier Prime',monospace; font-size:13px; min-width:170px;
   }
   .fr-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; }
+  /* 62 dossiers: a one-tap random deal for the undecided, and optional
+     category chips so the rest isn't a twelve-screen scroll. */
+  .fr-deal-row{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+  .fr-deal-note{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); }
+  .fr-chips{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
+  .fr-chip{
+    font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-2); cursor:pointer;
+    background:var(--paper); border:1px solid var(--rule); border-radius:14px; padding:5px 11px; min-height:30px;
+  }
+  .fr-chip[aria-pressed="true"]{ background:var(--ink); color:var(--paper); border-color:var(--ink); }
+  .fr-chip .n{ opacity:.6; margin-left:4px; }
   .fr-card{
     display:flex; flex-direction:column; gap:6px; text-align:left; cursor:pointer;
     background:var(--paper); border:1px solid var(--rule); border-top:3px solid var(--ink-3);
@@ -99,10 +110,13 @@
   .pv-vital{ text-align:center; }
   .pv-vital .lbl{ font-size:9px; color:var(--ink-3); letter-spacing:.1em; font-family:'Courier Prime',monospace; }
   .pv-vital .val{ font-family:'Special Elite',monospace; font-size:18px; color:var(--ink); }
+  /* "These are starting values, keep them on paper" -- a caption under
+     the vitals, not a note of its own: every line of height matters for
+     fitting the whole sheet on one phone screen. */
+  .pv-vitals-wrap{ display:flex; flex-direction:column; align-items:center; gap:2px; }
   .fr-paper-note{
-    background:#f0e87a; color:#3a300a; box-shadow:1px 3px 8px rgba(0,0,0,.3);
-    margin:14px 20px 0; padding:9px 12px; transform:rotate(-.4deg);
-    font-family:'Courier Prime',monospace; font-size:12px; line-height:1.5;
+    font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.04em; color:#7a5a12;
+    background:#f0e87a; padding:1px 6px; white-space:nowrap;
   }
   .pv-body{ padding:6px 20px 22px; }
   .pv-sec-hd{
@@ -159,7 +173,7 @@
   @media (min-width:861px){
     .pv-body{ display:grid; grid-template-columns:minmax(0,1.55fr) minmax(0,1fr); gap:0 26px; align-items:start; }
     .pv-skills{ grid-template-columns:repeat(3,minmax(0,1fr)); }
-    .roll{ min-height:30px; padding:4px 4px; }
+    .roll{ min-height:28px; padding:3px 4px; }
     .fr-col-side .pv-sec-hd:first-child, .fr-col-main .pv-sec-hd:first-child{ margin-top:14px; }
     .fr-col-side .fr-weapons .opt{ display:none; }
   }
@@ -176,12 +190,20 @@
      and the stat descriptors go; everything shrinks to a paper sheet's
      density; skills run three across. Rolls are still real buttons. ── */
   @media (max-width:560px){
-    body.folder-theme{ padding:10px 6px 60px; }
+    body.folder-theme{ padding:5px 6px 60px; }
+    .fr-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+    .fr-card{ padding:9px 9px 8px; gap:3px; }
+    .fr-card .fc-title{ font-size:8.5px; letter-spacing:.06em; }
+    .fr-card .fc-name{ font-size:14px; }
+    .fr-card .fc-meta{ font-size:10px; }
+    .fr-card .fc-skills{ font-size:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .fr-card .fc-go{ display:none; }
+    .fr-chip{ font-size:10.5px; padding:4px 9px; }
     body.fr-playing .hub-header h1, body.fr-playing .hub-header p{ display:none; }
     body.fr-playing .hub-header{ padding:4px 6px 8px; display:flex; align-items:center; gap:12px; }
     body.fr-playing .hub-header .stamp{ margin:0; padding:2px 8px; font-size:8px; }
     .folder-wrap{ padding:0; }
-    .folder-body{ padding:8px 6px 10px; }
+    .folder-body{ padding:5px 6px 10px; }
     .tab-strip{ padding-left:16px; }
     .pv-sticky{ padding:8px 10px 6px; gap:8px; }
     .pv-photo{ display:none; }
@@ -191,7 +213,18 @@
     .pv-vitals{ gap:9px; }
     .pv-vital .lbl{ font-size:8px; }
     .pv-vital .val{ font-size:15px; }
-    .fr-paper-note{ margin:6px 10px 0; padding:3px 8px; font-size:10px; transform:none; }
+    .pv-vitals-wrap{ margin-left:auto; }
+    .fr-more{ margin-top:8px; }
+    .fr-more > summary{ padding:5px 0; font-size:10px; }
+    .fr-weapons thead{ display:none; }  /* the buttons already read "60%" and "1d10" */
+    .fr-weapons .roll{ min-height:25px; }
+    .fr-weapons td{ padding:1px 6px 1px 0; }
+    .pv-sec-hd{ margin:7px 0 3px; }
+    .pv-cell.pv-local{ display:none; }
+    .fr-paper-note .fr-long{ display:none; }  /* only worth a line when a Cell hears the rolls */
+    .pv-stat .lbl, .pv-stat .x5{ line-height:1.15; }
+    body.fr-playing .hub-header{ padding:0 6px 6px; }
+    .pv-row{ padding:2px 0; }
     .pv-body{ padding:0 10px 12px; }
     .pv-sec-hd{ margin:9px 0 4px; padding-bottom:3px; font-size:9px; }
     .pv-stats{ grid-template-columns:repeat(6,1fr); gap:4px; }
@@ -239,6 +272,11 @@
           <label for="fr-cell-filter">Cell</label>
           <select id="fr-cell-filter" class="fr-cell-filter"><option value="">All Friendlies</option></select>
         </div>
+        <div class="fr-deal-row">
+          <button type="button" class="paper-btn primary" id="fr-deal" disabled>Deal me an Agent</button>
+          <span class="fr-deal-note">or pick one below</span>
+        </div>
+        <div class="fr-chips" id="fr-chips" role="group" aria-label="Kind of Agent"></div>
         <div class="fr-grid" id="fr-grid"><div class="fr-empty">Loading dossiers…</div></div>
         <details class="fr-pending" id="fr-pending" hidden><summary></summary><ul></ul></details>
       </div>
@@ -298,9 +336,51 @@
       .map(function (s) { return s.name + ' ' + s.value + '%'; }).join(' · ');
   }
 
+  var GROUP_ORDER = ['Federal Agents & Police', 'Special Ops & Tactical', 'Military', 'Intelligence', 'Medical & Rescue', 'Civilians & Specialists'];
+  var group = '';
+  var chipsEl = document.getElementById('fr-chips');
+  var dealBtn = document.getElementById('fr-deal');
+  function inCell() {
+    var cell = cellById(cellFilterEl.value);
+    return cell ? pregens.filter(function (p) { return cell.members.indexOf(p.id) !== -1; }) : pregens;
+  }
+  function visible() {
+    return inCell().filter(function (p) { return !group || p.group === group; })
+      .sort(function (a, b) {
+        return (GROUP_ORDER.indexOf(a.group) - GROUP_ORDER.indexOf(b.group)) || a.title.localeCompare(b.title);
+      });
+  }
+  // Chips count what the Cell filter leaves; a Cell of four Friendlies
+  // needs no chips at all.
+  function renderChips() {
+    var base = inCell();
+    var counts = {};
+    base.forEach(function (p) { counts[p.group] = (counts[p.group] || 0) + 1; });
+    if (group && !counts[group]) group = '';
+    var groups = GROUP_ORDER.filter(function (g) { return counts[g]; });
+    chipsEl.hidden = base.length < 9 || groups.length < 2;
+    chipsEl.innerHTML = [['', 'All', base.length]].concat(groups.map(function (g) { return [g, g, counts[g]]; }))
+      .map(function (c) {
+        return '<button type="button" class="fr-chip" data-group="' + esc(c[0]) + '" aria-pressed="' + (group === c[0]) + '">' +
+          esc(c[1]) + '<span class="n">' + c[2] + '</span></button>';
+      }).join('');
+  }
+  chipsEl.addEventListener('click', function (e) {
+    var chip = e.target.closest('.fr-chip');
+    if (!chip) return;
+    group = chip.dataset.group;
+    renderGrid();
+  });
+  dealBtn.addEventListener('click', function () {
+    var list = visible();
+    if (list.length) pick(list[Math.floor(Math.random() * list.length)].id, cellFilterEl.value || null);
+  });
+
   function renderGrid() {
     var cell = cellById(cellFilterEl.value);
-    var list = cell ? pregens.filter(function (p) { return cell.members.indexOf(p.id) !== -1; }) : pregens;
+    renderChips();
+    var list = visible();
+    dealBtn.disabled = !list.length;
     if (!list.length) {
       gridEl.innerHTML = '<div class="fr-empty">' + (cell ? 'No Friendlies in this Cell yet — ask your Handler.' : 'No Agents ready yet.') + '</div>';
       return;
@@ -309,7 +389,7 @@
       return '<button type="button" class="fr-card" data-id="' + esc(p.id) + '">' +
         '<span class="fc-title">' + esc(p.title) + '</span>' +
         '<span class="fc-name">' + esc(p.name) + '</span>' +
-        '<span class="fc-meta">' + esc(p.profession) + ' · ' + esc(p.age) + ' · ' + esc(p.sex) + '</span>' +
+        '<span class="fc-meta">' + esc(p.age) + ' · ' + esc(p.sex) + '</span>' +
         '<span class="fc-skills">' + esc(topSkills(p, 3)) + '</span>' +
         '<span class="fc-go">-&gt; Play this Agent</span>' +
         '</button>';
@@ -336,6 +416,12 @@
     document.getElementById('fr-dossier-tab-label').textContent = p.name.split(' ').slice(-1)[0];
     showTab('dossier');
     window.scrollTo(0, 0);
+  }
+
+  // "NASA - Astronaut Corps Pilot" / "NASA - Astronaut Corps": say it once.
+  function sameAgency(title, employer) {
+    var a = String(title).split(' - ')[0].toLowerCase(), b = String(employer).split(' - ')[0].toLowerCase();
+    return !employer || a === b || String(title).toLowerCase().indexOf(String(employer).toLowerCase()) === 0;
   }
 
   function roll(target, label) {
@@ -374,9 +460,12 @@
     var weapons = p.weapons.length ? '<table class="fr-weapons"><thead><tr><th>Weapon</th><th>Skill</th><th>Damage</th><th class="opt">Range</th><th class="opt">AP</th><th class="opt">Ammo</th></tr></thead><tbody>' +
       p.weapons.map(function (w) {
         var dmg = w.damage || w.kill_damage || '';
+        // Dice ("1d10") or a lethality rating ("15%") rolls; anything else
+        // ("Stun") is just what the weapon does.
+        var rollable = /^\s*\d*d\d+\s*([+-]\s*\d+)?\s*$/i.test(dmg) || /\d+\s*%/.test(dmg);
         return '<tr><td class="wn">' + esc(w.name) + '</td>' +
           '<td>' + (w.skill ? '<button type="button" class="roll" data-roll="' + w.skill + '" data-label="' + esc(w.name) + '"><span class="sv">' + w.skill + '%</span></button>' : '') + '</td>' +
-          '<td>' + (dmg ? '<button type="button" class="roll" data-damage="' + esc(dmg) + '" data-label="' + esc(w.name) + ' damage"><span class="sv">' + esc(dmg) + '</span></button>' : '') + '</td>' +
+          '<td>' + (dmg && rollable ? '<button type="button" class="roll" data-damage="' + esc(dmg) + '" data-label="' + esc(w.name) + ' damage"><span class="sv">' + esc(dmg) + '</span></button>' : esc(dmg)) + '</td>' +
           '<td class="opt">' + esc(w.range || '') + '</td><td class="opt">' + esc(w.ap || '') + '</td><td class="opt">' + esc(w.ammo || '') + '</td></tr>';
       }).join('') + '</tbody></table>' : '<p class="pv-text">None.</p>';
 
@@ -389,12 +478,12 @@
         '<div class="pv-photo" aria-hidden="true">' + esc(initials) + '</div>' +
         '<div class="pv-sticky-info">' +
           '<div class="pv-bio">' + esc(p.name) + '</div>' +
-          '<div class="pv-sub">' + esc(p.title) + ' · ' + esc(p.employer) + '</div>' +
-          '<div class="pv-cell">' + (cell ? 'Cell: <b>' + esc(cell.name) + '</b> — your rolls show on the Handler\'s feed' : 'Rolls stay on this device') + '</div>' +
+          '<div class="pv-sub">' + esc(p.title) + (sameAgency(p.title, p.employer) ? '' : ' · ' + esc(p.employer)) + '</div>' +
+          '<div class="pv-cell' + (cell ? '' : ' pv-local') + '">' + (cell ? 'Cell: <b>' + esc(cell.name) + '</b> — your rolls show on the Handler\'s feed' : 'Rolls stay on this device') + '</div>' +
         '</div>' +
-        '<div class="pv-vitals">' + vital('HP', d.hp) + vital('WP', d.wp) + vital('SAN', d.san) + vital('BP', d.bp) + '</div>' +
+        '<div class="pv-vitals-wrap"><div class="pv-vitals">' + vital('HP', d.hp) + vital('WP', d.wp) + vital('SAN', d.san) + vital('BP', d.bp) + '</div>' +
+        '<div class="fr-paper-note"><span class="fr-long">start values · </span>keep on paper</div></div>' +
       '</div>' +
-      '<div class="fr-paper-note">Start values · keep HP/WP/SAN on paper · tap to roll</div>' +
       '<div class="pv-body"><div class="fr-col-main">' +
         '<div class="pv-sec-hd">Statistics <span>×5</span></div><div class="pv-stats">' + stats + '</div>' +
         '<div class="pv-sec-hd">Skills</div>' +

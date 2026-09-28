@@ -15,17 +15,34 @@ python3 scripts/pregens/fill.py ~/Downloads/dossiers friendly/pregens.json -o pr
   left blank. Its output holds the sheets' own gear/notes text verbatim, so
   it's a local working file — `pregens-raw*.json` is git-ignored.
 - **build.js** keeps the sheet's numbers (stats, HP/WP/SAN/BP, skills,
-  weapons, Bond scores) and generates the blanks: name, sex, age/DOB,
-  nationality, education, physical description, distinguishing features
-  (stat descriptors), Bond names and relationships, three Motivations. It
-  uses the Creator's own tables (`stats/bio.js`) and is seeded per sheet,
-  so adding more PDFs later never re-rolls an Agent someone already played.
-  Change `SEED_SALT` to re-roll everyone.
-- **Bonus skills.** `catalog.json` names a bonus package per sheet
-  (`BONUS_PACKAGES` in `stats/scripts.js`). It's only added when the sheet
-  sits below a profession package plus bonus points (560 over base) —
-  some Dossiers are already built well past that (USSS PPD: 690 over
-  base). `--force-bonus` adds it everywhere; the report shows the numbers.
+  weapons, Bond scores) and does what each sheet leaves to the player:
+  - **Identity:** name, sex, age/DOB, nationality, education, physical
+    description, distinguishing features (stat descriptors), Bond names and
+    relationships that fit the job (one partner at most), three Motivations
+    with any "choose one" / "name them" resolved. Uses the Creator's own
+    tables (`stats/bio.js`), seeded per sheet.
+  - **Employer:** the agency the sheet pins; else one from the sheet's own
+    EMPLOYER dropdown (18 generic sheets leave it on "Select or Enter
+    Employer Name"), preferring one that fits the job; else the agency in
+    the title.
+  - **Skills, by the sheet's own notes.** "Choose N from the following
+    skills" takes the N options that raise the Agent most (a "(choose one)"
+    option gets a specialty that fits the profession). "Bonus skill points:
+    Add +20% each to any N skills" makes exactly N picks, max 80%, never
+    Unnatural -- led by the catalog's bonus package for that sheet, then the
+    Agent's own strongest skills. A sheet whose notes say neither (11 of the
+    62) is complete as printed.
+  - **Blank lines on the form** ("Language 50%", "Science (Choose One)",
+    "Pilot ( )") get a specific specialty.
+  - **Sheet slips:** Unnatural filled in with SAN max still 99 is a value
+    typed one line off (the Police Officer's Unarmed Combat 60%); it's moved
+    back. A printed HP that differs from ⌈(STR+CON)/2⌉ (three sheets) is kept
+    and flagged in the report.
+  - **Names across the roster:** no first name twice, no surname more than
+    twice. Built in `catalog.json` order, so append new sheets at the end --
+    earlier Agents keep their names.
+
+  `--report` writes a table of every decision per sheet.
 - **fill.py** (optional) writes a print-ready copy of each PDF with the
   generated details filled into its blanks, so the paper sheet a player
   keeps HP and SAN on matches the one on screen. Print-only; don't commit.

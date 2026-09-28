@@ -1,67 +1,191 @@
 {
-  "_comment": "Every Agent Dossier in the Handler's Drive pregen folder, by sheet title (file name without .pdf). build.js lists any title here with no extracted data yet as 'pending' on the Friendly picker. 'bonus' names the BONUS_PACKAGES entry (stats/scripts.js) to add when a sheet doesn't already carry bonus points; 'nationality' overrides the default American.",
+  "_comment": "Every Agent Dossier in the Handler's Drive pregen folder, by sheet title (file name without .pdf). build.js lists any title here with no extracted data yet as 'pending' on the Friendly picker. 'bonus' names the BONUS_PACKAGES entry (stats/scripts.js) to add when a sheet doesn't already carry bonus points; 'nationality' overrides the default American. Order matters: Agents are built in this order and later ones avoid names earlier ones took, so append new sheets at the end.",
   "sheets": {
-    "Police Officer": { "bonus": "Interrogator" },
-    "USCG - TACLET": { "bonus": "Combat Veteran" },
-    "Navy - Hospital Corps": { "bonus": "Nurse, Paramedic, or Pre-Med" },
-    "Navy - EOD": { "bonus": "Combat Veteran" },
-    "USSS - Counter Assault Team": { "bonus": "Combat Veteran" },
-    "USCG - HITRON": { "bonus": "Combat Veteran" },
-    "FBI - HRT": { "bonus": "Combat Veteran" },
-    "SOCOM - 160th SOAR (A)": { "bonus": "Combat Veteran" },
-    "DEA - FAST": { "bonus": "Combat Veteran" },
-    "SOCOM - Green Beret": { "bonus": "Combat Veteran" },
-    "Marines - MSPF": { "bonus": "Combat Veteran" },
-    "CIA SAD-SOG": { "bonus": "Combat Veteran" },
-    "USCG - MSRT": { "bonus": "Combat Veteran" },
-    "SOCOM - Marine Raider": { "bonus": "Combat Veteran" },
-    "SOCOM - 720th Special Tactics Group": { "bonus": "Combat Veteran" },
-    "SOCOM - Navy SEAL": { "bonus": "Combat Veteran" },
-    "Army - 1st Brigade 1st Cav": { "bonus": "Combat Veteran" },
-    "ICE - SRT": { "bonus": "Combat Veteran" },
-    "Marines - Security Force": { "bonus": "Combat Veteran" },
-    "SOCOM - 4th MIST": { "bonus": "Author, Editor, or Journalist" },
-    "Marshals - SOG": { "bonus": "Combat Veteran" },
-    "Marines - Force Recon": { "bonus": "Outdoorsman" },
-    "Soldier or Marine": { "bonus": "Combat Veteran" },
-    "USCG - MSST": { "bonus": "Combat Veteran" },
-    "EPA - OCEFT": { "bonus": "Criminalist" },
-    "Army - 10th Mtn Div": { "bonus": "Outdoorsman" },
-    "SOCOM - ISA": { "bonus": "“Black Bag” Training" },
-    "ATF - Explosives Specialist": { "bonus": "Criminalist" },
-    "CBP - Marine Interdiction": { "bonus": "Outdoorsman" },
-    "ATF - Tactical Canine Program": { "bonus": "Outdoorsman" },
-    "CBP - Detection Canine Program": { "bonus": "Outdoorsman" },
-    "ATF - Tactical Operations": { "bonus": "Combat Veteran" },
-    "Special Operator": { "bonus": "Combat Veteran" },
-    "CBP - Border Tactical Unit": { "bonus": "Combat Veteran" },
-    "USSS - Personal Protective Detail": { "bonus": "Athlete" },
-    "CBP - Border Search Trauma Rescue": { "bonus": "Nurse, Paramedic, or Pre-Med" },
-    "Federal Agent": { "bonus": "Criminalist" },
-    "NASA - Astronaut Corps Pilot": { "bonus": "Athlete" },
-    "USCG - Search and Rescue": { "bonus": "Outdoorsman" },
-    "CIA SAD-PAG": { "bonus": "Interrogator" },
-    "Marines - Combat Camera": { "bonus": "Photographer" },
-    "Firefighter": { "bonus": "Firefighter" },
-    "Intelligence Case Officer": { "bonus": "Interrogator" },
-    "ATF - Criminal Investigative Analyst": { "bonus": "Criminalist" },
-    "Intelligence Analyst": { "bonus": "Bureaucrat" },
-    "Foreign Service Officer": { "bonus": "Liberal Arts Degree" },
-    "Pilot or Sailor": { "bonus": "Outdoorsman" },
-    "Program Manager": { "bonus": "MBA" },
-    "CACI - Targeting Officer": { "bonus": "Computer Enthusiast or Hacker" },
-    "Nurse or Paramedic": { "bonus": "Nurse, Paramedic, or Pre-Med" },
-    "Scientist": { "bonus": "Occult Investigator or Conspiracy Theorist" },
-    "Criminal": { "bonus": "Gangster or Deep Cover" },
-    "Physician": { "bonus": "Counselor" },
-    "NSA - Remote Devices": { "bonus": "Computer Enthusiast or Hacker" },
-    "NSA - TAO": { "bonus": "Computer Enthusiast or Hacker" },
-    "Lawyer or Business Executive": { "bonus": "MBA" },
-    "NPS - Interpretive Ranger": { "bonus": "Outdoorsman" },
-    "Media Specialist": { "bonus": "Author, Editor, or Journalist" },
-    "NSA - Cryptoanalysis Unit": { "bonus": "Computer Enthusiast or Hacker" },
-    "Computer Scientist": { "bonus": "Computer Enthusiast or Hacker" },
-    "EPA - Regional Office Specialist": { "bonus": "Criminalist" },
-    "Anthropologist or Historian": { "bonus": "Occult Investigator or Conspiracy Theorist" }
+    "USSS - Personal Protective Detail": {
+      "bonus": "Athlete"
+    },
+    "Police Officer": {
+      "bonus": "Interrogator"
+    },
+    "USCG - TACLET": {
+      "bonus": "Combat Veteran"
+    },
+    "Navy - Hospital Corps": {
+      "bonus": "Nurse, Paramedic, or Pre-Med"
+    },
+    "Navy - EOD": {
+      "bonus": "Combat Veteran"
+    },
+    "USSS - Counter Assault Team": {
+      "bonus": "Combat Veteran"
+    },
+    "USCG - HITRON": {
+      "bonus": "Combat Veteran"
+    },
+    "FBI - HRT": {
+      "bonus": "Combat Veteran"
+    },
+    "SOCOM - 160th SOAR (A)": {
+      "bonus": "Combat Veteran"
+    },
+    "DEA - FAST": {
+      "bonus": "Combat Veteran"
+    },
+    "SOCOM - Green Beret": {
+      "bonus": "Combat Veteran"
+    },
+    "Marines - MSPF": {
+      "bonus": "Combat Veteran"
+    },
+    "CIA SAD-SOG": {
+      "bonus": "Combat Veteran"
+    },
+    "USCG - MSRT": {
+      "bonus": "Combat Veteran"
+    },
+    "SOCOM - Marine Raider": {
+      "bonus": "Combat Veteran"
+    },
+    "SOCOM - 720th Special Tactics Group": {
+      "bonus": "Combat Veteran"
+    },
+    "SOCOM - Navy SEAL": {
+      "bonus": "Combat Veteran"
+    },
+    "Army - 1st Brigade 1st Cav": {
+      "bonus": "Combat Veteran"
+    },
+    "ICE - SRT": {
+      "bonus": "Combat Veteran"
+    },
+    "Marines - Security Force": {
+      "bonus": "Combat Veteran"
+    },
+    "SOCOM - 4th MIST": {
+      "bonus": "Author, Editor, or Journalist"
+    },
+    "Marshals - SOG": {
+      "bonus": "Combat Veteran"
+    },
+    "Marines - Force Recon": {
+      "bonus": "Outdoorsman"
+    },
+    "Soldier or Marine": {
+      "bonus": "Combat Veteran"
+    },
+    "USCG - MSST": {
+      "bonus": "Combat Veteran"
+    },
+    "EPA - OCEFT": {
+      "bonus": "Criminalist"
+    },
+    "Army - 10th Mtn Div": {
+      "bonus": "Outdoorsman"
+    },
+    "SOCOM - ISA": {
+      "bonus": "“Black Bag” Training"
+    },
+    "ATF - Explosives Specialist": {
+      "bonus": "Criminalist"
+    },
+    "CBP - Marine Interdiction": {
+      "bonus": "Outdoorsman"
+    },
+    "ATF - Tactical Canine Program": {
+      "bonus": "Outdoorsman"
+    },
+    "CBP - Detection Canine Program": {
+      "bonus": "Outdoorsman"
+    },
+    "ATF - Tactical Operations": {
+      "bonus": "Combat Veteran"
+    },
+    "Special Operator": {
+      "bonus": "Combat Veteran"
+    },
+    "CBP - Border Tactical Unit": {
+      "bonus": "Combat Veteran"
+    },
+    "CBP - Border Search Trauma Rescue": {
+      "bonus": "Nurse, Paramedic, or Pre-Med"
+    },
+    "Federal Agent": {
+      "bonus": "Criminalist"
+    },
+    "NASA - Astronaut Corps Pilot": {
+      "bonus": "Athlete"
+    },
+    "USCG - Search and Rescue": {
+      "bonus": "Outdoorsman"
+    },
+    "CIA SAD-PAG": {
+      "bonus": "Interrogator"
+    },
+    "Marines - Combat Camera": {
+      "bonus": "Photographer"
+    },
+    "Firefighter": {
+      "bonus": "Firefighter"
+    },
+    "Intelligence Case Officer": {
+      "bonus": "Interrogator"
+    },
+    "ATF - Criminal Investigative Analyst": {
+      "bonus": "Criminalist"
+    },
+    "Intelligence Analyst": {
+      "bonus": "Bureaucrat"
+    },
+    "Foreign Service Officer": {
+      "bonus": "Liberal Arts Degree"
+    },
+    "Pilot or Sailor": {
+      "bonus": "Outdoorsman"
+    },
+    "Program Manager": {
+      "bonus": "MBA"
+    },
+    "CACI - Targeting Officer": {
+      "bonus": "Computer Enthusiast or Hacker"
+    },
+    "Nurse or Paramedic": {
+      "bonus": "Nurse, Paramedic, or Pre-Med"
+    },
+    "Scientist": {
+      "bonus": "Occult Investigator or Conspiracy Theorist"
+    },
+    "Criminal": {
+      "bonus": "Gangster or Deep Cover"
+    },
+    "Physician": {
+      "bonus": "Counselor"
+    },
+    "NSA - Remote Devices": {
+      "bonus": "Computer Enthusiast or Hacker"
+    },
+    "NSA - TAO": {
+      "bonus": "Computer Enthusiast or Hacker"
+    },
+    "Lawyer or Business Executive": {
+      "bonus": "MBA"
+    },
+    "NPS - Interpretive Ranger": {
+      "bonus": "Outdoorsman"
+    },
+    "Media Specialist": {
+      "bonus": "Author, Editor, or Journalist"
+    },
+    "NSA - Cryptoanalysis Unit": {
+      "bonus": "Computer Enthusiast or Hacker"
+    },
+    "Computer Scientist": {
+      "bonus": "Computer Enthusiast or Hacker"
+    },
+    "EPA - Regional Office Specialist": {
+      "bonus": "Criminalist"
+    },
+    "Anthropologist or Historian": {
+      "bonus": "Occult Investigator or Conspiracy Theorist"
+    }
   }
 }
