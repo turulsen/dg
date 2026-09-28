@@ -31,7 +31,7 @@
    through this whole migration -- not random flakiness, one bad path
    silently breaking the update mechanism itself.
    ══════════════════════════════════════════════ */
-const CACHE_NAME = 'dg-hub-shell-v155';
+const CACHE_NAME = 'dg-hub-shell-v156';
 
 const SHELL_FILES = [
   './',
@@ -44,6 +44,11 @@ const SHELL_FILES = [
   'requisition.html',
   'rules-reference.html',
   'the-incursion.html',
+  'friendly.html',
+  // Friendly pregens (scripts/pregens/build.js output) -- cached so a
+  // one-shot table with bad signal still plays; rebuilding it counts as
+  // a shell change like any other (bump CACHE_NAME).
+  'friendly/pregens.json',
   'manifest.json',
   'assets/theme-folder.css',
   'assets/table-radio.js',

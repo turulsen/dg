@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en" data-dice-friendly>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Delta Green — Friendly</title>
+<script src="assets/js-error-banner.js" async></script>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/png" href="assets/mars-tech-seal.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a0d08">
+<meta property="og:title" content="Delta Green — Friendly">
+<meta property="og:description" content="Pick a ready-made Agent and play. Everything is filled in; tap a skill to roll.">
+<meta property="og:image" content="https://turulsen.github.io/dg/assets/mars-tech-seal.png">
+<meta property="og:url" content="https://turulsen.github.io/dg/friendly.html">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet"></noscript>
+<link rel="stylesheet" href="assets/theme-folder.css">
+<style>
+  /* ══════════════════════════════════════════════
+     FRIENDLY -- a one-shot player's clearance. No sign-in, no character
+     creation: pick one of the Handler's pregenerated Agents (friendly/
+     pregens.json, built by scripts/pregens/) and play. The dossier is
+     A-Cell Play's own one-Agent view, read-only: HP/WP/SAN change on the
+     player's paper sheet, the page only rolls.
+     ══════════════════════════════════════════════ */
+  *{ box-sizing:border-box; }
+  .hub-header{ max-width:900px; margin:0 auto; padding:26px 6px 20px; }
+  .hub-header .back-link{
+    font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.15em;
+    text-transform:uppercase; color:#8a9878; text-decoration:none;
+  }
+  .hub-header .back-link:hover{ color:#c8c1a8; }
+  .hub-header .stamp{
+    font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.3em;
+    text-transform:uppercase; color:#c9a15a; border:1.5px solid #c9a15a;
+    display:inline-block; padding:4px 12px; margin:14px 0 10px; opacity:.85;
+  }
+  .hub-header h1{
+    font-family:'Special Elite',monospace; font-weight:400; font-size:clamp(22px,4vw,30px);
+    color:#e9e3ce; margin:0 0 8px;
+  }
+  .hub-header p{ font-family:'Courier Prime',monospace; font-size:13px; color:#b7b09a; max-width:62ch; line-height:1.7; margin:0; }
+  .folder-wrap{ max-width:900px; margin:0 auto; padding:0 6px; }
+  .tw[hidden]{ display:none; }
+
+  /* ── Picker: one manila personnel card per pregen ── */
+  .fr-toolbar{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+  .fr-toolbar[hidden]{ display:none; }
+  .fr-toolbar label{
+    font-family:'Courier Prime',monospace; font-size:10px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--ink-2);
+  }
+  .fr-cell-filter{
+    background:var(--paper); border:1px solid var(--rule); color:var(--ink);
+    padding:7px 9px; font-family:'Courier Prime',monospace; font-size:13px; min-width:170px;
+  }
+  .fr-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; }
+  .fr-card{
+    display:flex; flex-direction:column; gap:6px; text-align:left; cursor:pointer;
+    background:var(--paper); border:1px solid var(--rule); border-top:3px solid var(--ink-3);
+    padding:14px 14px 12px; color:var(--ink); font:inherit;
+    box-shadow:0 2px 6px rgba(0,0,0,.18); transition:transform .12s, border-color .12s;
+  }
+  .fr-card:hover{ transform:translateY(-2px); border-top-color:var(--red); }
+  .fr-card:active{ transform:scale(.98); }
+  .fr-card .fc-title{ font-family:'Courier Prime',monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--red); }
+  .fr-card .fc-name{ font-family:'Special Elite',monospace; font-size:17px; line-height:1.2; }
+  .fr-card .fc-meta{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-2); }
+  .fr-card .fc-skills{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); line-height:1.5; }
+  .fr-card .fc-go{ font-family:'Special Elite',monospace; font-size:9px; letter-spacing:.14em; text-transform:uppercase; margin-top:auto; padding-top:6px; }
+  .fr-empty{ font-family:'Courier Prime',monospace; font-size:13px; color:var(--ink-3); font-style:italic; padding:22px 6px; text-align:center; }
+  .fr-pending{ margin-top:18px; font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-2); }
+  .fr-pending summary{ cursor:pointer; letter-spacing:.06em; }
+  .fr-pending ul{ columns:2 180px; margin:8px 0 0; padding-left:18px; color:var(--ink-3); }
+
+  /* ── Dossier: A-Cell Play's single-Agent view ── */
+  #fr-view.paper{ padding:0; overflow:visible; }
+  .pv-sticky{
+    position:sticky; top:0; z-index:2; background:var(--paper);
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    padding:16px 20px 12px; border-bottom:2px solid var(--ink);
+  }
+  .pv-photo{
+    width:52px; height:52px; flex-shrink:0; border-radius:2px; background:var(--ink-2);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Special Elite',monospace; font-size:19px; color:var(--paper);
+  }
+  .pv-sticky-info{ min-width:0; flex:1 1 180px; }
+  .pv-bio{ font-family:'Special Elite',monospace; font-size:19px; color:var(--ink); overflow-wrap:anywhere; }
+  .pv-sub{ color:var(--ink-3); font-size:11px; margin-top:2px; font-family:'Courier Prime',monospace; }
+  .pv-cell{ color:var(--ink-2); font-size:11px; margin-top:4px; font-family:'Courier Prime',monospace; }
+  .pv-cell b{ font-family:'Special Elite',monospace; font-weight:400; color:var(--ink); }
+  .pv-vitals{ display:flex; gap:14px; }
+  .pv-vital{ text-align:center; }
+  .pv-vital .lbl{ font-size:9px; color:var(--ink-3); letter-spacing:.1em; font-family:'Courier Prime',monospace; }
+  .pv-vital .val{ font-family:'Special Elite',monospace; font-size:18px; color:var(--ink); }
+  .fr-paper-note{
+    background:#f0e87a; color:#3a300a; box-shadow:1px 3px 8px rgba(0,0,0,.3);
+    margin:14px 20px 0; padding:9px 12px; transform:rotate(-.4deg);
+    font-family:'Courier Prime',monospace; font-size:12px; line-height:1.5;
+  }
+  .pv-body{ padding:6px 20px 22px; }
+  .pv-sec-hd{
+    font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--ink-2); margin:20px 0 8px;
+    border-bottom:1px solid var(--rule); padding-bottom:5px;
+    display:flex; justify-content:space-between; align-items:baseline; gap:10px;
+  }
+  .pv-sec-hd button{
+    background:none; border:none; color:var(--red); cursor:pointer; padding:0;
+    font-family:'Courier Prime',monospace; font-size:10px; letter-spacing:.06em; text-transform:none;
+  }
+  .pv-stats{ display:grid; grid-template-columns:repeat(6,1fr); gap:8px; }
+  @media (max-width:560px){ .pv-stats{ grid-template-columns:repeat(3,1fr); } }
+  /* Every rollable thing is a real <button>: keyboard and screen
+     readers get it for free, and iOS gives instant tap feedback. */
+  .pv-stat{
+    text-align:center; border:1px solid var(--rule); padding:8px 4px 6px; cursor:pointer;
+    background:transparent; font:inherit; color:inherit;
+  }
+  .pv-stat:hover, .roll:hover{ border-color:var(--red); background:rgba(139,26,26,.06); }
+  .pv-stat .lbl{ font-size:9px; color:var(--ink-3); letter-spacing:.1em; font-family:'Courier Prime',monospace; }
+  .pv-stat .val{ font-family:'Special Elite',monospace; font-size:19px; color:var(--ink); }
+  .pv-stat .x5{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--red); }
+  .pv-stat .ft{ font-family:'Courier Prime',monospace; font-size:9px; color:var(--ink-3); margin-top:2px; }
+  .pv-skills{ display:grid; grid-template-columns:repeat(auto-fill,minmax(135px,1fr)); gap:5px 12px; }
+  .roll{
+    display:flex; justify-content:space-between; align-items:center; gap:8px;
+    background:transparent; border:1px solid transparent; border-bottom:1px dotted var(--rule);
+    padding:6px 4px; cursor:pointer; color:var(--ink-2); text-align:left;
+    font-family:'Courier Prime',monospace; font-size:12px; min-height:34px;
+  }
+  .roll .sv{ font-family:'Special Elite',monospace; color:var(--ink); flex-shrink:0; }
+  .roll.strong{ color:var(--ink); font-weight:700; }
+  .roll.untrained{ opacity:.6; }
+  .fr-weapons{ width:100%; border-collapse:collapse; font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); }
+  .fr-weapons th{ text-align:left; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); font-weight:400; padding:4px 6px 4px 0; }
+  .fr-weapons td{ padding:4px 6px 4px 0; border-top:1px dotted var(--rule); vertical-align:middle; }
+  .fr-weapons .roll{ display:inline-flex; border:1px solid var(--rule); border-radius:3px; padding:4px 8px; min-height:30px; }
+  .fr-weapons .wn{ font-family:'Special Elite',monospace; color:var(--ink); }
+  @media (max-width:560px){ .fr-weapons .opt{ display:none; } }
+  .pv-row{ display:flex; justify-content:space-between; gap:10px; font-size:12px; color:var(--ink-2); border-bottom:1px dotted var(--rule); padding:5px 0; font-family:'Courier Prime',monospace; }
+  .pv-row .k{ color:var(--ink-3); flex-shrink:0; }
+  .pv-row .v{ text-align:right; color:var(--ink); }
+  .pv-list{ margin:0; padding-left:18px; font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.7; }
+  .pv-text{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.7; margin:0; }
+  .fr-actions{ display:flex; gap:10px; flex-wrap:wrap; margin-top:22px; }
+</style>
+</head>
+<body class="folder-theme">
+
+<div class="hub-header">
+  <a class="back-link" href="index.html">&lt;- Clearance</a>
+  <div class="stamp">Clearance: Friendly</div>
+  <h1>Friendly</h1>
+  <p id="fr-intro">Pick a ready-made Agent and play. Everything's filled in — tap any skill, stat or weapon to roll.</p>
+</div>
+
+<div class="folder-wrap">
+  <div class="folder">
+    <div class="tab-strip" id="fr-tab-strip">
+      <div class="tw active" data-tab="pick" role="button" tabindex="0"><span>Choose Agent</span></div>
+      <div class="tw inactive" data-tab="dossier" role="button" tabindex="0" hidden><span id="fr-dossier-tab-label">Dossier</span></div>
+    </div>
+    <div class="folder-body">
+      <div class="tab-panel active" id="panel-pick">
+        <div class="fr-toolbar" id="fr-toolbar" hidden>
+          <label for="fr-cell-filter">Cell</label>
+          <select id="fr-cell-filter" class="fr-cell-filter"><option value="">All Friendlies</option></select>
+        </div>
+        <div class="fr-grid" id="fr-grid"><div class="fr-empty">Loading dossiers…</div></div>
+        <details class="fr-pending" id="fr-pending" hidden><summary></summary><ul></ul></details>
+      </div>
+      <div class="tab-panel" id="panel-dossier">
+        <div class="paper" id="fr-view"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var PICK_KEY = 'dg_friendly_pick'; // sessionStorage: this tab's own pick survives a reload, a new visit starts fresh
+  var params = new URLSearchParams(location.search);
+  var gridEl = document.getElementById('fr-grid');
+  var viewEl = document.getElementById('fr-view');
+  var toolbarEl = document.getElementById('fr-toolbar');
+  var cellFilterEl = document.getElementById('fr-cell-filter');
+  var strip = document.getElementById('fr-tab-strip');
+  var dossierTab = strip.querySelector('[data-tab="dossier"]');
+
+  var pregens = [];
+  var byId = {};
+  var cells = []; // only Cells holding at least one Friendly: { id, name, members }
+  var current = null;
+
+  function esc(s) {
+    if (s === null || s === undefined) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
+  }
+  function readPick() { try { return JSON.parse(sessionStorage.getItem(PICK_KEY) || 'null'); } catch (e) { return null; } }
+  function writePick(v) { try { sessionStorage.setItem(PICK_KEY, JSON.stringify(v)); } catch (e) { /* private mode */ } }
+
+  function showTab(id) {
+    strip.querySelectorAll('.tw').forEach(function (t) {
+      t.className = 'tw ' + (t.dataset.tab === id ? 'active' : 'inactive');
+    });
+    document.querySelectorAll('.folder-body > .tab-panel').forEach(function (p) {
+      p.classList.toggle('active', p.id === 'panel-' + id);
+    });
+  }
+  strip.addEventListener('click', function (e) {
+    var tab = e.target.closest('.tw');
+    if (tab) showTab(tab.dataset.tab);
+  });
+  strip.addEventListener('keydown', function (e) {
+    var tab = e.target.closest('.tw');
+    if (tab && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); showTab(tab.dataset.tab); }
+  });
+
+  function cellById(id) { return cells.filter(function (c) { return c.id === id; })[0] || null; }
+
+  function topSkills(p, n) {
+    return p.skills.slice().sort(function (a, b) { return b.value - a.value; }).slice(0, n)
+      .map(function (s) { return s.name + ' ' + s.value + '%'; }).join(' · ');
+  }
+
+  function renderGrid() {
+    var cell = cellById(cellFilterEl.value);
+    var list = cell ? pregens.filter(function (p) { return cell.members.indexOf(p.id) !== -1; }) : pregens;
+    if (!list.length) {
+      gridEl.innerHTML = '<div class="fr-empty">' + (cell ? 'No Friendlies in this Cell yet — ask your Handler.' : 'No Agents ready yet.') + '</div>';
+      return;
+    }
+    gridEl.innerHTML = list.map(function (p) {
+      return '<button type="button" class="fr-card" data-id="' + esc(p.id) + '">' +
+        '<span class="fc-title">' + esc(p.title) + '</span>' +
+        '<span class="fc-name">' + esc(p.name) + '</span>' +
+        '<span class="fc-meta">' + esc(p.profession) + ' · ' + esc(p.age) + ' · ' + esc(p.sex) + '</span>' +
+        '<span class="fc-skills">' + esc(topSkills(p, 3)) + '</span>' +
+        '<span class="fc-go">-&gt; Play this Agent</span>' +
+        '</button>';
+    }).join('');
+  }
+  gridEl.addEventListener('click', function (e) {
+    var card = e.target.closest('.fr-card');
+    if (card) pick(card.dataset.id, cellFilterEl.value || null);
+  });
+
+  function pick(id, cellId) {
+    var p = byId[id];
+    if (!p) return;
+    current = { p: p, cellId: cellId && cellById(cellId) ? cellId : null };
+    writePick({ id: id, cellId: current.cellId });
+    if (window.dgDice && window.dgDice.setIdentity) {
+      window.dgDice.setIdentity({ code: p.id, name: p.name, cellId: current.cellId });
+    } else {
+      window.dgDiceIdentity = { code: p.id, name: p.name, cellId: current.cellId };
+    }
+    renderDossier();
+    dossierTab.hidden = false;
+    document.getElementById('fr-dossier-tab-label').textContent = p.name.split(' ').slice(-1)[0];
+    showTab('dossier');
+    window.scrollTo(0, 0);
+  }
+
+  function roll(target, label) {
+    if (window.dgDice && window.dgDice.roll) window.dgDice.roll(target, label);
+  }
+  function rollDamage(expr, label) {
+    if (window.dgDice && window.dgDice.rollExpr && window.dgDice.rollExpr(expr, label)) return;
+    // Not a dice expression: a lethality rating ("Lethal 10%") is a D% roll.
+    var pct = /(\d+)\s*%/.exec(expr);
+    if (pct) roll(parseInt(pct[1], 10), label.replace(/ damage$/, '') + ' lethality');
+  }
+
+  function renderDossier() {
+    var p = current.p;
+    var cell = cellById(current.cellId);
+    var d = p.derived;
+    var initials = p.name.split(' ').filter(function (w) { return /^[A-Z][a-z]/.test(w); })
+      .map(function (w) { return w.charAt(0); }).join('').slice(0, 2);
+    function vital(lbl, v) { return '<div class="pv-vital"><div class="lbl">' + lbl + '</div><div class="val">' + esc(v) + '</div></div>'; }
+    function row(k, v) { return v ? '<div class="pv-row"><span class="k">' + k + '</span><span class="v">' + esc(v) + '</span></div>' : ''; }
+
+    var stats = ['STR', 'CON', 'DEX', 'INT', 'POW', 'CHA'].map(function (k) {
+      var s = p.stats[k];
+      return '<button type="button" class="pv-stat" data-roll="' + s.x5 + '" data-label="' + k + ' ×5">' +
+        '<div class="lbl">' + k + '</div><div class="val">' + s.value + '</div>' +
+        '<div class="x5">' + s.x5 + '%</div><div class="ft">' + esc(s.feature) + '</div></button>';
+    }).join('');
+
+    var skills = p.skills.map(function (s) {
+      var cls = 'roll' + (s.value >= 50 ? ' strong' : '') + (s.value === 0 ? ' untrained' : '');
+      return '<button type="button" class="' + cls + '"' + (s.value === 0 ? ' hidden' : '') +
+        ' data-roll="' + s.value + '" data-label="' + esc(s.name) + '"><span>' + esc(s.name) + '</span><span class="sv">' + s.value + '%</span></button>';
+    }).join('');
+    skills += '<button type="button" class="roll" data-roll="50" data-label="Luck"><span>Luck</span><span class="sv">50%</span></button>';
+    var untrained = p.skills.filter(function (s) { return s.value === 0; }).length;
+
+    var weapons = p.weapons.length ? '<table class="fr-weapons"><thead><tr><th>Weapon</th><th>Skill</th><th>Damage</th><th class="opt">Range</th><th class="opt">AP</th><th class="opt">Ammo</th></tr></thead><tbody>' +
+      p.weapons.map(function (w) {
+        var dmg = w.damage || w.kill_damage || '';
+        return '<tr><td class="wn">' + esc(w.name) + '</td>' +
+          '<td>' + (w.skill ? '<button type="button" class="roll" data-roll="' + w.skill + '" data-label="' + esc(w.name) + '"><span class="sv">' + w.skill + '%</span></button>' : '') + '</td>' +
+          '<td>' + (dmg ? '<button type="button" class="roll" data-damage="' + esc(dmg) + '" data-label="' + esc(w.name) + ' damage"><span class="sv">' + esc(dmg) + '</span></button>' : '') + '</td>' +
+          '<td class="opt">' + esc(w.range || '') + '</td><td class="opt">' + esc(w.ap || '') + '</td><td class="opt">' + esc(w.ammo || '') + '</td></tr>';
+      }).join('') + '</tbody></table>' : '<p class="pv-text">None.</p>';
+
+    var bonds = p.bonds.map(function (b) {
+      return '<div class="pv-row"><span class="v" style="text-align:left">' + esc(b.name) + ' <span class="k">· ' + esc(b.relationship) + '</span></span><span class="k">' + esc(b.score) + '</span></div>';
+    }).join('');
+
+    viewEl.innerHTML =
+      '<div class="pv-sticky">' +
+        '<div class="pv-photo" aria-hidden="true">' + esc(initials) + '</div>' +
+        '<div class="pv-sticky-info">' +
+          '<div class="pv-bio">' + esc(p.name) + '</div>' +
+          '<div class="pv-sub">' + esc(p.title) + ' · ' + esc(p.employer) + '</div>' +
+          '<div class="pv-cell">' + (cell ? 'Cell: <b>' + esc(cell.name) + '</b> — your rolls show on the Handler\'s feed' : 'Rolls stay on this device') + '</div>' +
+        '</div>' +
+        '<div class="pv-vitals">' + vital('HP', d.hp) + vital('WP', d.wp) + vital('SAN', d.san) + vital('BP', d.bp) + '</div>' +
+      '</div>' +
+      '<div class="fr-paper-note">Starting values. Keep track of HP, WP and SAN on your paper sheet — this page only rolls.</div>' +
+      '<div class="pv-body">' +
+        '<div class="pv-sec-hd">Statistics <span>tap for ×5 roll</span></div><div class="pv-stats">' + stats + '</div>' +
+        '<div class="pv-sec-hd">Skills' + (untrained ? ' <button type="button" id="fr-toggle-untrained">show ' + untrained + ' untrained</button>' : '') + '</div>' +
+        '<div class="pv-skills" id="fr-skills">' + skills + '</div>' +
+        '<div class="pv-sec-hd">Weapons</div>' + weapons +
+        '<div class="pv-sec-hd">Bonds</div>' + bonds +
+        '<div class="pv-sec-hd">Motivations</div><ul class="pv-list">' + p.motivations.map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('') + '</ul>' +
+        '<div class="pv-sec-hd">Personal Data</div>' +
+          row('Profession', p.profession) + row('Employer', p.employer) + row('Sex', p.sex) +
+          row('Age / DOB', p.age + ' (' + p.dob + ')') + row('Nationality', p.nationality) + row('Education', p.education) +
+        '<div class="pv-sec-hd">Physical Description</div><p class="pv-text">' + esc(p.physical) + '</p>' +
+        (p.gear.length ? '<div class="pv-sec-hd">Armor and Gear</div><ul class="pv-list">' + p.gear.map(function (g) { return '<li>' + esc(g) + '</li>'; }).join('') + '</ul>' : '') +
+        (p.special_training.length ? '<div class="pv-sec-hd">Special Training</div>' + p.special_training.map(function (t) { return row(esc(t.training), t.skill); }).join('') : '') +
+        '<div class="fr-actions"><button type="button" class="paper-btn" id="fr-change">Choose a different Agent</button></div>' +
+      '</div>';
+
+    var toggle = document.getElementById('fr-toggle-untrained');
+    if (toggle) toggle.addEventListener('click', function () {
+      var hidden = viewEl.querySelectorAll('#fr-skills .roll.untrained[hidden]');
+      viewEl.querySelectorAll('#fr-skills .roll.untrained').forEach(function (b) { b.hidden = !hidden.length; });
+      toggle.textContent = hidden.length ? 'hide untrained' : 'show ' + untrained + ' untrained';
+    });
+    document.getElementById('fr-change').addEventListener('click', function () { showTab('pick'); window.scrollTo(0, 0); });
+  }
+  viewEl.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-roll], [data-damage]');
+    if (!b) return;
+    if (b.dataset.damage) rollDamage(b.dataset.damage, b.dataset.label);
+    else roll(parseInt(b.dataset.roll, 10), b.dataset.label);
+  });
+
+  // On a phone the roller opens over the lower half of the sheet after
+  // every roll (its normal behavior everywhere), which left the next
+  // skill down there untappable until the player found the little
+  // collapse arrow. Here rolling is the whole page, so a tap anywhere
+  // outside the panel that isn't itself another roll just puts it away.
+  document.addEventListener('click', function (e) {
+    if (window.innerWidth > 700) return;
+    var panel = document.getElementById('dr-panel');
+    if (!panel || panel.classList.contains('dr-collapsed') || panel.contains(e.target)) return;
+    if (e.target.closest('[data-roll], [data-damage]')) return;
+    if (window.dgDice && window.dgDice._toggle) window.dgDice._toggle();
+  });
+
+  // Cells: public read (firestore.rules). Only Cells that hold at least
+  // one Friendly show up, and the whole filter stays hidden until one
+  // does -- a walk-in player never sees a control they don't need.
+  // ?cell=ID (the link A-Cell's Cells tab shows) preselects one.
+  function loadCells() {
+    if (!(window.dgDice && window.dgDice.firebase)) return;
+    window.dgDice.firebase(function () {
+      window.firebase.firestore().collection('cells').get().then(function (snap) {
+        cells = [];
+        snap.forEach(function (doc) {
+          var d = doc.data();
+          var members = (d.member_codes || []).filter(function (c) { return byId[c]; });
+          if (members.length) cells.push({ id: doc.id, name: d.name || doc.id, members: members });
+        });
+        cells.sort(function (a, b) { return a.name.localeCompare(b.name); });
+        cellFilterEl.innerHTML = '<option value="">All Friendlies</option>' + cells.map(function (c) {
+          return '<option value="' + esc(c.id) + '">' + esc(c.name) + '</option>';
+        }).join('');
+        toolbarEl.hidden = !cells.length;
+        var want = params.get('cell') || (readPick() || {}).cellId;
+        if (want && cellById(want)) cellFilterEl.value = want;
+        renderGrid();
+        // A pick restored before the Cells arrived: now its Cell is known.
+        if (current && !current.cellId) {
+          var saved = readPick();
+          var c = saved && saved.id === current.p.id && saved.cellId ? saved.cellId : (params.get('cell') || null);
+          if (c && cellById(c) && cellById(c).members.indexOf(current.p.id) !== -1) pick(current.p.id, c);
+        }
+      }).catch(function () { /* offline: no filter, everything still plays */ });
+    }, function () { /* same */ });
+  }
+  cellFilterEl.addEventListener('change', renderGrid);
+
+  fetch('friendly/pregens.json').then(function (r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then(function (data) {
+    pregens = (data.pregens || []).slice().sort(function (a, b) { return a.title.localeCompare(b.title); });
+    pregens.forEach(function (p) { byId[p.id] = p; });
+    renderGrid();
+    var pend = data.pending || [];
+    if (pend.length) {
+      var box = document.getElementById('fr-pending');
+      box.querySelector('summary').textContent = pend.length + ' more dossiers in processing';
+      box.querySelector('ul').innerHTML = pend.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('');
+      box.hidden = false;
+    }
+    // ?agent=ID opens that Agent straight away (a Handler can hand each
+    // player their own link); otherwise this tab's own earlier pick.
+    var saved = readPick();
+    var want = params.get('agent') ? { id: params.get('agent'), cellId: params.get('cell') } : saved;
+    if (want && byId[want.id]) pick(want.id, want.cellId);
+    loadCells();
+  }).catch(function (err) {
+    gridEl.innerHTML = '<div class="fr-empty">Could not load the dossiers (' + esc(err.message) + '). Check the connection and reload.</div>';
+  });
+})();
+</script>
+
+<script src="assets/table-radio.js"></script>
+<script src="assets/dice-roller.js?v=9"></script>
+<script src="assets/sw-update.js" data-sw="sw.js"></script>
+</body>
+</html>

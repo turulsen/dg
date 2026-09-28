@@ -17,3 +17,9 @@ tools/
 *-service-account*.json
 *-sa-key*.json
 firebase-debug*.log
+
+# Friendly pregens: raw form extracts hold the source PDFs' own text --
+# local working files only (see scripts/pregens/README.md).
+pregens-raw*.json
+pregens-report.md
+printable/
