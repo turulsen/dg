@@ -664,8 +664,10 @@ function matchProfessionKey(profStr) {
 
     let _clearing = false;
 
-    function clearSave() {
-        if (!confirm('Clear all saved character data? This cannot be undone.')) return;
+    // dgConfirm, not confirm(): confirm() returns false without showing
+    // anything in an iOS standalone install, so these never ran there.
+    async function clearSave() {
+        if (!(await dgConfirm('Clear all saved character data? This cannot be undone.'))) return;
         _clearing = true;
         localStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem('dg-equipment-loadout');
@@ -690,7 +692,13 @@ function matchProfessionKey(profStr) {
         document.querySelectorAll('input[type="checkbox"]').forEach(el => {
             el.checked = false;
         });
-        document.querySelectorAll('select').forEach(el => {
+        // Not the theme picker: it's a display setting, not character
+        // data. Resetting it to its first option (X-Files) left the page
+        // showing one theme while collectState() saved another -- every
+        // Agent started from the Hub's "Build a Character" (?new=1, which
+        // runs this reset) was saved as X-Files, and opening it again
+        // switched the player's phone out of Field Notes.
+        document.querySelectorAll('select:not(#cs-theme-select)').forEach(el => {
             el.selectedIndex = 0;
         });
 
@@ -719,8 +727,8 @@ function matchProfessionKey(profStr) {
         window.dgCharacterMode?.update?.();
     }
 
-    function clearSheet() {
-        if (!confirm('Clear the entire sheet? All values will be reset. This cannot be undone.')) return;
+    async function clearSheet() {
+        if (!(await dgConfirm('Clear the entire sheet? All values will be reset. This cannot be undone.'))) return;
         _resetSheetFields();
         showToast('Sheet cleared.');
     }
@@ -836,8 +844,18 @@ function matchProfessionKey(profStr) {
         toast.textContent = msg;
         toast.classList.add('dg-toast-visible');
         clearTimeout(toast._t);
-        toast._t = setTimeout(() => toast.classList.remove('dg-toast-visible'), 3000);
+        // Long messages (the ones that used to be alert()s) need longer
+        // than 3s to read.
+        const ms = Math.min(10000, Math.max(3000, String(msg).length * 55));
+        toast._t = setTimeout(() => toast.classList.remove('dg-toast-visible'), ms);
     }
+
+    // alert() is dead in an iOS home-screen (standalone) install -- it
+    // shows nothing at all -- and a blocking native dialog everywhere
+    // else. This page still had ~30 of them (import results, validation
+    // messages, "loaded into the editor!"), across files that all call
+    // the global, so route the global itself through the toast above.
+    window.alert = function (msg) { showToast(String(msg == null ? '' : msg)); };
 
     // A real in-page confirm dialog, not window.confirm() -- confirm()
     // (like prompt() and alert()) is silently disabled in an iOS

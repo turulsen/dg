@@ -2832,7 +2832,11 @@ function applyImportedAgentData(data) {
         setInput('cs-hp', sys.health?.max ?? sys.health?.value ?? 0);
         setInput('cs-wp', sys.wp?.max ?? sys.wp?.value ?? 0);
         setInput('cs-sanity-value', sys.sanity?.value ?? 0);
-        setInput('cs-breaking-point', sys.sanity?.currentBreakingPoint ?? 0);
+        // A missing (or 0, Kappa Black's old default) Breaking Point falls
+        // back to the rulebook's SAN - POW rather than importing as 0.
+        const _bp = parseInt(sys.sanity?.currentBreakingPoint);
+        setInput('cs-breaking-point', _bp > 0 ? _bp
+            : Math.max(0, (parseInt(sys.sanity?.value) || 0) - (parseInt(statistics.pow?.value) || 0)));
 
         // Predefined skill values — handle both this app's 'proficiency' key and
         // real Foundry VTT exports that use 'value'
@@ -3192,7 +3196,10 @@ function convertKappaBlackToAgentData(toml) {
             wp: { max: toml.wp ?? 0, value: toml.wp ?? 0 },
             sanity: {
                 value: toml.san ?? 0,
-                currentBreakingPoint: 0,
+                // Kappa Black exports don't carry a Breaking Point -- this
+                // used to import as 0 (shown as BP 0 in Live Play). Derive
+                // it the rulebook way instead: SAN minus POW.
+                currentBreakingPoint: Math.max(0, (toml.san ?? 0) - (toml.power?.score ?? 0)),
                 adaptations: {
                     violence: kappaBlackAdaptationFromCount(toml.violenceAdaptation),
                     helplessness: kappaBlackAdaptationFromCount(toml.helplessnessAdaptation)

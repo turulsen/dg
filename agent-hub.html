@@ -464,7 +464,7 @@
   function checkCharacterExists(code) {
     return new Promise(resolve => {
       const cbName = '_ahCharCheck_' + code.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
-      const timer = setTimeout(() => { delete window[cbName]; resolve(null); }, 6000);
+      const timer = setTimeout(() => { window[cbName] = function () { delete window[cbName]; }; resolve(null); }, 6000);
       window[cbName] = function (res) {
         clearTimeout(timer);
         delete window[cbName];
@@ -489,7 +489,7 @@
   function checkAgentFileExists(code) {
     return new Promise(resolve => {
       const cbName = '_ahFileCheck_' + code.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
-      const timer = setTimeout(() => { delete window[cbName]; resolve(null); }, 6000);
+      const timer = setTimeout(() => { window[cbName] = function () { delete window[cbName]; }; resolve(null); }, 6000);
       window[cbName] = function (res) {
         clearTimeout(timer);
         delete window[cbName];
@@ -556,7 +556,7 @@
   function checkAgentKia(code) {
     return new Promise(resolve => {
       const cbName = '_ahKiaCheck_' + code.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
-      const timer = setTimeout(() => { delete window[cbName]; resolve(false); }, 6000);
+      const timer = setTimeout(() => { window[cbName] = function () { delete window[cbName]; }; resolve(false); }, 6000);
       window[cbName] = function (res) {
         clearTimeout(timer);
         delete window[cbName];
@@ -984,7 +984,7 @@
     // defined" the moment it tried to call it). Same random-suffix fix
     // notes.js's own jsonpGet() already uses for this exact reason.
     const cbName = '_ahHandouts_' + action + '_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
-    const timer = setTimeout(() => { delete window[cbName]; cb(null); }, 7000);
+    const timer = setTimeout(() => { window[cbName] = function () { delete window[cbName]; }; cb(null); }, 7000);
     window[cbName] = function (res) {
       clearTimeout(timer);
       delete window[cbName];
@@ -1373,13 +1373,34 @@
       });
       startEvidenceListenerFor(a.code);
     }
-    jsonpGet('list_cells', {}, res => {
-      if (res && res.status === 'OK' && Array.isArray(res.cells)) handoutCells = res.cells;
+    // Cell names for each handout's scope label. Cells are created
+    // straight in Firestore now (A-Cell's Cells tab), so the Sheet-backed
+    // list_cells never learns about newer ones -- a handout filed for one
+    // was labelled with its raw id ("cell_1790577398095_80y"). Read the
+    // public-read cells collection instead; list_cells only as fallback.
+    const afterCells = () => {
       jsonpGet('list_operations', {}, opRes => {
         if (opRes && opRes.status === 'OK' && Array.isArray(opRes.operations)) handoutOperations = opRes.operations;
         agents.forEach(loadForAgent);
       });
+    };
+    const cellsViaSheet = () => jsonpGet('list_cells', {}, res => {
+      if (res && res.status === 'OK' && Array.isArray(res.cells)) handoutCells = res.cells;
+      afterCells();
     });
+    // Deferred: loadHandouts() can run during this script's first
+    // renderRoster(), before ensureFirebaseApi()'s own `let` state further
+    // down has been initialized (the JSONP path this replaced was always
+    // async anyway).
+    setTimeout(() => ensureFirebaseApi(() => {
+      window.firebase.firestore().collection('cells').get().then(snap => {
+        const list = [];
+        snap.forEach(d => list.push(Object.assign({ cell_id: d.id }, d.data())));
+        if (!list.length) { cellsViaSheet(); return; }
+        handoutCells = list;
+        afterCells();
+      }).catch(cellsViaSheet);
+    }, cellsViaSheet), 0);
   }
 
   tabStrip.addEventListener('click', e => {
@@ -1391,7 +1412,7 @@
 </script>
 
 <script src="assets/table-radio.js"></script>
-<script src="assets/dice-roller.js?v=7"></script>
+<script src="assets/dice-roller.js?v=8"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>
 
 </body>

@@ -863,8 +863,15 @@
 
   function renderCollapsed() {
     root.classList.remove('dgr-is-expanded');
-    root.innerHTML = '<div id="dg-radio-pill">Tune In</div>';
-    document.getElementById('dg-radio-pill').addEventListener('click', renderChoosing);
+    // role/tabindex + Enter/Space: it was a bare <div>, so keyboard users
+    // couldn't reach it and screen readers (VoiceOver included) didn't
+    // announce it as something you can press.
+    root.innerHTML = '<div id="dg-radio-pill" role="button" tabindex="0">Tune In</div>';
+    var pill = document.getElementById('dg-radio-pill');
+    pill.addEventListener('click', renderChoosing);
+    pill.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); renderChoosing(); }
+    });
   }
 
   function renderChoosing() {

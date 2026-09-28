@@ -13,9 +13,9 @@ or trying to roll anything back; it assumes you've already read
 Before any of this, the codebase already had two ad hoc counters:
 
 - `backend/Code.gs`'s own header comment (`// Google Apps Script backend
-  v95 — ...` as of this writing), bumped by convention whenever the
+  v96 — ...` as of this writing), bumped by convention whenever the
   backend changes in a way worth tracking.
-- `sw.js`'s `CACHE_NAME` (`dg-hub-shell-v154` as of this writing), bumped
+- `sw.js`'s `CACHE_NAME` (`dg-hub-shell-v155` as of this writing), bumped
   on every `SHELL_FILES`-listed change so returning visitors don't get
   stuck on stale JS.
 

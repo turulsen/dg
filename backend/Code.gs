@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v95 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v96 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -441,6 +441,19 @@
 //   stale migration-era docs). Shipped in git without a version bump at
 //   first, which made "v94 is live" ambiguous -- labelled v95 here so
 //   the deployed version says whether this is in.
+// + v96 -- Updating a Profiling brief no longer blanks every column the
+//   form doesn't carry (eras, their Plates and prompts, Active Era,
+//   medical/AAR logs, Profession); update_field('campaign_era') finds a
+//   'Campaign Era' header too; update_field/update_medical/update_aar
+//   now mirror to briefs/{code} in Firestore (Plates saved after the
+//   last full brief submit never reached Live Play's tracker photo);
+//   find_by_player_name returns campaign_era (Hub card era tag).
+// + v96 -- generate_plate_image accepts reference_image_url (a Firebase
+//   Storage download URL for this project's own agent-plates/ or
+//   agent-refs/ object) and fetches it server-side. Storage sends no
+//   CORS headers, so the Agent File couldn't read a Storage-hosted Face
+//   Plate's bytes itself -- every Outfit Plate generated in a later
+//   session went out with no face reference at all.
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -1438,11 +1451,23 @@ function doPost(e) {
         // note column) survives a resubmission untouched, instead of
         // being blanked out just because it isn't in COLUMNS.
         const row = existingValues[existingRowIndex].slice();
+        // v96: only the columns this submission actually carries. The
+        // Profiling form sends its own fields and nothing else, so
+        // writing valueFor(col) -- '' for anything absent -- to EVERY
+        // column blanked the Agent's eras, every era's Face/Outfit Plate
+        // and prompts, the Active Era, the medical/AAR logs and the
+        // Profession the first time a player edited their Profiling
+        // ("Update Brief") after building their Agent File.
+        const firestoreFields = {};
         COLUMNS.forEach(col => {
           const idx = existingHeaders.indexOf(briefsHeaderNameFor_(col));
-          if (idx !== -1) row[idx] = valueFor(col);
+          const sent = col === 'agent_code' || col === 'ref_image_link' || col === 'ref_image_base64'
+            || Object.prototype.hasOwnProperty.call(data, col);
+          if (idx !== -1 && sent) row[idx] = valueFor(col);
+          firestoreFields[col] = idx !== -1 ? row[idx] : (sent ? valueFor(col) : '');
         });
         sheet.getRange(existingRowIndex + 1, 1, 1, row.length).setValues([row]);
+        firestoreDualWrite_('briefs', agentCode, firestoreFields);
       } else {
         const row = new Array(existingHeaders.length).fill('');
         COLUMNS.forEach(col => {
@@ -1450,11 +1475,10 @@ function doPost(e) {
           if (idx !== -1) row[idx] = valueFor(col);
         });
         sheet.appendRow(row);
+        const firestoreFields = {};
+        COLUMNS.forEach(col => { firestoreFields[col] = valueFor(col); });
+        firestoreDualWrite_('briefs', agentCode, firestoreFields);
       }
-
-      const firestoreFields = {};
-      COLUMNS.forEach(col => { firestoreFields[col] = valueFor(col); });
-      firestoreDualWrite_('briefs', agentCode, firestoreFields);
 
       return ContentService
         .createTextOutput(JSON.stringify({ status: 'OK', agent_code: agentCode }))
@@ -1525,7 +1549,13 @@ function updateAgentField(data) {
       }
     }
 
-    const fieldCol = headers.indexOf(fieldName);
+    let fieldCol = headers.indexOf(fieldName);
+    // v96: FIELD_MAP says 'campaign_era', but a Briefs sheet built by
+    // ensureBriefsColumns()/getOrCreateSheet() names that column the
+    // standard Title Case way ('Campaign Era') -- "Make Active Era" failed
+    // with "column not found" there (silently: it's a no-cors POST).
+    // Fall back to the name this file's own column-creation code uses.
+    if (fieldCol === -1 && data.action === 'update_field') fieldCol = headers.indexOf(briefsHeaderNameFor_(data.field));
 
     if (fieldCol === -1) {
       return ContentService
@@ -1539,6 +1569,16 @@ function updateAgentField(data) {
           : data.action === 'update_aar' ? data.aar_log
           : data.value;
         sheet.getRange(i + 1, fieldCol + 1).setValue(value);
+        // v96: mirror to briefs/{code} too. Only full brief submissions
+        // were ever dual-written, so a Face Plate (face_plate_url, era
+        // Plates), Active Era, new era or prompt saved through here never
+        // reached Firestore -- and Live Play's tracker photo
+        // (stats/lp-tracker-photo.js) reads briefs/{code} from there.
+        const fsKey = data.action === 'update_medical' ? 'medical_log'
+          : data.action === 'update_aar' ? 'aar_log' : data.field;
+        const fsPatch = {};
+        fsPatch[fsKey] = value;
+        firestoreDualPatch_('briefs', data.agent_code, fsPatch);
         return ContentService
           .createTextOutput(JSON.stringify({ status: 'OK' }))
           .setMimeType(ContentService.MimeType.JSON);
@@ -1828,6 +1868,10 @@ function findByPlayerName(name, callback) {
     // position, same as every other column above.
     const faceCol = briefHeaders.indexOf('face_plate_url');
     const erasCol = briefHeaders.indexOf('Active Eras');
+    // v96: the Active Era too -- Agent Hub's era tag prefers it, but it
+    // was never sent, so a card always showed the FIRST era instead.
+    let campaignEraCol = briefHeaders.indexOf('Campaign Era');
+    if (campaignEraCol === -1) campaignEraCol = briefHeaders.indexOf('campaign_era');
     if (pnCol !== -1 && codeCol !== -1) {
       for (let i = 1; i < briefRows.length; i++) {
         const row = briefRows[i];
@@ -1843,6 +1887,7 @@ function findByPlayerName(name, callback) {
           nationality: natCol !== -1 ? (row[natCol] || '') : '',
           face_plate_url: faceCol !== -1 ? (row[faceCol] || '') : '',
           active_eras: erasCol !== -1 ? (row[erasCol] || '') : '',
+          campaign_era: campaignEraCol !== -1 ? (row[campaignEraCol] || '') : '',
           saved_at: Date.now(),
         };
       }
@@ -1914,6 +1959,7 @@ function findByPlayerName(name, callback) {
         // Pass 1 found on Briefs instead of dropping it here.
         face_plate_url: existing.face_plate_url || '',
         active_eras: existing.active_eras || '',
+        campaign_era: existing.campaign_era || '',
         // Real Characters "Updated At" when there's a character sheet to
         // read it from; otherwise (a Briefs-only match, Pass 1's own
         // Date.now() above) this is "found via name lookup just now",
@@ -4711,6 +4757,31 @@ function generateAppearancePrompt(data) {
 // Google's default (BLOCK_MEDIUM_AND_ABOVE) -- there's no legitimate
 // reason for this feature to need those loosened, and the API enforces a
 // floor on some categories regardless. ──
+// Returns {mimeType, data} (base64) for a Firebase Storage download URL
+// of this project's own Plate/reference images, or null for anything
+// else, a failed fetch, a non-image, or an image over 8MB.
+function fetchStorageReferenceImage_(url) {
+  const m = /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/([^\/]+)\/o\/(agent-plates|agent-refs)%2F[^?\/]+(\?.*)?$/.exec(String(url || ''));
+  if (!m || m[1] !== 'dg-app-b3447.firebasestorage.app') return null;
+  try {
+    const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    if (resp.getResponseCode() !== 200) return null;
+    const blob = resp.getBlob();
+    const bytes = blob.getBytes();
+    // An object uploaded without contentType metadata comes back as
+    // application/octet-stream -- fall back to the file extension.
+    let mime = blob.getContentType() || '';
+    if (mime.indexOf('image/') !== 0) {
+      const ext = (/\.(png|jpe?g|webp|gif)(%3F|\?|$)/i.exec(url) || [])[1] || '';
+      mime = ext ? 'image/' + (ext.toLowerCase() === 'jpg' ? 'jpeg' : ext.toLowerCase()) : '';
+    }
+    if (!mime || bytes.length > 8 * 1024 * 1024) return null;
+    return { mimeType: mime, data: Utilities.base64Encode(bytes) };
+  } catch (e) {
+    return null;
+  }
+}
+
 function generatePlateImage(data) {
   try {
     const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
@@ -4751,6 +4822,16 @@ function generatePlateImage(data) {
       const refMime = data.reference_image_base64.split(';')[0].split(':')[1];
       const refData = data.reference_image_base64.split(',')[1];
       parts.push({ inlineData: { mimeType: refMime, data: refData } });
+    } else if (data.reference_image_url) {
+      // A Face Plate (or Profiling reference photo) uploaded since the
+      // Firebase Storage move is an https download URL, and Storage
+      // sends no CORS headers -- the browser can show it but can't read
+      // its bytes to send as reference_image_base64, so every Outfit
+      // Plate generated in a later session silently lost the face
+      // likeness. Fetch it here instead. Only this project's own
+      // agent-plates/ and agent-refs/ objects -- never an arbitrary URL.
+      const ref = fetchStorageReferenceImage_(data.reference_image_url);
+      if (ref) parts.push({ inlineData: ref });
     }
 
     const model = 'gemini-3.1-flash-image';

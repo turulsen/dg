@@ -5351,3 +5351,189 @@ The tracker bar's sticky `top` now adds the row's height
 (`--lp-init-h`). Covered by `test_lp_initiative_order`; the DEX assertion
 in `test_lp_tracker_photo_dex_agent_file` was removed with the item.
 `stats/lp-initiative.js` added to `SHELL_FILES`.
+
+---
+
+## A new player's whole journey, walked end to end on real engines
+
+Request: "test as a brand new player ... create a new agent, the wizard
+(also with import), profiling, image creation, adding a new era ...
+returning, editing profiling, adding new image, choose active era, add
+notes, play tunes, roll dice, in cell, outside cells, check history ...
+sometimes randomly enter A-Cell and back", then "Desktop, Android, iOS,
+and Safari and Chromiums all need to be tested."
+
+**How it was tested, so nothing below is a guess.** The REAL
+`backend/Code.gs` ran in Node behind a small local server (in-memory
+Sheets/Drive/Cache; `UrlFetchApp` limited to the local Firebase emulators
+and canned AI replies -- anything else throws), and the pages ran against
+the Firebase Emulator Suite: auth, Firestore **with the real
+`firestore.rules`**, the real Functions, Storage. Every production
+Google/Firebase host was hard-blocked. Three players at once: a Handler
+(desktop Chromium, 1280px) creating a Cell, adding Agents and
+broadcasting music; "Wren" on **WebKit** -- Safari's engine, via
+WebKitGTK + WebDriver at a true 390px viewport with an iPhone Safari user
+agent, and later at 1280px with a Mac Safari agent -- behind an
+intercepting proxy with the same routing; and "Mara" on Chromium at an
+Android size (412px). Playwright's own WebKit build can't be downloaded
+in this sandbox; WebKitGTK shares WebCore/JavaScriptCore with Safari but
+not iOS's platform layer, so iOS-only behaviour (standalone-PWA dialog
+blocking, iOS audio) is reasoned from documented platform behaviour, not
+observed. WebKitGTK here also has no MP3 decoder, so audio *output* was
+verified on Chromium only.
+
+**Three of these are recurrences of earlier, partial fixes -- per this
+file's own protocol, called out as such rather than logged as new:**
+
+- **Roll history stuck on "Load your Cover Identity on this device to
+  save roll history", rolls not saved -- finishing "Stat x5 rolls
+  silently not saved" above.** That fix was real but only ever exercised
+  on the standalone sheet. Players use the Hub, where the Dice Roller
+  lives on the OUTER page and the Agent's code is set inside the iframe;
+  its `dg-cloud-code-set` event only fires on the iframe's window, so on a
+  fresh device the Hub's roller never learned the Agent all visit.
+  `dice-roller.js` now also follows `storage` events (a same-origin
+  iframe's localStorage write reaches the parent). Also: the Cell was
+  looked up once, so a player the Handler added to a Cell mid-session
+  (reproduced: Mara's roll went to her solo feed) kept rolling into, and
+  reading, the wrong feed until a reload -- the feed now follows `cells`
+  live, and rolls with it.
+- **The Handler's Live Rolls never started.** `isHandlerContext()` read
+  `dg_acell_session`, the old Apps Script session key the "Handler auth
+  unification" removed -- nothing has set it since, so the Handler's
+  roller behaved as a player (and a Handler's rolls were filed under
+  whichever Agent that device last opened). Now reads
+  `dg_acell_unlocked`, set only after `handlerLogin` succeeds. Solo rolls
+  show as "No Cell" instead of the raw `solo:CODE` id.
+- **A new Agent saved as X-Files while the phone showed Field Notes.**
+  The Hub's "Build a Character" (`?new=1`) sheet reset set every
+  `<select>` to its first option -- the theme picker included. Play then
+  switched the phone to X-Files. The reset skips the theme picker, cloud
+  loads keep the device's own theme (the rule `loadLocal()` already
+  followed), and the recruit flow no longer forces X-Files.
+
+**Data loss (the serious ones):**
+
+1. **Editing Profiling wiped the Agent File.** "Update Brief" sends the
+   form's own fields, and the brief upsert wrote `data[col] || ''` to
+   EVERY column -- blanking the eras, every era's Face/Outfit Plates and
+   prompts, the Active Era, the medical/AAR logs and the Profession, in
+   Sheets and in the Firestore `briefs` mirror; the page itself dropped
+   back to "choose the first era". Reproduced against the real Code.gs.
+   Fixed twice over: the page now carries everything it doesn't edit
+   (works before the redeploy), and **backend v96** only writes the
+   columns a submission actually sends (checked on its own with a
+   form-only POST). Same flaw, smaller scale: Export to Agent File and the
+   auto-created brief also sent partial rows.
+2. **New notes were never saved.** Since Notes writes moved to Firestore
+   (v93), saving a brand-new block read the not-yet-existing doc in a
+   transaction first; the notes read rule (`resource.data...`) can't be
+   evaluated on a missing doc, so Firestore denied the read and the whole
+   save -- the text vanished on reload. Found only because the emulator
+   runs the real rules (the test stub has none). Fixed client-side (a
+   denied read of a doc this Agent can't see falls back to a plain create,
+   which the create rule still checks) -- no rules deploy needed.
+
+**New player journey:**
+
+3. **A new Agent saved with an empty Player Name**, so "Load My Agents"
+   on the player's next device found nothing. The Hub's Cover Identity now
+   fills an empty Player Name at the first save (shown up front on a fresh
+   sheet), never on a `?load=` of someone else's Agent.
+4. **A new player's Face Plate never became their photo.** The Agent's
+   main photo (`face_plate_url`: Hub card, Live Play tracker, A-Cell) was
+   only set by "Make Active Era" -- which a new player never presses,
+   since their first era is already labelled Active. A Face Plate saved for
+   the active era is now the main photo.
+5. **Live Play's tracker photo never saw Plates** -- it reads Firestore
+   `briefs/{code}`, and `update_field` (Plates, eras, Active Era, prompts)
+   never mirrored there. v96 mirrors it.
+6. **"Make Active Era" never saved**: `update_field` looked for a
+   `campaign_era` header, the sheet names it "Campaign Era" (a silent
+   error on a no-cors POST). v96 falls back to that name. The Hub card's
+   era tag also showed the first era, not the Active one --
+   `find_by_player_name` never returned it (v96 does).
+7. **Returning to an Agent File showed a stale copy** (the local snapshot,
+   written only on a brief submit): Plates, eras, Active Era, anything done
+   on another device -- missing on every return. It now refreshes in the
+   background and re-renders when the server copy is at least as new.
+8. **Storage-hosted Plates never displayed** in the Agent File (it only
+   knew `gdrive:` links), nor on the Field ID card or in the roster drawer.
+9. **Outfit Plates in a later session had no face reference**: Storage
+   sends no CORS headers, so the page can't read a Face Plate's bytes. It
+   sends `reference_image_url`; **v96** fetches it server-side (only this
+   project's own `agent-plates/`/`agent-refs/` objects -- a foreign host,
+   another bucket and a non-plate path were all refused in testing).
+10. **Right after generating a Face Plate** the era header still said "No
+    Photo Yet" and the Outfit button stayed dimmed ("Generate a Face Plate
+    first"). **"+ Add Era"** reused the first-era picker ("No era pages
+    found for this agent") and offered eras already on file.
+11. **Auto-created brief** printed the internal profession key
+    ("federal_agent") and dropped the player's name.
+12. **Native `alert()`/`confirm()` on player pages** -- dead in an iOS
+    home-screen install (confirm() returns false with no dialog): Clear
+    Save / Clear Sheet / roster Remove and Clear All could never run there,
+    ~30 notices vanished. The sheet routes `alert()` through its toast and
+    uses `dgConfirm`; the Agent File and Requisition got in-page
+    equivalents.
+13. **The toast** was one `nowrap` line at `bottom:24px` -- measured
+    -206px..596px on a 390px screen, and under the Hub's Dice Roller. It
+    wraps, fits, and sits above the floating widgets now.
+14. **The Dice Roller stayed open across Hub pages.** A roll pops it open
+    over ~60% of a phone; tapping "Agent Hub" then left the Hub's own
+    buttons underneath it (Playwright's hit test confirmed Notes was
+    covered). It collapses when the Hub changes page.
+15. **Kappa Black imports had Breaking Point 0** (the export has none).
+    SAN - POW now; Foundry imports missing it too.
+16. **Field Notes (every phone's default): "Or drop/upload a file" and the
+    "OR" divider were dark ink on the dark desk** (1.07:1, invisible);
+    cost badges down to 1.5:1 on paper; the footer credit link was
+    browser-default blue. Found with a rendered-contrast audit (text colour
+    vs. the actual pixels beneath it).
+17. **Wizard Finish** left the page mid-sheet with "Enter Live Play" cut
+    off under the Hub header. **The Agent File's paperclip** covered the
+    header text on phones.
+18. **Late network replies threw.** A JSONP reply arriving after its
+    timeout hit an already-deleted callback -- an uncaught error, which the
+    page-wide error banner would show a player on a slow connection (Notes
+    polling, Hub handouts, Agent File, A-Cell lists; 10 call sites). A
+    timed-out callback now just swallows a late reply.
+19. **Newer Cells missing from two lists.** Cells are created straight in
+    Firestore now, but A-Cell's Music "Cue For Cell" dropdown and the Hub's
+    Handouts labels still read the Sheet-backed `list_cells`: the dropdown
+    was empty and a handout showed its Cell as a raw id. Both read
+    Firestore now.
+20. The **Tune In** pill was a bare `<div>` (no button role, no keyboard).
+
+Verified end to end with no change needed: Cover Identity sticking; the
+wizard; import; Profiling; the in-Cell initiative row appearing live when
+the Handler adds a player; cross-player live roll history (Android
+Chromium <-> iPhone WebKit) and the Handler seeing both; a shared note
+from Wren appearing for Mara; the Handler broadcasting a looped track,
+Mara's widget auto-playing muted and one SOUND tap unmuting (WebKit shows
+its "Playback failed" line honestly); a second Agent for the same player;
+a player wandering into A-Cell and back; a returning player on a new
+desktop device getting both Agents, photo and codename back.
+
+**Backend v96 needs the Apps Script paste-and-redeploy** for items 1
+(server half), 5, 6 and 9; everything else is front-end.
+
+Regression tests (each confirmed failing against the pre-fix code):
+`test_new_agent_carries_cover_identity`,
+`test_theme_survives_new_recruit_and_cloud_load`,
+`test_player_pages_use_in_page_dialogs`,
+`test_hub_dice_roller_learns_agent_from_iframe`,
+`test_agent_file_storage_plates_and_refresh`,
+`test_auto_created_brief_uses_titles_and_player`,
+`test_profiling_edit_keeps_agent_file`,
+`test_notes_first_block_saves_under_rules`, plus a scroll check in
+`test_wizard_full_run_in_shell`.
+
+Test infrastructure touched on the way: the in-page Firebase stub gained
+`auth().onAuthStateChanged` and `collectionGroup` (the roller's Handler
+mode is reachable in tests now that its key is fixed);
+`test_agent_hub_erase_agent` now installs the stub instead of reaching
+for real Firebase; and `test_agent_file_era_prompt_includes_era` waits on
+its condition instead of a fixed 1.2s (it missed that window once under
+full-suite load; 0/4 failures alone). Full suite: 886/914, the remaining
+28 being this sandbox's blocked-gstatic failures (unchanged class).

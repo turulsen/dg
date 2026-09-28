@@ -223,8 +223,15 @@
     };
     const ROSTER_KEY = 'dg_agent_roster';
     const CLOUD_CODE_KEY = 'dg_stats_cloud_code';
-    const ACELL_SESSION_KEY = 'dg_acell_session';
-    // Set alongside dg_acell_session by a-cell.html's own login success
+    // Was 'dg_acell_session' -- the old Apps Script Handler session token,
+    // removed by the Handler auth unification (see BUGFIXES.md). Nothing
+    // has set it since, so isHandlerContext() was false everywhere: the
+    // Handler's Live Rolls feed never started, and a Handler's own rolls
+    // were treated as whichever Agent that device last opened. A-Cell's
+    // Clearance gate IS the Handler login now, and it sets
+    // dg_acell_unlocked only after handlerLogin succeeds.
+    const ACELL_SESSION_KEY = 'dg_acell_unlocked';
+    // Set alongside dg_acell_unlocked by a-cell.html's own login success
     // handler -- reused here to sign into Live Rolls silently, same
     // pattern a-cell.html's own ensureHandlerSignedIn() already uses for
     // Evidence/Track Library (see attemptSilentHandlerSignIn() below).
@@ -332,7 +339,7 @@
     // itself immediately, before anyone has signed in, so isHandlerContext()
     // reads false and the panel renders as a normal Agent panel) *then*
     // the Handler types the A-Cell password into A-Cell's own login card,
-    // which only afterwards sets dg_acell_session. Nothing here ever
+    // which only afterwards sets dg_acell_unlocked. Nothing here ever
     // re-checked that after the panel had already been built once --
     // rechecking it here on a light poll and rebuilding from scratch
     // when it flips is simpler and more robust than trying to hook into
@@ -438,12 +445,14 @@
     // reads with nothing async in that branch.
     let _rollContext = null;
     let _rollContextPromise = null;
+    let _rollContextFor = ''; // the Agent Code the current/in-flight resolution is for
     function resolveRollContext() {
         if (_rollContextPromise) return _rollContextPromise;
         if (!isHandlerContext() && !currentAgentCode()) {
             _rollContext = { mode: 'none' };
             return Promise.resolve(_rollContext);
         }
+        _rollContextFor = isHandlerContext() ? '' : currentAgentCode();
         _rollContextPromise = new Promise(resolve => {
             if (isHandlerContext()) {
                 _rollContext = { mode: 'handler' };
@@ -642,13 +651,35 @@
     function startAgentHistoryFeed(ctx) {
         stopHistoryFeed();
         const db = window.firebase.firestore();
-        _historyUnsubscribe = db.collection('dice_rolls').doc(ctx.cellId).collection('rolls')
-            .orderBy('created_at', 'desc').limit(HISTORY_LIMIT)
-            .onSnapshot(snap => {
-                const entries = [];
-                snap.forEach(doc => entries.push(doc.data()));
-                renderHistoryList(entries);
-            }, err => showHistoryError('History feed error', err));
+        let rollsUnsub = null;
+        const listenRolls = () => {
+            if (rollsUnsub) rollsUnsub();
+            rollsUnsub = db.collection('dice_rolls').doc(ctx.cellId).collection('rolls')
+                .orderBy('created_at', 'desc').limit(HISTORY_LIMIT)
+                .onSnapshot(snap => {
+                    const entries = [];
+                    snap.forEach(doc => entries.push(doc.data()));
+                    renderHistoryList(entries);
+                }, err => showHistoryError('History feed error', err));
+        };
+        listenRolls();
+        // The Cell was looked up once, when this context resolved -- so a
+        // player the Handler added to a Cell mid-session (the normal way a
+        // new player joins) kept rolling into, and reading, their solo
+        // feed until they happened to reload. Follow cells live instead
+        // (public read, same "first Cell that lists this Agent" rule as
+        // resolveRollContext() and stats/lp-initiative.js); ctx is the
+        // shared _rollContext object, so recordRoll() follows too.
+        const cellsUnsub = db.collection('cells').onSnapshot(snap => {
+            let found = null;
+            snap.forEach(doc => {
+                if (found) return;
+                if ((doc.data().member_codes || []).indexOf(ctx.agentCode) !== -1) found = doc.id;
+            });
+            const next = found || soloCellId(ctx.agentCode);
+            if (next !== ctx.cellId) { ctx.cellId = next; listenRolls(); }
+        }, () => { /* keep the Cell resolved at start */ });
+        _historyUnsubscribe = () => { if (rollsUnsub) rollsUnsub(); cellsUnsub(); };
     }
     // Cell docs' own `name` field ("Test", "H-Cell"...) vs. the id doc
     // path segments actually are (cell_<timestamp>_<rand>) -- fetched
@@ -667,7 +698,9 @@
                     snap.forEach(doc => {
                         const data = doc.data();
                         const cellId = doc.ref.parent.parent ? doc.ref.parent.parent.id : '';
-                        data.cellName = (_cellNameMap && _cellNameMap[cellId]) || cellId;
+                        // solo:<code> is the internal pseudo-Cell for an Agent in
+                        // no Cell -- show that, not the raw id.
+                        data.cellName = (_cellNameMap && _cellNameMap[cellId]) || (cellId.indexOf('solo:') === 0 ? 'No Cell' : cellId);
                         entries.push(data);
                     });
                     renderHistoryList(entries);
@@ -1405,11 +1438,39 @@
         // becomes known, rather than leaving it stuck on the initial
         // "no Agent Code known yet" read until the next roll attempt
         // happens to retry it.
-        window.addEventListener('dg-cloud-code-set', () => {
+        function reresolve() {
             stopHistoryFeed();
             _rollContext = null;
             _rollContextPromise = null;
             initHistory();
+        }
+        window.addEventListener('dg-cloud-code-set', reresolve);
+        // Inside the Hub shell this panel lives on the outer page and so
+        // survives every page change -- a roll auto-expands it, and it then
+        // stayed open over ~60% of a phone's screen on whatever page the
+        // player went to next (tapping "Agent Hub" after a roll left the
+        // Hub's own buttons under it). Collapse it when the shell's content
+        // page changes; the player's roll history is still one tap away.
+        const shellFrame = document.getElementById('dg-shell-content');
+        if (shellFrame) shellFrame.addEventListener('load', () => {
+            if (_e.panel && !_e.panel.classList.contains('dr-collapsed')) togglePanel();
+        });
+        // Inside the Hub shell this widget lives on the OUTER page, while
+        // the Agent's code gets set by the sheet inside the iframe -- and
+        // 'dg-cloud-code-set' only fires on the iframe's own window. On a
+        // brand-new device (nothing in localStorage when hub.html first
+        // loaded) the shell's roller therefore stayed on "Load your Cover
+        // Identity on this device to save roll history" for the whole
+        // visit, and never saved a roll. A same-origin iframe's
+        // localStorage write does fire 'storage' here, so follow that:
+        // re-resolve whenever the code this widget would now pick differs
+        // from the one it's using (first code, or Play on another Agent).
+        window.addEventListener('storage', e => {
+            if (e.key !== CLOUD_CODE_KEY && e.key !== ROSTER_KEY && e.key !== null) return;
+            if (isHandlerContext()) return;
+            const code = currentAgentCode();
+            const using = _rollContextPromise ? _rollContextFor : '';
+            if (code !== using) reresolve();
         });
     };
     if (document.readyState === 'loading') {

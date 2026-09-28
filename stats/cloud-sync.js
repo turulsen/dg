@@ -152,6 +152,25 @@
         }).catch(() => { /* network error -- silent, same as every other Apps Script call in this app */ });
     }
 
+    // The Cover Identity this device's player typed into the Hub (hub.html
+    // / agent-hub.html). A brand-new Agent built here used to save with an
+    // empty Player Name unless the player happened to retype their own
+    // name into the Biography's Player Name box -- which nothing asks
+    // them to do -- so "Load My Agents" on their next device (a
+    // find_by_player_name search) came back empty. Only ever used to fill
+    // an EMPTY field on a brand-new, not-yet-coded character; never on a
+    // loaded Agent (applyState() writes that Agent's own player_name).
+    function coverIdentity() {
+        try { return (localStorage.getItem('dg_cover_identity') || '').trim(); } catch (e) { return ''; }
+    }
+    function fillPlayerNameFromCoverIdentity() {
+        const el = document.getElementById('cs-player-name');
+        const ci = coverIdentity();
+        if (!el || !ci || el.value.trim()) return false;
+        el.value = ci;
+        return true;
+    }
+
     // Mints a code on first meaningful edit (a real name present) if one
     // doesn't already exist, and pushes right away for immediate feedback
     // rather than leaving the player staring at a status line for up to
@@ -162,12 +181,23 @@
         if (existing) return existing;
         const name = (document.getElementById('cs-name')?.value || '').trim();
         if (!name || name === 'Agent') return '';
+        fillPlayerNameFromCoverIdentity();
         const code = genCloudCode(name);
         setCloudCode(code);
-        rosterUpsert(code, name);
+        rosterUpsert(code, name, document.getElementById('cs-player-name')?.value || '');
         pushToCloud();
         return code;
     }
+
+    // Show it up front too, so the player sees whose Agent this is before
+    // the first save -- only on a fresh sheet (no code yet, not a ?load=
+    // deep link, which applies its own Agent's player_name).
+    window.addEventListener('load', () => {
+        setTimeout(() => {
+            if (getCloudCode() || /[?&]load=/.test(location.search)) return;
+            fillPlayerNameFromCoverIdentity();
+        }, 600);
+    });
 
     let _syncDebounce;
     function scheduleCloudSync() {
@@ -241,7 +271,14 @@
                 // wrong code into place a moment before the line below
                 // overwrites it with the right one, needlessly pushing a
                 // throwaway save under an orphaned code first.
+                // Same rule as save-load.js's loadLocal(): the theme is this
+                // device's preference (dg_theme), not the Agent's -- applying
+                // the loaded Agent's saved theme used to switch a player's
+                // phone to whatever theme the Agent was last saved under.
+                let prefTheme = null;
+                try { prefTheme = localStorage.getItem('dg_theme'); } catch (e) { /* best effort */ }
                 window.dgSaveLoad.applyState(state, { skipCloudCodeMint: true });
+                if (prefTheme && typeof setTheme === 'function') setTheme(prefTheme, { skipSave: true });
                 setTimeout(() => {
                     window.dgSaveLoad.save?.();
                     if (typeof syncLpFromForm === 'function') syncLpFromForm();
@@ -349,7 +386,13 @@
         // blank, since the Agent File name fetch below hasn't resolved
         // yet), and that blank snapshot then wins when save-load.js's own
         // restore runs moments later, wiping out the pre-filled name.
-        if (typeof setTheme === 'function') setTheme('xfiles', { skipSave: true });
+        // Re-apply this device's own theme (Field Notes on a phone by
+        // default) rather than forcing X-Files onto it.
+        if (typeof setTheme === 'function') {
+            let pref = null;
+            try { pref = localStorage.getItem('dg_theme'); } catch (e) { /* best effort */ }
+            setTheme(pref || (window.matchMedia('(max-width: 768px)').matches ? 'field-notes' : 'xfiles'), { skipSave: true });
+        }
         setTimeout(() => { if (window.dgWizard?.activate) window.dgWizard.activate(); }, 200);
 
         // Best-effort: the Agent File (submitted separately, via the Cover

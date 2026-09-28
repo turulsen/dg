@@ -353,6 +353,8 @@ NOTES_FIRESTORE_STUB = """
       return {
         settings: function () {},
         collection: function (name) { return makeCollectionRef(name); },
+        // Handler Live Rolls (dice-roller.js): every Cell's rolls at once.
+        collectionGroup: function (name) { return makeQuery('group:' + name, []); },
         // a-cell.html's soundboard writes straight to Firestore via
         // db.runTransaction(fn(tx) => tx.get(docRef).then(...tx.set...)) --
         // no real transactional isolation here (see docSnapshot/writeDoc
@@ -370,6 +372,12 @@ NOTES_FIRESTORE_STUB = """
     auth: function () {
       return {
         get currentUser() { return window.__dgFirestoreAuthUser; },
+        // dice-roller.js's Handler mode (checkExistingHandlerSession) --
+        // reachable in tests only since that mode's session key was fixed.
+        onAuthStateChanged: function (cb) {
+          setTimeout(function () { cb(window.__dgFirestoreAuthUser || null); }, 0);
+          return function () {};
+        },
         signInWithCustomToken: function (token) {
           // getIdToken() is real code's only way to get the id_token it
           // now sends on every Handler-gated Apps Script write (see
@@ -2684,6 +2692,7 @@ def test_agent_hub_erase_agent(p):
     only enable for a correct (case-insensitive) match, and the actual
     delete_character POST must only fire after that."""
     page = p.new_page()
+    install_notes_firestore_stub(page)  # no real Firebase from a test
     page.set_default_timeout(8000)
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
@@ -8054,7 +8063,9 @@ def test_agent_file_era_prompt_includes_era(p):
     page.route("**/script.google.com/**", fake_apps_script)
 
     page.goto(f"{BASE}/dg-agent-portal.html?code=DANI-U8BM#agent", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(1200)
+    # Condition-based, not a fixed 1.2s: the prompt requests are staggered
+    # by setTimeout and could miss a fixed window under full-suite load.
+    _pump_until(page, lambda: {p_.get("mode") for p_ in prompt_posts} >= {"base", "outfit"}, 6000)
 
     base_posts = [p_ for p_ in prompt_posts if p_.get("mode") == "base"]
     outfit_posts = [p_ for p_ in prompt_posts if p_.get("mode") == "outfit"]
@@ -10415,6 +10426,8 @@ def test_wizard_full_run_in_shell(p):
         tap("#wiz-next", "Finish" if step == 8 else f"Next on step {step}")
     record("wizard", "Finish closes the wizard and leaves no saved step behind",
            frame.locator("#wiz-outer").count() == 0 and frame.evaluate("localStorage.getItem('dg-wiz-step')") is None, "")
+    record("wizard", "Finish lands on the top of the finished sheet (Enter Live Play visible, not cut off under the Hub header)",
+           frame.evaluate("scrollY") == 0, str(frame.evaluate("scrollY")))
     record("wizard", "the finished Agent keeps name and profession",
            frame.evaluate("document.getElementById('cs-name').value") not in ("", "Agent") and frame.evaluate("document.getElementById('cs-profession-select').value") == "federal_agent", "")
     record("wizard", "no JS exceptions (full wizard run)", len(errs) == 0, "; ".join(errs))
@@ -10678,6 +10691,469 @@ def test_dice_roller_firestore_native_cell(p):
     return errs
 
 
+# ── New-player journey regressions (found by walking the whole player
+# journey against the real Code.gs + Firebase emulators, in Chromium and
+# WebKit, phone and desktop -- see BUGFIXES.md) ─────────────────────────
+
+def _pump_until(page, fn, timeout_ms=6000):
+    """Like wait_for_condition, but waits with page.wait_for_timeout so
+    Playwright keeps servicing routed requests while it waits (time.sleep
+    doesn't -- a route-backed condition could never become true)."""
+    waited = 0
+    while waited < timeout_ms:
+        try:
+            if fn():
+                return True
+        except Exception:
+            pass
+        page.wait_for_timeout(150)
+        waited += 150
+    return bool(fn())
+
+def _route_backend(page, respond, posts=None):
+    """JSONP/POST-aware Apps Script mock. respond(method, params, body)
+    returns the response dict (None -> {"status": "OK"})."""
+    from urllib.parse import urlparse, parse_qs
+    def handler(route):
+        req = route.request
+        q = {k: v[0] for k, v in parse_qs(urlparse(req.url).query).items()}
+        body = None
+        if req.method == "POST":
+            try:
+                body = json.loads(req.post_data or "{}")
+            except Exception:
+                body = {}
+            if posts is not None:
+                posts.append(body)
+        res = respond(req.method, q, body) or {"status": "OK"}
+        cb = q.get("callback")
+        if cb and req.method == "GET":
+            route.fulfill(status=200, content_type="application/javascript", body=f"{cb}({json.dumps(res)})")
+        else:
+            route.fulfill(status=200, content_type="application/json", body=json.dumps(res))
+    page.route("**/script.google.com/**", handler)
+
+def _block_fonts(page):
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+
+def test_new_agent_carries_cover_identity(p):
+    """A brand-new player types their Cover Identity into the Hub, then
+    builds an Agent. That Agent used to save with an EMPTY Player Name
+    (nothing copied it over), so "Load My Agents" on their next device --
+    a find_by_player_name search -- found nothing. Also: a ?load= of
+    someone else's Agent must never be stamped with this device's name."""
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    posts = []
+    other = {"v": 1, "bio": {"name": "Priya Anand", "player_name": ""}}
+    def respond(method, q, body):
+        if q.get("action") == "load_character":
+            return {"status": "OK", "agent_code": q.get("code"), "character_json": json.dumps(other)}
+        if body and body.get("action") == "save_character":
+            return {"status": "OK", "agent_code": body.get("agent_code")}
+        return None
+    _route_backend(page, respond, posts)
+    page.add_init_script("try { localStorage.setItem('dg_cover_identity', 'Mara Voss'); } catch (e) {}")
+    page.goto(f"{BASE}/stats/index.html", wait_until="load", timeout=15000)
+    page.wait_for_timeout(1200)
+    record("journey", "a new sheet shows the Hub's Cover Identity as Player Name",
+           page.input_value("#cs-player-name") == "Mara Voss", page.input_value("#cs-player-name"))
+    page.fill("#cs-player-name", "")
+    page.fill("#cs-name", "Robert Wright")
+    page.dispatch_event("#cs-name", "input")
+    _pump_until(page, lambda: any(b.get("action") == "save_character" for b in posts), 6000)
+    saves = [b for b in posts if b.get("action") == "save_character"]
+    record("journey", "the new Agent's first save carries the Cover Identity as player_name (even if the box was cleared)",
+           bool(saves) and saves[0].get("player_name") == "Mara Voss", str([s.get("player_name") for s in saves]))
+    roster = page.evaluate("() => JSON.parse(localStorage.getItem('dg_agent_roster') || '{}')")
+    record("journey", "the local roster entry is claimed by the same name",
+           any(v.get("player_name") == "Mara Voss" for v in roster.values()), str(roster))
+
+    page2 = p.new_page(viewport={"width": 390, "height": 844})
+    errs += collect_errors(page2)
+    install_notes_firestore_stub(page2)
+    _block_fonts(page2)
+    _route_backend(page2, respond)
+    page2.add_init_script("try { localStorage.setItem('dg_cover_identity', 'Mara Voss'); } catch (e) {}")
+    page2.goto(f"{BASE}/stats/index.html?load=PRIY-AN34", wait_until="load", timeout=15000)
+    page2.wait_for_timeout(2000)
+    record("journey", "loading someone else's Agent (?load=) never stamps this device's name on it",
+           page2.input_value("#cs-player-name") == "" and page2.input_value("#cs-name") == "Priya Anand",
+           f"{page2.input_value('#cs-player-name')!r} / {page2.input_value('#cs-name')!r}")
+    record("journey", "no JS exceptions (cover identity)", len(errs) == 0, "; ".join(errs))
+    page.close(); page2.close()
+    return errs
+
+def test_theme_survives_new_recruit_and_cloud_load(p):
+    """The Hub's "Build a Character" (?new=1) reset set EVERY <select> to its
+    first option -- including the theme picker (X-Files) -- while the page
+    kept showing Field Notes. The Agent then saved as X-Files, and opening
+    it again (Play) switched the player's phone to X-Files. Cloud loads also
+    applied the Agent's saved theme over the device's own preference."""
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    route_apps_script_ok(page)
+    page.add_init_script("try { localStorage.setItem('dg_theme', 'field-notes'); } catch (e) {}")
+    page.goto(f"{BASE}/stats/index.html?new=1", wait_until="load", timeout=15000)
+    page.wait_for_timeout(800)
+    sel = page.input_value("#cs-theme-select")
+    state = page.evaluate("() => window.dgSaveLoad.collectState()")
+    record("journey", "?new=1 leaves the theme picker on the theme actually shown",
+           sel == "field-notes" and state.get("theme") == "field-notes"
+           and page.evaluate("document.body.classList.contains('theme-field-notes')"),
+           f"select={sel} saved={state.get('theme')}")
+    page.close()
+
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    errs += collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    state["theme"] = "xfiles"
+    state.setdefault("bio", {})["name"] = "Robert Wright"
+    _route_backend(page, lambda m, q, b: {"status": "OK", "agent_code": "ROBE-KKUL", "character_json": json.dumps(state)}
+                   if q.get("action") == "load_character" else None)
+    page.add_init_script("try { localStorage.setItem('dg_theme', 'field-notes'); } catch (e) {}")
+    page.goto(f"{BASE}/stats/index.html?load=ROBE-KKUL&live=1", wait_until="load", timeout=15000)
+    page.wait_for_timeout(2000)
+    record("journey", "Play on an Agent saved under another theme keeps this device's theme",
+           page.evaluate("document.body.classList.contains('theme-field-notes')")
+           and page.evaluate("localStorage.getItem('dg_theme')") == "field-notes",
+           page.evaluate("document.body.className"))
+    record("journey", "no JS exceptions (theme)", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
+def test_player_pages_use_in_page_dialogs(p):
+    """alert()/confirm() show nothing in an iOS home-screen install (confirm()
+    just returns false) -- Clear Save/Clear Sheet and the roster drawer's
+    Remove could never run there, and import/validation notices vanished.
+    Also: the toast used to be one nowrap line at bottom:24px, clipped off
+    both sides of a phone and under the Hub's Dice Roller bar. And a Kappa
+    Black import (no Breaking Point in the export) came in as BP 0."""
+    dialogs = []
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    errs = collect_errors(page)
+    page.on("dialog", lambda d: (dialogs.append(d.message), d.dismiss()))
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    route_apps_script_ok(page)
+    page.add_init_script("try { localStorage.setItem('dg_theme', 'field-notes'); } catch (e) {}")
+    page.goto(f"{BASE}/stats/index.html", wait_until="load", timeout=15000)
+    page.wait_for_timeout(600)
+    summary_color = page.evaluate("getComputedStyle(document.querySelector('#agent-drop-details > summary')).color")
+    lum = page.evaluate("(c) => { const m = c.match(/\\d+/g).map(Number); return 0.299*m[0] + 0.587*m[1] + 0.114*m[2]; }", summary_color)
+    record("journey", "Field Notes: the import 'Or drop/upload a file' toggle is light on the dark desk", lum > 150, summary_color)
+    toml = open(os.path.join(HERE, "fixtures", "kappablack-export.toml")).read()
+    page.evaluate("(t) => importAgentText(t)", toml)
+    page.wait_for_timeout(800)
+    box = page.evaluate("() => { const r = document.getElementById('dg-toast').getBoundingClientRect(); return [r.left, r.right, r.bottom, innerWidth, innerHeight, document.getElementById('dg-toast').textContent]; }")
+    record("journey", "import confirms with an in-page toast, not a native alert", not dialogs and "loaded" in box[5], f"dialogs={dialogs} toast={box[5]!r}")
+    record("journey", "the toast fits the phone screen and clears the floating widgets",
+           box[0] >= 0 and box[1] <= box[3] and box[2] <= box[4] - 110, str(box[:5]))
+    san = int(page.input_value("#cs-sanity-value") or 0)
+    pow_ = int(page.evaluate("document.getElementById('POW-value').textContent") or 0)
+    record("journey", "Kappa Black import derives Breaking Point as SAN - POW instead of 0",
+           page.input_value("#cs-breaking-point") == str(san - pow_), f"bp={page.input_value('#cs-breaking-point')} san={san} pow={pow_}")
+    page.evaluate("() => { window.dgSaveLoad.clearSheet(); }")
+    page.wait_for_timeout(300)
+    record("journey", "Clear Sheet asks with the in-page confirm", page.is_visible("#dg-confirm-backdrop.dg-confirm-open") and not dialogs, str(dialogs))
+    page.click("#dg-confirm-cancel"); page.wait_for_timeout(200)
+    record("journey", "Cancel keeps the Agent", page.input_value("#cs-name") != "", page.input_value("#cs-name"))
+    page.evaluate("() => { window.dgSaveLoad.clearSheet(); }"); page.wait_for_timeout(300)
+    page.click("#dg-confirm-ok"); page.wait_for_timeout(300)
+    record("journey", "Continue clears it", page.input_value("#cs-name") == "", page.input_value("#cs-name"))
+    page.close()
+
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    errs += collect_errors(page)
+    page.on("dialog", lambda d: (dialogs.append(d.message), d.dismiss()))
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    route_apps_script_ok(page)
+    page.goto(f"{BASE}/requisition.html", wait_until="load", timeout=15000)
+    page.wait_for_timeout(500)
+    page.click("#rollBtn"); page.wait_for_timeout(300)
+    record("journey", "Requisition: submitting an unfinished form explains itself in-page",
+           not dialogs and page.is_visible("#req-toast") and "not complete" in page.text_content("#req-toast"), str(dialogs))
+    page.close()
+
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    errs += collect_errors(page)
+    page.on("dialog", lambda d: (dialogs.append(d.message), d.dismiss()))
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    route_apps_script_ok(page)
+    page.add_init_script("try { localStorage.setItem('dg_agent_roster', JSON.stringify({'MARA-0001': {code: 'MARA-0001', char_name: 'Robert Wright', saved_at: 1}})); } catch (e) {}")
+    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="load", timeout=15000)
+    page.wait_for_timeout(500)
+    page.evaluate("() => rosterClearAll()"); page.wait_for_timeout(300)
+    record("journey", "Agent File roster Clear All asks in-page", not dialogs and page.is_visible("text=Remove all"), str(dialogs))
+    page.click("button:has-text('Remove all')"); page.wait_for_timeout(200)
+    record("journey", "confirming actually clears the roster",
+           page.evaluate("localStorage.getItem('dg_agent_roster')") is None, "")
+    record("journey", "no JS exceptions (dialogs)", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
+def test_hub_dice_roller_learns_agent_from_iframe(p):
+    """In the Hub the Dice Roller lives on the OUTER page, but the Agent's
+    code gets set by the sheet inside the iframe -- and PR #44's
+    'dg-cloud-code-set' event only fires on the iframe's window. On a
+    brand-new device the shell's roller stayed on "Load your Cover Identity
+    on this device to save roll history" all visit and saved nothing (the
+    earlier fix was only ever exercised on the standalone sheet). Also: the
+    Cell was looked up once, so a player the Handler added to a Cell
+    mid-session kept rolling into their solo feed."""
+    ctx = p.new_context(viewport={"width": 390, "height": 844})
+    page = ctx.new_page()
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    _route_backend(page, lambda m, q, b: {"status": "OK", "agents": [], "cells": [], "operations": [], "notes": []})
+    page.add_init_script("try { localStorage.setItem('dg_cover_identity', 'Mara Voss'); sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+    page.goto(f"{BASE}/hub.html", wait_until="load", timeout=20000)
+    page.wait_for_timeout(1500)
+    hist = lambda: page.evaluate("() => (document.getElementById('dr-panel') || {}).textContent || ''")
+    record("dice-roller", "Hub on a fresh device: roller starts with no Agent", "Load your Cover Identity" in hist(), hist()[-120:])
+    inner = next(f for f in page.frames if f != page.main_frame)
+    inner.evaluate("() => localStorage.setItem('dg_stats_cloud_code', 'ROBE-KKUL')")
+    listens = lambda: page.evaluate("() => (window.__dgFirestoreListeners || []).map(l => l.path)")
+    _pump_until(page, lambda: "dice_rolls/solo:ROBE-KKUL/rolls" in listens(), 6000)
+    record("dice-roller", "the shell's roller picks up the Agent the embedded sheet just loaded",
+           "dice_rolls/solo:ROBE-KKUL/rolls" in listens(), str(listens()))
+    push_firestore_snapshot(page, "cells", [], [{"id": "cell_night", "member_codes": ["ALIS-EGSE", "ROBE-KKUL"], "name": "Night Shift"}])
+    _pump_until(page, lambda: "dice_rolls/cell_night/rolls" in listens(), 4000)
+    record("dice-roller", "added to a Cell mid-session: history follows the Cell without a reload",
+           "dice_rolls/cell_night/rolls" in listens() and "dice_rolls/solo:ROBE-KKUL/rolls" not in listens(), str(listens()))
+    page.evaluate("() => window.dgDice.recordRoll({roll_type: 'percent', label: 'DEX x5', value: 12, target: 60, tier: 'success'})")
+    _pump_until(page, lambda: any(w["path"].startswith("dice_rolls/") for w in firestore_writes(page)), 4000)
+    writes = [w["path"] for w in firestore_writes(page)]
+    record("dice-roller", "and the next roll is saved to the Cell", any(w.startswith("dice_rolls/cell_night/rolls/") for w in writes), str(writes))
+    # A roll pops the panel open over ~60% of a phone; it then stayed open
+    # on every page the player moved to inside the Hub.
+    page.evaluate("() => { const p = document.getElementById('dr-panel'); if (p.classList.contains('dr-collapsed')) window.dgDice._toggle(); }")
+    page.evaluate("() => { document.getElementById('dg-shell-content').src = 'agent-hub.html?again=1'; }")
+    _pump_until(page, lambda: page.evaluate("() => document.getElementById('dr-panel').classList.contains('dr-collapsed')"), 5000)
+    record("dice-roller", "the open roller collapses when the player moves to another Hub page",
+           page.evaluate("() => document.getElementById('dr-panel').classList.contains('dr-collapsed')"), "")
+    record("dice-roller", "no JS exceptions (hub roller)", len(errs) == 0, "; ".join(errs))
+    ctx.close()
+    return errs
+
+_PROFILE_FIELDS = {
+    "char_name": "Robert Wright", "codename": "PARISH", "player_name": "Mara Voss",
+    "age_range": "Mid 30s", "sex": "Male", "nationality": "American",
+    "face_shape": "oval", "eye_color": "brown", "eye_shape": "almond",
+    "nose": "straight", "lips": "thin", "skin": "tan",
+    "facial_hair": "clean-shaven", "hair_color": "brown",
+    "hair_style": "short", "hair_texture": "straight",
+    "build": "average", "posture": "upright",
+    "expression": "neutral", "vibe": "unremarkable",
+    "jacket": "coat", "shirt": "shirt", "trousers": "trousers", "footwear": "boots",
+}
+
+def test_agent_file_storage_plates_and_refresh(p):
+    """Returning to an Agent File rendered the stale local dg_last_agent
+    snapshot and never refetched -- a Face Plate generated since showed as
+    "No face plate on file". And every Plate uploaded since the Firebase
+    Storage move (an https download URL) never displayed at all: the page
+    only knew gdrive: links. An Outfit Plate generated in a later session
+    also went out with no face reference (Storage sends no CORS headers,
+    so the page can't read the bytes) -- it now passes the URL for the
+    backend to fetch. And right after generating a Face Plate, the era
+    header still said "No Photo Yet" with the Outfit button dimmed."""
+    face = "https://firebasestorage.googleapis.com/v0/b/dg-app-b3447.firebasestorage.app/o/agent-plates%2FMARA-0001-face-90s.png?alt=media&token=t"
+    local = dict(_PROFILE_FIELDS, agent_code="MARA-0001", submitted_at="2026-09-27T19:00:00.000Z",
+                 active_eras='["90s"]', era_90s_mode0="portrait prompt", era_90s_mode1="reference prompt")
+    server = dict(local, era_90s_face_url=face)
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    posts = []
+    def respond(method, q, body):
+        if method == "GET" and q.get("code"):
+            return {"status": "OK", "data": server}
+        if body and body.get("action") == "generate_plate_image":
+            return {"status": "OK", "image_base64": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="}
+        return None
+    _route_backend(page, respond, posts)
+    png = bytes.fromhex("89504e470d0a1a0a0000000d4948445200000001000000010806000000")
+    # Real Storage download URLs send no CORS headers: an <img> loads them,
+    # a fetch() can't read them. Model exactly that.
+    page.route("**/firebasestorage.googleapis.com/**",
+               lambda r: r.abort() if r.request.resource_type == "fetch" else r.fulfill(status=200, content_type="image/png", body=png))
+    page.add_init_script("try { localStorage.setItem('dg_last_agent', " + json.dumps(json.dumps({"code": "MARA-0001", "data": local})) + "); } catch (e) {}")
+    page.goto(f"{BASE}/dg-agent-portal.html?code=MARA-0001#agent", wait_until="load", timeout=15000)
+    _pump_until(page, lambda: page.evaluate("() => { const i = document.getElementById('img-face-90s'); return !!(i && i.getAttribute('src')); }"), 6000)
+    img = page.evaluate("() => { const i = document.getElementById('img-face-90s'); return i ? [i.getAttribute('src'), i.style.display] : null; }")
+    record("journey", "a return visit refreshes the stale local copy and shows the Storage-hosted Face Plate",
+           bool(img) and img[0] == face and img[1] == "block", str(img))
+    record("journey", "the era header says Photo On File", "Photo On File" in (page.text_content("#era-photo-90s") or ""), page.text_content("#era-photo-90s") or "")
+    btn = 'button[data-era="90s"][data-mode="mode1"][onclick^="generatePlateImage"]'
+    page.locator(btn).click()
+    _pump_until(page, lambda: any(b.get("action") == "generate_plate_image" for b in posts), 6000)
+    gen = [b for b in posts if b.get("action") == "generate_plate_image"]
+    record("journey", "a later-session Outfit Plate hands the backend the Face Plate's URL as its reference",
+           bool(gen) and gen[0].get("reference_image_url") == face, str({k: (v[:60] if isinstance(v, str) else v) for k, v in (gen[0] if gen else {}).items() if k != 'prompt'}))
+    page.close()
+
+    # Same era, no Face Plate yet: generating one updates the header + Outfit button in place.
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    errs += collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    server = dict(local)
+    _route_backend(page, respond, posts)
+    page.goto(f"{BASE}/dg-agent-portal.html?code=MARA-0001#agent", wait_until="load", timeout=15000)
+    page.wait_for_timeout(1500)
+    page.locator('button[data-era="90s"][data-mode="mode0"][onclick^="generatePlateImage"]').click()
+    _pump_until(page, lambda: "Photo On File" in (page.text_content("#era-photo-90s") or ""), 6000)
+    record("journey", "generating a Face Plate flips the era header to Photo On File right away",
+           "Photo On File" in (page.text_content("#era-photo-90s") or ""), page.text_content("#era-photo-90s") or "")
+    record("journey", "...and un-dims the Outfit Plate's Generate Image",
+           page.evaluate(f"() => getComputedStyle(document.querySelector('{btn}')).opacity") == "1", "")
+    _pump_until(page, lambda: any(b.get("action") == "update_field" and b.get("field") == "face_plate_url" for b in posts), 5000)
+    record("journey", "a Face Plate for the Active Era also becomes the Agent's main photo (Hub card, Live Play, A-Cell)",
+           any(b.get("action") == "update_field" and b.get("field") == "face_plate_url" and b.get("value") for b in posts),
+           str([(b.get("field"), str(b.get("value"))[:40]) for b in posts if b.get("action") == "update_field"]))
+    page.evaluate("() => showEraSelect()")
+    picker = page.evaluate("() => [document.querySelector('#af-era-select .af-sub').textContent, Array.from(document.querySelectorAll('#af-era-select .era-option')).filter(o => o.style.display !== 'none').map(o => o.getAttribute('onclick'))]")
+    record("journey", "+ Add Era offers only eras not already on file, and says so",
+           "another era" in picker[0] and not any("'90s'" in o for o in picker[1]) and len(picker[1]) == 3, str(picker))
+    record("journey", "no JS exceptions (agent file plates)", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
+def test_profiling_edit_keeps_agent_file(p):
+    """Editing Profiling ("Update Brief") after building an Agent File sent
+    only the form's own fields, and the brief upsert blanked every other
+    column -- the eras, every era's Plates and prompts, the Active Era,
+    medical/AAR logs, the Profession. The page itself then showed "choose
+    the first era" again. (backend v96 also stops blanking absent columns;
+    this covers the page side, which works before that redeploy.)"""
+    face = "https://firebasestorage.googleapis.com/v0/b/dg-app-b3447.firebasestorage.app/o/agent-plates%2FMARA-0001-face-90s.png?alt=media"
+    data = dict(_PROFILE_FIELDS, agent_code="MARA-0001", submitted_at="2026-09-27T19:00:00.000Z",
+                active_eras='["90s","00s"]', campaign_era="00s", era_90s_face_url=face,
+                era_90s_mode0="p0", era_90s_mode1="p1", era_00s_mode0="q0", era_00s_mode1="q1",
+                profession="Police Officer", medical_log='[{"note":"broken arm"}]')
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    posts = []
+    _route_backend(page, lambda m, q, b: {"status": "OK", "data": data} if (m == "GET" and q.get("code")) else None, posts)
+    page.route("**/firebasestorage.googleapis.com/**", lambda r: r.abort())
+    page.goto(f"{BASE}/dg-agent-portal.html?code=MARA-0001#agent", wait_until="load", timeout=15000)
+    page.wait_for_timeout(1500)
+    page.evaluate("() => switchTab('cover')")
+    page.fill("#dg-form [name=eye_color]", "storm grey")
+    page.evaluate("() => handleSubmit()")
+    _pump_until(page, lambda: any(b.get("eye_color") == "storm grey" for b in posts), 5000)
+    brief = next((b for b in posts if b.get("eye_color") == "storm grey"), {})
+    keep = ["active_eras", "campaign_era", "era_90s_face_url", "era_00s_mode0", "profession", "medical_log"]
+    record("journey", "Update Brief carries the Agent File's eras, Plates, prompts, Active Era, logs and Profession",
+           all(brief.get(k) == data[k] for k in keep), str({k: brief.get(k) for k in keep}))
+    page.wait_for_timeout(800)
+    record("journey", "...and the Agent File still shows its eras afterwards (not 'choose the first era')",
+           page.evaluate("() => document.getElementById('af-pages-wrap').style.display") == "block"
+           and page.evaluate("() => document.getElementById('af-era-select').style.display") != "block", "")
+    record("journey", "no JS exceptions (profiling edit)", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
+# Firestore rules deny a read of a note doc that doesn't exist yet
+# (resource is null) -- the stub has no rules, so emulate that one.
+_NOTES_READ_RULE_EMULATION = r"""
+(function () {
+  const base = window.firebase.firestore;
+  window.firebase.firestore = function () {
+    const db = base();
+    const rt = db.runTransaction;
+    db.runTransaction = function (fn) {
+      return rt.call(db, function (tx) {
+        const get = tx.get;
+        tx.get = function (ref) {
+          if (/^cells\/[^/]+\/notes\//.test(ref.__path) && !Object.prototype.hasOwnProperty.call(window.__dgFirestoreDocs || {}, ref.__path)) {
+            return Promise.reject({ code: 'permission-denied', message: 'Missing or insufficient permissions.' });
+          }
+          return get.call(tx, ref);
+        };
+        return fn(tx);
+      });
+    };
+    return db;
+  };
+})();
+"""
+
+def test_notes_first_block_saves_under_rules(p):
+    """Since Notes writes moved to Firestore (backend v93), saving a brand-
+    new block read the not-yet-existing doc inside a transaction first --
+    and the notes read rule can't be evaluated on a missing doc, so
+    Firestore denied the read and the whole save. Every new note was lost
+    on reload (found against the real rules in the Firebase emulator; the
+    test stub has no rules, which is how it went unnoticed)."""
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    page.set_default_timeout(15000)
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    page.add_init_script(_NOTES_READ_RULE_EMULATION)
+    _block_fonts(page)
+    cell = {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12", "PRIY-AN34"]}
+    seed_cells_docs(page, [cell])
+    ident = {"OWEN-CS12": {"color": "#2b6cb0", "font": "nycd"}}
+    _route_backend(page, lambda m, q, b: {"status": "OK", "notes": {}, "identities": ident, "cells": [cell], "evidence": [], "seen": {}, "operations": []})
+    page.add_init_script("try { localStorage.setItem('dg_agent_roster', JSON.stringify({'OWEN-CS12': {code: 'OWEN-CS12', char_name: 'Owen Castillo', saved_at: Date.now()}})); } catch (e) {}")
+    page.goto(f"{BASE}/notes/index.html?code=OWEN-CS12", wait_until="load", timeout=15000)
+    _pump_until(page, lambda: page.locator(".ce-paragraph").count() > 0, 8000)
+    if page.locator("text=Start Writing").count():  # a new player picks their ink first
+        page.locator("[data-color]").first.click()
+        page.click("text=Start Writing")
+        page.wait_for_timeout(800)
+    page.locator(".ce-paragraph").first.click()
+    page.keyboard.type("The motel clerk lied about room 12.")
+    _pump_until(page, lambda: any(w["path"].startswith("cells/cell_1/notes/") for w in firestore_writes(page)), 6000)
+    writes = [w for w in firestore_writes(page) if w["path"].startswith("cells/cell_1/notes/")]
+    record("notes", "a brand-new note block saves even though Firestore denies reading a doc that doesn't exist yet",
+           any("motel clerk" in json.dumps(w.get("data")) for w in writes), str([w["path"] for w in writes]))
+    record("notes", "no JS exceptions (first note block)", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
+def test_auto_created_brief_uses_titles_and_player(p):
+    """The Agent File auto-creates a missing brief from the character sheet.
+    It sent stats/'s internal profession key ("federal_agent", printed raw
+    on the dossier) and dropped the player's name."""
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    posts = []
+    char = {"v": 1, "bio": {"name": "Robert Wright", "profession": "federal_agent", "player_name": "Mara Voss", "sex": "Male", "nationality": "American"}}
+    def respond(method, q, body):
+        if method == "GET" and q.get("code") and not q.get("action"):
+            return {"status": "NOT_FOUND"}
+        if q.get("action") == "load_character":
+            return {"status": "OK", "agent_code": q.get("code"), "character_json": json.dumps(char)}
+        return None
+    _route_backend(page, respond, posts)
+    page.goto(f"{BASE}/dg-agent-portal.html?code=ROBE-KKUL#agent", wait_until="load", timeout=15000)
+    _pump_until(page, lambda: any(b.get("char_name") for b in posts), 6000)
+    brief = next((b for b in posts if b.get("char_name")), {})
+    record("journey", "auto-created brief carries the profession title, not the internal key",
+           brief.get("profession") == "Federal Agent", str(brief.get("profession")))
+    record("journey", "auto-created brief carries the player's name", brief.get("player_name") == "Mara Voss", str(brief.get("player_name")))
+    record("journey", "no JS exceptions (auto brief)", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
+
 def main():
     with sync_playwright() as p:
         # Chrome's own background-tab timer throttling policy applies to a
@@ -10772,6 +11248,15 @@ def main():
         safe(test_import_agent_auto_detect, browser, area="stats-terminal")
 
         safe(test_player_name_field, browser, area="stats-terminal")
+
+        safe(test_new_agent_carries_cover_identity, browser, area="journey")
+        safe(test_theme_survives_new_recruit_and_cloud_load, browser, area="journey")
+        safe(test_player_pages_use_in_page_dialogs, browser, area="journey")
+        safe(test_hub_dice_roller_learns_agent_from_iframe, browser, area="dice-roller")
+        safe(test_agent_file_storage_plates_and_refresh, browser, area="journey")
+        safe(test_auto_created_brief_uses_titles_and_player, browser, area="journey")
+        safe(test_profiling_edit_keeps_agent_file, browser, area="journey")
+        safe(test_notes_first_block_saves_under_rules, browser, area="notes")
 
         safe(test_cloud_save, browser, area="stats-terminal")
 

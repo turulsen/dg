@@ -335,6 +335,10 @@ body{
   pointer-events:none;
 }
 .clip img{width:100%;height:100%;object-fit:contain;}
+/* Phones: the paper's text starts ~40px in, right where the clip sat --
+   it was drawn over "Delta Green Directorate" and the C of "Character".
+   Tuck it into the left margin instead. */
+@media (max-width:600px){ .clip{left:6px;} }
 
 /* Content lives above all overlays */
 .paper-content{position:relative;z-index:5;}
@@ -2200,7 +2204,16 @@ function idsPopulateFromAgent(d) {
   }
 
   // Load face plate if available
-  if (d.face_plate_url && !idsPhotoDataUrl) {
+  if (d.face_plate_url && !idsPhotoDataUrl && isDirectImageUrl_(d.face_plate_url)) {
+    // Storage-hosted plate: only ever used as an <img src> (the card is
+    // printed, never rasterized), so the URL itself is enough.
+    idsPhotoDataUrl = d.face_plate_url;
+    const prev = document.getElementById('ids-photo-prev');
+    const ph = document.getElementById('ids-photo-placeholder');
+    if (prev) { prev.src = d.face_plate_url; prev.style.display = 'block'; }
+    if (ph) ph.style.display = 'none';
+    idsUpdateCard();
+  } else if (d.face_plate_url && !idsPhotoDataUrl) {
     // Load face plate via proxy — use a temporary img element trick
     const _faceId = extractDriveId(d.face_plate_url);
     if (_faceId) {
@@ -2748,7 +2761,7 @@ function idsPrint() {
   // as plain inline-styled divs -- so gate on the placeholder's absence
   // instead, which is present for every layout until a card is rendered.
   if (!preview || preview.querySelector('#ids-card-placeholder')) {
-    alert('Select agency and era first.');
+    portalNotice('Select agency and era first.');
     return;
   }
 
@@ -2997,6 +3010,21 @@ async function handleSubmit() {
   // this form never actually relied on Code.gs's own server-side
   // auto-generation branch to begin with.
   const agentCode = sameAgent ? afCode : (rosterCode || genCode(payload.char_name));
+  // Editing an existing Agent's Profiling: carry over everything this
+  // form doesn't itself edit (eras, every era's Plates and prompts, the
+  // Active Era, medical/AAR logs, Profession...). The brief upsert
+  // (backend before v96) blanked every column a submission didn't
+  // include, so the first "Update Brief" after building an Agent File
+  // wiped it -- and this page then showed "choose the first era" again.
+  // afData is kept current by every write on this page (and refreshed
+  // from the server on load), so it's the right source.
+  if (sameAgent) {
+    Object.keys(afData).forEach(function (k) {
+      if (Object.prototype.hasOwnProperty.call(payload, k)) return;
+      if (k === 'ref_image' || k === 'ref_image_base64' || k === 'ref_image_name' || k === 'agent_code') return;
+      payload[k] = afData[k];
+    });
+  }
   if (refImageFile) {
     status.textContent = 'Uploading photo…';
     btn.textContent = 'Uploading…';
@@ -3674,9 +3702,24 @@ function autoCreateBriefFromCharacterThenRetry_(code, onCreated, onGiveUp) {
     if (!bio || !name || name === 'Agent') { onGiveUp(); return; }
     const sexRaw = (bio.sex || '').trim().toLowerCase();
     const sex = sexRaw === 'male' || sexRaw === 'm' ? 'Male' : sexRaw === 'female' || sexRaw === 'f' ? 'Female' : sexRaw ? 'Other' : '';
+    // bio.profession is stats/'s internal key ("federal_agent"), not the
+    // title -- the dossier used to print it raw. Same titles as
+    // stats/professions.js (not loaded on this page).
+    const PROF_TITLES = {
+      anthropologist: 'Anthropologist or Historian', federal_agent: 'Federal Agent', physician: 'Physician',
+      computer_scientist: 'Computer Scientist or Engineer', scientist: 'Scientist', special_operator: 'Special Operator',
+      criminal: 'Criminal', firefighter: 'Firefighter', police_officer: 'Police Officer', soldier_marine: 'Soldier or Marine',
+      foreign_service: 'Foreign Service Officer', intelligence_analyst: 'Intelligence Analyst',
+      intelligence_case_officer: 'Intelligence Case Officer', lawyer_executive: 'Lawyer or Business Executive',
+      media_specialist: 'Media Specialist', nurse_paramedic: 'Nurse or Paramedic', pilot_sailor: 'Pilot or Sailor',
+      program_manager: 'Program Manager'
+    };
+    const profKey = (bio.profession || '').trim();
+    const profession = PROF_TITLES[profKey] || (profKey === 'new_profession' ? '' : profKey);
     const payload = {
       char_name: name,
-      profession: bio.profession || '',
+      player_name: (bio.player_name || '').trim(),
+      profession: profession,
       nationality: bio.nationality || '',
       sex: sex,
       notes: 'Auto-created from this Agent\'s character sheet -- no Agent File was on record yet.',
@@ -3780,7 +3823,22 @@ function driveDirectUrl(url) {
   if (id) return 'gdrive:' + id;
   return url || '';
 }
+// Plates uploaded since the Firebase Storage move (Phase 4) are plain,
+// publicly readable https:// download URLs -- an <img> can load those
+// directly, same as agent-hub.html's loadFacePlate() and
+// lp-tracker-photo.js already do. Everything below used to assume a
+// gdrive:FILE_ID, so a Storage-hosted Face/Outfit Plate rendered as an
+// empty box on every return to the Agent File (and never reached the
+// Field ID card or the roster drawer).
+function isDirectImageUrl_(url) {
+  return /^https?:\/\//.test(url || '') && !extractDriveId(url);
+}
 function loadDriveImage(url, imgId) {
+  if (isDirectImageUrl_(url)) {
+    const el = document.getElementById(imgId);
+    if (el) { el.src = url; el.style.display = 'block'; }
+    return;
+  }
   const id = extractDriveId(url);
   if (!id) return;
   const cbName = '_driveImg_' + id.replace(/[^a-zA-Z0-9]/g, '_');
@@ -3980,6 +4038,45 @@ function loadAgentFile(retrying) {
   document.head.appendChild(s);
 }
 
+/* ── Background refresh after rendering from the local copy ──
+   openSpecificAgent()/autoRestore() render straight from dg_last_agent
+   (fast, and immune to a just-fired save still being in flight), but
+   that snapshot is only written on a brief submit/restore -- a Face or
+   Outfit Plate generated since, a new era, the Active Era, a Handler's
+   edit, or anything done on another device were all missing on every
+   return visit ("No face plate on file" for an Agent who has one) until
+   the player happened to use Load Different Agent. Fetch the real row
+   once in the background and re-render if it's at least as new as the
+   local copy (submitted_at) -- an older server row means a brief save
+   from this device hasn't landed yet, and the local copy stays. */
+function refreshAgentFileFromServer_(code) {
+  const cbName = '_afRefresh_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
+  window[cbName] = function (json) {
+    delete window[cbName];
+    const s = document.getElementById(cbName);
+    if (s) s.remove();
+    if (!json || json.status !== 'OK' || !json.data) return;
+    if (afCode !== code) return; // moved on to a different Agent meanwhile
+    const fresh = json.data;
+    const localAt = afData && afData.submitted_at ? new Date(afData.submitted_at).getTime() : 0;
+    const serverAt = fresh.submitted_at ? new Date(fresh.submitted_at).getTime() : 0;
+    if (localAt && serverAt && serverAt < localAt) return;
+    if (afData && JSON.stringify(afData) === JSON.stringify(fresh)) return;
+    afData = fresh;
+    persistAgent(code, fresh);
+    populateCoverForm(fresh);
+    if (document.getElementById('af-content') && document.getElementById('af-content').style.display === 'block'
+        && isProfilingComplete(fresh)) {
+      renderAgentFile(fresh);
+    }
+  };
+  const s = document.createElement('script');
+  s.id = cbName;
+  s.src = APPS_SCRIPT_URL + '?code=' + encodeURIComponent(code) + '&callback=' + cbName;
+  s.onerror = function () { delete window[cbName]; };
+  document.head.appendChild(s);
+}
+
 /* ── Show gate, hide content ── */
 function showAfGate() {
   clearPersistedAgent();
@@ -4003,6 +4100,7 @@ function renderAgentFile(data) {
 
   if (eras.length === 0) {
     // First time — show era selector
+    syncEraSelect_();
     document.getElementById('af-era-select').style.display = 'block';
     document.getElementById('af-pages-wrap').style.display = 'none';
   } else {
@@ -4056,7 +4154,7 @@ function checkAgentKia(code) {
   if (vitalsSection) vitalsSection.style.display = 'none';
 
   const cbName = '_afKiaCb' + Date.now();
-  const timer = setTimeout(() => { delete window[cbName]; }, 7000);
+  const timer = setTimeout(() => { window[cbName] = function () { delete window[cbName]; }; }, 7000);
   window[cbName] = function (res) {
     clearTimeout(timer);
     delete window[cbName];
@@ -4169,7 +4267,24 @@ function initEra(era) {
 }
 
 /* ── Show era selector for adding a new era ── */
+// The same picker serves "choose the first era" and "+ Add Era" -- it
+// used to say "No era pages found for this agent" and offer every era,
+// including ones already on file, when adding a second one.
+function syncEraSelect_() {
+  const sel = document.getElementById('af-era-select');
+  if (!sel) return;
+  const have = parseEras(afData || {});
+  const sub = sel.querySelector('.af-sub');
+  if (sub) sub.textContent = have.length
+    ? 'Choose another era to add to this file.'
+    : 'No era pages found for this agent. Choose the first era to create the file.';
+  sel.querySelectorAll('.era-option').forEach(function (o) {
+    const m = /initEra\('(\w+)'\)/.exec(o.getAttribute('onclick') || '');
+    o.style.display = m && have.indexOf(m[1]) !== -1 ? 'none' : '';
+  });
+}
 function showEraSelect() {
+  syncEraSelect_();
   document.getElementById('af-era-select').style.display = 'block';
   document.getElementById('af-era-select').scrollIntoView({behavior:'smooth'});
 }
@@ -4216,7 +4331,7 @@ function renderEraStack(eras, data) {
       + '<div style="font-family:Courier Prime,monospace;font-size:8px;letter-spacing:.15em;text-transform:uppercase;color:#4a3f28;">' + (eraLabels[era]||'') + '</div>'
       + '<div style="margin-left:auto;display:flex;align-items:center;gap:12px;">'
       + '<span id="era-preview-' + era + '"></span>'
-      + '<span style="font-family:Courier Prime,monospace;font-size:8px;color:#4a3f28;">' + (faceUrl ? '&#9679; Photo On File' : '&#9675; No Photo Yet') + '</span>'
+      + '<span id="era-photo-' + era + '" style="font-family:Courier Prime,monospace;font-size:8px;color:#4a3f28;">' + (faceUrl ? '&#9679; Photo On File' : '&#9675; No Photo Yet') + '</span>'
       + '<span id="era-chevron-' + era + '" style="font-size:12px;color:#8a7a5a;transition:transform 200ms;">' + (isOpen ? '&#9650;' : '&#9660;') + '</span>'
       + '</div>';
     header.onclick = () => toggleEraAccordion(era);
@@ -4402,7 +4517,21 @@ function handlePlateUpload(input, era, type) {
 function saveGeneratedPlate(dataUrl, era, type, imageName) {
   const box = document.getElementById('plate-' + type + '-' + era);
   if (box) box.innerHTML = '<img src="' + dataUrl + '" style="width:100%;display:block;object-fit:cover;object-position:top center;">';
-  if (type === 'face') afRecentFacePlateDataUri[era] = dataUrl;
+  if (type === 'face') {
+    afRecentFacePlateDataUri[era] = dataUrl;
+    // This era's header badge and its Outfit Plate "Generate Image"
+    // button were both rendered from the Face Plate state at page load
+    // and never updated -- right after generating (or uploading) a Face
+    // Plate the header still said "No Photo Yet" and the Outfit button
+    // stayed dimmed with a "Generate a Face Plate first" tooltip.
+    const badge = document.getElementById('era-photo-' + era);
+    if (badge) badge.innerHTML = '&#9679; Photo On File';
+    const outfitBtn = document.querySelector('button[data-era="' + era + '"][data-mode="mode1"][onclick^="generatePlateImage"]');
+    if (outfitBtn) {
+      outfitBtn.style.opacity = '';
+      outfitBtn.title = 'Uses the Face Plate as a reference for character consistency';
+    }
+  }
   // Era-specific (era Plate/prompt data collision fix) -- the old flat
   // face_plate_url/outfit_plate_url was shared by every era, so adding
   // a second era silently overwrote the first era's Plate.
@@ -4419,6 +4548,24 @@ function saveGeneratedPlate(dataUrl, era, type, imageName) {
   }).then(function (snapshot) {
     return snapshot.ref.getDownloadURL();
   }).then(function (storageUrl) {
+    // Keep this session's own copy current too, so anything read from
+    // afData afterwards (the Outfit Plate's reference-image fallback,
+    // a re-render of this era stack) sees the Plate that now exists.
+    if (afData) afData[fieldKey] = storageUrl;
+    // The Agent's main photo (face_plate_url -- Agent Hub's roster card,
+    // Live Play's tracker photo, A-Cell) was only ever set by "Make
+    // Active Era". A new player's first era is already shown as the
+    // Active Era, so they never press it -- and generating or uploading
+    // its Face Plate left the Hub saying "Take Photo" for good. A Face
+    // Plate for the era that's currently active is the main photo.
+    if (afData && type === 'face' && (afData.campaign_era || afEraPages[0]) === era) {
+      afData.face_plate_url = storageUrl;
+      fetch(APPS_SCRIPT_URL, {
+        method: 'POST', mode: 'no-cors', headers: {'Content-Type':'text/plain'},
+        body: JSON.stringify({ action: 'update_field', agent_code: afCode, token: agentToken(afCode), field: 'face_plate_url', value: storageUrl })
+      }).catch(() => {});
+      persistAgent(afCode, afData);
+    }
     return fetch(APPS_SCRIPT_URL, {
       method: 'POST', mode: 'no-cors',
       headers: {'Content-Type':'text/plain'},
@@ -4444,6 +4591,23 @@ function saveGeneratedPlate(dataUrl, era, type, imageName) {
 // <img>'s src -- so it can be attached to a generate_plate_image request
 // as a reference image rather than just displayed.
 function fetchDriveImageAsDataUri(url) {
+  if (isDirectImageUrl_(url)) {
+    // Storage-hosted: read the bytes directly if the bucket allows a
+    // cross-origin GET; if it doesn't (no CORS headers -- see
+    // table-radio.js), resolve null and let the caller hand the URL to
+    // the backend instead (reference_image_url, fetched server-side).
+    return fetch(url).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.blob();
+    }).then(function (blob) {
+      return new Promise(function (resolve) {
+        const fr = new FileReader();
+        fr.onload = function () { resolve(fr.result); };
+        fr.onerror = function () { resolve(null); };
+        fr.readAsDataURL(blob);
+      });
+    }).catch(function () { return null; });
+  }
   return new Promise(function(resolve) {
     const id = extractDriveId(url);
     if (!id) { resolve(null); return; }
@@ -4536,8 +4700,9 @@ function generatePlateImage(era, mode, btn) {
     // a Face Plate is generated or uploaded). Falling back to a fresh
     // Drive fetch covers a Face Plate from an earlier session instead.
     (recentFaceDataUri ? Promise.resolve(recentFaceDataUri) : fetchDriveImageAsDataUri(faceUrl)).then(function(dataUri) {
-      if (dataUri) {
-        payload.reference_image_base64 = dataUri;
+      if (!dataUri && isDirectImageUrl_(faceUrl)) payload.reference_image_url = faceUrl;
+      if (dataUri || payload.reference_image_url) {
+        if (dataUri) payload.reference_image_base64 = dataUri;
         // The reference here is the existing Face Plate -- a tight
         // forehead-to-chest headshot by Mode 0's own framing. Gemini's
         // image-to-image generation otherwise anchors hard on the
@@ -4556,6 +4721,7 @@ function generatePlateImage(era, mode, btn) {
     // text description instead of working from the description alone.
     fetchDriveImageAsDataUri(afData.ref_image_link).then(function(dataUri) {
       if (dataUri) payload.reference_image_base64 = dataUri;
+      else if (isDirectImageUrl_(afData.ref_image_link)) payload.reference_image_url = afData.ref_image_link;
       send();
     });
   } else {
@@ -5681,6 +5847,12 @@ function rerollAgent() {
   if (window.location.hash === '#agent') {
     openInAgentFile();
   }
+  // With a ?code= in the URL, openSpecificAgent() below owns loading
+  // (and refreshing) that Agent; otherwise refresh this restored copy.
+  const qsCode = (new URLSearchParams(window.location.search).get('code') || '').trim().toUpperCase();
+  if (!qsCode) {
+    setTimeout(function () { if (afCode === saved.code) refreshAgentFileFromServer_(saved.code); }, 0);
+  }
 })();
 
 /* ── OPEN A SPECIFIC AGENT BY CODE (this hub's addition) ──
@@ -5737,6 +5909,7 @@ function rerollAgent() {
   // connection despite the correct data already sitting right here.
   if (typeof afCode !== 'undefined' && afCode === upper && typeof afData !== 'undefined' && afData) {
     openInAgentFile();
+    refreshAgentFileFromServer_(upper);
     return;
   }
   const afInput = document.getElementById('af-code-input');
@@ -5917,6 +6090,10 @@ function rosterRender() {
     if (agent.face_plate_url) {
       var photoDiv = document.getElementById('roster-photo-' + agent.code);
       if (!photoDiv) return;
+      if (isDirectImageUrl_(agent.face_plate_url)) {
+        photoDiv.innerHTML = '<img src="' + agent.face_plate_url.replace(/"/g, '&quot;') + '">';
+        return;
+      }
       var faceId = extractDriveId(agent.face_plate_url);
       if (!faceId) return;
       var cbName = '_rosterFace_' + agent.code.replace(/[^a-zA-Z0-9]/g,'_');
@@ -5960,13 +6137,54 @@ function rosterSelectAgent(code) {
   }
 }
 
+/* ── In-page notice/confirm ──
+   alert()/confirm() show nothing in an iOS home-screen (standalone)
+   install -- confirm() just returns false -- so the roster drawer's
+   Remove / Clear All could never work there, and its notices vanished.
+   Small in-page stand-ins instead (same reasoning as stats/'s dgConfirm). */
+function portalNotice(msg) {
+  let t = document.getElementById('portal-toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'portal-toast';
+    t.setAttribute('role', 'status');
+    t.style.cssText = 'position:fixed;left:50%;bottom:130px;transform:translateX(-50%);z-index:100000;max-width:min(520px,calc(100vw - 32px));width:max-content;box-sizing:border-box;background:#1c1608;color:#f4eed8;border:1px solid #8a7a5a;padding:10px 18px;font:13px/1.45 Courier Prime,monospace;text-align:center;white-space:pre-line;opacity:0;transition:opacity .25s;pointer-events:none;';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.opacity = '1';
+  clearTimeout(t._h);
+  t._h = setTimeout(function () { t.style.opacity = '0'; }, Math.min(9000, Math.max(3000, String(msg).length * 55)));
+}
+function portalConfirm(msg, okLabel) {
+  return new Promise(function (resolve) {
+    const bd = document.createElement('div');
+    bd.style.cssText = 'position:fixed;inset:0;z-index:100001;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px;';
+    bd.innerHTML = '<div role="dialog" aria-modal="true" style="background:#f4eed8;color:#1c1608;border:1px solid #8a7a5a;max-width:360px;width:100%;padding:18px;font:14px/1.5 Courier Prime,monospace;box-shadow:0 8px 30px rgba(0,0,0,.5);">'
+      + '<div class="pc-msg" style="white-space:pre-line;margin-bottom:16px;"></div>'
+      + '<div style="display:flex;gap:10px;justify-content:flex-end;">'
+      + '<button type="button" class="pc-cancel" style="font:12px Special Elite,monospace;letter-spacing:.08em;text-transform:uppercase;background:transparent;border:1px solid #8a7a5a;color:#1c1608;padding:8px 14px;cursor:pointer;">Cancel</button>'
+      + '<button type="button" class="pc-ok" style="font:12px Special Elite,monospace;letter-spacing:.08em;text-transform:uppercase;background:#1c1608;border:1px solid #1c1608;color:#f4eed8;padding:8px 14px;cursor:pointer;"></button>'
+      + '</div></div>';
+    bd.querySelector('.pc-msg').textContent = msg;
+    bd.querySelector('.pc-ok').textContent = okLabel || 'Continue';
+    function done(v) { bd.remove(); resolve(v); }
+    bd.querySelector('.pc-ok').onclick = function () { done(true); };
+    bd.querySelector('.pc-cancel').onclick = function () { done(false); };
+    bd.onclick = function (e) { if (e.target === bd) done(false); };
+    document.body.appendChild(bd);
+    bd.querySelector('.pc-ok').focus();
+  });
+}
+
 function rosterDeleteConfirm(code) {
-  if (confirm('Remove ' + code + ' from roster?')) {
+  portalConfirm('Remove ' + code + ' from roster?', 'Remove').then(function (ok) {
+    if (!ok) return;
     rosterRemoveAgent(code);
     // Clear persistence if this was the active agent
     var saved = loadPersistedAgent();
     if (saved && saved.code === code) clearPersistedAgent();
-  }
+  });
 }
 
 function rosterToggle() {
@@ -6020,9 +6238,9 @@ function rosterImportPrompt() {
         rosterSave(roster);
         rosterRender();
         rosterUpdateCount();
-        alert('Imported ' + Object.keys(imported).length + ' agent(s).');
+        portalNotice('Imported ' + Object.keys(imported).length + ' agent(s).');
       } catch(e) {
-        alert('Invalid roster file.');
+        portalNotice('Invalid roster file.');
       }
     };
     r.readAsText(file);
@@ -6031,12 +6249,13 @@ function rosterImportPrompt() {
 }
 
 function rosterClearAll() {
-  if (confirm('Remove all agents from the local roster? This cannot be undone.')) {
+  portalConfirm('Remove all agents from the local roster? This cannot be undone.', 'Remove all').then(function (ok) {
+    if (!ok) return;
     localStorage.removeItem(ROSTER_KEY);
     clearPersistedAgent();
     rosterRender();
     rosterUpdateCount();
-  }
+  });
 }
 
 /* ── Init on page load ── */
@@ -6093,7 +6312,7 @@ function rosterClearAll() {
 
 
 <script src="assets/table-radio.js"></script>
-<script src="assets/dice-roller.js?v=7"></script>
+<script src="assets/dice-roller.js?v=8"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>
 
 </body>
