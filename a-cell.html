@@ -2698,6 +2698,7 @@
   // (unmigrated) and the "has base data loaded at least once" gate the
   // listener's own render calls check via baseDataReady.
   var baseDataReady = false;
+  var foldersOk = false; // list_cells came back OK at least once -- see the handler-ready listener
   function fetchAll(isRefresh) {
     var myGen = ++fetchGen;
     var cellsDone = false, opsDone = false, cellsOk = false;
@@ -2717,6 +2718,7 @@
         cellsById = {};
         cells.forEach(function (c) { cellsById[c.cell_id] = c; });
         cellsOk = true;
+        foldersOk = true;
       }
       maybeRender();
     });
@@ -3456,7 +3458,15 @@
   // silent re-login) -- startEvidenceListener()'s own evidenceListenerActive
   // guard makes a second call here a safe retry rather than a duplicate
   // listener once the first attempt actually succeeds.
-  window.addEventListener('dg-acell-handler-ready', function () { fetchAll(true); startEvidenceListener(); });
+  // The folder lists (list_cells/list_operations) need no Handler
+  // session, so the load-time fetch above already has them -- only
+  // re-fetch here if that one came back empty-handed. Re-fetching
+  // unconditionally doubled Evidence's Apps Script calls on every
+  // A-Cell visit.
+  window.addEventListener('dg-acell-handler-ready', function () {
+    if (!foldersOk) fetchAll(true);
+    startEvidenceListener();
+  });
 })();
 </script>
 
@@ -3518,6 +3528,13 @@
   // than sharing fetchGen and spuriously superseding an unrelated
   // in-flight fetchAll().
   var deletedFetchGen = 0;
+  // Lazy-load state -- see the tab-strip listener at the end of this block.
+  var sheetWanted = false, sheetLoaded = false, sheetInFlight = false, retryWhenDone = false;
+  function loadSheet(isRefresh) {
+    sheetWanted = true;
+    fetchAll(isRefresh);
+    fetchDeleted();
+  }
 
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -3608,6 +3625,7 @@
   function fetchAll(isRefresh) {
     refreshBtn.disabled = true;
     var myGen = ++fetchGen;
+    sheetInFlight = true;
     var charsDone = false, cellsDone = false, briefsDone = false;
     var charsOk = false, cellsOk = false, briefsOk = false;
     var characters = [], cellGroups = [], briefsOnly = [];
@@ -3616,6 +3634,12 @@
       if (myGen !== fetchGen) return;
       if (!charsDone || !cellsDone || !briefsDone) return;
       refreshBtn.disabled = false;
+      sheetInFlight = false;
+      if (charsOk) sheetLoaded = true;
+      if (retryWhenDone) {
+        retryWhenDone = false;
+        if (!charsOk) { fetchAll(true); return; }
+      }
       if (!charsOk) {
         wrap.innerHTML = '<div class="sheet-error">Could not load the roster. (The A-Cell backend addition may not be deployed yet.)</div>';
         return;
@@ -3659,12 +3683,36 @@
       if (res && res.status === 'OK' && Array.isArray(res.characters)) { characters = res.characters; charsOk = true; }
       maybeRender();
     });
-    jsonpGet('list_cells', {}, function (res) {
-      if (myGen !== fetchGen) return;
-      cellsDone = true;
-      if (res && res.status === 'OK' && Array.isArray(res.cells)) { cellGroups = res.cells; cellsOk = true; }
-      maybeRender();
-    });
+    // Cells from Firestore (public-read, no Apps Script call), same as
+    // Music's Cue For Cell: the Cells tab creates Cells there directly,
+    // so the Sheet-backed list_cells never listed a Cell made since and
+    // the Cell/Handler columns showed a dash for its members.
+    // list_cells stays as the fallback when nothing is mirrored yet.
+    function cellsViaSheet() {
+      jsonpGet('list_cells', {}, function (res) {
+        if (myGen !== fetchGen) return;
+        cellsDone = true;
+        if (res && res.status === 'OK' && Array.isArray(res.cells)) { cellGroups = res.cells; cellsOk = true; }
+        maybeRender();
+      });
+    }
+    if (window.__dgEnsureFirebaseApi) {
+      window.__dgEnsureFirebaseApi(function () {
+        window.firebase.firestore().collection('cells').get().then(function (snap) {
+          if (myGen !== fetchGen) return;
+          var list = [];
+          snap.forEach(function (d) {
+            var c = d.data() || {};
+            list.push({ cell_id: d.id, name: c.name || '', handler: c.handler || '', member_codes: Array.isArray(c.member_codes) ? c.member_codes : [] });
+          });
+          if (!list.length) { cellsViaSheet(); return; }
+          cellGroups = list; cellsOk = true; cellsDone = true;
+          maybeRender();
+        }).catch(cellsViaSheet);
+      }, cellsViaSheet);
+    } else {
+      cellsViaSheet();
+    }
     jsonpGet('list_agent_file_only', {}, function (res) {
       if (myGen !== fetchGen) return;
       briefsDone = true;
@@ -4016,14 +4064,31 @@
     });
   }
 
-  refreshBtn.addEventListener('click', function () { fetchAll(true); fetchDeleted(); });
-  fetchAll(false);
-  fetchDeleted();
-  // Same Handler-session race as the Play tab -- see its own comment.
-  // list_characters/list_agent_file_only/list_deleted_characters all
-  // need a valid session, which may still be an in-flight silent
-  // re-login at this point in page load if a saved password exists.
-  window.addEventListener('dg-acell-handler-ready', function () { fetchAll(true); fetchDeleted(); });
+  refreshBtn.addEventListener('click', function () { loadSheet(true); });
+  // Loaded the first time the Sheet tab is opened, not on every A-Cell
+  // page load. It used to fetch at load AND again on
+  // dg-acell-handler-ready -- every A-Cell visit (including just
+  // switching back from Agent Hub in the shell) sent this tab's four
+  // Apps Script calls twice, three of them Handler-verified, whether
+  // or not the Sheet was ever opened. Live report: after Music ->
+  // Agent Hub -> A-Cell, the Sheet sat on "Loading agents..." and then
+  // "Could not load the roster": its calls timed out queued behind
+  // everyone else's and their retries only added to the queue.
+  document.getElementById('acell-tab-strip').addEventListener('click', function (e) {
+    var tab = e.target.closest('.tw');
+    if (tab && tab.dataset.tab === 'sheet' && !sheetLoaded && !sheetInFlight) loadSheet(false);
+  });
+  var sheetPanel = document.getElementById('panel-sheet');
+  if (sheetPanel && sheetPanel.classList.contains('active')) loadSheet(false);
+  // A load started before the Handler session was ready waits for that
+  // same sign-in (jsonpGet asks __dgGetHandlerIdToken), so this only
+  // re-fetches when the Sheet was actually wanted -- and retries once
+  // after an in-flight load rather than superseding it.
+  window.addEventListener('dg-acell-handler-ready', function () {
+    if (!sheetWanted) return;
+    if (sheetInFlight) { retryWhenDone = true; return; }
+    loadSheet(true);
+  });
 })();
 </script>
 

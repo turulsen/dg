@@ -3469,6 +3469,90 @@ def test_acell_play(p):
     page.close()
     return errs
 
+def test_acell_sheet_loads_once_when_opened(p):
+    """Live report: Friendly -> A-Cell Music -> Agent Hub -> back to
+    A-Cell, and the Sheet tab sat on "Loading agents..." then showed
+    "Could not load the roster". Every A-Cell page load used to send the
+    Sheet's four Apps Script calls at load AND again on
+    dg-acell-handler-ready (three of them Handler-verified), and
+    Evidence re-sent its two folder lists the same way, whether or not
+    either tab was opened -- on a busy backend the Sheet's calls timed
+    out queued behind the rest. Now: nothing from the Sheet until its
+    tab is opened, then exactly one of each; Evidence's folder lists
+    once; the Cell column reads Firestore Cells (made on the Cells tab,
+    never in the Sheet-backed list_cells)."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    skip_acell_gate(page)
+    page.add_init_script("""
+        try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}
+    """)
+    calls = []
+
+    def fake_apps_script(route):
+        url = route.request.url
+        if route.request.method == "POST" or "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        action = url.split("action=")[1].split("&")[0]
+        calls.append((cb.split("_")[1], action))
+        res = {"status": "OK"}
+        if action == "list_characters":
+            res["characters"] = [{"agent_code": "OWEN-CS12", "name": "Owen Castillo", "player_name": "",
+                                  "hp": 12, "san": 50, "updated_at": ""}]
+        elif action == "list_cells":
+            res["cells"] = []
+        elif action == "list_operations":
+            res["operations"] = []
+        elif action == "list_agent_file_only":
+            res["agents"] = []
+        elif action == "list_deleted_characters":
+            res["characters"] = []
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.evaluate("""() => { window.__dgFirestoreDocs['cells/cell_fs'] = { name: 'Firestore Table', handler: 'Sam', member_codes: ['OWEN-CS12'] }; }""")
+    wait_for_condition(lambda: page.evaluate("() => window.__dgFirestoreAuthUser && window.__dgFirestoreAuthUser.uid") == "handler", timeout_ms=6000)
+    page.wait_for_timeout(1500)
+    # The stub's sign-in resolves before the later tab blocks even
+    # register their listeners; a real one takes seconds and lands after
+    # them. Fire the event again the way that real ordering would.
+    page.evaluate("() => window.dispatchEvent(new Event('dg-acell-handler-ready'))")
+    page.wait_for_timeout(800)
+    sheet_calls = [a for (who, a) in calls if who == "acellSheet"]
+    record("acell", "an A-Cell page load sends none of the Sheet tab's Apps Script calls until the Sheet is opened",
+           sheet_calls == [], str(calls))
+    ev = [a for (who, a) in calls if who == "acellEvidence"]
+    record("acell", "Evidence's folder lists load once per A-Cell visit, not again after the silent Handler sign-in",
+           ev.count("list_cells") == 1 and ev.count("list_operations") == 1, str(ev))
+    page.click('.tw[data-tab="sheet"]')
+    wait_for_condition(lambda: "Owen Castillo" in page.inner_text("#sheet-wrap"), timeout_ms=6000)
+    row = page.inner_text("#sheet-wrap")
+    sheet_calls = sorted(a for (who, a) in calls if who == "acellSheet")
+    record("acell", "opening the Sheet tab loads it with exactly one of each of its calls",
+           sheet_calls == ["list_agent_file_only", "list_characters", "list_deleted_characters"], str(sheet_calls))
+    record("acell", "the Sheet's Cell and Handler columns read Firestore Cells (made on the Cells tab)",
+           "Firestore Table" in row and "Sam" in row, row[:200])
+    page.click('.tw[data-tab="play"]'); page.click('.tw[data-tab="sheet"]'); page.wait_for_timeout(500)
+    record("acell", "re-opening an already-loaded Sheet tab doesn't re-fetch it (Refresh does)",
+           sum(1 for (who, a) in calls if who == "acellSheet" and a == "list_characters") == 1, str(calls))
+    page.click("#sheet-refresh-btn")
+    # _pump_until, not wait_for_condition: this condition reads only the
+    # Python-side `calls` list, and wait_for_condition's time.sleep never
+    # lets Playwright service the routed request it's waiting on.
+    _pump_until(page, lambda: sum(1 for (who, a) in calls if who == "acellSheet" and a == "list_characters") == 2, timeout_ms=8000)
+    record("acell", "the Sheet's Refresh button still re-fetches",
+           sum(1 for (who, a) in calls if who == "acellSheet" and a == "list_characters") == 2, str(calls))
+    record("acell", "no JS errors across the lazy Sheet load", not errs, str(errs))
+    page.close()
+
+
 def test_acell_handler_session_race(p):
     """Regression test, updated for the Handler-auth unification: this
     used to cover a race around the old handler_login Apps Script
@@ -11717,6 +11801,7 @@ def main():
 
         safe(test_acell_play, browser, area="acell")
         safe(test_acell_handler_session_race, browser, area="acell")
+        safe(test_acell_sheet_loads_once_when_opened, browser, area="acell")
 
         safe(test_acell_cells, browser, area="acell")
 
