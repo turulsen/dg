@@ -5633,3 +5633,31 @@ Regression test `test_table_radio_main_track_gain_only_with_cors`
 real local origins -- Playwright's `route.fulfill()` skips the browser's
 CORS check, so it can't stand in -- and fails on both "skip the probe"
 and "gain node without crossorigin" (the original silence bug).
+
+---
+
+## Dice Roller: a skill/stat roll right after a damage roll showed only in the history, not on the dice
+
+Reported from the Friendly page on an iPhone: roll a weapon's damage
+(`d10+1 = 6`), then tap POW ×5. The history said `POW ×5: 90/60 —
+FAILURE` and the result box said FAILURE, but the dice still showed the
+damage roll's d10 reading 6, labelled `D10+1`.
+
+Cause: `rollExpr()` (used by weapon damage buttons and typed expressions
+like `2d6+3` in the Roll box) swaps the face to the expression's die
+shape, but it never changed `_activeDie`, which stayed `dpct`.
+`rollPercent()` only calls `selectDie('dpct')` when `_activeDie` isn't
+already `dpct`, so it skipped that call. The d% roll then animated its
+tens/units into the still-hidden percentile face. This isn't specific to
+Friendly: the character sheet had the same bug after a typed
+expression roll.
+
+Fix (`assets/dice-roller.js`): a `_exprShown` flag, set by `rollExpr()`
+and cleared by `selectDie()`. `rollDie()` restores the selected die's
+face first whenever the flag is set. The expression roll also clears the
+die-button highlight, so D% no longer looks selected while a d10 is on
+screen. Regression check in `test_friendly_clearance`: a damage roll
+followed by a stat roll must show the percentile face, hide the single
+face, match the history's rolled value, and re-highlight D%. The check
+fails without the fix (percentile face hidden, `D4-1` still showing).
+Shell cache `dg-hub-shell-v159`.

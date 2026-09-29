@@ -109,6 +109,12 @@
 
     let _activeDie = 'dpct';   // default to percentile
     let _rolling = false;
+    // True while the face shows an expression roll (rollExpr: "D10+1",
+    // weapon damage) rather than _activeDie. rollExpr swaps the face
+    // without changing _activeDie, so the next plain roll has to put the
+    // selected die's face back first -- otherwise a d% roll animates
+    // into the hidden percentile face and the stale d10 stays on screen.
+    let _exprShown = false;
     let _e = null;     // cached DOM nodes, populated after buildPanel
 
     /* ── Percentile result tiers (Delta Green Agent's Handbook pp.44-45) ── */
@@ -185,6 +191,7 @@
     /* ── Switch active die ────────────────────────────────────────── */
     function selectDie(id) {
         _activeDie = id;
+        _exprShown = false;
         _e.dieBtns.forEach(b => b.classList.toggle('dr-die-btn-active', b.dataset.die === id));
         const isPct = id === 'dpct';
         _e.faceSingle.style.display = isPct ? 'none' : 'flex';
@@ -827,6 +834,7 @@
     /* ── Core roll ────────────────────────────────────────────────── */
     function rollDie(targetOverride, skillName) {
         if (_rolling) return;
+        if (_exprShown) selectDie(_activeDie);
         _rolling = true;
 
         const cfg = DICE_MAP.get(_activeDie);
@@ -941,6 +949,8 @@
 
         if (facePct) facePct.style.display = 'none';
         if (faceSingle) faceSingle.style.display = 'flex';
+        _exprShown = true;
+        _e.dieBtns.forEach(b => b.classList.remove('dr-die-btn-active'));
 
         if (nameEl) nameEl.textContent = label || '';
         if (targetDisp) targetDisp.textContent = '';
