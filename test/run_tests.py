@@ -11304,6 +11304,24 @@ def test_friendly_clearance(p):
     dmg.click()
     _pump_until(page, lambda: label in page.inner_text("#dr-history-list"))
     record("friendly", "weapon damage rolls its dice expression", label in page.inner_text("#dr-history-list"), page.inner_text("#dr-history-list")[:160])
+    # A d% roll right after a damage roll must show on the dice, not just
+    # in the history: rollExpr swapped the face to a d10 without changing
+    # the selected die, so the next stat roll animated into the hidden
+    # percentile face and left the damage d10 on screen.
+    page.click('#fr-view .pv-stat[data-label^="POW"]')
+    _pump_until(page, lambda: "POW" in page.inner_text("#dr-history-list"))
+    page.wait_for_timeout(1200)
+    face = page.evaluate("""() => {
+      const pct = document.getElementById('dr-face-percent'), one = document.getElementById('dr-face-single');
+      const top = document.querySelector('#dr-history-list').innerText.split('\\n').find(l => l.indexOf('POW') >= 0) || '';
+      const m = top.match(/(\\d+)\\/\\d+/);
+      const t = document.querySelector('#dr-tens .dr-face-num').textContent, u = document.querySelector('#dr-units .dr-face-num').textContent;
+      return { pctShown: getComputedStyle(pct).display !== 'none', singleHidden: getComputedStyle(one).display === 'none',
+               faceLabel: document.getElementById('dr-face-label').textContent, rolled: m ? +m[1] : null,
+               shown: (t === '00' && u === '0') ? 100 : (+t + +u), activeBtn: (document.querySelector('.dr-die-btn-active') || {}).dataset?.die || null };
+    }""")
+    record("friendly", "a stat roll after a weapon damage roll shows its result on the percentile dice",
+           face["pctShown"] and face["singleHidden"] and face["rolled"] == face["shown"] and face["activeBtn"] == "dpct", str(face))
     page.reload(wait_until="load")
     _pump_until(page, lambda: page.is_visible("#fr-view .pv-bio"))
     record("friendly", "a reload keeps this tab's Agent and its roll history",
