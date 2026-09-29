@@ -2699,43 +2699,116 @@
   // listener's own render calls check via baseDataReady.
   var baseDataReady = false;
   var foldersOk = false; // list_cells came back OK at least once -- see the handler-ready listener
+  function applyOperations_(list) {
+    operations = list;
+    operationsById = {};
+    operationsByCell = {};
+    operations.forEach(function (o) {
+      operationsById[o.operation_id] = o;
+      (operationsByCell[o.cell_id] = operationsByCell[o.cell_id] || []).push(o);
+    });
+  }
+  // Folders are read from Firestore (cells, operations -- both
+  // public-read) instead of Apps Script's list_cells/list_operations:
+  // one less pair of slow backend calls per A-Cell visit, and Cells
+  // created on the Cells tab (Firestore-only, never in the Sheet's
+  // list_cells) finally show up here as Evidence Cells. Operations were
+  // only mirrored to Firestore from 2026-09-19 (runBackfillOperations-
+  // ToFirestoreNow() in Code.gs copies older ones), so the Sheet is
+  // still asked -- once, and merged in -- when Firestore has none, when
+  // an Evidence item is filed under an Operation Firestore doesn't
+  // have, and on Refresh. Writes still verify against the Sheet (see
+  // refetchOperations_/create below).
+  // A Firestore read that never settles (seen when the SDK was loaded
+  // twice on one page) must still fall back to the Sheet, not leave the
+  // folder list empty forever.
+  function fsGet_(query) {
+    return new Promise(function (resolve, reject) {
+      var t = setTimeout(function () { reject(new Error('Firestore read timed out')); }, 8000);
+      query.get().then(function (v) { clearTimeout(t); resolve(v); }, function (e) { clearTimeout(t); reject(e); });
+    });
+  }
+  var opsToppedUp = false;
+  function topUpOperationsFromSheet_(then) {
+    opsToppedUp = true;
+    jsonpGet('list_operations', {}, function (res) {
+      if (res && res.status === 'OK' && Array.isArray(res.operations)) {
+        var byId = {};
+        operations.forEach(function (o) { byId[o.operation_id] = o; });
+        res.operations.forEach(function (o) { byId[o.operation_id] = o; });
+        applyOperations_(Object.keys(byId).map(function (k) { return byId[k]; }));
+      }
+      if (then) then();
+    });
+  }
+  function checkUnknownOperations_() {
+    if (opsToppedUp || !baseDataReady) return;
+    var unknown = evidenceItems.some(function (e) { return e.operation_id && !operationsById[e.operation_id]; });
+    if (unknown) topUpOperationsFromSheet_(function () { renderFolders(); renderList(); });
+  }
   function fetchAll(isRefresh) {
     var myGen = ++fetchGen;
-    var cellsDone = false, opsDone = false, cellsOk = false;
+    var cellsDone = false, opsDone = false;
     function maybeRender() {
       if (myGen !== fetchGen) return;
       if (!cellsDone || !opsDone) return;
       baseDataReady = true;
       renderFolders();
       renderList();
+      checkUnknownOperations_();
       if (isRefresh) refreshNote.textContent = 'Updated ' + new Date().toLocaleTimeString();
     }
-    jsonpGet('list_cells', {}, function (res) {
-      if (myGen !== fetchGen) return;
-      cellsDone = true;
-      if (res && res.status === 'OK' && Array.isArray(res.cells)) {
-        cells = res.cells;
-        cellsById = {};
-        cells.forEach(function (c) { cellsById[c.cell_id] = c; });
-        cellsOk = true;
-        foldersOk = true;
-      }
-      maybeRender();
-    });
-    jsonpGet('list_operations', {}, function (res) {
-      if (myGen !== fetchGen) return;
-      opsDone = true;
-      if (res && res.status === 'OK' && Array.isArray(res.operations)) {
-        operations = res.operations;
-        operationsById = {};
-        operationsByCell = {};
-        operations.forEach(function (o) {
-          operationsById[o.operation_id] = o;
-          (operationsByCell[o.cell_id] = operationsByCell[o.cell_id] || []).push(o);
+    function applyCells(list) {
+      cells = list;
+      cellsById = {};
+      cells.forEach(function (c) { cellsById[c.cell_id] = c; });
+      foldersOk = true;
+    }
+    function cellsViaSheet() {
+      jsonpGet('list_cells', {}, function (res) {
+        if (myGen !== fetchGen) return;
+        cellsDone = true;
+        if (res && res.status === 'OK' && Array.isArray(res.cells)) applyCells(res.cells);
+        maybeRender();
+      });
+    }
+    function opsViaSheet() {
+      topUpOperationsFromSheet_(function () {
+        if (myGen !== fetchGen) return;
+        opsDone = true;
+        maybeRender();
+      });
+    }
+    ensureFirebaseApi(function () {
+      var db = window.firebase.firestore();
+      fsGet_(db.collection('cells')).then(function (snap) {
+        if (myGen !== fetchGen) return;
+        var list = [];
+        snap.forEach(function (d) {
+          var c = d.data() || {};
+          list.push({ cell_id: d.id, name: c.name || '', handler: c.handler || '', member_codes: Array.isArray(c.member_codes) ? c.member_codes : [], channel: c.channel || '' });
         });
-      }
-      maybeRender();
-    });
+        if (!list.length) { cellsViaSheet(); return; }
+        list.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+        applyCells(list);
+        cellsDone = true;
+        maybeRender();
+      }).catch(cellsViaSheet);
+      // Refresh is the Handler asking for the authoritative list.
+      if (isRefresh) { opsViaSheet(); return; }
+      fsGet_(db.collection('operations')).then(function (snap) {
+        if (myGen !== fetchGen) return;
+        var list = [];
+        snap.forEach(function (d) {
+          var o = d.data() || {};
+          list.push({ operation_id: o.operation_id || d.id, cell_id: o.cell_id || '', name: o.name || '', created_at: o.created_at || '' });
+        });
+        if (!list.length) { opsViaSheet(); return; }
+        applyOperations_(list);
+        opsDone = true;
+        maybeRender();
+      }).catch(opsViaSheet);
+    }, function () { cellsViaSheet(); opsViaSheet(); });
   }
 
   // Live evidence/{evidenceId} collection listener (Phase 5) -- the
@@ -2768,7 +2841,7 @@
           });
           evidenceLoadError = null;
           setFsStatus('Firestore: snapshot received, ' + evidenceItems.length + ' doc(s) @ ' + new Date().toLocaleTimeString(), 'ok');
-          if (baseDataReady) { renderFolders(); renderList(); }
+          if (baseDataReady) { renderFolders(); renderList(); checkUnknownOperations_(); }
         }, function (err) {
           console.error('a-cell: evidence listener error', err);
           evidenceLoadError = 'Could not load Evidence (Firestore): ' + (err && err.message || String(err));
@@ -3698,7 +3771,13 @@
     }
     if (window.__dgEnsureFirebaseApi) {
       window.__dgEnsureFirebaseApi(function () {
+        // A read that never settles still falls back to the Sheet.
+        var cellsSettled = false;
+        var cellsFallback = function () { if (cellsSettled) return; cellsSettled = true; clearTimeout(cellsTimer); cellsViaSheet(); };
+        var cellsTimer = setTimeout(cellsFallback, 8000);
         window.firebase.firestore().collection('cells').get().then(function (snap) {
+          if (cellsSettled) return;
+          cellsSettled = true; clearTimeout(cellsTimer);
           if (myGen !== fetchGen) return;
           var list = [];
           snap.forEach(function (d) {
@@ -3708,7 +3787,7 @@
           if (!list.length) { cellsViaSheet(); return; }
           cellGroups = list; cellsOk = true; cellsDone = true;
           maybeRender();
-        }).catch(cellsViaSheet);
+        }).catch(cellsFallback);
       }, cellsViaSheet);
     } else {
       cellsViaSheet();
@@ -5609,8 +5688,14 @@
         renderCellOptions(res.cells);
       });
     }
-    ensureHandlerSignedIn().then(function () {
-      return window.firebase.firestore().collection('cells').get();
+    // cells is public-read: no Handler sign-in needed to list them.
+    // Waiting on ensureHandlerSignedIn() here meant every A-Cell load
+    // before the sign-in finished fell straight to list_cells.
+    new Promise(function (resolve, reject) {
+      var t = setTimeout(function () { reject(new Error('Firestore read timed out')); }, 8000);
+      window.__dgEnsureFirebaseApi(function () {
+        window.firebase.firestore().collection('cells').get().then(function (v) { clearTimeout(t); resolve(v); }, function (e) { clearTimeout(t); reject(e); });
+      }, function (e) { clearTimeout(t); reject(e); });
     }).then(function (snap) {
       var list = [];
       snap.forEach(function (d) { list.push(Object.assign({ cell_id: d.id }, d.data())); });

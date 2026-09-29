@@ -458,10 +458,43 @@
     document.head.appendChild(s);
   }
 
+  // Both per-Agent checks below (has a sheet? KIA?) read the Agent's
+  // characters/{code} Firestore doc -- the public-read mirror every
+  // save_character already writes -- once, shared, instead of two Apps
+  // Script load_character calls per Agent on every Agent Hub visit.
+  // Characters were never backfilled into Firestore, so a MISSING doc
+  // proves nothing (an Agent not saved since mirroring started): that,
+  // an error or a slow read falls back to the old load_character call,
+  // never to "no sheet" -- purgeIfFullyDeleted() below must only ever
+  // act on the backend's own answer.
+  let charDocCache = {};
+  function firestoreCharDoc(code) {
+    if (charDocCache[code]) return charDocCache[code];
+    charDocCache[code] = new Promise(resolve => {
+      const timer = setTimeout(() => resolve(null), 6000);
+      const done = v => { clearTimeout(timer); resolve(v); };
+      // Deferred: renderRoster() runs during this script's first pass,
+      // before ensureFirebaseApi()'s own `let` state further down exists.
+      setTimeout(() => {
+        try {
+          ensureFirebaseApi(() => {
+            window.firebase.firestore().collection('characters').doc(code).get()
+              .then(doc => done(doc.exists && doc.data() && doc.data().character_json ? doc.data() : null))
+              .catch(() => done(null));
+          }, () => done(null));
+        } catch (e) { done(null); }
+      }, 0);
+    });
+    return charDocCache[code];
+  }
+
   // Async, per agent: does a cloud character sheet already exist? A
   // check that errors or times out leaves the button as "Play" rather
   // than risking a false "Recruit" label on a real character.
   function checkCharacterExists(code) {
+    return firestoreCharDoc(code).then(doc => doc ? true : checkCharacterExistsViaSheet(code));
+  }
+  function checkCharacterExistsViaSheet(code) {
     return new Promise(resolve => {
       const cbName = '_ahCharCheck_' + code.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
       const timer = setTimeout(() => { window[cbName] = function () { delete window[cbName]; }; resolve(null); }, 6000);
@@ -554,6 +587,15 @@
   // renders. Best-effort, same as everything else here -- a check that
   // errors or times out just leaves the name unmarked.
   function checkAgentKia(code) {
+    return firestoreCharDoc(code).then(doc => {
+      if (!doc) return checkAgentKiaViaSheet(code);
+      let state;
+      try { state = JSON.parse(doc.character_json); } catch (e) { return false; }
+      const hp = state && state.derived && state.derived.hp;
+      return typeof hp === 'number' && hp <= 0;
+    });
+  }
+  function checkAgentKiaViaSheet(code) {
     return new Promise(resolve => {
       const cbName = '_ahKiaCheck_' + code.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
       const timer = setTimeout(() => { window[cbName] = function () { delete window[cbName]; }; resolve(false); }, 6000);
@@ -612,6 +654,7 @@
   // after a re-render, falling back to the most recent Agent only if
   // that tab no longer exists.
   function renderRoster(preserveActiveCode) {
+    charDocCache = {}; // a re-render re-reads (e.g. after a Cover Identity lookup)
     tabStrip.querySelectorAll('.tw:not(.tw-new)').forEach(el => el.remove());
     folderBody.querySelectorAll('.tab-panel:not(#panel-new)').forEach(el => el.remove());
 
@@ -1017,6 +1060,7 @@
     }
     notesByHandoutId = notesByHandoutId || {};
     const operationsById = operationsByIdMap();
+    if (handouts.some(h => h.operation_id && !operationsById[h.operation_id])) topUpHandoutOperations();
 
     // Filter options built from this Agent's OWN evidence, not every
     // Operation campaign-wide -- an Agent only ever sees a handful of
@@ -1286,6 +1330,25 @@
   // (same reasoning as list_cells above: players need folder names
   // without a Handler session), fetched once alongside Cells.
   let handoutOperations = [];
+  // Read from Firestore (operations is public-read) -- see loadHandouts().
+  // Operations were only mirrored there from 2026-09-19, so a handout
+  // filed under an older one asks the Sheet once (list_operations) and
+  // re-renders every tab with the merged list.
+  let handoutOpsToppedUp = false;
+  function topUpHandoutOperations() {
+    if (handoutOpsToppedUp) return;
+    handoutOpsToppedUp = true;
+    jsonpGet('list_operations', {}, opRes => {
+      if (!opRes || opRes.status !== 'OK' || !Array.isArray(opRes.operations)) return;
+      const byId = {};
+      handoutOperations.forEach(o => { byId[o.operation_id] = o; });
+      opRes.operations.forEach(o => { byId[o.operation_id] = o; });
+      handoutOperations = Object.values(byId);
+      Object.keys(lastEvidenceByCode).forEach(code => {
+        renderHandoutsFor(code, lastEvidenceByCode[code], cellsByIdMap(), notesByHandoutIdByCode[code]);
+      });
+    });
+  }
   function operationsByIdMap() {
     const map = {};
     handoutOperations.forEach(o => { map[o.operation_id] = o; });
@@ -1378,11 +1441,27 @@
     // list_cells never learns about newer ones -- a handout filed for one
     // was labelled with its raw id ("cell_1790577398095_80y"). Read the
     // public-read cells collection instead; list_cells only as fallback.
-    const afterCells = () => {
+    const opsViaSheet = () => {
+      handoutOpsToppedUp = true;
       jsonpGet('list_operations', {}, opRes => {
         if (opRes && opRes.status === 'OK' && Array.isArray(opRes.operations)) handoutOperations = opRes.operations;
         agents.forEach(loadForAgent);
       });
+    };
+    const afterCells = () => {
+      ensureFirebaseApi(() => {
+        let settled = false;
+        const timer = setTimeout(() => { if (!settled) { settled = true; opsViaSheet(); } }, 8000);
+        window.firebase.firestore().collection('operations').get().then(snap => {
+          if (settled) return;
+          settled = true; clearTimeout(timer);
+          const list = [];
+          snap.forEach(d => { const o = d.data() || {}; list.push({ operation_id: o.operation_id || d.id, cell_id: o.cell_id || '', name: o.name || '', created_at: o.created_at || '' }); });
+          if (!list.length) { opsViaSheet(); return; }
+          handoutOperations = list;
+          agents.forEach(loadForAgent);
+        }).catch(() => { if (settled) return; settled = true; clearTimeout(timer); opsViaSheet(); });
+      }, opsViaSheet);
     };
     const cellsViaSheet = () => jsonpGet('list_cells', {}, res => {
       if (res && res.status === 'OK' && Array.isArray(res.cells)) handoutCells = res.cells;
