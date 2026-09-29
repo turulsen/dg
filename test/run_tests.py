@@ -3553,6 +3553,134 @@ def test_acell_sheet_loads_once_when_opened(p):
     page.close()
 
 
+def test_acell_evidence_folders_read_firestore(p):
+    """Group 1 of moving reads off Apps Script: A-Cell's Evidence folders
+    (Cells + Operations) read Firestore instead of list_cells/
+    list_operations. Cells made on the Cells tab exist only in Firestore,
+    so they were missing from Evidence's Cell picker. Operations were
+    only mirrored from 2026-09-19, so an Evidence item filed under an
+    older one asks the Sheet once and merges it in."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    skip_acell_gate(page)
+    page.add_init_script("""
+        try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}
+        window.__dgFirestoreDocs['cells/cell_fs'] = { name: 'Firestore Table', handler: 'Sam', member_codes: [] };
+        window.__dgFirestoreDocs['operations/op_fs'] = { operation_id: 'op_fs', cell_id: 'cell_fs', name: 'Mirrored Op', created_at: 2 };
+    """)
+    calls = []
+
+    def fake_apps_script(route):
+        url = route.request.url
+        if route.request.method == "POST" or "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        action = url.split("action=")[1].split("&")[0]
+        calls.append((cb.split("_")[1], action))
+        res = {"status": "OK"}
+        if action == "list_cells":
+            res["cells"] = []
+        elif action == "list_operations":
+            res["operations"] = [{"operation_id": "op_fs", "cell_id": "cell_fs", "name": "Mirrored Op", "created_at": 2},
+                                 {"operation_id": "op_legacy", "cell_id": "cell_fs", "name": "Legacy Op", "created_at": 1}]
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+    page.route("**/script.google.com/**", fake_apps_script)
+
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: page.evaluate("() => window.__dgFirestoreAuthUser && window.__dgFirestoreAuthUser.uid") == "handler", timeout_ms=6000)
+    page.click('.tw[data-tab="evidence"]')
+    _pump_until(page, lambda: "Firestore Table" in page.inner_text("#evidence-cell-filter"))
+    record("acell", "Evidence's Cell picker lists a Cell that exists only in Firestore (made on the Cells tab)",
+           "Firestore Table" in page.inner_text("#evidence-cell-filter"), page.inner_text("#evidence-cell-filter"))
+    page.select_option("#evidence-cell-filter", "cell_fs")
+    _pump_until(page, lambda: "Mirrored Op" in page.inner_text("#evidence-folders"))
+    ev = [a for (who, a) in calls if who == "acellEvidence"]
+    record("acell", "Evidence folders come from Firestore -- no list_cells/list_operations call when Firestore has them",
+           "Mirrored Op" in page.inner_text("#evidence-folders") and ev == [], str(calls))
+    _pump_until(page, lambda: any(l["path"] == "evidence" for l in page.evaluate("() => window.__dgFirestoreListeners || []")))
+    push_firestore_snapshot(page, "evidence", [], [
+        {"id": "ev1", "title": "Old Photo", "body": "", "photo": "", "cell_id": "cell_fs",
+         "operation_id": "op_legacy", "created_at": 5, "released": True, "restricted_to": []}])
+    _pump_until(page, lambda: "Legacy Op" in page.inner_text("#evidence-folders"))
+    ev = [a for (who, a) in calls if who == "acellEvidence"]
+    record("acell", "an item filed under an Operation Firestore doesn't have asks the Sheet once and shows that folder",
+           "Legacy Op" in page.inner_text("#evidence-folders") and ev.count("list_operations") == 1, str(ev) + " / " + page.inner_text("#evidence-folders"))
+    push_firestore_snapshot(page, "evidence", [], [
+        {"id": "ev1", "title": "Old Photo", "body": "", "photo": "", "cell_id": "cell_fs",
+         "operation_id": "op_legacy", "created_at": 5, "released": True, "restricted_to": []},
+        {"id": "ev2", "title": "Another", "body": "", "photo": "", "cell_id": "cell_fs",
+         "operation_id": "op_gone", "created_at": 6, "released": True, "restricted_to": []}])
+    page.wait_for_timeout(600)
+    ev = [a for (who, a) in calls if who == "acellEvidence"]
+    record("acell", "the Sheet top-up happens at most once per visit (a deleted Operation doesn't re-ask forever)",
+           ev.count("list_operations") == 1, str(ev))
+    record("acell", "no JS errors reading Evidence folders from Firestore", not errs, str(errs))
+    page.close()
+
+
+def test_agent_hub_checks_read_firestore(p):
+    """Group 1 of moving reads off Apps Script: Agent Hub's per-Agent
+    "has a sheet?" and KIA checks read characters/{code} from Firestore
+    (one read shared by both) instead of two load_character calls per
+    Agent per visit. Characters were never backfilled, so an Agent with
+    no Firestore doc falls back to load_character -- and a missing doc
+    must never, by itself, mark an Agent as having no sheet."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.add_init_script("""
+        window.__dgFirestoreDocs['characters/DEAD-0001'] = { agent_code: 'DEAD-0001', character_json: JSON.stringify({ derived: { hp: 0 } }) };
+        window.__dgFirestoreDocs['operations/op_fs'] = { operation_id: 'op_fs', cell_id: 'cell_x', name: 'Mirrored Op', created_at: 1 };
+    """)
+    calls = []
+
+    def fake_apps_script(route):
+        url = route.request.url
+        if route.request.method == "POST" or "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        action = url.split("action=")[1].split("&")[0] if "action=" in url else "lookup"
+        code = url.split("code=")[1].split("&")[0] if "code=" in url else ""
+        calls.append((action, code))
+        res = {"status": "OK"}
+        if action == "load_character":
+            res = {"status": "OK", "character_json": json.dumps({"derived": {"hp": 9}})} if code == "ALIV-0002" else {"status": "NOT_FOUND"}
+        elif action == "list_operations":
+            res["operations"] = []
+        elif action == "list_handout_notes":
+            res["notes"] = []
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+    page.route("**/script.google.com/**", fake_apps_script)
+    roster = json.dumps({
+        "DEAD-0001": {"code": "DEAD-0001", "char_name": "Owen Castillo", "saved_at": 1000},
+        "ALIV-0002": {"code": "ALIV-0002", "char_name": "Priya Anand", "saved_at": 2000},
+    })
+    page.add_init_script(f"localStorage.setItem('dg_agent_roster', '{roster}');")
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    _pump_until(page, lambda: "KIA" in page.inner_text("#ah-charstamp-DEAD-0001"))
+    page.wait_for_timeout(800)
+    record("hub", "an Agent's KIA stamp comes from its Firestore character doc",
+           "KIA" in page.inner_text("#ah-charstamp-DEAD-0001"), page.inner_text("#ah-charstamp-DEAD-0001"))
+    record("hub", "an Agent with a Firestore character doc sends no load_character at all",
+           not any(a == "load_character" and c == "DEAD-0001" for (a, c) in calls), str(calls))
+    record("hub", "an Agent with no Firestore doc falls back to load_character (never treated as 'no sheet')",
+           any(a == "load_character" and c == "ALIV-0002" for (a, c) in calls)
+           and "No Character Sheet Yet" not in page.inner_text("#ah-charstamp-ALIV-0002"), str(calls))
+    record("hub", "handout Operation names come from Firestore -- no list_operations when Firestore has them",
+           not any(a == "list_operations" for (a, c) in calls), str(calls))
+    record("hub", "no JS errors reading Agent Hub checks from Firestore", not errs, str(errs))
+    page.close()
+
+
 def test_acell_handler_session_race(p):
     """Regression test, updated for the Handler-auth unification: this
     used to cover a race around the old handler_login Apps Script
@@ -9719,6 +9847,69 @@ def test_notes_evidence_integration(p):
     return errs
 
 
+def test_notes_operations_read_firestore(p):
+    """Group 1 of moving reads off Apps Script: Notes' Evidence Operation
+    tags read Firestore operations instead of list_operations. An item
+    filed under an Operation from before Operations were mirrored
+    (2026-09-19) asks the Sheet once and merges it in."""
+    page = p.new_page()
+    page.set_default_timeout(10000)
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    cell = {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"],
+            "member_names": {"OWEN-CS12": "Owen Castillo"}}
+    seed_cells_docs(page, [cell])
+    seed_characters_docs(page, [{"agent_code": "OWEN-CS12", "name": "Owen Castillo"}])
+    page.add_init_script("""
+        window.__dgFirestoreDocs['operations/op_fs'] = { operation_id: 'op_fs', cell_id: 'cell_1', name: 'Mirrored Op', created_at: 2 };
+    """)
+    calls = []
+
+    def fake_apps_script(route):
+        url = route.request.url
+        if route.request.method == "POST" or "callback=" not in url:
+            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+            return
+        cb = url.split("callback=")[1].split("&")[0]
+        action = url.split("action=")[1].split("&")[0] if "action=" in url else ""
+        calls.append(action)
+        res = {"status": "OK"}
+        if action == "list_operations":
+            res["operations"] = [{"operation_id": "op_legacy", "cell_id": "cell_1", "name": "Legacy Op", "created_at": 1}]
+        elif action == "list_cell_notes":
+            res.update({"notes": {}, "identities": {"OWEN-CS12": {"color": "#2f855a", "font": "kalam"}}})
+        elif action == "list_evidence":
+            res.update({"evidence": [], "seen": {}})
+        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
+    page.route("**/script.google.com/**", fake_apps_script)
+    page.add_init_script("""
+        try { localStorage.setItem('dg_agent_roster', JSON.stringify({
+            'OWEN-CS12': { code: 'OWEN-CS12', char_name: 'Owen Castillo', saved_at: Date.now() } })); } catch (e) {}
+    """)
+    page.goto(f"{BASE}/notes/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector(".dg-notes-identity-modal, #dg-notes-editor-mount", timeout=10000)
+    if page.query_selector(".dg-notes-identity-modal"):
+        page.click(".dg-notes-color-swatch")
+        page.click(".dg-notes-identity-confirm")
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 3, timeout_ms=8000)
+    page.wait_for_timeout(500)
+    record("notes", "opening Notes sends no list_operations when Firestore has the Operations",
+           "list_operations" not in calls, str(calls))
+    push_firestore_snapshot(page, "evidence", [["visible_to", "array-contains-any", ["OWEN-CS12", "ALL"]]], [
+        {"id": "ev1", "evidence_id": "ev1", "title": "Mirrored Item", "body": "", "photo": "", "cell_id": "cell_1", "operation_id": "op_fs", "created_at": "2000"},
+        {"id": "ev2", "evidence_id": "ev2", "title": "Old Item", "body": "", "photo": "", "cell_id": "cell_1", "operation_id": "op_legacy", "created_at": "1000"}])
+    _pump_until(page, lambda: "Legacy Op" in page.inner_text("#dg-notes-evidence-mount"), timeout_ms=8000)
+    txt = page.inner_text("#dg-notes-evidence-mount")
+    record("notes", "an Operation from Firestore labels its Evidence without asking the Sheet",
+           "Mirrored Op" in txt, txt[:200])
+    record("notes", "an Operation missing from Firestore is fetched from the Sheet once and labels its item",
+           "Legacy Op" in txt and calls.count("list_operations") == 1, str(calls) + " / " + txt[:200])
+    record("notes", "no JS errors reading Operations from Firestore", not errs, str(errs))
+    page.close()
+
+
 def test_notes_evidence_photo_loading_indicator(p):
     """Live report: opening an Evidence item "feels slow" -- the actual
     cause is the imgdata proxy round-trip (Code.gs fetching the Drive
@@ -11802,6 +11993,9 @@ def main():
         safe(test_acell_play, browser, area="acell")
         safe(test_acell_handler_session_race, browser, area="acell")
         safe(test_acell_sheet_loads_once_when_opened, browser, area="acell")
+        safe(test_acell_evidence_folders_read_firestore, browser, area="acell")
+        safe(test_agent_hub_checks_read_firestore, browser, area="hub")
+        safe(test_notes_operations_read_firestore, browser, area="notes")
 
         safe(test_acell_cells, browser, area="acell")
 

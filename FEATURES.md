@@ -685,6 +685,32 @@ Sheets/Drive backend wholesale:
   mirrors to Firestore), but for these two surfaces the read path has
   fully moved off Sheets/polling.
 
+- **Read-path status, 2026-09-29** (what still reads Apps Script, and
+  why — see BUGFIXES.md "Group 1" for the move that produced this list):
+  - *Reads Firestore now:* Cells everywhere; Operations (A-Cell
+    Evidence, Agent Hub handouts, Notes — the Sheet is asked once only
+    for an Operation Firestore doesn't have, until
+    `runBackfillOperationsToFirestoreNow` has been run); Agent Hub's
+    per-Agent "has a sheet" / KIA checks (`characters/{code}`, falling
+    back to `load_character` when there is no doc); Play, Cells,
+    Evidence, Notes, Track Library, Radio, dice rolls (earlier phases).
+  - *Still Apps Script, data is mirrored but deliberately not switched:*
+    a player's own character-sheet load (`load_character` in
+    `stats/cloud-sync.js`, Agent File, Requisition) — Characters were
+    never backfilled, and loading a stale Firestore copy into a sheet
+    that then autosaves would overwrite the real one; A-Cell's Sheet
+    tab (it *is* the Sheet view, now loaded only when opened); Load My
+    Agents (`find_by_player_name`, one button press).
+  - *Not in Firestore at all:* Music playlists, Agent Hub handout
+    notes, Recently Deleted / restore, Evidence "seen" marks, Notes
+    colour/font identities, the client error log.
+  - *Writes:* still Sheet-first with a best-effort Firestore mirror,
+    except Cells (create/delete/channel), Notes, dice rolls, Radio Now
+    Playing, Track Library and the soundboard, which write Firestore
+    directly.
+  - *Stays server-side by design:* AI prompt/image generation (API
+    keys), the Drive image proxy (`imgdata`).
+
 **[Corrected — verified against current code, this claim was wrong]**
 This previously said Phase 4's Plate-image cutover changed the upload
 transport only, without fixing the era-collision bug from §5. Checked

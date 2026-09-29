@@ -735,13 +735,38 @@
       });
     }
 
-    function fetchOperations() {
+    // Operation names from Firestore (operations is public-read) rather
+    // than list_operations -- one less Apps Script call per Notes open.
+    // Operations were only mirrored there from 2026-09-19, so an Evidence
+    // item filed under an older one asks the Sheet once and merges it in
+    // (see refreshEvidenceSidebar()).
+    let opsToppedUp = false;
+    function fetchOperationsViaSheet() {
+      opsToppedUp = true;
       jsonpGet('list_operations', {}, res => {
         if (res && res.status === 'OK' && Array.isArray(res.operations)) {
-          operations = res.operations;
+          const byId = {};
+          operations.forEach(o => { byId[o.operation_id] = o; });
+          res.operations.forEach(o => { byId[o.operation_id] = o; });
+          operations = Object.values(byId);
           refreshEvidenceSidebar();
         }
       });
+    }
+    function fetchOperations() {
+      ensureFirebaseApi(() => {
+        let settled = false;
+        const timer = setTimeout(() => { if (!settled) { settled = true; fetchOperationsViaSheet(); } }, 8000);
+        window.firebase.firestore().collection('operations').get().then(snap => {
+          if (settled) return;
+          settled = true; clearTimeout(timer);
+          const list = [];
+          snap.forEach(d => { const o = d.data() || {}; list.push({ operation_id: o.operation_id || d.id, cell_id: o.cell_id || '', name: o.name || '', created_at: o.created_at || '' }); });
+          if (!list.length) { fetchOperationsViaSheet(); return; }
+          operations = list;
+          refreshEvidenceSidebar();
+        }).catch(() => { if (settled) return; settled = true; clearTimeout(timer); fetchOperationsViaSheet(); });
+      }, fetchOperationsViaSheet);
     }
     function operationsByIdMap_() {
       const map = {};
@@ -758,6 +783,10 @@
       const mount = container.querySelector('#dg-notes-evidence-mount');
       if (!mount) return;
       if (!evidenceItems.length) { mount.innerHTML = ''; return; }
+      if (!opsToppedUp && operations.length) {
+        const known = operationsByIdMap_();
+        if (evidenceItems.some(h => h.operation_id && !known[h.operation_id])) fetchOperationsViaSheet();
+      }
 
       // Filter options built from this Agent's own visible Evidence,
       // not every Operation campaign-wide -- a folder with nothing

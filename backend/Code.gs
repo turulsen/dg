@@ -3671,6 +3671,39 @@ function createOperation(data) {
   return ContentService.createTextOutput(JSON.stringify({ status: 'OK', operation_id: operationId })).setMimeType(ContentService.MimeType.JSON);
 }
 
+// One-time repair: Operations only started mirroring to Firestore on
+// 2026-09-19 (createOperation's dual-write), so any Operation made
+// before that exists only in this Sheet. A-Cell Evidence, Agent Hub
+// and Notes now read Operation names from Firestore first and only ask
+// this Sheet when one is missing -- running this once makes that
+// fallback unnecessary. Safe to re-run: it rewrites each Operation's
+// Firestore doc from its Sheet row (the Sheet is the source of truth)
+// and touches nothing else. Run from the Apps Script editor: pick
+// runBackfillOperationsToFirestoreNow in the Run dropdown.
+function backfillOperationsToFirestore_() {
+  const sheet = getOrCreateOperationsSheet();
+  const data = sheet.getDataRange().getValues();
+  const cols = headerMap_(data[0]);
+  let written = 0;
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const operationId = row[cols.operation_id];
+    if (!operationId) continue;
+    firestoreDualWrite_('operations', operationId, {
+      operation_id: operationId,
+      cell_id: row[cols.cell_id] || '',
+      name: row[cols.name] || '',
+      created_at: row[cols.created_at] || ''
+    });
+    written++;
+  }
+  Logger.log('Re-sent ' + written + ' Operation rows to Firestore.');
+}
+
+function runBackfillOperationsToFirestoreNow() {
+  backfillOperationsToFirestore_();
+}
+
 function updateOperation(data) {
   if (!data.operation_id) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'ERROR', message: 'operation_id is required' }))

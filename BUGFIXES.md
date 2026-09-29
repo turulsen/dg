@@ -5734,3 +5734,102 @@ A-Cell and dice test group: 198/198. `test_acell_cells` failed twice in
 one batch run before the test fix, but passed twice alone both on
 unmodified main and with this change; it is the known flake (see the
 `test_acell_cells` entries above). Shell cache `dg-hub-shell-v160`.
+
+---
+
+## Group 1: moving reads that were already mirrored in Firestore off Apps Script
+
+This follows the Sheet-tab fix above. The Handler asked why anything
+still isn't in Firestore. The answer: most data *is* mirrored there,
+but many pages were still reading it through Apps Script. This pass
+moves the reads whose Firestore copy is trustworthy, and deliberately
+leaves the ones whose copy isn't (see FEATURES §12 "Read-path status").
+
+**Checked first: is the mirror complete?**
+- **Cells:** yes. There is a backfill (`backfillCellsToFirestore_`), and
+  Cells are now created in Firestore directly.
+- **Evidence:** yes. It has a backfill, and its content was already
+  read from Firestore.
+- **Operations:** only partly. The dual-write started on 2026-09-19
+  (`a1fa255`) and there was never a backfill.
+- **Characters:** only partly. There is no backfill, so an Agent not
+  saved since mirroring was enabled may be missing or stale.
+
+The Character gap is why a player's own sheet load (`load_character`)
+is **not** moved. If a stale copy loaded into a sheet, the next
+autosave would overwrite the real sheet with it.
+
+**What moved (page-only):**
+- **A-Cell Evidence:** folders read Firestore `cells` and `operations`.
+  This also fixes a real bug: Cells created on the Cells tab exist only
+  in Firestore, so they never appeared in Evidence's Cell picker, the
+  same class as findings #33/#34 fixed earlier for Music and Agent Hub.
+  - An Evidence item filed under an Operation that Firestore doesn't
+    have triggers one `list_operations` call, merged in.
+  - Refresh and every create/rename/delete verification still read the
+    Sheet.
+- **A-Cell Music:** Cue For Cell reads public `cells` without waiting
+  for the Handler sign-in. Before this, every load that happened before
+  sign-in finished fell back to `list_cells`.
+- **Agent Hub:** the per-Agent "has a sheet?" and KIA checks share one
+  `characters/{code}` read, replacing two `load_character` calls per
+  Agent per visit.
+  - A missing doc, an error, or a read slower than 6 s falls back to
+    `load_character`.
+  - A missing doc can never, by itself, mark an Agent "No Character
+    Sheet Yet". `purgeIfFullyDeleted()` only acts on the backend's
+    answer.
+  - Handout Operation names come from Firestore, with the same one-time
+    Sheet top-up.
+- **Notes:** Operation tags come from Firestore, with the same one-time
+  Sheet top-up. The Cell list was already Firestore; the `list_cells`
+  match in `notes/index.html` is only a comment. `list_evidence` is still
+  called, but only for "seen" marks, which aren't in Firestore (Group
+  2).
+
+Every new Firestore read has a timeout (8 s, or 6 s for the character
+check) that falls back to the Sheet. While testing I found a Firestore
+read that never settles, described below. A read like that must not
+leave a list empty.
+
+**Backend:** a new `runBackfillOperationsToFirestoreNow()` (visible in
+the Run dropdown) copies every Operations row to Firestore. It's safe to
+re-run. Running it from the Apps Script editor needs no redeploy; the
+web app's behaviour is unchanged. After it has run once, the Sheet
+top-up above never fires.
+
+**Verified end to end** (real `Code.gs` in the shim, Firebase
+emulators). Seeded one Sheet-only "legacy" Operation, one mirrored
+Operation, an Evidence item filed under the legacy one, and a
+Firestore-only Cell:
+- **A-Cell, before the backfill:** the Firestore-only Cell is listed and
+  both folders show, with one `list_operations` call (the top-up).
+- **Agent Hub:** the KIA stamp comes from Firestore, with zero
+  `load_character` calls for the mirrored Agent. The Agent with no
+  Firestore doc used the fallback and correctly kept "Play".
+- **After running the backfill:** the same A-Cell visit sends no
+  `list_cells` or `list_operations` at all. The only Apps Script call
+  left on an A-Cell load is `get_playlist` (Group 2).
+
+New tests:
+- `test_acell_evidence_folders_read_firestore`
+- `test_agent_hub_checks_read_firestore`
+- `test_notes_operations_read_firestore`
+
+Each fails on the old pages. A-Cell, Agent Hub, Notes and dice groups:
+all pass except the two `hub :: no JS exceptions` checks, which fail
+identically on unmodified main because gstatic.com is unreachable from
+the sandbox.
+
+**Found along the way, not fixed here (pre-existing, same on main):**
+on `a-cell.html` opened as its own page, not inside `hub.html`, a
+same-tab reload after the Handler signed in logs "Firebase is already
+defined in the global scope" (the SDK loaded twice). After that every
+Firestore read on the page hangs, including Evidence's listener, which
+stays on "signing in…". This doesn't happen on the real path (A-Cell
+inside the Hub shell, where the Radio and Dice Roller don't load their
+own Firebase copy): checked Hub → A-Cell → Agent Hub → A-Cell, with
+reads fine and no double load. Worth its own fix; the timeouts above
+already stop it from blanking the lists this pass touched.
+
+Shell cache `dg-hub-shell-v161`.
