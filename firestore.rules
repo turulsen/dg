@@ -78,17 +78,64 @@ service cloud.firestore {
     // GCP service account that bypasses these rules entirely), but nothing
     // stopped a signed-in Agent from doing it by hand. Split delete out
     // to close that gap and actually match the header's own claim.
-    match /characters/{agentCode} {
+    //
+    // v97 (Sheet retired): pages write this doc directly now (autosave,
+    // A-Cell's Player Name edit), so ownership is enforced here: an Agent
+    // session writes only its OWN code's doc; the Handler writes any.
+    // (Path variable renamed {code} so it can't shadow agentCode().)
+    match /characters/{code} {
       allow read: if true;
-      allow create, update: if isSignedIn();
+      allow create, update: if isHandler() || (isSignedIn() && agentCode() == code);
       allow delete: if isHandler();
+    }
+
+    // deleted_agents/{code} -- A-Cell's Recently Deleted: the character
+    // and brief an Agent had when the Handler deleted it, restorable for
+    // 24 hours (the Handler's A-Cell purges older ones). Handler-only.
+    match /deleted_agents/{code} {
+      allow read, write: if isHandler();
+    }
+
+    // playlists/{channel} -- the Handler's saved playlist per Table Radio
+    // channel (was RadioChannels.playlist_json). Handler-only.
+    match /playlists/{channel} {
+      allow read, write: if isHandler();
+    }
+
+    // client_errors/{id} -- the on-page JS error banner's telemetry (was
+    // the ClientErrors sheet). Anyone may add one small report; only the
+    // Handler reads them; nobody edits or deletes from the client.
+    match /client_errors/{id} {
+      allow create: if request.resource.data.keys().hasOnly(
+          ['logged_at', 'session_id', 'kind', 'message', 'filename', 'lineno', 'colno', 'stack', 'page', 'agent_code', 'user_agent'])
+        && request.resource.data.message is string && request.resource.data.message.size() <= 2000
+        && request.resource.data.stack is string && request.resource.data.stack.size() <= 4000;
+      allow read: if isHandler();
+      allow update, delete: if false;
+    }
+
+    // config/{doc} -- written only by the backend (e.g. config/migration,
+    // the Sheet -> Firestore migration's "done" marker). Public read.
+    match /config/{doc} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // rate_limits/{key} -- the AI Cloud Functions' per-Agent counters.
+    // Admin SDK only; no client access at all.
+    match /rate_limits/{key} {
+      allow read, write: if false;
     }
 
     // briefs/{agentCode} -- mirrors DeltaGreenBriefs. Same posture as
     // Characters: the brief-submission upsert has no auth check today.
-    match /briefs/{agentCode} {
+    // v97: written directly by the Agent File now -- own code or Handler,
+    // same as characters/ above. A brand-new Agent signs in under its
+    // freshly minted code first (exchangeAgentToken), then creates this.
+    match /briefs/{code} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow create, update: if isHandler() || (isSignedIn() && agentCode() == code);
+      allow delete: if isHandler();
     }
 
     // cells/{cellId} -- Cell metadata (name, handler, member_codes,
@@ -173,9 +220,10 @@ service cloud.firestore {
     }
 
     // agent_identity/{agentCode} -- mirrors AgentIdentity (color/font).
-    match /agent_identity/{agentCode} {
+    // v97: Notes writes this directly -- own code (or Handler) only.
+    match /agent_identity/{code} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow write: if isHandler() || (isSignedIn() && agentCode() == code);
     }
 
     // handout_notes/{agentCode}_{handoutId} -- a player's own private

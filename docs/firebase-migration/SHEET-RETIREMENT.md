@@ -1,0 +1,91 @@
+# Retiring the Google Sheet — one-time steps
+
+After these steps every page reads and writes Firestore directly. The
+Apps Script backend and its Sheet are no longer used. Two things stay
+behind until they aren't needed: the Drive image proxy, for any
+`gdrive:` photo link that couldn't be moved, and the migration
+functions themselves.
+
+The page changes go live on GitHub Pages as soon as they're merged, so
+**they're merged only after steps 1–4 are done**. Everything in steps
+1–4 is backwards-compatible with the pages as they are today, so it can
+be done at any time, with players online.
+
+## 1. Deploy the Firestore rules and Cloud Functions
+
+In Cloud Shell (or anywhere with `firebase-tools` installed and logged
+in — see README.md in this folder, sections 1 and 7):
+
+```bash
+git clone https://github.com/turulsen/dg-campaign.git
+cd dg-campaign
+firebase use dg-app-b3447
+
+# The AI keys move from Apps Script Script Properties to Secret Manager.
+# Paste the same values the Apps Script project has under
+# Project Settings > Script Properties (ANTHROPIC_API_KEY, GEMINI_API_KEY).
+firebase functions:secrets:set ANTHROPIC_API_KEY
+firebase functions:secrets:set GEMINI_API_KEY
+
+cd functions && npm install && cd ..
+firebase deploy --only firestore:rules,functions
+```
+
+This deploys:
+- the rules: Agents write only their own character and Agent File; the
+  new collections `deleted_agents`, `playlists`, `client_errors` and
+  `config` get rules;
+- the functions: `generatePrompt`, `generatePlateImage` and
+  `dailyBackup` (a daily JSON snapshot in Storage under `backups/`,
+  replacing the Sheet's daily Characters backup).
+
+## 2. Update Apps Script
+
+Paste `backend/Code.gs` over the Apps Script project's Code.gs, then
+**Deploy > Manage deployments > edit > New version > Deploy**. Version
+v97 keeps Firestore in sync for everything the pages still send there
+until step 5.
+
+## 3. Copy the Sheet into Firestore
+
+In the Apps Script editor:
+1. Choose **runFullMigrationToFirestoreNow** in the Run dropdown and
+   press **Run**.
+2. Open the **Execution log**. It should end with `MIGRATION COMPLETE`
+   and list what was copied under `counts`.
+3. If it says `MIGRATION HAD n FAILURE(S)`, the lines under `failures`
+   say what went wrong. Fix it and run again; it's safe to re-run.
+
+It also lists, under `notes`, any character or Agent File that's in
+Firestore but not on the Sheet. Nothing is deleted.
+
+## 4. Move Drive images into Firebase Storage
+
+1. Choose **runMigrateDriveFilesToStorageNow** and press **Run**.
+2. If the log says `press Run again`, do that. It stops itself before
+   Apps Script's 6-minute limit, and files already moved are skipped.
+3. It ends with `All Drive files are now in Firebase Storage.`, or with
+   a list of files it couldn't move. Those keep working through the old
+   image proxy.
+
+It writes with the same service account the Firestore mirror already
+uses. If the log shows `Storage upload failed (HTTP 403)`, that account
+lacks Storage access. In the Google Cloud console under IAM, give it the
+**Storage Object Admin** role on the project, then run again.
+
+## 5. Tell Claude it's done
+
+Paste the two log summaries. The page changes are then merged. Reload
+each device so it picks up the new offline cache, and you're done.
+
+## Rolling back
+
+- **Pages:** revert the frontend merge on GitHub. Apps Script v97 still
+  has every action, and the Sheet has everything written before the
+  switch.
+- **Anything written after the switch** exists only in Firestore. Run
+  the migration in reverse only if you really need to (ask Claude
+  first).
+- **Rules and functions:** the new rules are stricter only for
+  `characters`/`briefs`/`agent_identity` writes, which the old pages
+  never made directly, so they don't need rolling back.
