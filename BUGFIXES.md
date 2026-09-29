@@ -5661,3 +5661,76 @@ followed by a stat roll must show the percentile face, hide the single
 face, match the history's rolled value, and re-highlight D%. The check
 fails without the fix (percentile face hidden, `D4-1` still showing).
 Shell cache `dg-hub-shell-v159`.
+
+---
+
+## A-Cell Sheet: "Could not load the roster" after going back to A-Cell from Agent Hub (the unfinished part of "A-Cell dies")
+
+Live report: Friendly, then A-Cell Music, then Agent Hub, then back to
+A-Cell. Evidence took a long time to load, and the Sheet tab sat on
+"Loading agents…" and then showed "Could not load the roster. (The A-Cell
+backend addition may not be deployed yet.)" The message's guess about
+deployment was wrong: backend v96 is live.
+
+This is the same problem as "Handler feedback after the retry fixes
+above: 'A-Cell dies' with several players online", and that fix was
+only partial. It moved Play (and later Cells and Track Library) off
+Apps Script JSONP and onto Firestore listeners, but left two load
+patterns running on every A-Cell page load:
+
+- **Sheet** fetched its four Apps Script calls (`list_characters`,
+  `list_cells`, `list_agent_file_only`, `list_deleted_characters`; three
+  of them Handler-verified with a token check each) at page load, and
+  then again on `dg-acell-handler-ready`. It did this even when the
+  Sheet tab was never opened.
+- **Evidence** fetched its folder lists (`list_cells`,
+  `list_operations`) at load and again on the same event, although
+  those two actions need no Handler session.
+
+In the app shell, switching back from Agent Hub is a fresh A-Cell load,
+so each switch fired all of these twice. Reproduced locally (real
+`Code.gs` in the shim, Firebase emulators) with each backend call made
+2.5 s slower and calls handled one at a time, like a busy Apps Script:
+the return to A-Cell sent **33** Apps Script calls before the Sheet
+settled. The Sheet's calls timed out behind the queue, their retries
+added to it, and after 92 s it showed exactly the reported message.
+With no added latency the same path loads fine, which is why this only
+appears on a slow or busy connection.
+
+Fix (`a-cell.html` only, no backend change):
+
+- The Sheet loads the first time its tab is opened. Re-opening it does
+  not re-fetch; Refresh still does.
+- `dg-acell-handler-ready` only re-fetches the Sheet if it was actually
+  opened. If a load is already running, it retries once after that
+  load, and only if the load failed; it no longer supersedes the load
+  and throws away its result.
+- Evidence's handler-ready listener re-fetches the folder lists only if
+  the load-time fetch didn't get them.
+- The Sheet's Cell and Handler columns read Firestore `cells`
+  (public-read) instead of the Sheet-backed `list_cells`, the same
+  change Music's Cue For Cell already has, with `list_cells` as the
+  fallback. Cells created on the Cells tab since Cells moved to
+  Firestore never appear in `list_cells`, so their members showed a
+  dash in the Cell and Handler columns.
+
+Same slow-backend replay after the fix: **11** calls, and the Sheet
+loads (36 s under that deliberately harsh 2.5 s-per-call serialized
+model). New test `test_acell_sheet_loads_once_when_opened` checks:
+
+- no Sheet calls before the tab opens;
+- Evidence folders load once;
+- one of each Sheet call when the tab opens;
+- Firestore Cells appear in the Cell column;
+- re-opening the tab doesn't re-fetch, and Refresh does.
+
+On the old `a-cell.html` it fails six of its seven checks. Along the
+way I caught a test-only trap in the first draft: `wait_for_condition`
+waits with `time.sleep`, so a condition that reads only the Python-side
+`calls` list can never see a routed request land. It passed alone and
+failed in a batch. It now uses `_pump_until`.
+
+A-Cell and dice test group: 198/198. `test_acell_cells` failed twice in
+one batch run before the test fix, but passed twice alone both on
+unmodified main and with this change; it is the known flake (see the
+`test_acell_cells` entries above). Shell cache `dg-hub-shell-v160`.
