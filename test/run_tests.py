@@ -2521,14 +2521,10 @@ def test_agent_hub(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    def fake_hub_apps_script(route):
-        url = route.request.url
-        if "callback=" not in url:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        cb = url.split("callback=")[1].split("&")[0]
-        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
-    page.route("**/script.google.com/**", fake_hub_apps_script)
+    # Both Agents have an Agent File on the backend (an Agent with none
+    # and no character is purged from the roster as deleted).
+    install_firestore_backend(page, {"briefs/OWEN-CS12": {"char_name": "Owen Castillo", "codename": "Ferro"},
+                                     "briefs/PRIY-AN34": {"char_name": "Priya Anand"}})
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     roster = {
         "OWEN-CS12": {"code": "OWEN-CS12", "char_name": "Owen Castillo", "codename": "Ferro",
@@ -2781,7 +2777,7 @@ def test_agent_hub_erase_agent(p):
     Admin). Gated on typing the Agent's own Cover Identity back in --
     the Confirm button must stay disabled for a wrong/blank name and
     only enable for a correct (case-insensitive) match, and the actual
-    delete_character POST must only fire after that."""
+    delete (into deleted_agents) must only happen after that."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -2818,11 +2814,12 @@ def test_agent_hub_erase_agent(p):
 
     page.click("#ah-erase-confirm-btn")
     page.wait_for_timeout(400)
-    # Removing it from this device only: deleting an Agent for real is the
-    # Handler's (A-Cell), and the old backend call was always refused.
-    record("hub", "confirming deletes nothing in the backend (this device's roster only)",
-           fs_writes(page, "briefs/") == [] and fs_writes(page, "characters/") == []
-           and fs_doc(page, "briefs/GERG-E001") is not None, str(fs_writes(page, "")))
+    # A real delete into deleted_agents (restorable by a Handler for 24h).
+    # It used to POST delete_character, which the backend always refused.
+    deleted = fs_doc(page, "deleted_agents/GERG-E001") or {}
+    record("hub", "confirming moves the Agent into Recently Deleted (deleted_agents)",
+           fs_doc(page, "briefs/GERG-E001") is None and (deleted.get("brief") or {}).get("char_name") == "Duplicate Owen",
+           str(deleted))
     record("hub", "the overlay closes after confirming",
            not page.is_visible("#ah-erase-overlay"), "")
     record("hub", "the erased Agent is gone from the roster/tab strip",

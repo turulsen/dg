@@ -2,9 +2,10 @@
    Delta Green Agent Hub -- offline app shell.
 
    Only the static shell (HTML/CSS/JS/images listed below) is cached.
-   Everything else -- script.google.com JSONP calls, Google Fonts,
-   YouTube/SoundCloud embeds -- is deliberately left alone (no
-   respondWith) so it always goes straight to the network: caching a
+   Everything else -- Firestore/Firebase traffic, the Drive image
+   proxy, Google Fonts, YouTube/SoundCloud embeds -- is deliberately
+   left alone (no respondWith) so it always goes straight to the
+   network: caching a
    character sheet or Cells list here would mean serving stale Agent
    data offline and calling it a feature, which is worse than just
    failing normally when there's no signal.

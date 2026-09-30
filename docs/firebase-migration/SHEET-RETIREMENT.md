@@ -7,9 +7,10 @@ behind until they aren't needed: the Drive image proxy, for any
 functions themselves.
 
 The page changes go live on GitHub Pages as soon as they're merged, so
-**they're merged only after steps 1–4 are done**. Everything in steps
-1–4 is backwards-compatible with the pages as they are today, so it can
-be done at any time, with players online.
+**the pull request is merged only after steps 1–4 are done**. Until
+then, steps 1–4 use the files from its branch, `claude/new-session-thjzt6`.
+Everything in steps 1–4 is backwards-compatible with the pages as they
+are today, so it can be done at any time, with players online.
 
 ## 1. Deploy the Firestore rules and Cloud Functions
 
@@ -17,8 +18,8 @@ In Cloud Shell (or anywhere with `firebase-tools` installed and logged
 in — see README.md in this folder, sections 1 and 7):
 
 ```bash
-git clone https://github.com/turulsen/dg-campaign.git
-cd dg-campaign
+git clone -b claude/new-session-thjzt6 https://github.com/turulsen/dg.git
+cd dg
 firebase use dg-app-b3447
 
 # The AI keys move from Apps Script Script Properties to Secret Manager.
@@ -32,16 +33,19 @@ firebase deploy --only firestore:rules,functions
 ```
 
 This deploys:
-- the rules: Agents write only their own character and Agent File; the
-  new collections `deleted_agents`, `playlists`, `client_errors` and
-  `config` get rules;
+- the rules: Agents write only their own character and Agent File (and
+  may erase their own Agent from Agent Hub into Recently Deleted, which
+  the Handler can restore for 24 hours); the new collections
+  `deleted_agents`, `playlists`, `client_errors` and `config` get rules;
 - the functions: `generatePrompt`, `generatePlateImage` and
   `dailyBackup` (a daily JSON snapshot in Storage under `backups/`,
   replacing the Sheet's daily Characters backup).
 
 ## 2. Update Apps Script
 
-Paste `backend/Code.gs` over the Apps Script project's Code.gs, then
+Paste the branch's `backend/Code.gs`
+(https://raw.githubusercontent.com/turulsen/dg/claude/new-session-thjzt6/backend/Code.gs)
+over the Apps Script project's Code.gs, then
 **Deploy > Manage deployments > edit > New version > Deploy**. Version
 v97 keeps Firestore in sync for everything the pages still send there
 until step 5.
@@ -86,6 +90,6 @@ each device so it picks up the new offline cache, and you're done.
 - **Anything written after the switch** exists only in Firestore. Run
   the migration in reverse only if you really need to (ask Claude
   first).
-- **Rules and functions:** the new rules are stricter only for
-  `characters`/`briefs`/`agent_identity` writes, which the old pages
-  never made directly, so they don't need rolling back.
+- **Rules and functions:** the new rules only change writes the old
+  pages never made directly (`characters`/`briefs`/`agent_identity`,
+  and the new collections), so they don't need rolling back.

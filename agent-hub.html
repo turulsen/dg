@@ -131,9 +131,8 @@
   .empty-panel .paper-title{ font-size:20px; }
 
   /* ── Erase Agent: understated on purpose (small text link, not a
-     button) -- this is a real, backend delete_character call, not the
-     local-only roster removal dg-agent-portal.html's own roster tray
-     does, so it shouldn't invite an accidental tap the way a full-size
+     button) -- it really deletes the Agent (restorable by a Handler for
+     24h), so it shouldn't invite an accidental tap the way a full-size
      button would. ── */
   .ah-erase-link{
     background:none; border:none; padding:0; cursor:pointer;
@@ -330,9 +329,10 @@
 <!-- Erase Agent confirm -- one shared overlay for every panel's erase
      link, targeting whichever code openEraseModal() was last called
      with. Requires typing the Cover Identity name back in (not just a
-     click) before the Confirm button unlocks -- a real backend delete,
-     not the local-only roster removal dg-agent-portal.html's own roster
-     tray does, so it needs more friction than that one. -->
+     click) before the Confirm button unlocks -- a real delete (into
+     deleted_agents, restorable by a Handler for 24h), not the
+     local-only roster removal dg-agent-portal.html's own roster tray
+     does, so it needs more friction than that one. -->
 <div class="ah-erase-overlay" id="ah-erase-overlay">
   <div class="ah-erase-box">
     <div class="ah-erase-title">Burn This Agent's File?</div>
@@ -712,14 +712,13 @@
 
   renderRoster();
 
-  // ── Erase Agent: a real backend delete_character call (soft-delete --
-  // recoverable by a Handler within 24h via A-Cell Admin's Recently
-  // Deleted, same as every other delete in this app), for players who
-  // end up with accidental duplicate Agents and don't want to wait on a
-  // Handler to clean it up. Gated on typing back the Cover Identity that
-  // claims this Agent (its own player_name if it has one, otherwise
-  // whichever identity is currently active in this browser) so it's not
-  // a single misplaced tap. ──
+  // ── Erase Agent: a player deletes their own Agent (recoverable by a
+  // Handler within 24h from A-Cell's Recently Deleted, same as every
+  // other delete in this app), for accidental duplicate Agents they
+  // don't want to wait on a Handler to clean up. Gated on typing back the
+  // Cover Identity that claims this Agent (its own player_name if it
+  // has one, otherwise whichever identity is currently active in this
+  // browser) so it's not a single misplaced tap. ──
   const ERASE_KEY = 'dg_cover_identity';
   let eraseTargetCode = null;
   let eraseExpectedName = '';
@@ -766,11 +765,12 @@
     const btn = document.getElementById('ah-erase-confirm-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Burning…'; }
 
-    // Removes the Agent from THIS device's roster only. (It used to also
-    // POST delete_character, which the backend always refused -- that
-    // action needs the Handler's sign-in -- so nothing was ever deleted
-    // server-side from here. Deleting an Agent for real is A-Cell's.)
-    Promise.resolve().finally(() => {
+    // Moves the Agent's character and Agent File into deleted_agents
+    // (dgStore.deleteOwnAgent), where a Handler can restore it for 24h,
+    // then drops it from this device's roster. A failed delete keeps the
+    // Agent and says so, rather than hiding something still on file.
+    const errEl = document.getElementById('ah-erase-hint');
+    window.dgStore.deleteOwnAgent(code).then(() => {
       const roster = rosterLoad();
       delete roster[code];
       try { localStorage.setItem(ROSTER_KEY, JSON.stringify(roster)); } catch (e) { /* best effort */ }
@@ -778,6 +778,10 @@
       if (btn) { btn.disabled = false; btn.textContent = 'Burn It'; }
       const stillActive = document.querySelector('.tw.active');
       renderRoster(stillActive && stillActive.dataset.tab !== code ? stillActive.dataset.tab : undefined);
+    }, err => {
+      console.error('agent-hub: erase failed', err);
+      if (errEl) errEl.textContent = 'Could not burn this file: ' + ((err && err.message) || err) + ' -- nothing was deleted. Try again.';
+      if (btn) { btn.disabled = false; btn.textContent = 'Burn It'; }
     });
   }
 

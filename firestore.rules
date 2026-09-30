@@ -83,17 +83,27 @@ service cloud.firestore {
     // A-Cell's Player Name edit), so ownership is enforced here: an Agent
     // session writes only its OWN code's doc; the Handler writes any.
     // (Path variable renamed {code} so it can't shadow agentCode().)
+    //
+    // Delete: the Handler (A-Cell), or the Agent's own session erasing
+    // itself from Agent Hub -- which first copies the doc into
+    // deleted_agents/{code} (below), so a Handler can restore it for 24h.
+    // An own-code session could already overwrite this doc outright; an
+    // erase it can't restore is no worse than that, and this one can be.
     match /characters/{code} {
       allow read: if true;
       allow create, update: if isHandler() || (isSignedIn() && agentCode() == code);
-      allow delete: if isHandler();
+      allow delete: if isHandler() || (isSignedIn() && agentCode() == code);
     }
 
     // deleted_agents/{code} -- A-Cell's Recently Deleted: the character
-    // and brief an Agent had when the Handler deleted it, restorable for
-    // 24 hours (the Handler's A-Cell purges older ones). Handler-only.
+    // and brief an Agent had when it was deleted, restorable by the
+    // Handler for 24 hours (the Handler's A-Cell purges older ones). Only
+    // the Handler reads, restores or purges; an Agent's own session may
+    // only file its own record (Agent Hub's Erase Agent).
     match /deleted_agents/{code} {
-      allow read, write: if isHandler();
+      allow read, delete: if isHandler();
+      allow create, update: if isHandler()
+        || (isSignedIn() && agentCode() == code && request.resource.data.agent_code == code);
     }
 
     // playlists/{channel} -- the Handler's saved playlist per Table Radio
@@ -135,7 +145,8 @@ service cloud.firestore {
     match /briefs/{code} {
       allow read: if true;
       allow create, update: if isHandler() || (isSignedIn() && agentCode() == code);
-      allow delete: if isHandler();
+      // Same as characters/ above: the Handler, or the Agent erasing itself.
+      allow delete: if isHandler() || (isSignedIn() && agentCode() == code);
     }
 
     // cells/{cellId} -- Cell metadata (name, handler, member_codes,

@@ -277,6 +277,28 @@
     }), 15000, 'saving seen mark'));
   }
 
+  // ── Erase Agent (Agent Hub) ─────────────────────────────────
+  // The Agent's own session moves its character and Agent File into
+  // deleted_agents/{code} -- the same record A-Cell's Handler delete
+  // makes, so a Handler can restore it from Recently Deleted within 24h.
+  function deleteOwnAgent(code) {
+    code = norm(code);
+    return signInAgent(code).then(() => {
+      const cRef = db().collection('characters').doc(code);
+      const bRef = db().collection('briefs').doc(code);
+      return withTimeout(db().runTransaction(tx => Promise.all([tx.get(cRef), tx.get(bRef)]).then(([c, b]) => {
+        if (!c.exists && !b.exists) return false;
+        tx.set(db().collection('deleted_agents').doc(code), {
+          agent_code: code, deleted_at: Date.now(), deleted_by: 'agent',
+          character: c.exists ? c.data() : null, brief: b.exists ? b.data() : null
+        });
+        if (c.exists) tx.delete(cRef);
+        if (b.exists) tx.delete(bRef);
+        return true;
+      })), 15000, 'deleting Agent');
+    });
+  }
+
   // ── AI (Cloud Functions; the API keys live there) ────────────
   function callFunction(code, name, payload, ms) {
     return signInAgent(code).then(() => withTimeout(
@@ -291,7 +313,7 @@
     getCharacter, saveCharacter,
     getBrief, updateBrief, submitBrief, findByPlayerName,
     listHandoutNotes, saveHandoutNote,
-    getIdentities, saveIdentity, listSeen, markSeen,
+    getIdentities, saveIdentity, listSeen, markSeen, deleteOwnAgent,
     generatePrompt, generatePlateImage
   };
 })();

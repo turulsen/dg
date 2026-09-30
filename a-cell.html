@@ -2462,7 +2462,6 @@
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
-  var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
   var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm it. Check that the Cells addition (list_cells / update_cell_members) is pasted into Apps Script and redeployed.';
   function ensureHandlerSignedIn() {
     if (!window.__dgHandlerAuth) return Promise.reject(new Error('Handler auth not ready yet -- reload and try again.'));
@@ -3732,7 +3731,10 @@
     renderList();
   });
   fetchAll(false);
-  startEvidenceListener();
+  // With no Handler session yet (the Clearance gate is still up), wait
+  // for the gate's login to fire dg-acell-handler-ready below instead of
+  // trying -- and failing -- to sign in now.
+  if (sessionStorage.getItem('dg_acell_pw')) startEvidenceListener();
   // Cells/Operations are cheap Firestore reads now -- re-read them each
   // time the tab is opened, so a Cell just made on the Cells tab is
   // already in the Cell picker (it used to need Refresh).
@@ -3790,7 +3792,6 @@
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
-  var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
   var ACELL_PASSWORD = 'MASTICATE';
   var ONLINE_MS = 5 * 60 * 1000;
   var RECENT_MS = 30 * 60 * 1000;
@@ -4365,9 +4366,8 @@
    soundboard for the identical ~8s-latency reason). Cue For Cell writes
    straight to Firestore too now (cells/{cellId}'s channel field, same
    doc the Cells tab's own create/delete write directly -- see
-   cellAssignBtn's own comment below). Only the Cue List
-   (get_playlist/save_playlist) is still Apps-Script-mediated -- a
-   separate surface, out of scope here.
+   cellAssignBtn's own comment below). The Cue List (saved playlists)
+   is Firestore too, in playlists/{channel} (Handler-only).
 
    The whole tab is styled as one field-radio unit (chassis, recessed
    screen, numbered sections) rather than a form dropped on paper --
@@ -4379,7 +4379,6 @@
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
-  var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
   var CHANNEL_KEY = 'dg_acell_broadcast_channel';
   // Fixed numbered channels, turned on a dial rather than typed -- five
   // slots, no typos, no two players landing on "sam" vs "Sam".
@@ -4554,8 +4553,8 @@
   // the Soundboard header comment above updateSoundInstanceFirestore_/
   // removeSoundInstanceFirestore_/setAmbientLayerActive_ for why) --
   // the transaction's own resolved array IS the confirmed new state, so
-  // there's no separate confirm-via-GET step needed the way every other
-  // Apps-Script-mediated write in this file still has.
+  // there's no separate confirm-via-GET step needed the way the old
+  // Apps Script writes did.
   function sendActiveSoundAction_(row, action, extraParams) {
     var ch = currentChannel;
     var field = row.kind === 'ambient' ? 'ambient_layers' : 'stingers';
@@ -5239,10 +5238,8 @@
      sendSeek_/sendLoopToggle_ below, migrated the same way), have all
      since been deleted from Code.gs -- see BUGFIXES.md's Radio
      main-track entry. Cue For Cell writes straight to Firestore now too
-     (see cellAssignBtn's own comment below). Only the Cue List
-     (get_playlist/save_playlist) is still Apps-Script-mediated now --
-     a separate surface, out of scope here (see the Music tab's own
-     header comment above). ── */
+     (see cellAssignBtn's own comment below), and so does the Cue List
+     (playlists/{channel}). ── */
   function radioDocRef_(channel) {
     return window.firebase.firestore().collection('radio').doc(channel);
   }
@@ -5749,8 +5746,7 @@
   /* ── Playlist: a saved list of tracks per channel, so the Handler
      doesn't have to re-paste a URL every time -- click one to make it
      the current track (via setNowPlaying above, straight to Firestore).
-     Still Apps-Script-mediated itself (get_playlist/save_playlist,
-     unaffected by the main-track transport's own migration). ── */
+     Saved in Firestore playlists/{channel} (Handler-only). ── */
   function renderPlaylist() {
     if (!playlist.length) {
       playlistEl.innerHTML = '<div class="rdo-playlist-empty">No saved tracks yet -- paste a URL and hit "+ Playlist".</div>';
@@ -5793,7 +5789,7 @@
     var ch = currentChannel;
     window.__dgGetHandlerIdToken().then(function (idToken) {
       return window.dgAcellApi.post({ action: 'save_playlist', channel: ch, playlist_json: JSON.stringify(playlist), id_token: idToken });
-    }).catch(function () { /* best effort, same as every other Apps Script write here */ });
+    }).catch(function (err) { console.error('a-cell: saving the playlist failed', err); });
   }
 
   /* ── Cue For Cell: a Cell (from the Cells tab) can carry its own
@@ -6251,7 +6247,11 @@
 
   renderStingerGroups();
   startNowPlayingListener_(currentChannel);
-  loadPlaylist(currentChannel);
+  // The saved playlist is Handler-only: load it now if this tab already
+  // has a Handler session, otherwise once the Clearance gate's login
+  // lands (instead of failing, with an error, before anyone logged in).
+  if (sessionStorage.getItem('dg_acell_pw')) loadPlaylist(currentChannel);
+  window.addEventListener('dg-acell-handler-ready', function () { loadPlaylist(currentChannel); });
   fetchCells();
   trackLibListEl.innerHTML = '<div class="rdo-track-empty">Loading…</div>';
   startTracksListener();
