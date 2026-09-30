@@ -138,6 +138,11 @@
       if (h.ordersKey && h.ordersKey(e.key)) { e.preventDefault(); e.stopPropagation(); return; }
       if (e.key === 'Escape' && h.isOpen && h.isOpen()) h.close();
     }, true);
+    // A tap on this page puts the host's roll slip away.
+    document.addEventListener('pointerdown', function () {
+      var h = hostApi();
+      if (h && h.pagePointer) h.pagePointer();
+    }, true);
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wireSheetArming);
     else wireSheetArming();
     return;
@@ -222,16 +227,31 @@
   }
 
   /* ── Data (read-only, cached per Agent) ── */
-  var data = { code: '', loading: null, char: null, state: null, brief: null, cells: [], ops: [], cell: null, members: [], error: '' };
-  function fb() { return window.dgStore ? window.dgStore.ready() : Promise.reject(new Error('dgStore missing')); }
+  var data = { code: '', loading: null, ready: false, char: null, state: null, brief: null, cells: [], ops: [], cell: null, members: [], error: '' };
+  // Pages like the Clearance chooser, Rules Reference and Friendly don't
+  // load the data layer themselves; the notebook brings it when needed.
+  var storePromise = null;
+  function ensureStore() {
+    if (window.dgStore) return Promise.resolve(window.dgStore);
+    if (storePromise) return storePromise;
+    storePromise = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = url('assets/dg-store.js');
+      s.onload = function () { if (window.dgStore) resolve(window.dgStore); else reject(new Error('dgStore missing')); };
+      s.onerror = function () { storePromise = null; reject(new Error('Could not load the data layer -- check the connection.')); };
+      document.head.appendChild(s);
+    });
+    return storePromise;
+  }
+  function fb() { return ensureStore().then(function (st) { return st.ready(); }); }
   function loadData(force) {
     var a = currentAgent();
     var code = a && !a.friendly ? a.code : '';
     if (!force && data.code === code && data.loading) return data.loading;
-    data = { code: code, loading: null, char: null, state: null, brief: null, cells: [], ops: [], cell: null, members: [], error: '' };
-    if (!code || !window.dgStore) { data.loading = Promise.resolve(data); return data.loading; }
+    data = { code: code, loading: null, ready: false, char: null, state: null, brief: null, cells: [], ops: [], cell: null, members: [], error: '' };
+    if (!code) { data.ready = true; data.loading = Promise.resolve(data); return data.loading; }
     var d = data;
-    d.loading = Promise.all([
+    d.loading = ensureStore().then(function () { return Promise.all([
       window.dgStore.getCharacter(code).catch(function () { return null; }),
       window.dgStore.getBrief(code).catch(function () { return null; }),
       fb().then(function (f) { return f.firestore().collection('cells').get(); }).catch(function () { return null; }),
@@ -255,7 +275,8 @@
         });
         return d;
       });
-    }).catch(function (err) { d.error = String(err && err.message || err); return d; });
+    }); }).catch(function (err) { d.error = String(err && err.message || err); return d; })
+      .then(function (x) { d.ready = true; return x; });
     return d.loading;
   }
   function cellIdFor(a) {
@@ -389,7 +410,7 @@
     root.addEventListener('click', onClick);
     document.addEventListener('keydown', onKey);
     window.addEventListener('dg-radio-state', renderChip);
-    window.addEventListener('dg-dice-roll-start', function () { if (!state.suspended) open('dice'); });
+    window.addEventListener('dg-dice-roll-start', onRollStart);
     var mqHandler = function () { if (state.open && state.view === 'notes') render(); };
     if (narrowMq.addEventListener) narrowMq.addEventListener('change', mqHandler); else narrowMq.addListener(mqHandler);
     window.addEventListener('storage', function (e) {
@@ -452,6 +473,7 @@
     state.suspended = on;
     if (on) {
       close();
+      hidePeek();
       root.hidden = true;
       document.documentElement.classList.remove('dg-fn-host');
       // Hand the Dice panel back to the page, collapsed, where A-Cell's
@@ -534,9 +556,16 @@
     return null;
   }
   function loadingThen(body, fn) {
-    if (data.loading && !data.char && !data.brief && !data.error && data.code) {
+    if (data.code && !data.ready) {
       body.innerHTML = '<p class="fn-muted">Pulling the file…</p>';
-      data.loading.then(function () { if (state.open) render(); });
+      var view = state.view;
+      data.loading.then(function () { if (state.open && state.view === view) render(); });
+      return;
+    }
+    if (data.code && !data.char && !data.brief) {
+      body.innerHTML = '<p class="fn-p">Couldn\'t pull this Agent\'s file just now — check the connection.</p>' +
+        '<div class="fn-actions"><button type="button" class="fn-btn fn-primary" data-go="retry">Try again</button></div>';
+      body.querySelector('[data-go="retry"]').addEventListener('click', function () { refresh(); render(); });
       return;
     }
     fn();
@@ -953,8 +982,61 @@
     q('resume').hidden = !s.resumeNeeded;
   }
 
+  /* ── Roll slip: a roll started from the page itself (a skill tap on the
+     sheet, Friendly's skill and weapon buttons) shows its result in a
+     small card above the closed notebook -- no veil, so the next tap on
+     the sheet still lands. The notebook itself only opens when asked. ── */
+  var peekEl = null, peekTimer = null, peekHover = false;
+  function onRollStart() {
+    if (state.suspended) return;
+    if (state.open) { if (state.view !== 'dice') show('dice'); return; }
+    showPeek();
+  }
+  function showPeek() {
+    var panel = document.getElementById('dr-panel');
+    if (!panel) return;
+    if (!peekEl) {
+      peekEl = document.createElement('div');
+      peekEl.id = 'fn-peek';
+      peekEl.innerHTML = '<div class="fn-peek-head"><span>Dice Roller</span>' +
+        '<button type="button" data-peek="open" title="Open the Dice page">Open</button>' +
+        '<button type="button" data-peek="x" title="Close" aria-label="Close">×</button></div><div class="fn-peek-body"></div>';
+      root.appendChild(peekEl);
+      peekEl.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-peek]');
+        if (!b) return;
+        if (b.getAttribute('data-peek') === 'open') { hidePeek(); open('dice'); } else hidePeek();
+      });
+      peekEl.addEventListener('pointerenter', function () { peekHover = true; });
+      peekEl.addEventListener('pointerleave', function () { peekHover = false; armPeekHide(); });
+    }
+    var body = peekEl.querySelector('.fn-peek-body');
+    if (panel.parentNode !== body) body.appendChild(panel);
+    if (panel.classList.contains('dr-collapsed') && window.dgDice && window.dgDice._toggle) window.dgDice._toggle();
+    peekEl.hidden = false;
+    armPeekHide();
+  }
+  function armPeekHide() {
+    clearTimeout(peekTimer);
+    peekTimer = setTimeout(function () { if (peekHover) armPeekHide(); else hidePeek(); }, 9000);
+  }
+  function hidePeek() {
+    clearTimeout(peekTimer);
+    if (peekEl) peekEl.hidden = true;
+  }
+  // A tap anywhere else on the page puts the slip away (same as the old
+  // dice panel collapsing on a sheet tap). The tap that starts a roll
+  // lands before the roll does, so it never hides its own result.
+  function pagePointer(target) {
+    if (!peekEl || peekEl.hidden) return;
+    if (target && peekEl.contains(target)) return;
+    hidePeek();
+  }
+  document.addEventListener('pointerdown', function (e) { pagePointer(e.target); }, true);
+
   /* ── Dice: the engine's own panel, moved onto this page ── */
   function pageDice() {
+    hidePeek();
     var a = currentAgent();
     renderHead('dice', a ? agentName(a) : '');
     var host = slot('dice-host');
@@ -1128,7 +1210,7 @@
     if (!name) { st.textContent = 'Type your real name first.'; return; }
     lsSet('dg_cover_identity', name);
     st.textContent = 'Looking up your Agents…';
-    window.dgStore.findByPlayerName(name).then(function (agents) {
+    ensureStore().then(function (st) { return st.findByPlayerName(name); }).then(function (agents) {
       var prior = roster(), next = {};
       Object.keys(prior).forEach(function (c) { if (!prior[c].player_name) next[c] = prior[c]; });
       (agents || []).forEach(function (a) {
@@ -1175,6 +1257,7 @@
     open: open, close: close, refresh: refresh, armOrders: armOrders,
     isOpen: function () { return state.open; },
     ordersKey: function (key) { return ordersKeyHandler ? ordersKeyHandler(key) : false; },
+    pagePointer: function () { pagePointer(null); },
     view: function () { return state.view; }
   };
 
@@ -1255,10 +1338,12 @@
       // Recorded on the Agent's own brief so the Handler has it too --
       // only when that brief already exists: creating a stray, nameless
       // brief here would show up as a blank Agent in A-Cell.
-      var saved = window.dgStore ? window.dgStore.getBrief(p.code).then(function (b) {
-        if (!b) return 'local';
-        return window.dgStore.updateBrief(p.code, { standing_orders_ack_at: new Date().toISOString() }).then(function () { return 'ok'; });
-      }) : Promise.resolve('local');
+      var saved = ensureStore().then(function (st) {
+        return st.getBrief(p.code).then(function (b) {
+          if (!b) return 'local';
+          return st.updateBrief(p.code, { standing_orders_ack_at: new Date().toISOString() }).then(function () { return 'ok'; });
+        });
+      });
       var timeout = new Promise(function (res) { setTimeout(function () { res('slow'); }, 6000); });
       Promise.race([saved, timeout]).then(function (r) {
         say(r === 'ok' ? '>filed.' : '>noted_on_this_device.');
@@ -1327,8 +1412,8 @@
       };
     }
     function check() {
-      if (ob.step !== 'photo' || !window.dgStore) return;
-      window.dgStore.getBrief(ob.code).then(function (b) {
+      if (ob.step !== 'photo') return;
+      ensureStore().then(function (st) { return st.getBrief(ob.code); }).then(function (b) {
         if (b && b.face_plate_url && ob.step === 'photo') {
           ob.step = 'fieldid'; lsSet(ONBOARD_KEY, JSON.stringify(ob));
           if (nudgePoll) { clearInterval(nudgePoll); nudgePoll = null; }

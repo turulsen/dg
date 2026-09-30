@@ -158,6 +158,36 @@ def collect_errors(page):
     page.on("console", lambda m: errs.append(f"console.error: {m.text}") if m.type == "error" and "Failed to load resource" not in m.text else None)
     return errs
 
+# ── Field Notes notebook (assets/field-notes.js) ─────────────────────
+# The notebook replaced the character sheet's Settings cog, the floating
+# Dice Roller panel and the Table Radio pill on every player page. The
+# helpers below reach those same controls the way a player now does, so
+# the older tests keep checking the same behavior underneath.
+def open_sheet_settings(page):
+    """The sheet's own settings panel: Field Notes -> Settings ->
+    "Import, backup & more…" (the cog itself is hidden)."""
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.evaluate("() => window.dgFieldNotes.open('settings')")
+    page.click("#fn-veil [data-s=more]")
+    page.wait_for_selector("#settings-panel-close", state="visible", timeout=5000)
+
+def open_notebook_dice(page):
+    """The Dice Roller panel, now on the notebook's Dice page."""
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.evaluate("() => window.dgFieldNotes.open('dice')")
+    page.wait_for_selector("#fn-veil #dr-panel", state="visible", timeout=5000)
+
+def notebook_aside(page):
+    """Puts the page's legacy floating widgets (Table Radio pill, Dice
+    panel) back on screen, exactly as the notebook does on A-Cell -- for
+    tests of those widgets' own behavior, which the notebook reuses."""
+    page.wait_for_function("() => !!window.dgFieldNotes", timeout=10000)
+    page.evaluate("""() => {
+      document.documentElement.classList.remove('dg-fn-host');
+      const root = document.getElementById('fn-root'); if (root) root.hidden = true;
+      const p = document.getElementById('dr-panel'); if (p && p.parentNode !== document.body) document.body.appendChild(p);
+    }""")
+
 # ── Table Radio's Firestore listener (assets/table-radio.js, Firebase
 # migration Phase 2) -- a minimal in-page fake of the compat SDK surface
 # table-radio.js actually calls (firebase.firestore().collection('radio')
@@ -783,9 +813,9 @@ def test_stat_generator(p):
     record("stats-terminal", "Agent Hub nav link goes to the player's own agent list, not the clearance chooser",
            hub_link == "../agent-hub.html", str(hub_link))
 
-    # Theme, Live Play, Load by Code, and Export now live in the settings
-    # cog (top-right) rather than inline on the page.
-    page.click("#settings-cog-btn")
+    # Theme, Live Play, Load by Code, and Export live in the sheet's
+    # settings panel, reached through the Field Notes notebook now.
+    open_sheet_settings(page)
     page.wait_for_timeout(200)
 
     # All three themes must switch without throwing (field-doc retired --
@@ -875,28 +905,23 @@ def test_stat_generator(p):
     # fresh load, but switching Live Play mode on auto-opens it and that
     # state can persist across switching back, so check current state
     # rather than assuming collapsed.
-    d20 = page.locator("button[data-die='d20']")
-    if not d20.is_visible():
-        # Call the toggle directly rather than clicking #dr-arrow: moving
-        # Import/Wizard to the top of the page pushed it to a scroll
-        # position that can land under the position:fixed Table Radio
-        # "Tune In" pill -- both are legitimately visible/clickable
-        # widgets, just momentarily co-located after scrollIntoView at
-        # this viewport size, and a force-click there doesn't reliably
-        # land on the actual button underneath.
-        page.evaluate("window.dgDice?._toggle?.()")
-        page.wait_for_timeout(150)
+    # The Dice Roller panel lives on the Field Notes notebook's Dice page.
+    open_notebook_dice(page)
+    d20 = page.locator("#fn-veil button[data-die='d20']")
     d20_visible = d20.is_visible()
     if d20_visible:
         d20.click()
         page.wait_for_timeout(150)
+        page.click("#fn-veil #dr-roll-btn")
+        page.wait_for_timeout(900)
     record("stats-terminal", "dice roller widget opens and rolls without throwing",
-           d20_visible and len(errs)==0, f"visible={d20_visible}")
+           d20_visible and len(errs)==0 and bool(page.text_content("#dr-result-label")), f"visible={d20_visible}")
+    page.evaluate("() => window.dgFieldNotes.close()")
 
     # Field Notes: verify no horizontal overflow specifically (see test_mobile_no_overflow
     # for why the other themes are excluded from that general sweep) -- Field Notes is
     # the theme mobile users land on since the separate Mobile theme was retired.
-    page.click("#settings-cog-btn")
+    open_sheet_settings(page)
     page.wait_for_timeout(200)
     page.select_option("#cs-theme-select", "field-notes")
     page.wait_for_timeout(200)
@@ -1087,7 +1112,7 @@ def test_stat_generator_creation_lockout(p):
 
     # Settings cog unlock: session-only escape hatch to fix a bad import
     # or rules mistake without permanently re-cluttering the sheet.
-    page.click("#settings-cog-btn")
+    open_sheet_settings(page)
     page.wait_for_timeout(200)
     record("stats-terminal", "the creation-tools unlock control only appears once committed",
            page.is_visible("#creation-tools-unlock-row"), "")
@@ -1098,7 +1123,7 @@ def test_stat_generator_creation_lockout(p):
     record("stats-terminal", "unlock button brings the Bonus Points panel back",
            page.is_visible(".panel-bonus-skills"), "")
 
-    page.click("#settings-cog-btn")
+    open_sheet_settings(page)
     page.wait_for_timeout(200)
     page.click("#creation-tools-unlocked-btn")
     page.wait_for_timeout(150)
@@ -1196,7 +1221,7 @@ def test_stat_generator_agent_file_nav(p):
     # destination page may still be loading/running its scripts), then
     # separately for the destination page's own JS to actually run and mark
     # the Agent File tab active.
-    page.click("#settings-cog-btn")
+    open_sheet_settings(page)
     page.wait_for_timeout(200)
     page.click("#site-intro-agent-file-btn")
     # goToAgentFile() now navigates with an explicit ?code=<agent's own
@@ -1296,7 +1321,7 @@ def test_stat_generator_agent_file_nav_ignores_stale_last_agent(p):
     page.fill("#cs-name", "Elvis Shantings")
     page.wait_for_timeout(150)
 
-    page.click("#settings-cog-btn")
+    open_sheet_settings(page)
     page.wait_for_timeout(200)
     page.click("#site-intro-agent-file-btn")
     for _ in range(20):
@@ -1374,7 +1399,7 @@ def test_stat_generator_sheets_roundtrip(p):
 
     page.evaluate("document.getElementById('advanced-options-details').open = true")
     page.wait_for_timeout(200)
-    page.click("#settings-cog-btn")
+    open_sheet_settings(page)
     page.wait_for_timeout(200)
 
     with page.expect_download(timeout=15000) as dl_info:
@@ -1708,7 +1733,7 @@ def test_import_agent_paste_text(p):
     # (and #agent-paste-details inside it) from the top of the page into
     # the settings cog's New Recruit section -- see dgCharacterMode
     # (scripts.js). Open the cog to keep using it for the rest of this test.
-    page.click("#settings-cog-btn")
+    open_sheet_settings(page)
     page.wait_for_timeout(200)
 
     # A plain JSON paste (this site's own native export shape) should also
@@ -5404,6 +5429,7 @@ def test_table_radio_widget(p):
         status=200, content_type="application/javascript", body=fake_yt_api))
 
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page)
     page.wait_for_timeout(400)
     record("radio", "shows a collapsed 'Tune In' pill when no channel is set",
            page.is_visible("#dg-radio-pill"), "")
@@ -5480,6 +5506,7 @@ def test_table_radio_widget(p):
     # tuned in (this is the whole point -- "as they go back and forth"),
     # AND remembers the Expanded preference across that navigation.
     page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page)
     page.wait_for_timeout(600)
     record("radio", "the widget is present and still tuned to the same channel after navigating to a different page",
            page.is_visible("#dg-radio-panel") and "CH 3" in page.inner_text("#dg-radio-panel"), "")
@@ -5544,8 +5571,10 @@ def test_table_radio_transient_miss_no_flicker(p):
     page.route("**/uc?export=download*", lambda r: r.fulfill(status=200, content_type="audio/mpeg", body=""))
 
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page)
     page.evaluate("() => localStorage.setItem('dg_radio_channel', '3')")
     page.reload(wait_until="domcontentloaded")
+    notebook_aside(page)
     page.wait_for_timeout(300)
     push_radio_now_playing(page, "3", {
         "channel": "3", "track_url": "https://drive.google.com/uc?export=download&id=fakeFileId123",
@@ -5619,8 +5648,10 @@ def test_table_radio_audio_volume(p):
     page.route("**/ambience.mp3", lambda r: r.fulfill(status=200, content_type="audio/mpeg", body=""))
 
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page)
     page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
     page.reload(wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page)
     page.wait_for_timeout(300)
     push_radio_now_playing(page, "1", {
         "channel": "1", "track_url": "https://example.com/ambience.mp3",
@@ -5701,6 +5732,7 @@ def test_table_radio_mix_debug_readout(p):
            (lambda: (page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000),
                      page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')"),
                      page.reload(wait_until="domcontentloaded", timeout=15000),
+                     notebook_aside(page),
                      page.wait_for_timeout(300))
             and page.query_selector("#dg-radio-debug") is not None)(), "")
 
@@ -5747,6 +5779,7 @@ def test_table_radio_debug_readout_shows_ambient_and_stinger_state(p):
     page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
 
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page)
     page.click("#dg-radio-pill")
     page.wait_for_timeout(150)
     page.click('.dgr-tick[data-ch="3"]')
@@ -5833,8 +5866,10 @@ def test_table_radio_main_track_gain_only_with_cors(p):
         install_radio_firestore_stub(page)
         page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
         page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+        notebook_aside(page)
         page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
         page.reload(wait_until="domcontentloaded", timeout=15000)
+        notebook_aside(page)
         page.wait_for_timeout(300)
         return page, errs
 
@@ -5931,8 +5966,10 @@ def test_table_radio_finished_track_does_not_restart_from_beginning(p):
     page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
 
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page)
     page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
     page.reload(wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page)
     page.wait_for_timeout(300)
 
     now = int(time.time() * 1000)
@@ -6018,6 +6055,7 @@ def test_table_radio_debug_readout_present_before_tuning_in(p):
 
     # No pre-set localStorage channel -- a genuinely fresh device.
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page)
     page.wait_for_timeout(300)
     record("radio", "no debug element exists yet while still on the collapsed Tune In pill (nothing to show)",
            page.query_selector("#dg-radio-debug") is None, "")
@@ -6104,8 +6142,10 @@ def test_table_radio_pause_and_loop(p):
     now_ms = int(__import__("time").time() * 1000)
 
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page)
     page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
     page.reload(wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page)
     page.wait_for_timeout(300)
     push_radio_now_playing(page, "1", {
         "channel": "1", "track_url": "https://example.com/ambience.mp3",
@@ -6137,8 +6177,10 @@ def test_table_radio_pause_and_loop(p):
     page2.route("**/script.google.com/**", fake_apps_script)
 
     page2.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page2)
     page2.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
     page2.reload(wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page2)
     page2.wait_for_timeout(300)
     push_radio_now_playing(page2, "1", {
         "channel": "1", "track_url": "https://example.com/ambience.mp3",
@@ -6210,8 +6252,10 @@ def test_table_radio_unprompted_pause_auto_resumes(p):
 
     now_ms = int(__import__("time").time() * 1000)
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page)
     page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
     page.reload(wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page)
     page.wait_for_timeout(300)
     push_radio_now_playing(page, "1", {
         "channel": "1", "track_url": "https://example.com/ambience.mp3",
@@ -6306,8 +6350,10 @@ def test_table_radio_audio_syncs_to_live_position(p):
     route_apps_script_ok(page)
 
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page)
     page.evaluate("() => localStorage.setItem('dg_radio_channel', '1')")
     page.reload(wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page)
     page.wait_for_timeout(300)
 
     # A broadcast that "started" 45s ago -- a fresh tune-in should land
@@ -6376,8 +6422,10 @@ def test_table_radio_library_track_kind(p):
     page.route("**/uc?export=download*", lambda r: r.fulfill(status=200, content_type="audio/mpeg", body=""))
 
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page)
     page.evaluate("() => localStorage.setItem('dg_radio_channel', '3')")
     page.reload(wait_until="domcontentloaded")
+    notebook_aside(page)
     page.wait_for_timeout(300)
     push_radio_now_playing(page, "3", {
         "channel": "3", "track_url": "https://drive.google.com/uc?export=download&id=fakeFileId123",
@@ -6465,8 +6513,10 @@ def test_table_radio_yt_volume_reliability(p):
         status=200, content_type="application/javascript", body=fake_yt_api))
 
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page)
     page.evaluate("() => localStorage.setItem('dg_radio_channel', '3')")
     page.reload(wait_until="domcontentloaded")
+    notebook_aside(page)
     push_radio_now_playing(page, "3", {
         "channel": "3", "track_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
         "track_title": "Table Theme", "started_at": 1700000000000,
@@ -6527,8 +6577,10 @@ def test_table_radio_mobile_buttons_not_stretched(p):
     route_apps_script_ok(page)
 
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page)
     page.evaluate("() => localStorage.setItem('dg_radio_channel', '3')")
     page.reload(wait_until="domcontentloaded")
+    notebook_aside(page)
     page.wait_for_timeout(700)
 
     panel_box = page.evaluate("""() => {
@@ -6587,6 +6639,7 @@ def test_table_radio_theme_consistent_style(p):
         return styles
 
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page)
     page.wait_for_timeout(500)
     xfiles_styles = dial_styles("xfiles")
     sam_styles = dial_styles("son-of-sam")
@@ -7531,7 +7584,7 @@ def test_mobile_no_overflow(p):
     errs = collect_errors(page)
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
-    page.click("#settings-cog-btn")
+    open_sheet_settings(page)
     page.wait_for_timeout(200)
     for theme in ["xfiles", "son-of-sam", "field-notes"]:
         page.select_option("#cs-theme-select", theme)
@@ -11074,7 +11127,9 @@ def test_player_pages_use_in_page_dialogs(p):
     install_notes_firestore_stub(page)
     _block_fonts(page)
     route_apps_script_ok(page)
-    page.goto(f"{BASE}/requisition.html", wait_until="load", timeout=15000)
+    # The form as the Field Notes notebook embeds it (a direct visit
+    # forwards into the notebook; see test_field_notes_shell).
+    page.goto(f"{BASE}/requisition.html?embed=1", wait_until="load", timeout=15000)
     page.wait_for_timeout(500)
     page.click("#rollBtn"); page.wait_for_timeout(300)
     record("journey", "Requisition: submitting an unfinished form explains itself in-page",
@@ -11353,6 +11408,204 @@ def test_auto_created_brief_uses_titles_and_player(p):
     return errs
 
 
+FN_CODE, FN_MATE, FN_CELL = "FNRT-0001", "FNRT-0002", "cell_fnrt"
+
+def _field_notes_docs():
+    state = {"v": 1, "bio": {"name": "Mara Voss", "profession": "federal_agent", "player_name": "fn tester"},
+             "bonds": [{"name": "Lena Voss", "relationship": "Sister", "score": 11}]}
+    return {
+        f"characters/{FN_CODE}": character_doc(FN_CODE, state, "fn tester"),
+        f"briefs/{FN_CODE}": {"agent_code": FN_CODE, "char_name": "Mara Voss", "codename": "PARADE",
+                              "player_name": "fn tester", "player_name_lc": "fn tester"},
+        f"briefs/{FN_MATE}": {"agent_code": FN_MATE, "char_name": "Tom Hale", "codename": "TIN CUP"},
+        f"cells/{FN_CELL}": {"name": "Night Shift", "member_codes": [FN_CODE, FN_MATE]},
+        "operations/op_fn_a": {"operation_id": "op_fn_a", "cell_id": FN_CELL, "name": "Operation FULL MOON", "created_at": 1000, "active": True},
+        "operations/op_fn_b": {"operation_id": "op_fn_b", "cell_id": FN_CELL, "name": "Operation LOW TIDE", "created_at": 2000},
+        "evidence/ev_fn_1": {"title": "Coroner's Preliminary", "body": "Two pages, redacted.", "cell_id": FN_CELL,
+                             "operation_id": "op_fn_a", "visible_to": [FN_CODE], "released": True, "created_at": 1500},
+    }
+
+def _field_notes_page(p, width=1300, height=860, extra_init=""):
+    page = p.new_page(viewport={"width": width, "height": height})
+    page.set_default_timeout(10000)
+    errs = collect_errors(page)
+    _block_fonts(page)
+    route_apps_script_ok(page)
+    install_firestore_backend(page, _field_notes_docs())
+    roster = {FN_CODE: {"code": FN_CODE, "char_name": "Mara Voss", "codename": "PARADE", "player_name": "fn tester", "saved_at": 5}}
+    page.add_init_script("""try {
+      sessionStorage.setItem('dg_boot_seen', '1');
+      if (!sessionStorage.getItem('fn_seeded')) {
+        sessionStorage.setItem('fn_seeded', '1');
+        localStorage.setItem('dg_agent_roster', %s);
+        localStorage.setItem('dg_cover_identity', 'fn tester');
+      }
+      %s
+    } catch (e) {}""" % (json.dumps(json.dumps(roster)), extra_init))
+    return page, errs
+
+def _notebook_text(page):
+    return page.evaluate("() => { const b = document.querySelector('#fn-veil [data-fn-slot=body]'); return b && !b.hidden ? b.innerText : ''; }")
+
+def test_field_notes_notebook(p):
+    """The Field Notes notebook (assets/field-notes.js, see
+    docs/field-notes-widget/SPEC.md) replaces the floating Table Radio pill
+    and Dice panel on player pages, and every pocket and tab shows the
+    current Agent's real data: Agent File quick look (Play and Open first,
+    then Cell, members, Bonds, Operations with the Active one), the full
+    Requisition form, Evidence with private remarks, Rules, Settings. On a
+    phone, Notes is the quick strip and writes the same note blocks the
+    full Player Notes page does."""
+    errs_all = []
+    page, errs = _field_notes_page(p)
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    record("notebook", "the closed notebook is on the page, replacing the radio pill and dice panel",
+           page.is_visible("#fn-closed .fn-cover")
+           and page.evaluate("() => getComputedStyle(document.getElementById('dg-radio')).opacity === '0'")
+           and not page.is_visible("#dr-panel"), "")
+    page.click("#fn-closed .fn-cover")
+    page.click("#fn-veil .fn-pocket[data-view=agentfile]")
+    txt = wait_for_condition(lambda: (_notebook_text(page) if "Operation FULL MOON" in _notebook_text(page) else None), timeout_ms=10000) or ""
+    record("notebook", "Agent File starts with Play and Open Agent File",
+           page.evaluate("() => { const b = document.querySelectorAll('#fn-veil [data-fn-slot=body] button'); return b.length > 1 && b[0].dataset.go === 'play' && b[1].dataset.go === 'file'; }"), "")
+    record("notebook", "Agent File quick look: name, Cell, Cell members, Bonds, Operations",
+           all(s in txt for s in ["Mara Voss", "Night Shift", "Tom Hale", "Lena Voss", "Operation FULL MOON", "Operation LOW TIDE"]), txt[:300])
+    record("notebook", "the Handler's Active operation is the one marked Active",
+           page.evaluate("() => { const r = document.querySelector('#fn-veil .fn-op-active'); return !!r && r.textContent.indexOf('FULL MOON') !== -1; }"), "")
+    page.click("#fn-veil .fn-pocket[data-view=req]")
+    rsrc = page.get_attribute("#fn-veil iframe[data-dg-embed=requisition]", "src") or ""
+    record("notebook", "Requisition shows the full form inside the notebook, for this Agent",
+           "requisition.html?embed=1" in rsrc and FN_CODE in rsrc, rsrc)
+    page.click("#fn-veil .fn-tab[data-view=evidence]")
+    page.wait_for_selector("#fn-veil textarea[data-ev=ev_fn_1]", timeout=10000)
+    record("notebook", "Evidences lists what was released to this Agent", "Coroner's Preliminary" in _notebook_text(page), _notebook_text(page)[:200])
+    page.fill("#fn-veil textarea[data-ev=ev_fn_1]", "Check the tissue log.")
+    remark = wait_for_condition(lambda: (fs_doc(page, f"handout_notes/{FN_CODE}_ev_fn_1") or {}).get("note"), timeout_ms=8000)
+    record("notebook", "an Evidence remark saves as the Agent's own private note", remark == "Check the tissue log.", str(remark))
+    page.click("#fn-veil .fn-tab[data-view=rules]")
+    rules = wait_for_condition(lambda: (_notebook_text(page) if "Skill Tests" in _notebook_text(page) else None), timeout_ms=8000) or ""
+    record("notebook", "Rules reads the Rules Reference inline", "Skill Tests" in rules and "Sanity" in rules, rules[:120])
+    page.click("#fn-veil .fn-tab[data-view=settings]")
+    record("notebook", "Settings off the sheet: Cover Identity, Boot splash, and a way to the sheet's own settings",
+           page.input_value("#fn-veil [data-s=ci]") == "fn tester" and page.is_visible("#fn-veil [data-s=boot]")
+           and page.is_visible("#fn-veil [data-s=gosheet]"), "")
+    page.keyboard.press("Escape")
+    record("notebook", "Escape closes the notebook", page.evaluate("() => !window.dgFieldNotes.isOpen()"), "")
+    errs_all.extend(errs)
+    page.close()
+
+    # Phone: the quick strip writes a real note block.
+    page, errs = _field_notes_page(p, 390, 844)
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    record("notebook", "phone: closed notebook shows the radio chip, dice and notebook buttons",
+           page.is_visible("#fn-closed-phone [data-fn=chip]") and page.is_visible("#fn-closed-phone .fn-phone-dice")
+           and page.is_visible("#fn-closed-phone .fn-phone-book"), "")
+    page.click("#fn-closed-phone .fn-phone-book")
+    page.click("#fn-veil .fn-tab[data-view=notes]")
+    page.wait_for_selector("#fn-veil [data-q=text]", timeout=10000)
+    page.fill("#fn-veil [data-q=text]", "The janitor lied about the keys.")
+    page.click("#fn-veil [data-q=tag][data-type=npc]")
+    page.click("#fn-veil [data-q=shared]")
+    page.click("#fn-veil [data-q=add]")
+    w = wait_for_condition(lambda: next((x for x in fs_writes(page, f"cells/{FN_CELL}/notes/") if "janitor" in json.dumps(x)), None), timeout_ms=8000) or {}
+    d = w.get("data") or {}
+    record("notebook", "phone: a quick note saves as a note block in the Agent's Cell, shared and tagged",
+           d.get("agent_code") == FN_CODE and d.get("shared") is True and d.get("block_type") == "paragraph" and "npc" in (d.get("tags") or ""), str(w)[:300])
+    record("notebook", "phone: the open notebook adds no sideways scrolling",
+           page.evaluate("() => document.documentElement.scrollWidth <= innerWidth"), "")
+    errs_all.extend(errs)
+    page.close()
+    return errs_all
+
+def test_field_notes_standing_orders(p):
+    """New-Agent onboarding: the wizard finishing (or an Agent imported
+    onto the sheet) arms the Standing Orders; they come up only once the
+    player leaves the sheet. N and Escape put them off (they come back);
+    Y saves the acknowledgement on the Agent's brief and opens the Agent
+    File on the photo tab."""
+    errs_all = []
+    page, errs = _field_notes_page(p)
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.evaluate("(c) => { localStorage.setItem('dg_stats_cloud_code', c); window.dispatchEvent(new CustomEvent('dg-wizard-finished')); }", FN_CODE)
+    record("onboarding", "the wizard finishing arms the Standing Orders",
+           (json.loads(page.evaluate("() => localStorage.getItem('dg_fn_orders_pending')") or "null") or {}).get("code") == FN_CODE, "")
+    page.wait_for_timeout(500)
+    record("onboarding", "nothing shows while the player is still on the sheet", page.locator("#fn-orders").count() == 0, "")
+    page.evaluate("() => localStorage.removeItem('dg_fn_orders_pending')")
+    page.evaluate("() => window.importAgentText(JSON.stringify({v: 1, bio: {name: 'Ivy Imported'}}))")
+    armed = wait_for_condition(lambda: (json.loads(page.evaluate("() => localStorage.getItem('dg_fn_orders_pending')") or "null") or {}).get("name"), timeout_ms=8000)
+    record("onboarding", "importing an Agent onto the sheet arms them too", armed == "Ivy Imported", str(armed))
+
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector("#fn-orders", timeout=10000)
+    page.wait_for_selector("#fn-orders [data-o=prompt]:not([hidden])", timeout=15000)
+    term = page.inner_text("#fn-orders")
+    record("onboarding", "leaving the sheet brings up the terminal with the five tenets and a Y/N prompt",
+           all(s in term for s in ["STOP IT", "CONTAIN IT", "LEAVE NO TRACE", "BRING IT HOME", "SAVE WHO YOU CAN", "[Y/N]"]), term[:300])
+    page.keyboard.press("n")
+    page.wait_for_timeout(300)
+    record("onboarding", "N closes it and keeps the orders pending",
+           page.locator("#fn-orders").count() == 0 and bool(page.evaluate("() => localStorage.getItem('dg_fn_orders_pending')")), "")
+    page.goto(f"{BASE}/rules-reference.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector("#fn-orders", timeout=10000)
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(300)
+    record("onboarding", "they come back on the next page, and Escape also puts them off",
+           page.locator("#fn-orders").count() == 0 and bool(page.evaluate("() => localStorage.getItem('dg_fn_orders_pending')")), "")
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector("#fn-orders [data-o=prompt]:not([hidden])", timeout=15000)
+    page.keyboard.press("y")
+    page.wait_for_url("**/dg-agent-portal.html?code=%s#cover" % FN_CODE, timeout=15000)
+    record("onboarding", "Y opens the Agent File on the photo tab", page.url.endswith("#cover"), page.url)
+    ack = (fs_doc(page, f"briefs/{FN_CODE}") or {}).get("standing_orders_ack_at")
+    record("onboarding", "Y saves the acknowledgement on the Agent's brief", bool(ack), str(ack))
+    record("onboarding", "the next step (the photo, then the Field ID) is pointed out",
+           page.locator(".fn-nudge").count() == 1 and "photo" in page.inner_text(".fn-nudge").lower(), "")
+    errs_all.extend(errs)
+    page.close()
+    return errs_all
+
+def test_field_notes_shell(p):
+    """Inside the Hub shell: one notebook for the whole tab; the nav gains
+    Friendly; on A-Cell the notebook steps aside and the Handler gets the
+    radio pill and dice panel back; Requisition, opened directly, forwards
+    into the notebook."""
+    errs_all = []
+    page, errs = _field_notes_page(p)
+    skip_acell_gate(page)
+    page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    labels = page.eval_on_selector_all("#dg-shell-nav button", "els => els.map(e => e.textContent.trim())")
+    record("notebook-shell", "the Hub nav has Agent Hub, A-Cell and Friendly", labels == ["Agent Hub", "A-Cell", "Friendly"], str(labels))
+    hub = None
+    for _ in range(40):
+        hub = next((f for f in page.frames if "agent-hub.html" in f.url), None)
+        if hub: break
+        page.wait_for_timeout(250)
+    record("notebook-shell", "no second notebook inside the shell's page",
+           hub is not None and hub.evaluate("() => !document.getElementById('fn-root') && !!window.dgFieldNotes && !window.dgFieldNotes.isHost"), "")
+    page.click("#dg-shell-nav button[data-nav-id=a-cell]")
+    wait_for_condition(lambda: page.evaluate("() => document.getElementById('fn-root').hidden") or None, timeout_ms=10000)
+    record("notebook-shell", "on A-Cell the notebook steps aside and the radio pill and dice panel come back",
+           page.evaluate("() => document.getElementById('fn-root').hidden && getComputedStyle(document.getElementById('dg-radio')).opacity !== '0' && document.getElementById('dr-panel').parentNode === document.body"), "")
+    page.click("#dg-shell-nav button[data-nav-id=friendly]")
+    wait_for_condition(lambda: (not page.evaluate("() => document.getElementById('fn-root').hidden")) or None, timeout_ms=10000)
+    record("notebook-shell", "Friendly gets the notebook", not page.evaluate("() => document.getElementById('fn-root').hidden"), "")
+    errs_all.extend(errs)
+    page.close()
+
+    page, errs = _field_notes_page(p)
+    page.goto(f"{BASE}/requisition.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_url("**/hub.html?fn=req", timeout=10000)
+    opened = wait_for_condition(lambda: page.evaluate("() => !!(window.dgFieldNotes && window.dgFieldNotes.isOpen && window.dgFieldNotes.isOpen() && window.dgFieldNotes.view() === 'req')") or None, timeout_ms=10000)
+    record("notebook-shell", "Requisition opened directly forwards into the notebook's Requisition pocket", bool(opened), page.url)
+    errs_all.extend(errs)
+    page.close()
+    return errs_all
+
 def test_friendly_clearance(p):
     """Friendly: a one-shot player picks a pregen and plays. Out of the box
     it must be at most three clicks from Clearance to a roll (it's two:
@@ -11385,19 +11638,21 @@ def test_friendly_clearance(p):
     name = page.inner_text("#fr-view .pv-bio")
     zero = page.eval_on_selector_all("#fr-skills .sv", "els => els.filter(e => e.textContent === '0%').length")
     record("friendly", "0% skills are left off the sheet", zero == 0 and page.locator("#fr-skills .roll").count() > 10, str(zero))
+    # The closed Field Notes notebook (radio chip, dice, notebook) docks
+    # bottom-right on a phone; the playable sheet must end above it.
     fit = page.evaluate("""() => {
-      const bar = document.getElementById('dr-panel').getBoundingClientRect();
+      const bar = document.getElementById('fn-closed-phone').getBoundingClientRect();
       const more = document.querySelector('.fr-more > summary').getBoundingClientRect();
-      const pill = document.getElementById('dg-radio-pill');
-      const pr = pill ? pill.getBoundingClientRect() : null;
-      const hit = pr ? document.elementFromPoint(pr.left + pr.width / 2, pr.top + pr.height / 2) : null;
-      return { moreBottom: more.bottom, barTop: bar.top, pillInBar: !!pr && pr.top >= bar.top && pr.bottom <= bar.bottom + 1,
-               pillOnTop: !!hit && hit.id === 'dg-radio-pill', scrollX: document.documentElement.scrollWidth <= innerWidth };
+      const chip = document.querySelector('#fn-closed-phone [data-fn=chip]');
+      const pr = chip.getBoundingClientRect();
+      const hit = document.elementFromPoint(pr.left + pr.width / 2, pr.top + pr.height / 2);
+      return { moreBottom: more.bottom, barTop: bar.top, chipOnTop: !!hit && chip.contains(hit),
+               scrollX: document.documentElement.scrollWidth <= innerWidth };
     }""")
     record("friendly", "on a phone the whole playable sheet (stats, skills, weapons, Bonds) fits the first screen",
            fit["moreBottom"] <= fit["barTop"] and fit["scrollX"], str(fit))
-    record("friendly", "on a phone Tune In docks inside the collapsed Dice Roller bar instead of over the sheet",
-           fit["pillInBar"] and fit["pillOnTop"], str(fit))
+    record("friendly", "on a phone the radio chip sits beside the closed notebook, reachable, not over the sheet",
+           fit["chipOnTop"], str(fit))
     page.click('#fr-skills .roll[data-label="Alertness"]')
     _pump_until(page, lambda: "Alertness" in page.inner_text("#dr-history-list"))
     hist = page.inner_text("#dr-history-list")
@@ -11405,10 +11660,11 @@ def test_friendly_clearance(p):
     writes = page.evaluate("window.__dgFirestoreWrites.map(w => w.path + ':' + JSON.stringify(w.data || {}))")
     record("friendly", "a Friendly roll outside a Cell is never filed under this device's own Agent",
            not any("MARA-0001" in w or "dice_rolls" in w for w in writes), str(writes)[:200])
-    record("friendly", "the dice panel opened for the roll", not page.evaluate("document.getElementById('dr-panel').classList.contains('dr-collapsed')"), "")
+    record("friendly", "the roll shows in the roll slip, without covering the sheet with the notebook",
+           page.evaluate("() => !document.getElementById('fn-peek').hidden && !window.dgFieldNotes.isOpen()"), "")
     page.click("#fr-view .pv-bio"); page.wait_for_timeout(200)
-    record("friendly", "on a phone, tapping the sheet puts the dice panel away again",
-           page.evaluate("document.getElementById('dr-panel').classList.contains('dr-collapsed')"), "")
+    record("friendly", "on a phone, tapping the sheet puts the roll slip away again",
+           page.evaluate("() => document.getElementById('fn-peek').hidden"), "")
     dmg = page.locator("[data-damage]").first
     label = dmg.get_attribute("data-label")
     dmg.click()
@@ -11557,8 +11813,8 @@ def test_friendly_clearance(p):
     page.close()
 
     # One page, every Agent: on a 390x844 phone, everything the player
-    # rolls (stats, skills, weapons) must sit above the Dice Roller bar
-    # without scrolling -- checked for all 62 so a data rebuild can't
+    # rolls (stats, skills, weapons) must sit above the closed Field Notes
+    # notebook's buttons without scrolling -- checked for all 62 so a data rebuild can't
     # quietly push one off the screen.
     page = p.new_page(viewport={"width": 390, "height": 844})
     errs += collect_errors(page)
@@ -11573,7 +11829,7 @@ def test_friendly_clearance(p):
           const q = s => document.querySelector(s);
           const wpn = q('.fr-weapons') || q('.fr-col-side .pv-text');
           return { bottom: Math.max(q('.fr-col-main').getBoundingClientRect().bottom, wpn ? wpn.getBoundingClientRect().bottom : 0),
-                   bar: q('#dr-panel').getBoundingClientRect().top, sw: document.documentElement.scrollWidth };
+                   bar: q('#fn-closed-phone').getBoundingClientRect().top, sw: document.documentElement.scrollWidth };
         }""")
         if m["bottom"] > m["bar"] or m["sw"] > 390:
             over.append((q["id"], round(m["bottom"] - m["bar"])))
@@ -11825,6 +12081,9 @@ def main():
         safe(test_theme_survives_new_recruit_and_cloud_load, browser, area="journey")
         safe(test_player_pages_use_in_page_dialogs, browser, area="journey")
         safe(test_friendly_clearance, browser, area="friendly")
+        safe(test_field_notes_notebook, browser, area="notebook")
+        safe(test_field_notes_standing_orders, browser, area="onboarding")
+        safe(test_field_notes_shell, browser, area="notebook-shell")
         safe(test_friendly_pregen_builder, browser, area="friendly")
         safe(test_hub_dice_roller_learns_agent_from_iframe, browser, area="dice-roller")
         safe(test_agent_file_storage_plates_and_refresh, browser, area="journey")

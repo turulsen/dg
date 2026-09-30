@@ -312,6 +312,20 @@ html.dg-fn-host #notes-widget-btn{ display:none !important; }
 #fn-root #dr-panel #dr-handle{ display:none !important; }
 #fn-root #dr-panel #dr-body{ display:block !important; max-height:none !important; }
 
+/* Roll slip: a page-started roll's result, above the closed notebook */
+#fn-peek{
+  position:fixed; right:22px; bottom:200px; z-index:9992; width:min(300px,calc(100vw - 24px));
+  background:var(--fn-dark); color:#d9d2b8; border:1px solid var(--fn-dark-edge); border-radius:6px;
+  box-shadow:0 10px 26px rgba(0,0,0,.55); padding:6px 8px 8px; animation:fn-snap .2s ease both;
+}
+.fn-peek-head{ display:flex; align-items:center; gap:6px; font-size:9px; letter-spacing:.18em; text-transform:uppercase; color:#7a8a68; padding:0 2px 4px; }
+.fn-peek-head span{ flex:1; }
+#fn-root .fn-peek-head button{ background:transparent; border:1px solid var(--fn-dark-edge); color:#c9d4b8; font-family:var(--fn-mono); font-size:10px; padding:3px 8px; cursor:pointer; border-radius:3px; letter-spacing:.06em; }
+#fn-peek #dr-panel{ position:static !important; inset:auto !important; transform:none !important; width:100% !important; max-width:none !important; box-shadow:none !important; border:0 !important; background:transparent !important; margin:0 !important; }
+#fn-peek #dr-handle, #fn-peek #dr-die-pills, #fn-peek #dr-manual-row, #fn-peek #dr-hint, #fn-peek #dr-history-section{ display:none !important; }
+#fn-peek #dr-body{ display:block !important; }
+@media (max-width:759px){ #fn-peek{ right:12px; bottom:calc(env(safe-area-inset-bottom,0px) + 72px); } }
+
 /* Rules */
 .fn-rules-sec{ margin-bottom:12px; }
 .fn-rules-h{ display:flex; align-items:baseline; gap:10px; border-bottom:1px solid rgba(160,130,70,.45); padding-bottom:4px; margin-bottom:6px; }

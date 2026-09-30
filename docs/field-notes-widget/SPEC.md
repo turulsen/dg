@@ -1,7 +1,8 @@
 # Field Notes widget — build spec
 
-Status: **confirmed with revisions (round 2), being built.** Lives on
-the working branch only.
+Status: **built (round 2), awaiting the Handler's test on the preview.**
+Lives on the working branch only. §9 lists where the build differs from
+the plan above it, and why; §10 is how to try it.
 Nothing here merges to `main` (so nothing reaches the live site) until
 the widget is complete, tested, and signed off.
 
@@ -88,13 +89,13 @@ scroll is locked while the notebook is open.
 | Where | What it shows | Data / action |
 |---|---|---|
 | **Agent File** (pocket, dossier) | **Play (Live)** and **Open Agent File** buttons first. Then the quick look: name, Face Plate photo ("Take Photo" if none yet), Cell, the Cell's other members, Bonds, Operations with the active one marked | `characters/{code}` + `briefs/{code}` via `dgStore`, `cells` (`member_codes`), `operations` for that Cell. *Play* → `stats/?load=CODE`, *Open Agent File* → `dg-agent-portal.html?code=CODE`. **Active operation:** there's no such field today, so A-Cell's operation list gets an "Active" toggle (one per Cell, writes `operations/{id}.active`); until the Handler sets one, the newest operation shows as current |
-| **Field ID** (pocket, credential) | Card preview: cover agency and era | Opens the real fabricator (`dg-id-creator.html`) for the full ID and print |
+| **Field ID** (pocket, credential) | Card preview: cover agency and era, with the Face Plate | *Make Field ID* opens the Agent File's IDs tab (`dg-agent-portal.html?code=CODE#ids`, the same place Agent Hub's Field ID button goes); *Blank ID Creator* opens the standalone `dg-id-creator.html` |
 | **Requisition** (pocket, business card) | The **full** Request for Materiel & Disbursement form and its roll, rendered inside the notebook page | Requisition **only lives here**: Agent Hub's Requisition button opens the notebook on this pocket, and opening `requisition.html` directly forwards into the notebook. Its rolls go through the notebook's own Dice (no second dice panel) |
 | **Radio** (pocket, pager) | Channel dial 1–5, now playing, progress, Tune In/Leave, mute, volume (this is also where table sound is managed) | The existing `table-radio.js` engine (Firestore `radio/{channel}`, iOS gain fix) keeps playing; only its floating pill is replaced by this pager face and the quick-tune chip (§3) |
 | **Dice Roller** (the triangle) | D4–D20 and D%, target % or `2d6+3`, critical/fumble colours, recent rolls | The existing `dice-roller.js` roll logic and Cell-shared history (`dice_rolls`); Friendly identity and damage rolls kept |
 | **Notes** (tab) | **Phone:** the quick strip: one note, a tag (NPC / Location / Clue), *Private to you* / *Shared with the Cell*, *Add Note*, your notes listed below, *Open Player Notes ↗*. **Desktop:** the full existing Player Notes (editor, block types, Circulate, Pin, tags, other Agents' tabs, Shared feed), moved into the notebook page | Both write the same `cells/{cellId}/notes/{blockId}` blocks the Notes page writes today, so a quick note on the phone shows up in the full notes on desktop. No Cell yet: the same solo pseudo-Cell Notes already uses |
-| **Evidences** (tab) | Evidence released to this Agent: scope stamp, operation, title, date, body; your private remarks under each | Same Firestore `evidence` read and visibility filter Agent Hub uses; remarks are the existing private `evidence_remark` note blocks |
-| **Rules** (tab) | Search box plus the eight Rules Reference sections and their sub-headings | Links jump to the matching section of `rules-reference.html` |
+| **Evidences** (tab) | Evidence released to this Agent: scope stamp, operation, title, date, body, photo; your private remarks under each | Same Firestore `evidence` read and visibility filter Agent Hub uses; remarks are the same private `handout_notes` Agent Hub's Evidence "Your Notes" writes (so both show the same remark) |
+| **Rules** (tab) | Search box plus the eight Rules Reference sections and their sub-headings; tapping one reads that section right in the notebook (search terms highlighted) | Reads `rules-reference.html` itself, so the notebook never goes out of date with the page; *Open full page* jumps to its section |
 | **Settings** (tab) | **Character sheet settings** (everything in the sheet's cog today): Theme; Import Agent / New Recruit wizard; Fix a Character Creation Mistake; Cloud Save load by code; Export Printable / PDF / Google Sheet; Download / Upload / Clear Sheet, Share Link, Export to Agent File. **Plus:** Cover Identity (your real name), Boot splash, Reload My Agents | On the character sheet the buttons act on the open sheet; anywhere else they open the current Agent's sheet and run the action there. The sheet's own cog goes away where the notebook shows. **Boot splash** off skips the terminal animation, but the same screen still shows as the load screen while a page is actually loading. No Plain fonts toggle; no Table sound toggle (Radio owns sound) |
 
 The design's placeholder data (Aurelio "PARADE" Vance, the sample
@@ -161,3 +162,54 @@ Each step is testable on the preview before the next:
    player journey on Chromium, WebKit (Safari/iPhone) and Firefox, on
    emulators only, never the live campaign. Then you test on the
    preview, and it merges only when you say so.
+
+## 9. As built — changes from the plan above
+
+- **Roll slip.** A roll started from the page (a skill tap on the sheet,
+  Friendly's skill and weapon buttons) shows its result in a small dark
+  card above the closed notebook instead of opening the whole notebook
+  over the sheet — opening it on every roll meant an extra tap to close
+  it each time at the table. The slip has no dimmed backdrop, fades after
+  ~9s, and a tap anywhere else on the page puts it away (as the old dice
+  panel did). *Open* moves the roller onto the notebook's Dice page.
+- **Field ID** goes to the Agent File's IDs tab (§5), which is where the
+  app's real Field ID already lives; `dg-id-creator.html` is a blank,
+  standalone creator with no link to an Agent.
+- **Settings on the sheet** show the common sheet controls directly
+  (Theme, exports, backups, Share Link, Load by Code, Fix a Creation
+  Mistake) and *Import, backup & more…* opens the sheet's own full
+  settings panel for the rest (New Recruit / Import). Off the sheet, one
+  button opens the current Agent's sheet with the notebook on Settings.
+- **A-Cell** stays exactly as it was when visited directly. Inside the
+  Hub shell, going to A-Cell makes the notebook step aside and puts the
+  Radio pill and Dice panel (with the Handler's Live Rolls feed) back.
+- **Active operation**: a flag (⚑) on each operation folder in A-Cell's
+  Evidence tab. Setting one clears the others in that Cell.
+- **Notes page** (`notes/index.html`) visited on its own now also gets
+  the notebook, Radio and Dice (it had none before). Inside the notebook
+  it drops its own title and sits on the notebook's paper.
+- **Engines**: `table-radio.js` gained `window.dgRadio` (tune, leave,
+  mute, volume, resume, state) and `dice-roller.js` a roll-start signal
+  plus relays so Friendly inside the Hub shell rolls as its pregen. Both
+  stand down inside frames marked `data-dg-embed` (the notebook's own
+  embedded pages), like they already did inside the shell.
+- **Not done**: Firefox isn't installed in the build sandbox, so the
+  cross-browser pass is Chromium + WebKit (Safari's engine) only.
+
+## 10. Trying it on the private preview
+
+From Cloud Shell (the repo is public, so the clone needs no login):
+
+```
+cd ~ && rm -rf dg-preview && git clone -b claude/new-session-thjzt6 https://github.com/turulsen/dg.git dg-preview && cd dg-preview
+firebase hosting:channel:deploy field-notes --expires 30d --project dg-app-b3447
+```
+
+It prints a `https://dg-app-b3447--field-notes-….web.app` address. That
+deploys **only** a copy of the pages to that address: the live site,
+Firestore rules and Cloud Functions are untouched. The preview is its
+own web address, so its browser storage starts empty — type your Cover
+Identity on the Hub's loading screen to load your Agents. It uses the
+real Firestore (see §1 for what it may write). Re-run the second command
+after each new push to refresh the preview.
+
