@@ -11526,6 +11526,49 @@ def test_field_notes_notebook(p):
     page.close()
     return errs_all
 
+def test_main_photo_from_active_era(p):
+    """A real report (Daniella Martinez): an Agent with two era Face
+    Plates and an Active Era chosen showed no photo outside the Agent
+    File's own era stack. Every other surface read only face_plate_url,
+    a copy that was set in a few narrow cases. They now take the Active
+    Era's own Plate (dgStore.mainPhoto), and opening the Agent File
+    repairs the stored copy."""
+    errs_all = []
+    code = "DANI-0001"
+    brief = {"agent_code": code, "char_name": "Daniella Martinez", "codename": "LARK",
+             "player_name": "dani player", "player_name_lc": "dani player",
+             "active_eras": '["90s","20s"]', "campaign_era": "20s", "face_plate_url": "",
+             "era_90s_face_url": "https://example.test/dani-90s.png", "era_20s_face_url": "https://example.test/dani-20s.png"}
+    docs = {f"briefs/{code}": brief,
+            f"characters/{code}": character_doc(code, {"v": 1, "bio": {"name": "Daniella Martinez", "player_name": "dani player"}}, "dani player")}
+    page = p.new_page(viewport={"width": 1300, "height": 860})
+    page.set_default_timeout(10000)
+    errs = collect_errors(page)
+    _block_fonts(page)
+    route_apps_script_ok(page)
+    page.route("https://example.test/**", lambda r: r.fulfill(status=200, content_type="image/png", body=b""))
+    install_firestore_backend(page, docs)
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.fill("#cover-identity-input", "dani player")
+    page.click("#cover-identity-btn")
+    roster = wait_for_condition(lambda: (json.loads(page.evaluate("localStorage.getItem('dg_agent_roster')") or "{}").get(code)), timeout_ms=8000) or {}
+    record("photo", "Load My Agents takes the Active Era's Face Plate as the main photo when the flat copy is empty",
+           roster.get("face_plate_url") == "https://example.test/dani-20s.png", str(roster.get("face_plate_url")))
+    card = wait_for_condition(lambda: page.evaluate("() => { const i = document.querySelector('.paper-photo img'); return i ? i.getAttribute('src') : null; }"), timeout_ms=8000)
+    record("photo", "the Agent Hub card shows that photo instead of 'Take Photo'", card == "https://example.test/dani-20s.png", str(card))
+    page.evaluate("(c) => localStorage.setItem('dg_stats_cloud_code', c)", code)
+    page.evaluate("() => { window.dgFieldNotes.refresh(); window.dgFieldNotes.open('agentfile'); }")
+    nb = wait_for_condition(lambda: page.evaluate("() => { const i = document.querySelector('#fn-veil [data-fn-photo] img'); return i ? i.getAttribute('src') : null; }"), timeout_ms=8000)
+    record("photo", "the Field Notes Agent File shows it too", nb == "https://example.test/dani-20s.png", str(nb))
+    errs_all.extend(errs)
+    page.goto(f"{BASE}/dg-agent-portal.html?code={code}#cover", wait_until="domcontentloaded", timeout=15000)
+    healed = wait_for_condition(lambda: (fs_doc(page, f"briefs/{code}") or {}).get("face_plate_url") or None, timeout_ms=10000)
+    record("photo", "opening the Agent File repairs the stored main photo to the Active Era's Plate",
+           healed == "https://example.test/dani-20s.png", str(healed))
+    page.close()
+    return errs_all
+
 def test_field_notes_standing_orders(p):
     """New-Agent onboarding: the wizard finishing (or an Agent imported
     onto the sheet) arms the Standing Orders; they come up only once the
@@ -12091,6 +12134,7 @@ def main():
         safe(test_friendly_clearance, browser, area="friendly")
         safe(test_field_notes_notebook, browser, area="notebook")
         safe(test_field_notes_standing_orders, browser, area="onboarding")
+        safe(test_main_photo_from_active_era, browser, area="photo")
         safe(test_field_notes_shell, browser, area="notebook-shell")
         safe(test_friendly_pregen_builder, browser, area="friendly")
         safe(test_hub_dice_roller_learns_agent_from_iframe, browser, area="dice-roller")

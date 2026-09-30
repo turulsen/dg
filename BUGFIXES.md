@@ -5981,3 +5981,30 @@ purges.
 
 Shell cache `dg-hub-shell-v162` (`assets/dg-store.js` added to the
 shell).
+
+## An Agent with two era photos and an Active Era showed no photo
+## anywhere but its own Agent File (finishes items 4 and 6 above)
+
+Reported for Daniella Martinez: two era Face Plates, an Active Era
+chosen, and still "Take Photo" everywhere else. The photos themselves
+were fine -- each era keeps its own (`era_<era>_face_url`, the source of
+truth since the per-era fix). Every other surface (Agent Hub card, Live
+Play tracker, A-Cell, the Agent File's Field ID card, Field Notes) read
+only `face_plate_url`, a *copy* of the Active Era's Plate that was set
+in just two narrow cases: a Plate made while its era was already active,
+or "Make Active Era" pressed after the Plate existed. Items 4 and 6 in
+the new-player journey list above fixed those two paths going forward,
+but any Agent whose Plates and Active Era were set another way -- or
+before v96, when "Make Active Era" never saved, or migrated from the
+Sheet with the copy empty -- kept an empty or stale copy. Same symptom
+as item 4, so this finishes that fix rather than being a new bug.
+
+Now every reader works the main photo out itself with
+`dgStore.mainPhoto()` (A-Cell, which doesn't load dg-store.js, has the
+same rule as `mainPhotoOf_`): the Active Era's own Plate, else the
+`face_plate_url` copy, else the first era (in `active_eras` order) with
+one; Drive share links become `gdrive:ID` for the image proxy. The
+Agent File also repairs the stored copy whenever it loads the Agent
+from the server (`healMainPhoto()`), so older readers and other devices
+catch up too. New `test_main_photo_from_active_era`. `sw.js`
+`CACHE_NAME` v165.

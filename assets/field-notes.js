@@ -301,7 +301,9 @@
     return String(key).replace(/[_-]+/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
   }
   function faceUrl(a) {
-    return (data.brief && data.brief.face_plate_url) || (a && a.face) || '';
+    var b = data.brief;
+    var fromBrief = b ? (window.dgStore && window.dgStore.mainPhoto ? window.dgStore.mainPhoto(b) : b.face_plate_url) : '';
+    return fromBrief || (a && a.face) || '';
   }
   // Face Plates: newer ones are public https:// Storage links; a legacy
   // gdrive:ID still goes through the Apps Script image proxy (the one
@@ -1424,7 +1426,7 @@
     function check() {
       if (ob.step !== 'photo') return;
       ensureStore().then(function (st) { return st.getBrief(ob.code); }).then(function (b) {
-        if (b && b.face_plate_url && ob.step === 'photo') {
+        if (b && (window.dgStore.mainPhoto ? window.dgStore.mainPhoto(b) : b.face_plate_url) && ob.step === 'photo') {
           ob.step = 'fieldid'; lsSet(ONBOARD_KEY, JSON.stringify(ob));
           if (nudgePoll) { clearInterval(nudgePoll); nudgePoll = null; }
           draw();
