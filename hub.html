@@ -2,6 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script>
+  // Never inside another page: a Clearance/back link followed from a page
+  // already inside the Hub shell used to load this page INTO the shell's
+  // frame -- and choosing Agent from there nested a second Hub (a doubled
+  // nav bar). Always take over the whole tab instead.
+  (function () { try { if (window.top !== window.self) window.top.location.replace(location.href); } catch (e) { /* cross-origin: leave it */ } })();
+</script>
 <script src="assets/js-error-banner.js" async></script>
 <script src="assets/dg-store.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -63,8 +70,9 @@
   }
   #dg-shell-header .brand{
     font-family:'Special Elite',monospace; font-size:13px; letter-spacing:.12em;
-    text-transform:uppercase; color:#c8c1a8;
+    text-transform:uppercase; color:#c8c1a8; text-decoration:none;
   }
+  #dg-shell-header .brand:hover{ color:#d8f0c0; }
   #dg-shell-nav{
     margin-left:auto; display:flex; gap:6px; align-items:center;
   }
@@ -134,7 +142,7 @@
 <body>
 
 <div id="dg-shell-header">
-  <span class="brand">Delta Green — Hub</span>
+  <a class="brand" href="index.html" title="Back to Clearance">Delta Green — Hub</a>
 </div>
 
 <div id="dg-shell-content-wrap">

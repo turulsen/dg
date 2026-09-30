@@ -385,7 +385,13 @@
   location.replace('hub.html?fn=req');
 })();
 </script>
-<style>html.req-embedded .back-link-row{display:none;} html.req-embedded body{padding-top:14px;}</style>
+<style>
+  /* Inside the Field Notes notebook: the form IS the notebook's page --
+     no dark desk behind it, no floating drop shadow, full page width. */
+  html.req-embedded .back-link-row{ display:none; }
+  html.req-embedded body{ padding:0; background:#f4eed8; background-image:none; min-height:0; }
+  html.req-embedded .sheet{ max-width:none; box-shadow:none; }
+</style>
 
 <div class="back-link-row">
   <!-- Hidden inside the app shell -- see dg-agent-portal.html's own

@@ -126,7 +126,8 @@
       open: function (view) { var h = hostApi(); if (h) h.open(view); },
       close: function () { var h = hostApi(); if (h) h.close(); },
       armOrders: armOrders,
-      refresh: function () { var h = hostApi(); if (h) h.refresh(); }
+      refresh: function () { var h = hostApi(); if (h) h.refresh(); },
+      go: function (path) { var h = hostApi(); if (h && h.go) h.go(path); else location.href = url(path); }
     };
     // Escape inside an embedded page (focus is in the iframe, so the
     // host never sees the key) or on a shell page under the open notebook.
@@ -332,17 +333,32 @@
 
   /* ── DOM ── */
   var TRI = url('assets/delta-green-triangle.png');
-  var POCKETS = [
-    { view: 'agentfile', title: 'Agent File', kind: 'Dossier', sub: 'Play, your file, Cell and operations.' },
-    { view: 'fieldid', title: 'Field ID', kind: 'Credential', sub: 'Your cover credential.' },
-    { view: 'req', title: 'Requisition', kind: 'Business card', sub: 'Request materiel from your Program Manager.' },
-    { view: 'radio', title: 'Radio', kind: 'Pager', sub: 'Tune in to the table broadcast.' }
-  ];
   var TABS = [
     { view: 'notes', label: 'Notes' }, { view: 'evidence', label: 'Evidences' },
     { view: 'rules', label: 'Rules' }, { view: 'settings', label: 'Settings' }
   ];
-  var VIEWS = ['agentfile', 'fieldid', 'req', 'radio', 'dice', 'notes', 'evidence', 'rules', 'settings'];
+  var VIEWS = ['agentfile', 'fieldid', 'req', 'dice', 'notes', 'evidence', 'rules', 'settings'];
+
+  // The Agent File paper (assets/agent-sheet.js + .css) is shared with
+  // the Agent Hub roster; pages that don't load it get it from here.
+  var sheetLibPromise = null;
+  function ensureSheetLib() {
+    if (!document.querySelector('link[data-as-css]')) {
+      var l = document.createElement('link');
+      l.rel = 'stylesheet'; l.href = url('assets/agent-sheet.css'); l.setAttribute('data-as-css', '1');
+      document.head.appendChild(l);
+    }
+    if (window.dgAgentSheet) return Promise.resolve(window.dgAgentSheet);
+    if (sheetLibPromise) return sheetLibPromise;
+    sheetLibPromise = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = url('assets/agent-sheet.js');
+      s.onload = function () { resolve(window.dgAgentSheet); };
+      s.onerror = function () { sheetLibPromise = null; reject(new Error('agent-sheet.js')); };
+      document.head.appendChild(s);
+    });
+    return sheetLibPromise;
+  }
 
   var root = document.createElement('div');
   root.id = 'fn-root';
@@ -350,7 +366,7 @@
     '<div id="fn-closed">' +
       '<button type="button" class="fn-chip" data-fn="chip" title="Table Radio"></button>' +
       '<button type="button" class="fn-cover fn-leather" data-fn="open" title="Open Field Notes" aria-label="Open Field Notes">' +
-        '<span class="fn-cover-grain"></span><span class="fn-cover-spine"></span><span class="fn-cover-pages"></span>' +
+        '<span class="fn-stitch"></span><span class="fn-cover-spine"></span><span class="fn-cover-pages"></span>' +
         '<span class="fn-cover-band"></span><span class="fn-cover-title">Field<br>Notes</span>' +
         '<span class="fn-cover-dice" data-fn="dice" role="button" title="Roll dice" aria-label="Roll dice"><img class="fn-tri" src="' + TRI + '" alt=""></span>' +
       '</button>' +
@@ -360,9 +376,11 @@
       '<button type="button" class="fn-phone-dice fn-leather" data-fn="dice" title="Roll dice" aria-label="Roll dice"><img class="fn-tri" src="' + TRI + '" alt=""></button>' +
       '<button type="button" class="fn-phone-book fn-leather" data-fn="open" title="Open Field Notes"><span class="fn-cover-pages"></span><span class="fn-phone-band"></span><span class="fn-phone-title">Field<br>Notes</span></button>' +
     '</div>' +
+    '<div id="fn-pager" hidden></div>' +
     '<div id="fn-veil" hidden>' +
       '<div class="fn-veil-hit" data-fn="close"></div>' +
       '<div class="fn-book fn-leather" role="dialog" aria-label="Field Notes">' +
+        '<span class="fn-stitch"></span>' +
         '<button type="button" class="fn-close" data-fn="close" title="Close" aria-label="Close">X</button>' +
         '<div class="fn-phone-head">' +
           '<div class="fn-phone-head-t"><div class="fn-phone-head-k">Field Notes</div><div class="fn-phone-head-n" data-fn-slot="phone-name"></div></div>' +
@@ -370,37 +388,38 @@
           '<button type="button" data-fn="close" title="Close" aria-label="Close">X</button>' +
         '</div>' +
         '<div class="fn-spine"></div>' +
-        '<div class="fn-left">' +
-          '<div class="fn-id"><div class="fn-id-photo"><div class="fn-id-photo-img" data-fn-slot="id-photo">No photo</div></div>' +
-            '<div style="min-width:0;flex:1;padding-top:4px"><div class="fn-id-name" data-fn-slot="id-name"></div>' +
-            '<div class="fn-id-prof" data-fn-slot="id-prof"></div><div class="fn-id-meta" data-fn-slot="id-meta"></div></div></div>' +
-          '<div class="fn-pockets">' +
-            POCKETS.map(function (p) {
-              return '<button type="button" class="fn-pocket" data-view="' + p.view + '"><div class="fn-pocket-top"><span class="fn-pocket-title">' + p.title +
-                '</span><span class="fn-pocket-kind">' + p.kind + '</span></div><div class="fn-pocket-sub">' + p.sub + '</div></button>';
-            }).join('') +
-            '<button type="button" class="fn-pocket fn-pocket-dice" data-view="dice"><img class="fn-tri" src="' + TRI + '" alt=""><div><div class="fn-pocket-title">Dice Roller</div><div class="fn-pocket-sub">D%, D4–D20, 2d6+3</div></div></button>' +
-          '</div>' +
-        '</div>' +
+        '<div class="fn-left"><div class="fn-holder">' +
+          '<div class="fn-slot" data-view="agentfile" role="button" tabindex="0" aria-label="Agent File">' +
+            '<div class="fn-card fn-card-photo"><div class="fn-card-ph" data-fn-slot="card-photo"></div>' +
+              '<div class="fn-card-txt"><div class="fn-card-k">Delta Green — Agent File</div><div class="fn-card-n" data-fn-slot="card-name"></div>' +
+              '<div class="fn-card-s" data-fn-slot="card-meta"></div></div></div>' +
+            '<div class="fn-slot-lip"></div></div>' +
+          '<div class="fn-slot" data-view="fieldid" role="button" tabindex="0" aria-label="Field ID">' +
+            '<div class="fn-card fn-card-biz" data-fn-slot="card-biz"></div><div class="fn-slot-lip"></div></div>' +
+          '<div class="fn-slot" data-view="req" role="button" tabindex="0" aria-label="Requisition">' +
+            '<div class="fn-card fn-card-req"><div class="fn-card-k">Program Office</div><div class="fn-card-n">Requisition</div>' +
+            '<div class="fn-card-s">Materiel &amp; Disbursement Desk · Form 27-R</div></div><div class="fn-slot-lip"></div></div>' +
+        '</div></div>' +
         '<div class="fn-right">' +
-          '<div class="fn-paper">' +
+          '<div class="fn-booklet"><div class="fn-paper">' +
             '<div class="fn-page-head"><div class="fn-page-kicker"><span data-fn-slot="kicker"></span><span data-fn-slot="meta"></span></div>' +
             '<div class="fn-page-title" data-fn-slot="title"></div></div>' +
             '<div class="fn-page-body" data-fn-slot="body"></div>' +
             '<div class="fn-page-body" data-fn-slot="dice" hidden><div class="fn-dice-host" data-fn-slot="dice-host"></div></div>' +
             '<div class="fn-page-body fn-flush" data-fn-slot="embed-req" hidden></div>' +
-            '<div class="fn-page-body fn-flush" data-fn-slot="embed-notes" hidden></div>' +
-          '</div>' +
+          '</div></div>' +
           '<div class="fn-tabs">' +
             TABS.map(function (t) { return '<button type="button" class="fn-tab" data-view="' + t.view + '"><span>' + t.label + '</span></button>'; }).join('') +
           '</div>' +
         '</div>' +
+        '<div class="fn-spread" data-fn-slot="spread" hidden></div>' +
+        '<button type="button" class="fn-dice-strap fn-leather" data-fn="dice" title="Dice Roller"><img class="fn-tri" src="' + TRI + '" alt=""><span>Dice</span></button>' +
       '</div>' +
     '</div>';
 
   function slot(name) { return root.querySelector('[data-fn-slot="' + name + '"]'); }
 
-  var state = { open: false, view: lsGet(VIEW_KEY) || 'agentfile', suspended: false };
+  var state = { open: false, view: lsGet(VIEW_KEY) || 'agentfile', suspended: false, notesMode: 'spread', evOp: '' };
   if (VIEWS.indexOf(state.view) === -1) state.view = 'agentfile';
   var narrowMq = window.matchMedia ? window.matchMedia('(max-width:759px)') : { matches: false, addListener: function () {} };
   function narrow() { return !!narrowMq.matches; }
@@ -410,16 +429,21 @@
     document.documentElement.classList.add('dg-fn-host');
     if (IS_SHELL) document.documentElement.classList.add('dg-fn-shell');
     root.addEventListener('click', onClick);
+    root.addEventListener('keydown', function (e) {
+      if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('fn-slot')) { e.preventDefault(); show(e.target.getAttribute('data-view')); }
+    });
     document.addEventListener('keydown', onKey);
     window.addEventListener('dg-radio-state', renderChip);
     window.addEventListener('dg-dice-roll-start', onRollStart);
-    var mqHandler = function () { if (state.open && state.view === 'notes') render(); };
+    var mqHandler = function () { if (state.open) render(); };
     if (narrowMq.addEventListener) narrowMq.addEventListener('change', mqHandler); else narrowMq.addListener(mqHandler);
     window.addEventListener('storage', function (e) {
       if (e.key === ROSTER_KEY || e.key === CLOUD_CODE_KEY || e.key === null) refresh();
     });
     renderChip();
     setInterval(renderChip, 5000);
+    renderChrome();
+    loadData().then(renderChrome);
     if (IS_SHELL) {
       shellFrame.addEventListener('load', onShellPageChange);
       onShellPageChange();
@@ -436,18 +460,31 @@
     if (act === 'open') { if (e.target.closest('[data-fn="dice"]')) return; open(); return; }
     if (act === 'dice') { e.stopPropagation(); open('dice'); return; }
     if (act === 'close') { close(); return; }
-    if (act === 'chip') { quickTune(); return; }
+    if (act === 'chip') { togglePager(); return; }
     var v = t.getAttribute('data-view');
-    if (v && (t.classList.contains('fn-pocket') || t.classList.contains('fn-tab'))) show(v);
+    if (!v) return;
+    if (t.classList.contains('fn-tab') && v === 'notes' && state.view === 'notes' && !narrow()) {
+      // Notes is the one tab that takes both pages; tapping it again
+      // folds back to the quick notes, with the card holder on the left.
+      state.notesMode = state.notesMode === 'spread' ? 'quick' : 'spread';
+      render();
+      return;
+    }
+    if (t.classList.contains('fn-tab') && v === 'notes') state.notesMode = 'spread';
+    if (t.classList.contains('fn-slot') || t.classList.contains('fn-tab')) show(v);
   }
   function onKey(e) {
-    if (e.key === 'Escape' && state.open && !document.getElementById('fn-orders')) close();
+    if (e.key !== 'Escape' || document.getElementById('fn-orders')) return;
+    if (!root.querySelector('#fn-pager').hidden) { closePager(); return; }
+    if (state.open) close();
   }
 
   function open(view) {
     if (state.suspended) return;
     if (view && VIEWS.indexOf(view) !== -1) state.view = view;
     state.open = true;
+    closePager();
+    hidePeek();
     root.querySelector('#fn-veil').hidden = false;
     if (narrow()) document.body.style.overflow = 'hidden';
     loadData().then(function () { renderChrome(); if (state.open) render(); });
@@ -458,7 +495,6 @@
     state.open = false;
     root.querySelector('#fn-veil').hidden = true;
     document.body.style.overflow = '';
-    stopPagerTick();
   }
   function show(view) {
     state.view = view;
@@ -475,6 +511,7 @@
     state.suspended = on;
     if (on) {
       close();
+      closePager();
       hidePeek();
       root.hidden = true;
       document.documentElement.classList.remove('dg-fn-host');
@@ -491,12 +528,58 @@
     }
   }
 
-  /* ── Chrome: ID card, pockets, tabs, page head ── */
+  /* ── Field ID: the Agent's agency, from their workplace ── */
+  // The Agent File's own Field ID agencies (dg-agent-portal.html #ids-agency).
+  var AGENCIES = [
+    { code: 'FBI', name: 'Federal Bureau of Investigation', title: 'Special Agent' },
+    { code: 'DEA', name: 'Drug Enforcement Administration', title: 'Special Agent' },
+    { code: 'ATF', name: 'Bureau of Alcohol, Tobacco, Firearms and Explosives', title: 'Special Agent' },
+    { code: 'USMS', name: 'U.S. Marshals Service', title: 'Deputy U.S. Marshal', alias: ['marshal'] },
+    { code: 'DOJIG', name: 'DOJ Office of Inspector General', title: 'Special Agent', alias: ['inspector general'] },
+    { code: 'SECRET', name: 'U.S. Secret Service', title: 'Special Agent', alias: ['secret service', 'usss'] },
+    { code: 'ICE', name: 'Immigration and Customs Enforcement', title: 'Special Agent', alias: ['immigration'] },
+    { code: 'CBP', name: 'Customs and Border Protection', title: 'Officer', alias: ['border patrol', 'customs'] },
+    { code: 'NCIS', name: 'Naval Criminal Investigative Service', title: 'Special Agent' },
+    { code: 'FINCEN', name: 'Financial Crimes Enforcement Network', title: 'Analyst' },
+    { code: 'USPI', name: 'U.S. Postal Inspection Service', title: 'Postal Inspector', alias: ['postal'] },
+    { code: 'NYPD', name: 'New York City Police Department', title: 'Detective', alias: ['new york police'] },
+    { code: 'SCSO', name: "Shelby County Sheriff's Office", title: 'Deputy', alias: ['shelby county'] },
+    { code: 'MEPIC', name: 'M-EPIC Environmental Policy Impact Commission', title: 'Investigator', alias: ['m-epic', 'environmental policy'] }
+  ];
+  var DG_AGENCY = { code: 'DG', name: 'Delta Green — Directorate', title: 'Agent', dg: true };
+  function agencyFor(text) {
+    var t = String(text || '').toLowerCase();
+    if (!t) return DG_AGENCY;
+    for (var i = 0; i < AGENCIES.length; i++) {
+      var a = AGENCIES[i];
+      if (new RegExp('\\b' + a.code.toLowerCase() + '\\b').test(t) || t.indexOf(a.name.toLowerCase()) !== -1) return a;
+      if ((a.alias || []).some(function (x) { return t.indexOf(x) !== -1; })) return a;
+    }
+    return DG_AGENCY;
+  }
+  function agentAgency() {
+    var bio = (data.state && data.state.bio) || {};
+    var brief = data.brief || {};
+    return agencyFor(brief.cover_agency || bio.employer || brief.employer || '');
+  }
+  function bizCardHtml(big) {
+    var a = currentAgent();
+    var ag = agentAgency();
+    var name = a ? agentName(a) : 'Agent';
+    return '<div class="fn-biz' + (ag.dg ? ' fn-biz-dg' : '') + (big ? ' fn-biz-big' : '') + '">' +
+      (ag.dg ? '<img class="fn-biz-mark" src="' + TRI + '" alt="">' : '<div class="fn-biz-code">' + esc(ag.code) + '</div>') +
+      '<div class="fn-biz-agency">' + esc(ag.dg ? 'Delta Green' : ag.name) + '</div>' +
+      '<div class="fn-biz-name">' + esc(name) + '</div>' +
+      '<div class="fn-biz-title">' + esc(ag.title) + (ag.dg ? '' : ' · ' + esc(ag.code)) + '</div>' +
+      (big ? '<div class="fn-biz-line">' + esc(a ? a.code : '') + '</div>' : '') +
+      '</div>';
+  }
+
+  /* ── Chrome: the card holder, tabs, page head ── */
   var META = {
     agentfile: ['Delta Green — Agent Roster', 'Agent File'],
-    fieldid: ['Field ID Fabricator', 'Field ID'],
+    fieldid: ['Cover Credential', 'Field ID'],
     req: ['Request for Materiel & Disbursement', 'Requisition'],
-    radio: ['A-Cell Broadcast', 'Table Radio'],
     dice: ['Percentile & Dice', 'Dice Roller'],
     notes: ['Your Tab', 'Notes'],
     evidence: ['Evidence Locker — Read Only', 'Evidences'],
@@ -507,42 +590,44 @@
     var a = currentAgent();
     var name = agentName(a);
     slot('phone-name').textContent = name;
-    slot('id-name').textContent = name;
-    slot('id-prof').textContent = a ? (a.friendly ? 'Friendly — pregen' : (professionLabel() || '—')) : 'Open Agent Hub to pick one';
+    slot('card-name').textContent = name;
     var brief = data.brief || {};
-    var meta = a ? [a.code, (brief.codename || a.codename) ? 'Cover ' + (brief.codename || a.codename) : '', brief.campaign_era || a.era || ''].filter(Boolean).join(' · ') : '';
-    slot('id-meta').textContent = meta;
-    var ph = slot('id-photo');
+    slot('card-meta').textContent = a ? [a.code, (brief.codename || a.codename) ? '“' + (brief.codename || a.codename) + '”' : ''].filter(Boolean).join(' · ') : 'Pick your Agent in the Agent Hub';
+    var ph = slot('card-photo');
     var f = faceUrl(a);
     if (f) { if (ph.getAttribute('data-src') !== f) { ph.setAttribute('data-src', f); ph.textContent = ''; setImage(ph, f); } }
-    else { ph.removeAttribute('data-src'); ph.textContent = 'No photo'; }
+    else { ph.removeAttribute('data-src'); ph.innerHTML = '<span>No photo</span>'; }
+    slot('card-biz').innerHTML = bizCardHtml(false);
   }
   function renderHead(view, metaText) {
     var m = META[view] || ['', ''];
     slot('kicker').textContent = m[0];
     slot('title').textContent = m[1];
     slot('meta').textContent = metaText || '';
-    Array.prototype.forEach.call(root.querySelectorAll('.fn-pocket,.fn-tab'), function (b) {
+    Array.prototype.forEach.call(root.querySelectorAll('.fn-slot,.fn-tab'), function (b) {
       b.classList.toggle('fn-active', b.getAttribute('data-view') === view);
     });
   }
 
   /* ── Page router ── */
-  var PERSISTENT = { dice: 'dice', req: 'embed-req', notes: 'embed-notes' };
+  var PERSISTENT = { dice: 'dice', req: 'embed-req' };
   function render() {
     if (!state.open) return;
     var view = state.view;
-    var persistentSlot = PERSISTENT[view];
-    if (view === 'notes' && narrow()) persistentSlot = null; // phone: quick strip in the normal body
-    ['dice', 'embed-req', 'embed-notes'].forEach(function (s) { slot(s).hidden = s !== persistentSlot; });
+    var book = root.querySelector('.fn-book');
+    var spread = view === 'notes' && !narrow() && state.notesMode === 'spread';
+    book.classList.toggle('fn-spreading', spread);
+    slot('spread').hidden = !spread;
+    var persistentSlot = PERSISTENT[view] || null;
+    ['dice', 'embed-req'].forEach(function (s) { slot(s).hidden = s !== persistentSlot; });
     slot('body').hidden = !!persistentSlot;
-    if (view !== 'radio') stopPagerTick();
     renderHead(view, '');
     var body = slot('body');
     if (!persistentSlot) { body.innerHTML = ''; body.scrollTop = 0; }
+    if (spread) { pageNotesSpread(); return; }
     var fn = {
-      agentfile: pageAgentFile, fieldid: pageFieldId, req: pageRequisition, radio: pageRadio, dice: pageDice,
-      notes: narrow() ? pageQuickNotes : pageFullNotes, evidence: pageEvidence, rules: pageRules, settings: pageSettings
+      agentfile: pageAgentFile, fieldid: pageFieldId, req: pageRequisition, dice: pageDice,
+      notes: pageQuickNotes, evidence: pageEvidence, rules: pageRules, settings: pageSettings
     }[view];
     if (fn) fn(body);
   }
@@ -553,7 +638,7 @@
     body.innerHTML = '<p class="fn-p">' + (a && a.friendly
       ? esc(what) + ' belongs to a campaign Agent. Friendly pregens don\'t have one.'
       : 'No Agent on this device yet. ' + esc(what) + ' opens once you pick your Agent in the Agent Hub.') + '</p>' +
-      '<div class="fn-actions"><button type="button" class="fn-btn fn-primary" data-go="hub">Open Agent Hub</button></div>';
+      '<div class="fn-actions"><button type="button" class="fn-btn fn-red" data-go="hub">Open Agent Hub</button></div>';
     body.querySelector('[data-go="hub"]').addEventListener('click', function () { navigate(url('agent-hub.html')); });
     return null;
   }
@@ -566,87 +651,69 @@
     }
     if (data.code && !data.char && !data.brief) {
       body.innerHTML = '<p class="fn-p">Couldn\'t pull this Agent\'s file just now — check the connection.</p>' +
-        '<div class="fn-actions"><button type="button" class="fn-btn fn-primary" data-go="retry">Try again</button></div>';
+        '<div class="fn-actions"><button type="button" class="fn-btn fn-red" data-go="retry">Try again</button></div>';
       body.querySelector('[data-go="retry"]').addEventListener('click', function () { refresh(); render(); });
       return;
     }
     fn();
   }
-  function fieldRow(label, valueHtml) {
-    return '<div class="fn-field"><span class="fn-field-l">' + esc(label) + '</span><span class="fn-field-v">' + valueHtml + '</span></div>';
+  function cellOps() {
+    return data.ops.filter(function (o) { return data.cell && (!o.cell_id || o.cell_id === data.cell.cell_id); })
+      .sort(function (x, y) { return Number(y.created_at || 0) - Number(x.created_at || 0); });
   }
+  function activeOp(ops) { return ops.filter(function (o) { return o.active === true; })[0] || ops[0] || null; }
 
-  /* ── Agent File: Play / Open first, then the quick look ── */
+  /* ── Agent File: the shared Agent File paper ── */
   function pageAgentFile(body) {
     var a = needAgent(body, 'The Agent File');
     if (!a) return;
     renderHead('agentfile', a.code);
     loadingThen(body, function () {
-      var brief = data.brief || {};
-      var st = data.state || {};
-      var bonds = Array.isArray(st.bonds) ? st.bonds : [];
-      var cellOps = data.ops.filter(function (o) { return data.cell && (!o.cell_id || o.cell_id === data.cell.cell_id); })
-        .sort(function (x, y) { return Number(y.created_at || 0) - Number(x.created_at || 0); });
-      var activeOp = cellOps.filter(function (o) { return o.active === true; })[0] || cellOps[0] || null;
-      body.innerHTML =
-        '<div class="fn-actions" style="margin-bottom:16px">' +
-          '<button type="button" class="fn-btn fn-primary" data-go="play">Play (Live) ↗</button>' +
-          '<button type="button" class="fn-btn" data-go="file">Open Agent File ↗</button>' +
-        '</div>' +
-        '<div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:6px">' +
-          '<div class="fn-id-photo" style="transform:rotate(-1.5deg)"><div class="fn-id-photo-img" style="width:84px;height:84px" data-fn-photo>' +
-            (faceUrl(a) ? '' : '<button type="button" class="fn-btn" style="padding:4px 6px;font-size:8px;color:#1c1608;background:#f0e87a;border:0" data-go="photo">Take Photo</button>') + '</div></div>' +
-          '<div style="min-width:0;flex:1">' +
-            '<div class="fn-card-title" style="font-size:18px;margin:2px 0 4px">' + esc(agentName(a)) + '</div>' +
-            '<div class="fn-p" style="margin:0">' + esc([professionLabel(), brief.codename ? 'Cover “' + brief.codename + '”' : ''].filter(Boolean).join(' · ') || '—') + '</div>' +
-            (st.bio ? '' : '<div class="fn-muted" style="margin-top:6px">No character sheet yet — Play opens character creation.</div>') +
-          '</div>' +
-        '</div>' +
-        '<div class="fn-label">Cell</div>' +
-        (data.cell
-          ? fieldRow('Name', esc(data.cell.name || data.cell.cell_id)) +
-            fieldRow('Members', data.members.length ? '<div class="fn-members">' + data.members.map(function (m) {
-              return '<span>' + esc(m.name) + (m.codename ? ' <small style="color:#8a7a5a">“' + esc(m.codename) + '”</small>' : '') + '</span>';
-            }).join('') + '</div>' : '<span class="fn-muted">Only you so far.</span>')
-          : '<p class="fn-muted">Not assigned to a Cell yet — your Handler does that.</p>') +
-        '<div class="fn-label">Bonds</div>' +
-        (bonds.length ? bonds.map(function (b) {
-          return '<div class="fn-bond"><span class="fn-bond-score">' + esc(b.score != null ? b.score : '') + '</span>' + esc(b.name || 'Unnamed') +
-            (b.relationship ? ' <small>— ' + esc(b.relationship) + '</small>' : '') + '</div>';
-        }).join('') : '<p class="fn-muted">No bonds on the sheet yet.</p>') +
-        '<div class="fn-label">Operations</div>' +
-        (cellOps.length ? cellOps.map(function (o) {
-          var isActive = activeOp && o.operation_id === activeOp.operation_id;
-          return '<div class="fn-op' + (isActive ? ' fn-op-active' : '') + '"><span style="flex:1">' + esc(o.name || o.operation_id) + '</span>' +
-            (isActive ? '<span class="fn-stamp fn-red">Active</span>' : '') + '</div>';
-        }).join('') : '<p class="fn-muted">' + (data.cell ? 'No operations filed for your Cell yet.' : 'Operations appear once you\'re in a Cell.') + '</p>');
-      var ph = body.querySelector('[data-fn-photo]');
-      if (faceUrl(a)) setImage(ph, faceUrl(a));
-      body.querySelector('[data-go="play"]').addEventListener('click', function () { navigate(url('stats/index.html?load=' + encodeURIComponent(a.code))); });
-      body.querySelector('[data-go="file"]').addEventListener('click', function () { navigate(url('dg-agent-portal.html?code=' + encodeURIComponent(a.code) + '#agent')); });
-      var photoBtn = body.querySelector('[data-go="photo"]');
-      if (photoBtn) photoBtn.addEventListener('click', function () { navigate(url('dg-agent-portal.html?code=' + encodeURIComponent(a.code) + '#cover')); });
+      body.innerHTML = '<p class="fn-muted">Opening the file…</p>';
+      ensureSheetLib().then(function (AS) {
+        if (!state.open || state.view !== 'agentfile') return;
+        var brief = data.brief || {};
+        var sheet = data.state ? AS.fromState(data.state) : { name: agentName(a), profession: professionLabel() };
+        if (!sheet.name) sheet.name = agentName(a);
+        if (data.state && data.state.bio && data.state.bio.profession) sheet.profession = professionLabel();
+        var ops = cellOps(), act = activeOp(ops);
+        var opsHtml = data.cell ? '<div class="as-ops"><div class="as-sec-hd">Operations</div>' + (ops.length ? ops.map(function (o) {
+          var on = act && o.operation_id === act.operation_id;
+          return '<div class="as-op' + (on ? ' as-op-active' : '') + '"><span>' + esc(o.name || o.operation_id) + '</span>' + (on ? '<span class="as-stamp">Active</span>' : '') + '</div>';
+        }).join('') : '<p class="as-text as-k">None filed yet.</p>') + '</div>' : '';
+        body.innerHTML = AS.render(sheet, {
+          photoHtml: AS.photoHtml('data-go="photo"'),
+          subtitle: [sheet.profession, brief.codename ? 'Cover “' + brief.codename + '”' : ''].filter(Boolean).join(' · '),
+          physical: AS.physical(brief, sheet.physical),
+          cellName: data.cell ? (data.cell.name || data.cell.cell_id) : '',
+          members: data.members, opsHtml: opsHtml,
+          actionsHtml: '<button type="button" class="fn-btn fn-red" data-go="play">Play (Live) ↗</button>' +
+            '<button type="button" class="fn-btn fn-ink" data-go="file">Open Agent File ↗</button>',
+          emptySheetHtml: data.state ? '' : '<p class="as-text as-k" style="margin-top:14px">No character sheet yet — Play opens character creation.</p>'
+        });
+        var ph = body.querySelector('[data-as-photo]');
+        var f = faceUrl(a);
+        if (f && ph) { ph.classList.add('as-has-photo'); var holder = document.createElement('div'); holder.style.cssText = 'position:absolute;inset:0'; ph.appendChild(holder); setImage(holder, f); }
+        AS.wireRolls(body);
+        body.querySelector('[data-go="play"]').addEventListener('click', function () { navigate(url('stats/index.html?load=' + encodeURIComponent(a.code))); });
+        body.querySelector('[data-go="file"]').addEventListener('click', function () { navigate(url('dg-agent-portal.html?code=' + encodeURIComponent(a.code) + '#agent')); });
+        var photoBtn = body.querySelector('[data-go="photo"]');
+        if (photoBtn) photoBtn.addEventListener('click', function () { navigate(url('dg-agent-portal.html?code=' + encodeURIComponent(a.code) + '#cover')); });
+      }, function () { body.innerHTML = '<p class="fn-muted">Could not open the file — check the connection.</p>'; });
     });
   }
 
-  /* ── Field ID ── */
+  /* ── Field ID: the business card for the Agent's agency ── */
   function pageFieldId(body) {
     var a = needAgent(body, 'The Field ID');
     if (!a) return;
-    renderHead('fieldid', 'Prop only');
+    renderHead('fieldid', agentAgency().code);
     loadingThen(body, function () {
-      var brief = data.brief || {};
-      body.innerHTML =
-        '<div class="fn-cred"><div class="fn-cred-wm">PROP — NOT A GOVERNMENT DOCUMENT</div>' +
-          '<div class="fn-cred-top"><div class="fn-cred-ph" data-fn-photo></div><div>' +
-            '<div class="fn-cred-agency">' + esc(brief.cover_agency || 'FBI') + ' — SPECIAL AGENT</div>' +
-            '<div class="fn-cred-name">' + esc(agentName(a)) + '</div>' +
-            '<div class="fn-cred-era">' + esc([brief.campaign_era || a.era, a.code].filter(Boolean).join(' issue · ')) + '</div>' +
-          '</div></div></div>' +
-        '<p class="fn-p">The Agent File\'s IDs tab builds the real credential — agency, era, your Face Plate — ready to print.</p>' +
-        '<div class="fn-actions"><button type="button" class="fn-btn fn-primary" data-go="fab">Make Field ID ↗</button>' +
-        '<button type="button" class="fn-btn" data-go="blank">Blank ID Creator ↗</button></div>';
-      if (faceUrl(a)) setImage(body.querySelector('[data-fn-photo]'), faceUrl(a));
+      var ag = agentAgency();
+      body.innerHTML = '<div class="fn-biz-stage">' + bizCardHtml(true) + '</div>' +
+        '<p class="fn-p">' + (ag.dg ? 'No agency on this Agent\'s file yet, so it carries the Program\'s own card.' : 'From the workplace on this Agent\'s file.') + '</p>' +
+        '<div class="fn-actions"><button type="button" class="fn-btn fn-red" data-go="fab">Make Field ID ↗</button>' +
+        '<button type="button" class="fn-btn fn-ink" data-go="blank">Blank ID Creator ↗</button></div>';
       body.querySelector('[data-go="fab"]').addEventListener('click', function () { navigate(url('dg-agent-portal.html?code=' + encodeURIComponent(a.code) + '#ids')); });
       body.querySelector('[data-go="blank"]').addEventListener('click', function () { navigate(url('dg-id-creator.html')); });
     });
@@ -672,23 +739,19 @@
     }
   }
 
-  /* ── Notes: desktop = the full Player Notes; phone = quick strip ── */
-  function pageFullNotes() {
-    var host = slot('embed-notes');
+  /* ── Notes: both pages (index + Evidence | editor); again = quick notes ── */
+  function pageNotesSpread() {
+    var host = slot('spread');
     var a = currentAgent();
-    renderHead('notes', a && !a.friendly ? a.code : '');
     if (!a || a.friendly) {
-      host.innerHTML = '';
-      var d = document.createElement('div');
-      d.className = 'fn-page-body';
-      host.appendChild(d);
-      needAgent(d, 'Notes');
+      host.innerHTML = '<div class="fn-spread-msg"></div>';
+      needAgent(host.firstChild, 'Notes');
       return;
     }
-    var src = url('notes/index.html?embed=notebook&code=' + encodeURIComponent(a.code));
+    var src = url('notes/index.html?embed=spread&code=' + encodeURIComponent(a.code));
     var f = host.querySelector('iframe');
     if (!f || f.getAttribute('data-src') !== src) {
-      host.innerHTML = '';
+      host.innerHTML = '<button type="button" class="fn-btn fn-ink fn-small fn-spread-quick" data-spread="quick" title="Or click the Notes tab again">Quick notes</button>';
       f = document.createElement('iframe');
       f.className = 'fn-embed';
       f.setAttribute('data-dg-embed', 'notes');
@@ -696,6 +759,7 @@
       f.title = 'Player Notes';
       f.src = src;
       host.appendChild(f);
+      host.querySelector('[data-spread="quick"]').addEventListener('click', function () { state.notesMode = 'quick'; render(); });
     }
   }
 
@@ -723,11 +787,11 @@
         }).join('') + '</div>' +
         '<div class="fn-row" style="margin-top:10px">' +
           '<button type="button" class="fn-chipbtn' + (quick.shared ? ' fn-on' : '') + '" data-q="shared">' + (quick.shared ? 'Shared with the Cell' : 'Private to you') + '</button>' +
-          '<button type="button" class="fn-btn fn-primary" style="flex:1" data-q="add">Add Note</button>' +
+          '<button type="button" class="fn-btn fn-red" style="flex:1" data-q="add">Add Note</button>' +
         '</div>' +
         '<div class="fn-q-status" data-q="status">' + esc(quick.status) + '</div>' +
         '<div class="fn-q-list" data-q="list"><p class="fn-muted">Loading your notes…</p></div>' +
-        '<div class="fn-actions" style="margin-top:14px"><button type="button" class="fn-btn" style="flex:1;text-align:center" data-q="full">Open Player Notes ↗</button></div>';
+        '<div class="fn-actions" style="margin-top:14px"><button type="button" class="fn-btn" style="flex:1;text-align:center" data-q="full">' + (narrow() ? 'Open Player Notes ↗' : 'Open the full notes') + '</button></div>';
       var ta = body.querySelector('[data-q="text"]');
       body.addEventListener('click', function (e) {
         var b = e.target.closest('[data-q]');
@@ -736,7 +800,11 @@
         if (q === 'tag') { quick.tag = b.getAttribute('data-type'); Array.prototype.forEach.call(body.querySelectorAll('[data-q="tag"]'), function (x) { x.classList.toggle('fn-on', x === b); }); }
         else if (q === 'shared') { quick.shared = !quick.shared; b.classList.toggle('fn-on', quick.shared); b.textContent = quick.shared ? 'Shared with the Cell' : 'Private to you'; }
         else if (q === 'add') addQuickNote(a, cellId, ta, body);
-        else if (q === 'full') navigate(url('notes/index.html?code=' + encodeURIComponent(a.code)));
+        else if (q === 'full') {
+          // Desktop: back to the two-page spread in place; phone: the page.
+          if (!narrow()) { state.notesMode = 'spread'; render(); }
+          else navigate(url('notes/index.html?code=' + encodeURIComponent(a.code)));
+        }
       });
       loadQuickNotes(a, cellId, body);
     });
@@ -770,7 +838,7 @@
     el.innerHTML = list.slice(0, 40).map(function (b) {
       var tag = (b.tags || [])[0];
       var when = b.created_at ? new Date(b.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '';
-      return '<div class="fn-card"><div class="fn-card-head">' +
+      return '<div class="fn-card-q"><div class="fn-card-head">' +
         (tag ? '<span class="fn-tag" data-type="' + esc(tag.type) + '">' + esc(tag.label || tag.type) + '</span>' : '') +
         (b.shared ? '<span class="fn-stamp fn-green">Shared</span>' : '') +
         (b.pending ? '<span class="fn-stamp fn-red">Unsynced</span>' : '') +
@@ -813,7 +881,7 @@
     });
   }
 
-  /* ── Evidences ── */
+  /* ── Evidences, filtered by Operation ── */
   function pageEvidence(body) {
     var a = needAgent(body, 'Evidence');
     if (!a) return;
@@ -834,152 +902,162 @@
         var notes = {}; res[1].forEach(function (n) { notes[n.handout_id] = n.note; });
         renderHead('evidence', items.length + ' filed');
         if (!items.length) { body.innerHTML = '<p class="fn-muted">Nothing filed for this Agent yet.</p>'; return; }
-        body.innerHTML = items.map(function (h) {
-          var scope = h.cell_id ? ((cellsById[h.cell_id] && cellsById[h.cell_id].name) || h.cell_id) : 'All Cells';
-          var op = h.operation_id ? ((opsById[h.operation_id] && opsById[h.operation_id].name) || h.operation_id) : 'Unfiled';
-          var when = h.created_at ? new Date(Number(h.created_at)).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '';
-          return '<div class="fn-card"><div class="fn-card-head">' +
-            '<span class="fn-stamp ' + (h.cell_id ? 'fn-red' : 'fn-green') + '">' + esc(scope) + '</span>' +
-            '<span class="fn-tag" style="background:rgba(28,22,8,.08)">' + esc(op) + '</span>' +
-            '<span class="fn-card-date">' + esc(when ? 'Filed ' + when : '') + '</span></div>' +
-            '<div class="fn-card-title">' + esc(h.title || 'Untitled') + '</div>' +
-            (h.photo ? '<div data-ev-photo="' + esc(h.evidence_id) + '"></div>' : '') +
-            '<div class="fn-card-body">' + esc(h.body || '') + '</div>' +
-            '<div class="fn-remark"><div class="fn-label" style="margin:0 0 5px">Your private remarks</div>' +
-              '<textarea class="fn-input" rows="2" placeholder="Only you see these." data-ev="' + esc(h.evidence_id) + '">' + esc(notes[h.evidence_id] || '') + '</textarea>' +
-              '<div class="fn-remark-status" data-ev-status="' + esc(h.evidence_id) + '"></div></div></div>';
-        }).join('');
-        items.forEach(function (h) {
-          if (!h.photo) return;
-          var holder = body.querySelector('[data-ev-photo="' + h.evidence_id + '"]');
-          if (!holder) return;
-          var box = document.createElement('div');
-          holder.appendChild(box);
-          setImage(box, h.photo);
-          var mo = new MutationObserver(function () { var img = box.querySelector('img'); if (img) { img.className = 'fn-card-photo'; mo.disconnect(); } });
-          mo.observe(box, { childList: true });
-          var img0 = box.querySelector('img'); if (img0) img0.className = 'fn-card-photo';
-        });
-        var timers = {};
-        Array.prototype.forEach.call(body.querySelectorAll('textarea[data-ev]'), function (ta) {
-          ta.addEventListener('input', function () {
-            var id = ta.getAttribute('data-ev');
-            var st = body.querySelector('[data-ev-status="' + id + '"]');
-            if (st) st.textContent = 'Unsaved…';
-            clearTimeout(timers[id]);
-            timers[id] = setTimeout(function () {
-              window.dgStore.saveHandoutNote(a.code, id, ta.value).then(function () {
-                if (st) st.textContent = 'Saved.';
-              }, function () { if (st) st.textContent = 'Could not save — check the connection.'; });
-            }, 900);
+        var opIds = [], hasUnfiled = false;
+        items.forEach(function (h) { if (h.operation_id) { if (opIds.indexOf(h.operation_id) === -1) opIds.push(h.operation_id); } else hasUnfiled = true; });
+        if (state.evOp && state.evOp !== 'UNFILED' && opIds.indexOf(state.evOp) === -1) state.evOp = '';
+        var opName = function (id) { return (opsById[id] && opsById[id].name) || id; };
+        body.innerHTML = '<div class="fn-filter"><label>Operation</label><select class="fn-select" data-ev-filter>' +
+          '<option value="">All operations</option>' +
+          opIds.map(function (id) { return '<option value="' + esc(id) + '"' + (state.evOp === id ? ' selected' : '') + '>' + esc(opName(id)) + '</option>'; }).join('') +
+          (hasUnfiled ? '<option value="UNFILED"' + (state.evOp === 'UNFILED' ? ' selected' : '') + '>Unfiled</option>' : '') +
+          '</select></div><div data-ev-list></div>';
+        function draw() {
+          var shown = items.filter(function (h) { return !state.evOp || (state.evOp === 'UNFILED' ? !h.operation_id : h.operation_id === state.evOp); });
+          var list = body.querySelector('[data-ev-list]');
+          list.innerHTML = shown.length ? shown.map(function (h) {
+            var scope = h.cell_id ? ((cellsById[h.cell_id] && cellsById[h.cell_id].name) || h.cell_id) : 'All Cells';
+            var when = h.created_at ? new Date(Number(h.created_at)).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+            return '<div class="fn-card-sheet"><div class="fn-card-head">' +
+              '<span class="fn-stamp ' + (h.cell_id ? 'fn-red' : 'fn-green') + '">' + esc(scope) + '</span>' +
+              '<span class="fn-tag" style="background:rgba(28,22,8,.08)">' + esc(h.operation_id ? opName(h.operation_id) : 'Unfiled') + '</span>' +
+              '<span class="fn-card-date">' + esc(when ? 'Filed ' + when : '') + '</span></div>' +
+              '<div class="fn-card-title">' + esc(h.title || 'Untitled') + '</div>' +
+              (h.photo ? '<div data-ev-photo="' + esc(h.evidence_id) + '"></div>' : '') +
+              '<div class="fn-card-body">' + esc(h.body || '') + '</div>' +
+              '<div class="fn-remark"><div class="fn-label" style="margin:0 0 5px">Your private remarks</div>' +
+                '<textarea class="fn-input" rows="2" placeholder="Only you see these." data-ev="' + esc(h.evidence_id) + '">' + esc(notes[h.evidence_id] || '') + '</textarea>' +
+                '<div class="fn-remark-status" data-ev-status="' + esc(h.evidence_id) + '"></div></div></div>';
+          }).join('') : '<p class="fn-muted">Nothing filed under this Operation.</p>';
+          shown.forEach(function (h) {
+            if (!h.photo) return;
+            var holder = list.querySelector('[data-ev-photo="' + h.evidence_id + '"]');
+            if (!holder) return;
+            var box = document.createElement('div');
+            holder.appendChild(box);
+            var mo = new MutationObserver(function () { var img = box.querySelector('img'); if (img) { img.className = 'fn-ev-photo'; mo.disconnect(); } });
+            mo.observe(box, { childList: true });
+            setImage(box, h.photo);
+            var img0 = box.querySelector('img'); if (img0) img0.className = 'fn-ev-photo';
           });
-        });
+          var timers = {};
+          Array.prototype.forEach.call(list.querySelectorAll('textarea[data-ev]'), function (ta) {
+            ta.addEventListener('input', function () {
+              var id = ta.getAttribute('data-ev');
+              notes[id] = ta.value;
+              var st = list.querySelector('[data-ev-status="' + id + '"]');
+              if (st) st.textContent = 'Unsaved…';
+              clearTimeout(timers[id]);
+              timers[id] = setTimeout(function () {
+                window.dgStore.saveHandoutNote(a.code, id, ta.value).then(function () {
+                  if (st) st.textContent = 'Saved.';
+                }, function () { if (st) st.textContent = 'Could not save — check the connection.'; });
+              }, 900);
+            });
+          });
+        }
+        body.querySelector('[data-ev-filter]').addEventListener('change', function (e) { state.evOp = e.target.value; draw(); });
+        draw();
       }).catch(function (err) {
         body.innerHTML = '<p class="fn-muted">Could not open the locker — check the connection. (' + esc(err && (err.code || err.message) || err) + ')</p>';
       });
     });
   }
 
-  /* ── Radio pager + quick-tune chip ── */
-  var pagerTimer = null;
-  function stopPagerTick() { if (pagerTimer) { clearInterval(pagerTimer); pagerTimer = null; } }
+  /* ── Radio: a pager on the desk beside the notebook ── */
+  var pagerTimer = null, pagerPick = '';
   function radioState() { return window.dgRadio ? window.dgRadio.state() : null; }
-  function quickTune() {
-    var r = window.dgRadio;
-    if (!r) { open('radio'); return; }
-    var s = r.state();
-    if (s.tuned) {
-      if (s.resumeNeeded) r.resume(); else r.leave();
-    } else {
-      r.tune(lsGet('dg_fn_last_channel') || r.channels[0]);
-      if (r.state().muted) r.setMuted(false);
-    }
-    renderChip();
-  }
   function renderChip() {
     var s = radioState();
     Array.prototype.forEach.call(root.querySelectorAll('[data-fn="chip"]'), function (chip) {
       if (!s) { chip.hidden = true; return; }
       chip.hidden = false;
       chip.classList.toggle('fn-live', !!s.live);
-      var label = !s.tuned ? 'Tune In' : (s.resumeNeeded ? 'Tap for sound' : (s.live ? (s.muted ? 'Muted' : 'On air') : 'Waiting'));
+      var label = !s.tuned ? 'Radio' : (s.resumeNeeded ? 'Tap for sound' : (s.live ? (s.muted ? 'Muted' : 'On air') : 'Waiting'));
       chip.innerHTML = '<span class="fn-chip-dot"></span>' + (s.tuned ? '<b>CH ' + esc(s.channel) + '</b> ' : '') + esc(label);
-      chip.title = s.tuned ? 'Tap to leave the channel' + (s.track ? ' — now playing: ' + s.track : '') : 'Tap to tune in';
+      chip.title = s.tuned && s.track ? 'Now playing: ' + s.track : 'Table Radio';
     });
     if (s && s.channel) lsSet('dg_fn_last_channel', s.channel);
-    if (state.open && state.view === 'radio') updatePager();
+    if (!root.querySelector('#fn-pager').hidden) updatePager();
   }
-  function pageRadio(body) {
-    renderHead('radio', '');
+  function togglePager() { if (root.querySelector('#fn-pager').hidden) openPager(); else closePager(); }
+  function closePager() {
+    var p = root.querySelector('#fn-pager');
+    if (!p || p.hidden) return;
+    p.hidden = true;
+    if (pagerTimer) { clearInterval(pagerTimer); pagerTimer = null; }
+  }
+  function openPager() {
     var r = window.dgRadio;
-    if (!r) { body.innerHTML = '<p class="fn-muted">Table Radio isn\'t available on this page.</p>'; return; }
+    if (!r) return;
+    hidePeek();
+    var p = root.querySelector('#fn-pager');
     var chans = r.channels;
-    body.innerHTML =
-      '<div class="fn-pager">' +
-        '<div class="fn-dial"><div class="fn-dial-ring"></div><div class="fn-dial-knob" data-p="knob"></div>' +
-          chans.map(function (c, i) {
-            var ang = (i * 360 / chans.length - 90) * Math.PI / 180;
-            return '<button type="button" class="fn-dial-tick" data-ch="' + c + '" style="left:calc(50% + ' + (40 * Math.cos(ang)).toFixed(1) + 'px);top:calc(50% + ' + (40 * Math.sin(ang)).toFixed(1) + 'px)">' + c + '</button>';
-          }).join('') +
-        '</div>' +
-        '<div class="fn-pager-read">' +
-          '<div>CH <b data-p="ch">—</b></div>' +
-          '<div class="fn-pager-track" data-p="track">No signal yet.</div>' +
-          '<div class="fn-pager-bar"><div class="fn-pager-fill" data-p="fill"></div></div>' +
-          '<div class="fn-pager-time" data-p="time"></div>' +
-          '<div class="fn-pager-status" data-p="status"></div>' +
-          '<div class="fn-pager-ctl">' +
-            '<button type="button" class="fn-pbtn" data-p="tune">Tune In</button>' +
-            '<button type="button" class="fn-pbtn fn-quiet" data-p="mute">SOUND</button>' +
-            '<input type="range" class="fn-vol" min="0" max="100" step="1" data-p="vol" aria-label="Volume">' +
-            '<button type="button" class="fn-pbtn" data-p="resume" hidden>Tap to resume audio</button>' +
+    pagerPick = lsGet('dg_fn_last_channel') || chans[0];
+    p.innerHTML =
+      '<div class="fn-pg-case">' +
+        '<span class="fn-pg-screw fn-pg-s1"></span><span class="fn-pg-screw fn-pg-s2"></span><span class="fn-pg-screw fn-pg-s3"></span><span class="fn-pg-screw fn-pg-s4"></span>' +
+        '<button type="button" class="fn-pg-x" data-p="x" aria-label="Put the radio away">×</button>' +
+        '<div class="fn-pg-screen"><div class="fn-pg-row"><b data-p="ch">CH —</b><span data-p="st"></span></div>' +
+          '<div class="fn-pg-track" data-p="track"></div>' +
+          '<div class="fn-pg-bar"><div class="fn-pg-fill" data-p="fill"></div></div><div class="fn-pg-time" data-p="time"></div></div>' +
+        '<div class="fn-pg-controls">' +
+          '<div class="fn-dial"><div class="fn-dial-ring"></div><div class="fn-dial-knob" data-p="knob"></div>' +
+            chans.map(function (c, i) {
+              var ang = (i * 360 / chans.length - 90) * Math.PI / 180;
+              return '<button type="button" class="fn-dial-tick" data-ch="' + c + '" style="left:calc(50% + ' + (36 * Math.cos(ang)).toFixed(1) + 'px);top:calc(50% + ' + (36 * Math.sin(ang)).toFixed(1) + 'px)">' + c + '</button>';
+            }).join('') +
+          '</div>' +
+          '<div class="fn-pg-keys">' +
+            '<button type="button" class="fn-pg-key fn-pg-tune" data-p="tune">Tune In</button>' +
+            '<button type="button" class="fn-pg-key" data-p="mute">Sound</button>' +
+            '<label class="fn-pg-vol"><span>Vol</span><input type="range" min="0" max="100" step="1" data-p="vol" aria-label="Volume"></label>' +
+            '<button type="button" class="fn-pg-key fn-pg-resume" data-p="resume" hidden>Tap for sound</button>' +
           '</div>' +
         '</div>' +
-      '</div>' +
-      '<p class="fn-p">The pager keeps you tuned to what A-Cell is broadcasting while you move between pages. Volume and mute are yours alone; the Handler owns the track. The chip next to the notebook tunes in and out without opening it.</p>';
-    var pick = lsGet('dg_fn_last_channel') || chans[0];
-    body.addEventListener('click', function (e) {
+      '</div>';
+    p.onclick = function (e) {
       var t = e.target.closest('[data-ch],[data-p]');
       if (!t) return;
       var s = r.state();
       if (t.hasAttribute('data-ch')) {
-        pick = t.getAttribute('data-ch');
-        lsSet('dg_fn_last_channel', pick);
-        if (s.tuned) r.tune(pick);
-        updatePager(pick);
-        return;
+        pagerPick = t.getAttribute('data-ch');
+        lsSet('dg_fn_last_channel', pagerPick);
+        if (s.tuned) r.tune(pagerPick);
+      } else {
+        var k = t.getAttribute('data-p');
+        if (k === 'x') { closePager(); return; }
+        if (k === 'tune') { if (s.tuned) r.leave(); else { r.tune(pagerPick); if (r.state().muted) r.setMuted(false); } }
+        else if (k === 'mute') r.setMuted(!s.muted);
+        else if (k === 'resume') r.resume();
       }
-      var p = t.getAttribute('data-p');
-      if (p === 'tune') { if (s.tuned) r.leave(); else { r.tune(pick); if (r.state().muted) r.setMuted(false); } }
-      else if (p === 'mute') r.setMuted(!s.muted);
-      else if (p === 'resume') r.resume();
-      updatePager(pick);
+      updatePager();
       renderChip();
-    });
-    body.querySelector('[data-p="vol"]').addEventListener('input', function (e) { r.setVolume(e.target.value); });
-    updatePager(pick);
-    stopPagerTick();
-    pagerTimer = setInterval(function () { updatePager(); }, 1000);
+    };
+    p.querySelector('[data-p="vol"]').addEventListener('input', function (e) { r.setVolume(e.target.value); });
+    p.hidden = false;
+    updatePager();
+    if (pagerTimer) clearInterval(pagerTimer);
+    pagerTimer = setInterval(updatePager, 1000);
   }
-  var pagerPick = '';
-  function updatePager(pick) {
-    if (pick) pagerPick = pick;
-    var body = slot('body');
+  function updatePager() {
+    var p = root.querySelector('#fn-pager');
     var s = radioState();
-    if (!s || !body.querySelector('.fn-pager')) return;
-    var ch = s.tuned ? s.channel : (pagerPick || lsGet('dg_fn_last_channel') || '1');
-    var q = function (k) { return body.querySelector('[data-p="' + k + '"]'); };
+    if (!s || !p || p.hidden || !p.querySelector('.fn-pg-case')) return;
+    var q = function (k) { return p.querySelector('[data-p="' + k + '"]'); };
+    var ch = s.tuned ? s.channel : pagerPick;
     var idx = window.dgRadio.channels.indexOf(ch);
     q('knob').style.transform = 'rotate(' + (Math.max(0, idx) * 360 / window.dgRadio.channels.length) + 'deg)';
-    Array.prototype.forEach.call(body.querySelectorAll('[data-ch]'), function (b) { b.classList.toggle('fn-on', b.getAttribute('data-ch') === ch); });
-    q('ch').textContent = ch;
-    q('track').textContent = s.tuned ? (s.track || 'No signal yet.') : 'Not tuned in.';
+    Array.prototype.forEach.call(p.querySelectorAll('[data-ch]'), function (b) { b.classList.toggle('fn-on', b.getAttribute('data-ch') === ch); });
+    q('ch').textContent = 'CH ' + ch;
+    q('st').textContent = !s.tuned ? 'Off' : (s.live ? (s.muted ? 'Muted' : 'On air') : (s.paused ? 'Paused' : 'Waiting'));
+    q('track').textContent = s.tuned ? (s.track || '—') : '—';
     var pct = s.duration ? Math.max(0, Math.min(100, (s.elapsed / s.duration) * 100)) : 0;
     q('fill').style.width = pct + '%';
     q('time').textContent = s.duration ? s.formatTime(s.elapsed) + ' / ' + s.formatTime(s.duration) : '';
-    q('status').textContent = s.tuned ? s.status : 'Turn the dial, then Tune In.';
     q('tune').textContent = s.tuned ? 'Leave' : 'Tune In';
-    q('mute').textContent = s.muted ? 'MUTED' : 'SOUND';
+    q('tune').classList.toggle('fn-on', !!s.tuned);
+    q('mute').textContent = s.muted ? 'Muted' : 'Sound';
+    q('mute').classList.toggle('fn-on', !s.muted);
     var vol = q('vol'); if (document.activeElement !== vol) vol.value = String(s.volume);
     q('resume').hidden = !s.resumeNeeded;
   }
@@ -1035,7 +1113,6 @@
     hidePeek();
   }
   document.addEventListener('pointerdown', function (e) { pagePointer(e.target); }, true);
-
   /* ── Dice: the engine's own panel, moved onto this page ── */
   function pageDice() {
     hidePeek();
@@ -1047,9 +1124,8 @@
     if (panel.parentNode !== host) { host.innerHTML = ''; host.appendChild(panel); }
     if (panel.classList.contains('dr-collapsed') && window.dgDice && window.dgDice._toggle) window.dgDice._toggle();
   }
-
   /* ── Rules: the Rules Reference page itself, read inline ── */
-  var rules = { loading: null, sections: null, q: '', reading: null };
+  var rules = { loading: null, sections: null, q: '', reading: null, open: {} };
   function loadRules() {
     if (rules.loading) return rules.loading;
     rules.loading = fetch(url('rules-reference.html'), { credentials: 'same-origin' }).then(function (r) {
@@ -1069,6 +1145,15 @@
     }).catch(function (err) { rules.loading = null; throw err; });
     return rules.loading;
   }
+  // The five tenets again, as the oath at the head of the Rules -- the
+  // same text as the new-Agent clearance briefing (ORDERS_TEXT below).
+  function oathHtml() {
+    return '<div class="fn-oath"><div class="fn-oath-k">The Agent\'s Oath</div><ol>' +
+      ORDERS_TEXT.filter(function (l) { return /^\d\./.test(l[1]); }).map(function (l) {
+        var m = /^\d\.\s*([^.]+\.)\s*(.*)$/.exec(l[1]);
+        return '<li><b>' + esc(m ? m[1] : l[1]) + '</b> ' + esc(m ? m[2] : '') + '</li>';
+      }).join('') + '</ol><div class="fn-oath-foot">We need your silence.</div></div>';
+  }
   function pageRules(body) {
     renderHead('rules', '');
     body.innerHTML = '<p class="fn-muted">Opening the reference…</p>';
@@ -1076,11 +1161,14 @@
       if (!state.open || state.view !== 'rules') return;
       renderHead('rules', secs.length + ' sections');
       if (rules.reading) { renderRuleRead(body); return; }
-      body.innerHTML = '<input class="fn-input" type="search" data-r="q" placeholder="Search — e.g. lethality, SAN, pursuit" value="' + esc(rules.q) + '" style="margin-bottom:14px">' +
+      body.innerHTML = oathHtml() +
+        '<input class="fn-input fn-search" type="search" data-r="q" placeholder="Search the rules" value="' + esc(rules.q) + '">' +
         '<div data-r="list"></div>';
       var qi = body.querySelector('[data-r="q"]');
       qi.addEventListener('input', function () { rules.q = qi.value; renderRuleList(body); });
       body.querySelector('[data-r="list"]').addEventListener('click', function (e) {
+        var tog = e.target.closest('[data-toggle]');
+        if (tog) { var id = tog.getAttribute('data-toggle'); rules.open[id] = !rules.open[id]; renderRuleList(body); return; }
         var b = e.target.closest('[data-sec]');
         if (!b) return;
         rules.reading = { sec: b.getAttribute('data-sec'), block: b.hasAttribute('data-block') ? Number(b.getAttribute('data-block')) : null };
@@ -1098,10 +1186,12 @@
       var secHit = !q || s.h.toLowerCase().indexOf(q) !== -1;
       var blocks = s.blocks.filter(function (b) { return secHit || b.h.toLowerCase().indexOf(q) !== -1 || b.text.indexOf(q) !== -1; });
       if (!secHit && !blocks.length) return '';
-      return '<div class="fn-rules-sec"><div class="fn-rules-h"><button type="button" data-sec="' + esc(s.id) + '">' + esc(s.h) + '</button></div>' +
-        '<div class="fn-rules-subs">' + blocks.map(function (b) {
-          return '<button type="button" class="fn-rules-sub" data-sec="' + esc(s.id) + '" data-block="' + b.i + '">' + esc(b.h) + '</button>';
-        }).join('') + '</div></div>';
+      var isOpen = q ? true : !!rules.open[s.id];
+      return '<div class="fn-rule' + (isOpen ? ' fn-open' : '') + '">' +
+        '<button type="button" class="fn-rule-h" data-toggle="' + esc(s.id) + '"><span>' + esc(s.h) + '</span><span class="fn-rule-n">' + blocks.length + '</span></button>' +
+        (isOpen ? '<ul class="fn-rule-subs">' + blocks.map(function (b) {
+          return '<li><button type="button" data-sec="' + esc(s.id) + '" data-block="' + b.i + '">' + esc(b.h) + '</button></li>';
+        }).join('') + '</ul>' : '') + '</div>';
     }).join('');
     list.innerHTML = html || '<p class="fn-muted">No section matches that.</p>';
   }
@@ -1109,7 +1199,7 @@
     var s = rules.sections.filter(function (x) { return x.id === rules.reading.sec; })[0];
     if (!s) { rules.reading = null; render(); return; }
     var inner = rules.reading.block != null && s.blocks[rules.reading.block] ? s.blocks[rules.reading.block].html : s.html;
-    body.innerHTML = '<div class="fn-actions" style="margin-bottom:10px"><button type="button" class="fn-btn" data-r="back">← All rules</button>' +
+    body.innerHTML = '<div class="fn-actions" style="margin-bottom:10px"><button type="button" class="fn-btn fn-ink" data-r="back">← All rules</button>' +
       '<button type="button" class="fn-btn" data-r="full">Open full page ↗</button></div>' +
       '<div class="fn-rules-read">' + (rules.reading.block != null ? '<h2>' + esc(s.h) + '</h2>' : '') + inner + '</div>';
     var q = rules.q.trim();
@@ -1134,15 +1224,16 @@
   // The character sheet's own cog (stats/index.html #settings-panel) is
   // the source of truth for its settings: these buttons press the sheet's
   // real controls, so every confirm/prompt and edge case stays theirs.
+  var EXPORTS = [
+    { id: 'export-printable', label: 'Printable sheet' },
+    { id: 'export-pdf', label: 'PDF (DD Form 315)' },
+    { id: 'export-sheets', label: 'Google Sheet (.xlsx)' },
+    { id: 'export-agent-file-btn', label: 'To the Agent File' }
+  ];
   var SHEET_ACTIONS = [
-    { id: 'export-printable', label: 'Export Printable Sheet' },
-    { id: 'export-pdf', label: 'Export PDF (DD Form 315)' },
-    { id: 'export-sheets', label: 'Export Google Sheet' },
-    { id: 'download-sheet-btn', label: 'Download Sheet (.json)' },
+    { id: 'download-sheet-btn', label: 'Download Sheet' },
     { id: 'upload-sheet-btn', label: 'Upload Sheet' },
-    { id: 'copy-link-btn', label: 'Copy Share Link' },
-    { id: 'export-agent-file-btn', label: 'Export to Agent File' },
-    { id: 'creation-tools-unlocked-btn', label: 'Fix a Creation Mistake' }
+    { id: 'copy-link-btn', label: 'Copy Share Link' }
   ];
   function sheetWin() {
     var w = contentWin();
@@ -1154,36 +1245,42 @@
     var sw = sheetWin();
     var ci = lsGet('dg_cover_identity') || '';
     var bootOff = lsGet(BOOT_OFF_KEY) === '1';
-    var html = '<div class="fn-set-sec"><div class="fn-set-h">Character sheet</div>';
+    var html = '';
     if (sw) {
       var themeSel = sw.document.getElementById('cs-theme-select');
       html += '<div class="fn-set-row"><div><div class="fn-set-t">Theme</div><div class="fn-set-s">How the character sheet looks on this device.</div></div>' +
         '<select class="fn-select" data-s="theme">' + (themeSel ? Array.prototype.map.call(themeSel.options, function (o) {
           return '<option value="' + esc(o.value) + '"' + (o.value === themeSel.value ? ' selected' : '') + '>' + esc(o.textContent) + '</option>';
-        }).join('') : '') + '</select></div>' +
-        '<div class="fn-set-grid" style="margin-top:10px">' + SHEET_ACTIONS.filter(function (x) { return sw.document.getElementById(x.id); }).map(function (x) {
-          return '<button type="button" class="fn-btn" data-s-btn="' + x.id + '">' + esc(x.label) + '</button>';
-        }).join('') + '</div>' +
-        '<div class="fn-set-row"><div><div class="fn-set-t">Load by Agent Code</div><div class="fn-set-s">Pull a cloud-saved character onto this sheet.</div>' +
-          '<div class="fn-row" style="margin-top:6px"><input class="fn-input" style="flex:1;min-width:0;text-transform:uppercase" data-s="code" placeholder="AGENT CODE">' +
-          '<button type="button" class="fn-btn" data-s="load">Load</button></div></div></div>' +
-        '<div class="fn-actions" style="margin-top:10px"><button type="button" class="fn-btn" data-s="more">Import, backup &amp; more…</button></div>';
-    } else if (a && !a.friendly) {
-      html += '<p class="fn-p">Theme, exports, backups and imports for <b>' + esc(agentName(a)) + '</b> live on the character sheet.</p>' +
-        '<div class="fn-actions"><button type="button" class="fn-btn fn-primary" data-s="gosheet">Open the character sheet ↗</button></div>';
-    } else {
-      html += '<p class="fn-muted">Open an Agent\'s character sheet to change its settings.</p>';
+        }).join('') : '') + '</select></div>';
     }
-    html += '</div>' +
-      '<div class="fn-set-sec"><div class="fn-set-h">Cover Identity</div>' +
-        '<div class="fn-set-s" style="margin-bottom:6px">Your real name — how this device finds your Agents.</div>' +
-        '<div class="fn-row"><input class="fn-input" style="flex:1;min-width:0" data-s="ci" value="' + esc(ci) + '" placeholder="e.g. Gergo">' +
-        '<button type="button" class="fn-btn fn-primary" data-s="reload">Save &amp; Reload My Agents</button></div>' +
-        '<div class="fn-set-status" data-s="ci-status"></div></div>' +
-      '<div class="fn-set-sec"><div class="fn-set-h">This device</div>' +
-        '<div class="fn-set-row"><div><div class="fn-set-t">Boot splash</div><div class="fn-set-s">Play the clearance terminal once per session. Off skips the animation — the same screen still shows while a page is loading.</div></div>' +
-        '<button type="button" class="fn-toggle' + (bootOff ? '' : ' fn-on') + '" data-s="boot">' + (bootOff ? 'OFF' : 'ON') + '</button></div>' +
-      '</div>';
+    html += '<div class="fn-set-row fn-set-col"><div class="fn-set-t">Cover Identity</div>' +
+        '<div class="fn-set-s">Your real name — how this device finds your Agents.</div>' +
+        '<div class="fn-row" style="margin-top:6px"><input class="fn-input" style="flex:1;min-width:0" data-s="ci" value="' + esc(ci) + '" placeholder="e.g. Gergo">' +
+        '<button type="button" class="fn-btn fn-red" data-s="reload">Save &amp; Reload My Agents</button></div>' +
+        '<div class="fn-set-status" data-s="ci-status"></div></div>';
+    if (sw) {
+      var has = function (id) { return !!sw.document.getElementById(id); };
+      html += (has('creation-tools-unlocked-btn') ? '<div class="fn-set-row"><div><div class="fn-set-t">Fix a Creation Mistake</div><div class="fn-set-s">Brings back the Bonus Points panel and Bond generator until your next visit.</div></div>' +
+          '<button type="button" class="fn-btn fn-ink" data-s-btn="creation-tools-unlocked-btn">Fix</button></div>' : '') +
+        '<div class="fn-set-row"><div><div class="fn-set-t">Export</div><div class="fn-set-s">A copy of this character, in the format you pick.</div></div>' +
+          '<div class="fn-menu"><button type="button" class="fn-btn fn-red" data-s="export">Export ▾</button>' +
+          '<div class="fn-menu-list" data-s="export-list" hidden>' + EXPORTS.filter(function (x) { return has(x.id); }).map(function (x) {
+            return '<button type="button" data-s-btn="' + x.id + '">' + esc(x.label) + '</button>';
+          }).join('') + '</div></div></div>' +
+        '<div class="fn-set-row fn-set-col"><div class="fn-set-t">Backup</div>' +
+          '<div class="fn-set-grid">' + SHEET_ACTIONS.filter(function (x) { return has(x.id); }).map(function (x, i) {
+            return '<button type="button" class="fn-btn ' + (i % 2 ? 'fn-ink' : 'fn-red') + '" data-s-btn="' + x.id + '">' + esc(x.label) + '</button>';
+          }).join('') + '</div></div>' +
+        '<div class="fn-set-row fn-set-col"><div class="fn-set-t">Load by Agent Code</div>' +
+          '<div class="fn-row" style="margin-top:6px"><input class="fn-input" style="flex:1;min-width:0;text-transform:uppercase" data-s="code" placeholder="AGENT CODE">' +
+          '<button type="button" class="fn-btn fn-ink" data-s="load">Load</button></div></div>' +
+        '<div class="fn-actions" style="margin:10px 0 4px"><button type="button" class="fn-btn" data-s="more">Import &amp; more sheet settings…</button></div>';
+    } else if (a && !a.friendly) {
+      html += '<div class="fn-set-row"><div><div class="fn-set-t">Character sheet</div><div class="fn-set-s">Theme, exports, backups and imports for ' + esc(agentName(a)) + '.</div></div>' +
+        '<button type="button" class="fn-btn fn-ink" data-s="gosheet">Open sheet ↗</button></div>';
+    }
+    html += '<div class="fn-set-row"><div><div class="fn-set-t">Boot splash</div><div class="fn-set-s">Plays the clearance terminal once per session. Off skips the animation; the same screen still shows while a page loads.</div></div>' +
+        '<button type="button" class="fn-toggle' + (bootOff ? '' : ' fn-on') + '" data-s="boot">' + (bootOff ? 'OFF' : 'ON') + '</button></div>';
     body.innerHTML = html;
     body.addEventListener('click', function (e) {
       var b = e.target.closest('[data-s],[data-s-btn]');
@@ -1191,7 +1288,8 @@
       var id = b.getAttribute('data-s-btn');
       if (id && sw) { var el = sw.document.getElementById(id); if (el) { close(); el.click(); } return; }
       var k = b.getAttribute('data-s');
-      if (k === 'load' && sw && sw.dgCloudSave) { var v = body.querySelector('[data-s="code"]').value; close(); sw.dgCloudSave.loadFromCloud(v); }
+      if (k === 'export') { var m = body.querySelector('[data-s="export-list"]'); m.hidden = !m.hidden; }
+      else if (k === 'load' && sw && sw.dgCloudSave) { var v = body.querySelector('[data-s="code"]').value; close(); sw.dgCloudSave.loadFromCloud(v); }
       else if (k === 'more' && sw && sw.dgSettingsPanel) { close(); sw.dgSettingsPanel.open(); }
       else if (k === 'gosheet' && a) { try { sessionStorage.setItem(OPEN_ON_ARRIVAL_KEY, 'settings'); } catch (err) { /* private mode */ } navigate(url('stats/index.html?load=' + encodeURIComponent(a.code))); }
       else if (k === 'boot') { var off = lsGet(BOOT_OFF_KEY) !== '1'; lsSet(BOOT_OFF_KEY, off ? '1' : '0'); b.classList.toggle('fn-on', !off); b.textContent = off ? 'OFF' : 'ON'; }
@@ -1258,6 +1356,10 @@
     isHost: true,
     open: open, close: close, refresh: refresh, armOrders: armOrders,
     isOpen: function () { return state.open; },
+    // A page inside the notebook (desktop Notes) going somewhere else: it
+    // goes in the page under the notebook, not inside the notebook's own
+    // frame -- where it used to strand the player (no way back to Notes).
+    go: function (path) { navigate(url(path)); },
     ordersKey: function (key) { return ordersKeyHandler ? ordersKeyHandler(key) : false; },
     pagePointer: function () { pagePointer(null); },
     view: function () { return state.view; }

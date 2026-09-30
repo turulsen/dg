@@ -2,6 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script>
+  // Never inside another page: a Clearance/back link followed from a page
+  // already inside the Hub shell used to load this page INTO the shell's
+  // frame -- and choosing Agent from there nested a second Hub (a doubled
+  // nav bar). Always take over the whole tab instead.
+  (function () { try { if (window.top !== window.self) window.top.location.replace(location.href); } catch (e) { /* cross-origin: leave it */ } })();
+</script>
 <script src="assets/js-error-banner.js" async></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Delta Green — Clearance</title>
@@ -211,7 +218,7 @@
               <span class="cc-tab">Clearance: Agent</span>
               <span class="cc-body">
                 <span class="cc-title">AGENT</span>
-                <p>Build and manage your own Agent — character creation, the agent files you've submitted, and your cover ID.</p>
+                <p>Your Agents, their sheets and Field IDs.</p>
                 <span class="cc-go">-&gt; Enter as Agent</span>
               </span>
             </a>
@@ -223,7 +230,7 @@
               <span class="cc-tab">Clearance: Friendly</span>
               <span class="cc-body">
                 <span class="cc-title">FRIENDLY</span>
-                <p>First time, or just one night? Pick a ready-made Agent — name, skills, gear all filled in — and start rolling. No sign-up.</p>
+                <p>A ready-made Agent for one night. No sign-up.</p>
                 <span class="cc-go">-&gt; Play a Friendly</span>
               </span>
             </a>
@@ -231,19 +238,10 @@
               <span class="cc-tab">Clearance: A-Cell</span>
               <span class="cc-body">
                 <span class="cc-title">A-CELL</span>
-                <p>Handler tools — every Agent on file, organized into Cells, plus a shared table soundtrack. Password required.</p>
+                <p>Handler tools. Password required.</p>
                 <span class="cc-go">-&gt; Enter as Handler</span>
               </span>
             </a>
-          </div>
-
-          <div class="notes-block">
-            <h3>Notes</h3>
-            <ul>
-              <li>Players should use <strong>AGENT</strong> — that's the character creator, your submitted agent files, and the cover ID fabricator.</li>
-              <li>Here for a single session? <strong>FRIENDLY</strong> hands you a finished Agent in two taps — keep HP and SAN on paper.</li>
-              <li><strong>A-CELL</strong> is for the Handler only, and asks for a password before showing anything.</li>
-            </ul>
           </div>
         </div>
       </div>

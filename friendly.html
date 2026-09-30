@@ -254,10 +254,10 @@
 <body class="folder-theme">
 
 <div class="hub-header">
-  <a class="back-link" href="index.html">&lt;- Clearance</a>
+  <a class="back-link" id="fr-back-link" href="index.html">&lt;- Clearance</a>
+  <script>if (window.frameElement && window.frameElement.id === 'dg-shell-content') document.getElementById('fr-back-link').style.display = 'none';</script>
   <div class="stamp">Clearance: Friendly</div>
   <h1>Friendly</h1>
-  <p id="fr-intro">Pick a ready-made Agent and play. Everything's filled in — tap any skill, stat or weapon to roll.</p>
 </div>
 
 <div class="folder-wrap">
@@ -503,10 +503,22 @@
         (p.gear.length ? '<div class="pv-sec-hd">Armor and Gear</div><p class="pv-text">' + p.gear.map(esc).join(' · ') + '</p>' : '') +
         (p.special_training.length ? '<div class="pv-sec-hd">Special Training</div>' + p.special_training.map(function (t) { return row(esc(t.training), t.skill); }).join('') : '') +
         '</details>' +
-        '<div class="fr-actions"><button type="button" class="paper-btn" id="fr-change">Choose a different Agent</button></div>' +
+        '<div class="fr-actions"><button type="button" class="paper-btn" id="fr-change">Choose a different Agent</button>' +
+        '<button type="button" class="paper-btn primary" id="fr-keep" title="Opens a real character sheet with this Agent filled in, saved under your Cover Identity">Make this my Agent</button></div>' +
       '</div></div>';
 
     document.getElementById('fr-change').addEventListener('click', function () { showTab('pick'); window.scrollTo(0, 0); });
+    // Friendly -> a proper character sheet: the pregen as a real, saved
+    // Agent (assets/agent-sheet.js pregenToState()), picked up by
+    // stats/save-load.js on arrival. ?new=1 starts it on a blank sheet
+    // with its own fresh Agent Code, never on top of another Agent.
+    document.getElementById('fr-keep').addEventListener('click', function () {
+      if (!window.dgAgentSheet) return;
+      var who = '';
+      try { who = localStorage.getItem('dg_cover_identity') || ''; } catch (e) { /* private mode */ }
+      try { sessionStorage.setItem('dg_fr_import', JSON.stringify(window.dgAgentSheet.pregenToState(current.p, who))); } catch (e) { return; }
+      location.href = 'stats/index.html?new=1';
+    });
   }
   viewEl.addEventListener('click', function (e) {
     var b = e.target.closest('[data-roll], [data-damage]');
@@ -596,6 +608,7 @@
 
 <script src="assets/table-radio.js"></script>
 <script src="assets/dice-roller.js?v=9"></script>
+<script src="assets/agent-sheet.js"></script>
 <script src="assets/field-notes.js"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>
 </body>

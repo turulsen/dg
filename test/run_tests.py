@@ -11439,13 +11439,13 @@ def _field_notes_docs():
                              "operation_id": "op_fn_a", "visible_to": [FN_CODE], "released": True, "created_at": 1500},
     }
 
-def _field_notes_page(p, width=1300, height=860, extra_init=""):
+def _field_notes_page(p, width=1300, height=860, extra_init="", docs=None):
     page = p.new_page(viewport={"width": width, "height": height})
     page.set_default_timeout(10000)
     errs = collect_errors(page)
     _block_fonts(page)
     route_apps_script_ok(page)
-    install_firestore_backend(page, _field_notes_docs())
+    install_firestore_backend(page, docs or _field_notes_docs())
     roster = {FN_CODE: {"code": FN_CODE, "char_name": "Mara Voss", "codename": "PARADE", "player_name": "fn tester", "saved_at": 5}}
     page.add_init_script("""try {
       sessionStorage.setItem('dg_boot_seen', '1');
@@ -11479,15 +11479,15 @@ def test_field_notes_notebook(p):
            and page.evaluate("() => getComputedStyle(document.getElementById('dg-radio')).opacity === '0'")
            and not page.is_visible("#dr-panel"), "")
     page.click("#fn-closed .fn-cover")
-    page.click("#fn-veil .fn-pocket[data-view=agentfile]")
+    page.click("#fn-veil .fn-slot[data-view=agentfile]")
     txt = wait_for_condition(lambda: (_notebook_text(page) if "Operation FULL MOON" in _notebook_text(page) else None), timeout_ms=10000) or ""
     record("notebook", "Agent File starts with Play and Open Agent File",
-           page.evaluate("() => { const b = document.querySelectorAll('#fn-veil [data-fn-slot=body] button'); return b.length > 1 && b[0].dataset.go === 'play' && b[1].dataset.go === 'file'; }"), "")
+           page.evaluate("() => { const b = document.querySelectorAll('#fn-veil [data-fn-slot=body] .as-actions button'); return b.length > 1 && b[0].dataset.go === 'play' && b[1].dataset.go === 'file'; }"), "")
     record("notebook", "Agent File quick look: name, Cell, Cell members, Bonds, Operations",
-           all(s in txt for s in ["Mara Voss", "Night Shift", "Tom Hale", "Lena Voss", "Operation FULL MOON", "Operation LOW TIDE"]), txt[:300])
+           all(s.lower() in txt.lower() for s in ["Mara Voss", "Night Shift", "Tom Hale", "Lena Voss", "Operation FULL MOON", "Operation LOW TIDE"]), txt[:300])
     record("notebook", "the Handler's Active operation is the one marked Active",
-           page.evaluate("() => { const r = document.querySelector('#fn-veil .fn-op-active'); return !!r && r.textContent.indexOf('FULL MOON') !== -1; }"), "")
-    page.click("#fn-veil .fn-pocket[data-view=req]")
+           page.evaluate("() => { const r = document.querySelector('#fn-veil .as-op-active'); return !!r && r.textContent.indexOf('FULL MOON') !== -1; }"), "")
+    page.click("#fn-veil .fn-slot[data-view=req]")
     rsrc = page.get_attribute("#fn-veil iframe[data-dg-embed=requisition]", "src") or ""
     record("notebook", "Requisition shows the full form inside the notebook, for this Agent",
            "requisition.html?embed=1" in rsrc and FN_CODE in rsrc, rsrc)
@@ -11533,6 +11533,83 @@ def test_field_notes_notebook(p):
     page.close()
     return errs_all
 
+def test_field_notes_round3(p):
+    """Field Notes, third round of feedback: the Field ID pocket carries a
+    business card for the Agent's agency; Evidences filter by Operation;
+    on a desktop Notes spans both pages (index + Evidence left, editor
+    right), the Notes tab again drops to quick notes and back, and the
+    spread's Character Sheet button leaves for the sheet rather than
+    loading it inside the notebook; Friendly's "Make this my Agent" turns
+    a pregen into a real, saved character sheet."""
+    errs_all = []
+    docs = _field_notes_docs()
+    docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, {"v": 1, "bio": {"name": "Mara Voss", "employer": "DEA", "player_name": "fn tester"}}, "fn tester")
+    docs["evidence/ev_fn_2"] = {"title": "Voicemail Transcript", "body": "Static.", "cell_id": "", "operation_id": "",
+                                "visible_to": ["ALL"], "released": True, "created_at": 1600}
+    page, errs = _field_notes_page(p, docs=docs, extra_init="localStorage.setItem('dg_notes_identity_%s', JSON.stringify({color:'#2b6cb0', font:'Nothing You Could Do'}));" % FN_CODE)
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.evaluate("() => window.dgFieldNotes.open('fieldid')")
+    card = wait_for_condition(lambda: page.evaluate("() => { const c = document.querySelector('#fn-veil .fn-biz-big'); return c ? c.innerText : null; }"), timeout_ms=8000) or ""
+    record("notebook", "Field ID shows a business card for the Agent's agency (DEA)", "DRUG ENFORCEMENT" in card.upper(), card[:120])
+    page.evaluate("() => window.dgFieldNotes.open('evidence')")
+    page.wait_for_selector("#fn-veil [data-ev-filter]", timeout=10000)
+    count = lambda: page.evaluate("() => document.querySelectorAll('#fn-veil .fn-card-sheet').length")
+    n_all = wait_for_condition(lambda: count() if count() == 2 else None, timeout_ms=8000)
+    page.select_option("#fn-veil [data-ev-filter]", "op_fn_a")
+    n_op = count()
+    page.select_option("#fn-veil [data-ev-filter]", "UNFILED")
+    n_un = count()
+    record("notebook", "Evidences filter by Operation (all 2 / FULL MOON 1 / Unfiled 1)", (n_all, n_op, n_un) == (2, 1, 1), str((n_all, n_op, n_un)))
+    page.evaluate("() => window.dgFieldNotes.open('notes')")
+    src = wait_for_condition(lambda: page.get_attribute("#fn-veil .fn-spread iframe", "src") if page.locator("#fn-veil .fn-spread iframe").count() else None, timeout_ms=8000) or ""
+    record("notebook", "desktop Notes spans both pages as the full notes (embed=spread)",
+           "embed=spread" in src and page.evaluate("() => !!document.querySelector('#fn-veil .fn-book.fn-spreading')"), src)
+    page.click("#fn-veil .fn-tab[data-view=notes]")
+    record("notebook", "the Notes tab again drops to quick notes",
+           page.evaluate("() => !document.querySelector('#fn-veil .fn-book.fn-spreading') && !!document.querySelector('#fn-veil [data-q=full]')"), "")
+    page.click("#fn-veil [data-q=full]")
+    record("notebook", "…and quick notes' button goes back to the spread", page.evaluate("() => !!document.querySelector('#fn-veil .fn-book.fn-spreading')"), "")
+    fr = None
+    for _ in range(40):
+        fr = next((f for f in page.frames if "embed=spread" in f.url), None)
+        if fr: break
+        page.wait_for_timeout(250)
+    try:
+        fr.wait_for_selector("#character-sheet-btn", state="visible", timeout=10000)
+        fr.click("#character-sheet-btn")
+        page.wait_for_url("**/stats/index.html**", timeout=10000)
+        record("notebook", "the spread's Character Sheet button leaves for the sheet (no trap inside the notebook)", True, page.url)
+    except Exception as e:
+        record("notebook", "the spread's Character Sheet button leaves for the sheet (no trap inside the notebook)", False, str(e)[:200])
+    errs_all.extend(errs)
+    page.close()
+
+    # Friendly -> "Make this my Agent" -> a real sheet, saved with its stats
+    page, errs = _field_notes_page(p, docs={})
+    page.goto(f"{BASE}/friendly.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector(".fr-card[data-id]", timeout=15000)
+    first = page.locator(".fr-card[data-id]").first
+    name = first.locator(".fc-name").inner_text().strip()
+    first.click()
+    page.click("#fr-keep")
+    page.wait_for_url("**/stats/index.html**", timeout=15000)
+    got = wait_for_condition(lambda: page.evaluate("() => { const n = document.getElementById('cs-name'); return n && n.value ? n.value : null; }"), timeout_ms=10000)
+    record("friendly", "Make this my Agent opens a real sheet with the pregen filled in", got == name, f"{got!r} vs {name!r}")
+    code = wait_for_condition(lambda: page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')"), timeout_ms=8000) or ""
+    def saved_stats():
+        d = fs_doc(page, f"characters/{code}") if code else None
+        if not d: return None
+        st = json.loads(d.get("character_json") or "{}").get("csStats") or {}
+        return st if any(v != 3 for v in st.values()) else None
+    st = wait_for_condition(saved_stats, timeout_ms=12000)
+    record("friendly", "…saved under its own new Agent Code with the pregen's real stats (not the blank 3s)", bool(st), f"{code} {st}")
+    record("friendly", "…and the new Agent's Standing Orders are armed",
+           (json.loads(page.evaluate("() => localStorage.getItem('dg_fn_orders_pending')") or "null") or {}).get("code") == code, "")
+    errs_all.extend(errs)
+    page.close()
+    return errs_all
+
 def test_main_photo_from_active_era(p):
     """A real report (Daniella Martinez): an Agent with two era Face
     Plates and an Active Era chosen showed no photo outside the Agent
@@ -11546,7 +11623,15 @@ def test_main_photo_from_active_era(p):
              "player_name": "dani player", "player_name_lc": "dani player",
              "active_eras": '["90s","20s"]', "campaign_era": "20s", "face_plate_url": "",
              "era_90s_face_url": "https://example.test/dani-90s.png", "era_20s_face_url": "https://example.test/dani-20s.png"}
-    docs = {f"briefs/{code}": brief,
+    # An Agent File from before per-era photos: an era label but no era
+    # list, and its one photo only in face_plate_url. The rule above must
+    # not read that as "Active Era has no photo" -- the portal's heal
+    # would then wipe the only copy.
+    legacy = "LEGA-0001"
+    legacy_brief = {"agent_code": legacy, "char_name": "Lee Gacy", "codename": "OLDER",
+                    "player_name": "legacy player", "player_name_lc": "legacy player",
+                    "campaign_era": "1990s", "face_plate_url": "https://example.test/legacy.png"}
+    docs = {f"briefs/{code}": brief, f"briefs/{legacy}": legacy_brief,
             f"characters/{code}": character_doc(code, {"v": 1, "bio": {"name": "Daniella Martinez", "player_name": "dani player"}}, "dani player")}
     page = p.new_page(viewport={"width": 1300, "height": 860})
     page.set_default_timeout(10000)
@@ -11566,13 +11651,19 @@ def test_main_photo_from_active_era(p):
     record("photo", "the Agent Hub card shows that photo instead of 'Take Photo'", card == "https://example.test/dani-20s.png", str(card))
     page.evaluate("(c) => localStorage.setItem('dg_stats_cloud_code', c)", code)
     page.evaluate("() => { window.dgFieldNotes.refresh(); window.dgFieldNotes.open('agentfile'); }")
-    nb = wait_for_condition(lambda: page.evaluate("() => { const i = document.querySelector('#fn-veil [data-fn-photo] img'); return i ? i.getAttribute('src') : null; }"), timeout_ms=8000)
+    nb = wait_for_condition(lambda: page.evaluate("() => { const i = document.querySelector('#fn-veil [data-as-photo] img'); return i ? i.getAttribute('src') : null; }"), timeout_ms=8000)
     record("photo", "the Field Notes Agent File shows it too", nb == "https://example.test/dani-20s.png", str(nb))
     errs_all.extend(errs)
     page.goto(f"{BASE}/dg-agent-portal.html?code={code}#cover", wait_until="domcontentloaded", timeout=15000)
     healed = wait_for_condition(lambda: (fs_doc(page, f"briefs/{code}") or {}).get("face_plate_url") or None, timeout_ms=10000)
     record("photo", "opening the Agent File repairs the stored main photo to the Active Era's Plate",
            healed == "https://example.test/dani-20s.png", str(healed))
+    record("photo", "a pre-era-photos Agent File keeps face_plate_url as its main photo",
+           page.evaluate("(b) => window.dgStore.mainPhoto(b)", legacy_brief) == "https://example.test/legacy.png", "")
+    page.goto(f"{BASE}/dg-agent-portal.html?code={legacy}#cover", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(3500)
+    kept = (fs_doc(page, f"briefs/{legacy}") or {}).get("face_plate_url")
+    record("photo", "opening that Agent File leaves its only photo alone", kept == "https://example.test/legacy.png", str(kept))
     page.close()
     return errs_all
 
@@ -12140,6 +12231,7 @@ def main():
         safe(test_player_pages_use_in_page_dialogs, browser, area="journey")
         safe(test_friendly_clearance, browser, area="friendly")
         safe(test_field_notes_notebook, browser, area="notebook")
+        safe(test_field_notes_round3, browser, area="notebook")
         safe(test_field_notes_standing_orders, browser, area="onboarding")
         safe(test_main_photo_from_active_era, browser, area="photo")
         safe(test_field_notes_shell, browser, area="notebook-shell")

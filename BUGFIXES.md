@@ -6013,3 +6013,20 @@ The Agent File's roster drawer also gave each photo request the same
 JSONP callback name, so a re-render before the first answer threw
 "_rosterFace_… is not defined"; each request now gets its own. New `test_main_photo_from_active_era`. `sw.js`
 `CACHE_NAME` v165.
+
+**Follow-up before release (v166):** the first cut read an Agent File
+with an era *label* (`campaign_era`) but no era *list* (`active_eras`)
+-- the shape of every Agent File from before per-era photos -- as "the
+Active Era has no photo yet" and returned nothing, although the portal
+itself shows `face_plate_url` as that file's one era (`parseEras()`).
+Worse, `healMainPhoto()` would then have written that empty answer back
+over the only copy of the photo. Caught by the Field Notes onboarding
+journey (its photo-lands step), not in the field. With no era list,
+`face_plate_url` now counts whatever `campaign_era` says, in both
+`dgStore.mainPhoto()` and A-Cell's `mainPhotoOf_`;
+`test_main_photo_from_active_era` gained a legacy Agent File that must
+keep its photo through a portal visit. This only ever ran on the
+unreleased Field Notes branch and its preview channel -- but that
+preview reads and writes the live Firestore, so a legacy Agent File
+opened there could have lost its `face_plate_url` (the per-era columns
+are untouched; re-uploading the Face Plate restores it).

@@ -200,13 +200,72 @@ Each step is testable on the preview before the next:
 - **Not done**: Firefox isn't installed in the build sandbox, so the
   cross-browser pass is Chromium + WebKit (Safari's engine) only.
 
+### Round 3 (feedback on the preview)
+
+- **Look.** Pebbled leather with patina and saddle stitching (`.fn-stitch`)
+  on the cover and the open book. The left page is a **card holder**:
+  three deep leather pockets with stitched, thumb-notched lips, each
+  holding a card — the Agent File card (Polaroid photo, name, code),
+  the Field ID business card, the Requisition slip. The right page is a
+  **booklet**: offset page edges underneath, foxing, a gutter shadow and
+  a dog-eared corner. The Delta Green triangle (cover, dice strap, phone
+  header) is toned olive to match the radio instead of bright green.
+- **Radio**: no pocket any more. The chip beside the closed notebook
+  opens a **pager** — a small dark device with a shadow, an LCD
+  (channel, track, progress), a channel dial and Tune / Sound / Volume
+  keys. No flavor text. Escape or × puts it away.
+- **Dice** hang on a leather strap under the book; the strap opens the
+  Dice page.
+- **Agent File** is one paper shared with the Agent Hub's folders
+  (`assets/agent-sheet.js` + `.css`, `window.dgAgentSheet`): Polaroid
+  (the yellow Take Photo post-it covers all of it until a Face Plate
+  exists), name, HP/WP/SAN/BP, Play and Open Agent File, a short
+  physical description (built from the Agent File's profiling fields,
+  else the sheet's own), the **Cell in bold** with its members indented
+  under it, Operations with the Active one stamped, then Friendly's
+  dossier layout for stats, skills (tap to roll), weapons and Bonds.
+  In the Hub the paper sits in each Agent's folder without the photo and
+  name the folder already shows.
+- **Field ID** pocket: a business card for the Agent's agency when the
+  cover workplace (`cover_agency`, the sheet's Employer) matches one of
+  the app's agencies (FBI, DEA, ATF, US Marshals, DOJ OIG, Secret
+  Service, ICE, CBP, NCIS, FinCEN, Postal Inspection, NYPD, Shelby
+  County Sheriff, M-EPIC — the ID Creator's list); otherwise a Delta
+  Green card.
+- **Requisition** sits straight on the paper (no dark page behind it).
+- **Notes** on a desktop take **both pages**: tabs, index and Evidence
+  (with its Operation filter) on the left page, the toolbar and editor
+  on the right, one fold between. The Notes tab clicked again drops to
+  the quick-notes page; its button (or the tab) goes back. The spread's
+  *Character Sheet* button now leaves for the sheet instead of loading it
+  inside the notebook (where there was no way back).
+- **Evidences** filter by Operation (all / each Operation / Unfiled).
+- **Rules** open with the five tenets as *The Agent's Oath*, then a
+  search box and a collapsed list of sections (tap one to open it).
+- **Settings**: Theme (on the sheet), Cover Identity, *Fix a Creation
+  Mistake*, one **Export ▾** menu, backups, Load by Code, the rest of
+  the sheet's settings, Boot splash. One button language across the
+  notebook: red for the main action, ink for the second, plain outline
+  for the rest.
+- **Friendly → character sheet**: *Make this my Agent* on a pregen's
+  dossier opens a new, real character sheet with that Agent filled in
+  (`dgAgentSheet.pregenToState()`), saved under the player's Cover
+  Identity with its own new Agent Code, and arms the Standing Orders
+  like a finished wizard does.
+- **Elsewhere**: intro paragraphs under RESTRICTED/page titles removed on
+  every page, Clearance cards shortened and the notes under them gone,
+  and *Delta Green — Hub* in the top bar goes to Clearance. The doubled
+  nav bar (Friendly's and the ID Creator's back links loading the whole
+  Hub inside the Hub) is fixed: those links hide in the shell, and any
+  page that finds the Hub inside itself breaks out.
+
 ## 10. Trying it on the private preview
 
 From Cloud Shell (the repo is public, so the clone needs no login):
 
 ```
 cd ~ && rm -rf dg-preview && git clone -b claude/new-session-thjzt6 https://github.com/turulsen/dg.git dg-preview && cd dg-preview
-firebase hosting:channel:deploy field-notes --expires 30d --project dg-app-b3447
+npx -y firebase-tools@latest hosting:channel:deploy field-notes --expires 30d --project dg-app-b3447
 ```
 
 It prints a `https://dg-app-b3447--field-notes-….web.app` address. That

@@ -99,6 +99,40 @@
   html.notes-in-notebook .notes-header, html.notes-in-notebook footer.site-footer{ display:none; }
   html.notes-in-notebook .change-context{ margin-top:0; }
   html.notes-in-notebook .change-context button{ color:#4a3f28; border-color:rgba(160,130,70,.6); }
+  /* Field Notes' Notes spread (embed=spread): the notebook's two pages --
+     tabs, the index, Evidence and its Operation filter on the left page,
+     the toolbar and editor on the right -- with the fold drawn here at
+     the middle (field-notes.css hides the book's own spine for this).
+     The wrappers between #dg-notes-panel and its parts go display:contents
+     so the parts land straight on the two-column grid; each page scrolls
+     on its own. */
+  html.notes-spread body{ padding:0; background:transparent; overflow:hidden; }
+  html.notes-spread .change-context{
+    position:fixed; left:12px; bottom:10px; z-index:20; margin:0; padding:0;
+  }
+  html.notes-spread #notes-mount{ height:100vh; }
+  html.notes-spread #dg-notes-panel .dg-notes-paper-rules,
+  html.notes-spread #dg-notes-panel .dg-notes-paper-margin,
+  html.notes-spread #dg-notes-panel .dg-notes-holes{ display:none; }
+  @media (min-width:700px){
+    html.notes-spread #dg-notes-panel{
+      display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); grid-template-rows:auto minmax(0,1fr);
+      column-gap:56px; height:100vh; padding:12px 20px 0; box-sizing:border-box;
+      background:
+        linear-gradient(90deg,transparent calc(50% - 22px),rgba(60,40,10,.10) calc(50% - 8px),rgba(40,24,6,.34) 50%,rgba(60,40,10,.10) calc(50% + 8px),transparent calc(50% + 22px)),
+        repeating-linear-gradient(180deg,transparent 0 27px,rgba(120,150,180,.16) 27px 28px);
+    }
+    html.notes-spread #dg-notes-panel .dg-notes-folder-body,
+    html.notes-spread #dg-notes-panel .dg-notes-paper,
+    html.notes-spread #dg-notes-panel .dg-notes-paper-content,
+    html.notes-spread #dg-notes-panel .dg-notes-body{ display:contents; }
+    html.notes-spread #dg-notes-panel .dg-notes-tab-strip{ grid-column:1; grid-row:1; margin:0 0 8px; }
+    html.notes-spread #dg-notes-panel .dg-notes-toolbar{ grid-column:2; grid-row:1; margin:0 0 8px; align-self:end; }
+    html.notes-spread #dg-notes-panel .dg-notes-toc{
+      grid-column:1; grid-row:2; width:auto; max-width:none; position:static; overflow:auto; padding:4px 4px 56px 0; border:0;
+    }
+    html.notes-spread #dg-notes-panel .dg-notes-main{ grid-column:2; grid-row:2; overflow:auto; padding:4px 4px 52px 0; min-width:0; }
+  }
 </style>
 </head>
 <body class="folder-theme">
@@ -114,9 +148,6 @@
        below. -->
   <button type="button" class="notes-play-btn" id="notes-play-btn">Play</button>
   <h1>Player Notes</h1>
-  <p>Shared and private session notes for your Cell. Anything you mark
-     Shared is visible to every other member of the same Cell; everything
-     else stays yours alone.</p>
 </div>
 
 <div class="picker-wrap hidden" id="picker-wrap">
@@ -268,10 +299,11 @@
   // still attached (e.g. a bookmarked/shared link).
   // Inside the Field Notes notebook (desktop Notes tab): the notebook is
   // the chrome, so this page's own way back out goes.
-  if (new URLSearchParams(location.search).get('embed') === 'notebook') {
+  if (['notebook', 'spread'].indexOf(new URLSearchParams(location.search).get('embed')) !== -1) {
     const backLink = document.getElementById('notes-back-link');
     if (backLink) backLink.style.display = 'none';
     document.documentElement.classList.add('notes-in-notebook');
+    if (new URLSearchParams(location.search).get('embed') === 'spread') document.documentElement.classList.add('notes-spread');
   }
   if (new URLSearchParams(location.search).get('embed') === 'fullscreen') {
     const backLink = document.getElementById('notes-back-link');
@@ -370,13 +402,23 @@
   // link elsewhere in the Hub (agentToken() below is per-Agent, not
   // needed for a plain navigation). ../stats/ is a sibling of notes/,
   // one level up.
+  // Inside the Field Notes notebook, going to the sheet happens in the
+  // page under the notebook (window.dgFieldNotes.go) -- navigating this
+  // frame put the sheet inside the notebook with no way back to Notes.
+  function goOut(path) {
+    if (document.documentElement.classList.contains('dg-fn-embedded') && window.dgFieldNotes && window.dgFieldNotes.go) {
+      window.dgFieldNotes.go(path);
+    } else {
+      location.href = '../' + path;
+    }
+  }
   splitViewBtn.addEventListener('click', () => {
     if (!currentAgentCode) return;
-    location.href = '../stats/index.html?load=' + encodeURIComponent(currentAgentCode) + '&split=1';
+    goOut('stats/index.html?load=' + encodeURIComponent(currentAgentCode) + '&split=1');
   });
   characterSheetBtn.addEventListener('click', () => {
     if (!currentAgentCode) return;
-    location.href = '../stats/index.html?load=' + encodeURIComponent(currentAgentCode);
+    goOut('stats/index.html?load=' + encodeURIComponent(currentAgentCode));
   });
 
   init();

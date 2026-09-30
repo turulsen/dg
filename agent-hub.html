@@ -23,6 +23,7 @@
      a cross-origin fetch, badly on a weak connection. -->
 <link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet"></noscript>
+<link rel="stylesheet" href="assets/agent-sheet.css">
 <link rel="stylesheet" href="assets/theme-folder.css">
 <style>
   *{box-sizing:border-box;}
@@ -262,6 +263,11 @@
     margin-top:4px; min-height:1.2em;
   }
   footer.site-footer{ font-family:'Courier Prime',monospace; text-align:center; color:#6a6250; font-size:11px; margin-top:56px; }
+  /* The shared Agent File paper under the folder's own header (photo,
+     name and buttons are up there already). */
+  .ah-sheet .as-photo, .ah-sheet .as-id{ display:none; }
+  .ah-sheet .as-head{ border-bottom:0; padding-bottom:0; justify-content:flex-end; margin-top:14px; }
+  .ah-sheet:empty{ display:none; }
 </style>
 </head>
 <body class="folder-theme">
@@ -277,7 +283,6 @@
   <script>if (window.frameElement && window.frameElement.id === 'dg-shell-content') document.getElementById('hub-back-link').style.display = 'none';</script>
   <div class="restricted-stamp"><img src="assets/restricted-stamp.png" alt="Restricted -- Top Secret // Orcon // Special Access Required - Delta Green"></div>
   <h1>Agent Hub</h1>
-  <p>Build a cover identity, roll or point-buy a new Agent, and keep dossiers up to date between sessions. Each tab below is one of your Agents.</p>
   <!-- Cover Identity: your real name, not the Agent's -- looks up every
        Agent (character sheet and/or Agent File) tied to that name and
        pulls them into this browser's roster below, so a new device or a
@@ -653,6 +658,7 @@
             <a class="paper-btn" href="rules-reference.html">Rules Reference</a>
             <a class="paper-btn" href="the-incursion.html">The Incursion</a>
           </div>
+          <div class="ah-sheet" id="ah-sheet-${escapeHtml(a.code)}"></div>
           <div style="text-align:right;margin-top:2px;">
             <button type="button" class="ah-erase-link">Erase Agent&hellip;</button>
           </div>
@@ -683,6 +689,7 @@
       // here gets the same "run after the whole script has finished
       // executing once" effect without restructuring the file.
       setTimeout(function () { startDexListenerFor(a.code); }, 0);
+      setTimeout(function () { renderAgentSheetFor(a); }, 0);
 
       checkCharacterExists(a.code).then(exists => {
         if (exists !== false) return; // true (has a sheet) or null (check failed) -> leave as Play
@@ -1306,6 +1313,49 @@
     });
   }
 
+  // The Agent File paper -- the same one the Field Notes notebook shows
+  // (assets/agent-sheet.js): vitals, physical description, Cell with its
+  // members, then the Friendly-style sheet whose numbers roll. The
+  // folder's own header above already carries the photo and name.
+  function renderAgentSheetFor(a) {
+    const el = document.getElementById('ah-sheet-' + a.code);
+    if (!el || !window.dgAgentSheet || !window.dgStore) return;
+    const AS = window.dgAgentSheet;
+    const db = () => window.firebase.firestore();
+    Promise.all([
+      firestoreCharDoc(a.code),
+      window.dgStore.getBrief(a.code).catch(() => null),
+      window.dgStore.ready().then(() => db().collection('cells').get()).catch(() => null),
+      window.dgStore.ready().then(() => db().collection('operations').get()).catch(() => null)
+    ]).then(([charDoc, brief, cellsSnap, opsSnap]) => {
+      let state = null;
+      try { state = charDoc && charDoc.character_json ? JSON.parse(charDoc.character_json) : null; } catch (e) { state = null; }
+      brief = brief || {};
+      let cell = null;
+      if (cellsSnap) cellsSnap.forEach(d => { const c = d.data() || {}; if (!cell && (c.member_codes || []).indexOf(a.code) !== -1) cell = Object.assign({ cell_id: d.id }, c); });
+      const ops = [];
+      if (opsSnap && cell) opsSnap.forEach(d => { const o = d.data() || {}; if (!o.cell_id || o.cell_id === cell.cell_id) ops.push(Object.assign({ operation_id: o.operation_id || d.id }, o)); });
+      ops.sort((x, y) => Number(y.created_at || 0) - Number(x.created_at || 0));
+      const active = ops.filter(o => o.active === true)[0] || ops[0] || null;
+      const others = cell ? (cell.member_codes || []).filter(c => c !== a.code) : [];
+      return Promise.all(others.map(c => window.dgStore.getBrief(c).then(b => ({ c, b }), () => ({ c, b: null })))).then(ms => {
+        const names = (cell && cell.member_names) || {};
+        const members = ms.map(m => ({ name: (m.b && m.b.char_name) || names[m.c] || m.c, codename: (m.b && m.b.codename) || '' }));
+        const sheet = state ? AS.fromState(state) : { name: a.char_name || a.code };
+        const opsHtml = cell ? '<div class="as-ops"><div class="as-sec-hd">Operations</div>' + (ops.length ? ops.map(o => {
+          const on = active && o.operation_id === active.operation_id;
+          return '<div class="as-op' + (on ? ' as-op-active' : '') + '"><span>' + escapeHtml(o.name || o.operation_id) + '</span>' + (on ? '<span class="as-stamp">Active</span>' : '') + '</div>';
+        }).join('') : '<p class="as-text as-k">None filed yet.</p>') + '</div>' : '';
+        el.innerHTML = AS.render(sheet, {
+          physical: AS.physical(brief, sheet.physical),
+          cellName: cell ? (cell.name || cell.cell_id) : '', members, opsHtml,
+          emptySheetHtml: state ? '' : '<p class="as-text as-k" style="margin-top:12px">No character sheet yet — Play builds one.</p>'
+        });
+        AS.wireRolls(el);
+      });
+    }).catch(err => console.error('agent-hub: could not build the Agent File paper for ' + a.code, err));
+  }
+
   function loadHandouts() {
     function loadForAgent(a) {
       // Personal per-Agent notes on a Handout stay a one-shot JSONP
@@ -1372,6 +1422,7 @@
 
 <script src="assets/table-radio.js"></script>
 <script src="assets/dice-roller.js?v=9"></script>
+<script src="assets/agent-sheet.js"></script>
 <script src="assets/field-notes.js"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>
 
