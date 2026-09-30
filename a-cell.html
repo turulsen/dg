@@ -1462,24 +1462,22 @@
   }
   // The Agent's main photo -- same rule as dgStore.mainPhoto()
   // (assets/dg-store.js, not loaded on this page): the Active Era's own
-  // Face Plate, else the flat face_plate_url copy, else any era's Plate.
+  // Face Plate (none yet = no photo); with no Active Era, the first era's;
+  // face_plate_url stands in for that first era only.
   function mainPhotoOf_(b) {
-    var u = mainPhotoRaw_(b);
+    if (!b) return '';
+    var keys = ['90s', '00s', '10s', '20s'];
+    var key = function (e) { e = String(e || '').trim().toLowerCase(); var m = e.match(/^(?:19|20)?(\d0s)$/); return m ? m[1] : e; };
+    var order = [];
+    try { order = Array.isArray(b.active_eras) ? b.active_eras : JSON.parse(b.active_eras || '[]'); } catch (e) { order = [b.active_eras]; }
+    order = (Array.isArray(order) ? order : []).map(key).filter(function (e) { return keys.indexOf(e) !== -1; });
+    var first = order[0] || '';
+    var era = key(b.campaign_era) || first;
+    var u = !era ? (b.face_plate_url || '') : (b['era_' + era + '_face_url'] || (era === first ? b.face_plate_url : '') || '');
+    u = String(u || '').trim();
     if (!u || !/drive\.google\.com|docs\.google\.com/.test(u)) return u;
     var m = u.match(/\/file\/d\/([^\/?]+)/) || u.match(/[?&]id=([^&]+)/);
     return m ? 'gdrive:' + m[1] : u;
-  }
-  function mainPhotoRaw_(b) {
-    if (!b) return '';
-    var key = function (e) { e = String(e || '').trim().toLowerCase(); var m = e.match(/^(?:19|20)?(\d0s)$/); return m ? m[1] : e; };
-    var active = key(b.campaign_era);
-    if (active && b['era_' + active + '_face_url']) return b['era_' + active + '_face_url'];
-    if (b.face_plate_url) return b.face_plate_url;
-    var order = [];
-    try { order = Array.isArray(b.active_eras) ? b.active_eras : JSON.parse(b.active_eras || '[]'); } catch (e) { order = [b.active_eras]; }
-    var all = (Array.isArray(order) ? order : []).map(key).concat(['90s', '00s', '10s', '20s']);
-    for (var i = 0; i < all.length; i++) if (b['era_' + all[i] + '_face_url']) return b['era_' + all[i] + '_face_url'];
-    return '';
   }
   window.dgMainPhoto = mainPhotoOf_; // the Play tab's own script block below uses it too
   function docsOf_(snap) {

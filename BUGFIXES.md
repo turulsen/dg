@@ -6001,10 +6001,15 @@ as item 4, so this finishes that fix rather than being a new bug.
 
 Now every reader works the main photo out itself with
 `dgStore.mainPhoto()` (A-Cell, which doesn't load dg-store.js, has the
-same rule as `mainPhotoOf_`): the Active Era's own Plate, else the
-`face_plate_url` copy, else the first era (in `active_eras` order) with
-one; Drive share links become `gdrive:ID` for the image proxy. The
-Agent File also repairs the stored copy whenever it loads the Agent
-from the server (`healMainPhoto()`), so older readers and other devices
-catch up too. New `test_main_photo_from_active_era`. `sw.js`
+same rule as `mainPhotoOf_`) with the Agent File's own rule: the Active
+Era's Plate -- none yet means no photo, never another era's (the
+deliberate choice `test_agent_file_active_era_toggle` already pins) --
+and with no Active Era chosen, the first era's, with `face_plate_url`
+standing in for that first era only (a pre-per-era Agent's one photo).
+Drive share links become `gdrive:ID` for the image proxy. The Agent File
+also repairs the stored copy whenever it loads the Agent from the server
+(`healMainPhoto()`), so older readers and other devices catch up too.
+The Agent File's roster drawer also gave each photo request the same
+JSONP callback name, so a re-render before the first answer threw
+"_rosterFace_… is not defined"; each request now gets its own. New `test_main_photo_from_active_era`. `sw.js`
 `CACHE_NAME` v165.
