@@ -82,6 +82,15 @@ lacks Storage access. In the Google Cloud console under IAM, give it the
 Paste the two log summaries. The page changes are then merged. Reload
 each device so it picks up the new offline cache, and you're done.
 
+## 6. After the merge: switch off the Sheet's daily backup
+
+The Apps Script project may still have a daily trigger copying the
+Characters sheet (`backupCharactersSheet`, installed once by
+`installDailyBackupTrigger`). Nothing writes that sheet any more, so it
+would just copy a frozen tab every night; `dailyBackup` (step 1) backs up
+Firestore instead. In the Apps Script editor open **Triggers** (the
+clock icon on the left) and delete the `backupCharactersSheet` trigger.
+
 ## Rolling back
 
 - **Pages:** revert the frontend merge on GitHub. Apps Script v97 still
