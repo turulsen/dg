@@ -2788,8 +2788,10 @@ def test_player_name_survives_profiling_and_load_my_agents(p):
     install_firestore_backend(page, {"briefs/NORA-VX01": brief})
     page.goto(f"{BASE}/dg-agent-portal.html?code=NORA-VX01#cover", wait_until="domcontentloaded", timeout=15000)
     wait_for_condition(lambda: page.input_value("#dg-form [name=char_name]") == "Nora Vance", timeout_ms=8000)
-    page.click('button[onclick^="randomizeAgent"]')  # fills every required field
+    page.click('button[onclick^="randomizeAgent"]')  # fills the rest of the form
     page.wait_for_timeout(300)
+    # (the fixture's age "30s" isn't one of the dropdown's options)
+    page.evaluate("() => { const s = document.querySelector('#dg-form [name=age_range]'); if (s && !s.checkValidity()) { s.selectedIndex = 1; } }")
     page.fill("#dg-form [name=player_name]", "")
     page.click("#submit-btn")
     wait_for_condition(lambda: (fs_doc(page, "briefs/NORA-VX01") or {}).get("submitted_at"), timeout_ms=8000)
