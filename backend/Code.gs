@@ -5401,6 +5401,25 @@ function runFullMigrationToFirestoreNow() {
     return fsCommit_(Object.keys(byCh).map(function (c) { return { set: ['playlists', c, byCh[c]] }; }));
   });
 
+  // Player Notes and Track Library entries are written only to Firestore
+  // since v93 / Phase 4 -- including deletes, so the Sheet still holds
+  // rows a player or Handler has since deleted. A Sheet row missing from
+  // Firestore is therefore EITHER one that was never mirrored OR one that
+  // was deleted afterwards, and nothing tells the two apart. Reported,
+  // not copied: runCopySheetOnlyNotesAndTracksNow() copies them if the
+  // Handler decides they're wanted.
+  step('sheet_only_notes_and_tracks_reported', function () {
+    const found = sheetOnlyNotesAndTracks_();
+    found.notes.forEach(function (n) {
+      report.notes.push('Note on the Sheet but not in Firestore: cell ' + n.cellId + ', ' + n.doc.agent_code +
+        ', "' + String(n.doc.text || '').slice(0, 60) + '"');
+    });
+    found.tracks.forEach(function (t) {
+      report.notes.push('Track on the Sheet but not in Firestore: "' + (t.doc.title || t.id) + '"');
+    });
+    return found.notes.length + found.tracks.length;
+  });
+
   // Characters/Briefs docs in Firestore with no live Sheet row: reported,
   // not deleted -- a human should look before anything goes.
   step('orphans_reported', function () {
@@ -5534,6 +5553,70 @@ function fsPatchFields_(collectionName, docId, fieldsObj) {
 function driveIdFromRef_(v) {
   const m = /^gdrive:([A-Za-z0-9_-]+)$/.exec(String(v || '').trim());
   return m ? m[1] : null;
+}
+
+// Player Notes (CellNotes) and Track Library (Tracks) rows that are on
+// the Sheet but have no Firestore document -- see the migration's own
+// sheet_only_notes_and_tracks_reported step for why they aren't copied
+// automatically.
+function sheetOnlyNotesAndTracks_() {
+  const out = { notes: [], tracks: [] };
+  const n = migrationSheetRows_('CellNotes');
+  if (n) {
+    const c = headerMap_(n.headers);
+    const byCell = {};
+    n.rows.forEach(function (row) {
+      const cellId = String(row[c.cell_id] || '').trim();
+      const blockId = String(row[c.block_id] || '').trim();
+      if (cellId && blockId) (byCell[cellId] = byCell[cellId] || []).push(row);
+    });
+    Object.keys(byCell).forEach(function (cellId) {
+      const have = {};
+      fsListCollection_('cells/' + cellId + '/notes').forEach(function (d) { have[d.id] = true; });
+      byCell[cellId].forEach(function (row) {
+        const blockId = String(row[c.block_id]).trim();
+        if (have[blockId]) return;
+        out.notes.push({ cellId: cellId, blockId: blockId, doc: {
+          agent_code: String(row[c.agent_code] || '').trim().toUpperCase(),
+          block_type: row[c.block_type] || 'paragraph', text: row[c.text] || '',
+          shared: asBoolean_(row[c.shared]), sort_order: Number(row[c.sort_order]) || 0,
+          created_at: migrationValue_(row[c.created_at] || 0), updated_at: migrationValue_(row[c.updated_at] || 0),
+          pinned: c.pinned !== undefined && asBoolean_(row[c.pinned]),
+          tags: (c.tags !== undefined && row[c.tags]) || '[]'
+        } });
+      });
+    });
+  }
+  const t = migrationSheetRows_('Tracks');
+  if (t) {
+    const c = headerMap_(t.headers);
+    const have = {};
+    fsListCollection_('tracks').forEach(function (d) { have[d.id] = true; });
+    t.rows.forEach(function (row) {
+      const id = String(row[c.track_id] || '').trim();
+      if (!id || have[id]) return;
+      const fileId = c.drive_file_id !== undefined ? String(row[c.drive_file_id] || '') : '';
+      out.tracks.push({ id: id, doc: {
+        track_id: id, title: row[c.title] || '',
+        url: fileId ? driveDirectAudioUrl(fileId) : ((c.url !== undefined && row[c.url]) || ''),
+        drive_file_id: fileId, uploaded_at: migrationValue_(row[c.uploaded_at] || '')
+      } });
+    });
+  }
+  return out;
+}
+
+// Copies the Notes and Tracks runFullMigrationToFirestoreNow() listed as
+// "on the Sheet but not in Firestore". Run it only if those should come
+// back -- some may be ones a player or Handler deleted on purpose. Never
+// overwrites a Firestore document. A copied Track still points at Drive;
+// run runMigrateDriveFilesToStorageNow() afterwards to move it.
+function runCopySheetOnlyNotesAndTracksNow() {
+  const found = sheetOnlyNotesAndTracks_();
+  const writes = found.notes.map(function (n) { return { set: ['cells', n.cellId + '/notes/' + n.blockId, n.doc] }; })
+    .concat(found.tracks.map(function (t) { return { set: ['tracks', t.id, t.doc] }; }));
+  const done = fsCommit_(writes);
+  Logger.log('Copied ' + found.notes.length + ' note(s) and ' + found.tracks.length + ' track(s) to Firestore (' + done + ' writes).');
 }
 
 function runMigrateDriveFilesToStorageNow() {

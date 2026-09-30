@@ -60,8 +60,20 @@ In the Apps Script editor:
 3. If it says `MIGRATION HAD n FAILURE(S)`, the lines under `failures`
    say what went wrong. Fix it and run again; it's safe to re-run.
 
-It also lists, under `notes`, any character or Agent File that's in
-Firestore but not on the Sheet. Nothing is deleted.
+It also lists, under `notes`:
+- any character or Agent File that's in Firestore but not on the Sheet
+  (nothing is deleted);
+- any Player Note or Track Library entry that's on the Sheet but not in
+  Firestore. Those two have been saved only to Firestore for a while,
+  deletes included, so such a row is either one that was never copied
+  or one somebody deleted on purpose -- the migration can't tell which,
+  so it doesn't copy them. If the list is empty (the likely case),
+  there's nothing to do. If it shows notes or tracks you want back, run
+  **runCopySheetOnlyNotesAndTracksNow** once, before step 4.
+
+The error log (`ClientErrors`) and the hidden `Backup_Characters_*`
+tabs are the only Sheet data not copied: the first is a debugging log,
+the second is replaced by the daily Firestore backup.
 
 ## 4. Move Drive images into Firebase Storage
 

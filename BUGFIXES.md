@@ -5868,7 +5868,15 @@ are gone too, not kept as fallbacks.
   any old `gdrive:` photo link the Drive move couldn't carry over.
 - **Backend:** `Code.gs` v97 adds the one-time copy
   (`runFullMigrationToFirestoreNow`) and the Drive → Storage move
-  (`runMigrateDriveFilesToStorageNow`). Until the page cutover merges,
+  (`runMigrateDriveFilesToStorageNow`).
+  - The copy covers every Sheet tab except the error log and the hidden
+    daily backups.
+  - Player Notes and Track Library rows that are on the Sheet but not
+    in Firestore are listed, not copied. Those two have saved only to
+    Firestore for a while, deletes included, so such a row may be one
+    somebody deleted on purpose.
+  - `runCopySheetOnlyNotesAndTracksNow` copies those listed rows if
+    they're wanted. Until the page cutover merges,
   it also keeps Firestore in sync for everything the old pages still
   send to the Sheet. `dailyBackup` replaces the Sheet's daily backup.
   Runbook: `docs/firebase-migration/SHEET-RETIREMENT.md`.
