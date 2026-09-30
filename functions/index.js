@@ -117,3 +117,176 @@ exports.handlerLogin = onCall({ secrets: [HANDLER_PASSWORD] }, async (request) =
   const token = await getAuth().createCustomToken('handler', { handler: true });
   return { token: token };
 });
+
+// ════════════════════════════════════════════════════════════════
+// AI generation for the Agent File -- moved here from the retired Apps
+// Script backend (generateAppearancePrompt / generatePlateImage in
+// backend/Code.gs). The API keys live only in Secret Manager:
+//   firebase functions:secrets:set ANTHROPIC_API_KEY
+//   firebase functions:secrets:set GEMINI_API_KEY
+// (the same values that sat in the Apps Script project's Script
+// Properties). The caller must be signed in -- as an Agent (via
+// exchangeAgentToken) or as the Handler -- and each Agent gets the same
+// limits the Apps Script had: 10 prompts / 3 images per 10 minutes.
+// ════════════════════════════════════════════════════════════════
+const { getFirestore } = require('firebase-admin/firestore');
+const { buildAppearancePrompt } = require('./ai-prompts');
+
+const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
+const GEMINI_API_KEY = defineSecret('GEMINI_API_KEY');
+const STORAGE_BUCKET = 'dg-app-b3447.firebasestorage.app';
+
+function callerKey_(request) {
+  const t = (request.auth && request.auth.token) || {};
+  if (t.handler === true) return 'HANDLER';
+  if (t.agentCode) return String(t.agentCode);
+  throw new HttpsError('unauthenticated', 'Sign in first.');
+}
+
+// Fixed-window counter per caller per bucket, in a transaction so two
+// simultaneous calls can't both slip under the limit.
+async function checkRateLimit_(key, bucket, maxCalls, windowSeconds) {
+  const ref = getFirestore().collection('rate_limits').doc(bucket + '_' + key);
+  const now = Date.now();
+  const allowed = await getFirestore().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const d = snap.exists ? snap.data() : null;
+    if (!d || now - d.window_start > windowSeconds * 1000) {
+      tx.set(ref, { window_start: now, count: 1 });
+      return true;
+    }
+    if (d.count >= maxCalls) return false;
+    tx.update(ref, { count: d.count + 1 });
+    return true;
+  });
+  if (!allowed) throw new HttpsError('resource-exhausted', 'Rate limit reached for this Agent -- please wait a few minutes and try again.');
+}
+
+// Local emulator runs (tests) never reach the real AI APIs.
+const IN_EMULATOR = process.env.FUNCTIONS_EMULATOR === 'true';
+const FAKE_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAGElEQVR4nGNgGAWjYBSMglEwCkbBwAQABAgAAWm3N0IAAAAASUVORK5CYII=';
+
+exports.generatePrompt = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120 }, async (request) => {
+  const key = callerKey_(request);
+  await checkRateLimit_(key, 'prompt', 10, 600);
+  if (IN_EMULATOR) return { status: 'OK', prompt: 'EMULATOR PROMPT: ' + buildAppearancePrompt(request.data || {}).slice(0, 80) };
+  const apiKey = ANTHROPIC_API_KEY.value();
+  if (!apiKey) throw new HttpsError('failed-precondition', 'ANTHROPIC_API_KEY is not set on the server.');
+  const userPrompt = buildAppearancePrompt(request.data || {});
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 1000, messages: [{ role: 'user', content: userPrompt }] })
+  });
+  const result = await resp.json().catch(() => ({}));
+  if (result.content && result.content[0] && result.content[0].text) {
+    return { status: 'OK', prompt: result.content[0].text };
+  }
+  return { status: 'ERROR', message: (result.error && result.error.message) || 'No content returned.' };
+});
+
+// Reads one of this project's own Plate/reference images straight out
+// of Storage (no CORS involved server-side) -- only agent-plates/ and
+// agent-refs/ objects, never an arbitrary URL.
+async function storageReferenceImage_(url) {
+  const m = /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/([^/]+)\/o\/((?:agent-plates|agent-refs)%2F[^?/]+)(\?.*)?$/.exec(String(url || ''));
+  if (!m || m[1] !== STORAGE_BUCKET) return null;
+  try {
+    const { getStorage } = require('firebase-admin/storage');
+    const file = getStorage().bucket(STORAGE_BUCKET).file(decodeURIComponent(m[2]));
+    const [meta] = await file.getMetadata();
+    if (Number(meta.size) > 8 * 1024 * 1024) return null;
+    let mime = meta.contentType || '';
+    if (mime.indexOf('image/') !== 0) {
+      const ext = (/\.(png|jpe?g|webp|gif)$/i.exec(file.name) || [])[1] || '';
+      mime = ext ? 'image/' + (ext.toLowerCase() === 'jpg' ? 'jpeg' : ext.toLowerCase()) : '';
+    }
+    if (!mime) return null;
+    const [buf] = await file.download();
+    return { mimeType: mime, data: buf.toString('base64') };
+  } catch (e) {
+    return null;
+  }
+}
+
+exports.generatePlateImage = onCall({ secrets: [GEMINI_API_KEY], timeoutSeconds: 180, memory: '512MiB' }, async (request) => {
+  const key = callerKey_(request);
+  await checkRateLimit_(key, 'plate_image', 3, 600);
+  const apiKey = GEMINI_API_KEY.value();
+  if (!apiKey) throw new HttpsError('failed-precondition', 'GEMINI_API_KEY is not set on the server.');
+  const data = request.data || {};
+  const prompt = String(data.prompt || '').trim();
+  if (!prompt) return { status: 'ERROR', message: 'prompt is required.' };
+  if (prompt.length > 4000) return { status: 'ERROR', message: 'prompt is too long.' };
+  if (data.reference_image_base64 && data.reference_image_base64.length > 8 * 1024 * 1024) {
+    return { status: 'ERROR', message: 'reference image is too large.' };
+  }
+  const parts = [{ text: prompt }];
+  if (data.reference_image_base64 && data.reference_image_base64.indexOf(',') !== -1) {
+    parts.push({ inlineData: {
+      mimeType: data.reference_image_base64.split(';')[0].split(':')[1],
+      data: data.reference_image_base64.split(',')[1]
+    } });
+  } else if (data.reference_image_url) {
+    const ref = await storageReferenceImage_(data.reference_image_url);
+    if (ref) parts.push({ inlineData: ref });
+  }
+  if (IN_EMULATOR) return { status: 'OK', image_base64: 'data:image/png;base64,' + FAKE_PNG, refs: parts.length - 1 };
+  const model = 'gemini-3.1-flash-image';
+  const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+    body: JSON.stringify({
+      contents: [{ parts: parts }],
+      generationConfig: { responseModalities: ['IMAGE'] },
+      safetySettings: [
+        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
+        { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+        { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' }
+      ]
+    })
+  });
+  const result = await resp.json().catch(() => ({}));
+  const candidate = result.candidates && result.candidates[0];
+  const resultParts = candidate && candidate.content && candidate.content.parts;
+  const imagePart = resultParts && resultParts.filter((p) => p.inlineData)[0];
+  if (imagePart) {
+    return { status: 'OK', image_base64: 'data:' + imagePart.inlineData.mimeType + ';base64,' + imagePart.inlineData.data };
+  }
+  const blockReason = result.promptFeedback && result.promptFeedback.blockReason;
+  const finishReason = candidate && candidate.finishReason;
+  const apiError = result.error && result.error.message;
+  return { status: 'ERROR', message: apiError || (blockReason ? 'Blocked: ' + blockReason
+    : finishReason && finishReason !== 'STOP' ? 'Generation stopped: ' + finishReason : 'No image returned.') };
+});
+
+// ════════════════════════════════════════════════════════════════
+// Daily backup -- replaces the Apps Script backupCharactersSheet()
+// trigger (a hidden copy of the Characters sheet every day, 14 kept).
+// Writes characters + briefs to backups/YYYY-MM-DD.json in Storage
+// (not public: storage.rules has no rule for backups/, so only the
+// console and the Admin SDK can read them) and deletes files older
+// than 14 days.
+// ════════════════════════════════════════════════════════════════
+const { onSchedule } = require('firebase-functions/v2/scheduler');
+
+exports.dailyBackup = onSchedule({ schedule: 'every day 04:00', timeZone: 'Europe/Copenhagen' }, async () => {
+  const db = getFirestore();
+  const out = { taken_at: new Date().toISOString() };
+  for (const coll of ['characters', 'briefs', 'cells', 'evidence', 'operations']) {
+    const snap = await db.collection(coll).get();
+    out[coll] = {};
+    snap.forEach((d) => { out[coll][d.id] = d.data(); });
+  }
+  const { getStorage } = require('firebase-admin/storage');
+  const bucket = getStorage().bucket(STORAGE_BUCKET);
+  const day = out.taken_at.slice(0, 10);
+  await bucket.file('backups/' + day + '.json').save(JSON.stringify(out), { contentType: 'application/json' });
+  const [files] = await bucket.getFiles({ prefix: 'backups/' });
+  const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
+  for (const f of files) {
+    const m = /backups\/(\d{4}-\d{2}-\d{2})\.json$/.exec(f.name);
+    if (m && new Date(m[1]).getTime() < cutoff) await f.delete().catch(() => {});
+  }
+});

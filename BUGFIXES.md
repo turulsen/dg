@@ -5833,3 +5833,151 @@ reads fine and no double load. Worth its own fix; the timeouts above
 already stop it from blanking the lists this pass touched.
 
 Shell cache `dg-hub-shell-v161`.
+
+## The Sheet is retired: every page reads and writes Firestore (v97)
+
+**Report:** "I want a fast app that works from firebase and no sheet."
+Two earlier migrations and several partial moves (most recently "Group
+1" above) had each left something still on the Sheet. Each was
+described as done while the Sheet stayed the source of truth for
+characters, Agent Files and more. This finishes that work rather than
+adding another partial step. Group 1's one-time "ask the Sheet" top-ups
+are gone too, not kept as fallbacks.
+
+**What moved (every page, all of it):**
+- **New `assets/dg-store.js`.** It is the one Firestore layer the
+  player pages share. It covers characters (autosave and `?load=`),
+  Agent Files (`briefs/`), minting new Agent Codes, Load My Agents (by
+  `player_name_lc`), handout notes, Notes identities, Evidence "seen"
+  marks, and the AI calls.
+- **The AI calls** are now Cloud Functions (`generatePrompt`,
+  `generatePlateImage`). The API keys move to Secret Manager.
+- **A-Cell:**
+  - Every Handler action goes through `window.dgAcellApi`, which writes
+    Firestore directly. That covers:
+    - Cell membership: solo Notes follow the Agent into the Cell, and
+      Evidence `visible_to` is recomputed.
+    - Operations and Evidence.
+    - Delete/restore: `deleted_agents/`, purged after 24 h.
+    - Player Name edits and playlists.
+  - Evidence's folders load in one Firestore read.
+- **Agent Hub, Notes, Requisition and the Hub shell** read Firestore
+  only.
+- **The error banner** writes `client_errors/`.
+- **What's left on Apps Script:** the Drive image proxy (`imgdata`), for
+  any old `gdrive:` photo link the Drive move couldn't carry over.
+- **Backend:** `Code.gs` v97 adds the one-time copy
+  (`runFullMigrationToFirestoreNow`) and the Drive → Storage move
+  (`runMigrateDriveFilesToStorageNow`).
+  - The copy covers every Sheet tab except the error log and the hidden
+    daily backups.
+  - Player Notes and Track Library rows that are on the Sheet but not
+    in Firestore are listed, not copied. Those two have saved only to
+    Firestore for a while, deletes included, so such a row may be one
+    somebody deleted on purpose.
+  - `runCopySheetOnlyNotesAndTracksNow` copies those listed rows if
+    they're wanted.
+  - Until the page cutover merges, v97 also keeps Firestore in sync for
+    everything the old pages still send to the Sheet.
+  - `dailyBackup` replaces the Sheet's daily backup.
+  - Runbook: `docs/firebase-migration/SHEET-RETIREMENT.md`.
+- **Rules:** a character, Agent File or Notes identity is written only
+  by its own Agent's session or the Handler. `deleted_agents`,
+  `playlists`, `client_errors`, `config` and `rate_limits` get rules.
+
+**Two bugs this surfaced, fixed:**
+- **The Firebase SDK loaded twice on a standalone A-Cell reload.** After
+  "Firebase is already defined", every Firestore read on the page hung.
+  Group 1 above noted this and left it open. Every loader now reuses a
+  script tag another script already added (`dgLoadFirebaseScript` and
+  the same guard in each page's loader).
+- **Agent Hub's "Erase Agent" never deleted anything.** It posted
+  `delete_character`, which the backend always refused because that
+  action needs the Handler. The overlay still promised a delete a
+  Handler could undo. It now really does that: the Agent's own session
+  moves its character and Agent File into `deleted_agents`, which A-Cell
+  can restore for 24 h. Rules let an Agent delete only its own code. The
+  same session could already overwrite that code outright, which is
+  unrecoverable, so a restorable delete adds no new exposure.
+
+**Found by the full player + Handler journey (Chromium and WebKit), fixed:**
+- **Profiling could wipe the Player Name.** A player who submitted
+  Profiling before the form had filled in from the Agent File (the
+  journey script did it within a second) sent an empty "Your Name",
+  which blanked `player_name` on the Agent File. On a second device,
+  Load My Agents then found the character but not its Agent File, so
+  the Face Plate, codename and eras were missing ("Take Photo" on the
+  roster card). Now:
+  - an empty name never overwrites a known one (portal submit, and
+    `dgStore.submitBrief` for any existing Agent File);
+  - `findByPlayerName` also reads each matched character's own Agent
+    File, even one without the name.
+- **A-Cell showed "backend didn't confirm" after a successful delete
+  (WebKit, so every iPhone/iPad browser).**
+  - **What happened:** Sheet-tab delete/restore and Evidence
+    release/delete re-read the list straight after writing, to confirm
+    the write. The Sheet-era 900 ms waits before those reads were
+    removed in this change as pure lag. On WebKit the live-listened
+    collection could still return the old copy for a moment, so a
+    successful delete showed "Sent, but the backend didn't confirm the
+    delete" and Recently Deleted never refreshed.
+  - **Fix:** the write succeeding is the confirmation now. The page
+    updates from it and the live listeners keep the lists current. Bulk
+    delete reports how many succeeded and failed. The "didn't confirm"
+    messages no longer tell the Handler to redeploy Apps Script.
+- **A-Cell waited 0.9 s after every write before re-reading** (Operation
+  create/rename/delete, Sheet delete/restore, Evidence). These were
+  Sheet-era waits for the Sheet to catch up, and are removed.
+
+**Agent Hub roster, now that Firestore is the answer:** an Agent with
+no character and no Agent File in Firestore is gone, and is purged from
+a device's roster. This is `purgeIfFullyDeleted()`, unchanged. A read
+that fails or times out still never marks anything "no sheet" and never
+purges.
+
+**Verified:**
+- **Full journey through the real UI, in Chromium (38/38) and WebKit
+  (37/37)**, with the emulators and Apps Script blocked. A phone player
+  and a desktop Handler:
+  - Hub Cover Identity, then the 8-step Character Wizard.
+  - Settings → Open Agent File, then Profiling (Generate + Submit).
+  - First era, with its AI prompt and a generated Face Plate.
+  - Notes (identity + a note), then a Live Play stat roll.
+  - The A-Cell Clearance login.
+  - Cells: create, then add the Agent. The solo note follows them in.
+  - Evidence: an Operation and a released item.
+  - Music: broadcast a track.
+  - The Sheet and Play tabs.
+  - The player sees the Evidence in Agent Hub and Notes, and opening it
+    marks it seen.
+  - A second device's Load My Agents shows the Agent with its photo.
+  - Sheet delete + Recently Deleted restore.
+  - No page made an Apps Script request, and no page reported a JS
+    error. Firefox couldn't be run: it isn't installed here, and the
+    network blocks downloading it.
+- **Emulators with Apps Script blocked** (real pages against Firestore,
+  Auth, Functions and Storage): 33/33.
+  - A new character autosaves and loads on a second device.
+  - The Agent File is created and edited, and a resubmission merges.
+  - A brand-new Agent mints a code.
+  - AI goes through the functions.
+  - Handout notes, identities, seen marks and Load My Agents work.
+  - Membership, Operations, Evidence, playlists, the Sheet tab, and
+    delete/restore work.
+  - Erase Agent works, and restore brings the Agent back.
+  - Rules deny writing or deleting another Agent.
+  - No page made a single Apps Script request.
+- **Migration on the shim and emulators:** characters, briefs, recent
+  deleted Agents, `visible_to` from Firestore Cells, seen marks,
+  identities, handout notes and playlists all copy. Drive files land in
+  Storage, and a re-run changes nothing.
+- **`test/run_tests.py` now runs against an in-page Firestore stub.**
+  Every test page gets the stub by default, and production Firebase
+  hosts are aborted. The old Sheet-shaped tests were converted:
+  - `jsonp_backend()` answers Firestore reads from a test's old Apps
+    Script fake.
+  - `tap_acell_posts()` records A-Cell's Handler actions.
+  - `watch_apps_script()` asserts a page makes no Apps Script call.
+
+Shell cache `dg-hub-shell-v162` (`assets/dg-store.js` added to the
+shell).

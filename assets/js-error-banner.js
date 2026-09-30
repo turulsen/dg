@@ -19,9 +19,9 @@
    completely invisible unless someone happened to have devtools open
    at the exact moment. The banner alone only helps if someone is
    physically watching that one screen when it happens; this also
-   POSTs a best-effort report to the Apps Script backend (log_client_error,
-   see backend/Code.gs), a plain fire-and-forget fetch with no Firebase
-   dependency at all -- deliberately so a failure IN Firebase loading
+   Adds a best-effort report to Firestore (client_errors), falling back
+   to a plain REST create with no Firebase SDK dependency at all --
+   deliberately so a failure IN Firebase loading
    itself still gets reported, rather than the one thing most likely to
    break also being the one channel that can't report it breaking.
 
@@ -29,7 +29,7 @@
    anything else runs, so it can catch a crash from ANY later script on
    that page, not just one widget's own pipeline. ══════════════════════ */
 (function () {
-  var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
+  var FIRESTORE_ERRORS_URL = 'https://firestore.googleapis.com/v1/projects/dg-app-b3447/databases/(default)/documents/client_errors?key=AIzaSyBiFBvgmrjtacxXvh7FHa9a28BbwV0LnDQ';
   // One id per page load, sent with every report, so a burst of
   // errors from the same load can be told apart from unrelated ones
   // across devices/sessions when reading the ClientErrors sheet later.
@@ -111,7 +111,7 @@
     totalReports++;
     try {
       var payload = {
-        action: 'log_client_error',
+        logged_at: new Date().toISOString(),
         session_id: SESSION_ID,
         kind: kind,
         message: String(message || '').slice(0, 2000),
@@ -121,12 +121,25 @@
         stack: String(stack || '').slice(0, 4000),
         page: location.pathname + location.search,
         agent_code: bestEffortAgentCode(),
-        user_agent: navigator.userAgent,
-        client_time: new Date().toISOString()
+        user_agent: String(navigator.userAgent || '').slice(0, 500)
       };
-      fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors',
-        body: JSON.stringify(payload)
+      // client_errors/{auto-id} in Firestore (the ClientErrors sheet is
+      // retired). Through the page's Firebase SDK when one is loaded;
+      // otherwise a plain REST create, so a failure in loading Firebase
+      // itself still gets reported. firestore.rules lets anyone add one
+      // small report and only the Handler read them.
+      if (window.firebase && window.firebase.apps && window.firebase.apps.length && window.firebase.firestore) {
+        window.firebase.firestore().collection('client_errors').add(payload).catch(function () { /* best effort */ });
+        return;
+      }
+      var fields = {};
+      Object.keys(payload).forEach(function (k) {
+        var v = payload[k];
+        fields[k] = typeof v === 'number' ? { integerValue: String(Math.round(v)) } : { stringValue: String(v) };
+      });
+      fetch(FIRESTORE_ERRORS_URL, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: fields })
       }).catch(function () { /* best effort -- never let a failed report throw */ });
     } catch (e) { /* best effort */ }
   }

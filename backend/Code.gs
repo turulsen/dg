@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════════
 // DELTA GREEN — Character Brief Collector + Agent File
-// Google Apps Script backend v96 — Phase 2 + image proxy + Cloud Save
+// Google Apps Script backend v97 — Phase 2 + image proxy + Cloud Save
 // + A-Cell (Play/Cells/Evidence/Sheet/Music) + Cell groups + Table Radio
 // + Cover Identity (find a player's Agents by real name)
 // + 24h auto-purge for Recently Deleted
@@ -454,6 +454,18 @@
 //   CORS headers, so the Agent File couldn't read a Storage-hosted Face
 //   Plate's bytes itself -- every Outfit Plate generated in a later
 //   session went out with no face reference at all.
+// + v97 -- THE SHEET IS RETIRED. Every page now reads and writes
+//   Firestore directly (assets/dg-store.js, a-cell.html's dgAcellApi);
+//   AI generation moved to Cloud Functions (generatePrompt,
+//   generatePlateImage). This file stays deployed only for the legacy
+//   Drive image proxy (imgdata, for a 'gdrive:' link) and to run the
+//   one-time migration below:
+//     1. runFullMigrationToFirestoreNow()   -- copies every Sheet to Firestore
+//     2. runMigrateDriveFilesToStorageNow() -- moves Drive images/tracks to Storage
+//   Also: dates now reach Firestore as ISO strings (they arrived as empty
+//   maps); Notes identity, Evidence seen marks, handout notes, playlists
+//   and delete/restore mirror to Firestore meanwhile, so nothing written
+//   between running the migration and the pages switching over is lost.
 //
 // This file is NOT deployed from here -- this repo is a static
 // GitHub Pages site with no server-side execution. It's kept here as
@@ -854,6 +866,12 @@ function getFirestoreAccessToken_() {
 // wrapper shape ({stringValue:...}, {arrayValue:{values:[...]}}, etc).
 function toFirestoreValue_(v) {
   if (v === null || v === undefined) return { nullValue: null };
+  // Sheets hands dates back as Date objects (it silently converts an ISO
+  // string written into a cell, e.g. Characters' Updated At). A Date has
+  // no enumerable own keys, so the object branch below turned every one
+  // into an EMPTY map in Firestore. Store it the way every JSON reply
+  // from this file already showed it to the pages: an ISO string.
+  if (v instanceof Date) return { stringValue: isNaN(v.getTime()) ? '' : v.toISOString() };
   if (typeof v === 'boolean') return { booleanValue: v };
   if (typeof v === 'number') return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
   if (Array.isArray(v)) return { arrayValue: { values: v.map(toFirestoreValue_) } };
@@ -1236,7 +1254,12 @@ function doPost(e) {
     if (data.action === 'save_agent_identity') {
       const authErr = requireAgentToken_(data);
       if (authErr) return authErr;
-      return saveAgentIdentity(data);
+      const out = saveAgentIdentity(data);
+      // v97 interim mirror: pages read agent_identity/{code} once they
+      // switch to Firestore; keeps it current until then.
+      const idCode = String(data.agent_code || '').trim().toUpperCase();
+      if (idCode) firestoreDualWrite_('agent_identity', idCode, { agent_code: idCode, color: data.color || '', font: data.font || '', updated_at: Date.now() });
+      return out;
     }
 
     // A-Cell Music: set a Cell's usual Table Radio channel ("Cue For Cell").
@@ -1292,7 +1315,11 @@ function doPost(e) {
     // see requireAgentToken_()'s own comment): the only thing at stake
     // is a cosmetic unseen dot, not real data.
     if (data.action === 'mark_evidence_seen') {
-      return markEvidenceSeen(data.agent_code, data.evidence_id);
+      const out = markEvidenceSeen(data.agent_code, data.evidence_id);
+      const seenCode = String(data.agent_code || '').trim().toUpperCase();
+      const seenEv = String(data.evidence_id || '').trim();
+      if (seenCode && seenEv) firestoreDualWrite_('evidence_seen', seenCode + '_' + seenEv, { agent_code: seenCode, evidence_id: seenEv, seen_at: Date.now() });
+      return out;
     }
 
     // Client-side JS-error telemetry (assets/js-error-banner.js on
@@ -1310,14 +1337,18 @@ function doPost(e) {
     if (data.action === 'delete_character') {
       const authErr = requireHandlerAuth_(data);
       if (authErr) return authErr;
-      return deleteCharacter(data.agent_code);
+      const out = deleteCharacter(data.agent_code);
+      mirrorDeletedAgent_(data.agent_code);
+      return out;
     }
 
     // A-Cell Admin: undo a soft-delete.
     if (data.action === 'restore_character') {
       const authErr = requireHandlerAuth_(data);
       if (authErr) return authErr;
-      return restoreCharacter(data.agent_code);
+      const out = restoreCharacter(data.agent_code);
+      if (data.agent_code) firestoreDualDelete_('deleted_agents', data.agent_code);
+      return out;
     }
 
     // set_now_playing/pause_now_playing/resume_now_playing/
@@ -1334,7 +1365,10 @@ function doPost(e) {
     if (data.action === 'save_playlist') {
       const authErr = requireHandlerAuth_(data);
       if (authErr) return authErr;
-      return savePlaylist(data.channel, data.playlist_json);
+      const out = savePlaylist(data.channel, data.playlist_json);
+      const plCh = String(data.channel || '').trim().toLowerCase();
+      if (plCh) firestoreDualWrite_('playlists', plCh, { channel: plCh, playlist: migrationParseJsonArray_(data.playlist_json), updated_at: Date.now() });
+      return out;
     }
 
     // A-Cell Music: upload/delete a Track Library mp3.
@@ -1353,7 +1387,10 @@ function doPost(e) {
     if (data.action === 'save_handout_note') {
       const authErr = requireAgentToken_(data);
       if (authErr) return authErr;
-      return saveHandoutNote(data);
+      const out = saveHandoutNote(data);
+      const hnCode = String(data.agent_code || '').trim().toUpperCase();
+      if (hnCode && data.handout_id) firestoreDualWrite_('handout_notes', hnCode + '_' + data.handout_id, { agent_code: hnCode, handout_id: String(data.handout_id), note: data.note || '', updated_at: Date.now() });
+      return out;
     }
 
     // New agent submission -- also handles a returning Agent's "Update
@@ -1467,7 +1504,11 @@ function doPost(e) {
           firestoreFields[col] = idx !== -1 ? row[idx] : (sent ? valueFor(col) : '');
         });
         sheet.getRange(existingRowIndex + 1, 1, 1, row.length).setValues([row]);
-        firestoreDualWrite_('briefs', agentCode, firestoreFields);
+        // v97: the whole row, keyed the way runFullMigrationToFirestoreNow()
+        // keys it (header lowercased), so this full-document write can't
+        // drop a field the migration copied (firestoreFields only ever
+        // carried COLUMNS).
+        firestoreDualWrite_('briefs', agentCode, Object.assign(firestoreFields, briefDocFromRow_(existingHeaders, row)));
       } else {
         const row = new Array(existingHeaders.length).fill('');
         COLUMNS.forEach(col => {
@@ -1477,7 +1518,7 @@ function doPost(e) {
         sheet.appendRow(row);
         const firestoreFields = {};
         COLUMNS.forEach(col => { firestoreFields[col] = valueFor(col); });
-        firestoreDualWrite_('briefs', agentCode, firestoreFields);
+        firestoreDualWrite_('briefs', agentCode, Object.assign(firestoreFields, briefDocFromRow_(existingHeaders, row)));
       }
 
       return ContentService
@@ -1578,6 +1619,7 @@ function updateAgentField(data) {
           : data.action === 'update_aar' ? 'aar_log' : data.field;
         const fsPatch = {};
         fsPatch[fsKey] = value;
+        if (fsKey === 'player_name') fsPatch.player_name_lc = String(value || '').trim().toLowerCase();
         firestoreDualPatch_('briefs', data.agent_code, fsPatch);
         return ContentService
           .createTextOutput(JSON.stringify({ status: 'OK' }))
@@ -1771,7 +1813,8 @@ function saveCharacter(data) {
     // real network round trip to Firestore has no business extending
     // how long every other locked write has to wait its turn.
     firestoreDualWrite_('characters', data.agent_code, {
-      agent_code: data.agent_code, updated_at: now, character_json: characterJson, player_name: playerName
+      agent_code: data.agent_code, updated_at: now, character_json: characterJson, player_name: playerName,
+      player_name_lc: String(playerName || '').trim().toLowerCase()
     });
 
     return ContentService
@@ -2138,7 +2181,7 @@ function updateCharacterField(agentCode, field, value) {
       // one field so this never touches character_json or anything else
       // on the document.
       if (field === 'player_name') {
-        firestoreDualPatch_('characters', agentCode, { player_name: value });
+        firestoreDualPatch_('characters', agentCode, { player_name: value, player_name_lc: String(value || '').trim().toLowerCase() });
       }
       return ContentService.createTextOutput(JSON.stringify({ status: 'OK' })).setMimeType(ContentService.MimeType.JSON);
     }
@@ -4984,4 +5027,677 @@ function backupCharactersSheet() {
     const m = s.getName().match(/^Backup_Characters_(\d{4}-\d{2}-\d{2})$/);
     if (m && new Date(m[1]) < cutoff) ss.deleteSheet(s);
   });
+}
+
+// ════════════════════════════════════════════════════════════════
+// FULL MIGRATION TO FIRESTORE (v97)
+//
+// The app's pages now read and write Firestore directly; this Sheet
+// is being retired. runFullMigrationToFirestoreNow() copies every Sheet
+// that is still the source of truth into Firestore, checks every write,
+// and logs a report (View > Logs / Execution log). Safe to re-run: each
+// document is rewritten from its Sheet row, nothing else is touched.
+//
+// Copied (Sheet -> Firestore):
+//   Characters        -> characters/{code}
+//   Delta Green Briefs-> briefs/{code}           (keys = header, lowercased, spaces -> _)
+//   DeletedCharacters + DeletedBriefs -> deleted_agents/{code} (last 24h)
+//   Operations        -> operations/{id}
+//   Evidence          -> evidence/{id}           (visible_to from FIRESTORE Cell membership)
+//   EvidenceSeen      -> evidence_seen/{code}_{evidenceId}
+//   AgentIdentity     -> agent_identity/{code}
+//   HandoutNotes      -> handout_notes/{code}_{handoutId}
+//   RadioChannels.playlist_json -> playlists/{channel}
+//   Cells             -> cells/{id}              ONLY if Firestore doesn't have it
+// Not copied (Firestore is already the source of truth there): Cell
+// docs that exist, Notes, Radio Now Playing, Tracks, dice rolls.
+//
+// Run it from this editor: pick runFullMigrationToFirestoreNow in the
+// Run dropdown and press Run. It needs the same two Script Properties
+// the dual-write already uses (FIRESTORE_PROJECT_ID,
+// FIRESTORE_SERVICE_ACCOUNT_JSON). When it reports 0 failures it also
+// writes config/migration in Firestore -- that's the "done" marker.
+// ════════════════════════════════════════════════════════════════
+
+function fsProjectId_() {
+  return PropertiesService.getScriptProperties().getProperty(FIRESTORE_PROJECT_ID_PROPERTY);
+}
+
+function fsDocName_(collectionName, docId) {
+  return 'projects/' + fsProjectId_() + '/databases/(default)/documents/' + collectionName + '/' + docId;
+}
+
+function fsFields_(obj) {
+  const fields = {};
+  Object.keys(obj).forEach(function (k) {
+    if (obj[k] === undefined) return;
+    fields[k] = toFirestoreValue_(obj[k]);
+  });
+  return fields;
+}
+
+function fromFirestoreValue_(v) {
+  if (!v) return null;
+  if ('stringValue' in v) return v.stringValue;
+  if ('integerValue' in v) return Number(v.integerValue);
+  if ('doubleValue' in v) return v.doubleValue;
+  if ('booleanValue' in v) return v.booleanValue;
+  if ('nullValue' in v) return null;
+  if ('timestampValue' in v) return v.timestampValue;
+  if ('arrayValue' in v) return (v.arrayValue.values || []).map(fromFirestoreValue_);
+  if ('mapValue' in v) {
+    const out = {};
+    const f = v.mapValue.fields || {};
+    Object.keys(f).forEach(function (k) { out[k] = fromFirestoreValue_(f[k]); });
+    return out;
+  }
+  return null;
+}
+
+// Strict batched writes: every write must land, or this throws with the
+// server's own message. writes: [{ set: [collection, id, obj] } | { del: [collection, id] }]
+function fsCommit_(writes) {
+  const token = getFirestoreAccessToken_();
+  if (!token) throw new Error('No Firestore access token -- are FIRESTORE_PROJECT_ID and FIRESTORE_SERVICE_ACCOUNT_JSON set in Script Properties?');
+  const url = 'https://firestore.googleapis.com/v1/projects/' + fsProjectId_() + '/databases/(default)/documents:commit';
+  let done = 0;
+  for (let i = 0; i < writes.length; i += 400) {
+    const chunk = writes.slice(i, i + 400).map(function (w) {
+      if (w.del) return { delete: fsDocName_(w.del[0], w.del[1]) };
+      return { update: { name: fsDocName_(w.set[0], w.set[1]), fields: fsFields_(w.set[2]) } };
+    });
+    const resp = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { Authorization: 'Bearer ' + token },
+      payload: JSON.stringify({ writes: chunk }),
+      muteHttpExceptions: true
+    });
+    if (resp.getResponseCode() !== 200) {
+      throw new Error('Firestore commit failed (HTTP ' + resp.getResponseCode() + '): ' + resp.getContentText().slice(0, 500));
+    }
+    done += chunk.length;
+  }
+  return done;
+}
+
+function fsListCollection_(collectionName) {
+  const token = getFirestoreAccessToken_();
+  if (!token) throw new Error('No Firestore access token.');
+  const out = [];
+  let pageToken = '';
+  do {
+    const url = 'https://firestore.googleapis.com/v1/projects/' + fsProjectId_() + '/databases/(default)/documents/' +
+      collectionName + '?pageSize=300' + (pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : '');
+    const resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true });
+    if (resp.getResponseCode() !== 200) throw new Error('Firestore list ' + collectionName + ' failed (HTTP ' + resp.getResponseCode() + '): ' + resp.getContentText().slice(0, 300));
+    const body = JSON.parse(resp.getContentText() || '{}');
+    (body.documents || []).forEach(function (d) {
+      const data = {};
+      const f = d.fields || {};
+      Object.keys(f).forEach(function (k) { data[k] = fromFirestoreValue_(f[k]); });
+      out.push({ id: d.name.split('/').pop(), data: data });
+    });
+    pageToken = body.nextPageToken || '';
+  } while (pageToken);
+  return out;
+}
+
+// { headers: [...], rows: [[...], ...] } or null when the sheet is missing/empty.
+function migrationSheetRows_(name) {
+  const sheet = getOrCreateSheet().getSheetByName(name);
+  if (!sheet || sheet.getLastRow() < 1) return null;
+  const data = sheet.getDataRange().getValues();
+  return { headers: data[0].map(function (h) { return String(h || '').trim(); }), rows: data.slice(1) };
+}
+
+function migrationKey_(header) {
+  return String(header).trim().toLowerCase().replace(/\s+/g, '_');
+}
+
+function migrationValue_(v) {
+  if (v instanceof Date) return isNaN(v.getTime()) ? '' : v.toISOString();
+  return v;
+}
+
+function migrationParseJsonArray_(v) {
+  if (Array.isArray(v)) return v;
+  try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; }
+}
+
+function characterDocFromRow_(headers, row) {
+  const cols = headerMap_(headers);
+  const code = String(row[cols['Agent Code']] || '').trim();
+  const json = cols['Character JSON'] !== undefined ? String(row[cols['Character JSON']] || '') : '';
+  let playerName = cols['Player Name'] !== undefined ? String(row[cols['Player Name']] || '').trim() : '';
+  if (!playerName && json) {
+    try { playerName = String(((JSON.parse(json) || {}).bio || {}).player_name || '').trim(); } catch (e) { /* unparsable row */ }
+  }
+  return {
+    agent_code: code,
+    updated_at: migrationValue_(cols['Updated At'] !== undefined ? row[cols['Updated At']] : ''),
+    character_json: json,
+    player_name: playerName,
+    player_name_lc: playerName.toLowerCase()
+  };
+}
+
+function briefDocFromRow_(headers, row) {
+  const doc = {};
+  headers.forEach(function (h, i) {
+    if (!h || h === 'Deleted At') return;
+    const key = migrationKey_(h);
+    let v = migrationValue_(row[i] !== undefined ? row[i] : '');
+    // A legacy base64 reference photo can be most of a 1MB Firestore doc
+    // on its own; the photo itself lives on (ref_image_link).
+    if (key === 'ref_image_base64' && String(v).length > 50000) v = '';
+    doc[key] = mapDriveRef_(v);
+  });
+  doc.agent_code = String(doc.agent_code || '').trim();
+  doc.player_name_lc = String(doc.player_name || '').trim().toLowerCase();
+  return doc;
+}
+
+// config/drive_map.map = { driveFileId: storageUrl } -- written by
+// runMigrateDriveFilesToStorageNow(). The Sheet keeps its old gdrive:
+// values, so a re-run of the migration after the Drive move maps them
+// to the Storage copy instead of putting the Drive link back.
+function loadDriveMap_() {
+  try {
+    const resp = UrlFetchApp.fetch(firestoreDocUrl_('config', 'drive_map'), { headers: { Authorization: 'Bearer ' + getFirestoreAccessToken_() }, muteHttpExceptions: true });
+    if (resp.getResponseCode() !== 200) return {};
+    const body = JSON.parse(resp.getContentText() || '{}');
+    return fromFirestoreValue_((body.fields || {}).map) || {};
+  } catch (e) { return {}; }
+}
+let DRIVE_MAP_ = null;
+function mapDriveRef_(v) {
+  const id = driveIdFromRef_(v);
+  if (!id) return v;
+  if (DRIVE_MAP_ === null) DRIVE_MAP_ = loadDriveMap_();
+  return DRIVE_MAP_[id] || v;
+}
+
+function runFullMigrationToFirestoreNow() {
+  DRIVE_MAP_ = null;
+  const report = { started_at: new Date().toISOString(), counts: {}, failures: [], notes: [] };
+  function step(name, fn) {
+    try {
+      report.counts[name] = fn();
+    } catch (e) {
+      report.failures.push(name + ': ' + e.message);
+    }
+  }
+
+  const liveCharCodes = {};
+  const liveBriefCodes = {};
+
+  step('characters', function () {
+    const t = migrationSheetRows_(CHARACTERS_SHEET_NAME);
+    if (!t) return 0;
+    const writes = [];
+    t.rows.forEach(function (row) {
+      const doc = characterDocFromRow_(t.headers, row);
+      if (!doc.agent_code || !doc.character_json) return;
+      liveCharCodes[doc.agent_code] = true;
+      writes.push({ set: ['characters', doc.agent_code, doc] });
+    });
+    return fsCommit_(writes);
+  });
+
+  step('briefs', function () {
+    const t = migrationSheetRows_(SHEET_NAME);
+    if (!t) return 0;
+    const writes = [];
+    t.rows.forEach(function (row) {
+      const doc = briefDocFromRow_(t.headers, row);
+      if (!doc.agent_code) return;
+      liveBriefCodes[doc.agent_code] = true;
+      writes.push({ set: ['briefs', doc.agent_code, doc] });
+    });
+    return fsCommit_(writes);
+  });
+
+  step('deleted_agents', function () {
+    const cutoff = Date.now() - DELETED_RETENTION_MS;
+    const byCode = {};
+    [['DeletedCharacters', 'character'], ['DeletedBriefs', 'brief']].forEach(function (pair) {
+      const t = migrationSheetRows_(pair[0]);
+      if (!t) return;
+      const delCol = t.headers.indexOf('Deleted At');
+      const codeCol = t.headers.indexOf('Agent Code');
+      if (delCol === -1 || codeCol === -1) return;
+      t.rows.forEach(function (row) {
+        const code = String(row[codeCol] || '').trim();
+        const deletedAt = normalizedDeletedAt_(row[delCol]);
+        if (!code || !deletedAt || deletedAt < cutoff) return;
+        const entry = byCode[code] = byCode[code] || { agent_code: code, deleted_at: deletedAt, character: null, brief: null };
+        entry.deleted_at = Math.max(entry.deleted_at, deletedAt);
+        entry[pair[1]] = pair[1] === 'character' ? characterDocFromRow_(t.headers, row) : briefDocFromRow_(t.headers, row);
+      });
+    });
+    const writes = [];
+    Object.keys(byCode).forEach(function (code) {
+      // Still live on the Sheet (restored since) -- not deleted.
+      if (liveCharCodes[code] || liveBriefCodes[code]) return;
+      writes.push({ set: ['deleted_agents', code, byCode[code]] });
+    });
+    return fsCommit_(writes);
+  });
+
+  // Firestore Cell membership is the real one now (Cells are created and
+  // edited there); Sheet-only Cells fill in anything Firestore lacks.
+  const members = {};
+  step('cells_missing_from_firestore', function () {
+    const fsCells = fsListCollection_('cells');
+    fsCells.forEach(function (c) { members[c.id] = migrationParseJsonArray_(c.data.member_codes); });
+    const t = migrationSheetRows_('Cells');
+    if (!t) return 0;
+    const cols = headerMap_(t.headers);
+    const writes = [];
+    t.rows.forEach(function (row) {
+      const id = String(row[cols.cell_id] || '').trim();
+      if (!id || members[id]) return;
+      const m = migrationParseJsonArray_(row[cols.member_codes]);
+      members[id] = m;
+      writes.push({ set: ['cells', id, {
+        name: row[cols.name] || '', handler: row[cols.handler] || '', member_codes: m,
+        channel: cols.channel !== undefined ? String(row[cols.channel] || '') : ''
+      }] });
+    });
+    return fsCommit_(writes);
+  });
+
+  step('operations', function () {
+    const t = migrationSheetRows_('Operations');
+    if (!t) return 0;
+    const cols = headerMap_(t.headers);
+    const writes = [];
+    t.rows.forEach(function (row) {
+      const id = String(row[cols.operation_id] || '').trim();
+      if (!id) return;
+      writes.push({ set: ['operations', id, {
+        operation_id: id, cell_id: row[cols.cell_id] || '', name: row[cols.name] || '',
+        created_at: migrationValue_(row[cols.created_at] || '')
+      }] });
+    });
+    return fsCommit_(writes);
+  });
+
+  step('evidence', function () {
+    const t = migrationSheetRows_('Evidence');
+    if (!t) return 0;
+    const cols = headerMap_(t.headers);
+    const writes = [];
+    t.rows.forEach(function (row) {
+      const id = String(row[cols.evidence_id] || '').trim();
+      if (!id) return;
+      const released = asBoolean_(row[cols.released]);
+      const cellId = String(row[cols.cell_id] || '').trim();
+      const restrictedTo = migrationParseJsonArray_(row[cols.restricted_to]);
+      writes.push({ set: ['evidence', id, {
+        title: row[cols.title] || '', body: row[cols.body] || '', photo: mapDriveRef_(row[cols.photo] || ''),
+        cell_id: cellId, created_at: migrationValue_(row[cols.created_at] || ''),
+        operation_id: row[cols.operation_id] || '', released: released, restricted_to: restrictedTo,
+        visible_to: evidenceVisibleToFrom_(members, released, cellId, restrictedTo)
+      }] });
+    });
+    return fsCommit_(writes);
+  });
+
+  step('evidence_seen', function () {
+    const t = migrationSheetRows_('EvidenceSeen');
+    if (!t) return 0;
+    const cols = headerMap_(t.headers);
+    const writes = [];
+    t.rows.forEach(function (row) {
+      const code = String(row[cols.agent_code] || '').trim().toUpperCase();
+      const ev = String(row[cols.evidence_id] || '').trim();
+      if (!code || !ev) return;
+      writes.push({ set: ['evidence_seen', code + '_' + ev, { agent_code: code, evidence_id: ev, seen_at: migrationValue_(row[cols.seen_at] || '') }] });
+    });
+    return fsCommit_(writes);
+  });
+
+  step('agent_identity', function () {
+    const t = migrationSheetRows_('AgentIdentity');
+    if (!t) return 0;
+    const cols = headerMap_(t.headers);
+    const byCode = {};
+    t.rows.forEach(function (row) {
+      const code = String(row[cols.agent_code] || '').trim().toUpperCase();
+      if (!code) return;
+      byCode[code] = { agent_code: code, color: row[cols.color] || '', font: row[cols.font] || '', updated_at: migrationValue_(row[cols.updated_at] || '') };
+    });
+    return fsCommit_(Object.keys(byCode).map(function (c) { return { set: ['agent_identity', c, byCode[c]] }; }));
+  });
+
+  step('handout_notes', function () {
+    const t = migrationSheetRows_('HandoutNotes');
+    if (!t) return 0;
+    const cols = headerMap_(t.headers);
+    const byId = {};
+    t.rows.forEach(function (row) {
+      const code = String(row[cols.agent_code] || '').trim().toUpperCase();
+      const hid = String(row[cols.handout_id] || '').trim();
+      if (!code || !hid) return;
+      byId[code + '_' + hid] = { agent_code: code, handout_id: hid, note: row[cols.note] || '', updated_at: migrationValue_(row[cols.updated_at] || '') };
+    });
+    return fsCommit_(Object.keys(byId).map(function (k) { return { set: ['handout_notes', k, byId[k]] }; }));
+  });
+
+  step('playlists', function () {
+    const t = migrationSheetRows_('RadioChannels');
+    if (!t) return 0;
+    const chCol = t.headers.indexOf('channel');
+    const plCol = t.headers.indexOf('playlist_json');
+    if (chCol === -1 || plCol === -1) return 0;
+    const byCh = {};
+    t.rows.forEach(function (row) {
+      const ch = String(row[chCol] || '').trim().toLowerCase();
+      if (!ch || !row[plCol]) return;
+      byCh[ch] = { channel: ch, playlist: migrationParseJsonArray_(row[plCol]), updated_at: Date.now() };
+    });
+    return fsCommit_(Object.keys(byCh).map(function (c) { return { set: ['playlists', c, byCh[c]] }; }));
+  });
+
+  // Player Notes and Track Library entries are written only to Firestore
+  // since v93 / Phase 4 -- including deletes, so the Sheet still holds
+  // rows a player or Handler has since deleted. A Sheet row missing from
+  // Firestore is therefore EITHER one that was never mirrored OR one that
+  // was deleted afterwards, and nothing tells the two apart. Reported,
+  // not copied: runCopySheetOnlyNotesAndTracksNow() copies them if the
+  // Handler decides they're wanted.
+  step('sheet_only_notes_and_tracks_reported', function () {
+    const found = sheetOnlyNotesAndTracks_();
+    found.notes.forEach(function (n) {
+      report.notes.push('Note on the Sheet but not in Firestore: cell ' + n.cellId + ', ' + n.doc.agent_code +
+        ', "' + String(n.doc.text || '').slice(0, 60) + '"');
+    });
+    found.tracks.forEach(function (t) {
+      report.notes.push('Track on the Sheet but not in Firestore: "' + (t.doc.title || t.id) + '"');
+    });
+    return found.notes.length + found.tracks.length;
+  });
+
+  // Characters/Briefs docs in Firestore with no live Sheet row: reported,
+  // not deleted -- a human should look before anything goes.
+  step('orphans_reported', function () {
+    let n = 0;
+    [['characters', liveCharCodes], ['briefs', liveBriefCodes]].forEach(function (pair) {
+      fsListCollection_(pair[0]).forEach(function (d) {
+        if (!pair[1][d.id]) { n++; report.notes.push(pair[0] + '/' + d.id + ' is in Firestore but not on the Sheet'); }
+      });
+    });
+    return n;
+  });
+
+  report.finished_at = new Date().toISOString();
+  if (!report.failures.length) {
+    try {
+      fsCommit_([{ set: ['config', 'migration', { completed_at: report.finished_at, counts: report.counts, notes: report.notes.slice(0, 50) }] }]);
+    } catch (e) { report.failures.push('config/migration: ' + e.message); }
+  }
+  Logger.log(JSON.stringify(report, null, 2));
+  Logger.log(report.failures.length
+    ? 'MIGRATION HAD ' + report.failures.length + ' FAILURE(S) -- see "failures" above. Nothing was marked done; fix and run again.'
+    : 'MIGRATION COMPLETE -- every Sheet copied to Firestore. config/migration written.');
+  return report;
+}
+
+function evidenceVisibleToFrom_(membersByCell, released, cellId, restrictedTo) {
+  if (!released) return [];
+  restrictedTo = restrictedTo || [];
+  let allowed = null;
+  if (cellId) allowed = (membersByCell[cellId] || []).slice();
+  if (restrictedTo.length) {
+    allowed = allowed === null ? restrictedTo.slice()
+      : allowed.filter(function (code) { return restrictedTo.indexOf(code) !== -1; });
+  }
+  return allowed === null ? ['ALL'] : allowed;
+}
+
+// v97 interim mirror for delete_character: the archived Characters and
+// Briefs rows it just moved become one deleted_agents/{code} doc, the
+// shape A-Cell's Recently Deleted reads once pages are on Firestore.
+function mirrorDeletedAgent_(agentCode) {
+  if (!agentCode || !firestoreDualWriteEnabled_()) return;
+  try {
+    const entry = { agent_code: agentCode, deleted_at: 0, character: null, brief: null };
+    [['DeletedCharacters', 'character'], ['DeletedBriefs', 'brief']].forEach(function (pair) {
+      const t = migrationSheetRows_(pair[0]);
+      if (!t) return;
+      const codeCol = t.headers.indexOf('Agent Code');
+      const delCol = t.headers.indexOf('Deleted At');
+      if (codeCol === -1) return;
+      for (let i = t.rows.length - 1; i >= 0; i--) {
+        if (t.rows[i][codeCol] !== agentCode) continue;
+        entry[pair[1]] = pair[1] === 'character' ? characterDocFromRow_(t.headers, t.rows[i]) : briefDocFromRow_(t.headers, t.rows[i]);
+        entry.deleted_at = Math.max(entry.deleted_at, delCol === -1 ? Date.now() : (normalizedDeletedAt_(t.rows[i][delCol]) || Date.now()));
+        break;
+      }
+    });
+    if (entry.character || entry.brief) firestoreDualWrite_('deleted_agents', agentCode, entry);
+  } catch (e) {
+    console.error('mirrorDeletedAgent_ failed for ' + agentCode + ': ' + e.message);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// DRIVE -> FIREBASE STORAGE (v97)
+//
+// Face/Outfit Plates, reference photos and Evidence photos saved before
+// the Storage move are 'gdrive:FILE_ID' links, and legacy Track Library
+// tracks point at Drive. Every one of those needs this Apps Script's
+// imgdata proxy (or a Drive URL that often stops playing). This copies
+// each Drive file into Firebase Storage and rewrites the Firestore field
+// to the Storage link. Run runMigrateDriveFilesToStorageNow() AFTER
+// runFullMigrationToFirestoreNow(). It stops itself after ~4.5 minutes
+// (Apps Script's 6-minute limit); if the log says to, press Run again --
+// already-moved files are skipped (their field no longer says gdrive:).
+// ════════════════════════════════════════════════════════════════
+
+const FIREBASE_STORAGE_BUCKET_ = 'dg-app-b3447.firebasestorage.app';
+
+function getGoogleAccessToken_(scope, cacheKey) {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+  const saJson = PropertiesService.getScriptProperties().getProperty(FIRESTORE_SERVICE_ACCOUNT_PROPERTY);
+  if (!saJson) return null;
+  const sa = JSON.parse(saJson);
+  const now = Math.floor(Date.now() / 1000);
+  const toBase64Url = function (obj) { return Utilities.base64EncodeWebSafe(JSON.stringify(obj)).replace(/=+$/, ''); };
+  const unsigned = toBase64Url({ alg: 'RS256', typ: 'JWT' }) + '.' + toBase64Url({
+    iss: sa.client_email, scope: scope, aud: 'https://oauth2.googleapis.com/token', exp: now + 3600, iat: now
+  });
+  const jwt = unsigned + '.' + Utilities.base64EncodeWebSafe(Utilities.computeRsaSha256Signature(unsigned, sa.private_key)).replace(/=+$/, '');
+  const resp = UrlFetchApp.fetch('https://oauth2.googleapis.com/token', {
+    method: 'post', contentType: 'application/x-www-form-urlencoded',
+    payload: { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: jwt }, muteHttpExceptions: true
+  });
+  const body = JSON.parse(resp.getContentText());
+  if (!body.access_token) throw new Error('Token exchange failed for ' + scope + ': ' + resp.getContentText());
+  cache.put(cacheKey, body.access_token, 3000);
+  return body.access_token;
+}
+
+// Uploads a blob to Storage at objectPath and returns its public download
+// URL (storage.rules make tracks/, evidence/, agent-refs/ and
+// agent-plates/ public-read).
+function uploadToFirebaseStorage_(objectPath, blob) {
+  const token = getGoogleAccessToken_('https://www.googleapis.com/auth/devstorage.read_write', 'storage_access_token');
+  if (!token) throw new Error('No Storage access token (service account missing).');
+  const resp = UrlFetchApp.fetch('https://storage.googleapis.com/upload/storage/v1/b/' + FIREBASE_STORAGE_BUCKET_ +
+    '/o?uploadType=media&name=' + encodeURIComponent(objectPath), {
+    method: 'post', contentType: blob.getContentType() || 'application/octet-stream',
+    headers: { Authorization: 'Bearer ' + token }, payload: blob.getBytes(), muteHttpExceptions: true
+  });
+  if (resp.getResponseCode() !== 200) {
+    throw new Error('Storage upload failed (HTTP ' + resp.getResponseCode() + '): ' + resp.getContentText().slice(0, 300));
+  }
+  return 'https://firebasestorage.googleapis.com/v0/b/' + FIREBASE_STORAGE_BUCKET_ + '/o/' + encodeURIComponent(objectPath) + '?alt=media';
+}
+
+// Partial update: only the named fields change.
+function fsPatchFields_(collectionName, docId, fieldsObj) {
+  const token = getFirestoreAccessToken_();
+  const mask = Object.keys(fieldsObj).map(function (k) { return 'updateMask.fieldPaths=' + encodeURIComponent(k); }).join('&');
+  const resp = UrlFetchApp.fetch(firestoreDocUrl_(collectionName, docId) + '?' + mask, {
+    method: 'patch', contentType: 'application/json', headers: { Authorization: 'Bearer ' + token },
+    payload: JSON.stringify({ fields: fsFields_(fieldsObj) }), muteHttpExceptions: true
+  });
+  if (resp.getResponseCode() !== 200) throw new Error('Firestore patch ' + collectionName + '/' + docId + ' failed (HTTP ' + resp.getResponseCode() + '): ' + resp.getContentText().slice(0, 300));
+}
+
+function driveIdFromRef_(v) {
+  const m = /^gdrive:([A-Za-z0-9_-]+)$/.exec(String(v || '').trim());
+  return m ? m[1] : null;
+}
+
+// Player Notes (CellNotes) and Track Library (Tracks) rows that are on
+// the Sheet but have no Firestore document -- see the migration's own
+// sheet_only_notes_and_tracks_reported step for why they aren't copied
+// automatically.
+function sheetOnlyNotesAndTracks_() {
+  const out = { notes: [], tracks: [] };
+  const n = migrationSheetRows_('CellNotes');
+  if (n) {
+    const c = headerMap_(n.headers);
+    const byCell = {};
+    n.rows.forEach(function (row) {
+      const cellId = String(row[c.cell_id] || '').trim();
+      const blockId = String(row[c.block_id] || '').trim();
+      if (cellId && blockId) (byCell[cellId] = byCell[cellId] || []).push(row);
+    });
+    Object.keys(byCell).forEach(function (cellId) {
+      const have = {};
+      fsListCollection_('cells/' + cellId + '/notes').forEach(function (d) { have[d.id] = true; });
+      byCell[cellId].forEach(function (row) {
+        const blockId = String(row[c.block_id]).trim();
+        if (have[blockId]) return;
+        out.notes.push({ cellId: cellId, blockId: blockId, doc: {
+          agent_code: String(row[c.agent_code] || '').trim().toUpperCase(),
+          block_type: row[c.block_type] || 'paragraph', text: row[c.text] || '',
+          shared: asBoolean_(row[c.shared]), sort_order: Number(row[c.sort_order]) || 0,
+          created_at: migrationValue_(row[c.created_at] || 0), updated_at: migrationValue_(row[c.updated_at] || 0),
+          pinned: c.pinned !== undefined && asBoolean_(row[c.pinned]),
+          tags: (c.tags !== undefined && row[c.tags]) || '[]'
+        } });
+      });
+    });
+  }
+  const t = migrationSheetRows_('Tracks');
+  if (t) {
+    const c = headerMap_(t.headers);
+    const have = {};
+    fsListCollection_('tracks').forEach(function (d) { have[d.id] = true; });
+    t.rows.forEach(function (row) {
+      const id = String(row[c.track_id] || '').trim();
+      if (!id || have[id]) return;
+      const fileId = c.drive_file_id !== undefined ? String(row[c.drive_file_id] || '') : '';
+      out.tracks.push({ id: id, doc: {
+        track_id: id, title: row[c.title] || '',
+        url: fileId ? driveDirectAudioUrl(fileId) : ((c.url !== undefined && row[c.url]) || ''),
+        drive_file_id: fileId, uploaded_at: migrationValue_(row[c.uploaded_at] || '')
+      } });
+    });
+  }
+  return out;
+}
+
+// Copies the Notes and Tracks runFullMigrationToFirestoreNow() listed as
+// "on the Sheet but not in Firestore". Run it only if those should come
+// back -- some may be ones a player or Handler deleted on purpose. Never
+// overwrites a Firestore document. A copied Track still points at Drive;
+// run runMigrateDriveFilesToStorageNow() afterwards to move it.
+function runCopySheetOnlyNotesAndTracksNow() {
+  const found = sheetOnlyNotesAndTracks_();
+  const writes = found.notes.map(function (n) { return { set: ['cells', n.cellId + '/notes/' + n.blockId, n.doc] }; })
+    .concat(found.tracks.map(function (t) { return { set: ['tracks', t.id, t.doc] }; }));
+  const done = fsCommit_(writes);
+  Logger.log('Copied ' + found.notes.length + ' note(s) and ' + found.tracks.length + ' track(s) to Firestore (' + done + ' writes).');
+}
+
+function runMigrateDriveFilesToStorageNow() {
+  const started = Date.now();
+  const budgetMs = 270 * 1000;
+  const report = { moved: 0, docs_updated: 0, failures: [], remaining_docs: 0 };
+  const urlByDriveId = loadDriveMap_(); // already-moved files aren't uploaded again
+  const mapSizeBefore = Object.keys(urlByDriveId).length;
+
+  function storageUrlFor(driveId, folder) {
+    if (urlByDriveId[driveId]) return urlByDriveId[driveId];
+    const blob = DriveApp.getFileById(driveId).getBlob();
+    const ext = ((blob.getContentType() || '').split('/')[1] || 'bin').replace('jpeg', 'jpg').replace(/[^a-z0-9]/gi, '');
+    const url = uploadToFirebaseStorage_(folder + '/migrated-' + driveId + '.' + ext, blob);
+    urlByDriveId[driveId] = url;
+    report.moved++;
+    return url;
+  }
+  function folderFor(field) { return field === 'ref_image_link' ? 'agent-refs' : 'agent-plates'; }
+  function patchForFlat(obj) {
+    const patch = {};
+    Object.keys(obj || {}).forEach(function (k) {
+      const id = driveIdFromRef_(obj[k]);
+      if (id) patch[k] = storageUrlFor(id, folderFor(k));
+    });
+    return patch;
+  }
+
+  // One unit of work per document: [collection, doc, fn(doc) -> patch|null]
+  const units = [];
+  fsListCollection_('briefs').forEach(function (d) {
+    units.push(['briefs', d, function (doc) {
+      const patch = patchForFlat(doc.data);
+      return Object.keys(patch).length ? patch : null;
+    }]);
+  });
+  fsListCollection_('evidence').forEach(function (d) {
+    units.push(['evidence', d, function (doc) {
+      const id = driveIdFromRef_(doc.data.photo);
+      return id ? { photo: storageUrlFor(id, 'evidence') } : null;
+    }]);
+  });
+  fsListCollection_('deleted_agents').forEach(function (d) {
+    units.push(['deleted_agents', d, function (doc) {
+      const brief = doc.data.brief;
+      if (!brief) return null;
+      const patch = patchForFlat(brief);
+      if (!Object.keys(patch).length) return null;
+      return { brief: Object.assign({}, brief, patch) };
+    }]);
+  });
+  fsListCollection_('tracks').forEach(function (d) {
+    units.push(['tracks', d, function (doc) {
+      if (!doc.data.drive_file_id) return null;
+      const blob = DriveApp.getFileById(doc.data.drive_file_id).getBlob();
+      report.moved++;
+      return { url: uploadToFirebaseStorage_('tracks/' + doc.id + '.mp3', blob), drive_file_id: '' };
+    }]);
+  });
+
+  for (let i = 0; i < units.length; i++) {
+    if (Date.now() - started > budgetMs) { report.remaining_docs = units.length - i; break; }
+    const u = units[i];
+    try {
+      const patch = u[2](u[1]);
+      if (!patch) continue;
+      fsPatchFields_(u[0], u[1].id, patch);
+      report.docs_updated++;
+    } catch (e) {
+      report.failures.push(u[0] + '/' + u[1].id + ': ' + e.message);
+    }
+  }
+  if (Object.keys(urlByDriveId).length !== mapSizeBefore) {
+    try { fsCommit_([{ set: ['config', 'drive_map', { map: urlByDriveId, updated_at: new Date().toISOString() }] }]); }
+    catch (e) { report.failures.push('config/drive_map: ' + e.message); }
+  }
+  Logger.log(JSON.stringify(report, null, 2));
+  Logger.log(report.remaining_docs
+    ? 'Stopped before the time limit -- press Run again to continue.'
+    : (report.failures.length
+      ? 'Done, with ' + report.failures.length + ' failure(s) listed above.'
+      : 'All Drive files are now in Firebase Storage.'));
+  return report;
 }

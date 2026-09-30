@@ -281,6 +281,19 @@
         }, 15000);
         s.onload = () => { if (done) return; done = true; clearTimeout(timer); cb(); };
         s.onerror = () => { if (done) return; done = true; clearTimeout(timer); onerror(new Error('Failed to load ' + src + ' -- check network connection.')); };
+        // One copy of each Firebase SDK file per page: reuse a tag another
+        // widget already added (loaded, or still loading) instead of adding
+        // a second -- two copies of firebase-app-compat.js left every
+        // Firestore call on the page hanging (BUGFIXES.md, Sheet retired).
+        var dgPrev = Array.prototype.filter.call(document.scripts, function (x) { return x !== s && x.src === s.src && x.dataset.dgFailed !== '1'; })[0];
+        if (dgPrev) {
+          if (dgPrev.dataset.dgLoaded === '1') { if (s.onload) s.onload(); return; }
+          dgPrev.addEventListener('load', function () { if (s.onload) s.onload(); }, { once: true });
+          dgPrev.addEventListener('error', function () { if (s.onerror) s.onerror(); }, { once: true });
+          return;
+        }
+        s.addEventListener('load', function () { s.dataset.dgLoaded = '1'; });
+        s.addEventListener('error', function () { s.dataset.dgFailed = '1'; });
         document.head.appendChild(s);
     }
     function ensureFirebaseApi(cb, onerror) {

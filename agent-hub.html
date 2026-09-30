@@ -131,9 +131,8 @@
   .empty-panel .paper-title{ font-size:20px; }
 
   /* ── Erase Agent: understated on purpose (small text link, not a
-     button) -- this is a real, backend delete_character call, not the
-     local-only roster removal dg-agent-portal.html's own roster tray
-     does, so it shouldn't invite an accidental tap the way a full-size
+     button) -- it really deletes the Agent (restorable by a Handler for
+     24h), so it shouldn't invite an accidental tap the way a full-size
      button would. ── */
   .ah-erase-link{
     background:none; border:none; padding:0; cursor:pointer;
@@ -330,9 +329,10 @@
 <!-- Erase Agent confirm -- one shared overlay for every panel's erase
      link, targeting whichever code openEraseModal() was last called
      with. Requires typing the Cover Identity name back in (not just a
-     click) before the Confirm button unlocks -- a real backend delete,
-     not the local-only roster removal dg-agent-portal.html's own roster
-     tray does, so it needs more friction than that one. -->
+     click) before the Confirm button unlocks -- a real delete (into
+     deleted_agents, restorable by a Handler for 24h), not the
+     local-only roster removal dg-agent-portal.html's own roster tray
+     does, so it needs more friction than that one. -->
 <div class="ah-erase-overlay" id="ah-erase-overlay">
   <div class="ah-erase-box">
     <div class="ah-erase-title">Burn This Agent's File?</div>
@@ -347,6 +347,8 @@
   </div>
 </div>
 
+<script src="assets/agent-code.js"></script>
+<script src="assets/dg-store.js"></script>
 <script>
 /* ══════════════════════════════════════════════
    AGENT HUB -- unified roster view. Reads the same dg_agent_roster
@@ -376,22 +378,6 @@
 
   function rosterSave(roster) {
     try { localStorage.setItem(ROSTER_KEY, JSON.stringify(roster)); } catch (e) { /* best effort */ }
-  }
-
-  // Backend hardening: save_handout_note/list_handout_notes now need a
-  // per-Agent secret token (see requireAgentToken_() in Code.gs). See
-  // the matching agentToken() in dg-agent-portal.html for the fuller
-  // rationale -- mints and persists one into this same dg_agent_roster
-  // entry the first time it's needed, no server round trip required.
-  function agentToken(code) {
-    if (!code) return '';
-    const roster = rosterLoad();
-    if (roster[code] && roster[code].token) return roster[code].token;
-    const token = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
-      : 'tok_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2);
-    roster[code] = Object.assign({ code: code }, roster[code] || {}, { token: token });
-    rosterSave(roster);
-    return token;
   }
 
   function eraLabel(a) {
@@ -458,83 +444,38 @@
     document.head.appendChild(s);
   }
 
-  // Both per-Agent checks below (has a sheet? KIA?) read the Agent's
-  // characters/{code} Firestore doc -- the public-read mirror every
-  // save_character already writes -- once, shared, instead of two Apps
-  // Script load_character calls per Agent on every Agent Hub visit.
-  // Characters were never backfilled into Firestore, so a MISSING doc
-  // proves nothing (an Agent not saved since mirroring started): that,
-  // an error or a slow read falls back to the old load_character call,
-  // never to "no sheet" -- purgeIfFullyDeleted() below must only ever
-  // act on the backend's own answer.
+  // Both per-Agent checks below (has a sheet? KIA?) share one read of
+  // the Agent's characters/{code} doc in Firestore. The Sheet is
+  // retired, so Firestore's answer is the real one now: a missing doc
+  // means no sheet. A read that fails or times out resolves `undefined`
+  // -- never "no sheet" -- so purgeIfFullyDeleted() below only ever acts
+  // on a real answer.
   let charDocCache = {};
   function firestoreCharDoc(code) {
-    if (charDocCache[code]) return charDocCache[code];
-    charDocCache[code] = new Promise(resolve => {
-      const timer = setTimeout(() => resolve(null), 6000);
-      const done = v => { clearTimeout(timer); resolve(v); };
-      // Deferred: renderRoster() runs during this script's first pass,
-      // before ensureFirebaseApi()'s own `let` state further down exists.
-      setTimeout(() => {
-        try {
-          ensureFirebaseApi(() => {
-            window.firebase.firestore().collection('characters').doc(code).get()
-              .then(doc => done(doc.exists && doc.data() && doc.data().character_json ? doc.data() : null))
-              .catch(() => done(null));
-          }, () => done(null));
-        } catch (e) { done(null); }
-      }, 0);
-    });
+    if (!charDocCache[code]) {
+      charDocCache[code] = Promise.race([
+        window.dgStore.getCharacter(code),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
+      ]).catch(() => undefined);
+    }
     return charDocCache[code];
   }
 
   // Async, per agent: does a cloud character sheet already exist? A
-  // check that errors or times out leaves the button as "Play" rather
-  // than risking a false "Recruit" label on a real character.
+  // check that errors or times out (null) leaves the button as "Play"
+  // rather than risking a false "Recruit" label on a real character.
   function checkCharacterExists(code) {
-    return firestoreCharDoc(code).then(doc => doc ? true : checkCharacterExistsViaSheet(code));
-  }
-  function checkCharacterExistsViaSheet(code) {
-    return new Promise(resolve => {
-      const cbName = '_ahCharCheck_' + code.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
-      const timer = setTimeout(() => { window[cbName] = function () { delete window[cbName]; }; resolve(null); }, 6000);
-      window[cbName] = function (res) {
-        clearTimeout(timer);
-        delete window[cbName];
-        const s = document.getElementById('s-' + cbName);
-        if (s) s.remove();
-        resolve(!!(res && res.status === 'OK'));
-      };
-      const s = document.createElement('script');
-      s.id = 's-' + cbName;
-      s.src = APPS_SCRIPT_URL + '?action=load_character&code=' + encodeURIComponent(code) + '&callback=' + cbName;
-      document.head.appendChild(s);
-    });
+    return firestoreCharDoc(code).then(doc => doc === undefined ? null : !!doc);
   }
 
-  // Async, per agent: does an Agent File (Delta Green Briefs row) exist
-  // for this code? Bare ?code=CODE&callback=CB (doLookup() in Code.gs,
-  // the same endpoint the Cover tab's own "RETURNING AGENT" restore box
-  // and a-cell.html's loadPlayPhoto() already use) -- NOT_FOUND when no
-  // Brief row exists. Paired with checkCharacterExists() below to detect
-  // an Agent that's gone from the backend entirely (see its own comment
-  // for why neither check alone is a safe signal to purge on).
+  // Async, per agent: does an Agent File (briefs/{code}) exist? Paired
+  // with checkCharacterExists() to detect an Agent that's gone from the
+  // backend entirely (see purgeIfFullyDeleted()). null on a failed read.
   function checkAgentFileExists(code) {
-    return new Promise(resolve => {
-      const cbName = '_ahFileCheck_' + code.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
-      const timer = setTimeout(() => { window[cbName] = function () { delete window[cbName]; }; resolve(null); }, 6000);
-      window[cbName] = function (res) {
-        clearTimeout(timer);
-        delete window[cbName];
-        const s = document.getElementById('s-' + cbName);
-        if (s) s.remove();
-        resolve(!!(res && res.status === 'OK'));
-      };
-      const s = document.createElement('script');
-      s.id = 's-' + cbName;
-      s.src = APPS_SCRIPT_URL + '?code=' + encodeURIComponent(code) + '&callback=' + cbName;
-      document.head.appendChild(s);
-    });
+    return Promise.race([
+      window.dgStore.getBrief(code).then(b => !!b),
+      new Promise(resolve => setTimeout(() => resolve(null), 8000))
+    ]).catch(() => null);
   }
 
   // A real report: an Agent permanently deleted by a Handler (gone from
@@ -588,32 +529,11 @@
   // errors or times out just leaves the name unmarked.
   function checkAgentKia(code) {
     return firestoreCharDoc(code).then(doc => {
-      if (!doc) return checkAgentKiaViaSheet(code);
+      if (!doc) return false;
       let state;
       try { state = JSON.parse(doc.character_json); } catch (e) { return false; }
       const hp = state && state.derived && state.derived.hp;
       return typeof hp === 'number' && hp <= 0;
-    });
-  }
-  function checkAgentKiaViaSheet(code) {
-    return new Promise(resolve => {
-      const cbName = '_ahKiaCheck_' + code.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
-      const timer = setTimeout(() => { window[cbName] = function () { delete window[cbName]; }; resolve(false); }, 6000);
-      window[cbName] = function (res) {
-        clearTimeout(timer);
-        delete window[cbName];
-        const s = document.getElementById('s-' + cbName);
-        if (s) s.remove();
-        if (!res || res.status !== 'OK' || !res.character_json) { resolve(false); return; }
-        let state;
-        try { state = JSON.parse(res.character_json); } catch (e) { resolve(false); return; }
-        const hp = state && state.derived && state.derived.hp;
-        resolve(typeof hp === 'number' && hp <= 0);
-      };
-      const s = document.createElement('script');
-      s.id = 's-' + cbName;
-      s.src = APPS_SCRIPT_URL + '?action=load_character&code=' + encodeURIComponent(code) + '&callback=' + cbName;
-      document.head.appendChild(s);
     });
   }
 
@@ -792,14 +712,13 @@
 
   renderRoster();
 
-  // ── Erase Agent: a real backend delete_character call (soft-delete --
-  // recoverable by a Handler within 24h via A-Cell Admin's Recently
-  // Deleted, same as every other delete in this app), for players who
-  // end up with accidental duplicate Agents and don't want to wait on a
-  // Handler to clean it up. Gated on typing back the Cover Identity that
-  // claims this Agent (its own player_name if it has one, otherwise
-  // whichever identity is currently active in this browser) so it's not
-  // a single misplaced tap. ──
+  // ── Erase Agent: a player deletes their own Agent (recoverable by a
+  // Handler within 24h from A-Cell's Recently Deleted, same as every
+  // other delete in this app), for accidental duplicate Agents they
+  // don't want to wait on a Handler to clean up. Gated on typing back the
+  // Cover Identity that claims this Agent (its own player_name if it
+  // has one, otherwise whichever identity is currently active in this
+  // browser) so it's not a single misplaced tap. ──
   const ERASE_KEY = 'dg_cover_identity';
   let eraseTargetCode = null;
   let eraseExpectedName = '';
@@ -846,11 +765,12 @@
     const btn = document.getElementById('ah-erase-confirm-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Burning…'; }
 
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'delete_character', agent_code: code })
-    }).catch(() => {}).finally(() => {
+    // Moves the Agent's character and Agent File into deleted_agents
+    // (dgStore.deleteOwnAgent), where a Handler can restore it for 24h,
+    // then drops it from this device's roster. A failed delete keeps the
+    // Agent and says so, rather than hiding something still on file.
+    const errEl = document.getElementById('ah-erase-hint');
+    window.dgStore.deleteOwnAgent(code).then(() => {
       const roster = rosterLoad();
       delete roster[code];
       try { localStorage.setItem(ROSTER_KEY, JSON.stringify(roster)); } catch (e) { /* best effort */ }
@@ -858,6 +778,10 @@
       if (btn) { btn.disabled = false; btn.textContent = 'Burn It'; }
       const stillActive = document.querySelector('.tw.active');
       renderRoster(stillActive && stillActive.dataset.tab !== code ? stillActive.dataset.tab : undefined);
+    }, err => {
+      console.error('agent-hub: erase failed', err);
+      if (errEl) errEl.textContent = 'Could not burn this file: ' + ((err && err.message) || err) + ' -- nothing was deleted. Try again.';
+      if (btn) { btn.disabled = false; btn.textContent = 'Burn It'; }
     });
   }
 
@@ -986,10 +910,13 @@
       const stillActive = document.querySelector('.tw.active');
       renderRoster(stillActive ? stillActive.dataset.tab : undefined);
     };
-    const s = document.createElement('script');
-    s.id = 's-' + cbName;
-    s.src = APPS_SCRIPT_URL + '?action=find_by_player_name&name=' + encodeURIComponent(name) + '&callback=' + cbName;
-    document.head.appendChild(s);
+    // Firestore (briefs + characters by player_name_lc) -- same reply
+    // shape find_by_player_name gave this handler.
+    window.dgStore.findByPlayerName(name).then(agents => {
+      if (typeof window[cbName] === 'function') window[cbName]({ status: 'OK', agents: agents });
+    }, () => {
+      if (typeof window[cbName] === 'function') window[cbName]({ status: 'ERROR' });
+    });
   }
 
   const ciBtn = document.getElementById('cover-identity-btn');
@@ -1010,39 +937,6 @@
     lookupCoverIdentity(storedIdentity, { silent: true });
   }
 
-  // Handouts: one list_cells fetch (for Cell display names) plus one
-  // list_evidence fetch PER Agent -- see loadHandouts() below for why
-  // this has to be per-Agent rather than one shared fetch reused for
-  // everyone (a Handler-restricted-to-specific-Agents item needs that
-  // Agent's own agent_code on the request to ever come back at all).
-  // The richer unseen-aware view is still meant to live in notes/ too,
-  // this stays the simpler read-only mirror.
-  function jsonpGet(action, params, cb) {
-    // Date.now() alone collided once this fetch went per-Agent instead
-    // of one shared call -- several list_evidence/list_handout_notes
-    // requests can now fire synchronously in the same millisecond
-    // (agents.forEach), two landing on the identical callback name and
-    // the first response's cleanup deleting window[cbName] out from
-    // under the second one's still-in-flight <script> tag ("X is not
-    // defined" the moment it tried to call it). Same random-suffix fix
-    // notes.js's own jsonpGet() already uses for this exact reason.
-    const cbName = '_ahHandouts_' + action + '_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
-    const timer = setTimeout(() => { window[cbName] = function () { delete window[cbName]; }; cb(null); }, 7000);
-    window[cbName] = function (res) {
-      clearTimeout(timer);
-      delete window[cbName];
-      const s = document.getElementById('s-' + cbName);
-      if (s) s.remove();
-      cb(res);
-    };
-    const s = document.createElement('script');
-    s.id = 's-' + cbName;
-    let qs = 'action=' + action + '&callback=' + cbName;
-    Object.keys(params || {}).forEach(k => { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
-    s.src = APPS_SCRIPT_URL + '?' + qs;
-    document.head.appendChild(s);
-  }
-
   function formatHandoutDate(ts) {
     const n = Number(ts);
     if (!n) return '';
@@ -1060,7 +954,6 @@
     }
     notesByHandoutId = notesByHandoutId || {};
     const operationsById = operationsByIdMap();
-    if (handouts.some(h => h.operation_id && !operationsById[h.operation_id])) topUpHandoutOperations();
 
     // Filter options built from this Agent's OWN evidence, not every
     // Operation campaign-wide -- an Agent only ever sees a handful of
@@ -1157,11 +1050,7 @@
   }
   function saveHandoutNote(code, handoutId, value, statusEl) {
     if (statusEl) statusEl.textContent = 'Saving…';
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'save_handout_note', handout_id: handoutId, agent_code: code, token: agentToken(code), note: value }),
-    }).then(() => {
+    window.dgStore.saveHandoutNote(code, handoutId, value).then(() => {
       if (!statusEl) return;
       statusEl.textContent = 'Saved';
       setTimeout(() => { if (statusEl.textContent === 'Saved') statusEl.textContent = ''; }, 2000);
@@ -1227,6 +1116,19 @@
     }, 15000);
     s.onload = () => { if (done) return; done = true; clearTimeout(timer); cb(); };
     s.onerror = () => { if (done) return; done = true; clearTimeout(timer); onerror(new Error('Failed to load ' + src + ' -- check network connection.')); };
+    // One copy of each Firebase SDK file per page: reuse a tag another
+    // widget already added (loaded, or still loading) instead of adding
+    // a second -- two copies of firebase-app-compat.js left every
+    // Firestore call on the page hanging (BUGFIXES.md, Sheet retired).
+    var dgPrev = Array.prototype.filter.call(document.scripts, function (x) { return x !== s && x.src === s.src && x.dataset.dgFailed !== '1'; })[0];
+    if (dgPrev) {
+      if (dgPrev.dataset.dgLoaded === '1') { if (s.onload) s.onload(); return; }
+      dgPrev.addEventListener('load', function () { if (s.onload) s.onload(); }, { once: true });
+      dgPrev.addEventListener('error', function () { if (s.onerror) s.onerror(); }, { once: true });
+      return;
+    }
+    s.addEventListener('load', function () { s.dataset.dgLoaded = '1'; });
+    s.addEventListener('error', function () { s.dataset.dgFailed = '1'; });
     document.head.appendChild(s);
   }
   function ensureFirebaseApi(cb, onerror) {
@@ -1330,25 +1232,8 @@
   // (same reasoning as list_cells above: players need folder names
   // without a Handler session), fetched once alongside Cells.
   let handoutOperations = [];
-  // Read from Firestore (operations is public-read) -- see loadHandouts().
-  // Operations were only mirrored there from 2026-09-19, so a handout
-  // filed under an older one asks the Sheet once (list_operations) and
-  // re-renders every tab with the merged list.
-  let handoutOpsToppedUp = false;
-  function topUpHandoutOperations() {
-    if (handoutOpsToppedUp) return;
-    handoutOpsToppedUp = true;
-    jsonpGet('list_operations', {}, opRes => {
-      if (!opRes || opRes.status !== 'OK' || !Array.isArray(opRes.operations)) return;
-      const byId = {};
-      handoutOperations.forEach(o => { byId[o.operation_id] = o; });
-      opRes.operations.forEach(o => { byId[o.operation_id] = o; });
-      handoutOperations = Object.values(byId);
-      Object.keys(lastEvidenceByCode).forEach(code => {
-        renderHandoutsFor(code, lastEvidenceByCode[code], cellsByIdMap(), notesByHandoutIdByCode[code]);
-      });
-    });
-  }
+  // Operation names come from Firestore (operations, public-read) -- see
+  // loadHandouts().
   function operationsByIdMap() {
     const map = {};
     handoutOperations.forEach(o => { map[o.operation_id] = o; });
@@ -1427,13 +1312,12 @@
       // fetch (low-churn, never shown to anyone but their own author) --
       // re-render once they land so "Your Notes" isn't blank on first
       // paint if this resolves after the Firestore listener's first fire.
-      jsonpGet('list_handout_notes', { agent_code: a.code, token: agentToken(a.code) }, notesRes => {
-        if (!notesRes || notesRes.status !== 'OK' || !Array.isArray(notesRes.notes)) return;
+      window.dgStore.listHandoutNotes(a.code).then(notes => {
         const notesByHandoutId = {};
-        notesRes.notes.forEach(n => { notesByHandoutId[n.handout_id] = n.note; });
+        notes.forEach(n => { notesByHandoutId[n.handout_id] = n.note; });
         notesByHandoutIdByCode[a.code] = notesByHandoutId;
         if (lastEvidenceByCode[a.code]) renderHandoutsFor(a.code, lastEvidenceByCode[a.code], cellsByIdMap(), notesByHandoutId);
-      });
+      }).catch(err => console.error('agent-hub: could not read handout notes for ' + a.code, err));
       startEvidenceListenerFor(a.code);
     }
     // Cell names for each handout's scope label. Cells are created
@@ -1441,45 +1325,30 @@
     // list_cells never learns about newer ones -- a handout filed for one
     // was labelled with its raw id ("cell_1790577398095_80y"). Read the
     // public-read cells collection instead; list_cells only as fallback.
-    const opsViaSheet = () => {
-      handoutOpsToppedUp = true;
-      jsonpGet('list_operations', {}, opRes => {
-        if (opRes && opRes.status === 'OK' && Array.isArray(opRes.operations)) handoutOperations = opRes.operations;
-        agents.forEach(loadForAgent);
-      });
-    };
+    // Cells and Operations both come from Firestore (public-read). A read
+    // that fails or hangs just leaves the scope/folder labels as ids --
+    // the handouts themselves still load.
+    const withTimeout_ = (p, ms) => Promise.race([p, new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))]);
     const afterCells = () => {
       ensureFirebaseApi(() => {
-        let settled = false;
-        const timer = setTimeout(() => { if (!settled) { settled = true; opsViaSheet(); } }, 8000);
-        window.firebase.firestore().collection('operations').get().then(snap => {
-          if (settled) return;
-          settled = true; clearTimeout(timer);
+        withTimeout_(window.firebase.firestore().collection('operations').get(), 8000).then(snap => {
           const list = [];
           snap.forEach(d => { const o = d.data() || {}; list.push({ operation_id: o.operation_id || d.id, cell_id: o.cell_id || '', name: o.name || '', created_at: o.created_at || '' }); });
-          if (!list.length) { opsViaSheet(); return; }
           handoutOperations = list;
-          agents.forEach(loadForAgent);
-        }).catch(() => { if (settled) return; settled = true; clearTimeout(timer); opsViaSheet(); });
-      }, opsViaSheet);
+        }).catch(err => console.error('agent-hub: could not read Operations', err))
+          .then(() => agents.forEach(loadForAgent));
+      }, () => agents.forEach(loadForAgent));
     };
-    const cellsViaSheet = () => jsonpGet('list_cells', {}, res => {
-      if (res && res.status === 'OK' && Array.isArray(res.cells)) handoutCells = res.cells;
-      afterCells();
-    });
     // Deferred: loadHandouts() can run during this script's first
     // renderRoster(), before ensureFirebaseApi()'s own `let` state further
-    // down has been initialized (the JSONP path this replaced was always
-    // async anyway).
+    // down has been initialized.
     setTimeout(() => ensureFirebaseApi(() => {
-      window.firebase.firestore().collection('cells').get().then(snap => {
+      withTimeout_(window.firebase.firestore().collection('cells').get(), 8000).then(snap => {
         const list = [];
         snap.forEach(d => list.push(Object.assign({ cell_id: d.id }, d.data())));
-        if (!list.length) { cellsViaSheet(); return; }
         handoutCells = list;
-        afterCells();
-      }).catch(cellsViaSheet);
-    }, cellsViaSheet), 0);
+      }).catch(err => console.error('agent-hub: could not read Cells', err)).then(afterCells);
+    }, afterCells), 0);
   }
 
   tabStrip.addEventListener('click', e => {

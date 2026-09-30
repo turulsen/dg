@@ -1255,6 +1255,19 @@
     }, 15000);
     s.onload = function () { if (done) return; done = true; clearTimeout(timer); cb(); };
     s.onerror = function () { if (done) return; done = true; clearTimeout(timer); onerror(new Error('Failed to load ' + src + ' -- check network connection.')); };
+    // One copy of each Firebase SDK file per page: reuse a tag another
+    // widget already added (loaded, or still loading) instead of adding
+    // a second -- two copies of firebase-app-compat.js left every
+    // Firestore call on the page hanging (BUGFIXES.md, Sheet retired).
+    var dgPrev = Array.prototype.filter.call(document.scripts, function (x) { return x !== s && x.src === s.src && x.dataset.dgFailed !== '1'; })[0];
+    if (dgPrev) {
+      if (dgPrev.dataset.dgLoaded === '1') { if (s.onload) s.onload(); return; }
+      dgPrev.addEventListener('load', function () { if (s.onload) s.onload(); }, { once: true });
+      dgPrev.addEventListener('error', function () { if (s.onerror) s.onerror(); }, { once: true });
+      return;
+    }
+    s.addEventListener('load', function () { s.dataset.dgLoaded = '1'; });
+    s.addEventListener('error', function () { s.dataset.dgFailed = '1'; });
     document.head.appendChild(s);
   }
   function ensureFirebaseApi(cb, onerror) {
@@ -1418,6 +1431,318 @@
   window.__dgHandlerAuth = ensureHandlerSignedIn;
   window.__dgEnsureFirebaseApi = ensureFirebaseApi;
   window.__dgGetHandlerIdToken = getHandlerIdToken_;
+
+  /* ══════════════════════════════════════════════
+     dgAcellApi -- the Handler's data layer, straight on Firestore.
+     The Apps Script backend and its Google Sheet are retired; every tab
+     below used to call them with jsonpGet(action, params, cb) and
+     window.dgAcellApi.post({action, ...}). Those
+     call sites stay as they were -- each tab's jsonpGet() and the
+     fetch() calls now route here, and these answer with the SAME reply
+     shapes the backend used to send, including its side effects:
+       - update_cell_members also carries a newly-added Agent's solo
+         Notes into the Cell and recomputes every Evidence item's
+         visible_to for that Cell (was updateCellMembers() in Code.gs);
+       - create/update_evidence compute visible_to from the Cell's
+         CURRENT Firestore membership (the backend read the Sheet's
+         membership, which never had Cells made on the Cells tab);
+       - delete_character archives the Agent's character + brief to
+         deleted_agents/{code} (24h, then purged when the Sheet tab lists
+         Recently Deleted); restore_character puts them back.
+     ══════════════════════════════════════════════ */
+  var DELETED_RETENTION_MS_ = 24 * 60 * 60 * 1000;
+  function fsReady_() {
+    return new Promise(function (resolve, reject) { ensureFirebaseApi(function () { resolve(window.firebase.firestore()); }, reject); });
+  }
+  function asHandler_() {
+    return ensureHandlerSignedIn().then(function () { return window.firebase.firestore(); });
+  }
+  function docsOf_(snap) {
+    var out = [];
+    snap.forEach(function (d) { out.push({ id: d.id, data: d.data() || {} }); });
+    return out;
+  }
+  function parseArr_(v) {
+    if (Array.isArray(v)) return v;
+    try { var a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; }
+  }
+  function visibleTo_(members, released, cellId, restrictedTo) {
+    if (!released) return [];
+    var allowed = null;
+    if (cellId) allowed = (members || []).slice();
+    if (restrictedTo && restrictedTo.length) {
+      allowed = allowed === null ? restrictedTo.slice()
+        : allowed.filter(function (c) { return restrictedTo.indexOf(c) !== -1; });
+    }
+    return allowed === null ? ['ALL'] : allowed;
+  }
+  function cellMembers_(db, cellId) {
+    if (!cellId) return Promise.resolve([]);
+    return db.collection('cells').doc(cellId).get().then(function (d) { return d.exists ? (d.data().member_codes || []) : []; });
+  }
+  function charSummary_(id, c, faceByCode) {
+    var bio = {}, derived = {};
+    try { var parsed = JSON.parse(c.character_json || '{}') || {}; bio = parsed.bio || {}; derived = parsed.derived || {}; } catch (e) { /* unparsable */ }
+    return {
+      agent_code: id, updated_at: c.updated_at || '',
+      name: bio.name || '', profession: bio.profession || '', nationality: bio.nationality || '',
+      player_name: c.player_name || bio.player_name || '',
+      hp: derived.hp, wp: derived.wp, san: derived.san, bp: derived.bp,
+      face_plate_url: (faceByCode && faceByCode[id]) || ''
+    };
+  }
+  function purgeDeleted_(db) {
+    var cutoff = Date.now() - DELETED_RETENTION_MS_;
+    return db.collection('deleted_agents').get().then(function (snap) {
+      var keep = [];
+      var dels = [];
+      snap.forEach(function (d) {
+        if ((Number(d.data().deleted_at) || 0) < cutoff) dels.push(d.ref.delete());
+        else keep.push({ id: d.id, data: d.data() });
+      });
+      return Promise.all(dels).then(function () { return keep; });
+    });
+  }
+
+  var GET_ = {
+    list_cells: function () {
+      return fsReady_().then(function (db) { return db.collection('cells').get(); }).then(function (snap) {
+        return { status: 'OK', cells: docsOf_(snap).map(function (d) {
+          return { cell_id: d.id, name: d.data.name || '', handler: d.data.handler || '', member_codes: d.data.member_codes || [], channel: d.data.channel || '' };
+        }) };
+      });
+    },
+    list_operations: function () {
+      return fsReady_().then(function (db) { return db.collection('operations').get(); }).then(function (snap) {
+        return { status: 'OK', operations: docsOf_(snap).map(function (d) {
+          return { operation_id: d.data.operation_id || d.id, cell_id: d.data.cell_id || '', name: d.data.name || '', created_at: d.data.created_at || '' };
+        }) };
+      });
+    },
+    list_evidence: function () {
+      return asHandler_().then(function (db) { return db.collection('evidence').get(); }).then(function (snap) {
+        return { status: 'OK', evidence: docsOf_(snap).map(function (d) {
+          var e = d.data;
+          return { evidence_id: d.id, title: e.title || '', body: e.body || '', photo: e.photo || '', cell_id: e.cell_id || '',
+            operation_id: e.operation_id || '', created_at: e.created_at || '', released: !!e.released, restricted_to: e.restricted_to || [] };
+        }) };
+      });
+    },
+    list_characters: function () {
+      return fsReady_().then(function (db) {
+        return Promise.all([db.collection('characters').get(), db.collection('briefs').get()]);
+      }).then(function (r) {
+        var face = {};
+        r[1].forEach(function (d) { face[d.id] = d.data().face_plate_url || ''; });
+        return { status: 'OK', characters: docsOf_(r[0]).filter(function (d) { return d.data.character_json; })
+          .map(function (d) { return charSummary_(d.id, d.data, face); }) };
+      });
+    },
+    list_agent_file_only: function () {
+      return fsReady_().then(function (db) {
+        return Promise.all([db.collection('characters').get(), db.collection('briefs').get()]);
+      }).then(function (r) {
+        var hasChar = {};
+        r[0].forEach(function (d) { if (d.data().character_json) hasChar[d.id] = true; });
+        return { status: 'OK', agents: docsOf_(r[1]).filter(function (d) { return !hasChar[d.id]; }).map(function (d) {
+          return { agent_code: d.id, char_name: d.data.char_name || '', codename: d.data.codename || '', submitted_at: d.data.submitted_at || '' };
+        }) };
+      });
+    },
+    list_deleted_characters: function () {
+      return asHandler_().then(purgeDeleted_).then(function (docs) {
+        return { status: 'OK', characters: docs.map(function (d) {
+          var c = d.data.character || null, b = d.data.brief || null;
+          return { agent_code: d.id, character_json: c ? (c.character_json || '') : '',
+            char_name: b ? (b.char_name || '') : '', deleted_at: d.data.deleted_at || '' };
+        }) };
+      });
+    },
+    get_playlist: function (params) {
+      var ch = String((params && params.channel) || '').trim().toLowerCase();
+      if (!ch) return Promise.resolve({ status: 'OK', playlist: [] });
+      return asHandler_().then(function (db) { return db.collection('playlists').doc(ch).get(); }).then(function (d) {
+        return { status: 'OK', playlist: d.exists ? (d.data().playlist || []) : [] };
+      });
+    },
+    load_character: function (params) {
+      var code = String((params && params.code) || '').trim().toUpperCase();
+      return fsReady_().then(function (db) { return db.collection('characters').doc(code).get(); }).then(function (d) {
+        return d.exists && d.data().character_json
+          ? { status: 'OK', agent_code: code, character_json: d.data().character_json, updated_at: d.data().updated_at || '' }
+          : { status: 'NOT_FOUND' };
+      });
+    },
+    lookup: function (params) {
+      var code = String((params && params.code) || '').trim().toUpperCase();
+      return fsReady_().then(function (db) { return db.collection('briefs').doc(code).get(); }).then(function (d) {
+        return d.exists ? { status: 'OK', data: d.data() } : { status: 'NOT_FOUND' };
+      });
+    }
+  };
+
+  var POST_ = {
+    update_cell_members: function (p) {
+      return asHandler_().then(function (db) {
+        var ref = db.collection('cells').doc(p.cell_id);
+        var newMembers = (p.member_codes || []).map(function (c) { return String(c).trim().toUpperCase(); });
+        return ref.get().then(function (snap) {
+          if (!snap.exists) return { status: 'NOT_FOUND' };
+          var before = snap.data().member_codes || [];
+          return ref.update({ member_codes: newMembers }).then(function () {
+            var added = newMembers.filter(function (c) { return before.indexOf(c) === -1; });
+            // A newly-assigned Agent's solo Notes follow them into the Cell.
+            var moves = added.map(function (code) {
+              var solo = db.collection('cells').doc('solo:' + code).collection('notes');
+              return solo.get().then(function (ns) {
+                var batch = db.batch();
+                var n = 0;
+                ns.forEach(function (d) {
+                  if (String(d.data().agent_code || '').toUpperCase() !== code) return;
+                  batch.set(db.collection('cells').doc(p.cell_id).collection('notes').doc(d.id), d.data());
+                  batch.delete(d.ref);
+                  n++;
+                });
+                return n ? batch.commit() : null;
+              });
+            });
+            // Every Evidence item scoped to this Cell re-derives visible_to.
+            var recompute = db.collection('evidence').where('cell_id', '==', p.cell_id).get().then(function (es) {
+              var batch = db.batch();
+              var n = 0;
+              es.forEach(function (d) {
+                var e = d.data();
+                batch.update(d.ref, { visible_to: visibleTo_(newMembers, !!e.released, p.cell_id, e.restricted_to || []) });
+                n++;
+              });
+              return n ? batch.commit() : null;
+            });
+            return Promise.all(moves.concat([recompute])).then(function () { return { status: 'OK' }; });
+          });
+        });
+      });
+    },
+    create_operation: function (p) {
+      var name = String(p.name || '').trim(), cellId = String(p.cell_id || '').trim();
+      if (!name || !cellId) return Promise.resolve({ status: 'ERROR', message: 'name and cell_id are required' });
+      var id = 'operation_' + Date.now() + '_' + Math.floor(Math.random() * 100000).toString(36);
+      return asHandler_().then(function (db) {
+        return db.collection('operations').doc(id).set({ operation_id: id, cell_id: cellId, name: name, created_at: Date.now() });
+      }).then(function () { return { status: 'OK', operation_id: id }; });
+    },
+    update_operation: function (p) {
+      return asHandler_().then(function (db) {
+        return db.collection('operations').doc(p.operation_id).update({ name: String(p.name || '').trim() });
+      }).then(function () { return { status: 'OK' }; });
+    },
+    delete_operation: function (p) {
+      // Evidence filed under it keeps its now-dangling operation_id and
+      // simply shows as unfiled -- same as before.
+      return asHandler_().then(function (db) { return db.collection('operations').doc(p.operation_id).delete(); })
+        .then(function () { return { status: 'OK' }; });
+    },
+    create_evidence: function (p) { return POST_._saveEvidence(p, true); },
+    update_evidence: function (p) { return POST_._saveEvidence(p, false); },
+    _saveEvidence: function (p, isNew) {
+      var id = String(p.evidence_id || '').trim() || ('evidence_' + Date.now() + '_' + Math.floor(Math.random() * 100000).toString(36));
+      var restrictedTo = parseArr_(p.restricted_to);
+      var released = p.released === true || p.released === 'true' || p.released === 1;
+      var cellId = String(p.cell_id || '').trim();
+      return asHandler_().then(function (db) {
+        var ref = db.collection('evidence').doc(id);
+        return Promise.all([cellMembers_(db, cellId), isNew ? null : ref.get()]).then(function (r) {
+          var prev = r[1] && r[1].exists ? r[1].data() : {};
+          var doc = {
+            title: p.title || '', body: p.body || '', photo: p.photo || '', cell_id: cellId,
+            operation_id: p.operation_id || '', released: released, restricted_to: restrictedTo,
+            created_at: isNew ? Date.now() : (prev.created_at || Date.now()),
+            visible_to: visibleTo_(r[0], released, cellId, restrictedTo)
+          };
+          return ref.set(doc);
+        });
+      }).then(function () { return { status: 'OK', evidence_id: id }; });
+    },
+    delete_evidence: function (p) {
+      return asHandler_().then(function (db) { return db.collection('evidence').doc(p.evidence_id).delete(); })
+        .then(function () { return { status: 'OK' }; });
+    },
+    delete_character: function (p) {
+      var code = String(p.agent_code || '').trim();
+      return asHandler_().then(function (db) {
+        var cRef = db.collection('characters').doc(code), bRef = db.collection('briefs').doc(code);
+        return db.runTransaction(function (tx) {
+          return Promise.all([tx.get(cRef), tx.get(bRef)]).then(function (r) {
+            if (!r[0].exists && !r[1].exists) return false;
+            tx.set(db.collection('deleted_agents').doc(code), {
+              agent_code: code, deleted_at: Date.now(),
+              character: r[0].exists ? r[0].data() : null, brief: r[1].exists ? r[1].data() : null
+            });
+            if (r[0].exists) tx.delete(cRef);
+            if (r[1].exists) tx.delete(bRef);
+            return true;
+          });
+        });
+      }).then(function () { return { status: 'OK', agent_code: code }; });
+    },
+    restore_character: function (p) {
+      var code = String(p.agent_code || '').trim();
+      return asHandler_().then(function (db) {
+        var dRef = db.collection('deleted_agents').doc(code);
+        return db.runTransaction(function (tx) {
+          var cRef = db.collection('characters').doc(code), bRef = db.collection('briefs').doc(code);
+          return Promise.all([tx.get(dRef), tx.get(cRef), tx.get(bRef)]).then(function (r) {
+            if (!r[0].exists) return false;
+            var d = r[0].data();
+            if (d.character && !r[1].exists) tx.set(cRef, d.character);
+            if (d.brief && !r[2].exists) tx.set(bRef, d.brief);
+            tx.delete(dRef);
+            return true;
+          });
+        });
+      }).then(function () { return { status: 'OK' }; });
+    },
+    update_character_field: function (p) {
+      if (p.field !== 'player_name') return Promise.resolve({ status: 'ERROR', message: 'Field not allowed: ' + p.field });
+      var v = String(p.value || '');
+      return asHandler_().then(function (db) {
+        return db.collection('characters').doc(p.agent_code).update({ player_name: v, player_name_lc: v.trim().toLowerCase() });
+      }).then(function () { return { status: 'OK' }; });
+    },
+    update_field: function (p) {
+      if (p.field !== 'player_name') return Promise.resolve({ status: 'ERROR', message: 'Field not allowed here: ' + p.field });
+      var v = String(p.value || '');
+      return asHandler_().then(function (db) {
+        return db.collection('briefs').doc(p.agent_code).set({ player_name: v, player_name_lc: v.trim().toLowerCase() }, { merge: true });
+      }).then(function () { return { status: 'OK' }; });
+    },
+    save_playlist: function (p) {
+      var ch = String(p.channel || '').trim().toLowerCase();
+      if (!ch) return Promise.resolve({ status: 'ERROR', message: 'channel is required' });
+      return asHandler_().then(function (db) {
+        return db.collection('playlists').doc(ch).set({ channel: ch, playlist: parseArr_(p.playlist_json), updated_at: Date.now() });
+      }).then(function () { return { status: 'OK' }; });
+    }
+  };
+
+  window.dgAcellApi = {
+    // Resolves with the old JSONP reply (or null on failure, like a timeout).
+    get: function (action, params) {
+      var fn = GET_[action];
+      if (!fn) return Promise.resolve({ status: 'ERROR', message: 'unknown action ' + action });
+      return fn(params || {}).catch(function (err) {
+        console.error('a-cell: ' + action + ' failed', err);
+        return null;
+      });
+    },
+    // Resolves with a fetch-Response-like { ok, json() }; rejects on failure.
+    post: function (payload) {
+      var fn = POST_[payload && payload.action];
+      if (!fn) return Promise.reject(new Error('unknown action ' + (payload && payload.action)));
+      return fn(payload).then(function (reply) {
+        return { ok: true, json: function () { return Promise.resolve(reply); } };
+      });
+    }
+  };
 
   // Same-tab reload once already unlocked: the Clearance gate below
   // skips itself entirely when dg_acell_unlocked is set, so nothing else
@@ -1937,10 +2262,9 @@
       fullStateCache[c.code] = full;
       renderView(c.code, full);
     };
-    var s = document.createElement('script');
-    s.id = 's-' + cbName;
-    s.src = APPS_SCRIPT_URL + '?action=load_character&code=' + encodeURIComponent(c.code) + '&callback=' + cbName;
-    document.head.appendChild(s);
+    window.dgAcellApi.get('load_character', { code: c.code }).then(function (res) {
+      if (typeof window[cbName] === 'function') window[cbName](res);
+    });
   }
 
   // Drops a Face Plate into a photo box, given its URL is already
@@ -2021,10 +2345,9 @@
         }
       }
     };
-    var s = document.createElement('script');
-    s.id = 's-' + cbName;
-    s.src = APPS_SCRIPT_URL + '?code=' + encodeURIComponent(code) + '&callback=' + cbName;
-    document.head.appendChild(s);
+    window.dgAcellApi.get('lookup', { code: code }).then(function (res) {
+      if (typeof window[cbName] === 'function') window[cbName](res);
+    });
   }
 
   function renderView(code, st) {
@@ -2139,8 +2462,7 @@
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
-  var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
-  var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm it. Check that the Cells addition (list_cells / update_cell_members) is pasted into Apps Script and redeployed.';
+  var NOT_DEPLOYED_MSG = 'Saved, but the change hasn\'t shown up here yet. Press Refresh; if it still isn\'t there, try again.';
   function ensureHandlerSignedIn() {
     if (!window.__dgHandlerAuth) return Promise.reject(new Error('Handler auth not ready yet -- reload and try again.'));
     return window.__dgHandlerAuth();
@@ -2403,11 +2725,7 @@
   function saveMembers(cellObj, newMembers) {
     statusEl.textContent = 'Saving…';
     window.__dgGetHandlerIdToken().then(function (idToken) {
-      return fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors', keepalive: true,
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'update_cell_members', cell_id: cellObj.cell_id, member_codes: newMembers, id_token: idToken }),
-      });
+      return window.dgAcellApi.post({ action: 'update_cell_members', cell_id: cellObj.cell_id, member_codes: newMembers, id_token: idToken });
     }).then(function () {
       waitForCellsCondition_(function () {
         var c = cells.filter(function (x) { return x.cell_id === cellObj.cell_id; })[0];
@@ -2484,7 +2802,7 @@
 (function () {
   "use strict";
   var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
-  var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm it. Check that the Evidence addition (list_evidence / create_evidence / update_evidence / delete_evidence / list_operations / create_operation / update_operation / delete_operation) is pasted into Apps Script and redeployed.';
+  var NOT_DEPLOYED_MSG = 'Saved, but the change hasn\'t shown up here yet. Press Refresh; if it still isn\'t there, try again.';
 
   var listEl = document.getElementById('evidence-list');
   var statusEl = document.getElementById('evidence-status');
@@ -2637,42 +2955,11 @@
   // copy (see its comment) -- one dropped/slow request under a weak
   // signal used to permanently fail whatever this call was loading.
   var JSONP_GET_RETRY_DELAYS_MS = [1000, 1000];
-  function jsonpGet(action, params, cb, attempt) {
-    attempt = attempt || 0;
-    var cbName = '_acellEvidence_' + action + '_' + Date.now() + '_' + attempt;
-    function doRequest(idToken) {
-      var timer = setTimeout(function () {
-        window[cbName] = function () { delete window[cbName]; }; // a late reply must not throw
-        if (attempt < JSONP_GET_RETRY_DELAYS_MS.length) {
-          setTimeout(function () { jsonpGet(action, params, cb, attempt + 1); }, JSONP_GET_RETRY_DELAYS_MS[attempt]);
-        } else {
-          cb(null);
-        }
-      }, 15000);
-      window[cbName] = function (res) {
-        clearTimeout(timer);
-        delete window[cbName];
-        var s = document.getElementById('s-' + cbName);
-        if (s) s.remove();
-        cb(res);
-      };
-      var s = document.createElement('script');
-      s.id = 's-' + cbName;
-      var qs = 'action=' + action + '&callback=' + cbName;
-      // The full, unfiltered Evidence Locker view (list_evidence) needs
-      // a Handler ID token -- see verifyHandlerIdToken_() in Code.gs.
-      // Attached to every GET here rather than special-cased per
-      // action: harmless extra param for the ones that don't check it,
-      // one less thing to keep in sync across this file's several
-      // independent jsonpGet() copies. Best-effort -- proceeds with no
-      // token at all if not signed in yet, same as before.
-      if (idToken) qs += '&id_token=' + encodeURIComponent(idToken);
-      Object.keys(params || {}).forEach(function (k) { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
-      s.src = APPS_SCRIPT_URL + '?' + qs;
-      document.head.appendChild(s);
-    }
-    if (window.__dgGetHandlerIdToken) window.__dgGetHandlerIdToken().then(doRequest, function () { doRequest(null); });
-    else doRequest(null);
+  // Firestore now -- dgAcellApi (Handler auth block near the top of
+  // this page) answers with the same replies the Apps Script JSONP used
+  // to give, or null on failure (what a timeout used to hand back).
+  function jsonpGet(action, params, cb) {
+    window.dgAcellApi.get(action, params).then(cb);
   }
 
   function cellName(cellId) {
@@ -2694,11 +2981,11 @@
 
   // Evidence content itself (Phase 5) is now a live Firestore listener
   // -- see startEvidenceListener() below -- not part of this poll-driven
-  // fetch/render cycle anymore. This still owns Cells/Operations
-  // (unmigrated) and the "has base data loaded at least once" gate the
-  // listener's own render calls check via baseDataReady.
+  // fetch/render cycle anymore. This still owns Cells/Operations and
+  // the "has base data loaded at least once" gate the listener's own
+  // render calls check via baseDataReady.
   var baseDataReady = false;
-  var foldersOk = false; // list_cells came back OK at least once -- see the handler-ready listener
+  var foldersOk = false; // Cells/Operations loaded OK at least once -- see the handler-ready listener
   function applyOperations_(list) {
     operations = list;
     operationsById = {};
@@ -2708,107 +2995,52 @@
       (operationsByCell[o.cell_id] = operationsByCell[o.cell_id] || []).push(o);
     });
   }
-  // Folders are read from Firestore (cells, operations -- both
-  // public-read) instead of Apps Script's list_cells/list_operations:
-  // one less pair of slow backend calls per A-Cell visit, and Cells
-  // created on the Cells tab (Firestore-only, never in the Sheet's
-  // list_cells) finally show up here as Evidence Cells. Operations were
-  // only mirrored to Firestore from 2026-09-19 (runBackfillOperations-
-  // ToFirestoreNow() in Code.gs copies older ones), so the Sheet is
-  // still asked -- once, and merged in -- when Firestore has none, when
-  // an Evidence item is filed under an Operation Firestore doesn't
-  // have, and on Refresh. Writes still verify against the Sheet (see
-  // refetchOperations_/create below).
-  // A Firestore read that never settles (seen when the SDK was loaded
-  // twice on one page) must still fall back to the Sheet, not leave the
-  // folder list empty forever.
+  // Folders (Cells, Operations) are read straight from Firestore, both
+  // public-read. A read that never settles (seen when the SDK was loaded
+  // twice on one page) gives up after 8s with a visible note instead of
+  // leaving the folder list empty forever; Refresh tries again.
   function fsGet_(query) {
     return new Promise(function (resolve, reject) {
       var t = setTimeout(function () { reject(new Error('Firestore read timed out')); }, 8000);
       query.get().then(function (v) { clearTimeout(t); resolve(v); }, function (e) { clearTimeout(t); reject(e); });
     });
   }
-  var opsToppedUp = false;
-  function topUpOperationsFromSheet_(then) {
-    opsToppedUp = true;
-    jsonpGet('list_operations', {}, function (res) {
-      if (res && res.status === 'OK' && Array.isArray(res.operations)) {
-        var byId = {};
-        operations.forEach(function (o) { byId[o.operation_id] = o; });
-        res.operations.forEach(function (o) { byId[o.operation_id] = o; });
-        applyOperations_(Object.keys(byId).map(function (k) { return byId[k]; }));
-      }
-      if (then) then();
-    });
-  }
-  function checkUnknownOperations_() {
-    if (opsToppedUp || !baseDataReady) return;
-    var unknown = evidenceItems.some(function (e) { return e.operation_id && !operationsById[e.operation_id]; });
-    if (unknown) topUpOperationsFromSheet_(function () { renderFolders(); renderList(); });
-  }
   function fetchAll(isRefresh) {
     var myGen = ++fetchGen;
-    var cellsDone = false, opsDone = false;
-    function maybeRender() {
+    function failed(err) {
       if (myGen !== fetchGen) return;
-      if (!cellsDone || !opsDone) return;
+      console.error('a-cell: Evidence folders failed to load', err);
       baseDataReady = true;
       renderFolders();
       renderList();
-      checkUnknownOperations_();
-      if (isRefresh) refreshNote.textContent = 'Updated ' + new Date().toLocaleTimeString();
-    }
-    function applyCells(list) {
-      cells = list;
-      cellsById = {};
-      cells.forEach(function (c) { cellsById[c.cell_id] = c; });
-      foldersOk = true;
-    }
-    function cellsViaSheet() {
-      jsonpGet('list_cells', {}, function (res) {
-        if (myGen !== fetchGen) return;
-        cellsDone = true;
-        if (res && res.status === 'OK' && Array.isArray(res.cells)) applyCells(res.cells);
-        maybeRender();
-      });
-    }
-    function opsViaSheet() {
-      topUpOperationsFromSheet_(function () {
-        if (myGen !== fetchGen) return;
-        opsDone = true;
-        maybeRender();
-      });
+      refreshNote.textContent = 'Could not load Cells/Operations. Press Refresh to try again.';
     }
     ensureFirebaseApi(function () {
       var db = window.firebase.firestore();
-      fsGet_(db.collection('cells')).then(function (snap) {
+      Promise.all([fsGet_(db.collection('cells')), fsGet_(db.collection('operations'))]).then(function (r) {
         if (myGen !== fetchGen) return;
         var list = [];
-        snap.forEach(function (d) {
+        r[0].forEach(function (d) {
           var c = d.data() || {};
           list.push({ cell_id: d.id, name: c.name || '', handler: c.handler || '', member_codes: Array.isArray(c.member_codes) ? c.member_codes : [], channel: c.channel || '' });
         });
-        if (!list.length) { cellsViaSheet(); return; }
         list.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
-        applyCells(list);
-        cellsDone = true;
-        maybeRender();
-      }).catch(cellsViaSheet);
-      // Refresh is the Handler asking for the authoritative list.
-      if (isRefresh) { opsViaSheet(); return; }
-      fsGet_(db.collection('operations')).then(function (snap) {
-        if (myGen !== fetchGen) return;
-        var list = [];
-        snap.forEach(function (d) {
+        cells = list;
+        cellsById = {};
+        cells.forEach(function (c) { cellsById[c.cell_id] = c; });
+        foldersOk = true;
+        var ops = [];
+        r[1].forEach(function (d) {
           var o = d.data() || {};
-          list.push({ operation_id: o.operation_id || d.id, cell_id: o.cell_id || '', name: o.name || '', created_at: o.created_at || '' });
+          ops.push({ operation_id: o.operation_id || d.id, cell_id: o.cell_id || '', name: o.name || '', created_at: o.created_at || '' });
         });
-        if (!list.length) { opsViaSheet(); return; }
-        applyOperations_(list);
-        opsDone = true;
-        maybeRender();
-      }).catch(opsViaSheet);
-    }, function () { cellsViaSheet(); opsViaSheet(); });
+        applyOperations_(ops);
+        baseDataReady = true;
+        renderFolders();
+        renderList();
+        refreshNote.textContent = isRefresh ? 'Updated ' + new Date().toLocaleTimeString() : '';
+      }).catch(failed);
+    }, failed);
   }
 
   // Live evidence/{evidenceId} collection listener (Phase 5) -- the
@@ -2841,7 +3073,7 @@
           });
           evidenceLoadError = null;
           setFsStatus('Firestore: snapshot received, ' + evidenceItems.length + ' doc(s) @ ' + new Date().toLocaleTimeString(), 'ok');
-          if (baseDataReady) { renderFolders(); renderList(); checkUnknownOperations_(); }
+          if (baseDataReady) { renderFolders(); renderList(); }
         }, function (err) {
           console.error('a-cell: evidence listener error', err);
           evidenceLoadError = 'Could not load Evidence (Firestore): ' + (err && err.message || String(err));
@@ -2960,11 +3192,7 @@
           confirmBtn.textContent = 'Saving…';
           statusEl.textContent = 'Renaming Operation…';
           window.__dgGetHandlerIdToken().then(function (idToken) {
-            return fetch(APPS_SCRIPT_URL, {
-              method: 'POST', mode: 'no-cors', keepalive: true,
-              headers: { 'Content-Type': 'text/plain' },
-              body: JSON.stringify({ action: 'update_operation', operation_id: opId, name: newName, id_token: idToken }),
-            });
+            return window.dgAcellApi.post({ action: 'update_operation', operation_id: opId, name: newName, id_token: idToken });
           }).then(function () {
             setTimeout(function () {
               refreshOperations(function () {
@@ -2973,7 +3201,7 @@
                 renderFolders();
                 renderList();
               });
-            }, 900);
+            }, 0);
           }).catch(function () {
             statusEl.textContent = 'Could not reach the backend.';
             confirmBtn.disabled = false;
@@ -2992,11 +3220,7 @@
         x.style.pointerEvents = 'none'; // same double-submit guard as Create/Rename, see their own comments
         statusEl.textContent = 'Deleting Operation…';
         window.__dgGetHandlerIdToken().then(function (idToken) {
-          return fetch(APPS_SCRIPT_URL, {
-            method: 'POST', mode: 'no-cors', keepalive: true,
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({ action: 'delete_operation', operation_id: opId, id_token: idToken }),
-          });
+          return window.dgAcellApi.post({ action: 'delete_operation', operation_id: opId, id_token: idToken });
         }).then(function () {
           setTimeout(function () {
             refreshOperations(function () {
@@ -3005,7 +3229,7 @@
               renderFolders();
               renderList();
             });
-          }, 900);
+          }, 0);
         }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
       });
     });
@@ -3172,27 +3396,20 @@
     cb.disabled = true;
     statusEl.textContent = 'Saving…';
     window.__dgGetHandlerIdToken().then(function (idToken) {
-      return fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors', keepalive: true,
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
+      return window.dgAcellApi.post({
           action: 'update_evidence', evidence_id: h.evidence_id, title: h.title, body: h.body,
           photo: h.photo || '', cell_id: h.cell_id || '', operation_id: h.operation_id || '',
           released: next, restricted_to: JSON.stringify(h.restricted_to || []),
           id_token: idToken,
-        }),
-      });
-    }).then(function () {
-      setTimeout(function () {
-        jsonpGet('list_evidence', {}, function (res) {
-          cb.disabled = false;
-          if (res && res.status === 'OK' && Array.isArray(res.evidence)) {
-            evidenceItems = res.evidence.slice().sort(function (a, b) { return Number(b.created_at) - Number(a.created_at); });
-          }
-          statusEl.textContent = '';
-          renderList();
         });
-      }, 900);
+    }).then(function () {
+      // The write has landed (Firestore); the live listener brings the
+      // list itself up to date. Re-reading here instead could briefly
+      // return the old copy (seen on WebKit/iOS) and flip the box back.
+      h.released = next;
+      cb.disabled = false;
+      statusEl.textContent = '';
+      renderList();
     }).catch(function () { cb.disabled = false; statusEl.textContent = 'Could not reach the backend.'; });
   }
 
@@ -3226,28 +3443,13 @@
     if (btn) { btn.disabled = true; btn.textContent = 'Deleting…'; }
     statusEl.textContent = 'Deleting…';
     window.__dgGetHandlerIdToken().then(function (idToken) {
-      return fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors', keepalive: true,
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'delete_evidence', evidence_id: h.evidence_id, id_token: idToken }),
-      });
+      return window.dgAcellApi.post({ action: 'delete_evidence', evidence_id: h.evidence_id, id_token: idToken });
     }).then(function () {
-      setTimeout(function () {
-        jsonpGet('list_evidence', {}, function (res) {
-          var stillThere = res && res.status === 'OK' && Array.isArray(res.evidence) &&
-            res.evidence.some(function (x) { return x.evidence_id === h.evidence_id; });
-          if (stillThere) {
-            if (btn) { btn.disabled = false; btn.textContent = 'Delete'; }
-            statusEl.textContent = NOT_DEPLOYED_MSG;
-            return;
-          }
-          if (res && res.status === 'OK' && Array.isArray(res.evidence)) {
-            evidenceItems = res.evidence.slice().sort(function (a, b) { return Number(b.created_at) - Number(a.created_at); });
-          }
-          statusEl.textContent = 'Deleted ' + h.title + '.';
-          renderList();
-        });
-      }, 900);
+      // Deleted in Firestore -- the write succeeding is the confirmation
+      // (see toggleReleased above for why this doesn't re-read the list).
+      evidenceItems = evidenceItems.filter(function (x) { return x.evidence_id !== h.evidence_id; });
+      statusEl.textContent = 'Deleted ' + h.title + '.';
+      renderList();
     }).catch(function () {
       if (btn) { btn.disabled = false; btn.textContent = 'Delete'; }
       statusEl.textContent = 'Could not reach the backend.';
@@ -3303,6 +3505,9 @@
   // Rebuilds the Operation dropdown for whichever Cell is picked in the
   // form's own Scope select -- an Operation belongs to one Cell, so the
   // list has to follow the form's scope, not the sidebar's filter.
+  // Writes here are Firestore now: when dgAcellApi.post() resolves the
+  // write has landed, so each read-back below runs right away (the 0ms
+  // timeouts used to be 900ms waits for the Sheet to catch up).
   function refreshFormOperationOptions(selectedCellId, keepOpId) {
     var opSel = document.getElementById('evidence-new-op');
     if (!opSel) return;
@@ -3429,11 +3634,7 @@
         // POST -- a legacy gdrive:/data: value falling through
         // formPhotoExisting unchanged is the only way this could still be
         // large, and even that's rare enough not to special-case).
-        return fetch(APPS_SCRIPT_URL, {
-          method: 'POST', mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify(payload),
-        });
+        return window.dgAcellApi.post(payload);
       }).then(function () {
         verifyEvidenceWrite_(
           function (list) { return list.some(function (x) { return x.title === title && x.cell_id === cellId; }); },
@@ -3483,11 +3684,7 @@
       newConfirmBtn.textContent = 'Creating…';
       statusEl.textContent = 'Creating Operation…';
       window.__dgGetHandlerIdToken().then(function (idToken) {
-        return fetch(APPS_SCRIPT_URL, {
-          method: 'POST', mode: 'no-cors', keepalive: true,
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({ action: 'create_operation', name: name, cell_id: filterCellId, id_token: idToken }),
-        });
+        return window.dgAcellApi.post({ action: 'create_operation', name: name, cell_id: filterCellId, id_token: idToken });
       }).then(function () {
         setTimeout(function () {
           jsonpGet('list_operations', {}, function (res) {
@@ -3503,7 +3700,7 @@
             opFormSlot.innerHTML = '';
             renderFolders();
           });
-        }, 900);
+        }, 0);
       }).catch(function () {
         statusEl.textContent = 'Could not reach the backend.';
         newConfirmBtn.disabled = false;
@@ -3523,7 +3720,17 @@
     renderList();
   });
   fetchAll(false);
-  startEvidenceListener();
+  // With no Handler session yet (the Clearance gate is still up), wait
+  // for the gate's login to fire dg-acell-handler-ready below instead of
+  // trying -- and failing -- to sign in now.
+  if (sessionStorage.getItem('dg_acell_pw')) startEvidenceListener();
+  // Cells/Operations are cheap Firestore reads now -- re-read them each
+  // time the tab is opened, so a Cell just made on the Cells tab is
+  // already in the Cell picker (it used to need Refresh).
+  document.getElementById('acell-tab-strip').addEventListener('click', function (e) {
+    var tab = e.target.closest('.tw');
+    if (tab && tab.dataset.tab === 'evidence') fetchAll(false);
+  });
   // Same Handler-session race as Play/Cells/Sheet -- see the Handler-
   // password module's own comment. ensureHandlerSignedIn() needs
   // dg_acell_pw in sessionStorage, which may not be there yet at this
@@ -3574,12 +3781,9 @@
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
-  var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
   var ACELL_PASSWORD = 'MASTICATE';
   var ONLINE_MS = 5 * 60 * 1000;
   var RECENT_MS = 30 * 60 * 1000;
-  var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm the delete. Check that Code.gs is pasted into Apps Script and redeployed.';
-  var RESTORE_NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm the restore. Check that Code.gs is pasted into Apps Script and redeployed.';
 
   var wrap = document.getElementById('sheet-wrap');
   var refreshBtn = document.getElementById('sheet-refresh-btn');
@@ -3656,43 +3860,11 @@
   // copy (see its comment) -- one dropped/slow request under a weak
   // signal used to permanently fail whatever this call was loading.
   var JSONP_GET_RETRY_DELAYS_MS = [1000, 1000];
-  function jsonpGet(action, params, cb, attempt) {
-    attempt = attempt || 0;
-    var cbName = '_acellSheet_' + action + '_' + Date.now() + '_' + attempt;
-    function doRequest(idToken) {
-      var timer = setTimeout(function () {
-        window[cbName] = function () { delete window[cbName]; }; // a late reply must not throw
-        if (attempt < JSONP_GET_RETRY_DELAYS_MS.length) {
-          setTimeout(function () { jsonpGet(action, params, cb, attempt + 1); }, JSONP_GET_RETRY_DELAYS_MS[attempt]);
-        } else {
-          cb(null);
-        }
-      }, 15000);
-      window[cbName] = function (res) {
-        clearTimeout(timer);
-        delete window[cbName];
-        var s = document.getElementById('s-' + cbName);
-        if (s) s.remove();
-        cb(res);
-      };
-      var s = document.createElement('script');
-      s.id = 's-' + cbName;
-      var qs = 'action=' + action + '&callback=' + cbName;
-      // Admin listing reads (list_characters/list_agent_file_only/
-      // list_deleted_characters) need a Handler ID token -- see
-      // verifyHandlerIdToken_() in Code.gs. Attached to every GET here
-      // rather than special-cased per action: harmless extra param for
-      // the ones that don't check it, one less thing to keep in sync
-      // across this file's several independent jsonpGet() copies.
-      // Best-effort -- proceeds with no token at all if not signed in
-      // yet, same as before.
-      if (idToken) qs += '&id_token=' + encodeURIComponent(idToken);
-      Object.keys(params || {}).forEach(function (k) { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
-      s.src = APPS_SCRIPT_URL + '?' + qs;
-      document.head.appendChild(s);
-    }
-    if (window.__dgGetHandlerIdToken) window.__dgGetHandlerIdToken().then(doRequest, function () { doRequest(null); });
-    else doRequest(null);
+  // Firestore now -- dgAcellApi (Handler auth block near the top of
+  // this page) answers with the same replies the Apps Script JSONP used
+  // to give, or null on failure (what a timeout used to hand back).
+  function jsonpGet(action, params, cb) {
+    window.dgAcellApi.get(action, params).then(cb);
   }
 
   function fetchAll(isRefresh) {
@@ -3907,14 +4079,11 @@
     });
   }
 
-  // Fire-and-forget, bounded-concurrency loop -- the same no-cors POST
-  // doDelete() already sends per row, just without that function's own
-  // per-row 900ms-wait-then-reverify step (fine for one row, far too
-  // slow for the hundreds this button is meant to clear). One list
-  // refresh at the end shows whatever's left; anything that failed to
-  // delete is still selectable and safe to retry.
+  // Bounded-concurrency loop over the same delete doDelete() sends per
+  // row. Each Agent whose delete succeeded leaves the table right away;
+  // one that failed stays listed and selectable, safe to retry.
   function doBulkDelete(codes) {
-    var total = codes.length, sent = 0;
+    var total = codes.length, sent = 0, failed = 0, done = {};
     var CONCURRENCY = 4;
     var idx = 0;
     bulkConfirmSlot.innerHTML = '<div class="admin-confirm"><p>Deleting 0 / ' + total + '…</p></div>';
@@ -3922,30 +4091,26 @@
       if (idx >= codes.length) return;
       var code = codes[idx++];
       window.__dgGetHandlerIdToken().then(function (idToken) {
-        return fetch(APPS_SCRIPT_URL, {
-          method: 'POST', mode: 'no-cors', keepalive: true,
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({ action: 'delete_character', agent_code: code, id_token: idToken }),
-        });
-      }).then(afterOne).catch(afterOne);
+        return window.dgAcellApi.post({ action: 'delete_character', agent_code: code, id_token: idToken });
+      }).then(function () { done[code] = true; afterOne(); }, function () { failed++; afterOne(); });
     }
     function afterOne() {
       sent++;
       bulkConfirmSlot.innerHTML = '<div class="admin-confirm"><p>Deleting ' + sent + ' / ' + total + '…</p></div>';
       if (idx < codes.length) next();
-      else if (sent >= total) finishBulk(total);
+      else if (sent >= total) finishBulk(total, failed, done);
     }
     for (var k = 0; k < Math.min(CONCURRENCY, codes.length); k++) next();
   }
 
-  function finishBulk(total) {
+  function finishBulk(total, failed, done) {
     selectedCodes = {};
-    setTimeout(function () {
-      bulkConfirmSlot.innerHTML = '';
-      statusEl.textContent = 'Sent ' + total + ' delete request' + (total === 1 ? '' : 's') + '. Anything still listed below either didn\'t match or failed -- select and delete again.';
-      fetchAll();
-      fetchDeleted();
-    }, 1500);
+    bulkConfirmSlot.innerHTML = '';
+    rows = rows.filter(function (r) { return !done[r.code]; });
+    renderSheet();
+    statusEl.textContent = 'Deleted ' + (total - failed) + ' of ' + total + ' Agent' + (total === 1 ? '' : 's') + '.' +
+      (failed ? ' The ' + failed + ' still listed failed -- select and delete again.' : ' Restore any of them within 24 hours from Recently Deleted below.');
+    fetchDeleted();
   }
 
   function startEditPlayerName(span) {
@@ -3989,11 +4154,7 @@
       var body = row.isBriefsOnly
         ? { action: 'update_field', agent_code: row.code, field: 'player_name', value: value }
         : { action: 'update_character_field', agent_code: row.code, field: 'player_name', value: value, id_token: idToken };
-      return fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors', keepalive: true,
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify(body),
-      });
+      return window.dgAcellApi.post(body);
     }).then(function () { fetchAll(); }).catch(function () { fetchAll(); });
   }
 
@@ -4036,31 +4197,18 @@
   function doDelete(row, slot) {
     slot.innerHTML = '<div class="admin-confirm"><p>Deleting…</p></div>';
     window.__dgGetHandlerIdToken().then(function (idToken) {
-      return fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors', keepalive: true,
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'delete_character', agent_code: row.code, id_token: idToken }),
-      });
+      return window.dgAcellApi.post({ action: 'delete_character', agent_code: row.code, id_token: idToken });
     }).then(function () {
-      setTimeout(function () { verifyDelete(row, slot); }, 900);
+      // The write succeeding is the confirmation (Firestore). Re-reading
+      // the roster straight after could still return the Agent for a
+      // moment (seen on WebKit/iOS) and report a false failure.
+      slot.innerHTML = '';
+      rows = rows.filter(function (r) { return r.code !== row.code; });
+      renderSheet();
+      statusEl.textContent = 'Deleted ' + row.name + '. Restore it within 24 hours from Recently Deleted below.';
+      fetchDeleted();
     }).catch(function () {
       slot.innerHTML = '<div class="admin-confirm"><p class="admin-confirm-error">Could not reach the backend.</p></div>';
-    });
-  }
-
-  function verifyDelete(row, slot) {
-    var action = row.isBriefsOnly ? 'list_agent_file_only' : 'list_characters';
-    var listKey = row.isBriefsOnly ? 'agents' : 'characters';
-    jsonpGet(action, {}, function (res) {
-      var stillThere = res && res.status === 'OK' && Array.isArray(res[listKey]) &&
-        res[listKey].some(function (c) { return c.agent_code === row.code; });
-      if (stillThere) {
-        slot.innerHTML = '<div class="admin-confirm"><p class="admin-confirm-error">' + NOT_DEPLOYED_MSG + '</p></div>';
-        return;
-      }
-      statusEl.textContent = 'Deleted ' + row.name + '. Restore it within 24 hours from Recently Deleted below.';
-      fetchAll();
-      fetchDeleted();
     });
   }
 
@@ -4111,35 +4259,22 @@
     if (!agent) return;
     statusEl.textContent = 'Restoring…';
     window.__dgGetHandlerIdToken().then(function (idToken) {
-      return fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors', keepalive: true,
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'restore_character', agent_code: agent.code, id_token: idToken }),
-      });
+      return window.dgAcellApi.post({ action: 'restore_character', agent_code: agent.code, id_token: idToken });
     }).then(function () {
-      setTimeout(function () { verifyRestore(agent); }, 900);
-    }).catch(function () {
-      statusEl.textContent = 'Could not reach the backend.';
-    });
-  }
-
-  function verifyRestore(agent) {
-    // An Agent-File-only delete (agent.state is null -- see fetchDeleted()
-    // above) never had a Characters row to restore, so list_characters
-    // would never confirm it -- check list_agent_file_only instead.
-    var action = agent.state ? 'list_characters' : 'list_agent_file_only';
-    var listKey = agent.state ? 'characters' : 'agents';
-    jsonpGet(action, {}, function (res) {
-      var backInRoster = res && res.status === 'OK' && Array.isArray(res[listKey]) &&
-        res[listKey].some(function (c) { return c.agent_code === agent.code; });
-      if (!backInRoster) {
-        statusEl.textContent = RESTORE_NOT_DEPLOYED_MSG;
-        return;
-      }
+      // Same as doDelete(): the write succeeding is the confirmation.
       var name = (agent.state && agent.state.bio || {}).name || agent.char_name || agent.code;
       statusEl.textContent = 'Restored ' + name + '.';
+      deletedAgents = deletedAgents.filter(function (d) { return d.code !== agent.code; });
+      renderDeletedList();
+      // A read straight after can briefly miss the restored Agent on
+      // WebKit/iOS (see doDelete): refresh once more if it did. (Only
+      // then -- a redraw would close any delete confirm opened since.)
       fetchAll();
-      fetchDeleted();
+      setTimeout(function () {
+        if (!rows.some(function (r) { return r.code === agent.code; })) fetchAll();
+      }, 2000);
+    }).catch(function () {
+      statusEl.textContent = 'Could not reach the backend.';
     });
   }
 
@@ -4197,9 +4332,8 @@
    soundboard for the identical ~8s-latency reason). Cue For Cell writes
    straight to Firestore too now (cells/{cellId}'s channel field, same
    doc the Cells tab's own create/delete write directly -- see
-   cellAssignBtn's own comment below). Only the Cue List
-   (get_playlist/save_playlist) is still Apps-Script-mediated -- a
-   separate surface, out of scope here.
+   cellAssignBtn's own comment below). The Cue List (saved playlists)
+   is Firestore too, in playlists/{channel} (Handler-only).
 
    The whole tab is styled as one field-radio unit (chassis, recessed
    screen, numbered sections) rather than a form dropped on paper --
@@ -4211,7 +4345,6 @@
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
-  var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
   var CHANNEL_KEY = 'dg_acell_broadcast_channel';
   // Fixed numbered channels, turned on a dial rather than typed -- five
   // slots, no typos, no two players landing on "sam" vs "Sam".
@@ -4386,8 +4519,8 @@
   // the Soundboard header comment above updateSoundInstanceFirestore_/
   // removeSoundInstanceFirestore_/setAmbientLayerActive_ for why) --
   // the transaction's own resolved array IS the confirmed new state, so
-  // there's no separate confirm-via-GET step needed the way every other
-  // Apps-Script-mediated write in this file still has.
+  // there's no separate confirm-via-GET step needed the way the old
+  // Apps Script writes did.
   function sendActiveSoundAction_(row, action, extraParams) {
     var ch = currentChannel;
     var field = row.kind === 'ambient' ? 'ambient_layers' : 'stingers';
@@ -5023,40 +5156,11 @@
   // through Apps Script) had exactly one 7s window to succeed, no retry
   // at all. Retries twice more before actually giving up.
   var JSONP_GET_RETRY_DELAYS_MS = [1000, 1000];
-  function jsonpGet(action, params, cb, attempt) {
-    attempt = attempt || 0;
-    var cbName = '_acellMusic_' + action + '_' + Date.now() + '_' + attempt;
-    function doRequest(idToken) {
-      var timer = setTimeout(function () {
-        window[cbName] = function () { delete window[cbName]; }; // a late reply must not throw
-        if (attempt < JSONP_GET_RETRY_DELAYS_MS.length) {
-          setTimeout(function () { jsonpGet(action, params, cb, attempt + 1); }, JSONP_GET_RETRY_DELAYS_MS[attempt]);
-        } else {
-          cb(null);
-        }
-      }, 15000);
-      window[cbName] = function (res) {
-        clearTimeout(timer);
-        delete window[cbName];
-        var s = document.getElementById('s-' + cbName);
-        if (s) s.remove();
-        cb(res);
-      };
-      var s = document.createElement('script');
-      s.id = 's-' + cbName;
-      var qs = 'action=' + action + '&callback=' + cbName;
-      // Neither of this tab's own remaining reads (get_playlist/
-      // list_cells) need Handler auth, but a Handler ID token is
-      // attached whenever one's already available anyway -- harmless,
-      // and one less thing to keep in sync across this file's several
-      // independent jsonpGet() copies.
-      if (idToken) qs += '&id_token=' + encodeURIComponent(idToken);
-      Object.keys(params || {}).forEach(function (k) { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
-      s.src = APPS_SCRIPT_URL + '?' + qs;
-      document.head.appendChild(s);
-    }
-    if (window.__dgGetHandlerIdToken) window.__dgGetHandlerIdToken().then(doRequest, function () { doRequest(null); });
-    else doRequest(null);
+  // Firestore now -- dgAcellApi (Handler auth block near the top of
+  // this page) answers with the same replies the Apps Script JSONP used
+  // to give, or null on failure (what a timeout used to hand back).
+  function jsonpGet(action, params, cb) {
+    window.dgAcellApi.get(action, params).then(cb);
   }
 
   function setAirIndicator(onAir) {
@@ -5100,10 +5204,8 @@
      sendSeek_/sendLoopToggle_ below, migrated the same way), have all
      since been deleted from Code.gs -- see BUGFIXES.md's Radio
      main-track entry. Cue For Cell writes straight to Firestore now too
-     (see cellAssignBtn's own comment below). Only the Cue List
-     (get_playlist/save_playlist) is still Apps-Script-mediated now --
-     a separate surface, out of scope here (see the Music tab's own
-     header comment above). ── */
+     (see cellAssignBtn's own comment below), and so does the Cue List
+     (playlists/{channel}). ── */
   function radioDocRef_(channel) {
     return window.firebase.firestore().collection('radio').doc(channel);
   }
@@ -5610,8 +5712,7 @@
   /* ── Playlist: a saved list of tracks per channel, so the Handler
      doesn't have to re-paste a URL every time -- click one to make it
      the current track (via setNowPlaying above, straight to Firestore).
-     Still Apps-Script-mediated itself (get_playlist/save_playlist,
-     unaffected by the main-track transport's own migration). ── */
+     Saved in Firestore playlists/{channel} (Handler-only). ── */
   function renderPlaylist() {
     if (!playlist.length) {
       playlistEl.innerHTML = '<div class="rdo-playlist-empty">No saved tracks yet -- paste a URL and hit "+ Playlist".</div>';
@@ -5653,12 +5754,8 @@
   function savePlaylist() {
     var ch = currentChannel;
     window.__dgGetHandlerIdToken().then(function (idToken) {
-      return fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors', keepalive: true,
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'save_playlist', channel: ch, playlist_json: JSON.stringify(playlist), id_token: idToken }),
-      });
-    }).catch(function () { /* best effort, same as every other Apps Script write here */ });
+      return window.dgAcellApi.post({ action: 'save_playlist', channel: ch, playlist_json: JSON.stringify(playlist), id_token: idToken });
+    }).catch(function (err) { console.error('a-cell: saving the playlist failed', err); });
   }
 
   /* ── Cue For Cell: a Cell (from the Cells tab) can carry its own
@@ -6116,7 +6213,11 @@
 
   renderStingerGroups();
   startNowPlayingListener_(currentChannel);
-  loadPlaylist(currentChannel);
+  // The saved playlist is Handler-only: load it now if this tab already
+  // has a Handler session, otherwise once the Clearance gate's login
+  // lands (instead of failing, with an error, before anyone logged in).
+  if (sessionStorage.getItem('dg_acell_pw')) loadPlaylist(currentChannel);
+  window.addEventListener('dg-acell-handler-ready', function () { loadPlaylist(currentChannel); });
   fetchCells();
   trackLibListEl.innerHTML = '<div class="rdo-track-empty">Loading…</div>';
   startTracksListener();

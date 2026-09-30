@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <script src="assets/js-error-banner.js"></script>
+<script src="assets/dg-store.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DG FORM 27-R</title>
 <meta name="robots" content="noindex, nofollow">
@@ -1240,7 +1241,6 @@ document.getElementById('resetLink').addEventListener('click', ()=>{
    pre-fills the default, a Handler can still override for a specific
    circumstance (a specialty that doesn't apply, a wounded/impaired stat,
    etc). */
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
 
 function setAutofillNote(routeId, text, stale){
   const el = document.getElementById('note-'+routeId);
@@ -1331,15 +1331,15 @@ function applyAgentSkills(state){
     }
     applyAgentSkills(state);
   };
-  const script = document.createElement('script');
-  script.id = '_dg_req_skills_script';
-  script.src = APPS_SCRIPT_URL + '?action=load_character&code=' + encodeURIComponent(code) + '&callback=' + cbName;
-  script.onerror = function(){
+  // characters/{code} in Firestore -- same reply shape as the old
+  // load_character JSONP this handler was written for.
+  window.dgStore.getCharacter(code).then(function (d) {
+    window[cbName](d ? { status: 'OK', character_json: d.character_json } : { status: 'NOT_FOUND' });
+  }, function(){
     delete window[cbName];
     const msg = 'Connection error loading this Agent’s character sheet — enter manually.';
     ['official','personal','favor','black'].forEach(id => setAutofillNote(id, msg, true));
-  };
-  document.head.appendChild(script);
+  });
 })();
 </script>
 <script src="assets/table-radio.js"></script>

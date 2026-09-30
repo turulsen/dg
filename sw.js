@@ -2,9 +2,10 @@
    Delta Green Agent Hub -- offline app shell.
 
    Only the static shell (HTML/CSS/JS/images listed below) is cached.
-   Everything else -- script.google.com JSONP calls, Google Fonts,
-   YouTube/SoundCloud embeds -- is deliberately left alone (no
-   respondWith) so it always goes straight to the network: caching a
+   Everything else -- Firestore/Firebase traffic, the Drive image
+   proxy, Google Fonts, YouTube/SoundCloud embeds -- is deliberately
+   left alone (no respondWith) so it always goes straight to the
+   network: caching a
    character sheet or Cells list here would mean serving stale Agent
    data offline and calling it a feature, which is worse than just
    failing normally when there's no signal.
@@ -31,7 +32,7 @@
    through this whole migration -- not random flakiness, one bad path
    silently breaking the update mechanism itself.
    ══════════════════════════════════════════════ */
-const CACHE_NAME = 'dg-hub-shell-v161';
+const CACHE_NAME = 'dg-hub-shell-v162';
 
 const SHELL_FILES = [
   './',
@@ -57,6 +58,7 @@ const SHELL_FILES = [
   'assets/sw-update.js',
   'assets/js-error-banner.js',
   'assets/agent-code.js',
+  'assets/dg-store.js',
   'assets/mars-tech-seal.png',
   'assets/restricted-stamp.png',
   'assets/delta-green-triangle.png',

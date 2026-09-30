@@ -4,9 +4,9 @@
 
    Sends this character to the Agent Portal as a new Agent File, using
    the exact same submission path the Cover form's own "Submit Brief"
-   button uses (same APPS_SCRIPT_URL, same field names, same PREFIX-XXXX
-   code format from genCode()) -- not a new backend integration, just
-   this page filling out that same form programmatically.
+   button uses (dgStore.submitBrief -> briefs/{code} in Firestore, same
+   field names, same PREFIX-XXXX code format from genCode()) -- this page
+   filling out that same form programmatically.
 
    Name, sex, nationality, and profession carry straight over; build
    (from STR/CON) and outfit (from profession) are derived. Everything
@@ -17,8 +17,6 @@
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
-
-  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
 
   // jacket / shirt / trousers / footwear per profession -- plausible
   // defaults, not canon; the Cover tab remains fully editable afterward.
@@ -175,11 +173,9 @@
       localStorage.setItem('dg_last_agent', JSON.stringify({ code: agentCode, data: payload }));
     } catch (e) { /* best effort */ }
 
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors', keepalive: true,
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(payload),
-    }).then(() => {
+    // Straight to briefs/{code} in Firestore (the Sheet is retired) --
+    // a merge of just these fields, same as the old upsert.
+    lastExport = window.dgStore.submitBrief(payload).then(() => {
       if (btn) { btn.disabled = false; }
       if (status) {
         status.innerHTML = `Sent. Agent File code: <strong>${agentCode}</strong> — ` +
@@ -209,12 +205,20 @@
   // Cloud Save has minted a code) -- this used to open whichever OTHER
   // agent this browser had most recently exported instead of the one
   // actually being viewed here, silently and with no error shown.
+  // The old POST was keepalive:true and could outlive the navigation; a
+  // Firestore write can't, so wait for it (briefly) before leaving.
+  let lastExport = null;
   function goToAgentFile() {
     let code = null;
+    lastExport = null;
     try { code = run(); } catch (e) { /* best effort -- still navigate below */ }
-    window.location.href = code
-      ? '../dg-agent-portal.html?code=' + encodeURIComponent(code) + '#agent'
-      : '../dg-agent-portal.html#agent';
+    const go = () => {
+      window.location.href = code
+        ? '../dg-agent-portal.html?code=' + encodeURIComponent(code) + '#agent'
+        : '../dg-agent-portal.html#agent';
+    };
+    if (!lastExport) { go(); return; }
+    Promise.race([lastExport.catch(() => { }), new Promise(r => setTimeout(r, 8000))]).then(go);
   }
 
   window.dgAgentPortalExport = { run, goToAgentFile, buildFromStats, ageToRange, sexToOption, buildNotes, genCode, PROFESSION_OUTFIT };
