@@ -474,10 +474,9 @@
     let evidenceItems = [];
     let evidenceSeenMap = {};
     let evidenceModalEl = null;
-    // Operation names -- list_operations is deliberately unauthenticated
-    // (players need folder names without a Handler session, same
-    // reasoning as list_cells), fetched once at mount rather than every
-    // poll tick since Operations change rarely. opFilter narrows the
+    // Operation names -- Firestore operations/ is public-read (players
+    // need folder names without a Handler session), fetched once at
+    // mount rather than every poll tick since Operations change rarely. opFilter narrows the
     // sidebar to one Operation at a time; '' shows everything.
     let operations = [];
     let opFilter = '';

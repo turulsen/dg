@@ -30,30 +30,30 @@ def record(area, name, ok, detail=""):
     mark = "PASS" if ok else "FAIL"
     print(f"[{mark}] {area} :: {name}" + (f" -- {detail}" if detail and not ok else ""))
 
+# Every field #dg-form itself marks required, not just a handful --
+# isProfilingComplete() (dg-agent-portal.html) gates the Agent File tab on
+# all of them being non-empty, so a fixture missing any of these would
+# silently redirect every test expecting to land on Agent File back to
+# Profiling instead.
+MOCK_BRIEF = {
+    "char_name": "Mock Loaded Agent", "codename": "TESTCASE",
+    "age_range": "30s", "sex": "Female", "nationality": "American",
+    "face_shape": "oval", "eye_color": "brown", "eye_shape": "almond",
+    "nose": "straight", "lips": "thin", "skin": "tan",
+    "facial_hair": "clean-shaven", "hair_color": "brown",
+    "hair_style": "short", "hair_texture": "straight",
+    "build": "average", "posture": "upright",
+    "expression": "neutral", "vibe": "unremarkable",
+    "jacket": "coat", "shirt": "shirt",
+    "trousers": "trousers", "footwear": "boots"
+}
+
 def mock_routes(page):
     def fake_apps_script(route):
         url = route.request.url
         if "callback=" in url:
             cb = url.split("callback=")[1].split("&")[0]
-            # Every field #dg-form itself marks required, not just a
-            # handful -- isProfilingComplete() (dg-agent-portal.html)
-            # gates the Agent File tab on all of them being non-empty,
-            # so a fixture missing any of these would silently redirect
-            # every test below expecting to land on Agent File back to
-            # Profiling instead.
-            fake_data = {
-                "char_name": "Mock Loaded Agent", "codename": "TESTCASE",
-                "age_range": "30s", "sex": "Female", "nationality": "American",
-                "face_shape": "oval", "eye_color": "brown", "eye_shape": "almond",
-                "nose": "straight", "lips": "thin", "skin": "tan",
-                "facial_hair": "clean-shaven", "hair_color": "brown",
-                "hair_style": "short", "hair_texture": "straight",
-                "build": "average", "posture": "upright",
-                "expression": "neutral", "vibe": "unremarkable",
-                "jacket": "coat", "shirt": "shirt",
-                "trousers": "trousers", "footwear": "boots"
-            }
-            body = f'{cb}({json.dumps({"status": "OK", "data": fake_data})})'
+            body = f'{cb}({json.dumps({"status": "OK", "data": MOCK_BRIEF})})'
             route.fulfill(status=200, content_type="application/javascript", body=body)
         else:
             route.fulfill(status=200, content_type="application/json",
@@ -61,6 +61,28 @@ def mock_routes(page):
     def fake_anthropic(route):
         route.fulfill(status=200, content_type="application/json",
                        body=json.dumps({"content": [{"text": "[mocked cinematic prompt]"}]}))
+    # The Agent File reads briefs/{code} from Firestore now: any code a
+    # test types in answers with the same Mock Loaded Agent (unless the
+    # test seeded or wrote a real doc there), and the AI functions give
+    # the same canned prompt.
+    install_notes_firestore_stub(page)
+    page.add_init_script("""
+        (function () {
+          var FAKE = %s;
+          window.__dgBackendHook = function (kind, arg) {
+            if (kind === 'get') {
+              if (arg.indexOf('briefs/') === 0 && !(arg in (window.__dgFirestoreDocs || {}))) return FAKE;
+              return '__local__';
+            }
+            if (kind === 'call') {
+              (window.__dgFunctionCalls = window.__dgFunctionCalls || []).push(arg);
+              return arg.name === 'generatePrompt'
+                ? { status: 'OK', prompt: '[mocked cinematic prompt]' }
+                : { status: 'OK', image_base64: 'data:image/png;base64,iVBORw0KGgo=' };
+            }
+          };
+        })();
+    """ % json.dumps(MOCK_BRIEF))
     page.route("**/script.google.com/**", fake_apps_script)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
@@ -539,6 +561,39 @@ def install_firestore_backend(page, docs=None):
           sessionStorage.setItem('__dgFsDocs', JSON.stringify(window.__dgFirestoreDocs));
         } catch (e) { Object.assign(window.__dgFirestoreDocs, %s); }
     """ % (json.dumps(docs or {}), json.dumps(docs or {})))
+
+def tap_acell_posts(page, on_post):
+    """A-Cell's Handler writes go through window.dgAcellApi.post(payload)
+    (Firestore now, not an Apps Script POST). Calls on_post(payload) in
+    Python for each one, before the real write runs -- so a test keeps
+    its old `posts` list and any state it mutates per action."""
+    def _cb(payload):
+        try:
+            on_post(payload)
+        except Exception as e:
+            print("tap_acell_posts: on_post raised", e)
+    page.expose_function("__dgPyAcellPost", _cb)
+    page.add_init_script("""
+        (function () {
+          var real;
+          Object.defineProperty(window, 'dgAcellApi', {
+            configurable: true,
+            get: function () { return real; },
+            set: function (api) {
+              var post = api.post;
+              api.post = function (payload) {
+                var args = arguments, self = this;
+                var copy = JSON.parse(JSON.stringify(payload || {}));
+                delete copy.id_token;
+                return Promise.resolve(window.__dgPyAcellPost(copy)).then(function () {
+                  return post.apply(self, args);
+                });
+              };
+              real = api;
+            }
+          });
+        })();
+    """)
 
 def character_doc(code, state, player_name=None):
     """A characters/{code} document the way dgStore.saveCharacter writes it."""
@@ -1580,16 +1635,7 @@ def test_kappablack_toml_import_triggers_cloud_save(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    posts = []
-    def capture(route):
-        req = route.request
-        if req.method == "POST":
-            try:
-                posts.append(json.loads(req.post_data or "{}"))
-            except Exception:
-                pass
-        route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", capture)
+    install_firestore_backend(page)
 
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
@@ -1603,8 +1649,8 @@ def test_kappablack_toml_import_triggers_cloud_save(p):
     page.click("#kappablack-to-editor-button")
     page.wait_for_timeout(1000)
 
-    save_posts = [p_ for p_ in posts if p_.get("action") == "save_character"]
-    record("stats-terminal", "importing a Kappa Black .toml triggers a Cloud Save (save_character) without any further manual edit",
+    save_posts = [w["data"] for w in fs_writes(page, "characters/")]
+    record("stats-terminal", "importing a Kappa Black .toml triggers a Cloud Save (a characters/ write) without any further manual edit",
            len(save_posts) >= 1, str(save_posts))
     if save_posts:
         char_json = json.loads(save_posts[0].get("character_json") or "{}")
@@ -2299,18 +2345,15 @@ def test_hub_cover_identity_veil(p):
     fake_agents = [{"code": "DANI-U8BM", "char_name": "Daniela Martinez", "codename": "", "sex": "female",
                      "age_range": "41", "nationality": "Swedish", "saved_at": 1000, "player_name": "gergo"}]
 
-    def fake_apps_script(route):
-        url = route.request.url
-        if "action=find_by_player_name" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            route.fulfill(status=200, content_type="application/javascript",
-                           body=f'{cb}({json.dumps({"status": "OK", "agents": fake_agents})})')
-            return
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"OK"}})')
-            return
-        route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
+    # Agents tied to a Cover Identity are a Firestore query now (briefs
+    # where player_name_lc == the name).
+    def fake_backend(page):
+        docs = {}
+        for a_ in fake_agents:
+            d = {k: v for k, v in a_.items() if k not in ("code", "saved_at")}
+            d["player_name_lc"] = d["player_name"].lower()
+            docs["briefs/" + a_["code"]] = d
+        install_firestore_backend(page, docs)
 
     # Branch 1: no remembered identity -- prompt shows, boot waits for Enter.
     page = p.new_page()
@@ -2318,7 +2361,7 @@ def test_hub_cover_identity_veil(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", fake_apps_script)
+    fake_backend(page)
     page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
     record("hub", "a brand-new device is actually asked for a Cover Identity on the veil",
@@ -2345,7 +2388,7 @@ def test_hub_cover_identity_veil(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", fake_apps_script)
+    fake_backend(page)
     page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
     page.press("#dg-shell-loading-ci-input", "Enter")
@@ -2363,7 +2406,7 @@ def test_hub_cover_identity_veil(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", fake_apps_script)
+    fake_backend(page)
     page.add_init_script("try { localStorage.setItem('dg_cover_identity', 'Gergo'); } catch (e) {}")
     page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(200)
@@ -2387,7 +2430,7 @@ def test_hub_cover_identity_veil(p):
     install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", fake_apps_script)
+    fake_backend(page)
     page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
     page.goto(f"{BASE}/hub.html?start=a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
@@ -2410,7 +2453,7 @@ def test_hub_cover_identity_veil(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", fake_apps_script)
+    fake_backend(page)
     held = []
     page.route("**/agent-hub.html", lambda route: held.append(route))
     page.add_init_script("try { localStorage.setItem('dg_cover_identity', 'Gergo'); } catch (e) {}")
@@ -2434,7 +2477,7 @@ def test_hub_cover_identity_veil(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", fake_apps_script)
+    fake_backend(page)
     page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
     page.wait_for_timeout(3500)
@@ -2575,7 +2618,10 @@ def test_agent_hub_cover_identity(p):
         PATRICK,
         {"code": "GERG-D002", "char_name": "Danielle Mitchell", "codename": "", "sex": "Female",
          "age_range": "Late 20s", "nationality": "American"},
-    ]), **briefs_for("Not Gergo", [{"code": "STRY-X001", "char_name": "Claimed By Someone Else"}])))
+    ]), **briefs_for("Not Gergo", [{"code": "STRY-X001", "char_name": "Claimed By Someone Else"}]),
+        # An Agent File nobody has put a Player Name on yet. (A roster
+        # entry with no Agent File AND no character is purged as deleted.)
+        **{"briefs/STRY-X002": {"char_name": "Unclaimed Local Draft"}}))
     page.add_init_script("""
         const now = Date.now();
         localStorage.setItem('dg_agent_roster', JSON.stringify({
@@ -2736,30 +2782,13 @@ def test_agent_hub_erase_agent(p):
     only enable for a correct (case-insensitive) match, and the actual
     delete_character POST must only fire after that."""
     page = p.new_page()
-    install_notes_firestore_stub(page)  # no real Firebase from a test
     page.set_default_timeout(8000)
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    delete_posts = []
-    def fake_apps_script(route):
-        req = route.request
-        if req.method == "POST":
-            try:
-                body = json.loads(req.post_data or "{}")
-            except Exception:
-                body = {}
-            if body.get("action") == "delete_character":
-                delete_posts.append(body)
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        url = req.url
-        if "callback=" not in url:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        cb = url.split("callback=")[1].split("&")[0]
-        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"OK"}})')
-    page.route("**/script.google.com/**", fake_apps_script)
+    install_firestore_backend(page, {
+        "briefs/GERG-E001": {"char_name": "Duplicate Owen", "player_name": "Gergo", "player_name_lc": "gergo"},
+    })
 
     roster = json.dumps({
         "GERG-E001": {"code": "GERG-E001", "char_name": "Duplicate Owen",
@@ -2788,8 +2817,11 @@ def test_agent_hub_erase_agent(p):
 
     page.click("#ah-erase-confirm-btn")
     page.wait_for_timeout(400)
-    record("hub", "confirming sends a delete_character request for the right Agent",
-           len(delete_posts) == 1 and delete_posts[0].get("agent_code") == "GERG-E001", str(delete_posts))
+    # Removing it from this device only: deleting an Agent for real is the
+    # Handler's (A-Cell), and the old backend call was always refused.
+    record("hub", "confirming deletes nothing in the backend (this device's roster only)",
+           fs_writes(page, "briefs/") == [] and fs_writes(page, "characters/") == []
+           and fs_doc(page, "briefs/GERG-E001") is not None, str(fs_writes(page, "")))
     record("hub", "the overlay closes after confirming",
            not page.is_visible("#ah-erase-overlay"), "")
     record("hub", "the erased Agent is gone from the roster/tab strip",
@@ -2814,23 +2846,10 @@ def test_agent_hub_kia_stamp(p):
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
-    characters = {
-        "DEAD-0001": json.dumps({"derived": {"hp": 0}}),
-        "ALIV-0002": json.dumps({"derived": {"hp": 9}}),
-    }
-    def fake_apps_script(route):
-        url = route.request.url
-        if route.request.method == "POST" or "callback=" not in url:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        cb = url.split("callback=")[1].split("&")[0]
-        if "action=load_character" in url:
-            code = url.split("code=")[1].split("&")[0]
-            res = {"status": "OK", "character_json": characters[code]} if code in characters else {"status": "NOT_FOUND"}
-        else:
-            res = {"status": "OK"}
-        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-    page.route("**/script.google.com/**", fake_apps_script)
+    install_firestore_backend(page, {
+        "characters/DEAD-0001": character_doc("DEAD-0001", {"derived": {"hp": 0}}, ""),
+        "characters/ALIV-0002": character_doc("ALIV-0002", {"derived": {"hp": 9}}, ""),
+    })
 
     roster = json.dumps({
         "DEAD-0001": {"code": "DEAD-0001", "char_name": "Owen Castillo", "saved_at": 1000},
@@ -2894,20 +2913,11 @@ def test_agent_hub_handouts(p):
         {"evidence_id": "ev3", "title": "Priya Eyes Only", "body": "Restricted to Priya specifically.", "photo": "", "cell_id": "", "restricted_to": ["PRIY-AN34"], "created_at": "1500", "visible_to": ["PRIY-AN34"]},
     ]
 
-    def fake_apps_script(route):
-        url = route.request.url
-        if route.request.method == "POST" or "callback=" not in url:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        cb = url.split("callback=")[1].split("&")[0]
-        if "action=list_cells" in url:
-            res = {"status": "OK", "cells": cells_fixture}
-        elif "action=list_operations" in url:
-            res = {"status": "OK", "operations": []}
-        else:
-            res = {"status": "OK"}
-        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-    page.route("**/script.google.com/**", fake_apps_script)
+    install_firestore_backend(page, {
+        "cells/cell_1": {k: v for k, v in cells_fixture[0].items() if k != "cell_id"},
+        "briefs/OWEN-CS12": {"char_name": "Owen Castillo", "codename": "Ferro"},
+        "briefs/PRIY-AN34": {"char_name": "Priya Anand"},
+    })
 
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     roster = {
@@ -2969,32 +2979,10 @@ def test_agent_hub_handout_notes(p):
     evidence_fixture = [
         {"evidence_id": "h1", "title": "Field Photo", "body": "evidence", "photo": "", "cell_id": "", "created_at": "1000", "visible_to": ["ALL"]},
     ]
-    notes_fixture = {"OWEN-CS12": [{"handout_id": "h1", "note": "Existing note text"}]}
-    saved_bodies = []
-
-    def fake_apps_script(route):
-        req = route.request
-        url = req.url
-        if req.method == "POST":
-            body = req.post_data or "{}"
-            saved_bodies.append(json.loads(body))
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        if "callback=" not in url:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        cb = url.split("callback=")[1].split("&")[0]
-        if "action=list_cells" in url:
-            res = {"status": "OK", "cells": []}
-        elif "action=list_operations" in url:
-            res = {"status": "OK", "operations": []}
-        elif "action=list_handout_notes" in url:
-            code = url.split("agent_code=")[1].split("&")[0]
-            res = {"status": "OK", "notes": notes_fixture.get(code, [])}
-        else:
-            res = {"status": "OK"}
-        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-    page.route("**/script.google.com/**", fake_apps_script)
+    install_firestore_backend(page, {
+        "briefs/OWEN-CS12": {"char_name": "Owen Castillo", "codename": "Ferro"},
+        "handout_notes/OWEN-CS12_h1": {"agent_code": "OWEN-CS12", "handout_id": "h1", "note": "Existing note text"},
+    })
 
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     roster = {"OWEN-CS12": {"code": "OWEN-CS12", "char_name": "Owen Castillo", "codename": "Ferro", "saved_at": 2000}}
@@ -3019,11 +3007,10 @@ def test_agent_hub_handout_notes(p):
            "Typing" in (status_el.text_content() or ""), status_el.text_content() if status_el else "")
 
     page.wait_for_timeout(1600)
-    record("hub", "editing a note posts save_handout_note with the right handout_id/agent_code/note",
-           any(b.get("action") == "save_handout_note" and b.get("handout_id") == "h1"
-               and b.get("agent_code") == "OWEN-CS12" and b.get("note") == "Updated note from the Agent"
-               for b in saved_bodies),
-           str(saved_bodies))
+    saved = fs_doc(page, "handout_notes/OWEN-CS12_h1") or {}
+    record("hub", "editing a note saves it under the right handout_id/agent_code",
+           saved.get("handout_id") == "h1" and saved.get("agent_code") == "OWEN-CS12"
+           and saved.get("note") == "Updated note from the Agent", str(saved))
     record("hub", "status flips to 'Saved' after the debounced save resolves",
            status_el.text_content() == "Saved", status_el.text_content() if status_el else "")
 
@@ -3043,10 +3030,10 @@ def test_agent_hub_dex_postit(p):
     install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", lambda route: route.fulfill(
-        status=200, content_type="application/json", body='{"status":"OK"}') if "callback=" not in route.request.url
-        else route.fulfill(status=200, content_type="application/javascript",
-                            body=f'{route.request.url.split("callback=")[1].split("&")[0]}({{"status":"OK"}})'))
+    install_firestore_backend(page, {
+        "briefs/OWEN-CS12": {"char_name": "Owen Castillo", "codename": "Ferro"},
+        "briefs/PRIY-AN34": {"char_name": "Priya Anand"},
+    })
 
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     roster = {
@@ -3092,19 +3079,12 @@ def test_agent_hub_recruit_flag(p):
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
-    def fake_apps_script(route):
-        url = route.request.url
-        if "action=load_character" in url and "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            has_sheet = "OWEN-CS12" in url
-            res = {"status": "OK", "character_json": "{}"} if has_sheet else {"status": "NOT_FOUND"}
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-        elif "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"OK"}})')
-        else:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", fake_apps_script)
+    # Owen has a character; Priya only an Agent File.
+    install_firestore_backend(page, {
+        "characters/OWEN-CS12": character_doc("OWEN-CS12", {}, ""),
+        "briefs/OWEN-CS12": {"char_name": "Owen Castillo"},
+        "briefs/PRIY-AN34": {"char_name": "Priya Anand"},
+    })
 
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     roster = {
@@ -3337,32 +3317,11 @@ def test_acell_play(p):
     # Play's own roster/Cell-filter now come from live Firestore reads
     # (characters/briefs/cells, all public-read) instead of
     # list_characters/list_cells JSONP -- see startCharacterListeners()/
-    # startCellsListener() in a-cell.html. load_character (a single
-    # Agent's full sheet, fetched on demand) is untouched.
+    # startCellsListener() in a-cell.html. 
     install_notes_firestore_stub(page)
 
-    def fake_apps_script(route):
-        url = route.request.url
-        if "action=load_character" in url and "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            code = url.split("code=")[1].split("&")[0]
-            st = fake_full.get(code)
-            if st:
-                body = f'{cb}({json.dumps({"status": "OK", "agent_code": code, "character_json": json.dumps(st)})})'
-            else:
-                body = f'{cb}({json.dumps({"status": "NOT_FOUND"})})'
-            route.fulfill(status=200, content_type="application/javascript", body=body)
-        elif "callback=" in url:
-            # Other tab modules (Music, Sheet) fetch unconditionally on
-            # page load regardless of which tab is visible -- their
-            # calls need a real JSONP-wrapped response too, or the
-            # browser tries to execute a raw JSON object as a <script>
-            # and throws a syntax error on the object literal's ':'.
-            cb = url.split("callback=")[1].split("&")[0]
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"OK"}})')
-        else:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", fake_apps_script)
+    # Opening an Agent reads their full sheet from characters/{code}.
+    install_firestore_backend(page, {"characters/" + c: character_doc(c, st) for c, st in fake_full.items()})
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
 
@@ -3414,6 +3373,8 @@ def test_acell_play(p):
     # re-fetches), keeping the selected panel showing their updated view
     # instead of going stale underneath an unrelated roster refresh.
     fake_full["OWEN-CS12"]["csStats"]["CHA"] = 99
+    page.evaluate("(d) => { window.__dgFirestoreDocs['characters/OWEN-CS12'] = d; }",
+                  character_doc("OWEN-CS12", fake_full["OWEN-CS12"]))
     push_firestore_snapshot(page, "characters", [], [char_doc(c) for c in fake_order])
     stat_vals_after = wait_for_condition(
         lambda: (lambda v: v if v == ["12", "13", "14", "15", "10", "99"] else None)(
@@ -3511,55 +3472,43 @@ def test_acell_play(p):
     page.close()
     return errs
 
+def watch_apps_script(page):
+    """Every request this page (or its frames) makes to Apps Script. The
+    Sheet is retired: only the Drive image proxy (action=imgdata) is
+    still expected there."""
+    seen = []
+    page.on("request", lambda r: seen.append(r.url) if "script.google.com" in r.url else None)
+    return seen
+
+def fs_queries(page, path):
+    """How many stubbed Firestore query reads hit this collection path."""
+    return page.evaluate("(p) => (window.__dgFsQueries || []).filter(q => q.path === p).length", path)
+
 def test_acell_sheet_loads_once_when_opened(p):
     """Live report: Friendly -> A-Cell Music -> Agent Hub -> back to
     A-Cell, and the Sheet tab sat on "Loading agents..." then showed
-    "Could not load the roster". Every A-Cell page load used to send the
-    Sheet's four Apps Script calls at load AND again on
-    dg-acell-handler-ready (three of them Handler-verified), and
-    Evidence re-sent its two folder lists the same way, whether or not
-    either tab was opened -- on a busy backend the Sheet's calls timed
-    out queued behind the rest. Now: nothing from the Sheet until its
-    tab is opened, then exactly one of each; Evidence's folder lists
-    once; the Cell column reads Firestore Cells (made on the Cells tab,
-    never in the Sheet-backed list_cells)."""
+    "Could not load the roster". Every A-Cell page load used to load the
+    Sheet tab (and Evidence's folder lists) at load AND again on
+    dg-acell-handler-ready, whether or not either tab was opened. Now:
+    nothing from the Sheet until its tab is opened, then exactly one
+    load; Evidence's folder lists once; the Cell column reads Firestore
+    Cells. All of it from Firestore -- no Apps Script call at all."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
-    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     skip_acell_gate(page)
     page.add_init_script("""
         try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}
     """)
-    calls = []
-
-    def fake_apps_script(route):
-        url = route.request.url
-        if route.request.method == "POST" or "callback=" not in url:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        cb = url.split("callback=")[1].split("&")[0]
-        action = url.split("action=")[1].split("&")[0]
-        calls.append((cb.split("_")[1], action))
-        res = {"status": "OK"}
-        if action == "list_characters":
-            res["characters"] = [{"agent_code": "OWEN-CS12", "name": "Owen Castillo", "player_name": "",
-                                  "hp": 12, "san": 50, "updated_at": ""}]
-        elif action == "list_cells":
-            res["cells"] = []
-        elif action == "list_operations":
-            res["operations"] = []
-        elif action == "list_agent_file_only":
-            res["agents"] = []
-        elif action == "list_deleted_characters":
-            res["characters"] = []
-        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-    page.route("**/script.google.com/**", fake_apps_script)
+    install_firestore_backend(page, {
+        "characters/OWEN-CS12": character_doc("OWEN-CS12", {"bio": {"name": "Owen Castillo"}, "derived": {"hp": 12, "san": 50}}, ""),
+        "cells/cell_fs": {"name": "Firestore Table", "handler": "Sam", "member_codes": ["OWEN-CS12"]},
+    })
+    apps_script = watch_apps_script(page)
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
-    page.evaluate("""() => { window.__dgFirestoreDocs['cells/cell_fs'] = { name: 'Firestore Table', handler: 'Sam', member_codes: ['OWEN-CS12'] }; }""")
     wait_for_condition(lambda: page.evaluate("() => window.__dgFirestoreAuthUser && window.__dgFirestoreAuthUser.uid") == "handler", timeout_ms=6000)
     page.wait_for_timeout(1500)
     # The stub's sign-in resolves before the later tab blocks even
@@ -3567,159 +3516,122 @@ def test_acell_sheet_loads_once_when_opened(p):
     # them. Fire the event again the way that real ordering would.
     page.evaluate("() => window.dispatchEvent(new Event('dg-acell-handler-ready'))")
     page.wait_for_timeout(800)
-    sheet_calls = [a for (who, a) in calls if who == "acellSheet"]
-    record("acell", "an A-Cell page load sends none of the Sheet tab's Apps Script calls until the Sheet is opened",
-           sheet_calls == [], str(calls))
-    ev = [a for (who, a) in calls if who == "acellEvidence"]
+    # deleted_agents is read only by the Sheet tab (Recently Deleted).
+    record("acell", "an A-Cell page load sends none of the Sheet tab's reads until the Sheet is opened",
+           fs_queries(page, "deleted_agents") == 0, fs_queries(page, "deleted_agents"))
     record("acell", "Evidence's folder lists load once per A-Cell visit, not again after the silent Handler sign-in",
-           ev.count("list_cells") == 1 and ev.count("list_operations") == 1, str(ev))
+           fs_queries(page, "operations") == 1, fs_queries(page, "operations"))
     page.click('.tw[data-tab="sheet"]')
     wait_for_condition(lambda: "Owen Castillo" in page.inner_text("#sheet-wrap"), timeout_ms=6000)
     row = page.inner_text("#sheet-wrap")
-    sheet_calls = sorted(a for (who, a) in calls if who == "acellSheet")
-    record("acell", "opening the Sheet tab loads it with exactly one of each of its calls",
-           sheet_calls == ["list_agent_file_only", "list_characters", "list_deleted_characters"], str(sheet_calls))
+    record("acell", "opening the Sheet tab loads it exactly once",
+           fs_queries(page, "deleted_agents") == 1, fs_queries(page, "deleted_agents"))
     record("acell", "the Sheet's Cell and Handler columns read Firestore Cells (made on the Cells tab)",
            "Firestore Table" in row and "Sam" in row, row[:200])
     page.click('.tw[data-tab="play"]'); page.click('.tw[data-tab="sheet"]'); page.wait_for_timeout(500)
     record("acell", "re-opening an already-loaded Sheet tab doesn't re-fetch it (Refresh does)",
-           sum(1 for (who, a) in calls if who == "acellSheet" and a == "list_characters") == 1, str(calls))
+           fs_queries(page, "deleted_agents") == 1, fs_queries(page, "deleted_agents"))
     page.click("#sheet-refresh-btn")
-    # _pump_until, not wait_for_condition: this condition reads only the
-    # Python-side `calls` list, and wait_for_condition's time.sleep never
-    # lets Playwright service the routed request it's waiting on.
-    _pump_until(page, lambda: sum(1 for (who, a) in calls if who == "acellSheet" and a == "list_characters") == 2, timeout_ms=8000)
+    wait_for_condition(lambda: fs_queries(page, "deleted_agents") == 2, timeout_ms=8000)
     record("acell", "the Sheet's Refresh button still re-fetches",
-           sum(1 for (who, a) in calls if who == "acellSheet" and a == "list_characters") == 2, str(calls))
+           fs_queries(page, "deleted_agents") == 2, fs_queries(page, "deleted_agents"))
+    record("acell", "A-Cell makes no Apps Script call at all (the Sheet is retired)",
+           apps_script == [], str(apps_script))
     record("acell", "no JS errors across the lazy Sheet load", not errs, str(errs))
     page.close()
 
 
 def test_acell_evidence_folders_read_firestore(p):
-    """Group 1 of moving reads off Apps Script: A-Cell's Evidence folders
-    (Cells + Operations) read Firestore instead of list_cells/
-    list_operations. Cells made on the Cells tab exist only in Firestore,
-    so they were missing from Evidence's Cell picker. Operations were
-    only mirrored from 2026-09-19, so an Evidence item filed under an
-    older one asks the Sheet once and merges it in."""
+    """A-Cell's Evidence folders (Cells + Operations) read Firestore --
+    Cells made on the Cells tab exist only there. An item filed under an
+    Operation that no longer exists just shows as unfiled; nothing asks
+    Apps Script any more."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
-    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     skip_acell_gate(page)
-    page.add_init_script("""
-        try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}
-        window.__dgFirestoreDocs['cells/cell_fs'] = { name: 'Firestore Table', handler: 'Sam', member_codes: [] };
-        window.__dgFirestoreDocs['operations/op_fs'] = { operation_id: 'op_fs', cell_id: 'cell_fs', name: 'Mirrored Op', created_at: 2 };
-    """)
-    calls = []
-
-    def fake_apps_script(route):
-        url = route.request.url
-        if route.request.method == "POST" or "callback=" not in url:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        cb = url.split("callback=")[1].split("&")[0]
-        action = url.split("action=")[1].split("&")[0]
-        calls.append((cb.split("_")[1], action))
-        res = {"status": "OK"}
-        if action == "list_cells":
-            res["cells"] = []
-        elif action == "list_operations":
-            res["operations"] = [{"operation_id": "op_fs", "cell_id": "cell_fs", "name": "Mirrored Op", "created_at": 2},
-                                 {"operation_id": "op_legacy", "cell_id": "cell_fs", "name": "Legacy Op", "created_at": 1}]
-        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-    page.route("**/script.google.com/**", fake_apps_script)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
+    install_firestore_backend(page, {
+        "cells/cell_fs": {"name": "Firestore Table", "handler": "Sam", "member_codes": []},
+        "operations/op_fs": {"operation_id": "op_fs", "cell_id": "cell_fs", "name": "Mirrored Op", "created_at": 2},
+    })
+    apps_script = watch_apps_script(page)
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     wait_for_condition(lambda: page.evaluate("() => window.__dgFirestoreAuthUser && window.__dgFirestoreAuthUser.uid") == "handler", timeout_ms=6000)
     page.click('.tw[data-tab="evidence"]')
-    _pump_until(page, lambda: "Firestore Table" in page.inner_text("#evidence-cell-filter"))
+    wait_for_condition(lambda: "Firestore Table" in page.inner_text("#evidence-cell-filter"))
     record("acell", "Evidence's Cell picker lists a Cell that exists only in Firestore (made on the Cells tab)",
            "Firestore Table" in page.inner_text("#evidence-cell-filter"), page.inner_text("#evidence-cell-filter"))
     page.select_option("#evidence-cell-filter", "cell_fs")
-    _pump_until(page, lambda: "Mirrored Op" in page.inner_text("#evidence-folders"))
-    ev = [a for (who, a) in calls if who == "acellEvidence"]
-    record("acell", "Evidence folders come from Firestore -- no list_cells/list_operations call when Firestore has them",
-           "Mirrored Op" in page.inner_text("#evidence-folders") and ev == [], str(calls))
-    _pump_until(page, lambda: any(l["path"] == "evidence" for l in page.evaluate("() => window.__dgFirestoreListeners || []")))
+    wait_for_condition(lambda: "Mirrored Op" in page.inner_text("#evidence-folders"))
+    record("acell", "Evidence's Operation folders come from Firestore",
+           "Mirrored Op" in page.inner_text("#evidence-folders"), page.inner_text("#evidence-folders"))
+    wait_for_condition(lambda: any(l["path"] == "evidence" for l in page.evaluate("() => window.__dgFirestoreListeners || []")))
     push_firestore_snapshot(page, "evidence", [], [
-        {"id": "ev1", "title": "Old Photo", "body": "", "photo": "", "cell_id": "cell_fs",
-         "operation_id": "op_legacy", "created_at": 5, "released": True, "restricted_to": []}])
-    _pump_until(page, lambda: "Legacy Op" in page.inner_text("#evidence-folders"))
-    ev = [a for (who, a) in calls if who == "acellEvidence"]
-    record("acell", "an item filed under an Operation Firestore doesn't have asks the Sheet once and shows that folder",
-           "Legacy Op" in page.inner_text("#evidence-folders") and ev.count("list_operations") == 1, str(ev) + " / " + page.inner_text("#evidence-folders"))
-    push_firestore_snapshot(page, "evidence", [], [
-        {"id": "ev1", "title": "Old Photo", "body": "", "photo": "", "cell_id": "cell_fs",
-         "operation_id": "op_legacy", "created_at": 5, "released": True, "restricted_to": []},
-        {"id": "ev2", "title": "Another", "body": "", "photo": "", "cell_id": "cell_fs",
+        {"id": "ev2", "title": "Orphaned Item", "body": "", "photo": "", "cell_id": "cell_fs",
          "operation_id": "op_gone", "created_at": 6, "released": True, "restricted_to": []}])
+    page.click('[data-op=""]')
+    wait_for_condition(lambda: "Orphaned Item" in page.inner_text("#evidence-list"))
+    record("acell", "an item filed under a deleted Operation shows as Unfiled",
+           "Orphaned Item" in page.inner_text("#evidence-list"), page.inner_text("#evidence-list"))
     page.wait_for_timeout(600)
-    ev = [a for (who, a) in calls if who == "acellEvidence"]
-    record("acell", "the Sheet top-up happens at most once per visit (a deleted Operation doesn't re-ask forever)",
-           ev.count("list_operations") == 1, str(ev))
+    record("acell", "the Evidence tab makes no Apps Script call (the Sheet is retired)",
+           apps_script == [], str(apps_script))
     record("acell", "no JS errors reading Evidence folders from Firestore", not errs, str(errs))
     page.close()
 
-
 def test_agent_hub_checks_read_firestore(p):
-    """Group 1 of moving reads off Apps Script: Agent Hub's per-Agent
-    "has a sheet?" and KIA checks read characters/{code} from Firestore
-    (one read shared by both) instead of two load_character calls per
-    Agent per visit. Characters were never backfilled, so an Agent with
-    no Firestore doc falls back to load_character -- and a missing doc
-    must never, by itself, mark an Agent as having no sheet."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    install_notes_firestore_stub(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.add_init_script("""
-        window.__dgFirestoreDocs['characters/DEAD-0001'] = { agent_code: 'DEAD-0001', character_json: JSON.stringify({ derived: { hp: 0 } }) };
-        window.__dgFirestoreDocs['operations/op_fs'] = { operation_id: 'op_fs', cell_id: 'cell_x', name: 'Mirrored Op', created_at: 1 };
-    """)
-    calls = []
-
-    def fake_apps_script(route):
-        url = route.request.url
-        if route.request.method == "POST" or "callback=" not in url:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        cb = url.split("callback=")[1].split("&")[0]
-        action = url.split("action=")[1].split("&")[0] if "action=" in url else "lookup"
-        code = url.split("code=")[1].split("&")[0] if "code=" in url else ""
-        calls.append((action, code))
-        res = {"status": "OK"}
-        if action == "load_character":
-            res = {"status": "OK", "character_json": json.dumps({"derived": {"hp": 9}})} if code == "ALIV-0002" else {"status": "NOT_FOUND"}
-        elif action == "list_operations":
-            res["operations"] = []
-        elif action == "list_handout_notes":
-            res["notes"] = []
-        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-    page.route("**/script.google.com/**", fake_apps_script)
+    """Agent Hub's per-Agent "has a sheet?" and KIA checks read
+    characters/{code} from Firestore (one read shared by both). Firestore
+    is the only backend now, so a missing doc means no sheet yet (Recruit)
+    -- but a read that FAILS must never mark an Agent as having no sheet,
+    or purge it from the roster."""
     roster = json.dumps({
         "DEAD-0001": {"code": "DEAD-0001", "char_name": "Owen Castillo", "saved_at": 1000},
         "ALIV-0002": {"code": "ALIV-0002", "char_name": "Priya Anand", "saved_at": 2000},
     })
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    install_firestore_backend(page, {
+        "characters/DEAD-0001": character_doc("DEAD-0001", {"derived": {"hp": 0}}, ""),
+        "briefs/ALIV-0002": {"char_name": "Priya Anand"},
+        "operations/op_fs": {"operation_id": "op_fs", "cell_id": "cell_x", "name": "Mirrored Op", "created_at": 1},
+    })
+    apps_script = watch_apps_script(page)
     page.add_init_script(f"localStorage.setItem('dg_agent_roster', '{roster}');")
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
-    _pump_until(page, lambda: "KIA" in page.inner_text("#ah-charstamp-DEAD-0001"))
+    wait_for_condition(lambda: "KIA" in page.inner_text("#ah-charstamp-DEAD-0001"))
     page.wait_for_timeout(800)
     record("hub", "an Agent's KIA stamp comes from its Firestore character doc",
            "KIA" in page.inner_text("#ah-charstamp-DEAD-0001"), page.inner_text("#ah-charstamp-DEAD-0001"))
-    record("hub", "an Agent with a Firestore character doc sends no load_character at all",
-           not any(a == "load_character" and c == "DEAD-0001" for (a, c) in calls), str(calls))
-    record("hub", "an Agent with no Firestore doc falls back to load_character (never treated as 'no sheet')",
-           any(a == "load_character" and c == "ALIV-0002" for (a, c) in calls)
-           and "No Character Sheet Yet" not in page.inner_text("#ah-charstamp-ALIV-0002"), str(calls))
-    record("hub", "handout Operation names come from Firestore -- no list_operations when Firestore has them",
-           not any(a == "list_operations" for (a, c) in calls), str(calls))
+    record("hub", "an Agent with an Agent File but no character doc shows No Character Sheet Yet",
+           "No Character Sheet Yet" in page.eval_on_selector("#ah-charstamp-ALIV-0002", "el => el.textContent"), "")
+    record("hub", "Agent Hub makes no Apps Script call (the Sheet is retired)", apps_script == [], str(apps_script))
     record("hub", "no JS errors reading Agent Hub checks from Firestore", not errs, str(errs))
+    page.close()
+
+    # Firestore unreachable: nothing is marked "no sheet", nothing purged.
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    install_firestore_backend(page)
+    page.add_init_script("window.__dgFsFail = true;")
+    page.add_init_script(f"localStorage.setItem('dg_agent_roster', '{roster}');")
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(1500)
+    labels = page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)")
+    record("hub", "a failed Firestore read never marks an Agent as having no sheet",
+           "No Character Sheet Yet" not in page.eval_on_selector("#ah-charstamp-ALIV-0002", "el => el.textContent")
+           and "Play" in page.eval_on_selector("#ah-play-ALIV-0002", "el => el.textContent"), "")
+    record("hub", "a failed Firestore read never purges an Agent from this device's roster",
+           any("Priya" in l for l in labels) and any("Owen" in l for l in labels), str(labels))
     page.close()
 
 
@@ -3874,39 +3786,18 @@ def test_acell_cells(p):
     cells_state = []
     posts = []
 
-    def fake_apps_script(route):
-        req = route.request
-        if req.method == "POST":
-            body = json.loads(req.post_data or "{}")
-            # Mutate cells_state BEFORE appending to posts -- wait_post_and_sync()
-            # polls `posts` from a separate loop and calls sync_cells() the
-            # instant it sees a match, so if the append happened first, a poll
-            # landing between these two lines could push a snapshot still
-            # missing this very mutation (a real, if narrow, race -- caught
-            # via a flaky "adding an Agent to a Cell" failure while testing
-            # the Create/Delete Cell migration above, even though this
-            # ordering issue predates it and applies to any action here).
-            if body.get("action") == "update_cell_members":
-                for c in cells_state:
-                    if c["cell_id"] == body.get("cell_id"):
-                        c["member_codes"] = body.get("member_codes", [])
-            posts.append(body)
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        url = req.url
-        if "callback=" in url:
-            # Other tab modules (Evidence/Sheet/Music) still fire their own
-            # JSONP GETs unconditionally on page load regardless of which
-            # tab is visible -- a bare JSON body loaded via <script src>
-            # throws "Unexpected token ':'" (see route_apps_script_ok's own
-            # comment above), which this test hit for real before this was
-            # JSONP-aware: real, repeated pageerrors that made the whole
-            # test's POST/listener timing visibly flaky.
-            cb = url.split("callback=")[1].split("&")[0]
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"OK"}})')
-        else:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", fake_apps_script)
+    def on_post(body):
+        # Mutate cells_state BEFORE appending to posts -- wait_post_and_sync()
+        # polls `posts` from a separate loop and calls sync_cells() the
+        # instant it sees a match, so if the append happened first, a poll
+        # landing between these two lines could push a snapshot still
+        # missing this very mutation.
+        if body.get("action") == "update_cell_members":
+            for c in cells_state:
+                if c["cell_id"] == body.get("cell_id"):
+                    c["member_codes"] = body.get("member_codes", [])
+        posts.append(body)
+    tap_acell_posts(page, on_post)
 
     def sync_cells():
         push_firestore_snapshot(page, "cells", [], [dict(c, id=c["cell_id"]) for c in cells_state])
@@ -4146,8 +4037,13 @@ def test_acell_evidence(p):
     skip_acell_gate(page)
 
     cells_fixture = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12", "PRIY-AN34"], "channel": ""}]
-    evidence_state = []
-    operations_state = []
+    # The backend is the Firestore stub: A-Cell writes evidence/ and
+    # operations/ docs itself; this reads them back.
+    install_firestore_backend(page, {"cells/cell_1": {k: v for k, v in cells_fixture[0].items() if k != "cell_id"}})
+    def evidence_state():
+        return page.evaluate("() => Object.entries(window.__dgFirestoreDocs || {})"
+                             ".filter(([k]) => k.indexOf('evidence/') === 0 && k.split('/').length === 2)"
+                             ".map(([k, v]) => Object.assign({}, v, { evidence_id: k.split('/')[1] }))")
 
     # a-cell.html's Evidence tab reads content from a live Firestore
     # onSnapshot listener now (Phase 5), not from list_evidence -- only
@@ -4164,57 +4060,10 @@ def test_acell_evidence(p):
     # selectors on the same item a real backend would put there.
     def push_evidence():
         wait_for_condition(lambda: notes_firestore_listener_count(page) >= 1, timeout_ms=8000)
-        ordered = sorted(evidence_state, key=lambda e: int(e["created_at"]), reverse=True)
+        ordered = sorted(evidence_state(), key=lambda e: int(e["created_at"]), reverse=True)
         push_firestore_snapshot(page, "evidence", [],
                                  [dict(e, id=e["evidence_id"]) for e in ordered])
 
-    def fake_apps_script(route):
-        req = route.request
-        if req.method == "POST":
-            body = json.loads(req.post_data or "{}")
-            action = body.get("action")
-            if action == "create_evidence":
-                eid = "evidence_" + str(len(evidence_state) + 1)
-                evidence_state.append({
-                    "evidence_id": eid, "title": body.get("title", ""), "body": body.get("body", ""),
-                    "photo": body.get("photo", ""), "cell_id": body.get("cell_id", ""),
-                    "operation_id": body.get("operation_id", ""), "released": bool(body.get("released")),
-                    "restricted_to": json.loads(body.get("restricted_to") or "[]"),
-                    "created_at": str(1000 + len(evidence_state)),
-                })
-            elif action == "update_evidence":
-                for h in evidence_state:
-                    if h["evidence_id"] == body.get("evidence_id"):
-                        h["title"] = body.get("title", ""); h["body"] = body.get("body", "")
-                        h["photo"] = body.get("photo", ""); h["cell_id"] = body.get("cell_id", "")
-                        h["operation_id"] = body.get("operation_id", ""); h["released"] = bool(body.get("released"))
-                        h["restricted_to"] = json.loads(body.get("restricted_to") or "[]")
-            elif action == "delete_evidence":
-                evidence_state[:] = [h for h in evidence_state if h["evidence_id"] != body.get("evidence_id")]
-            elif action == "create_operation":
-                oid = "op_" + str(len(operations_state) + 1)
-                operations_state.append({"operation_id": oid, "cell_id": body.get("cell_id", ""), "name": body.get("name", ""), "created_at": str(len(operations_state))})
-            elif action == "delete_operation":
-                operations_state[:] = [o for o in operations_state if o["operation_id"] != body.get("operation_id")]
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        url = req.url
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            if "action=list_cells" in url:
-                res = {"status": "OK", "cells": cells_fixture}
-            elif "action=list_evidence" in url:
-                res = {"status": "OK", "evidence": evidence_state}
-            elif "action=list_operations" in url:
-                res = {"status": "OK", "operations": operations_state}
-            elif "action=list_characters" in url:
-                res = {"status": "OK", "characters": []}
-            else:
-                res = {"status": "OK"}
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-        else:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", fake_apps_script)
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
@@ -4255,7 +4104,7 @@ def test_acell_evidence(p):
     page.check("#evidence-new-released")
     page.check('#evidence-new-restrict-wrap input[value="OWEN-CS12"]')
     page.click("#evidence-new-confirm")
-    wait_for_condition(lambda: len(evidence_state) >= 1)
+    wait_for_condition(lambda: len(evidence_state()) >= 1)
     push_evidence()
     list_text = wait_for_condition(lambda: page.inner_text("#evidence-list")
                                     if "Field Photograph" in page.inner_text("#evidence-list") else None)
@@ -4285,7 +4134,7 @@ def test_acell_evidence(p):
     page.select_option("#evidence-new-scope", label="Cell Alpha")
     page.fill("#evidence-new-body", "Three additional livestock deaths reported.")
     page.click("#evidence-new-confirm")
-    wait_for_condition(lambda: len(evidence_state) >= 2)
+    wait_for_condition(lambda: len(evidence_state()) >= 2)
     push_evidence()
     wait_for_condition(lambda: "Wire Service Clipping" in page.inner_text("#evidence-list"))
     record("acell", "an unfiled, unreleased item shows the staged (unreleased) styling",
@@ -4324,7 +4173,7 @@ def test_acell_evidence(p):
            page.is_checked('#evidence-new-restrict-wrap input[value="OWEN-CS12"]'), "")
     page.fill("#evidence-new-title", "Field Photograph (annotated)")
     page.click("#evidence-new-confirm")
-    wait_for_condition(lambda: any(e["title"] == "Field Photograph (annotated)" for e in evidence_state))
+    wait_for_condition(lambda: any(e["title"] == "Field Photograph (annotated)" for e in evidence_state()))
     push_evidence()
     wait_for_condition(lambda: "Field Photograph (annotated)" in page.inner_text("#evidence-list"))
     record("acell", "editing evidence updates it in place once confirmed",
@@ -4354,7 +4203,7 @@ def test_acell_evidence(p):
     page.set_input_files("#evidence-new-photo", oversized_photo_path)
     page.wait_for_timeout(300)
     page.click("#evidence-new-confirm")
-    wait_for_condition(lambda: any(e["title"] == "Photo Evidence" for e in evidence_state))
+    wait_for_condition(lambda: any(e["title"] == "Photo Evidence" for e in evidence_state()))
     push_evidence()
     photo_list_text = wait_for_condition(lambda: page.inner_text("#evidence-list")
                                           if "Photo Evidence" in page.inner_text("#evidence-list") else None)
@@ -4398,7 +4247,10 @@ def test_acell_evidence(p):
     # Deleting an Operation folder doesn't delete evidence filed under
     # it -- it just becomes Unfiled (no cascade, per the backend design).
     page.once("dialog", lambda d: d.accept())
-    page.click('[data-del-op="op_1"]')
+    # (The page mints the Operation's id itself now.)
+    nightshade_id = page.evaluate("() => { var d = Object.entries(window.__dgFirestoreDocs || {}).find(([k, v]) =>"
+                                  " k.indexOf('operations/') === 0 && v.name === 'Operation Nightshade'); return d ? d[0].split('/')[1] : ''; }")
+    page.click('[data-del-op="%s"]' % nightshade_id)
     wait_for_condition(lambda: "Operation Nightshade" not in page.inner_text("#evidence-folders"))
     record("acell", "deleting an Operation removes it from the folder list",
            "Operation Nightshade" not in page.inner_text("#evidence-folders"), page.inner_text("#evidence-folders"))
@@ -4440,42 +4292,19 @@ def test_acell_evidence_pdf(p):
         window.open = function (url) { window.__openCalls.push(url); return null; };
     """)
 
-    evidence_state = []
     posts = []
+    install_firestore_backend(page)
+    tap_acell_posts(page, lambda b: posts.append(b))
+    def evidence_state():
+        return page.evaluate("() => Object.entries(window.__dgFirestoreDocs || {})"
+                             ".filter(([k]) => k.indexOf('evidence/') === 0 && k.split('/').length === 2)"
+                             ".map(([k, v]) => Object.assign({}, v, { evidence_id: k.split('/')[1] }))")
 
     def push_evidence():
         wait_for_condition(lambda: notes_firestore_listener_count(page) >= 1, timeout_ms=8000)
         push_firestore_snapshot(page, "evidence", [],
-                                 [dict(e, id=e["evidence_id"]) for e in evidence_state])
+                                 [dict(e, id=e["evidence_id"]) for e in evidence_state()])
 
-    def fake_apps_script(route):
-        req = route.request
-        url = req.url
-        if req.method == "POST":
-            body = json.loads(req.post_data or "{}")
-            posts.append(body)
-            if body.get("action") == "create_evidence":
-                evidence_state.append({
-                    "evidence_id": "ev1", "title": body.get("title", ""), "body": body.get("body", ""),
-                    "photo": body.get("photo", ""), "cell_id": "", "operation_id": "",
-                    "released": False, "restricted_to": [], "created_at": "1000",
-                })
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            if "action=list_evidence" in url:
-                res = {"status": "OK", "evidence": evidence_state}
-            elif "action=list_cells" in url:
-                res = {"status": "OK", "cells": []}
-            elif "action=list_operations" in url:
-                res = {"status": "OK", "operations": []}
-            else:
-                res = {"status": "OK"}
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-        else:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", fake_apps_script)
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(400)
@@ -4510,7 +4339,7 @@ def test_acell_evidence_pdf(p):
            page.inner_text("#evidence-new-error").strip() == "", page.inner_text("#evidence-new-error"))
 
     page.click("#evidence-new-confirm")
-    wait_for_condition(lambda: len(evidence_state) >= 1)
+    wait_for_condition(lambda: len(evidence_state()) >= 1)
     push_evidence()
     wait_for_condition(lambda: "Case File 12" in page.inner_text("#evidence-list"))
     # PDFs upload to Storage the same as photos now (Phase 4,
@@ -4575,35 +4404,12 @@ def test_acell_evidence_create_verify_retries(p):
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
     skip_acell_gate(page)
 
-    evidence_state = []
+    install_firestore_backend(page)
+    def evidence_state():
+        return page.evaluate("() => Object.entries(window.__dgFirestoreDocs || {})"
+                             ".filter(([k]) => k.indexOf('evidence/') === 0 && k.split('/').length === 2)"
+                             ".map(([k, v]) => Object.assign({}, v, { evidence_id: k.split('/')[1] }))")
 
-    def fake_apps_script(route):
-        req = route.request
-        url = req.url
-        if req.method == "POST":
-            body = json.loads(req.post_data or "{}")
-            if body.get("action") == "create_evidence":
-                evidence_state.append({
-                    "evidence_id": "ev1", "title": body.get("title", ""), "body": body.get("body", ""),
-                    "photo": body.get("photo", ""), "cell_id": "", "operation_id": "",
-                    "released": False, "restricted_to": [], "created_at": "1000",
-                })
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            if "action=list_cells" in url:
-                res = {"status": "OK", "cells": []}
-            elif "action=list_operations" in url:
-                res = {"status": "OK", "operations": []}
-            elif "action=list_evidence" in url:
-                res = {"status": "OK", "evidence": []}
-            else:
-                res = {"status": "OK"}
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-        else:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", fake_apps_script)
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(400)
@@ -4614,7 +4420,7 @@ def test_acell_evidence_create_verify_retries(p):
     page.wait_for_timeout(300)
     page.fill("#evidence-new-title", "Slow Upload Memo")
     page.click("#evidence-new-confirm")
-    wait_for_condition(lambda: len(evidence_state) >= 1)
+    wait_for_condition(lambda: len(evidence_state()) >= 1)
 
     # Deliberately held back past verifyEvidenceWrite_'s first delay
     # (400ms) but well inside its ~12.4s total retry budget -- long
@@ -4627,7 +4433,7 @@ def test_acell_evidence_create_verify_retries(p):
            and "backend didn't confirm" not in page.inner_text("#evidence-status"),
            page.inner_text("#evidence-list") + " | status: " + page.inner_text("#evidence-status"))
 
-    push_firestore_snapshot(page, "evidence", [], [dict(e, id=e["evidence_id"]) for e in evidence_state])
+    push_firestore_snapshot(page, "evidence", [], [dict(e, id=e["evidence_id"]) for e in evidence_state()])
     wait_for_condition(lambda: "Slow Upload Memo" in page.inner_text("#evidence-list")
                         or "backend didn't confirm" in page.inner_text("#evidence-status"), timeout_ms=12000)
     record("acell", "a create whose write lands later than the first check still succeeds via retry, instead of a false 'backend didn't confirm'",
@@ -4685,70 +4491,21 @@ def test_acell_sheet(p):
     briefs_only = [
         {"agent_code": "DEMO-Q5MD", "char_name": 'DeMore, "Mastery", André', "codename": "Mastery"},
     ]
-    deleted_characters = []
-    deleted_briefs_only = []
     posts = []
-
-    def fake_apps_script(route):
-        req = route.request
-        if req.method == "POST":
-            try:
-                body = json.loads(req.post_data or "{}")
-            except Exception:
-                body = {}
-            posts.append(body)
-            if body.get("action") == "update_character_field" and body.get("field") == "player_name":
-                for c in fake_characters:
-                    if c["agent_code"] == body.get("agent_code"):
-                        c["player_name"] = body.get("value", "")
-                        break
-            elif body.get("action") == "update_field" and body.get("field") == "player_name":
-                pass  # briefs-only Player Name edit isn't exercised here
-            elif body.get("action") == "delete_character":
-                code = body.get("agent_code")
-                idx = next((i for i, c in enumerate(fake_characters) if c["agent_code"] == code), None)
-                if idx is not None:
-                    row = fake_characters.pop(idx)
-                    deleted_characters.append({"agent_code": row["agent_code"],
-                                                "character_json": json.dumps({"bio": {"name": row["name"]}}),
-                                                "deleted_at": 1700000001000})
-                idx2 = next((i for i, a in enumerate(briefs_only) if a["agent_code"] == code), None)
-                if idx2 is not None:
-                    row = briefs_only.pop(idx2)
-                    deleted_briefs_only.append({"agent_code": row["agent_code"], "char_name": row["char_name"],
-                                                 "deleted_at": 1700000001000})
-            elif body.get("action") == "restore_character":
-                code = body.get("agent_code")
-                idx = next((i for i, c in enumerate(deleted_characters) if c["agent_code"] == code), None)
-                if idx is not None:
-                    row = deleted_characters.pop(idx)
-                    bio = json.loads(row["character_json"]).get("bio", {})
-                    fake_characters.append({"agent_code": row["agent_code"], "name": bio.get("name", ""),
-                                             "player_name": "", "hp": None, "san": None, "updated_at": iso(now_ms)})
-                idx2 = next((i for i, a in enumerate(deleted_briefs_only) if a["agent_code"] == code), None)
-                if idx2 is not None:
-                    row = deleted_briefs_only.pop(idx2)
-                    briefs_only.append({"agent_code": row["agent_code"], "char_name": row["char_name"], "codename": ""})
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        url = req.url
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            if "action=list_characters" in url:
-                res = {"status": "OK", "characters": fake_characters}
-            elif "action=list_cells" in url:
-                res = {"status": "OK", "cells": fake_cells}
-            elif "action=list_agent_file_only" in url:
-                res = {"status": "OK", "agents": briefs_only}
-            elif "action=list_deleted_characters" in url:
-                chars = deleted_characters + deleted_briefs_only
-                res = {"status": "OK", "characters": chars}
-            else:
-                res = {"status": "OK"}
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-        else:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", fake_apps_script)
+    # The Firestore docs the Sheet tab reads (characters, cells, briefs);
+    # delete/restore/Player Name edits are real writes to that store.
+    docs = {}
+    for c in fake_characters:
+        docs["characters/" + c["agent_code"]] = {
+            "agent_code": c["agent_code"], "player_name": c["player_name"],
+            "player_name_lc": c["player_name"].lower(), "updated_at": c["updated_at"],
+            "character_json": json.dumps({"bio": {"name": c["name"]}, "derived": {"hp": c["hp"], "san": c["san"]}})}
+    for c in fake_cells:
+        docs["cells/" + c["cell_id"]] = {k: v for k, v in c.items() if k != "cell_id"}
+    for bo in briefs_only:
+        docs["briefs/" + bo["agent_code"]] = {k: v for k, v in bo.items() if k != "agent_code"}
+    install_firestore_backend(page, docs)
+    tap_acell_posts(page, lambda body: posts.append(body))
     page.add_init_script(f"Date.now = () => {now_ms}")
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
@@ -4920,26 +4677,8 @@ def test_acell_music(p):
     posts = []
     fake_cells = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": [], "channel": "4"}]
 
-    def fake_apps_script(route):
-        req = route.request
-        if req.method == "POST":
-            body = json.loads(req.post_data or "{}")
-            posts.append(body)
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        url = req.url
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            if "action=get_playlist" in url:
-                res = {"status": "OK", "playlist": []}
-            elif "action=list_cells" in url:
-                res = {"status": "OK", "cells": fake_cells}
-            else:
-                res = {"status": "OK"}
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-        else:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", fake_apps_script)
+    install_firestore_backend(page, {"cells/cell_1": {k: v for k, v in fake_cells[0].items() if k != "cell_id"}})
+    tap_acell_posts(page, lambda body: posts.append(body))
 
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.click('.tw[data-tab="music"]')
@@ -9856,42 +9595,21 @@ def test_notes_evidence_integration(p):
 
 
 def test_notes_operations_read_firestore(p):
-    """Group 1 of moving reads off Apps Script: Notes' Evidence Operation
-    tags read Firestore operations instead of list_operations. An item
-    filed under an Operation from before Operations were mirrored
-    (2026-09-19) asks the Sheet once and merges it in."""
+    """Notes' Evidence Operation tags read Firestore operations -- no
+    Apps Script call."""
     page = p.new_page()
     page.set_default_timeout(10000)
     errs = collect_errors(page)
-    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    cell = {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"],
-            "member_names": {"OWEN-CS12": "Owen Castillo"}}
-    seed_cells_docs(page, [cell])
-    seed_characters_docs(page, [{"agent_code": "OWEN-CS12", "name": "Owen Castillo"}])
-    page.add_init_script("""
-        window.__dgFirestoreDocs['operations/op_fs'] = { operation_id: 'op_fs', cell_id: 'cell_1', name: 'Mirrored Op', created_at: 2 };
-    """)
-    calls = []
-
-    def fake_apps_script(route):
-        url = route.request.url
-        if route.request.method == "POST" or "callback=" not in url:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        cb = url.split("callback=")[1].split("&")[0]
-        action = url.split("action=")[1].split("&")[0] if "action=" in url else ""
-        calls.append(action)
-        res = {"status": "OK"}
-        if action == "list_operations":
-            res["operations"] = [{"operation_id": "op_legacy", "cell_id": "cell_1", "name": "Legacy Op", "created_at": 1}]
-        elif action == "list_cell_notes":
-            res.update({"notes": {}, "identities": {"OWEN-CS12": {"color": "#2f855a", "font": "kalam"}}})
-        elif action == "list_evidence":
-            res.update({"evidence": [], "seen": {}})
-        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-    page.route("**/script.google.com/**", fake_apps_script)
+    install_firestore_backend(page, {
+        "cells/cell_1": {"name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"],
+                         "member_names": {"OWEN-CS12": "Owen Castillo"}},
+        "characters/OWEN-CS12": character_doc("OWEN-CS12", {"bio": {"name": "Owen Castillo"}}, ""),
+        "agent_identity/OWEN-CS12": {"agent_code": "OWEN-CS12", "color": "#2f855a", "font": "kalam"},
+        "operations/op_fs": {"operation_id": "op_fs", "cell_id": "cell_1", "name": "Mirrored Op", "created_at": 2},
+    })
+    apps_script = watch_apps_script(page)
     page.add_init_script("""
         try { localStorage.setItem('dg_agent_roster', JSON.stringify({
             'OWEN-CS12': { code: 'OWEN-CS12', char_name: 'Owen Castillo', saved_at: Date.now() } })); } catch (e) {}
@@ -9902,21 +9620,15 @@ def test_notes_operations_read_firestore(p):
         page.click(".dg-notes-color-swatch")
         page.click(".dg-notes-identity-confirm")
     wait_for_condition(lambda: notes_firestore_listener_count(page) >= 3, timeout_ms=8000)
-    page.wait_for_timeout(500)
-    record("notes", "opening Notes sends no list_operations when Firestore has the Operations",
-           "list_operations" not in calls, str(calls))
     push_firestore_snapshot(page, "evidence", [["visible_to", "array-contains-any", ["OWEN-CS12", "ALL"]]], [
-        {"id": "ev1", "evidence_id": "ev1", "title": "Mirrored Item", "body": "", "photo": "", "cell_id": "cell_1", "operation_id": "op_fs", "created_at": "2000"},
-        {"id": "ev2", "evidence_id": "ev2", "title": "Old Item", "body": "", "photo": "", "cell_id": "cell_1", "operation_id": "op_legacy", "created_at": "1000"}])
-    _pump_until(page, lambda: "Legacy Op" in page.inner_text("#dg-notes-evidence-mount"), timeout_ms=8000)
+        {"id": "ev1", "evidence_id": "ev1", "title": "Mirrored Item", "body": "", "photo": "", "cell_id": "cell_1", "operation_id": "op_fs", "created_at": "2000"}])
+    wait_for_condition(lambda: "Mirrored Op" in page.inner_text("#dg-notes-evidence-mount"), timeout_ms=8000)
     txt = page.inner_text("#dg-notes-evidence-mount")
-    record("notes", "an Operation from Firestore labels its Evidence without asking the Sheet",
-           "Mirrored Op" in txt, txt[:200])
-    record("notes", "an Operation missing from Firestore is fetched from the Sheet once and labels its item",
-           "Legacy Op" in txt and calls.count("list_operations") == 1, str(calls) + " / " + txt[:200])
+    record("notes", "an Operation from Firestore labels its Evidence", "Mirrored Op" in txt, txt[:200])
+    page.wait_for_timeout(500)
+    record("notes", "Notes makes no Apps Script call (the Sheet is retired)", apps_script == [], str(apps_script))
     record("notes", "no JS errors reading Operations from Firestore", not errs, str(errs))
     page.close()
-
 
 def test_notes_evidence_photo_loading_indicator(p):
     """Live report: opening an Evidence item "feels slow" -- the actual
@@ -11962,7 +11674,12 @@ def main():
             return page
         browser.new_page = _new_page_blocking_live_backend
 
+        # DG_TEST_ONLY=test_a,test_b runs just those tests (same browser
+        # setup, same live-backend blocking as a full run).
+        only = set(filter(None, os.environ.get("DG_TEST_ONLY", "").split(",")))
         def safe(fn, *args, area="unknown"):
+            if only and fn.__name__ not in only:
+                return None
             try:
                 return fn(*args)
             except Exception as e:
