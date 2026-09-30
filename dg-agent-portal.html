@@ -2031,8 +2031,74 @@ footer.site-footer{ font-family:'Courier Prime',monospace; text-align:center; co
 <footer class="site-footer">Delta Green is a trademark of Arc Dream Publishing. Unofficial fan-made campaign tools.</footer>
 
 <script src="assets/agent-code.js"></script>
+<script src="assets/dg-store.js"></script>
 <script>
+// Only the legacy Drive image proxy (imgdata, for a pre-Storage
+// 'gdrive:' photo link) still calls Apps Script -- and none remain once
+// runMigrateDriveFilesToStorageNow() has run. Everything else below
+// goes to Firestore through afFetch()/afJsonp().
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
+
+/* ── Firestore stand-ins for the retired Apps Script calls ──
+   The Google Sheet behind the old backend is retired. These keep every
+   call site on this page exactly as it was -- same payloads, same
+   replies -- while the data goes to Firestore via assets/dg-store.js:
+     afFetch(payload)  was fetch(APPS_SCRIPT_URL, {body: JSON.stringify(payload)})
+                       -> resolves to { json(): reply } like a fetch Response
+     afJsonp(kind, code, callbackName, scriptEl)
+                       was a <script src="...?code=...&callback=..."> lookup;
+                       calls window[callbackName](reply) the same way, or
+                       scriptEl.onerror() on a connection failure. */
+function afReply_(obj) { return { ok: true, json: function () { return Promise.resolve(obj); } }; }
+function afFetch(payload) {
+  const p = Object.assign({}, payload || {});
+  const code = String(p.agent_code || '').trim().toUpperCase();
+  delete p.token;
+  let work;
+  switch (p.action) {
+    case 'update_field':
+      if (!p.field || p.field === 'agent_code') return Promise.reject(new Error('Field not allowed: ' + p.field));
+      work = window.dgStore.updateBrief(code, { [p.field]: p.value }).then(() => ({ status: 'OK' }));
+      break;
+    case 'update_medical':
+      work = window.dgStore.updateBrief(code, { medical_log: p.medical_log || '' }).then(() => ({ status: 'OK' }));
+      break;
+    case 'update_aar':
+      work = window.dgStore.updateBrief(code, { aar_log: p.aar_log || '' }).then(() => ({ status: 'OK' }));
+      break;
+    case 'save_plate':
+      if (!p.storage_url) return Promise.reject(new Error('Plate image must be uploaded to Storage first.'));
+      work = window.dgStore.updateBrief(code, { [p.field]: p.storage_url }).then(() => ({ status: 'OK' }));
+      break;
+    case 'generate_prompt':
+    case 'generate_plate_image': {
+      delete p.action;
+      const call = payload.action === 'generate_prompt' ? window.dgStore.generatePrompt : window.dgStore.generatePlateImage;
+      work = call(code, p).catch(err => ({ status: 'ERROR', message: (err && err.message) || 'Request failed.' }));
+      break;
+    }
+    default: {
+      // A Profiling / brief submission (no action). The photo was already
+      // uploaded to Storage; record its link only when there is a new one.
+      if (p.ref_storage_url) p.ref_image_link = p.ref_storage_url;
+      delete p.ref_storage_url; delete p.ref_image_base64; delete p.ref_image; delete p.action;
+      work = window.dgStore.submitBrief(p).then(c => ({ status: 'OK', agent_code: c }));
+    }
+  }
+  return work.then(afReply_);
+}
+function afJsonp(kind, code, cbName, scriptEl) {
+  const get = kind === 'character'
+    ? window.dgStore.getCharacter(code).then(d => d ? { status: 'OK', agent_code: d.agent_code, character_json: d.character_json, updated_at: d.updated_at } : { status: 'NOT_FOUND' })
+    : window.dgStore.getBrief(code).then(d => d ? { status: 'OK', data: d } : { status: 'NOT_FOUND' });
+  get.then(reply => {
+    const cb = window[cbName];
+    if (typeof cb === 'function') cb(reply);
+  }, () => {
+    if (scriptEl && typeof scriptEl.onerror === 'function') scriptEl.onerror();
+    else if (typeof window[cbName] === 'function') window[cbName]({ status: 'ERROR' });
+  });
+}
 
 /* ── LOCAL PERSISTENCE ── */
 const LS_KEY = 'dg_last_agent';
@@ -2170,7 +2236,7 @@ function idsImportAgent() {
 
   const s = document.createElement('script');
   s.id = '_ids_script';
-  s.src = APPS_SCRIPT_URL + '?code=' + encodeURIComponent(code) + '&callback=' + cbName;
+  s.dataset.af = "1"; afJsonp('lookup', code, cbName, s);
   document.head.appendChild(s);
 }
 
@@ -2871,6 +2937,19 @@ function loadFirebaseScriptTag(src, cb) {
   var s = document.createElement('script');
   s.src = src;
   s.onload = cb;
+  // One copy of each Firebase SDK file per page: reuse a tag another
+  // widget already added (loaded, or still loading) instead of adding
+  // a second -- two copies of firebase-app-compat.js left every
+  // Firestore call on the page hanging (BUGFIXES.md, Sheet retired).
+  var dgPrev = Array.prototype.filter.call(document.scripts, function (x) { return x !== s && x.src === s.src && x.dataset.dgFailed !== '1'; })[0];
+  if (dgPrev) {
+    if (dgPrev.dataset.dgLoaded === '1') { if (s.onload) s.onload(); return; }
+    dgPrev.addEventListener('load', function () { if (s.onload) s.onload(); }, { once: true });
+    dgPrev.addEventListener('error', function () { if (s.onerror) s.onerror(); }, { once: true });
+    return;
+  }
+  s.addEventListener('load', function () { s.dataset.dgLoaded = '1'; });
+  s.addEventListener('error', function () { s.dataset.dgFailed = '1'; });
   document.head.appendChild(s);
 }
 function ensureFirebaseApi(cb) {
@@ -3048,7 +3127,7 @@ async function handleSubmit() {
   status.className='ok'; status.textContent='Brief received. Stand by for orders.';
   btn.textContent='Submitted';
   try {
-    await fetch(APPS_SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
+    await afFetch(payload);
   } catch(e){ console.error(e); }
   // reportValidity() above guarantees a complete brief, so the Agent
   // File is unlocked -- go straight there instead of showing the old
@@ -3726,13 +3805,13 @@ function autoCreateBriefFromCharacterThenRetry_(code, onCreated, onGiveUp) {
       agent_code: code,
       submitted_at: new Date().toISOString()
     };
-    fetch(APPS_SCRIPT_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(payload) })
+    afFetch(payload)
       .then(function () { setTimeout(onCreated, 700); })
       .catch(onGiveUp);
   };
   const s = document.createElement('script');
   s.id = '_acb_script';
-  s.src = APPS_SCRIPT_URL + '?action=load_character&code=' + encodeURIComponent(code) + '&callback=_acbCallback';
+  s.dataset.af = "1"; afJsonp('character', code, '_acbCallback', s);
   s.onerror = onGiveUp;
   document.head.appendChild(s);
 }
@@ -3770,7 +3849,7 @@ function loadAgentCode(retrying){
   };
   const s=document.createElement('script');
   s.id='_agent_script';
-  s.src=APPS_SCRIPT_URL+'?code='+encodeURIComponent(code)+'&callback=_agentLookupCallback';
+  s.dataset.af = "1"; afJsonp('lookup', code, '_agentLookupCallback', s);
   s.onerror=()=>{status.textContent='Connection error. Try again.';};
   document.head.appendChild(s);
 }
@@ -3876,17 +3955,13 @@ function savePromptToDossier(agentCode) {
   if (!prompt) { if(status) status.textContent = 'No prompt to save.'; return; }
   if (!agentCode) { if(status) status.textContent = 'No agent code.'; return; }
   if(status) status.textContent = 'Saving…';
-  fetch(APPS_SCRIPT_URL, {
-    method:'POST', mode:'no-cors',
-    headers:{'Content-Type':'text/plain'},
-    body: JSON.stringify({
+  afFetch({
       action: 'update_field',
       agent_code: agentCode,
       token: agentToken(agentCode),
       field: 'banana_prompt',
       value: prompt
-    })
-  }).then(() => {
+    }).then(() => {
     if(status) status.textContent = 'Prompt saved.';
     setTimeout(() => { if(status) status.textContent=''; }, 3000);
   }).catch(() => { if(status) status.textContent = 'Error — try again.'; });
@@ -3925,17 +4000,13 @@ function generateDossierPrompt(agentCode) {
   ta.value = '';
   ta.placeholder = 'Generating…';
 
-  fetch(APPS_SCRIPT_URL, {
-    method: 'POST',
-    headers: {'Content-Type': 'text/plain'},
-    body: JSON.stringify({
+  afFetch({
       action: 'generate_prompt',
       agent_code: code,
       character: character,
       injuries: [],
       mode: 'base'
     })
-  })
   .then(function(r) { return r.json(); })
   .then(function(json) {
     btn.disabled = false;
@@ -4033,7 +4104,7 @@ function loadAgentFile(retrying) {
 
   const s = document.createElement('script');
   s.id = '_af_script';
-  s.src = APPS_SCRIPT_URL + '?code=' + encodeURIComponent(code) + '&callback=_afLookupCallback';
+  s.dataset.af = "1"; afJsonp('lookup', code, '_afLookupCallback', s);
   s.onerror = () => { status.textContent = 'Connection error.'; };
   document.head.appendChild(s);
 }
@@ -4072,7 +4143,7 @@ function refreshAgentFileFromServer_(code) {
   };
   const s = document.createElement('script');
   s.id = cbName;
-  s.src = APPS_SCRIPT_URL + '?code=' + encodeURIComponent(code) + '&callback=' + cbName;
+  s.dataset.af = "1"; afJsonp('lookup', code, cbName, s);
   s.onerror = function () { delete window[cbName]; };
   document.head.appendChild(s);
 }
@@ -4202,7 +4273,7 @@ function checkAgentKia(code) {
   };
   const s = document.createElement('script');
   s.id = '_af_kia_script';
-  s.src = APPS_SCRIPT_URL + '?action=load_character&code=' + encodeURIComponent(code) + '&callback=' + cbName;
+  s.dataset.af = "1"; afJsonp('character', code, cbName, s);
   document.head.appendChild(s);
 }
 
@@ -4247,17 +4318,13 @@ function initEra(era) {
   afData.active_eras = JSON.stringify(existing);
   persistAgent(afCode, afData);
 
-  fetch(APPS_SCRIPT_URL, {
-    method:'POST', mode:'no-cors',
-    headers:{'Content-Type':'text/plain'},
-    body: JSON.stringify({
+  afFetch({
       action: 'update_field',
       agent_code: afCode,
       token: agentToken(afCode),
       field: 'active_eras',
       value: afData.active_eras
-    })
-  }).catch(e => console.error('Era save:', e));
+    }).catch(e => console.error('Era save:', e));
 
   document.getElementById('af-era-select').style.display = 'none';
   document.getElementById('af-pages-wrap').style.display = 'block';
@@ -4453,14 +4520,8 @@ function setPreviewEra(era) {
   afData.face_plate_url = faceUrl;
   persistAgent(afCode, afData);
   updatePreviewBadges();
-  fetch(APPS_SCRIPT_URL, {
-    method: 'POST', mode: 'no-cors', headers: {'Content-Type':'text/plain'},
-    body: JSON.stringify({ action: 'update_field', agent_code: afCode, token: agentToken(afCode), field: 'campaign_era', value: era })
-  }).catch(() => {});
-  fetch(APPS_SCRIPT_URL, {
-    method: 'POST', mode: 'no-cors', headers: {'Content-Type':'text/plain'},
-    body: JSON.stringify({ action: 'update_field', agent_code: afCode, token: agentToken(afCode), field: 'face_plate_url', value: faceUrl })
-  }).catch(() => {});
+  afFetch({ action: 'update_field', agent_code: afCode, token: agentToken(afCode), field: 'campaign_era', value: era }).catch(() => {});
+  afFetch({ action: 'update_field', agent_code: afCode, token: agentToken(afCode), field: 'face_plate_url', value: faceUrl }).catch(() => {});
 }
 
 function toggleEraAccordion(era) {
@@ -4560,16 +4621,10 @@ function saveGeneratedPlate(dataUrl, era, type, imageName) {
     // Plate for the era that's currently active is the main photo.
     if (afData && type === 'face' && (afData.campaign_era || afEraPages[0]) === era) {
       afData.face_plate_url = storageUrl;
-      fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors', headers: {'Content-Type':'text/plain'},
-        body: JSON.stringify({ action: 'update_field', agent_code: afCode, token: agentToken(afCode), field: 'face_plate_url', value: storageUrl })
-      }).catch(() => {});
+      afFetch({ action: 'update_field', agent_code: afCode, token: agentToken(afCode), field: 'face_plate_url', value: storageUrl }).catch(() => {});
       persistAgent(afCode, afData);
     }
-    return fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors',
-      headers: {'Content-Type':'text/plain'},
-      body: JSON.stringify({
+    return afFetch({
         action: 'save_plate',
         agent_code: afCode,
         token: agentToken(afCode),
@@ -4577,8 +4632,7 @@ function saveGeneratedPlate(dataUrl, era, type, imageName) {
         storage_url: storageUrl,
         image_name: imageName || (type + '_' + era + '_generated.png'),
         char_name: charName
-      })
-    });
+      });
   }).catch(e => { console.error('Plate save:', e); throw e; });
 }
 
@@ -4668,11 +4722,7 @@ function generatePlateImage(era, mode, btn) {
   const payload = { action: 'generate_plate_image', agent_code: afCode, token: agentToken(afCode), prompt: prompt };
 
   function send() {
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: {'Content-Type': 'text/plain'},
-      body: JSON.stringify(payload)
-    })
+    afFetch(payload)
     .then(function(r) { return r.json(); })
     .then(function(json) {
       if (json.status === 'OK' && json.image_base64) {
@@ -4826,20 +4876,14 @@ function autoGenerateEraPrompts(era) {
 
   // Generate Field Portrait (mode: base = headshot)
   if (needsPortrait) {
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: {'Content-Type': 'text/plain'},
-      body: JSON.stringify({ action: 'generate_prompt', agent_code: afCode, token: agentToken(afCode), character: character, injuries: [], mode: 'base', era: era })
-    })
+    afFetch({ action: 'generate_prompt', agent_code: afCode, token: agentToken(afCode), character: character, injuries: [], mode: 'base', era: era })
     .then(function(r) { return r.json(); })
     .then(function(json) {
       if (json.status === 'OK' && json.prompt) {
         ta0.value = json.prompt;
         if (st0) { st0.textContent = 'Generated.'; setTimeout(function(){ st0.textContent=''; }, 3000); }
         // Save to Sheet
-        fetch(APPS_SCRIPT_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'},
-          body: JSON.stringify({ action:'update_field', agent_code: afCode, token: agentToken(afCode), field: 'era_' + era + '_mode0', value: json.prompt })
-        }).catch(function(e){ console.error(e); });
+        afFetch({ action:'update_field', agent_code: afCode, token: agentToken(afCode), field: 'era_' + era + '_mode0', value: json.prompt }).catch(function(e){ console.error(e); });
         if (afData) afData['era_' + era + '_mode0'] = json.prompt;
         persistAgent(afCode, afData);
       } else {
@@ -4857,19 +4901,13 @@ function autoGenerateEraPrompts(era) {
 
   // Generate Field Reference (mode: outfit = full body with outfit)
   if (needsReference) {
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: {'Content-Type': 'text/plain'},
-      body: JSON.stringify({ action: 'generate_prompt', agent_code: afCode, token: agentToken(afCode), character: character, injuries: [], mode: 'outfit', era: era })
-    })
+    afFetch({ action: 'generate_prompt', agent_code: afCode, token: agentToken(afCode), character: character, injuries: [], mode: 'outfit', era: era })
     .then(function(r) { return r.json(); })
     .then(function(json) {
       if (json.status === 'OK' && json.prompt) {
         ta1.value = json.prompt;
         if (st1) { st1.textContent = 'Generated.'; setTimeout(function(){ st1.textContent=''; }, 3000); }
-        fetch(APPS_SCRIPT_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'},
-          body: JSON.stringify({ action:'update_field', agent_code: afCode, token: agentToken(afCode), field: 'era_' + era + '_mode1', value: json.prompt })
-        }).catch(function(e){ console.error(e); });
+        afFetch({ action:'update_field', agent_code: afCode, token: agentToken(afCode), field: 'era_' + era + '_mode1', value: json.prompt }).catch(function(e){ console.error(e); });
         if (afData) afData['era_' + era + '_mode1'] = json.prompt;
         persistAgent(afCode, afData);
       } else {
@@ -4895,11 +4933,7 @@ function saveEraPrompt(btn) {
   // era used to silently overwrite.
   const fieldMap = {'mode0': 'era_' + era + '_mode0', 'mode1': 'era_' + era + '_mode1'};
   const field = fieldMap[mode];
-  fetch(APPS_SCRIPT_URL, {
-    method: 'POST', mode: 'no-cors',
-    headers: {'Content-Type':'text/plain'},
-    body: JSON.stringify({ action: 'update_field', agent_code: afCode, token: agentToken(afCode), field: field, value: val })
-  }).then(() => {
+  afFetch({ action: 'update_field', agent_code: afCode, token: agentToken(afCode), field: field, value: val }).then(() => {
     if (status) { status.textContent = 'Saved.'; setTimeout(() => status.textContent = '', 2500); }
     if (afData) afData[field] = val;
   }).catch(() => { if (status) status.textContent = 'Error.'; });
@@ -4998,11 +5032,7 @@ function generateMedPrompt(btn) {
   btn.textContent = 'Generating…';
   status.textContent = '';
   box.innerHTML = '<span style="color:#b8a878;font-style:italic;">Generating prompt…</span>';
-  fetch(APPS_SCRIPT_URL, {
-    method: 'POST',
-    headers: {'Content-Type': 'text/plain'},
-    body: JSON.stringify({ action: 'generate_prompt', agent_code: afCode, token: agentToken(afCode), character: character, injuries: injuries })
-  })
+  afFetch({ action: 'generate_prompt', agent_code: afCode, token: agentToken(afCode), character: character, injuries: injuries })
   .then(function(r) { return r.json(); })
   .then(function(json) {
     btn.disabled = false;
@@ -5014,11 +5044,7 @@ function generateMedPrompt(btn) {
       entries[idx].appearance_prompt = json.prompt;
       afData.medical_log = JSON.stringify(entries);
       persistAgent(afCode, afData);
-      fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors',
-        headers: {'Content-Type':'text/plain'},
-        body: JSON.stringify({ action: 'update_medical', agent_code: afCode, token: agentToken(afCode), medical_log: afData.medical_log })
-      }).catch(function(e) { console.error(e); });
+      afFetch({ action: 'update_medical', agent_code: afCode, token: agentToken(afCode), medical_log: afData.medical_log }).catch(function(e) { console.error(e); });
     } else {
       box.innerHTML = '<span style="color:#8b1a1a;font-style:italic;">Error: ' + (json.message || 'Unknown') + '</span>';
       btn.textContent = 'Retry';
@@ -5086,11 +5112,7 @@ function generateMedFormPrompt() {
   ta.value = '';
   ta.placeholder = 'Generating…';
 
-  fetch(APPS_SCRIPT_URL, {
-    method: 'POST',
-    headers: {'Content-Type': 'text/plain'},
-    body: JSON.stringify({ action: 'generate_prompt', agent_code: afCode, token: agentToken(afCode), character: character, injuries: allInjuries })
-  })
+  afFetch({ action: 'generate_prompt', agent_code: afCode, token: agentToken(afCode), character: character, injuries: allInjuries })
   .then(function(r) { return r.json(); })
   .then(function(json) {
     btn.disabled = false;
@@ -5175,11 +5197,7 @@ function saveMedEntry() {
     medical_log: JSON.stringify(existing)
   };
 
-  fetch(APPS_SCRIPT_URL, {
-    method: 'POST', mode: 'no-cors',
-    headers: {'Content-Type':'text/plain'},
-    body: JSON.stringify(payload)
-  }).then(() => {
+  afFetch(payload).then(() => {
     status.textContent = 'Entry filed.';
     if (!afData) afData = {};
     afData.medical_log = JSON.stringify(existing);
@@ -5343,11 +5361,7 @@ function saveAarEntry() {
     aar_log: JSON.stringify(existing)
   };
 
-  fetch(APPS_SCRIPT_URL, {
-    method: 'POST', mode: 'no-cors',
-    headers: {'Content-Type':'text/plain'},
-    body: JSON.stringify(payload)
-  }).then(() => {
+  afFetch(payload).then(() => {
     status.textContent = 'Report filed.';
     if (!afData) afData = {};
     afData.aar_log = JSON.stringify(existing);

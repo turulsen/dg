@@ -2,8 +2,8 @@
    CLOUD SAVE (this hub's addition, not part of the upstream character
    creator)
 
-   Automatic background sync of the current character to the Agent
-   Portal's Google Apps Script backend, keyed by an Agent Code -- so a
+   Automatic background sync of the current character to Firestore
+   (characters/{code}, via assets/dg-store.js), keyed by an Agent Code -- so a
    character built on one device can be picked up on another without an
    export/import file changing hands. Auto-starts on the first edit made
    once the agent has a real name (the same "is this actually a
@@ -20,17 +20,12 @@
    Only loadFromCloud() (below) is still an explicit action, since
    pulling a character down inherently needs a code from the player.
 
-   Uses the exact same APPS_SCRIPT_URL and no-cors/keepalive POST pattern
-   agent-portal-export.js already uses for Export to Agent File -- not a
-   new backend integration, just a new `action` on the same endpoint.
-   Requires a matching addition to the Apps Script project itself (see
-   character-cloud-save-addition.gs, handed over separately) -- deployed
-   and confirmed working.
+   Used to go through the Apps Script backend and its Google Sheet;
+   that's retired -- load and save go straight to Firestore now.
    ══════════════════════════════════════════════ */
 (function () {
     "use strict";
 
-    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
     const CLOUD_CODE_KEY = 'dg_stats_cloud_code';
     const SYNC_DEBOUNCE_MS = 4000;
     const ROSTER_KEY = 'dg_agent_roster';
@@ -67,27 +62,6 @@
     // same algorithm before this file existed.
     function genCloudCode(name) {
         return window.dgAgentCode.gen(name);
-    }
-
-    // Backend hardening: save_character now needs a per-Agent secret
-    // token (see requireAgentToken_() in Code.gs) -- mints and persists
-    // one into the same dg_agent_roster entry rosterUpsert() writes to,
-    // the first time this browser needs one for a given code. See the
-    // matching agentToken() in dg-agent-portal.html for the fuller
-    // rationale (no server round trip needed, since every write here is
-    // a fire-and-forget mode:'no-cors' POST that can't read a response
-    // body to learn a server-issued token anyway).
-    function agentToken(code) {
-        if (!code) return '';
-        try {
-            const roster = JSON.parse(localStorage.getItem(ROSTER_KEY) || '{}');
-            if (roster[code] && roster[code].token) return roster[code].token;
-            const token = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
-                : 'tok_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2);
-            roster[code] = Object.assign({ code: code }, roster[code] || {}, { token: token });
-            localStorage.setItem(ROSTER_KEY, JSON.stringify(roster));
-            return token;
-        } catch (e) { return ''; }
     }
 
     function getCloudCode() {
@@ -128,28 +102,15 @@
         // use) now needs that device's own claimed token, same as every
         // other player-owned write, so a mismatch here is the expected
         // shape of "this device hasn't been recovered yet," not a bug.
-        fetch(APPS_SCRIPT_URL, {
-            method: 'POST', keepalive: true,
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({
-                action: 'save_character',
-                agent_code: code,
-                token: agentToken(code),
-                character_json: JSON.stringify(state),
-                // Also sent as its own top-level field (not just buried in
-                // character_json) so the backend can write it to its own
-                // queryable column -- see the Cover Identity addition,
-                // which looks characters up by this field directly rather
-                // than scanning and JSON-parsing every row's blob.
-                player_name: state.bio?.player_name || '',
-            }),
-        }).then(r => r.json()).then(res => {
-            if (res && res.status === 'OK') {
-                renderStatus('☁ Synced — code ' + code);
-            } else {
-                renderStatus('☁ Not synced — this code is claimed on a different device. Ask your Handler to reset its token.');
-            }
-        }).catch(() => { /* network error -- silent, same as every other Apps Script call in this app */ });
+        // Straight to Firestore (characters/{code}) -- the Sheet this used
+        // to go through is retired. dgStore signs this tab in as the
+        // Agent first (Firestore rules only let an Agent write its own
+        // code's doc).
+        window.dgStore.saveCharacter(code, state).then(() => {
+            renderStatus('☁ Synced — code ' + code);
+        }).catch(err => {
+            renderStatus('☁ Not synced — ' + ((err && err.message) || 'connection problem') + '. Your changes are kept on this device and sync on the next edit.');
+        });
     }
 
     // The Cover Identity this device's player typed into the Hub (hub.html
@@ -324,15 +285,15 @@
             if (codeInput) codeInput.value = '';
         };
 
-        const script = document.createElement('script');
-        script.id = '_dg_cloud_load_script';
-        script.src = APPS_SCRIPT_URL + '?action=load_character&code=' + encodeURIComponent(code) + '&callback=' + cbName;
-        script.onerror = () => {
+        // characters/{code} in Firestore (the Sheet is retired). Same
+        // reply shape the old load_character JSONP gave the handler above.
+        window.dgStore.getCharacter(code).then(doc => {
+            window[cbName](doc ? { status: 'OK', agent_code: code, character_json: doc.character_json, updated_at: doc.updated_at } : { status: 'NOT_FOUND' });
+        }).catch(() => {
             delete window[cbName];
             if (status) status.textContent = 'Connection error. Try again.';
             if (typeof opts.onSettled === 'function') opts.onSettled();
-        };
-        document.head.appendChild(script);
+        });
     }
 
     // Called when a `?load=` deep link's Agent Code has no cloud character
@@ -408,10 +369,8 @@
                 nameEl.value = res.data.char_name;
             }
         };
-        const script = document.createElement('script');
-        script.id = '_dg_recruit_af_script';
-        script.src = APPS_SCRIPT_URL + '?code=' + encodeURIComponent(code) + '&callback=' + cbName;
-        document.head.appendChild(script);
+        window.dgStore.getBrief(code).then(b => window[cbName](b ? { status: 'OK', data: b } : { status: 'NOT_FOUND' }))
+            .catch(() => { delete window[cbName]; });
     }
 
     window.dgCloudSave = { loadFromCloud, getCloudCode, ensureCloudCode };

@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <script src="assets/js-error-banner.js" async></script>
+<script src="assets/dg-store.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Delta Green — Hub</title>
 <meta name="robots" content="noindex, nofollow">
@@ -287,11 +288,11 @@
             addLine('agents_loaded: ' + res.agents.length);
           } catch (e) { /* best effort -- agent-hub.html's own lookup still covers this */ }
         };
-        var script = document.createElement('script');
-        script.id = cbName;
-        script.src = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec'
-          + '?action=find_by_player_name&name=' + encodeURIComponent(name) + '&callback=' + cbName;
-        document.head.appendChild(script);
+        // Firestore (assets/dg-store.js) -- same reply shape as the old
+        // find_by_player_name JSONP this handler was written for.
+        window.dgStore.findByPlayerName(name).then(function (agents) {
+          window[cbName]({ status: 'OK', agents: agents });
+        }, function () { delete window[cbName]; addLine('agent_lookup_failed'); });
       } catch (e) { /* best effort -- localStorage unavailable (private mode etc.) */ }
     }
 

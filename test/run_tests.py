@@ -9,7 +9,8 @@ Usage:
     python3 -m http.server 8949 &
     python3 test/run_tests.py
 """
-import json, os, sys, time
+import json
+import re, os, sys, time
 from playwright.sync_api import sync_playwright
 
 BASE = os.environ.get("DG_TEST_BASE", "http://127.0.0.1:8949")
@@ -20,6 +21,11 @@ RESULTS_PATH = os.path.join(HERE, "results.json")
 results = []
 
 def record(area, name, ok, detail=""):
+    # A detail that isn't plain JSON (e.g. a re.Match) used to crash the
+    # results.json write at the very end of a full run.
+    if not isinstance(detail, (str, int, float, bool, type(None))):
+        detail = str(detail)
+    ok = bool(ok)
     results.append({"area": area, "name": name, "ok": ok, "detail": detail})
     mark = "PASS" if ok else "FAIL"
     print(f"[{mark}] {area} :: {name}" + (f" -- {detail}" if detail and not ok else ""))
@@ -254,11 +260,25 @@ NOTES_FIRESTORE_STUB = """
       // write to, so a test can seed a Cell via push_firestore_snapshot()
       // OR via a plain docRef.set() and have .get() see either. Ignores
       // `wheres` (no test needs a real filtered query yet).
+      // '==' and 'array-contains-any' where() clauses are honoured
+      // (dgStore's Load My Agents / handout notes / seen-mark queries).
       get: function () {
+        // Every query read, so a test can count lookups (retries etc.).
+        (window.__dgFsQueries = window.__dgFsQueries || []).push({ path: path, wheres: wheres });
+        if (window.__dgFsHang) return new Promise(function () {});
+        if (window.__dgFsFail) return Promise.reject(new Error('stub: Firestore unavailable'));
         var prefix = path + '/';
         var docs = Object.keys(window.__dgFirestoreDocs || {})
           .filter(function (p) { return p.indexOf(prefix) === 0 && p.slice(prefix.length).indexOf('/') === -1; })
-          .map(function (p) { return { id: p.slice(prefix.length), data: function () { return window.__dgFirestoreDocs[p]; } }; });
+          .filter(function (p) {
+            var d = window.__dgFirestoreDocs[p] || {};
+            return wheres.every(function (w) {
+              if (w[1] === '==') return d[w[0]] === w[2];
+              if (w[1] === 'array-contains-any') return Array.isArray(d[w[0]]) && d[w[0]].some(function (x) { return w[2].indexOf(x) !== -1; });
+              return true;
+            });
+          })
+          .map(function (p) { return { id: p.slice(prefix.length), ref: makeCollectionRef(path).doc(p.slice(prefix.length)), data: function () { return window.__dgFirestoreDocs[p]; } }; });
         return Promise.resolve({ forEach: function (fn) { docs.forEach(fn); }, docs: docs, empty: docs.length === 0 });
       },
       onSnapshot: function (success, error) {
@@ -285,11 +305,19 @@ NOTES_FIRESTORE_STUB = """
   }
   function writeDoc(op, docPath, data, opts) {
     window.__dgFirestoreWrites.push({ op: op, path: docPath, data: data, opts: opts });
-    if (op === 'delete') { delete window.__dgFirestoreDocs[docPath]; return; }
-    if (op === 'update' || (opts && opts.merge)) {
+    if (op === 'delete') { delete window.__dgFirestoreDocs[docPath]; }
+    else if (op === 'update' || (opts && opts.merge)) {
       window.__dgFirestoreDocs[docPath] = Object.assign({}, window.__dgFirestoreDocs[docPath] || {}, data);
     } else {
       window.__dgFirestoreDocs[docPath] = data;
+    }
+    if (window.__dgBackendHook) {
+      try { window.__dgBackendHook('write', { op: op, path: docPath, data: data || null }); } catch (e) {}
+    }
+    // install_firestore_backend(): the store outlives a navigation in
+    // this tab, like a real backend would.
+    if (window.__dgFsPersist) {
+      try { sessionStorage.setItem('__dgFsDocs', JSON.stringify(window.__dgFirestoreDocs)); } catch (e) {}
     }
   }
   var _dgAutoIdCounter = 0;
@@ -311,7 +339,21 @@ NOTES_FIRESTORE_STUB = """
       return {
         __path: docPath,
         collection: function (name) { return makeCollectionRef(docPath + '/' + name); },
-        get: function () { return Promise.resolve(docSnapshot(docPath)); },
+        get: function () {
+          // __dgFsHang / __dgFsFail: a test can make every read never
+          // answer, or fail, to exercise loading gates and error paths.
+          if (window.__dgFsHang) return new Promise(function () {});
+          if (window.__dgFsFail) return Promise.reject(new Error('stub: Firestore unavailable'));
+          // _route_backend(): a test's Python respond() answers reads of
+          // characters/ and briefs/ ('__local__' = use this store).
+          if (window.__dgBackendHook) {
+            return Promise.resolve(window.__dgBackendHook('get', docPath)).then(function (r) {
+              if (r === '__local__') return docSnapshot(docPath);
+              return { exists: r != null, id: docPath.split('/').pop(), data: function () { return r; } };
+            });
+          }
+          return Promise.resolve(docSnapshot(docPath));
+        },
         set: function (data, opts) {
           writeDoc('set', docPath, data, opts);
           return Promise.resolve();
@@ -363,9 +405,20 @@ NOTES_FIRESTORE_STUB = """
         runTransaction: function (updateFn) {
           var tx = {
             get: function (docRef) { return Promise.resolve(docSnapshot(docRef.__path)); },
-            set: function (docRef, data, opts) { writeDoc('set', docRef.__path, data, opts); }
+            set: function (docRef, data, opts) { writeDoc('set', docRef.__path, data, opts); },
+            update: function (docRef, data) { writeDoc('update', docRef.__path, data); },
+            delete: function (docRef) { writeDoc('delete', docRef.__path); }
           };
           return Promise.resolve(updateFn(tx));
+        },
+        batch: function () {
+          var ops = [];
+          return {
+            set: function (ref, data, opts) { ops.push(['set', ref.__path, data, opts]); },
+            update: function (ref, data) { ops.push(['update', ref.__path, data]); },
+            delete: function (ref) { ops.push(['delete', ref.__path]); },
+            commit: function () { ops.forEach(function (o) { writeDoc(o[0], o[1], o[2], o[3]); }); return Promise.resolve(); }
+          };
         }
       };
     },
@@ -421,6 +474,17 @@ NOTES_FIRESTORE_STUB = """
               if (payload && payload.handler_password === 'testpw') return Promise.resolve({ data: { token: 'handler' } });
               return Promise.reject({ message: 'invalid Handler password' });
             }
+            // The Agent File's AI (Cloud Functions now) -- canned replies,
+            // recorded so a test can see what was asked.
+            if ((name === 'generatePrompt' || name === 'generatePlateImage') && window.__dgBackendHook) {
+              return Promise.resolve(window.__dgBackendHook('call', { name: name, payload: payload })).then(function (r) { return { data: r }; });
+            }
+            if (name === 'generatePrompt' || name === 'generatePlateImage') {
+              (window.__dgFunctionCalls = window.__dgFunctionCalls || []).push({ name: name, payload: payload });
+              return Promise.resolve({ data: name === 'generatePrompt'
+                ? { status: 'OK', prompt: 'STUB PROMPT' }
+                : { status: 'OK', image_base64: 'data:image/png;base64,iVBORw0KGgo=' } });
+            }
             return Promise.resolve({ data: {} });
           };
         }
@@ -452,7 +516,48 @@ NOTES_FIRESTORE_STUB = """
 """
 
 def install_notes_firestore_stub(page):
+    # Once per page: a second copy would re-create an empty doc store
+    # (and a fresh window.firebase) after anything seeded in between.
+    if getattr(page, "_dg_fs_stub", False):
+        return
+    page._dg_fs_stub = True
     page.add_init_script(NOTES_FIRESTORE_STUB)
+
+def install_firestore_backend(page, docs=None):
+    """The app's backend is Firestore now (the Sheet is retired): installs
+    the in-page Firestore stub and seeds documents, keyed by full path
+    ('characters/CODE', 'briefs/CODE', ...). Call before page.goto().
+    What pages write persists across navigations in this tab (seeds are
+    applied once), like a real backend."""
+    install_notes_firestore_stub(page)
+    page.add_init_script("""
+        window.__dgFsPersist = true;
+        try {
+          var kept = JSON.parse(sessionStorage.getItem('__dgFsDocs') || 'null');
+          if (kept) Object.assign(window.__dgFirestoreDocs, kept);
+          else Object.assign(window.__dgFirestoreDocs, %s);
+          sessionStorage.setItem('__dgFsDocs', JSON.stringify(window.__dgFirestoreDocs));
+        } catch (e) { Object.assign(window.__dgFirestoreDocs, %s); }
+    """ % (json.dumps(docs or {}), json.dumps(docs or {})))
+
+def character_doc(code, state, player_name=None):
+    """A characters/{code} document the way dgStore.saveCharacter writes it."""
+    pn = player_name if player_name is not None else (state.get("bio", {}) or {}).get("player_name", "")
+    return {"agent_code": code, "character_json": json.dumps(state), "updated_at": "2026-09-01T00:00:00.000Z",
+            "player_name": pn, "player_name_lc": (pn or "").strip().lower()}
+
+def fs_writes(page, prefix):
+    """Every stubbed Firestore write whose path starts with prefix, oldest first."""
+    return page.evaluate("(pfx) => (window.__dgFirestoreWrites || []).filter(w => w.path.indexOf(pfx) === 0)", prefix)
+
+def last_brief_write(page):
+    """The data of the latest briefs/{code} write (a brief submission)."""
+    w = fs_writes(page, "briefs/")
+    return w[-1]["data"] if w else {}
+
+def fs_doc(page, path):
+    """The stubbed Firestore document at path, or None."""
+    return page.evaluate("(p) => (window.__dgFirestoreDocs || {})[p] || null", path)
 
 def seed_cells_docs(page, cells_list):
     """Seeds the `cells/{cellId}` doc store directly (window.__dgFirestoreDocs),
@@ -1005,24 +1110,7 @@ def test_stat_generator_agent_file_nav(p):
     page.set_default_timeout(8000)
     errs = collect_errors(page)
 
-    captured = {}
-    def capture(route):
-        url = route.request.url
-        if route.request.method == "POST":
-            captured["body"] = route.request.post_data
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        if "callback=" not in url:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        # A callback-carrying GET (e.g. checkAgentKia's load_character
-        # check, fired once the destination page's Agent File tab
-        # renders) needs a real JSONP-wrapped response -- a raw JSON
-        # body gets executed as a <script> and throws on the object
-        # literal's ':'.
-        cb = url.split("callback=")[1].split("&")[0]
-        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"OK"}})')
-    page.route("**/script.google.com/**", capture)
+    install_firestore_backend(page)  # briefs/{code} written on this page is read back on the Portal
     # The button navigates to dg-agent-portal.html, whose inline <script>
     # sits right after a Google Fonts <link> -- browsers hold script
     # execution until a preceding stylesheet resolves, so an unblocked font
@@ -1088,7 +1176,8 @@ def test_stat_generator_agent_file_nav(p):
     record("stats-terminal", "the just-exported character's name is already on the Profiling form",
            char_name_val == "Priya Anand", char_name_val)
 
-    body = json.loads(captured.get("body") or "{}")
+    nav_code = page.url.split("code=")[1].split("#")[0].split("&")[0] if "code=" in page.url else ""
+    body = fs_doc(page, "briefs/" + nav_code) or {}
     record("stats-terminal", "the nav button's export used the real char_name",
            body.get("char_name") == "Priya Anand", str(body.get("char_name")))
 
@@ -1301,12 +1390,7 @@ def test_foundry_import_profession_and_outfit(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    captured = {}
-    def capture(route):
-        if route.request.method == "POST":
-            captured["body"] = route.request.post_data
-        route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", capture)
+    install_firestore_backend(page)  # the brief lands in briefs/{code}
 
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
@@ -1331,8 +1415,8 @@ def test_foundry_import_profession_and_outfit(p):
            prof_val == "pilot_sailor", f"value={prof_val!r}")
 
     page.click("#export-agent-file-btn")
-    wait_for_condition(lambda: captured.get("body"), timeout_ms=8000)
-    body = json.loads(captured.get("body") or "{}")
+    _pump_until(page, lambda: fs_writes(page, "briefs/"), timeout_ms=8000)
+    body = last_brief_write(page)
     record("stats-terminal", "outfit reflects the imported Pilot profession, not the pre-existing Police Officer one",
            body.get("jacket") == "flight/deck jacket" and body.get("footwear") == "deck shoes",
            f"jacket={body.get('jacket')!r} footwear={body.get('footwear')!r}")
@@ -1356,12 +1440,7 @@ def test_kappablack_toml_import(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    captured = {}
-    def capture(route):
-        if route.request.method == "POST":
-            captured["body"] = route.request.post_data
-        route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", capture)
+    install_firestore_backend(page)  # the brief lands in briefs/{code}
 
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
@@ -1431,8 +1510,8 @@ def test_kappablack_toml_import(p):
            bonds_count == 2, f"count={bonds_count}")
 
     page.click("#export-agent-file-btn")
-    wait_for_condition(lambda: captured.get("body"), timeout_ms=8000)
-    body = json.loads(captured.get("body") or "{}")
+    _pump_until(page, lambda: fs_writes(page, "briefs/"), timeout_ms=8000)
+    body = last_brief_write(page)
     record("stats-terminal", "outfit derived from the imported Kappa Black character matches its Pilot profession",
            body.get("jacket") == "flight/deck jacket" and body.get("footwear") == "deck shoes",
            f"jacket={body.get('jacket')!r} footwear={body.get('footwear')!r}")
@@ -1769,26 +1848,12 @@ def test_cloud_save(p):
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
-    posts = []
-    def route_apps_script(route):
-        req = route.request
-        if req.method == "POST":
-            posts.append(json.loads(req.post_data or "{}"))
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        url = req.url
-        if "action=load_character" in url and "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            code = url.split("code=")[1].split("&")[0]
-            if code == "TESTCODE":
-                char_state = {"v": 1, "bio": {"name": "Cloud Loaded Character", "profession": "Pilot"}}
-                body = f'{cb}({json.dumps({"status": "OK", "agent_code": code, "updated_at": "now", "character_json": json.dumps(char_state)})})'
-            else:
-                body = f'{cb}({json.dumps({"status": "NOT_FOUND"})})'
-            route.fulfill(status=200, content_type="application/javascript", body=body)
-            return
-        route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", route_apps_script)
+    # Firestore (the Sheet is retired): TESTCODE exists as a saved
+    # character; every save lands as a characters/{code} write.
+    install_firestore_backend(page, {"characters/TESTCODE": character_doc(
+        "TESTCODE", {"v": 1, "bio": {"name": "Cloud Loaded Character", "profession": "Pilot"}})})
+    def saves():
+        return [dict(w["data"], agent_code=w["path"].split("/")[1]) for w in fs_writes(page, "characters/")]
 
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(400)
@@ -1796,7 +1861,7 @@ def test_cloud_save(p):
     # No code yet and no name entered -- silent, nothing sent, so an idle
     # visitor never mints a throwaway row just from loading the page.
     record("stats-terminal", "Cloud Save is inactive on page load, before any name is entered",
-           page.eval_on_selector("#cloud-save-status", "el => el.textContent.trim()") == "" and len(posts) == 0)
+           page.eval_on_selector("#cloud-save-status", "el => el.textContent.trim()") == "" and len(saves()) == 0)
 
     # Entering a real name -- with NO button click -- is the auto-start trigger.
     page.fill("#cs-name", "Priya Anand")
@@ -1805,9 +1870,9 @@ def test_cloud_save(p):
     status1 = page.eval_on_selector("#cloud-save-status", "el => el.textContent")
     record("stats-terminal", "naming the agent auto-starts Cloud Save without pressing Start",
            "Cloud Save active" in status1 or "Synced" in status1, status1)
-    save_posts = [b for b in posts if b.get("action") == "save_character"]
+    save_posts = saves()
     record("stats-terminal", "auto-start immediately pushes the character (not waiting for the debounce)",
-           len(save_posts) >= 1, f"posts={posts}")
+           len(save_posts) >= 1, f"saves={save_posts}")
     if save_posts:
         first_state = json.loads(save_posts[0]["character_json"])
         record("stats-terminal", "the pushed character_json carries the real character data (name)",
@@ -1834,7 +1899,7 @@ def test_cloud_save(p):
     # initial auto-start push.
     page.fill("#cs-bio-nationality", "Indian-American")
     page.wait_for_timeout(4500)
-    save_posts_after_edit = [b for b in posts if b.get("action") == "save_character"]
+    save_posts_after_edit = saves()
     record("stats-terminal", "editing after auto-start schedules another debounced push",
            len(save_posts_after_edit) >= 2, f"count={len(save_posts_after_edit)}")
     if len(save_posts_after_edit) >= 2:
@@ -1880,12 +1945,8 @@ def test_agent_file_export(p):
     page.set_default_timeout(8000)
     errs = collect_errors(page)
 
-    captured = {}
-    def capture(route):
-        if route.request.method == "POST":
-            captured["body"] = route.request.post_data
-        route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", capture)
+    # The brief goes to briefs/{code} in Firestore (dgStore.submitBrief).
+    install_firestore_backend(page)
 
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
@@ -1912,9 +1973,10 @@ def test_agent_file_export(p):
     record("agent-file-export", "shows the generated code and an Agent Portal link",
            "OWEN-" in status_html and "dg-agent-portal.html" in status_html, status_html)
 
-    body = json.loads(captured.get("body") or "{}")
-    record("agent-file-export", "submits through the same APPS_SCRIPT_URL as the Cover form",
-           bool(captured.get("body")), "no POST captured" if not captured.get("body") else "")
+    brief_writes = fs_writes(page, "briefs/")
+    body = brief_writes[-1]["data"] if brief_writes else {}
+    record("agent-file-export", "submits through the same brief path as the Cover form (briefs/{code})",
+           bool(brief_writes), "no brief write captured" if not brief_writes else "")
     record("agent-file-export", "char_name and agent_code present in payload",
            body.get("char_name") == "Owen Castillo" and bool(body.get("agent_code")), str(body.get("agent_code")))
 
@@ -1970,12 +2032,7 @@ def test_random_bio_cloud_code_race(p):
     page.set_default_timeout(8000)
     errs = collect_errors(page)
 
-    captured = {}
-    def capture(route):
-        if route.request.method == "POST":
-            captured["body"] = route.request.post_data
-        route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", capture)
+    install_firestore_backend(page)  # the brief lands in briefs/{code}
 
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
@@ -1993,7 +2050,7 @@ def test_random_bio_cloud_code_race(p):
     page.evaluate("window.dgSettingsPanel.open()")
     page.click("#export-agent-file-btn")
     page.wait_for_timeout(400)
-    body = json.loads(captured.get("body") or "{}")
+    body = last_brief_write(page)
     record("agent-file-export", "exporting right after Random Bio reuses that same code, not a second unrelated one",
            bool(cloud_code) and body.get("agent_code") == cloud_code,
            f"cloud_code={cloud_code} exported={body.get('agent_code')}")
@@ -2484,16 +2541,19 @@ def test_agent_hub_cover_identity(p):
     lookupCoverIdentity()/renderRoster() in agent-hub.html."""
     errs_all = []
 
-    def mock_lookup(agents_response):
-        def handler(route):
-            url = route.request.url
-            if "action=find_by_player_name" not in url:
-                route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-                return
-            cb = url.split("callback=")[1].split("&")[0]
-            body = json.dumps({"status": "OK", "agents": agents_response})
-            route.fulfill(status=200, content_type="application/javascript", body=f"{cb}({body})")
-        return handler
+    # The lookup is a Firestore query now (briefs + characters where
+    # player_name_lc == the name): each Agent is seeded as a briefs/ doc.
+    def briefs_for(player, agents):
+        docs = {}
+        for a in agents:
+            d = dict(a)
+            code = d.pop("code")
+            d["player_name"] = player
+            d["player_name_lc"] = player.lower()
+            docs["briefs/" + code] = d
+        return docs
+    PATRICK = {"code": "GERG-P001", "char_name": "Patrick Montgomery", "codename": "", "sex": "Male",
+               "age_range": "Mid 30s", "nationality": "American"}
 
     # Entering a name and finding 2 Agents replaces the *claimed* part of
     # the roster (which starts out seeded with two locally-added Agents:
@@ -2511,12 +2571,11 @@ def test_agent_hub_cover_identity(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", mock_lookup([
-        {"code": "GERG-P001", "char_name": "Patrick Montgomery", "codename": "", "sex": "Male",
-         "age_range": "Mid 30s", "nationality": "American", "saved_at": 1000},
+    install_firestore_backend(page, dict(briefs_for("Gergo", [
+        PATRICK,
         {"code": "GERG-D002", "char_name": "Danielle Mitchell", "codename": "", "sex": "Female",
-         "age_range": "Late 20s", "nationality": "American", "saved_at": 2000},
-    ]))
+         "age_range": "Late 20s", "nationality": "American"},
+    ]), **briefs_for("Not Gergo", [{"code": "STRY-X001", "char_name": "Claimed By Someone Else"}])))
     page.add_init_script("""
         const now = Date.now();
         localStorage.setItem('dg_agent_roster', JSON.stringify({
@@ -2554,7 +2613,7 @@ def test_agent_hub_cover_identity(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", mock_lookup([]))
+    install_firestore_backend(page, briefs_for("Gergo", [PATRICK]))
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
     page.fill("#cover-identity-input", "Nobody Real")
@@ -2574,17 +2633,12 @@ def test_agent_hub_cover_identity(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    lookup_calls = []
-    def counting_mock(route):
-        url = route.request.url
-        if "action=find_by_player_name" in url:
-            lookup_calls.append(url)
-        mock_lookup([{"code": "GERG-P001", "char_name": "Patrick Montgomery", "codename": "", "sex": "Male",
-                       "age_range": "Mid 30s", "nationality": "American", "saved_at": 1000}])(route)
-    page.route("**/script.google.com/**", counting_mock)
+    install_firestore_backend(page, briefs_for("Gergo", [PATRICK]))
     page.add_init_script("localStorage.setItem('dg_cover_identity', 'Gergo');")
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(500)
+    lookup_calls = page.evaluate("() => (window.__dgFsQueries || []).filter(q => "
+                                 "q.wheres.some(w => w[0] === 'player_name_lc' && w[2] === 'gergo'))")
     record("hub", "a stored Cover Identity re-runs the lookup on its own, no click needed",
            len(lookup_calls) >= 1, str(lookup_calls))
     record("hub", "the returning player's Agent shows up without any input",
@@ -2604,19 +2658,21 @@ def test_agent_hub_cover_identity(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    def mock_with_face_plate(route):
+    # A gdrive: link the Drive move couldn't carry over still loads
+    # through the Apps Script image proxy (the one call left there).
+    def mock_imgdata(route):
         url = route.request.url
         if "action=imgdata" in url:
             cb = url.split("callback=")[1].split("&")[0]
             body = json.dumps({"status": "OK", "dataUri": "data:image/png;base64,ZmFrZQ=="})
             route.fulfill(status=200, content_type="application/javascript", body=f"{cb}({body})")
             return
-        mock_lookup([
-            {"code": "DEMO-Q5MD", "char_name": "DeMore, \"Mastery\", André", "codename": "", "sex": "Male",
-             "age_range": "50s", "nationality": "American", "saved_at": 1000,
-             "face_plate_url": "gdrive:fake-drive-id"},
-        ])(route)
-    page.route("**/script.google.com/**", mock_with_face_plate)
+        route.fulfill(status=404, body="")
+    page.route("**/script.google.com/**", mock_imgdata)
+    install_firestore_backend(page, briefs_for("Gergo", [
+        {"code": "DEMO-Q5MD", "char_name": "DeMore, \"Mastery\", André", "codename": "", "sex": "Male",
+         "age_range": "50s", "nationality": "American", "face_plate_url": "gdrive:fake-drive-id"},
+    ]))
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
     page.fill("#cover-identity-input", "Gergo")
@@ -2644,27 +2700,11 @@ def test_agent_hub_cover_identity(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    retry_state = {"calls": 0}
-    def flaky_then_ok(route):
-        url = route.request.url
-        if "action=find_by_player_name" not in url:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        cb = url.split("callback=")[1].split("&")[0]
-        retry_state["calls"] += 1
-        if retry_state["calls"] <= 2:
-            # A malformed/error response -- backend busy, not a real
-            # "nothing matches" answer.
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"ERROR"}})')
-            return
-        body = json.dumps({"status": "OK", "agents": [
-            {"code": "GERG-P001", "char_name": "Patrick Montgomery", "codename": "", "sex": "Male",
-             "age_range": "Mid 30s", "nationality": "American", "saved_at": 1000},
-        ]})
-        route.fulfill(status=200, content_type="application/javascript", body=f"{cb}({body})")
-    page.route("**/script.google.com/**", flaky_then_ok)
+    install_firestore_backend(page, briefs_for("Gergo", [PATRICK]))
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
+    # Firestore failing (offline, overloaded) for the first two attempts.
+    page.evaluate("() => { window.__dgFsFail = true; }")
     page.fill("#cover-identity-input", "Gergo")
     page.click("#cover-identity-btn")
     # First attempt fails near-instantly (a malformed response, not a
@@ -2674,14 +2714,16 @@ def test_agent_hub_cover_identity(p):
     page.wait_for_timeout(2300)
     record("hub", "a busy-backend response shows a retrying status instead of a false failure",
            "busy" in page.inner_text("#ci-status").lower(), page.inner_text("#ci-status"))
+    page.evaluate("() => { window.__dgFsFail = false; }")
     tab_labels = wait_for_condition(
         lambda: page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)")
         if "Patrick Montgomery" in page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)") else None,
         timeout_ms=10000)
     record("hub", "the search self-heals and loads the Agent once the backend actually answers, with no user retry",
            bool(tab_labels) and "Patrick Montgomery" in tab_labels, str(tab_labels))
+    attempts = page.evaluate("() => (window.__dgFsQueries || []).filter(q => q.path === 'briefs').length")
     record("hub", "it took more than one attempt to get there (proves the retry path actually ran)",
-           retry_state["calls"] >= 3, retry_state["calls"])
+           attempts >= 3, attempts)
     errs_all.extend(errs)
     page.close()
     return errs_all
@@ -7365,18 +7407,10 @@ def test_stats_load_by_code_query_param(p):
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
-    def fake_apps_script(route):
-        url = route.request.url
-        if "action=load_character" in url and "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            char_state = {"v": 1, "bio": {"name": "Owen Castillo", "profession": ""},
-                          "stats": {"STR": 14, "CON": 12, "DEX": 10, "INT": 16, "POW": 13, "CHA": 11},
-                          "csStats": {"STR": 14, "CON": 12, "DEX": 10, "INT": 16, "POW": 13, "CHA": 11}}
-            body = f'{cb}({json.dumps({"status": "OK", "agent_code": "OWEN-CS12", "character_json": json.dumps(char_state)})})'
-            route.fulfill(status=200, content_type="application/javascript", body=body)
-        else:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", fake_apps_script)
+    char_state = {"v": 1, "bio": {"name": "Owen Castillo", "profession": ""},
+                  "stats": {"STR": 14, "CON": 12, "DEX": 10, "INT": 16, "POW": 13, "CHA": 11},
+                  "csStats": {"STR": 14, "CON": 12, "DEX": 10, "INT": 16, "POW": 13, "CHA": 11}}
+    install_firestore_backend(page, {"characters/OWEN-CS12": character_doc("OWEN-CS12", char_state)})
 
     page.goto(f"{BASE}/stats/index.html?load=OWEN-CS12&live=1", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(1800)
@@ -7403,7 +7437,8 @@ def test_stats_loading_terminal(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", lambda route: None)  # never fulfilled -- load hangs
+    install_firestore_backend(page)
+    page.add_init_script("window.__dgFsHang = true;")  # the character read never answers -- the gate stays up
 
     page.goto(f"{BASE}/stats/index.html?load=OWEN-CS12&live=1", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
@@ -7456,15 +7491,8 @@ def test_stats_load_error_reveals_gate_quickly(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    def fake_apps_script(route):
-        url = route.request.url
-        if "callback=" not in url:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        cb = url.split("callback=")[1].split("&")[0]
-        body = json.dumps({"status": "ERROR", "message": "Something went wrong server-side"})
-        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({body})')
-    page.route("**/script.google.com/**", fake_apps_script)
+    install_firestore_backend(page)
+    page.add_init_script("window.__dgFsFail = true;")  # the character read fails
 
     import time
     start = time.monotonic()
@@ -7511,7 +7539,8 @@ def test_stats_recruit_flow_on_missing_character(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    route_apps_script_ok(page)
+    # Firestore: no character for DANI-U8BM, but its Agent File exists.
+    install_firestore_backend(page, {"briefs/DANI-U8BM": {"agent_code": "DANI-U8BM", "char_name": "Dani Uribe"}})
 
     # Seed a DIFFERENT character's local autosave, simulating a device
     # last used to play a different Agent.
@@ -7520,19 +7549,6 @@ def test_stats_recruit_flow_on_missing_character(p):
     page.fill("#cs-name", "Patrick Previous")
     page.wait_for_timeout(1800)
 
-    def fake_apps_script(route):
-        url = route.request.url
-        if "callback=" not in url:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        cb = url.split("callback=")[1].split("&")[0]
-        if "action=load_character" in url:
-            route.fulfill(status=200, content_type="application/javascript",
-                           body=f'{cb}({json.dumps({"status": "NOT_FOUND"})})')
-        else:
-            route.fulfill(status=200, content_type="application/javascript",
-                           body=f'{cb}({json.dumps({"status": "OK", "data": {"char_name": "Dani Uribe"}})})')
-    page.route("**/script.google.com/**", fake_apps_script)
 
     page.goto(f"{BASE}/stats/index.html?load=DANI-U8BM&live=1", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(1500)
@@ -7576,15 +7592,7 @@ def test_stats_recruit_flow_cancel_protects_existing_character(p):
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
-    def fake_apps_script(route):
-        url = route.request.url
-        if "callback=" not in url:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        cb = url.split("callback=")[1].split("&")[0]
-        route.fulfill(status=200, content_type="application/javascript",
-                       body=f'{cb}({json.dumps({"status": "NOT_FOUND"})})')
-    page.route("**/script.google.com/**", fake_apps_script)
+    install_firestore_backend(page)  # no character and no Agent File for PATR-EQ9A
 
     page.goto(f"{BASE}/stats/index.html?load=PATR-EQ9A&live=1", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(1500)
@@ -11075,27 +11083,62 @@ def _pump_until(page, fn, timeout_ms=6000):
     return bool(fn())
 
 def _route_backend(page, respond, posts=None):
-    """JSONP/POST-aware Apps Script mock. respond(method, params, body)
-    returns the response dict (None -> {"status": "OK"})."""
-    from urllib.parse import urlparse, parse_qs
-    def handler(route):
-        req = route.request
-        q = {k: v[0] for k, v in parse_qs(urlparse(req.url).query).items()}
-        body = None
-        if req.method == "POST":
-            try:
-                body = json.loads(req.post_data or "{}")
-            except Exception:
-                body = {}
-            if posts is not None:
-                posts.append(body)
-        res = respond(req.method, q, body) or {"status": "OK"}
-        cb = q.get("callback")
-        if cb and req.method == "GET":
-            route.fulfill(status=200, content_type="application/javascript", body=f"{cb}({json.dumps(res)})")
-        else:
-            route.fulfill(status=200, content_type="application/json", body=json.dumps(res))
-    page.route("**/script.google.com/**", handler)
+    """A test's backend, answered by respond(method, params, body), which
+    returns the reply the old Apps Script used to give (None -> OK).
+    The Sheet is retired -- the pages talk to Firestore -- so this
+    installs the Firestore stub and connects respond() to it:
+      reading characters/{code}  -> respond('GET', {action: load_character, code})
+      reading briefs/{code}      -> respond('GET', {code})
+      writing characters/{code}  -> a save_character payload
+      writing briefs/{code}      -> a brief submission (has submitted_at),
+                                    update_medical / update_aar, or one
+                                    update_field per field
+      generatePrompt / generatePlateImage -> generate_prompt /
+                                    generate_plate_image, answered by respond()
+    Every translated payload is appended to posts, as before."""
+    install_notes_firestore_stub(page)
+    def _post(body):
+        if posts is not None:
+            posts.append(body)
+        return respond("POST", {}, body) or {"status": "OK"}
+    def hook(kind, arg):
+        if kind == "get":
+            coll, _, code = arg.partition("/")
+            if coll == "characters" and "/" not in code:
+                res = respond("GET", {"action": "load_character", "code": code}, None) or {}
+                if res.get("status") == "OK" and res.get("character_json"):
+                    return {"agent_code": code, "character_json": res["character_json"], "updated_at": res.get("updated_at", "")}
+                return None
+            if coll == "briefs" and "/" not in code:
+                res = respond("GET", {"code": code}, None) or {}
+                return res.get("data") if res.get("status") == "OK" and res.get("data") else None
+            return "__local__"
+        if kind == "write":
+            coll, _, code = arg["path"].partition("/")
+            data = arg.get("data") or {}
+            if arg.get("op") == "delete" or "/" in code:
+                return None
+            if coll == "characters":
+                _post({"action": "save_character", "agent_code": code, "character_json": data.get("character_json", ""),
+                       "player_name": data.get("player_name", "")})
+            elif coll == "briefs":
+                fields = {k: v for k, v in data.items() if k != "player_name_lc"}
+                if "submitted_at" in fields:
+                    _post(dict(fields, agent_code=code))
+                elif set(fields) == {"medical_log"}:
+                    _post({"action": "update_medical", "agent_code": code, "medical_log": fields["medical_log"]})
+                elif set(fields) == {"aar_log"}:
+                    _post({"action": "update_aar", "agent_code": code, "aar_log": fields["aar_log"]})
+                else:
+                    for k, v in fields.items():
+                        _post({"action": "update_field", "agent_code": code, "field": k, "value": v})
+            return None
+        if kind == "call":
+            action = "generate_prompt" if arg["name"] == "generatePrompt" else "generate_plate_image"
+            return _post(dict(arg.get("payload") or {}, action=action))
+        return None
+    page.expose_function("__dgPyBackend", hook)
+    page.add_init_script("window.__dgBackendHook = function (kind, arg) { return window.__dgPyBackend(kind, arg); };")
 
 def _block_fonts(page):
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
@@ -11901,10 +11944,21 @@ def main():
         # overrides this: Playwright resolves the most-recently-registered
         # handler first, and none of the existing per-test mocks below call
         # route.fallback(), so they fully take over instead of chaining.
+        # Same, for Firebase: the pages read and write Firestore (and call
+        # Cloud Functions) directly now that the Sheet is retired, so an
+        # unstubbed page in CI would otherwise sign in to and write the
+        # LIVE project. Every production Firebase/Google API host is
+        # aborted for every test page; tests use the in-page Firestore
+        # stub (install_notes_firestore_stub) instead.
+        LIVE_FIREBASE_HOSTS = re.compile(
+            r"^https://([a-z0-9-]+\.)?(firestore\.googleapis\.com|identitytoolkit\.googleapis\.com|"
+            r"securetoken\.googleapis\.com|firebasestorage\.googleapis\.com|firebaseinstallations\.googleapis\.com|"
+            r"cloudfunctions\.net|storage\.googleapis\.com)/")
         _real_new_page = browser.new_page
         def _new_page_blocking_live_backend(*a, **kw):
             page = _real_new_page(*a, **kw)
             page.route("**/script.google.com/**", lambda route: route.abort())
+            page.route(LIVE_FIREBASE_HOSTS, lambda route: route.abort())
             return page
         browser.new_page = _new_page_blocking_live_backend
 

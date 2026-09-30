@@ -127,6 +127,19 @@
     }, 15000);
     s.onload = () => { if (done) return; done = true; clearTimeout(timer); cb(); };
     s.onerror = () => { if (done) return; done = true; clearTimeout(timer); onerror(new Error('Failed to load ' + src + ' -- check network connection.')); };
+    // One copy of each Firebase SDK file per page: reuse a tag another
+    // widget already added (loaded, or still loading) instead of adding
+    // a second -- two copies of firebase-app-compat.js left every
+    // Firestore call on the page hanging (BUGFIXES.md, Sheet retired).
+    var dgPrev = Array.prototype.filter.call(document.scripts, function (x) { return x !== s && x.src === s.src && x.dataset.dgFailed !== '1'; })[0];
+    if (dgPrev) {
+      if (dgPrev.dataset.dgLoaded === '1') { if (s.onload) s.onload(); return; }
+      dgPrev.addEventListener('load', function () { if (s.onload) s.onload(); }, { once: true });
+      dgPrev.addEventListener('error', function () { if (s.onerror) s.onerror(); }, { once: true });
+      return;
+    }
+    s.addEventListener('load', function () { s.dataset.dgLoaded = '1'; });
+    s.addEventListener('error', function () { s.dataset.dgFailed = '1'; });
     document.head.appendChild(s);
   }
   function ensureFirebaseApi(cb, onerror) {
@@ -373,37 +386,6 @@
     }
   }
 
-  // Same "remove the previous cycle's leftover script tag, then inject a
-  // fresh one" JSONP convention used by table-radio.js's polling and
-  // agent-hub.html's jsonpGet().
-  function jsonpGet(action, params, cb) {
-    const cbName = '_dgNotes_' + action + '_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
-    const prevScript = document.getElementById('_dg_notes_jsonp_script');
-    if (prevScript) prevScript.remove();
-    const timer = setTimeout(() => { window[cbName] = function () { delete window[cbName]; }; cb(null); }, 20000);
-    window[cbName] = function (res) {
-      clearTimeout(timer);
-      delete window[cbName];
-      cb(res);
-    };
-    const s = document.createElement('script');
-    s.id = '_dg_notes_jsonp_script';
-    let qs = 'action=' + action + '&callback=' + cbName;
-    Object.keys(params || {}).forEach(k => { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
-    s.src = APPS_SCRIPT_URL + '?' + qs;
-    document.head.appendChild(s);
-  }
-
-  // Fire-and-forget, no read-back -- same weight as saveHandoutNote()'s
-  // "low-stakes personal scratchpad" write.
-  function postAction(payload) {
-    return fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(payload),
-    });
-  }
-
   function init(container, opts) {
     opts = opts || {};
     const cellId = opts.cellId;
@@ -601,7 +583,7 @@
         if (!chosenColor) return;
         myIdentity = { color: chosenColor, font: chosenFont };
         saveLocalIdentity(myIdentity);
-        postAction({ action: 'save_agent_identity', agent_code: agentCode, token: agentToken, color: chosenColor, font: chosenFont }).catch(() => { });
+        window.dgStore.saveIdentity(agentCode, chosenColor, chosenFont).catch(err => console.error('notes: could not save identity', err));
         modal.remove();
         applyOwnInkStyle();
         refreshChrome();
@@ -728,45 +710,27 @@
     }
     function fetchEvidenceSeen() {
       if (!cellId) return;
-      jsonpGet('list_evidence', { agent_code: agentCode, token: agentToken }, res => {
-        if (!res || res.status !== 'OK') return;
-        evidenceSeenMap = res.seen || evidenceSeenMap;
+      window.dgStore.listSeen(agentCode).then(seen => {
+        evidenceSeenMap = Object.assign({}, evidenceSeenMap, seen);
         refreshEvidenceSidebar();
-      });
+      }).catch(err => console.error('notes: could not read seen marks', err));
     }
 
-    // Operation names from Firestore (operations is public-read) rather
-    // than list_operations -- one less Apps Script call per Notes open.
-    // Operations were only mirrored there from 2026-09-19, so an Evidence
-    // item filed under an older one asks the Sheet once and merges it in
-    // (see refreshEvidenceSidebar()).
-    let opsToppedUp = false;
-    function fetchOperationsViaSheet() {
-      opsToppedUp = true;
-      jsonpGet('list_operations', {}, res => {
-        if (res && res.status === 'OK' && Array.isArray(res.operations)) {
-          const byId = {};
-          operations.forEach(o => { byId[o.operation_id] = o; });
-          res.operations.forEach(o => { byId[o.operation_id] = o; });
-          operations = Object.values(byId);
-          refreshEvidenceSidebar();
-        }
-      });
-    }
+    // Operation names from Firestore (operations, public-read). A failed
+    // read just leaves the tags as ids.
     function fetchOperations() {
       ensureFirebaseApi(() => {
         let settled = false;
-        const timer = setTimeout(() => { if (!settled) { settled = true; fetchOperationsViaSheet(); } }, 8000);
+        const timer = setTimeout(() => { settled = true; }, 8000);
         window.firebase.firestore().collection('operations').get().then(snap => {
           if (settled) return;
           settled = true; clearTimeout(timer);
           const list = [];
           snap.forEach(d => { const o = d.data() || {}; list.push({ operation_id: o.operation_id || d.id, cell_id: o.cell_id || '', name: o.name || '', created_at: o.created_at || '' }); });
-          if (!list.length) { fetchOperationsViaSheet(); return; }
           operations = list;
           refreshEvidenceSidebar();
-        }).catch(() => { if (settled) return; settled = true; clearTimeout(timer); fetchOperationsViaSheet(); });
-      }, fetchOperationsViaSheet);
+        }).catch(err => console.error('notes: could not read Operations', err));
+      }, () => { });
     }
     function operationsByIdMap_() {
       const map = {};
@@ -783,10 +747,7 @@
       const mount = container.querySelector('#dg-notes-evidence-mount');
       if (!mount) return;
       if (!evidenceItems.length) { mount.innerHTML = ''; return; }
-      if (!opsToppedUp && operations.length) {
-        const known = operationsByIdMap_();
-        if (evidenceItems.some(h => h.operation_id && !known[h.operation_id])) fetchOperationsViaSheet();
-      }
+
 
       // Filter options built from this Agent's own visible Evidence,
       // not every Operation campaign-wide -- a folder with nothing
@@ -830,7 +791,7 @@
       if (evidenceSeenMap[evidenceId]) return;
       evidenceSeenMap[evidenceId] = true;
       refreshEvidenceSidebar();
-      postAction({ action: 'mark_evidence_seen', agent_code: agentCode, evidence_id: evidenceId }).catch(() => { });
+      window.dgStore.markSeen(agentCode, evidenceId).catch(err => console.error('notes: could not save seen mark', err));
     }
 
     // Every remark attached to one Evidence item that's actually
@@ -1779,11 +1740,13 @@
     // res.notes now that the two listeners above own note content.
     function fetchIdentities() {
       if (!cellId) return;
-      jsonpGet('list_cell_notes', { cell_id: cellId, agent_code: agentCode, token: agentToken }, res => {
-        if (!res || res.status !== 'OK') return;
-        identities = res.identities || identities;
+      // agent_identity/{code} in Firestore, for everyone who can appear
+      // on this Cell's notes (members, note authors, yourself).
+      const codes = Object.keys(memberNames).concat(Object.keys(notesByCode || {}), [agentCode]);
+      window.dgStore.getIdentities(codes).then(map => {
+        identities = Object.assign({}, identities, map);
         refreshChrome();
-      });
+      }).catch(err => console.error('notes: could not read identities', err));
     }
 
     // Pushes your own just-fetched blocks into the live editor -- only
