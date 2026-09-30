@@ -3104,6 +3104,16 @@ async function handleSubmit() {
       payload[k] = afData[k];
     });
   }
+  // An empty "Your Name" box never wipes a Player Name already on file
+  // (the form can still be filling in from the Agent File when a quick
+  // player hits Submit): keep the saved one, else the Hub's Cover
+  // Identity. Without it, Load My Agents on another device can't find
+  // this Agent File, and its Face Plate/codename/eras go missing there.
+  if (!String(payload.player_name || '').trim()) {
+    let known = (sameAgent && afData && afData.player_name) || '';
+    if (!known) { try { known = localStorage.getItem('dg_cover_identity') || ''; } catch (e) { /* storage blocked */ } }
+    if (known) payload.player_name = known;
+  }
   if (refImageFile) {
     status.textContent = 'Uploading photo…';
     btn.textContent = 'Uploading…';

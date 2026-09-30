@@ -2771,6 +2771,54 @@ def test_agent_hub_cover_identity(p):
     page.close()
     return errs_all
 
+def test_player_name_survives_profiling_and_load_my_agents(p):
+    """Found in the full-journey run: a Profiling submit made before the
+    form had filled in (a quick player) sent an empty "Your Name" and
+    wiped the Agent File's Player Name. Load My Agents on another device
+    then found the character but not its Agent File, so the Face Plate
+    and codename never showed. An empty name now never overwrites a
+    known one, and Load My Agents also pulls a matched character's own
+    Agent File even when that file lacks the name."""
+    errs_all = []
+    page = p.new_page()
+    page.set_default_timeout(10000)
+    errs = collect_errors(page)
+    _block_fonts(page)
+    brief = dict(MOCK_BRIEF, char_name="Nora Vance", player_name="Mara Player", player_name_lc="mara player")
+    install_firestore_backend(page, {"briefs/NORA-VX01": brief})
+    page.goto(f"{BASE}/dg-agent-portal.html?code=NORA-VX01#cover", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: page.input_value("#dg-form [name=char_name]") == "Nora Vance", timeout_ms=8000)
+    page.click('button[onclick^="randomizeAgent"]')  # fills every required field
+    page.wait_for_timeout(300)
+    page.fill("#dg-form [name=player_name]", "")
+    page.click("#submit-btn")
+    wait_for_condition(lambda: (fs_doc(page, "briefs/NORA-VX01") or {}).get("submitted_at"), timeout_ms=8000)
+    saved = fs_doc(page, "briefs/NORA-VX01") or {}
+    record("agent-portal", "submitting Profiling with an empty Your Name keeps the Player Name already on file",
+           bool(saved.get("submitted_at")) and saved.get("player_name") == "Mara Player" and saved.get("player_name_lc") == "mara player",
+           str({k: saved.get(k) for k in ("submitted_at", "player_name", "player_name_lc")}) + " status=" + page.inner_text("#form-status") if page.locator("#form-status").count() else "")
+    errs_all.extend(errs)
+    page.close()
+
+    page = p.new_page()
+    page.set_default_timeout(10000)
+    errs = collect_errors(page)
+    _block_fonts(page)
+    install_firestore_backend(page, {
+        "characters/NORA-VX02": character_doc("NORA-VX02", {"bio": {"name": "Nora Vance"}}, "Mara Player"),
+        "briefs/NORA-VX02": {"char_name": "Nora Vance", "codename": "Lantern", "face_plate_url": "https://example.test/face.png"},
+    })
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.fill("#cover-identity-input", "Mara Player")
+    page.click("#cover-identity-btn")
+    roster = wait_for_condition(lambda: (json.loads(page.evaluate("localStorage.getItem('dg_agent_roster')") or "{}").get("NORA-VX02")), timeout_ms=8000) or {}
+    record("hub", "Load My Agents brings a found character's own Agent File (photo, codename) even when that file lacks the name",
+           roster.get("face_plate_url") == "https://example.test/face.png" and roster.get("codename") == "Lantern", str(roster))
+    errs_all.extend(errs)
+    page.close()
+    record("hub", "no JS exceptions", len(errs_all) == 0, "; ".join(errs_all))
+    return errs_all
+
 def test_agent_hub_erase_agent(p):
     """Erase Agent: a player self-service delete for accidental duplicate
     Agents (previously only a Handler could clean these up via A-Cell
@@ -4586,7 +4634,7 @@ def test_acell_sheet(p):
     record("acell", "the correct password sends delete_character for the right Agent",
            len(delete_posts) == 1 and delete_posts[0].get("agent_code") == "OWEN-CS12", str(delete_posts))
     row_texts_after = page.eval_on_selector_all("#sheet-wrap tbody tr", "els => els.map(e=>e.textContent)")
-    record("acell", "the deleted Agent's row disappears only after a real read-back confirms it's gone",
+    record("acell", "the deleted Agent's row disappears once the delete succeeds",
            not any("Owen Castillo" in t for t in row_texts_after) and len(row_texts_after) == 3, str(row_texts_after))
 
     deleted_text = wait_for_condition(lambda: page.inner_text("#admin-deleted-list")
@@ -4619,7 +4667,7 @@ def test_acell_sheet(p):
     record("acell", "deleting an Agent-File-only row sends delete_character for the right code",
            len(demo_delete_posts) == 1, str(demo_delete_posts))
     row_texts_after_demo = page.eval_on_selector_all("#sheet-wrap tbody tr", "els => els.map(e=>e.textContent)")
-    record("acell", "the deleted Agent-File-only row disappears after a real read-back confirms it",
+    record("acell", "the deleted Agent-File-only row disappears once the delete succeeds",
            not any("Mastery" in t for t in row_texts_after_demo), str(row_texts_after_demo))
 
     demo_deleted_text = wait_for_condition(lambda: page.inner_text("#admin-deleted-list")
@@ -11803,6 +11851,7 @@ def main():
         safe(test_agent_hub_cover_identity, browser, area="hub")
 
         safe(test_agent_hub_erase_agent, browser, area="hub")
+        safe(test_player_name_survives_profiling_and_load_my_agents, browser, area="hub")
 
         safe(test_agent_hub_kia_stamp, browser, area="hub")
 

@@ -70,21 +70,11 @@
   "use strict";
 
   const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
-  // Widened (was 5000ms flat) and jittered (see POLL_JITTER_MS/
-  // startPolling() below) after live reports of intermittent backend
-  // timeouts under real concurrent load -- several tabs' Notes panels,
-  // Table Radio widgets, and character-sheet autosaves all share the
-  // same Apps Script project/Sheet. A fixed setInterval also means
-  // every Notes panel opened around the same moment polls in lockstep
-  // forever after; a self-rescheduling setTimeout with jitter spreads
-  // that back out. Still slower than Table Radio's own poll -- note
-  // content changes far less often than "what's playing".
-  // Phase 5 (Firebase migration): note CONTENT itself is now a live
-  // Firestore onSnapshot listener (see startNotesListeners() in init()),
-  // not this poll -- this interval now only refreshes identities/colors
-  // (which change rarely) and the Evidence sidebar (list_evidence, not
-  // yet on Firestore). Widened well past the old 8s now that it's no
-  // longer the thing that makes a Cell-mate's new note show up.
+  // Note content, Evidence and Operations are live Firestore listeners
+  // / reads (see startNotesListeners() and the Evidence block below).
+  // This slow, jittered timer only re-reads the Cell's colour/font
+  // identities and this Agent's Evidence "seen" marks from Firestore,
+  // both of which change rarely.
   const POLL_MS = 30000;
   const POLL_JITTER_MS = 4000;
   const SAVE_DEBOUNCE_MS = 1200; // matches agent-hub.html's scheduleNoteSave() convention

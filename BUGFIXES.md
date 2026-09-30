@@ -5876,10 +5876,11 @@ are gone too, not kept as fallbacks.
     Firestore for a while, deletes included, so such a row may be one
     somebody deleted on purpose.
   - `runCopySheetOnlyNotesAndTracksNow` copies those listed rows if
-    they're wanted. Until the page cutover merges,
-  it also keeps Firestore in sync for everything the old pages still
-  send to the Sheet. `dailyBackup` replaces the Sheet's daily backup.
-  Runbook: `docs/firebase-migration/SHEET-RETIREMENT.md`.
+    they're wanted.
+  - Until the page cutover merges, v97 also keeps Firestore in sync for
+    everything the old pages still send to the Sheet.
+  - `dailyBackup` replaces the Sheet's daily backup.
+  - Runbook: `docs/firebase-migration/SHEET-RETIREMENT.md`.
 - **Rules:** a character, Agent File or Notes identity is written only
   by its own Agent's session or the Handler. `deleted_agents`,
   `playlists`, `client_errors`, `config` and `rate_limits` get rules.
@@ -5899,6 +5900,35 @@ are gone too, not kept as fallbacks.
   same session could already overwrite that code outright, which is
   unrecoverable, so a restorable delete adds no new exposure.
 
+**Found by the full player + Handler journey (Chromium and WebKit), fixed:**
+- **Profiling could wipe the Player Name.** A player who submitted
+  Profiling before the form had filled in from the Agent File (the
+  journey script did it within a second) sent an empty "Your Name",
+  which blanked `player_name` on the Agent File. On a second device,
+  Load My Agents then found the character but not its Agent File, so
+  the Face Plate, codename and eras were missing ("Take Photo" on the
+  roster card). Now:
+  - an empty name never overwrites a known one (portal submit, and
+    `dgStore.submitBrief` for any existing Agent File);
+  - `findByPlayerName` also reads each matched character's own Agent
+    File, even one without the name.
+- **A-Cell showed "backend didn't confirm" after a successful delete
+  (WebKit, so every iPhone/iPad browser).**
+  - **What happened:** Sheet-tab delete/restore and Evidence
+    release/delete re-read the list straight after writing, to confirm
+    the write. The Sheet-era 900 ms waits before those reads were
+    removed in this change as pure lag. On WebKit the live-listened
+    collection could still return the old copy for a moment, so a
+    successful delete showed "Sent, but the backend didn't confirm the
+    delete" and Recently Deleted never refreshed.
+  - **Fix:** the write succeeding is the confirmation now. The page
+    updates from it and the live listeners keep the lists current. Bulk
+    delete reports how many succeeded and failed. The "didn't confirm"
+    messages no longer tell the Handler to redeploy Apps Script.
+- **A-Cell waited 0.9 s after every write before re-reading** (Operation
+  create/rename/delete, Sheet delete/restore, Evidence). These were
+  Sheet-era waits for the Sheet to catch up, and are removed.
+
 **Agent Hub roster, now that Firestore is the answer:** an Agent with
 no character and no Agent File in Firestore is gone, and is purged from
 a device's roster. This is `purgeIfFullyDeleted()`, unchanged. A read
@@ -5906,6 +5936,25 @@ that fails or times out still never marks anything "no sheet" and never
 purges.
 
 **Verified:**
+- **Full journey through the real UI, in Chromium (38/38) and WebKit
+  (37/37)**, with the emulators and Apps Script blocked. A phone player
+  and a desktop Handler:
+  - Hub Cover Identity, then the 8-step Character Wizard.
+  - Settings → Open Agent File, then Profiling (Generate + Submit).
+  - First era, with its AI prompt and a generated Face Plate.
+  - Notes (identity + a note), then a Live Play stat roll.
+  - The A-Cell Clearance login.
+  - Cells: create, then add the Agent. The solo note follows them in.
+  - Evidence: an Operation and a released item.
+  - Music: broadcast a track.
+  - The Sheet and Play tabs.
+  - The player sees the Evidence in Agent Hub and Notes, and opening it
+    marks it seen.
+  - A second device's Load My Agents shows the Agent with its photo.
+  - Sheet delete + Recently Deleted restore.
+  - No page made an Apps Script request, and no page reported a JS
+    error. Firefox couldn't be run: it isn't installed here, and the
+    network blocks downloading it.
 - **Emulators with Apps Script blocked** (real pages against Firestore,
   Auth, Functions and Storage): 33/33.
   - A new character autosaves and loads on a second device.

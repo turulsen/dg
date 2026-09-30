@@ -2462,7 +2462,7 @@
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
-  var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm it. Check that the Cells addition (list_cells / update_cell_members) is pasted into Apps Script and redeployed.';
+  var NOT_DEPLOYED_MSG = 'Saved, but the change hasn\'t shown up here yet. Press Refresh; if it still isn\'t there, try again.';
   function ensureHandlerSignedIn() {
     if (!window.__dgHandlerAuth) return Promise.reject(new Error('Handler auth not ready yet -- reload and try again.'));
     return window.__dgHandlerAuth();
@@ -2802,7 +2802,7 @@
 (function () {
   "use strict";
   var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
-  var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm it. Check that the Evidence addition (list_evidence / create_evidence / update_evidence / delete_evidence / list_operations / create_operation / update_operation / delete_operation) is pasted into Apps Script and redeployed.';
+  var NOT_DEPLOYED_MSG = 'Saved, but the change hasn\'t shown up here yet. Press Refresh; if it still isn\'t there, try again.';
 
   var listEl = document.getElementById('evidence-list');
   var statusEl = document.getElementById('evidence-status');
@@ -3201,7 +3201,7 @@
                 renderFolders();
                 renderList();
               });
-            }, 900);
+            }, 0);
           }).catch(function () {
             statusEl.textContent = 'Could not reach the backend.';
             confirmBtn.disabled = false;
@@ -3229,7 +3229,7 @@
               renderFolders();
               renderList();
             });
-          }, 900);
+          }, 0);
         }).catch(function () { statusEl.textContent = 'Could not reach the backend.'; });
       });
     });
@@ -3403,16 +3403,13 @@
           id_token: idToken,
         });
     }).then(function () {
-      setTimeout(function () {
-        jsonpGet('list_evidence', {}, function (res) {
-          cb.disabled = false;
-          if (res && res.status === 'OK' && Array.isArray(res.evidence)) {
-            evidenceItems = res.evidence.slice().sort(function (a, b) { return Number(b.created_at) - Number(a.created_at); });
-          }
-          statusEl.textContent = '';
-          renderList();
-        });
-      }, 900);
+      // The write has landed (Firestore); the live listener brings the
+      // list itself up to date. Re-reading here instead could briefly
+      // return the old copy (seen on WebKit/iOS) and flip the box back.
+      h.released = next;
+      cb.disabled = false;
+      statusEl.textContent = '';
+      renderList();
     }).catch(function () { cb.disabled = false; statusEl.textContent = 'Could not reach the backend.'; });
   }
 
@@ -3448,22 +3445,11 @@
     window.__dgGetHandlerIdToken().then(function (idToken) {
       return window.dgAcellApi.post({ action: 'delete_evidence', evidence_id: h.evidence_id, id_token: idToken });
     }).then(function () {
-      setTimeout(function () {
-        jsonpGet('list_evidence', {}, function (res) {
-          var stillThere = res && res.status === 'OK' && Array.isArray(res.evidence) &&
-            res.evidence.some(function (x) { return x.evidence_id === h.evidence_id; });
-          if (stillThere) {
-            if (btn) { btn.disabled = false; btn.textContent = 'Delete'; }
-            statusEl.textContent = NOT_DEPLOYED_MSG;
-            return;
-          }
-          if (res && res.status === 'OK' && Array.isArray(res.evidence)) {
-            evidenceItems = res.evidence.slice().sort(function (a, b) { return Number(b.created_at) - Number(a.created_at); });
-          }
-          statusEl.textContent = 'Deleted ' + h.title + '.';
-          renderList();
-        });
-      }, 900);
+      // Deleted in Firestore -- the write succeeding is the confirmation
+      // (see toggleReleased above for why this doesn't re-read the list).
+      evidenceItems = evidenceItems.filter(function (x) { return x.evidence_id !== h.evidence_id; });
+      statusEl.textContent = 'Deleted ' + h.title + '.';
+      renderList();
     }).catch(function () {
       if (btn) { btn.disabled = false; btn.textContent = 'Delete'; }
       statusEl.textContent = 'Could not reach the backend.';
@@ -3519,6 +3505,9 @@
   // Rebuilds the Operation dropdown for whichever Cell is picked in the
   // form's own Scope select -- an Operation belongs to one Cell, so the
   // list has to follow the form's scope, not the sidebar's filter.
+  // Writes here are Firestore now: when dgAcellApi.post() resolves the
+  // write has landed, so each read-back below runs right away (the 0ms
+  // timeouts used to be 900ms waits for the Sheet to catch up).
   function refreshFormOperationOptions(selectedCellId, keepOpId) {
     var opSel = document.getElementById('evidence-new-op');
     if (!opSel) return;
@@ -3711,7 +3700,7 @@
             opFormSlot.innerHTML = '';
             renderFolders();
           });
-        }, 900);
+        }, 0);
       }).catch(function () {
         statusEl.textContent = 'Could not reach the backend.';
         newConfirmBtn.disabled = false;
@@ -3795,8 +3784,6 @@
   var ACELL_PASSWORD = 'MASTICATE';
   var ONLINE_MS = 5 * 60 * 1000;
   var RECENT_MS = 30 * 60 * 1000;
-  var NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm the delete. Check that Code.gs is pasted into Apps Script and redeployed.';
-  var RESTORE_NOT_DEPLOYED_MSG = 'Sent, but the backend didn\'t confirm the restore. Check that Code.gs is pasted into Apps Script and redeployed.';
 
   var wrap = document.getElementById('sheet-wrap');
   var refreshBtn = document.getElementById('sheet-refresh-btn');
@@ -4092,14 +4079,11 @@
     });
   }
 
-  // Fire-and-forget, bounded-concurrency loop -- the same no-cors POST
-  // doDelete() already sends per row, just without that function's own
-  // per-row 900ms-wait-then-reverify step (fine for one row, far too
-  // slow for the hundreds this button is meant to clear). One list
-  // refresh at the end shows whatever's left; anything that failed to
-  // delete is still selectable and safe to retry.
+  // Bounded-concurrency loop over the same delete doDelete() sends per
+  // row. Each Agent whose delete succeeded leaves the table right away;
+  // one that failed stays listed and selectable, safe to retry.
   function doBulkDelete(codes) {
-    var total = codes.length, sent = 0;
+    var total = codes.length, sent = 0, failed = 0, done = {};
     var CONCURRENCY = 4;
     var idx = 0;
     bulkConfirmSlot.innerHTML = '<div class="admin-confirm"><p>Deleting 0 / ' + total + '…</p></div>';
@@ -4108,25 +4092,25 @@
       var code = codes[idx++];
       window.__dgGetHandlerIdToken().then(function (idToken) {
         return window.dgAcellApi.post({ action: 'delete_character', agent_code: code, id_token: idToken });
-      }).then(afterOne).catch(afterOne);
+      }).then(function () { done[code] = true; afterOne(); }, function () { failed++; afterOne(); });
     }
     function afterOne() {
       sent++;
       bulkConfirmSlot.innerHTML = '<div class="admin-confirm"><p>Deleting ' + sent + ' / ' + total + '…</p></div>';
       if (idx < codes.length) next();
-      else if (sent >= total) finishBulk(total);
+      else if (sent >= total) finishBulk(total, failed, done);
     }
     for (var k = 0; k < Math.min(CONCURRENCY, codes.length); k++) next();
   }
 
-  function finishBulk(total) {
+  function finishBulk(total, failed, done) {
     selectedCodes = {};
-    setTimeout(function () {
-      bulkConfirmSlot.innerHTML = '';
-      statusEl.textContent = 'Sent ' + total + ' delete request' + (total === 1 ? '' : 's') + '. Anything still listed below either didn\'t match or failed -- select and delete again.';
-      fetchAll();
-      fetchDeleted();
-    }, 1500);
+    bulkConfirmSlot.innerHTML = '';
+    rows = rows.filter(function (r) { return !done[r.code]; });
+    renderSheet();
+    statusEl.textContent = 'Deleted ' + (total - failed) + ' of ' + total + ' Agent' + (total === 1 ? '' : 's') + '.' +
+      (failed ? ' The ' + failed + ' still listed failed -- select and delete again.' : ' Restore any of them within 24 hours from Recently Deleted below.');
+    fetchDeleted();
   }
 
   function startEditPlayerName(span) {
@@ -4215,25 +4199,16 @@
     window.__dgGetHandlerIdToken().then(function (idToken) {
       return window.dgAcellApi.post({ action: 'delete_character', agent_code: row.code, id_token: idToken });
     }).then(function () {
-      setTimeout(function () { verifyDelete(row, slot); }, 900);
+      // The write succeeding is the confirmation (Firestore). Re-reading
+      // the roster straight after could still return the Agent for a
+      // moment (seen on WebKit/iOS) and report a false failure.
+      slot.innerHTML = '';
+      rows = rows.filter(function (r) { return r.code !== row.code; });
+      renderSheet();
+      statusEl.textContent = 'Deleted ' + row.name + '. Restore it within 24 hours from Recently Deleted below.';
+      fetchDeleted();
     }).catch(function () {
       slot.innerHTML = '<div class="admin-confirm"><p class="admin-confirm-error">Could not reach the backend.</p></div>';
-    });
-  }
-
-  function verifyDelete(row, slot) {
-    var action = row.isBriefsOnly ? 'list_agent_file_only' : 'list_characters';
-    var listKey = row.isBriefsOnly ? 'agents' : 'characters';
-    jsonpGet(action, {}, function (res) {
-      var stillThere = res && res.status === 'OK' && Array.isArray(res[listKey]) &&
-        res[listKey].some(function (c) { return c.agent_code === row.code; });
-      if (stillThere) {
-        slot.innerHTML = '<div class="admin-confirm"><p class="admin-confirm-error">' + NOT_DEPLOYED_MSG + '</p></div>';
-        return;
-      }
-      statusEl.textContent = 'Deleted ' + row.name + '. Restore it within 24 hours from Recently Deleted below.';
-      fetchAll();
-      fetchDeleted();
     });
   }
 
@@ -4286,29 +4261,17 @@
     window.__dgGetHandlerIdToken().then(function (idToken) {
       return window.dgAcellApi.post({ action: 'restore_character', agent_code: agent.code, id_token: idToken });
     }).then(function () {
-      setTimeout(function () { verifyRestore(agent); }, 900);
-    }).catch(function () {
-      statusEl.textContent = 'Could not reach the backend.';
-    });
-  }
-
-  function verifyRestore(agent) {
-    // An Agent-File-only delete (agent.state is null -- see fetchDeleted()
-    // above) never had a Characters row to restore, so list_characters
-    // would never confirm it -- check list_agent_file_only instead.
-    var action = agent.state ? 'list_characters' : 'list_agent_file_only';
-    var listKey = agent.state ? 'characters' : 'agents';
-    jsonpGet(action, {}, function (res) {
-      var backInRoster = res && res.status === 'OK' && Array.isArray(res[listKey]) &&
-        res[listKey].some(function (c) { return c.agent_code === agent.code; });
-      if (!backInRoster) {
-        statusEl.textContent = RESTORE_NOT_DEPLOYED_MSG;
-        return;
-      }
+      // Same as doDelete(): the write succeeding is the confirmation.
       var name = (agent.state && agent.state.bio || {}).name || agent.char_name || agent.code;
       statusEl.textContent = 'Restored ' + name + '.';
+      deletedAgents = deletedAgents.filter(function (d) { return d.code !== agent.code; });
+      renderDeletedList();
+      // A read straight after can briefly miss the restored Agent on
+      // WebKit/iOS (see doDelete), so the table refreshes twice.
       fetchAll();
-      fetchDeleted();
+      setTimeout(fetchAll, 2000);
+    }).catch(function () {
+      statusEl.textContent = 'Could not reach the backend.';
     });
   }
 

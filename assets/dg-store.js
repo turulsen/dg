@@ -180,7 +180,10 @@
     const given = norm(fields && fields.agent_code);
     const now = new Date().toISOString();
     if (given) {
-      return updateBrief(given, Object.assign({}, fields, { agent_code: given, submitted_at: now })).then(() => given);
+      const patch = Object.assign({}, fields, { agent_code: given, submitted_at: now });
+      // A blank Player Name never overwrites one already on file.
+      if (!String(patch.player_name || '').trim()) delete patch.player_name;
+      return updateBrief(given, patch).then(() => given);
     }
     const gen = (window.dgAgentCode && window.dgAgentCode.gen) || (n => 'AGNT-' + Math.random().toString(36).slice(2, 6).toUpperCase());
     let attempts = 0;
@@ -212,8 +215,18 @@
       withTimeout(db().collection('briefs').where('player_name_lc', '==', needle).get(), 15000, 'searching Agent Files'),
       withTimeout(db().collection('characters').where('player_name_lc', '==', needle).get(), 15000, 'searching characters')
     ])).then(([briefs, chars]) => {
+      // A character found by name whose Agent File doesn't carry the name
+      // (yet) still brings that Agent File's photo, codename and eras.
+      const have = {};
+      briefs.forEach(d => { have[d.id] = true; });
+      const missing = [];
+      chars.forEach(d => { if (!have[d.id]) missing.push(d.id); });
+      return Promise.all(missing.map(code => withTimeout(db().collection('briefs').doc(code).get(), 15000, 'reading Agent Files')
+        .catch(() => null)))
+        .then(extra => [briefs, chars, extra.filter(s => s && s.exists)]);
+    }).then(([briefs, chars, extraBriefs]) => {
       const byCode = {};
-      briefs.forEach(d => {
+      briefs.docs.concat(extraBriefs).forEach(d => {
         const b = d.data();
         byCode[d.id] = {
           code: d.id, char_name: b.char_name || '', codename: b.codename || '', sex: b.sex || '',
