@@ -10,6 +10,7 @@ Usage:
     python3 test/run_tests.py
 """
 import json
+from types import SimpleNamespace
 import re, os, sys, time
 from playwright.sync_api import sync_playwright
 
@@ -6692,18 +6693,9 @@ def test_shell_nav_tracks_in_page_navigation(p):
     install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    # JSONP-aware -- Agent Hub loads some data via a <script src=...
-    # &callback=...> tag, which executes the response as raw JS; a bare
-    # JSON body (not wrapped in the callback call) throws exactly the
-    # "Unexpected token ':'" a first pass at this stub hit.
-    def fake_hub_apps_script(route):
-        url = route.request.url
-        if "callback=" not in url:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        cb = url.split("callback=")[1].split("&")[0]
-        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
-    page.route("**/script.google.com/**", fake_hub_apps_script)
+    # OWEN-CS12 needs a backend record (an Agent File), or Agent Hub
+    # purges it from the roster as deleted.
+    install_firestore_backend(page, {"briefs/OWEN-CS12": {"char_name": "Owen Castillo", "codename": "Ferro"}})
     # add_init_script runs in every same-origin document this page
     # loads, the content iframe included -- needed so Agent Hub's own
     # roster (and its per-Agent "Agent File" link) actually renders
@@ -7010,7 +7002,7 @@ def test_agent_portal_code_query_param(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", fake_apps_script)
+    jsonp_backend(page, fake_apps_script)
     page.goto(f"{BASE}/dg-agent-portal.html?code=OWEN-CS12#agent", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(600)
     record("agent-portal", "?code=...#agent opens straight to the Agent File tab (Profiling is complete)",
@@ -7041,7 +7033,7 @@ def test_agent_portal_code_query_param(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", fake_apps_script)
+    jsonp_backend(page, fake_apps_script)
     page.goto(f"{BASE}/dg-agent-portal.html?code=OWEN-CS12#ids", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(600)
     record("agent-portal", "?code=...#ids opens straight to the Cover IDs tab",
@@ -7089,7 +7081,7 @@ def test_agent_portal_profiling_gate(p):
     errs = collect_errors(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", partial_fake_apps_script)
+    jsonp_backend(page, partial_fake_apps_script)
     page.goto(f"{BASE}/dg-agent-portal.html?code=MARK-DL01#agent", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(600)
     record("agent-portal", "an incomplete profile (auto-export shape) bounces ?code=...#agent back to Profiling",
@@ -8002,7 +7994,7 @@ def test_agent_portal_submit_reuses_roster_code(p):
             return
         cb = url.split("callback=")[1].split("&")[0]
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"NOT_FOUND"}})')
-    page.route("**/script.google.com/**", fake_apps_script)
+    jsonp_backend(page, fake_apps_script)
 
     agent = AGENTS[0]
     roster = json.dumps({"ROST-X001": {"code": "ROST-X001", "char_name": agent["char_name"], "saved_at": 1000}})
@@ -8098,7 +8090,7 @@ def test_agent_file_era_prompt_includes_era(p):
         else:
             res = {"status": "OK"}
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-    page.route("**/script.google.com/**", fake_apps_script)
+    jsonp_backend(page, fake_apps_script)
 
     page.goto(f"{BASE}/dg-agent-portal.html?code=DANI-U8BM#agent", wait_until="domcontentloaded", timeout=15000)
     # Condition-based, not a fixed 1.2s: the prompt requests are staggered
@@ -8185,7 +8177,7 @@ def test_agent_file_era_prompts_isolated_per_era(p):
         else:
             res = {"status": "OK"}
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-    page.route("**/script.google.com/**", fake_apps_script)
+    jsonp_backend(page, fake_apps_script)
 
     page.goto(f"{BASE}/dg-agent-portal.html?code=DANI-U8BM#agent", wait_until="domcontentloaded", timeout=15000)
     # Auto-generate is staggered (500ms + idx*200ms per era in
@@ -8274,7 +8266,7 @@ def test_agent_file_era_age_adjusts_per_era(p):
         else:
             res = {"status": "OK"}
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-    page.route("**/script.google.com/**", fake_apps_script)
+    jsonp_backend(page, fake_apps_script)
 
     page.goto(f"{BASE}/dg-agent-portal.html?code=AGED-E20A#agent", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(2500)
@@ -8409,7 +8401,7 @@ def test_agent_file_active_era_toggle(p):
         else:
             res = {"status": "OK"}
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-    page.route("**/script.google.com/**", fake_apps_script)
+    jsonp_backend(page, fake_apps_script)
     # Real Drive photo URLs would normally load through loadDriveImage()'s
     # own JSONP proxy -- irrelevant to this test (only the toggle's own
     # logic/network calls matter), and no route is registered for it, so
@@ -8515,7 +8507,7 @@ def test_agent_file_outfit_plate_requires_face_first(p):
         else:
             res = {"status": "OK"}
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-    page.route("**/script.google.com/**", fake_apps_script)
+    jsonp_backend(page, fake_apps_script)
 
     page.goto(f"{BASE}/dg-agent-portal.html?code=NOFA-CE01#agent", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(800)
@@ -8607,7 +8599,7 @@ def test_agent_file_kia_stamp(p):
         else:
             res = {"status": "OK"}
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-    page.route("**/script.google.com/**", fake_apps_script)
+    jsonp_backend(page, fake_apps_script)
 
     page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
@@ -8679,7 +8671,7 @@ def test_agent_file_vitals_and_bonds(p):
         else:
             res = {"status": "OK"}
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-    page.route("**/script.google.com/**", fake_apps_script)
+    jsonp_backend(page, fake_apps_script)
 
     page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
@@ -9477,7 +9469,10 @@ def test_notes_evidence_integration(p):
             route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
         else:
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", fake_apps_script)
+    page.route("**/script.google.com/**", fake_apps_script)  # the Drive image proxy
+    # Seen marks are Firestore evidence_seen/{code}_{id} docs now.
+    install_firestore_backend(page, {"evidence_seen/OWEN-CS12_" + k: {"agent_code": "OWEN-CS12", "evidence_id": k}
+                                     for k in seen_map})
 
     page.add_init_script("""
         try {
@@ -9526,8 +9521,9 @@ def test_notes_evidence_integration(p):
            and "Cause of death" in page.inner_text(".dg-notes-evidence-body"), "")
     record("notes", "a Cell-mate's existing Circulated remark shows in the Remarks thread, attributed to them",
            "blood spatter" in page.inner_text(".dg-notes-evidence-body") and "Priya Anand" in page.inner_text(".dg-notes-evidence-body"), "")
-    record("notes", "opening it posts mark_evidence_seen for this Agent and this item",
-           any(x.get("action") == "mark_evidence_seen" and x.get("evidence_id") == "ev1" and x.get("agent_code") == "OWEN-CS12" for x in posts), str(posts))
+    record("notes", "opening it saves a seen mark for this Agent and this item",
+           (fs_doc(page, "evidence_seen/OWEN-CS12_ev1") or {}).get("evidence_id") == "ev1",
+           str(fs_writes(page, "evidence_seen/")))
     record("notes", "its gdrive-backed photo resolves and renders as a real image",
            page.locator(".dg-notes-evidence-photo-img").count() == 1, "")
 
@@ -10633,7 +10629,7 @@ def test_wizard_does_not_reopen_over_loaded_agent(p):
     page.add_init_script("try { localStorage.setItem('dg-wiz-step', '0'); } catch (e) {}")
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", fake)
+    jsonp_backend(page, fake)
     page.goto(f"{BASE}/stats/index.html?load=DANI-U8BM&live=1", wait_until="load", timeout=20000)
     page.wait_for_timeout(1500)
     record("stats-terminal", "a leftover wizard step does not reopen the wizard over an Agent opened via ?load=",
@@ -10698,7 +10694,7 @@ def test_dice_roller_recovers_from_load_race(p):
             route.fulfill(status=200, content_type="application/javascript", body=body)
         else:
             route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", fake_apps_script)
+    jsonp_backend(page, fake_apps_script)
 
     page.goto(f"{BASE}/stats/index.html?load=OWEN-CS12&live=1", wait_until="domcontentloaded", timeout=15000)
     # Gives the mocked ?load= round trip (JSONP callback + cloud-sync.js's
@@ -10851,6 +10847,43 @@ def _route_backend(page, respond, posts=None):
         return None
     page.expose_function("__dgPyBackend", hook)
     page.add_init_script("window.__dgBackendHook = function (kind, arg) { return window.__dgPyBackend(kind, arg); };")
+
+class _FakeRoute:
+    """Stands in for a Playwright route so an old Apps Script fake can
+    be asked a question directly (see jsonp_backend)."""
+    def __init__(self, method, url, body):
+        self.request = SimpleNamespace(method=method, url=url, post_data=body)
+        self.result = None
+    def fulfill(self, status=200, content_type=None, body="", **kw):
+        self.result = body
+    def abort(self, *a, **kw):
+        self.result = None
+    def continue_(self, *a, **kw):
+        self.result = None
+    fallback = continue_
+
+def jsonp_backend(page, handler, posts=None):
+    """A test's old Apps Script fake (a page.route handler answering JSONP
+    GETs / POSTs) now answers the Firestore reads and writes that replaced
+    those calls, via _route_backend. It also still serves the one request
+    left on Apps Script, the Drive image proxy (action=imgdata)."""
+    page.route("**/script.google.com/**", handler)
+    def respond(method, q, body):
+        if method == "GET":
+            qs = "&".join("%s=%s" % (k, v) for k, v in q.items()) + "&callback=cbTest"
+            r = _FakeRoute("GET", "https://script.google.com/macros/s/TEST/exec?" + qs, None)
+        else:
+            r = _FakeRoute("POST", "https://script.google.com/macros/s/TEST/exec", json.dumps(body))
+        handler(r)
+        text = (r.result or "").strip()
+        if not text:
+            return None
+        m = re.match(r"^[\w$.]+\((.*)\)\s*;?$", text, re.S)
+        try:
+            return json.loads(m.group(1) if m else text)
+        except Exception:
+            return None
+    _route_backend(page, respond, posts)
 
 def _block_fonts(page):
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
@@ -11667,10 +11700,19 @@ def main():
             r"securetoken\.googleapis\.com|firebasestorage\.googleapis\.com|firebaseinstallations\.googleapis\.com|"
             r"cloudfunctions\.net|storage\.googleapis\.com)/")
         _real_new_page = browser.new_page
+        # And every page gets the in-page Firestore stub by default: the
+        # pages talk to Firestore from their first second now, so an
+        # unstubbed page would load the real SDK (unreachable from a
+        # sandbox) and then fail against the blocked hosts above -- a
+        # console error in every test that never cared about Firebase.
+        # new_page(real_firebase=True) opts out.
         def _new_page_blocking_live_backend(*a, **kw):
+            real_firebase = kw.pop("real_firebase", False)
             page = _real_new_page(*a, **kw)
             page.route("**/script.google.com/**", lambda route: route.abort())
             page.route(LIVE_FIREBASE_HOSTS, lambda route: route.abort())
+            if not real_firebase:
+                install_notes_firestore_stub(page)
             return page
         browser.new_page = _new_page_blocking_live_backend
 
