@@ -11353,6 +11353,59 @@ def test_auto_created_brief_uses_titles_and_player(p):
     return errs
 
 
+def test_main_photo_from_active_era(p):
+    """A real report (Daniella Martinez): an Agent with two era Face
+    Plates and an Active Era chosen showed no photo outside the Agent
+    File's own era stack. Every other surface read only face_plate_url,
+    a copy that was set in a few narrow cases. They now take the Active
+    Era's own Plate (dgStore.mainPhoto), and opening the Agent File
+    repairs the stored copy."""
+    errs_all = []
+    code = "DANI-0001"
+    brief = {"agent_code": code, "char_name": "Daniella Martinez", "codename": "LARK",
+             "player_name": "dani player", "player_name_lc": "dani player",
+             "active_eras": '["90s","20s"]', "campaign_era": "20s", "face_plate_url": "",
+             "era_90s_face_url": "https://example.test/dani-90s.png", "era_20s_face_url": "https://example.test/dani-20s.png"}
+    # An Agent File from before per-era photos: an era label but no era
+    # list, and its one photo only in face_plate_url. The rule above must
+    # not read that as "Active Era has no photo" -- the portal's heal
+    # would then wipe the only copy.
+    legacy = "LEGA-0001"
+    legacy_brief = {"agent_code": legacy, "char_name": "Lee Gacy", "codename": "OLDER",
+                    "player_name": "legacy player", "player_name_lc": "legacy player",
+                    "campaign_era": "1990s", "face_plate_url": "https://example.test/legacy.png"}
+    docs = {f"briefs/{code}": brief, f"briefs/{legacy}": legacy_brief,
+            f"characters/{code}": character_doc(code, {"v": 1, "bio": {"name": "Daniella Martinez", "player_name": "dani player"}}, "dani player")}
+    page = p.new_page(viewport={"width": 1300, "height": 860})
+    page.set_default_timeout(10000)
+    errs = collect_errors(page)
+    _block_fonts(page)
+    route_apps_script_ok(page)
+    page.route("https://example.test/**", lambda r: r.fulfill(status=200, content_type="image/png", body=b""))
+    install_firestore_backend(page, docs)
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.fill("#cover-identity-input", "dani player")
+    page.click("#cover-identity-btn")
+    roster = wait_for_condition(lambda: (json.loads(page.evaluate("localStorage.getItem('dg_agent_roster')") or "{}").get(code)), timeout_ms=8000) or {}
+    record("photo", "Load My Agents takes the Active Era's Face Plate as the main photo when the flat copy is empty",
+           roster.get("face_plate_url") == "https://example.test/dani-20s.png", str(roster.get("face_plate_url")))
+    card = wait_for_condition(lambda: page.evaluate("() => { const i = document.querySelector('.paper-photo img'); return i ? i.getAttribute('src') : null; }"), timeout_ms=8000)
+    record("photo", "the Agent Hub card shows that photo instead of 'Take Photo'", card == "https://example.test/dani-20s.png", str(card))
+    errs_all.extend(errs)
+    page.goto(f"{BASE}/dg-agent-portal.html?code={code}#cover", wait_until="domcontentloaded", timeout=15000)
+    healed = wait_for_condition(lambda: (fs_doc(page, f"briefs/{code}") or {}).get("face_plate_url") or None, timeout_ms=10000)
+    record("photo", "opening the Agent File repairs the stored main photo to the Active Era's Plate",
+           healed == "https://example.test/dani-20s.png", str(healed))
+    record("photo", "a pre-era-photos Agent File keeps face_plate_url as its main photo",
+           page.evaluate("(b) => window.dgStore.mainPhoto(b)", legacy_brief) == "https://example.test/legacy.png", "")
+    page.goto(f"{BASE}/dg-agent-portal.html?code={legacy}#cover", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(3500)
+    kept = (fs_doc(page, f"briefs/{legacy}") or {}).get("face_plate_url")
+    record("photo", "opening that Agent File leaves its only photo alone", kept == "https://example.test/legacy.png", str(kept))
+    page.close()
+    return errs_all
+
 def test_friendly_clearance(p):
     """Friendly: a one-shot player picks a pregen and plays. Out of the box
     it must be at most three clicks from Clearance to a roll (it's two:
@@ -11825,6 +11878,7 @@ def main():
         safe(test_theme_survives_new_recruit_and_cloud_load, browser, area="journey")
         safe(test_player_pages_use_in_page_dialogs, browser, area="journey")
         safe(test_friendly_clearance, browser, area="friendly")
+        safe(test_main_photo_from_active_era, browser, area="photo")
         safe(test_friendly_pregen_builder, browser, area="friendly")
         safe(test_hub_dice_roller_learns_agent_from_iframe, browser, area="dice-roller")
         safe(test_agent_file_storage_plates_and_refresh, browser, area="journey")

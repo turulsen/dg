@@ -1457,6 +1457,28 @@
   function asHandler_() {
     return ensureHandlerSignedIn().then(function () { return window.firebase.firestore(); });
   }
+  // The Agent's main photo -- same rule as dgStore.mainPhoto()
+  // (assets/dg-store.js, not loaded on this page): the Active Era's own
+  // Face Plate, else the flat face_plate_url copy, else any era's Plate.
+  function mainPhotoOf_(b) {
+    var u = mainPhotoRaw_(b);
+    if (!u || !/drive\.google\.com|docs\.google\.com/.test(u)) return u;
+    var m = u.match(/\/file\/d\/([^\/?]+)/) || u.match(/[?&]id=([^&]+)/);
+    return m ? 'gdrive:' + m[1] : u;
+  }
+  function mainPhotoRaw_(b) {
+    if (!b) return '';
+    var key = function (e) { e = String(e || '').trim().toLowerCase(); var m = e.match(/^(?:19|20)?(\d0s)$/); return m ? m[1] : e; };
+    var active = key(b.campaign_era);
+    if (active && b['era_' + active + '_face_url']) return b['era_' + active + '_face_url'];
+    if (b.face_plate_url) return b.face_plate_url;
+    var order = [];
+    try { order = Array.isArray(b.active_eras) ? b.active_eras : JSON.parse(b.active_eras || '[]'); } catch (e) { order = [b.active_eras]; }
+    var all = (Array.isArray(order) ? order : []).map(key).concat(['90s', '00s', '10s', '20s']);
+    for (var i = 0; i < all.length; i++) if (b['era_' + all[i] + '_face_url']) return b['era_' + all[i] + '_face_url'];
+    return '';
+  }
+  window.dgMainPhoto = mainPhotoOf_; // the Play tab's own script block below uses it too
   function docsOf_(snap) {
     var out = [];
     snap.forEach(function (d) { out.push({ id: d.id, data: d.data() || {} }); });
@@ -1533,7 +1555,7 @@
         return Promise.all([db.collection('characters').get(), db.collection('briefs').get()]);
       }).then(function (r) {
         var face = {};
-        r[1].forEach(function (d) { face[d.id] = d.data().face_plate_url || ''; });
+        r[1].forEach(function (d) { face[d.id] = mainPhotoOf_(d.data()); });
         return { status: 'OK', characters: docsOf_(r[0]).filter(function (d) { return d.data.character_json; })
           .map(function (d) { return charSummary_(d.id, d.data, face); }) };
       });
@@ -2001,7 +2023,7 @@
       return {
         code: code,
         updatedAt: charDoc.updated_at || '',
-        face_plate_url: briefDoc.face_plate_url || '',
+        face_plate_url: window.dgMainPhoto(briefDoc),
         state: {
           bio: {
             name: bio.name, profession: bio.profession, nationality: bio.nationality,
@@ -2334,7 +2356,7 @@
       delete window[cbName];
       var s = document.getElementById('s-' + cbName);
       if (s) s.remove();
-      var faceUrl = res && res.status === 'OK' && res.data ? res.data.face_plate_url : null;
+      var faceUrl = res && res.status === 'OK' && res.data ? window.dgMainPhoto(res.data) : null;
       if (faceUrl) {
         resolveFacePlateInto(faceUrl, imgElId);
       } else {
