@@ -10280,6 +10280,9 @@ def test_split_view_tablet_breakpoint(p):
     page.set_viewport_size({"width": 820, "height": 1100})
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(400)
+    # The sheet's own mobile Notes button; on notebook pages Notes is the
+    # Field Notes notebook's Notes tab (test_field_notes_notebook).
+    notebook_aside(page)
     record("stats", "at a portrait-iPad width, Split View's toggle is hidden, not reachable in a half-usable state",
            page.is_visible("#split-view-toggle-btn") is False, "")
     record("stats", "the mobile Notes widget is shown instead at that same width",
@@ -10360,6 +10363,10 @@ def test_mobile_notes_fullscreen(p):
 
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
+    # This flip-over is the sheet's own phone Notes; with the Field Notes
+    # notebook on the page its button is replaced by the notebook's Notes
+    # tab, so check the flip-over itself with the notebook set aside.
+    notebook_aside(page)
 
     record("stats", "at a phone width, Split View's toggle is hidden -- desktop/tablet only",
            page.is_visible("#split-view-toggle-btn") is False, "")
