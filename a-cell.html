@@ -4267,9 +4267,12 @@
       deletedAgents = deletedAgents.filter(function (d) { return d.code !== agent.code; });
       renderDeletedList();
       // A read straight after can briefly miss the restored Agent on
-      // WebKit/iOS (see doDelete), so the table refreshes twice.
+      // WebKit/iOS (see doDelete): refresh once more if it did. (Only
+      // then -- a redraw would close any delete confirm opened since.)
       fetchAll();
-      setTimeout(fetchAll, 2000);
+      setTimeout(function () {
+        if (!rows.some(function (r) { return r.code === agent.code; })) fetchAll();
+      }, 2000);
     }).catch(function () {
       statusEl.textContent = 'Could not reach the backend.';
     });
