@@ -11543,8 +11543,9 @@ def test_field_notes_standing_orders(p):
     page.wait_for_selector("#fn-orders", timeout=10000)
     page.wait_for_selector("#fn-orders [data-o=prompt]:not([hidden])", timeout=15000)
     term = page.inner_text("#fn-orders")
-    record("onboarding", "leaving the sheet brings up the terminal with the five tenets and a Y/N prompt",
-           all(s in term for s in ["STOP IT", "CONTAIN IT", "LEAVE NO TRACE", "BRING IT HOME", "SAVE WHO YOU CAN", "[Y/N]"]), term[:300])
+    record("onboarding", "leaving the sheet brings up the clearance briefing: five tenets, then 'can we call on you? [Y/N]'",
+           all(s in term for s in ["IT HAS HAPPENED BEFORE", "KNOWING SPREADS IT", "WE ARE FEW", "THE WORK IS NECESSARY",
+                                   "ASK NOTHING", "We need your silence", "CAN WE CALL ON YOU? [Y/N]", "briefing_codename:"]), term[:400])
     page.keyboard.press("n")
     page.wait_for_timeout(300)
     record("onboarding", "N closes it and keeps the orders pending",

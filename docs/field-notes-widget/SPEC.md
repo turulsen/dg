@@ -110,30 +110,34 @@ evidence, "Gergo") is replaced by the real Agent's data everywhere.
   navigation away: the shell's nav, a link, Back, or reopening the app
   later). The terminal comes up over whatever page they were heading to.
   Never on a normal page load for an Agent that already acknowledged.
-- **Look:** green-on-black terminal, like the Clearance boot splash.
-  The lines type in one at a time, ending in a prompt:
-  `ACKNOWLEDGE STANDING ORDERS? [Y/N]`.
-- **Keys:** `Y` (or tapping **Y**) acknowledges and saves
-  (`briefs/{code}.standing_orders_ack_at`, plus a local flag).
+- **Look:** green-on-black terminal, like the Clearance boot splash:
+  the clearance agreement is signed, the briefing gets its own random
+  code name, then the lines type in one at a time, ending in the
+  briefing's own question: `CAN WE CALL ON YOU? [Y/N]`.
+- **Keys:** `Y` (or tapping **Y — you can call on me**) accepts and
+  saves (`briefs/{code}.standing_orders_ack_at`, plus a local flag).
   `N` or `Escape` closes it without saving, so it comes back the next
   time they leave the sheet.
 - **After Y:** the Agent loads straight into its **Agent File** on the
   Profiling tab to take the Face Plate photo, and once a photo exists
   the next step offered is the **Field ID** (the business ID).
-- **Text:** our own simplified wording of the Program's priorities,
-  not the rulebook's text:
+- **Text:** the recruitment briefing a new Agent hears after signing
+  (the Handler's reference, round 3), in our own simplified words, not
+  the rulebook's:
 
-  > **STANDING ORDERS — READ AND ACKNOWLEDGE**
+  > **CLEARANCE BRIEFING — NEED TO KNOW**
   >
-  > You will never speak of the Program. Not to family, not to anyone.
+  > 1. **It has happened before.** Unnatural incursions are real, and
+  >    they kill.
+  > 2. **Knowing spreads it.** Exposure does the damage; only a cover-up
+  >    stops it.
+  > 3. **We are few.** A small, secret task force exists to stop them.
+  > 4. **The work is necessary.** It is also clandestine, and not always
+  >    legal.
+  > 5. **Ask nothing.** Explanations don't come. Looking into us is
+  >    forbidden; you learn only what you need to know.
   >
-  > 1. **Stop it.** Ending the threat comes before everything else.
-  > 2. **Contain it.** The fewer people who learn of it, the fewer it
-  >    can reach.
-  > 3. **Leave no trace.** Nothing may point back to the Program.
-  > 4. **Bring it home.** Recover what you can: evidence, samples,
-  >    anything that shouldn't exist.
-  > 5. **Save who you can.** The last priority, not the least.
+  > We need your silence. **Can we call on you? [Y/N]**
 
 ## 7. Look
 

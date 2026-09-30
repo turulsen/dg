@@ -1264,17 +1264,26 @@
   /* ── Standing Orders: the five tenets, new-Agent onboarding ── */
   // Our own simplified wording of the Program's priorities -- NOT the
   // rulebook's text (the repo and site are public).
+  // The recruitment briefing a new Agent gets after signing the
+  // clearance agreement, in our own words. The briefing's closing ask
+  // (silence, and whether they can call on you) is the Y/N prompt below.
   var ORDERS_TEXT = [
-    ['fn-o-head', 'STANDING ORDERS — READ AND ACKNOWLEDGE'],
+    ['fn-o-head', 'CLEARANCE BRIEFING — NEED TO KNOW'],
     ['', ''],
-    ['', 'You will never speak of the Program. Not to family, not to anyone.'],
+    ['', '1. IT HAS HAPPENED BEFORE. Unnatural incursions are real, and they kill.'],
+    ['', '2. KNOWING SPREADS IT. Exposure does the damage; only a cover-up stops it.'],
+    ['', '3. WE ARE FEW. A small, secret task force exists to stop them.'],
+    ['', '4. THE WORK IS NECESSARY. It is also clandestine, and not always legal.'],
+    ['', '5. ASK NOTHING. Explanations don\'t come. Looking into us is forbidden; you learn only what you need to know.'],
     ['', ''],
-    ['', '1. STOP IT. Ending the threat comes before everything else.'],
-    ['', '2. CONTAIN IT. The fewer people who learn of it, the fewer it can reach.'],
-    ['', '3. LEAVE NO TRACE. Nothing may point back to the Program.'],
-    ['', '4. BRING IT HOME. Recover what you can: evidence, samples, anything that shouldn\'t exist.'],
-    ['', '5. SAVE WHO YOU CAN. The last priority, not the least.']
+    ['', 'We need your silence.']
   ];
+  var BRIEFING_WORDS = [['PALE', 'IRON', 'QUIET', 'BITTER', 'HOLLOW', 'GRAY', 'NORTHERN', 'SILENT', 'BURNT', 'WINTER'],
+    ['LANTERN', 'ORCHARD', 'HARBOR', 'MERIDIAN', 'CISTERN', 'THRESHOLD', 'LEDGER', 'SPARROW', 'CANTICLE', 'FATHOM']];
+  function briefingCodename() {
+    var r = function (a) { return a[Math.floor(Math.random() * a.length)]; };
+    return r(BRIEFING_WORDS[0]) + ' ' + r(BRIEFING_WORDS[1]);
+  }
   var ordersKeyHandler = null;
   function maybeShowOrders() {
     if (document.getElementById('fn-orders')) return;
@@ -1286,14 +1295,15 @@
   function showOrders(p) {
     close();
     var who = p.name ? p.name + ' (' + p.code + ')' : p.code;
-    var lines = [['fn-o-dim', '>incoming_transmission'], ['fn-o-dim', '>agent: ' + who], ['', '']].concat(ORDERS_TEXT);
+    var lines = [['fn-o-dim', '>clearance_agreement: signed'], ['fn-o-dim', '>briefing_codename: ' + briefingCodename()],
+      ['fn-o-dim', '>recruit: ' + who], ['', '']].concat(ORDERS_TEXT);
     var ov = document.createElement('div');
     ov.id = 'fn-orders';
     ov.setAttribute('role', 'dialog');
-    ov.setAttribute('aria-label', 'Standing Orders');
+    ov.setAttribute('aria-label', 'Clearance briefing');
     ov.innerHTML = '<div class="fn-orders-term"><div data-o="log"></div><div data-o="prompt" hidden>' +
-      '<div>ACKNOWLEDGE STANDING ORDERS? [Y/N]<span class="fn-cursor"></span></div>' +
-      '<div class="fn-orders-prompt"><button type="button" class="fn-orders-key" data-o="y">Y — I understand</button>' +
+      '<div>CAN WE CALL ON YOU? [Y/N]<span class="fn-cursor"></span></div>' +
+      '<div class="fn-orders-prompt"><button type="button" class="fn-orders-key" data-o="y">Y — you can call on me</button>' +
       '<button type="button" class="fn-orders-key" data-o="n">N — not now</button></div></div></div>';
     root.appendChild(ov);
     ov.tabIndex = -1;
@@ -1333,8 +1343,8 @@
       lsSet(ORDERS_ACK_KEY, JSON.stringify(ack));
       lsDel(ORDERS_PENDING_KEY);
       lsSet(ONBOARD_KEY, JSON.stringify({ code: p.code, step: 'photo', at: Date.now() }));
-      say('>acknowledged.');
-      say('>filing_acknowledgement…');
+      say('>understood. we\'ll be in touch.');
+      say('>filing_clearance…');
       // Recorded on the Agent's own brief so the Handler has it too --
       // only when that brief already exists: creating a stray, nameless
       // brief here would show up as a blank Agent in A-Cell.
