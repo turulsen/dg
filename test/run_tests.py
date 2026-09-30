@@ -11712,6 +11712,22 @@ def main():
                 install_notes_firestore_stub(page)
             return page
         browser.new_page = _new_page_blocking_live_backend
+        # Same for pages opened from a test's own browser context.
+        _real_new_context = browser.new_context
+        def _new_context_blocking_live_backend(*a, **kw):
+            ctx = _real_new_context(*a, **kw)
+            _ctx_new_page = ctx.new_page
+            def _ctx_page(*pa, **pkw):
+                real_firebase = pkw.pop("real_firebase", False)
+                page = _ctx_new_page(*pa, **pkw)
+                page.route("**/script.google.com/**", lambda route: route.abort())
+                page.route(LIVE_FIREBASE_HOSTS, lambda route: route.abort())
+                if not real_firebase:
+                    install_notes_firestore_stub(page)
+                return page
+            ctx.new_page = _ctx_page
+            return ctx
+        browser.new_context = _new_context_blocking_live_backend
 
         # DG_TEST_ONLY=test_a,test_b runs just those tests (same browser
         # setup, same live-backend blocking as a full run).
