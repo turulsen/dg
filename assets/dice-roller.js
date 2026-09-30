@@ -76,9 +76,19 @@
     // own outer/non-embedded page) via postMessage, same mechanism this
     // file already used for Split View alone before this fix widened it
     // to also cover the shell.
-    const FRIENDLY_PAGE = document.documentElement.hasAttribute('data-dice-friendly');
+    const FRIENDLY_PAGE_OWN = document.documentElement.hasAttribute('data-dice-friendly');
+    // A frame marked data-dg-embed is one of the Field Notes notebook's
+    // own embedded pages (Requisition, desktop Notes) -- same rule as the
+    // shell: the page that hosts the notebook owns the one Dice panel.
     const SUPPRESS_OWN_PANEL = !!(window.frameElement &&
-        (window.frameElement.id === 'dg-shell-content' || window.frameElement.id === 'dg-split-sheet-frame'));
+        (window.frameElement.id === 'dg-shell-content' || window.frameElement.id === 'dg-split-sheet-frame' ||
+         window.frameElement.hasAttribute('data-dg-embed')));
+    // Friendly (friendly.html) loaded INSIDE the Hub shell: that page's
+    // own copy of this script is suppressed, so it relays its pregen
+    // identity up here (see setIdentity()) and this, the shell's copy,
+    // rolls as that pregen until the shell navigates elsewhere.
+    let _relayedFriendly = false;
+    function isFriendly() { return FRIENDLY_PAGE_OWN || _relayedFriendly; }
 
     /* ── Dice config ──────────────────────────────────────────────── */
     const DICE = [
@@ -360,7 +370,7 @@
     }
 
     function friendlyIdentity() {
-        return FRIENDLY_PAGE ? (window.dgDiceIdentity || null) : null;
+        return isFriendly() ? (window.dgDiceIdentity || null) : null;
     }
     const LOCAL_HISTORY_KEY = 'dg_friendly_rolls';
     function readLocalHistory() {
@@ -375,7 +385,7 @@
     function isHandlerContext() {
         // A table's shared tablet can still hold the Handler's A-Cell
         // session in this tab -- the Friendly page is never the Handler's feed.
-        if (FRIENDLY_PAGE) return false;
+        if (isFriendly()) return false;
         try { return !!sessionStorage.getItem(ACELL_SESSION_KEY); } catch (e) { return false; }
     }
 
@@ -411,7 +421,7 @@
     // notes/index.html already uses for the same "who am I on this
     // page" question.
     function currentAgentCode() {
-        if (FRIENDLY_PAGE) return (friendlyIdentity() || {}).code || '';
+        if (isFriendly()) return (friendlyIdentity() || {}).code || '';
         try {
             const direct = localStorage.getItem(CLOUD_CODE_KEY);
             if (direct) return direct;
@@ -436,7 +446,7 @@
     // so it's the fallback; dgSaveLoad's live value is still preferred
     // when available since it reflects an unsaved in-progress edit.
     function currentAgentName() {
-        if (FRIENDLY_PAGE) return (friendlyIdentity() || {}).name || '';
+        if (isFriendly()) return (friendlyIdentity() || {}).name || '';
         try {
             const s = window.dgSaveLoad && window.dgSaveLoad.collectState && window.dgSaveLoad.collectState();
             const live = s && s.bio && s.bio.name;
@@ -494,7 +504,7 @@
     let _rollContextFor = ''; // the Agent Code the current/in-flight resolution is for
     function resolveRollContext() {
         if (_rollContextPromise) return _rollContextPromise;
-        if (FRIENDLY_PAGE) {
+        if (isFriendly()) {
             const id = friendlyIdentity();
             if (!id || !id.code || !id.cellId) {
                 _rollContext = { mode: 'local' };
@@ -845,10 +855,18 @@
     }
 
     /* ── Core roll ────────────────────────────────────────────────── */
+    // The Field Notes notebook (assets/field-notes.js) hosts this panel
+    // on its Dice page and opens to it when a roll starts from anywhere
+    // (a skill click on the sheet, Friendly's weapon buttons).
+    function signalRollStart() {
+        try { window.dispatchEvent(new CustomEvent('dg-dice-roll-start')); } catch (e) { /* old engine */ }
+    }
+
     function rollDie(targetOverride, skillName) {
         if (_rolling) return;
         if (_exprShown) selectDie(_activeDie);
         _rolling = true;
+        signalRollStart();
 
         const cfg = DICE_MAP.get(_activeDie);
         const sides = cfg?.sides ?? 100;
@@ -953,6 +971,7 @@
     function rollExpr(expr, label) {
         if (_rolling) return;
         _rolling = true;
+        signalRollStart();
 
         const rolls = Array.from({ length: expr.count }, () => Math.floor(Math.random() * expr.sides) + 1);
         const total = rolls.reduce((a, b) => a + b, 0) + expr.modifier;
@@ -1024,13 +1043,23 @@
     function rollExpression(str, label) {
         const expr = parseExpr(String(str || ''));
         if (!expr) return false;
-        if (SUPPRESS_OWN_PANEL) return false;
+        if (SUPPRESS_OWN_PANEL) {
+            if (window.top === window) return false;
+            try { window.top.postMessage({ type: 'dg-dice-expr', expr: String(str), label: label || '' }, location.origin); } catch (e) { return false; }
+            return true;
+        }
         if (_e && _e.panel && _e.panel.classList.contains('dr-collapsed')) togglePanel();
         rollExpr(expr, label);
         return true;
     }
     function setIdentity(id) {
         window.dgDiceIdentity = id || null;
+        if (SUPPRESS_OWN_PANEL) {
+            if (window.top !== window) {
+                try { window.top.postMessage({ type: 'dg-dice-identity', id: id || null }, location.origin); } catch (e) { }
+            }
+            return;
+        }
         stopHistoryFeed();
         _rollContext = null;
         _rollContextPromise = null;
@@ -1047,6 +1076,14 @@
 
     /* ── Panel toggle ─────────────────────────────────────────────── */
     function togglePanel() {
+        if (!_e) {
+            // Suppressed copy (inside the shell): nothing of its own to
+            // toggle -- ask the page that owns the panel to show it.
+            if (SUPPRESS_OWN_PANEL && window.top !== window) {
+                try { window.top.postMessage({ type: 'dg-dice-show' }, location.origin); } catch (e) { }
+            }
+            return;
+        }
         const { panel, body, arrow } = _e;
         if (!panel) return;
         const collapsed = panel.classList.toggle('dr-collapsed');
@@ -1495,6 +1532,14 @@
             const data = e.data;
             if (data && data.type === 'dg-dice-roll') {
                 rollPercent(data.target, data.skillName);
+            } else if (data && data.type === 'dg-dice-expr') {
+                rollExpression(data.expr, data.label);
+            } else if (data && data.type === 'dg-dice-identity') {
+                _relayedFriendly = !!data.id;
+                setIdentity(data.id || null);
+            } else if (data && data.type === 'dg-dice-show') {
+                if (window.dgFieldNotes && window.dgFieldNotes.open) window.dgFieldNotes.open('dice');
+                else if (_e && _e.panel && _e.panel.classList.contains('dr-collapsed')) togglePanel();
             }
         });
     }
@@ -1543,6 +1588,9 @@
         const shellFrame = document.getElementById('dg-shell-content');
         if (shellFrame) shellFrame.addEventListener('load', () => {
             if (_e.panel && !_e.panel.classList.contains('dr-collapsed')) togglePanel();
+            let onFriendly = false;
+            try { onFriendly = shellFrame.contentWindow.location.pathname.indexOf('friendly.html') !== -1; } catch (e) { }
+            if (_relayedFriendly && !onFriendly) { _relayedFriendly = false; setIdentity(null); }
         });
         // Inside the Hub shell this widget lives on the OUTER page, while
         // the Agent's code gets set by the sheet inside the iframe -- and
@@ -1556,7 +1604,7 @@
         // from the one it's using (first code, or Play on another Agent).
         window.addEventListener('storage', e => {
             if (e.key !== CLOUD_CODE_KEY && e.key !== ROSTER_KEY && e.key !== null) return;
-            if (isHandlerContext() || FRIENDLY_PAGE) return;
+            if (isHandlerContext() || isFriendly()) return;
             const code = currentAgentCode();
             const using = _rollContextPromise ? _rollContextFor : '';
             if (code !== using) reresolve();

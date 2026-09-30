@@ -156,7 +156,7 @@
   // included) -- the iframe only ever loads the one correct page, no
   // flash of Agent Hub before redirecting to A-Cell.
   (function () {
-    var ALLOWED_START = ['agent-hub.html', 'a-cell.html'];
+    var ALLOWED_START = ['agent-hub.html', 'a-cell.html', 'friendly.html'];
     var requested = new URLSearchParams(location.search).get('start');
     var initial = ALLOWED_START.indexOf(requested) !== -1 ? requested : 'agent-hub.html';
     var iframe = document.getElementById('dg-shell-content');
@@ -383,6 +383,7 @@
 </script>
 <script src="assets/table-radio.js"></script>
 <script src="assets/dice-roller.js?v=9"></script>
+<script src="assets/field-notes.js"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>
 <script src="assets/shell-nav.js"></script>
 

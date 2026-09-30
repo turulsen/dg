@@ -649,7 +649,7 @@
             <a class="paper-btn" href="dg-agent-portal.html?code=${encodeURIComponent(a.code)}#agent">Agent File</a>
             <a class="paper-btn" href="dg-agent-portal.html?code=${encodeURIComponent(a.code)}#ids">Field ID</a>
             <a class="paper-btn" href="notes/index.html?code=${encodeURIComponent(a.code)}">Notes</a>
-            <a class="paper-btn" href="requisition.html?code=${encodeURIComponent(a.code)}">Requisition</a>
+            <a class="paper-btn" href="requisition.html?code=${encodeURIComponent(a.code)}" data-fn-req="${escapeHtml(a.code)}">Requisition</a>
             <a class="paper-btn" href="rules-reference.html">Rules Reference</a>
             <a class="paper-btn" href="the-incursion.html">The Incursion</a>
           </div>
@@ -1351,6 +1351,17 @@
     }, afterCells), 0);
   }
 
+  // Requisition lives inside the Field Notes notebook now: open it there
+  // for this Agent instead of loading the page (which would only forward
+  // into the notebook anyway, after a full Agent Hub reload).
+  document.addEventListener('click', e => {
+    const link = e.target.closest && e.target.closest('a[data-fn-req]');
+    if (!link || !window.dgFieldNotes) return;
+    e.preventDefault();
+    try { localStorage.setItem('dg_stats_cloud_code', link.getAttribute('data-fn-req')); } catch (err) { /* best effort */ }
+    window.dgFieldNotes.refresh();
+    window.dgFieldNotes.open('req');
+  });
   tabStrip.addEventListener('click', e => {
     const tab = e.target.closest('.tw');
     if (!tab) return;
@@ -1361,6 +1372,7 @@
 
 <script src="assets/table-radio.js"></script>
 <script src="assets/dice-roller.js?v=9"></script>
+<script src="assets/field-notes.js"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>
 
 </body>

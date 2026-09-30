@@ -525,6 +525,9 @@
     function finish() {
         localStorage.removeItem('dg-wiz-step');
         deactivate();
+        // New-Agent onboarding (assets/field-notes.js): arms the Standing
+        // Orders terminal for the next time the player leaves the sheet.
+        try { window.dispatchEvent(new CustomEvent('dg-wizard-finished')); } catch (e) { /* best effort */ }
         // The page used to stay wherever the last step had scrolled it --
         // on a phone that left the finished Agent half-way down with the
         // "Enter Live Play" button cut off under the Hub's header. Start

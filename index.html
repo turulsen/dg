@@ -262,7 +262,13 @@
   var term = document.getElementById('boot-term');
   var logo = document.getElementById('boot-logo');
 
-  if (sessionStorage.getItem('dg_boot_seen')) {
+  // Field Notes -> Settings -> Boot splash OFF skips the animation. The
+  // Hub's own terminal loading screen (hub.html #dg-shell-loading) still
+  // shows while a page is actually loading -- that one is a load screen,
+  // not a ceremony.
+  var bootOff = false;
+  try { bootOff = localStorage.getItem('dg_boot_splash_off') === '1'; } catch (e) { /* best effort */ }
+  if (bootOff || sessionStorage.getItem('dg_boot_seen')) {
     splash.remove();
     document.body.classList.remove('boot-lock');
     return;
@@ -353,6 +359,7 @@
 
 <script src="assets/table-radio.js"></script>
 <script src="assets/dice-roller.js?v=9"></script>
+<script src="assets/field-notes.js"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>
 
 </body>

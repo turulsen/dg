@@ -408,6 +408,9 @@
     flex-shrink:0; color:var(--ink-3); font-size:11px; line-height:1; cursor:pointer; opacity:.5;
   }
   .evidence-folder-edit:hover{ opacity:1; color:var(--ink); }
+  .evidence-folder-flag{ flex-shrink:0; color:var(--ink-3); font-size:12px; line-height:1; cursor:pointer; opacity:.35; }
+  .evidence-folder-flag:hover{ opacity:.9; }
+  .evidence-folder-flag.on{ opacity:1; color:var(--red); }
   .evidence-new-op-form{
     background:rgba(28,22,8,.04); border:1px solid var(--rule); padding:8px 10px;
     display:flex; flex-direction:column; gap:6px;
@@ -1515,7 +1518,7 @@
     list_operations: function () {
       return fsReady_().then(function (db) { return db.collection('operations').get(); }).then(function (snap) {
         return { status: 'OK', operations: docsOf_(snap).map(function (d) {
-          return { operation_id: d.data.operation_id || d.id, cell_id: d.data.cell_id || '', name: d.data.name || '', created_at: d.data.created_at || '' };
+          return { operation_id: d.data.operation_id || d.id, cell_id: d.data.cell_id || '', name: d.data.name || '', created_at: d.data.created_at || '', active: d.data.active === true };
         }) };
       });
     },
@@ -1633,6 +1636,25 @@
     update_operation: function (p) {
       return asHandler_().then(function (db) {
         return db.collection('operations').doc(p.operation_id).update({ name: String(p.name || '').trim() });
+      }).then(function () { return { status: 'OK' }; });
+    },
+    // One Active operation per Cell -- what the players' Field Notes
+    // notebook marks as current on its Agent File page. Setting one
+    // clears the rest of that Cell's; toggling the active one clears it
+    // (the notebook then falls back to the newest operation).
+    set_active_operation: function (p) {
+      var opId = String(p.operation_id || '').trim(), cellId = String(p.cell_id || '').trim();
+      var on = p.active === true || p.active === 'true';
+      if (!opId || !cellId) return Promise.resolve({ status: 'ERROR', message: 'operation_id and cell_id are required' });
+      return asHandler_().then(function (db) {
+        return db.collection('operations').where('cell_id', '==', cellId).get().then(function (snap) {
+          var batch = db.batch();
+          snap.forEach(function (d) {
+            var want = on && d.id === opId;
+            if ((d.data().active === true) !== want) batch.update(d.ref, { active: want });
+          });
+          return batch.commit();
+        });
       }).then(function () { return { status: 'OK' }; });
     },
     delete_operation: function (p) {
@@ -3032,7 +3054,7 @@
         var ops = [];
         r[1].forEach(function (d) {
           var o = d.data() || {};
-          ops.push({ operation_id: o.operation_id || d.id, cell_id: o.cell_id || '', name: o.name || '', created_at: o.created_at || '' });
+          ops.push({ operation_id: o.operation_id || d.id, cell_id: o.cell_id || '', name: o.name || '', created_at: o.created_at || '', active: o.active === true });
         });
         applyOperations_(ops);
         baseDataReady = true;
@@ -3121,11 +3143,12 @@
     newOpBtn.style.display = '';
     var ops = operationsByCell[filterCellId] || [];
     var rows = [{ id: '', label: 'All' }, { id: 'UNFILED', label: 'Unfiled' }]
-      .concat(ops.map(function (o) { return { id: o.operation_id, label: o.name, editable: true }; }));
+      .concat(ops.map(function (o) { return { id: o.operation_id, label: o.name, editable: true, isActive: !!o.active }; }));
     foldersEl.innerHTML = rows.map(function (r) {
       var active = filterOpId === r.id ? ' active' : '';
       var actions = r.editable
         ? '<span class="evidence-folder-actions">' +
+          '<span class="evidence-folder-flag' + (r.isActive ? ' on' : '') + '" data-active-op="' + escapeHtml(r.id) + '" title="' + (r.isActive ? 'Active Operation (players see this as current) — tap to clear' : 'Mark as the Active Operation (players see this as current)') + '">&#9873;</span>' +
           '<span class="evidence-folder-edit" data-edit-op="' + escapeHtml(r.id) + '" title="Rename Operation">&#9998;</span>' +
           '<span class="evidence-folder-del" data-del-op="' + escapeHtml(r.id) + '" title="Delete Operation">&times;</span>' +
           '</span>'
@@ -3135,7 +3158,7 @@
     }).join('');
     Array.prototype.forEach.call(foldersEl.querySelectorAll('[data-op]'), function (row) {
       row.addEventListener('click', function (e) {
-        if (e.target.hasAttribute('data-del-op') || e.target.hasAttribute('data-edit-op')) return;
+        if (e.target.hasAttribute('data-del-op') || e.target.hasAttribute('data-edit-op') || e.target.hasAttribute('data-active-op')) return;
         filterOpId = row.dataset.op;
         renderFolders();
         renderList();
@@ -3208,6 +3231,30 @@
             document.getElementById('evidence-op-edit-cancel').disabled = false;
             confirmBtn.textContent = 'Save';
           });
+        });
+      });
+    });
+    Array.prototype.forEach.call(foldersEl.querySelectorAll('[data-active-op]'), function (x) {
+      x.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var opId = x.dataset.activeOp;
+        var o = operationsById[opId];
+        if (!o) return;
+        var turnOn = !o.active;
+        x.style.pointerEvents = 'none';
+        statusEl.textContent = turnOn ? 'Marking ' + o.name + ' as the Active Operation…' : 'Clearing the Active Operation…';
+        window.__dgGetHandlerIdToken().then(function (idToken) {
+          return window.dgAcellApi.post({ action: 'set_active_operation', operation_id: opId, cell_id: o.cell_id, active: turnOn, id_token: idToken });
+        }).then(function (r) { return r.json(); }).then(function (res) {
+          if (res && res.status && res.status !== 'OK') throw new Error(res.message || res.status);
+          // Trust the write (same as every other A-Cell mutation since the
+          // WebKit read-after-write fix) and update the local copy.
+          (operationsByCell[o.cell_id] || []).forEach(function (o2) { o2.active = turnOn && o2.operation_id === opId; });
+          statusEl.textContent = turnOn ? o.name + ' is now the Active Operation.' : 'No Active Operation set.';
+          renderFolders();
+        }).catch(function () {
+          x.style.pointerEvents = '';
+          statusEl.textContent = 'Could not reach the backend.';
         });
       });
     });

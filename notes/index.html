@@ -91,6 +91,14 @@
   }
 
   footer.site-footer{ font-family:'Courier Prime',monospace; text-align:center; color:#6a6250; font-size:11px; margin-top:56px; }
+  /* Inside the Field Notes notebook's desktop Notes tab: the notebook's
+     own page head already says "Notes", so this page's title block and
+     footer go, and it sits on the notebook's paper instead of the dark
+     folder background. */
+  html.notes-in-notebook body{ background:#f4eed8; padding:10px 12px 18px; }
+  html.notes-in-notebook .notes-header, html.notes-in-notebook footer.site-footer{ display:none; }
+  html.notes-in-notebook .change-context{ margin-top:0; }
+  html.notes-in-notebook .change-context button{ color:#4a3f28; border-color:rgba(160,130,70,.6); }
 </style>
 </head>
 <body class="folder-theme">
@@ -258,6 +266,13 @@
   // right alongside. Same-origin parent, so a direct call is simplest;
   // guarded in case this ever loads standalone with the param somehow
   // still attached (e.g. a bookmarked/shared link).
+  // Inside the Field Notes notebook (desktop Notes tab): the notebook is
+  // the chrome, so this page's own way back out goes.
+  if (new URLSearchParams(location.search).get('embed') === 'notebook') {
+    const backLink = document.getElementById('notes-back-link');
+    if (backLink) backLink.style.display = 'none';
+    document.documentElement.classList.add('notes-in-notebook');
+  }
   if (new URLSearchParams(location.search).get('embed') === 'fullscreen') {
     const backLink = document.getElementById('notes-back-link');
     const playBtn = document.getElementById('notes-play-btn');
@@ -375,6 +390,9 @@
      running arbitrarily old cached JS indefinitely, with no self-heal
      path -- see sw.js's own comment for the stale-while-revalidate
      strategy this plugs into. -->
+<script src="../assets/table-radio.js"></script>
+<script src="../assets/dice-roller.js?v=9"></script>
+<script src="../assets/field-notes.js"></script>
 <script src="../assets/sw-update.js" data-sw="../sw.js"></script>
 
 </body>
