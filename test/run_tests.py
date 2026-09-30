@@ -8464,6 +8464,13 @@ def test_agent_file_active_era_toggle(p):
            "active era" in page.inner_text("#era-preview-90s").lower(), page.inner_text("#era-preview-90s"))
     record("agent-portal", "the other era (00s) offers a Make Active Era button instead",
            page.locator("#era-preview-00s button").count() == 1, "")
+    # This Agent's stored main-photo copy is empty although its default
+    # Active Era (90s) has a Plate: opening the Agent File repairs it
+    # (healMainPhoto(), see test_main_photo_from_active_era).
+    load_posts = [b for b in field_posts if b.get("field") == "face_plate_url"]
+    record("agent-portal", "opening the Agent File fills the empty main-photo copy with the default Active Era's Plate",
+           len(load_posts) == 1 and load_posts[0].get("value") == "gdrive:fake90sface", str(load_posts))
+    del field_posts[:]
 
     page.click("#era-preview-00s button")
     page.wait_for_timeout(300)

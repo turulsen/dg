@@ -211,8 +211,10 @@
   // (era_<era>_face_url, the source of truth since the per-era fix) and
   // face_plate_url was only a copy of the Active Era's, set in a few
   // narrow cases -- an Agent with two era photos and an Active Era could
-  // still have none there. So: the Active Era's own Plate, else that
-  // copy, else the first era (active_eras order) that has one.
+  // still have none there. Same rule the Agent File's own era stack uses:
+  // the Active Era's Plate (none yet means no photo -- never another
+  // era's); with no Active Era chosen, the first era's. face_plate_url
+  // stands in for that first era only (a pre-per-era Agent's one photo).
   const ERA_KEYS = ['90s', '00s', '10s', '20s'];
   function eraKey(era) {
     const e = String(era || '').trim().toLowerCase();
@@ -227,19 +229,15 @@
     const m = u.match(/\/file\/d\/([^\/?]+)/) || u.match(/[?&]id=([^&]+)/);
     return m ? 'gdrive:' + m[1] : u;
   }
-  function mainPhoto(b) { return photoRef(mainPhotoRaw(b)); }
-  function mainPhotoRaw(b) {
+  function mainPhoto(b) {
     if (!b) return '';
-    const active = eraKey(b.campaign_era);
-    if (active && b['era_' + active + '_face_url']) return b['era_' + active + '_face_url'];
-    if (b.face_plate_url) return b.face_plate_url;
     let order = [];
     try { order = Array.isArray(b.active_eras) ? b.active_eras : JSON.parse(b.active_eras || '[]'); } catch (e) { order = [b.active_eras]; }
-    const all = (Array.isArray(order) ? order : []).map(eraKey).concat(ERA_KEYS);
-    for (let i = 0; i < all.length; i++) {
-      if (b['era_' + all[i] + '_face_url']) return b['era_' + all[i] + '_face_url'];
-    }
-    return '';
+    order = (Array.isArray(order) ? order : []).map(eraKey).filter(e => ERA_KEYS.indexOf(e) !== -1);
+    const first = order[0] || '';
+    const era = eraKey(b.campaign_era) || first;
+    if (!era) return photoRef(b.face_plate_url);
+    return photoRef(b['era_' + era + '_face_url'] || (era === first ? b.face_plate_url : '') || '');
   }
 
   // "Load My Agents": every Agent whose brief or character sheet carries
@@ -362,7 +360,7 @@
     getCharacter, saveCharacter,
     getBrief, updateBrief, submitBrief, findByPlayerName,
     listHandoutNotes, saveHandoutNote,
-    getIdentities, saveIdentity, listSeen, markSeen, deleteOwnAgent, mainPhoto,
+    getIdentities, saveIdentity, listSeen, markSeen, deleteOwnAgent, mainPhoto, photoRef,
     generatePrompt, generatePlateImage
   };
 })();

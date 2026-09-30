@@ -4511,11 +4511,13 @@ function renderEraStack(eras, data) {
 // report: an Agent with two era photos and an Active Era, and no photo
 // anywhere else. Every reader now works it out with dgStore.mainPhoto();
 // this also repairs the stored copy whenever the Agent File loads the
-// Agent from the server.
+// Agent from the server. An Active Era with no Plate yet clears a stale
+// copy (matching setPreviewEra(): no photo, not another era's).
 function healMainPhoto() {
   if (!afData || !afCode || !window.dgStore || !window.dgStore.mainPhoto) return;
   const want = window.dgStore.mainPhoto(afData);
-  if (!want || want === afData.face_plate_url) return;
+  // Same photo, just a different link form (Drive link vs gdrive:ID): leave it.
+  if (want === window.dgStore.photoRef(afData.face_plate_url)) return;
   afData.face_plate_url = want;
   persistAgent(afCode, afData);
   afFetch({ action: 'update_field', agent_code: afCode, token: agentToken(afCode), field: 'face_plate_url', value: want }).catch(() => {});
@@ -6144,7 +6146,10 @@ function rosterRender() {
       }
       var faceId = extractDriveId(agent.face_plate_url);
       if (!faceId) return;
-      var cbName = '_rosterFace_' + agent.code.replace(/[^a-zA-Z0-9]/g,'_');
+      // Unique per request: the drawer can re-render (a re-save of this
+      // Agent) before an earlier request answers, and a shared name let
+      // the first answer delete the callback the second one still calls.
+      var cbName = '_rosterFace_' + agent.code.replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
       window[cbName] = function(json) {
         delete window[cbName];
         if (json.status === 'OK' && json.dataUri) {
