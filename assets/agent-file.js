@@ -1085,12 +1085,14 @@ function renderEraStack(eras, data) {
 
     // Header — always visible, click to toggle
     const header = document.createElement('div');
-    header.style.cssText = 'display:flex;align-items:center;gap:12px;height:48px;padding:0 16px 0 52px;border-bottom:' + (isOpen ? '2px solid #1c1608' : '1px solid rgba(180,150,72,.3)') + ';cursor:pointer;position:relative;';
+    // Wraps onto a second line on a phone instead of running off the
+    // edge; no 52px gutter (that was room for the portal's punch holes).
+    header.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;min-height:48px;padding:8px 14px;border-bottom:' + (isOpen ? '2px solid #1c1608' : '1px solid rgba(180,150,72,.3)') + ';cursor:pointer;position:relative;';
     header.innerHTML = '<div style="font-family:Special Elite,monospace;font-size:20px;color:#1c1608;letter-spacing:.04em;">' + eraDecade[era] + '</div>'
       + '<div style="font-family:Courier Prime,monospace;font-size:8px;letter-spacing:.15em;text-transform:uppercase;color:#4a3f28;">' + (eraLabels[era]||'') + '</div>'
-      + '<div style="margin-left:auto;display:flex;align-items:center;gap:12px;">'
+      + '<div style="margin-left:auto;display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px 12px;">'
       + '<span id="era-preview-' + era + '"></span>'
-      + '<span id="era-photo-' + era + '" style="font-family:Courier Prime,monospace;font-size:8px;color:#4a3f28;">' + (faceUrl ? '&#9679; Photo On File' : '&#9675; No Photo Yet') + '</span>'
+      + '<span id="era-photo-' + era + '" style="font-family:Courier Prime,monospace;font-size:8px;color:#4a3f28;white-space:nowrap;">' + (faceUrl ? '&#9679; Photo On File' : '&#9675; No Photo Yet') + '</span>'
       + '<span id="era-chevron-' + era + '" style="font-size:12px;color:#8a7a5a;transition:transform 200ms;">' + (isOpen ? '&#9650;' : '&#9660;') + '</span>'
       + '</div>';
     header.onclick = () => toggleEraAccordion(era);
@@ -1099,7 +1101,7 @@ function renderEraStack(eras, data) {
     // Body — collapsible
     const body = document.createElement('div');
     body.id = 'era-body-' + era;
-    body.style.cssText = 'display:' + (isOpen ? 'block' : 'none') + ';padding:24px 16px 24px 52px;font-family:Courier Prime,monospace;font-size:12px;color:#1c1608;';
+    body.style.cssText = 'display:' + (isOpen ? 'block' : 'none') + ';padding:20px 14px;font-family:Courier Prime,monospace;font-size:12px;color:#1c1608;';
 
     // Plate images
     body.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">'
@@ -1218,7 +1220,7 @@ function updatePreviewBadges() {
     const isPreview = afData.campaign_era ? (afData.campaign_era === era) : (afEraPages[0] === era);
     el.innerHTML = isPreview
       ? '<span style="font-family:Courier Prime,monospace;font-size:8px;letter-spacing:.08em;text-transform:uppercase;color:#8b1a1a;">Active Era</span>'
-      : '<button type="button" data-era="' + era + '" onclick="event.stopPropagation();setPreviewEra(this.dataset.era)" style="font-family:Courier Prime,monospace;font-size:8px;letter-spacing:.08em;text-transform:uppercase;background:transparent;color:#4a3f28;border:1px solid rgba(160,130,70,.4);padding:2px 6px;cursor:pointer;">Make Active Era</button>';
+      : '<button type="button" data-era="' + era + '" onclick="event.stopPropagation();setPreviewEra(this.dataset.era)" style="white-space:nowrap;font-family:Courier Prime,monospace;font-size:8px;letter-spacing:.08em;text-transform:uppercase;background:transparent;color:#4a3f28;border:1px solid rgba(160,130,70,.4);padding:2px 6px;cursor:pointer;">Make Active Era</button>';
   });
 }
 
