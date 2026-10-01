@@ -206,6 +206,43 @@
     return tryOnce();
   }
 
+  // The Agent's main photo (Hub card, Live Play tracker, A-Cell, Field ID
+  // card). Each era keeps its own Face Plate
+  // (era_<era>_face_url, the source of truth since the per-era fix) and
+  // face_plate_url was only a copy of the Active Era's, set in a few
+  // narrow cases -- an Agent with two era photos and an Active Era could
+  // still have none there. Same rule the Agent File's own era stack uses:
+  // the Active Era's Plate (none yet means no photo -- never another
+  // era's); with no Active Era chosen, the first era's. face_plate_url
+  // stands in for that first era only (a pre-per-era Agent's one photo).
+  const ERA_KEYS = ['90s', '00s', '10s', '20s'];
+  function eraKey(era) {
+    const e = String(era || '').trim().toLowerCase();
+    const m = e.match(/^(?:19|20)?(\d0s)$/);
+    return m ? m[1] : e;
+  }
+  // A Drive share/uc link becomes gdrive:ID, the form every photo loader
+  // sends through the imgdata proxy (a raw Drive link won't load in an <img>).
+  function photoRef(u) {
+    u = String(u || '').trim();
+    if (!u || !/drive\.google\.com|docs\.google\.com/.test(u)) return u;
+    const m = u.match(/\/file\/d\/([^\/?]+)/) || u.match(/[?&]id=([^&]+)/);
+    return m ? 'gdrive:' + m[1] : u;
+  }
+  function mainPhoto(b) {
+    if (!b) return '';
+    let order = [];
+    try { order = Array.isArray(b.active_eras) ? b.active_eras : JSON.parse(b.active_eras || '[]'); } catch (e) { order = [b.active_eras]; }
+    order = (Array.isArray(order) ? order : []).map(eraKey).filter(e => ERA_KEYS.indexOf(e) !== -1);
+    const first = order[0] || '';
+    const era = eraKey(b.campaign_era) || first;
+    if (!era) return photoRef(b.face_plate_url);
+    // No era list at all (an Agent File from before per-era photos): the
+    // portal shows face_plate_url as its one era's photo (parseEras()), so
+    // it counts here too, whatever campaign_era says.
+    return photoRef(b['era_' + era + '_face_url'] || (era === first || !first ? b.face_plate_url : '') || '');
+  }
+
   // "Load My Agents": every Agent whose brief or character sheet carries
   // this player name -- same merged shape find_by_player_name returned.
   function findByPlayerName(name) {
@@ -230,7 +267,7 @@
         const b = d.data();
         byCode[d.id] = {
           code: d.id, char_name: b.char_name || '', codename: b.codename || '', sex: b.sex || '',
-          age_range: b.age_range || '', nationality: b.nationality || '', face_plate_url: b.face_plate_url || '',
+          age_range: b.age_range || '', nationality: b.nationality || '', face_plate_url: mainPhoto(b),
           active_eras: b.active_eras || '', campaign_era: b.campaign_era || '', saved_at: Date.now()
         };
       });
@@ -326,7 +363,7 @@
     getCharacter, saveCharacter,
     getBrief, updateBrief, submitBrief, findByPlayerName,
     listHandoutNotes, saveHandoutNote,
-    getIdentities, saveIdentity, listSeen, markSeen, deleteOwnAgent,
+    getIdentities, saveIdentity, listSeen, markSeen, deleteOwnAgent, mainPhoto, photoRef,
     generatePrompt, generatePlateImage
   };
 })();

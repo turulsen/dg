@@ -119,7 +119,8 @@
     ensureFirebaseApi(function () {
       if (code !== currentCode) return; // a newer code arrived while Firebase was loading
       currentUnsub = window.firebase.firestore().collection('briefs').doc(code).onSnapshot(function (doc) {
-        resolvePhoto((doc.data() || {}).face_plate_url || '', box);
+        const b = doc.data() || {};
+        resolvePhoto(window.dgStore && window.dgStore.mainPhoto ? window.dgStore.mainPhoto(b) : (b.face_plate_url || ''), box);
       }, function () { box.innerHTML = MISSING_HTML; });
     }, function () { box.innerHTML = MISSING_HTML; });
   };

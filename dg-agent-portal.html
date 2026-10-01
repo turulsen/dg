@@ -2269,19 +2269,21 @@ function idsPopulateFromAgent(d) {
     agencyEl.value = 'FBI';
   }
 
-  // Load face plate if available
-  if (d.face_plate_url && !idsPhotoDataUrl && isDirectImageUrl_(d.face_plate_url)) {
+  // Load face plate if available -- the Active Era's own Plate first
+  // (see healMainPhoto()), not only the flat face_plate_url copy.
+  const face = (window.dgStore && window.dgStore.mainPhoto) ? window.dgStore.mainPhoto(d) : (d.face_plate_url || '');
+  if (face && !idsPhotoDataUrl && isDirectImageUrl_(face)) {
     // Storage-hosted plate: only ever used as an <img src> (the card is
     // printed, never rasterized), so the URL itself is enough.
-    idsPhotoDataUrl = d.face_plate_url;
+    idsPhotoDataUrl = face;
     const prev = document.getElementById('ids-photo-prev');
     const ph = document.getElementById('ids-photo-placeholder');
-    if (prev) { prev.src = d.face_plate_url; prev.style.display = 'block'; }
+    if (prev) { prev.src = face; prev.style.display = 'block'; }
     if (ph) ph.style.display = 'none';
     idsUpdateCard();
-  } else if (d.face_plate_url && !idsPhotoDataUrl) {
+  } else if (face && !idsPhotoDataUrl) {
     // Load face plate via proxy — use a temporary img element trick
-    const _faceId = extractDriveId(d.face_plate_url);
+    const _faceId = extractDriveId(face);
     if (_faceId) {
       const _cbName = '_idsFaceCb_' + Date.now();
       window[_cbName] = function(json) {
@@ -3844,6 +3846,7 @@ function loadAgentCode(retrying){
       afCode = existingCode;
       afData = data;
       persistAgent(existingCode, data);
+      healMainPhoto();
       const afInput = document.getElementById('af-code-input');
       if (afInput) afInput.value = existingCode;
       renderDossier(data, existingCode, true);
@@ -4083,6 +4086,7 @@ function loadAgentFile(retrying) {
       afData = json.data;
       afCode = code;
       persistAgent(code, json.data);
+      healMainPhoto();
       populateCoverForm(json.data);
       // Only actually show the Agent File once Profiling is done --
       // see isProfilingComplete()'s own comment for why "a row exists"
@@ -4145,6 +4149,7 @@ function refreshAgentFileFromServer_(code) {
     if (afData && JSON.stringify(afData) === JSON.stringify(fresh)) return;
     afData = fresh;
     persistAgent(code, fresh);
+    healMainPhoto();
     populateCoverForm(fresh);
     if (document.getElementById('af-content') && document.getElementById('af-content').style.display === 'block'
         && isProfilingComplete(fresh)) {
@@ -4495,6 +4500,27 @@ function renderEraStack(eras, data) {
   stack.style.minHeight = '';
   document.getElementById('af-add-era-btn').style.display = eras.length < 4 ? 'block' : 'none';
   updatePreviewBadges();
+}
+
+// face_plate_url is the Agent's main photo everywhere else (Hub card,
+// Live Play tracker, A-Cell, Field ID) and is meant to be a
+// copy of the Active Era's Face Plate -- but it was only ever set in a
+// few narrow cases (a Plate made while its era was already active, or
+// "Make Active Era" pressed after the Plate existed), and older versions
+// never saved it at all (BUGFIXES: "Make Active Era never saved"). A real
+// report: an Agent with two era photos and an Active Era, and no photo
+// anywhere else. Every reader now works it out with dgStore.mainPhoto();
+// this also repairs the stored copy whenever the Agent File loads the
+// Agent from the server. An Active Era with no Plate yet clears a stale
+// copy (matching setPreviewEra(): no photo, not another era's).
+function healMainPhoto() {
+  if (!afData || !afCode || !window.dgStore || !window.dgStore.mainPhoto) return;
+  const want = window.dgStore.mainPhoto(afData);
+  // Same photo, just a different link form (Drive link vs gdrive:ID): leave it.
+  if (want === window.dgStore.photoRef(afData.face_plate_url)) return;
+  afData.face_plate_url = want;
+  persistAgent(afCode, afData);
+  afFetch({ action: 'update_field', agent_code: afCode, token: agentToken(afCode), field: 'face_plate_url', value: want }).catch(() => {});
 }
 
 // Which era's Face Plate is the Agent's "preview" photo -- the one every
@@ -6026,7 +6052,7 @@ function rosterAddAgent(code, data) {
     age_range: data.age_range || '',
     nationality: data.nationality || '',
     active_eras: data.active_eras || '',
-    face_plate_url: data.face_plate_url || '',
+    face_plate_url: (window.dgStore && window.dgStore.mainPhoto) ? window.dgStore.mainPhoto(data) : (data.face_plate_url || ''),
     campaign_era: data.campaign_era || '',
     // Not shown anywhere in this roster's own UI -- read only by
     // agent-hub.html's Cover Identity search, to tell an Agent nobody's
@@ -6120,7 +6146,10 @@ function rosterRender() {
       }
       var faceId = extractDriveId(agent.face_plate_url);
       if (!faceId) return;
-      var cbName = '_rosterFace_' + agent.code.replace(/[^a-zA-Z0-9]/g,'_');
+      // Unique per request: the drawer can re-render (a re-save of this
+      // Agent) before an earlier request answers, and a shared name let
+      // the first answer delete the callback the second one still calls.
+      var cbName = '_rosterFace_' + agent.code.replace(/[^a-zA-Z0-9]/g,'_') + '_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
       window[cbName] = function(json) {
         delete window[cbName];
         if (json.status === 'OK' && json.dataUri) {
