@@ -205,8 +205,6 @@ html.dg-fn-host #notes-widget-btn{ display:none !important; }
 /* Three short pockets up top -- each card shows its top half above the
    stitched, thumb-notched lip -- and the kit (radio, dice tin) below. */
 #fn-root .fn-slot{ position:relative; flex:1 1 96px; min-height:92px; max-height:118px; cursor:pointer; outline:none; }
-.fn-slot .fn-biz-agency{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.fn-slot .fn-biz-name{ margin-top:2px; }
 #fn-root .fn-slot:focus-visible .fn-card{ box-shadow:0 0 0 2px var(--fn-lime), 0 3px 8px rgba(0,0,0,.4); }
 .fn-slot-lip{
   position:absolute; left:0; right:0; bottom:0; height:40px; border-radius:2px 2px 4px 4px; pointer-events:none; z-index:1;
@@ -236,26 +234,16 @@ html.dg-fn-host #notes-widget-btn{ display:none !important; }
 .fn-card-txt{ min-width:0; flex:1; }
 .fn-card-req{ background:linear-gradient(170deg,#f7f1dd,#e6dcbc); }
 
-/* Business card (Field ID) */
-.fn-biz{ position:relative; height:100%; display:flex; flex-direction:column; justify-content:flex-start; }
-.fn-biz-code{ position:absolute; right:0; top:0; font-family:var(--fn-type); font-size:12px; letter-spacing:.14em; color:var(--fn-red); border:1.5px solid var(--fn-red); padding:0 5px; }
-.fn-biz-mark{ position:absolute; right:0; top:0; width:26px; height:auto; filter:grayscale(1) sepia(1) hue-rotate(42deg) saturate(1.25) brightness(.8); }
-.fn-biz-agency{ font-size:8px; letter-spacing:.16em; text-transform:uppercase; color:var(--fn-ink-2); padding-right:54px; line-height:1.4; }
-.fn-biz-name{ font-family:var(--fn-type); font-size:14px; margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.fn-biz-title{ font-size:9px; letter-spacing:.1em; color:var(--fn-ink-3); text-transform:uppercase; }
-.fn-biz-dg .fn-biz-agency{ color:#3f4a28; }
-.fn-biz-stage{ display:flex; justify-content:center; padding:16px 0 10px; }
-.fn-biz-big{
-  width:min(100%,360px); height:auto; aspect-ratio:1.75; padding:18px 20px; border-radius:4px;
-  background:linear-gradient(170deg,#fbf7ea,#ece3c8); box-shadow:0 10px 24px rgba(0,0,0,.28), inset 0 0 0 1px rgba(160,130,70,.4);
-  transform:rotate(-1.2deg);
-}
-.fn-biz-big .fn-biz-code{ right:18px; top:16px; font-size:15px; }
-.fn-biz-big .fn-biz-mark{ right:18px; top:14px; width:40px; }
-.fn-biz-big .fn-biz-agency{ font-size:10px; }
-.fn-biz-big .fn-biz-name{ font-size:20px; margin-top:16px; }
-.fn-biz-big .fn-biz-title{ font-size:10px; margin-top:3px; }
-.fn-biz-line{ margin-top:auto; font-size:10px; letter-spacing:.14em; color:var(--fn-ink-3); border-top:1px solid var(--fn-rule); padding-top:6px; }
+/* Field ID: the Agent's cover credential, drawn by assets/field-id-cards.js
+   (the Field IDs tab's own templates) and scaled to fit. */
+.fn-idc-in{ transform-origin:0 0; }
+#fn-root .fn-card.fn-card-biz, #fn-root .fn-slot.fn-active .fn-card.fn-card-biz{ padding:0 6px; background:none; box-shadow:none; overflow:hidden; }
+.fn-card-biz .fn-idc-in > div{ box-shadow:0 3px 8px rgba(0,0,0,.42) !important; }
+#fn-root .fn-slot.fn-active .fn-card-biz .fn-idc-in > div{ outline:2px solid var(--fn-red); outline-offset:-2px; }
+.fn-idc-stage{ display:flex; justify-content:center; padding:14px 0 6px; }
+.fn-idc{ width:100%; max-width:404px; overflow:visible; }
+.fn-idc .fn-idc-in > div{ box-shadow:0 10px 26px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.35) !important; }
+.fn-idc-note{ text-align:center; color:var(--fn-ink-3); font-size:11px; }
 
 /* ── Right page: a small, well-used booklet ── */
 .fn-booklet{ flex:1; display:flex; position:relative; min-width:0; min-height:0; margin:2px 4px 8px 0; }

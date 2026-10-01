@@ -275,6 +275,22 @@ Each step is testable on the preview before the next:
   band of the same height, ruled at the same line, then the editor. The
   *Plain fonts* switch is left out of the spread.
 
+### Round 5
+
+- **Field ID uses the Field IDs templates.** The hand-made business card
+  is gone. The Field ID pocket and page draw the Agent's credential with
+  the same per-agency, per-era templates and agency seals as the Agent
+  File's Field IDs tab: credential books for the 1990s, CR80 cards later,
+  each agency's colors and photo side. The agency comes from the cover
+  workplace; the era is the Agent's Active Era (else first era, else the
+  2020s). The name, title and Agent Code are filled in, plus the Face Plate
+  when there is one. With no agency on file it is the Program's own card
+  (the 2010s design for a 1990s Agent, since the Program issued none
+  then). The templates, seals and renderer moved out of
+  `dg-agent-portal.html` into `assets/field-id-cards.js`
+  (`window.dgFieldIdCards`), which the Field IDs tab now loads too, so
+  there is one copy. Field Notes loads it only when it draws the card.
+
 ## 10. Trying it on the private preview
 
 From Cloud Shell (the repo is public, so the clone needs no login):

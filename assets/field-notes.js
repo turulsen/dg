@@ -360,6 +360,22 @@
     return sheetLibPromise;
   }
 
+  // The Field ID card templates (assets/field-id-cards.js), shared with
+  // the Agent File's Field IDs tab.
+  var idCardsPromise = null;
+  function ensureIdCards() {
+    if (window.dgFieldIdCards) return Promise.resolve(window.dgFieldIdCards);
+    if (idCardsPromise) return idCardsPromise;
+    idCardsPromise = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = url('assets/field-id-cards.js');
+      s.onload = function () { resolve(window.dgFieldIdCards); };
+      s.onerror = function () { idCardsPromise = null; reject(new Error('field-id-cards.js')); };
+      document.head.appendChild(s);
+    });
+    return idCardsPromise;
+  }
+
   var root = document.createElement('div');
   root.id = 'fn-root';
   root.innerHTML =
@@ -448,6 +464,12 @@
     });
     renderChip();
     setInterval(renderChip, 5000);
+    window.addEventListener('resize', function () {
+      if (!state.open) return;
+      drawIdCard(slot('card-biz'), 1);
+      var c = root.querySelector('[data-fn-idc]');
+      if (c) drawIdCard(c, 1.25, 340);
+    });
     renderChrome();
     loadData().then(renderChrome);
     if (IS_SHELL) {
@@ -570,17 +592,75 @@
     var brief = data.brief || {};
     return agencyFor(brief.cover_agency || bio.employer || brief.employer || '');
   }
-  function bizCardHtml(big) {
-    var a = currentAgent();
+  // The Agent's cover credential, drawn with the Field IDs tab's own
+  // per-agency, per-era templates: the agency from the cover workplace
+  // (else the Program's own card), the Agent's era, name, code and photo.
+  function cardEra() {
+    var b = data.brief || {};
+    var k = function (e) { var m = String(e || '').toLowerCase().match(/(?:19|20)?(\d0s)/); return m ? m[1] : ''; };
+    var order = [];
+    try { order = Array.isArray(b.active_eras) ? b.active_eras : JSON.parse(b.active_eras || '[]'); } catch (e) { order = [b.active_eras]; }
+    return k(b.campaign_era) || k((order || [])[0]) || '20s';
+  }
+  function idCardTemplate(C) {
+    var ag = agentAgency(), era = cardEra();
+    var key = ag.dg ? 'DG' : ag.code;
+    var tmpl = null;
+    [era, '20s', '10s', '00s', '90s'].some(function (e) { tmpl = C.template(key, e); return !!tmpl; });
+    // No Program credentials existed in the 90s; the card shown is the
+    // Program's own later one.
+    if (!tmpl || tmpl.is_no_card) tmpl = C.template('DG', '10s');
+    return tmpl;
+  }
+  function idCardPhoto(a, done) {
+    var f = faceUrl(a);
+    if (!f) return '';
+    if (/^(https?:|data:)/.test(f)) return f;
+    var m = String(f).match(/^gdrive:(.+)$/);
+    if (!m) return '';
+    if (imgCache[m[1]]) return imgCache[m[1]];
+    var probe = document.createElement('div');
+    setImage(probe, f);
+    var tries = 0, t = setInterval(function () {
+      if (imgCache[m[1]] || ++tries > 40) { clearInterval(t); if (imgCache[m[1]]) done(); }
+    }, 250);
+    return '';
+  }
+  // Fills `el` with the Agent's card, scaled to el's width.
+  function drawIdCard(el, maxScale, maxH) {
+    if (!el) return;
+    ensureIdCards().then(function (C) {
+      var a = currentAgent();
+      var brief = data.brief || {};
+      var ag = agentAgency();
+      var tmpl = idCardTemplate(C);
+      var codename = brief.codename || (a && a.codename) || '';
+      var fields = {
+        name: a ? agentName(a) : '',
+        title: tmpl.is_dg ? (codename ? 'AGENT \u201C' + codename + '\u201D' : 'AGENT') : '',
+        id_num: a && !a.friendly ? a.code : '',
+        era: tmpl.era
+      };
+      var photo = idCardPhoto(a, function () { drawIdCard(el, maxScale, maxH); });
+      el.innerHTML = '<div class="fn-idc-in">' + C.render(tmpl, fields, photo) + '</div>';
+      el.setAttribute('data-template', (ag.dg ? 'DG' : ag.code) + '_' + tmpl.era);
+      var inner = el.firstChild, card = inner.firstChild;
+      var w = card.offsetWidth || 323, h = card.offsetHeight || 204;
+      var k = Math.min(maxScale || 1, (el.clientWidth || w) / w, maxH ? maxH / h : Infinity);
+      inner.style.width = w + 'px';
+      // Centered across the width (a credential book is narrower than a
+      // CR80 card); the pocket clips it to its own height, the page sizes
+      // itself to the card.
+      inner.style.transform = 'translateX(' + Math.max(0, Math.round(((el.clientWidth || w) - w * k) / 2)) + 'px) scale(' + k + ')';
+      if (maxH) el.style.height = Math.round(h * k) + 'px';
+    }, function () { /* offline: leave the pocket as it was */ });
+  }
+  function idCardLabel() {
     var ag = agentAgency();
-    var name = a ? agentName(a) : 'Agent';
-    return '<div class="fn-biz' + (ag.dg ? ' fn-biz-dg' : '') + (big ? ' fn-biz-big' : '') + '">' +
-      (ag.dg ? '<img class="fn-biz-mark" src="' + TRI + '" alt="">' : '<div class="fn-biz-code">' + esc(ag.code) + '</div>') +
-      '<div class="fn-biz-agency">' + esc(ag.dg ? 'Delta Green' : ag.name) + '</div>' +
-      '<div class="fn-biz-name">' + esc(name) + '</div>' +
-      '<div class="fn-biz-title">' + esc(ag.title) + (ag.dg ? '' : ' · ' + esc(ag.code)) + '</div>' +
-      (big ? '<div class="fn-biz-line">' + esc(a ? a.code : '') + '</div>' : '') +
-      '</div>';
+    var era = cardEra();
+    var t = window.dgFieldIdCards ? idCardTemplate(window.dgFieldIdCards) : null;
+    var label = { '90s': '1990s', '00s': '2000s', '10s': '2010s', '20s': '2020s' };
+    return (ag.dg ? 'Delta Green' : ag.code) + ' · ' + (label[t ? t.era : era] || era);
   }
 
   /* ── Chrome: the card holder, tabs, page head ── */
@@ -605,7 +685,7 @@
     var f = faceUrl(a);
     if (f) { if (ph.getAttribute('data-src') !== f) { ph.setAttribute('data-src', f); ph.textContent = ''; setImage(ph, f); } }
     else { ph.removeAttribute('data-src'); ph.innerHTML = '<span>No photo</span>'; }
-    slot('card-biz').innerHTML = bizCardHtml(false);
+    drawIdCard(slot('card-biz'), 1);
   }
   function renderHead(view, metaText) {
     var m = META[view] || ['', ''];
@@ -718,11 +798,16 @@
     renderHead('fieldid', agentAgency().code);
     loadingThen(body, function () {
       var ag = agentAgency();
-      body.innerHTML = '<div class="fn-biz-stage">' + bizCardHtml(true) + '</div>' +
-        '<p class="fn-p">' + (ag.dg ? 'No agency on this Agent\'s file yet, so it carries the Program\'s own card.' : 'From the workplace on this Agent\'s file.') + '</p>' +
+      body.innerHTML = '<div class="fn-idc-stage"><div class="fn-idc" data-fn-idc></div></div>' +
+        '<p class="fn-p fn-idc-note" data-fn-idc-note></p>' +
         '<div class="fn-actions"><button type="button" class="fn-btn fn-red" data-go="fab">Make Field ID ↗</button>' +
         '<button type="button" class="fn-btn fn-ink" data-go="blank">Blank ID Creator ↗</button></div>';
       body.querySelector('[data-go="fab"]').addEventListener('click', function () { navigate(url('dg-agent-portal.html?code=' + encodeURIComponent(a.code) + '#ids')); });
+      drawIdCard(body.querySelector('[data-fn-idc]'), 1.25, 340);
+      ensureIdCards().then(function () {
+        var n = body.querySelector('[data-fn-idc-note]');
+        if (n) n.textContent = (ag.dg ? 'No agency on this Agent\'s file yet, so this is the Program\'s own card' : 'The ' + ag.name + ' credential for this Agent\'s era') + ' (' + idCardLabel() + '), from the Field IDs templates.';
+      }, function () {});
       body.querySelector('[data-go="blank"]').addEventListener('click', function () { navigate(url('dg-id-creator.html')); });
     });
   }

@@ -2211,6 +2211,20 @@ def test_cover_ids_tab(p):
         record("cover-ids-tab", "PRINT/EXPORT opens a print window for a credential-book layout (no .ids-card-wrap class)",
                False, str(e))
 
+    # The templates now live in assets/field-id-cards.js, shared with the
+    # Field Notes Field ID pocket: every agency in the tab's list, in every
+    # era, still finds a template and draws a card.
+    sweep = page.evaluate("""() => {
+        const C = window.dgFieldIdCards, out = { drawn: 0, missing: [] };
+        const agencies = Array.from(document.querySelectorAll('#ids-agency option')).map(o => o.value).filter(v => v && v !== 'OTHER');
+        ['90s', '00s', '10s', '20s'].forEach(era => agencies.forEach(ag => {
+            const t = C.template(ag, era);
+            if (!t) { out.missing.push(ag + '_' + era); return; }
+            if ((C.render(t, { name: 'Test Agent', era: era }, '') || '').length > 100) out.drawn++;
+        }));
+        return out; }""")
+    record("cover-ids-tab", "every agency/era template is drawn by the shared Field ID card module",
+           sweep["drawn"] > 40 and all(m.split("_")[0] in ("ICE", "CBP", "DHS", "FINCEN") for m in sweep["missing"]), str(sweep))
     record("cover-ids-tab", "no JS exceptions", len(errs)==0, "; ".join(errs))
     page.close()
     return errs
@@ -11562,8 +11576,11 @@ def test_field_notes_round3(p):
     record("notebook", "the dice tin under the radio opens the Dice page",
            bool(wait_for_condition(lambda: page.evaluate("() => window.dgFieldNotes.view() === 'dice' && !!document.querySelector('#fn-veil #dr-panel')") or None, timeout_ms=6000)), "")
     page.evaluate("() => window.dgFieldNotes.open('fieldid')")
-    card = wait_for_condition(lambda: page.evaluate("() => { const c = document.querySelector('#fn-veil .fn-biz-big'); return c ? c.innerText : null; }"), timeout_ms=8000) or ""
-    record("notebook", "Field ID shows a business card for the Agent's agency (DEA)", "DRUG ENFORCEMENT" in card.upper(), card[:120])
+    card = wait_for_condition(lambda: page.evaluate("() => { const c = document.querySelector('#fn-veil [data-fn-idc]'); return c && c.innerText.trim() ? c.getAttribute('data-template') + '|' + c.innerText : null; }"), timeout_ms=8000) or ""
+    record("notebook", "Field ID draws the Agent's agency card from the Field IDs templates (DEA)",
+           card.startswith("DEA_") and "DRUG ENFORCEMENT" in card.upper() and "Mara Voss" in card, card[:160])
+    pocket = page.evaluate("() => { const c = document.querySelector('#fn-veil [data-fn-slot=card-biz]'); return c ? c.getAttribute('data-template') : null; }")
+    record("notebook", "…and the same card sits in the Field ID pocket", (pocket or "").startswith("DEA_"), str(pocket))
     page.evaluate("() => window.dgFieldNotes.open('evidence')")
     page.wait_for_selector("#fn-veil [data-ev-filter]", timeout=10000)
     count = lambda: page.evaluate("() => document.querySelectorAll('#fn-veil .fn-card-sheet').length")
