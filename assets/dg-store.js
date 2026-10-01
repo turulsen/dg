@@ -207,7 +207,7 @@
   }
 
   // The Agent's main photo (Hub card, Live Play tracker, A-Cell, Field ID
-  // card, Field Notes). Each era keeps its own Face Plate
+  // card). Each era keeps its own Face Plate
   // (era_<era>_face_url, the source of truth since the per-era fix) and
   // face_plate_url was only a copy of the Active Era's, set in a few
   // narrow cases -- an Agent with two era photos and an Active Era could
@@ -237,7 +237,10 @@
     const first = order[0] || '';
     const era = eraKey(b.campaign_era) || first;
     if (!era) return photoRef(b.face_plate_url);
-    return photoRef(b['era_' + era + '_face_url'] || (era === first ? b.face_plate_url : '') || '');
+    // No era list at all (an Agent File from before per-era photos): the
+    // portal shows face_plate_url as its one era's photo (parseEras()), so
+    // it counts here too, whatever campaign_era says.
+    return photoRef(b['era_' + era + '_face_url'] || (era === first || !first ? b.face_plate_url : '') || '');
   }
 
   // "Load My Agents": every Agent whose brief or character sheet carries

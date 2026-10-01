@@ -1460,7 +1460,8 @@
   // The Agent's main photo -- same rule as dgStore.mainPhoto()
   // (assets/dg-store.js, not loaded on this page): the Active Era's own
   // Face Plate (none yet = no photo); with no Active Era, the first era's;
-  // face_plate_url stands in for that first era only.
+  // face_plate_url stands in for that first era only (or for the one
+  // photo of an Agent File with no era list at all).
   function mainPhotoOf_(b) {
     if (!b) return '';
     var keys = ['90s', '00s', '10s', '20s'];
@@ -1470,7 +1471,7 @@
     order = (Array.isArray(order) ? order : []).map(key).filter(function (e) { return keys.indexOf(e) !== -1; });
     var first = order[0] || '';
     var era = key(b.campaign_era) || first;
-    var u = !era ? (b.face_plate_url || '') : (b['era_' + era + '_face_url'] || (era === first ? b.face_plate_url : '') || '');
+    var u = !era ? (b.face_plate_url || '') : (b['era_' + era + '_face_url'] || (era === first || !first ? b.face_plate_url : '') || '');
     u = String(u || '').trim();
     if (!u || !/drive\.google\.com|docs\.google\.com/.test(u)) return u;
     var m = u.match(/\/file\/d\/([^\/?]+)/) || u.match(/[?&]id=([^&]+)/);

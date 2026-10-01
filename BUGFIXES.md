@@ -5989,7 +5989,7 @@ Reported for Daniella Martinez: two era Face Plates, an Active Era
 chosen, and still "Take Photo" everywhere else. The photos themselves
 were fine -- each era keeps its own (`era_<era>_face_url`, the source of
 truth since the per-era fix). Every other surface (Agent Hub card, Live
-Play tracker, A-Cell, the Agent File's Field ID card, Field Notes) read
+Play tracker, A-Cell, the Agent File's Field ID card) read
 only `face_plate_url`, a *copy* of the Active Era's Plate that was set
 in just two narrow cases: a Plate made while its era was already active,
 or "Make Active Era" pressed after the Plate existed. Items 4 and 6 in
@@ -6005,11 +6005,18 @@ same rule as `mainPhotoOf_`) with the Agent File's own rule: the Active
 Era's Plate -- none yet means no photo, never another era's (the
 deliberate choice `test_agent_file_active_era_toggle` already pins) --
 and with no Active Era chosen, the first era's, with `face_plate_url`
-standing in for that first era only (a pre-per-era Agent's one photo).
+standing in for that first era only -- or, on an Agent File from before
+per-era photos (an era label in `campaign_era` but no era list in
+`active_eras`), for its one photo whatever the label says, which is how
+the Agent File's own era stack (`parseEras()`) already reads such a
+file. That last case matters doubly: the repair below writes this rule's
+answer back, so reading such a file as "Active Era has no photo yet"
+would have cleared its only copy.
 Drive share links become `gdrive:ID` for the image proxy. The Agent File
 also repairs the stored copy whenever it loads the Agent from the server
 (`healMainPhoto()`), so older readers and other devices catch up too.
 The Agent File's roster drawer also gave each photo request the same
 JSONP callback name, so a re-render before the first answer threw
-"_rosterFace_… is not defined"; each request now gets its own. New `test_main_photo_from_active_era`. `sw.js`
-`CACHE_NAME` v165.
+"_rosterFace_… is not defined"; each request now gets its own. New `test_main_photo_from_active_era`
+(including a pre-per-era Agent File that must keep its photo through an
+Agent File visit). `sw.js` `CACHE_NAME` v163.
