@@ -9634,8 +9634,8 @@ def test_notes_code_url_param(p):
     # navigation to the character sheet. What actually replaced it: the
     # change-context row (Split View / Character Sheet buttons) becomes
     # visible once notes are open for the URL-forced Agent.
-    record("notes", "the old Change Agent button's replacement (Split View/Character Sheet) is shown for the URL-forced Agent",
-           page.is_visible("#change-context-row") and page.is_visible("#split-view-btn") and page.is_visible("#character-sheet-btn"), "")
+    record("notes", "the old Change Agent button's replacement (Character Sheet; Split View is retired) is shown for the URL-forced Agent",
+           page.is_visible("#change-context-row") and page.is_visible("#character-sheet-btn") and not page.is_visible("#split-view-btn"), "")
 
     page.close()
     return errs
@@ -9728,243 +9728,66 @@ def test_notes_solo_mode_for_unassigned_agent(p):
     return errs
 
 
-def test_split_view(p):
-    """Split View: this sheet's own real mobile layout (a second, real
-    iframe of this exact page at a genuinely narrow width, not the live
-    #app-main resized into a flex child and forced into the Mobile
-    theme -- that never actually changed the real viewport width, so it
-    never triggered this page's own existing @media-query responsive
-    layout at all) alongside this Agent's Notes in another iframe. A
-    toggle anyone can flip, not an automatic width-based switch; needs
-    a Cloud Save code to know which Agent to reopen and which Agent's
-    Notes to show, so it no-ops until the sheet has been named at least
-    once. Must never touch the user's saved theme preference -- there's
-    nothing to restore on exit since nothing was ever forced."""
-    page = p.new_page()
-    page.set_default_timeout(10000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+def test_split_view_retired(p):
+    """Split View (the sheet and Notes side by side) is retired: the
+    notebook's Notes sit beside any page. Its buttons -- the sheet's
+    #split-view-toggle-btn and Notes' #split-view-btn -- stay hidden
+    wherever the notebook runs, standalone and inside the Hub shell."""
+    errs_all = []
+    for path, btn in (("stats/index.html", "#split-view-toggle-btn"), (f"notes/index.html?code={FN_CODE}", "#split-view-btn")):
+        page, errs = _field_notes_page(p)
+        page.goto(f"{BASE}/{path}", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+        page.wait_for_timeout(800)
+        record("notebook", f"{path.split('?')[0]}: no Split View button", page.locator(btn).count() == 0 or not page.is_visible(btn), "")
+        errs_all.extend(errs)
+        page.close()
+    page, errs = _field_notes_page(p)
+    page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.evaluate("() => { document.getElementById('dg-shell-content').src = 'stats/index.html'; }")
+    page.wait_for_timeout(3000)
+    fr = page.frame_locator("#dg-shell-content")
+    record("notebook", "inside the Hub shell: no Split View button on the sheet",
+           fr.locator("#split-view-toggle-btn").count() == 0 or not fr.locator("#split-view-toggle-btn").is_visible(), "")
+    errs_all.extend(errs)
+    page.close()
+    return errs_all
 
-    def fake_apps_script(route):
-        req = route.request
-        if req.method == "POST":
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        url = req.url
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            if "action=list_cells" in url:
-                res = {"status": "OK", "cells": [{"cell_id": "cell_1", "name": "Cell Alpha",
-                                                    "handler": "Sam", "member_codes": []}]}
-            elif "action=list_cell_notes" in url:
-                res = {"status": "OK", "notes": {}, "identities": {}}
-            else:
-                res = {"status": "OK"}
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-        else:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", fake_apps_script)
-
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(300)
-
-    record("stats", "Split View toggle button is present",
-           page.locator("#split-view-toggle-btn").count() == 1, "")
-
-    # Regression: the toggle's resting-state colors used to come from
-    # whatever the active theme's own `button` rule painted (a class+tag
-    # selector beats the toggle's bare class), leaving it a flat
-    # near-black slab under some themes -- checked here in the default
-    # theme, before Split View is ever activated (the .active state has
-    # its own separate, always-legible colors, checked further below).
-    resting_toggle_colors = page.evaluate("""() => {
-        const cs = getComputedStyle(document.getElementById('split-view-toggle-btn'));
-        return { bg: cs.backgroundColor, color: cs.color };
-    }""")
-    record("stats", "the Split View toggle keeps its own legible resting-state colors, not whatever the theme's button rule paints",
-           resting_toggle_colors["bg"] == "rgb(22, 26, 20)" and resting_toggle_colors["color"] == "rgb(201, 212, 184)",
-           str(resting_toggle_colors))
-
-    # No Cloud Save code yet -- clicking must no-op rather than activate
-    # split mode with nothing for either pane to point at.
-    page.click("#split-view-toggle-btn")
-    page.wait_for_timeout(200)
-    record("stats", "clicking Split View with no Cloud Save code yet does not activate it",
-           page.evaluate("() => document.body.classList.contains('dg-split-active')") is False, "")
-
-    page.fill("#cs-name", "Split Test Agent")
-    page.wait_for_timeout(300)
-    cloud_code = page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')")
-    record("stats", "naming the agent mints a Cloud Save code", bool(cloud_code), str(cloud_code))
-
-    page.select_option("#cs-theme-select", "field-notes")
-    page.wait_for_timeout(150)
-
-    page.click("#split-view-toggle-btn")
+def test_cell_members_by_name_and_kia(p):
+    """The Cell on an Agent's paper (Agent Hub and the notebook's Agent
+    File) lists each member by name, never by Agent Code: the Agent File's
+    name, else the name on their character sheet; a member whose sheet is
+    at 0 HP is marked KIA."""
+    errs_all = []
+    docs = _field_notes_docs()
+    docs[f"cells/{FN_CELL}"]["member_codes"] = [FN_CODE, FN_MATE, "NONA-0001", "DEAD-0002"]
+    docs["briefs/NONA-0001"] = {"agent_code": "NONA-0001"}  # an Agent File with no name on it
+    docs["characters/NONA-0001"] = character_doc("NONA-0001", {"v": 1, "bio": {"name": "Ruth Okafor"}, "derived": {"hp": 11}}, "x")
+    docs["characters/DEAD-0002"] = character_doc("DEAD-0002", {"v": 1, "bio": {"name": "Sam Doyle"}, "derived": {"hp": 0}}, "y")
+    extra = "localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE
+    page, errs = _field_notes_page(p, docs=docs, extra_init=extra)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector(f"#ah-sheet-{FN_CODE} .as-members li", timeout=15000)
     page.wait_for_timeout(500)
-    record("stats", "Split View activates: body picks up dg-split-active",
-           page.evaluate("() => document.body.classList.contains('dg-split-active')") is True, "")
-    record("stats", "the live sheet (#app-main) is hidden -- only the sheet iframe is live now",
-           page.is_visible("#app-main") is False, "")
-    record("stats", "the toggle button shows an active state",
-           "active" in (page.get_attribute("#split-view-toggle-btn", "class") or ""), "")
-
-    theme_during_split = page.evaluate("() => document.body.className")
-    record("stats", "Split View does not force a different theme -- the real theme stays active",
-           "theme-field-notes" in theme_during_split,
-           theme_during_split)
-    saved_theme_during_split = page.evaluate("() => localStorage.getItem('dg_theme')")
-    record("stats", "the user's real saved theme preference is untouched",
-           saved_theme_during_split == "field-notes", str(saved_theme_during_split))
-
-    sheet_iframe_src = page.get_attribute("#dg-split-sheet-frame", "src") or ""
-    record("stats", "the sheet pane iframe re-opens this exact page, flagged as the embedded sheet",
-           sheet_iframe_src == "index.html?embed=split-sheet", sheet_iframe_src)
-
-    notes_iframe_src = page.get_attribute("#dg-split-notes-frame", "src") or ""
-    record("stats", "the Notes pane iframe points at this Agent's own Cloud Save code",
-           notes_iframe_src == f"../notes/index.html?code={cloud_code}", f"{notes_iframe_src} vs code={cloud_code}")
-
-    def frame_ready(sel):
-        return page.eval_on_selector(
-            sel,
-            "el => !!(el.contentDocument && el.contentDocument.readyState === 'complete' && el.contentDocument.body && el.contentDocument.body.innerHTML.length > 0)")
-    wait_for_condition(lambda: frame_ready("#dg-split-sheet-frame"), timeout_ms=8000)
-    wait_for_condition(lambda: frame_ready("#dg-split-notes-frame"), timeout_ms=6000)
-
-    sheet_frame = page.frame_locator("#dg-split-sheet-frame")
-    page.wait_for_timeout(600)
-    record("stats", "the sheet iframe actually loads stats/index.html content",
-           sheet_frame.locator("body").count() >= 1, "")
-    record("stats", "the sheet iframe picks up the same character via the shared local autosave",
-           sheet_frame.locator("#cs-name").input_value() == "Split Test Agent", "")
-    record("stats", "the sheet iframe carries the same real theme too, not Mobile",
-           sheet_frame.locator("body.theme-field-notes").count() == 1, "")
-    record("stats", "the sheet iframe hides its own Split View toggle -- nesting one level deep doesn't mean anything",
-           sheet_frame.locator("#split-view-toggle-btn").count() == 0
-           or sheet_frame.locator("#split-view-toggle-btn").is_visible() is False, "")
-    record("stats", "the Notes iframe actually loads notes/index.html content",
-           page.frame_locator("#dg-split-notes-frame").locator("body").count() >= 1, "")
-
-    # Regression: clicking a skill inside the embedded sheet iframe used to
-    # roll against that iframe's own #dr-panel, which is hidden there by
-    # design (body.dg-embedded) -- the roll happened but the player could
-    # never see it. It should now relay to the outer page's visible panel.
-    skill_input = sheet_frame.locator("#cs-skills input.cs-skill-input").first
-    skill_input.fill("55")
-    skill_input.click()
-    wait_for_condition(
-        lambda: (page.eval_on_selector("#dr-result-label", "el => el.textContent") or "") != "" or None,
-        timeout_ms=4000)
-    outer_dr_name = page.eval_on_selector("#dr-skill-name", "el => el.textContent")
-    outer_dr_result = page.eval_on_selector("#dr-result-label", "el => el.textContent")
-    record("stats", "a skill click inside Split View's embedded sheet relays a roll to the outer page's visible dice panel",
-           bool(outer_dr_name) and outer_dr_result in ("SUCCESS", "FAILURE", "CRITICAL SUCCESS", "FUMBLE"),
-           f"name={outer_dr_name!r} result={outer_dr_result!r}")
-
-    sheet_box = page.eval_on_selector("#dg-split-sheet-pane", "el => el.getBoundingClientRect().top")
-    notes_box = page.eval_on_selector("#dg-split-notes-pane", "el => el.getBoundingClientRect().top")
-    record("stats", "both panes start at the same vertical position",
-           sheet_box == notes_box, f"sheet_top={sheet_box} notes_top={notes_box}")
-
-    # Toggle off tears both panes back down; nothing to restore since
-    # nothing was ever forced.
-    page.click("#split-view-toggle-btn")
-    page.wait_for_timeout(300)
-    record("stats", "toggling off drops dg-split-active",
-           page.evaluate("() => document.body.classList.contains('dg-split-active')") is False, "")
-    record("stats", "toggling off brings the live sheet back",
-           page.is_visible("#app-main") is True, "")
-    restored_theme = page.evaluate("() => localStorage.getItem('dg_theme')")
-    record("stats", "the real theme preference in storage is unchanged after the round trip",
-           restored_theme == "field-notes", str(restored_theme))
-
-    # A reload with the toggle left on should auto-restore it, since a
-    # Cloud Save code already exists on this device.
-    page.evaluate("() => localStorage.setItem('dg_split_view', '1')")
-    page.reload(wait_until="domcontentloaded")
-    page.wait_for_timeout(600)
-    record("stats", "Split View auto-restores on reload when left on and a Cloud Save code exists",
-           page.evaluate("() => document.body.classList.contains('dg-split-active')") is True, "")
-
-    record("stats", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    rows = page.eval_on_selector_all(f"#ah-sheet-{FN_CODE} .as-members li", "els => els.map(e => [e.querySelector('.as-mname') ? e.querySelector('.as-mname').textContent : e.textContent, e.classList.contains('as-kia'), !!e.querySelector('.as-stamp')])")
+    names = [r[0] for r in rows]
+    record("hub", "Agent Hub's Cell lists members by name (Agent File, else character sheet), not by code",
+           names == ["Tom Hale", "Ruth Okafor", "Sam Doyle"], str(rows))
+    record("hub", "…and a member at 0 HP is marked KIA (only them)",
+           [r[1] and r[2] for r in rows] == [False, False, True], str(rows))
+    page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+    page.wait_for_selector("#fn-veil .as-members li", timeout=15000)
+    nb = page.eval_on_selector_all("#fn-veil .as-members li", "els => els.map(e => [e.querySelector('.as-mname').textContent, e.classList.contains('as-kia')])")
+    record("notebook", "the notebook's Agent File lists the same Cell by name, with KIA marked",
+           nb == [["Tom Hale", False], ["Ruth Okafor", False], ["Sam Doyle", True]], str(nb))
+    page.evaluate("() => window.dgFieldNotes.open('fieldid')")
+    page.wait_for_selector("#fn-veil [data-go=fab]", timeout=10000)
+    record("notebook", "Field ID offers the Fabricator only (no Blank ID Creator)",
+           page.locator("#fn-veil [data-go=blank]").count() == 0 and "Blank ID" not in page.inner_text("#fn-veil"), "")
+    errs_all.extend(errs)
     page.close()
-    return errs
-
-
-def test_split_view_tablet_breakpoint(p):
-    """Regression coverage for a real live report from a portrait iPad:
-    Split View's toggle-hidden threshold and the mobile Notes widget's
-    toggle-shown threshold used to disagree (768px vs 900px), so a
-    width in that gap showed Split View's own toggle but the two panes
-    had nowhere to go but stacked full-width, one below the other --
-    indistinguishable in practice from the toggle just flipping between
-    the two, since each pane runs a good deal taller than the screen.
-    Both thresholds now match (900px, see DG_MOBILE_QUERY in scripts.js
-    and its styles.css counterpart) so there's no width where Split
-    View is reachable but has nothing usable to fall back on."""
-    page = p.new_page()
-    page.set_default_timeout(10000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-
-    def fake_apps_script(route):
-        req = route.request
-        if req.method == "POST":
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        url = req.url
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            if "action=list_cells" in url:
-                res = {"status": "OK", "cells": [{"cell_id": "cell_1", "name": "Cell Alpha",
-                                                    "handler": "Sam", "member_codes": []}]}
-            elif "action=list_cell_notes" in url:
-                res = {"status": "OK", "notes": {}, "identities": {}}
-            else:
-                res = {"status": "OK"}
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-        else:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", fake_apps_script)
-
-    # A portrait iPad's own CSS viewport width sits right in what used
-    # to be the disagreement gap.
-    page.set_viewport_size({"width": 820, "height": 1100})
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(400)
-    # The sheet's own mobile Notes button; on notebook pages Notes is the
-    # Field Notes notebook's Notes tab (test_field_notes_notebook).
-    notebook_aside(page)
-    record("stats", "at a portrait-iPad width, Split View's toggle is hidden, not reachable in a half-usable state",
-           page.is_visible("#split-view-toggle-btn") is False, "")
-    record("stats", "the mobile Notes widget is shown instead at that same width",
-           page.is_visible("#notes-widget-btn") is True, "")
-
-    # One tick wider and Split View should be a real, genuinely
-    # side-by-side split -- not stacked.
-    page.set_viewport_size({"width": 901, "height": 1100})
-    page.wait_for_timeout(300)
-    record("stats", "one pixel past the threshold, Split View's toggle is reachable",
-           page.is_visible("#split-view-toggle-btn") is True, "")
-    page.fill("#cs-name", "Tablet Breakpoint Agent")
-    page.wait_for_timeout(300)
-    page.click("#split-view-toggle-btn")
-    page.wait_for_timeout(600)
-    sheet_top = page.eval_on_selector("#dg-split-sheet-pane", "el => el.getBoundingClientRect().top")
-    notes_top = page.eval_on_selector("#dg-split-notes-pane", "el => el.getBoundingClientRect().top")
-    sheet_left = page.eval_on_selector("#dg-split-sheet-pane", "el => el.getBoundingClientRect().left")
-    notes_left = page.eval_on_selector("#dg-split-notes-pane", "el => el.getBoundingClientRect().left")
-    record("stats", "just past the threshold, the two panes sit side by side (same row, different columns), not stacked",
-           sheet_top == notes_top and sheet_left != notes_left,
-           f"sheet=({sheet_left},{sheet_top}) notes=({notes_left},{notes_top})")
-
-    record("stats", "no JS exceptions", len(errs) == 0, "; ".join(errs))
-    page.close()
-    return errs
-
+    return errs_all
 
 def test_mobile_notes_fullscreen(p):
     """Split View doesn't fit a phone-width screen, so mobile gets a
@@ -11399,26 +11222,36 @@ def test_field_notes_page_taps_act_once(p):
     return errs
 
 def test_field_notes_popup_pager(p):
-    """The radio popped up beside the closed notebook (from the radio chip;
-    on a phone, the only radio there is) is position:fixed, and its face
-    was filtered out of every refresh by an offsetParent check -- tapping a
-    channel never turned the knob and Tune In never became Leave."""
+    """The radio, now that the closed notebook has no radio chip beside it
+    (retired with Split View): on a phone, the open notebook's header
+    radio pops the pager up (position:fixed -- its face was once filtered
+    out of every refresh by an offsetParent check, so a channel tap never
+    turned the knob and Tune In never became Leave); on a desktop, the
+    radio sits under the card pockets in the open notebook."""
     errs_all = []
     for width, height in ((390, 844), (1300, 860)):
         page, errs = _field_notes_page(p, width=width, height=height)
         page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
         page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost && window.dgRadio", timeout=10000)
-        where = "phone" if width < 700 else "desktop"
-        page.evaluate("() => [...document.querySelectorAll('#fn-root .fn-chip')].find(c => c.getClientRects().length).click()")
-        shown = wait_for_condition(lambda: page.evaluate("() => { const p = document.querySelector('#fn-pager'); return p && !p.hidden && p.querySelector('.fn-pg-case') ? 1 : null; }"), timeout_ms=5000)
-        record("notebook", f"{where}: the radio chip pops the radio up", bool(shown), "")
-        page.click("#fn-pager [data-ch='3']")
-        knob = wait_for_condition(lambda: page.evaluate("() => { const k = document.querySelector('#fn-pager [data-p=knob]'); return /rotate\\(144deg\\)/.test(k.style.transform) && document.querySelector('#fn-pager [data-ch=\"3\"]').classList.contains('fn-on') ? k.style.transform : null; }"), timeout_ms=3000)
-        record("notebook", f"{where}: tapping a channel on the popped-up radio turns its knob there", bool(knob), str(knob))
-        page.click("#fn-pager [data-p=tune]")
-        key = wait_for_condition(lambda: page.evaluate("() => { const t = document.querySelector('#fn-pager [data-p=tune]'); return /leave/i.test(t.textContent) && t.classList.contains('fn-on') ? t.textContent : null; }"), timeout_ms=4000)
-        record("notebook", f"{where}: …and Tune In there becomes Leave once tuned", bool(key) and page.evaluate("() => window.dgRadio.state().channel === '3'"), str(key))
-        page.click("#fn-pager [data-p=tune]")
+        phone = width < 700
+        where = "phone" if phone else "desktop"
+        record("notebook", f"{where}: no radio chip beside the closed notebook",
+               page.evaluate("() => document.querySelectorAll('#fn-root .fn-chip').length") == 0, "")
+        page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+        if phone:
+            page.click("#fn-root .fn-ph-radio")
+            box = "#fn-pager"
+        else:
+            box = "#fn-root .fn-kit-radio"
+        shown = wait_for_condition(lambda: page.evaluate("(sel) => { const p = document.querySelector(sel); return p && p.getClientRects().length && p.querySelector('.fn-pg-case') ? 1 : null; }", box), timeout_ms=5000)
+        record("notebook", f"{where}: the radio is there in the open notebook", bool(shown), "")
+        page.click(f"{box} [data-ch='3']")
+        knob = wait_for_condition(lambda: page.evaluate("""(sel) => { const k = document.querySelector(sel + ' [data-p=knob]'); return /rotate\\(144deg\\)/.test(k.style.transform) && document.querySelector(sel + ' [data-ch="3"]').classList.contains('fn-on') ? k.style.transform : null; }""", box), timeout_ms=3000)
+        record("notebook", f"{where}: tapping a channel turns the radio's knob", bool(knob), str(knob))
+        page.click(f"{box} [data-p=tune]")
+        key = wait_for_condition(lambda: page.evaluate("(sel) => { const t = document.querySelector(sel + ' [data-p=tune]'); return /leave/i.test(t.textContent) && t.classList.contains('fn-on') ? t.textContent : null; }", box), timeout_ms=4000)
+        record("notebook", f"{where}: …and Tune In becomes Leave once tuned", bool(key) and page.evaluate("() => window.dgRadio.state().channel === '3'"), str(key))
+        page.click(f"{box} [data-p=tune]")
         errs_all.extend(errs)
         page.close()
     return errs_all
@@ -12526,9 +12359,9 @@ def main():
         safe(test_notes_code_url_param, browser, area="notes")
         safe(test_notes_solo_mode_for_unassigned_agent, browser, area="notes")
 
-        safe(test_split_view, browser, area="stats")
+        safe(test_split_view_retired, browser, area="notebook")
+        safe(test_cell_members_by_name_and_kia, browser, area="hub")
 
-        safe(test_split_view_tablet_breakpoint, browser, area="stats")
 
         safe(test_mobile_notes_fullscreen, browser, area="stats")
 

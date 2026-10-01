@@ -6079,3 +6079,17 @@ Same report, not code bugs, made clearer instead:
   "the AI service did not answer. Try again in a minute; if it keeps
   failing, tell your Handler." The cause itself is server-side and is
   being checked in the function logs (`generatePrompt`).
+
+## Agent Hub: the Agent's paper could stay blank on a slow load
+
+Found while testing the Cell list by name. Agent Hub draws each Agent's
+paper (vitals, physical description, Cell, sheet) on a zero-delay timer
+from its main script, but `assets/agent-sheet.js` is loaded by a script
+tag further down the page. When the tags in between were slow to arrive,
+the timer won the race, found no `dgAgentSheet`, and gave up -- the
+paper stayed empty (and hidden) until something else redrew it. It now
+waits for the page's `load` when the library isn't there yet, and writes
+into the tab's current element in case the roster was rebuilt while the
+reads were in flight. Covered by the new
+`test_cell_members_by_name_and_kia`, which hit the race every time.
+`sw.js` `CACHE_NAME` v176.

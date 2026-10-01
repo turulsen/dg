@@ -158,8 +158,27 @@
     return s || String(fallback || '');
   }
 
+  /* ── A Cell member, as the paper lists them ── */
+  // By name, never by Agent Code: the Agent File's name, else the name on
+  // their character sheet, else the Cell's own copy; the code only when
+  // nothing has a name. KIA the same way Agent Hub stamps an Agent: the
+  // saved sheet's HP at 0 or below.
+  function cellMember(code, brief, charDoc, cellNames) {
+    var b = brief || {};
+    var st = null;
+    try { st = charDoc && charDoc.character_json ? JSON.parse(charDoc.character_json) : null; } catch (e) { st = null; }
+    var sheetName = st && st.bio && String(st.bio.name || '').trim();
+    var hp = st && st.derived ? st.derived.hp : null;
+    return {
+      code: code,
+      name: String(b.char_name || '').trim() || sheetName || ((cellNames || {})[code]) || code,
+      codename: b.codename || '',
+      kia: typeof hp === 'number' && hp <= 0
+    };
+  }
+
   /* ── The paper ── */
-  // opts: { photoHtml, subtitle, cellName, members:[{name,codename}], actionsHtml, noteHtml, emptySheetHtml }
+  // opts: { photoHtml, subtitle, cellName, members:[{name,codename,kia}], actionsHtml, noteHtml, emptySheetHtml }
   function render(sheet, opts) {
     opts = opts || {};
     var d = sheet.derived || {};
@@ -180,7 +199,9 @@
           (opts.cellName
             ? '<div class="as-cell"><b>' + esc(opts.cellName) + '</b>' +
               '<ul class="as-members">' + ((opts.members || []).length ? opts.members.map(function (m) {
-                return '<li>' + esc(m.name) + (m.codename ? ' <span class="as-k">“' + esc(m.codename) + '”</span>' : '') + '</li>';
+                return '<li' + (m.kia ? ' class="as-kia"' : '') + '><span class="as-mname">' + esc(m.name) + '</span>' +
+                  (m.codename ? ' <span class="as-k">“' + esc(m.codename) + '”</span>' : '') +
+                  (m.kia ? ' <span class="as-stamp">KIA</span>' : '') + '</li>';
               }).join('') : '<li class="as-k">Only you so far.</li>') + '</ul></div>'
             : '<p class="as-text as-k">Not assigned to a Cell yet — your Handler does that.</p>') +
           (opts.opsHtml || '') +
@@ -260,6 +281,6 @@
 
   window.dgAgentSheet = {
     fromState: fromState, fromPregen: fromPregen, pregenToState: pregenToState,
-    physical: physical, render: render, wireRolls: wireRolls, photoHtml: photoHtml, esc: esc, incursionText: incursionText
+    physical: physical, cellMember: cellMember, render: render, wireRolls: wireRolls, photoHtml: photoHtml, esc: esc, incursionText: incursionText
   };
 })();

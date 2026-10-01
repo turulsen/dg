@@ -118,7 +118,7 @@
   }
   if (GUEST) {
     var guestStyle = document.createElement('style');
-    guestStyle.textContent = 'html.dg-fn-host #settings-cog-btn,html.dg-fn-host #notes-widget-btn{display:none!important}';
+    guestStyle.textContent = 'html.dg-fn-host #settings-cog-btn,html.dg-fn-host #notes-widget-btn,html.dg-fn-host #split-view-toggle-btn,html.dg-fn-host #split-view-btn{display:none!important}';
     document.head.appendChild(guestStyle);
     if (hostApi()) document.documentElement.classList.add('dg-fn-host');
     // Phone: leave room under the page for the closed notebook's buttons
@@ -280,15 +280,23 @@
       if (res[3]) res[3].forEach(function (doc) { var o = doc.data() || {}; d.ops.push(Object.assign({}, o, { operation_id: o.operation_id || doc.id })); });
       d.cell = d.cells.filter(function (c) { return (c.member_codes || []).indexOf(code) !== -1; })[0] || null;
       var others = d.cell ? (d.cell.member_codes || []).filter(function (c) { return c !== code; }) : [];
+      // Each member's Agent File and sheet: their name (not their code)
+      // and whether they're KIA (assets/agent-sheet.js cellMember()).
       return Promise.all(others.map(function (c) {
-        return window.dgStore.getBrief(c).then(function (b) { return { code: c, brief: b }; }, function () { return { code: c, brief: null }; });
+        return Promise.all([
+          window.dgStore.getBrief(c).catch(function () { return null; }),
+          window.dgStore.getCharacter(c).catch(function () { return null; })
+        ]).then(function (r) { return { code: c, brief: r[0], char: r[1] }; });
       })).then(function (m) {
         var names = (d.cell && d.cell.member_names) || {};
-        d.members = m.map(function (x) {
-          var b = x.brief || {};
-          return { code: x.code, name: b.char_name || names[x.code] || x.code, codename: b.codename || '' };
+        return ensureSheetLib().catch(function () { return null; }).then(function (AS) {
+          d.members = m.map(function (x) {
+            if (AS && AS.cellMember) return AS.cellMember(x.code, x.brief, x.char, names);
+            var b = x.brief || {};
+            return { code: x.code, name: b.char_name || names[x.code] || x.code, codename: b.codename || '' };
+          });
+          return d;
         });
-        return d;
       });
     }); }).catch(function (err) { d.error = String(err && err.message || err); return d; })
       .then(function (x) { d.ready = true; return x; });
@@ -394,7 +402,6 @@
   root.id = 'fn-root';
   root.innerHTML =
     '<div id="fn-closed">' +
-      '<button type="button" class="fn-chip" data-fn="chip" title="Table Radio"></button>' +
       '<button type="button" class="fn-cover fn-leather" data-fn="open" title="Open Field Notes" aria-label="Open Field Notes">' +
         '<span class="fn-stitch"></span><span class="fn-cover-spine"></span><span class="fn-cover-pages"></span>' +
         '<span class="fn-cover-band"></span><span class="fn-cover-title">Field<br>Notes</span>' +
@@ -402,7 +409,6 @@
       '</button>' +
     '</div>' +
     '<div id="fn-closed-phone">' +
-      '<button type="button" class="fn-chip fn-chip-phone" data-fn="chip" title="Table Radio"></button>' +
       '<button type="button" class="fn-phone-dice fn-leather" data-fn="dice" title="Roll dice" aria-label="Roll dice"><img class="fn-tri" src="' + TRI + '" alt=""></button>' +
       '<button type="button" class="fn-phone-book fn-leather" data-fn="open" title="Open Field Notes"><span class="fn-cover-pages"></span><span class="fn-phone-band"></span><span class="fn-phone-title">Field<br>Notes</span></button>' +
     '</div>' +
@@ -865,15 +871,13 @@
       var ag = agentAgency();
       body.innerHTML = '<div class="fn-idc-stage"><div class="fn-idc" data-fn-idc></div></div>' +
         '<p class="fn-p fn-idc-note" data-fn-idc-note></p>' +
-        '<div class="fn-actions"><button type="button" class="fn-btn fn-red" data-go="fab">Make Field ID</button>' +
-        '<button type="button" class="fn-btn fn-ink" data-go="blank">Blank ID Creator ↗</button></div>';
+        '<div class="fn-actions"><button type="button" class="fn-btn fn-red" data-go="fab">Make Field ID</button></div>';
       body.querySelector('[data-go="fab"]').addEventListener('click', function () { state.fieldIdMode = 'fab'; render(); });
       drawIdCard(body.querySelector('[data-fn-idc]'), 1.25, 340);
       ensureIdCards().then(function () {
         var n = body.querySelector('[data-fn-idc-note]');
         if (n) n.textContent = (ag.dg ? 'No agency on this Agent\'s file yet, so this is the Program\'s own card' : 'The ' + ag.name + ' credential for this Agent\'s era') + ' (' + idCardLabel() + '), from the Field IDs templates.';
       }, function () {});
-      body.querySelector('[data-go="blank"]').addEventListener('click', function () { navigate(url('dg-id-creator.html')); });
     });
   }
 

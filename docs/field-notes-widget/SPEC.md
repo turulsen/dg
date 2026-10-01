@@ -461,6 +461,26 @@ notebook**; **Play stays** as the one button.
   (`test_agent_hub_one_page_file`, `test_appearance_wizard_step`,
   `test_field_id_fabricator_in_notebook`).
 
+### Round 9 — before going live
+
+From the iPad on the preview ("the tablet is much better"):
+
+- **Split View retired.** The sheet's *Split View* button and Notes'
+  own *Split View* button are hidden wherever the notebook runs
+  (standalone and inside the Hub shell): the notebook's Notes sit beside
+  any page. The code underneath is left in place, unreachable.
+- **No radio chip beside the closed notebook.** The radio lives in the
+  open notebook: under the card pockets on a desktop/tablet, and from the
+  radio button in the notebook's header on a phone (which still pops the
+  same pager up).
+- **Field ID: the Fabricator only.** The *Blank ID Creator* button is
+  gone; `dg-id-creator.html` itself stays online for old links.
+- **Cell members by name, KIA marked** (Agent Hub and the notebook's
+  Agent File): the Agent File's name, else the name on the member's
+  character sheet, else the Cell's own copy; the code only when nothing
+  has a name. A member whose saved sheet is at 0 HP or below is struck
+  through in red with a KIA stamp (`dgAgentSheet.cellMember()`).
+
 ## 10. Trying it on the private preview
 
 From Cloud Shell (the repo is public, so the clone needs no login):

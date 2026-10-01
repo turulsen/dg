@@ -40,9 +40,13 @@ html.dg-fn-host #dg-radio{
 }
 html.dg-fn-host body > #dr-panel{ display:none !important; }
 /* The character sheet's own Settings cog and mobile Notes button move
-   into the notebook (Settings and Notes tabs). */
+   into the notebook (Settings and Notes tabs). Split View (the sheet and
+   Notes side by side) is retired: the notebook's Notes sit beside any
+   page. */
 html.dg-fn-host #settings-cog-btn,
-html.dg-fn-host #notes-widget-btn{ display:none !important; }
+html.dg-fn-host #notes-widget-btn,
+html.dg-fn-host #split-view-toggle-btn,
+html.dg-fn-host #split-view-btn{ display:none !important; }
 
 #fn-root{ font-family:var(--fn-mono); color:var(--fn-ink); }
 #fn-root *, #fn-root *::before, #fn-root *::after{ box-sizing:border-box; }

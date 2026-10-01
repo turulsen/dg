@@ -178,6 +178,10 @@ to share with yet). The first time a Handler assigns that Agent to a
 real Cell, `updateCellMembers()`'s `migrateSoloNotesToCell_()` carries
 the solo notes forward onto the real cell_id automatically.
 
+**[Retired with the Field Notes notebook]** Split View's buttons are
+hidden wherever the notebook runs (`assets/field-notes.css`); the
+notebook's Notes sit beside any page. Described below as it was.
+
 **Split View** (`stats/index.html`): the character sheet and Notes
 side by side in two panes (desktop/tablet), or a full-screen flip
 between them on a phone (Table Radio and the settings cog hide

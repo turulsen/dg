@@ -1368,6 +1368,12 @@
   // folder's own header above already carries the photo and name.
   function renderAgentSheetFor(a) {
     const el = document.getElementById('ah-sheet-' + a.code);
+    // agent-sheet.js loads below this script: a slow page could reach
+    // here first, and the paper then never drew. Try again once loaded.
+    if (el && !window.dgAgentSheet && document.readyState !== 'complete') {
+      window.addEventListener('load', () => renderAgentSheetFor(a), { once: true });
+      return;
+    }
     if (!el || !window.dgAgentSheet || !window.dgStore) return;
     const AS = window.dgAgentSheet;
     const db = () => window.firebase.firestore();
@@ -1387,21 +1393,27 @@
       ops.sort((x, y) => Number(y.created_at || 0) - Number(x.created_at || 0));
       const active = ops.filter(o => o.active === true)[0] || ops[0] || null;
       const others = cell ? (cell.member_codes || []).filter(c => c !== a.code) : [];
-      return Promise.all(others.map(c => window.dgStore.getBrief(c).then(b => ({ c, b }), () => ({ c, b: null })))).then(ms => {
+      // Each member's Agent File and sheet: their name (not their code)
+      // and whether they're KIA.
+      return Promise.all(others.map(c => Promise.all([
+        window.dgStore.getBrief(c).catch(() => null),
+        firestoreCharDoc(c)
+      ]).then(([b, ch]) => ({ c, b, ch })))).then(ms => {
         const names = (cell && cell.member_names) || {};
-        const members = ms.map(m => ({ name: (m.b && m.b.char_name) || names[m.c] || m.c, codename: (m.b && m.b.codename) || '' }));
+        const members = ms.map(m => AS.cellMember(m.c, m.b, m.ch, names));
         const sheet = state ? AS.fromState(state) : { name: a.char_name || a.code };
         const opsHtml = cell ? '<div class="as-ops"><div class="as-sec-hd">Operations</div>' + (ops.length ? ops.map(o => {
           const on = active && o.operation_id === active.operation_id;
           return '<div class="as-op' + (on ? ' as-op-active' : '') + '"><span>' + escapeHtml(o.name || o.operation_id) + '</span>' + (on ? '<span class="as-stamp">Active</span>' : '') + '</div>';
         }).join('') : '<p class="as-text as-k">None filed yet.</p>') + '</div>' : '';
-        el.innerHTML = AS.render(sheet, {
+        const out = document.getElementById('ah-sheet-' + a.code) || el;
+        out.innerHTML = AS.render(sheet, {
           physical: AS.physical(brief, sheet.physical),
           cellName: cell ? (cell.name || cell.cell_id) : '', members, opsHtml,
           incursion: AS.incursionText(charDoc, state),
           emptySheetHtml: state ? '' : '<p class="as-text as-k" style="margin-top:12px">No character sheet yet — Play builds one.</p>'
         });
-        AS.wireRolls(el);
+        AS.wireRolls(out);
       });
     }).catch(err => console.error('agent-hub: could not build the Agent File paper for ' + a.code, err));
   }
