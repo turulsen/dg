@@ -5989,7 +5989,7 @@ Reported for Daniella Martinez: two era Face Plates, an Active Era
 chosen, and still "Take Photo" everywhere else. The photos themselves
 were fine -- each era keeps its own (`era_<era>_face_url`, the source of
 truth since the per-era fix). Every other surface (Agent Hub card, Live
-Play tracker, A-Cell, the Agent File's Field ID card, Field Notes) read
+Play tracker, A-Cell, the Agent File's Field ID card) read
 only `face_plate_url`, a *copy* of the Active Era's Plate that was set
 in just two narrow cases: a Plate made while its era was already active,
 or "Make Active Era" pressed after the Plate existed. Items 4 and 6 in
@@ -6005,28 +6005,25 @@ same rule as `mainPhotoOf_`) with the Agent File's own rule: the Active
 Era's Plate -- none yet means no photo, never another era's (the
 deliberate choice `test_agent_file_active_era_toggle` already pins) --
 and with no Active Era chosen, the first era's, with `face_plate_url`
-standing in for that first era only (a pre-per-era Agent's one photo).
+standing in for that first era only -- or, on an Agent File from before
+per-era photos (an era label in `campaign_era` but no era list in
+`active_eras`), for its one photo whatever the label says, which is how
+the Agent File's own era stack (`parseEras()`) already reads such a
+file. That last case matters doubly: the repair below writes this rule's
+answer back, so reading such a file as "Active Era has no photo yet"
+would have cleared its only copy.
 Drive share links become `gdrive:ID` for the image proxy. The Agent File
 also repairs the stored copy whenever it loads the Agent from the server
 (`healMainPhoto()`), so older readers and other devices catch up too.
 The Agent File's roster drawer also gave each photo request the same
 JSONP callback name, so a re-render before the first answer threw
-"_rosterFace_… is not defined"; each request now gets its own. New `test_main_photo_from_active_era`. `sw.js`
-`CACHE_NAME` v165.
+"_rosterFace_… is not defined"; each request now gets its own. New `test_main_photo_from_active_era`
+(including a pre-per-era Agent File that must keep its photo through an
+Agent File visit). `sw.js` `CACHE_NAME` v163.
 
-**Follow-up before release (v166):** the first cut read an Agent File
-with an era *label* (`campaign_era`) but no era *list* (`active_eras`)
--- the shape of every Agent File from before per-era photos -- as "the
-Active Era has no photo yet" and returned nothing, although the portal
-itself shows `face_plate_url` as that file's one era (`parseEras()`).
-Worse, `healMainPhoto()` would then have written that empty answer back
-over the only copy of the photo. Caught by the Field Notes onboarding
-journey (its photo-lands step), not in the field. With no era list,
-`face_plate_url` now counts whatever `campaign_era` says, in both
-`dgStore.mainPhoto()` and A-Cell's `mainPhotoOf_`;
-`test_main_photo_from_active_era` gained a legacy Agent File that must
-keep its photo through a portal visit. This only ever ran on the
-unreleased Field Notes branch and its preview channel -- but that
-preview reads and writes the live Firestore, so a legacy Agent File
-opened there could have lost its `face_plate_url` (the per-era columns
-are untouched; re-uploading the Face Plate restores it).
+Shipped to main in #56. Before the pre-per-era case was handled, the
+first cut ran only on the unreleased Field Notes branch and its preview
+channel -- but that preview reads and writes the live Firestore, so a
+pre-per-era Agent File opened there could have lost its `face_plate_url`
+(the per-era columns are untouched; re-uploading the Face Plate restores
+it).
