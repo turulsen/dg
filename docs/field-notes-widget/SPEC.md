@@ -118,7 +118,8 @@ evidence, "Gergo") is replaced by the real Agent's data everywhere.
   the clearance agreement is signed, the briefing gets its own random
   code name, then the lines type in one at a time, ending in the
   briefing's own question: `CAN WE CALL ON YOU? [Y/N]`.
-- **Keys:** `Y` (or tapping **Y — you can call on me**) accepts and
+- **Keys:** `Y` (or tapping the **Y** of the prompt's own `[Y/N]` -- no
+  buttons under it) accepts and
   saves (`briefs/{code}.standing_orders_ack_at`, plus a local flag).
   `N` or `Escape` closes it without saving, so it comes back the next
   time they leave the sheet.
@@ -475,6 +476,9 @@ From the iPad on the preview ("the tablet is much better"):
   same pager up).
 - **Field ID: the Fabricator only.** The *Blank ID Creator* button is
   gone; `dg-id-creator.html` itself stays online for old links.
+- **The briefing ends on its own `[Y/N]`** -- the two call-to-action
+  buttons under it are gone; the Y and N in the prompt are tappable
+  (and nothing is pre-selected, so a stray Enter doesn't answer).
 - **Cell members by name, KIA marked** (Agent Hub and the notebook's
   Agent File): the Agent File's name, else the name on the member's
   character sheet, else the Cell's own copy; the code only when nothing

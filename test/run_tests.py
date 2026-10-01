@@ -11009,8 +11009,8 @@ def test_field_notes_notebook(p):
     page, errs = _field_notes_page(p, 390, 844)
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
-    record("notebook", "phone: closed notebook shows the radio chip, dice and notebook buttons",
-           page.is_visible("#fn-closed-phone [data-fn=chip]") and page.is_visible("#fn-closed-phone .fn-phone-dice")
+    record("notebook", "phone: closed notebook shows the dice and notebook buttons (no radio chip: the radio is in the notebook)",
+           page.locator("#fn-closed-phone [data-fn=chip]").count() == 0 and page.is_visible("#fn-closed-phone .fn-phone-dice")
            and page.is_visible("#fn-closed-phone .fn-phone-book"), "")
     page.click("#fn-closed-phone .fn-phone-book")
     page.click("#fn-veil .fn-tab[data-view=notes]")
@@ -11642,6 +11642,8 @@ def test_field_notes_standing_orders(p):
                                    "ASK NOTHING", "We need your silence", "CAN WE CALL ON YOU? [Y/N]", "briefing_codename:"]), term[:400])
     record("onboarding", "the briefing says, out of character, why it came up: this Agent is saved, and it's once",
            "Ivy Imported is saved" in term and "once" in term, term[:200])
+    record("onboarding", "no call-to-action buttons under the prompt: only the terminal's own [Y/N], each letter tappable",
+           page.eval_on_selector_all("#fn-orders button", "els => els.map(e => e.textContent)") == ["Y", "N"], "")
     page.keyboard.press("n")
     page.wait_for_timeout(300)
     record("onboarding", "N closes it and keeps the orders pending",
@@ -11654,7 +11656,7 @@ def test_field_notes_standing_orders(p):
            page.locator("#fn-orders").count() == 0 and bool(page.evaluate("() => localStorage.getItem('dg_fn_orders_pending')")), "")
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_selector("#fn-orders [data-o=prompt]:not([hidden])", timeout=15000)
-    page.keyboard.press("y")
+    page.click("#fn-orders [data-o=y]")  # a tap on the Y of [Y/N]
     page.wait_for_url("**/agent-hub.html?code=%s#photos" % FN_CODE, timeout=15000)
     record("onboarding", "Y opens the Agent's file on Agent Hub, at the photos", page.url.endswith("#photos"), page.url)
     ack = (fs_doc(page, f"briefs/{FN_CODE}") or {}).get("standing_orders_ack_at")
@@ -11735,21 +11737,21 @@ def test_friendly_clearance(p):
     name = page.inner_text("#fr-view .pv-bio")
     zero = page.eval_on_selector_all("#fr-skills .sv", "els => els.filter(e => e.textContent === '0%').length")
     record("friendly", "0% skills are left off the sheet", zero == 0 and page.locator("#fr-skills .roll").count() > 10, str(zero))
-    # The closed Field Notes notebook (radio chip, dice, notebook) docks
-    # bottom-right on a phone; the playable sheet must end above it.
+    # The closed Field Notes notebook (dice, notebook) docks bottom-right
+    # on a phone; the playable sheet must end above it.
     fit = page.evaluate("""() => {
       const bar = document.getElementById('fn-closed-phone').getBoundingClientRect();
       const more = document.querySelector('.fr-more > summary').getBoundingClientRect();
-      const chip = document.querySelector('#fn-closed-phone [data-fn=chip]');
-      const pr = chip.getBoundingClientRect();
+      const book = document.querySelector('#fn-closed-phone .fn-phone-book');
+      const pr = book.getBoundingClientRect();
       const hit = document.elementFromPoint(pr.left + pr.width / 2, pr.top + pr.height / 2);
-      return { moreBottom: more.bottom, barTop: bar.top, chipOnTop: !!hit && chip.contains(hit),
+      return { moreBottom: more.bottom, barTop: bar.top, bookOnTop: !!hit && book.contains(hit),
                scrollX: document.documentElement.scrollWidth <= innerWidth };
     }""")
     record("friendly", "on a phone the whole playable sheet (stats, skills, weapons, Bonds) fits the first screen",
            fit["moreBottom"] <= fit["barTop"] and fit["scrollX"], str(fit))
-    record("friendly", "on a phone the radio chip sits beside the closed notebook, reachable, not over the sheet",
-           fit["chipOnTop"], str(fit))
+    record("friendly", "on a phone the closed notebook is reachable, not under the sheet",
+           fit["bookOnTop"], str(fit))
     page.click('#fr-skills .roll[data-label="Alertness"]')
     _pump_until(page, lambda: "Alertness" in page.inner_text("#dr-history-list"))
     hist = page.inner_text("#dr-history-list")

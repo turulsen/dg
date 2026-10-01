@@ -1644,9 +1644,9 @@
     ov.innerHTML = '<div class="fn-orders-term"><div class="fn-orders-why">' +
       esc((p.name || 'Your new Agent') + ' is saved. Before their first assignment, the clearance briefing every new Agent gets, once.') +
       '</div><div data-o="log"></div><div data-o="prompt" hidden>' +
-      '<div>CAN WE CALL ON YOU? [Y/N]<span class="fn-cursor"></span></div>' +
-      '<div class="fn-orders-prompt"><button type="button" class="fn-orders-key" data-o="y">Y — you can call on me</button>' +
-      '<button type="button" class="fn-orders-key" data-o="n">N — not now</button></div></div></div>';
+      // Just the terminal's own [Y/N]: type it, or tap the letter.
+      '<div>CAN WE CALL ON YOU? [<button type="button" class="fn-orders-key" data-o="y" aria-label="Y: you can call on me">Y</button>/' +
+      '<button type="button" class="fn-orders-key" data-o="n" aria-label="N: not now">N</button>]<span class="fn-cursor"></span></div></div></div>';
     root.appendChild(ov);
     ov.tabIndex = -1;
     try { ov.focus(); } catch (e) { /* best effort */ }
@@ -1659,7 +1659,6 @@
       clearInterval(timer);
       log.innerHTML = lines.map(function (l) { return '<div class="' + l[0] + '">' + esc(l[1]) + '&nbsp;</div>'; }).join('');
       prompt.hidden = false;
-      var yb = ov.querySelector('[data-o="y"]'); if (yb) yb.focus();
     }
     timer = setInterval(function () {
       if (li >= lines.length) { finishTyping(); return; }

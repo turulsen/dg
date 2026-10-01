@@ -546,9 +546,12 @@ html.dg-fn-host #split-view-btn{ display:none !important; }
 .fn-orders-term .fn-orders-why{ font-family:'Courier Prime','Courier New',monospace; font-size:12px; line-height:1.5; color:#9ab8a4; text-shadow:none; border-bottom:1px solid #1e5a36; padding-bottom:10px; margin-bottom:12px; white-space:normal; }
 .fn-orders-term .fn-o-inc{ color:#9ff0bd; padding-left:2ch; font-style:italic; }
 .fn-orders-term .fn-o-head{ letter-spacing:.12em; }
-.fn-orders-prompt{ margin-top:14px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-#fn-root .fn-orders-key{ font-family:inherit; font-size:inherit; background:transparent; color:#3ef07a; border:1px solid #1e7a42; padding:6px 14px; cursor:pointer; text-shadow:inherit; border-radius:0; }
-#fn-root .fn-orders-key:hover, #fn-root .fn-orders-key:focus{ border-color:#3ef07a; outline:none; }
+/* The Y and N inside "[Y/N]": plain terminal letters, tappable. An
+   invisible ::after gives a finger room without moving the text. */
+#fn-root .fn-orders-key{ position:relative; font-family:inherit; font-size:inherit; line-height:inherit; letter-spacing:inherit; background:transparent; color:inherit; border:0; padding:0 1px; margin:0; cursor:pointer; text-shadow:inherit; border-radius:0; }
+#fn-root .fn-orders-key::after{ content:''; position:absolute; inset:-12px -9px; }
+#fn-root .fn-orders-key:hover, #fn-root .fn-orders-key:focus-visible{ color:#000; background:#3ef07a; text-shadow:none; outline:none; }
+#fn-root .fn-orders-key:focus:not(:focus-visible){ outline:none; }
 .fn-cursor{ display:inline-block; width:.55em; height:1em; background:#3ef07a; vertical-align:text-bottom; margin-left:2px; animation:fn-blink 1s step-end infinite; }
 @keyframes fn-blink{ 50%{ opacity:0; } }
 
