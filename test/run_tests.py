@@ -6572,7 +6572,11 @@ def test_table_radio_theme_consistent_style(p):
         page.evaluate(f"() => window.setTheme && window.setTheme('{theme}')")
         page.wait_for_timeout(200)
         page.click("#dg-radio-pill")
-        page.wait_for_timeout(300)
+        # The click leaves the pointer where the pill was -- over the Tune In
+        # button once the panel opens -- so move it off and let the hover
+        # transition settle: this compares resting styles, not hover ones.
+        page.mouse.move(1, 1)
+        page.wait_for_timeout(500)
         styles = page.evaluate("""() => {
             var turn = document.querySelector('.dgr-turn');
             var confirm = document.getElementById('dg-radio-confirm-tune');
