@@ -8494,3 +8494,7 @@ body.dg-embedded,
 body.dg-notes-fullscreen-active {
     padding-bottom: var(--spacing-lg);
 }
+
+/* The Incursion (stats/incursion-sheet.js) */
+.cs-incursion-intro{ margin:0 0 10px; font-size:.9em; opacity:.8; font-style:italic; }
+#cs-incursion-picker{ margin-bottom:4px; }

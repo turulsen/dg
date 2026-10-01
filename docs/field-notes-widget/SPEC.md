@@ -311,6 +311,35 @@ Each step is testable on the preview before the next:
   under it. It is skipped for the Notes spread and when the device asks
   for reduced motion.
 
+### Round 7 — The Incursion
+
+What brought the Agent to Delta Green is now part of the Agent, the way
+Motivations are.
+
+- **One picker** (`assets/incursion.js`, `window.dgIncursion`): the five
+  existing tables, unchanged. *Roll all*, roll any single line (its die
+  button), or choose any line from its list — mix and match — and a
+  *What happened* box that writes itself from the lines until the player
+  writes their own words. Their words are kept when lines change after;
+  *Rewrite from the lines above* brings the composed account back.
+- **On the character sheet**: a *The Incursion* section after Biography,
+  and a matching step in the creation wizard right after Biography, whose
+  tips are the existing *What Brought Your Agent to Delta Green?* text.
+  It is saved with the sheet (`bio.incursion`), and also on the Agent's own
+  record (`characters/{code}.incursion`, with `by` = player/handler),
+  beside the sheet rather than inside it: the sheet's autosave merges
+  around it, so a Handler's amendment is never undone by a player who
+  still has the sheet open. Loading an Agent takes the record's copy.
+- **Agent File** (notebook and Agent Hub): a *The Incursion* section under
+  the physical description and Cell.
+- **Clearance briefing**: opens with the recruit's own incident
+  (`>incident_on_file:`) before the five tenets.
+- **A-Cell**: the dossier shows it (*set by the Handler* when amended)
+  with an *Edit* button that opens the same picker for the Handler.
+- **The Incursion page** (`the-incursion.html`): the same picker as a
+  scratch pad above the reference tables (its intro text unchanged); the
+  chosen rows light up in the tables.
+
 ## 10. Trying it on the private preview
 
 From Cloud Shell (the repo is public, so the clone needs no login):

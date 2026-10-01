@@ -10581,14 +10581,14 @@ def test_wizard_full_run_in_shell(p):
             frame.locator("#dg-confirm-ok").click(timeout=5000); page.wait_for_timeout(300)
 
     tap("#wiz-toggle-btn", "New Recruit's wizard button")
-    for step in range(1, 9):
+    for step in range(1, 10):
         settle("#wiz-step-label")
         label = frame.locator("#wiz-step-label").text_content()
         title_hit = frame.evaluate("""() => { const el = document.getElementById('wiz-step-label'); const rg = document.createRange(); rg.selectNodeContents(el); const r = rg.getBoundingClientRect();
             const h = document.elementFromPoint(r.right - 4, r.top + r.height / 2); const c = h && (h.closest('button, [id]') || h); return c ? (c.id || c.tagName) : null; }""")
         width = frame.evaluate("document.documentElement.scrollWidth")
         record("wizard", f"step {step}: on the right step, title clear of the settings cog, no sideways scroll",
-               label.startswith(f"Step {step} of 8") and title_hit in ("wiz-step-label", "wiz-header") and width <= 390,
+               label.startswith(f"Step {step} of 9") and title_hit in ("wiz-step-label", "wiz-header") and width <= 390,
                f"label={label!r} title_hit={title_hit} width={width}")
         if step == 1:
             tap("#random-point-buy", "Random Point Buy")
@@ -10609,19 +10609,24 @@ def test_wizard_full_run_in_shell(p):
         elif step == 3:
             tap("#random-bio-button", "Random Bio")
             record("wizard", "Random Bio fills the name", frame.evaluate("document.getElementById('cs-name').value") not in ("", "Agent"), "")
-        elif step == 5:
+        elif step == 4:
+            tap("#cs-incursion-picker [data-inc-all]", "Roll all (The Incursion)")
+            inc = frame.evaluate("() => ({ text: document.querySelector('#cs-incursion-picker [data-inc-text]').value, saved: document.getElementById('cs-incursion').value })")
+            record("wizard", "the Incursion step rolls all five lines into what happened, saved with the sheet",
+                   "Delta Green covered it up as" in inc["text"] and '"picks"' in inc["saved"], str(inc)[:200])
+        elif step == 6:
             tap("#prepare-bonus-button", "Prepare Skills for Bonus Points")
             frame.locator("#bonus-package-select").select_option(index=1); page.wait_for_timeout(300)
             tap("#bonus-package-row button", "Fill Dropdowns")
-        elif step == 6:
+        elif step == 7:
             tap("#bonds-button", "Generate Bond (no categories ticked)")
             record("wizard", "Generate Bond with no categories ticked still gives a bond",
                    "No bond available" not in frame.evaluate("document.getElementById('bond-text-content').textContent"), "")
             tap("#add-bond-button", "Add to Sheet")
             record("wizard", "the generated bond lands on the sheet", frame.evaluate("(window.bondsOnSheet || []).length") >= 1, "")
-        elif step == 7:
+        elif step == 8:
             tap(".eq-add-btn", "an equipment item's +")
-        tap("#wiz-next", "Finish" if step == 8 else f"Next on step {step}")
+        tap("#wiz-next", "Finish" if step == 9 else f"Next on step {step}")
     record("wizard", "Finish closes the wizard and leaves no saved step behind",
            frame.locator("#wiz-outer").count() == 0 and frame.evaluate("localStorage.getItem('dg-wiz-step')") is None, "")
     record("wizard", "Finish lands on the top of the finished sheet (Enter Live Play visible, not cut off under the Hub header)",
@@ -10732,7 +10737,7 @@ def test_lp_initiative_order(p):
 
 def test_wizard_does_not_reopen_over_loaded_agent(p):
     """GitHub issue #10: Play on an existing Agent showed the Character
-    Creation Wizard ("Step 1 of 8 -- Statistics") on top of that Agent's
+    Creation Wizard ("Step 1 of 9 -- Statistics") on top of that Agent's
     real, fully-loaded sheet. Root cause: stats/wizard.js saves its step
     in a device-wide dg-wiz-step key and auto-reopens on any later page
     load while it's set -- so abandoning a New Recruit wizard and then
@@ -10777,7 +10782,7 @@ def test_wizard_does_not_reopen_over_loaded_agent(p):
     wait_for_condition(lambda: page.locator("#wiz-step-label").count() > 0, timeout_ms=5000)
     lbl = page.locator("#wiz-step-label")
     record("stats-terminal", "a genuine mid-creation refresh (no ?load=) still reopens the wizard on its saved step",
-           lbl.count() > 0 and "Step 3 of 8" in (lbl.text_content() or ""), lbl.text_content() if lbl.count() else "")
+           lbl.count() > 0 and "Step 3 of 9" in (lbl.text_content() or ""), lbl.text_content() if lbl.count() else "")
     page.close()
     return errs
 
@@ -11676,6 +11681,126 @@ def test_field_notes_round3(p):
     page.close()
     return errs_all
 
+def test_incursion(p):
+    """The Incursion -- what brought the Agent to Delta Green -- as a part
+    of the Agent, like Motivations: the standalone page and the sheet share
+    one picker (assets/incursion.js: roll all, roll or choose any line,
+    or write it freehand); the sheet saves it with the Agent and on the
+    Agent's own record (characters/{code}.incursion), which wins on load so
+    a Handler's amendment from A-Cell is what the player sees; the Agent
+    File shows it; the clearance briefing opens with it; A-Cell shows it
+    and lets the Handler amend it."""
+    errs_all = []
+    code = "INCU-0001"
+    # 1. The standalone page: mix and match, then freehand.
+    page = p.new_page(viewport={"width": 1200, "height": 900})
+    errs = collect_errors(page)
+    _block_fonts(page)
+    route_apps_script_ok(page)
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+    page.goto(f"{BASE}/the-incursion.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector("#incursion-picker [data-inc-all]", timeout=10000)
+    page.click("#incursion-picker [data-inc-all]")
+    txt = page.input_value("#incursion-picker [data-inc-text]")
+    record("incursion", "the Incursion page rolls all five lines into one account", "Delta Green covered it up as" in txt and txt.startswith("In a"), txt)
+    page.select_option("#incursion-picker [data-inc=cover]", "2")
+    txt2 = page.input_value("#incursion-picker [data-inc-text]")
+    record("incursion", "choosing one line by hand changes just that part (mix and match)",
+           "covered it up as terrorism" in txt2 and txt2.split("Delta Green")[0] == txt.split("Delta Green")[0], txt2)
+    record("incursion", "the chosen row lights up in its table",
+           page.evaluate("() => document.getElementById('table-cover-row-2').classList.contains('rolled')"), "")
+    page.fill("#incursion-picker [data-inc-text]", "My own words about the night at the quarry.")
+    page.click("#incursion-picker [data-inc-roll=environment]")
+    record("incursion", "freehand words are kept when a line is re-rolled afterwards",
+           page.input_value("#incursion-picker [data-inc-text]") == "My own words about the night at the quarry.", "")
+    page.click("#incursion-picker [data-inc-rebuild]")
+    record("incursion", "…and 'Rewrite from the lines above' brings the rolled account back",
+           "Delta Green covered it up as terrorism" in page.input_value("#incursion-picker [data-inc-text]"), "")
+    errs_all.extend(errs)
+    page.close()
+
+    # 2. The sheet: written on the sheet, saved with it and on the Agent's record.
+    page = p.new_page(viewport={"width": 1300, "height": 900})
+    errs = collect_errors(page)
+    _block_fonts(page)
+    route_apps_script_ok(page)
+    handler_inc = {"picks": {"environment": 0, "vector": 0, "cover": 0, "complication": 0, "incursion": 0},
+                   "text": "The Handler says: the lighthouse keeper's ledger.", "custom": True, "by": "handler"}
+    sheet_state = {"v": 1, "bio": {"name": "Ines Cutter", "player_name": "inc tester",
+                                   "incursion": {"picks": {"environment": 3}, "text": "Old sheet copy.", "custom": True}}}
+    install_firestore_backend(page, {f"characters/{code}": dict(character_doc(code, sheet_state, "inc tester")),
+                                     f"briefs/{code}": {"agent_code": code, "char_name": "Ines Cutter", "player_name": "inc tester"}})
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); localStorage.setItem('dg_stats_cloud_code', '%s'); } catch (e) {}" % code)
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector("#cs-incursion-picker [data-inc-all]", state="attached", timeout=10000)
+    page.wait_for_timeout(1200)
+    page.evaluate("() => { const el = document.getElementById('cs-incursion-fieldset'); el.scrollIntoView(); }")
+    page.select_option("#cs-incursion-picker [data-inc=vector]", "4")
+    page.select_option("#cs-incursion-picker [data-inc=complication]", "8")
+    rec = wait_for_condition(lambda: ((fs_doc(page, f"characters/{code}") or {}).get("incursion") or {}).get("picks", {}).get("vector") == 4 or None, timeout_ms=6000)
+    doc = fs_doc(page, f"characters/{code}") or {}
+    record("incursion", "the sheet writes the Incursion to the Agent's record (characters/{code}.incursion) as the player",
+           bool(rec) and doc.get("incursion", {}).get("by") == "player" and "part of the threat escaped" in doc.get("incursion", {}).get("text", ""), str(doc.get("incursion"))[:200])
+    saved = json.loads(page.evaluate("() => JSON.stringify(window.dgSaveLoad.collectState().bio.incursion)") or "null") or {}
+    record("incursion", "…and it is saved with the sheet itself, like Motivations", saved.get("picks", {}).get("complication") == 8, str(saved)[:160])
+    # A Handler amendment on the record wins when the Agent is loaded.
+    page.evaluate("""(a) => { const d = window.__dgFirestoreDocs['characters/' + a.code]; d.incursion = a.inc; d.character_json = JSON.stringify(a.st);
+                  try { sessionStorage.setItem('__dgFsDocs', JSON.stringify(window.__dgFirestoreDocs)); } catch (e) {} }""",
+                  {"code": code, "inc": handler_inc, "st": sheet_state})
+    page.goto(f"{BASE}/stats/index.html?load={code}", wait_until="domcontentloaded", timeout=15000)
+    shown = wait_for_condition(lambda: (page.input_value("#cs-incursion-picker [data-inc-text]") if page.locator("#cs-incursion-picker [data-inc-text]").count() else "") .startswith("The Handler says") or None, timeout_ms=10000)
+    record("incursion", "loading the Agent shows the record's Incursion (the Handler's amendment), not the sheet's older copy", bool(shown),
+           page.input_value("#cs-incursion-picker [data-inc-text]") if page.locator("#cs-incursion-picker [data-inc-text]").count() else "")
+    # The Agent File (Field Notes) shows it.
+    page.evaluate("() => window.dgFieldNotes && window.dgFieldNotes.refresh && window.dgFieldNotes.refresh()")
+    page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+    af = wait_for_condition(lambda: page.evaluate("() => { const el = document.querySelector('#fn-veil .as-incursion'); return el ? el.innerText : null; }"), timeout_ms=10000) or ""
+    record("incursion", "the Agent File shows what happened in the incursion", "lighthouse keeper" in af, af[:160])
+    page.evaluate("() => window.dgFieldNotes.close()")
+    # The clearance briefing opens with the Agent's own incident.
+    page.evaluate("(c) => { localStorage.setItem('dg_stats_cloud_code', c); window.dispatchEvent(new CustomEvent('dg-wizard-finished')); }", code)
+    pend = json.loads(page.evaluate("() => localStorage.getItem('dg_fn_orders_pending')") or "null") or {}
+    record("incursion", "finishing the wizard carries the Incursion into the clearance briefing",
+           "lighthouse keeper" in (pend.get("incursion") or ""), str(pend)[:200])
+    errs_all.extend(errs)
+    page.close()
+
+    # 3. A-Cell: the Handler sees it and can amend it.
+    page = p.new_page(viewport={"width": 1300, "height": 900})
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    skip_acell_gate(page)
+    # A Handler signed in earlier this session (the shared Firebase mock's
+    # handlerLogin checks for 'testpw').
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
+    posts = []
+    tap_acell_posts(page, lambda pl: posts.append(pl))
+    install_notes_firestore_stub(page)
+    st = {"bio": {"name": "Ines Cutter", "profession": "Federal Agent"}, "csStats": {"STR": 10}, "derived": {"hp": 10}}
+    install_firestore_backend(page, {f"characters/{code}": dict(character_doc(code, st), incursion={"text": "Player wrote: the quarry.", "by": "player"})})
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: any(l["path"] == "characters" for l in page.evaluate("() => window.__dgFirestoreListeners || []")), timeout_ms=8000)
+    push_firestore_snapshot(page, "characters", [], [{"id": code, "character_json": json.dumps(st), "updated_at": "", "player_name": ""}])
+    push_firestore_snapshot(page, "briefs", [], [])
+    push_firestore_snapshot(page, "cells", [], [])
+    wait_for_condition(lambda: "Ines Cutter" in page.inner_text("#play-agent-list") or None, timeout_ms=8000)
+    page.click("#play-agent-list .play-agent-btn:first-child")
+    shown = wait_for_condition(lambda: page.evaluate("(c) => { const el = document.getElementById('pv-incursion-' + c); return el ? el.innerText : null; }", code), timeout_ms=8000) or ""
+    record("incursion", "A-Cell's dossier shows the Agent's Incursion", "the quarry" in shown, shown)
+    page.click(f"#play-view [data-inc-edit='{code}']")
+    page.fill(f"#pv-incursion-{code} [data-inc-text]", "Handler: it was the lighthouse, not the quarry.")
+    page.click(f"#pv-incursion-{code} .pv-inc-save")
+    after = wait_for_condition(lambda: (lambda t: t if "lighthouse" in t else None)(page.inner_text(f"#pv-incursion-{code}")), timeout_ms=8000) or ""
+    record("incursion", "the Handler can amend it from A-Cell (set_incursion), marked as the Handler's",
+           any(x.get("action") == "set_incursion" for x in posts) and "set by the Handler" in after, f"{after!r} {[x.get('action') for x in posts]}")
+    rec = (fs_doc(page, f"characters/{code}") or {}).get("incursion") or {}
+    record("incursion", "…written beside the sheet, so the player's autosave can't undo it",
+           rec.get("by") == "handler" and "lighthouse" in rec.get("text", "") and json.loads((fs_doc(page, f"characters/{code}") or {}).get("character_json") or "{}").get("bio", {}).get("name") == "Ines Cutter", str(rec)[:160])
+    errs_all.extend(errs)
+    page.close()
+    return errs_all
+
 def test_main_photo_from_active_era(p):
     """A real report (Daniella Martinez): an Agent with two era Face
     Plates and an Active Era chosen showed no photo outside the Agent
@@ -12298,6 +12423,7 @@ def main():
         safe(test_friendly_clearance, browser, area="friendly")
         safe(test_field_notes_notebook, browser, area="notebook")
         safe(test_field_notes_round3, browser, area="notebook")
+        safe(test_incursion, browser, area="incursion")
         safe(test_field_notes_standing_orders, browser, area="onboarding")
         safe(test_main_photo_from_active_era, browser, area="photo")
         safe(test_field_notes_shell, browser, area="notebook-shell")

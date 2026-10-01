@@ -1349,6 +1349,7 @@
         el.innerHTML = AS.render(sheet, {
           physical: AS.physical(brief, sheet.physical),
           cellName: cell ? (cell.name || cell.cell_id) : '', members, opsHtml,
+          incursion: AS.incursionText(charDoc, state),
           emptySheetHtml: state ? '' : '<p class="as-text as-k" style="margin-top:12px">No character sheet yet — Play builds one.</p>'
         });
         AS.wireRolls(el);

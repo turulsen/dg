@@ -71,7 +71,11 @@
   function armOrders(code, name) {
     code = String(code || '').trim().toUpperCase();
     if (!code || ordersAck()[code]) return;
-    lsSet(ORDERS_PENDING_KEY, JSON.stringify({ code: code, name: name || '', at: Date.now() }));
+    // On the sheet, the Incursion just written rides along, so the briefing
+    // can open with the Agent's own incident.
+    var inc = '';
+    try { if (window.dgIncursionSheet && window.dgIncursion) inc = window.dgIncursion.textOf(window.dgIncursionSheet.get()); } catch (e) { /* not on the sheet */ }
+    lsSet(ORDERS_PENDING_KEY, JSON.stringify({ code: code, name: name || '', incursion: inc, at: Date.now() }));
   }
   function sheetName() {
     var el = document.getElementById('cs-name');
@@ -811,6 +815,8 @@
           physical: AS.physical(brief, sheet.physical),
           cellName: data.cell ? (data.cell.name || data.cell.cell_id) : '',
           members: data.members, opsHtml: opsHtml,
+          incursion: AS.incursionText(data.char, data.state),
+          incursionEmptyHtml: '<p class="as-text as-k">Not written yet — the Incursion section of the character sheet.</p>',
           actionsHtml: '<button type="button" class="fn-btn fn-red" data-go="play">Play (Live) ↗</button>' +
             '<button type="button" class="fn-btn fn-ink" data-go="file">Open Agent File ↗</button>',
           emptySheetHtml: data.state ? '' : '<p class="as-text as-k" style="margin-top:14px">No character sheet yet — Play opens character creation.</p>'
@@ -1556,7 +1562,16 @@
     close();
     var who = p.name ? p.name + ' (' + p.code + ')' : p.code;
     var lines = [['fn-o-dim', '>clearance_agreement: signed'], ['fn-o-dim', '>briefing_codename: ' + briefingCodename()],
-      ['fn-o-dim', '>recruit: ' + who], ['', '']].concat(ORDERS_TEXT);
+      ['fn-o-dim', '>recruit: ' + who]];
+    // The incident that brought this recruit in, when there is one on file.
+    var inc = p.incursion || '';
+    if (!inc && data.code === p.code) {
+      var v = (data.char && data.char.incursion) || (data.state && data.state.bio && data.state.bio.incursion) || null;
+      if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = { text: v }; } }
+      inc = String((v && v.text) || '').trim();
+    }
+    if (inc) lines.push(['fn-o-dim', '>incident_on_file:'], ['fn-o-inc', inc]);
+    lines = lines.concat([['', '']], ORDERS_TEXT);
     var ov = document.createElement('div');
     ov.id = 'fn-orders';
     ov.setAttribute('role', 'dialog');

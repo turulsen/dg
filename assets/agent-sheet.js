@@ -178,7 +178,10 @@
             : '<p class="as-text as-k">Not assigned to a Cell yet — your Handler does that.</p>') +
           (opts.opsHtml || '') +
         '</div>' +
-      '</div>';
+      '</div>' +
+      // The Incursion: what brought the Agent to Delta Green.
+      (opts.incursion ? '<div class="as-sec as-incursion"><div class="as-sec-hd">The Incursion</div><p class="as-text">' + esc(opts.incursion) + '</p></div>'
+        : (opts.incursionEmptyHtml ? '<div class="as-sec as-incursion"><div class="as-sec-hd">The Incursion</div>' + opts.incursionEmptyHtml + '</div>' : ''));
     if (!sheet.stats) {
       return '<div class="as-paper">' + head + actions + about + (opts.emptySheetHtml || '') + (opts.noteHtml || '') + '</div>';
     }
@@ -237,8 +240,19 @@
       '<button type="button" class="as-take-photo" ' + (takePhotoAttr || '') + '>Take Photo</button></div></div>';
   }
 
+  // What happened in the Agent's incursion: the copy on the Agent's own
+  // record (characters/{code}.incursion -- the latest, possibly the
+  // Handler's) over the one inside the sheet.
+  function incursionText(charDoc, state) {
+    var v = (charDoc && charDoc.incursion) || (state && state.bio && state.bio.incursion) || null;
+    if (!v) return '';
+    if (window.dgIncursion) return window.dgIncursion.textOf(v);
+    if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return v; } }
+    return String((v && v.text) || '').trim();
+  }
+
   window.dgAgentSheet = {
     fromState: fromState, fromPregen: fromPregen, pregenToState: pregenToState,
-    physical: physical, render: render, wireRolls: wireRolls, photoHtml: photoHtml, esc: esc
+    physical: physical, render: render, wireRolls: wireRolls, photoHtml: photoHtml, esc: esc, incursionText: incursionText
   };
 })();

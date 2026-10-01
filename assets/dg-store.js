@@ -153,6 +153,19 @@
     }, { merge: true }), 20000, 'saving character'));
   }
 
+  // The Incursion (assets/incursion.js) on the Agent's own record, beside
+  // character_json rather than inside it: saveCharacter() merges, so the
+  // sheet's autosave never undoes a Handler's amendment. `by` is 'player'
+  // or 'handler'. A-Cell writes through its own Handler session.
+  function saveIncursion(code, value, by) {
+    code = norm(code);
+    const v = window.dgIncursion ? window.dgIncursion.normalize(value) : value;
+    return signInAgent(code).then(() => withTimeout(db().collection('characters').doc(code).set({
+      agent_code: code,
+      incursion: Object.assign({}, v, { by: by || 'player', updated_at: new Date().toISOString() })
+    }, { merge: true }), 20000, 'saving the Incursion'));
+  }
+
   // ── Briefs (Agent File / Profiling) ─────────────────────────
   function getBrief(code) {
     code = norm(code);
@@ -360,7 +373,7 @@
 
   window.dgStore = {
     ready, loadScript, signInAgent,
-    getCharacter, saveCharacter,
+    getCharacter, saveCharacter, saveIncursion,
     getBrief, updateBrief, submitBrief, findByPlayerName,
     listHandoutNotes, saveHandoutNote,
     getIdentities, saveIdentity, listSeen, markSeen, deleteOwnAgent, mainPhoto, photoRef,

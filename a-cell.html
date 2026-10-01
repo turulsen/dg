@@ -14,6 +14,7 @@
      pages at once with zero visibility anywhere but here. See the file
      itself for the full history. -->
 <script src="assets/js-error-banner.js" async></script>
+<script src="assets/incursion.js"></script>
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" type="image/png" href="assets/mars-tech-seal.png">
 <link rel="manifest" href="manifest.json">
@@ -284,6 +285,12 @@
   .pv-bond-row .bs{ font-family:'Courier Prime',monospace; color:var(--ink-3); flex-shrink:0; }
   .pv-empty-note{ font-size:11px; color:var(--ink-3); font-style:italic; font-family:'Courier Prime',monospace; }
   .pv-motivations{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.7; white-space:pre-wrap; }
+  .pv-incursion{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.7; }
+  .pv-inc-by{ font-size:10px; letter-spacing:.06em; color:var(--ink-3, #8a7a5a); }
+  .pv-inc-edit{ float:right; font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; background:transparent; border:1px solid currentColor; padding:1px 7px; cursor:pointer; color:inherit; opacity:.75; }
+  .pv-inc-actions{ display:flex; gap:8px; align-items:center; margin-top:8px; }
+  .pv-inc-actions button{ font-family:'Courier Prime',monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:5px 12px; cursor:pointer; }
+  .pv-inc-status{ font-size:11px; opacity:.8; }
   .pv-adapt-row{ display:flex; align-items:center; gap:10px; font-size:12px; color:var(--ink-2); margin-bottom:6px; }
   .pv-adapt-row .lbl{ width:110px; flex-shrink:0; font-family:'Courier Prime',monospace; font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-3); }
   .pv-adapt-boxes{ font-family:'Courier Prime',monospace; font-size:15px; letter-spacing:.15em; color:var(--ink); }
@@ -1592,7 +1599,7 @@
       var code = String((params && params.code) || '').trim().toUpperCase();
       return fsReady_().then(function (db) { return db.collection('characters').doc(code).get(); }).then(function (d) {
         return d.exists && d.data().character_json
-          ? { status: 'OK', agent_code: code, character_json: d.data().character_json, updated_at: d.data().updated_at || '' }
+          ? { status: 'OK', agent_code: code, character_json: d.data().character_json, updated_at: d.data().updated_at || '', incursion: d.data().incursion || null }
           : { status: 'NOT_FOUND' };
       });
     },
@@ -1742,6 +1749,18 @@
           });
         });
       }).then(function () { return { status: 'OK' }; });
+    },
+    // The Handler's word on what happened in an Agent's incursion: written
+    // beside the sheet (characters/{code}.incursion), which the player's
+    // autosave merges around rather than overwriting.
+    set_incursion: function (p) {
+      var code = String(p.agent_code || '').trim().toUpperCase();
+      if (!code) return Promise.resolve({ status: 'ERROR', message: 'agent_code is required' });
+      var v = window.dgIncursion ? window.dgIncursion.normalize(p.value) : (p.value || {});
+      var rec = Object.assign({}, v, { by: 'handler', updated_at: new Date().toISOString() });
+      return asHandler_().then(function (db) {
+        return db.collection('characters').doc(code).set({ agent_code: code, incursion: rec }, { merge: true });
+      }).then(function () { return { status: 'OK', incursion: rec }; });
     },
     update_character_field: function (p) {
       if (p.field !== 'player_name') return Promise.resolve({ status: 'ERROR', message: 'Field not allowed: ' + p.field });
@@ -2301,6 +2320,9 @@
           (res && res.message ? ' (' + escapeHtml(res.message) + ')' : '') + '</div>';
         return;
       }
+      // The Incursion on the Agent's own record (the latest word on it --
+      // the player's sheet or a Handler amendment) over the sheet's copy.
+      if (res.incursion) full.__incursion = res.incursion;
       fullStateCache[c.code] = full;
       renderView(c.code, full);
     };
@@ -2392,6 +2414,38 @@
     });
   }
 
+  // The Incursion in the dossier: what happened, and who last set it.
+  function incursionOf_(st) { return st.__incursion || (st.bio && st.bio.incursion) || null; }
+  function incursionHtml_(st) {
+    var v = incursionOf_(st);
+    var text = v ? (window.dgIncursion ? window.dgIncursion.textOf(v) : (v.text || '')) : '';
+    if (!text) return '<span class="pv-empty-note">Not set yet.</span>';
+    return escapeHtml(text) + (v.by === 'handler' ? ' <span class="pv-inc-by">— set by the Handler</span>' : '');
+  }
+  // Handler edit: the same picker the player has (roll, choose any line,
+  // or write it freehand), saved with set_incursion.
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-inc-edit]');
+    if (!b || !window.dgIncursion) return;
+    var code = b.getAttribute('data-inc-edit');
+    var st = fullStateCache[code];
+    var box = document.getElementById('pv-incursion-' + code);
+    if (!st || !box || box.querySelector('.dg-inc')) return;
+    box.innerHTML = '<div class="pv-inc-picker"></div><div class="pv-inc-actions"><button type="button" class="pv-inc-save">Save</button><button type="button" class="pv-inc-cancel">Cancel</button><span class="pv-inc-status"></span></div>';
+    var picker = window.dgIncursion.mount(box.querySelector('.pv-inc-picker'), incursionOf_(st));
+    box.querySelector('.pv-inc-cancel').addEventListener('click', function () { box.innerHTML = incursionHtml_(st); });
+    box.querySelector('.pv-inc-save').addEventListener('click', function () {
+      var status = box.querySelector('.pv-inc-status');
+      status.textContent = 'Saving…';
+      // post() answers like fetch(): the reply is behind .json().
+      window.dgAcellApi.post({ action: 'set_incursion', agent_code: code, value: picker.get() }).then(function (r) { return r.json(); }).then(function (res) {
+        if (!res || res.status !== 'OK') { status.textContent = 'Not saved' + (res && res.message ? ' — ' + res.message : '') + '.'; return; }
+        st.__incursion = res.incursion;
+        box.innerHTML = incursionHtml_(st);
+      }, function () { status.textContent = 'Not saved — check the connection.'; });
+    });
+  });
+
   function renderView(code, st) {
     var bio = st.bio || {};
     var stats = st.csStats || st.stats || {};
@@ -2460,6 +2514,8 @@
       bondsHtml +
       '<div class="pv-sec-hd">Motivations &amp; Disorders</div>' +
       '<div class="pv-motivations">' + (bio.motivations ? escapeHtml(bio.motivations) : '<span class="pv-empty-note">None recorded.</span>') + '</div>' +
+      '<div class="pv-sec-hd">The Incursion <button type="button" class="pv-inc-edit" data-inc-edit="' + escapeHtml(code) + '">Edit</button></div>' +
+      '<div class="pv-incursion" id="pv-incursion-' + escapeHtml(code) + '">' + incursionHtml_(st) + '</div>' +
       '<div class="pv-sec-hd">Sanity Adaptation</div>' +
       '<div class="pv-adapt-row"><span class="lbl">Violence</span><span class="pv-adapt-boxes">' + adaptBoxes(sanity.violence) + '</span></div>' +
       '<div class="pv-adapt-row"><span class="lbl">Helplessness</span><span class="pv-adapt-boxes">' + adaptBoxes(sanity.helplessness) + '</span></div>' +

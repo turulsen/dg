@@ -778,6 +778,17 @@
                             <textarea id="cs-personal-details" autocomplete="off"
                                 placeholder="Personal details, notes, and other information about your agent."></textarea></label>
                     </fieldset>
+                    <!-- The Incursion: what brought this Agent to Delta Green
+                         (assets/incursion.js). Roll it, pick any line, or write
+                         it freehand; saved with the sheet like Motivations, and
+                         also on the Agent's own record (characters/{code}.incursion)
+                         so the Handler can amend it from A-Cell. -->
+                    <fieldset id="cs-incursion-fieldset" class="panel panel-incursion fieldset-default">
+                        <legend>The Incursion</legend>
+                        <p class="cs-incursion-intro">What brought your Agent to Delta Green? Roll it, choose any line yourself, or write what happened in your own words. What happened in the incursion is up to your Handler.</p>
+                        <div id="cs-incursion-picker"></div>
+                        <input type="hidden" id="cs-incursion" value="">
+                    </fieldset>
                     <h2 class="visually-hidden">Skills</h2>
                     <fieldset class="panel panel-skills fieldset-default">
                         <legend>Skills</legend>
@@ -1085,7 +1096,9 @@
         <script src="pdf-export.js"></script>
         <script src="sheets-export.js"></script>
         <script src="sheets-import.js"></script>
-        <script src="save-load.js"></script>
+        <script src="../assets/incursion.js"></script>
+    <script src="incursion-sheet.js"></script>
+    <script src="save-load.js"></script>
         <script src="agent-portal-export.js"></script>
         <script src="cloud-sync.js"></script>
         <script src="lp-tracker-photo.js"></script>

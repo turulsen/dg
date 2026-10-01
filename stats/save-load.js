@@ -93,6 +93,7 @@ function matchProfessionKey(profStr) {
             physicalDesc: g('cs-physical-desc'),
             motivations: g('cs-motivations'),
             personalDetails: g('cs-personal-details'),
+            incursion: (() => { try { return JSON.parse(g('cs-incursion') || 'null'); } catch (e) { return null; } })(),
         };
 
         // Predefined skills (values)
@@ -276,6 +277,7 @@ function matchProfessionKey(profStr) {
             set('cs-physical-desc', state.bio.physicalDesc);
             if (state.bio.motivations !== undefined) set('cs-motivations', state.bio.motivations);
             if (state.bio.personalDetails !== undefined) set('cs-personal-details', state.bio.personalDetails);
+            if (window.dgIncursionSheet) window.dgIncursionSheet.set(state.bio.incursion || null);
             // A named character needs a Cloud Save code minted before
             // Export/Open Agent File can be clicked -- setting cs-name's
             // .value here doesn't fire the 'input' event ensureCloudCode()
@@ -692,6 +694,7 @@ function matchProfessionKey(profStr) {
         document.querySelectorAll('input[type="checkbox"]').forEach(el => {
             el.checked = false;
         });
+        if (window.dgIncursionSheet) window.dgIncursionSheet.set(null);
         // Not the theme picker: it's a display setting, not character
         // data. Resetting it to its first option (X-Files) left the page
         // showing one theme while collectState() saved another -- every

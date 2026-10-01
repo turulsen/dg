@@ -239,6 +239,10 @@
                 let prefTheme = null;
                 try { prefTheme = localStorage.getItem('dg_theme'); } catch (e) { /* best effort */ }
                 window.dgSaveLoad.applyState(state, { skipCloudCodeMint: true });
+                // The Incursion on the Agent's own record is the latest word on
+                // it -- the Handler can amend it from A-Cell without touching
+                // the sheet -- so it wins over the copy inside the sheet.
+                if (res.incursion && window.dgIncursionSheet) window.dgIncursionSheet.set(res.incursion, { quiet: true });
                 if (prefTheme && typeof setTheme === 'function') setTheme(prefTheme, { skipSave: true });
                 setTimeout(() => {
                     window.dgSaveLoad.save?.();
@@ -288,7 +292,7 @@
         // characters/{code} in Firestore (the Sheet is retired). Same
         // reply shape the old load_character JSONP gave the handler above.
         window.dgStore.getCharacter(code).then(doc => {
-            window[cbName](doc ? { status: 'OK', agent_code: code, character_json: doc.character_json, updated_at: doc.updated_at } : { status: 'NOT_FOUND' });
+            window[cbName](doc ? { status: 'OK', agent_code: code, character_json: doc.character_json, updated_at: doc.updated_at, incursion: doc.incursion || null } : { status: 'NOT_FOUND' });
         }).catch(() => {
             delete window[cbName];
             if (status) status.textContent = 'Connection error. Try again.';
