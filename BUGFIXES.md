@@ -6077,8 +6077,15 @@ Same report, not code bugs, made clearer instead:
   SDK's catch-all for a Cloud Function that gave no usable answer (it
   crashed or the request never got through). The Agent File now says
   "the AI service did not answer. Try again in a minute; if it keeps
-  failing, tell your Handler." The cause itself is server-side and is
-  being checked in the function logs (`generatePrompt`).
+  failing, tell your Handler." The cause was server-side:
+  `generatePrompt`, `generatePlateImage` and `dailyBackup` had never
+  been deployed (step 1 of `docs/firebase-migration/SHEET-RETIREMENT.md`
+  was only half done -- the secrets were set, the functions weren't
+  deployed; `functions:list` showed only the two auth functions, and the
+  prompt function had no log entries at all). So prompt and plate
+  generation had been failing on the live site since the Sheet was
+  retired, not only on the preview. Deployed 2026-10-01 with
+  `firebase deploy --only functions:generatePrompt,functions:generatePlateImage,functions:dailyBackup`.
 
 ## Agent Hub: the Agent's paper could stay blank on a slow load
 
