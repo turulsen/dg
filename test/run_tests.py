@@ -1231,22 +1231,15 @@ def test_stat_generator_agent_file_nav(p):
     # wins) drives this, not a stale most-recent-agent fallback that a
     # different agent's earlier session could have left behind.
     for _ in range(20):
-        if "dg-agent-portal.html?code=" in page.url and page.url.endswith("#agent"):
+        if "agent-hub.html?code=" in page.url:
             break
         page.wait_for_timeout(300)
-
-    cover_tab_active = False
-    for _ in range(20):
-        cover_tab_active = "active" in (page.eval_on_selector("#tw-cover", "el => el.className") or "")
-        if cover_tab_active:
-            break
-        page.wait_for_timeout(300)
-
-    record("stats-terminal", "Open Agent File button navigates to the Portal with this Agent's own code, landing on Profiling (name-only export is incomplete)",
-           "dg-agent-portal.html?code=" in page.url and page.url.endswith("#agent") and cover_tab_active,
-           page.url)
-    record("stats-terminal", "the Agent File tab is NOT shown for this still-incomplete export",
-           not page.eval_on_selector("#tw-agent", "el => el.classList.contains('active')"), "")
+    state = _af_state(page)
+    record("stats-terminal", "Open Agent File button opens this Agent's own file on Agent Hub, Appearance open (name-only export is incomplete)",
+           "agent-hub.html?code=" in page.url and state.get("open") and "still to fill in" in (state.get("state") or ""),
+           page.url + " " + json.dumps(state))
+    record("stats-terminal", "the era photos are NOT offered yet for this still-incomplete export",
+           state.get("photosLocked") is True, json.dumps(state))
 
     char_name_val = ""
     for _ in range(15):
@@ -1298,6 +1291,7 @@ def test_stat_generator_agent_file_nav_ignores_stale_last_agent(p):
         cb = url.split("callback=")[1].split("&")[0]
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"OK"}})')
     page.route("**/script.google.com/**", fake_apps_script)
+    install_firestore_backend(page)  # the brief run() writes is what Agent Hub then reads
 
     page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(400)
@@ -1325,7 +1319,7 @@ def test_stat_generator_agent_file_nav_ignores_stale_last_agent(p):
     page.wait_for_timeout(200)
     page.click("#site-intro-agent-file-btn")
     for _ in range(20):
-        if "dg-agent-portal.html?code=" in page.url and page.url.endswith("#agent"):
+        if "agent-hub.html?code=" in page.url:
             break
         page.wait_for_timeout(300)
 
@@ -1341,7 +1335,7 @@ def test_stat_generator_agent_file_nav_ignores_stale_last_agent(p):
         if char_name_val:
             break
         page.wait_for_timeout(300)
-    record("stats-terminal", "the Agent Portal shows the just-exported agent (Elvis), not the stale one (Daniela)",
+    record("stats-terminal", "the Agent File shows the just-exported agent (Elvis), not the stale one (Daniela)",
            char_name_val == "Elvis Shantings", char_name_val)
 
     record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
@@ -2042,8 +2036,8 @@ def test_agent_file_export(p):
     page.wait_for_timeout(400)
 
     status_html = page.inner_html("#agent-file-export-status")
-    record("agent-file-export", "shows the generated code and an Agent Portal link",
-           "OWEN-" in status_html and "dg-agent-portal.html" in status_html, status_html)
+    record("agent-file-export", "shows the generated code and a link to that Agent's file on Agent Hub",
+           "OWEN-" in status_html and "agent-hub.html?code=OWEN-" in status_html, status_html)
 
     brief_writes = fs_writes(page, "briefs/")
     body = brief_writes[-1]["data"] if brief_writes else {}
@@ -2132,7 +2126,8 @@ def test_random_bio_cloud_code_race(p):
     return errs
 
 def test_cover_ids_tab(p):
-    """The Cover IDs tab is the "Cover ID Fabricator" -- a native, in-page
+    """The Field ID Fabricator (field-id.html, embedded in the Field Notes
+    notebook's Field ID page; it was the Agent Portal's third tab) -- a native, in-page
     tablet UI (agency+era picker, live-rendered credential card, PRINT/
     EXPORT, and an agent-code importer that queries the Apps Script backend
     the same way the Agent File tab does). Ported wholesale from the
@@ -2143,19 +2138,10 @@ def test_cover_ids_tab(p):
     page.set_default_timeout(8000)
     errs = collect_errors(page)
     mock_routes(page)
-    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
+    page.goto(f"{BASE}/field-id.html?embed=1", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
 
-    # textContent, not inner_text() -- .tw span is CSS text-transform:uppercase,
-    # so inner_text() would return the rendered "FIELD IDS", not the markup.
-    tw_ids_text = page.eval_on_selector("#tw-ids span", "el => el.textContent")
-    record("cover-ids-tab", "the tab reads Field IDs, not the old Cover IDs name (now Cover Identity means something else)",
-           tw_ids_text == "Field IDs", repr(tw_ids_text))
-
-    page.click("#tw-ids")
-    page.wait_for_timeout(300)
-
-    record("cover-ids-tab", "Cover IDs tab renders the native tablet UI (not an iframe)",
+    record("cover-ids-tab", "the Fabricator renders the native tablet UI (not an iframe)",
            page.locator("#ids-shell").count() > 0 and page.locator("iframe#ids-iframe").count() == 0, "")
 
     # placeholder before any agency/era chosen
@@ -2531,14 +2517,13 @@ def test_hub_cover_identity_veil(p):
     return errs_all
 
 def test_agent_hub(p):
-    """agent-hub.html (the Agent clearance branch): a folder look shared
-    with the Agent File -- every Agent (plus a pinned "+ New Recruit")
-    is a folder ear-tab, and the active tab's paper panel shows that
-    Agent's dossier with three actions (Play/Recruit / Agent File /
-    Cover ID) linking to stats/ and the Agent Portal with query params
-    those pages now handle (see test_stats_load_by_code_query_param and
-    test_agent_portal_code_query_param). Reads the same dg_agent_roster
-    localStorage the Agent Portal's own roster drawer already writes to."""
+    """agent-hub.html (the Agent clearance branch): every Agent (plus a
+    pinned "+ New Recruit") is a folder ear-tab, and the active tab is
+    that Agent's whole file -- the hub's header and sheet, Appearance and
+    the era photos (assets/agent-file.js, moved into whichever tab is
+    open) and Evidence. Play is the one button left under the Agent's
+    line; Agent File, Field ID, Notes and the rest live in the Field
+    Notes notebook. Reads the dg_agent_roster localStorage."""
     errs_all = []
 
     # No agents on file -> only the New Recruit tab, an empty-state panel
@@ -2584,26 +2569,27 @@ def test_agent_hub(p):
            "active" in page.eval_on_selector("#panel-OWEN-CS12", "el => el.className"), "")
 
     action_hrefs = page.eval_on_selector_all(
-        "#panel-OWEN-CS12 .paper-btn", "els => els.map(e => e.getAttribute('href'))")
-    record("hub", "Play links to stats/ with load+theme query params for that exact agent",
-           action_hrefs[0] == "stats/index.html?load=OWEN-CS12&live=1", str(action_hrefs))
-    record("hub", "Agent File links to the Agent Portal's Agent File tab for that exact agent",
-           action_hrefs[1] == "dg-agent-portal.html?code=OWEN-CS12#agent", str(action_hrefs))
-    record("hub", "Field ID links to the Agent Portal's Field IDs tab for that exact agent",
-           action_hrefs[2] == "dg-agent-portal.html?code=OWEN-CS12#ids", str(action_hrefs))
-    action_labels = page.eval_on_selector_all(
-        "#panel-OWEN-CS12 .paper-btn", "els => els.map(e => e.textContent)")
-    record("hub", "the button reads Field ID, not the old Cover ID name (now Cover Identity means something else)",
-           action_labels[2] == "Field ID", str(action_labels))
-    record("hub", "Notes links to the Notes app with ?code= for that exact agent",
-           action_hrefs[3] == "notes/index.html?code=OWEN-CS12", str(action_hrefs))
+        "#panel-OWEN-CS12 .paper-actions .paper-btn", "els => els.map(e => e.getAttribute('href'))")
+    record("hub", "Play is the only button under the Agent's line, linking to stats/ for that exact agent (the rest lives in the notebook)",
+           action_hrefs == ["stats/index.html?load=OWEN-CS12&live=1"], str(action_hrefs))
+    af = _af_state(page)
+    record("hub", "the active Agent's tab carries their Agent File (Appearance, era photos), loaded for them",
+           af.get("inTab") and af.get("code") == "OWEN-CS12", json.dumps(af))
+    record("hub", "an Agent with an unfinished Appearance brief gets the callout under Play, with how much is left",
+           page.eval_on_selector("#ah-callout-OWEN-CS12", "el => !el.hidden && /still to fill in/.test(el.textContent)"), "")
 
-    # Clicking a tab switches the active panel.
+    # Clicking a tab switches the active panel -- and the one Agent File
+    # moves into it and loads that Agent.
     page.click('.tw[data-tab="PRIY-AN34"]')
     page.wait_for_timeout(150)
     record("hub", "clicking a tab activates that Agent's panel and deactivates the others",
            "active" in page.eval_on_selector("#panel-PRIY-AN34", "el => el.className")
            and "active" not in page.eval_on_selector("#panel-OWEN-CS12", "el => el.className"), "")
+    page.wait_for_function("() => window.dgAgentFile.code() === 'PRIY-AN34'", timeout=5000)
+    af = _af_state(page)
+    form_name = page.eval_on_selector("#dg-form [name=char_name]", "el => el.value")
+    record("hub", "…and the Agent File follows, now Priya's (her name on the Appearance brief)",
+           af.get("inTab") and af.get("code") == "PRIY-AN34" and form_name == "Priya Anand", json.dumps(af) + " " + form_name)
 
     errs_all.extend(errs)
     page.close()
@@ -2825,8 +2811,9 @@ def test_player_name_survives_profiling_and_load_my_agents(p):
     _block_fonts(page)
     brief = dict(MOCK_BRIEF, char_name="Nora Vance", player_name="Mara Player", player_name_lc="mara player")
     install_firestore_backend(page, {"briefs/NORA-VX01": brief})
-    page.goto(f"{BASE}/dg-agent-portal.html?code=NORA-VX01#cover", wait_until="domcontentloaded", timeout=15000)
+    page.goto(f"{BASE}/agent-hub.html?code=NORA-VX01#appearance", wait_until="domcontentloaded", timeout=15000)
     wait_for_condition(lambda: page.input_value("#dg-form [name=char_name]") == "Nora Vance", timeout_ms=8000)
+    page.wait_for_function("() => document.getElementById('af-appear').classList.contains('af-open')", timeout=8000)
     page.click('button[onclick^="randomizeAgent"]')  # fills the rest of the form
     page.wait_for_timeout(300)
     # (the fixture's age "30s" isn't one of the dropdown's options)
@@ -2835,7 +2822,7 @@ def test_player_name_survives_profiling_and_load_my_agents(p):
     page.click("#submit-btn")
     wait_for_condition(lambda: (fs_doc(page, "briefs/NORA-VX01") or {}).get("submitted_at"), timeout_ms=8000)
     saved = fs_doc(page, "briefs/NORA-VX01") or {}
-    record("agent-portal", "submitting Profiling with an empty Your Name keeps the Player Name already on file",
+    record("agent-file", "submitting Appearance with an empty Your Name keeps the Player Name already on file",
            bool(saved.get("submitted_at")) and saved.get("player_name") == "Mara Player" and saved.get("player_name_lc") == "mara player",
            str({k: saved.get(k) for k in ("submitted_at", "player_name", "player_name_lc")}) + " status=" + page.inner_text("#form-status") if page.locator("#form-status").count() else "")
     errs_all.extend(errs)
@@ -6795,8 +6782,8 @@ def test_shell_nav_tracks_in_page_navigation(p):
     link inside whichever page is currently loaded, which just navigates
     the iframe on its own (same-origin, no extra plumbing). This proves
     that actually works end to end: click Agent Hub's own "Agent File"
-    button (real in-page markup, not the shell's nav) for a known Agent,
-    confirm the iframe followed it to dg-agent-portal.html WITHOUT the
+    Play button (real in-page markup, not the shell's nav) for a known Agent,
+    confirm the iframe followed it to the character sheet WITHOUT the
     outer shell page navigating at all (Table Radio/Dice Roller survive,
     same proof as the swap test above), and that the nav still reads
     this as "Agent Hub" territory rather than going blank."""
@@ -6836,29 +6823,29 @@ def test_shell_nav_tracks_in_page_navigation(p):
         document.getElementById('dg-radio-pill').dataset.dgTestTag = 'radio-still-here';
     }""")
 
-    # A real Agent File link, from inside the loaded Agent Hub page --
+    # A real Play link, from inside the loaded Agent Hub page --
     # any known agent code works, this is only proving the iframe
     # follows a same-origin relative link on its own.
     agent_file_href = page.eval_on_selector(
         "#dg-shell-content",
-        "el => { var a = el.contentDocument.querySelector('a[href*=\"dg-agent-portal.html\"]'); "
+        "el => { var a = el.contentDocument.querySelector('a[href*=\"stats/index.html?load=\"]'); "
         "if (a) { a.target = ''; } return a && a.getAttribute('href'); }"
     )
     if not agent_file_href:
-        record("shell", "found an in-page Agent File link to click (roster has at least one Agent)", False, "no roster link found")
+        record("shell", "found an in-page Play link to click (roster has at least one Agent)", False, "no roster link found")
         record("shell", "no JS exceptions", len(errs) == 0, "; ".join(errs))
         page.close()
         return errs
 
-    page.eval_on_selector("#dg-shell-content", "el => { var a = el.contentDocument.querySelector('a[href*=\"dg-agent-portal.html\"]'); a.click(); }")
+    page.eval_on_selector("#dg-shell-content", "el => { var a = el.contentDocument.querySelector('a[href*=\"stats/index.html?load=\"]'); a.click(); }")
     page.wait_for_function(
         "() => { var f = document.getElementById('dg-shell-content'); "
         "return f.contentDocument && f.contentDocument.readyState === 'complete' "
-        "&& /dg-agent-portal\\.html/.test(f.contentWindow.location.href); }")
+        "&& /stats\\/index\\.html/.test(f.contentWindow.location.href); }")
     page.wait_for_timeout(200)
 
     record("shell", "clicking an in-page link (not the shell's own nav) still navigates the content iframe",
-           "dg-agent-portal.html" in page.eval_on_selector("#dg-shell-content", "el => el.contentWindow.location.href"), "")
+           "stats/index.html" in page.eval_on_selector("#dg-shell-content", "el => el.contentWindow.location.href"), "")
     record("shell", "the outer Table Radio pill is untouched by an in-page navigation too",
            page.eval_on_selector("#dg-radio-pill", "el => el.dataset.dgTestTag") == "radio-still-here", "")
     record("shell", "the nav still reads this as Agent Hub territory, not blank",
@@ -7084,22 +7071,19 @@ def test_shell_hides_widgets_for_notes_popover(p):
     return errs
 
 def test_agent_portal_code_query_param(p):
-    """agent-hub.html's Agent Files "Files" and "ID Creator" buttons link
-    to dg-agent-portal.html?code=XXXX#agent / #ids -- a new
-    openSpecificAgent() IIFE there that opens that exact agent by code,
-    taking priority over whatever autoRestore() would otherwise pick up
-    from dg_last_agent (the most-recently-active agent, which may not be
-    the one just clicked from Agent Files)."""
+    """One Agent by code: agent-hub.html?code=CODE opens that Agent's tab
+    with their whole file loaded -- looked up and added when they aren't
+    on this device yet -- and the retired three-tab Agent Portal's old
+    addresses forward to the right place (dg-agent-portal.html is only a
+    forwarding page now): ?code=#agent -> the Agent's file, #cover -> its
+    photos, #ids -> the Field ID Fabricator, which lives in the notebook."""
     errs_all = []
 
     def fake_apps_script(route):
         url = route.request.url
         if "callback=" in url:
             cb = url.split("callback=")[1].split("&")[0]
-            # Every #dg-form [required] field, not just a few -- a
-            # partial profile (see the dedicated incomplete-profile test
-            # below) is exactly the case isProfilingComplete() bounces
-            # back to Profiling instead of showing the Agent File tab.
+            # Every #dg-form [required] field: a complete Appearance brief.
             fake_data = {
                 "char_name": "Owen Castillo", "codename": "Ferro", "age_range": "Late 30s",
                 "sex": "Male", "profession": "Pilot", "nationality": "American",
@@ -7118,73 +7102,55 @@ def test_agent_portal_code_query_param(p):
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    _block_fonts(page)
     jsonp_backend(page, fake_apps_script)
-    page.goto(f"{BASE}/dg-agent-portal.html?code=OWEN-CS12#agent", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(600)
-    record("agent-portal", "?code=...#agent opens straight to the Agent File tab (Profiling is complete)",
-           "active" in page.eval_on_selector("#tw-agent", "el => el.className"), "")
-    record("agent-portal", "?code=...#agent loads that exact agent's name",
-           page.eval_on_selector("#af-agent-name", "el => el.textContent") == "Owen Castillo", "")
-
-    # Bug fix: loadAgentFile() (the ?code=...#agent path) used to only
-    # render the read-only Agent File dossier -- switching over to the
-    # Profiling tab afterward showed a blank form instead of this same
-    # Agent's data, since only the separate "Restore by code" flow
-    # (loadAgentCode()) populated it. Both now share populateCoverForm().
-    page.click("#tw-cover")
-    page.wait_for_timeout(200)
-    record("agent-portal", "switching to the Profiling tab after ?code=...#agent shows that Agent's name, not a blank form",
-           page.eval_on_selector("#dg-form [name=char_name]", "el => el.value") == "Owen Castillo", "")
-    # profession has no form field on Profiling (removed -- the character
-    # sheet's own profession dropdown is the real source of this data),
-    # so check the underlying restored data carries it rather than a
-    # form value.
-    record("agent-portal", "switching to the Cover tab after ?code=...#agent still has that Agent's profession in afData",
-           page.evaluate("() => afData && afData.profession") == "Pilot", "")
+    page.goto(f"{BASE}/agent-hub.html?code=OWEN-CS12", wait_until="domcontentloaded", timeout=15000)
+    af = _af_state(page)
+    record("agent-file", "?code= opens that Agent's tab with their file, even when they weren't on this device yet",
+           af.get("inTab") and af.get("code") == "OWEN-CS12"
+           and "active" in (page.eval_on_selector('.tw[data-tab="OWEN-CS12"]', "el => el.className") or ""), json.dumps(af))
+    record("agent-file", "…and adds them to this device's roster",
+           "OWEN-CS12" in json.loads(page.evaluate("localStorage.getItem('dg_agent_roster')") or "{}"), "")
+    record("agent-file", "a complete Appearance brief shows folded ('On file') with the era photos open",
+           af.get("state") == "On file" and not af.get("open") and af.get("photosLocked") is False, json.dumps(af))
+    record("agent-file", "the Appearance brief carries that Agent's data (name on the form, profession on file)",
+           page.eval_on_selector("#dg-form [name=char_name]", "el => el.value") == "Owen Castillo"
+           and page.evaluate("() => window.dgAgentFile.data() && window.dgAgentFile.data().profession") == "Pilot", "")
     errs_all.extend(errs)
     page.close()
 
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    jsonp_backend(page, fake_apps_script)
-    page.goto(f"{BASE}/dg-agent-portal.html?code=OWEN-CS12#ids", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(600)
-    record("agent-portal", "?code=...#ids opens straight to the Cover IDs tab",
-           "active" in page.eval_on_selector("#tw-ids", "el => el.className"), "")
-    record("agent-portal", "?code=...#ids pre-fills the agent-code importer with that code",
-           page.eval_on_selector("#ids-agent-code", "el => el.value") == "OWEN-CS12", "")
-    errs_all.extend(errs)
-    page.close()
+    for old, want in (("#agent", "/agent-hub.html?code=OWEN-CS12"), ("#cover", "/agent-hub.html?code=OWEN-CS12#photos"),
+                      ("#ids", "/hub.html?fn=fab")):
+        page = p.new_page()
+        page.set_default_timeout(8000)
+        _block_fonts(page)
+        jsonp_backend(page, fake_apps_script)
+        page.route("**/hub.html*", lambda r: r.fulfill(status=200, content_type="text/html", body="<!doctype html><title>hub</title>"))
+        page.goto(f"{BASE}/dg-agent-portal.html?code=OWEN-CS12{old}", wait_until="domcontentloaded", timeout=15000)
+        wait_for_condition(lambda: want in page.url, timeout_ms=8000)
+        record("agent-file", "the retired Agent Portal address ?code=…%s forwards to %s" % (old, want), want in page.url, page.url)
+        if old == "#ids":
+            record("agent-file", "…with that Agent set as the notebook's, for the Fabricator",
+                   page.evaluate("localStorage.getItem('dg_stats_cloud_code')") == "OWEN-CS12", "")
+        page.close()
     return errs_all
 
 def test_agent_portal_profiling_gate(p):
-    """The Agent File tab (dg-agent-portal.html) is gated behind Profiling
-    actually being "filled out totally and submitted" -- defined as every
-    #dg-form [required] field having a real value (isProfilingComplete()),
-    not just "a Delta Green Briefs row exists for this code". That
-    distinction matters because stats/'s "Open Agent File" button
-    auto-exports a real but partial row (name/sex/nationality/profession/
-    build/outfit only -- see agent-portal-export.js's run()) straight to
-    the backend, bypassing this form's own required-field validation
-    entirely. Covers both directions: an incomplete profile bounces the
-    Agent File tab back to Profiling (whether reached via ?code=...#agent
-    or a direct tab click), and the Random Agent Generator on Profiling
-    skips rerolling fields that already carry real Agent data instead of
-    clobbering them."""
+    """Era photos are made from the Appearance brief, so they only open
+    once it is "filled out totally" -- every #dg-form [required] field has
+    a real value (isProfilingComplete()), not just "an Agent File exists".
+    stats/'s export writes a real but partial one (name/sex/nationality/
+    profession/build/outfit only, agent-portal-export.js's run()). Such
+    an Agent's file shows Appearance open, with how much is left, the
+    already-known fields carried over, and no photos yet; the Random
+    Agent Generator fills only the rest, never rerolling what's known."""
     errs_all = []
 
     def partial_fake_apps_script(route):
         url = route.request.url
         if "callback=" in url:
             cb = url.split("callback=")[1].split("&")[0]
-            # Deliberately shaped like stats/'s auto-export payload --
-            # only the handful of fields it actually sets, everything
-            # else #dg-form marks required is missing.
+            # Shaped like stats/'s auto-export payload.
             fake_data = {"char_name": "Mark Delacroix", "age_range": "30s", "sex": "Male",
                          "nationality": "American", "profession": "Federal Agent", "build": "muscular",
                          "jacket": "dark suit jacket", "shirt": "white dress shirt",
@@ -7197,40 +7163,34 @@ def test_agent_portal_profiling_gate(p):
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    _block_fonts(page)
     jsonp_backend(page, partial_fake_apps_script)
-    page.goto(f"{BASE}/dg-agent-portal.html?code=MARK-DL01#agent", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(600)
-    record("agent-portal", "an incomplete profile (auto-export shape) bounces ?code=...#agent back to Profiling",
-           "active" in page.eval_on_selector("#tw-cover", "el => el.className"), "")
-    record("agent-portal", "the Agent File tab is NOT shown for an incomplete profile",
-           not page.eval_on_selector("#tw-agent", "el => el.classList.contains('active')"), "")
-    # profession has no form field on Profiling (removed) -- checked via
-    # afData instead, same as the other two occurrences below.
-    record("agent-portal", "the already-known fields carry over into Profiling despite the bounce",
+    page.goto(f"{BASE}/agent-hub.html?code=MARK-DL01", wait_until="domcontentloaded", timeout=15000)
+    af = _af_state(page)
+    record("agent-file", "an incomplete brief (auto-export shape) shows Appearance open, with how many details are left",
+           af.get("open") and af.get("state") == "13 of 22 still to fill in", json.dumps(af))
+    record("agent-file", "no era photos for an incomplete brief",
+           af.get("photosLocked") is True and page.eval_on_selector("#af-content", "el => el.style.display") == "none", json.dumps(af))
+    record("agent-file", "the callout under Play says the same",
+           page.eval_on_selector("#ah-callout-MARK-DL01", "el => !el.hidden && el.textContent.indexOf('13 of 22') !== -1"), "")
+    record("agent-file", "no Edit/Close toggle while it's incomplete (it stays open)",
+           page.eval_on_selector("#af-appear-toggle", "el => el.hidden"), "")
+    record("agent-file", "the already-known fields carry over into Appearance",
            page.eval_on_selector("#dg-form [name=char_name]", "el => el.value") == "Mark Delacroix"
            and page.eval_on_selector("#dg-form [name=build]", "el => el.value") == "muscular"
-           and page.evaluate("() => afData && afData.profession") == "Federal Agent", "")
-
-    # Clicking the Agent File tab directly (not just the ?code= route)
-    # bounces back too, for the same still-incomplete Agent.
-    page.click("#tw-agent")
-    page.wait_for_timeout(200)
-    record("agent-portal", "clicking the Agent File tab directly also bounces back to Profiling while incomplete",
-           "active" in page.eval_on_selector("#tw-cover", "el => el.className"), "")
+           and page.evaluate("() => window.dgAgentFile.data().profession") == "Federal Agent", "")
 
     # Random Generate must not reroll the fields the (auto-)export
     # already established -- only fill in the rest of the blank brief.
     page.evaluate("randomizeAgent(null)")
     page.wait_for_timeout(200)
-    record("agent-portal", "Random Generate leaves the already-known name untouched",
+    record("agent-file", "Random Generate leaves the already-known name untouched",
            page.eval_on_selector("#dg-form [name=char_name]", "el => el.value") == "Mark Delacroix", "")
-    record("agent-portal", "Random Generate leaves the already-known build (from STR) untouched",
+    record("agent-file", "Random Generate leaves the already-known build (from STR) untouched",
            page.eval_on_selector("#dg-form [name=build]", "el => el.value") == "muscular", "")
-    record("agent-portal", "Random Generate leaves the already-known sex untouched",
+    record("agent-file", "Random Generate leaves the already-known sex untouched",
            page.eval_on_selector("#dg-form [name=sex]", "el => el.value") == "Male", "")
-    record("agent-portal", "Random Generate DOES fill in a field that was genuinely still blank (face_shape)",
+    record("agent-file", "Random Generate DOES fill in a field that was genuinely still blank (face_shape)",
            page.eval_on_selector("#dg-form [name=face_shape]", "el => el.value") != "", "")
 
     errs_all.extend(errs)
@@ -7772,7 +7732,7 @@ def test_mobile_no_overflow(p):
     errs_all.extend(errs)
     page.close()
 
-    # The Cover IDs "tablet" is its own dense grid layout (260px sidebar +
+    # The Field ID Fabricator "tablet" is its own dense grid layout (260px sidebar +
     # card preview), collapsing to a single column under 700px -- worth
     # checking on its own rather than trusting the Cover tab's check above
     # to cover it.
@@ -7780,205 +7740,58 @@ def test_mobile_no_overflow(p):
     page.set_default_timeout(5000)
     errs = collect_errors(page)
     mock_routes(page)
-    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(300)
-    page.click("#tw-ids")
+    page.goto(f"{BASE}/field-id.html?embed=1", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
     scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
-    record("mobile", "dg-agent-portal.html Cover IDs tab has no horizontal overflow at 390px viewport",
+    record("mobile", "the Field ID Fabricator (field-id.html) has no horizontal overflow at 390px viewport",
            scroll_width <= 390, f"scrollWidth={scroll_width}")
     errs_all.extend(errs)
     page.close()
     return errs_all
 
-def test_agent_portal_restore_dossier(p, agent):
-    """Regression check: restoring an agent by code on the Cover tab must
-    re-render the dossier ('pop up') in place, not just jump silently to
-    the Agent File tab."""
-    page = p.new_page()
-    page.set_default_timeout(5000)
-    errs = collect_errors(page)
-    mock_routes(page)
-    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(200)
-
-    page.fill("#agent-code-input", "REST-OR3D")
-    page.click(".sticky-btn")
-    page.wait_for_timeout(400)
-
-    status = page.text_content("#code-load-status")
-    dossier_html = page.inner_html("#dossier-wrap")
-    cover_still_active = page.is_visible("#panel-cover")
-    ok = "restored" in (status or "").lower() and "Mock Loaded Agent" in dossier_html and cover_still_active
-    record("agent-portal", "restoring by code re-renders dossier on Cover tab", ok,
-           f"status={status!r} cover_visible={cover_still_active}")
-    page.close()
-    return errs
-
-def test_agent_portal_autorestore_prefills_cover(p):
-    """Bug fix: a bare visit to dg-agent-portal.html (no ?code=, no
-    #agent/#ids hash -- e.g. a bookmark, or a generic "Agent File" nav
-    link) lands on the Cover tab by default (panel-cover is the markup's
-    default-active panel). autoRestore() picked up the last-active Agent
-    from dg_last_agent into afData/afCode, but only pushed it into the
-    Cover form when the hash happened to be #agent (which calls
-    openInAgentFile() -> populateCoverForm()) -- the far more common
-    plain-visit case left the Cover form blank even though this browser
-    already knew this Agent's data. populateCoverForm() is now called
-    unconditionally in autoRestore()."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    route_apps_script_ok(page)
-    saved = {"code": "OWEN-CS12", "data": {"char_name": "Owen Castillo", "profession": "Pilot", "codename": "Ferro"}}
-    page.add_init_script(f"localStorage.setItem('dg_last_agent', '{json.dumps(saved)}');")
-    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(400)
-    record("agent-portal", "a bare visit lands on the Cover tab by default",
-           "active" in page.eval_on_selector("#tw-cover", "el => el.className"), "")
-    record("agent-portal", "the last-active Agent's name is already in the Cover form, not blank",
-           page.eval_on_selector("#dg-form [name=char_name]", "el => el.value") == "Owen Castillo", "")
-    record("agent-portal", "the last-active Agent's profession is still in afData (no form field for it anymore)",
-           page.evaluate("() => afData && afData.profession") == "Pilot", "")
-    record("agent-portal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
-    page.close()
-    return errs
-
-def test_agent_file_open_character_sheet_btn(p):
-    """The "Open Character Sheet" button above the era grid on the Agent
-    File tab. There's no real link between an Agent File and a stats/
-    character (roadmap item #1: three separate identity systems), so this
-    is honest about what it does -- just navigates to stats/index.html,
-    which auto-saves/auto-loads on its own (resumes a character already
-    there, or starts blank if none is). Checks the button is present only
-    once an agent is actually loaded (not on the code-entry gate), and
-    that it navigates to the right page."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    def fake_apps_script(route):
-        url = route.request.url
-        if route.request.method == "POST" or "callback=" not in url:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        # A callback-carrying GET (e.g. checkAgentKia's load_character
-        # check, which now fires whenever the Agent File tab renders)
-        # needs a real JSONP-wrapped response -- a raw JSON body gets
-        # executed as a <script> and throws on the object literal's ':'.
-        cb = url.split("callback=")[1].split("&")[0]
-        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"OK"}})')
-    page.route("**/script.google.com/**", fake_apps_script)
-
-    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(300)
-
-    # The button lives inside #af-content, which is display:none until an
-    # agent is loaded -- so it's present in the DOM but must not be
-    # visible yet, not merely absent.
-    record("agent-portal", "Open Character Sheet button is not visible on the Agent File code gate",
-           not page.is_visible("#open-character-sheet-btn"), "")
-
-    # A complete brief, not just a name -- isProfilingComplete() now
-    # gates the Agent File tab behind every #dg-form [required] field
-    # actually being filled in, so a name-only submission (as this used
-    # to be) wouldn't even get past that gate to reach the button this
-    # test is actually about. A complete submit now opens the Agent File
-    # tab directly (no more "click Open Agent File on the dossier card"
-    # step in between).
-    fill_cover_form(page, {
-        "char_name": "Marcus Reyes", "nationality": "American", "face_shape": "square",
-        "eye_color": "brown", "eye_shape": "narrow", "nose": "broad", "lips": "thin",
-        "skin": "tan", "facial_hair": "goatee", "hair_color": "black", "hair_style": "short",
-        "hair_texture": "coarse", "build": "stocky", "posture": "alert", "jacket": "windbreaker",
-        "shirt": "t-shirt", "trousers": "jeans", "footwear": "boots", "expression": "wary",
-        "vibe": "coiled and watchful",
-    }, "#dg-form")
-    page.click("#submit-btn")
-    page.wait_for_timeout(400)
-
-    btn = page.locator("#open-character-sheet-btn")
-    record("agent-portal", "Open Character Sheet button appears once an agent is loaded",
-           btn.count() == 1, "")
-
-    # Submitting the Cover form mints an Agent Code (afCode) -- the button
-    # now carries that code through as ?load=, so stats/'s own cloud
-    # lookup can try to resume this exact Agent instead of blindly
-    # opening whatever was last saved locally on this device (see
-    # dgOpenCharacterSheet() in dg-agent-portal.html).
-    btn.click()
-    for _ in range(20):
-        if "stats/index.html" in page.url:
-            break
-        page.wait_for_timeout(300)
-    record("agent-portal", "Open Character Sheet button navigates to stats/index.html",
-           "stats/index.html" in page.url, page.url)
-    record("agent-portal", "Open Character Sheet carries the Agent's known code through as ?load=",
-           "load=" in page.url, page.url)
-
-    record("agent-portal", "no JS exceptions", len(errs)==0, "; ".join(errs))
-    page.close()
-    return errs
-
 def test_agent_portal_cover(p, agent):
+    """Appearance (the Profiling brief) on an Agent's Agent Hub tab: an
+    Agent with only a started brief gets it open; the Random Agent
+    Generator offers every profession; filling it in and submitting saves
+    it under that Agent's own code, folds Appearance to "On file" and
+    opens the era photos."""
+    code = (re.sub(r"[^A-Z]", "", agent["char_name"].upper()) + "XXXX")[:4] + "-AP01"
     page = p.new_page()
-    page.set_default_timeout(5000)
+    page.set_default_timeout(8000)
     errs = collect_errors(page)
-    mock_routes(page)
-    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(300)
+    _block_fonts(page)
+    install_firestore_backend(page, {"briefs/" + code: {"char_name": agent["char_name"], "agent_code": code}})
+    page.goto(f"{BASE}/agent-hub.html?code={code}", wait_until="domcontentloaded", timeout=15000)
+    af = _af_state(page)
+    record("agent-file", "an Agent with a started brief opens with Appearance unfolded and no photos yet",
+           af.get("code") == code and af.get("open") and af.get("photosLocked") is True, json.dumps(af))
 
-    # tabs sanity (regression check)
-    page.click("#tw-agent"); page.wait_for_timeout(150)
-    agent_visible = page.is_visible("#panel-agent")
-    page.click("#tw-ids"); page.wait_for_timeout(150)
-    ids_visible = page.is_visible("#panel-ids")
-    page.click("#tw-cover"); page.wait_for_timeout(150)
-    cover_visible = page.is_visible("#panel-cover")
-    record("agent-portal", "tab switching (regression)", agent_visible and ids_visible and cover_visible,
-           f"agent={agent_visible} ids={ids_visible} cover={cover_visible}")
-
-    # profession dropdown full list (regression check)
     opt_count = page.eval_on_selector_all("#rand-profession option", "els => els.length")
-    record("agent-portal", "profession dropdown has full list (regression)", opt_count >= 15, f"{opt_count} options")
-
-    # random agent generator using this mock agent's profession
+    record("agent-file", "profession dropdown has full list (regression)", opt_count >= 15, f"{opt_count} options")
     prof_id = agent.get("profession_id", "")
     if prof_id and page.locator(f"#rand-profession option[value={prof_id}]").count():
         page.select_option("#rand-profession", prof_id)
-        page.click("#rand-reroll-btn") if page.is_visible("#rand-reroll-btn") else None
-        gen_btn = page.locator("button:has-text('Generate')").first
-        gen_btn.click()
+        page.locator("button:has-text('Generate')").first.click()
         page.wait_for_timeout(200)
-        rand_bar_visible = page.is_visible("#rand-result-bar")
-        record("agent-portal", f"random agent generator for profession '{prof_id}'", rand_bar_visible, "")
+        record("agent-file", f"random agent generator for profession '{prof_id}'", page.is_visible("#rand-result-bar"), "")
 
-    # fill + submit cover form -- a complete submission now opens
-    # straight into the Agent File tab instead of showing the old
-    # inline printable dossier card underneath Profiling.
     fill_cover_form(page, agent, "#dg-form")
     page.click("#submit-btn")
-    page.wait_for_timeout(400)
-    status = page.text_content("#form-status")
-    agent_tab_active = "active" in page.eval_on_selector("#tw-agent", "el => el.className")
-    af_name = page.text_content("#af-agent-name") or ""
-    ok = agent_tab_active and agent["char_name"] in af_name
-    record("agent-portal", "cover submit opens straight into the Agent File tab", ok, status or "")
-
-    # grab the generated code from local storage for downstream tests
-    saved = page.evaluate("() => { try { return JSON.parse(localStorage.getItem('dg_last_agent')); } catch(e){ return null; } }")
-    code = saved["code"] if saved else None
-    record("agent-portal", "agent persisted to localStorage after submit", bool(code), str(code))
-
+    wait_for_condition(lambda: (fs_doc(page, "briefs/" + code) or {}).get("submitted_at"), timeout_ms=8000)
+    saved = fs_doc(page, "briefs/" + code) or {}
+    af = _af_state(page)
+    record("agent-file", "submitting saves the brief under this Agent's own code",
+           saved.get("face_shape") == agent.get("face_shape") and saved.get("agent_code") == code, str({k: saved.get(k) for k in ("agent_code", "face_shape")}))
+    record("agent-file", "…folds Appearance to 'On file' and opens the era photos",
+           af.get("state") == "On file" and not af.get("open") and af.get("photosLocked") is False, json.dumps(af))
+    record("agent-file", "…and the callout under Play is gone",
+           page.eval_on_selector("#ah-callout-" + code, "el => el.hidden"), "")
     page.close()
     return errs, code
 
 def test_agent_portal_random_generator_matches_sex(p):
-    """Regression test for an older request: the Profiling page's Random
-    Agent Generator (generateAgent() in dg-agent-portal.html) rolls a
+    """Regression test for an older request: the Random Agent Generator
+    (generateAgent(), assets/appearance-gen.js) rolls a
     random sex but drew facial_hair and hair_style from flat, unisex
     tables regardless of it -- a Female agent could be randomly assigned
     a handlebar mustache or a buzzcut. facial_hair/hair_style are now
@@ -8021,15 +7834,12 @@ def test_agent_portal_random_generator_matches_sex(p):
         page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
         route_apps_script_ok(page)
         page.add_init_script(f"Math.random = () => {forced_roll};")
-        page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
+        page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
         page.wait_for_timeout(300)
-
-        page.click("button:has-text('Generate')")
-        page.wait_for_timeout(200)
-
-        sex_val = page.input_value('#dg-form [name="sex"]')
-        facial_val = page.input_value('#dg-form [name="facial_hair"]')
-        hair_val = page.input_value('#dg-form [name="hair_style"]')
+        # The generator is shared now (assets/appearance-gen.js): Agent
+        # Hub's Appearance brief and the sheet's Appearance step both use it.
+        a = page.evaluate("() => window.dgAppearanceGen.generate(null)")
+        sex_val, facial_val, hair_val = a.get("sex"), a.get("facial_hair"), a.get("hair_style")
         record("agent-portal", f"forced roll {forced_roll} produces sex={expected_sex}",
                sex_val == expected_sex, sex_val)
         record("agent-portal", f"a {expected_sex} agent's facial hair comes from the {expected_sex.lower()} table",
@@ -8044,118 +7854,57 @@ def test_agent_portal_random_generator_matches_sex(p):
 
 def test_agent_portal_incomplete_submit_blocked(p):
     """Regression test for a real bug: #dg-form's [required] attributes
-    were purely decorative -- the submit button is type="submit" inside a
-    form with onsubmit="return false", so handleSubmit() fired
-    unconditionally on click regardless of which required fields were
-    still blank. A brief could submit successfully that way and then
-    permanently fail isProfilingComplete()'s gate on the Agent File tab
-    later, with no indication to the player of what was actually missing
-    (a real report: 'agent file won't open even though it's been
-    created'). handleSubmit() now calls form.reportValidity() first and
-    bails out if the form is invalid, so a blocked submission always
-    comes with the browser's own pointer at the empty field."""
+    were purely decorative (the submit button is type="submit" in a form
+    with onsubmit="return false"), so a brief could be submitted with
+    blanks and then never open the era photos, with no pointer at what
+    was missing. handleSubmit() calls form.reportValidity() first and
+    bails out if anything required is blank."""
     page = p.new_page()
-    page.set_default_timeout(5000)
+    page.set_default_timeout(8000)
     errs = collect_errors(page)
-    mock_routes(page)
-    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(300)
-
-    # Fill only char_name -- every other [required] field left blank.
-    page.fill("#dg-form [name=char_name]", "Incomplete Ivy")
+    _block_fonts(page)
+    install_firestore_backend(page, {"briefs/IVYI-NC01": {"char_name": "Incomplete Ivy", "agent_code": "IVYI-NC01"}})
+    page.goto(f"{BASE}/agent-hub.html?code=IVYI-NC01", wait_until="domcontentloaded", timeout=15000)
+    _af_state(page)
     page.click("#submit-btn")
-    page.wait_for_timeout(300)
-
-    saved = page.evaluate("() => { try { return JSON.parse(localStorage.getItem('dg_last_agent')); } catch(e){ return null; } }")
-    record("agent-portal", "submitting with required fields blank does not submit (no code minted)",
-           saved is None, str(saved))
-
+    page.wait_for_timeout(400)
+    saved = fs_doc(page, "briefs/IVYI-NC01") or {}
+    record("agent-file", "submitting with required fields blank does not save the brief",
+           not saved.get("submitted_at"), str(saved))
     invalid_count = page.eval_on_selector_all("#dg-form [required]:invalid", "els => els.length")
-    record("agent-portal", "the browser flags at least one blank required field as invalid",
+    record("agent-file", "the browser flags the blank required fields as invalid",
            invalid_count > 0, f"invalid_count={invalid_count}")
-
-    record("agent-portal", "no JS exceptions", len(errs)==0, "; ".join(errs))
+    record("agent-file", "no JS exceptions", len(errs)==0, "; ".join(errs))
     page.close()
     return errs
 
 def test_agent_portal_submit_reuses_roster_code(p):
-    """Regression test for a real report: a character built or imported
-    on stats/index.html mints and stores its own Agent Code independently
-    (dg_agent_roster, written by stats/cloud-sync.js) before this page
-    ever sees it. Submitting a Profiling brief for that same Agent from a
-    fresh visit here (no ?code= in the URL, so afCode is never restored)
-    used to only check the in-memory afCode for a same-name match, never
-    the roster -- so it minted a brand new, disconnected code instead of
-    reusing the one the character sheet already had: two separate files
-    (a Characters row and a Briefs row) for what should have been one
-    Agent. handleSubmit() now also checks the roster by char_name."""
+    """The Appearance brief always describes the Agent whose Agent Hub tab
+    it is in, so it saves under that Agent's code -- renaming them renames
+    them. (On the standalone Agent Portal the code was guessed from the
+    name or the roster, and a renamed or freshly typed Agent got a second,
+    disconnected code: two files for one Agent.) The hub's tab and title
+    follow the new name."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    submit_posts = []
-    def fake_apps_script(route):
-        req = route.request
-        if req.method == "POST":
-            try:
-                body = json.loads(req.post_data or "{}")
-            except Exception:
-                body = {}
-            if body.get("char_name"):
-                submit_posts.append(body)
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        url = req.url
-        if "callback=" not in url:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        cb = url.split("callback=")[1].split("&")[0]
-        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"NOT_FOUND"}})')
-    jsonp_backend(page, fake_apps_script)
-
-    agent = AGENTS[0]
-    roster = json.dumps({"ROST-X001": {"code": "ROST-X001", "char_name": agent["char_name"], "saved_at": 1000}})
-    page.add_init_script(f"localStorage.setItem('dg_agent_roster', '{roster}');")
-    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(300)
-
-    fill_cover_form(page, agent, "#dg-form")
+    _block_fonts(page)
+    install_firestore_backend(page, {"briefs/ROST-X001": dict(MOCK_BRIEF, char_name="Rosa Stone", agent_code="ROST-X001")})
+    page.goto(f"{BASE}/agent-hub.html?code=ROST-X001#appearance", wait_until="domcontentloaded", timeout=15000)
+    _af_state(page)
+    page.wait_for_function("() => document.getElementById('af-appear').classList.contains('af-open')", timeout=8000)
+    page.evaluate("() => { const s = document.querySelector('#dg-form [name=age_range]'); if (s && !s.checkValidity()) s.selectedIndex = 1; }")
+    page.fill("#dg-form [name=char_name]", "Rosa Stern")
     page.click("#submit-btn")
-    page.wait_for_timeout(400)
-
-    record("agent-portal", "a fresh Profiling submission for an Agent the roster already knows by name reuses its code",
-           len(submit_posts) == 1 and submit_posts[0].get("agent_code") == "ROST-X001", str(submit_posts))
-
-    record("agent-portal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
-    page.close()
-    return errs
-
-def test_agent_portal_agent_file(p, code):
-    if not code:
-        record("agent-portal", "agent file gate (skipped, no code)", False, "no code from cover test")
-        return []
-    page = p.new_page()
-    page.set_default_timeout(5000)
-    errs = collect_errors(page)
-    mock_routes(page)
-    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(200)
-    page.click("#tw-agent")
-    page.wait_for_timeout(150)
-    gate_input = page.locator("#af-code-input")
-    if gate_input.count():
-        gate_input.fill(code)
-        btn = page.locator("#af-gate button, #af-gate .af-gate-btn")
-        if btn.count():
-            btn.first.click()
-        else:
-            page.keyboard.press("Enter")
-        page.wait_for_timeout(400)
-        content_visible = page.is_visible("#af-content")
-        record("agent-portal", "agent file loads by code", content_visible, f"code={code}")
-    else:
-        record("agent-portal", "agent file gate input present", False, "selector #af-code-input not found")
+    wait_for_condition(lambda: (fs_doc(page, "briefs/ROST-X001") or {}).get("char_name") == "Rosa Stern", timeout_ms=8000)
+    briefs = page.evaluate("() => Object.keys(window.__dgFirestoreDocs || {}).filter(k => k.indexOf('briefs/') === 0)")
+    record("agent-file", "renaming an Agent in Appearance saves under their own code, never a second Agent",
+           (fs_doc(page, "briefs/ROST-X001") or {}).get("char_name") == "Rosa Stern" and briefs == ["briefs/ROST-X001"], str(briefs))
+    wait_for_condition(lambda: page.text_content("#ah-title-ROST-X001") == "Rosa Stern", timeout_ms=4000)
+    record("agent-file", "…and the Agent's tab and title follow the new name",
+           page.text_content("#ah-title-ROST-X001") == "Rosa Stern" and "Rosa" in page.text_content("#ah-tablabel-ROST-X001"),
+           page.text_content("#ah-title-ROST-X001") + " / " + page.text_content("#ah-tablabel-ROST-X001"))
+    record("agent-file", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
     return errs
 
@@ -8210,7 +7959,7 @@ def test_agent_file_era_prompt_includes_era(p):
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
     jsonp_backend(page, fake_apps_script)
 
-    page.goto(f"{BASE}/dg-agent-portal.html?code=DANI-U8BM#agent", wait_until="domcontentloaded", timeout=15000)
+    page.goto(f"{BASE}/agent-hub.html?code=DANI-U8BM", wait_until="domcontentloaded", timeout=15000)
     # Condition-based, not a fixed 1.2s: the prompt requests are staggered
     # by setTimeout and could miss a fixed window under full-suite load.
     _pump_until(page, lambda: {p_.get("mode") for p_ in prompt_posts} >= {"base", "outfit"}, 6000)
@@ -8297,7 +8046,7 @@ def test_agent_file_era_prompts_isolated_per_era(p):
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
     jsonp_backend(page, fake_apps_script)
 
-    page.goto(f"{BASE}/dg-agent-portal.html?code=DANI-U8BM#agent", wait_until="domcontentloaded", timeout=15000)
+    page.goto(f"{BASE}/agent-hub.html?code=DANI-U8BM", wait_until="domcontentloaded", timeout=15000)
     # Auto-generate is staggered (500ms + idx*200ms per era in
     # renderEraStack()) and 00s is the second era rendered -- give it
     # real headroom to actually fire and its mocked round trip to land.
@@ -8386,7 +8135,7 @@ def test_agent_file_era_age_adjusts_per_era(p):
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
     jsonp_backend(page, fake_apps_script)
 
-    page.goto(f"{BASE}/dg-agent-portal.html?code=AGED-E20A#agent", wait_until="domcontentloaded", timeout=15000)
+    page.goto(f"{BASE}/agent-hub.html?code=AGED-E20A", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(2500)
 
     ages_by_era = {}
@@ -8449,7 +8198,7 @@ def test_agent_file_medical_aar_archived(p):
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
     page.route("**/script.google.com/**", fake_apps_script)
 
-    page.goto(f"{BASE}/dg-agent-portal.html?code=MEDX-AR01#agent", wait_until="domcontentloaded", timeout=15000)
+    page.goto(f"{BASE}/agent-hub.html?code=MEDX-AR01", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(800)
 
     record("agent-portal", "Medical History is not visible even though this Agent has a real entry on file",
@@ -8525,7 +8274,7 @@ def test_agent_file_active_era_toggle(p):
     # logic/network calls matter), and no route is registered for it, so
     # nothing here needs to intercept it.
 
-    page.goto(f"{BASE}/dg-agent-portal.html?code=ERAT-OGL01#agent", wait_until="domcontentloaded", timeout=15000)
+    page.goto(f"{BASE}/agent-hub.html?code=ERAT-OGL01", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(800)
 
     # text-transform:uppercase is CSS-only -- Playwright's inner_text()
@@ -8634,7 +8383,7 @@ def test_agent_file_outfit_plate_requires_face_first(p):
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
     jsonp_backend(page, fake_apps_script)
 
-    page.goto(f"{BASE}/dg-agent-portal.html?code=NOFA-CE01#agent", wait_until="domcontentloaded", timeout=15000)
+    page.goto(f"{BASE}/agent-hub.html?code=NOFA-CE01", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(800)
 
     # Outfit Plate button should refuse before any Face Plate exists.
@@ -8677,82 +8426,11 @@ def test_agent_file_outfit_plate_requires_face_first(p):
     page.close()
     return errs
 
-def test_agent_file_kia_stamp(p):
-    """The Agent File tab shows a KIA stamp when the Agent's saved
-    character sheet (load_character -- the same Cloud Save record
-    stats/ writes to, not this file's own Briefs data) has 0 or less
-    HP. Purely a live read, not a separate persisted flag -- heal the
-    Agent back above 0 and the stamp is gone next time this loads."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-
-    # Complete profiles (every #dg-form [required] field set) -- this
-    # test is about the KIA stamp on the Agent File tab, which only
-    # renders once isProfilingComplete() lets the gate through.
-    complete_extra = {
-        "age_range": "30s", "sex": "Male", "nationality": "American",
-        "face_shape": "oval", "eye_color": "brown", "eye_shape": "round",
-        "nose": "straight", "lips": "thin", "skin": "tan", "facial_hair": "none",
-        "hair_color": "brown", "hair_style": "short", "hair_texture": "straight",
-        "build": "average", "posture": "upright", "jacket": "coat", "shirt": "shirt",
-        "trousers": "trousers", "footwear": "boots", "expression": "neutral", "vibe": "calm",
-    }
-    briefs = {
-        "DEAD-0001": {"char_name": "Owen Castillo", **complete_extra},
-        "ALIV-0002": {"char_name": "Priya Anand", **complete_extra},
-    }
-    characters = {
-        "DEAD-0001": json.dumps({"derived": {"hp": 0}}),
-        "ALIV-0002": json.dumps({"derived": {"hp": 9}}),
-    }
-
-    def fake_apps_script(route):
-        url = route.request.url
-        if route.request.method == "POST" or "callback=" not in url:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        cb = url.split("callback=")[1].split("&")[0]
-        if "action=load_character" in url:
-            code = url.split("code=")[1].split("&")[0]
-            res = {"status": "OK", "character_json": characters[code]} if code in characters else {"status": "NOT_FOUND"}
-        elif "code=" in url:
-            code = url.split("code=")[1].split("&")[0]
-            res = {"status": "OK", "data": briefs[code]} if code in briefs else {"status": "NOT_FOUND"}
-        else:
-            res = {"status": "OK"}
-        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-    jsonp_backend(page, fake_apps_script)
-
-    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(300)
-    page.click("#tw-agent")
-    page.wait_for_timeout(150)
-
-    page.fill("#af-code-input", "DEAD-0001")
-    page.click("#af-gate .af-gate-btn")
-    page.wait_for_timeout(800)
-    record("agent-portal", "Agent File shows a KIA stamp for an Agent whose saved sheet is at 0 HP",
-           page.is_visible("#af-kia-stamp"), "")
-
-    page.click("button:has-text('Load Different Agent')")
-    page.wait_for_timeout(200)
-    page.fill("#af-code-input", "ALIV-0002")
-    page.click("#af-gate .af-gate-btn")
-    page.wait_for_timeout(800)
-    record("agent-portal", "Agent File shows no KIA stamp for an Agent above 0 HP",
-           not page.is_visible("#af-kia-stamp"), "")
-
-    page.close()
-    return errs
-
 def test_agent_file_vitals_and_bonds(p):
-    """Vitals (HP/WP/SAN/BP) and Bond scores -- previously only visible
-    to a Handler in A-Cell's Play view -- now also show on the Agent
-    File tab, read from the same load_character record the KIA stamp
-    already uses. Also regression-tests a bug caught while building
+    """Vitals (HP/WP/SAN/BP) and Bond scores -- once only visible to a
+    Handler in A-Cell's Play view -- show on the Agent's file in Agent Hub
+    (the sheet in their tab, assets/agent-sheet.js), read from the Agent's
+    saved character. Also regression-tests a bug caught while building
     this: reusing eraDataField() for Bond rows would have hidden any
     Bond whose score is legitimately 0, since that helper treats a
     falsy value as "nothing to show"."""
@@ -8798,86 +8476,47 @@ def test_agent_file_vitals_and_bonds(p):
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
     jsonp_backend(page, fake_apps_script)
 
-    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(300)
-    page.click("#tw-agent")
-    page.wait_for_timeout(150)
-    page.fill("#af-code-input", "VITL-0001")
-    page.click("#af-gate .af-gate-btn")
-    page.wait_for_timeout(800)
+    page.goto(f"{BASE}/agent-hub.html?code=VITL-0001", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector("#ah-sheet-VITL-0001 .as-vitals", timeout=10000)
+    vit = page.inner_text("#ah-sheet-VITL-0001 .as-vitals").upper()
+    record("agent-file", "HP/WP/SAN/BP show the saved sheet's actual values on the Agent's file",
+           all(re.search(lab + r"\D*" + val + r"\b", vit) for lab, val in (("HP", "11"), ("WP", "9"), ("SAN", "55"), ("BP", "20"))), vit)
+    bonds_text = page.inner_text("#ah-sheet-VITL-0001")
+    record("agent-file", "both Bonds show up with their names",
+           "Marcus Webb" in bonds_text and "Delta Green" in bonds_text, bonds_text[:400])
+    zero = page.evaluate("""() => [].some.call(document.querySelectorAll('#ah-sheet-VITL-0001 .as-row'), r => /Marcus Webb/.test(r.textContent) && (r.querySelector('.as-score') || {}).textContent === '0')""")
+    record("agent-file", "a Bond with a legitimate score of 0 still shows 0, not hidden as if it had no score", zero, "")
+    record("agent-file", "the other Bond's non-zero score also shows",
+           page.evaluate("""() => [].some.call(document.querySelectorAll('#ah-sheet-VITL-0001 .as-row'), r => /Delta Green/.test(r.textContent) && (r.querySelector('.as-score') || {}).textContent === '12')"""), "")
 
-    record("agent-portal", "the Vitals section becomes visible once the Agent's saved sheet loads",
-           page.is_visible("#af-vitals-section"), "")
-    record("agent-portal", "HP/WP/SAN/BP all show the saved sheet's actual values",
-           (page.inner_text("#af-vital-hp"), page.inner_text("#af-vital-wp"),
-            page.inner_text("#af-vital-san"), page.inner_text("#af-vital-bp")) == ("11", "9", "55", "20"),
-           str((page.inner_text("#af-vital-hp"), page.inner_text("#af-vital-wp"),
-                page.inner_text("#af-vital-san"), page.inner_text("#af-vital-bp"))))
-
-    bonds_text = page.inner_text("#af-bonds-list")
-    record("agent-portal", "both Bonds show up with their names",
-           "Marcus Webb" in bonds_text and "Delta Green" in bonds_text, bonds_text)
-    record("agent-portal", "a Bond with a legitimate score of 0 still shows 0, not hidden as if it had no score",
-           "0" in bonds_text, bonds_text)
-    record("agent-portal", "the other Bond's non-zero score also shows",
-           "12" in bonds_text, bonds_text)
-
-    record("agent-portal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    record("agent-file", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
     return errs
 
 def test_agent_roster(p):
-    """The Agent Roster drawer's own UI (a slide-up "AGENTS ON FILE"
-    button + drawer, letting a Handler switch between locally-known
-    Agents) was hidden -- real player report, confirmed: it read as
-    the WRONG Agent's data being shown (autoRestore()'s dg_last_agent
-    fallback surfacing whichever Agent was last active on this device),
-    and is redundant now that Agent Hub is a real, server-backed way to
-    switch between Agents. #roster-trigger is display:none now; nothing
-    on the page can open the drawer any more. The underlying
-    localStorage store (dg_agent_roster) is deliberately NOT touched --
-    agentToken() (per-Agent write auth), findRosterCodeByName()
-    (Profiling's cross-page code reuse check), and dice-roller.js's own
-    currentAgentCode() fallback all still read it directly, so this
-    test also re-confirms a real regression that predates the drawer's
-    own removal: handleSubmit() must still update the in-memory
-    afCode/afData globals after a fresh Cover submission (checked here
-    via JS state directly, not the now-gone drawer UI that used to
-    surface this same bug as "the wrong agent shown as active")."""
+    """Several Agents on one device (dg_agent_roster -- the Hub's tabs; the
+    Agent Portal's old roster drawer is gone with the portal). Agent Hub
+    has ONE Agent File, moved into whichever tab is open: filling in and
+    saving each Agent's Appearance in turn must always load and save the
+    open tab's Agent (afCode/afData never left on the previous one), and
+    the roster keeps all of them -- agentToken(), dice-roller.js's
+    currentAgentCode() and the Cover Identity search all read it."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-
-    agents_by_code = {}
-    def capture(route):
-        url = route.request.url
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            code = url.split("code=")[1].split("&")[0] if "code=" in url else None
-            data = agents_by_code.get(code)
-            body = f'{cb}({json.dumps({"status": "OK", "data": data} if data else {"status": "NOT_FOUND"})})'
-            route.fulfill(status=200, content_type="application/javascript", body=body)
-        else:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", capture)
-
-    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(300)
-    record("agent-roster", "the roster drawer's trigger button is hidden (feature removed from the UI)",
-           not page.is_visible("#roster-trigger"), "")
-
-    # Submit 3 different agents across separate page loads -- like a
-    # Handler checking multiple players' briefs in the same browser --
-    # tracking each one's real generated code so the count check below
-    # addresses the underlying store directly rather than via UI.
-    # Complete profiles, not just a name -- isProfilingComplete() gates
-    # the Agent File view behind every #dg-form [required] field
-    # actually being filled in.
-    for name in ["Marcus Reyes", "Priya Anand", "Owen Castillo"]:
-        page.goto(f"{BASE}/dg-agent-portal.html", wait_until="domcontentloaded", timeout=15000)
-        page.wait_for_timeout(300)
+    _block_fonts(page)
+    names = {"MARC-RS01": "Marcus Reyes", "PRIY-AN02": "Priya Anand", "OWEN-CS03": "Owen Castillo"}
+    install_firestore_backend(page, {"briefs/" + c: {"char_name": n, "agent_code": c} for c, n in names.items()})
+    roster = {c: {"code": c, "char_name": n, "saved_at": 1000 + i} for i, (c, n) in enumerate(names.items())}
+    page.add_init_script("try { if (!sessionStorage.getItem('__seeded')) { localStorage.setItem('dg_agent_roster', %s); sessionStorage.setItem('__seeded', '1'); } } catch (e) {}" % json.dumps(json.dumps(roster)))
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    for code, name in names.items():
+        page.click('.tw[data-tab="%s"]' % code)
+        page.wait_for_function("(c) => window.dgAgentFile.code() === c", arg=code, timeout=5000)
+        af = _af_state(page)
+        record("agent-roster", f"opening {name}'s tab loads their file into it, Appearance open",
+               af.get("inTab") and af.get("code") == code and af.get("open")
+               and page.eval_on_selector("#dg-form [name=char_name]", "el => el.value") == name, json.dumps(af))
         fill_cover_form(page, {
             "char_name": name, "nationality": "American", "face_shape": "oval",
             "eye_color": "brown", "eye_shape": "round", "nose": "straight", "lips": "thin",
@@ -8887,23 +8526,14 @@ def test_agent_roster(p):
             "footwear": "boots", "expression": "neutral", "vibe": "unremarkable",
         }, "#dg-form")
         page.click("#submit-btn")
-        page.wait_for_timeout(400)
-        saved = page.evaluate("JSON.parse(localStorage.getItem('dg_last_agent'))")
-        agents_by_code[saved["code"]] = saved["data"]
-
-        # Regression check (previously surfaced via the roster drawer's
-        # own "active card" highlight, now checked directly): the
-        # in-memory afCode/afData globals must reflect THIS just-
-        # submitted Agent, not whichever was active before it.
+        wait_for_condition(lambda: (fs_doc(page, "briefs/" + code) or {}).get("submitted_at"), timeout_ms=8000)
         record("agent-roster", f"afCode/afData reflect the just-submitted Agent ({name}), not a stale prior one",
-               page.evaluate("() => afCode") == saved["code"]
-               and page.evaluate("() => afData && afData.char_name") == name, "")
+               page.evaluate("() => afCode") == code and page.evaluate("() => afData && afData.char_name") == name
+               and (fs_doc(page, "briefs/" + code) or {}).get("face_shape") == "oval", "")
 
-    roster = page.evaluate("() => JSON.parse(localStorage.getItem('dg_agent_roster') || '{}')")
-    record("agent-roster", "all 3 submitted agents still join the underlying roster store "
-           "(agentToken()/findRosterCodeByName()/dice-roller.js's currentAgentCode() all still read this)",
-           len(roster) == 3, f"count={len(roster)}")
-
+    kept = page.evaluate("() => JSON.parse(localStorage.getItem('dg_agent_roster') || '{}')")
+    record("agent-roster", "all 3 Agents stay in the roster store (agentToken()/dice-roller.js's currentAgentCode() read it)",
+           sorted(kept.keys()) == sorted(names.keys()), f"keys={sorted(kept.keys())}")
     record("agent-roster", "no JS exceptions", len(errs)==0, "; ".join(errs))
     page.close()
     return errs
@@ -10585,14 +10215,14 @@ def test_wizard_full_run_in_shell(p):
             frame.locator("#dg-confirm-ok").click(timeout=5000); page.wait_for_timeout(300)
 
     tap("#wiz-toggle-btn", "New Recruit's wizard button")
-    for step in range(1, 10):
+    for step in range(1, 11):
         settle("#wiz-step-label")
         label = frame.locator("#wiz-step-label").text_content()
         title_hit = frame.evaluate("""() => { const el = document.getElementById('wiz-step-label'); const rg = document.createRange(); rg.selectNodeContents(el); const r = rg.getBoundingClientRect();
             const h = document.elementFromPoint(r.right - 4, r.top + r.height / 2); const c = h && (h.closest('button, [id]') || h); return c ? (c.id || c.tagName) : null; }""")
         width = frame.evaluate("document.documentElement.scrollWidth")
         record("wizard", f"step {step}: on the right step, title clear of the settings cog, no sideways scroll",
-               label.startswith(f"Step {step} of 9") and title_hit in ("wiz-step-label", "wiz-header") and width <= 390,
+               label.startswith(f"Step {step} of 10") and title_hit in ("wiz-step-label", "wiz-header") and width <= 390,
                f"label={label!r} title_hit={title_hit} width={width}")
         if step == 1:
             tap("#random-point-buy", "Random Point Buy")
@@ -10614,23 +10244,28 @@ def test_wizard_full_run_in_shell(p):
             tap("#random-bio-button", "Random Bio")
             record("wizard", "Random Bio fills the name", frame.evaluate("document.getElementById('cs-name').value") not in ("", "Agent"), "")
         elif step == 4:
+            record("wizard", "step 4 is Appearance (how the Agent looks)", "Appearance" in label, label)
+            tap("#cs-appearance-random", "Fill the rest at random (Appearance)")
+            record("wizard", "Fill the rest at random fills every required Appearance line",
+                   frame.evaluate("[].every.call(document.querySelectorAll('#cs-appearance-fieldset [data-ap-required]'), e => e.value.trim())"), "")
+        elif step == 5:
             tap("#cs-incursion-picker [data-inc-all]", "Roll all (The Incursion)")
             inc = frame.evaluate("() => ({ text: document.querySelector('#cs-incursion-picker [data-inc-text]').value, saved: document.getElementById('cs-incursion').value })")
             record("wizard", "the Incursion step rolls all five lines into what happened, saved with the sheet",
                    "Delta Green covered it up as" in inc["text"] and '"picks"' in inc["saved"], str(inc)[:200])
-        elif step == 6:
+        elif step == 7:
             tap("#prepare-bonus-button", "Prepare Skills for Bonus Points")
             frame.locator("#bonus-package-select").select_option(index=1); page.wait_for_timeout(300)
             tap("#bonus-package-row button", "Fill Dropdowns")
-        elif step == 7:
+        elif step == 8:
             tap("#bonds-button", "Generate Bond (no categories ticked)")
             record("wizard", "Generate Bond with no categories ticked still gives a bond",
                    "No bond available" not in frame.evaluate("document.getElementById('bond-text-content').textContent"), "")
             tap("#add-bond-button", "Add to Sheet")
             record("wizard", "the generated bond lands on the sheet", frame.evaluate("(window.bondsOnSheet || []).length") >= 1, "")
-        elif step == 8:
+        elif step == 9:
             tap(".eq-add-btn", "an equipment item's +")
-        tap("#wiz-next", "Finish" if step == 9 else f"Next on step {step}")
+        tap("#wiz-next", "Finish" if step == 10 else f"Next on step {step}")
     record("wizard", "Finish closes the wizard and leaves no saved step behind",
            frame.locator("#wiz-outer").count() == 0 and frame.evaluate("localStorage.getItem('dg-wiz-step')") is None, "")
     record("wizard", "Finish lands on the top of the finished sheet (Enter Live Play visible, not cut off under the Hub header)",
@@ -10656,7 +10291,7 @@ def test_no_sideways_scroll_any_width(p):
         page.wait_for_timeout(700)
         widths = {"sheet": page.evaluate("document.documentElement.scrollWidth")}
         page.evaluate("window.dgWizard.activate()"); page.wait_for_timeout(200)
-        for s in range(8):
+        for s in range(10):
             page.evaluate(f"window.dgWizard.goTo({s})"); page.wait_for_timeout(150)
             widths[f"wizard {s+1}"] = page.evaluate("document.documentElement.scrollWidth")
         page.evaluate("() => { window.dgWizard.deactivate(); const n = document.getElementById('cs-name'); n.value = 'X'; window.setLivePlay(true); }"); page.wait_for_timeout(300)
@@ -10786,7 +10421,7 @@ def test_wizard_does_not_reopen_over_loaded_agent(p):
     wait_for_condition(lambda: page.locator("#wiz-step-label").count() > 0, timeout_ms=5000)
     lbl = page.locator("#wiz-step-label")
     record("stats-terminal", "a genuine mid-creation refresh (no ?load=) still reopens the wizard on its saved step",
-           lbl.count() > 0 and "Step 3 of 9" in (lbl.text_content() or ""), lbl.text_content() if lbl.count() else "")
+           lbl.count() > 0 and "Step 3 of 10" in (lbl.text_content() or ""), lbl.text_content() if lbl.count() else "")
     page.close()
     return errs
 
@@ -10999,6 +10634,21 @@ class _FakeRoute:
         self.result = None
     fallback = continue_
 
+def _af_state(page, timeout_ms=12000):
+    """The Agent File in Agent Hub's open tab (assets/agent-file.js), once
+    it has loaded its Agent: which Agent, the Appearance state line, whether
+    Appearance is unfolded, and whether the era photos are still locked."""
+    try:
+        page.wait_for_function("""() => { const s = document.getElementById('af-appear-state');
+            return !!(s && s.textContent && s.textContent !== 'Loading…'); }""", timeout=timeout_ms)
+    except Exception:
+        pass
+    return page.evaluate("""() => { const s = document.getElementById('af-appear-state'); if (!s) return {};
+        return { code: window.dgAgentFile && window.dgAgentFile.code(), state: s.textContent,
+                 open: document.getElementById('af-appear').classList.contains('af-open'),
+                 photosLocked: !document.getElementById('af-photos-locked').hidden,
+                 inTab: !!document.querySelector('.tab-panel.active #af-root') }; }""")
+
 def jsonp_backend(page, handler, posts=None):
     """A test's old Apps Script fake (a page.route handler answering JSONP
     GETs / POSTs) now answers the Firestore reads and writes that replaced
@@ -11176,17 +10826,17 @@ def test_player_pages_use_in_page_dialogs(p):
     page = p.new_page(viewport={"width": 390, "height": 844})
     errs += collect_errors(page)
     page.on("dialog", lambda d: (dialogs.append(d.message), d.dismiss()))
-    install_notes_firestore_stub(page)
+    install_firestore_backend(page, {"briefs/MARA-0001": {"char_name": "Robert Wright", "agent_code": "MARA-0001"}})
     _block_fonts(page)
     route_apps_script_ok(page)
     page.add_init_script("try { localStorage.setItem('dg_agent_roster', JSON.stringify({'MARA-0001': {code: 'MARA-0001', char_name: 'Robert Wright', saved_at: 1}})); } catch (e) {}")
-    page.goto(f"{BASE}/dg-agent-portal.html", wait_until="load", timeout=15000)
-    page.wait_for_timeout(500)
-    page.evaluate("() => rosterClearAll()"); page.wait_for_timeout(300)
-    record("journey", "Agent File roster Clear All asks in-page", not dialogs and page.is_visible("text=Remove all"), str(dialogs))
-    page.click("button:has-text('Remove all')"); page.wait_for_timeout(200)
-    record("journey", "confirming actually clears the roster",
-           page.evaluate("localStorage.getItem('dg_agent_roster')") is None, "")
+    page.goto(f"{BASE}/agent-hub.html?code=MARA-0001", wait_until="load", timeout=15000)
+    _af_state(page)
+    page.evaluate("() => window.dgAgentFile.focus('appearance')"); page.wait_for_timeout(300)
+    page.fill("#dg-form [name=face_shape]", "")
+    page.click("#submit-btn"); page.wait_for_timeout(300)
+    record("journey", "an incomplete Appearance brief points at the blank field in-page, no native dialog",
+           not dialogs and page.eval_on_selector_all("#dg-form [required]:invalid", "els => els.length") > 0, str(dialogs))
     record("journey", "no JS exceptions (dialogs)", len(errs) == 0, "; ".join(errs))
     page.close()
     return errs
@@ -11280,7 +10930,7 @@ def test_agent_file_storage_plates_and_refresh(p):
     page.route("**/firebasestorage.googleapis.com/**",
                lambda r: r.abort() if r.request.resource_type == "fetch" else r.fulfill(status=200, content_type="image/png", body=png))
     page.add_init_script("try { localStorage.setItem('dg_last_agent', " + json.dumps(json.dumps({"code": "MARA-0001", "data": local})) + "); } catch (e) {}")
-    page.goto(f"{BASE}/dg-agent-portal.html?code=MARA-0001#agent", wait_until="load", timeout=15000)
+    page.goto(f"{BASE}/agent-hub.html?code=MARA-0001", wait_until="load", timeout=15000)
     _pump_until(page, lambda: page.evaluate("() => { const i = document.getElementById('img-face-90s'); return !!(i && i.getAttribute('src')); }"), 6000)
     img = page.evaluate("() => { const i = document.getElementById('img-face-90s'); return i ? [i.getAttribute('src'), i.style.display] : null; }")
     record("journey", "a return visit refreshes the stale local copy and shows the Storage-hosted Face Plate",
@@ -11301,7 +10951,7 @@ def test_agent_file_storage_plates_and_refresh(p):
     _block_fonts(page)
     server = dict(local)
     _route_backend(page, respond, posts)
-    page.goto(f"{BASE}/dg-agent-portal.html?code=MARA-0001#agent", wait_until="load", timeout=15000)
+    page.goto(f"{BASE}/agent-hub.html?code=MARA-0001", wait_until="load", timeout=15000)
     page.wait_for_timeout(1500)
     page.locator('button[data-era="90s"][data-mode="mode0"][onclick^="generatePlateImage"]').click()
     _pump_until(page, lambda: "Photo On File" in (page.text_content("#era-photo-90s") or ""), 6000)
@@ -11340,9 +10990,9 @@ def test_profiling_edit_keeps_agent_file(p):
     posts = []
     _route_backend(page, lambda m, q, b: {"status": "OK", "data": data} if (m == "GET" and q.get("code")) else None, posts)
     page.route("**/firebasestorage.googleapis.com/**", lambda r: r.abort())
-    page.goto(f"{BASE}/dg-agent-portal.html?code=MARA-0001#agent", wait_until="load", timeout=15000)
+    page.goto(f"{BASE}/agent-hub.html?code=MARA-0001", wait_until="load", timeout=15000)
     page.wait_for_timeout(1500)
-    page.evaluate("() => switchTab('cover')")
+    page.evaluate("() => window.dgAgentFile.focus('appearance')")  # Edit
     page.fill("#dg-form [name=eye_color]", "storm grey")
     page.evaluate("() => handleSubmit()")
     _pump_until(page, lambda: any(b.get("eye_color") == "storm grey" for b in posts), 5000)
@@ -11434,7 +11084,7 @@ def test_auto_created_brief_uses_titles_and_player(p):
             return {"status": "OK", "agent_code": q.get("code"), "character_json": json.dumps(char)}
         return None
     _route_backend(page, respond, posts)
-    page.goto(f"{BASE}/dg-agent-portal.html?code=ROBE-KKUL#agent", wait_until="load", timeout=15000)
+    page.goto(f"{BASE}/agent-hub.html?code=ROBE-KKUL", wait_until="load", timeout=15000)
     _pump_until(page, lambda: any(b.get("char_name") for b in posts), 6000)
     brief = next((b for b in posts if b.get("char_name")), {})
     record("journey", "auto-created brief carries the profession title, not the internal key",
@@ -11555,6 +11205,198 @@ def test_field_notes_notebook(p):
     errs_all.extend(errs)
     page.close()
     return errs_all
+
+def test_agent_hub_one_page_file(p):
+    """Agent Hub's tab is the Agent's whole file (assets/agent-file.js, one
+    instance moved into the open tab): a stale Agent the hub drops while
+    the file sits in their tab must not take the file with them; the
+    "Describe them" callout opens Appearance; ?code=…#photos and the
+    header's Take Photo go straight to the era photos, in the page; a save
+    in Appearance refreshes the Agent's line in the header."""
+    errs_all = []
+    page = p.new_page(viewport={"width": 1280, "height": 900})
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    _block_fonts(page)
+    install_firestore_backend(page, {
+        "briefs/ADAM-AF01": dict(MOCK_BRIEF, char_name="Adam Fell", agent_code="ADAM-AF01"),
+        "briefs/CORA-AF03": {"char_name": "Cora Lind", "agent_code": "CORA-AF03"},
+    })
+    # GONE-AF02 has neither an Agent File nor a sheet: the hub drops it.
+    # It is the most recent, so its tab is the one open (with the file).
+    roster = {"ADAM-AF01": {"code": "ADAM-AF01", "char_name": "Adam Fell", "saved_at": 10},
+              "GONE-AF02": {"code": "GONE-AF02", "char_name": "Gone Agent", "saved_at": 30},
+              "CORA-AF03": {"code": "CORA-AF03", "char_name": "Cora Lind", "saved_at": 20}}
+    page.add_init_script("try { if (!sessionStorage.getItem('__s')) { sessionStorage.setItem('__s', '1'); localStorage.setItem('dg_agent_roster', %s); } } catch (e) {}" % json.dumps(json.dumps(roster)))
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    gone = wait_for_condition(lambda: page.evaluate("() => !document.getElementById('panel-GONE-AF02')") or None, timeout_ms=10000)
+    af = _af_state(page)
+    record("hub", "an Agent dropped from the roster while the file is in their tab doesn't take the file with them",
+           bool(gone) and af.get("inTab") and af.get("code") in ("ADAM-AF01", "CORA-AF03")
+           and page.evaluate("() => !!document.getElementById('dg-form')"), json.dumps(af))
+
+    page.click('.tw[data-tab="CORA-AF03"]')
+    page.wait_for_function("() => window.dgAgentFile.code() === 'CORA-AF03'")
+    _af_state(page)
+    page.click("#ah-callout-CORA-AF03 [data-ah-focus=appearance]")
+    page.wait_for_timeout(900)
+    record("hub", "'Describe them' under Play opens the Appearance brief and brings it into view",
+           page.evaluate("() => { const r = document.getElementById('af-appear').getBoundingClientRect(); return document.getElementById('af-appear').classList.contains('af-open') && r.top < innerHeight && r.bottom > 0; }"), "")
+    page.evaluate("randomizeAgent(null)")
+    page.select_option("#dg-form [name=age_range]", "Late 40s")
+    page.select_option("#dg-form [name=sex]", "Female")
+    page.fill("#dg-form [name=nationality]", "Swedish")
+    page.click("#submit-btn")
+    wait_for_condition(lambda: "Swedish" in (page.text_content("#ah-meta-CORA-AF03") or ""), timeout_ms=6000)
+    record("hub", "saving Appearance refreshes the Agent's line in the header (age, sex, nationality)",
+           page.text_content("#ah-meta-CORA-AF03").replace("\xa0", " ").strip() == "Late 40s · Female · Swedish", page.text_content("#ah-meta-CORA-AF03"))
+    errs_all.extend(errs)
+    page.close()
+
+    page = p.new_page(viewport={"width": 1280, "height": 700})
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    _block_fonts(page)
+    install_firestore_backend(page, {"briefs/ADAM-AF01": dict(MOCK_BRIEF, char_name="Adam Fell", agent_code="ADAM-AF01")})
+    page.goto(f"{BASE}/agent-hub.html?code=ADAM-AF01#photos", wait_until="domcontentloaded", timeout=15000)
+    _af_state(page)
+    in_view = "() => { const r = document.getElementById('af-photos').getBoundingClientRect(); return r.top < innerHeight * 0.6 && r.bottom > 0; }"
+    record("hub", "?code=…#photos lands on that Agent's era photos",
+           bool(wait_for_condition(lambda: page.evaluate(in_view) or None, timeout_ms=4000)), "")
+    page.evaluate("() => scrollTo(0, 0)")
+    url0 = page.url
+    page.click("#panel-ADAM-AF01 [data-ah-focus=photos]")
+    record("hub", "the header's Take Photo goes to the era photos in the page (no other page)",
+           bool(wait_for_condition(lambda: page.evaluate(in_view) or None, timeout_ms=4000)) and page.url == url0, page.url)
+    record("hub", "no JS exceptions", len(errs_all + errs) == 0, "; ".join(errs_all + errs))
+    page.close()
+    return errs_all + errs
+
+def test_appearance_wizard_step(p):
+    """The creation wizard's Appearance step (stats/appearance-sheet.js):
+    only shown inside the wizard; what's typed goes straight to the Agent
+    File (briefs/{code}) -- the same fields Agent Hub's Appearance edits;
+    Fill the rest at random fills only the blanks, to suit the Agent's sex;
+    loading the Agent brings their Appearance back from the Agent File; and
+    finishing the wizard gives a new Agent their Agent File (name, outfit
+    from the sheet) without touching what was described."""
+    FEMALE_FACIAL = {'none', 'none, meticulous about it', 'faint, barely visible — never remarked on'}
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    _block_fonts(page)
+    install_firestore_backend(page)
+    page.goto(f"{BASE}/stats/index.html?new=1", wait_until="load", timeout=20000)
+    page.wait_for_timeout(600)
+    record("appearance", "the Appearance section isn't on the sheet itself (it's a wizard step; afterwards it lives on Agent Hub)",
+           not page.is_visible("#cs-appearance-fieldset"), "")
+    page.fill("#cs-name", "Ilse Brandt")
+    page.fill("#cs-bio-sex", "Female")
+    code = wait_for_condition(lambda: page.evaluate("localStorage.getItem('dg_stats_cloud_code')"), timeout_ms=8000)
+    page.evaluate("window.dgWizard.activate()"); page.wait_for_timeout(200)
+    page.evaluate("window.dgWizard.goTo(3)"); page.wait_for_timeout(300)
+    record("appearance", "wizard step 4 is Appearance, showing the section",
+           "Appearance" in page.text_content("#wiz-step-label") and page.is_visible("#cs-appearance-fieldset"), page.text_content("#wiz-step-label"))
+    page.fill("#cs-appearance-fieldset [data-ap=eye_color]", "storm grey")
+    saved = wait_for_condition(lambda: (fs_doc(page, "briefs/" + code) or {}).get("eye_color"), timeout_ms=6000)
+    record("appearance", "typing saves straight to the Agent's Agent File (briefs/{code})", saved == "storm grey", str(saved))
+    ok_sex = True
+    for _ in range(5):
+        page.evaluate("() => ['facial_hair', 'hair_style'].forEach(k => { document.querySelector('#cs-appearance-fieldset [data-ap=' + k + ']').value = ''; })")
+        page.click("#cs-appearance-random")
+        fh = page.input_value("#cs-appearance-fieldset [data-ap=facial_hair]")
+        ok_sex = ok_sex and fh in FEMALE_FACIAL
+    record("appearance", "Fill the rest at random suits the Agent's sex (facial hair from the female table, every time)", ok_sex, "")
+    record("appearance", "…fills every required line and keeps what the player wrote",
+           page.evaluate("[].every.call(document.querySelectorAll('#cs-appearance-fieldset [data-ap-required]'), e => e.value.trim())")
+           and page.input_value("#cs-appearance-fieldset [data-ap=eye_color]") == "storm grey", "")
+    wait_for_condition(lambda: (fs_doc(page, "briefs/" + code) or {}).get("vibe"), timeout_ms=6000)
+    page.evaluate("() => { window.dgAppearanceSheet.clear(); window.dgAppearanceSheet.load(); }")
+    back = wait_for_condition(lambda: page.input_value("#cs-appearance-fieldset [data-ap=eye_color]") or None, timeout_ms=6000)
+    record("appearance", "loading the Agent brings their Appearance back from the Agent File", back == "storm grey", str(back))
+    page.evaluate("window.dgWizard.goTo(9)"); page.wait_for_timeout(200)
+    page.click("#wiz-next")
+    brief = wait_for_condition(lambda: (lambda b: b if b.get("char_name") == "Ilse Brandt" else None)(fs_doc(page, "briefs/" + code) or {}), timeout_ms=8000) or {}
+    record("appearance", "finishing the wizard files the Agent File from the sheet, keeping the Appearance",
+           brief.get("char_name") == "Ilse Brandt" and brief.get("eye_color") == "storm grey" and bool(brief.get("vibe")), str({k: brief.get(k) for k in ("char_name", "eye_color", "sex")}))
+    record("appearance", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
+def test_field_id_fabricator_in_notebook(p):
+    """The Field ID Fabricator (field-id.html; the Agent Portal's third tab)
+    lives in the notebook: Make Field ID on the Field ID page opens it
+    across both pages on a desktop and as the page on a phone, loaded with
+    the notebook's Agent; Back to the card (or the Field ID tab/pocket)
+    returns. Opened any other way, field-id.html forwards into the notebook."""
+    errs_all = []
+    for width, height in ((1300, 860), (390, 844)):
+        where = "desktop" if width > 700 else "phone"
+        page, errs = _field_notes_page(p, width=width, height=height)
+        page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+        page.evaluate("() => window.dgFieldNotes.open('fieldid')")
+        page.wait_for_selector("#fn-veil [data-go=fab]", timeout=8000)
+        page.click("#fn-veil [data-go=fab]")
+        f = page.wait_for_selector("#fn-veil iframe[data-dg-embed=fieldid]", timeout=8000)
+        src = f.get_attribute("src") or ""
+        frame = f.content_frame()
+        frame.wait_for_load_state("domcontentloaded")
+        loaded = wait_for_condition(lambda: frame.evaluate("() => /LOADED/.test(document.getElementById('ids-import-status').textContent) ? document.getElementById('ids-cover-name').value : null"), timeout_ms=8000)
+        record("notebook", f"{where}: Make Field ID opens the Fabricator in the notebook, on this Agent", ("code=" + FN_CODE) in src and loaded == "Mara Voss", src + " " + str(loaded))
+        spread = page.evaluate("() => !document.querySelector('#fn-veil [data-fn-slot=spread]').hidden")
+        record("notebook", f"{where}: " + ("across both pages" if where == "desktop" else "as the page"),
+               spread if where == "desktop" else (not spread and page.evaluate("() => !document.querySelector('#fn-veil [data-fn-slot=embed-fab]').hidden")), "")
+        page.click("#fn-veil [data-fab=card]")
+        record("notebook", f"{where}: Back to the card", bool(wait_for_condition(lambda: page.evaluate("() => !!document.querySelector('#fn-veil [data-fn-idc]')") or None, timeout_ms=4000)), "")
+        errs_all.extend(errs)
+        page.close()
+    page = p.new_page()
+    _block_fonts(page)
+    page.route("**/hub.html*", lambda r: r.fulfill(status=200, content_type="text/html", body="<!doctype html><title>hub</title>"))
+    page.goto(f"{BASE}/field-id.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: "hub.html?fn=fab" in page.url, timeout_ms=6000)
+    record("notebook", "field-id.html opened on its own forwards into the notebook's Fabricator for that Agent",
+           "hub.html?fn=fab" in page.url and page.evaluate("localStorage.getItem('dg_stats_cloud_code')") == FN_CODE, page.url)
+    page.close()
+    record("notebook", "no JS exceptions (Fabricator)", len(errs_all) == 0, "; ".join(errs_all))
+    return errs_all
+
+def test_field_notes_page_taps_act_once(p):
+    """The notebook's page body is one element reused by every page, and
+    quick notes and Settings each added a click listener per render: after
+    a re-render (the Agent's data arriving, or opening Settings again) one
+    tap ran twice -- Shared flipped on and straight back off, a Settings
+    toggle did nothing. Seen intermittently in the phone flow."""
+    page, errs = _field_notes_page(p, width=390, height=844)
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.evaluate("() => window.dgFieldNotes.open('settings')")
+    page.wait_for_selector("#fn-veil [data-s=boot]")
+    page.evaluate("() => { window.dgFieldNotes.open('rules'); window.dgFieldNotes.open('settings'); }")
+    page.wait_for_selector("#fn-veil [data-s=boot]")
+    # Count how many times one tap runs: each run writes the setting once.
+    page.evaluate("""() => { window.__bootWrites = 0; const o = Storage.prototype.setItem;
+        Storage.prototype.setItem = function (k, v) { if (/boot/i.test(k)) window.__bootWrites++; return o.apply(this, arguments); }; }""")
+    page.click("#fn-veil [data-s=boot]")
+    writes = page.evaluate("() => window.__bootWrites")
+    record("notebook", "Settings opened twice: one tap on a toggle runs once", writes == 1, f"runs={writes}")
+    page.click("#fn-veil [data-s=boot]")  # put it back
+    page.evaluate("() => { window.dgFieldNotes.open('notes'); window.dgFieldNotes.refresh(); }")
+    page.wait_for_timeout(600)
+    page.evaluate("() => window.dgFieldNotes.open('notes')")
+    page.wait_for_selector("#fn-veil [data-q=shared]")
+    page.wait_for_timeout(400)
+    page.evaluate("""() => { window.__sharedRuns = 0; const b = document.querySelector('#fn-veil [data-q=shared]');
+        new MutationObserver(() => window.__sharedRuns++).observe(b, { childList: true }); }""")
+    page.click("#fn-veil [data-q=shared]")
+    page.wait_for_timeout(100)
+    runs = page.evaluate("() => window.__sharedRuns")
+    record("notebook", "quick notes after a re-render: one tap on Private runs once and turns it Shared",
+           runs == 1 and page.text_content("#fn-veil [data-q=shared]") == "Shared with the Cell", f"runs={runs} " + page.text_content("#fn-veil [data-q=shared]"))
+    record("notebook", "no JS exceptions (taps act once)", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
 
 def test_field_notes_popup_pager(p):
     """The radio popped up beside the closed notebook (from the radio chip;
@@ -11935,8 +11777,8 @@ def test_field_notes_standing_orders(p):
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_selector("#fn-orders [data-o=prompt]:not([hidden])", timeout=15000)
     page.keyboard.press("y")
-    page.wait_for_url("**/dg-agent-portal.html?code=%s#cover" % FN_CODE, timeout=15000)
-    record("onboarding", "Y opens the Agent File on the photo tab", page.url.endswith("#cover"), page.url)
+    page.wait_for_url("**/agent-hub.html?code=%s#photos" % FN_CODE, timeout=15000)
+    record("onboarding", "Y opens the Agent's file on Agent Hub, at the photos", page.url.endswith("#photos"), page.url)
     ack = (fs_doc(page, f"briefs/{FN_CODE}") or {}).get("standing_orders_ack_at")
     record("onboarding", "Y saves the acknowledgement on the Agent's brief", bool(ack), str(ack))
     record("onboarding", "the next step (the photo, then the Field ID) is pointed out",
@@ -12461,6 +12303,10 @@ def main():
         safe(test_field_notes_notebook, browser, area="notebook")
         safe(test_field_notes_round3, browser, area="notebook")
         safe(test_field_notes_popup_pager, browser, area="notebook")
+        safe(test_field_notes_page_taps_act_once, browser, area="notebook")
+        safe(test_field_id_fabricator_in_notebook, browser, area="notebook")
+        safe(test_agent_hub_one_page_file, browser, area="hub")
+        safe(test_appearance_wizard_step, browser, area="appearance")
         safe(test_incursion, browser, area="incursion")
         safe(test_field_notes_standing_orders, browser, area="onboarding")
         safe(test_main_photo_from_active_era, browser, area="photo")
@@ -12572,8 +12418,6 @@ def main():
 
         safe(test_agent_portal_profiling_gate, browser, area="agent-portal")
 
-        safe(test_agent_portal_autorestore_prefills_cover, browser, area="agent-portal")
-
         safe(test_stats_load_by_code_query_param, browser, area="stats-terminal")
 
         safe(test_stats_loading_terminal, browser, area="stats-terminal")
@@ -12588,25 +12432,16 @@ def main():
 
         safe(test_mobile_no_overflow, browser, area="mobile")
 
-        safe(test_agent_portal_restore_dossier, browser, AGENTS[0], area="agent-portal")
-
-        safe(test_agent_file_open_character_sheet_btn, browser, area="agent-portal")
-
         codes = []
         for agent in AGENTS:
             res = safe(test_agent_portal_cover, browser, agent, area="agent-portal")
             codes.append(res[1] if res else None)
-
-        if codes and codes[0]:
-            safe(test_agent_portal_agent_file, browser, codes[0], area="agent-portal")
 
         safe(test_agent_portal_random_generator_matches_sex, browser, area="agent-portal")
 
         safe(test_agent_portal_incomplete_submit_blocked, browser, area="agent-portal")
 
         safe(test_agent_portal_submit_reuses_roster_code, browser, area="agent-portal")
-
-        safe(test_agent_file_kia_stamp, browser, area="agent-portal")
 
         safe(test_agent_file_vitals_and_bonds, browser, area="agent-portal")
 

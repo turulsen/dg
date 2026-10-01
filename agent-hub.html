@@ -24,6 +24,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet"></noscript>
 <link rel="stylesheet" href="assets/agent-sheet.css">
+<link rel="stylesheet" href="assets/agent-file.css">
 <link rel="stylesheet" href="assets/theme-folder.css">
 <style>
   *{box-sizing:border-box;}
@@ -45,8 +46,8 @@
   .hub-header p{ font-family:'Courier Prime',monospace; font-size:13px; color:#b7b09a; max-width:62ch; line-height:1.7; margin:0; }
   .folder-wrap{ max-width:900px; margin:26px auto 0; padding:0 6px; }
 
-  /* Cover Identity — sticky note, same design as the Agent File's
-     Returning Agent code loader on dg-agent-portal.html. */
+  /* Cover Identity — sticky note (the design of the retired Agent
+     Portal's code loader). */
   .ci-row{
     background:#f0e87a;
     box-shadow:1px 3px 8px rgba(0,0,0,.35);
@@ -176,10 +177,8 @@
   }
   .ah-erase-confirm:disabled{ background:#a89a78; border-color:#a89a78; cursor:not-allowed; opacity:.6; }
 
-  /* ── KIA: a live read of the Agent's saved character sheet (same
-     signal dg-agent-portal.html's Agent File tab already shows via
-     #af-kia-stamp), surfaced here too so it's visible on the roster tab
-     strip and panel without clicking through -- see checkAgentKia()
+  /* ── KIA: a live read of the Agent's saved character sheet, shown on
+     the roster tab strip and the Agent's panel -- see checkAgentKia()
      below. .stamp is already red by default (theme-folder.css), so the
      "KIA" stamp itself needs no extra styling; this covers the
      struck-through name on both the tab label and the panel title. ── */
@@ -194,6 +193,14 @@
     font-family:'Special Elite',monospace; font-size:11px; letter-spacing:.14em; text-transform:uppercase;
     color:var(--ink-3); border-top:1px solid var(--rule); margin-top:var(--s5); padding-top:14px; margin-bottom:10px;
   }
+  /* Under Play while the Appearance brief is unfinished (agent-file.js). */
+  .ah-appear-callout{
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:12px 0 4px; padding:10px 14px;
+    border:1px dashed var(--red); background:rgba(139,26,26,.05);
+    font-family:'Courier Prime',monospace; font-size:12px; line-height:1.5; color:var(--ink);
+  }
+  .ah-appear-callout[hidden]{ display:none; }
+  .ah-appear-callout-text{ flex:1 1 220px; }
   .ah-handouts{ display:flex; flex-direction:column; gap:12px; }
   .ah-handouts-empty{ font-style:italic; color:var(--ink-3); font-size:12px; font-family:'Courier Prime',monospace; }
   .ah-handout-card{ background:rgba(28,22,8,.04); border:1px solid var(--rule); padding:14px 16px; }
@@ -335,9 +342,8 @@
      link, targeting whichever code openEraseModal() was last called
      with. Requires typing the Cover Identity name back in (not just a
      click) before the Confirm button unlocks -- a real delete (into
-     deleted_agents, restorable by a Handler for 24h), not the
-     local-only roster removal dg-agent-portal.html's own roster tray
-     does, so it needs more friction than that one. -->
+     deleted_agents, restorable by a Handler for 24h), not just a
+     local roster removal, so it needs real friction. -->
 <div class="ah-erase-overlay" id="ah-erase-overlay">
   <div class="ah-erase-box">
     <div class="ah-erase-title">Burn This Agent's File?</div>
@@ -354,22 +360,25 @@
 
 <script src="assets/agent-code.js"></script>
 <script src="assets/dg-store.js"></script>
+<script src="assets/appearance-gen.js"></script>
+<script src="assets/agent-file.js"></script>
 <script>
 /* ══════════════════════════════════════════════
-   AGENT HUB -- unified roster view. Reads the same dg_agent_roster
-   localStorage the Agent Portal's roster drawer already writes to.
-   Every Agent (plus a pinned "+ New Recruit") is a folder ear-tab;
-   the active tab's paper panel shows that Agent's dossier with three
-   actions:
-     Play/Recruit -> stats/index.html?load=CODE&live=1
-                     (Live Play switches on over whichever theme this
-                     device last used -- Live Play is a mode, not a
-                     theme of its own, see setLivePlay() in scripts.js.
-                     Label flips to "Recruit" if this Agent has no
-                     cloud character yet -- checked async per agent
-                     against load_character, see checkCharacterExists)
-     Agent File    -> dg-agent-portal.html?code=CODE#agent
-     Field ID      -> dg-agent-portal.html?code=CODE#ids
+   AGENT HUB -- every Agent on this device (dg_agent_roster in
+   localStorage) as a folder ear-tab, plus a pinned "+ New Recruit".
+   The active tab is that Agent's whole file, one page:
+     photo, name, line, stamps, and Play/Recruit
+       -> stats/index.html?load=CODE&live=1 (Live Play over whichever
+          theme this device last used; "Recruit" when there's no cloud
+          character yet, see checkCharacterExists)
+     the Appearance callout while the brief is unfinished
+     the Agent File paper (Cell, Operations, the sheet) -- agent-sheet.js
+     Appearance (Profiling) and the era photos -- agent-file.js, one
+       instance moved into the active tab (setActiveTab)
+     Evidence
+   Everything else (Notes, Field ID, Requisition, Rules, Radio, Dice)
+   lives in the Field Notes notebook. ?code=CODE#appearance|#photos
+   opens one Agent; the old Agent Portal's addresses forward here.
    ══════════════════════════════════════════════ */
 (function () {
   "use strict";
@@ -414,7 +423,11 @@
     }
     const id = extractDriveId(faceUrl);
     if (!id) return;
-    const cbName = '_agentHubFace_' + code.replace(/[^a-zA-Z0-9]/g, '_');
+    // One name per request: the photo is re-requested after a save in the
+    // Agent File, and a shared name let the first answer delete the
+    // callback the second still calls (same as the old roster drawer's
+    // "_rosterFace_… is not defined", BUGFIXES.md).
+    const cbName = '_agentHubFace_' + code.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
     window[cbName] = function (json) {
       delete window[cbName];
       if (json.status === 'OK' && json.dataUri) {
@@ -432,7 +445,7 @@
   function loadHandoutPhoto(handoutId, photoUrl, wrapElId) {
     const id = extractDriveId(photoUrl);
     if (!id) return;
-    const cbName = '_ahHandoutPhoto_' + handoutId.replace(/[^a-zA-Z0-9]/g, '_');
+    const cbName = '_ahHandoutPhoto_' + handoutId.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now() + '_' + Math.floor(Math.random() * 1e6); // one per request, as above
     window[cbName] = function (json) {
       delete window[cbName];
       if (json && json.status === 'OK' && json.dataUri) {
@@ -516,6 +529,9 @@
       const tab = tabStrip.querySelector('.tw[data-tab="' + CSS.escape(code) + '"]');
       if (tab) tab.remove();
       const panel = document.getElementById('panel-' + code);
+      // The one Agent File may be in this panel: lift it out first, or it
+      // leaves the page with it.
+      if (panel && window.dgAgentFile && panel.querySelector('#af-root')) window.dgAgentFile.park();
       if (panel) panel.remove();
       agents = agents.filter(a => a.code !== code);
       if (wasActive) {
@@ -526,9 +542,8 @@
   }
 
   // Async, per agent: a live read of the same saved character sheet
-  // checkCharacterExists() above already fetches -- mirrors
-  // dg-agent-portal.html's checkAgentKia(), which Agent File already
-  // shows this same signal via. Not a separate persisted flag: heal the
+  // checkCharacterExists() above already fetches. Not a separate
+  // persisted flag: heal the
   // Agent back above 0 and this clears on its own next time the roster
   // renders. Best-effort, same as everything else here -- a check that
   // errors or times out just leaves the name unmarked.
@@ -558,8 +573,8 @@
   const folderBody = document.getElementById('folder-body');
   let agents = [];
 
-  // Sets exactly one tab/panel active by id, mirroring dg-agent-portal.html's
-  // switchTab() -- a full class replace (not classList.toggle), since 'tw
+  // Sets exactly one tab/panel active by id -- a full class replace (not
+  // classList.toggle), since 'tw
   // active' and 'tw inactive' must stay mutually exclusive: with both
   // classes present at once, CSS source order would pick the wrong text
   // color for the "active" tab's label.
@@ -569,6 +584,8 @@
       t.className = 'tw' + (isNew ? ' tw-new' : '') + (t.dataset.tab === id ? ' active' : ' inactive');
     });
     folderBody.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + id));
+    const slot = document.getElementById('ah-file-' + id);
+    if (slot && window.dgAgentFile) window.dgAgentFile.mount(slot, id);
   }
 
   // Builds (or rebuilds) the roster tabs/panels from local storage --
@@ -580,6 +597,7 @@
   // that tab no longer exists.
   function renderRoster(preserveActiveCode) {
     charDocCache = {}; // a re-render re-reads (e.g. after a Cover Identity lookup)
+    if (window.dgAgentFile) window.dgAgentFile.park(); // keep the Agent File out of the panels being dropped
     tabStrip.querySelectorAll('.tw:not(.tw-new)').forEach(el => el.remove());
     folderBody.querySelectorAll('.tab-panel:not(#panel-new)').forEach(el => el.remove());
 
@@ -638,7 +656,7 @@
         <div class="paper-content">
           <div class="paper-header">
             <div class="lead">
-              <div class="paper-photo" id="${photoId}">${a.face_plate_url ? '' : `<a class="photo-missing-note" href="dg-agent-portal.html?code=${encodeURIComponent(a.code)}#cover" title="Open this Agent's Profiling tab to generate a Face Plate">Take Photo</a>`}</div>
+              <div class="paper-photo" id="${photoId}">${a.face_plate_url ? '' : `<a class="photo-missing-note" href="#photos" data-ah-focus="photos" title="This Agent's photos are made from the Appearance brief, further down">Take Photo</a>`}</div>
               <div>
                 <div class="paper-title-sub">Delta Green — Agent Roster</div>
                 <div class="paper-title" id="${titleId}">${escapeHtml(a.char_name || 'Unknown Agent')}</div>
@@ -647,18 +665,17 @@
             <div class="paper-meta">CODE: ${escapeHtml(a.code)}<br>COVER: ${a.codename ? escapeHtml(a.codename) : '&mdash;'}<br>SAVED: ${a.saved_at ? new Date(a.saved_at).toLocaleDateString() : '&mdash;'}</div>
           </div>
           <div class="stamps" id="${stampId}">${era ? `<div class="stamp">${escapeHtml(era)}</div>` : ''}</div>
-          ${meta ? `<div class="dossier-line">${meta}</div>` : ''}
+          <div class="dossier-line" id="ah-meta-${escapeHtml(a.code)}"${meta ? '' : ' hidden'}>${meta}</div>
           <div class="dex-postit" id="ah-dex-${a.code}"></div>
           <div class="paper-actions">
             <a class="paper-btn primary" id="${playBtnId}" href="stats/index.html?load=${encodeURIComponent(a.code)}&live=1">Play</a>
-            <a class="paper-btn" href="dg-agent-portal.html?code=${encodeURIComponent(a.code)}#agent">Agent File</a>
-            <a class="paper-btn" href="dg-agent-portal.html?code=${encodeURIComponent(a.code)}#ids">Field ID</a>
-            <a class="paper-btn" href="notes/index.html?code=${encodeURIComponent(a.code)}">Notes</a>
-            <a class="paper-btn" href="requisition.html?code=${encodeURIComponent(a.code)}" data-fn-req="${escapeHtml(a.code)}">Requisition</a>
-            <a class="paper-btn" href="rules-reference.html">Rules Reference</a>
-            <a class="paper-btn" href="the-incursion.html">The Incursion</a>
+          </div>
+          <div class="ah-appear-callout" id="ah-callout-${escapeHtml(a.code)}" hidden>
+            <span class="ah-appear-callout-text"></span>
+            <button type="button" class="paper-btn" data-ah-focus="appearance">Describe them</button>
           </div>
           <div class="ah-sheet" id="ah-sheet-${escapeHtml(a.code)}"></div>
+          <div class="ah-file-slot" id="ah-file-${escapeHtml(a.code)}"></div>
           <div style="text-align:right;margin-top:2px;">
             <button type="button" class="ah-erase-link">Erase Agent&hellip;</button>
           </div>
@@ -718,6 +735,38 @@
   }
 
   renderRoster();
+
+  // A link to one Agent (the retired Agent Portal's addresses forward
+  // here): ?code=CODE opens their tab, #appearance or #photos goes to
+  // that part of their file. An Agent not on this device yet is looked
+  // up and added, the way the portal's code box used to.
+  (function openFromUrl() {
+    const code = (new URLSearchParams(location.search).get('code') || '').trim().toUpperCase();
+    if (!code) return;
+    const part = (location.hash || '').replace('#', '');
+    const go = () => {
+      setActiveTab(code);
+      if ((part === 'appearance' || part === 'photos') && window.dgAgentFile) window.dgAgentFile.focus(part); // waits for the Agent to load
+    };
+    if (rosterLoad()[code]) { go(); return; }
+    Promise.all([window.dgStore.getBrief(code).catch(() => null), firestoreCharDoc(code)]).then(([brief, ch]) => {
+      let bio = {};
+      try { bio = ch && ch.character_json ? (JSON.parse(ch.character_json).bio || {}) : {}; } catch (e) { bio = {}; }
+      if (!brief && !ch) { setCiStatus('No Agent on file for ' + code + '.'); return; }
+      const b = brief || {};
+      const roster = rosterLoad();
+      roster[code] = {
+        code, char_name: b.char_name || bio.name || '', codename: b.codename || '', sex: b.sex || '',
+        age_range: b.age_range || '', nationality: b.nationality || bio.nationality || '',
+        active_eras: b.active_eras || '', campaign_era: b.campaign_era || '',
+        face_plate_url: window.dgStore.mainPhoto ? window.dgStore.mainPhoto(b) : (b.face_plate_url || ''),
+        player_name: (b.player_name || bio.player_name || '').trim(), saved_at: Date.now()
+      };
+      rosterSave(roster);
+      renderRoster(code);
+      go();
+    });
+  })();
 
   // ── Erase Agent: a player deletes their own Agent (recoverable by a
   // Handler within 24h from A-Cell's Recently Deleted, same as every
@@ -1402,16 +1451,43 @@
     }, afterCells), 0);
   }
 
-  // Requisition lives inside the Field Notes notebook now: open it there
-  // for this Agent instead of loading the page (which would only forward
-  // into the notebook anyway, after a full Agent Hub reload).
+  // ── The Agent File in each tab (assets/agent-file.js) ──
+  // Under Play while the Appearance brief isn't done: how much is left,
+  // and a button straight to it -- the first thing a player sees.
+  window.addEventListener('dg-agent-file-state', e => {
+    const d = e.detail || {};
+    const box = d.code && document.getElementById('ah-callout-' + d.code);
+    if (!box) return;
+    box.hidden = !!d.complete;
+    box.querySelector('.ah-appear-callout-text').textContent =
+      'Appearance: ' + d.missing + ' of ' + d.total + ' details still to fill in. Your Handler makes this Agent\'s photos from it.';
+  });
+  // Saved in the file: refresh this Agent's tab, name, line, photo and
+  // physical description from the roster entry the save just updated.
+  window.addEventListener('dg-agent-file-saved', e => {
+    const code = e.detail && e.detail.code;
+    const a = code && rosterLoad()[code];
+    if (!a) return;
+    const i = agents.findIndex(x => x.code === code);
+    if (i >= 0) agents[i] = Object.assign({}, agents[i], a);
+    const lbl = document.getElementById('ah-tablabel-' + code);
+    if (lbl) lbl.textContent = tabLabel(a);
+    const title = document.getElementById('ah-title-' + code);
+    if (title) title.textContent = a.char_name || 'Unknown Agent';
+    const metaEl = document.getElementById('ah-meta-' + code);
+    if (metaEl) {
+      const meta = [a.age_range, a.sex, a.nationality].filter(Boolean).map(escapeHtml).join(' &middot; ');
+      metaEl.innerHTML = meta;
+      metaEl.hidden = !meta;
+    }
+    if (a.face_plate_url) loadFacePlate(code, a.face_plate_url, 'ah-photo-' + code);
+    renderAgentSheetFor(a);
+  });
   document.addEventListener('click', e => {
-    const link = e.target.closest && e.target.closest('a[data-fn-req]');
-    if (!link || !window.dgFieldNotes) return;
+    const b = e.target.closest && e.target.closest('[data-ah-focus]');
+    if (!b || !window.dgAgentFile) return;
     e.preventDefault();
-    try { localStorage.setItem('dg_stats_cloud_code', link.getAttribute('data-fn-req')); } catch (err) { /* best effort */ }
-    window.dgFieldNotes.refresh();
-    window.dgFieldNotes.open('req');
+    window.dgAgentFile.focus(b.getAttribute('data-ah-focus'));
   });
   tabStrip.addEventListener('click', e => {
     const tab = e.target.closest('.tw');

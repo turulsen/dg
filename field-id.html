@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="assets/js-error-banner.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Delta Green — Field ID Fabricator</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/png" href="assets/mars-tech-seal.png">
+<script>
+/* The Field ID Fabricator only lives inside the Field Notes notebook
+   (its Field ID page -> Make Field ID), embedded with ?embed=1 in an
+   iframe marked data-dg-embed -- the third tab of the old Agent Portal,
+   moved. Opened any other way it forwards into the notebook for the
+   same Agent, the way requisition.html does.
+     ?code=CODE      load that Agent (name, photo, era)
+     ?agency=&era=   start on this agency/era (the notebook's card) */
+(function () {
+  var fe = null;
+  try { fe = window.frameElement; } catch (e) { fe = null; }
+  var params = new URLSearchParams(location.search);
+  if ((fe && fe.hasAttribute && fe.hasAttribute('data-dg-embed')) || params.get('embed') === '1') {
+    document.documentElement.classList.add('fid-embedded');
+    return;
+  }
+  var code = params.get('code');
+  if (code) { try { localStorage.setItem('dg_stats_cloud_code', code.trim().toUpperCase()); } catch (e) { /* best effort */ } }
+  if (fe && fe.id === 'dg-shell-content') {
+    try { sessionStorage.setItem('dg_fn_open', 'fab'); } catch (e) { /* best effort */ }
+    location.replace('agent-hub.html');
+    return;
+  }
+  location.replace('hub.html?fn=fab');
+})();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{--paper:#f4eed8;
+  --paper-line:rgba(180,148,72,.18);
+  --paper-margin:rgba(180,60,60,.22);
+  --paper-shadow:0 4px 18px rgba(0,0,0,.22), 0 1px 4px rgba(0,0,0,.12);
+
+  
+  --ink:#1c1608;
+  --ink-2:#4a3f28;
+  --ink-3:#8a7a5a;
+  --ink-placeholder:#b8a878;
+
+  
+  --red:#8b1a1a;
+  --green:#1a4a1a;
+
+  
+  --rule:rgba(160,130,70,.35);
+
+  
+  --sticky:#f0e87a;
+  --sticky-shadow:1px 3px 8px rgba(0,0,0,.22);
+
+  
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px;
+  --s5:24px; --s6:32px; --s7:48px;
+
+  
+  --line:27px;}
+#ids-shell-outer{padding: 0;
+  border-radius: 3px;
+  position: relative;
+  box-shadow:
+    inset 0 3px 10px rgba(60,40,10,.35),
+    inset 0 -2px 6px rgba(60,40,10,.15),
+    inset 3px 0 8px rgba(60,40,10,.12),
+    inset -3px 0 8px rgba(60,40,10,.12);}
+#ids-shell{background: #111a11;
+  border-radius: 9px;
+  font-family: 'Courier Prime', 'Courier New', monospace;
+  color: #44cc44;
+  min-height: 480px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  border: 4px solid #1c241c;
+  outline: 1px solid #0a0f0a;
+  box-shadow:
+    inset 0 0 40px rgba(0,20,0,.55),
+    inset 0 1px 0 rgba(255,255,255,.04),
+    0 4px 14px rgba(20,10,0,.65),
+    0 10px 32px rgba(10,5,0,.55),
+    0 1px 0 rgba(255,255,255,.04),
+    -2px 0 8px rgba(0,0,0,.4),
+    3px 4px 12px rgba(0,0,0,.55);
+  transform: none;
+  transform-origin: center top;
+  margin-top: -1px;}
+#ids-shell::before{content: '';
+  position: absolute; inset: 0;
+  border-radius: 6px;
+  background:
+    repeating-linear-gradient(87deg,transparent 0px,transparent 18px,rgba(255,255,255,.006) 18px,rgba(255,255,255,.006) 19px),
+    repeating-linear-gradient(2deg,transparent 0px,transparent 60px,rgba(255,255,255,.004) 60px,rgba(255,255,255,.004) 61px);
+  pointer-events: none;
+  z-index: 10;}
+#ids-shell::after{content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 55%; height: 45%;
+  border-radius: 6px 0 0 0;
+  background: linear-gradient(135deg,rgba(255,255,255,.042) 0%,rgba(255,255,255,.014) 40%,transparent 70%);
+  pointer-events: none;
+  z-index: 11;}
+#ids-header{background: #060c06;
+  border-bottom: 1px solid #0f1f0f;
+  padding: 5px 12px 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+  border-radius: 5px 5px 0 0;
+  position: relative;
+  z-index: 2;}
+#ids-header::before{content: '';
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%,-50%);
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: #0a1a0a;
+  border: 1px solid #151f15;
+  box-shadow: 0 0 0 1px #0a100a;}
+#ids-header-title{font-size: 8px;
+  letter-spacing: .15em;
+  color: #2aaa2a;
+  text-transform: uppercase;
+  text-shadow: 0 0 8px rgba(42,170,42,.4);}
+#ids-header-status{font-size: 7px;
+  letter-spacing: .1em;
+  color: #1a6a1a;
+  text-transform: uppercase;}
+#ids-main{display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 0;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  z-index: 2;}
+@media(max-width:700px){
+#ids-main{grid-template-columns: 1fr;}
+}
+#ids-controls{border-right: 1px solid #0f1f0f;
+  padding: 10px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #0a120a;
+  box-shadow: inset -2px 0 6px rgba(0,0,0,.3);}
+#ids-controls::-webkit-scrollbar{width: 3px;}
+#ids-controls::-webkit-scrollbar-track{background: #060c06;}
+#ids-controls::-webkit-scrollbar-thumb{background: #1a4a1a; border-radius: 2px;}
+.ids-section{display: flex; flex-direction: column; gap: 5px;}
+.ids-section-label{font-size: 7px;
+  letter-spacing: .22em;
+  color: #1a6a1a;
+  text-transform: uppercase;
+  border-bottom: 1px solid #0a1a0a;
+  padding-bottom: 3px;
+  margin-bottom: 2px;
+  text-shadow: 0 0 6px rgba(26,106,26,.5);}
+.ids-input{background: #060c06;
+  border: 1px solid #1a2a1a;
+  color: #44cc44;
+  font-family: 'Courier Prime', monospace;
+  font-size: 10px;
+  padding: 5px 7px;
+  outline: none;
+  letter-spacing: .04em;
+  flex: 1;
+  box-shadow: inset 0 1px 4px rgba(0,0,0,.5);}
+.ids-input::placeholder{color: #1a3a1a;}
+.ids-input:focus{border-color: #2aaa2a; box-shadow: inset 0 1px 4px rgba(0,0,0,.5), 0 0 6px rgba(42,170,42,.15);}
+.ids-input.ids-full{width: 100%; box-sizing: border-box;}
+.ids-select{background: #060c06;
+  border: 1px solid #1a2a1a;
+  color: #44cc44;
+  font-family: 'Courier Prime', monospace;
+  font-size: 10px;
+  padding: 5px 7px;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+  appearance: none;
+  cursor: pointer;
+  box-shadow: inset 0 1px 4px rgba(0,0,0,.5);}
+.ids-select:focus{border-color: #2aaa2a;}
+.ids-select option{background: #060c06;}
+.ids-row{display: flex; gap: 5px;}
+.ids-btn{background: linear-gradient(180deg,#0d2a0d 0%,#081808 100%);
+  border: 1px solid #1a4a1a;
+  border-top-color: #2a6a2a;
+  color: #44cc44;
+  font-family: 'Courier Prime', monospace;
+  font-size: 8px;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  padding: 6px 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-shadow: 0 0 8px rgba(68,204,68,.3);
+  box-shadow: 0 1px 0 rgba(255,255,255,.04), 0 2px 4px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.03);
+  transition: all 80ms;}
+.ids-btn:hover{background: linear-gradient(180deg,#142a14 0%,#0a200a 100%); border-color: #44cc44; box-shadow: 0 0 8px rgba(42,170,42,.2),0 2px 4px rgba(0,0,0,.4);}
+.ids-btn:active{transform: translateY(1px); box-shadow: 0 1px 2px rgba(0,0,0,.4);}
+.ids-btn.ids-btn-full{width: 100%; box-sizing: border-box;}
+.ids-btn.ids-btn-ghost{background: transparent; color: #1a5a1a; border-color: #0a1a0a; border-top-color: #0f1f0f; box-shadow: none; margin-top: 3px;}
+.ids-btn.ids-btn-ghost:hover{border-color: #1a3a1a; color: #2a7a2a;}
+.ids-status-line{font-size: 8px; letter-spacing: .08em; color: #2a8a2a;
+  min-height: 12px; text-shadow: 0 0 6px rgba(42,138,42,.3);}
+.ids-note{font-size: 8px; letter-spacing: .04em; color: #1a5a1a; line-height: 1.5; min-height: 12px;}
+#ids-photo-zone{background: #060c06;
+  border: 1px dashed #1a3a1a;
+  height: 90px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; overflow: hidden;
+  box-shadow: inset 0 2px 6px rgba(0,0,0,.5);
+  transition: border-color 100ms;}
+#ids-photo-zone:hover{border-color: #2aaa2a;}
+#ids-photo-placeholder{font-size: 8px; letter-spacing: .12em; color: #1a4a1a; text-align: center;}
+#ids-preview-wrap{padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  overflow-y: auto;
+  background: #0d160d;
+  background-image: radial-gradient(ellipse at 55% 40%,#0d160d 60%,#080e08 100%);}
+#ids-preview-wrap::-webkit-scrollbar{width: 3px;}
+#ids-preview-wrap::-webkit-scrollbar-track{background: #060c06;}
+#ids-preview-wrap::-webkit-scrollbar-thumb{background: #1a4a1a; border-radius: 2px;}
+#ids-card-preview{width: 100%; max-width: 380px; margin-bottom: 14px;
+  filter: drop-shadow(0 4px 16px rgba(0,0,0,.7)) drop-shadow(0 1px 3px rgba(0,0,0,.9));
+  position: relative;}
+#ids-card-preview .ids-card-cr80{width: 100%;
+  max-width: 340px;
+  font-size: clamp(5px, 1.8vw, 8px);}
+#ids-card-preview .ids-card-credential{width: 200px;
+  font-size: clamp(5px, 1.4vw, 7px);}
+#ids-card-placeholder{border: 1px dashed #0f1f0f;
+  padding: 40px 20px;
+  text-align: center;
+  font-size: 9px; letter-spacing: .15em;
+  color: #1a3a1a; line-height: 2;
+  background: #080e08;}
+#ids-card-meta{font-size: 8px; letter-spacing: .06em; color: #1a5a1a; line-height: 1.7; max-width: 360px; opacity: .8;}
+.ids-card-wrap{position: relative; border-radius: 6px; overflow: hidden;
+  box-shadow: 0 6px 28px rgba(0,0,0,.85), 0 2px 6px rgba(0,0,0,.9), 0 0 0 1px rgba(255,255,255,.06), inset 0 1px 0 rgba(255,255,255,.06);}
+.ids-card-credential{aspect-ratio: 3/4;}
+.ids-card-cr80{aspect-ratio: 85.6/54;}
+.ids-card-dg{aspect-ratio: 85.6/54; font-family: 'Courier Prime', monospace !important;}
+.ids-card-header{display: flex; align-items: center; gap: 8px; padding: 5px 8px;}
+.ids-card-seal{width: 22px; height: 22px; border-radius: 50%; border: 1px solid currentColor; opacity: .7; flex-shrink: 0;}
+.ids-card-rule{height: 1px; opacity: .4;}
+.ids-card-body{display: flex; flex: 1; gap: 0; padding: 6px;}
+.ids-card-photo-zone{flex-shrink: 0; display: flex; align-items: flex-start; justify-content: center;}
+.ids-card-photo-zone img,
+.ids-card-photo-zone div{width: 100%; height: 100%; object-fit: cover;}
+.ids-card-photo-placeholder{background: rgba(0,0,0,.15); display: flex; align-items: center; justify-content: center; font-size: 6px; letter-spacing: .1em; opacity: .5; text-transform: uppercase;}
+.ids-card-fields{flex: 1; padding: 0 6px; display: flex; flex-direction: column; gap: 3px; overflow: hidden;}
+.ids-card-field-label{font-size: 5px; letter-spacing: .15em; text-transform: uppercase; opacity: .6; line-height: 1;}
+.ids-card-field-value{font-size: 8px; letter-spacing: .04em; font-weight: 600; line-height: 1.2; word-break: break-word;}
+.ids-card-field-value.ids-name{font-size: 10px; letter-spacing: .03em;}
+.ids-card-field-group{display: flex; flex-direction: column; gap: 1px; padding-bottom: 3px; border-bottom: 1px solid rgba(0,0,0,.1);}
+.ids-card-footer{padding: 3px 8px; font-size: 5px; letter-spacing: .1em; opacity: .5; text-transform: uppercase; display: flex; justify-content: space-between; align-items: center;}
+.ids-card-sig-line{height: 1px; background: currentColor; opacity: .3; margin: 2px 0 1px; width: 60%;}
+.ids-dg-card{display: flex; flex-direction: column; justify-content: space-between; padding: 8px 10px; font-family: 'Courier Prime', monospace;}
+.ids-dg-triangle{font-size: 18px; line-height: 1;}
+.ids-dg-codename{font-size: 11px; letter-spacing: .2em; text-transform: uppercase;}
+.ids-dg-field{font-size: 7px; letter-spacing: .15em; opacity: .7; text-transform: uppercase;}
+.ids-book-card{display: flex; flex-direction: column; padding: 8px;}
+.ids-book-header{text-align: center; margin-bottom: 8px;}
+.ids-book-agency{font-size: 8px; letter-spacing: .2em; text-transform: uppercase; font-weight: 700; line-height: 1.5;}
+.ids-book-seal{width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid currentColor; margin: 4px auto; opacity: .6;}
+.ids-book-body{display: flex; gap: 8px; flex: 1;}
+.ids-book-fields{flex: 1;}
+.ids-book-photo{flex-shrink: 0;}
+.ids-no-card{border: 1px dashed #1a3a1a; padding: 20px; background: #040804; font-family: 'Courier Prime', monospace; color: #2a8a2a; font-size: 9px; line-height: 1.7; letter-spacing: .05em;}
+#ids-shell-footer{display: none;}
+
+html, body{ background:#0a0d08; }
+body{ padding:16px; font-family:'Courier Prime', monospace; }
+/* In the notebook: the tablet sits on the notebook's own pages. */
+html.fid-embedded, html.fid-embedded body{ background:transparent; }
+html.fid-embedded body{ padding:4px 6px 12px; }
+#fid-toast{ position:fixed; left:50%; bottom:24px; transform:translateX(-50%); z-index:10; max-width:calc(100vw - 32px);
+  background:#1c1608; color:#f4eed8; border:1px solid #8a7a5a; padding:10px 18px; font:13px/1.45 'Courier Prime',monospace;
+  opacity:0; transition:opacity .25s; pointer-events:none; }
+</style>
+</head>
+<body>
+      <div id="ids-shell-outer">
+      <div id="ids-shell">
+
+        <!-- ── TERMINAL HEADER ── -->
+        <div id="ids-header">
+          <span id="ids-header-title">▲ COVER ID FABRICATOR // DELTA GREEN DIRECTORATE</span>
+          <span id="ids-header-status">SYSTEM READY</span>
+        </div>
+
+        <!-- ── MAIN LAYOUT ── -->
+        <div id="ids-main">
+
+          <!-- LEFT: CONTROLS -->
+          <div id="ids-controls">
+
+            <!-- IMPORT AGENT -->
+            <div class="ids-section">
+              <div class="ids-section-label">01 // IMPORT AGENT</div>
+              <div class="ids-row">
+                <input id="ids-agent-code" class="ids-input" type="text" placeholder="AGENT CODE e.g. PATR-EQ9A" maxlength="9">
+                <button class="ids-btn" onclick="idsImportAgent()">LOAD</button>
+              </div>
+              <div id="ids-import-status" class="ids-status-line"></div>
+            </div>
+
+            <!-- AGENCY + ERA -->
+            <div class="ids-section">
+              <div class="ids-section-label">02 // COVER AGENCY + ERA</div>
+              <select id="ids-agency" class="ids-select" onchange="idsOnAgencyChange()">
+                <option value="">— SELECT AGENCY —</option>
+                <optgroup label="Federal — DOJ">
+                  <option value="FBI">Federal Bureau of Investigation</option>
+                  <option value="DEA">Drug Enforcement Administration</option>
+                  <option value="ATF">Bureau of Alcohol, Tobacco, Firearms and Explosives</option>
+                  <option value="USMS">U.S. Marshals Service</option>
+                  <option value="DOJIG">DOJ Office of Inspector General</option>
+                </optgroup>
+                <optgroup label="Federal — DHS">
+                  <option value="SECRET">U.S. Secret Service</option>
+                  <option value="ICE">Immigration and Customs Enforcement</option>
+                  <option value="CBP">Customs and Border Protection</option>
+                </optgroup>
+                <optgroup label="Federal — Other">
+                  <option value="NCIS">Naval Criminal Investigative Service</option>
+                  <option value="FINCEN">Financial Crimes Enforcement Network</option>
+                  <option value="USPI">U.S. Postal Inspection Service</option>
+                </optgroup>
+                <optgroup label="Municipal / County">
+                  <option value="NYPD">New York City Police Department</option>
+                  <option value="SCSO">Shelby County Sheriff's Office</option>
+                </optgroup>
+                <optgroup label="Fictional">
+                  <option value="MEPIC">M-EPIC Environmental Policy Impact Commission</option>
+                  <option value="DG">Delta Green — Directorate</option>
+                </optgroup>
+                <optgroup label="Custom">
+                  <option value="OTHER">⊕ Other / Custom Agency</option>
+                </optgroup>
+              </select>
+              <select id="ids-era" class="ids-select" onchange="idsUpdateCard()">
+                <option value="">— SELECT ERA —</option>
+                <option value="90s">1990s</option>
+                <option value="00s">2000s</option>
+                <option value="10s">2010s</option>
+                <option value="20s">2020s</option>
+              </select>
+              <div id="ids-template-note" class="ids-note"></div>
+            </div>
+
+            <!-- OTHER / CUSTOM AGENCY — hidden unless OTHER selected -->
+            <div class="ids-section" id="ids-other-section" style="display:none;">
+              <div class="ids-section-label">02b // CUSTOM AGENCY DETAILS</div>
+              <input id="ids-other-name" class="ids-input ids-full" type="text" placeholder="AGENCY / ORGANIZATION NAME" oninput="idsUpdateCard()">
+              <input id="ids-other-sub" class="ids-input ids-full" type="text" placeholder="SUB-LINE (optional, e.g. County of Meadowbrook)" oninput="idsUpdateCard()">
+              <div class="ids-row" style="gap:5px;align-items:center;">
+                <button class="ids-btn" onclick="idsRandomizeOther()" style="flex:1;">RANDOMIZE STYLE</button>
+                <button class="ids-btn ids-btn-ghost" onclick="idsResetOtherStyle()" style="flex-shrink:0;">RESET</button>
+              </div>
+              <div id="ids-other-style-note" class="ids-note" style="font-size:7px;"></div>
+              <!-- Manual color overrides -->
+              <div style="display:flex;gap:5px;margin-top:4px;">
+                <div style="flex:1;">
+                  <div style="font-size:6px;letter-spacing:.1em;color:#1a6a1a;text-transform:uppercase;margin-bottom:2px;">Header BG</div>
+                  <input type="color" id="ids-other-hbg" value="#1a2a5a" oninput="idsUpdateCard()" style="width:100%;height:24px;border:1px solid #1a3a1a;background:transparent;cursor:pointer;padding:0;">
+                </div>
+                <div style="flex:1;">
+                  <div style="font-size:6px;letter-spacing:.1em;color:#1a6a1a;text-transform:uppercase;margin-bottom:2px;">Header Text</div>
+                  <input type="color" id="ids-other-htxt" value="#ffffff" oninput="idsUpdateCard()" style="width:100%;height:24px;border:1px solid #1a3a1a;background:transparent;cursor:pointer;padding:0;">
+                </div>
+                <div style="flex:1;">
+                  <div style="font-size:6px;letter-spacing:.1em;color:#1a6a1a;text-transform:uppercase;margin-bottom:2px;">Accent</div>
+                  <input type="color" id="ids-other-acc" value="#c8a850" oninput="idsUpdateCard()" style="width:100%;height:24px;border:1px solid #1a3a1a;background:transparent;cursor:pointer;padding:0;">
+                </div>
+              </div>
+              <div style="margin-top:4px;">
+                <div style="font-size:6px;letter-spacing:.1em;color:#1a6a1a;text-transform:uppercase;margin-bottom:2px;">Layout</div>
+                <select id="ids-other-layout" class="ids-select" onchange="idsUpdateCard()">
+                  <option value="top-bottom">Top ribbon + bottom ribbon</option>
+                  <option value="top-only">Top ribbon only</option>
+                  <option value="bottom-only">Bottom ribbon only</option>
+                  <option value="no-ribbon">No ribbon — borderless</option>
+                </select>
+              </div>
+              <div style="margin-top:4px;">
+                <div style="font-size:6px;letter-spacing:.1em;color:#1a6a1a;text-transform:uppercase;margin-bottom:2px;">Font</div>
+                <select id="ids-other-font" class="ids-select" onchange="idsUpdateCard()">
+                  <option value="Arial,sans-serif">Sans-serif (Arial)</option>
+                  <option value="'Times New Roman',serif">Serif (Times New Roman)</option>
+                  <option value="'Courier New',monospace">Monospace (Courier)</option>
+                  <option value="Georgia,serif">Serif (Georgia)</option>
+                  <option value="'Trebuchet MS',sans-serif">Sans-serif (Trebuchet)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- COVER FIELDS -->
+            <div class="ids-section">
+              <div class="ids-section-label">03 // COVER IDENTITY FIELDS</div>
+              <input id="ids-cover-name" class="ids-input ids-full" type="text" placeholder="COVER NAME" oninput="idsUpdateCard()">
+              <input id="ids-cover-title" class="ids-input ids-full" type="text" placeholder="TITLE / DESIGNATION" oninput="idsUpdateCard()">
+              <div class="ids-row">
+                <input id="ids-cover-id" class="ids-input" type="text" placeholder="ID NUMBER" oninput="idsUpdateCard()">
+                <input id="ids-cover-expiry" class="ids-input" type="text" placeholder="EXP DATE" oninput="idsUpdateCard()">
+              </div>
+              <input id="ids-cover-detail" class="ids-input ids-full" type="text" placeholder="EXTRA FIELD (DIVISION / BADGE NO. / RANK)" oninput="idsUpdateCard()">
+            </div>
+
+            <!-- PHOTO -->
+            <div class="ids-section">
+              <div class="ids-section-label">04 // PHOTO PLATE</div>
+              <div id="ids-photo-zone" onclick="document.getElementById('ids-photo-input').click()">
+                <input type="file" id="ids-photo-input" accept="image/*" style="display:none" onchange="idsHandlePhoto(this)">
+                <div id="ids-photo-placeholder">TAP TO UPLOAD PHOTO</div>
+                <img id="ids-photo-prev" style="display:none;width:100%;height:100%;object-fit:cover;">
+              </div>
+            </div>
+
+            <!-- PRINT -->
+            <div class="ids-section">
+              <div class="ids-section-label">05 // OUTPUT</div>
+              <button class="ids-btn ids-btn-full" onclick="idsPrint()">PRINT / EXPORT CARD</button>
+              <button class="ids-btn ids-btn-full ids-btn-ghost" onclick="idsReset()">CLEAR ALL FIELDS</button>
+            </div>
+
+          </div><!-- ids-controls -->
+
+          <!-- RIGHT: PREVIEW -->
+          <div id="ids-preview-wrap">
+            <div class="ids-section-label" style="margin-bottom:8px;">LIVE PREVIEW</div>
+            <div id="ids-card-preview">
+              <div id="ids-card-placeholder">
+                SELECT AGENCY + ERA<br>TO RENDER CARD
+              </div>
+            </div>
+            <div id="ids-card-meta"></div>
+          </div>
+
+        </div><!-- ids-main -->
+      </div><!-- ids-shell -->
+        <div id="ids-shell-footer"></div>
+      </div><!-- ids-shell-outer -->
+<div id="fid-toast" role="status"></div>
+
+<script src="assets/dg-store.js"></script>
+<script src="assets/field-id-cards.js"></script>
+<script>
+// The few Agent File helpers the Fabricator uses (assets/agent-file.js
+// has the same ones for the Agent Hub file).
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
+// Inside the notebook, use the page's own store: it's already signed in
+// and warm, where this frame's would start Firebase from cold (~10 s).
+function store_() {
+  try { if (window.parent !== window && window.parent.dgStore) return window.parent.dgStore; } catch (e) { /* not ours */ }
+  return window.dgStore;
+}
+function afJsonp(kind, code, cbName, scriptEl) {
+  store_().getBrief(code).then(function (d) {
+    const cb = window[cbName];
+    if (typeof cb === 'function') cb(d ? { status: 'OK', data: d } : { status: 'NOT_FOUND' });
+  }, function () {
+    if (scriptEl && typeof scriptEl.onerror === 'function') scriptEl.onerror();
+    else if (typeof window[cbName] === 'function') window[cbName]({ status: 'ERROR' });
+  });
+}
+function extractDriveId(url) {
+  if (!url) return null;
+  if (url.startsWith('gdrive:')) return url.slice(7);
+  const shareMatch = url.match(/\/file\/d\/([^\/\?]+)/);
+  if (shareMatch) return shareMatch[1];
+  const ucMatch = url.match(/[?&]id=([^&]+)/);
+  if (ucMatch) return ucMatch[1];
+  return null;
+}
+function isDirectImageUrl_(url) {
+  return /^https?:\/\//.test(url || '') && !extractDriveId(url);
+}
+function portalNotice(msg) {
+  const t = document.getElementById('fid-toast');
+  t.textContent = msg;
+  t.style.opacity = '1';
+  clearTimeout(t._h);
+  t._h = setTimeout(function () { t.style.opacity = '0'; }, 3500);
+}
+
+const IDS_SEALS = window.dgFieldIdCards.SEALS;
+
+const IDS_CARD_DATA = window.dgFieldIdCards.DATA;
+
+let idsPhotoDataUrl = null;
+let idsCurrentAgent = null;
+
+function idsSetStatus(msg, ok) {
+  const el = document.getElementById('ids-import-status');
+  if (el) { el.textContent = msg; el.style.color = ok ? '#44cc44' : '#cc4444'; }
+}
+
+function idsImportAgent() {
+  const code = (document.getElementById('ids-agent-code').value || '').trim().toUpperCase();
+  if (!code) { idsSetStatus('ENTER AGENT CODE', false); return; }
+  idsSetStatus('QUERYING DATABASE...', true);
+
+  const cbName = '_idsCb_' + Date.now();
+  window[cbName] = function(json) {
+    delete window[cbName];
+    const old = document.getElementById('_ids_script');
+    if (old) old.remove();
+    if (json.status === 'OK' && json.data) {
+      idsCurrentAgent = json.data;
+      idsPopulateFromAgent(json.data);
+      idsSetStatus('AGENT ' + code + ' LOADED — ' + (json.data.char_name || '').toUpperCase(), true);
+    } else {
+      idsSetStatus('NOT FOUND — CHECK CODE', false);
+    }
+  };
+
+  const s = document.createElement('script');
+  s.id = '_ids_script';
+  s.dataset.af = "1"; afJsonp('lookup', code, cbName, s);
+  document.head.appendChild(s);
+}
+
+function idsPopulateFromAgent(d) {
+  const nameEl = document.getElementById('ids-cover-name');
+  const titleEl = document.getElementById('ids-cover-title');
+  const idEl = document.getElementById('ids-cover-id');
+  const agencyEl = document.getElementById('ids-agency');
+  const eraEl = document.getElementById('ids-era');
+
+  if (nameEl && !nameEl.value) nameEl.value = d.char_name || '';
+  if (titleEl && !titleEl.value) titleEl.value = d.codename ? 'SPECIAL AGENT — ' + d.codename : 'SPECIAL AGENT';
+
+  // Set era from agent active_eras if available
+  if (eraEl) {
+    let era = '';
+    if (d.active_eras) {
+      try {
+        const eras = JSON.parse(d.active_eras);
+        if (Array.isArray(eras) && eras.length) era = eras[0];
+      } catch(e) { era = d.active_eras.trim(); }
+    }
+    if (era && eraEl.querySelector('option[value="' + era + '"]')) {
+      eraEl.value = era;
+    }
+  }
+
+  // Set agency if agent's file has a clue — default FBI for federal cover
+  if (agencyEl && !agencyEl.value) {
+    agencyEl.value = 'FBI';
+  }
+
+  // Load face plate if available -- the Active Era's own Plate first
+  // (see healMainPhoto()), not only the flat face_plate_url copy.
+  const face = (window.dgStore && window.dgStore.mainPhoto) ? window.dgStore.mainPhoto(d) : (d.face_plate_url || '');
+  if (face && !idsPhotoDataUrl && isDirectImageUrl_(face)) {
+    // Storage-hosted plate: only ever used as an <img src> (the card is
+    // printed, never rasterized), so the URL itself is enough.
+    idsPhotoDataUrl = face;
+    const prev = document.getElementById('ids-photo-prev');
+    const ph = document.getElementById('ids-photo-placeholder');
+    if (prev) { prev.src = face; prev.style.display = 'block'; }
+    if (ph) ph.style.display = 'none';
+    idsUpdateCard();
+  } else if (face && !idsPhotoDataUrl) {
+    // Load face plate via proxy — use a temporary img element trick
+    const _faceId = extractDriveId(face);
+    if (_faceId) {
+      const _cbName = '_idsFaceCb_' + Date.now();
+      window[_cbName] = function(json) {
+        delete window[_cbName];
+        const old = document.getElementById('_ids_face_script');
+        if (old) old.remove();
+        if (json.status === 'OK' && json.dataUri) {
+          idsPhotoDataUrl = json.dataUri;
+          const prev = document.getElementById('ids-photo-prev');
+          const ph = document.getElementById('ids-photo-placeholder');
+          if (prev) { prev.src = json.dataUri; prev.style.display = 'block'; }
+          if (ph) ph.style.display = 'none';
+          idsUpdateCard();
+        }
+      };
+      const _s = document.createElement('script');
+      _s.id = '_ids_face_script';
+      _s.src = APPS_SCRIPT_URL + '?action=imgdata&id=' + encodeURIComponent(_faceId) + '&callback=' + _cbName;
+      document.head.appendChild(_s);
+    }
+  }
+
+  idsUpdateCard();
+}
+
+function idsHandlePhoto(input) {
+  if (!input.files[0]) return;
+  const r = new FileReader();
+  r.onload = function(e) {
+    idsPhotoDataUrl = e.target.result;
+    const prev = document.getElementById('ids-photo-prev');
+    const ph = document.getElementById('ids-photo-placeholder');
+    if (prev) { prev.src = e.target.result; prev.style.display = 'block'; }
+    if (ph) ph.style.display = 'none';
+    idsUpdateCard();
+  };
+  r.readAsDataURL(input.files[0]);
+}
+
+function idsGetFields() {
+  return {
+    name: (document.getElementById('ids-cover-name')?.value || '').trim(),
+    title: (document.getElementById('ids-cover-title')?.value || '').trim(),
+    id_num: (document.getElementById('ids-cover-id')?.value || '').trim(),
+    expiry: (document.getElementById('ids-cover-expiry')?.value || '').trim(),
+    detail: (document.getElementById('ids-cover-detail')?.value || '').trim(),
+    agency: document.getElementById('ids-agency')?.value || '',
+    era: document.getElementById('ids-era')?.value || '',
+  };
+}
+
+
+/* ══ OTHER / CUSTOM AGENCY ══ */
+
+// No-90s agencies
+const IDS_NO_90S = {'ICE':1,'CBP':1};
+
+function idsOnAgencyChange() {
+  var agency = document.getElementById('ids-agency').value;
+  var otherSection = document.getElementById('ids-other-section');
+  var eraEl = document.getElementById('ids-era');
+
+  // Show/hide custom section
+  if (otherSection) otherSection.style.display = agency === 'OTHER' ? 'flex' : 'none';
+
+  // Grey out 90s for ICE/CBP
+  if (eraEl) {
+    Array.from(eraEl.options).forEach(function(opt) {
+      if (opt.value === '90s') {
+        opt.disabled = !!IDS_NO_90S[agency];
+        opt.text = opt.value === '90s'
+          ? (IDS_NO_90S[agency] ? '1990s (agency not yet founded)' : '1990s')
+          : opt.text;
+        if (opt.disabled && eraEl.value === '90s') eraEl.value = '00s';
+      }
+    });
+  }
+
+  idsUpdateCard();
+}
+
+function idsRandomizeOther() {
+  // Random palette families
+  var palettes = [
+    {hbg:'#0a0a0a', htxt:'#ffffff', acc:'#ffffff'},  // black + white
+    {hbg:'#1a1a1a', htxt:'#f0f0f0', acc:'#c8c8c8'},  // near-black + silver
+    {hbg:'#2a0a0a', htxt:'#ffffff', acc:'#cc4444'},   // dark red
+    {hbg:'#0a2a0a', htxt:'#ffffff', acc:'#44aa44'},   // dark green
+    {hbg:'#0a0a2a', htxt:'#ffffff', acc:'#6666ee'},   // dark blue
+    {hbg:'#2a2a00', htxt:'#ffffff', acc:'#ddaa00'},   // dark gold
+    {hbg:'#1a0a2a', htxt:'#ffffff', acc:'#aa44cc'},   // dark purple + purple acc
+    {hbg:'#8a6a00', htxt:'#ffffff', acc:'#ffd700'},   // gold header
+    {hbg:'#ffffff', htxt:'#1a1a1a', acc:'#1a1a1a'},   // white + black
+    {hbg:'#f5f0e8', htxt:'#2a1a0a', acc:'#6a4a1a'},   // cream + brown
+    {hbg:'#003366', htxt:'#ffffff', acc:'#ffcc00'},   // navy + yellow
+    {hbg:'#660033', htxt:'#ffffff', acc:'#ffaacc'},   // maroon + pink
+    {hbg:'#004444', htxt:'#ffffff', acc:'#44dddd'},   // teal
+    {hbg:'#440044', htxt:'#ffffff', acc:'#dd44dd'},   // purple + magenta
+    {hbg:'#cc5500', htxt:'#ffffff', acc:'#ffdd88'},   // orange
+  ];
+  var fonts = [
+    'Arial,sans-serif',
+    "'Times New Roman',serif",
+    "'Courier New',monospace",
+    'Georgia,serif',
+    "'Trebuchet MS',sans-serif",
+  ];
+  var layouts = ['top-bottom','top-only','bottom-only','no-ribbon'];
+  var layoutLabels = {
+    'top-bottom':'Top + bottom ribbon',
+    'top-only':'Top ribbon only',
+    'bottom-only':'Bottom ribbon only',
+    'no-ribbon':'No ribbon'
+  };
+
+  var p = palettes[Math.floor(Math.random() * palettes.length)];
+  var font = fonts[Math.floor(Math.random() * fonts.length)];
+  var layout = layouts[Math.floor(Math.random() * layouts.length)];
+
+  document.getElementById('ids-other-hbg').value = p.hbg;
+  document.getElementById('ids-other-htxt').value = p.htxt;
+  document.getElementById('ids-other-acc').value = p.acc;
+  document.getElementById('ids-other-font').value = font;
+  document.getElementById('ids-other-layout').value = layout;
+
+  var note = document.getElementById('ids-other-style-note');
+  if (note) note.textContent = layoutLabels[layout] + ' · ' + font.split(',')[0].replace(/'/g,'');
+
+  idsUpdateCard();
+}
+
+function idsResetOtherStyle() {
+  document.getElementById('ids-other-hbg').value = '#1a2a5a';
+  document.getElementById('ids-other-htxt').value = '#ffffff';
+  document.getElementById('ids-other-acc').value = '#c8a850';
+  document.getElementById('ids-other-font').value = 'Arial,sans-serif';
+  document.getElementById('ids-other-layout').value = 'top-bottom';
+  var note = document.getElementById('ids-other-style-note');
+  if (note) note.textContent = '';
+  idsUpdateCard();
+}
+
+function idsGetOtherTmpl(f) {
+  var hbg = document.getElementById('ids-other-hbg')?.value || '#1a2a5a';
+  var htxt = document.getElementById('ids-other-htxt')?.value || '#ffffff';
+  var acc = document.getElementById('ids-other-acc')?.value || '#c8a850';
+  var font = document.getElementById('ids-other-font')?.value || 'Arial,sans-serif';
+  var layout = document.getElementById('ids-other-layout')?.value || 'top-bottom';
+  var agencyName = document.getElementById('ids-other-name')?.value || 'AGENCY NAME';
+  var subLine = document.getElementById('ids-other-sub')?.value || '';
+  return {
+    agency_key: 'OTHER',
+    agency_full: agencyName,
+    agency_sub: subLine,
+    era: f.era || '20s',
+    era_label: {'90s':'1990s','00s':'2000s','10s':'2010s','20s':'2020s'}[f.era] || '',
+    layout: 'other-' + layout,
+    other_layout: layout,
+    other_font: font,
+    header_bg: hbg,
+    header_text: htxt,
+    body_bg: '#f5f4ee',
+    body_text: '#1a1a18',
+    accent: acc,
+    secondary: acc,
+    photo_pos: 'left',
+    is_credential_book: false,
+    is_no_card: false,
+    is_dg: false,
+    is_other: true,
+  };
+}
+
+// Only applied at print/export time (see idsPrint() below), not to the
+// live on-screen preview -- these are federal/municipal credential
+// replicas, and a PRINTED/exported card that leaves the table (left in
+// a wallet, photographed, shown as a joke) should still be unmistakably
+// a game prop out of context, without cluttering the working preview
+// while the Handler is still building it. All styling is inline so it
+// survives idsPrint()'s separate, minimal print stylesheet unchanged.
+const IDS_WATERMARK_HTML =
+  '<div style="position:absolute;inset:0;pointer-events:none;display:flex;'
+  + 'align-items:center;justify-content:center;z-index:50;overflow:hidden;">'
+  + '<div style="transform:rotate(-18deg);font-family:Arial,Helvetica,sans-serif;'
+  + 'font-weight:800;font-size:9px;letter-spacing:.12em;text-transform:uppercase;'
+  + 'color:rgba(170,20,20,.75);border:1.5px solid rgba(170,20,20,.75);'
+  + 'padding:4px 10px;white-space:nowrap;background:rgba(255,255,255,.6);'
+  + 'text-align:center;line-height:1.5;">'
+  + 'PROP — NOT A GOVERNMENT DOCUMENT<br>TABLETOP GAME PROP · DELTA GREEN'
+  + '</div></div>';
+
+function idsUpdateCard() {
+  const f = idsGetFields();
+  const preview = document.getElementById('ids-card-preview');
+  const meta = document.getElementById('ids-card-meta');
+  const note = document.getElementById('ids-template-note');
+  if (!preview) return;
+
+  if (!f.agency || !f.era) {
+    preview.innerHTML = '<div id="ids-card-placeholder">SELECT AGENCY + ERA<br>TO RENDER CARD</div>';
+    if (meta) meta.innerHTML = '';
+    if (note) note.textContent = '';
+    return;
+  }
+
+  // OTHER / custom agency
+  if (f.agency === 'OTHER') {
+    var tmpl = idsGetOtherTmpl(f);
+    preview.innerHTML = idsRenderCard(tmpl, f);
+    if (note) note.textContent = 'CUSTOM · ' + (tmpl.other_layout || 'top-bottom');
+    if (meta) meta.innerHTML = '';
+    return;
+  }
+
+  var tmpl = window.dgFieldIdCards.template(f.agency, f.era);
+
+  if (!tmpl) {
+    preview.innerHTML = '<div id="ids-card-placeholder">NO TEMPLATE FOR THIS COMBINATION</div>';
+    if (note) note.textContent = '';
+    return;
+  }
+
+  // Update note
+  if (note) {
+    note.textContent = tmpl.layout + ' — ' + tmpl.era_label;
+  }
+
+  // Render the card
+  preview.innerHTML = idsRenderCard(tmpl, f);
+
+  // Meta info
+  if (meta) {
+    meta.innerHTML = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid #0a1a0a;">'
+      + '<div style="color:#1a5a1a;margin-bottom:4px;">// TEMPLATE: ' + tmpl.layout.toUpperCase() + '</div>'
+      + '<div>' + tmpl.layout_desc.substring(0, 160) + (tmpl.layout_desc.length > 160 ? '...' : '') + '</div>'
+      + (tmpl.distinguishing ? '<div style="margin-top:4px;color:#1a4a1a;">' + tmpl.distinguishing.substring(0, 120) + (tmpl.distinguishing.length > 120 ? '...' : '') + '</div>' : '')
+      + '</div>';
+  }
+}
+
+function idsRenderCard(tmpl, f) {
+  // Templates and renderer: assets/field-id-cards.js (shared with Field Notes).
+  return window.dgFieldIdCards.render(tmpl, f, idsPhotoDataUrl);
+}
+
+function idsPrint() {
+  const preview = document.getElementById('ids-card-preview');
+  // Not every rendered layout carries a .ids-card-wrap/.ids-no-card class --
+  // credential-book layouts (FBI/DEA/USPI/SCSO/MEPIC 90s-00s, etc.) render
+  // as plain inline-styled divs -- so gate on the placeholder's absence
+  // instead, which is present for every layout until a card is rendered.
+  if (!preview || preview.querySelector('#ids-card-placeholder')) {
+    portalNotice('Select agency and era first.');
+    return;
+  }
+
+  // Open print window with just the card -- the PROP watermark is added
+  // here, not in the live preview, so it only ever appears on a printed
+  // or exported card, never while the Handler is still working on it.
+  const cardHtml = preview.innerHTML + IDS_WATERMARK_HTML;
+  const win = window.open('', '_blank', 'width=600,height=500');
+  win.document.write('<html><head><title>Delta Green Field ID</title><style>'
+    + 'body{margin:20px;background:#111;display:flex;align-items:center;justify-content:center;}'
+    + '.ids-card-wrap,.ids-card-cr80,.ids-card-credential{max-width:340px;width:100%;}'
+    + '.ids-card-cr80{aspect-ratio:85.6/54;border-radius:6px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.8);}'
+    + '.ids-card-credential{aspect-ratio:3/4;border-radius:6px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.8);}'
+    + '.ids-card-header,.ids-book-header{padding:5px 7px;display:flex;align-items:center;gap:6px;}'
+    + '.ids-card-agency-name,.ids-book-agency{font-size:6px;letter-spacing:.18em;text-transform:uppercase;font-weight:700;font-family:Arial,sans-serif;}'
+    + '.ids-card-rule{height:1px;opacity:.4;}'
+    + '.ids-card-body,.ids-book-body{display:flex;gap:6px;padding:5px 6px;flex:1;}'
+    + '.ids-card-fields,.ids-book-fields{flex:1;display:flex;flex-direction:column;gap:3px;}'
+    + '.ids-card-field-label{font-size:5px;letter-spacing:.15em;text-transform:uppercase;opacity:.5;font-family:Arial,sans-serif;}'
+    + '.ids-card-field-value{font-size:8px;letter-spacing:.04em;font-weight:600;font-family:Arial,sans-serif;}'
+    + '.ids-card-photo-zone{overflow:hidden;border:1px solid rgba(0,0,0,.15);}'
+    + '.ids-card-photo-zone img{width:100%;height:100%;object-fit:cover;}'
+    + '.ids-card-sig-line{height:1px;opacity:.3;margin:2px 0 1px;width:60%;}'
+    + '.ids-card-footer{padding:3px 7px;font-size:5px;letter-spacing:.1em;display:flex;justify-content:space-between;font-family:Arial,sans-serif;}'
+    + '.ids-dg-card{display:flex;flex-direction:column;justify-content:space-between;padding:8px 10px;font-family:Courier New,monospace;height:100%;}'
+    + '.ids-card-seal{width:16px;height:16px;border-radius:50%;border:1.5px solid currentColor;opacity:.6;flex-shrink:0;}'
+    + 'img{display:block;}'
+    + '</style></head><body>'
+    + '<div style="width:340px;position:relative;">' + cardHtml + '</div>'
+    + '</body></html>');
+  win.document.close();
+  setTimeout(() => win.print(), 300);
+}
+
+function idsReset() {
+  document.getElementById('ids-cover-name').value = '';
+  document.getElementById('ids-cover-title').value = '';
+  document.getElementById('ids-cover-id').value = '';
+  document.getElementById('ids-cover-expiry').value = '';
+  document.getElementById('ids-cover-detail').value = '';
+  document.getElementById('ids-agent-code').value = '';
+  document.getElementById('ids-agency').value = '';
+  document.getElementById('ids-era').value = '';
+  idsPhotoDataUrl = null;
+  idsCurrentAgent = null;
+  const prev = document.getElementById('ids-photo-prev');
+  const ph = document.getElementById('ids-photo-placeholder');
+  if (prev) { prev.style.display = 'none'; prev.src = ''; }
+  if (ph) ph.style.display = 'flex';
+  idsSetStatus('', true);
+  idsUpdateCard();
+}
+
+
+/* Start on the Agent and card the notebook asked for. */
+(function start() {
+  const params = new URLSearchParams(location.search);
+  const agency = params.get('agency'), era = params.get('era');
+  const agencyEl = document.getElementById('ids-agency');
+  if (agency && agencyEl.querySelector('option[value="' + agency + '"]')) {
+    agencyEl.value = agency;
+    idsOnAgencyChange();
+  }
+  const eraEl = document.getElementById('ids-era');
+  if (era && eraEl.querySelector('option[value="' + era + '"]')) { eraEl.value = era; idsUpdateCard(); }
+  const code = (params.get('code') || '').trim().toUpperCase();
+  if (code) {
+    document.getElementById('ids-agent-code').value = code;
+    idsImportAgent();
+  }
+})();
+</script>
+</body>
+</html>

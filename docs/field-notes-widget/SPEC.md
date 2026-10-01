@@ -394,6 +394,69 @@ Two separate causes:
   (`route=webaudio`); not allowed -> `route=element`. To try volume on the
   preview, allow its address too (see §10). Not needed for the live site.
 
+### Round 8 — One Agent page; Profiling where players are
+
+Feedback: merge the Agent File and Agent Hub with Profiling into one easy
+page, phase out the three-tab Agent Portal and the buttons under the
+Agent's line (they live in the notebook), and put Profiling where players
+actually meet it -- three clicks from logging in, nobody used it. Choices
+made with the Handler: the page is the Agent's **Agent Hub tab**;
+Profiling is **both** an Appearance step in the creation wizard and an
+Appearance section on that page; the **Fabricator goes into the
+notebook**; **Play stays** as the one button.
+
+- **Agent Hub tab = the whole file.** Header and Play, a callout under Play
+  while Appearance is unfinished ("N of 22 details still to fill in" ->
+  Describe them), the Agent File paper, **Appearance** (the Profiling
+  form: open until complete, then folded with Edit), **Era Photos** (the
+  era stack: Face/Outfit Plates, prompts, Active Era; waits for a complete
+  Appearance), Evidence. The portal's Profiling + Agent File code moved as
+  it was into `assets/agent-file.js` / `.css` (scoped `.af-root`), one
+  instance moved into the open tab. Gone with the portal: the code-entry
+  boxes, the old printable dossier card, the roster drawer, auto-restore
+  from `dg_last_agent`, Open Character Sheet (Play does it).
+- **Saving under the open Agent.** The form always saves under the tab's
+  Agent code -- renaming renames; the portal's guess-the-code-from-the-
+  name logic (and the duplicate Agents it could make) is gone.
+- **Appearance in the wizard** (step 4 of 10, after Biography):
+  `stats/appearance-sheet.js`, the looks a sheet can't work out, saved
+  straight to `briefs/{code}`; Fill the rest at random fills only blanks,
+  suited to the Agent's sex and profession (the generator's tables are
+  shared: `assets/appearance-gen.js`). Finishing the wizard runs the
+  sheet's export, so a new Agent arrives on Agent Hub with Appearance
+  already "On file" and the era photos open.
+- **The Fabricator in the notebook.** `field-id.html` (the old Field IDs
+  tab), embedded like Requisition: Field ID page -> Make Field ID, across
+  both pages on a desktop, the page on a phone, loaded with the notebook's
+  Agent, agency and era (and the notebook page's warm store -- in its own
+  frame it took ~12 s to start Firebase, now ~2); Back to the card or the
+  Field ID tab returns. Opened directly it forwards into the notebook.
+- **Old links keep working.** `dg-agent-portal.html` forwards: `?code=` ->
+  the Agent's tab, `#cover` (Take Photo, also A-Cell's) -> their photos,
+  `#ids` -> the Fabricator. The notebook's Agent File / Take Photo, the
+  clearance briefing, the onboarding nudge and the sheet's Open Agent File
+  all go to the Agent's tab now.
+- **Found while merging:** Agent Hub's photo loader shared one JSONP
+  callback name per Agent, so a second request (a save re-loading the
+  photo) let the first answer delete the callback the second still
+  called -- the same class as the old roster drawer's `_rosterFace_` bug
+  (latent on `main` too, rarer there); now one name per request, and the
+  same for Evidence photos. And the hub dropping a stale Agent removed
+  their panel with the one Agent File still inside; it parks the file
+  first now. And in the notebook itself: quick notes and Settings added a click
+  listener to the reused page body on every render, so after re-renders
+  one tap ran several times (5 in the test) -- Shared flipped on and back
+  off, a Settings toggle could do nothing. Seen once as an intermittent
+  failure in the phone flow; each page now sets the body's one handler
+  (`test_field_notes_page_taps_act_once`).
+- Verified on the emulators end to end (Chromium journey: wizard with
+  Appearance -> briefing -> the Agent's tab -> Face Plate -> notebook ->
+  Fabricator -> Requisition, 84 checks) and by the suite; tests that drove
+  the portal were ported to Agent Hub / `field-id.html`, the ones for
+  removed portal features retired, and new ones added
+  (`test_agent_hub_one_page_file`, `test_appearance_wizard_step`,
+  `test_field_id_fabricator_in_notebook`).
+
 ## 10. Trying it on the private preview
 
 From Cloud Shell (the repo is public, so the clone needs no login):

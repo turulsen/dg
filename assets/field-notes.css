@@ -347,6 +347,10 @@ html.dg-fn-host #notes-widget-btn{ display:none !important; }
 /* The Notes page runs 28px above the paper so its tabs sit on the paper's top edge. */
 .fn-spread .fn-embed{ position:absolute; left:0; top:-28px; width:100%; height:calc(100% + 28px); background:transparent; }
 #fn-root .fn-spread-quick{ position:absolute; right:12px; bottom:10px; z-index:2; }
+/* On a phone the Fabricator is the page: its way back sits on a strip
+   above the tablet instead of over its Print button. */
+.fn-page-body.fn-flush[data-fn-slot="embed-fab"]{ flex-direction:column; }
+#fn-root [data-fn-slot="embed-fab"] .fn-spread-quick{ position:static; align-self:flex-end; margin:6px 12px 4px; }
 .fn-spread-msg{ padding:18px; }
 
 /* The kit under the pockets: the radio (the same pager the chip pops

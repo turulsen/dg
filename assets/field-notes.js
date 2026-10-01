@@ -444,6 +444,7 @@
             '<div class="fn-page-body" data-fn-slot="body"></div>' +
             '<div class="fn-page-body" data-fn-slot="dice" hidden><div class="fn-dice-host" data-fn-slot="dice-host"></div></div>' +
             '<div class="fn-page-body fn-flush" data-fn-slot="embed-req" hidden></div>' +
+            '<div class="fn-page-body fn-flush" data-fn-slot="embed-fab" hidden></div>' +
           '</div></div>' +
           '<div class="fn-tabs">' +
             TABS.map(function (t) { return '<button type="button" class="fn-tab" data-view="' + t.view + '"><span>' + t.label + '</span></button>'; }).join('') +
@@ -455,7 +456,7 @@
 
   function slot(name) { return root.querySelector('[data-fn-slot="' + name + '"]'); }
 
-  var state = { open: false, view: lsGet(VIEW_KEY) || 'agentfile', suspended: false, notesMode: 'spread', evOp: '' };
+  var state = { open: false, view: lsGet(VIEW_KEY) || 'agentfile', suspended: false, notesMode: 'spread', evOp: '', fieldIdMode: 'card' };
   if (VIEWS.indexOf(state.view) === -1) state.view = 'agentfile';
   var narrowMq = window.matchMedia ? window.matchMedia('(max-width:759px)') : { matches: false, addListener: function () {} };
   function narrow() { return !!narrowMq.matches; }
@@ -513,6 +514,7 @@
       return;
     }
     if (t.classList.contains('fn-tab') && v === 'notes') state.notesMode = 'spread';
+    if (v === 'fieldid') state.fieldIdMode = 'card';
     if (t.classList.contains('fn-slot') || t.classList.contains('fn-tab')) show(v);
   }
   function onKey(e) {
@@ -523,6 +525,7 @@
 
   function open(view) {
     if (state.suspended) return;
+    if (view === 'fab') { state.fieldIdMode = 'fab'; view = 'fieldid'; }
     if (view && VIEWS.indexOf(view) !== -1) state.view = view;
     state.open = true;
     closePager();
@@ -576,7 +579,7 @@
     setTimeout(done, 1400);
   }
   function show(view) {
-    if (state.open && view !== state.view && !(view === 'notes' && state.notesMode === 'spread' && !narrow())) turnPage();
+    if (state.open && view !== state.view && !spreadKind(view)) turnPage();
     state.view = view;
     lsSet(VIEW_KEY, view === 'dice' ? 'agentfile' : view);
     render();
@@ -609,7 +612,7 @@
   }
 
   /* ── Field ID: the Agent's agency, from their workplace ── */
-  // The Agent File's own Field ID agencies (dg-agent-portal.html #ids-agency).
+  // The Agent File's own Field ID agencies (field-id.html #ids-agency).
   var AGENCIES = [
     { code: 'FBI', name: 'Federal Bureau of Investigation', title: 'Special Agent' },
     { code: 'DEA', name: 'Drug Enforcement Administration', title: 'Special Agent' },
@@ -749,20 +752,30 @@
 
   /* ── Page router ── */
   var PERSISTENT = { dice: 'dice', req: 'embed-req' };
+  // Which view takes both pages on a desktop: Notes (unless folded to
+  // quick notes) and the Field ID Fabricator.
+  function spreadKind(view) {
+    if (narrow()) return '';
+    if (view === 'notes' && state.notesMode === 'spread') return 'notes';
+    if (view === 'fieldid' && state.fieldIdMode === 'fab') return 'fab';
+    return '';
+  }
   function render() {
     if (!state.open) return;
     var view = state.view;
     var book = root.querySelector('.fn-book');
-    var spread = view === 'notes' && !narrow() && state.notesMode === 'spread';
+    var kind = spreadKind(view);
+    var spread = !!kind;
     book.classList.toggle('fn-spreading', spread);
     slot('spread').hidden = !spread;
-    var persistentSlot = PERSISTENT[view] || null;
-    ['dice', 'embed-req'].forEach(function (s) { slot(s).hidden = s !== persistentSlot; });
+    var persistentSlot = PERSISTENT[view] || (view === 'fieldid' && state.fieldIdMode === 'fab' && !spread ? 'embed-fab' : null);
+    ['dice', 'embed-req', 'embed-fab'].forEach(function (s) { slot(s).hidden = s !== persistentSlot; });
     slot('body').hidden = !!persistentSlot;
     renderHead(view, '');
     var body = slot('body');
-    if (!persistentSlot) { body.innerHTML = ''; body.scrollTop = 0; }
-    if (spread) { pageNotesSpread(); return; }
+    if (!persistentSlot) { body.innerHTML = ''; body.scrollTop = 0; body.onclick = null; }
+    if (kind === 'notes') { pageNotesSpread(); return; }
+    if (kind === 'fab' || persistentSlot === 'embed-fab') { pageFabricator(spread ? slot('spread') : slot('embed-fab'), spread); return; }
     var fn = {
       agentfile: pageAgentFile, fieldid: pageFieldId, req: pageRequisition, dice: pageDice,
       notes: pageQuickNotes, evidence: pageEvidence, rules: pageRules, settings: pageSettings
@@ -828,7 +841,7 @@
           incursion: AS.incursionText(data.char, data.state),
           incursionEmptyHtml: '<p class="as-text as-k">Not written yet — the Incursion section of the character sheet.</p>',
           actionsHtml: '<button type="button" class="fn-btn fn-red" data-go="play">Play (Live) ↗</button>' +
-            '<button type="button" class="fn-btn fn-ink" data-go="file">Open Agent File ↗</button>',
+            '<button type="button" class="fn-btn fn-ink" data-go="file">Whole Agent File ↗</button>',
           emptySheetHtml: data.state ? '' : '<p class="as-text as-k" style="margin-top:14px">No character sheet yet — Play opens character creation.</p>'
         });
         var ph = body.querySelector('[data-as-photo]');
@@ -836,9 +849,9 @@
         if (f && ph) { ph.classList.add('as-has-photo'); var holder = document.createElement('div'); holder.style.cssText = 'position:absolute;inset:0'; ph.appendChild(holder); setImage(holder, f); }
         AS.wireRolls(body);
         body.querySelector('[data-go="play"]').addEventListener('click', function () { navigate(url('stats/index.html?load=' + encodeURIComponent(a.code))); });
-        body.querySelector('[data-go="file"]').addEventListener('click', function () { navigate(url('dg-agent-portal.html?code=' + encodeURIComponent(a.code) + '#agent')); });
+        body.querySelector('[data-go="file"]').addEventListener('click', function () { navigate(url('agent-hub.html?code=' + encodeURIComponent(a.code))); });
         var photoBtn = body.querySelector('[data-go="photo"]');
-        if (photoBtn) photoBtn.addEventListener('click', function () { navigate(url('dg-agent-portal.html?code=' + encodeURIComponent(a.code) + '#cover')); });
+        if (photoBtn) photoBtn.addEventListener('click', function () { navigate(url('agent-hub.html?code=' + encodeURIComponent(a.code) + '#photos')); });
       }, function () { body.innerHTML = '<p class="fn-muted">Could not open the file — check the connection.</p>'; });
     });
   }
@@ -852,9 +865,9 @@
       var ag = agentAgency();
       body.innerHTML = '<div class="fn-idc-stage"><div class="fn-idc" data-fn-idc></div></div>' +
         '<p class="fn-p fn-idc-note" data-fn-idc-note></p>' +
-        '<div class="fn-actions"><button type="button" class="fn-btn fn-red" data-go="fab">Make Field ID ↗</button>' +
+        '<div class="fn-actions"><button type="button" class="fn-btn fn-red" data-go="fab">Make Field ID</button>' +
         '<button type="button" class="fn-btn fn-ink" data-go="blank">Blank ID Creator ↗</button></div>';
-      body.querySelector('[data-go="fab"]').addEventListener('click', function () { navigate(url('dg-agent-portal.html?code=' + encodeURIComponent(a.code) + '#ids')); });
+      body.querySelector('[data-go="fab"]').addEventListener('click', function () { state.fieldIdMode = 'fab'; render(); });
       drawIdCard(body.querySelector('[data-fn-idc]'), 1.25, 340);
       ensureIdCards().then(function () {
         var n = body.querySelector('[data-fn-idc-note]');
@@ -862,6 +875,33 @@
       }, function () {});
       body.querySelector('[data-go="blank"]').addEventListener('click', function () { navigate(url('dg-id-creator.html')); });
     });
+  }
+
+  /* ── The Field ID Fabricator (field-id.html): both pages on a desktop,
+     the page on a phone; starts on this Agent and their card ── */
+  function pageFabricator(host, spread) {
+    var a = currentAgent();
+    if (!a || a.friendly) {
+      host.innerHTML = '<div class="fn-spread-msg"></div>';
+      needAgent(host.firstChild, 'The Field ID');
+      return;
+    }
+    renderHead('fieldid', 'Fabricator');
+    var ag = agentAgency();
+    var src = url('field-id.html?embed=1&code=' + encodeURIComponent(a.code) +
+      (ag.dg ? '' : '&agency=' + encodeURIComponent(ag.code)) + '&era=' + encodeURIComponent(cardEra()));
+    var f = host.querySelector('iframe');
+    if (!f || f.getAttribute('data-src') !== src) {
+      host.innerHTML = '<button type="button" class="fn-btn fn-ink fn-small fn-spread-quick" data-fab="card" title="Or click the Field ID tab">Back to the card</button>';
+      f = document.createElement('iframe');
+      f.className = 'fn-embed';
+      f.setAttribute('data-dg-embed', 'fieldid');
+      f.setAttribute('data-src', src);
+      f.title = 'Field ID Fabricator';
+      f.src = src;
+      host.appendChild(f);
+      host.querySelector('[data-fab="card"]').addEventListener('click', function () { state.fieldIdMode = 'card'; render(); });
+    }
   }
 
   /* ── Requisition: the full form, and it only lives here ── */
@@ -938,7 +978,10 @@
         '<div class="fn-q-list" data-q="list"><p class="fn-muted">Loading your notes…</p></div>' +
         '<div class="fn-actions" style="margin-top:14px"><button type="button" class="fn-btn" style="flex:1;text-align:center" data-q="full">' + (narrow() ? 'Open Player Notes ↗' : 'Open the full notes') + '</button></div>';
       var ta = body.querySelector('[data-q="text"]');
-      body.addEventListener('click', function (e) {
+      // One handler, replaced on each render: the page body is reused, and an
+      // added listener per render made one tap act twice (Shared flipped on
+      // and straight back off; a Settings toggle did nothing).
+      body.onclick = function (e) {
         var b = e.target.closest('[data-q]');
         if (!b) return;
         var q = b.getAttribute('data-q');
@@ -950,7 +993,7 @@
           if (!narrow()) { state.notesMode = 'spread'; render(); }
           else navigate(url('notes/index.html?code=' + encodeURIComponent(a.code)));
         }
-      });
+      };
       loadQuickNotes(a, cellId, body);
     });
   }
@@ -1460,7 +1503,7 @@
     html += '<div class="fn-set-row"><div><div class="fn-set-t">Boot splash</div><div class="fn-set-s">Plays the clearance terminal once per session. Off skips the animation; the same screen still shows while a page loads.</div></div>' +
         '<button type="button" class="fn-toggle' + (bootOff ? '' : ' fn-on') + '" data-s="boot">' + (bootOff ? 'OFF' : 'ON') + '</button></div>';
     body.innerHTML = html;
-    body.addEventListener('click', function (e) {
+    body.onclick = function (e) { // one handler, as in quick notes
       var b = e.target.closest('[data-s],[data-s-btn]');
       if (!b) return;
       var id = b.getAttribute('data-s-btn');
@@ -1472,7 +1515,7 @@
       else if (k === 'gosheet' && a) { try { sessionStorage.setItem(OPEN_ON_ARRIVAL_KEY, 'settings'); } catch (err) { /* private mode */ } navigate(url('stats/index.html?load=' + encodeURIComponent(a.code))); }
       else if (k === 'boot') { var off = lsGet(BOOT_OFF_KEY) !== '1'; lsSet(BOOT_OFF_KEY, off ? '1' : '0'); b.classList.toggle('fn-on', !off); b.textContent = off ? 'OFF' : 'ON'; }
       else if (k === 'reload') reloadMyAgents(body);
-    });
+    };
     var sel = body.querySelector('[data-s="theme"]');
     if (sel && sw) sel.addEventListener('change', function () {
       var t = sw.document.getElementById('cs-theme-select');
@@ -1526,7 +1569,7 @@
     try { want = new URLSearchParams(location.search).get('fn') || ''; } catch (e) { want = ''; }
     try { if (!want && w && w !== window) want = new URLSearchParams(w.location.search).get('fn') || ''; } catch (e) { /* ignore */ }
     try { if (!want) { want = sessionStorage.getItem(OPEN_ON_ARRIVAL_KEY) || ''; sessionStorage.removeItem(OPEN_ON_ARRIVAL_KEY); } } catch (e) { /* ignore */ }
-    if (want && VIEWS.indexOf(want) !== -1 && !document.getElementById('fn-orders')) setTimeout(function () { open(want); }, 300);
+    if (want && (VIEWS.indexOf(want) !== -1 || want === 'fab') && !document.getElementById('fn-orders')) setTimeout(function () { open(want); }, 300);
   }
 
   /* ── Public API ── */
@@ -1653,7 +1696,7 @@
         setTimeout(function () {
           cleanup();
           ov.remove();
-          navigate(url('dg-agent-portal.html?code=' + encodeURIComponent(p.code) + '#cover'));
+          navigate(url('agent-hub.html?code=' + encodeURIComponent(p.code) + '#photos'));
         }, 900);
       });
     }
@@ -1692,23 +1735,23 @@
       if (!n) { n = document.createElement('div'); n.className = 'fn-nudge'; root.appendChild(n); }
       var photo = ob.step === 'photo';
       n.innerHTML = (photo
-        ? '<b>Next:</b> take your Face Plate photo on the Agent File\'s Profiling tab.'
+        ? '<b>Next:</b> describe your Agent and take their Face Plate photo, in their file on Agent Hub.'
         : '<b>Photo on file.</b> Next: make your Field ID.') +
         '<div class="fn-row" style="margin-top:8px"><button type="button" class="fn-btn" style="padding:5px 9px" data-nudge="go">' +
-        (photo ? (contentIs('dg-agent-portal.html') ? 'Show me' : 'Open Agent File') : 'Open Field ID') + '</button>' +
+        (photo ? (contentIs('agent-hub.html') ? 'Show me' : 'Open Agent File') : 'Make Field ID') + '</button>' +
         '<button type="button" class="fn-btn" style="padding:5px 9px;border-color:transparent" data-nudge="x" title="Dismiss">×</button></div>';
       n.onclick = function (e) {
         var b = e.target.closest('[data-nudge]');
         if (!b) return;
         if (b.getAttribute('data-nudge') === 'x') { ob.step = 'done'; lsSet(ONBOARD_KEY, JSON.stringify(ob)); onboardingNudge(); return; }
         if (photo) {
-          if (contentIs('dg-agent-portal.html')) {
-            try { var w = contentWin(); w.location.hash = 'cover'; } catch (err) { /* best effort */ }
-          } else navigate(url('dg-agent-portal.html?code=' + encodeURIComponent(ob.code) + '#cover'));
+          var w = contentIs('agent-hub.html') ? contentWin() : null;
+          if (w && w.dgAgentFile && w.dgAgentFile.code() === ob.code) w.dgAgentFile.focus('photos');
+          else navigate(url('agent-hub.html?code=' + encodeURIComponent(ob.code) + '#photos'));
         } else {
           ob.step = 'done'; lsSet(ONBOARD_KEY, JSON.stringify(ob));
           onboardingNudge();
-          navigate(url('dg-agent-portal.html?code=' + encodeURIComponent(ob.code) + '#ids'));
+          open('fab');
         }
       };
     }

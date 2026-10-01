@@ -1,6 +1,6 @@
 /* Field ID card templates -- one source for every place that draws an
-   Agent's cover credential: the Agent File's Field IDs tab
-   (dg-agent-portal.html) and Field Notes' Field ID pocket and page
+   Agent's cover credential: the Field ID Fabricator (field-id.html,
+   inside the notebook) and Field Notes' Field ID pocket and page
    (assets/field-notes.js). Per-agency, per-era templates (colors, layout,
    photo side, credential book vs CR80 card), the agency seals, and the
    renderer, which returns the card as inline-styled HTML (323x204 for a

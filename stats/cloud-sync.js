@@ -243,6 +243,7 @@
                 // it -- the Handler can amend it from A-Cell without touching
                 // the sheet -- so it wins over the copy inside the sheet.
                 if (res.incursion && window.dgIncursionSheet) window.dgIncursionSheet.set(res.incursion, { quiet: true });
+                if (window.dgAppearanceSheet) window.dgAppearanceSheet.load();
                 if (prefTheme && typeof setTheme === 'function') setTheme(prefTheme, { skipSave: true });
                 setTimeout(() => {
                     window.dgSaveLoad.save?.();

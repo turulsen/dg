@@ -36,6 +36,14 @@
                 + '<p>Tip: hover over any field label for a tooltip with guidance on what to enter and how it fits into the Delta Green setting.</p>'
         },
         {
+            label: 'Appearance',
+            selectors: ['#cs-appearance-fieldset'],
+            tipsHTML:
+                '<p><b>How does your Agent look?</b> Your Handler makes your Agent\'s photos from this &mdash; the Face Plate on their file, ID and notebook.</p>'
+                + '<p>Be specific: <i>dirty blond with grey at the temples</i> beats <i>blond</i>. Stuck? <b>Fill the rest at random</b> fills only the blank lines, to suit your Agent\'s sex and profession.</p>'
+                + '<p>Anything left blank can be finished later on your Agent\'s file in Agent Hub.</p>'
+        },
+        {
             label: 'Incursion',
             selectors: ['#cs-incursion-fieldset'],
             tipsHTML:

@@ -2362,12 +2362,11 @@
     document.head.appendChild(s);
   }
 
-  // Clicking a "Take Photo" note opens that Agent's Profiling tab in a
-  // new tab (dg-agent-portal.html's own #cover handling auto-restores
-  // the code there and, per autoCreateBriefFromCharacterThenRetry_()'s
-  // own comment, auto-fills the Cover form from the character sheet if
-  // no Agent File exists yet -- exactly the case that put this note up
-  // in the first place). A separate click-wiring pass rather than an
+  // Clicking a "Take Photo" note opens that Agent's file (their Agent Hub
+  // tab, #photos) in a new tab -- the Appearance brief first if it isn't
+  // finished, and, per autoCreateBriefFromCharacterThenRetry_() in
+  // assets/agent-file.js, filled from the character sheet if no Agent
+  // File exists yet (exactly the case that put this note up). A separate click-wiring pass rather than an
   // <a> in the markup: the roster-list note sits inside a <button> (see
   // renderList()), and nesting an interactive <a> inside a <button> is
   // invalid HTML. Idempotent to call repeatedly (each note only ever
@@ -2379,7 +2378,7 @@
       note.dataset.wired = '1';
       note.addEventListener('click', function (e) {
         e.stopPropagation();
-        window.open('dg-agent-portal.html?code=' + encodeURIComponent(note.dataset.takePhoto) + '#cover', '_blank', 'noopener');
+        window.open('agent-hub.html?code=' + encodeURIComponent(note.dataset.takePhoto) + '#photos', '_blank', 'noopener');
       });
     });
   }

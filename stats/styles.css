@@ -8498,3 +8498,16 @@ body.dg-notes-fullscreen-active {
 /* The Incursion (stats/incursion-sheet.js) */
 .cs-incursion-intro{ margin:0 0 10px; font-size:.9em; opacity:.8; font-style:italic; }
 #cs-incursion-picker{ margin-bottom:4px; }
+
+/* Appearance (stats/appearance-sheet.js): a creation-wizard step only --
+   afterwards it lives on the Agent's file in Agent Hub. */
+#cs-appearance-fieldset{ display:none; }
+#wiz-content #cs-appearance-fieldset{ display:block; }
+.cs-appearance-intro{ margin:0 0 10px; font-size:.9em; opacity:.8; font-style:italic; }
+.cs-appearance-actions{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
+.cs-appearance-status{ font-size:.85em; opacity:.75; }
+.cs-appearance-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:8px 14px; }
+.cs-appearance-grid label{ display:flex; flex-direction:column; gap:3px; font-size:.85em; }
+.cs-appearance-grid input, .cs-appearance-grid textarea{ width:100%; box-sizing:border-box; }
+.cs-appearance-wide{ grid-column:1 / -1; }
+.cs-appearance-grid textarea{ min-height:60px; }

@@ -278,6 +278,8 @@ function matchProfessionKey(profStr) {
             if (state.bio.motivations !== undefined) set('cs-motivations', state.bio.motivations);
             if (state.bio.personalDetails !== undefined) set('cs-personal-details', state.bio.personalDetails);
             if (window.dgIncursionSheet) window.dgIncursionSheet.set(state.bio.incursion || null);
+            // Appearance lives on the Agent File, not in the sheet: fetch it.
+            if (window.dgAppearanceSheet) setTimeout(window.dgAppearanceSheet.load, 0);
             // A named character needs a Cloud Save code minted before
             // Export/Open Agent File can be clicked -- setting cs-name's
             // .value here doesn't fire the 'input' event ensureCloudCode()
@@ -695,6 +697,7 @@ function matchProfessionKey(profStr) {
             el.checked = false;
         });
         if (window.dgIncursionSheet) window.dgIncursionSheet.set(null);
+        if (window.dgAppearanceSheet) window.dgAppearanceSheet.clear();
         // Not the theme picker: it's a display setting, not character
         // data. Resetting it to its first option (X-Files) left the page
         // showing one theme while collectState() saved another -- every

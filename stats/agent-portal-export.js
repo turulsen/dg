@@ -179,7 +179,7 @@
       if (btn) { btn.disabled = false; }
       if (status) {
         status.innerHTML = `Sent. Agent File code: <strong>${agentCode}</strong> — ` +
-          `<a href="../dg-agent-portal.html" target="_blank" rel="noopener">open Agent Portal &rarr;</a>`;
+          `<a href="../agent-hub.html?code=${encodeURIComponent(agentCode)}" target="_blank" rel="noopener">open the Agent File &rarr;</a>`;
         status.style.color = '#2d6a2d';
       }
     }).catch(() => {
@@ -191,15 +191,14 @@
   }
 
   // Nav shortcut above the theme selector: export (best effort -- run()
-  // silently no-ops if there's no name yet) then jump straight to the
-  // Agent Portal's Agent File tab. The localStorage write in run() happens
+  // silently no-ops if there's no name yet) then jump straight to this
+  // Agent's file (their Agent Hub tab). The localStorage write in run() happens
   // synchronously before its fetch, and that fetch is keepalive:true, so
   // navigating away immediately doesn't lose either.
   //
   // Pass this character's OWN code explicitly via ?code= rather than
-  // relying on dg_last_agent alone -- dg-agent-portal.html's own
-  // openSpecificAgent() already treats an explicit ?code= as always
-  // winning over the dg_last_agent fallback (see its comment), and
+  // relying on dg_last_agent alone -- Agent Hub opens exactly the
+  // ?code= Agent's tab (openFromUrl() there), and
   // dg_last_agent is a single browser-wide "most recent agent" pointer
   // that stays stale whenever run() no-ops (blank name, a beat before
   // Cloud Save has minted a code) -- this used to open whichever OTHER
@@ -214,8 +213,8 @@
     try { code = run(); } catch (e) { /* best effort -- still navigate below */ }
     const go = () => {
       window.location.href = code
-        ? '../dg-agent-portal.html?code=' + encodeURIComponent(code) + '#agent'
-        : '../dg-agent-portal.html#agent';
+        ? '../agent-hub.html?code=' + encodeURIComponent(code)
+        : '../agent-hub.html';
     };
     if (!lastExport) { go(); return; }
     Promise.race([lastExport.catch(() => { }), new Promise(r => setTimeout(r, 8000))]).then(go);
