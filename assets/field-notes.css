@@ -76,6 +76,11 @@ html.dg-fn-host #notes-widget-btn{ display:none !important; }
 
 /* ── Closed: desktop notebook ── */
 #fn-closed{ position:fixed; right:22px; bottom:20px; z-index:9990; display:flex; align-items:flex-end; gap:12px; }
+/* Desktop: room under the page for the closed notebook (and its radio
+   chip) in the bottom-right corner, so whatever ends a page -- the
+   creation wizard's Next button, a form's Submit -- can always be
+   scrolled clear of it. The phone has its own allowance below. */
+@media (min-width:760px){ html.dg-fn-host:not(.dg-fn-shell):not(.dg-fn-embedded) body{ padding-bottom:200px !important; } }
 #fn-root .fn-cover{
   position:relative; width:128px; height:164px; cursor:pointer; border:0; padding:0;
   border-radius:5px 9px 9px 5px; transition:transform .16s ease;

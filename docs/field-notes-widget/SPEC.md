@@ -340,6 +340,32 @@ Motivations are.
   scratch pad above the reference tables (its intro text unchanged); the
   chosen rows light up in the tables.
 
+### Full journey (Agent + Handler, emulators)
+
+A scripted run of the whole thing through the real pages on the Firebase
+emulators, nothing touching production: a new player through the 9-step
+wizard (Incursion rolled, one line hand-picked, then freehand), the
+clearance briefing (opening with their incident), the Agent File photo,
+every notebook page (Agent File, Field ID card with the Face Plate,
+Requisition submitted, Evidences + remark, Notes spread + editor + quick
+notes, radio pager playing the Handler's broadcast, dice reaching the
+Handler's live rolls, Rules, Settings); the Handler signing in to A-Cell,
+making a Cell, adding the Agent, filing two Operations and flagging one
+Active, releasing Evidence, broadcasting, and amending the Incursion; then
+the Agent's notebook and sheet showing all of it; and the same Agent on a
+phone. 73/73. It found three things, now fixed:
+
+- On a desktop window the closed notebook in the corner covered the
+  creation wizard's *Next* on its two tallest steps (Skills, Bonds), with
+  no way to scroll it clear. Pages hosting the notebook now leave 200px
+  under themselves on desktop (the phone already had its own allowance).
+- A brand-new recruit accepts the clearance briefing before Profiling has
+  created their Agent File, so the acceptance stayed on the device only.
+  It is now filed on the Agent File as soon as one exists.
+- That acceptance was filed "so the Handler has it" but A-Cell never
+  showed it: the dossier now reads *Clearance briefing: accepted (date)* or
+  *not yet*.
+
 ## 10. Trying it on the private preview
 
 From Cloud Shell (the repo is public, so the clone needs no login):

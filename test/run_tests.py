@@ -11569,9 +11569,15 @@ def test_field_notes_round3(p):
     docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, {"v": 1, "bio": {"name": "Mara Voss", "employer": "DEA", "player_name": "fn tester"}}, "fn tester")
     docs["evidence/ev_fn_2"] = {"title": "Voicemail Transcript", "body": "Static.", "cell_id": "", "operation_id": "",
                                 "visible_to": ["ALL"], "released": True, "created_at": 1600}
-    page, errs = _field_notes_page(p, docs=docs, extra_init="localStorage.setItem('dg_notes_identity_%s', JSON.stringify({color:'#2b6cb0', font:'Nothing You Could Do'}));" % FN_CODE)
+    page, errs = _field_notes_page(p, docs=docs, extra_init="localStorage.setItem('dg_notes_identity_%s', JSON.stringify({color:'#2b6cb0', font:'Nothing You Could Do'})); localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % (FN_CODE, FN_CODE))
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    # Accepted on this device before the Agent had an Agent File: filed on
+    # the Agent File once there is one, for the Handler.
+    ack = wait_for_condition(lambda: (fs_doc(page, f"briefs/{FN_CODE}") or {}).get("standing_orders_ack_at"), timeout_ms=8000)
+    record("notebook", "a clearance briefing accepted before the Agent File existed is filed on it later", bool(ack), str(ack))
+    pad = page.evaluate("() => parseInt(getComputedStyle(document.body).paddingBottom, 10)")
+    record("notebook", "desktop pages leave room under them for the closed notebook (a wizard's Next is never stuck under it)", pad >= 180, str(pad))
     # Radio and dice live in the notebook: under the card pockets.
     page.evaluate("() => window.dgFieldNotes.open('agentfile')")
     kit = wait_for_condition(lambda: page.evaluate("() => { const k = document.querySelector('#fn-veil [data-fn-slot=kit-radio] .fn-pg-case'); return k && k.offsetParent ? 1 : null; }"), timeout_ms=8000)
@@ -11786,12 +11792,14 @@ def test_incursion(p):
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     wait_for_condition(lambda: any(l["path"] == "characters" for l in page.evaluate("() => window.__dgFirestoreListeners || []")), timeout_ms=8000)
     push_firestore_snapshot(page, "characters", [], [{"id": code, "character_json": json.dumps(st), "updated_at": "", "player_name": ""}])
-    push_firestore_snapshot(page, "briefs", [], [])
+    push_firestore_snapshot(page, "briefs", [], [{"id": code, "agent_code": code, "char_name": "Ines Cutter", "standing_orders_ack_at": "2026-10-01T07:00:00.000Z"}])
     push_firestore_snapshot(page, "cells", [], [])
     wait_for_condition(lambda: "Ines Cutter" in page.inner_text("#play-agent-list") or None, timeout_ms=8000)
     page.click("#play-agent-list .play-agent-btn:first-child")
     shown = wait_for_condition(lambda: page.evaluate("(c) => { const el = document.getElementById('pv-incursion-' + c); return el ? el.innerText : null; }", code), timeout_ms=8000) or ""
     record("incursion", "A-Cell's dossier shows the Agent's Incursion", "the quarry" in shown, shown)
+    clr = page.evaluate("() => [].map.call(document.querySelectorAll('#play-view .pv-player'), e => e.textContent).join(' | ')")
+    record("incursion", "A-Cell's dossier shows when the Agent accepted the clearance briefing", "accepted 2026-10-01" in clr, clr)
     page.click(f"#play-view [data-inc-edit='{code}']")
     page.fill(f"#pv-incursion-{code} [data-inc-text]", "Handler: it was the lighthouse, not the quarry.")
     page.click(f"#pv-incursion-{code} .pv-inc-save")

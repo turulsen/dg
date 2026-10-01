@@ -124,6 +124,8 @@
     // Phone: leave room under the page for the closed notebook's buttons
     // (the shell's own copy floats over this page's bottom edge).
     guestStyle.textContent += '@media (max-width:759px){html.dg-fn-host:not(.dg-fn-embedded) body{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 76px)!important}}';
+    // Desktop: the same for the closed notebook in the corner (see field-notes.css).
+    guestStyle.textContent += '@media (min-width:760px){html.dg-fn-host:not(.dg-fn-embedded) body{padding-bottom:200px!important}}';
     if (EMBEDDED_IN_NOTEBOOK) document.documentElement.classList.add('dg-fn-embedded');
     window.dgFieldNotes = {
       isHost: false,
@@ -266,6 +268,14 @@
       d.char = res[0];
       try { d.state = res[0] && res[0].character_json ? JSON.parse(res[0].character_json) : null; } catch (e) { d.state = null; }
       d.brief = res[1];
+      // Accepted before this Agent had an Agent File (a brand-new recruit
+      // takes the briefing before Profiling creates one): file the
+      // acknowledgement now that there is one, so the Handler has it too.
+      var acked = ordersAck()[code];
+      if (d.brief && acked && !d.brief.standing_orders_ack_at) {
+        window.dgStore.updateBrief(code, { standing_orders_ack_at: new Date(acked).toISOString() })
+          .then(function () { d.brief.standing_orders_ack_at = new Date(acked).toISOString(); }, function () { /* next load tries again */ });
+      }
       if (res[2]) res[2].forEach(function (doc) { d.cells.push(Object.assign({ cell_id: doc.id }, doc.data())); });
       if (res[3]) res[3].forEach(function (doc) { var o = doc.data() || {}; d.ops.push(Object.assign({}, o, { operation_id: o.operation_id || doc.id })); });
       d.cell = d.cells.filter(function (c) { return (c.member_codes || []).indexOf(code) !== -1; })[0] || null;

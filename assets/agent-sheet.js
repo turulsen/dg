@@ -135,18 +135,23 @@
 
   /* ── Short physical description from the Agent File (Profiling) ── */
   function lc(s) { return String(s || '').trim().toLowerCase(); }
+  // A short description from the Agent File's profiling: who, build, hair
+  // and eyes -- the glance a witness would give. (The full detail stays
+  // on the Agent File itself.)
   function physical(brief, fallback) {
     var b = brief || {};
     var parts = [];
-    var who = [b.age_range, lc(b.sex), b.nationality].filter(Boolean).join(' ');
-    if (who) parts.push(who.charAt(0).toUpperCase() + who.slice(1) + '.');
-    var frame = [b.build ? lc(b.build) + ' build' : '', b.posture ? lc(b.posture) + ' posture' : ''].filter(Boolean).join(', ');
-    if (frame) parts.push(frame.charAt(0).toUpperCase() + frame.slice(1) + '.');
-    var hair = [lc(b.hair_color), lc(b.hair_texture), 'hair'].filter(Boolean).join(' ');
-    if (b.hair_color || b.hair_texture) parts.push(hair.charAt(0).toUpperCase() + hair.slice(1) + (b.hair_style ? ', ' + lc(b.hair_style) : '') + '.');
-    var face = [b.eye_color || b.eye_shape ? [lc(b.eye_color), lc(b.eye_shape), 'eyes'].filter(Boolean).join(' ') : '',
-      b.skin ? lc(b.skin) + ' skin' : '', b.facial_hair && !/clean|none/.test(lc(b.facial_hair)) ? lc(b.facial_hair) : ''].filter(Boolean).join(', ');
-    if (face) parts.push(face.charAt(0).toUpperCase() + face.slice(1) + '.');
+    // the first clause of a long profiling answer is the useful part
+    var short = function (t) { return lc(String(t || '').split(/[,;—–(]| - /)[0].trim()); };
+    var cap = function (t) { return t.charAt(0).toUpperCase() + t.slice(1); };
+    var who = [b.age_range, short(b.sex), b.nationality].filter(Boolean).join(' ');
+    if (who) parts.push(cap(who) + '.');
+    // "wiry build", but "build average in every dimension"
+    var with_ = function (t, noun) { t = short(t); return t.split(/\s+/).length <= 2 ? t + ' ' + noun : noun + ' ' + t; };
+    var look = [b.build ? with_(b.build, 'build') : '',
+      (b.hair_color ? with_(b.hair_color, 'hair') : ''),
+      (b.eye_color ? with_(b.eye_color, 'eyes') : '')].filter(Boolean).join(', ');
+    if (look) parts.push(cap(look) + '.');
     var s = parts.join(' ');
     return s || String(fallback || '');
   }

@@ -2496,6 +2496,13 @@
       '<div class="pv-bio"><span class="' + (kia ? 'kia-name' : '') + '">' + escapeHtml(bio.name || 'Unknown Agent') + '</span>' + (kia ? ' <span class="stamp">KIA</span>' : '') + '</div>' +
       '<div class="pv-sub">' + subParts.join(' &middot; ') + '</div>' +
       '<div class="pv-player">Player: <b>' + (bio.player_name ? escapeHtml(bio.player_name) : '<span class="pv-empty-note">not set</span>') + '</b></div>' +
+      // The clearance briefing (Field Notes' Standing Orders) the Agent
+      // accepted, filed on their Agent File.
+      '<div class="pv-player">Clearance briefing: <b>' + (function () {
+        var at = (briefsByCode[code] || {}).standing_orders_ack_at;
+        var dt = at ? new Date(at) : null;
+        return dt && !isNaN(dt) ? 'accepted ' + escapeHtml(dt.toISOString().slice(0, 10)) : '<span class="pv-empty-note">not yet</span>';
+      })() + '</b></div>' +
       '</div>' +
       '<div class="pv-vitals">' +
       '<div class="pv-vital"><div class="lbl">HP</div><div class="val">' + (derived.hp ?? '&mdash;') + '</div></div>' +
