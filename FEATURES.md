@@ -9,14 +9,15 @@ reverse-engineer it from the code alone. Pairs with `BUGFIXES.md`
 (every bug ever fixed, chronologically) and `README.md` (the shorter
 player/Handler-facing overview).
 
-**Branch note:** this document describes the architecture as it stands
-on `claude/delta-green-agent-hub-sn79d4` — Google Sheets (via Apps
-Script) as the backend, Google Drive for images/audio. A separate
-`firebase-migration` branch (already partially merged to `main`) is
-layering Firestore and Firebase Storage on top of this — see "Firebase
-migration status" near the end. Where the two disagree, this doc is
-describing the Sheets/Drive version; check which branch you're
-actually looking at before trusting a specific function name.
+**Branch note:** most of this document describes the architecture as it
+stood on `claude/delta-green-agent-hub-sn79d4` — Google Sheets (via Apps
+Script) as the backend, Google Drive for images/audio. **That backend is
+retired as of v2.0.0 (2026-09-30, Code.gs v97):** every page now reads
+and writes Firestore and Firebase Storage directly (see §12). The page
+and feature descriptions (§1–§8) still hold; §9–§11 (Apps Script
+actions, the Sheets data model) are history now — useful for old
+records and the one-time migration, not for how a live call works.
+Check the current code before trusting a specific function name.
 
 ---
 
@@ -27,11 +28,20 @@ actually looking at before trusting a specific function name.
 | `index.html` | Everyone | Boot-splash animation, then a three-card chooser: **Agent** (player), **Friendly** (one-shot player, pregen) or **A-Cell** (Handler, password-gated). Entry point for the whole site. |
 | `friendly.html` | One-shot players | Pick a pregenerated Agent (`friendly/pregens.json`, built by `scripts/pregens/`) and play: read-only dossier, every stat/skill/weapon rolls via the Dice Roller, HP/WP/SAN kept on paper. No Firebase sign-in unless the pregen is in a Cell (then its id — a valid Agent Code shape, e.g. `FR-USSS-PPD` — signs in through `exchangeAgentToken` like any Agent and rolls into that Cell's `dice_rolls` feed; no backend or rules change was needed). The Dice Roller takes its identity from the page (`dgDice.setIdentity`), never from the device's own roster. |
 | `agent-hub.html` | Players | A player's own hub. Reads this browser's local Agent roster and renders one folder tab per Agent, plus "+ New Recruit". Each tab has **Play** (character sheet, loaded, Live Play on), **Agent File**, **Field ID**, a read-only mirror of Evidence filed for that Agent, and (if unassigned) a Cover Identity search box. |
-| `dg-agent-portal.html` | Players | One Agent's dossier. Three tabs: **Profiling** (physical description + AI portrait prompt), **Agent File** (the assembled, read-only dossier — gated behind Profiling being complete), **Field IDs** (in-page fake-credential card generator). Backed by the Apps Script backend. |
-| `stats/index.html` | Players | The actual Delta Green character sheet/creator — stats, skills, professions, Bonds, equipment, dice roller, Live Play tracker bar, five visual themes, import from five different formats, Cloud Save. This is a ported third-party project, see §2. |
+| `dg-agent-portal.html` | Players | One Agent's dossier. Three tabs: **Profiling** (physical description + AI portrait prompt), **Agent File** (the assembled, read-only dossier — gated behind Profiling being complete), **Field IDs** (in-page fake-credential card generator). Backed by Firestore (`briefs/{code}`) and Firebase Storage. |
+| `stats/index.html` | Players | The actual Delta Green character sheet/creator — stats, skills, professions, Bonds, equipment, dice roller, Live Play tracker bar, three visual themes, import from five different formats, Cloud Save. This is a ported third-party project, see §2. |
 | `a-cell.html` | Handler | The Handler's dashboard, password-gated. Tabs: **Play** (every Agent, simplified, for running the table), **Cells** (group Agents under a Handler), **Evidence** (file documents/photos, scoped to a Cell or campaign-wide), **Sheet** (dense Excel-style roster), **Music** (Table Radio broadcast controls), **Admin** (delete/restore Agents, including Agent-File-only entries). |
 | `dg-id-creator.html` | Players | A standalone, older fake-ID-card generator. Superseded by the Field IDs tab's own Fabricator; kept in the repo, not linked from anywhere, no code system of its own left. |
 | `notes/index.html` | Players & Handler | Player Notes — a shared/private notebook scoped to a Cell. See §3. |
+| `the-incursion.html` | Players | The Incursion tables (what first brought the Agent to Delta Green): read them, roll them, or pick lines with the shared picker (`assets/incursion.js`). Linked from Agent Hub. See §2. |
+
+**Field Notes notebook (unreleased, on `claude/new-session-thjzt6`,
+not on `main`):** a leather notebook (`assets/field-notes.js`/`.css`)
+on every player page, replacing the floating Table Radio pill and Dice
+Roller panel and folding Agent File, Field ID, Requisition, Radio, Dice,
+Notes, Evidence, Rules and Settings into one place. Not on A-Cell. Full
+design and the record of each feedback round:
+`docs/field-notes-widget/SPEC.md`.
 
 Every page is a single self-contained HTML file with inline CSS/JS,
 except `stats/` (a direct multi-file copy of the upstream project, kept
@@ -90,6 +100,30 @@ sync to the backend, keyed by an Agent Code — starts the moment a real
 name is entered, debounces every edit after that, no Start/Stop
 button. This is what lets a character follow a player between devices
 without a file changing hands.
+
+**The Incursion (unreleased, on `claude/new-session-thjzt6` with the
+Field Notes notebook):** what first brought the Agent to Delta Green,
+part of the Agent the way Motivations are. One module,
+`assets/incursion.js` (`window.dgIncursion`), holds the five tables
+(Environment D4, Vector D6, Cover Story D8, Complication D10, Incursion
+D12, worded exactly as `the-incursion.html` always had them) and a
+picker: roll all, roll or choose any one line (mix and match), and/or
+write it freehand. The text follows the picks until the player writes
+their own; "Rewrite from the lines above" hands it back. Value shape:
+`{ picks: {environment, vector, cover, complication, incursion}, text,
+custom }` (picks are 1-based rows, 0 = not chosen). Where it lives:
+- the character sheet's Incursion fieldset (after Biography) and its own
+  creation-wizard step (`stats/incursion-sheet.js`), saved in the sheet
+  state as `bio.incursion`;
+- the Agent's record, `characters/{code}.incursion`, with `by`
+  (`player`/`handler`) and `updated_at`, written by
+  `dgStore.saveIncursion()` (merge, so the sheet's autosave never wipes
+  it). When the sheet loads, the record's copy wins;
+- read on the notebook's Agent File page and its orders terminal
+  (`>incident_on_file:`), via `dgAgentSheet.incursionText()`;
+- A-Cell's dossier shows it, and the Handler can edit it there
+  (`set_incursion`), using the same picker;
+- `the-incursion.html` uses the same picker in place of its old roll UI.
 
 **Export to Agent File** (`stats/agent-portal-export.js`): the "Open
 Agent File" button sends a finished character to the Agent Portal
@@ -656,7 +690,7 @@ actually kept around once that was reverted to a no-op.
 
 ---
 
-## 12. Firebase migration status (separate branch/effort)
+## 12. Firebase migration status (done: the Sheet is retired in v2.0.0)
 
 A `firebase-migration` branch (with some of its work already merged
 directly to `main`, ahead of this branch) is layering Firestore and
@@ -726,26 +760,25 @@ widgets). Live and current — no longer just planned.
 ## 13. Open / known-incomplete work
 
 **Currently-open items live in GitHub Issues, not here** —
-`https://github.com/turulsen/dg/issues`. This section used to carry the
+`https://github.com/turulsen/dg-campaign/issues`. This section used to carry the
 live list directly, which meant two places could say different things
 about whether something was still open; see `VERSIONING.md` for the
 full reasoning on the split (Issues = live status board, `BUGFIXES.md`
 = narrative archive of what shipped, this section = closed/decided
 matters worth a permanent note).
 
-As of this writing, five open tracked issues: #5 (Handler-facing access
+As of 2026-10-01, four open tracked issues (#10 is closed; see
+`BUGFIXES.md`'s "Issue #10's actual root cause"): #5 (Handler-facing access
 control — shared A-Cell password, dossiers reachable by Agent Code, no
 per-player identity), #8 (Agent Hub: long load screen then empty
 character sheet — a regression from four commits already reverted off
 `main`, root cause not yet confirmed), #9 (app feels laggy/unresponsive
 overall on phone, incl. a "backend is busy" error with only one real
-user online), #10 (Play → an existing Agent sometimes shows the
-Character Creation Wizard instead of the real sheet), #39 (Table
-Radio's main-track volume/mix control still doesn't work on iOS Safari
-and Brave — root-caused to a cross-origin Firebase Storage URL with no
-CORS headers silencing Web Audio output entirely on WebKit; needs a
-Storage bucket CORS config change, outside this repo, before the
-GainNode fix already built for it can be safely re-enabled).
+user online), #39 (Table Radio's main-track volume/mix control on iOS
+Safari and Brave — the code side is finished, see `BUGFIXES.md`'s
+"Issue #39, finished"; it goes live once the Storage bucket CORS config
+in `storage.cors.json` is applied by hand, and the issue stays open
+until that is confirmed).
 
 **Resolved, kept here as a permanent record (not re-opened as issues):**
 

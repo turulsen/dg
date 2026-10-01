@@ -6027,3 +6027,19 @@ channel -- but that preview reads and writes the live Firestore, so a
 pre-per-era Agent File opened there could have lost its `face_plate_url`
 (the per-era columns are untouched; re-uploading the Face Plate restores
 it).
+
+## `main`'s CI red since #55: a radio test read a hover colour mid-transition
+
+Not an app bug -- the live app was fine. CI only runs after a merge
+(pushes to `main`), so the v2.0.0 merge (#55) was the first time
+`test_table_radio_theme_consistent_style` ran in CI against that code,
+and it failed there. The test clicks the radio pill and compares the
+dial's colours across two themes, but the click leaves the pointer over
+the Tune In button once the panel opens, so it was comparing hover
+colours -- and one theme was read mid-transition (`rgb(168,200,143)`
+against the other's finished `rgb(168,200,144)`). The #56 merge was red
+for the same reason. The test now moves the pointer away and lets the
+transition settle, so it compares the resting accent
+(`rgb(143,174,90)`), which is what it is about. Shipped in #57; `main`'s
+CI green again. `VERSIONING.md` §3 now spells out that CI doesn't run
+on pull requests, and how to run it by hand on a branch before merging.

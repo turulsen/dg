@@ -28,7 +28,7 @@
    these risks solving the wrong problem, or "fixing" something that's
    actually working as designed.
 
-3. **Check GitHub Issues** (`https://github.com/turulsen/dg/issues`) for
+3. **Check GitHub Issues** (`https://github.com/turulsen/dg-campaign/issues`) for
    whether this is already tracked. See `VERSIONING.md` §5 for the full
    split between Issues (live, open items), `BUGFIXES.md` (narrative
    archive of what shipped), and `FEATURES.md` §13 (resolved/decided

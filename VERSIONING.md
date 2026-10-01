@@ -13,9 +13,9 @@ or trying to roll anything back; it assumes you've already read
 Before any of this, the codebase already had two ad hoc counters:
 
 - `backend/Code.gs`'s own header comment (`// Google Apps Script backend
-  v96 — ...` as of this writing), bumped by convention whenever the
+  v97 — ...` as of this writing), bumped by convention whenever the
   backend changes in a way worth tracking.
-- `sw.js`'s `CACHE_NAME` (`dg-hub-shell-v158` as of this writing), bumped
+- `sw.js`'s `CACHE_NAME` (`dg-hub-shell-v171` as of this writing), bumped
   on every `SHELL_FILES`-listed change so returning visitors don't get
   stuck on stale JS.
 
@@ -59,7 +59,14 @@ anything for).
 reconstruction of the 260 commits before it — don't backfill v0.x tags
 onto old commits, it's not worth the archaeology and there's no
 consumer depending on that history being versioned. Latest tag as of
-this writing is **v1.4.0**, cut 2026-09-29 — PRs #41–#50 since v1.3.0:
+this writing is **v2.0.0**, cut 2026-09-30 — PR #55, the major bump §2
+reserved for it: the Google Sheet is retired and every page reads and
+writes Firestore directly (Code.gs v97 is left serving only the Drive
+image proxy for old `gdrive:` links; going live took the one-time steps
+in `docs/firebase-migration/SHEET-RETIREMENT.md`). On `main` since then,
+untagged: #56 (the main photo follows the Agent File's Active Era rule
+everywhere; a patch) and #57 (a CI test fix only) — together the next
+tag would be **v2.0.1**. v1.4.0 (2026-09-29) was PRs #41–#50:
 the **Friendly** clearance (one-shot players, all 62 Agent Dossiers,
 `scripts/pregens/`), the Table Radio main-track volume on iOS (#39,
 live once the bucket CORS config in `storage.cors.json` is applied),
@@ -102,10 +109,14 @@ the tag agree when they don't.
 
 ## 3. CI (`.github/workflows/ci.yml`)
 
-Runs on every push to `main` and `firebase-migration` only — not
-`claude/new-session-*` or other short-lived branches, which get
-validated indirectly once their work lands on one of these two via the
-existing cutover-merge pattern. Two jobs:
+Runs on every push to `main` and `firebase-migration` only, or by hand
+(`workflow_dispatch`, on any branch) — not on `claude/new-session-*` or
+other short-lived branches, and not on pull requests, so a PR's own
+checks show nothing: its work is validated by the session's local run
+of the suite, then by CI once it is merged into `main`. That gap is how
+#55 merged with a test that then failed on `main` (a hover-colour race,
+fixed in #57). To check a branch before merging, start the workflow by
+hand on it. Two jobs:
 
 1. **Shell-cache discipline** (`scripts/check-shell-cache-bump.js`) —
    hard-fails the push if any `SHELL_FILES`-listed file changed without
@@ -115,7 +126,7 @@ existing cutover-merge pattern. Two jobs:
    every install for over a week) — now enforced instead of only
    remembered.
 2. **QA harness** (`test/run_tests.py`) — the existing Playwright suite
-   (96 test functions, 750+ individual checks as of this writing), run
+   (130 test functions, 1,000+ individual checks as of this writing), run
    headless against a local static server. Fails the push on any
    non-zero exit.
 
@@ -126,11 +137,11 @@ bump; redeploy is an out-of-band manual step CI has no way to observe)
 that would produce false-positive noise if auto-enforced. They stay a
 human/session discipline (§1 of `CLAUDE.md`), not a CI gate.
 
-**No branch protection is configured to block on this** (yet) — the
-existing workflow pushes directly to `main` without PRs, and requiring
-status checks to pass would need that to change first. CI here reports;
-it doesn't currently gate. Revisit if the direct-push workflow ever
-changes to a PR-based one.
+**No branch protection is configured to block on this** (yet). Work
+reached `main` by direct push until v2.0.0; since #55 it lands through
+PRs, but CI still only runs after the merge, so it reports and doesn't
+gate. Gating would need a `pull_request` trigger in `ci.yml` plus a
+required status check on `main`.
 
 ## 4. Rollback plan
 
@@ -256,7 +267,7 @@ against what the rolled-back frontend commit actually expects).
 
 Three places used to blur together here. The split, going forward:
 
-- **GitHub Issues** (`https://github.com/turulsen/dg/issues`) — the
+- **GitHub Issues** (`https://github.com/turulsen/dg-campaign/issues`) — the
   *live* board. Anything currently open and unresolved gets filed here,
   not as a `FEATURES.md` bullet. Default labels only (`bug` for actual
   defects, `enhancement` for known gaps/feature work) — no custom label
