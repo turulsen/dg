@@ -351,7 +351,11 @@ function afFetch(payload) {
     case 'generate_plate_image': {
       delete p.action;
       const call = payload.action === 'generate_prompt' ? window.dgStore.generatePrompt : window.dgStore.generatePlateImage;
-      work = call(code, p).catch(err => ({ status: 'ERROR', message: (err && err.message) || 'Request failed.' }));
+      // "internal" is the SDK's word for "no usable answer" (the function
+      // crashed, or the request never got through) -- say so plainly.
+      work = call(code, p).catch(err => ({ status: 'ERROR', message: (err && err.code === 'functions/internal')
+        ? 'the AI service did not answer. Try again in a minute; if it keeps failing, tell your Handler.'
+        : ((err && err.message) || 'Request failed.') }));
       break;
     }
     default: {

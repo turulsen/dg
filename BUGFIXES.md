@@ -6043,3 +6043,39 @@ transition settle, so it compares the resting accent
 (`rgb(143,174,90)`), which is what it is about. Shipped in #57; `main`'s
 CI green again. `VERSIONING.md` §3 now spells out that CI doesn't run
 on pull requests, and how to run it by hand on a branch before merging.
+
+## Sheet scrolling laggy on an iPad (X-Files and Son of Sam themes)
+
+Reported on the Field Notes preview: scrolling the character sheet in
+edit mode stuttered on an iPad, right after making a Friendly pregen
+into an Agent (which lands on the X-Files theme). Both dark themes pulse
+a glow around the five big panels (Biography, Skills, Bonus Skills,
+Bonds, Equipment) by animating their `box-shadow`. A box-shadow can't be
+animated on the GPU, so every frame repainted the whole panel; the
+Skills panel alone is thousands of pixels tall. Measured in Chromium
+with the CPU slowed 6x: 44 of 180 scroll frames over 33 ms as it was,
+2-5 with the fix. The glow is now drawn once, as a fixed shadow on each
+panel's `::after`, and only that layer's opacity pulses, with the same
+rhythm and stagger and the same peak glow. New
+`test_sheet_theme_glow_is_cheap`. `sw.js` `CACHE_NAME` v175.
+
+**Doubled punctuation in Agent Hub's physical description.** Also from
+the preview: "hair dark brown to nearly black., eyes very pale
+blue-gray..". `dgAgentSheet.physical()` (`assets/agent-sheet.js`) joins
+the Appearance answers into one sentence and kept each answer's own full
+stop. Trailing punctuation is now dropped from each piece. New
+`test_physical_description_punctuation`.
+
+Same report, not code bugs, made clearer instead:
+- **The clearance briefing "came up all of a sudden".** It works as
+  specified: armed when a new Agent lands on the sheet (here, Friendly's
+  "Make this my Agent"), shown the first time the player leaves the
+  sheet, which also saves the sheet. Nothing said why it had appeared,
+  so it now opens with a plain line: "<Agent> is saved. Before their
+  first assignment, the clearance briefing every new Agent gets, once."
+- **"Error: internal [0]" under the era prompts.** That's the Firebase
+  SDK's catch-all for a Cloud Function that gave no usable answer (it
+  crashed or the request never got through). The Agent File now says
+  "the AI service did not answer. Try again in a minute; if it keeps
+  failing, tell your Handler." The cause itself is server-side and is
+  being checked in the function logs (`generatePrompt`).

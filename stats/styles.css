@@ -911,32 +911,52 @@
 }
 
 /* ── Fieldset pulsing border glow — slow, ominous heartbeat ─────────────── */
+/* The glow is drawn once, on a layer around the panel, and only that
+   layer's opacity pulses. Animating box-shadow itself repainted the
+   whole (very tall) panel every frame -- scrolling the sheet on an
+   iPad stuttered. */
 .theme-son-of-sam #cs-biography-fieldset,
 .theme-son-of-sam .panel-skills,
 .theme-son-of-sam .panel-bonus-skills,
 .theme-son-of-sam #cs-bonds-fieldset,
 .theme-son-of-sam #eq-picker-fieldset {
+    position: relative;
+}
+
+.theme-son-of-sam #cs-biography-fieldset::after,
+.theme-son-of-sam .panel-skills::after,
+.theme-son-of-sam .panel-bonus-skills::after,
+.theme-son-of-sam #cs-bonds-fieldset::after,
+.theme-son-of-sam #eq-picker-fieldset::after {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow: 0 0 22px rgba(204, 0, 0, 0.32);
+    opacity: 0.2;
+    will-change: opacity;
     animation: sos-border-pulse 4s ease-in-out infinite;
 }
 
 /* Stagger each fieldset's pulse so they don't all beat in sync */
-.theme-son-of-sam #cs-biography-fieldset {
+.theme-son-of-sam #cs-biography-fieldset::after {
     animation-delay: 0.0s;
 }
 
-.theme-son-of-sam .panel-skills {
+.theme-son-of-sam .panel-skills::after {
     animation-delay: 1.4s;
 }
 
-.theme-son-of-sam .panel-bonus-skills {
+.theme-son-of-sam .panel-bonus-skills::after {
     animation-delay: 2.1s;
 }
 
-.theme-son-of-sam #cs-bonds-fieldset {
+.theme-son-of-sam #cs-bonds-fieldset::after {
     animation-delay: 2.8s;
 }
 
-.theme-son-of-sam #eq-picker-fieldset {
+.theme-son-of-sam #eq-picker-fieldset::after {
     animation-delay: 3.5s;
 }
 
@@ -1132,19 +1152,19 @@
 
     0%,
     100% {
-        box-shadow: 0 0 5px rgba(204, 0, 0, 0.08);
+        opacity: 0.2;
     }
 
     40% {
-        box-shadow: 0 0 18px rgba(204, 0, 0, 0.28);
+        opacity: 0.8;
     }
 
     55% {
-        box-shadow: 0 0 10px rgba(204, 0, 0, 0.15);
+        opacity: 0.45;
     }
 
     70% {
-        box-shadow: 0 0 22px rgba(204, 0, 0, 0.32);
+        opacity: 1;
     }
 }
 
@@ -1330,33 +1350,53 @@ select {
 }
 
 /* Fieldset pulsing border glow — slow phosphor heartbeat */
+/* The glow is drawn once, on a layer around the panel, and only that
+   layer's opacity pulses. Animating box-shadow itself repainted the
+   whole (very tall) panel every frame -- scrolling the sheet on an
+   iPad stuttered. */
 .theme-xfiles #cs-biography-fieldset,
 .theme-xfiles .panel-skills,
 .theme-xfiles .panel-bonus-skills,
 .theme-xfiles #cs-bonds-fieldset,
 .theme-xfiles #eq-picker-fieldset {
-    animation: xfiles-border-pulse 4s ease-in-out infinite !important;
+    position: relative;
+}
+
+.theme-xfiles #cs-biography-fieldset::after,
+.theme-xfiles .panel-skills::after,
+.theme-xfiles .panel-bonus-skills::after,
+.theme-xfiles #cs-bonds-fieldset::after,
+.theme-xfiles #eq-picker-fieldset::after {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow: 0 0 22px rgba(0, 181, 33, 0.30);
+    opacity: 0.2;
+    will-change: opacity;
+    animation: xfiles-border-pulse 4s ease-in-out infinite;
 }
 
 /* Stagger each fieldset so they don't all beat together */
-.theme-xfiles #cs-biography-fieldset {
-    animation-delay: 0.0s !important;
+.theme-xfiles #cs-biography-fieldset::after {
+    animation-delay: 0.0s;
 }
 
-.theme-xfiles .panel-skills {
-    animation-delay: 1.4s !important;
+.theme-xfiles .panel-skills::after {
+    animation-delay: 1.4s;
 }
 
-.theme-xfiles .panel-bonus-skills {
-    animation-delay: 2.1s !important;
+.theme-xfiles .panel-bonus-skills::after {
+    animation-delay: 2.1s;
 }
 
-.theme-xfiles #cs-bonds-fieldset {
-    animation-delay: 2.8s !important;
+.theme-xfiles #cs-bonds-fieldset::after {
+    animation-delay: 2.8s;
 }
 
-.theme-xfiles #eq-picker-fieldset {
-    animation-delay: 3.5s !important;
+.theme-xfiles #eq-picker-fieldset::after {
+    animation-delay: 3.5s;
 }
 
 /* Custom scrollbar — phosphor on black */
@@ -1444,19 +1484,19 @@ select {
 
     0%,
     100% {
-        box-shadow: 0 0 5px rgba(0, 181, 33, 0.06);
+        opacity: 0.2;
     }
 
     40% {
-        box-shadow: 0 0 18px rgba(0, 181, 33, 0.25);
+        opacity: 0.8;
     }
 
     55% {
-        box-shadow: 0 0 10px rgba(0, 181, 33, 0.13);
+        opacity: 0.45;
     }
 
     70% {
-        box-shadow: 0 0 22px rgba(0, 181, 33, 0.30);
+        opacity: 1;
     }
 }
 

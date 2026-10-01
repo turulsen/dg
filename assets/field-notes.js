@@ -1635,7 +1635,11 @@
     ov.id = 'fn-orders';
     ov.setAttribute('role', 'dialog');
     ov.setAttribute('aria-label', 'Clearance briefing');
-    ov.innerHTML = '<div class="fn-orders-term"><div data-o="log"></div><div data-o="prompt" hidden>' +
+    // Out of character, so the player knows why this came up: it
+    // isn't an error or a lost page, the Agent is saved, and it's once.
+    ov.innerHTML = '<div class="fn-orders-term"><div class="fn-orders-why">' +
+      esc((p.name || 'Your new Agent') + ' is saved. Before their first assignment, the clearance briefing every new Agent gets, once.') +
+      '</div><div data-o="log"></div><div data-o="prompt" hidden>' +
       '<div>CAN WE CALL ON YOU? [Y/N]<span class="fn-cursor"></span></div>' +
       '<div class="fn-orders-prompt"><button type="button" class="fn-orders-key" data-o="y">Y — you can call on me</button>' +
       '<button type="button" class="fn-orders-key" data-o="n">N — not now</button></div></div></div>';

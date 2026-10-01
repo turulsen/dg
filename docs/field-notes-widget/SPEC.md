@@ -110,6 +110,10 @@ evidence, "Gergo") is replaced by the real Agent's data everywhere.
   navigation away: the shell's nav, a link, Back, or reopening the app
   later). The terminal comes up over whatever page they were heading to.
   Never on a normal page load for an Agent that already acknowledged.
+- **Why it's up:** a plain, out-of-character line heads the terminal
+  ("<Agent> is saved. Before their first assignment, the clearance
+  briefing every new Agent gets, once."), so it never reads as an
+  error or a lost page.
 - **Look:** green-on-black terminal, like the Clearance boot splash:
   the clearance agreement is signed, the briefing gets its own random
   code name, then the lines type in one at a time, ending in the

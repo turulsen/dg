@@ -11737,6 +11737,49 @@ def test_main_photo_from_active_era(p):
     page.close()
     return errs_all
 
+def test_physical_description_punctuation(p):
+    """Agent Hub's short physical description (dgAgentSheet.physical)
+    joins the Appearance answers into a sentence; an answer typed with
+    its own full stop read "nearly black., eyes very pale blue-gray.."."""
+    page = p.new_page()
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgAgentSheet && window.dgAgentSheet.physical", timeout=10000)
+    got = page.evaluate("""() => window.dgAgentSheet.physical({ age_range: 'Early 40s', sex: 'Male', nationality: 'British.',
+        build: 'extremely thin and elongated.', hair_color: 'dark brown to nearly black.', eye_color: 'very pale blue-gray.' })""")
+    record("hub", "the physical description never doubles punctuation from answers that end in a full stop",
+           got == "Early 40s male British. Build extremely thin and elongated, hair dark brown to nearly black, eyes very pale blue-gray.", got)
+    page.close()
+    return errs
+
+def test_sheet_theme_glow_is_cheap(p):
+    """The X-Files and Son of Sam themes' pulsing panel glow (reported:
+    scrolling the sheet on an iPad was laggy). Animating box-shadow on the
+    tall panels repainted them every frame; the glow is now a fixed shadow
+    on each panel's ::after and only its opacity animates, which the
+    compositor handles without repainting."""
+    page = p.new_page()
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(1200)
+    for theme in ("xfiles", "son-of-sam"):
+        page.evaluate("(t) => { document.body.className = document.body.className.replace(/theme-\\S+/g, ''); document.body.classList.add('theme-' + t); }", theme)
+        page.wait_for_timeout(200)
+        st = page.evaluate("""() => ['#cs-biography-fieldset', '.panel-skills', '.panel-bonus-skills', '#cs-bonds-fieldset', '#eq-picker-fieldset'].map(sel => {
+            const el = document.querySelector(sel); if (!el) return [sel, 'missing'];
+            const own = getComputedStyle(el), after = getComputedStyle(el, '::after');
+            return [sel, own.animationName, after.animationName, after.boxShadow !== 'none', after.pointerEvents]; })""")
+        record("sheet-theme", f"{theme}: no panel animates its own box-shadow (it repainted the whole panel every frame)",
+               all(r[1] == "none" for r in st), str(st))
+        record("sheet-theme", f"{theme}: the glow still pulses, as an opacity animation on each panel's ::after",
+               all(len(r) == 5 and r[2] != "none" and r[3] and r[4] == "none" for r in st), str(st))
+    page.close()
+    return errs
+
 def test_field_notes_standing_orders(p):
     """New-Agent onboarding: the wizard finishing (or an Agent imported
     onto the sheet) arms the Standing Orders; they come up only once the
@@ -11764,6 +11807,8 @@ def test_field_notes_standing_orders(p):
     record("onboarding", "leaving the sheet brings up the clearance briefing: five tenets, then 'can we call on you? [Y/N]'",
            all(s in term for s in ["IT HAS HAPPENED BEFORE", "KNOWING SPREADS IT", "WE ARE FEW", "THE WORK IS NECESSARY",
                                    "ASK NOTHING", "We need your silence", "CAN WE CALL ON YOU? [Y/N]", "briefing_codename:"]), term[:400])
+    record("onboarding", "the briefing says, out of character, why it came up: this Agent is saved, and it's once",
+           "Ivy Imported is saved" in term and "once" in term, term[:200])
     page.keyboard.press("n")
     page.wait_for_timeout(300)
     record("onboarding", "N closes it and keeps the orders pending",
@@ -12309,6 +12354,8 @@ def main():
         safe(test_appearance_wizard_step, browser, area="appearance")
         safe(test_incursion, browser, area="incursion")
         safe(test_field_notes_standing_orders, browser, area="onboarding")
+        safe(test_sheet_theme_glow_is_cheap, browser, area="sheet-theme")
+        safe(test_physical_description_punctuation, browser, area="hub")
         safe(test_main_photo_from_active_era, browser, area="photo")
         safe(test_field_notes_shell, browser, area="notebook-shell")
         safe(test_friendly_pregen_builder, browser, area="friendly")

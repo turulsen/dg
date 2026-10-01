@@ -142,9 +142,11 @@
     var b = brief || {};
     var parts = [];
     // the first clause of a long profiling answer is the useful part
-    var short = function (t) { return lc(String(t || '').split(/[,;—–(]| - /)[0].trim()); };
+    // ...without its own full stop: "black." would read "black., eyes"
+    var bare = function (t) { return String(t || '').trim().replace(/[\s.!?…:]+$/, ''); };
+    var short = function (t) { return bare(lc(String(t || '').split(/[,;—–(]| - /)[0])); };
     var cap = function (t) { return t.charAt(0).toUpperCase() + t.slice(1); };
-    var who = [b.age_range, short(b.sex), b.nationality].filter(Boolean).join(' ');
+    var who = [bare(b.age_range), short(b.sex), bare(b.nationality)].filter(Boolean).join(' ');
     if (who) parts.push(cap(who) + '.');
     // "wiry build", but "build average in every dimension"
     var with_ = function (t, noun) { t = short(t); return t.split(/\s+/).length <= 2 ? t + ' ' + noun : noun + ' ' + t; };
