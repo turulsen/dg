@@ -1,8 +1,8 @@
 /* ══════════════════════════════════════════════
    SHELL NAV -- hub.html's persistent top nav (Phase 3 of the app-shell
    plan, docs/firebase-migration/ on this branch). Replaces the earlier
-   manual test-swap buttons with the real thing: two destinations,
-   Agent Hub and A-Cell, swapping #dg-shell-content's src the same way
+   manual test-swap buttons with the real thing: three destinations,
+   Agent Hub, A-Cell and Friendly, swapping #dg-shell-content's src the same way
    the old test buttons did (plain iframe.src assignment) -- the OUTER
    shell document, and everything hoisted in it (Table Radio, Dice
    Roller), is never touched by that, which is the entire point of the
@@ -27,7 +27,8 @@
   "use strict";
   var DESTINATIONS = [
     { id: 'agent-hub', label: 'Agent Hub', target: 'agent-hub.html' },
-    { id: 'a-cell', label: 'A-Cell', target: 'a-cell.html' }
+    { id: 'a-cell', label: 'A-Cell', target: 'a-cell.html' },
+    { id: 'friendly', label: 'Friendly', target: 'friendly.html' }
   ];
 
   // Which top-level destination a given iframe path "belongs to" --
@@ -36,6 +37,7 @@
   // leading-slash-anchored pattern would silently never match there.
   function classify(pathname) {
     if (pathname.indexOf('a-cell.html') !== -1) return 'a-cell';
+    if (pathname.indexOf('friendly.html') !== -1) return 'friendly';
     if (pathname.indexOf('agent-hub.html') !== -1 ||
         pathname.indexOf('dg-agent-portal.html') !== -1 ||
         pathname.indexOf('/stats/') !== -1 ||

@@ -139,7 +139,8 @@ body{
   <div class="app-stamp">Handler Access Only</div>
 </div>
 <div style="max-width:1000px;margin:-8px auto 16px;padding:0 16px;">
-  <a href="index.html" style="font-family:'Special Elite',monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#c8bfa0;text-decoration:none;">← Agent Hub</a>
+  <a href="index.html" id="idc-back-link" style="font-family:'Special Elite',monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#c8bfa0;text-decoration:none;">← Agent Hub</a>
+  <script>if (window.frameElement && window.frameElement.id === 'dg-shell-content') document.getElementById('idc-back-link').style.display = 'none';</script>
 </div>
 
 <div class="workspace">
@@ -923,6 +924,7 @@ window.addEventListener('message', function(e) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="assets/table-radio.js"></script>
 <script src="assets/dice-roller.js?v=9"></script>
+<script src="assets/field-notes.js"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>
 </body>
 </html>

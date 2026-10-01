@@ -66,8 +66,11 @@
   // "double dice roller" when entering Live Play. window.frameElement
   // is same-origin-only, so this is null for every standalone visit and
   // for any other embedding not in this explicit list.
+  // data-dg-embed: a page embedded inside the Field Notes notebook
+  // (Requisition, desktop Notes) -- the notebook's host page owns radio.
   if (window.frameElement &&
-      (window.frameElement.id === 'dg-shell-content' || window.frameElement.id === 'dg-split-sheet-frame')) return;
+      (window.frameElement.id === 'dg-shell-content' || window.frameElement.id === 'dg-split-sheet-frame' ||
+       window.frameElement.hasAttribute('data-dg-embed'))) return;
   var FIREBASE_SDK_VERSION = '12.18.0';
   // Public Web SDK config for the dg-app-b3447 Firebase project -- not
   // a secret, same reasoning as every other client-side Firebase config;
@@ -702,9 +705,7 @@
   // local copy. Pulls elapsed/duration from whichever embed kind is
   // actually live; hides itself entirely for a kind that can't report
   // both (the generic-iframe fallback, or before an API/embed is ready).
-  function updateProgressDisplay() {
-    var wrap = document.getElementById('dg-radio-progress');
-    if (!wrap) return;
+  function progressNow_() {
     var elapsed = null, duration = null;
     if (currentEmbedKind === 'audio') {
       var audioEl = document.getElementById('dg-radio-audio');
@@ -721,10 +722,17 @@
       elapsed = scPosition / 1000;
       duration = scDuration / 1000;
     }
-    if (elapsed === null || !duration) {
+    return (elapsed === null || !duration) ? null : { elapsed: elapsed, duration: duration };
+  }
+  function updateProgressDisplay() {
+    var wrap = document.getElementById('dg-radio-progress');
+    if (!wrap) return;
+    var pr = progressNow_();
+    if (!pr) {
       wrap.style.display = 'none';
       return;
     }
+    var elapsed = pr.elapsed, duration = pr.duration;
     wrap.style.display = '';
     var fill = document.getElementById('dg-radio-progress-fill');
     var label = document.getElementById('dg-radio-progress-label');
@@ -968,14 +976,73 @@
     var dial = wireDial(panel, getChannel() || CHANNELS[0], function () { /* live-preview only, commit on confirm */ });
     document.getElementById('dg-radio-cancel').addEventListener('click', renderCollapsed);
     document.getElementById('dg-radio-confirm-tune').addEventListener('click', function () {
-      setChannel(dial.get());
-      lastStartedAt = null;
-      lastPaused = false;
-      seenStingerFires = null;
-      applyAmbientLayers_([]);
-      renderTuned();
-      startPolling();
+      tuneTo(dial.get());
     });
+  }
+
+  // Shared by this widget's own buttons and window.dgRadio below (the
+  // Field Notes notebook's pager and quick-tune chip drive the same
+  // engine instead of keeping a second copy of any of this).
+  function tuneTo(ch) {
+    setChannel(ch);
+    lastStartedAt = null;
+    lastPaused = false;
+    seenStingerFires = null;
+    applyAmbientLayers_([]);
+    renderTuned();
+    startPolling();
+    notifyState_();
+  }
+  function leaveRadio() {
+    stopPolling();
+    stopProgressInterval();
+    clearChannel();
+    window._dgRadioLast = null;
+    seenStingerFires = null;
+    applyAmbientLayers_([]);
+    destroyActivePlayers();
+    renderCollapsed();
+    notifyState_();
+  }
+  function setMutedLive(m) {
+    setMuted(m);
+    var muteBtn = document.getElementById('dg-radio-mute');
+    if (muteBtn) muteBtn.textContent = isMuted() ? 'MUTED' : 'SOUND';
+    if (!applyLiveMuteVolume()) renderEmbed(window._dgRadioLast);
+    notifyState_();
+  }
+  function setVolumeLive(v) {
+    setVolume(v);
+    var slider = document.getElementById('dg-radio-volume');
+    if (slider) slider.value = String(v);
+    // Same as the slider's own handler: dragging volume means "I want to
+    // hear this", so it unmutes.
+    if (isMuted()) {
+      setMuted(false);
+      var muteBtn = document.getElementById('dg-radio-mute');
+      if (muteBtn) muteBtn.textContent = 'SOUND';
+    }
+    if (!applyLiveMuteVolume()) renderEmbed(window._dgRadioLast);
+    notifyState_();
+  }
+  function resumeAudio() {
+    // Wake the AudioContext inside the tap itself: renderEmbed() may
+    // wait on the main track's CORS answer (issue #39) and so build the
+    // gain-routed <audio> after the gesture has ended.
+    ensureAudioCtx_();
+    setMuted(false);
+    var muteBtn = document.getElementById('dg-radio-mute');
+    if (muteBtn) muteBtn.textContent = 'SOUND';
+    renderEmbed(window._dgRadioLast);
+    notifyState_();
+  }
+  var notifyTimer_ = null;
+  function notifyState_() {
+    if (notifyTimer_) return;
+    notifyTimer_ = setTimeout(function () {
+      notifyTimer_ = null;
+      try { window.dispatchEvent(new CustomEvent('dg-radio-state')); } catch (e) { /* old engine */ }
+    }, 0);
   }
 
   function applyExpandedClass() {
@@ -1018,24 +1085,15 @@
     refreshDebugLine_();
 
     document.getElementById('dg-radio-mute').addEventListener('click', function () {
-      setMuted(!isMuted());
-      var muteBtn = document.getElementById('dg-radio-mute');
-      if (muteBtn) muteBtn.textContent = isMuted() ? 'MUTED' : 'SOUND';
-      if (!applyLiveMuteVolume()) renderEmbed(window._dgRadioLast);
+      setMutedLive(!isMuted());
     });
     document.getElementById('dg-radio-volume').addEventListener('input', function (e) {
-      setVolume(parseInt(e.target.value, 10) || 0);
       // Dragging the volume slider implies wanting to hear that level --
-      // without this, a still-Muted widget (the default until the first
-      // Sound tap) would apply the new volume internally but stay
-      // silent, reading as "the volume slider doesn't do anything" even
-      // though it technically did.
-      if (isMuted()) {
-        setMuted(false);
-        var muteBtn = document.getElementById('dg-radio-mute');
-        if (muteBtn) muteBtn.textContent = 'SOUND';
-      }
-      if (!applyLiveMuteVolume()) renderEmbed(window._dgRadioLast);
+      // without the unmute in setVolumeLive(), a still-Muted widget (the
+      // default until the first Sound tap) would apply the new volume
+      // internally but stay silent, reading as "the volume slider
+      // doesn't do anything" even though it technically did.
+      setVolumeLive(parseInt(e.target.value, 10) || 0);
     });
     document.getElementById('dg-radio-toggle-expand').addEventListener('click', function () {
       setExpanded(!isExpanded());
@@ -1047,6 +1105,7 @@
       slot.innerHTML = dialHtml();
       wireDial(slot, ch, function (newCh) {
         if (newCh === ch) return;
+        notifyState_();
         setChannel(newCh);
         ch = newCh;
         lastStartedAt = null;
@@ -1062,26 +1121,8 @@
         startPolling();
       });
     });
-    document.getElementById('dg-radio-leave').addEventListener('click', function () {
-      stopPolling();
-      stopProgressInterval();
-      clearChannel();
-      window._dgRadioLast = null;
-      seenStingerFires = null;
-      applyAmbientLayers_([]);
-      destroyActivePlayers();
-      renderCollapsed();
-    });
-    document.getElementById('dg-radio-resume').addEventListener('click', function () {
-      // Wake the AudioContext inside the tap itself: renderEmbed() may
-      // wait on the main track's CORS answer (issue #39) and so build the
-      // gain-routed <audio> after the gesture has ended.
-      ensureAudioCtx_();
-      setMuted(false);
-      var muteBtn = document.getElementById('dg-radio-mute');
-      if (muteBtn) muteBtn.textContent = 'SOUND';
-      renderEmbed(window._dgRadioLast);
-    });
+    document.getElementById('dg-radio-leave').addEventListener('click', leaveRadio);
+    document.getElementById('dg-radio-resume').addEventListener('click', resumeAudio);
   }
 
   function escapeHtml(str) {
@@ -1533,6 +1574,7 @@
       if (lastStartedAt) { window._dgRadioLast = null; renderEmbed(null); }
       lastStartedAt = null;
       lastPaused = false;
+      notifyState_();
       return;
     }
     var label = np.track_title || np.track_url;
@@ -1552,6 +1594,7 @@
       window._dgRadioLast = np;
       if (!applyLivePauseState(lastPaused)) renderEmbed(np);
     }
+    notifyState_();
   }
 
   var radioUnsubscribe = null;
@@ -1582,6 +1625,43 @@
   function stopPolling() {
     if (radioUnsubscribe) { radioUnsubscribe(); radioUnsubscribe = null; }
   }
+
+  // Control surface for the Field Notes notebook (assets/field-notes.js),
+  // which hides this widget's own floating chrome and shows its pager
+  // face + quick-tune chip instead. Everything still runs through this
+  // engine: same Firestore listener, same <audio>/YouTube/SoundCloud
+  // players, same iOS gain routing (issue #39).
+  window.dgRadio = {
+    channels: CHANNELS.slice(),
+    state: function () {
+      var np = window._dgRadioLast || null;
+      var ch = getChannel();
+      var statusEl = document.getElementById('dg-radio-status');
+      var resumeBtn = document.getElementById('dg-radio-resume');
+      var pr = ch ? progressNow_() : null;
+      return {
+        channel: ch, tuned: !!ch, muted: isMuted(), volume: getVolume(),
+        track: np && np.track_url ? (np.track_title || np.track_url) : '',
+        paused: !!(np && np.paused),
+        live: !!(ch && np && np.track_url && !np.paused),
+        status: ch ? ((statusEl && statusEl.textContent) || 'Waiting for the Handler…') : '',
+        resumeNeeded: !!(resumeBtn && resumeBtn.style.display && resumeBtn.style.display !== 'none'),
+        elapsed: pr ? pr.elapsed : null, duration: pr ? pr.duration : null,
+        formatTime: formatTime_
+      };
+    },
+    tune: function (ch) {
+      ch = String(ch || getChannel() || CHANNELS[0]);
+      if (CHANNELS.indexOf(ch) === -1) return;
+      if (getChannel() === ch && radioUnsubscribe) return;
+      if (getChannel()) { window._dgRadioLast = null; renderEmbed(null); }
+      tuneTo(ch);
+    },
+    leave: function () { if (getChannel()) leaveRadio(); },
+    setMuted: function (m) { setMutedLive(!!m); },
+    setVolume: function (v) { v = Math.max(0, Math.min(100, parseInt(v, 10) || 0)); setVolumeLive(v); },
+    resume: resumeAudio
+  };
 
   if (getChannel()) {
     renderTuned();

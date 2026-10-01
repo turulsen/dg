@@ -358,6 +358,40 @@
 </style>
 </head>
 <body>
+<script>
+/* Requisition only lives inside the Field Notes notebook (docs/
+   field-notes-widget/SPEC.md): the notebook embeds this page with
+   ?embed=1 in an iframe marked data-dg-embed. Opened any other way --
+   an old bookmark, a link, a page inside the Hub shell -- it forwards
+   into the notebook's Requisition pocket for the same Agent instead. */
+(function () {
+  var fe = null;
+  try { fe = window.frameElement; } catch (e) { fe = null; }
+  var params = new URLSearchParams(location.search);
+  var embedded = fe && fe.hasAttribute && fe.hasAttribute('data-dg-embed');
+  if (embedded || params.get('embed') === '1') {
+    document.documentElement.classList.add('req-embedded');
+    return;
+  }
+  var code = params.get('code');
+  if (code) { try { localStorage.setItem('dg_stats_cloud_code', code.trim().toUpperCase()); } catch (e) { /* best effort */ } }
+  if (fe && fe.id === 'dg-shell-content') {
+    // Inside the shell: open the shell's notebook, and put the shell back
+    // on the Agent Hub underneath it.
+    try { sessionStorage.setItem('dg_fn_open', 'req'); } catch (e) { /* best effort */ }
+    location.replace('agent-hub.html');
+    return;
+  }
+  location.replace('hub.html?fn=req');
+})();
+</script>
+<style>
+  /* Inside the Field Notes notebook: the form IS the notebook's page --
+     no dark desk behind it, no floating drop shadow, full page width. */
+  html.req-embedded .back-link-row{ display:none; }
+  html.req-embedded body{ padding:0; background:#f4eed8; background-image:none; min-height:0; }
+  html.req-embedded .sheet{ max-width:none; box-shadow:none; }
+</style>
 
 <div class="back-link-row">
   <!-- Hidden inside the app shell -- see dg-agent-portal.html's own
@@ -1344,5 +1378,6 @@ function applyAgentSkills(state){
 </script>
 <script src="assets/table-radio.js"></script>
 <script src="assets/dice-roller.js?v=9"></script>
+<script src="assets/field-notes.js"></script>
 </body>
 </html>

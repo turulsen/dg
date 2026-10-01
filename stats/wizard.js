@@ -36,6 +36,23 @@
                 + '<p>Tip: hover over any field label for a tooltip with guidance on what to enter and how it fits into the Delta Green setting.</p>'
         },
         {
+            label: 'Appearance',
+            selectors: ['#cs-appearance-fieldset'],
+            tipsHTML:
+                '<p><b>How does your Agent look?</b> Your Handler makes your Agent\'s photos from this &mdash; the Face Plate on their file, ID and notebook.</p>'
+                + '<p>Be specific: <i>dirty blond with grey at the temples</i> beats <i>blond</i>. Stuck? <b>Fill the rest at random</b> fills only the blank lines, to suit your Agent\'s sex and profession.</p>'
+                + '<p>Anything left blank can be finished later on your Agent\'s file in Agent Hub.</p>'
+        },
+        {
+            label: 'Incursion',
+            selectors: ['#cs-incursion-fieldset'],
+            tipsHTML:
+                '<p><b>What brought your Agent to Delta Green?</b></p>'
+                + '<p>Beyond the edges of reality are unnatural powers that outstrip human understanding. Sometimes those powers bleed through and destroy everything they touch. Sometimes people study them, and the knowledge festers like a cancer of the mind. Your Agent probably experienced the unnatural in some crisis that caught the attention of Delta Green. The Agent was recruited, so we know a few things about how the Agent reacted&mdash;but the reasons for your Agent\'s responses are up to you:</p>'
+                + '<ul><li>Your Agent recognized the catastrophic danger of the incursion.</li><li>Your Agent helped stop it.</li><li>Your Agent agreed to stay quiet for the sake of protecting the public and preventing another incursion.</li><li>When Delta Green needed help with another investigation and cover-up later, your Agent answered the call.</li></ul>'
+                + '<p>What happened in the incursion is up to the Handler. If the Handler says to make it up and you want some ideas, roll all five lines, roll or choose any one of them, or write it in your own words &mdash; or mix the two.</p>'
+        },
+        {
             label: 'Skills',
             selectors: ['.panel-skills'],
             tips: 'Skills\n\nA skill is a body of specialized knowledge that takes months or years to learn and decades to master. Each skill has a percentile rating, from zero to 99.',
@@ -525,6 +542,9 @@
     function finish() {
         localStorage.removeItem('dg-wiz-step');
         deactivate();
+        // New-Agent onboarding (assets/field-notes.js): arms the Standing
+        // Orders terminal for the next time the player leaves the sheet.
+        try { window.dispatchEvent(new CustomEvent('dg-wizard-finished')); } catch (e) { /* best effort */ }
         // The page used to stay wherever the last step had scrolled it --
         // on a phone that left the finished Agent half-way down with the
         // "Enter Live Play" button cut off under the Hub's header. Start

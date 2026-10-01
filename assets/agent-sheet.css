@@ -1,0 +1,75 @@
+/* The Agent File paper (assets/agent-sheet.js): Field Notes' Agent File
+   page and each Agent's folder in the Agent Hub. Friendly's dossier
+   layout (friendly.html .pv-*), in the shared paper/ink palette. */
+.as-paper{
+  --as-ink:#1c1608; --as-ink-2:#4a3f28; --as-ink-3:#8a7a5a; --as-rule:rgba(160,130,70,.5); --as-red:#8b1a1a;
+  font-family:'Courier Prime',monospace; color:var(--as-ink-2); font-size:12px; line-height:1.55;
+}
+.as-paper *, .as-paper *::before, .as-paper *::after{ box-sizing:border-box; }
+.as-head{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding-bottom:10px; border-bottom:2px solid var(--as-ink); }
+.as-photo{ flex:none; }
+.as-id{ min-width:0; flex:1 1 170px; }
+.as-name{ font-family:'Special Elite',monospace; font-size:21px; line-height:1.15; color:var(--as-ink); overflow-wrap:anywhere; }
+.as-sub{ color:var(--as-ink-3); font-size:11px; margin-top:3px; }
+.as-vitals{ display:flex; gap:14px; }
+.as-vital{ text-align:center; }
+.as-lbl{ font-size:9px; color:var(--as-ink-3); letter-spacing:.1em; }
+.as-val{ font-family:'Special Elite',monospace; font-size:18px; color:var(--as-ink); }
+.as-actions{ display:flex; gap:8px; flex-wrap:wrap; margin:12px 0 2px; }
+.as-about{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:0 22px; }
+@media (max-width:560px){ .as-about{ grid-template-columns:1fr; } }
+.as-sec-hd{
+  font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--as-ink-2); margin:16px 0 7px; border-bottom:1px solid var(--as-rule); padding-bottom:4px;
+  display:flex; justify-content:space-between; align-items:baseline; gap:10px;
+}
+.as-text{ margin:0; font-size:12px; line-height:1.65; color:var(--as-ink-2); }
+.as-k{ color:var(--as-ink-3); }
+.as-cell b{ display:block; font-family:'Courier Prime',monospace; font-weight:700; font-size:15px; letter-spacing:.04em; text-transform:uppercase; color:var(--as-ink); }
+.as-members{ list-style:none; margin:5px 0 0; padding:0 0 0 12px; border-left:2px solid var(--as-rule); }
+.as-members li{ padding:2px 0; font-size:12px; color:var(--as-ink); }
+.as-members li.as-kia .as-mname{ text-decoration:line-through; text-decoration-color:var(--as-red); text-decoration-thickness:1.5px; color:var(--as-red); }
+.as-members .as-stamp{ display:inline-block; margin-left:6px; font-family:'Special Elite',monospace; font-size:8px; letter-spacing:.14em; text-transform:uppercase; border:1.5px solid var(--as-red); color:var(--as-red); padding:0 5px; vertical-align:1px; }
+.as-ops{ margin-top:10px; }
+.as-op{ display:flex; gap:8px; align-items:center; padding:3px 0; font-size:12px; color:var(--as-ink-2); }
+.as-op.as-op-active{ color:var(--as-ink); font-weight:bold; }
+.as-op .as-stamp{ margin-left:auto; font-family:'Special Elite',monospace; font-size:8px; letter-spacing:.14em; text-transform:uppercase; border:1.5px solid var(--as-red); color:var(--as-red); padding:1px 6px; font-weight:400; }
+.as-stats{ display:grid; grid-template-columns:repeat(6,1fr); gap:6px; }
+@media (max-width:420px){ .as-stats{ grid-template-columns:repeat(3,1fr); } }
+.as-paper button{ font:inherit; width:auto; margin:0; box-shadow:none; text-transform:none; letter-spacing:normal; }
+.as-stat{ text-align:center; border:1px solid var(--as-rule); padding:6px 2px 5px; cursor:pointer; background:transparent; color:inherit; border-radius:0; }
+.as-stat:hover, .as-roll:hover{ border-color:var(--as-red); background:rgba(139,26,26,.06); }
+.as-x5{ font-size:11px; color:var(--as-red); }
+.as-skills{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:2px 12px; }
+.as-roll{
+  display:flex; justify-content:space-between; align-items:center; gap:8px; background:transparent; border:1px solid transparent;
+  border-bottom:1px dotted var(--as-rule); padding:4px 3px; cursor:pointer; color:var(--as-ink-2); text-align:left;
+  font-family:'Courier Prime',monospace; font-size:12px; min-height:28px; border-radius:0;
+}
+.as-roll .as-sv{ font-family:'Special Elite',monospace; color:var(--as-ink); flex-shrink:0; }
+.as-roll.as-strong{ color:var(--as-ink); font-weight:700; }
+.as-sn{ min-width:0; overflow-wrap:anywhere; }
+.as-roll.as-chip{ display:inline-flex; border:1px solid var(--as-rule); border-radius:3px; padding:2px 8px; min-height:26px; }
+.as-cols{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:0 22px; }
+@media (max-width:560px){ .as-cols{ grid-template-columns:1fr; } }
+.as-weapons{ width:100%; border-collapse:collapse; font-size:12px; }
+.as-weapons td{ padding:3px 6px 3px 0; border-top:1px dotted var(--as-rule); vertical-align:middle; }
+.as-wn{ font-family:'Special Elite',monospace; color:var(--as-ink); }
+.as-row{ display:flex; justify-content:space-between; gap:10px; border-bottom:1px dotted var(--as-rule); padding:4px 0; color:var(--as-ink); }
+.as-score{ font-family:'Special Elite',monospace; color:var(--as-red); }
+
+/* Polaroid + the full-cover "Take Photo" post-it */
+.as-polaroid{ padding:6px 6px 18px; background:#fff; box-shadow:0 2px 7px rgba(0,0,0,.3); transform:rotate(-1.5deg); }
+.as-polaroid-img{
+  position:relative; width:88px; height:88px; background:#9d8f6c; overflow:hidden;
+  background-image:repeating-linear-gradient(135deg,rgba(0,0,0,.07) 0 4px,transparent 4px 8px);
+}
+.as-polaroid-img img{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; }
+.as-paper .as-take-photo, .as-take-photo{
+  position:absolute; inset:0; width:100%; height:100%; border:0; cursor:pointer;
+  background:#f0e87a; color:#3a2a04; font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.14em;
+  text-transform:uppercase; box-shadow:inset 0 -8px 12px rgba(120,100,20,.12); display:flex; align-items:center; justify-content:center;
+}
+.as-polaroid-img.as-has-photo .as-take-photo{ display:none; }
+.as-incursion{ margin-top:2px; }
+.as-incursion .as-text{ font-style:italic; }

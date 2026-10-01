@@ -164,7 +164,6 @@
 
 <div class="ref-header">
   <h1>THE INCURSION</h1>
-  <p>What brought your Agent to Delta Green? A creation-time backstory roller -- not saved to any sheet.</p>
 </div>
 
 <main class="ref-main">
@@ -185,36 +184,12 @@
     <p class="ref-prose">What happened in the incursion is up to the Handler. If the Handler says to make it up
       and you want some ideas, roll 1D4, 1D6, 1D8, 1D10, and 1D12 and look up the details below.</p>
 
-    <button type="button" class="incursion-roll-btn" id="incursion-roll-btn" onclick="rollIncursion()">Roll My Incursion</button>
-
-    <div id="incursion-result">
-      <div class="incursion-line">
-        <span class="il-label">Environment</span>
-        <span class="il-die" id="il-die-environment"></span>
-        <span class="il-value" id="il-value-environment"></span>
-      </div>
-      <div class="incursion-line">
-        <span class="il-label">Vector</span>
-        <span class="il-die" id="il-die-vector"></span>
-        <span class="il-value" id="il-value-vector"></span>
-      </div>
-      <div class="incursion-line">
-        <span class="il-label">Cover Story</span>
-        <span class="il-die" id="il-die-cover"></span>
-        <span class="il-value" id="il-value-cover"></span>
-      </div>
-      <div class="incursion-line">
-        <span class="il-label">Complication</span>
-        <span class="il-die" id="il-die-complication"></span>
-        <span class="il-value" id="il-value-complication"></span>
-      </div>
-      <div class="incursion-line">
-        <span class="il-label">Incursion</span>
-        <span class="il-die" id="il-die-incursion"></span>
-        <span class="il-value" id="il-value-incursion"></span>
-      </div>
-      <div id="incursion-summary"></div>
-    </div>
+    <!-- The same picker as the character sheet's Incursion section
+         (assets/incursion.js): roll all five, roll or choose any one line,
+         or write it in your own words. It is kept on the sheet; here it is
+         a scratch pad. -->
+    <div id="incursion-picker"></div>
+    <p class="ref-prose" id="incursion-keep">To keep it with your Agent, use the Incursion section of the character sheet.</p>
   </section>
 
   <section class="ref-section" id="incursion-tables">
@@ -262,110 +237,35 @@
 
 </main>
 
+<script src="assets/incursion.js"></script>
 <script>
-  var incursionData = {
-    environment: [
-      'Urban', 'Suburban or exurban', 'Rural', 'Wilderness or ocean'
-    ],
-    vector: [
-      'A lone wolf', 'A family cult', 'A militant or corrupted religious sect',
-      'A linguistic or historical discovery', 'A scientific or technological discovery',
-      'A bystander exposed accidentally'
-    ],
-    cover: [
-      'Violent crime across state lines or on federal property', 'Terrorism',
-      'Theft or fraud', 'Drug trafficking', 'Environmental crime', 'Kidnapping',
-      'Natural disaster', 'Plane, train, or ship disaster or disappearance'
-    ],
-    complication: [
-      'Your Agent was badly hurt', 'Witness audio, video, or photos went online',
-      'Journalists had to be misled', 'First responders were hurt or killed',
-      'Bystanders were hurt or killed', 'Professional blowback',
-      'Legal or criminal repercussions', 'Part of the threat escaped',
-      'Evidence went to a non-Delta Green lab',
-      'Your Agent does not remember some of what happened'
-    ],
-    incursion: [
-      '…feeding on human flesh and blood', '…feeding on psychic energies',
-      '…reproducing', '…seeking servants', '…studying humanity',
-      '…taking physical form through human infestation',
-      '…seeking contact with an unnatural entity',
-      '…utilizing an unnatural artifact or device',
-      '…performing an unnatural ritual', '…transforming into something unnatural',
-      '…psychically possessed', '…studying the remnants of an unnatural incursion'
-    ]
-  };
-
-  function fillTable(tableId, key) {
-    var table = document.getElementById(tableId);
-    var list = incursionData[key];
-    for (var i = 0; i < list.length; i++) {
-      var tr = document.createElement('tr');
-      tr.id = tableId + '-row-' + (i + 1);
-      var tdNum = document.createElement('td');
-      tdNum.className = 'ref-num';
-      tdNum.textContent = i + 1;
-      var tdVal = document.createElement('td');
-      tdVal.textContent = list[i];
-      tr.appendChild(tdNum);
-      tr.appendChild(tdVal);
-      table.appendChild(tr);
+  // Tables and picker: assets/incursion.js (shared with the character
+  // sheet, the Agent File and A-Cell).
+  (function () {
+    var I = window.dgIncursion;
+    var ids = { environment: 'table-environment', vector: 'table-vector', cover: 'table-cover', complication: 'table-complication', incursion: 'table-incursion' };
+    I.ORDER.forEach(function (key) {
+      var table = document.getElementById(ids[key]);
+      I.TABLES[key].forEach(function (t, i) {
+        var tr = document.createElement('tr');
+        tr.id = ids[key] + '-row-' + (i + 1);
+        var tdNum = document.createElement('td'); tdNum.className = 'ref-num'; tdNum.textContent = i + 1;
+        var tdVal = document.createElement('td'); tdVal.textContent = t;
+        tr.appendChild(tdNum); tr.appendChild(tdVal); table.appendChild(tr);
+      });
+    });
+    function highlight(v) {
+      I.ORDER.forEach(function (key) {
+        var rows = document.querySelectorAll('#' + ids[key] + ' tr[id]');
+        Array.prototype.forEach.call(rows, function (row, i) { row.classList.toggle('rolled', v.picks[key] === i + 1); });
+      });
     }
-  }
-  fillTable('table-environment', 'environment');
-  fillTable('table-vector', 'vector');
-  fillTable('table-cover', 'cover');
-  fillTable('table-complication', 'complication');
-  fillTable('table-incursion', 'incursion');
-
-  function d(sides) { return Math.floor(Math.random() * sides) + 1; }
-
-  function highlightRow(tableId, num) {
-    var table = document.getElementById(tableId);
-    for (var i = 1; i <= table.rows.length; i++) {
-      var row = document.getElementById(tableId + '-row-' + i);
-      if (row) row.classList.toggle('rolled', i === num);
-    }
-  }
-
-  function rollIncursion() {
-    var envN = d(4), vecN = d(6), covN = d(8), compN = d(10), incN = d(12);
-    var env = incursionData.environment[envN - 1];
-    var vec = incursionData.vector[vecN - 1];
-    var cov = incursionData.cover[covN - 1];
-    var comp = incursionData.complication[compN - 1];
-    var inc = incursionData.incursion[incN - 1];
-
-    document.getElementById('il-die-environment').textContent = '(D4: ' + envN + ')';
-    document.getElementById('il-value-environment').textContent = env;
-    document.getElementById('il-die-vector').textContent = '(D6: ' + vecN + ')';
-    document.getElementById('il-value-vector').textContent = vec;
-    document.getElementById('il-die-cover').textContent = '(D8: ' + covN + ')';
-    document.getElementById('il-value-cover').textContent = cov;
-    document.getElementById('il-die-complication').textContent = '(D10: ' + compN + ')';
-    document.getElementById('il-value-complication').textContent = comp;
-    document.getElementById('il-die-incursion').textContent = '(D12: ' + incN + ')';
-    document.getElementById('il-value-incursion').textContent = inc;
-
-    function article(word) { return /^[aeiou]/i.test(word) ? 'an' : 'a'; }
-    var envLower = env.toLowerCase();
-
-    document.getElementById('incursion-summary').textContent =
-      'In ' + article(envLower) + ' ' + envLower + ' setting, ' + vec.toLowerCase() + ' led to an unnatural entity or human being ' +
-      inc.replace('…', '') + '. Delta Green covered it up as ' + cov.toLowerCase() + '. During the incident, ' +
-      comp.toLowerCase() + '.';
-
-    highlightRow('table-environment', envN);
-    highlightRow('table-vector', vecN);
-    highlightRow('table-cover', covN);
-    highlightRow('table-complication', compN);
-    highlightRow('table-incursion', incN);
-
-    document.getElementById('incursion-result').classList.add('show');
-  }
+    I.mount(document.getElementById('incursion-picker'), null, { onChange: highlight });
+  })();
 </script>
 
 <script src="assets/table-radio.js"></script>
 <script src="assets/dice-roller.js?v=9"></script>
+<script src="assets/field-notes.js"></script>
 </body>
 </html>

@@ -778,6 +778,47 @@
                             <textarea id="cs-personal-details" autocomplete="off"
                                 placeholder="Personal details, notes, and other information about your agent."></textarea></label>
                     </fieldset>
+                    <!-- Appearance: how this Agent looks -- the part of the Agent
+                         File's Appearance brief a sheet can't work out. Only shown
+                         as a step of the creation wizard; saved straight to the
+                         Agent File (briefs/{code}), where Agent Hub's Appearance
+                         section edits the same fields. stats/appearance-sheet.js. -->
+                    <fieldset id="cs-appearance-fieldset" class="panel panel-appearance fieldset-default">
+                        <legend>Appearance</legend>
+                        <p class="cs-appearance-intro">How does your Agent look? Your Handler makes their photos from this. Leave any line blank and fill it in later on the Agent's file in Agent Hub.</p>
+                        <div class="cs-appearance-actions">
+                            <button type="button" id="cs-appearance-random">Fill the rest at random</button>
+                            <span class="cs-appearance-status" id="cs-appearance-status" aria-live="polite"></span>
+                        </div>
+                        <div class="cs-appearance-grid">
+                            <label>Face shape <input type="text" data-ap="face_shape" placeholder="e.g. sharp and angular, round, gaunt" data-ap-required autocomplete="off"></label>
+                            <label>Eye colour <input type="text" data-ap="eye_color" placeholder="e.g. pale blue, dark brown" data-ap-required autocomplete="off"></label>
+                            <label>Eye shape <input type="text" data-ap="eye_shape" placeholder="e.g. deep-set, hooded, wide" data-ap-required autocomplete="off"></label>
+                            <label>Nose <input type="text" data-ap="nose" placeholder="e.g. straight, crooked, flat" data-ap-required autocomplete="off"></label>
+                            <label>Lips <input type="text" data-ap="lips" placeholder="e.g. thin, full, downturned" data-ap-required autocomplete="off"></label>
+                            <label>Skin tone <input type="text" data-ap="skin" placeholder="e.g. pale and weathered, warm brown, ruddy" data-ap-required autocomplete="off"></label>
+                            <label>Facial hair <input type="text" data-ap="facial_hair" placeholder="e.g. clean-shaven, heavy stubble" data-ap-required autocomplete="off"></label>
+                            <label>Scars / marks (optional) <input type="text" data-ap="face_scars" placeholder="e.g. scar through left eyebrow" autocomplete="off"></label>
+                            <label>Hair colour <input type="text" data-ap="hair_color" placeholder="e.g. dirty blond with grey at the temples" data-ap-required autocomplete="off"></label>
+                            <label>Hair length and style <input type="text" data-ap="hair_style" placeholder="e.g. shoulder-length, worn loose" data-ap-required autocomplete="off"></label>
+                            <label>Hair texture <input type="text" data-ap="hair_texture" placeholder="e.g. straight, wavy, coarse and curly" data-ap-required autocomplete="off"></label>
+                            <label>Posture <input type="text" data-ap="posture" placeholder="e.g. coiled and watchful, upright and confident" data-ap-required autocomplete="off"></label>
+                            <label>Body markers (optional) <input type="text" data-ap="body_markers" placeholder="e.g. sleeve tattoos, burn scarring on the forearms" autocomplete="off"></label>
+                            <label>Default expression <input type="text" data-ap="expression" placeholder="e.g. flat and dead-eyed, quietly amused" data-ap-required autocomplete="off"></label>
+                            <label class="cs-appearance-wide">What does this person feel like to be in a room with? <textarea data-ap="vibe" data-ap-required placeholder="One or two sentences." autocomplete="off"></textarea></label>
+                        </div>
+                    </fieldset>
+                    <!-- The Incursion: what brought this Agent to Delta Green
+                         (assets/incursion.js). Roll it, pick any line, or write
+                         it freehand; saved with the sheet like Motivations, and
+                         also on the Agent's own record (characters/{code}.incursion)
+                         so the Handler can amend it from A-Cell. -->
+                    <fieldset id="cs-incursion-fieldset" class="panel panel-incursion fieldset-default">
+                        <legend>The Incursion</legend>
+                        <p class="cs-incursion-intro">What brought your Agent to Delta Green? Roll it, choose any line yourself, or write what happened in your own words. What happened in the incursion is up to your Handler.</p>
+                        <div id="cs-incursion-picker"></div>
+                        <input type="hidden" id="cs-incursion" value="">
+                    </fieldset>
                     <h2 class="visually-hidden">Skills</h2>
                     <fieldset class="panel panel-skills fieldset-default">
                         <legend>Skills</legend>
@@ -1043,7 +1084,7 @@
                 <iframe id="dg-split-sheet-frame" title="Character Sheet" loading="lazy"></iframe>
             </div>
             <div id="dg-split-notes-pane">
-                <iframe id="dg-split-notes-frame" title="Notes" loading="lazy"></iframe>
+                <iframe id="dg-split-notes-frame" title="Notes" loading="lazy" data-dg-embed="notes"></iframe>
             </div>
         </div>
         <footer class="site-footer">
@@ -1085,7 +1126,11 @@
         <script src="pdf-export.js"></script>
         <script src="sheets-export.js"></script>
         <script src="sheets-import.js"></script>
-        <script src="save-load.js"></script>
+        <script src="../assets/incursion.js"></script>
+    <script src="incursion-sheet.js"></script>
+    <script src="../assets/appearance-gen.js"></script>
+    <script src="appearance-sheet.js"></script>
+    <script src="save-load.js"></script>
         <script src="agent-portal-export.js"></script>
         <script src="cloud-sync.js"></script>
         <script src="lp-tracker-photo.js"></script>
@@ -1099,6 +1144,7 @@
         <div id="specialty-tooltip-panel" role="tooltip" aria-hidden="true"></div>
 
         <script src="../assets/table-radio.js"></script>
+        <script src="../assets/field-notes.js"></script>
         <script src="../assets/sw-update.js" data-sw="../sw.js"></script>
 </body>
 

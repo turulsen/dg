@@ -1,0 +1,314 @@
+/* The Agent File inside Agent Hub: Appearance (Profiling) and era photos.
+   Moved from dg-agent-portal.html, scoped to .af-root so the hub's own
+   paper styles and these never collide. See assets/agent-file.js. */
+.af-root *{box-sizing:border-box;margin:0;padding:0;}
+.af-root{--paper:#f4eed8;
+  --paper-line:rgba(180,148,72,.18);
+  --paper-margin:rgba(180,60,60,.22);
+  --paper-shadow:0 4px 18px rgba(0,0,0,.22), 0 1px 4px rgba(0,0,0,.12);
+
+  
+  --ink:#1c1608;
+  --ink-2:#4a3f28;
+  --ink-3:#8a7a5a;
+  --ink-placeholder:#b8a878;
+
+  
+  --red:#8b1a1a;
+  --green:#1a4a1a;
+
+  
+  --rule:rgba(160,130,70,.35);
+
+  
+  --sticky:#f0e87a;
+  --sticky-shadow:1px 3px 8px rgba(0,0,0,.22);
+
+  
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px;
+  --s5:24px; --s6:32px; --s7:48px;
+
+  
+  --line:27px;}
+.af-root .section-head{font-family:'Special Elite', monospace;
+  font-size:9px;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--red);
+  border-bottom:1px solid var(--red);
+  padding-bottom:3px;
+  margin:var(--s5) 0 var(--s3);}
+.af-root .fg{margin-bottom:var(--line);}
+.af-root .fg label{display:block;
+  font-family:'Courier Prime', monospace;
+  font-size:8px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--ink-2);
+  margin-bottom:3px;}
+.af-root .fg label .opt{text-transform:none;letter-spacing:0;color:var(--ink-3);font-weight:400;}
+.af-root .fi,
+.af-root .fs,
+.af-root .ft{width:100%;
+  background:transparent;
+  border:none;
+  border-bottom:1px solid var(--rule);
+  padding:5px 0;
+  font-family:'Courier Prime', monospace;
+  font-size:12px;
+  color:var(--ink);
+  outline:none;
+  -webkit-appearance:none;
+  border-radius:0;
+  transition:border-color 120ms;}
+.af-root .fi::placeholder,
+.af-root .ft::placeholder{color:var(--ink-placeholder);font-style:italic;font-size:11px;}
+.af-root .fi:focus,
+.af-root .fs:focus,
+.af-root .ft:focus{border-bottom-color:var(--ink);}
+.af-root .cover-field-locked{background:rgba(120,150,90,.08);}
+.af-root .cover-field-locked:focus{border-bottom-color:var(--ink);}
+.af-root .fs{cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23b8a878'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 4px center;padding-right:18px;}
+.af-root .ft{resize:vertical;min-height:54px;line-height:1.7;}
+.af-root .two{display:grid;grid-template-columns:1fr 1fr;gap:0 var(--s5);}
+.af-root .upload-zone{border:1.5px dashed var(--rule);
+  padding:var(--s3);
+  text-align:center;
+  cursor:pointer;
+  background:rgba(255,255,255,.25);
+  margin-top:3px;
+  transition:border-color 120ms;}
+.af-root .upload-zone:hover{border-color:var(--ink);}
+.af-root .upload-zone input{display:none;}
+.af-root .upload-hint{font-family:'Courier Prime', monospace;
+  font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-placeholder);}
+.af-root .upload-prev{width:100%;height:80px;object-fit:cover;object-position:top center;
+  display:none;margin-top:var(--s2);}
+.af-root .submit-row{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;margin-top:var(--s5);}
+.af-root .submit-btn{font-family:'Special Elite', monospace;
+  font-size:10px;letter-spacing:.15em;text-transform:uppercase;
+  background:var(--ink);color:var(--paper);
+  border:none;padding:11px var(--s5);
+  cursor:pointer;
+  box-shadow:0 2px 6px rgba(0,0,0,.28);
+  transition:opacity 120ms;}
+.af-root .submit-btn:hover{opacity:.8;}
+.af-root #form-status{font-family:'Courier Prime', monospace;font-size:11px;
+  font-style:italic;color:var(--ink-2);}
+.af-root #form-status.ok{color:#1a4a1a;font-style:normal;font-weight:700;}
+@media(max-width:560px){
+.af-root .two{grid-template-columns:1fr;}
+}
+.af-root .af-header{display:flex;justify-content:space-between;align-items:center;
+  padding:var(--s3) 0 var(--s3);
+  border-bottom:1px solid var(--rule);margin-bottom:var(--s3);}
+.af-root .af-header-label{font-family:'Courier Prime',monospace;font-size:7px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-3);}
+.af-root .af-header-name{font-family:'Special Elite',monospace;font-size:18px;color:var(--ink);line-height:1.1;}
+.af-root .af-header-name.kia-name{color:var(--red);text-decoration:line-through;text-decoration-thickness:2px;text-decoration-color:var(--red);}
+.af-root .af-header-code{font-family:'Courier Prime',monospace;font-size:10px;letter-spacing:.12em;color:var(--ink-2);}
+.af-root .af-small-btn{font-family:'Special Elite',monospace;font-size:8px;letter-spacing:.1em;text-transform:uppercase;
+  background:transparent;color:var(--ink-2);border:1px solid var(--rule);padding:5px 10px;cursor:pointer;
+  white-space:nowrap;}
+.af-root .af-section-head{font-family:'Special Elite',monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--red);border-bottom:1px solid var(--red);padding-bottom:4px;margin-bottom:var(--s3);}
+.af-root .af-sub{font-family:'Courier Prime',monospace;font-size:11px;color:var(--ink-2);line-height:1.7;margin-bottom:var(--s4);}
+.af-root .era-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--s3);}
+.af-root .era-option{border:1.5px solid var(--rule);padding:var(--s4);cursor:pointer;
+  transition:border-color 120ms,background 120ms;text-align:center;
+  background:rgba(255,255,255,.2);}
+.af-root .era-option:hover{border-color:var(--ink);background:rgba(255,255,255,.4);}
+.af-root .era-decade{font-family:'Special Elite',monospace;font-size:20px;color:var(--ink);margin-bottom:4px;}
+.af-root .era-sub{font-family:'Courier Prime',monospace;font-size:9px;letter-spacing:.08em;color:var(--ink-2);}
+.af-root .era-stack{position:relative;}
+.af-root .era-page{position:absolute;
+  top:0;left:0;right:0;
+  background:var(--paper);
+  border:1px solid #c8b888;
+  border-radius:1px;
+  box-shadow:0 4px 16px rgba(0,0,0,.2),0 1px 4px rgba(0,0,0,.1);
+  transition:transform 320ms cubic-bezier(.25,.46,.45,.94), box-shadow 320ms ease;
+  cursor:pointer;
+  overflow:visible;}
+.af-root .era-page-tag{position:absolute;
+  top:-28px;
+  right:24px;
+  background:var(--paper);
+  border:1px solid #c8b888;
+  border-bottom:none;
+  padding:4px 14px;
+  border-radius:4px 4px 0 0;
+  font-family:'Special Elite',monospace;
+  font-size:10px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--ink-2);
+  white-space:nowrap;}
+.af-root .era-page.active .era-page-tag{color:var(--ink);
+  background:var(--paper);}
+.af-root .era-page.active{position:relative;
+  z-index:10;
+  cursor:default;
+  transform:none !important;}
+.af-root .era-page.behind-1{transform:translateY(8px) rotate(.8deg);z-index:9;box-shadow:0 2px 8px rgba(0,0,0,.15);}
+.af-root .era-page.behind-2{transform:translateY(14px) rotate(-1.2deg);z-index:8;box-shadow:0 2px 6px rgba(0,0,0,.12);}
+.af-root .era-page.behind-3{transform:translateY(20px) rotate(.5deg);z-index:7;box-shadow:0 2px 4px rgba(0,0,0,.1);}
+.af-root .era-page-content{padding:var(--s5) var(--s5) var(--s5) 52px;
+  position:relative;
+  overflow:hidden;
+  font-family:'Courier Prime',monospace;
+  font-size:12px;
+  color:var(--ink);}
+.af-root .era-page-header{display:flex;justify-content:space-between;align-items:flex-start;
+  border-bottom:2px solid var(--ink);padding-bottom:var(--s2);margin-bottom:var(--s3);}
+.af-root .era-page-title{font-family:'Special Elite',monospace;font-size:18px;color:var(--ink);}
+.af-root .era-page-meta{font-family:'Courier Prime',monospace;font-size:8px;letter-spacing:.08em;color:var(--ink-2);text-align:right;line-height:1.9;}
+.af-root .era-plates{display:grid;grid-template-columns:1fr 1fr;gap:var(--s3);margin-bottom:var(--s4);}
+.af-root .era-plate{border:1px solid var(--rule);background:var(--paper-aged);
+  aspect-ratio:3/4;overflow:hidden;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--s1);
+  cursor:pointer;position:relative;}
+.af-root .era-plate img{width:100%;height:100%;object-fit:cover;object-position:top center;display:block;}
+.af-root .era-plate-label{position:absolute;bottom:0;left:0;right:0;
+  background:rgba(0,0,0,.55);
+  font-family:'Courier Prime',monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;
+  color:#fff;padding:4px 6px;text-align:center;}
+.af-root .era-plate-empty{font-family:'Courier Prime',monospace;font-size:8px;letter-spacing:.08em;color:var(--rule);text-align:center;padding:8px;}
+.af-root .era-prompt-box{background:rgba(0,0,0,.04);border-left:2px solid var(--rule);
+  padding:var(--s2) var(--s3);margin-bottom:var(--s3);position:relative;}
+.af-root .era-prompt-label{font-family:'Special Elite',monospace;font-size:8px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);margin-bottom:var(--s1);display:block;}
+.af-root .era-prompt-text{font-family:'Courier Prime',monospace;font-size:10px;color:var(--ink);line-height:1.6;white-space:pre-wrap;max-height:120px;overflow-y:auto;}
+.af-root .era-prompt-empty{font-family:'Courier Prime',monospace;font-size:10px;color:var(--rule);font-style:italic;}
+.af-root .era-prompt-copy{position:absolute;top:var(--s2);right:var(--s2);
+  font-family:'Special Elite',monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;
+  background:var(--ink);color:var(--paper);border:none;padding:3px 7px;cursor:pointer;}
+.af-root .era-data-grid{display:grid;grid-template-columns:1fr;gap:0;}
+.af-root .med-accordion{border:1px solid var(--rule);margin-bottom:var(--s2);background:rgba(255,255,255,.3);}
+.af-root .med-accordion-header{display:flex;align-items:center;gap:var(--s2);padding:var(--s2) var(--s3);
+  cursor:pointer;font-family:'Courier Prime',monospace;}
+.af-root .med-severity-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+.af-root .med-severity-dot.minor{background:#4aaa4a;}
+.af-root .med-severity-dot.moderate{background:#e8a020;}
+.af-root .med-severity-dot.severe{background:#cc4420;}
+.af-root .med-severity-dot.critical{background:#8b1a1a;}
+.af-root .med-accordion-title{font-size:12px;color:var(--ink);flex:1;}
+.af-root .med-accordion-date{font-size:10px;color:var(--ink-3);margin-left:auto;}
+.af-root .med-accordion-arrow{color:var(--ink-3);transition:transform 200ms;font-size:10px;}
+.af-root .med-accordion.open .med-accordion-arrow{transform:rotate(180deg);}
+.af-root .med-accordion-body{display:none;padding:var(--s3);border-top:1px solid var(--rule);
+  font-family:'Courier Prime',monospace;font-size:11px;color:var(--ink);line-height:1.7;}
+.af-root .med-accordion.open .med-accordion-body{display:block;}
+.af-root .med-report-paper{background:rgba(255,255,255,.4);border:1px solid var(--rule);
+  padding:var(--s4);margin-bottom:var(--s3);}
+.af-root .med-report-header{border-bottom:2px solid var(--ink);padding-bottom:var(--s2);margin-bottom:var(--s3);}
+.af-root .med-report-title{font-family:'Special Elite',monospace;font-size:14px;color:var(--ink);letter-spacing:.06em;}
+.af-root .med-report-sub{font-family:'Courier Prime',monospace;font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);margin-top:3px;}
+.af-root .aar-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:var(--s3);margin-bottom:var(--s3);}
+.af-root .aar-card{background:var(--paper);border:1px solid var(--rule);
+  box-shadow:0 2px 8px rgba(0,0,0,.1);
+  cursor:pointer;transition:box-shadow 120ms;}
+.af-root .aar-card:hover{box-shadow:0 4px 14px rgba(0,0,0,.18);}
+.af-root .aar-polaroid{background:#fff;
+  padding:var(--s2) var(--s2) var(--s5);
+  box-shadow:0 2px 6px rgba(0,0,0,.15);
+  margin:var(--s3) auto;
+  width:calc(100% - var(--s3));
+  transform:rotate(var(--pol-rot, -1deg));}
+.af-root .aar-polaroid img{width:100%;height:120px;object-fit:cover;display:block;}
+.af-root .aar-polaroid-empty{width:100%;height:120px;background:#e8e8e8;
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Courier Prime',monospace;font-size:8px;color:#aaa;
+  letter-spacing:.1em;text-transform:uppercase;}
+.af-root .aar-polaroid-caption{font-family:'Courier Prime',monospace;font-size:9px;color:#333;
+  text-align:center;padding:var(--s1) 0 0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.af-root .aar-card-meta{padding:var(--s2) var(--s3) var(--s3);border-top:1px solid var(--rule);}
+.af-root .aar-card-op{font-family:'Special Elite',monospace;font-size:11px;color:var(--ink);margin-bottom:2px;}
+.af-root .aar-card-date{font-family:'Courier Prime',monospace;font-size:9px;color:var(--ink-2);}
+.af-root #aar-detail-overlay{position:fixed;inset:0;background:rgba(10,8,4,.72);
+  z-index:400;display:none;align-items:center;justify-content:center;
+  padding:var(--s4);}
+.af-root #aar-detail-overlay.open{display:flex;}
+.af-root #aar-detail-card{background:var(--paper);box-shadow:var(--paper-shadow);
+  max-width:480px;width:100%;max-height:86vh;overflow-y:auto;
+  padding:var(--s6) var(--s4) var(--s4);position:relative;}
+.af-root #aar-detail-close{position:absolute;top:var(--s3);right:var(--s3);
+  font-family:'Special Elite',monospace;font-size:9px;letter-spacing:.1em;
+  color:var(--ink-3);cursor:pointer;background:none;border:none;padding:4px 8px;}
+.af-root #aar-detail-close:hover{color:var(--ink);}
+.af-root .aar-detail-op{font-family:'Special Elite',monospace;font-size:19px;color:var(--ink);margin:0 40px 4px 0;}
+.af-root .aar-detail-meta{font-family:'Courier Prime',monospace;font-size:10px;color:var(--ink-3);
+  letter-spacing:.04em;margin-bottom:var(--s4);}
+.af-root .aar-detail-photo{width:100%;max-height:280px;object-fit:cover;
+  margin-bottom:var(--s4);box-shadow:0 2px 8px rgba(0,0,0,.2);}
+.af-root .aar-detail-scene{font-family:'Courier Prime',monospace;font-size:12px;color:var(--ink-2);
+  line-height:1.75;white-space:pre-wrap;margin-bottom:var(--s3);}
+.af-root .polaroid{background:#faf8f0;
+  padding:10px 10px 32px;
+  box-shadow:0 3px 10px rgba(0,0,0,.22),0 1px 3px rgba(0,0,0,.12);
+  transform:rotate(-1.5deg);
+  transition:transform 150ms ease,box-shadow 150ms ease;
+  cursor:pointer;}
+.af-root .polaroid:nth-child(even){transform:rotate(1.2deg);}
+.af-root .polaroid:hover{transform:rotate(0) scale(1.03);box-shadow:0 8px 24px rgba(0,0,0,.3);}
+.af-root .polaroid-photo{width:100%;aspect-ratio:1;background:#e0d8c8;overflow:hidden;
+  display:flex;align-items:center;justify-content:center;margin-bottom:var(--s2);}
+.af-root .polaroid-photo img{width:100%;height:100%;object-fit:cover;}
+.af-root .polaroid-photo-empty{font-family:'Courier Prime',monospace;font-size:8px;color:#b0a870;text-align:center;padding:8px;}
+.af-root .polaroid-caption{font-family:'Courier Prime',monospace;font-size:9px;color:#3a3020;text-align:center;line-height:1.4;}
+.af-root .polaroid-date{font-family:'Courier Prime',monospace;font-size:7px;color:#8a7850;text-align:center;margin-top:3px;}
+.af-root .co-debrief-box{background:#0f1a0f;border:1px solid #2a4a2a;
+  padding:var(--s3);margin:var(--s3) 0;}
+.af-root .co-debrief-label{font-family:'Special Elite',monospace;font-size:8px;letter-spacing:.2em;text-transform:uppercase;
+  color:#4aaa4a;margin-bottom:var(--s2);display:block;}
+.af-root .co-debrief-content{font-family:'Courier Prime',monospace;font-size:10px;color:#88cc88;
+  line-height:1.6;margin-bottom:var(--s2);min-height:40px;white-space:pre-wrap;}
+.af-root .co-debrief-btn{font-family:'Special Elite',monospace;font-size:8px;letter-spacing:.12em;text-transform:uppercase;
+  background:#1a4a1a;color:#88cc88;border:1px solid #2a6a2a;padding:6px 12px;cursor:pointer;
+  transition:background 120ms;}
+.af-root .co-debrief-btn:hover{background:#2a6a2a;}
+.af-root .af-section-divider{border-top:2px dashed var(--rule);margin:var(--s5) 0 var(--s4);}
+.af-root .af-add-era-btn{font-family:'Special Elite',monospace;font-size:9px;letter-spacing:.14em;text-transform:uppercase;
+  background:transparent;color:var(--ink-2);border:1.5px dashed var(--rule);
+  padding:8px 16px;cursor:pointer;width:100%;margin-top:var(--s3);
+  transition:border-color 120ms,color 120ms;}
+.af-root .af-add-era-btn:hover{border-color:var(--ink);color:var(--ink);}
+.af-root .era-holes{position:absolute;left:10px;top:0;bottom:0;
+  display:flex;flex-direction:column;justify-content:space-around;padding:40px 0;}
+.af-root .era-rules{position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(180deg,transparent,transparent 27px,var(--paper-line) 27px,var(--paper-line) 28px);}
+.af-root .era-margin{position:absolute;top:0;left:44px;bottom:0;width:1px;background:var(--paper-margin);}
+.af-root .af-no-data{font-family:'Courier Prime',monospace;font-size:11px;color:var(--ink-3);
+  font-style:italic;text-align:center;padding:var(--s4) 0;}
+@media print{
+.af-root #print-card-target{display: block !important;}
+}
+
+/* ── The file's own sections inside an Agent Hub tab ── */
+.af-root{ display:block; }
+.af-root .af-block-head{
+  display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;
+  border-top:1px solid var(--rule); margin-top:28px; padding-top:14px; margin-bottom:10px;
+}
+.af-root .af-block-title{ font-family:'Special Elite',monospace; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3); }
+.af-root .af-appear-state{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-2); }
+.af-root .af-appear:not(.af-done) .af-appear-state{ color:var(--red); }
+.af-root .af-appear-toggle{
+  margin-left:auto; font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase;
+  background:transparent; color:var(--ink); border:1px solid var(--rule); padding:6px 14px; cursor:pointer;
+}
+.af-root .af-appear-toggle:hover{ border-color:var(--red); }
+.af-root .af-appear-note{ font-family:'Courier Prime',monospace; font-size:12px; line-height:1.6; color:var(--red); margin-bottom:12px; }
+.af-root .af-appear-note:empty{ display:none; }
+.af-root .af-appear:not(.af-open) .af-appear-body{ display:none; }
+.af-root .af-photos-locked{ font-family:'Courier Prime',monospace; font-size:12px; font-style:italic; color:var(--ink-3); }
+/* The hub's own header and sheet already show these. */
+.af-root .af-header, .af-root #af-vitals-section{ display:none !important; }
+/* The era picker was its own sheet of paper on the portal; here it is
+   already on the Agent's page. */
+.af-root .paper-stack{ margin:0 !important; }
+.af-root .paper-stack .paper{ box-shadow:none; background:transparent; border:0; min-height:0; }
+.af-root .paper-stack .paper::before, .af-root .paper-stack .paper::after{ display:none; }
+.af-root .paper-stack .paper-rules, .af-root .paper-stack .paper-margin, .af-root .paper-stack .holes{ display:none; }
+.af-root .paper-stack .paper-content{ padding:0; }

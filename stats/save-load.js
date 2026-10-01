@@ -93,6 +93,7 @@ function matchProfessionKey(profStr) {
             physicalDesc: g('cs-physical-desc'),
             motivations: g('cs-motivations'),
             personalDetails: g('cs-personal-details'),
+            incursion: (() => { try { return JSON.parse(g('cs-incursion') || 'null'); } catch (e) { return null; } })(),
         };
 
         // Predefined skills (values)
@@ -276,6 +277,9 @@ function matchProfessionKey(profStr) {
             set('cs-physical-desc', state.bio.physicalDesc);
             if (state.bio.motivations !== undefined) set('cs-motivations', state.bio.motivations);
             if (state.bio.personalDetails !== undefined) set('cs-personal-details', state.bio.personalDetails);
+            if (window.dgIncursionSheet) window.dgIncursionSheet.set(state.bio.incursion || null);
+            // Appearance lives on the Agent File, not in the sheet: fetch it.
+            if (window.dgAppearanceSheet) setTimeout(window.dgAppearanceSheet.load, 0);
             // A named character needs a Cloud Save code minted before
             // Export/Open Agent File can be clicked -- setting cs-name's
             // .value here doesn't fire the 'input' event ensureCloudCode()
@@ -692,6 +696,8 @@ function matchProfessionKey(profStr) {
         document.querySelectorAll('input[type="checkbox"]').forEach(el => {
             el.checked = false;
         });
+        if (window.dgIncursionSheet) window.dgIncursionSheet.set(null);
+        if (window.dgAppearanceSheet) window.dgAppearanceSheet.clear();
         // Not the theme picker: it's a display setting, not character
         // data. Resetting it to its first option (X-Files) left the page
         // showing one theme while collectState() saved another -- every
@@ -1042,6 +1048,29 @@ function matchProfessionKey(profStr) {
             // like the new Agent's stats had been wiped. Cloud-sync.js is
             // the sole authority whenever ?load= is present.
             const hasCloudLoad = new URLSearchParams(window.location.search).has('load');
+            // Friendly's "Make this my Agent" (friendly.html): a pregen as
+            // a real sheet, handed over once through sessionStorage.
+            let fromFriendly = null;
+            try { fromFriendly = JSON.parse(sessionStorage.getItem('dg_fr_import') || 'null'); sessionStorage.removeItem('dg_fr_import'); } catch (e) { fromFriendly = null; }
+            if (fromFriendly && fromFriendly.v === 1) {
+                applyState(fromFriendly);
+                setTimeout(() => {
+                    save();
+                    // The Agent Code is minted (and pushed straight away) by
+                    // cloud-sync.js on applyState()'s first change event --
+                    // before its 100 ms phase fills in the stats. One more
+                    // change event now lets the normal debounced sync push
+                    // the finished sheet over that first, partial copy.
+                    document.dispatchEvent(new Event('change'));
+                    // A new Agent imported onto the sheet: the clearance
+                    // briefing comes up once the player leaves it.
+                    let code = '';
+                    try { code = localStorage.getItem('dg_stats_cloud_code') || ''; } catch (e) { /* private mode */ }
+                    if (code && window.dgFieldNotes && window.dgFieldNotes.armOrders) window.dgFieldNotes.armOrders(code, fromFriendly.bio && fromFriendly.bio.name);
+                }, 400);
+                if (window.showToast) window.showToast('Agent ready: ' + ((fromFriendly.bio && fromFriendly.bio.name) || 'your new Agent'));
+                return;
+            }
             if (!loadFromURL() && !hasCloudLoad) loadLocal();
         }, 200);
     };

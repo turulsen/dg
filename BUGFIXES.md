@@ -6020,3 +6020,83 @@ JSONP callback name, so a re-render before the first answer threw
 "_rosterFace_… is not defined"; each request now gets its own. New `test_main_photo_from_active_era`
 (including a pre-per-era Agent File that must keep its photo through an
 Agent File visit). `sw.js` `CACHE_NAME` v163.
+
+Shipped to main in #56. Before the pre-per-era case was handled, the
+first cut ran only on the unreleased Field Notes branch and its preview
+channel -- but that preview reads and writes the live Firestore, so a
+pre-per-era Agent File opened there could have lost its `face_plate_url`
+(the per-era columns are untouched; re-uploading the Face Plate restores
+it).
+
+## `main`'s CI red since #55: a radio test read a hover colour mid-transition
+
+Not an app bug -- the live app was fine. CI only runs after a merge
+(pushes to `main`), so the v2.0.0 merge (#55) was the first time
+`test_table_radio_theme_consistent_style` ran in CI against that code,
+and it failed there. The test clicks the radio pill and compares the
+dial's colours across two themes, but the click leaves the pointer over
+the Tune In button once the panel opens, so it was comparing hover
+colours -- and one theme was read mid-transition (`rgb(168,200,143)`
+against the other's finished `rgb(168,200,144)`). The #56 merge was red
+for the same reason. The test now moves the pointer away and lets the
+transition settle, so it compares the resting accent
+(`rgb(143,174,90)`), which is what it is about. Shipped in #57; `main`'s
+CI green again. `VERSIONING.md` §3 now spells out that CI doesn't run
+on pull requests, and how to run it by hand on a branch before merging.
+
+## Sheet scrolling laggy on an iPad (X-Files and Son of Sam themes)
+
+Reported on the Field Notes preview: scrolling the character sheet in
+edit mode stuttered on an iPad, right after making a Friendly pregen
+into an Agent (which lands on the X-Files theme). Both dark themes pulse
+a glow around the five big panels (Biography, Skills, Bonus Skills,
+Bonds, Equipment) by animating their `box-shadow`. A box-shadow can't be
+animated on the GPU, so every frame repainted the whole panel; the
+Skills panel alone is thousands of pixels tall. Measured in Chromium
+with the CPU slowed 6x: 44 of 180 scroll frames over 33 ms as it was,
+2-5 with the fix. The glow is now drawn once, as a fixed shadow on each
+panel's `::after`, and only that layer's opacity pulses, with the same
+rhythm and stagger and the same peak glow. New
+`test_sheet_theme_glow_is_cheap`. `sw.js` `CACHE_NAME` v175.
+
+**Doubled punctuation in Agent Hub's physical description.** Also from
+the preview: "hair dark brown to nearly black., eyes very pale
+blue-gray..". `dgAgentSheet.physical()` (`assets/agent-sheet.js`) joins
+the Appearance answers into one sentence and kept each answer's own full
+stop. Trailing punctuation is now dropped from each piece. New
+`test_physical_description_punctuation`.
+
+Same report, not code bugs, made clearer instead:
+- **The clearance briefing "came up all of a sudden".** It works as
+  specified: armed when a new Agent lands on the sheet (here, Friendly's
+  "Make this my Agent"), shown the first time the player leaves the
+  sheet, which also saves the sheet. Nothing said why it had appeared,
+  so it now opens with a plain line: "<Agent> is saved. Before their
+  first assignment, the clearance briefing every new Agent gets, once."
+- **"Error: internal [0]" under the era prompts.** That's the Firebase
+  SDK's catch-all for a Cloud Function that gave no usable answer (it
+  crashed or the request never got through). The Agent File now says
+  "the AI service did not answer. Try again in a minute; if it keeps
+  failing, tell your Handler." The cause was server-side:
+  `generatePrompt`, `generatePlateImage` and `dailyBackup` had never
+  been deployed (step 1 of `docs/firebase-migration/SHEET-RETIREMENT.md`
+  was only half done -- the secrets were set, the functions weren't
+  deployed; `functions:list` showed only the two auth functions, and the
+  prompt function had no log entries at all). So prompt and plate
+  generation had been failing on the live site since the Sheet was
+  retired, not only on the preview. Deployed 2026-10-01 with
+  `firebase deploy --only functions:generatePrompt,functions:generatePlateImage,functions:dailyBackup`.
+
+## Agent Hub: the Agent's paper could stay blank on a slow load
+
+Found while testing the Cell list by name. Agent Hub draws each Agent's
+paper (vitals, physical description, Cell, sheet) on a zero-delay timer
+from its main script, but `assets/agent-sheet.js` is loaded by a script
+tag further down the page. When the tags in between were slow to arrive,
+the timer won the race, found no `dgAgentSheet`, and gave up -- the
+paper stayed empty (and hidden) until something else redrew it. It now
+waits for the page's `load` when the library isn't there yet, and writes
+into the tab's current element in case the roster was rebuilt while the
+reads were in flight. Covered by the new
+`test_cell_members_by_name_and_kia`, which hit the race every time.
+`sw.js` `CACHE_NAME` v176.

@@ -21,7 +21,12 @@ jobs:
         with:
           fetch-depth: 0
       - name: Check SHELL_FILES changes bumped CACHE_NAME
-        run: node scripts/check-shell-cache-bump.js "${{ github.event.before }}" "${{ github.sha }}"
+        # A manual run (workflow_dispatch) has no "before" commit: check
+        # the branch against where it left main instead.
+        run: |
+          BASE="${{ github.event.before }}"
+          if [ -z "$BASE" ]; then BASE="$(git merge-base origin/main "${{ github.sha }}")"; fi
+          node scripts/check-shell-cache-bump.js "$BASE" "${{ github.sha }}"
 
   test:
     name: QA harness (test/run_tests.py)
