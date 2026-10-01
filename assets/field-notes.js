@@ -526,7 +526,43 @@
     document.body.style.overflow = '';
     syncPagerTimer();
   }
+  // A page turn: the current page lifts at the spine and turns over to
+  // the left (showing its blank back), the next page already beneath it.
+  // Desktop only, not into or out of the Notes spread, never with
+  // reduced motion.
+  function turnPage() {
+    if (narrow() || !state.open) return;
+    try { if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) { /* old browser */ }
+    var book = root.querySelector('.fn-book');
+    var booklet = root.querySelector('.fn-booklet');
+    var paper = booklet && booklet.querySelector('.fn-paper:not(.fn-leaf-front)');
+    if (!paper || !paper.offsetWidth || book.classList.contains('fn-spreading')) return;
+    var old = booklet.querySelector('.fn-leaf-wrap');
+    if (old) old.remove();
+    var front = paper.cloneNode(true);
+    front.classList.add('fn-leaf-front');
+    Array.prototype.forEach.call(front.querySelectorAll('iframe, #dr-panel'), function (el) { el.remove(); });
+    Array.prototype.forEach.call(front.querySelectorAll('[id],[data-fn-slot],[data-view]'), function (el) {
+      el.removeAttribute('id'); el.removeAttribute('data-fn-slot'); el.removeAttribute('data-view');
+    });
+    var leaf = document.createElement('div');
+    leaf.className = 'fn-leaf';
+    leaf.setAttribute('aria-hidden', 'true');
+    leaf.appendChild(front);
+    leaf.insertAdjacentHTML('beforeend', '<div class="fn-leaf-shade"></div><div class="fn-leaf-back"></div>');
+    var wrap = document.createElement('div');
+    wrap.className = 'fn-leaf-wrap';
+    wrap.appendChild(leaf);
+    booklet.appendChild(wrap);
+    var from = paper.querySelectorAll('.fn-page-body'), to = front.querySelectorAll('.fn-page-body');
+    for (var i = 0; i < from.length && i < to.length; i++) to[i].scrollTop = from[i].scrollTop;
+    book.classList.add('fn-turning');
+    var done = function () { if (wrap.parentNode) wrap.remove(); if (!booklet.querySelector('.fn-leaf-wrap')) book.classList.remove('fn-turning'); };
+    wrap.addEventListener('animationend', function (e) { if (e.target === wrap) done(); });
+    setTimeout(done, 1400);
+  }
   function show(view) {
+    if (state.open && view !== state.view && !(view === 'notes' && state.notesMode === 'spread' && !narrow())) turnPage();
     state.view = view;
     lsSet(VIEW_KEY, view === 'dice' ? 'agentfile' : view);
     render();

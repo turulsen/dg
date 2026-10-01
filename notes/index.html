@@ -100,62 +100,70 @@
   html.notes-in-notebook .change-context{ margin-top:0; }
   html.notes-in-notebook .change-context button{ color:#4a3f28; border-color:rgba(160,130,70,.6); }
   /* Field Notes' Notes spread (embed=spread): the notebook's two pages.
-     Left page: "Notes" over the Shared / per-Agent tabs, which sit on the
-     page's head rule like index tabs; below it the Index and Evidence
-     (with its Operation filter) as sections. Right page: search and the
-     block tools in a head band of the same height, ruled off the same
-     way, then the editor. The fold is drawn here at the middle
-     (field-notes.css hides the book's own spine for this). The wrappers
+     The frame starts 28px above the paper (field-notes.css), so the
+     Shared / per-Agent tabs stand on the paper's top edge like real index
+     tabs, the active one running into its page. Left page: "Notes" over
+     a ruled head, then Index and Evidence (with its Operation filter).
+     Right page: search and the block tools in a head of the same height,
+     ruled at the same line, then the editor. The fold is drawn at the
+     middle (the book's own spine is hidden for this). The wrappers
      between #dg-notes-panel and its parts go display:contents so the
-     parts land straight on the two-column grid; each page scrolls on its
-     own. */
-  html.notes-spread body{ padding:0; background:transparent; overflow:hidden; }
+     parts land straight on the grid; each page scrolls on its own. */
+  html.notes-spread, html.notes-spread body{ background:transparent !important; }
+  html.notes-spread body{ padding:0; overflow:hidden; }
   html.notes-spread .change-context{ position:fixed; left:22px; bottom:12px; z-index:20; margin:0; padding:0; }
   html.notes-spread .change-context button{
     font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase;
-    color:#1c1608; background:transparent; border:1.5px solid #4a3f28; border-radius:2px; padding:7px 12px;
+    color:#1c1608; background:#f4eed8; border:1.5px solid #4a3f28; border-radius:2px; padding:7px 12px;
   }
-  html.notes-spread #notes-mount{ height:100vh; }
+  html.notes-spread #split-view-btn{ display:none; }
+  /* pinned to the frame, so nothing else on the page can push the tabs off the paper's edge */
+  html.notes-spread #notes-mount{ position:fixed; inset:0; height:auto; margin:0; padding:0; overflow:hidden; }
   html.notes-spread #dg-notes-panel .dg-notes-paper-rules,
   html.notes-spread #dg-notes-panel .dg-notes-paper-margin,
   html.notes-spread #dg-notes-panel .dg-notes-holes{ display:none; }
   @media (min-width:700px){
     html.notes-spread #dg-notes-panel{
-      display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); grid-template-rows:auto minmax(0,1fr);
-      column-gap:60px; height:100vh; padding:0 22px; box-sizing:border-box;
+      display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); grid-template-rows:28px auto minmax(0,1fr);
+      column-gap:64px; height:100%; padding:0 24px; box-sizing:border-box;
+      /* fold + ruled lines, on the paper only (below the tab strip) */
       background:
-        linear-gradient(90deg,transparent calc(50% - 24px),rgba(60,40,10,.10) calc(50% - 9px),rgba(40,24,6,.34) 50%,rgba(60,40,10,.10) calc(50% + 9px),transparent calc(50% + 24px)),
-        repeating-linear-gradient(180deg,transparent 0 27px,rgba(120,150,180,.14) 27px 28px);
-      background-attachment:local;
+        linear-gradient(90deg,transparent calc(50% - 30px),rgba(50,32,8,.07) calc(50% - 14px),rgba(40,24,6,.30) calc(50% - 1px),rgba(255,250,235,.25) calc(50% + 1px),rgba(50,32,8,.07) calc(50% + 14px),transparent calc(50% + 30px)) 0 28px / 100% calc(100% - 28px) no-repeat,
+        repeating-linear-gradient(180deg,transparent 0 27px,rgba(120,150,180,.14) 27px 28px) 0 28px / 100% calc(100% - 28px) no-repeat;
     }
     html.notes-spread #dg-notes-panel .dg-notes-folder-body,
     html.notes-spread #dg-notes-panel .dg-notes-paper,
     html.notes-spread #dg-notes-panel .dg-notes-paper-content,
     html.notes-spread #dg-notes-panel .dg-notes-body{ display:contents; }
 
-    /* Head bands: same row, same height, same 2px rule underneath. */
-    html.notes-spread #dg-notes-panel .dg-notes-tab-strip,
-    html.notes-spread #dg-notes-panel .dg-notes-toolbar{
-      grid-row:1; align-self:stretch; margin:0; padding:14px 0 0; background:#f4eed8; border-bottom:2px solid #1c1608;
-    }
+    /* Left: tabs above the paper's edge, then the page title on its rule. */
     html.notes-spread #dg-notes-panel .dg-notes-tab-strip{
-      grid-column:1; display:flex; flex-wrap:wrap; align-content:space-between; align-items:flex-end; gap:0 4px;
+      grid-column:1; grid-row:1 / 3; align-self:stretch; display:flex; flex-wrap:wrap; align-content:space-between; align-items:flex-end;
+      gap:0 3px; margin:0; padding:0 0 0 6px; background:transparent; border-bottom:2px solid #1c1608;
     }
-    html.notes-spread #dg-notes-panel .dg-notes-tab-strip::before{
-      content:'Notes'; flex:0 0 100%; font-family:'Special Elite',monospace; font-size:22px; line-height:1.1; color:#1c1608; margin-bottom:8px;
+    html.notes-spread #dg-notes-panel .dg-notes-tab-strip::after{
+      content:'Notes'; flex:0 0 100%; align-self:flex-end; margin:auto 0 0 -6px; padding:12px 0 8px;
+      font-family:'Special Elite',monospace; font-size:22px; line-height:1.1; color:#1c1608;
     }
     html.notes-spread #dg-notes-panel .dg-notes-tab{
-      transform:none; margin-bottom:-2px; padding:6px 12px 5px; font-size:10px; border-width:1px 1px 0; border-bottom:0;
-      border-radius:5px 5px 0 0; background:#e4dcc2; box-shadow:inset 0 -6px 8px -6px rgba(0,0,0,.18);
+      height:26px; margin-top:2px; transform:none; padding:0 13px; font-size:10px; letter-spacing:.1em;
+      border:1px solid rgba(120,95,50,.55); border-bottom:0; border-radius:6px 6px 0 0;
+      background:linear-gradient(180deg,#ece3c8,#ddd2b2); color:#4a3f28;
+      box-shadow:0 -2px 5px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.5);
     }
-    html.notes-spread #dg-notes-panel .dg-notes-tab:hover:not(.active){ transform:none; background:#ece5cd; }
-    html.notes-spread #dg-notes-panel .dg-notes-tab.active{ background:#f4eed8; box-shadow:none; border-bottom:2px solid #f4eed8; margin-bottom:-2px; }
-    html.notes-spread #dg-notes-panel .dg-notes-tab-shared{ border-color:#4a3f28; }
+    html.notes-spread #dg-notes-panel .dg-notes-tab:hover:not(.active){ transform:none; background:linear-gradient(180deg,#f1e9d1,#e4dabd); }
+    /* the open tab runs into its page: paper-colored, a pixel taller, no seam */
+    html.notes-spread #dg-notes-panel .dg-notes-tab.active{
+      height:29px; margin-top:0; margin-bottom:-1px; background:#f4eed8; color:#1c1608; position:relative; z-index:2;
+      box-shadow:0 -3px 6px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.6);
+    }
 
+    /* Right: the tools head, ruled at the same line as the left page's. */
     html.notes-spread #dg-notes-panel .dg-notes-toolbar{
-      grid-column:2; display:flex; flex-wrap:wrap; align-content:space-between; align-items:center; justify-content:flex-start; gap:6px 6px; padding-bottom:8px;
+      grid-column:2; grid-row:2; align-self:stretch; display:flex; flex-wrap:wrap; align-content:flex-end; align-items:center;
+      justify-content:flex-start; gap:6px; margin:0; padding:12px 0 8px; background:transparent; border-bottom:2px solid #1c1608;
     }
-    html.notes-spread #dg-notes-panel .dg-notes-search{ order:-2; flex:1 1 60%; padding:5px 9px; }
+    html.notes-spread #dg-notes-panel .dg-notes-search{ order:-2; flex:1 1 60%; padding:5px 9px; background:rgba(255,255,255,.45); }
     html.notes-spread #dg-notes-panel .dg-notes-toggle-label-inline:has(.dg-notes-search-everywhere){ order:-1; font-size:10px; }
     html.notes-spread #dg-notes-panel .dg-notes-toggle-label-inline:has(.dg-notes-plain-fonts){ display:none; }
     html.notes-spread #dg-notes-panel .dg-notes-circulate-btn,
@@ -163,9 +171,9 @@
     html.notes-spread #dg-notes-panel .dg-notes-tag-btn,
     html.notes-spread #dg-notes-panel .dg-notes-timeline-btn{ font-size:11px; padding:4px 9px; }
 
-    /* Left page body: Index and Evidence as the notebook's own sections. */
+    /* Page bodies. */
     html.notes-spread #dg-notes-panel .dg-notes-toc{
-      grid-column:1; grid-row:2; width:auto; max-width:none; position:static; overflow:auto; padding:14px 2px 60px 0; border:0;
+      grid-column:1; grid-row:3; width:auto; max-width:none; position:static; overflow:auto; padding:14px 2px 60px 0; border:0;
     }
     html.notes-spread #dg-notes-panel .dg-notes-toc-label,
     html.notes-spread #dg-notes-panel #dg-notes-evidence-mount > .dg-notes-toc-subhead:first-child{
@@ -176,8 +184,7 @@
     html.notes-spread #dg-notes-panel .dg-notes-evidence-filter{ margin:2px 0 8px; padding:5px 7px; font-size:11px; }
     html.notes-spread #dg-notes-panel .dg-notes-toc-item,
     html.notes-spread #dg-notes-panel .dg-notes-evidence-item{ font-size:12.5px; padding:5px 0; }
-
-    html.notes-spread #dg-notes-panel .dg-notes-main{ grid-column:2; grid-row:2; overflow:auto; padding:14px 4px 56px 0; min-width:0; }
+    html.notes-spread #dg-notes-panel .dg-notes-main{ grid-column:2; grid-row:3; overflow:auto; padding:14px 4px 56px 0; min-width:0; }
   }
 </style>
 </head>

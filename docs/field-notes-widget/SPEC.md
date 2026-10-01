@@ -291,6 +291,26 @@ Each step is testable on the preview before the next:
   (`window.dgFieldIdCards`), which the Field IDs tab now loads too, so
   there is one copy. Field Notes loads it only when it draws the card.
 
+### Round 6
+
+- **A real book's proportions.** The two halves are the same width with
+  the spine in the middle; the index tabs (Notes, Evidences, Rules,
+  Settings) stick out past the right page's edge over the cover instead
+  of taking width from the page.
+- **Pages with depth.** The right page sits on a block of stacked pages
+  (outer edge and bottom) and curves up out of the gutter. The open
+  Notes spread has its page block on both outer edges, and the paper
+  starts at the same height as the single page.
+- **Notes tabs on the paper.** The Shared / per-Agent tabs stand on the
+  paper's top edge like index tabs, the open one running into its page.
+  "Notes" sits on the left page's head rule, level with the right page's
+  tools.
+- **Page turns.** Changing pages (desktop) turns the page: a leaf hinged
+  at the spine lifts the old page, shades as it rises, swings over and
+  lands on the left showing its blank back, with the next page already
+  under it. It is skipped for the Notes spread and when the device asks
+  for reduced motion.
+
 ## 10. Trying it on the private preview
 
 From Cloud Shell (the repo is public, so the clone needs no login):

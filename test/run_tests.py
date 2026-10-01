@@ -11575,6 +11575,18 @@ def test_field_notes_round3(p):
     page.click("#fn-veil .fn-kit-dice")
     record("notebook", "the dice tin under the radio opens the Dice page",
            bool(wait_for_condition(lambda: page.evaluate("() => window.dgFieldNotes.view() === 'dice' && !!document.querySelector('#fn-veil #dr-panel')") or None, timeout_ms=6000)), "")
+    halves = page.evaluate("() => { const l = document.querySelector('#fn-veil .fn-left').getBoundingClientRect(), r = document.querySelector('#fn-veil .fn-right').getBoundingClientRect(); return [l.width, r.width]; }")
+    record("notebook", "the open notebook's two halves are the same width, like a real book", abs(halves[0] - halves[1]) < 2, str(halves))
+    page.click("#fn-veil .fn-tab[data-view=rules]")
+    record("notebook", "changing pages turns the page (a leaf hinged at the spine)",
+           page.evaluate("() => !!document.querySelector('#fn-veil .fn-leaf-wrap .fn-leaf .fn-leaf-back')"), "")
+    gone = wait_for_condition(lambda: page.evaluate("() => !document.querySelector('#fn-veil .fn-leaf-wrap')") or None, timeout_ms=3000)
+    record("notebook", "…and the turned leaf is cleared away afterwards", bool(gone), "")
+    page.emulate_media(reduced_motion="reduce")
+    page.click("#fn-veil .fn-tab[data-view=settings]")
+    record("notebook", "no page turn when the device asks for reduced motion",
+           page.evaluate("() => !document.querySelector('#fn-veil .fn-leaf-wrap')"), "")
+    page.emulate_media(reduced_motion="no-preference")
     page.evaluate("() => window.dgFieldNotes.open('fieldid')")
     card = wait_for_condition(lambda: page.evaluate("() => { const c = document.querySelector('#fn-veil [data-fn-idc]'); return c && c.innerText.trim() ? c.getAttribute('data-template') + '|' + c.innerText : null; }"), timeout_ms=8000) or ""
     record("notebook", "Field ID draws the Agent's agency card from the Field IDs templates (DEA)",
@@ -11608,12 +11620,14 @@ def test_field_notes_round3(p):
         fr.wait_for_selector("#dg-notes-panel .dg-notes-toc", timeout=10000)
         lay = fr.evaluate("""() => { const q = s => document.querySelector('#dg-notes-panel ' + s).getBoundingClientRect();
             const tabs = q('.dg-notes-tab-strip'), tools = q('.dg-notes-toolbar'), toc = q('.dg-notes-toc'), main = q('.dg-notes-main');
+            const tab = document.querySelector('#dg-notes-panel .dg-notes-tab').getBoundingClientRect();
             return { tabsTop: tabs.top < 40, tabsAboveIndex: tabs.bottom <= toc.top + 1, rulesLevel: Math.abs(tabs.bottom - tools.bottom) < 2,
-                     indexLeft: toc.right <= main.left, toolsOverEditor: tools.bottom <= main.top + 1 }; }""")
-        record("notebook", "Notes spread: tabs at the top of the left page over Index/Evidence; tools over the editor on the right, head rules level",
+                     indexLeft: toc.right <= main.left, toolsOverEditor: tools.bottom <= main.top + 1,
+                     tabsOnPaperEdge: tab.top < 28 && tab.bottom >= 27 && tab.bottom <= 30, tabBox: [tab.top, tab.bottom] }; }""")
+        record("notebook", "Notes spread: tabs stand on the paper's top edge over Index/Evidence; tools over the editor on the right, head rules level",
                all(lay.values()), str(lay))
     except Exception as e:
-        record("notebook", "Notes spread: tabs at the top of the left page over Index/Evidence; tools over the editor on the right, head rules level", False, str(e)[:200])
+        record("notebook", "Notes spread: tabs stand on the paper's top edge over Index/Evidence; tools over the editor on the right, head rules level", False, str(e)[:200])
     try:
         fr.wait_for_selector("#character-sheet-btn", state="visible", timeout=10000)
         fr.click("#character-sheet-btn")
