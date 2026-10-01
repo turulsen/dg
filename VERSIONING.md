@@ -116,7 +116,8 @@ checks show nothing: its work is validated by the session's local run
 of the suite, then by CI once it is merged into `main`. That gap is how
 #55 merged with a test that then failed on `main` (a hover-colour race,
 fixed in #57). To check a branch before merging, start the workflow by
-hand on it. Two jobs:
+hand on it (a manual run has no previous push to compare, so job 1
+checks the branch against its merge-base with `main`). Two jobs:
 
 1. **Shell-cache discipline** (`scripts/check-shell-cache-bump.js`) —
    hard-fails the push if any `SHELL_FILES`-listed file changed without
