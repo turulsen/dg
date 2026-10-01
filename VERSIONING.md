@@ -267,7 +267,7 @@ against what the rolled-back frontend commit actually expects).
 
 Three places used to blur together here. The split, going forward:
 
-- **GitHub Issues** (`https://github.com/turulsen/dg-campaign/issues`) — the
+- **GitHub Issues** (`https://github.com/turulsen/dg/issues`) — the
   *live* board. Anything currently open and unresolved gets filed here,
   not as a `FEATURES.md` bullet. Default labels only (`bug` for actual
   defects, `enhancement` for known gaps/feature work) — no custom label

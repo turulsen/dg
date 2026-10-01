@@ -760,7 +760,7 @@ widgets). Live and current — no longer just planned.
 ## 13. Open / known-incomplete work
 
 **Currently-open items live in GitHub Issues, not here** —
-`https://github.com/turulsen/dg-campaign/issues`. This section used to carry the
+`https://github.com/turulsen/dg/issues`. This section used to carry the
 live list directly, which meant two places could say different things
 about whether something was still open; see `VERSIONING.md` for the
 full reasoning on the split (Issues = live status board, `BUGFIXES.md`
