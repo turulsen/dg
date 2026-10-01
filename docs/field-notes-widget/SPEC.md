@@ -366,6 +366,34 @@ phone. 73/73. It found three things, now fixed:
   showed it: the dossier now reads *Clearance briefing: accepted (date)* or
   *not yet*.
 
+### Radio on the preview (feedback: volume does nothing, Tune In doesn't move)
+
+Two separate causes:
+
+- **Tune In / channel dial (a notebook bug, fixed).** The radio that pops
+  up beside the closed notebook (from the radio chip, and on a phone the
+  only radio there is) is `position:fixed`. `livePagers()` decided which
+  radio faces to refresh with `offsetParent !== null`, which is always
+  null for a fixed element, so that face never refreshed: tapping a
+  channel never turned the knob and Tune In never became Leave, though
+  the engine underneath did tune. Only the radio inside the open book on
+  a desktop updated, and the earlier tests only drove that one. Now
+  "on screen" means "has a box" (`getClientRects()`); iOS also gets a
+  touch listener on the radio so its keys show their press.
+  `test_field_notes_popup_pager` drives the popped-up radio on a phone and
+  a desktop width and fails on the old check.
+- **Volume on an iPhone (the bucket setting, not code).** iOS ignores an
+  `<audio>` element's volume; only the Web Audio gain route (issue #39)
+  changes what's heard, and the radio takes that route only when the
+  track's host allows the page's origin. The bucket's CORS config is
+  applied and allows `https://turulsen.github.io` (checked: the live site
+  gets `access-control-allow-origin`), but not the preview's
+  `*.web.app` address, so the preview plays the plain element and the
+  slider can't change the volume on an iPhone. Checked on WebKit with
+  the notebook's own slider: CORS allowed -> gain 0.10 at slider 10
+  (`route=webaudio`); not allowed -> `route=element`. To try volume on the
+  preview, allow its address too (see §10). Not needed for the live site.
+
 ## 10. Trying it on the private preview
 
 From Cloud Shell (the repo is public, so the clone needs no login):
@@ -382,4 +410,20 @@ own web address, so its browser storage starts empty — type your Cover
 Identity on the Hub's loading screen to load your Agents. It uses the
 real Firestore (see §1 for what it may write). Re-run the second command
 after each new push to refresh the preview.
+
+**Radio volume on an iPhone** needs the preview's address allowed by the
+Storage bucket's CORS config (see "Radio on the preview" above). In
+Cloud Shell, with `PREVIEW` set to the address the deploy printed (no
+trailing slash):
+
+```
+PREVIEW=https://dg-app-b3447--field-notes-XXXXXXXX.web.app
+echo '[{"origin":["https://turulsen.github.io","'"$PREVIEW"'"],"method":["GET","HEAD"],"responseHeader":["Content-Type","Content-Length","Content-Range","Accept-Ranges"],"maxAgeSeconds":3600}]' > /tmp/cors.json
+gcloud storage buckets update gs://dg-app-b3447.firebasestorage.app --cors-file=/tmp/cors.json
+```
+
+Then reload the preview. The preview's address isn't committed to the
+repo's `storage.cors.json` (the repo is public). When the preview is
+retired, put the bucket back to the repo's file:
+`gcloud storage buckets update gs://dg-app-b3447.firebasestorage.app --cors-file=storage.cors.json`.
 

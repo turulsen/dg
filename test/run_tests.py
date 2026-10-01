@@ -11556,6 +11556,31 @@ def test_field_notes_notebook(p):
     page.close()
     return errs_all
 
+def test_field_notes_popup_pager(p):
+    """The radio popped up beside the closed notebook (from the radio chip;
+    on a phone, the only radio there is) is position:fixed, and its face
+    was filtered out of every refresh by an offsetParent check -- tapping a
+    channel never turned the knob and Tune In never became Leave."""
+    errs_all = []
+    for width, height in ((390, 844), (1300, 860)):
+        page, errs = _field_notes_page(p, width=width, height=height)
+        page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost && window.dgRadio", timeout=10000)
+        where = "phone" if width < 700 else "desktop"
+        page.evaluate("() => [...document.querySelectorAll('#fn-root .fn-chip')].find(c => c.getClientRects().length).click()")
+        shown = wait_for_condition(lambda: page.evaluate("() => { const p = document.querySelector('#fn-pager'); return p && !p.hidden && p.querySelector('.fn-pg-case') ? 1 : null; }"), timeout_ms=5000)
+        record("notebook", f"{where}: the radio chip pops the radio up", bool(shown), "")
+        page.click("#fn-pager [data-ch='3']")
+        knob = wait_for_condition(lambda: page.evaluate("() => { const k = document.querySelector('#fn-pager [data-p=knob]'); return /rotate\\(144deg\\)/.test(k.style.transform) && document.querySelector('#fn-pager [data-ch=\"3\"]').classList.contains('fn-on') ? k.style.transform : null; }"), timeout_ms=3000)
+        record("notebook", f"{where}: tapping a channel on the popped-up radio turns its knob there", bool(knob), str(knob))
+        page.click("#fn-pager [data-p=tune]")
+        key = wait_for_condition(lambda: page.evaluate("() => { const t = document.querySelector('#fn-pager [data-p=tune]'); return /leave/i.test(t.textContent) && t.classList.contains('fn-on') ? t.textContent : null; }"), timeout_ms=4000)
+        record("notebook", f"{where}: …and Tune In there becomes Leave once tuned", bool(key) and page.evaluate("() => window.dgRadio.state().channel === '3'"), str(key))
+        page.click("#fn-pager [data-p=tune]")
+        errs_all.extend(errs)
+        page.close()
+    return errs_all
+
 def test_field_notes_round3(p):
     """Field Notes, third round of feedback: the Field ID pocket carries a
     business card for the Agent's agency; Evidences filter by Operation;
@@ -12435,6 +12460,7 @@ def main():
         safe(test_friendly_clearance, browser, area="friendly")
         safe(test_field_notes_notebook, browser, area="notebook")
         safe(test_field_notes_round3, browser, area="notebook")
+        safe(test_field_notes_popup_pager, browser, area="notebook")
         safe(test_incursion, browser, area="incursion")
         safe(test_field_notes_standing_orders, browser, area="onboarding")
         safe(test_main_photo_from_active_era, browser, area="photo")

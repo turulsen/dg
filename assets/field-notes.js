@@ -1185,6 +1185,9 @@
         renderChip();
       };
       el.querySelector('[data-p="vol"]').addEventListener('input', function (e) { r.setVolume(e.target.value); });
+      // iOS Safari only shows :active (the keys' press) where a touch
+      // listener exists.
+      el.addEventListener('touchstart', function () {}, { passive: true });
     }
     updatePager();
     syncPagerTimer();
@@ -1196,9 +1199,12 @@
     p.hidden = false;
     mountPager(p, true);
   }
+  // On screen = has a box. Not offsetParent: that is null for the
+  // position:fixed popup pager, which then never updated (no knob turn,
+  // Tune In never became Leave) -- the whole radio on a phone.
   function livePagers() {
     return Array.prototype.filter.call(root.querySelectorAll('#fn-pager, [data-fn-slot="kit-radio"]'), function (p) {
-      return !p.hidden && p.offsetParent !== null && p.querySelector('.fn-pg-case');
+      return !p.hidden && p.getClientRects().length > 0 && p.querySelector('.fn-pg-case');
     });
   }
   function syncPagerTimer() {
