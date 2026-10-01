@@ -11549,6 +11549,18 @@ def test_field_notes_round3(p):
     page, errs = _field_notes_page(p, docs=docs, extra_init="localStorage.setItem('dg_notes_identity_%s', JSON.stringify({color:'#2b6cb0', font:'Nothing You Could Do'}));" % FN_CODE)
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    # Radio and dice live in the notebook: under the card pockets.
+    page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+    kit = wait_for_condition(lambda: page.evaluate("() => { const k = document.querySelector('#fn-veil [data-fn-slot=kit-radio] .fn-pg-case'); return k && k.offsetParent ? 1 : null; }"), timeout_ms=8000)
+    record("notebook", "the radio sits on the notebook's left page, under the card pockets", bool(kit), "")
+    if kit and page.evaluate("() => !!window.dgRadio"):
+        page.click("#fn-veil [data-fn-slot=kit-radio] [data-p=tune]")
+        tuned = wait_for_condition(lambda: page.evaluate("() => window.dgRadio.state().tuned") or None, timeout_ms=6000)
+        record("notebook", "…and tunes the Table Radio from there", bool(tuned), "")
+        page.click("#fn-veil [data-fn-slot=kit-radio] [data-p=tune]")
+    page.click("#fn-veil .fn-kit-dice")
+    record("notebook", "the dice tin under the radio opens the Dice page",
+           bool(wait_for_condition(lambda: page.evaluate("() => window.dgFieldNotes.view() === 'dice' && !!document.querySelector('#fn-veil #dr-panel')") or None, timeout_ms=6000)), "")
     page.evaluate("() => window.dgFieldNotes.open('fieldid')")
     card = wait_for_condition(lambda: page.evaluate("() => { const c = document.querySelector('#fn-veil .fn-biz-big'); return c ? c.innerText : null; }"), timeout_ms=8000) or ""
     record("notebook", "Field ID shows a business card for the Agent's agency (DEA)", "DRUG ENFORCEMENT" in card.upper(), card[:120])
@@ -11576,12 +11588,35 @@ def test_field_notes_round3(p):
         if fr: break
         page.wait_for_timeout(250)
     try:
+        fr.wait_for_selector("#dg-notes-panel .dg-notes-toc", timeout=10000)
+        lay = fr.evaluate("""() => { const q = s => document.querySelector('#dg-notes-panel ' + s).getBoundingClientRect();
+            const tabs = q('.dg-notes-tab-strip'), tools = q('.dg-notes-toolbar'), toc = q('.dg-notes-toc'), main = q('.dg-notes-main');
+            return { tabsTop: tabs.top < 40, tabsAboveIndex: tabs.bottom <= toc.top + 1, rulesLevel: Math.abs(tabs.bottom - tools.bottom) < 2,
+                     indexLeft: toc.right <= main.left, toolsOverEditor: tools.bottom <= main.top + 1 }; }""")
+        record("notebook", "Notes spread: tabs at the top of the left page over Index/Evidence; tools over the editor on the right, head rules level",
+               all(lay.values()), str(lay))
+    except Exception as e:
+        record("notebook", "Notes spread: tabs at the top of the left page over Index/Evidence; tools over the editor on the right, head rules level", False, str(e)[:200])
+    try:
         fr.wait_for_selector("#character-sheet-btn", state="visible", timeout=10000)
         fr.click("#character-sheet-btn")
         page.wait_for_url("**/stats/index.html**", timeout=10000)
         record("notebook", "the spread's Character Sheet button leaves for the sheet (no trap inside the notebook)", True, page.url)
     except Exception as e:
         record("notebook", "the spread's Character Sheet button leaves for the sheet (no trap inside the notebook)", False, str(e)[:200])
+    errs_all.extend(errs)
+    page.close()
+
+    # Phone: the open notebook's header has the radio; its pager comes up over the book
+    page, errs = _field_notes_page(p, width=390, height=844)
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost && !!window.dgRadio", timeout=10000)
+    page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+    page.click("#fn-veil .fn-phone-head [data-fn=radio]")
+    on_top = wait_for_condition(lambda: page.evaluate("""() => { const p = document.getElementById('fn-pager'); if (!p || p.hidden) return null;
+        const r = p.querySelector('[data-p=tune]').getBoundingClientRect(); const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return el && el.closest('#fn-pager') ? 1 : null; }"""), timeout_ms=6000)
+    record("notebook", "phone: the notebook header's radio button brings the pager up over the open book", bool(on_top), "")
     errs_all.extend(errs)
     page.close()
 

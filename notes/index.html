@@ -99,16 +99,21 @@
   html.notes-in-notebook .notes-header, html.notes-in-notebook footer.site-footer{ display:none; }
   html.notes-in-notebook .change-context{ margin-top:0; }
   html.notes-in-notebook .change-context button{ color:#4a3f28; border-color:rgba(160,130,70,.6); }
-  /* Field Notes' Notes spread (embed=spread): the notebook's two pages --
-     tabs, the index, Evidence and its Operation filter on the left page,
-     the toolbar and editor on the right -- with the fold drawn here at
-     the middle (field-notes.css hides the book's own spine for this).
-     The wrappers between #dg-notes-panel and its parts go display:contents
-     so the parts land straight on the two-column grid; each page scrolls
-     on its own. */
+  /* Field Notes' Notes spread (embed=spread): the notebook's two pages.
+     Left page: "Notes" over the Shared / per-Agent tabs, which sit on the
+     page's head rule like index tabs; below it the Index and Evidence
+     (with its Operation filter) as sections. Right page: search and the
+     block tools in a head band of the same height, ruled off the same
+     way, then the editor. The fold is drawn here at the middle
+     (field-notes.css hides the book's own spine for this). The wrappers
+     between #dg-notes-panel and its parts go display:contents so the
+     parts land straight on the two-column grid; each page scrolls on its
+     own. */
   html.notes-spread body{ padding:0; background:transparent; overflow:hidden; }
-  html.notes-spread .change-context{
-    position:fixed; left:12px; bottom:10px; z-index:20; margin:0; padding:0;
+  html.notes-spread .change-context{ position:fixed; left:22px; bottom:12px; z-index:20; margin:0; padding:0; }
+  html.notes-spread .change-context button{
+    font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase;
+    color:#1c1608; background:transparent; border:1.5px solid #4a3f28; border-radius:2px; padding:7px 12px;
   }
   html.notes-spread #notes-mount{ height:100vh; }
   html.notes-spread #dg-notes-panel .dg-notes-paper-rules,
@@ -117,21 +122,62 @@
   @media (min-width:700px){
     html.notes-spread #dg-notes-panel{
       display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); grid-template-rows:auto minmax(0,1fr);
-      column-gap:56px; height:100vh; padding:12px 20px 0; box-sizing:border-box;
+      column-gap:60px; height:100vh; padding:0 22px; box-sizing:border-box;
       background:
-        linear-gradient(90deg,transparent calc(50% - 22px),rgba(60,40,10,.10) calc(50% - 8px),rgba(40,24,6,.34) 50%,rgba(60,40,10,.10) calc(50% + 8px),transparent calc(50% + 22px)),
-        repeating-linear-gradient(180deg,transparent 0 27px,rgba(120,150,180,.16) 27px 28px);
+        linear-gradient(90deg,transparent calc(50% - 24px),rgba(60,40,10,.10) calc(50% - 9px),rgba(40,24,6,.34) 50%,rgba(60,40,10,.10) calc(50% + 9px),transparent calc(50% + 24px)),
+        repeating-linear-gradient(180deg,transparent 0 27px,rgba(120,150,180,.14) 27px 28px);
+      background-attachment:local;
     }
     html.notes-spread #dg-notes-panel .dg-notes-folder-body,
     html.notes-spread #dg-notes-panel .dg-notes-paper,
     html.notes-spread #dg-notes-panel .dg-notes-paper-content,
     html.notes-spread #dg-notes-panel .dg-notes-body{ display:contents; }
-    html.notes-spread #dg-notes-panel .dg-notes-tab-strip{ grid-column:1; grid-row:1; margin:0 0 8px; }
-    html.notes-spread #dg-notes-panel .dg-notes-toolbar{ grid-column:2; grid-row:1; margin:0 0 8px; align-self:end; }
-    html.notes-spread #dg-notes-panel .dg-notes-toc{
-      grid-column:1; grid-row:2; width:auto; max-width:none; position:static; overflow:auto; padding:4px 4px 56px 0; border:0;
+
+    /* Head bands: same row, same height, same 2px rule underneath. */
+    html.notes-spread #dg-notes-panel .dg-notes-tab-strip,
+    html.notes-spread #dg-notes-panel .dg-notes-toolbar{
+      grid-row:1; align-self:stretch; margin:0; padding:14px 0 0; background:#f4eed8; border-bottom:2px solid #1c1608;
     }
-    html.notes-spread #dg-notes-panel .dg-notes-main{ grid-column:2; grid-row:2; overflow:auto; padding:4px 4px 52px 0; min-width:0; }
+    html.notes-spread #dg-notes-panel .dg-notes-tab-strip{
+      grid-column:1; display:flex; flex-wrap:wrap; align-content:space-between; align-items:flex-end; gap:0 4px;
+    }
+    html.notes-spread #dg-notes-panel .dg-notes-tab-strip::before{
+      content:'Notes'; flex:0 0 100%; font-family:'Special Elite',monospace; font-size:22px; line-height:1.1; color:#1c1608; margin-bottom:8px;
+    }
+    html.notes-spread #dg-notes-panel .dg-notes-tab{
+      transform:none; margin-bottom:-2px; padding:6px 12px 5px; font-size:10px; border-width:1px 1px 0; border-bottom:0;
+      border-radius:5px 5px 0 0; background:#e4dcc2; box-shadow:inset 0 -6px 8px -6px rgba(0,0,0,.18);
+    }
+    html.notes-spread #dg-notes-panel .dg-notes-tab:hover:not(.active){ transform:none; background:#ece5cd; }
+    html.notes-spread #dg-notes-panel .dg-notes-tab.active{ background:#f4eed8; box-shadow:none; border-bottom:2px solid #f4eed8; margin-bottom:-2px; }
+    html.notes-spread #dg-notes-panel .dg-notes-tab-shared{ border-color:#4a3f28; }
+
+    html.notes-spread #dg-notes-panel .dg-notes-toolbar{
+      grid-column:2; display:flex; flex-wrap:wrap; align-content:space-between; align-items:center; justify-content:flex-start; gap:6px 6px; padding-bottom:8px;
+    }
+    html.notes-spread #dg-notes-panel .dg-notes-search{ order:-2; flex:1 1 60%; padding:5px 9px; }
+    html.notes-spread #dg-notes-panel .dg-notes-toggle-label-inline:has(.dg-notes-search-everywhere){ order:-1; font-size:10px; }
+    html.notes-spread #dg-notes-panel .dg-notes-toggle-label-inline:has(.dg-notes-plain-fonts){ display:none; }
+    html.notes-spread #dg-notes-panel .dg-notes-circulate-btn,
+    html.notes-spread #dg-notes-panel .dg-notes-pin-btn,
+    html.notes-spread #dg-notes-panel .dg-notes-tag-btn,
+    html.notes-spread #dg-notes-panel .dg-notes-timeline-btn{ font-size:11px; padding:4px 9px; }
+
+    /* Left page body: Index and Evidence as the notebook's own sections. */
+    html.notes-spread #dg-notes-panel .dg-notes-toc{
+      grid-column:1; grid-row:2; width:auto; max-width:none; position:static; overflow:auto; padding:14px 2px 60px 0; border:0;
+    }
+    html.notes-spread #dg-notes-panel .dg-notes-toc-label,
+    html.notes-spread #dg-notes-panel #dg-notes-evidence-mount > .dg-notes-toc-subhead:first-child{
+      font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:#4a3f28;
+      margin:0 0 7px; padding-bottom:4px; border-bottom:1px solid rgba(160,130,70,.5);
+    }
+    html.notes-spread #dg-notes-panel #dg-notes-evidence-mount{ margin-top:22px; }
+    html.notes-spread #dg-notes-panel .dg-notes-evidence-filter{ margin:2px 0 8px; padding:5px 7px; font-size:11px; }
+    html.notes-spread #dg-notes-panel .dg-notes-toc-item,
+    html.notes-spread #dg-notes-panel .dg-notes-evidence-item{ font-size:12.5px; padding:5px 0; }
+
+    html.notes-spread #dg-notes-panel .dg-notes-main{ grid-column:2; grid-row:2; overflow:auto; padding:14px 4px 56px 0; min-width:0; }
   }
 </style>
 </head>

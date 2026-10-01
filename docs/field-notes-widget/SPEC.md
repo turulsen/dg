@@ -259,6 +259,22 @@ Each step is testable on the preview before the next:
   Hub inside the Hub) is fixed: those links hide in the shell, and any
   page that finds the Hub inside itself breaks out.
 
+### Round 4
+
+- **Radio and dice back inside the notebook.** The card pockets are
+  shorter; under them, on the left page, sit the radio (the same pager
+  device, fully working: dial, Tune, Sound, Volume) and a dice tin
+  showing the last result, which opens the Dice page. The strap under
+  the book is gone. With the notebook shut, the chip beside it still
+  pops the pager up. On a phone the open notebook's header has a radio
+  button that brings the pager up over the book.
+- **Notes spread laid out as two pages.** Left page: *Notes* on top with
+  the Shared / per-Agent tabs sitting on the page's head rule, then
+  *Index* and *Evidence* (with its Operation filter) as sections. Right
+  page: search (and *Search everywhere*) over the block tools in a head
+  band of the same height, ruled at the same line, then the editor. The
+  *Plain fonts* switch is left out of the spread.
+
 ## 10. Trying it on the private preview
 
 From Cloud Shell (the repo is public, so the clone needs no login):

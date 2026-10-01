@@ -128,7 +128,7 @@ html.dg-fn-host #notes-widget-btn{ display:none !important; }
 #fn-root .fn-chip.fn-chip-phone{ height:50px; border-radius:25px; padding:0 12px; }
 
 /* ── The radio: a pager on the desk ── */
-#fn-pager{ position:fixed; right:170px; bottom:74px; z-index:9993; width:318px; animation:fn-snap .2s ease both; }
+#fn-pager{ position:fixed; right:170px; bottom:74px; z-index:9997; width:318px; animation:fn-snap .2s ease both; }
 .fn-pg-case{
   position:relative; padding:16px 16px 14px; border-radius:16px;
   background:linear-gradient(165deg,#2b3322 0%,#1a2013 48%,#12160d 100%);
@@ -202,20 +202,22 @@ html.dg-fn-host #notes-widget-btn{ display:none !important; }
   background-image:var(--fn-grain), radial-gradient(120% 90% at 50% 0%, rgba(255,210,160,.08), transparent 60%), linear-gradient(180deg,#6a3720,#4d2714);
   box-shadow:inset 0 2px 10px rgba(0,0,0,.55), inset 0 0 0 1px rgba(30,12,4,.8);
 }
-/* Three deep pockets share the page; each card sits well down inside
-   its pocket and shows its top half above the stitched, thumb-notched lip. */
-#fn-root .fn-slot{ position:relative; flex:1 1 0; min-height:128px; max-height:200px; cursor:pointer; outline:none; }
+/* Three short pockets up top -- each card shows its top half above the
+   stitched, thumb-notched lip -- and the kit (radio, dice tin) below. */
+#fn-root .fn-slot{ position:relative; flex:1 1 96px; min-height:92px; max-height:118px; cursor:pointer; outline:none; }
+.fn-slot .fn-biz-agency{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.fn-slot .fn-biz-name{ margin-top:2px; }
 #fn-root .fn-slot:focus-visible .fn-card{ box-shadow:0 0 0 2px var(--fn-lime), 0 3px 8px rgba(0,0,0,.4); }
 .fn-slot-lip{
-  position:absolute; left:0; right:0; bottom:0; height:46%; min-height:52px; border-radius:2px 2px 4px 4px; pointer-events:none; z-index:1;
-  -webkit-mask:radial-gradient(circle 20px at 50% 0,transparent 19px,#000 20px); mask:radial-gradient(circle 20px at 50% 0,transparent 19px,#000 20px);
+  position:absolute; left:0; right:0; bottom:0; height:40px; border-radius:2px 2px 4px 4px; pointer-events:none; z-index:1;
+  -webkit-mask:radial-gradient(circle 16px at 50% 0,transparent 15px,#000 16px); mask:radial-gradient(circle 16px at 50% 0,transparent 15px,#000 16px);
   background-color:#7a4023;
   background-image:var(--fn-grain), linear-gradient(180deg,#8a4a2a,#6a3720);
   box-shadow:0 -4px 8px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,220,180,.18), inset 0 0 0 1px rgba(40,16,6,.7);
 }
 .fn-slot-lip::before{ content:''; position:absolute; left:6px; right:6px; top:6px; border-top:2px dashed var(--fn-stitch); filter:drop-shadow(0 1px 0 rgba(0,0,0,.4)); }
 .fn-card{
-  position:absolute; left:7%; right:7%; top:6px; bottom:12px; padding:12px 14px; border-radius:3px;
+  position:absolute; left:7%; right:7%; top:4px; bottom:8px; padding:9px 12px; border-radius:3px;
   background:linear-gradient(170deg,#fbf7ea,#ece3c8); color:var(--fn-ink);
   box-shadow:0 3px 8px rgba(0,0,0,.42), inset 0 0 0 1px rgba(160,130,70,.35); transition:transform .16s ease;
 }
@@ -226,7 +228,7 @@ html.dg-fn-host #notes-widget-btn{ display:none !important; }
 .fn-card-s{ font-size:9px; letter-spacing:.08em; color:var(--fn-ink-3); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .fn-card-photo{ display:flex; gap:10px; align-items:flex-start; }
 .fn-card-ph{
-  width:58px; height:64px; flex:none; background:#9d8f6c; border:3px solid #fff; border-bottom-width:10px; box-shadow:0 1px 4px rgba(0,0,0,.3);
+  width:42px; height:46px; flex:none; background:#9d8f6c; border:3px solid #fff; border-bottom-width:8px; box-shadow:0 1px 4px rgba(0,0,0,.3);
   background-image:repeating-linear-gradient(135deg,rgba(0,0,0,.07) 0 4px,transparent 4px 8px); overflow:hidden; position:relative;
   display:flex; align-items:center; justify-content:center; font-size:6px; letter-spacing:.06em; text-transform:uppercase; color:#efe7cf; text-align:center;
 }
@@ -314,14 +316,25 @@ html.dg-fn-host #notes-widget-btn{ display:none !important; }
 #fn-root .fn-spread-quick{ position:absolute; right:12px; bottom:10px; z-index:2; }
 .fn-spread-msg{ padding:18px; }
 
-/* Dice on a strap under the book */
-#fn-root .fn-dice-strap{
-  position:absolute; left:50%; bottom:-30px; transform:translateX(-50%); z-index:5; height:42px; padding:4px 16px 0 10px; border:0;
-  border-radius:0 0 12px 12px; cursor:pointer; display:flex; align-items:center; gap:8px;
-  font-family:var(--fn-type); font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:#f0dcbc;
+/* The kit under the pockets: the radio (the same pager the chip pops
+   up beside the closed book) and the dice tin. */
+.fn-kit{ margin-top:auto; padding-top:6px; display:flex; flex-direction:column; gap:10px; }
+.fn-kit-radio .fn-pg-case{ padding:12px 12px 11px; border-radius:13px; box-shadow:0 10px 18px rgba(0,0,0,.55), 0 2px 5px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.10), inset 0 0 0 1px #3d4a32, inset 0 -3px 0 rgba(0,0,0,.35); }
+.fn-kit-radio .fn-pg-controls{ margin-top:9px; gap:10px; }
+#fn-root .fn-kit-dice{
+  position:relative; display:flex; align-items:center; gap:10px; width:100%; padding:7px 12px; cursor:pointer; text-align:left;
+  border:0; border-radius:9px; color:#c9d4b8; font-family:var(--fn-mono);
+  background:linear-gradient(165deg,#2b3322 0%,#1a2013 55%,#12160d 100%);
+  box-shadow:0 8px 14px rgba(0,0,0,.5), 0 2px 4px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.10), inset 0 0 0 1px #3d4a32;
 }
-#fn-root .fn-dice-strap img{ width:30px; }
-#fn-root .fn-dice-strap:hover{ filter:brightness(1.1); }
+#fn-root .fn-kit-dice:hover{ filter:brightness(1.12); }
+#fn-root .fn-kit-dice img{ width:30px; flex:none; }
+.fn-kit-dice-t{ font-family:var(--fn-type); font-size:12px; letter-spacing:.18em; text-transform:uppercase; }
+.fn-kit-dice-r{
+  margin-left:auto; min-width:64px; text-align:center; font-size:11px; letter-spacing:.08em; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  background:linear-gradient(180deg,#a9b87a,#93a364); color:#1c2410; border-radius:4px; padding:4px 8px; box-shadow:inset 0 2px 4px rgba(0,0,0,.4);
+}
+@media (max-height:760px){ .fn-kit-radio .fn-pg-time{ display:none; } .fn-kit-radio .fn-pg-bar{ margin-top:4px; } }
 
 /* ── Buttons, one language ── */
 #fn-root .fn-btn{
@@ -448,7 +461,7 @@ html.dg-fn-host #notes-widget-btn{ display:none !important; }
     animation:fn-sheet .26s cubic-bezier(.2,.8,.24,1) both;
   }
   #fn-root .fn-stitch{ inset:4px; border-radius:0; }
-  #fn-root .fn-close, .fn-spine, #fn-root .fn-dice-strap{ display:none; }
+  #fn-root .fn-close, .fn-spine, .fn-kit{ display:none; }
   .fn-phone-head{
     display:flex; align-items:center; gap:10px; flex:none; padding:8px 10px; border-radius:5px; position:relative; z-index:2;
     background-image:linear-gradient(180deg,rgba(255,255,255,.06),rgba(0,0,0,.14)); box-shadow:inset 0 0 0 1px rgba(58,32,19,.7);
@@ -461,6 +474,9 @@ html.dg-fn-host #notes-widget-btn{ display:none !important; }
     border-radius:4px; border:0; background:rgba(0,0,0,.22); box-shadow:inset 0 0 0 1px rgba(58,32,19,.7); color:#f7e9d4; font-size:15px; padding:0;
   }
   #fn-root .fn-phone-head button img{ width:26px; }
+  #fn-root .fn-phone-head .fn-ph-radio{ position:relative; color:#c9d4b8; }
+  #fn-root .fn-ph-radio .fn-chip-dot{ position:absolute; right:6px; top:6px; width:6px; height:6px; }
+  #fn-root .fn-ph-radio.fn-live .fn-chip-dot{ background:#8fce5a; box-shadow:0 0 6px rgba(143,206,90,.9); }
   .fn-left{ width:auto; padding:0; flex:none; position:relative; z-index:2; }
   .fn-holder{ flex-direction:row; overflow-x:auto; overflow-y:hidden; scroll-snap-type:x mandatory; padding:8px; gap:8px; }
   #fn-root .fn-slot{ flex:0 0 62%; height:96px; min-height:0; max-height:none; scroll-snap-align:start; }

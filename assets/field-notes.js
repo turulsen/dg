@@ -384,6 +384,7 @@
         '<button type="button" class="fn-close" data-fn="close" title="Close" aria-label="Close">X</button>' +
         '<div class="fn-phone-head">' +
           '<div class="fn-phone-head-t"><div class="fn-phone-head-k">Field Notes</div><div class="fn-phone-head-n" data-fn-slot="phone-name"></div></div>' +
+          '<button type="button" data-fn="radio" title="Table Radio" aria-label="Table Radio" class="fn-ph-radio"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 8 L17 3"/><rect x="3" y="8" width="18" height="12" rx="2"/><circle cx="15.5" cy="14" r="3"/><path d="M6 12h4M6 15h4"/></svg><span class="fn-chip-dot"></span></button>' +
           '<button type="button" data-fn="dice" title="Dice roller" aria-label="Dice roller"><img class="fn-tri" src="' + TRI + '" alt=""></button>' +
           '<button type="button" data-fn="close" title="Close" aria-label="Close">X</button>' +
         '</div>' +
@@ -399,6 +400,12 @@
           '<div class="fn-slot" data-view="req" role="button" tabindex="0" aria-label="Requisition">' +
             '<div class="fn-card fn-card-req"><div class="fn-card-k">Program Office</div><div class="fn-card-n">Requisition</div>' +
             '<div class="fn-card-s">Materiel &amp; Disbursement Desk · Form 27-R</div></div><div class="fn-slot-lip"></div></div>' +
+          // The kit under the pockets: the radio and the dice tin.
+          '<div class="fn-kit">' +
+            '<div class="fn-kit-radio" data-fn-slot="kit-radio"></div>' +
+            '<button type="button" class="fn-kit-dice" data-fn="dice" title="Dice Roller"><img class="fn-tri" src="' + TRI + '" alt="">' +
+              '<span class="fn-kit-dice-t">Dice</span><span class="fn-kit-dice-r" data-fn-slot="kit-dice-last"></span></button>' +
+          '</div>' +
         '</div></div>' +
         '<div class="fn-right">' +
           '<div class="fn-booklet"><div class="fn-paper">' +
@@ -413,7 +420,6 @@
           '</div>' +
         '</div>' +
         '<div class="fn-spread" data-fn-slot="spread" hidden></div>' +
-        '<button type="button" class="fn-dice-strap fn-leather" data-fn="dice" title="Dice Roller"><img class="fn-tri" src="' + TRI + '" alt=""><span>Dice</span></button>' +
       '</div>' +
     '</div>';
 
@@ -460,7 +466,7 @@
     if (act === 'open') { if (e.target.closest('[data-fn="dice"]')) return; open(); return; }
     if (act === 'dice') { e.stopPropagation(); open('dice'); return; }
     if (act === 'close') { close(); return; }
-    if (act === 'chip') { togglePager(); return; }
+    if (act === 'chip' || act === 'radio') { togglePager(); return; }
     var v = t.getAttribute('data-view');
     if (!v) return;
     if (t.classList.contains('fn-tab') && v === 'notes' && state.view === 'notes' && !narrow()) {
@@ -490,11 +496,13 @@
     loadData().then(function () { renderChrome(); if (state.open) render(); });
     renderChrome();
     render();
+    mountPager(slot('kit-radio'), false);
   }
   function close() {
     state.open = false;
     root.querySelector('#fn-veil').hidden = true;
     document.body.style.overflow = '';
+    syncPagerTimer();
   }
   function show(view) {
     state.view = view;
@@ -976,27 +984,26 @@
       chip.innerHTML = '<span class="fn-chip-dot"></span>' + (s.tuned ? '<b>CH ' + esc(s.channel) + '</b> ' : '') + esc(label);
       chip.title = s.tuned && s.track ? 'Now playing: ' + s.track : 'Table Radio';
     });
+    var ph = root.querySelector('.fn-ph-radio');
+    if (ph) { ph.hidden = !s; ph.classList.toggle('fn-live', !!(s && s.live)); }
     if (s && s.channel) lsSet('dg_fn_last_channel', s.channel);
-    if (!root.querySelector('#fn-pager').hidden) updatePager();
+    updatePager();
   }
   function togglePager() { if (root.querySelector('#fn-pager').hidden) openPager(); else closePager(); }
   function closePager() {
     var p = root.querySelector('#fn-pager');
     if (!p || p.hidden) return;
     p.hidden = true;
-    if (pagerTimer) { clearInterval(pagerTimer); pagerTimer = null; }
+    syncPagerTimer();
   }
-  function openPager() {
-    var r = window.dgRadio;
-    if (!r) return;
-    hidePeek();
-    var p = root.querySelector('#fn-pager');
-    var chans = r.channels;
-    pagerPick = lsGet('dg_fn_last_channel') || chans[0];
-    p.innerHTML =
-      '<div class="fn-pg-case">' +
+  // The same radio device in two places: on the notebook's left page
+  // (under the card pockets) and, with the notebook shut, popped up beside
+  // the closed book from the radio chip.
+  function pagerHtml(withClose) {
+    var chans = window.dgRadio.channels;
+    return '<div class="fn-pg-case">' +
         '<span class="fn-pg-screw fn-pg-s1"></span><span class="fn-pg-screw fn-pg-s2"></span><span class="fn-pg-screw fn-pg-s3"></span><span class="fn-pg-screw fn-pg-s4"></span>' +
-        '<button type="button" class="fn-pg-x" data-p="x" aria-label="Put the radio away">×</button>' +
+        (withClose ? '<button type="button" class="fn-pg-x" data-p="x" aria-label="Put the radio away">×</button>' : '') +
         '<div class="fn-pg-screen"><div class="fn-pg-row"><b data-p="ch">CH —</b><span data-p="st"></span></div>' +
           '<div class="fn-pg-track" data-p="track"></div>' +
           '<div class="fn-pg-bar"><div class="fn-pg-fill" data-p="fill"></div></div><div class="fn-pg-time" data-p="time"></div></div>' +
@@ -1015,34 +1022,62 @@
           '</div>' +
         '</div>' +
       '</div>';
-    p.onclick = function (e) {
-      var t = e.target.closest('[data-ch],[data-p]');
-      if (!t) return;
-      var s = r.state();
-      if (t.hasAttribute('data-ch')) {
-        pagerPick = t.getAttribute('data-ch');
-        lsSet('dg_fn_last_channel', pagerPick);
-        if (s.tuned) r.tune(pagerPick);
-      } else {
-        var k = t.getAttribute('data-p');
-        if (k === 'x') { closePager(); return; }
-        if (k === 'tune') { if (s.tuned) r.leave(); else { r.tune(pagerPick); if (r.state().muted) r.setMuted(false); } }
-        else if (k === 'mute') r.setMuted(!s.muted);
-        else if (k === 'resume') r.resume();
-      }
-      updatePager();
-      renderChip();
-    };
-    p.querySelector('[data-p="vol"]').addEventListener('input', function (e) { r.setVolume(e.target.value); });
-    p.hidden = false;
+  }
+  function mountPager(el, withClose) {
+    var r = window.dgRadio;
+    if (!r || !el) return;
+    if (!pagerPick) pagerPick = lsGet('dg_fn_last_channel') || r.channels[0];
+    if (!el.querySelector('.fn-pg-case')) {
+      el.innerHTML = pagerHtml(withClose);
+      el.onclick = function (e) {
+        var t = e.target.closest('[data-ch],[data-p]');
+        if (!t || t.getAttribute('data-p') === 'vol') return;
+        var s = r.state();
+        if (t.hasAttribute('data-ch')) {
+          pagerPick = t.getAttribute('data-ch');
+          lsSet('dg_fn_last_channel', pagerPick);
+          if (s.tuned) r.tune(pagerPick);
+        } else {
+          var k = t.getAttribute('data-p');
+          if (k === 'x') { closePager(); return; }
+          if (k === 'tune') { if (s.tuned) r.leave(); else { r.tune(pagerPick); if (r.state().muted) r.setMuted(false); } }
+          else if (k === 'mute') r.setMuted(!s.muted);
+          else if (k === 'resume') r.resume();
+        }
+        updatePager();
+        renderChip();
+      };
+      el.querySelector('[data-p="vol"]').addEventListener('input', function (e) { r.setVolume(e.target.value); });
+    }
     updatePager();
-    if (pagerTimer) clearInterval(pagerTimer);
-    pagerTimer = setInterval(updatePager, 1000);
+    syncPagerTimer();
+  }
+  function openPager() {
+    if (!window.dgRadio) return;
+    hidePeek();
+    var p = root.querySelector('#fn-pager');
+    p.hidden = false;
+    mountPager(p, true);
+  }
+  function livePagers() {
+    return Array.prototype.filter.call(root.querySelectorAll('#fn-pager, [data-fn-slot="kit-radio"]'), function (p) {
+      return !p.hidden && p.offsetParent !== null && p.querySelector('.fn-pg-case');
+    });
+  }
+  function syncPagerTimer() {
+    var need = !root.querySelector('#fn-pager').hidden || (state.open && !state.suspended);
+    if (need && !pagerTimer) pagerTimer = setInterval(updatePager, 1000);
+    if (!need && pagerTimer) { clearInterval(pagerTimer); pagerTimer = null; }
   }
   function updatePager() {
-    var p = root.querySelector('#fn-pager');
+    // The dice tin under it shows the last result, read off the roller.
+    var lr = document.getElementById('dr-result-label'), last = slot('kit-dice-last');
+    if (last) { var lt = lr && lr.textContent.trim(); if (last.textContent !== (lt || 'd4 – d100')) last.textContent = lt || 'd4 – d100'; }
     var s = radioState();
-    if (!s || !p || p.hidden || !p.querySelector('.fn-pg-case')) return;
+    if (!s) return;
+    livePagers().forEach(function (p) { updatePagerEl(p, s); });
+  }
+  function updatePagerEl(p, s) {
     var q = function (k) { return p.querySelector('[data-p="' + k + '"]'); };
     var ch = s.tuned ? s.channel : pagerPick;
     var idx = window.dgRadio.channels.indexOf(ch);
