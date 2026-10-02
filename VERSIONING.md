@@ -58,15 +58,24 @@ anything for).
 **v1.0.0** marks a deliberate starting line as of 2026-09-06, not a
 reconstruction of the 260 commits before it — don't backfill v0.x tags
 onto old commits, it's not worth the archaeology and there's no
-consumer depending on that history being versioned. Latest tag as of
-this writing is **v2.0.0**, cut 2026-09-30 — PR #55, the major bump §2
+consumer depending on that history being versioned. v2.0.0 was cut
+2026-09-30 — PR #55, the major bump §2
 reserved for it: the Google Sheet is retired and every page reads and
 writes Firestore directly (Code.gs v97 is left serving only the Drive
 image proxy for old `gdrive:` links; going live took the one-time steps
-in `docs/firebase-migration/SHEET-RETIREMENT.md`). On `main` since then,
-untagged: #56 (the main photo follows the Agent File's Active Era rule
-everywhere; a patch) and #57 (a CI test fix only) — together the next
-tag would be **v2.0.1**. v1.4.0 (2026-09-29) was PRs #41–#50:
+in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v2.1.0**
+(2026-10-02) is PRs #56–#58: the Field Notes notebook on every player
+page, each Agent's whole file on one Agent Hub tab (the three-tab Agent
+Portal retired), the Appearance and Incursion wizard steps, the
+clearance briefing, Cell lists by name with KIA marked, Split View
+retired; plus #56 (the main photo follows the Active Era everywhere) and
+#57 (a CI test fix). No backend change (Code.gs still v97); the AI Cloud
+Functions (`generatePrompt`, `generatePlateImage`, `dailyBackup`) were
+deployed by hand on 2026-10-01, having been missed at the Sheet
+retirement. Its tag is made from GitHub's release page (Releases →
+Draft a new release → new tag `v2.1.0` on `main`), since a Claude
+session can push only its own branch, not tags: that makes it a
+lightweight tag, with the notes on the Release rather than in the tag. v1.4.0 (2026-09-29) was PRs #41–#50:
 the **Friendly** clearance (one-shot players, all 62 Agent Dossiers,
 `scripts/pregens/`), the Table Radio main-track volume on iOS (#39,
 live once the bucket CORS config in `storage.cors.json` is applied),
