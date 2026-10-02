@@ -2533,7 +2533,7 @@ def test_agent_hub(p):
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
     record("hub", "with no agents on file, New Recruit is the only tab",
-           page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)") == ["+ New Recruit"], "")
+           page.eval_on_selector_all(".tw:not(.tw-switch) > span", "els => els.map(e=>e.textContent)") == ["+ New Recruit"], "")
     record("hub", "the empty-state panel explains there's nothing on file yet",
            "No Agents on File" in page.inner_text("#folder-body"), "")
     errs_all.extend(errs)
@@ -2560,7 +2560,7 @@ def test_agent_hub(p):
     page.reload(wait_until="domcontentloaded")
     page.wait_for_timeout(400)
 
-    tab_labels = page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)")
+    tab_labels = page.eval_on_selector_all(".tw:not(.tw-switch) > span", "els => els.map(e=>e.textContent)")
     record("hub", "one tab per Agent (most recent first) plus New Recruit pinned first",
            tab_labels == ['+ New Recruit', 'Owen "Ferro"', 'Priya Anand'], str(tab_labels))
     record("hub", "the most recently-saved Agent's tab is active by default",
@@ -2655,13 +2655,13 @@ def test_agent_hub_cover_identity(p):
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(300)
     record("hub", "starts with both stray Agents already in the roster before any lookup",
-           set(page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)"))
+           set(page.eval_on_selector_all(".tw:not(.tw-switch) > span", "els => els.map(e=>e.textContent)"))
            == {"+ New Recruit", "Claimed By Someone Else", "Unclaimed Local Draft"}, "")
 
     page.fill("#cover-identity-input", "Gergo")
     page.click("#cover-identity-btn")
     page.wait_for_timeout(500)
-    tab_labels = page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)")
+    tab_labels = page.eval_on_selector_all(".tw:not(.tw-switch) > span", "els => els.map(e=>e.textContent)")
     record("hub", "a Cover Identity lookup with matches adds the returned Agents",
            {"Patrick Montgomery", "Danielle Mitchell"}.issubset(set(tab_labels)), str(tab_labels))
     record("hub", "the stray Agent already claimed by a different real name is gone",
@@ -2690,7 +2690,7 @@ def test_agent_hub_cover_identity(p):
     record("hub", "a Cover Identity lookup with no matches shows a clear status instead of doing nothing",
            "No Agents found" in page.inner_text("#ci-status"), page.inner_text("#ci-status"))
     record("hub", "a no-match lookup leaves the roster empty, not a phantom entry",
-           page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)") == ["+ New Recruit"], "")
+           page.eval_on_selector_all(".tw:not(.tw-switch) > span", "els => els.map(e=>e.textContent)") == ["+ New Recruit"], "")
     errs_all.extend(errs)
     page.close()
 
@@ -2710,7 +2710,7 @@ def test_agent_hub_cover_identity(p):
     record("hub", "a stored Cover Identity re-runs the lookup on its own, no click needed",
            len(lookup_calls) >= 1, str(lookup_calls))
     record("hub", "the returning player's Agent shows up without any input",
-           "Patrick Montgomery" in page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)"), "")
+           "Patrick Montgomery" in page.eval_on_selector_all(".tw:not(.tw-switch) > span", "els => els.map(e=>e.textContent)"), "")
     record("hub", "the input is pre-filled with the remembered Cover Identity",
            page.input_value("#cover-identity-input") == "Gergo", "")
     errs_all.extend(errs)
@@ -2784,8 +2784,8 @@ def test_agent_hub_cover_identity(p):
            "busy" in page.inner_text("#ci-status").lower(), page.inner_text("#ci-status"))
     page.evaluate("() => { window.__dgFsFail = false; }")
     tab_labels = wait_for_condition(
-        lambda: page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)")
-        if "Patrick Montgomery" in page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)") else None,
+        lambda: page.eval_on_selector_all(".tw:not(.tw-switch) > span", "els => els.map(e=>e.textContent)")
+        if "Patrick Montgomery" in page.eval_on_selector_all(".tw:not(.tw-switch) > span", "els => els.map(e=>e.textContent)") else None,
         timeout_ms=10000)
     record("hub", "the search self-heals and loads the Agent once the backend actually answers, with no user retry",
            bool(tab_labels) and "Patrick Montgomery" in tab_labels, str(tab_labels))
@@ -2899,7 +2899,7 @@ def test_agent_hub_erase_agent(p):
     record("hub", "the overlay closes after confirming",
            not page.is_visible("#ah-erase-overlay"), "")
     record("hub", "the erased Agent is gone from the roster/tab strip",
-           "Duplicate Owen" not in page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)"), "")
+           "Duplicate Owen" not in page.eval_on_selector_all(".tw:not(.tw-switch) > span", "els => els.map(e=>e.textContent)"), "")
 
     record("hub", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
@@ -3700,7 +3700,7 @@ def test_agent_hub_checks_read_firestore(p):
     page.add_init_script(f"localStorage.setItem('dg_agent_roster', '{roster}');")
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(1500)
-    labels = page.eval_on_selector_all(".tw span", "els => els.map(e=>e.textContent)")
+    labels = page.eval_on_selector_all(".tw:not(.tw-switch) > span", "els => els.map(e=>e.textContent)")
     record("hub", "a failed Firestore read never marks an Agent as having no sheet",
            "No Character Sheet Yet" not in page.eval_on_selector("#ah-charstamp-ALIV-0002", "el => el.textContent")
            and "Play" in page.eval_on_selector("#ah-play-ALIV-0002", "el => el.textContent"), "")
@@ -11570,6 +11570,58 @@ def test_main_photo_from_active_era(p):
     page.close()
     return errs_all
 
+def test_agent_hub_phone_agents_menu(p):
+    """Agent Hub's tabs on a phone: past one Agent they wrapped onto a
+    second row that floated over the page. On a phone the strip is now
+    + New Recruit, an "Agents (N)" menu tab and the open Agent's tab; the
+    menu lists every Agent (the open one ticked) and + New Recruit, and
+    picking one opens it. The desktop strip keeps every tab, no menu."""
+    errs_all = []
+    roster = {
+        "MENU-0001": {"code": "MENU-0001", "char_name": "Charles Ward", "codename": "SPARROW", "player_name": "g", "saved_at": 3},
+        "MENU-0002": {"code": "MENU-0002", "char_name": "Daniela Martinez", "codename": "SPWARROW", "player_name": "g", "saved_at": 2},
+        "MENU-0003": {"code": "MENU-0003", "char_name": "Eli Filagree", "codename": "SPARROW", "player_name": "g", "saved_at": 1},
+    }
+    docs = _field_notes_docs()
+    for c, a in roster.items():
+        docs["briefs/" + c] = {"agent_code": c, "char_name": a["char_name"], "codename": a["codename"], "player_name": "g", "player_name_lc": "g"}
+    init = ("localStorage.removeItem('dg_cover_identity'); localStorage.setItem('dg_agent_roster', %s); "
+            "localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'MENU-0001':1,'MENU-0002':1,'MENU-0003':1}));") % json.dumps(json.dumps(roster))
+    visible = "() => [...document.querySelectorAll('#tab-strip .tw')].filter(t => t.getClientRects().length).map(t => t.textContent.trim())"
+    for width in (360, 390, 430, 1100):
+        page, errs = _field_notes_page(p, width, 860, extra_init=init, docs=docs)
+        page.goto(f"{BASE}/agent-hub.html?code=MENU-0003", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_selector('#tab-strip .tw.active[data-tab="MENU-0003"]', state="attached", timeout=15000)
+        page.wait_for_timeout(500)
+        tabs = page.evaluate(visible)
+        if width < 560:
+            record("hub", f"phone {width}px: the tab strip is + New Recruit, Agents (3) and the open Agent -- one row, nothing floating",
+                   tabs == ["+ New Recruit", "Agents (3) \u25be", 'Eli "SPARROW"'], str(tabs))
+            # (unselected tabs sit 6px lower on purpose, tucked behind the open one)
+            tops = page.evaluate("() => [...document.querySelectorAll('#tab-strip .tw')].filter(t => t.getClientRects().length).map(t => Math.round(t.getBoundingClientRect().top))")
+            record("hub", f"phone {width}px: the tabs sit on one line, inside the screen",
+                   max(tops) - min(tops) <= 8 and page.evaluate("() => document.documentElement.scrollWidth <= innerWidth"), str(tops))
+            if width != 390:
+                errs_all.extend(errs); page.close(); continue
+            page.click("#tab-strip .tw-switch")
+            items = page.eval_on_selector_all(".ah-agent-menu button", "els => els.map(e => e.textContent + (e.getAttribute('aria-current') ? '*' : ''))")
+            record("hub", "phone: the Agents menu lists every Agent (the open one ticked) and + New Recruit",
+                   items == ['Charles "SPARROW"', 'Daniela "SPWARROW"', 'Eli "SPARROW"*', "+ New Recruit"], str(items))
+            page.click('.ah-agent-menu button[data-code="MENU-0002"]')
+            page.wait_for_timeout(300)
+            after = page.evaluate("() => [document.querySelector('#tab-strip .tw.active').dataset.tab, document.querySelector('.ah-agent-menu').hidden]")
+            record("hub", "phone: picking an Agent in the menu opens their file and closes the menu",
+                   after == ["MENU-0002", True] and page.evaluate(visible)[-1] == 'Daniela "SPWARROW"', str(after))
+            page.click("#tab-strip .tw-switch")
+            page.keyboard.press("Escape")
+            record("hub", "phone: Escape closes the Agents menu", page.evaluate("() => document.querySelector('.ah-agent-menu').hidden"), "")
+        else:
+            record("hub", "desktop: every Agent keeps its own tab, no Agents menu",
+                   tabs == ["+ New Recruit", 'Charles "SPARROW"', 'Daniela "SPWARROW"', 'Eli "SPARROW"'], str(tabs))
+        errs_all.extend(errs)
+        page.close()
+    return errs_all
+
 def test_physical_description_punctuation(p):
     """Agent Hub's short physical description (dgAgentSheet.physical)
     joins the Appearance answers into a sentence; an answer typed with
@@ -11584,6 +11636,10 @@ def test_physical_description_punctuation(p):
         build: 'extremely thin and elongated.', hair_color: 'dark brown to nearly black.', eye_color: 'very pale blue-gray.' })""")
     record("hub", "the physical description never doubles punctuation from answers that end in a full stop",
            got == "Early 40s male British. Build extremely thin and elongated, hair dark brown to nearly black, eyes very pale blue-gray.", got)
+    got2 = page.evaluate("""() => window.dgAgentSheet.physical({ age_range: 'Mid 40s', sex: 'Male', nationality: 'American',
+        build: 'Average build', hair_color: 'salt-and-pepper', eye_color: 'near-black eyes' })""")
+    record("hub", "an answer that already names its noun ('Average build', 'near-black eyes') isn't given it twice",
+           got2 == "Mid 40s male American. Average build, salt-and-pepper hair, near-black eyes.", got2)
     page.close()
     return errs
 
@@ -12191,6 +12247,7 @@ def main():
         safe(test_field_notes_standing_orders, browser, area="onboarding")
         safe(test_sheet_theme_glow_is_cheap, browser, area="sheet-theme")
         safe(test_physical_description_punctuation, browser, area="hub")
+        safe(test_agent_hub_phone_agents_menu, browser, area="hub")
         safe(test_main_photo_from_active_era, browser, area="photo")
         safe(test_field_notes_shell, browser, area="notebook-shell")
         safe(test_friendly_pregen_builder, browser, area="friendly")

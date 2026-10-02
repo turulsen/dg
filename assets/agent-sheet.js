@@ -148,8 +148,13 @@
     var cap = function (t) { return t.charAt(0).toUpperCase() + t.slice(1); };
     var who = [bare(b.age_range), short(b.sex), bare(b.nationality)].filter(Boolean).join(' ');
     if (who) parts.push(cap(who) + '.');
-    // "wiry build", but "build average in every dimension"
-    var with_ = function (t, noun) { t = short(t); return t.split(/\s+/).length <= 2 ? t + ' ' + noun : noun + ' ' + t; };
+    // "wiry build", but "build average in every dimension" -- and an
+    // answer that already names it ("average build") is left as written
+    var with_ = function (t, noun) {
+      t = short(t);
+      if (new RegExp('\\b' + noun + '\\b').test(t)) return t;
+      return t.split(/\s+/).length <= 2 ? t + ' ' + noun : noun + ' ' + t;
+    };
     var look = [b.build ? with_(b.build, 'build') : '',
       (b.hair_color ? with_(b.hair_color, 'hair') : ''),
       (b.eye_color ? with_(b.eye_color, 'eyes') : '')].filter(Boolean).join(', ');

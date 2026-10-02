@@ -184,6 +184,45 @@
      struck-through name on both the tab label and the panel title. ── */
   .kia-name{ color:var(--red); text-decoration:line-through; text-decoration-thickness:2px; text-decoration-color:var(--red); }
 
+  /* ── Phone: the Agents menu. Past one Agent, the roster's tabs wrapped
+     onto a second row that floated over the page. On a phone the strip
+     is just + New Recruit, an "Agents (N)" tab that opens a list of
+     every Agent, and the open Agent's tab -- see agentMenu below. The
+     desktop strip keeps every tab. ── */
+  .tw.tw-switch{ display:none; }
+  .tw.tw-switch span{ color:#4a3f28; }
+  .tw.tw-switch[aria-expanded="true"]{ background:#c8c1ae; transform:translateY(3px); }
+  .ah-agent-menu{
+    position:absolute; z-index:20; min-width:230px; max-width:calc(100vw - 32px);
+    margin-top:2px; background:#efe6cf; border:1px solid #a8a090; box-shadow:0 10px 24px rgba(0,0,0,.5);
+  }
+  .ah-agent-menu[hidden]{ display:none; }
+  /* Hung on the folder, not the tab strip: the folder sits above the strip. */
+  .folder{ position:relative; }
+  .ah-agent-menu button{
+    display:flex; align-items:center; gap:8px; width:100%; margin:0; padding:13px 14px; text-align:left;
+    background:transparent; border:0; border-bottom:1px solid rgba(160,130,70,.35); border-radius:0; cursor:pointer;
+    font-family:'Special Elite', monospace; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink);
+  }
+  .ah-agent-menu button:last-child{ border-bottom:0; }
+  .ah-agent-menu button:hover, .ah-agent-menu button:focus-visible{ background:rgba(139,26,26,.08); outline:none; }
+  .ah-agent-menu button[aria-current="true"]::after{ content:'\2713'; margin-left:auto; color:var(--red); }
+  .ah-agent-menu .kia-name{ text-decoration-thickness:1.5px; }
+  @media (max-width:560px){
+    .tab-strip.ah-switching .tw:not(.tw-new):not(.tw-switch):not(.active){ display:none; }
+    .tab-strip.ah-switching .tw.tw-switch{ display:flex; }
+    /* One line at any phone width: the menu and + New Recruit keep their
+       size, the open Agent's tab gives way (its name ellipsized). */
+    .tab-strip.ah-switching{ flex-wrap:nowrap; padding-left:14px; }
+    .tab-strip.ah-switching .tw{ flex:none; }
+    .tab-strip.ah-switching .tw.active{ flex:0 1 auto; min-width:0; }
+    .tab-strip.ah-switching .tw.active span{ overflow:hidden; text-overflow:ellipsis; }
+  }
+  /* Narrow phones: "+ New" leaves the open Agent's name more room. */
+  @media (max-width:420px){
+    .tab-strip.ah-switching .tw-new .tw-long{ display:none; }
+  }
+
   /* ── Handouts (internal name; the visible label is "Evidence", matching
      A-Cell's Evidence Locker tab it mirrors): whatever the Handler has
      filed and released for this Agent -- campaign-wide entries, plus
@@ -309,7 +348,7 @@
 <div class="folder-wrap">
   <div class="folder">
     <div class="tab-strip" id="tab-strip">
-      <div class="tw tw-new" data-tab="new"><span>+ New Recruit</span></div>
+      <div class="tw tw-new" data-tab="new"><span>+ New<span class="tw-long"> Recruit</span></span></div>
     </div>
     <div class="folder-body" id="folder-body">
       <div class="tab-panel" id="panel-new">
@@ -579,7 +618,9 @@
   // classes present at once, CSS source order would pick the wrong text
   // color for the "active" tab's label.
   function setActiveTab(id) {
+    closeAgentMenu();
     tabStrip.querySelectorAll('.tw').forEach(t => {
+      if (t.classList.contains('tw-switch')) return; // the phone's Agents menu tab, never itself active
       const isNew = t.classList.contains('tw-new');
       t.className = 'tw' + (isNew ? ' tw-new' : '') + (t.dataset.tab === id ? ' active' : ' inactive');
     });
@@ -587,6 +628,56 @@
     const slot = document.getElementById('ah-file-' + id);
     if (slot && window.dgAgentFile) window.dgAgentFile.mount(slot, id);
   }
+
+  // The phone's Agents menu: every Agent on this device (the open one
+  // ticked, KIA ones struck through), then + New Recruit. Built fresh on
+  // each open from the same roster the tabs come from.
+  const agentMenu = document.createElement('div');
+  agentMenu.className = 'ah-agent-menu';
+  agentMenu.setAttribute('role', 'menu');
+  agentMenu.hidden = true;
+  tabStrip.parentNode.appendChild(agentMenu);
+  function closeAgentMenu() {
+    if (agentMenu.hidden) return;
+    agentMenu.hidden = true;
+    const sw = tabStrip.querySelector('.tw-switch');
+    if (sw) sw.setAttribute('aria-expanded', 'false');
+  }
+  function toggleAgentMenu() {
+    if (!agentMenu.hidden) { closeAgentMenu(); return; }
+    const sw = tabStrip.querySelector('.tw-switch');
+    if (!sw) return;
+    const current = (tabStrip.querySelector('.tw.active') || {}).dataset || {};
+    agentMenu.innerHTML = agents.map(a => {
+      const kia = !!(tabStrip.querySelector('.tw[data-tab="' + CSS.escape(a.code) + '"] .kia-name'));
+      return '<button type="button" role="menuitem" data-code="' + escapeHtml(a.code) + '"' +
+        (current.tab === a.code ? ' aria-current="true"' : '') + '><span' + (kia ? ' class="kia-name"' : '') + '>' +
+        escapeHtml(tabLabel(a)) + '</span></button>';
+    }).join('') + '<button type="button" role="menuitem" data-code="new">+ New Recruit</button>';
+    const box = agentMenu.parentNode.getBoundingClientRect(), r = sw.getBoundingClientRect();
+    agentMenu.style.left = (r.left - box.left) + 'px';
+    agentMenu.style.top = (r.bottom - box.top + 2) + 'px';
+    agentMenu.hidden = false;
+    sw.setAttribute('aria-expanded', 'true');
+    const first = agentMenu.querySelector('[aria-current="true"]') || agentMenu.querySelector('button');
+    if (first) first.focus({ preventScroll: true });
+  }
+  agentMenu.addEventListener('click', e => {
+    const b = e.target.closest('button[data-code]');
+    if (!b) return;
+    e.stopPropagation();
+    setActiveTab(b.dataset.code);
+    const tab = tabStrip.querySelector('.tw.active');
+    if (tab) tab.scrollIntoView({ block: 'nearest' });
+  });
+  document.addEventListener('click', e => { if (!tabStrip.contains(e.target) && !agentMenu.contains(e.target)) closeAgentMenu(); });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || agentMenu.hidden) return;
+    closeAgentMenu();
+    const sw = tabStrip.querySelector('.tw-switch');
+    if (sw) sw.focus();
+  });
+  window.addEventListener('resize', () => { if (!agentMenu.hidden && !tabStrip.querySelector('.tw-switch').offsetParent) closeAgentMenu(); });
 
   // Builds (or rebuilds) the roster tabs/panels from local storage --
   // pulled out of the old one-shot top-level code so a Cover Identity
@@ -603,12 +694,20 @@
 
     const roster = rosterLoad();
     agents = Object.values(roster).sort((a, b) => (b.saved_at || 0) - (a.saved_at || 0));
-    // The strip-fill + active-tab-reorder look (see .tab-strip.many in
-    // theme-folder.css) is only needed once tabs actually wrap to a
-    // second row -- on desktop, or with few enough agents to fit one
-    // row, the plain floating tabs already look right and this extra
-    // treatment would just be a gratuitous difference for no reason.
-    tabStrip.classList.toggle('many', agents.length > 3);
+    // Phone: with more than one Agent, the strip is + New Recruit, the
+    // Agents menu tab and the open Agent's tab (see agentMenu below).
+    closeAgentMenu();
+    tabStrip.classList.toggle('ah-switching', agents.length > 1);
+    if (agents.length > 1) {
+      const sw = document.createElement('div');
+      sw.className = 'tw tw-switch';
+      sw.setAttribute('role', 'button');
+      sw.setAttribute('tabindex', '0');
+      sw.setAttribute('aria-haspopup', 'menu');
+      sw.setAttribute('aria-expanded', 'false');
+      sw.innerHTML = '<span>Agents (' + agents.length + ') &#9662;</span>';
+      tabStrip.querySelector('.tw-new').after(sw);
+    }
 
     if (!agents.length) {
       const panel = document.createElement('div');
@@ -1502,9 +1601,17 @@
     window.dgAgentFile.focus(b.getAttribute('data-ah-focus'));
   });
   tabStrip.addEventListener('click', e => {
+    if (e.target.closest('.ah-agent-menu')) return;
     const tab = e.target.closest('.tw');
     if (!tab) return;
+    if (tab.classList.contains('tw-switch')) { toggleAgentMenu(); return; }
     setActiveTab(tab.dataset.tab);
+  });
+  tabStrip.addEventListener('keydown', e => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('tw-switch')) {
+      e.preventDefault();
+      toggleAgentMenu();
+    }
   });
 })();
 </script>
