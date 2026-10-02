@@ -6100,3 +6100,32 @@ into the tab's current element in case the roster was rebuilt while the
 reads were in flight. Covered by the new
 `test_cell_members_by_name_and_kia`, which hit the race every time.
 `sw.js` `CACHE_NAME` v176.
+
+## Agent Hub's tabs floated over the page on a phone
+
+Reported from the live site on a phone: with three Agents, the roster's
+folder tabs ("+ New Recruit" and one per Agent) wrapped onto two rows,
+and the top row hung over the black page with nothing under it. An
+earlier fix for exactly this (a tan fill behind wrapped tabs, the open
+Agent's tab moved to the last row) only switched on past **three**
+Agents (`.tab-strip.many`), a count rather than whether the tabs
+actually wrapped, so three Agents plus "+ New Recruit" still wrapped
+unfilled. Finished differently rather than re-tuned, after rendering
+four designs on the real page for the user (fill on any wrap, one
+swipeable row, a folder behind the folder, an Agents menu); they chose
+the menu. On a phone with more than one Agent the strip is now
+"+ New Recruit", an "Agents (N) ▾" tab and the open Agent's tab, kept
+on one line at any phone width (the open Agent's name gives way, and
+under 420px "+ New Recruit" reads "+ New"); the menu lists every Agent,
+the open one ticked and KIA ones struck through, then + New Recruit.
+It hangs on the folder, not the tab strip (the folder draws above the
+strip). Desktop keeps every tab. The count-based `.many` fill is gone
+from `theme-folder.css`. New `test_agent_hub_phone_agents_menu` (360,
+390, 430px and desktop); the older roster tests now read tab labels as
+`.tw:not(.tw-switch) > span`, the menu tab not being an Agent.
+
+Same screenshot: the physical description read "Average build
+**build**" -- an Appearance answer that already names its noun ("Average
+build", "near-black eyes") got the noun added again by
+`dgAgentSheet.physical()`. It's now left as written; covered in
+`test_physical_description_punctuation`. `sw.js` `CACHE_NAME` v178.
