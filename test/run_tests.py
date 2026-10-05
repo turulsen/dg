@@ -5811,6 +5811,74 @@ def test_table_radio_debug_readout_shows_ambient_and_stinger_state(p):
     page.close()
     return errs
 
+def test_table_radio_plays_while_audio_context_locked(p):
+    """Live, the evening of a session: after the Storage bucket got its
+    CORS config, players heard nothing -- tracks showed as playing but
+    stalled (Abyss stuck at 1:19), stingers were silent even on A-Cell.
+    iOS keeps an AudioContext created before any tap suspended, and every
+    element wired into it (main track via CORS, ambient, stingers) plays
+    silence. Here the context is held "suspended" until a pointerdown:
+    while locked, sounds must play as plain <audio> (no gain node); after
+    any tap on the page the next track goes through the gain node again.
+    Also: ambient/stinger files resolve next to the script, not against a
+    subfolder page (stats/)."""
+    lock = """(() => {
+      const C = window.AudioContext || window.webkitAudioContext; if (!C) return;
+      window.__ctxUnlocked = false;
+      document.addEventListener('pointerdown', () => { window.__ctxUnlocked = true; }, true);
+      Object.defineProperty(C.prototype, 'state', { configurable: true, get() { return window.__ctxUnlocked ? 'running' : 'suspended'; } });
+      C.prototype.resume = function () { return Promise.resolve(); };
+    })();"""
+    errs = []
+    def fresh(path):
+        page = p.new_page()
+        page.set_default_timeout(8000)
+        e = collect_errors(page)
+        page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+        page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+        page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); localStorage.setItem('dg_radio_channel', '1'); } catch (e) {}")
+        page.add_init_script(lock)
+        install_radio_firestore_stub(page)
+        page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+        page.goto(f"{BASE}/{path}", wait_until="domcontentloaded", timeout=15000)
+        notebook_aside(page)
+        page.wait_for_timeout(400)
+        return page, e
+    clip = sorted(os.listdir(os.path.join(HERE, "..", "assets", "stingers")))[0]
+    track = f"{BASE}/assets/stingers/{clip}"
+    page, e = fresh("agent-hub.html"); errs += e
+    push_radio_now_playing(page, "1", {"channel": "1", "track_url": track, "track_title": "Abyss", "started_at": 1700000000000,
+        "track_volume": 50, "ambient_volume": 100, "track_kind": "audio",
+        "ambient_layers": [{"id": "alien-lunch", "started_at": 1700000000000, "paused": False, "paused_at": 0, "loop": True}]})
+    _pump_until(page, lambda: "route=" in page.inner_text("#dg-radio-debug"), timeout_ms=6000)
+    page.wait_for_timeout(600)
+    dbg = page.inner_text("#dg-radio-debug")
+    record("radio", "locked audio context: the main track plays as plain <audio>, not into a silent gain node",
+           "route=element" in dbg, dbg)
+    record("radio", "locked audio context: the ambient layer plays without a gain node too",
+           "ambient x1=alien-lunch:" in dbg and "/gain=" not in dbg.split("ambient x1=")[1].split(" | ")[0], dbg)
+    page.mouse.click(5, 5)  # any tap on the page unlocks it
+    page.wait_for_timeout(200)
+    push_radio_now_playing(page, "1", {"channel": "1", "track_url": track + "?next", "track_title": "Schism", "started_at": 1700000005000,
+        "track_volume": 50, "ambient_volume": 100, "track_kind": "audio"})
+    _pump_until(page, lambda: "route=webaudio" in page.inner_text("#dg-radio-debug"), timeout_ms=6000)
+    record("radio", "after any tap on the page, the next track goes through the gain node again (iOS volume works)",
+           "route=webaudio" in page.inner_text("#dg-radio-debug"), page.inner_text("#dg-radio-debug"))
+    page.close()
+
+    page, e = fresh("stats/index.html"); errs += e
+    push_radio_now_playing(page, "1", {"channel": "1", "track_url": "", "track_volume": 0, "ambient_volume": 100,
+        "ambient_layers": [{"id": "alien-lunch", "started_at": 1700000000000, "paused": False, "paused_at": 0, "loop": True}]})
+    src = None
+    for _ in range(30):
+        src = page.evaluate("() => { const a = [...document.querySelectorAll('audio')].find(x => /alien-lunch/.test(x.src)); return a ? a.src : null; }")
+        if src: break
+        page.wait_for_timeout(200)
+    record("radio", "on a page in a subfolder (stats/), ambient files load from the site's assets/, not stats/assets/",
+           bool(src) and src.startswith(f"{BASE}/assets/ambient/"), str(src))
+    page.close()
+    return errs
+
 def test_table_radio_main_track_gain_only_with_cors(p):
     """Issue #39. The main track only goes through Web Audio (the gain
     node, the one volume control iOS honours) when that is audible:
@@ -12323,6 +12391,7 @@ def main():
 
         safe(test_table_radio_debug_readout_shows_ambient_and_stinger_state, browser, area="radio")
 
+        safe(test_table_radio_plays_while_audio_context_locked, browser, area="radio")
         safe(test_table_radio_main_track_gain_only_with_cors, browser, area="radio")
 
         safe(test_table_radio_finished_track_does_not_restart_from_beginning, browser, area="radio")

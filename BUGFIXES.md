@@ -6129,3 +6129,30 @@ Same screenshot: the physical description read "Average build
 build", "near-black eyes") got the noun added again by
 `dgAgentSheet.physical()`. It's now left as written; covered in
 `test_physical_description_punctuation`. `sw.js` `CACHE_NAME` v178.
+
+## Table Radio silent after the Storage CORS config (tracks stalled, stingers mute)
+
+Reported an hour before a session: once the bucket had its CORS config
+(issue #39, so iOS could get volume control), players heard nothing.
+Tracks showed as playing but stalled (Abyss stuck at 1:19, Conspiracy at
+0:18, after a reload Abyss at 0:00), Combat "played" silently, Schism
+played once and then went quiet, and stingers were silent on the player
+side and on A-Cell; A-Cell's own main track was audible only with the
+volume up. Cause: `attachGain_()` wired every sound -- the main track
+(now that CORS allowed it), ambient loops and stingers -- through the
+page's AudioContext even while that context was suspended. iOS keeps a
+context created before any tap suspended, and a suspended graph outputs
+silence; Safari also stalls an element feeding it. The context was only
+woken from the radio's own buttons. Fixed in `assets/table-radio.js`:
+- sounds go through the gain node only while the context is actually
+  running; otherwise they play as plain `<audio>` (always audible; only
+  the iOS volume slider has no effect on that sound);
+- any tap or key anywhere on the page creates/resumes the context, and
+  returning to the tab tries to resume it;
+- the main track waits up to half a second for the context Tune In just
+  woke before choosing its route.
+Also found on the way: ambient/stinger files used a bare
+`assets/...` path, so on a page in a subfolder (`stats/`) they loaded
+from `stats/assets/...`, which doesn't exist; they now resolve next to
+the script. New `test_table_radio_plays_while_audio_context_locked`
+(fails on the old code, 3 of 4 checks). `sw.js` `CACHE_NAME` v179.
