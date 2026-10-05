@@ -4113,7 +4113,8 @@ def test_acell_evidence(p):
     cells_fixture = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12", "PRIY-AN34"], "channel": ""}]
     # The backend is the Firestore stub: A-Cell writes evidence/ and
     # operations/ docs itself; this reads them back.
-    install_firestore_backend(page, {"cells/cell_1": {k: v for k, v in cells_fixture[0].items() if k != "cell_id"}})
+    install_firestore_backend(page, {"cells/cell_1": {k: v for k, v in cells_fixture[0].items() if k != "cell_id"},
+                                     "briefs/OWEN-CS12": {"agent_code": "OWEN-CS12", "char_name": "Owen Castillo"}})
     def evidence_state():
         return page.evaluate("() => Object.entries(window.__dgFirestoreDocs || {})"
                              ".filter(([k]) => k.indexOf('evidence/') === 0 && k.split('/').length === 2)"
@@ -4176,6 +4177,10 @@ def test_acell_evidence(p):
     page.select_option("#evidence-new-op", label="Operation Nightshade")
     page.fill("#evidence-new-body", "Recovered from the scene.")
     page.check("#evidence-new-released")
+    owen = wait_for_condition(lambda: page.evaluate("""() => { const i = document.querySelector('#evidence-new-restrict-wrap input[value="OWEN-CS12"]');
+        return i && /Owen Castillo/.test(i.parentNode.textContent) ? i.parentNode.textContent.trim() : null; }"""), timeout_ms=8000)
+    record("acell", "the restriction checklist names each Agent (from their Agent File), not their code",
+           owen == "Owen Castillo", str(owen))
     page.check('#evidence-new-restrict-wrap input[value="OWEN-CS12"]')
     page.click("#evidence-new-confirm")
     wait_for_condition(lambda: len(evidence_state()) >= 1)
@@ -4184,7 +4189,7 @@ def test_acell_evidence(p):
                                     if "Field Photograph" in page.inner_text("#evidence-list") else None)
     record("acell", "filing evidence into an Operation, released and restricted, shows it once confirmed",
            bool(list_text) and "Field Photograph" in list_text and "cell alpha" in list_text.lower()
-           and "operation nightshade" in list_text.lower() and "restricted to: owen-cs12" in list_text.lower(),
+           and "operation nightshade" in list_text.lower() and "restricted to: owen castillo" in list_text.lower(),
            list_text or "")
     record("acell", "a released item's card doesn't carry the unreleased (staged) styling",
            "unreleased" not in (page.get_attribute(".evidence-card", "class") or ""), "")

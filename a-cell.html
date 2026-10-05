@@ -3103,6 +3103,36 @@
   // public-read. A read that never settles (seen when the SDK was loaded
   // twice on one page) gives up after 8s with a visible note instead of
   // leaving the folder list empty forever; Refresh tries again.
+  // Agents by name, not Agent Code, in the restriction checklist and on
+  // the cards: the Agent File's name, else the name on their character
+  // sheet, else the code. Loaded alongside the Cells, never holding
+  // them up.
+  var agentNames = {};
+  function agentLabel_(code) { return agentNames[code] || code; }
+  function loadAgentNames_(db) {
+    var pregens = fetch('friendly/pregens.json').then(function (x) { return x.ok ? x.json() : { pregens: [] }; }).catch(function () { return { pregens: [] }; });
+    Promise.all([fsGet_(db.collection('briefs')), fsGet_(db.collection('characters')), pregens]).then(function (r) {
+      var names = {};
+      // Friendly pregens can sit in a Cell too (named as on the Cells tab)
+      ((r[2] && r[2].pregens) || []).forEach(function (p) { if (p.id) names[p.id] = 'Friendly: ' + p.name + ' (' + p.title + ')'; });
+      r[1].forEach(function (d) {
+        var c = d.data() || {}, n = '';
+        try { n = ((JSON.parse(c.character_json || '{}') || {}).bio || {}).name || ''; } catch (e) { n = ''; }
+        if (String(n).trim()) names[d.id] = String(n).trim();
+      });
+      r[0].forEach(function (d) {
+        var b = d.data() || {};
+        if (String(b.char_name || '').trim()) names[d.id] = String(b.char_name).trim();
+      });
+      agentNames = names;
+      renderList();
+      var scope = document.getElementById('evidence-new-scope');
+      if (scope && document.getElementById('evidence-new-restrict-wrap')) {
+        refreshFormRestrictList(scope.value, Array.prototype.map.call(
+          document.querySelectorAll('#evidence-new-restrict-wrap input:checked'), function (cb) { return cb.value; }));
+      }
+    }).catch(function () { /* codes stay as labels */ });
+  }
   function fsGet_(query) {
     return new Promise(function (resolve, reject) {
       var t = setTimeout(function () { reject(new Error('Firestore read timed out')); }, 8000);
@@ -3121,6 +3151,7 @@
     }
     ensureFirebaseApi(function () {
       var db = window.firebase.firestore();
+      loadAgentNames_(db);
       Promise.all([fsGet_(db.collection('cells')), fsGet_(db.collection('operations'))]).then(function (r) {
         if (myGen !== fetchGen) return;
         var list = [];
@@ -3402,7 +3433,7 @@
                       : '<img class="evidence-photo" src="' + h.photo + '" alt="" data-lightbox-photo="' + i + '">'))
         : '';
       var restrictedNote = (h.restricted_to && h.restricted_to.length)
-        ? '<div class="evidence-restricted-note">Restricted to: ' + h.restricted_to.map(escapeHtml).join(', ') + '</div>' : '';
+        ? '<div class="evidence-restricted-note">Restricted to: ' + h.restricted_to.map(function (c) { return escapeHtml(agentLabel_(c)); }).join(', ') + '</div>' : '';
       return '<div class="evidence-card' + (h.released ? '' : ' unreleased') + '" data-i="' + i + '">' +
         '<div class="evidence-card-head">' +
         '<div class="evidence-card-tags"><span class="' + scopeClass + '">' + escapeHtml(cellName(h.cell_id)) + '</span>' + opTag + '</div>' +
@@ -3663,7 +3694,7 @@
     }
     wrap.innerHTML = '<div class="evidence-restrict-list">' + codes.map(function (code) {
       var checked = checkedCodes.indexOf(code) !== -1 ? ' checked' : '';
-      return '<label class="evidence-restrict-item"><input type="checkbox" value="' + escapeHtml(code) + '"' + checked + '> ' + escapeHtml(code) + '</label>';
+      return '<label class="evidence-restrict-item" title="' + escapeHtml(code) + '"><input type="checkbox" value="' + escapeHtml(code) + '"' + checked + '> ' + escapeHtml(agentLabel_(code)) + '</label>';
     }).join('') + '</div><p class="evidence-restrict-note">Leave all unchecked to share with the whole Cell once released.</p>';
   }
 

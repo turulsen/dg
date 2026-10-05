@@ -6156,3 +6156,15 @@ Also found on the way: ambient/stinger files used a bare
 from `stats/assets/...`, which doesn't exist; they now resolve next to
 the script. New `test_table_radio_plays_while_audio_context_locked`
 (fails on the old code, 3 of 4 checks). `sw.js` `CACHE_NAME` v179.
+
+## A-Cell Evidence: Agents listed by code when restricting an item
+
+Request: when restricting an Evidence item to specific Agents in a Cell,
+the checklist (and the card's "Restricted to:" line) showed Agent Codes,
+not names. The Evidence tab's code had no names of its own (the Cells
+tab's `agentName()` lives in a separate script block). It now loads them
+alongside the Cells -- the Agent File's name, else the name on the
+character sheet, Friendly pregens as "Friendly: name (title)", the code
+only when nothing has a name -- without holding up the Cells/Operations
+load; the code stays as the checkbox's tooltip and value.
+`test_acell_evidence` checks both places. `sw.js` `CACHE_NAME` v180.
