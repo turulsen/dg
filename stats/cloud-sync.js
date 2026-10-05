@@ -137,6 +137,10 @@
     // rather than leaving the player staring at a status line for up to
     // SYNC_DEBOUNCE_MS. Returns '' when there's nothing to name yet,
     // which scheduleCloudSync() below treats as "nothing to do."
+    // freshCode: the code ensureCloudCode() minted on this page, until it
+    // has been checked against this player's other Agents (checkForTwin()).
+    let freshCode = '';
+    const twinAsked = {};
     function ensureCloudCode() {
         const existing = getCloudCode();
         if (existing) return existing;
@@ -147,8 +151,68 @@
         setCloudCode(code);
         rosterUpsert(code, name, document.getElementById('cs-player-name')?.value || '');
         pushToCloud();
+        freshCode = code;
+        // An import or Friendly pregen lands with its whole name at once.
+        setTimeout(() => checkForTwin(code), 1500);
         return code;
     }
+
+    // Same Agent twice: the same character imported again on a blank sheet
+    // (another device, or after + New Recruit) got a brand-new code -- two
+    // Agents, one name, one player (live: "Soko, Lenka", SOKO-HUBK and
+    // SOKO-GDBQ). Every new code comes from ensureCloudCode() above, so
+    // that is where this asks: when a code minted on this page belongs to
+    // a name this player already has, offer to update that Agent instead.
+    // The extra code goes to Recently Deleted (the Handler can restore it
+    // for 24 hours).
+    function sameAgentName(a, b) {
+        const n = s => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        return !!n(a) && n(a) === n(b);
+    }
+    function checkForTwin(code) {
+        if (!code || code !== freshCode || getCloudCode() !== code || !window.dgStore) return;
+        const name = (document.getElementById('cs-name')?.value || '').trim();
+        const player = (document.getElementById('cs-player-name')?.value || '').trim() || coverIdentity();
+        if (!name || name === 'Agent') return;
+        const key = code + '|' + name.toLowerCase();
+        if (twinAsked[key]) return;
+        twinAsked[key] = true;
+        // This device's roster, plus everything on file under the player's name.
+        let local = [];
+        try {
+            const roster = JSON.parse(localStorage.getItem(ROSTER_KEY) || '{}');
+            local = Object.values(roster).filter(a => !a.player_name || !player || a.player_name.trim().toLowerCase() === player.toLowerCase());
+        } catch (e) { local = []; }
+        const remote = player ? window.dgStore.findByPlayerName(player).catch(() => []) : Promise.resolve([]);
+        remote.then(found => {
+            const twin = local.concat(found || []).find(a => a && a.code && a.code !== code && sameAgentName(a.char_name, name));
+            if (!twin || getCloudCode() !== code) return;
+            const ask = window.dgConfirm
+                ? window.dgConfirm('You already have an Agent named "' + name + '" (' + twin.code + '). Update that Agent with this sheet, instead of starting a second one?',
+                    { ok: 'Update ' + twin.code, cancel: 'Keep both' })
+                : Promise.resolve(false);
+            return ask.then(useTwin => {
+                if (!useTwin || getCloudCode() !== code) return;
+                setCloudCode(twin.code);
+                freshCode = '';
+                pushToCloud();
+                try {
+                    const roster = JSON.parse(localStorage.getItem(ROSTER_KEY) || '{}');
+                    delete roster[code];
+                    localStorage.setItem(ROSTER_KEY, JSON.stringify(roster));
+                    // A clearance briefing armed for the extra code belongs to this Agent.
+                    const pend = JSON.parse(localStorage.getItem('dg_fn_orders_pending') || 'null');
+                    if (pend && pend.code === code) { pend.code = twin.code; localStorage.setItem('dg_fn_orders_pending', JSON.stringify(pend)); }
+                } catch (e) { /* best effort */ }
+                window.dgStore.deleteOwnAgent(code).catch(err => console.warn('cloud-sync: could not remove the extra Agent ' + code, err));
+                if (window.showToast) window.showToast('Saved to ' + twin.code + ' -- one Agent, not two.');
+            });
+        }).catch(() => { /* no lookup, no question */ });
+    }
+    // Typed names (the wizard) arrive a key at a time: ask once the name is done.
+    document.addEventListener('change', e => {
+        if (e.target && e.target.id === 'cs-name' && freshCode) setTimeout(() => checkForTwin(freshCode), 300);
+    });
 
     // Show it up front too, so the player sees whose Agent this is before
     // the first save -- only on a fresh sheet (no code yet, not a ?load=

@@ -11742,6 +11742,51 @@ def test_sheet_theme_glow_is_cheap(p):
     page.close()
     return errs
 
+def test_import_same_agent_twice_offers_update(p):
+    """Live: a player imported the same character twice ("Soko, Lenka"),
+    the second time on a blank sheet, and got two Agents with two codes
+    (SOKO-HUBK, SOKO-GDBQ) -- a blank sheet always mints a new code. Now a
+    freshly minted code whose name this player already has on file asks:
+    "Update TWIN-0001" moves the sheet onto the existing Agent and sends
+    the extra code to Recently Deleted; "Keep both" leaves two Agents."""
+    errs_all = []
+    twin_state = {"v": 1, "bio": {"name": "Soko, Lenka", "player_name": "Zuzu"}}
+    for choice in ("update", "keep"):
+        docs = {
+            "characters/TWIN-0001": character_doc("TWIN-0001", twin_state, "Zuzu"),
+            "briefs/TWIN-0001": {"agent_code": "TWIN-0001", "char_name": "Soko, Lenka", "player_name": "Zuzu", "player_name_lc": "zuzu"},
+        }
+        page, errs = _field_notes_page(p, docs=docs, extra_init="localStorage.setItem('dg_cover_identity', 'Zuzu'); localStorage.removeItem('dg_stats_cloud_code'); localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'TWIN-0001': 1}));")
+        page.goto(f"{BASE}/stats/index.html?new=1", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_function("() => window.importAgentText && window.dgCloudSave", timeout=10000)
+        page.wait_for_timeout(800)
+        page.evaluate("(st) => window.importAgentText(JSON.stringify(st))", twin_state)
+        page.wait_for_selector("#dg-confirm-backdrop.dg-confirm-open", timeout=15000)
+        new_code = page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')")
+        msg = page.inner_text("#dg-confirm-message")
+        if choice == "update":
+            record("journey", "importing an Agent this player already has asks before keeping a second one",
+                   "TWIN-0001" in msg and "Soko, Lenka" in msg and page.inner_text("#dg-confirm-ok") == "Update TWIN-0001"
+                   and page.inner_text("#dg-confirm-cancel") == "Keep both" and new_code and new_code != "TWIN-0001", msg + " / " + str(new_code))
+            page.click("#dg-confirm-ok")
+            gone = wait_for_condition(lambda: (fs_doc(page, f"deleted_agents/{new_code}") is not None
+                                               and fs_doc(page, f"characters/{new_code}") is None) or None, timeout_ms=10000)
+            code_now = page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')")
+            roster = json.loads(page.evaluate("() => localStorage.getItem('dg_agent_roster')") or "{}")
+            record("journey", "Update: the sheet saves to the existing Agent's code, the extra code goes to Recently Deleted",
+                   code_now == "TWIN-0001" and bool(gone) and new_code not in roster
+                   and any(w["path"] == "characters/TWIN-0001" for w in fs_writes(page, "characters/TWIN-0001")),
+                   f"code={code_now} gone={gone} roster={list(roster)}")
+        else:
+            page.click("#dg-confirm-cancel")
+            page.wait_for_timeout(1500)
+            record("journey", "Keep both: the new Agent keeps its own code and nothing is removed",
+                   page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')") == new_code
+                   and fs_doc(page, f"characters/{new_code}") is not None and fs_doc(page, f"deleted_agents/{new_code}") is None, str(new_code))
+        errs_all.extend(errs)
+        page.close()
+    return errs_all
+
 def test_field_notes_standing_orders(p):
     """New-Agent onboarding: the wizard finishing (or an Agent imported
     onto the sheet) arms the Standing Orders; they come up only once the
@@ -12318,6 +12363,7 @@ def main():
         safe(test_appearance_wizard_step, browser, area="appearance")
         safe(test_incursion, browser, area="incursion")
         safe(test_field_notes_standing_orders, browser, area="onboarding")
+        safe(test_import_same_agent_twice_offers_update, browser, area="journey")
         safe(test_sheet_theme_glow_is_cheap, browser, area="sheet-theme")
         safe(test_physical_description_punctuation, browser, area="hub")
         safe(test_agent_hub_phone_agents_menu, browser, area="hub")

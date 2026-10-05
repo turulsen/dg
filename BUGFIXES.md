@@ -6168,3 +6168,28 @@ character sheet, Friendly pregens as "Friendly: name (title)", the code
 only when nothing has a name -- without holding up the Cells/Operations
 load; the code stays as the checkbox's tooltip and value.
 `test_acell_evidence` checks both places. `sw.js` `CACHE_NAME` v180.
+
+## The same Agent twice: one name, two codes ("Soko, Lenka")
+
+Reported by a second Handler trying the app: two Agents named "Soko,
+Lenka" for player "Zuzu", one with its clearance briefing accepted and
+one without. Read-only look at the live records: `characters/SOKO-HUBK`
+created 16:22, its Agent File auto-created 16:25, briefing accepted
+16:28; `characters/SOKO-GDBQ` created 16:30 with identical contents
+except for import-time bond IDs (timestamped 16:22 and 16:30) -- the
+same character imported twice, the second time on a blank sheet
+(another device, or after + New Recruit). A blank sheet always mints a
+new code in `ensureCloudCode()`, and nothing compared it with what the
+player already had. This is the same class as the two earlier
+duplicate-code fixes above ("Update Brief", "Open Agent File"), which
+each closed one caller; this closes it where every new code is made.
+A code minted on the page is now checked (after an import lands, and
+when a typed name is finished) against this device's roster and the
+player's Agents on file; if one has the same name the sheet asks
+"Update <CODE>" / "Keep both". Update saves the sheet onto the existing
+Agent, moves a briefing armed for the extra code onto it, and sends the
+extra code to Recently Deleted (restorable by the Handler for 24 hours).
+`dgConfirm()` takes optional button labels. New
+`test_import_same_agent_twice_offers_update`. `sw.js` `CACHE_NAME`
+v181. The existing pair needs tidying by hand: delete SOKO-GDBQ in
+A-Cell (it's the copy without the accepted briefing).

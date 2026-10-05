@@ -32,7 +32,7 @@
    through this whole migration -- not random flakiness, one bad path
    silently breaking the update mechanism itself.
    ══════════════════════════════════════════════ */
-const CACHE_NAME = 'dg-hub-shell-v180';
+const CACHE_NAME = 'dg-hub-shell-v181';
 
 const SHELL_FILES = [
   './',

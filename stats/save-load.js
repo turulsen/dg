@@ -870,7 +870,9 @@ function matchProfessionKey(profStr) {
     // gated action (like cloud-sync.js's startRecruitFlow) tries to use it.
     // Returns a Promise<boolean> so callers can `await` it the same way
     // they'd branch on confirm()'s return value.
-    function dgConfirm(message) {
+    // opts.ok / opts.cancel relabel the two buttons for this one question.
+    function dgConfirm(message, opts) {
+        opts = opts || {};
         return new Promise((resolve) => {
             let backdrop = document.getElementById('dg-confirm-backdrop');
             if (!backdrop) {
@@ -888,6 +890,8 @@ function matchProfessionKey(profStr) {
             document.getElementById('dg-confirm-message').textContent = message;
             const okBtn = document.getElementById('dg-confirm-ok');
             const cancelBtn = document.getElementById('dg-confirm-cancel');
+            okBtn.textContent = opts.ok || 'Continue';
+            cancelBtn.textContent = opts.cancel || 'Cancel';
             const cleanup = (result) => {
                 backdrop.classList.remove('dg-confirm-open');
                 okBtn.removeEventListener('click', onOk);
