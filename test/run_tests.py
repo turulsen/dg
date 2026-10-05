@@ -5903,6 +5903,104 @@ def test_table_radio_plays_while_audio_context_locked(p):
     page.close()
     return errs
 
+def test_table_radio_new_track_starts_without_a_tap(p):
+    """Live, on an iPad in the hub shell: every song change needed the
+    player to tap Resume, sound effects never played, and the volume
+    slider did nothing. Safari lets an <audio> element start by itself
+    only once that same element was played (or loaded) inside a tap, and
+    the widget built a fresh element for every track and every stinger.
+    Worse, in hub.html the widget sits in the outer page while nearly
+    every tap lands inside #dg-shell-content, which the widget never
+    heard. Chromium is made to behave the same way here: play() without
+    a tap is refused unless the element was unlocked by one, and the
+    AudioContext stays suspended until the page has had a tap."""
+    # Taps are tracked from real (trusted) input events -- not
+    # navigator.userActivation, which Playwright's evaluate() switches on.
+    ios = """(() => {
+      const top = window.top;
+      const mark = (e) => { if (!e.isTrusted) return; top.__inTap = true; top.__tapped = true; setTimeout(() => { top.__inTap = false; }, 0); };
+      ['click', 'touchend', 'keydown'].forEach((t) => window.addEventListener(t, mark, true));
+      const active = () => !!top.__inTap;
+      const realPlay = HTMLMediaElement.prototype.play, realLoad = HTMLMediaElement.prototype.load;
+      window.__refused = 0;
+      HTMLMediaElement.prototype.load = function () { if (active()) this.__unlocked = true; return realLoad.call(this); };
+      HTMLMediaElement.prototype.play = function () {
+        if (active()) this.__unlocked = true;
+        if (!this.__unlocked) { window.__refused++; return Promise.reject(new DOMException('needs a tap', 'NotAllowedError')); }
+        return realPlay.call(this);
+      };
+      const C = window.AudioContext || window.webkitAudioContext; if (!C) return;
+      Object.defineProperty(C.prototype, 'state', { configurable: true, get() {
+        return window.top.__tapped ? 'running' : 'suspended'; } });
+      C.prototype.resume = function () { return Promise.resolve(); };
+    })();"""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); localStorage.setItem('dg_radio_channel', '1'); localStorage.setItem('dg_cover_identity', 'Gergo'); } catch (e) {}")
+    page.add_init_script(ios)
+    install_radio_firestore_stub(page)
+    page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page)
+    # Content frame loaded and the boot veil gone from where we tap.
+    _pump_until(page, lambda: page.evaluate("""() => { try {
+        const f = document.getElementById('dg-shell-content'); if (f.contentDocument.readyState !== 'complete') return false;
+        const r = f.getBoundingClientRect(); const el = document.elementFromPoint(r.left + 20, r.top + r.height * 0.5);
+        return el === f; } catch (e) { return false; } }"""), timeout_ms=12000)
+    page.wait_for_timeout(300)
+    clips = sorted(os.listdir(os.path.join(HERE, "..", "assets", "stingers")))
+    track = f"{BASE}/assets/stingers/{clips[0]}"
+    np = {"channel": "1", "track_url": track, "track_title": "Abyss", "started_at": 1700000000000,
+          "track_volume": 50, "ambient_volume": 100, "track_kind": "audio", "loop": True}
+    push_radio_now_playing(page, "1", np)
+    main_state = """() => { const a = document.getElementById('dg-radio-audio'); const r = document.getElementById('dg-radio-resume');
+        return a ? { src: a.src, paused: a.paused, resume: !!r && r.style.display === 'block' } : null; }"""
+    _pump_until(page, lambda: (page.evaluate(main_state) or {}).get("resume"), timeout_ms=6000)
+    before = page.evaluate(main_state)
+    record("radio", "before any tap (iOS-like), a new track is refused and Resume shows",
+           bool(before) and before["paused"] and before["resume"], str(before))
+
+    # One tap inside the shell's content frame -- not on the radio.
+    page.evaluate("""() => { const d = document.getElementById('dg-shell-content').contentDocument;
+        const t = d.createElement('div'); t.id = 'tap-target';
+        t.style.cssText = 'position:fixed;left:8px;top:45%;width:40px;height:40px;z-index:2147483647;background:transparent';
+        d.body.appendChild(t); }""")
+    page.frame_locator("#dg-shell-content").locator("#tap-target").click()
+    _pump_until(page, lambda: not (page.evaluate(main_state) or {"paused": True})["paused"], timeout_ms=4000)
+    after = page.evaluate(main_state)
+    dbg = page.inner_text("#dg-radio-debug")
+    record("radio", "a tap anywhere in the shell's content frame starts the refused track and hides Resume",
+           bool(after) and not after["paused"] and not after["resume"], str(after))
+    record("radio", "the same tap wires the already-playing track into the gain node (volume works mid-track)",
+           "route=webaudio" in dbg, dbg)
+
+    refused = page.evaluate("() => window.__refused")
+    np2 = dict(np, track_url=track + "?schism", track_title="Schism", started_at=1700000009000)
+    push_radio_now_playing(page, "1", np2)
+    _pump_until(page, lambda: (page.evaluate(main_state) or {}).get("src", "").endswith("?schism")
+                and not page.evaluate(main_state)["paused"], timeout_ms=6000)
+    s2 = page.evaluate(main_state)
+    record("radio", "the Handler changes the song: the next track starts by itself, no tap, no Resume",
+           bool(s2) and s2["src"].endswith("?schism") and not s2["paused"] and not s2["resume"]
+           and page.evaluate("() => window.__refused") == refused, f"{s2} refused {refused}->{page.evaluate('() => window.__refused')}")
+    record("radio", "the next track goes through the gain node too",
+           "route=webaudio" in page.inner_text("#dg-radio-debug"), page.inner_text("#dg-radio-debug"))
+
+    now = page.evaluate("() => Date.now()")
+    sid = clips[0].rsplit(".", 1)[0]
+    np3 = dict(np2, stingers=[{"id": sid, "fired_at": now, "started_at": now, "paused": False, "paused_at": 0, "loop": False}])
+    push_radio_now_playing(page, "1", np3)
+    stinger = """(id) => { const a = [...document.querySelectorAll('audio')].find(x => x.src.indexOf('/stingers/' + id) !== -1 && x.id !== 'dg-radio-audio');
+        return a ? { paused: a.paused, t: a.currentTime } : null; }"""
+    _pump_until(page, lambda: (page.evaluate(stinger, sid) or {"paused": True})["paused"] is False, timeout_ms=4000)
+    st = page.evaluate(stinger, sid)
+    record("radio", "a sound effect fired after that tap plays on its own (no tap needed)",
+           bool(st) and st["paused"] is False and page.evaluate("() => window.__refused") == refused, str(st))
+    page.close()
+    return errs
+
 def test_table_radio_main_track_gain_only_with_cors(p):
     """Issue #39. The main track only goes through Web Audio (the gain
     node, the one volume control iOS honours) when that is audible:
@@ -12467,6 +12565,7 @@ def main():
         safe(test_table_radio_debug_readout_shows_ambient_and_stinger_state, browser, area="radio")
 
         safe(test_table_radio_plays_while_audio_context_locked, browser, area="radio")
+        safe(test_table_radio_new_track_starts_without_a_tap, browser, area="radio")
         safe(test_table_radio_main_track_gain_only_with_cors, browser, area="radio")
 
         safe(test_table_radio_finished_track_does_not_restart_from_beginning, browser, area="radio")

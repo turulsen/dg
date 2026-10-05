@@ -6174,6 +6174,36 @@ from `stats/assets/...`, which doesn't exist; they now resolve next to
 the script. New `test_table_radio_plays_while_audio_context_locked`
 (fails on the old code, 3 of 4 checks). `sw.js` `CACHE_NAME` v179.
 
+**Only half fixed (2026-10-05, at the table):** sound effects still
+silent and the volume slider dead on the iPad, and every song change sat
+paused until the player tapped again. Two things the fix above missed:
+- *"Any tap anywhere" wasn't.* In the hub shell (`hub.html`) the radio
+  lives in the outer page, but the sheet, Agent Hub and A-Cell load in
+  `#dg-shell-content`, and a tap in a frame never reaches the outer
+  document's listeners. The context only woke from the radio's own
+  controls, so almost everything stayed on the plain, unwired route (no
+  iOS volume). The tap listener now also hooks every same-origin frame
+  (re-hooked on each load, new frames picked up as they appear).
+- *A fresh element per sound.* Safari lets an `<audio>` element start by
+  itself only once that same element was played or loaded inside a tap.
+  The widget built a new element for every track, ambient loop and
+  stinger, so each song change was refused (Resume) and stingers, which
+  had no Resume, were silently dropped. Each tap now unlocks a few spare
+  elements (a muted 10 ms silent clip played inside the tap, the
+  howler.js technique); tracks, loops and stingers take a spare and
+  return it when done, with their listeners removed (`listen_` /
+  `releaseAudioEl_`). Elements already wired into a gain node stay wired
+  and are only reused for files the gain node can hear.
+Also: whatever was refused anyway now starts on the next tap anywhere,
+not only on Resume; the main track asks for `crossorigin` whenever the
+CORS probe says yes, whether or not the context runs yet, so a later
+tap can wire the playing track into the gain node mid-song
+(`wireLiveElements_`) instead of waiting for the next track; the
+half-second wait for the context is gone. New
+`test_table_radio_new_track_starts_without_a_tap` (Chromium made to
+refuse untapped elements like iOS, taps inside the shell's frame; fails
+on the old code, 4 of 6 checks). `sw.js` `CACHE_NAME` v184.
+
 ## A-Cell Evidence: Agents listed by code when restricting an item
 
 Request: when restricting an Evidence item to specific Agents in a Cell,
