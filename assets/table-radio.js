@@ -71,6 +71,12 @@
   if (window.frameElement &&
       (window.frameElement.id === 'dg-shell-content' || window.frameElement.id === 'dg-split-sheet-frame' ||
        window.frameElement.hasAttribute('data-dg-embed'))) return;
+  // The ambient/stinger files live next to this script; a page in a
+  // subfolder (stats/, notes/) resolved a bare 'assets/...' against its
+  // own folder and found nothing.
+  var ASSET_BASE_ = (function () {
+    try { return document.currentScript.src.replace(/assets\/table-radio\.js(\?.*)?$/, ''); } catch (e) { return ''; }
+  })();
   var FIREBASE_SDK_VERSION = '12.18.0';
   // Public Web SDK config for the dg-app-b3447 Firebase project -- not
   // a secret, same reasoning as every other client-side Firebase config;
@@ -218,6 +224,32 @@
     } catch (e) { return null; }
     return audioCtx;
   }
+  // Any tap or key on the page counts as the gesture iOS needs: create
+  // or resume the context then, so the next sound can use the gain node
+  // (the radio's own buttons aren't the only thing players touch).
+  ['pointerdown', 'touchend', 'keydown', 'click'].forEach(function (t) {
+    document.addEventListener(t, function () {
+      if (!audioCtx || audioCtx.state !== 'running') ensureAudioCtx_();
+    }, { capture: true, passive: true });
+  });
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && audioCtx && audioCtx.state !== 'running') {
+      audioCtx.resume().catch(function () { /* needs a tap; the listener above has it */ });
+    }
+  });
+  // cb(true) once the context is running, cb(false) if it isn't within
+  // `ms` (e.g. no gesture yet) -- the caller then plays without it.
+  function whenCtxRunning_(ms, cb) {
+    var ctx = ensureAudioCtx_();
+    if (!ctx) { cb(false); return; }
+    if (ctx.state === 'running') { cb(true); return; }
+    var done = false;
+    var finish = function (ok) { if (!done) { done = true; cb(ok); } };
+    setTimeout(function () { finish(false); }, ms);
+    try {
+      ctx.resume().then(function () { finish(ctx.state === 'running'); }, function () { finish(false); });
+    } catch (e) { finish(false); }
+  }
   // Wires one <audio> element through a GainNode. Can only ever be
   // called once per element (a second call on the same node throws) --
   // safe here because every call site is right after that exact
@@ -228,6 +260,14 @@
   function attachGain_(el) {
     var ctx = ensureAudioCtx_();
     if (!ctx) return null;
+    // A suspended context (created before any tap on this page, or
+    // interrupted on iOS) outputs silence for everything wired into it,
+    // and Safari can stall such an element mid-track. The table heard
+    // nothing: tracks "playing" but stuck at 1:19, stingers silent. Only
+    // wire through the gain node while the context is really running;
+    // otherwise play the element directly -- always audible, only its
+    // volume is then ignored on iOS.
+    if (ctx.state !== 'running') return null;
     try {
       var source = ctx.createMediaElementSource(el);
       var gain = ctx.createGain();
@@ -579,7 +619,7 @@
       var entry = ambientAudioEls[layer.id];
       if (!entry) {
         var el = document.createElement('audio');
-        el.src = 'assets/ambient/' + layer.id + '.mp3';
+        el.src = ASSET_BASE_ + 'assets/ambient/' + layer.id + '.mp3';
         el.style.display = 'none';
         document.body.appendChild(el);
         var ambientGain = attachGain_(el);
@@ -650,7 +690,7 @@
       var entry = stingerAudioEls[s.fired_at];
       if (!entry) {
         var el = document.createElement('audio');
-        el.src = 'assets/stingers/' + s.id + '.mp3';
+        el.src = ASSET_BASE_ + 'assets/stingers/' + s.id + '.mp3';
         el.style.display = 'none';
         document.body.appendChild(el);
         var stingerGain = attachGain_(el);
@@ -1436,7 +1476,12 @@
           }
         });
       };
-      mainTrackRoute_(np.track_url, buildAudio);
+      mainTrackRoute_(np.track_url, function (route) {
+        if (route !== 'webaudio') { buildAudio(route); return; }
+        // CORS allows the gain node -- but only use it if the context
+        // runs (Tune In's own tap wakes it; give that a moment).
+        whenCtxRunning_(500, function (ok) { buildAudio(ok ? 'webaudio' : 'element'); });
+      });
     } else {
       // Generic embeddable URL, neither YouTube, SoundCloud, nor direct
       // audio -- no API, cross-origin, never controllable from here
