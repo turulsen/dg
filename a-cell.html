@@ -4133,33 +4133,39 @@
   // and Agent File's Firestore createTime. The web SDK doesn't expose
   // createTime, the REST API does (characters/ and briefs/ are
   // public-read). Loaded once per Sheet load; '—' until it arrives.
-  var createdByCode = {}, createdLoading = false;
-  function createdCell(code) {
-    var t = createdByCode[code];
-    if (!t) return '<span class="sheet-empty-cell">&mdash;</span>';
+  // Last updated: the later of the two docs' updateTime from the same
+  // read (an Agent File edit counts too); until it arrives, the sheet's
+  // own updated_at.
+  var createdByCode = {}, updatedByCode = {}, createdLoading = false;
+  function dateCell(t) {
+    if (!t || isNaN(t)) return '<span class="sheet-empty-cell">&mdash;</span>';
     var d = new Date(t), pad = function (n) { return (n < 10 ? '0' : '') + n; };
     return '<span title="' + escapeHtml(d.toLocaleString()) + '">' + d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
       ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + '</span>';
   }
+  function createdCell(code) { return dateCell(createdByCode[code]); }
+  function updatedCell(r) { return dateCell(updatedByCode[r.code] || Date.parse(r.updatedAt || '')); }
   function loadCreatedTimes() {
     var opts = window.__dgFirebaseConfig;
     if (createdLoading || !opts || !window.fetch) return;
     createdLoading = true;
     var base = 'https://firestore.googleapis.com/v1/projects/' + opts.projectId + '/databases/(default)/documents/';
-    var found = {};
+    var found = {}, updated = {};
     function page(coll, token, n) {
       var url = base + coll + '?pageSize=300&mask.fieldPaths=agent_code&key=' + encodeURIComponent(opts.apiKey) +
         (token ? '&pageToken=' + encodeURIComponent(token) : '');
       return fetch(url).then(function (r) { return r.ok ? r.json() : {}; }).then(function (j) {
         (j.documents || []).forEach(function (d) {
-          var code = String(d.name || '').split('/').pop(), t = Date.parse(d.createTime || '');
+          var code = String(d.name || '').split('/').pop(), t = Date.parse(d.createTime || ''), u = Date.parse(d.updateTime || '');
           if (code && !isNaN(t) && (!found[code] || t < found[code])) found[code] = t;
+          if (code && !isNaN(u) && (!updated[code] || u > updated[code])) updated[code] = u;
         });
         return j.nextPageToken && n < 20 ? page(coll, j.nextPageToken, n + 1) : null;
       });
     }
     Promise.all([page('characters', '', 0), page('briefs', '', 0)]).then(function () {
       createdByCode = found;
+      updatedByCode = updated;
       if (rows.length) renderSheet();
     }).catch(function () { /* dates stay '—' */ }).then(function () { createdLoading = false; });
   }
@@ -4179,6 +4185,7 @@
         '<td class="sheet-code">' + escapeHtml(r.code) + '</td>' +
         '<td>' + playerNameCell(r.playerName, r.code) + '</td>' +
         '<td>' + createdCell(r.code) + '</td>' +
+        '<td>' + updatedCell(r) + '</td>' +
         '<td>' + (r.isBriefsOnly ? '<span class="sheet-empty-cell" title="No character sheet yet">&mdash;</span>' : onlineCell(r.updatedAt)) + '</td>' +
         '<td><button type="button" class="paper-btn sheet-delete-btn" data-i="' + i + '">Delete</button>' +
         '<div class="admin-confirm-slot" id="sheet-confirm-slot-' + i + '"></div></td>' +
@@ -4186,7 +4193,7 @@
     }).join('');
     wrap.innerHTML =
       '<table class="sheet-table"><thead><tr>' +
-      '<th></th><th>Cell</th><th>Handler</th><th>Agent Name</th><th>Agent Code</th><th>Player Name</th><th>Created</th><th>Online</th><th></th>' +
+      '<th></th><th>Cell</th><th>Handler</th><th>Agent Name</th><th>Agent Code</th><th>Player Name</th><th>Created</th><th>Last Updated</th><th>Online</th><th></th>' +
       '</tr></thead><tbody>' + body + '</tbody></table>';
     Array.prototype.forEach.call(wrap.querySelectorAll('.sheet-pn-display'), function (span) {
       span.addEventListener('click', function () { startEditPlayerName(span); });

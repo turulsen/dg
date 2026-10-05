@@ -4591,8 +4591,9 @@ def test_acell_sheet(p):
                    "MARC-9XQ2": "2026-09-03T12:00:00Z", "DEMO-Q5MD": "2026-09-04T13:00:00Z"}
     def fake_rest(route):
         coll = route.request.url.split("/documents/")[1].split("?")[0]
-        docs_out = [{"name": f"projects/dg-app-b3447/databases/(default)/documents/{coll}/{c}", "createTime": t}
-                    for c, t in created_iso.items() if (coll == "characters") != (c == "DEMO-Q5MD")]
+        docs_out = [{"name": f"projects/dg-app-b3447/databases/(default)/documents/{coll}/{c}", "createTime": t,
+                     "updateTime": "2026-09-20T08:30:00Z" if (c == "OWEN-CS12" and coll == "briefs") else t}
+                    for c, t in created_iso.items() if c == "OWEN-CS12" or (coll == "characters") != (c == "DEMO-Q5MD")]
         route.fulfill(status=200, content_type="application/json", body=json.dumps({"documents": docs_out}))
     page.route("**/firestore.googleapis.com/v1/**", fake_rest)
     tap_acell_posts(page, lambda body: posts.append(body))
@@ -4608,8 +4609,8 @@ def test_acell_sheet(p):
     # the bulk-delete addition to renderSheet() -- a real report of
     # hundreds of dummy/test rows needing deletion made the old one-row-
     # at-a-time Delete button impractical).
-    record("acell", "Sheet table has the requested columns in order (Agent Code and Created; no HP or SAN)",
-           headers[1:8] == ["Cell", "Handler", "Agent Name", "Agent Code", "Player Name", "Created", "Online"], str(headers))
+    record("acell", "Sheet table has the requested columns in order (Agent Code, Created, Last Updated; no HP or SAN)",
+           headers[1:9] == ["Cell", "Handler", "Agent Name", "Agent Code", "Player Name", "Created", "Last Updated", "Online"], str(headers))
 
     row_texts = page.eval_on_selector_all("#sheet-wrap tbody tr", "els => els.map(e=>e.textContent)")
     record("acell", "Sheet lists every Agent on file plus every Agent-File-only entry as rows",
@@ -4622,6 +4623,10 @@ def test_acell_sheet(p):
     expect = page.evaluate("""() => { const d = new Date('2026-09-01T10:05:00Z'), p = n => (n < 10 ? '0' : '') + n;
         return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); }""")
     record("acell", "the Created column shows when each Agent was created", created == expect, f"{created} vs {expect}")
+    upd = page.evaluate("() => (document.querySelector('#sheet-wrap tbody tr:nth-child(1) td:nth-child(8)') || {}).textContent")
+    expect_upd = page.evaluate("""() => { const d = new Date('2026-09-20T08:30:00Z'), p = n => (n < 10 ? '0' : '') + n;
+        return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); }""")
+    record("acell", "Last Updated shows the latest save of the Agent's sheet or Agent File", (upd or "").strip() == expect_upd, f"{upd} vs {expect_upd}")
     record("acell", "an Agent File-only entry (no character sheet) shows as its own row in the same table",
            any("Mastery" in t for t in row_texts), str(row_texts))
 

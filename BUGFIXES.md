@@ -6204,10 +6204,13 @@ Requests from the Handler, alongside the duplicate-Agent fix:
   `characters/` and `briefs/` are public-read, so the Sheet reads both
   collections' `createTime` once per load (codes only, via a field mask)
   and shows the earlier of the two; a dash until it arrives or if it
-  can't be read. `test_acell_sheet` covers the columns and the date.
+  can't be read. A **Last Updated** column (asked for right after) uses
+  the same read: the later `updateTime` of the sheet and the Agent File,
+  falling back to the sheet's own `updated_at` until it arrives.
+  `test_acell_sheet` covers the columns and both dates.
 - **KIA Agents take no more turns.** An Agent whose saved sheet is at
   0 HP or below is left out of the Cell Dashboard's Initiative Order
   (A-Cell) and the Live Play initiative row (`stats/lp-initiative.js`),
   including the player's own Agent; the row hides when no living
   teammate is left. `test_acell_play` and `test_lp_initiative_order`
-  check it. `sw.js` `CACHE_NAME` v182.
+  check it. `sw.js` `CACHE_NAME` v183.
