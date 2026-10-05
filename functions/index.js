@@ -149,17 +149,26 @@ function callerKey_(request) {
 async function checkRateLimit_(key, bucket, maxCalls, windowSeconds) {
   const ref = getFirestore().collection('rate_limits').doc(bucket + '_' + key);
   const now = Date.now();
-  const allowed = await getFirestore().runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-    const d = snap.exists ? snap.data() : null;
-    if (!d || now - d.window_start > windowSeconds * 1000) {
-      tx.set(ref, { window_start: now, count: 1 });
+  let allowed = true;
+  // A failing counter (e.g. the functions' service account without
+  // Firestore access) must not block the AI calls outright: before this,
+  // such an error escaped as the SDK's bare "internal" on every request.
+  // Let the call through and log why, so the cause shows in functions:log.
+  try {
+    allowed = await getFirestore().runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const d = snap.exists ? snap.data() : null;
+      if (!d || now - d.window_start > windowSeconds * 1000) {
+        tx.set(ref, { window_start: now, count: 1 });
+        return true;
+      }
+      if (d.count >= maxCalls) return false;
+      tx.update(ref, { count: d.count + 1 });
       return true;
-    }
-    if (d.count >= maxCalls) return false;
-    tx.update(ref, { count: d.count + 1 });
-    return true;
-  });
+    });
+  } catch (err) {
+    logger.error('rate limit check failed; allowing the call', { bucket: bucket, key: key, error: (err && err.message) || String(err) });
+  }
   if (!allowed) throw new HttpsError('resource-exhausted', 'Rate limit reached for this Agent -- please wait a few minutes and try again.');
 }
 

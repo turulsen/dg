@@ -6095,7 +6095,13 @@ Same report, not code bugs, made clearer instead:
   message and nothing logged to say which. Both AI functions now trim
   the key, catch any error and return it as a readable `ERROR` message
   ("Prompt service error: …", or the Anthropic/Gemini error text), and
-  log the cause to `functions:log`. Needs
+  log the cause to `functions:log`. The rate-limit counter
+  (`checkRateLimit_`, a Firestore transaction) ran before that
+  try/catch and is the AI functions' only server-side Firestore use --
+  `exchangeAgentToken` never touches Firestore, so a service account
+  without database access would only ever show up here, as the same
+  bare "internal". A failing counter is now logged and the call let
+  through instead. Needs
   `firebase deploy --only functions:generatePrompt,functions:generatePlateImage`.
 
 ## Agent Hub: the Agent's paper could stay blank on a slow load
