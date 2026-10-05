@@ -1,6 +1,7 @@
 const { initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const logger = require('firebase-functions/logger');
 const { defineSecret } = require('firebase-functions/params');
 
 initializeApp();
@@ -170,19 +171,31 @@ exports.generatePrompt = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 
   const key = callerKey_(request);
   await checkRateLimit_(key, 'prompt', 10, 600);
   if (IN_EMULATOR) return { status: 'OK', prompt: 'EMULATOR PROMPT: ' + buildAppearancePrompt(request.data || {}).slice(0, 80) };
-  const apiKey = ANTHROPIC_API_KEY.value();
+  // trim(): a key pasted with a stray newline or space makes fetch() throw
+  // on the header before any request is sent.
+  const apiKey = String(ANTHROPIC_API_KEY.value() || '').trim();
   if (!apiKey) throw new HttpsError('failed-precondition', 'ANTHROPIC_API_KEY is not set on the server.');
-  const userPrompt = buildAppearancePrompt(request.data || {});
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 1000, messages: [{ role: 'user', content: userPrompt }] })
-  });
-  const result = await resp.json().catch(() => ({}));
-  if (result.content && result.content[0] && result.content[0].text) {
-    return { status: 'OK', prompt: result.content[0].text };
+  // Anything thrown past this point would reach the player only as the
+  // SDK's bare "internal" -- report it as a readable ERROR instead, the
+  // way the Apps Script version's try/catch did.
+  try {
+    const userPrompt = buildAppearancePrompt(request.data || {});
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 1000, messages: [{ role: 'user', content: userPrompt }] })
+    });
+    const result = await resp.json().catch(() => ({}));
+    if (result.content && result.content[0] && result.content[0].text) {
+      return { status: 'OK', prompt: result.content[0].text };
+    }
+    const message = (result.error && result.error.message) || ('No content returned (HTTP ' + resp.status + ').');
+    logger.error('generatePrompt: Anthropic API error', { status: resp.status, error: result.error || null });
+    return { status: 'ERROR', message: message };
+  } catch (err) {
+    logger.error('generatePrompt failed', err);
+    return { status: 'ERROR', message: 'Prompt service error: ' + ((err && err.message) || String(err)) };
   }
-  return { status: 'ERROR', message: (result.error && result.error.message) || 'No content returned.' };
 });
 
 // Reads one of this project's own Plate/reference images straight out
@@ -212,7 +225,7 @@ async function storageReferenceImage_(url) {
 exports.generatePlateImage = onCall({ secrets: [GEMINI_API_KEY], timeoutSeconds: 180, memory: '512MiB' }, async (request) => {
   const key = callerKey_(request);
   await checkRateLimit_(key, 'plate_image', 3, 600);
-  const apiKey = GEMINI_API_KEY.value();
+  const apiKey = String(GEMINI_API_KEY.value() || '').trim();
   if (!apiKey) throw new HttpsError('failed-precondition', 'GEMINI_API_KEY is not set on the server.');
   const data = request.data || {};
   const prompt = String(data.prompt || '').trim();
@@ -232,33 +245,41 @@ exports.generatePlateImage = onCall({ secrets: [GEMINI_API_KEY], timeoutSeconds:
     if (ref) parts.push({ inlineData: ref });
   }
   if (IN_EMULATOR) return { status: 'OK', image_base64: 'data:image/png;base64,' + FAKE_PNG, refs: parts.length - 1 };
-  const model = 'gemini-3.1-flash-image';
-  const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
-    body: JSON.stringify({
-      contents: [{ parts: parts }],
-      generationConfig: { responseModalities: ['IMAGE'] },
-      safetySettings: [
-        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
-        { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-        { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' }
-      ]
-    })
-  });
-  const result = await resp.json().catch(() => ({}));
-  const candidate = result.candidates && result.candidates[0];
-  const resultParts = candidate && candidate.content && candidate.content.parts;
-  const imagePart = resultParts && resultParts.filter((p) => p.inlineData)[0];
-  if (imagePart) {
-    return { status: 'OK', image_base64: 'data:' + imagePart.inlineData.mimeType + ';base64,' + imagePart.inlineData.data };
+  // Same as generatePrompt: never let a thrown error reach the player as
+  // a bare "internal".
+  try {
+    const model = 'gemini-3.1-flash-image';
+    const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify({
+        contents: [{ parts: parts }],
+        generationConfig: { responseModalities: ['IMAGE'] },
+        safetySettings: [
+          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
+          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' }
+        ]
+      })
+    });
+    const result = await resp.json().catch(() => ({}));
+    const candidate = result.candidates && result.candidates[0];
+    const resultParts = candidate && candidate.content && candidate.content.parts;
+    const imagePart = resultParts && resultParts.filter((p) => p.inlineData)[0];
+    if (imagePart) {
+      return { status: 'OK', image_base64: 'data:' + imagePart.inlineData.mimeType + ';base64,' + imagePart.inlineData.data };
+    }
+    const blockReason = result.promptFeedback && result.promptFeedback.blockReason;
+    const finishReason = candidate && candidate.finishReason;
+    const apiError = result.error && result.error.message;
+    logger.error('generatePlateImage: no image', { status: resp.status, error: result.error || null, blockReason: blockReason || null, finishReason: finishReason || null });
+    return { status: 'ERROR', message: apiError || (blockReason ? 'Blocked: ' + blockReason
+      : finishReason && finishReason !== 'STOP' ? 'Generation stopped: ' + finishReason : 'No image returned.') };
+  } catch (err) {
+    logger.error('generatePlateImage failed', err);
+    return { status: 'ERROR', message: 'Image service error: ' + ((err && err.message) || String(err)) };
   }
-  const blockReason = result.promptFeedback && result.promptFeedback.blockReason;
-  const finishReason = candidate && candidate.finishReason;
-  const apiError = result.error && result.error.message;
-  return { status: 'ERROR', message: apiError || (blockReason ? 'Blocked: ' + blockReason
-    : finishReason && finishReason !== 'STOP' ? 'Generation stopped: ' + finishReason : 'No image returned.') };
 });
 
 // ════════════════════════════════════════════════════════════════

@@ -6086,6 +6086,17 @@ Same report, not code bugs, made clearer instead:
   generation had been failing on the live site since the Sheet was
   retired, not only on the preview. Deployed 2026-10-01 with
   `firebase deploy --only functions:generatePrompt,functions:generatePlateImage,functions:dailyBackup`.
+  **That fix was only half of it (2026-10-05):** with the functions
+  deployed, the iPad still showed "the AI service did not answer" and
+  the prompt box stayed empty. The port from Apps Script had dropped
+  `generateAppearancePrompt()`'s try/catch, so anything the function
+  threw (a failed `fetch`, a key with a stray newline in the header)
+  still reached the player as the bare "internal", with nothing in the
+  message and nothing logged to say which. Both AI functions now trim
+  the key, catch any error and return it as a readable `ERROR` message
+  ("Prompt service error: …", or the Anthropic/Gemini error text), and
+  log the cause to `functions:log`. Needs
+  `firebase deploy --only functions:generatePrompt,functions:generatePlateImage`.
 
 ## Agent Hub: the Agent's paper could stay blank on a slow load
 
