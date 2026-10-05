@@ -6193,3 +6193,21 @@ extra code to Recently Deleted (restorable by the Handler for 24 hours).
 `test_import_same_agent_twice_offers_update`. `sw.js` `CACHE_NAME`
 v181. The existing pair needs tidying by hand: delete SOKO-GDBQ in
 A-Cell (it's the copy without the accepted briefing).
+
+## A-Cell Sheet: Agent Code and Created columns; KIA Agents out of initiative
+
+Requests from the Handler, alongside the duplicate-Agent fix:
+- **Sheet tab columns.** Agent Code and Created are now columns; HP and
+  SAN are gone (the KIA badge by the name still reads HP). There was no
+  creation date anywhere in the data, and the Firebase web SDK doesn't
+  expose a document's `createTime` -- the Firestore REST API does, and
+  `characters/` and `briefs/` are public-read, so the Sheet reads both
+  collections' `createTime` once per load (codes only, via a field mask)
+  and shows the earlier of the two; a dash until it arrives or if it
+  can't be read. `test_acell_sheet` covers the columns and the date.
+- **KIA Agents take no more turns.** An Agent whose saved sheet is at
+  0 HP or below is left out of the Cell Dashboard's Initiative Order
+  (A-Cell) and the Live Play initiative row (`stats/lp-initiative.js`),
+  including the player's own Agent; the row hides when no living
+  teammate is left. `test_acell_play` and `test_lp_initiative_order`
+  check it. `sw.js` `CACHE_NAME` v182.

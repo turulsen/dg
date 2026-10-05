@@ -892,6 +892,7 @@
   .sheet-table td:last-child{ white-space:normal; }
   .sheet-table tr:nth-child(even) td{ background:rgba(28,22,8,.035); }
   .sheet-table td.sheet-empty-cell{ color:var(--ink-3); font-style:italic; }
+  .sheet-table td.sheet-code{ font-family:'Special Elite',monospace; letter-spacing:.06em; }
   .sheet-pn-display{ cursor:pointer; border-bottom:1px dashed var(--rule); }
   .sheet-pn-display:hover{ border-bottom-color:var(--ink-2); }
   .sheet-pn-input{
@@ -1246,6 +1247,7 @@
     messagingSenderId: '464997490443',
     appId: '1:464997490443:web:dad47a347ae7a64a9e4c0e'
   };
+  window.__dgFirebaseConfig = FIREBASE_CONFIG; // the Sheet tab's Created dates read the REST API with it
   var firebaseApiLoading = false;
   var firebaseApiCallbacks = []; // { ok, err } pairs
   // s.onload with no s.onerror at all meant a script that failed to load
@@ -2240,6 +2242,8 @@
 
   function initiativeTrackerHtml() {
     var ranked = characters
+      // A KIA Agent (saved HP at 0 or below) takes no more turns.
+      .filter(function (c) { var hp = ((c.state || {}).derived || {}).hp; return !(typeof hp === 'number' && hp <= 0); })
       .map(function (c) { return { name: (c.state.bio || {}).name || 'Unknown Agent', dex: (c.state || {}).dex }; })
       .concat(cellFriendlies().map(function (p) { return { name: p.name + ' (Friendly)', dex: p.stats.DEX.value }; }))
       .filter(function (r) { return typeof r.dex === 'number'; })
@@ -3999,14 +4003,6 @@
     return v ? escapeHtml(v) : '<span class="sheet-empty-cell">&mdash;</span>';
   }
 
-  // HP/SAN are numbers where 0 is real data (a KIA'd Agent's HP), not
-  // "nothing recorded" -- cell() above treats 0 as falsy and would show
-  // an em-dash instead, which reads as missing data on exactly the row
-  // where it matters most.
-  function numCell(v) {
-    return (typeof v === 'number') ? escapeHtml(String(v)) : '<span class="sheet-empty-cell">&mdash;</span>';
-  }
-
   // Click-to-edit, not a plain cell -- the only field in this table a
   // Handler can fix directly, since it's also the Cover Identity lookup
   // key (agent-hub.html) and an Agent saved before that field existed
@@ -4079,6 +4075,7 @@
       }) : [];
       rows = charRows.concat(briefsRows);
       renderSheet();
+      loadCreatedTimes();
       if (isRefresh) refreshNote.textContent = 'Updated ' + new Date().toLocaleTimeString();
     }
 
@@ -4132,6 +4129,41 @@
     });
   }
 
+  // When each Agent was created: the earliest of its character sheet's
+  // and Agent File's Firestore createTime. The web SDK doesn't expose
+  // createTime, the REST API does (characters/ and briefs/ are
+  // public-read). Loaded once per Sheet load; '—' until it arrives.
+  var createdByCode = {}, createdLoading = false;
+  function createdCell(code) {
+    var t = createdByCode[code];
+    if (!t) return '<span class="sheet-empty-cell">&mdash;</span>';
+    var d = new Date(t), pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    return '<span title="' + escapeHtml(d.toLocaleString()) + '">' + d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+      ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + '</span>';
+  }
+  function loadCreatedTimes() {
+    var opts = window.__dgFirebaseConfig;
+    if (createdLoading || !opts || !window.fetch) return;
+    createdLoading = true;
+    var base = 'https://firestore.googleapis.com/v1/projects/' + opts.projectId + '/databases/(default)/documents/';
+    var found = {};
+    function page(coll, token, n) {
+      var url = base + coll + '?pageSize=300&mask.fieldPaths=agent_code&key=' + encodeURIComponent(opts.apiKey) +
+        (token ? '&pageToken=' + encodeURIComponent(token) : '');
+      return fetch(url).then(function (r) { return r.ok ? r.json() : {}; }).then(function (j) {
+        (j.documents || []).forEach(function (d) {
+          var code = String(d.name || '').split('/').pop(), t = Date.parse(d.createTime || '');
+          if (code && !isNaN(t) && (!found[code] || t < found[code])) found[code] = t;
+        });
+        return j.nextPageToken && n < 20 ? page(coll, j.nextPageToken, n + 1) : null;
+      });
+    }
+    Promise.all([page('characters', '', 0), page('briefs', '', 0)]).then(function () {
+      createdByCode = found;
+      if (rows.length) renderSheet();
+    }).catch(function () { /* dates stay '—' */ }).then(function () { createdLoading = false; });
+  }
+
   function renderSheet() {
     if (!rows.length) {
       wrap.innerHTML = '<div class="sheet-error">No Agents on file yet.</div>';
@@ -4144,9 +4176,9 @@
         '<td>' + cell(r.cellNames) + '</td>' +
         '<td>' + cell(r.handlers) + '</td>' +
         '<td>' + (kia ? '<span class="kia-name">' + cell(r.name) + '</span>' : cell(r.name)) + (kia ? ' <span class="sheet-kia-badge">KIA</span>' : '') + '</td>' +
+        '<td class="sheet-code">' + escapeHtml(r.code) + '</td>' +
         '<td>' + playerNameCell(r.playerName, r.code) + '</td>' +
-        '<td>' + numCell(r.hp) + '</td>' +
-        '<td>' + numCell(r.san) + '</td>' +
+        '<td>' + createdCell(r.code) + '</td>' +
         '<td>' + (r.isBriefsOnly ? '<span class="sheet-empty-cell" title="No character sheet yet">&mdash;</span>' : onlineCell(r.updatedAt)) + '</td>' +
         '<td><button type="button" class="paper-btn sheet-delete-btn" data-i="' + i + '">Delete</button>' +
         '<div class="admin-confirm-slot" id="sheet-confirm-slot-' + i + '"></div></td>' +
@@ -4154,7 +4186,7 @@
     }).join('');
     wrap.innerHTML =
       '<table class="sheet-table"><thead><tr>' +
-      '<th></th><th>Cell</th><th>Handler</th><th>Agent Name</th><th>Player Name</th><th>HP</th><th>SAN</th><th>Online</th><th></th>' +
+      '<th></th><th>Cell</th><th>Handler</th><th>Agent Name</th><th>Agent Code</th><th>Player Name</th><th>Created</th><th>Online</th><th></th>' +
       '</tr></thead><tbody>' + body + '</tbody></table>';
     Array.prototype.forEach.call(wrap.querySelectorAll('.sheet-pn-display'), function (span) {
       span.addEventListener('click', function () { startEditPlayerName(span); });

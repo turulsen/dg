@@ -3519,9 +3519,10 @@ def test_acell_play(p):
     page.wait_for_timeout(200)
     initiative_names = page.eval_on_selector_all("#play-view .cdb-initiative-row .nm", "els => els.map(e=>e.textContent)")
     initiative_dex = page.eval_on_selector_all("#play-view .cdb-initiative-row .dx", "els => els.map(e=>e.textContent)")
-    expected = sorted([("Owen Castillo", 14), ("Marcus Reyes", 10), (fr["name"] + " (Friendly)", fr["stats"]["DEX"]["value"])],
+    # Marcus Reyes is KIA (0 HP) and takes no more turns.
+    expected = sorted([("Owen Castillo", 14), (fr["name"] + " (Friendly)", fr["stats"]["DEX"]["value"])],
                       key=lambda r: -r[1])
-    record("acell", "Cell Dashboard shows an Initiative Tracker ranked by DEX descending, Friendlies included",
+    record("acell", "Cell Dashboard shows an Initiative Tracker ranked by DEX descending, Friendlies included, KIA Agents left out",
            initiative_names == [r[0] for r in expected] and initiative_dex == [str(r[1]) for r in expected],
            str((initiative_names, initiative_dex)))
 
@@ -4584,6 +4585,16 @@ def test_acell_sheet(p):
     for bo in briefs_only:
         docs["briefs/" + bo["agent_code"]] = {k: v for k, v in bo.items() if k != "agent_code"}
     install_firestore_backend(page, docs)
+    # The Created column reads each doc's createTime from Firestore's REST
+    # API (the web SDK doesn't expose it): answer with fixed times.
+    created_iso = {"OWEN-CS12": "2026-09-01T10:05:00Z", "PRIY-AN34": "2026-09-02T11:00:00Z",
+                   "MARC-9XQ2": "2026-09-03T12:00:00Z", "DEMO-Q5MD": "2026-09-04T13:00:00Z"}
+    def fake_rest(route):
+        coll = route.request.url.split("/documents/")[1].split("?")[0]
+        docs_out = [{"name": f"projects/dg-app-b3447/databases/(default)/documents/{coll}/{c}", "createTime": t}
+                    for c, t in created_iso.items() if (coll == "characters") != (c == "DEMO-Q5MD")]
+        route.fulfill(status=200, content_type="application/json", body=json.dumps({"documents": docs_out}))
+    page.route("**/firestore.googleapis.com/v1/**", fake_rest)
     tap_acell_posts(page, lambda body: posts.append(body))
     page.add_init_script(f"Date.now = () => {now_ms}")
 
@@ -4597,16 +4608,20 @@ def test_acell_sheet(p):
     # the bulk-delete addition to renderSheet() -- a real report of
     # hundreds of dummy/test rows needing deletion made the old one-row-
     # at-a-time Delete button impractical).
-    record("acell", "Sheet table has the requested columns in order",
-           headers[1:8] == ["Cell", "Handler", "Agent Name", "Player Name", "HP", "SAN", "Online"], str(headers))
+    record("acell", "Sheet table has the requested columns in order (Agent Code and Created; no HP or SAN)",
+           headers[1:8] == ["Cell", "Handler", "Agent Name", "Agent Code", "Player Name", "Created", "Online"], str(headers))
 
     row_texts = page.eval_on_selector_all("#sheet-wrap tbody tr", "els => els.map(e=>e.textContent)")
     record("acell", "Sheet lists every Agent on file plus every Agent-File-only entry as rows",
            len(row_texts) == 4, str(row_texts))
-    record("acell", "a row shows the Agent's Cell, Handler, player name, HP, and SAN together",
+    record("acell", "a row shows the Agent's Cell, Handler, name, Agent Code and player name together",
            "Cell Alpha" in row_texts[0] and "Sam" in row_texts[0]
-           and "Owen Castillo" in row_texts[0] and "Gergo P" in row_texts[0]
-           and "13" in row_texts[0] and "50" in row_texts[0], row_texts[0])
+           and "Owen Castillo" in row_texts[0] and "OWEN-CS12" in row_texts[0] and "Gergo P" in row_texts[0], row_texts[0])
+    created = wait_for_condition(lambda: page.evaluate("""() => { const t = document.querySelector('#sheet-wrap tbody tr:nth-child(1) td:nth-child(7)');
+        return t && /2026-09-0\\d/.test(t.textContent) ? t.textContent.trim() : null; }"""), timeout_ms=8000)
+    expect = page.evaluate("""() => { const d = new Date('2026-09-01T10:05:00Z'), p = n => (n < 10 ? '0' : '') + n;
+        return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); }""")
+    record("acell", "the Created column shows when each Agent was created", created == expect, f"{created} vs {expect}")
     record("acell", "an Agent File-only entry (no character sheet) shows as its own row in the same table",
            any("Mastery" in t for t in row_texts), str(row_texts))
 
@@ -4616,9 +4631,8 @@ def test_acell_sheet(p):
            "KIA" in row_texts[2], row_texts[2])
     record("acell", "an Agent above 0 HP does not show a KIA badge",
            "KIA" not in row_texts[0] and "KIA" not in row_texts[1], "")
-    hp_cells = page.eval_on_selector_all("#sheet-wrap tbody tr:nth-child(3) td:nth-child(6)", "els => els.map(e=>e.textContent.trim())")
-    record("acell", "an Agent at 0 HP shows '0' in the HP column, not an empty-cell dash",
-           hp_cells == ["0"], str(hp_cells))
+    code_cells = page.eval_on_selector_all("#sheet-wrap tbody tr:nth-child(3) td:nth-child(5)", "els => els.map(e=>e.textContent.trim())")
+    record("acell", "the Agent Code column shows the row's code", code_cells == ["MARC-9XQ2"], str(code_cells))
 
     dots = page.eval_on_selector_all("#sheet-wrap .sheet-dot", "els => els.map(e=>e.className)")
     record("acell", "Online status reflects how recently each Agent's sheet last synced (just now / 20 min ago / 2 hours ago)",
@@ -10205,8 +10219,8 @@ def test_lp_initiative_order(p):
     Cell has other players. Reads cells + characters/{code} (both
     public-read) live; this Agent's own row uses the sheet's live DEX."""
     import json as _json
-    def char(name, dex):
-        return {"character_json": _json.dumps({"bio": {"name": name}, "csStats": {"DEX": dex}})}
+    def char(name, dex, hp=10):
+        return {"character_json": _json.dumps({"bio": {"name": name}, "csStats": {"DEX": dex}, "derived": {"hp": hp}})}
 
     page = p.new_page(viewport={"width": 390, "height": 844})
     errs = collect_errors(page)
@@ -10257,6 +10271,11 @@ def test_lp_initiative_order(p):
     record("stats-terminal", "a Friendly pregen in the Cell takes its place in initiative with its sheet's DEX",
            [fr_first, str(fr["stats"]["DEX"]["value"])] in rows, str(rows))
 
+    # KIA (0 HP on the saved sheet): out of the order.
+    push_firestore_doc_snapshot(page, "characters/DANI-U8BM", True, char("Daniela Martinez", 9, hp=0))
+    gone = wait_for_condition(lambda: "Daniela" not in page.eval_on_selector_all("#lp-initiative .lp-init-name", "els => els.map(e => e.textContent)") or None, timeout_ms=4000)
+    record("stats-terminal", "a KIA Agent (0 HP) drops out of the initiative order", bool(gone),
+           str(page.eval_on_selector_all("#lp-initiative .lp-init-name", "els => els.map(e => e.textContent)")))
     bar_top = page.evaluate("() => getComputedStyle(document.getElementById('lp-tracker-bar')).top")
     init_h = page.evaluate("() => document.getElementById('lp-initiative').offsetHeight")
     record("stats-terminal", "the tracker bar sticks below the initiative row, not on top of it",
