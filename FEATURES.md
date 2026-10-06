@@ -394,16 +394,27 @@ yet) that the main delete list can't see.
 
 **Music tab:** see §7.
 
-**Session Notes tab (v2.3.0):** the Handler's own links to each scenario's prep
-pages (e.g. Handler notes kept as a claude.ai artifact): one entry per
-scenario, a Hungarian (`url_hu`) and/or English (`url_en`) link and an
-optional note, opened in a new tab (claude.ai pages can't be framed and
-need the owner's sign-in anyway). Stored in Firestore
-`session_notes/{id}`, Handler-only in `firestore.rules`, so the links
-live in the database, not in this public repo. Only `https://` links
-are accepted. Loaded the first time the tab is opened. (The rule was
-deployed 2026-10-06; a fresh project needs `firebase deploy --only
-firestore:rules` for the tab to load.)
+**Session Notes tab (v2.3.0):** the Handler's own prep pages for each
+scenario, a Hungarian and/or English version, plus an optional note.
+Each version is either an uploaded `.html` page or a link (opened in a
+new tab; a claude.ai page can't be framed).
+- **Uploaded pages** open inside A-Cell, full-screen, in an `<iframe
+  srcdoc>` sandboxed *without* `allow-same-origin`, so the page can't
+  reach A-Cell's storage, Handler sign-in or Firestore. Dice Roller and
+  Tune In are hidden while it's open, in the Hub shell too.
+- **Remembered edits:** pages like the claude.ai Handler notes keep their
+  ticks, counters and notes in `localStorage`, which throws in such a
+  frame. So a small script injected ahead of the page swaps in a
+  `localStorage` that starts from the saved state and posts every change
+  to A-Cell. A-Cell saves it to Firestore (debounced, and on close), so
+  ticks follow the Handler between devices.
+- **Firestore**, Handler-only (`match /session_notes/{document=**}`):
+  `session_notes/{id}` (title, description, `url_hu`/`url_en`,
+  `file_hu`/`file_en` {name, size, uploaded_at}), `…/files/{lang}`
+  (the page's HTML, up to ~900 KB, a Firestore document's limit) and
+  `…/state/{lang}` ({items, updated_at}). Nothing is in this public repo.
+  Only `https://` links are accepted. Loaded the first time the tab is
+  opened. The rule needs `firebase deploy --only firestore:rules`.
 
 **Auth:** the whole page is gated behind a shared Handler password
 (`HANDLER_PASSWORD`, an Apps Script Script Property) — see §9 for how
