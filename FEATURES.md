@@ -81,7 +81,25 @@ current styling. Phones now land on Field Notes by default instead.
 
 **Live Play** is an orthogonal mode layered on top of whichever theme
 is active (not a theme of its own) — a sticky HP/WP/SAN/BP tracker bar
-across the top, meant for actual table use.
+across the top, meant for actual table use. Above it, the Cell's
+initiative row lists the Cell in DEX order (`stats/lp-initiative.js`);
+a KIA Agent (HP 0 or below on their saved sheet) drops out of it.
+
+**Bonds after creation (v2.2.0).** Once an Agent is committed (first
+Live Play), the Bond *generator* hides, as the Bonus Points panel does;
+`+ Add Bond` replaces it for Bonds gained in play: under the Bonds list
+in Edit mode, under Live Play's Bonds table (to Edit mode with a blank
+Bond, `dgAddBond()`), and on the Agent File, which opens
+`stats/index.html?load=CODE&add_bond=1`. The sheet writes the Bond
+itself (its save covers the whole list, so nothing else edits Bonds in
+`characters/{code}`).
+
+**One Agent, one code (v2.2.0).** When a blank sheet mints a new Agent
+Code and the player already has an Agent of that name (this device's
+roster, or `dgStore.findByPlayerName` in Firestore), the sheet asks
+whether to update that Agent instead (`checkForTwin` in
+`stats/cloud-sync.js`). Update moves the data and any pending briefing
+onto the existing code and sends the new one to Recently Deleted.
 
 **Import**, one drop zone, five formats auto-detected and routed to
 the right parser (`importAgentAuto()`): this hub's own printable/PDF
@@ -241,6 +259,11 @@ switch. Also now dual-written to Firestore and read live via
 `onSnapshot` on A-Cell's Evidence tab and `agent-hub.html`'s mirror —
 see §12.
 
+**Restricting an item to Agents** (A-Cell): the checklist and the
+"Restricted to:" line show Agent names, not Agent Codes (Agent File
+name first, then the sheet's, Friendlies as "Friendly: name"); the
+stored value is still the codes.
+
 **Terminology note:** the UI-visible label is "Evidence," but this
 started life as "Handouts" and some internal names (`HandoutNotes`, a
 per-Agent-private-note-on-an-item feature, `save_handout_note`) still
@@ -350,10 +373,18 @@ belong to multiple Cells. **"Unassigned Agents"** are surfaced here
 too, with a click-to-assign popup (added alongside the Notes solo-mode
 fix — previously these were shown but inert).
 
-**Sheet tab:** a dense, Excel-style table across every Agent —
-including a directly-editable Player Name column, useful for a Handler
+**Sheet tab:** a dense, Excel-style table across every Agent: Cell,
+Handler, Agent Name, Agent Code, Player Name, Created, Last Updated,
+Online. Player Name is directly editable, useful for a Handler
 backfilling identity info a player hasn't set themselves yet (this is
-what lets Cover Identity eventually find that Agent).
+what lets Cover Identity eventually find that Agent). Created and Last
+Updated come from Firestore's own document times (earliest
+`createTime`, latest `updateTime` across the Agent's `characters/` and
+`briefs/` docs, read through the REST API, which the web SDK doesn't
+expose). HP and SAN left this table in v2.2.0; they're on the Play tab.
+
+**Play tab's Initiative Tracker** leaves out KIA Agents (derived HP 0
+or below), the same rule as the players' Live Play initiative row.
 
 **Admin tab:** soft-delete/restore an Agent (`delete_character`/
 `restore_character` — archives rather than destroys, with a 24h auto-
@@ -362,6 +393,17 @@ for Agent-File-only entries (a Profiling brief with no character sheet
 yet) that the main delete list can't see.
 
 **Music tab:** see §7.
+
+**Session Notes tab:** the Handler's own links to each scenario's prep
+pages (e.g. Handler notes kept as a claude.ai artifact): one entry per
+scenario, a Hungarian (`url_hu`) and/or English (`url_en`) link and an
+optional note, opened in a new tab (claude.ai pages can't be framed and
+need the owner's sign-in anyway). Stored in Firestore
+`session_notes/{id}`, Handler-only in `firestore.rules`, so the links
+live in the database, not in this public repo. Only `https://` links
+are accepted. Loaded the first time the tab is opened. (The rule was
+deployed 2026-10-06; a fresh project needs `firebase deploy --only
+firestore:rules` for the tab to load.)
 
 **Auth:** the whole page is gated behind a shared Handler password
 (`HANDLER_PASSWORD`, an Apps Script Script Property) — see §9 for how
@@ -522,6 +564,21 @@ synthesis if revisited.
 **Channel model:** 5 fixed channels, selected via a rotary-dial UI on
 both the Handler and player sides (not free text — avoids the
 typo/mismatch class of bug a text field invited).
+
+**iPhone/iPad playback (v2.2.0).** Safari plays nothing before the
+page's first tap, and lets an `<audio>` element start on its own only
+once that same element was played or loaded inside a tap. So every tap
+(in the outer page *and* in same-origin frames, e.g. the Hub shell's
+`#dg-shell-content`, where most taps land) wakes the AudioContext,
+unlocks a few spare elements (a muted 10 ms silent clip played inside
+the tap), and retries anything the browser refused. Tracks, ambient
+loops and stingers take a spare element and hand it back when done
+(`takeAudioEl_`/`releaseAudioEl_`), so after the first tap a song change
+or a stinger starts with no Resume. The main track asks for
+`crossorigin` whenever the CORS probe says yes, so the next tap can wire
+the *playing* track into the gain node (the only volume control iOS
+honours) instead of waiting for the next track. Background:
+`BUGFIXES.md`, "Table Radio silent after the Storage CORS config".
 
 ---
 
@@ -768,7 +825,14 @@ Sheets/Drive backend wholesale:
   log. Shared player-side calls are in `assets/dg-store.js`; A-Cell's
   Handler actions are in its own `window.dgAcellApi`. AI prompt and
   image generation are Cloud Functions (`generatePrompt`,
-  `generatePlateImage`), with the keys in Secret Manager. The only
+  `generatePlateImage`), with the keys in Secret Manager. They were
+  only deployed on 2026-10-01. Since v2.2.0 they return any failure as a
+  readable message, logged to `functions:log`, instead of the SDK's
+  bare "internal". Their rate-limit counter (`rate_limits/`) is the
+  functions' only Firestore use; the runtime service account needs
+  `roles/datastore.user` for it, and `roles/storage.objectAdmin` for
+  reference photos and `dailyBackup` (it had neither: `PERMISSION_DENIED`
+  in the logs, 2026-10-05). A failing counter now lets the call through. The only
   Apps Script call left is the Drive image proxy (`imgdata`), for old
   `gdrive:` links the one-time Drive → Storage move couldn't carry.
   Going live needs the one-time steps in
@@ -809,7 +873,7 @@ full reasoning on the split (Issues = live status board, `BUGFIXES.md`
 = narrative archive of what shipped, this section = closed/decided
 matters worth a permanent note).
 
-As of 2026-10-01, four open tracked issues (#10 is closed; see
+As of 2026-10-06, four open tracked issues (#10 is closed; see
 `BUGFIXES.md`'s "Issue #10's actual root cause"): #5 (Handler-facing access
 control — shared A-Cell password, dossiers reachable by Agent Code, no
 per-player identity), #8 (Agent Hub: long load screen then empty
@@ -818,9 +882,10 @@ character sheet — a regression from four commits already reverted off
 overall on phone, incl. a "backend is busy" error with only one real
 user online), #39 (Table Radio's main-track volume/mix control on iOS
 Safari and Brave — the code side is finished, see `BUGFIXES.md`'s
-"Issue #39, finished"; it goes live once the Storage bucket CORS config
-in `storage.cors.json` is applied by hand, and the issue stays open
-until that is confirmed).
+"Issue #39, finished"; the bucket CORS config is applied, and v2.2.0
+fixed the two things that still kept iOS volume and autoplay from
+working in the Hub shell -- see §7, "iPhone/iPad playback". The issue
+stays open until it's confirmed on a real device).
 
 **Resolved, kept here as a permanent record (not re-opened as issues):**
 

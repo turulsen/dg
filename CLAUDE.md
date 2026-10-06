@@ -52,6 +52,12 @@ context, kept here as a quick reference)
   diagnostic/wrapper functions meant to be run manually must not have a
   trailing underscore.
 
+## After every merge to `main`
+
+Update `README.md`, `FEATURES.md`, `BUGFIXES.md` and `VERSIONING.md` for
+what just shipped (the user asked for this as a standing rule,
+2026-10-06). The checklist is `VERSIONING.md` §6.
+
 ## Versioning, CI, and rollback
 
 See `VERSIONING.md` for the full policy — semver tag cadence, what
