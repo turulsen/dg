@@ -464,6 +464,10 @@
         // (onApplied, not onNotFound/onSettled's error paths), same
         // reasoning as setLivePlay(true) there.
         const wantSplit = params.get('split') === '1';
+        // The Agent File's "+ Add Bond" links here as `?load=CODE&add_bond=1`:
+        // once loaded, Edit mode with a blank Bond ready to fill in. Dropped
+        // from the address afterwards so a reload doesn't add a second one.
+        const wantAddBond = params.get('add_bond') === '1';
         // Matches the inline script at the top of <body> that gated
         // #app-main behind body.dg-agent-loading the instant it saw this
         // same ?load= param -- lift the gate once this load has actually
@@ -586,6 +590,14 @@
                 window.dgWizard?.deactivate?.();
                 if (wantLive && typeof setLivePlay === 'function') setLivePlay(true);
                 if (wantSplit && window.dgSplitView) window.dgSplitView.enter();
+                if (wantAddBond && typeof window.dgAddBond === 'function') {
+                    window.dgAddBond();
+                    try {
+                        const u = new URL(window.location.href);
+                        u.searchParams.delete('add_bond');
+                        history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+                    } catch (e) { /* the bond is added either way */ }
+                }
             },
             onSettled: () => { revealGate(); finishBadge(); },
         });

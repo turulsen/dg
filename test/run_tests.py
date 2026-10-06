@@ -9979,6 +9979,80 @@ def test_cell_members_by_name_and_kia(p):
     page.close()
     return errs_all
 
+def test_add_bond_in_play(p):
+    """At the table: adding a Bond to an Agent that's already been played
+    meant finding "Fix a Character Creation Mistake" in the settings, since
+    the Bond generator (and its New Empty Bond) hides once an Agent is
+    committed. Now: + Add Bond under the Bonds list in Edit mode, + Add
+    Bond under Live Play's Bonds table (to Edit mode with a blank Bond),
+    and + Add Bond on the Agent File (Agent Hub and the notebook), which
+    opens the sheet with ?add_bond=1."""
+    errs_all = []
+    state = {"v": 1, "creationCommitted": True, "bio": {"name": "Owen Castillo", "profession": ""},
+             "stats": {"STR": 14, "CON": 12, "DEX": 10, "INT": 16, "POW": 13, "CHA": 11},
+             "csStats": {"STR": 14, "CON": 12, "DEX": 10, "INT": 16, "POW": 13, "CHA": 11},
+             "bonds": [{"id": "bond-1", "name": "Maria Castillo", "relationship": "Sister", "description": "", "score": 8}]}
+    def sheet(path):
+        page = p.new_page()
+        page.set_default_timeout(8000)
+        errs = collect_errors(page)
+        page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+        page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+        install_firestore_backend(page, {"characters/OWEN-CS12": character_doc("OWEN-CS12", state)})
+        page.goto(f"{BASE}/stats/{path}", wait_until="domcontentloaded", timeout=15000)
+        _pump_until(page, lambda: page.eval_on_selector("#cs-name", "el => el.value") == "Owen Castillo", timeout_ms=8000)
+        page.wait_for_timeout(600)
+        return page, errs
+    entries = "() => document.querySelectorAll('#cs-bonds .bond-entry').length"
+    focused_new = """() => { const e = [...document.querySelectorAll('#cs-bonds .bond-entry')].pop();
+        return !!e && document.activeElement === e.querySelector('input[data-field=name]') && !e.querySelector('input[data-field=name]').value; }"""
+
+    page, errs = sheet("index.html?load=OWEN-CS12&live=1")
+    record("bonds", "a committed Agent in Live Play has + Add Bond under its Bonds table",
+           page.locator(".lp-add-bond-btn").is_visible(), "")
+    page.click(".lp-add-bond-btn")
+    page.wait_for_timeout(300)
+    record("bonds", "Live Play's + Add Bond switches to Edit mode with a new, blank Bond, cursor in its name",
+           "live-play" not in page.eval_on_selector("body", "el => el.className") and page.evaluate(entries) == 2 and page.evaluate(focused_new),
+           f"entries={page.evaluate(entries)} class={page.eval_on_selector('body', 'el => el.className')}")
+    record("bonds", "Edit mode shows + Add Bond while the generator stays hidden (no Fix-a-Mistake needed)",
+           page.locator("#cs-add-bond-btn").is_visible() and not page.locator("#new-empty-bond-button").is_visible(), "")
+    page.click("#cs-add-bond-btn")
+    page.wait_for_timeout(200)
+    page.keyboard.type("Father Ruiz")
+    page.keyboard.press("Tab")  # Bond fields save on change
+    page.wait_for_timeout(300)
+    saved = page.evaluate("() => (window.bondsOnSheet || []).map(b => b.name)")
+    record("bonds", "Edit mode's + Add Bond adds another; typing names it",
+           page.evaluate(entries) == 3 and saved[-1] == "Father Ruiz", str(saved))
+    errs_all.extend(errs)
+    page.close()
+
+    page, errs = sheet("index.html?load=OWEN-CS12&add_bond=1")
+    record("bonds", "?add_bond=1 (from the Agent File) opens Edit mode with a blank Bond ready to type into",
+           "live-play" not in page.eval_on_selector("body", "el => el.className") and page.evaluate(entries) == 2 and page.evaluate(focused_new),
+           f"entries={page.evaluate(entries)}")
+    record("bonds", "…and drops add_bond from the address, so a reload doesn't add a second one",
+           "add_bond" not in page.url and "load=OWEN-CS12" in page.url, page.url)
+    errs_all.extend(errs)
+    page.close()
+
+    page, errs = _field_notes_page(p, extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector(f"#ah-sheet-{FN_CODE} .as-add-bond", timeout=15000)
+    href = page.get_attribute(f"#ah-sheet-{FN_CODE} .as-add-bond", "href")
+    record("bonds", "Agent Hub's Agent File has + Add Bond, linking to the sheet with add_bond=1",
+           href == f"stats/index.html?load={FN_CODE}&add_bond=1", str(href))
+    page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+    page.wait_for_selector("#fn-veil [data-go=addbond]", timeout=15000)
+    page.click("#fn-veil [data-go=addbond]")
+    _pump_until(page, lambda: "stats/index.html" in page.url, timeout_ms=8000)
+    record("bonds", "the notebook's Agent File + Add Bond opens that Agent's sheet to add one",
+           "stats/index.html" in page.url and f"load={FN_CODE}" in page.url, page.url)
+    errs_all.extend(errs)
+    page.close()
+    return errs_all
+
 def test_mobile_notes_fullscreen(p):
     """Split View doesn't fit a phone-width screen, so mobile gets a
     separate control instead: a Notes widget (dgNotesFullscreen in
@@ -12663,6 +12737,7 @@ def main():
 
         safe(test_split_view_retired, browser, area="notebook")
         safe(test_cell_members_by_name_and_kia, browser, area="hub")
+        safe(test_add_bond_in_play, browser, area="bonds")
 
 
         safe(test_mobile_notes_fullscreen, browser, area="stats")

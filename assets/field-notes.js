@@ -846,6 +846,7 @@
           members: data.members, opsHtml: opsHtml,
           incursion: AS.incursionText(data.char, data.state),
           incursionEmptyHtml: '<p class="as-text as-k">Not written yet — the Incursion section of the character sheet.</p>',
+          addBondHtml: data.state ? '<button type="button" class="as-add-bond" data-go="addbond">+ Add Bond</button>' : '',
           actionsHtml: '<button type="button" class="fn-btn fn-red" data-go="play">Play (Live) ↗</button>' +
             '<button type="button" class="fn-btn fn-ink" data-go="file">Whole Agent File ↗</button>',
           emptySheetHtml: data.state ? '' : '<p class="as-text as-k" style="margin-top:14px">No character sheet yet — Play opens character creation.</p>'
@@ -856,6 +857,8 @@
         AS.wireRolls(body);
         body.querySelector('[data-go="play"]').addEventListener('click', function () { navigate(url('stats/index.html?load=' + encodeURIComponent(a.code))); });
         body.querySelector('[data-go="file"]').addEventListener('click', function () { navigate(url('agent-hub.html?code=' + encodeURIComponent(a.code))); });
+        var addBond = body.querySelector('[data-go="addbond"]');
+        if (addBond) addBond.addEventListener('click', function () { navigate(url('stats/index.html?load=' + encodeURIComponent(a.code) + '&add_bond=1')); });
         var photoBtn = body.querySelector('[data-go="photo"]');
         if (photoBtn) photoBtn.addEventListener('click', function () { navigate(url('agent-hub.html?code=' + encodeURIComponent(a.code) + '#photos')); });
       }, function () { body.innerHTML = '<p class="fn-muted">Could not open the file — check the connection.</p>'; });

@@ -6261,3 +6261,26 @@ Requests from the Handler, alongside the duplicate-Agent fix:
   including the player's own Agent; the row hides when no living
   teammate is left. `test_acell_play` and `test_lp_initiative_order`
   check it. `sw.js` `CACHE_NAME` v183.
+
+## Adding a Bond in play needed "Fix a Character Creation Mistake"
+
+Found at the table (2026-10-05): a player gaining a new Bond mid-session
+had to open the settings and switch on "Fix a Character Creation
+Mistake", because once an Agent is committed the whole Bond generator,
+New Empty Bond included, is hidden (`body.agent-committed` in
+`stats/styles.css`). That hiding is by design (the generator is
+creation-time clutter); the gap was that it took the only plain "add a
+Bond" button with it. Now:
+- **Edit mode:** `+ Add Bond` under the Bonds list (`#cs-add-bond-btn`),
+  always shown; the generator stays hidden for a committed Agent.
+- **Live Play:** `+ Add Bond` under the Bonds table switches to Edit mode
+  with a blank Bond and the cursor in its name (`dgAddBond()` in
+  `stats/scripts.js`).
+- **Agent File** (Agent Hub's paper and the notebook's quick look):
+  `+ Add Bond` opens the sheet as `stats/index.html?load=CODE&add_bond=1`,
+  which does the same once the Agent has loaded and then drops
+  `add_bond` from the address so a reload doesn't add another. The
+  Bond is still written by the sheet itself -- not from the Agent File
+  straight into `characters/{code}` -- because the sheet saves its whole
+  Bond list at once and would overwrite a Bond added behind its back.
+New `test_add_bond_in_play`. `sw.js` `CACHE_NAME` v185.
