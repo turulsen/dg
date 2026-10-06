@@ -243,17 +243,33 @@ exports.generatePlateImage = onCall({ secrets: [GEMINI_API_KEY], timeoutSeconds:
   if (data.reference_image_base64 && data.reference_image_base64.length > 8 * 1024 * 1024) {
     return { status: 'ERROR', message: 'reference image is too large.' };
   }
-  const parts = [{ text: prompt }];
+  // An Outfit Plate is a full-body shot, but its reference image is the
+  // Face Plate -- a tight 3:4 headshot -- and Gemini anchors on the
+  // reference's framing, so outfit plates kept coming back as headshots
+  // even with the "identity only" line in the prompt. So: ask for a tall
+  // 9:16 frame outright (3:4 for a Face Plate), and put the reference
+  // first with its own label, so the full-body instructions come last.
+  // plate_type comes from the Agent File; a page older than it sends none,
+  // so fall back on the prompt (every outfit prompt says "full body").
+  const isOutfit = data.plate_type ? data.plate_type === 'outfit' : /full[\s-]*body/i.test(prompt);
+  let ref = null;
   if (data.reference_image_base64 && data.reference_image_base64.indexOf(',') !== -1) {
-    parts.push({ inlineData: {
+    ref = {
       mimeType: data.reference_image_base64.split(';')[0].split(':')[1],
       data: data.reference_image_base64.split(',')[1]
-    } });
+    };
   } else if (data.reference_image_url) {
-    const ref = await storageReferenceImage_(data.reference_image_url);
-    if (ref) parts.push({ inlineData: ref });
+    ref = await storageReferenceImage_(data.reference_image_url);
   }
-  if (IN_EMULATOR) return { status: 'OK', image_base64: 'data:image/png;base64,' + FAKE_PNG, refs: parts.length - 1 };
+  const parts = [];
+  if (ref) {
+    parts.push({ text: isOutfit
+      ? 'Reference image (next): use it ONLY for this person\'s face and likeness. Ignore its framing, crop and camera distance -- it is a close-up headshot, the output is not.'
+      : 'Reference image (next): use it for this person\'s likeness.' });
+    parts.push({ inlineData: ref });
+  }
+  parts.push({ text: prompt });
+  if (IN_EMULATOR) return { status: 'OK', image_base64: 'data:image/png;base64,' + FAKE_PNG, refs: ref ? 1 : 0 };
   // Same as generatePrompt: never let a thrown error reach the player as
   // a bare "internal".
   try {
@@ -263,7 +279,7 @@ exports.generatePlateImage = onCall({ secrets: [GEMINI_API_KEY], timeoutSeconds:
       headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
       body: JSON.stringify({
         contents: [{ parts: parts }],
-        generationConfig: { responseModalities: ['IMAGE'] },
+        generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: isOutfit ? '9:16' : '3:4' } },
         safetySettings: [
           { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
           { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },

@@ -395,6 +395,21 @@ body" text prompt made Gemini anchor hard on the reference's own tight
 headshot framing — clothing was correct, but the composition wasn't.
 Now explicitly tells the model the reference is for facial identity
 only, not framing.
+**Came back again (2026-10-06, Cloud Functions):** Outfit Plates were
+still head-and-shoulders. The prompt text was fine: the builder writes
+"FULL-BODY SHOT… crown of head to soles of feet" for an outfit. The
+"identity only" line alone wasn't enough, because the Face Plate it
+references is a tight 3:4 headshot and nothing else in the request
+asked for a different shape. `generatePlateImage` (functions/index.js)
+now:
+- asks Gemini for a 9:16 frame for an Outfit Plate and 3:4 for a Face
+  Plate (`generationConfig.imageConfig.aspectRatio`);
+- puts the reference image first, after its own "face and likeness
+  only, ignore its framing" label, with the full-body prompt last.
+The Agent File sends `plate_type`. A page without it is read from the
+prompt ("full body" = outfit), so the fix works as soon as the function
+is redeployed. Needs
+`firebase deploy --only functions:generatePlateImage`.
 
 **Era age adjustment always described the Agent as the same age,
 regardless of era.** `ageRangeForEra_()` shifts an Agent's age_range

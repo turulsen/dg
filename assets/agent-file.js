@@ -1438,7 +1438,9 @@ function generatePlateImage(era, mode, btn) {
   if (btn) { btn.disabled = true; btn.textContent = 'Working…'; }
   function reenable() { if (btn) { btn.disabled = false; btn.textContent = btnLabel; } }
 
-  const payload = { action: 'generate_plate_image', agent_code: afCode, token: agentToken(afCode), prompt: prompt };
+  // plate_type: the function asks Gemini for a tall full-body frame for an
+  // Outfit Plate (functions/index.js generatePlateImage).
+  const payload = { action: 'generate_plate_image', agent_code: afCode, token: agentToken(afCode), prompt: prompt, plate_type: type };
 
   function send() {
     afFetch(payload)

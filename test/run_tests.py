@@ -8680,6 +8680,12 @@ def test_agent_file_outfit_plate_requires_face_first(p):
     record("agent-portal", "the Outfit Plate prompt tells Gemini to ignore the reference image's framing, not just its face",
            len(outfit_posts) == 1 and "ignore its framing" in outfit_posts[0].get("prompt", ""),
            str(outfit_posts[0].get("prompt") if outfit_posts else None))
+    # The function sizes the image by this: 9:16 full body for an Outfit
+    # Plate, 3:4 for a Face Plate (functions/index.js generatePlateImage).
+    record("agent-portal", "plate requests say which plate they are (outfit -> tall full-body frame on the server)",
+           len(outfit_posts) == 1 and outfit_posts[0].get("plate_type") == "outfit"
+           and len(face_posts) == 1 and face_posts[0].get("plate_type") == "face",
+           f"{[x.get('plate_type') for x in face_posts]} {[x.get('plate_type') for x in outfit_posts]}")
 
     record("agent-portal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
