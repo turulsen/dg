@@ -63,7 +63,24 @@ consumer depending on that history being versioned. v2.0.0 was cut
 reserved for it: the Google Sheet is retired and every page reads and
 writes Firestore directly (Code.gs v97 is left serving only the Drive
 image proxy for old `gdrive:` links; going live took the one-time steps
-in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v2.1.0**
+in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v2.2.0**
+(2026-10-06) is PR #61:
+- Table Radio on iPhone/iPad: after the first tap on the page, new
+  songs and sound effects start by themselves and the volume slider
+  works (unlocked `<audio>` elements, taps heard inside the Hub shell's
+  frame);
+- `+ Add Bond` in Edit mode, Live Play and on the Agent File;
+- a second Agent with a name the player already has asks to update the
+  existing one;
+- A-Cell: Evidence restricted by Agent name, the Sheet tab's Agent
+  Code/Created/Last Updated columns (HP/SAN out), KIA Agents left out of
+  initiative (there and in Live Play);
+- the AI Cloud Functions report errors instead of "internal".
+Backend: Code.gs unchanged (v97); `functions/index.js` changed and was
+deployed by hand from the branch before the merge, plus a one-time IAM
+grant for the functions' service account (`roles/datastore.user`,
+`roles/storage.objectAdmin`; see FEATURES.md §12). Shell cache
+`dg-hub-shell-v185`. Tagged the same way as v2.1.0, below. **v2.1.0**
 (2026-10-02) is PRs #56–#58: the Field Notes notebook on every player
 page, each Agent's whole file on one Agent Hub tab (the three-tab Agent
 Portal retired), the Appearance and Incursion wizard steps, the
@@ -300,3 +317,20 @@ A session picking up a bug report should still check `BUGFIXES.md` in
 full first (recurring symptoms are often an old fix that was real but
 partial), then check open Issues for whether it's already tracked,
 before doing anything else.
+
+## 6. After every merge to `main`: update the docs
+
+Each merge to `main` gets a docs pass on the next branch (restarted
+from the new `main`), in the same PR as the next change or on its own:
+
+- **`README.md`** — page rows and sections for anything players or the
+  Handler now see differently; the current release in "Versioning & CI";
+  the test count in "QA".
+- **`FEATURES.md`** — the section for each changed surface; §12 for any
+  Firebase/Cloud Functions change, including one-time manual steps;
+  §13's issue list and its "As of" date.
+- **`BUGFIXES.md`** — every fix that shipped, with root cause. Finish an
+  earlier entry when the same symptom came back rather than starting a
+  new one (`CLAUDE.md`).
+- **`VERSIONING.md`** — the release paragraph in §2 (what shipped, PR
+  numbers, backend state, shell cache), and whether its tag exists yet.

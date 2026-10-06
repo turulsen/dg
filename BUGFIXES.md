@@ -6103,6 +6103,18 @@ Same report, not code bugs, made clearer instead:
   bare "internal". A failing counter is now logged and the call let
   through instead. Needs
   `firebase deploy --only functions:generatePrompt,functions:generatePlateImage`.
+  **Confirmed by the logs (2026-10-05, after the deploy):**
+  `generateprompt` answered 500 with gRPC code 7, `PERMISSION_DENIED:
+  Missing or insufficient permissions.`, from that counter's Firestore
+  transaction. The functions' runtime service account has no Firestore
+  access at all, so `dailyBackup` (Firestore read + Storage write) and
+  reference photos for `generatePlateImage` (Storage read) fail the
+  same way. The fix is IAM, not code, in Cloud Shell:
+  `SA=$(gcloud functions describe generatePrompt --region us-central1 --project dg-app-b3447 --format='value(serviceConfig.serviceAccountEmail)')`,
+  then `gcloud projects add-iam-policy-binding dg-app-b3447 --member="serviceAccount:$SA" --role=roles/datastore.user --condition=None`,
+  and the same with `--role=roles/storage.objectAdmin`. Shipped in
+  v2.2.0 (PR #61); the IAM grant was handed over to be run by hand, and
+  isn't confirmed working yet.
 
 ## Agent Hub: the Agent's paper could stay blank on a slow load
 
@@ -6202,9 +6214,16 @@ tap can wire the playing track into the gain node mid-song
 half-second wait for the context is gone. New
 `test_table_radio_new_track_starts_without_a_tap` (Chromium made to
 refuse untapped elements like iOS, taps inside the shell's frame; fails
-on the old code, 4 of 6 checks). `sw.js` `CACHE_NAME` v184.
+on the old code, 4 of 6 checks). `sw.js` `CACHE_NAME` v184. Shipped in
+v2.2.0 (PR #61). Its first CI run failed 2 of the new test's checks: it
+read the page the moment `play()` flipped `.paused`, before the play
+promise resolved (Resume still shown) and before the gain node was
+wired a tick later. The test now waits for all three. Not yet
+confirmed on a real iPhone/iPad.
 
 ## A-Cell Evidence: Agents listed by code when restricting an item
+
+*Shipped in v2.2.0 (PR #61, 2026-10-06).*
 
 Request: when restricting an Evidence item to specific Agents in a Cell,
 the checklist (and the card's "Restricted to:" line) showed Agent Codes,
@@ -6217,6 +6236,8 @@ load; the code stays as the checkbox's tooltip and value.
 `test_acell_evidence` checks both places. `sw.js` `CACHE_NAME` v180.
 
 ## The same Agent twice: one name, two codes ("Soko, Lenka")
+
+*Shipped in v2.2.0 (PR #61, 2026-10-06).*
 
 Reported by a second Handler trying the app: two Agents named "Soko,
 Lenka" for player "Zuzu", one with its clearance briefing accepted and
@@ -6243,6 +6264,8 @@ A-Cell (it's the copy without the accepted briefing).
 
 ## A-Cell Sheet: Agent Code and Created columns; KIA Agents out of initiative
 
+*Shipped in v2.2.0 (PR #61, 2026-10-06).*
+
 Requests from the Handler, alongside the duplicate-Agent fix:
 - **Sheet tab columns.** Agent Code and Created are now columns; HP and
   SAN are gone (the KIA badge by the name still reads HP). There was no
@@ -6263,6 +6286,8 @@ Requests from the Handler, alongside the duplicate-Agent fix:
   check it. `sw.js` `CACHE_NAME` v183.
 
 ## Adding a Bond in play needed "Fix a Character Creation Mistake"
+
+*Shipped in v2.2.0 (PR #61, 2026-10-06).*
 
 Found at the table (2026-10-05): a player gaining a new Bond mid-session
 had to open the settings and switch on "Fix a Character Creation
