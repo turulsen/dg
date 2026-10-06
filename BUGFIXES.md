@@ -410,7 +410,9 @@ The Agent File sends `plate_type`. A page without it is read from the
 prompt ("full body" = outfit), so the fix works as soon as the function
 is redeployed. Deployed 2026-10-06 (`firebase deploy --only
 functions:generatePlateImage`), together with the `session_notes`
-Firestore rule for A-Cell's Session Notes tab.
+Firestore rule for A-Cell's Session Notes tab; the Agent File side
+shipped in v2.3.0 (PR #62). Not yet confirmed with a real generated
+Outfit Plate.
 
 **Era age adjustment always described the Agent as the same age,
 regardless of era.** `ageRangeForEra_()` shifts an Agent's age_range

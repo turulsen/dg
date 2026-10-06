@@ -402,6 +402,17 @@
   .sn-form textarea{ min-height:52px; resize:vertical; }
   .sn-form-actions{ display:flex; gap:8px; }
   .sn-empty{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-3); }
+  .sn-lang{ border:1px solid var(--rule); padding:8px 10px 10px; display:grid; gap:8px; margin:0; }
+  .sn-lang legend{ font-family:'Special Elite',monospace; font-size:12px; color:var(--ink-2); padding:0 4px; }
+  .sn-file{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-2); }
+  .sn-form label.sn-inline{ display:inline-flex; gap:4px; align-items:center; }
+  /* Above everything A-Cell floats (Dice Roller, Tune In). */
+  .sn-viewer{ position:fixed; inset:0; z-index:2147483000; display:flex; flex-direction:column; background:#0b0d0a; }
+  .sn-v-bar{ display:flex; align-items:center; gap:12px; padding:8px 12px; padding-top:max(8px, env(safe-area-inset-top)); background:#14170f; border-bottom:1px solid #2c3326; }
+  .sn-v-title{ flex:1; min-width:0; font-family:'Special Elite',monospace; font-size:14px; color:#e6e1cf; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sn-v-saved{ font-family:'Courier Prime',monospace; font-size:11px; color:#9aa58c; white-space:nowrap; }
+  .sn-v-frame{ flex:1; width:100%; border:0; background:#fff; }
+  .sn-v-bar .sn-v-close{ font-family:'Special Elite',monospace; font-size:13px; letter-spacing:.06em; color:#14170f; background:#e6e1cf; border:0; padding:8px 16px; cursor:pointer; }
   .evidence-layout{ display:flex; gap:20px; align-items:flex-start; }
   @media (max-width:720px){ .evidence-layout{ flex-direction:column; } }
   .evidence-sidebar{ width:200px; flex-shrink:0; display:flex; flex-direction:column; gap:10px; }
@@ -1992,11 +2003,22 @@
 <script>
 /* ══════════════════════════════════════════════
    SESSION NOTES -- the Handler's own prep pages for a scenario (e.g.
-   Handler notes kept as a claude.ai artifact), one entry per scenario
-   with a Hungarian and/or English link. Links only: the pages open in a
-   new tab (a claude.ai artifact can't be framed, and needs the owner's
-   sign-in anyway). Kept in Firestore session_notes/{id}, Handler-only
-   (firestore.rules), so no link is ever in this public repo's code.
+   Handler notes made as a claude.ai artifact), one entry per scenario,
+   a Hungarian and/or English version of each.
+   Each version is either:
+   - an uploaded .html page, opened right here in a sealed frame. The
+     page keeps its ticks/notes in localStorage; the frame gets a
+     stand-in localStorage that hands every change to A-Cell, which
+     saves it to Firestore -- so checkboxes are remembered on every
+     device, not just in this browser; or
+   - a link, opened in a new tab.
+   The frame is sandboxed WITHOUT allow-same-origin: the uploaded page
+   can't reach A-Cell's storage, Handler sign-in or Firestore.
+   Firestore, Handler-only (firestore.rules), never in this public repo:
+     session_notes/{id}               title, description, url_hu/url_en,
+                                      file_hu/file_en {name, size, uploaded_at}
+     session_notes/{id}/files/{lang}  { html, name, uploaded_at }
+     session_notes/{id}/state/{lang}  { items: {key: value}, updated_at }
    Loaded the first time the tab is opened.
    ══════════════════════════════════════════════ */
 (function () {
@@ -2005,16 +2027,19 @@
   var formSlot = document.getElementById('sn-form-slot');
   var notes = [];
   var loaded = false, loading = false;
-  var LANGS = [['url_hu', 'Magyar'], ['url_en', 'English']];
+  var LANGS = [['hu', 'Magyar', 'Hungarian'], ['en', 'English', 'English']];
+  var MAX_HTML = 900000; // a Firestore document holds at most 1 MiB
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
   }
   function setStatus(t) { statusEl.textContent = t || ''; }
+  function errText(err) { return (err && err.message) || String(err); }
   function db_() {
     if (!window.__dgHandlerAuth) return Promise.reject(new Error('Handler sign-in is not ready yet -- reload and try again.'));
     return window.__dgHandlerAuth().then(function () { return window.firebase.firestore(); });
   }
+  function noteRef(db, id) { return db.collection('session_notes').doc(id); }
   // Only plain https links -- never javascript: or data: in an href.
   function cleanUrl(u) {
     u = String(u || '').trim();
@@ -2024,17 +2049,19 @@
 
   function render() {
     if (!notes.length) {
-      listEl.innerHTML = '<div class="sn-empty">No session notes yet. + Add Session Notes links a scenario\'s Handler notes (Hungarian and/or English).</div>';
+      listEl.innerHTML = '<div class="sn-empty">No session notes yet. + Add Session Notes adds a scenario\'s Handler notes: upload the page (.html) or paste a link, Hungarian and/or English.</div>';
       return;
     }
     listEl.innerHTML = notes.map(function (n) {
-      var links = LANGS.filter(function (l) { return n[l[0]]; }).map(function (l) {
-        return '<a class="paper-btn primary" href="' + esc(n[l[0]]) + '" target="_blank" rel="noopener noreferrer">' + l[1] + ' &#8599;</a>';
+      var links = LANGS.map(function (l) {
+        if (n['file_' + l[0]]) return '<button type="button" class="paper-btn primary" data-sn="view" data-lang="' + l[0] + '">' + l[1] + '</button>';
+        if (n['url_' + l[0]]) return '<a class="paper-btn primary" href="' + esc(n['url_' + l[0]]) + '" target="_blank" rel="noopener noreferrer">' + l[1] + ' &#8599;</a>';
+        return '';
       }).join('');
       return '<div class="sn-card" data-id="' + esc(n.id) + '">' +
         '<h3 class="sn-title">' + esc(n.title || 'Untitled') + '</h3>' +
         (n.description ? '<p class="sn-desc">' + esc(n.description) + '</p>' : '') +
-        '<div class="sn-links">' + (links || '<span class="sn-empty">No link yet.</span>') +
+        '<div class="sn-links">' + (links || '<span class="sn-empty">Nothing attached yet.</span>') +
           '<span class="sn-actions"><button type="button" class="paper-btn" data-sn="edit">Edit</button>' +
           '<button type="button" class="paper-btn admin-delete-btn" data-sn="delete">Delete</button></span>' +
         '</div></div>';
@@ -2054,44 +2081,193 @@
       setStatus('');
       render();
     }).catch(function (err) {
-      setStatus('Could not load session notes: ' + ((err && err.message) || err));
+      setStatus('Could not load session notes: ' + errText(err));
     }).then(function () { loading = false; });
   }
 
+  /* ── The form ── */
   function openForm(n) {
     n = n || {};
+    var rows = LANGS.map(function (l) {
+      var f = n['file_' + l[0]];
+      return '<fieldset class="sn-lang"><legend>' + l[2] + '</legend>' +
+        '<label>Upload the page (.html)<input type="file" name="file_' + l[0] + '" accept=".html,.htm,text/html"></label>' +
+        (f ? '<div class="sn-file">On file: ' + esc(f.name || 'page.html') + ' (' + Math.round((f.size || 0) / 1024) + ' KB). Uploading again replaces it; ticks and notes are kept. ' +
+             '<label class="sn-inline"><input type="checkbox" name="drop_' + l[0] + '"> remove it</label></div>' : '') +
+        '<label>…or a link<input type="url" name="url_' + l[0] + '" value="' + esc(n['url_' + l[0]]) + '" placeholder="https://claude.ai/code/artifact/…"></label>' +
+        '</fieldset>';
+    }).join('');
     formSlot.innerHTML = '<form class="sn-form" id="sn-form">' +
       '<label>Scenario / session<input type="text" name="title" required maxlength="120" value="' + esc(n.title) + '" placeholder="e.g. Music From a Darkened Room"></label>' +
-      '<label>Hungarian link (Magyar)<input type="url" name="url_hu" value="' + esc(n.url_hu) + '" placeholder="https://claude.ai/code/artifact/…"></label>' +
-      '<label>English link<input type="url" name="url_en" value="' + esc(n.url_en) + '" placeholder="https://claude.ai/code/artifact/…"></label>' +
+      rows +
       '<label>Note (optional)<textarea name="description" maxlength="500">' + esc(n.description) + '</textarea></label>' +
       '<div class="sn-form-actions"><button type="submit" class="paper-btn primary">Save</button>' +
       '<button type="button" class="paper-btn" data-sn="cancel">Cancel</button></div></form>';
     var form = document.getElementById('sn-form');
-    form.elements.title.focus();
+    var el = form.elements;
+    el.title.focus();
     form.addEventListener('submit', function (e) {
       e.preventDefault();
-      var data = { title: form.elements.title.value.trim(), description: form.elements.description.value.trim(), updated_at: Date.now() };
-      var bad = [];
+      var data = { title: el.title.value.trim(), description: el.description.value.trim(), updated_at: Date.now() };
+      var bad = [], uploads = [], drops = [];
       LANGS.forEach(function (l) {
-        var u = cleanUrl(form.elements[l[0]].value);
-        if (u === null) bad.push(l[1]); else data[l[0]] = u;
+        var u = cleanUrl(el['url_' + l[0]].value);
+        if (u === null) bad.push(l[2]); else data['url_' + l[0]] = u;
+        var file = el['file_' + l[0]].files && el['file_' + l[0]].files[0];
+        if (file) uploads.push({ lang: l[0], file: file });
+        else if (el['drop_' + l[0]] && el['drop_' + l[0]].checked) drops.push(l[0]);
+        else data['file_' + l[0]] = n['file_' + l[0]] || null;
       });
       if (!data.title) { setStatus('Give it a name first.'); return; }
       if (bad.length) { setStatus(bad.join(' and ') + ': that is not an https:// link.'); return; }
-      if (!data.url_hu && !data.url_en) { setStatus('Add at least one link.'); return; }
-      setStatus('Saving…');
-      db_().then(function (db) {
-        var coll = db.collection('session_notes');
-        return n.id ? coll.doc(n.id).set(data) : coll.add(data);
+      var tooBig = uploads.filter(function (u) { return u.file.size > MAX_HTML; })[0];
+      if (tooBig) { setStatus(tooBig.file.name + ' is too large (' + Math.round(tooBig.file.size / 1024) + ' KB; up to ' + Math.round(MAX_HTML / 1024) + ' KB).'); return; }
+      if (!uploads.length && !LANGS.some(function (l) { return data['url_' + l[0]] || data['file_' + l[0]]; })) {
+        setStatus('Upload a page or add a link for at least one language.'); return;
+      }
+      setStatus(uploads.length ? 'Uploading…' : 'Saving…');
+      Promise.all(uploads.map(function (u) {
+        return u.file.text().then(function (html) { u.html = html; });
+      })).then(function () {
+        var notHtml = uploads.filter(function (u) { return !/<(html|body|head|!doctype)/i.test(u.html.slice(0, 4000)); })[0];
+        if (notHtml) throw new Error(notHtml.file.name + ' does not look like an HTML page.');
+        var now = Date.now();
+        uploads.forEach(function (u) { data['file_' + u.lang] = { name: u.file.name, size: u.file.size, uploaded_at: now }; });
+        drops.forEach(function (lang) { data['file_' + lang] = null; });
+        return db_().then(function (db) {
+          var ref = n.id ? noteRef(db, n.id) : db.collection('session_notes').doc(newId());
+          return ref.set(data).then(function () {
+            return Promise.all(uploads.map(function (u) {
+              return ref.collection('files').doc(u.lang).set({ html: u.html, name: u.file.name, uploaded_at: now });
+            }).concat(drops.map(function (lang) {
+              return Promise.all([ref.collection('files').doc(lang).delete(), ref.collection('state').doc(lang).delete()]);
+            })));
+          });
+        });
       }).then(function () {
         formSlot.innerHTML = '';
         setStatus('Saved.');
         loading = false;
         load();
-      }).catch(function (err) { setStatus('Could not save: ' + ((err && err.message) || err)); });
+      }).catch(function (err) { setStatus('Could not save: ' + errText(err)); });
     });
   }
+  function newId() {
+    return 'sn_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+
+  /* ── The viewer: an uploaded page in a sealed frame ── */
+  var viewer = null;
+  // Runs inside the frame before the page's own scripts: a localStorage
+  // that starts from the saved state and reports every change to A-Cell
+  // (the real one would throw in a sandboxed frame), plus a
+  // sessionStorage that only lives as long as the frame.
+  function storageShim(items) {
+    var json = JSON.stringify(items || {}).replace(/</g, '\\u003c');
+    return '<script>(function(){' +
+      'var saved=' + json + ';' +
+      'function mk(store,report){var api={' +
+        'getItem:function(k){k=String(k);return Object.prototype.hasOwnProperty.call(store,k)?store[k]:null;},' +
+        'setItem:function(k,v){k=String(k);v=String(v);store[k]=v;if(report)parent.postMessage({dgSessionNotes:"set",k:k,v:v},"*");},' +
+        'removeItem:function(k){k=String(k);delete store[k];if(report)parent.postMessage({dgSessionNotes:"remove",k:k},"*");},' +
+        'clear:function(){Object.keys(store).forEach(function(k){delete store[k];});if(report)parent.postMessage({dgSessionNotes:"clear"},"*");},' +
+        'key:function(i){return Object.keys(store)[i]||null;}};' +
+        'Object.defineProperty(api,"length",{get:function(){return Object.keys(store).length;}});return api;}' +
+      'try{Object.defineProperty(window,"localStorage",{value:mk(saved,true),configurable:true});}catch(e){}' +
+      'try{Object.defineProperty(window,"sessionStorage",{value:mk({},false),configurable:true});}catch(e){}' +
+      '})();<\/script>';
+  }
+  function withShim(html, items) {
+    var shim = storageShim(items);
+    var m = /<head[^>]*>/i.exec(html);
+    if (m) return html.slice(0, m.index + m[0].length) + shim + html.slice(m.index + m[0].length);
+    return shim + html;
+  }
+  // Dice Roller and Tune In float over everything -- in the Hub shell they
+  // belong to the outer page, out of reach of the viewer's z-index. Hide
+  // them while a page is open, in this page and (same-origin) the shell.
+  function hideFloaters(on) {
+    [window, window.parent].forEach(function (w) {
+      try {
+        var d = w.document, st = d.getElementById('sn-hide-floaters');
+        if (on && !st) {
+          st = d.createElement('style');
+          st.id = 'sn-hide-floaters';
+          st.textContent = '#dg-radio, #dr-panel { visibility: hidden !important; }';
+          d.head.appendChild(st);
+        } else if (!on && st) st.remove();
+      } catch (e) { /* not same-origin: nothing of ours there */ }
+    });
+  }
+  function closeViewer() {
+    if (!viewer) return;
+    hideFloaters(false);
+    flushState();
+    window.removeEventListener('message', onFrameMessage);
+    viewer.root.remove();
+    document.documentElement.style.overflow = viewer.prevOverflow;
+    viewer = null;
+  }
+  function setSaved(t) { if (viewer) viewer.root.querySelector('.sn-v-saved').textContent = t; }
+  function flushState() {
+    if (!viewer || !viewer.dirty) return;
+    var v = viewer;
+    v.dirty = false;
+    clearTimeout(v.timer);
+    setSaved('Saving…');
+    db_().then(function (db) {
+      return noteRef(db, v.id).collection('state').doc(v.lang).set({ items: v.items, updated_at: Date.now() });
+    }).then(function () { if (viewer === v && !v.dirty) setSaved('Saved'); })
+      .catch(function (err) { v.dirty = true; if (viewer === v) setSaved('Not saved: ' + errText(err)); });
+  }
+  function onFrameMessage(e) {
+    if (!viewer || e.source !== viewer.frame.contentWindow) return; // only the page we opened
+    var d = e.data;
+    if (!d || typeof d.dgSessionNotes !== 'string') return;
+    if (d.dgSessionNotes === 'set' && typeof d.k === 'string' && typeof d.v === 'string' && d.v.length < 500000) viewer.items[d.k] = d.v;
+    else if (d.dgSessionNotes === 'remove' && typeof d.k === 'string') delete viewer.items[d.k];
+    else if (d.dgSessionNotes === 'clear') viewer.items = {};
+    else return;
+    viewer.dirty = true;
+    setSaved('Saving…');
+    clearTimeout(viewer.timer);
+    viewer.timer = setTimeout(flushState, 800);
+  }
+  function openViewer(n, lang) {
+    closeViewer();
+    var label = (LANGS.filter(function (l) { return l[0] === lang; })[0] || [lang, lang])[1];
+    setStatus('Opening…');
+    db_().then(function (db) {
+      var ref = noteRef(db, n.id);
+      return Promise.all([ref.collection('files').doc(lang).get(), ref.collection('state').doc(lang).get()]);
+    }).then(function (r) {
+      var file = r[0].exists ? r[0].data() : null;
+      if (!file || !file.html) throw new Error('the uploaded page is missing -- upload it again under Edit.');
+      var items = (r[1].exists && r[1].data().items) || {};
+      setStatus('');
+      var root = document.createElement('div');
+      root.className = 'sn-viewer';
+      root.innerHTML = '<div class="sn-v-bar"><span class="sn-v-title">' + esc(n.title) + ' · ' + esc(label) + '</span>' +
+        '<span class="sn-v-saved" aria-live="polite"></span>' +
+        '<button type="button" class="sn-v-close" data-sn="close">Close</button></div>';
+      var frame = document.createElement('iframe');
+      frame.className = 'sn-v-frame';
+      frame.title = n.title + ' (' + label + ')';
+      // No allow-same-origin: the page can't reach A-Cell's storage or sign-in.
+      frame.setAttribute('sandbox', 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-modals allow-forms');
+      frame.srcdoc = withShim(file.html, items);
+      root.appendChild(frame);
+      document.body.appendChild(root);
+      viewer = { id: n.id, lang: lang, root: root, frame: frame, items: items, dirty: false, timer: null,
+                 prevOverflow: document.documentElement.style.overflow };
+      document.documentElement.style.overflow = 'hidden';
+      hideFloaters(true);
+      window.addEventListener('message', onFrameMessage);
+      root.querySelector('[data-sn="close"]').addEventListener('click', closeViewer);
+    }).catch(function (err) { setStatus('Could not open it: ' + errText(err)); });
+  }
+  window.addEventListener('pagehide', flushState);
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flushState(); });
 
   formSlot.addEventListener('click', function (e) {
     if (e.target.closest('[data-sn="cancel"]')) { formSlot.innerHTML = ''; setStatus(''); }
@@ -2102,14 +2278,19 @@
     var card = btn.closest('.sn-card');
     var n = notes.filter(function (x) { return card && x.id === card.dataset.id; })[0];
     if (!n) return;
+    if (btn.dataset.sn === 'view') { openViewer(n, btn.dataset.lang); return; }
     if (btn.dataset.sn === 'edit') { openForm(n); return; }
     if (btn.dataset.sn === 'delete') {
       // Two taps, no dialog: window.confirm is dead in an iOS home-screen app.
       if (btn.dataset.armed !== '1') { btn.dataset.armed = '1'; btn.textContent = 'Really delete?'; return; }
       setStatus('Deleting…');
-      db_().then(function (db) { return db.collection('session_notes').doc(n.id).delete(); })
-        .then(function () { setStatus('Deleted.'); loading = false; load(); })
-        .catch(function (err) { setStatus('Could not delete: ' + ((err && err.message) || err)); });
+      db_().then(function (db) {
+        var ref = noteRef(db, n.id);
+        var subs = [];
+        LANGS.forEach(function (l) { subs.push(ref.collection('files').doc(l[0]).delete(), ref.collection('state').doc(l[0]).delete()); });
+        return Promise.all(subs).then(function () { return ref.delete(); });
+      }).then(function () { setStatus('Deleted.'); loading = false; load(); })
+        .catch(function (err) { setStatus('Could not delete: ' + errText(err)); });
     }
   });
   document.getElementById('sn-add-btn').addEventListener('click', function () { openForm(null); });

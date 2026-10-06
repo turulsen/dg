@@ -4582,6 +4582,50 @@ def test_acell_session_notes(p):
     _pump_until(page, lambda: page.locator(".sn-card[data-id=sn1]").count() == 0, timeout_ms=5000)
     record("acell-notes", "Delete asks once more, then removes it",
            still and fs_doc(page, "session_notes/sn1") is None and page.locator("#sn-list .sn-card").count() == 1, "")
+
+    # An uploaded page: opened in a sealed frame, its localStorage saves
+    # (ticks) kept in Firestore and restored on the next open.
+    import tempfile
+    html = ("<!doctype html><html><head><title>Prep</title></head><body>"
+            "<input type='checkbox' id='c1'><label for='c1'>Clue found</label>"
+            "<script>var S={};try{S=JSON.parse(localStorage.getItem('prep-v1')||'{}');}catch(e){}"
+            "document.getElementById('c1').checked=!!S.c1;"
+            "var own='?';try{own=String(window.parent.document.title);}catch(e){own='blocked';}document.body.dataset.parent=own;"
+            "document.getElementById('c1').addEventListener('change',function(e){S.c1=e.target.checked;localStorage.setItem('prep-v1',JSON.stringify(S));});"
+            "</script></body></html>")
+    tmp = tempfile.NamedTemporaryFile("w", suffix=".html", delete=False)
+    tmp.write(html); tmp.close()
+    page.click("#sn-add-btn")
+    page.fill("#sn-form input[name=title]", "Prep Page")
+    page.set_input_files("#sn-form input[name=file_hu]", tmp.name)
+    page.click("#sn-form button[type=submit]")
+    _pump_until(page, lambda: page.locator(".sn-card button[data-sn=view]").count() == 1, timeout_ms=6000)
+    main_w = [w_ for w_ in fs_writes(page, "session_notes/") if (w_.get("data") or {}).get("title") == "Prep Page"]
+    nid = main_w[-1]["path"].split("/")[1] if main_w else ""
+    filed = fs_doc(page, f"session_notes/{nid}/files/hu") or {}
+    record("acell-notes", "an uploaded .html page is stored (Handler-only Firestore) and the card opens it in A-Cell",
+           bool(nid) and filed.get("html") == html and (fs_doc(page, f"session_notes/{nid}") or {}).get("file_hu", {}).get("name", "").endswith(".html"),
+           f"{nid} {list(filed.keys())}")
+    page.click(".sn-card button[data-sn=view]")
+    page.wait_for_selector(".sn-viewer .sn-v-frame", timeout=6000)
+    fr = page.frame_locator(".sn-v-frame")
+    fr.locator("#c1").wait_for(timeout=6000)
+    sandbox = page.get_attribute(".sn-v-frame", "sandbox") or ""
+    record("acell-notes", "the page runs sealed: sandboxed without allow-same-origin, can't reach A-Cell",
+           "allow-scripts" in sandbox and "allow-same-origin" not in sandbox
+           and fr.locator("body").get_attribute("data-parent") == "blocked", sandbox)
+    fr.locator("#c1").check()
+    _pump_until(page, lambda: "c1" in ((fs_doc(page, f"session_notes/{nid}/state/hu") or {}).get("items") or {}).get("prep-v1", ""), timeout_ms=5000)
+    st = (fs_doc(page, f"session_notes/{nid}/state/hu") or {}).get("items") or {}
+    record("acell-notes", "ticking a box in the page saves it to Firestore (not just this browser)",
+           st.get("prep-v1") == '{"c1":true}', str(st))
+    page.click(".sn-viewer [data-sn=close]")
+    page.click(".sn-card button[data-sn=view]")
+    page.frame_locator(".sn-v-frame").locator("#c1").wait_for(timeout=6000)
+    record("acell-notes", "reopening restores the ticks",
+           page.frame_locator(".sn-v-frame").locator("#c1").is_checked(), "")
+    page.click(".sn-viewer [data-sn=close]")
+    os.unlink(tmp.name)
     record("acell-notes", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
     return errs

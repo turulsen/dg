@@ -113,9 +113,11 @@ service cloud.firestore {
     }
 
     // session_notes/{id} -- A-Cell's Session Notes tab: the Handler's own
-    // links to scenario prep pages (title, url_hu, url_en, description).
-    // Handler-only, so the links never show to players or the public.
-    match /session_notes/{id} {
+    // scenario prep pages (title, links, description), with the uploaded
+    // pages themselves (files/{lang}) and their saved ticks and notes
+    // (state/{lang}) underneath. Handler-only, all of it: the pages
+    // summarize paid scenarios and must never reach players or the public.
+    match /session_notes/{document=**} {
       allow read, write: if isHandler();
     }
 
