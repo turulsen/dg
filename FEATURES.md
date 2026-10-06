@@ -394,7 +394,7 @@ yet) that the main delete list can't see.
 
 **Music tab:** see §7.
 
-**Session Notes tab (v2.3.0):** the Handler's own prep pages for each
+**Session Notes tab (v2.3.0; uploaded pages v2.4.0):** the Handler's own prep pages for each
 scenario, a Hungarian and/or English version, plus an optional note.
 Each version is either an uploaded `.html` page or a link (opened in a
 new tab; a claude.ai page can't be framed).

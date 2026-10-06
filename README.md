@@ -154,7 +154,7 @@ There's an automated smoke-test suite in `test/` (135 test functions, 1,000+ ind
 
 ## Versioning & CI
 
-Releases are semver-tagged on `main` (`vMAJOR.MINOR.PATCH`); the current one is **v2.3.0** (PR #62: A-Cell Session Notes, full-body Outfit Plates); v2.2.0 (PR #61) was iOS radio autoplay and volume, `+ Add Bond` in play, A-Cell Sheet columns and one Agent per name; v2.1.0 was the Field Notes notebook (PRs #56–#58). A GitHub
+Releases are semver-tagged on `main` (`vMAJOR.MINOR.PATCH`); the current one is **v2.4.0** (PR #63: Session Notes pages uploaded and opened inside A-Cell, ticks remembered); v2.3.0 (PR #62) added A-Cell Session Notes and full-body Outfit Plates; v2.2.0 (PR #61) was iOS radio autoplay and volume, `+ Add Bond` in play, A-Cell Sheet columns and one Agent per name; v2.1.0 was the Field Notes notebook (PRs #56–#58). A GitHub
 Actions workflow runs the QA suite above plus a check that `sw.js`'s
 `CACHE_NAME` gets bumped alongside any shell-file change, on every push
 to `main`/`firebase-migration` (not on pull requests or session
