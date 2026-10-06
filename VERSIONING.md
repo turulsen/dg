@@ -63,8 +63,17 @@ consumer depending on that history being versioned. v2.0.0 was cut
 reserved for it: the Google Sheet is retired and every page reads and
 writes Firestore directly (Code.gs v97 is left serving only the Drive
 image proxy for old `gdrive:` links; going live took the one-time steps
-in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v2.2.0**
-(2026-10-06) is PR #61:
+in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v2.3.0**
+(2026-10-06) is PR #62:
+- A-Cell's Session Notes tab (the Handler's links to each scenario's
+  prep pages, Hungarian and/or English, in Firestore `session_notes/`,
+  Handler-only);
+- Outfit Plates generated as full-body frames (9:16, reference image
+  labelled "face only") instead of headshots.
+Backend: Code.gs unchanged; `generatePlateImage` and `firestore.rules`
+(the `session_notes` rule) were deployed by hand before the merge.
+Shell cache `dg-hub-shell-v187`. Tag it from the release page like the
+others. **v2.2.0** (2026-10-06, earlier the same day) is PR #61:
 - Table Radio on iPhone/iPad: after the first tap on the page, new
   songs and sound effects start by themselves and the volume slider
   works (unlocked `<audio>` elements, taps heard inside the Hub shell's

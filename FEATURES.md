@@ -394,7 +394,7 @@ yet) that the main delete list can't see.
 
 **Music tab:** see §7.
 
-**Session Notes tab:** the Handler's own links to each scenario's prep
+**Session Notes tab (v2.3.0):** the Handler's own links to each scenario's prep
 pages (e.g. Handler notes kept as a claude.ai artifact): one entry per
 scenario, a Hungarian (`url_hu`) and/or English (`url_en`) link and an
 optional note, opened in a new tab (claude.ai pages can't be framed and
