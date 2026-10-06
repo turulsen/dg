@@ -408,8 +408,9 @@ now:
   only, ignore its framing" label, with the full-body prompt last.
 The Agent File sends `plate_type`. A page without it is read from the
 prompt ("full body" = outfit), so the fix works as soon as the function
-is redeployed. Needs
-`firebase deploy --only functions:generatePlateImage`.
+is redeployed. Deployed 2026-10-06 (`firebase deploy --only
+functions:generatePlateImage`), together with the `session_notes`
+Firestore rule for A-Cell's Session Notes tab.
 
 **Era age adjustment always described the Agent as the same age,
 regardless of era.** `ageRangeForEra_()` shifts an Agent's age_range

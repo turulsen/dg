@@ -401,7 +401,9 @@ optional note, opened in a new tab (claude.ai pages can't be framed and
 need the owner's sign-in anyway). Stored in Firestore
 `session_notes/{id}`, Handler-only in `firestore.rules`, so the links
 live in the database, not in this public repo. Only `https://` links
-are accepted. Loaded the first time the tab is opened.
+are accepted. Loaded the first time the tab is opened. (The rule was
+deployed 2026-10-06; a fresh project needs `firebase deploy --only
+firestore:rules` for the tab to load.)
 
 **Auth:** the whole page is gated behind a shared Handler password
 (`HANDLER_PASSWORD`, an Apps Script Script Property) — see §9 for how
