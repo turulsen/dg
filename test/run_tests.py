@@ -5968,7 +5968,12 @@ def test_table_radio_new_track_starts_without_a_tap(p):
         t.style.cssText = 'position:fixed;left:8px;top:45%;width:40px;height:40px;z-index:2147483647;background:transparent';
         d.body.appendChild(t); }""")
     page.frame_locator("#dg-shell-content").locator("#tap-target").click()
-    _pump_until(page, lambda: not (page.evaluate(main_state) or {"paused": True})["paused"], timeout_ms=4000)
+    # play() flips .paused at once; Resume hides when its promise resolves
+    # and the gain node is wired a tick later -- wait for all three.
+    def settled():
+        st = page.evaluate(main_state) or {"paused": True, "resume": True}
+        return not st["paused"] and not st["resume"] and "route=webaudio" in page.inner_text("#dg-radio-debug")
+    _pump_until(page, settled, timeout_ms=6000)
     after = page.evaluate(main_state)
     dbg = page.inner_text("#dg-radio-debug")
     record("radio", "a tap anywhere in the shell's content frame starts the refused track and hides Resume",
