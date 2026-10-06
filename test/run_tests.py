@@ -4522,6 +4522,70 @@ def test_acell_evidence_create_verify_retries(p):
     page.close()
     return errs
 
+def test_acell_session_notes(p):
+    """A-Cell's Session Notes tab: the Handler's links to a scenario's
+    prep pages (Hungarian and/or English), kept in Firestore
+    session_notes/ (Handler-only), opened in a new tab. Only https links
+    are accepted; edit keeps the same document; delete takes two taps."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    skip_acell_gate(page)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
+    install_firestore_backend(page, {
+        "session_notes/sn1": {"title": "Music From a Darkened Room", "url_hu": "https://example.org/mfdr-hu", "url_en": "", "description": "Op IAGO"},
+    })
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: page.evaluate("() => window.__dgFirestoreAuthUser && window.__dgFirestoreAuthUser.uid") == "handler", timeout_ms=6000)
+    record("acell-notes", "nothing is read from session_notes until the tab is opened",
+           page.inner_text("#sn-list").startswith("Open this tab"), page.inner_text("#sn-list"))
+    page.click("#acell-tab-strip .tw[data-tab=notes]")
+    page.wait_for_selector("#sn-list .sn-card", timeout=8000)
+    links = page.eval_on_selector_all("#sn-list .sn-card a", "els => els.map(a => [a.textContent.trim(), a.getAttribute('href'), a.target, a.rel])")
+    record("acell-notes", "a saved scenario shows its name, note and a Magyar link opening in a new tab (no English link yet)",
+           "Music From a Darkened Room" in page.inner_text("#sn-list") and "Op IAGO" in page.inner_text("#sn-list")
+           and links == [["Magyar \u2197", "https://example.org/mfdr-hu", "_blank", "noopener noreferrer"]], str(links))
+
+    page.click("#sn-add-btn")
+    page.fill("#sn-form input[name=title]", "Last Things Last")
+    page.fill("#sn-form input[name=url_hu]", "javascript:alert(1)")
+    page.click("#sn-form button[type=submit]")
+    page.wait_for_timeout(300)
+    record("acell-notes", "a non-https link is refused, nothing written",
+           "https://" in page.inner_text("#sn-status") and not fs_writes(page, "session_notes/"), page.inner_text("#sn-status"))
+    page.fill("#sn-form input[name=url_hu]", "https://example.org/ltl-hu")
+    page.fill("#sn-form input[name=url_en]", "https://example.org/ltl-en")
+    page.click("#sn-form button[type=submit]")
+    _pump_until(page, lambda: page.locator("#sn-list .sn-card").count() == 2, timeout_ms=5000)
+    titles = page.eval_on_selector_all("#sn-list .sn-title", "els => els.map(e => e.textContent)")
+    w = fs_writes(page, "session_notes/")
+    record("acell-notes", "+ Add Session Notes saves both links and lists it (sorted by name)",
+           titles == ["Last Things Last", "Music From a Darkened Room"] and len(w) == 1
+           and w[0]["data"].get("url_hu") == "https://example.org/ltl-hu" and w[0]["data"].get("url_en") == "https://example.org/ltl-en",
+           f"{titles} {w}")
+
+    page.click(".sn-card[data-id=sn1] [data-sn=edit]")
+    page.fill("#sn-form input[name=url_en]", "https://example.org/mfdr-en")
+    page.click("#sn-form button[type=submit]")
+    _pump_until(page, lambda: page.locator(".sn-card[data-id=sn1] a").count() == 2, timeout_ms=5000)
+    doc = fs_doc(page, "session_notes/sn1") or {}
+    record("acell-notes", "Edit adds the English link to the same entry",
+           doc.get("url_en") == "https://example.org/mfdr-en" and doc.get("url_hu") == "https://example.org/mfdr-hu"
+           and page.locator(".sn-card[data-id=sn1] a").count() == 2, str(doc))
+
+    page.click(".sn-card[data-id=sn1] [data-sn=delete]")
+    page.wait_for_timeout(200)
+    still = fs_doc(page, "session_notes/sn1") is not None
+    page.click(".sn-card[data-id=sn1] [data-sn=delete]")
+    _pump_until(page, lambda: page.locator(".sn-card[data-id=sn1]").count() == 0, timeout_ms=5000)
+    record("acell-notes", "Delete asks once more, then removes it",
+           still and fs_doc(page, "session_notes/sn1") is None and page.locator("#sn-list .sn-card").count() == 1, "")
+    record("acell-notes", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_acell_sheet(p):
     """a-cell.html's Sheet tab: merged with the former separate Admin tab
     -- one dense, spreadsheet-style roster table (Cell, Handler, Agent
@@ -12626,6 +12690,7 @@ def main():
         safe(test_acell_evidence_create_verify_retries, browser, area="acell")
 
         safe(test_acell_sheet, browser, area="acell")
+        safe(test_acell_session_notes, browser, area="acell-notes")
 
         safe(test_acell_music, browser, area="acell")
 

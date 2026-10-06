@@ -112,6 +112,13 @@ service cloud.firestore {
       allow read, write: if isHandler();
     }
 
+    // session_notes/{id} -- A-Cell's Session Notes tab: the Handler's own
+    // links to scenario prep pages (title, url_hu, url_en, description).
+    // Handler-only, so the links never show to players or the public.
+    match /session_notes/{id} {
+      allow read, write: if isHandler();
+    }
+
     // client_errors/{id} -- the on-page JS error banner's telemetry (was
     // the ClientErrors sheet). Anyone may add one small report; only the
     // Handler reads them; nobody edits or deletes from the client.

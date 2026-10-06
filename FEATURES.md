@@ -394,6 +394,15 @@ yet) that the main delete list can't see.
 
 **Music tab:** see §7.
 
+**Session Notes tab:** the Handler's own links to each scenario's prep
+pages (e.g. Handler notes kept as a claude.ai artifact): one entry per
+scenario, a Hungarian (`url_hu`) and/or English (`url_en`) link and an
+optional note, opened in a new tab (claude.ai pages can't be framed and
+need the owner's sign-in anyway). Stored in Firestore
+`session_notes/{id}`, Handler-only in `firestore.rules`, so the links
+live in the database, not in this public repo. Only `https://` links
+are accepted. Loaded the first time the tab is opened.
+
 **Auth:** the whole page is gated behind a shared Handler password
 (`HANDLER_PASSWORD`, an Apps Script Script Property) — see §9 for how
 that's actually enforced per-action.
