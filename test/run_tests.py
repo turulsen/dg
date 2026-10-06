@@ -3519,9 +3519,10 @@ def test_acell_play(p):
     page.wait_for_timeout(200)
     initiative_names = page.eval_on_selector_all("#play-view .cdb-initiative-row .nm", "els => els.map(e=>e.textContent)")
     initiative_dex = page.eval_on_selector_all("#play-view .cdb-initiative-row .dx", "els => els.map(e=>e.textContent)")
-    expected = sorted([("Owen Castillo", 14), ("Marcus Reyes", 10), (fr["name"] + " (Friendly)", fr["stats"]["DEX"]["value"])],
+    # Marcus Reyes is KIA (0 HP) and takes no more turns.
+    expected = sorted([("Owen Castillo", 14), (fr["name"] + " (Friendly)", fr["stats"]["DEX"]["value"])],
                       key=lambda r: -r[1])
-    record("acell", "Cell Dashboard shows an Initiative Tracker ranked by DEX descending, Friendlies included",
+    record("acell", "Cell Dashboard shows an Initiative Tracker ranked by DEX descending, Friendlies included, KIA Agents left out",
            initiative_names == [r[0] for r in expected] and initiative_dex == [str(r[1]) for r in expected],
            str((initiative_names, initiative_dex)))
 
@@ -4113,7 +4114,8 @@ def test_acell_evidence(p):
     cells_fixture = [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12", "PRIY-AN34"], "channel": ""}]
     # The backend is the Firestore stub: A-Cell writes evidence/ and
     # operations/ docs itself; this reads them back.
-    install_firestore_backend(page, {"cells/cell_1": {k: v for k, v in cells_fixture[0].items() if k != "cell_id"}})
+    install_firestore_backend(page, {"cells/cell_1": {k: v for k, v in cells_fixture[0].items() if k != "cell_id"},
+                                     "briefs/OWEN-CS12": {"agent_code": "OWEN-CS12", "char_name": "Owen Castillo"}})
     def evidence_state():
         return page.evaluate("() => Object.entries(window.__dgFirestoreDocs || {})"
                              ".filter(([k]) => k.indexOf('evidence/') === 0 && k.split('/').length === 2)"
@@ -4176,6 +4178,10 @@ def test_acell_evidence(p):
     page.select_option("#evidence-new-op", label="Operation Nightshade")
     page.fill("#evidence-new-body", "Recovered from the scene.")
     page.check("#evidence-new-released")
+    owen = wait_for_condition(lambda: page.evaluate("""() => { const i = document.querySelector('#evidence-new-restrict-wrap input[value="OWEN-CS12"]');
+        return i && /Owen Castillo/.test(i.parentNode.textContent) ? i.parentNode.textContent.trim() : null; }"""), timeout_ms=8000)
+    record("acell", "the restriction checklist names each Agent (from their Agent File), not their code",
+           owen == "Owen Castillo", str(owen))
     page.check('#evidence-new-restrict-wrap input[value="OWEN-CS12"]')
     page.click("#evidence-new-confirm")
     wait_for_condition(lambda: len(evidence_state()) >= 1)
@@ -4184,7 +4190,7 @@ def test_acell_evidence(p):
                                     if "Field Photograph" in page.inner_text("#evidence-list") else None)
     record("acell", "filing evidence into an Operation, released and restricted, shows it once confirmed",
            bool(list_text) and "Field Photograph" in list_text and "cell alpha" in list_text.lower()
-           and "operation nightshade" in list_text.lower() and "restricted to: owen-cs12" in list_text.lower(),
+           and "operation nightshade" in list_text.lower() and "restricted to: owen castillo" in list_text.lower(),
            list_text or "")
     record("acell", "a released item's card doesn't carry the unreleased (staged) styling",
            "unreleased" not in (page.get_attribute(".evidence-card", "class") or ""), "")
@@ -4579,6 +4585,17 @@ def test_acell_sheet(p):
     for bo in briefs_only:
         docs["briefs/" + bo["agent_code"]] = {k: v for k, v in bo.items() if k != "agent_code"}
     install_firestore_backend(page, docs)
+    # The Created column reads each doc's createTime from Firestore's REST
+    # API (the web SDK doesn't expose it): answer with fixed times.
+    created_iso = {"OWEN-CS12": "2026-09-01T10:05:00Z", "PRIY-AN34": "2026-09-02T11:00:00Z",
+                   "MARC-9XQ2": "2026-09-03T12:00:00Z", "DEMO-Q5MD": "2026-09-04T13:00:00Z"}
+    def fake_rest(route):
+        coll = route.request.url.split("/documents/")[1].split("?")[0]
+        docs_out = [{"name": f"projects/dg-app-b3447/databases/(default)/documents/{coll}/{c}", "createTime": t,
+                     "updateTime": "2026-09-20T08:30:00Z" if (c == "OWEN-CS12" and coll == "briefs") else t}
+                    for c, t in created_iso.items() if c == "OWEN-CS12" or (coll == "characters") != (c == "DEMO-Q5MD")]
+        route.fulfill(status=200, content_type="application/json", body=json.dumps({"documents": docs_out}))
+    page.route("**/firestore.googleapis.com/v1/**", fake_rest)
     tap_acell_posts(page, lambda body: posts.append(body))
     page.add_init_script(f"Date.now = () => {now_ms}")
 
@@ -4592,16 +4609,24 @@ def test_acell_sheet(p):
     # the bulk-delete addition to renderSheet() -- a real report of
     # hundreds of dummy/test rows needing deletion made the old one-row-
     # at-a-time Delete button impractical).
-    record("acell", "Sheet table has the requested columns in order",
-           headers[1:8] == ["Cell", "Handler", "Agent Name", "Player Name", "HP", "SAN", "Online"], str(headers))
+    record("acell", "Sheet table has the requested columns in order (Agent Code, Created, Last Updated; no HP or SAN)",
+           headers[1:9] == ["Cell", "Handler", "Agent Name", "Agent Code", "Player Name", "Created", "Last Updated", "Online"], str(headers))
 
     row_texts = page.eval_on_selector_all("#sheet-wrap tbody tr", "els => els.map(e=>e.textContent)")
     record("acell", "Sheet lists every Agent on file plus every Agent-File-only entry as rows",
            len(row_texts) == 4, str(row_texts))
-    record("acell", "a row shows the Agent's Cell, Handler, player name, HP, and SAN together",
+    record("acell", "a row shows the Agent's Cell, Handler, name, Agent Code and player name together",
            "Cell Alpha" in row_texts[0] and "Sam" in row_texts[0]
-           and "Owen Castillo" in row_texts[0] and "Gergo P" in row_texts[0]
-           and "13" in row_texts[0] and "50" in row_texts[0], row_texts[0])
+           and "Owen Castillo" in row_texts[0] and "OWEN-CS12" in row_texts[0] and "Gergo P" in row_texts[0], row_texts[0])
+    created = wait_for_condition(lambda: page.evaluate("""() => { const t = document.querySelector('#sheet-wrap tbody tr:nth-child(1) td:nth-child(7)');
+        return t && /2026-09-0\\d/.test(t.textContent) ? t.textContent.trim() : null; }"""), timeout_ms=8000)
+    expect = page.evaluate("""() => { const d = new Date('2026-09-01T10:05:00Z'), p = n => (n < 10 ? '0' : '') + n;
+        return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); }""")
+    record("acell", "the Created column shows when each Agent was created", created == expect, f"{created} vs {expect}")
+    upd = page.evaluate("() => (document.querySelector('#sheet-wrap tbody tr:nth-child(1) td:nth-child(8)') || {}).textContent")
+    expect_upd = page.evaluate("""() => { const d = new Date('2026-09-20T08:30:00Z'), p = n => (n < 10 ? '0' : '') + n;
+        return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); }""")
+    record("acell", "Last Updated shows the latest save of the Agent's sheet or Agent File", (upd or "").strip() == expect_upd, f"{upd} vs {expect_upd}")
     record("acell", "an Agent File-only entry (no character sheet) shows as its own row in the same table",
            any("Mastery" in t for t in row_texts), str(row_texts))
 
@@ -4611,9 +4636,8 @@ def test_acell_sheet(p):
            "KIA" in row_texts[2], row_texts[2])
     record("acell", "an Agent above 0 HP does not show a KIA badge",
            "KIA" not in row_texts[0] and "KIA" not in row_texts[1], "")
-    hp_cells = page.eval_on_selector_all("#sheet-wrap tbody tr:nth-child(3) td:nth-child(6)", "els => els.map(e=>e.textContent.trim())")
-    record("acell", "an Agent at 0 HP shows '0' in the HP column, not an empty-cell dash",
-           hp_cells == ["0"], str(hp_cells))
+    code_cells = page.eval_on_selector_all("#sheet-wrap tbody tr:nth-child(3) td:nth-child(5)", "els => els.map(e=>e.textContent.trim())")
+    record("acell", "the Agent Code column shows the row's code", code_cells == ["MARC-9XQ2"], str(code_cells))
 
     dots = page.eval_on_selector_all("#sheet-wrap .sheet-dot", "els => els.map(e=>e.className)")
     record("acell", "Online status reflects how recently each Agent's sheet last synced (just now / 20 min ago / 2 hours ago)",
@@ -5876,6 +5900,109 @@ def test_table_radio_plays_while_audio_context_locked(p):
         page.wait_for_timeout(200)
     record("radio", "on a page in a subfolder (stats/), ambient files load from the site's assets/, not stats/assets/",
            bool(src) and src.startswith(f"{BASE}/assets/ambient/"), str(src))
+    page.close()
+    return errs
+
+def test_table_radio_new_track_starts_without_a_tap(p):
+    """Live, on an iPad in the hub shell: every song change needed the
+    player to tap Resume, sound effects never played, and the volume
+    slider did nothing. Safari lets an <audio> element start by itself
+    only once that same element was played (or loaded) inside a tap, and
+    the widget built a fresh element for every track and every stinger.
+    Worse, in hub.html the widget sits in the outer page while nearly
+    every tap lands inside #dg-shell-content, which the widget never
+    heard. Chromium is made to behave the same way here: play() without
+    a tap is refused unless the element was unlocked by one, and the
+    AudioContext stays suspended until the page has had a tap."""
+    # Taps are tracked from real (trusted) input events -- not
+    # navigator.userActivation, which Playwright's evaluate() switches on.
+    ios = """(() => {
+      const top = window.top;
+      const mark = (e) => { if (!e.isTrusted) return; top.__inTap = true; top.__tapped = true; setTimeout(() => { top.__inTap = false; }, 0); };
+      ['click', 'touchend', 'keydown'].forEach((t) => window.addEventListener(t, mark, true));
+      const active = () => !!top.__inTap;
+      const realPlay = HTMLMediaElement.prototype.play, realLoad = HTMLMediaElement.prototype.load;
+      window.__refused = 0;
+      HTMLMediaElement.prototype.load = function () { if (active()) this.__unlocked = true; return realLoad.call(this); };
+      HTMLMediaElement.prototype.play = function () {
+        if (active()) this.__unlocked = true;
+        if (!this.__unlocked) { window.__refused++; return Promise.reject(new DOMException('needs a tap', 'NotAllowedError')); }
+        return realPlay.call(this);
+      };
+      const C = window.AudioContext || window.webkitAudioContext; if (!C) return;
+      Object.defineProperty(C.prototype, 'state', { configurable: true, get() {
+        return window.top.__tapped ? 'running' : 'suspended'; } });
+      C.prototype.resume = function () { return Promise.resolve(); };
+    })();"""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); localStorage.setItem('dg_radio_channel', '1'); localStorage.setItem('dg_cover_identity', 'Gergo'); } catch (e) {}")
+    page.add_init_script(ios)
+    install_radio_firestore_stub(page)
+    page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page)
+    # Content frame loaded and the boot veil gone from where we tap.
+    _pump_until(page, lambda: page.evaluate("""() => { try {
+        const f = document.getElementById('dg-shell-content'); if (f.contentDocument.readyState !== 'complete') return false;
+        const r = f.getBoundingClientRect(); const el = document.elementFromPoint(r.left + 20, r.top + r.height * 0.5);
+        return el === f; } catch (e) { return false; } }"""), timeout_ms=12000)
+    page.wait_for_timeout(300)
+    clips = sorted(os.listdir(os.path.join(HERE, "..", "assets", "stingers")))
+    track = f"{BASE}/assets/stingers/{clips[0]}"
+    np = {"channel": "1", "track_url": track, "track_title": "Abyss", "started_at": 1700000000000,
+          "track_volume": 50, "ambient_volume": 100, "track_kind": "audio", "loop": True}
+    push_radio_now_playing(page, "1", np)
+    main_state = """() => { const a = document.getElementById('dg-radio-audio'); const r = document.getElementById('dg-radio-resume');
+        return a ? { src: a.src, paused: a.paused, resume: !!r && r.style.display === 'block' } : null; }"""
+    _pump_until(page, lambda: (page.evaluate(main_state) or {}).get("resume"), timeout_ms=6000)
+    before = page.evaluate(main_state)
+    record("radio", "before any tap (iOS-like), a new track is refused and Resume shows",
+           bool(before) and before["paused"] and before["resume"], str(before))
+
+    # One tap inside the shell's content frame -- not on the radio.
+    page.evaluate("""() => { const d = document.getElementById('dg-shell-content').contentDocument;
+        const t = d.createElement('div'); t.id = 'tap-target';
+        t.style.cssText = 'position:fixed;left:8px;top:45%;width:40px;height:40px;z-index:2147483647;background:transparent';
+        d.body.appendChild(t); }""")
+    page.frame_locator("#dg-shell-content").locator("#tap-target").click()
+    # play() flips .paused at once; Resume hides when its promise resolves
+    # and the gain node is wired a tick later -- wait for all three.
+    def settled():
+        st = page.evaluate(main_state) or {"paused": True, "resume": True}
+        return not st["paused"] and not st["resume"] and "route=webaudio" in page.inner_text("#dg-radio-debug")
+    _pump_until(page, settled, timeout_ms=6000)
+    after = page.evaluate(main_state)
+    dbg = page.inner_text("#dg-radio-debug")
+    record("radio", "a tap anywhere in the shell's content frame starts the refused track and hides Resume",
+           bool(after) and not after["paused"] and not after["resume"], str(after))
+    record("radio", "the same tap wires the already-playing track into the gain node (volume works mid-track)",
+           "route=webaudio" in dbg, dbg)
+
+    refused = page.evaluate("() => window.__refused")
+    np2 = dict(np, track_url=track + "?schism", track_title="Schism", started_at=1700000009000)
+    push_radio_now_playing(page, "1", np2)
+    _pump_until(page, lambda: (page.evaluate(main_state) or {}).get("src", "").endswith("?schism")
+                and not page.evaluate(main_state)["paused"], timeout_ms=6000)
+    s2 = page.evaluate(main_state)
+    record("radio", "the Handler changes the song: the next track starts by itself, no tap, no Resume",
+           bool(s2) and s2["src"].endswith("?schism") and not s2["paused"] and not s2["resume"]
+           and page.evaluate("() => window.__refused") == refused, f"{s2} refused {refused}->{page.evaluate('() => window.__refused')}")
+    record("radio", "the next track goes through the gain node too",
+           "route=webaudio" in page.inner_text("#dg-radio-debug"), page.inner_text("#dg-radio-debug"))
+
+    now = page.evaluate("() => Date.now()")
+    sid = clips[0].rsplit(".", 1)[0]
+    np3 = dict(np2, stingers=[{"id": sid, "fired_at": now, "started_at": now, "paused": False, "paused_at": 0, "loop": False}])
+    push_radio_now_playing(page, "1", np3)
+    stinger = """(id) => { const a = [...document.querySelectorAll('audio')].find(x => x.src.indexOf('/stingers/' + id) !== -1 && x.id !== 'dg-radio-audio');
+        return a ? { paused: a.paused, t: a.currentTime } : null; }"""
+    _pump_until(page, lambda: (page.evaluate(stinger, sid) or {"paused": True})["paused"] is False, timeout_ms=4000)
+    st = page.evaluate(stinger, sid)
+    record("radio", "a sound effect fired after that tap plays on its own (no tap needed)",
+           bool(st) and st["paused"] is False and page.evaluate("() => window.__refused") == refused, str(st))
     page.close()
     return errs
 
@@ -9857,6 +9984,80 @@ def test_cell_members_by_name_and_kia(p):
     page.close()
     return errs_all
 
+def test_add_bond_in_play(p):
+    """At the table: adding a Bond to an Agent that's already been played
+    meant finding "Fix a Character Creation Mistake" in the settings, since
+    the Bond generator (and its New Empty Bond) hides once an Agent is
+    committed. Now: + Add Bond under the Bonds list in Edit mode, + Add
+    Bond under Live Play's Bonds table (to Edit mode with a blank Bond),
+    and + Add Bond on the Agent File (Agent Hub and the notebook), which
+    opens the sheet with ?add_bond=1."""
+    errs_all = []
+    state = {"v": 1, "creationCommitted": True, "bio": {"name": "Owen Castillo", "profession": ""},
+             "stats": {"STR": 14, "CON": 12, "DEX": 10, "INT": 16, "POW": 13, "CHA": 11},
+             "csStats": {"STR": 14, "CON": 12, "DEX": 10, "INT": 16, "POW": 13, "CHA": 11},
+             "bonds": [{"id": "bond-1", "name": "Maria Castillo", "relationship": "Sister", "description": "", "score": 8}]}
+    def sheet(path):
+        page = p.new_page()
+        page.set_default_timeout(8000)
+        errs = collect_errors(page)
+        page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+        page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+        install_firestore_backend(page, {"characters/OWEN-CS12": character_doc("OWEN-CS12", state)})
+        page.goto(f"{BASE}/stats/{path}", wait_until="domcontentloaded", timeout=15000)
+        _pump_until(page, lambda: page.eval_on_selector("#cs-name", "el => el.value") == "Owen Castillo", timeout_ms=8000)
+        page.wait_for_timeout(600)
+        return page, errs
+    entries = "() => document.querySelectorAll('#cs-bonds .bond-entry').length"
+    focused_new = """() => { const e = [...document.querySelectorAll('#cs-bonds .bond-entry')].pop();
+        return !!e && document.activeElement === e.querySelector('input[data-field=name]') && !e.querySelector('input[data-field=name]').value; }"""
+
+    page, errs = sheet("index.html?load=OWEN-CS12&live=1")
+    record("bonds", "a committed Agent in Live Play has + Add Bond under its Bonds table",
+           page.locator(".lp-add-bond-btn").is_visible(), "")
+    page.click(".lp-add-bond-btn")
+    page.wait_for_timeout(300)
+    record("bonds", "Live Play's + Add Bond switches to Edit mode with a new, blank Bond, cursor in its name",
+           "live-play" not in page.eval_on_selector("body", "el => el.className") and page.evaluate(entries) == 2 and page.evaluate(focused_new),
+           f"entries={page.evaluate(entries)} class={page.eval_on_selector('body', 'el => el.className')}")
+    record("bonds", "Edit mode shows + Add Bond while the generator stays hidden (no Fix-a-Mistake needed)",
+           page.locator("#cs-add-bond-btn").is_visible() and not page.locator("#new-empty-bond-button").is_visible(), "")
+    page.click("#cs-add-bond-btn")
+    page.wait_for_timeout(200)
+    page.keyboard.type("Father Ruiz")
+    page.keyboard.press("Tab")  # Bond fields save on change
+    page.wait_for_timeout(300)
+    saved = page.evaluate("() => (window.bondsOnSheet || []).map(b => b.name)")
+    record("bonds", "Edit mode's + Add Bond adds another; typing names it",
+           page.evaluate(entries) == 3 and saved[-1] == "Father Ruiz", str(saved))
+    errs_all.extend(errs)
+    page.close()
+
+    page, errs = sheet("index.html?load=OWEN-CS12&add_bond=1")
+    record("bonds", "?add_bond=1 (from the Agent File) opens Edit mode with a blank Bond ready to type into",
+           "live-play" not in page.eval_on_selector("body", "el => el.className") and page.evaluate(entries) == 2 and page.evaluate(focused_new),
+           f"entries={page.evaluate(entries)}")
+    record("bonds", "…and drops add_bond from the address, so a reload doesn't add a second one",
+           "add_bond" not in page.url and "load=OWEN-CS12" in page.url, page.url)
+    errs_all.extend(errs)
+    page.close()
+
+    page, errs = _field_notes_page(p, extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector(f"#ah-sheet-{FN_CODE} .as-add-bond", timeout=15000)
+    href = page.get_attribute(f"#ah-sheet-{FN_CODE} .as-add-bond", "href")
+    record("bonds", "Agent Hub's Agent File has + Add Bond, linking to the sheet with add_bond=1",
+           href == f"stats/index.html?load={FN_CODE}&add_bond=1", str(href))
+    page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+    page.wait_for_selector("#fn-veil [data-go=addbond]", timeout=15000)
+    page.click("#fn-veil [data-go=addbond]")
+    _pump_until(page, lambda: "stats/index.html" in page.url, timeout_ms=8000)
+    record("bonds", "the notebook's Agent File + Add Bond opens that Agent's sheet to add one",
+           "stats/index.html" in page.url and f"load={FN_CODE}" in page.url, page.url)
+    errs_all.extend(errs)
+    page.close()
+    return errs_all
+
 def test_mobile_notes_fullscreen(p):
     """Split View doesn't fit a phone-width screen, so mobile gets a
     separate control instead: a Notes widget (dgNotesFullscreen in
@@ -10200,8 +10401,8 @@ def test_lp_initiative_order(p):
     Cell has other players. Reads cells + characters/{code} (both
     public-read) live; this Agent's own row uses the sheet's live DEX."""
     import json as _json
-    def char(name, dex):
-        return {"character_json": _json.dumps({"bio": {"name": name}, "csStats": {"DEX": dex}})}
+    def char(name, dex, hp=10):
+        return {"character_json": _json.dumps({"bio": {"name": name}, "csStats": {"DEX": dex}, "derived": {"hp": hp}})}
 
     page = p.new_page(viewport={"width": 390, "height": 844})
     errs = collect_errors(page)
@@ -10252,6 +10453,11 @@ def test_lp_initiative_order(p):
     record("stats-terminal", "a Friendly pregen in the Cell takes its place in initiative with its sheet's DEX",
            [fr_first, str(fr["stats"]["DEX"]["value"])] in rows, str(rows))
 
+    # KIA (0 HP on the saved sheet): out of the order.
+    push_firestore_doc_snapshot(page, "characters/DANI-U8BM", True, char("Daniela Martinez", 9, hp=0))
+    gone = wait_for_condition(lambda: "Daniela" not in page.eval_on_selector_all("#lp-initiative .lp-init-name", "els => els.map(e => e.textContent)") or None, timeout_ms=4000)
+    record("stats-terminal", "a KIA Agent (0 HP) drops out of the initiative order", bool(gone),
+           str(page.eval_on_selector_all("#lp-initiative .lp-init-name", "els => els.map(e => e.textContent)")))
     bar_top = page.evaluate("() => getComputedStyle(document.getElementById('lp-tracker-bar')).top")
     init_h = page.evaluate("() => document.getElementById('lp-initiative').offsetHeight")
     record("stats-terminal", "the tracker bar sticks below the initiative row, not on top of it",
@@ -11737,6 +11943,51 @@ def test_sheet_theme_glow_is_cheap(p):
     page.close()
     return errs
 
+def test_import_same_agent_twice_offers_update(p):
+    """Live: a player imported the same character twice ("Soko, Lenka"),
+    the second time on a blank sheet, and got two Agents with two codes
+    (SOKO-HUBK, SOKO-GDBQ) -- a blank sheet always mints a new code. Now a
+    freshly minted code whose name this player already has on file asks:
+    "Update TWIN-0001" moves the sheet onto the existing Agent and sends
+    the extra code to Recently Deleted; "Keep both" leaves two Agents."""
+    errs_all = []
+    twin_state = {"v": 1, "bio": {"name": "Soko, Lenka", "player_name": "Zuzu"}}
+    for choice in ("update", "keep"):
+        docs = {
+            "characters/TWIN-0001": character_doc("TWIN-0001", twin_state, "Zuzu"),
+            "briefs/TWIN-0001": {"agent_code": "TWIN-0001", "char_name": "Soko, Lenka", "player_name": "Zuzu", "player_name_lc": "zuzu"},
+        }
+        page, errs = _field_notes_page(p, docs=docs, extra_init="localStorage.setItem('dg_cover_identity', 'Zuzu'); localStorage.removeItem('dg_stats_cloud_code'); localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'TWIN-0001': 1}));")
+        page.goto(f"{BASE}/stats/index.html?new=1", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_function("() => window.importAgentText && window.dgCloudSave", timeout=10000)
+        page.wait_for_timeout(800)
+        page.evaluate("(st) => window.importAgentText(JSON.stringify(st))", twin_state)
+        page.wait_for_selector("#dg-confirm-backdrop.dg-confirm-open", timeout=15000)
+        new_code = page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')")
+        msg = page.inner_text("#dg-confirm-message")
+        if choice == "update":
+            record("journey", "importing an Agent this player already has asks before keeping a second one",
+                   "TWIN-0001" in msg and "Soko, Lenka" in msg and page.inner_text("#dg-confirm-ok") == "Update TWIN-0001"
+                   and page.inner_text("#dg-confirm-cancel") == "Keep both" and new_code and new_code != "TWIN-0001", msg + " / " + str(new_code))
+            page.click("#dg-confirm-ok")
+            gone = wait_for_condition(lambda: (fs_doc(page, f"deleted_agents/{new_code}") is not None
+                                               and fs_doc(page, f"characters/{new_code}") is None) or None, timeout_ms=10000)
+            code_now = page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')")
+            roster = json.loads(page.evaluate("() => localStorage.getItem('dg_agent_roster')") or "{}")
+            record("journey", "Update: the sheet saves to the existing Agent's code, the extra code goes to Recently Deleted",
+                   code_now == "TWIN-0001" and bool(gone) and new_code not in roster
+                   and any(w["path"] == "characters/TWIN-0001" for w in fs_writes(page, "characters/TWIN-0001")),
+                   f"code={code_now} gone={gone} roster={list(roster)}")
+        else:
+            page.click("#dg-confirm-cancel")
+            page.wait_for_timeout(1500)
+            record("journey", "Keep both: the new Agent keeps its own code and nothing is removed",
+                   page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')") == new_code
+                   and fs_doc(page, f"characters/{new_code}") is not None and fs_doc(page, f"deleted_agents/{new_code}") is None, str(new_code))
+        errs_all.extend(errs)
+        page.close()
+    return errs_all
+
 def test_field_notes_standing_orders(p):
     """New-Agent onboarding: the wizard finishing (or an Agent imported
     onto the sheet) arms the Standing Orders; they come up only once the
@@ -12313,6 +12564,7 @@ def main():
         safe(test_appearance_wizard_step, browser, area="appearance")
         safe(test_incursion, browser, area="incursion")
         safe(test_field_notes_standing_orders, browser, area="onboarding")
+        safe(test_import_same_agent_twice_offers_update, browser, area="journey")
         safe(test_sheet_theme_glow_is_cheap, browser, area="sheet-theme")
         safe(test_physical_description_punctuation, browser, area="hub")
         safe(test_agent_hub_phone_agents_menu, browser, area="hub")
@@ -12392,6 +12644,7 @@ def main():
         safe(test_table_radio_debug_readout_shows_ambient_and_stinger_state, browser, area="radio")
 
         safe(test_table_radio_plays_while_audio_context_locked, browser, area="radio")
+        safe(test_table_radio_new_track_starts_without_a_tap, browser, area="radio")
         safe(test_table_radio_main_track_gain_only_with_cors, browser, area="radio")
 
         safe(test_table_radio_finished_track_does_not_restart_from_beginning, browser, area="radio")
@@ -12489,6 +12742,7 @@ def main():
 
         safe(test_split_view_retired, browser, area="notebook")
         safe(test_cell_members_by_name_and_kia, browser, area="hub")
+        safe(test_add_bond_in_play, browser, area="bonds")
 
 
         safe(test_mobile_notes_fullscreen, browser, area="stats")

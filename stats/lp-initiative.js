@@ -88,12 +88,13 @@
   let cellsUnsub = null;
   let members = [];            // Agent Codes in this Agent's Cell, this one included
   const memberUnsubs = {};     // code -> unsubscribe for characters/{code}
-  const memberData = {};       // code -> { name, dex }
+  const memberData = {};       // code -> { name, dex, kia }
 
   function ownRow() {
     const name = (document.getElementById('cs-name')?.value || '').trim();
     const dex = parseInt(document.getElementById('DEX-value')?.textContent, 10);
-    return { name: name && name !== 'Agent' ? name : 'You', dex: isNaN(dex) ? null : dex };
+    const hp = parseInt(document.getElementById('cs-hp')?.value, 10);
+    return { name: name && name !== 'Agent' ? name : 'You', dex: isNaN(dex) ? null : dex, kia: !isNaN(hp) && hp <= 0 };
   }
 
   function hide(el) {
@@ -106,11 +107,13 @@
     const el = document.getElementById('lp-initiative');
     if (!el) return;
     if (!code || !members.some(m => m !== code)) { hide(el); return; }
+    // A KIA Agent (HP at 0 or below on their saved sheet) takes no more turns.
     const rows = members.map(m => {
       if (m === code) return Object.assign({ me: true }, ownRow());
       const d = memberData[m];
-      return { me: false, name: d ? d.name : '…', dex: d ? d.dex : null };
-    });
+      return { me: false, name: d ? d.name : '…', dex: d ? d.dex : null, kia: !!(d && d.kia) };
+    }).filter(r => !r.kia);
+    if (!rows.some(r => !r.me)) { hide(el); return; }
     rows.sort((a, b) => {
       const ad = typeof a.dex === 'number', bd = typeof b.dex === 'number';
       if (ad !== bd) return ad ? -1 : 1;         // unknown DEX last
@@ -155,15 +158,17 @@
       return;
     }
     memberUnsubs[m] = window.firebase.firestore().collection('characters').doc(m).onSnapshot(doc => {
-      let name = m, dex = null;
+      let name = m, dex = null, kia = false;
       try {
         const parsed = JSON.parse((doc.data() || {}).character_json || '{}');
         const bio = parsed.bio || {};
         const stats = parsed.csStats || parsed.stats || {};
         name = (bio.name && bio.name !== 'Agent') ? bio.name : (bio.codename || m);
         if (typeof stats.DEX === 'number') dex = stats.DEX;
+        const hp = (parsed.derived || {}).hp;
+        kia = typeof hp === 'number' && hp <= 0;
       } catch (e) { /* unparsable -- keep the code as the label */ }
-      memberData[m] = { name, dex };
+      memberData[m] = { name, dex, kia };
       render();
     }, () => { memberData[m] = { name: m, dex: null }; render(); });
   }

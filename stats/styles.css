@@ -2357,6 +2357,15 @@ textarea.bond-entry-field {
     padding: var(--spacing-md) var(--spacing-lg);
 }
 
+/* + Add Bond under the Bonds list: Edit mode's way to add a Bond gained
+   in play, shown whether or not the generator on the left is hidden. */
+.cs-add-bond-btn {
+    display: block;
+    width: 100%;
+    margin-top: var(--spacing-md);
+    padding: var(--spacing-md) var(--spacing-lg);
+}
+
 #random-bio-button {
     padding: var(--spacing-md) var(--spacing-lg);
     margin-bottom: var(--spacing-lg);
@@ -7094,6 +7103,24 @@ input[type="checkbox"]:checked+label {
 
 .lp-bond-dmg-btn:hover {
     background: #c00 !important;
+}
+
+/* + Add Bond under Live Play's Bonds table: goes to Edit mode with a
+   blank Bond (dgAddBond in scripts.js). */
+.lp-add-bond-btn {
+    display: block;
+    margin: 4px 0 0 auto;
+    background: transparent !important;
+    color: inherit !important;
+    border: 1px solid currentColor !important;
+    border-radius: 0 !important;
+    font-family: var(--lp-font-body) !important;
+    font-size: 9pt !important;
+    font-weight: 700 !important;
+    padding: 2px 8px !important;
+    cursor: pointer;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
 }
 
 /* ── Weapon table editable row inputs ────────────────────────────── */

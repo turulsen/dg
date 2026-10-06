@@ -1023,6 +1023,13 @@
                                 <div id="cs-bonds" class="bonds-list">
                                     <p class="description-text">(No bonds yet — generated bonds will appear here.)</p>
                                 </div>
+                                <!-- Always there in Edit mode, also once the Agent is
+                                     committed and the generator on the left is hidden:
+                                     a Bond gained in play shouldn't need "Fix a Character
+                                     Creation Mistake". -->
+                                <button type="button" id="cs-add-bond-btn" class="cs-add-bond-btn"
+                                    title="Adds a new Bond to this Agent: write its name, relationship and description; the score starts at CHA."
+                                    onclick="addEmptyBond()">+ Add Bond</button>
                             </div>
                         </div>
                     </fieldset>

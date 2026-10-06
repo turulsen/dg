@@ -4198,6 +4198,8 @@ function buildLpSheet() {
                         </tr></thead>
                         <tbody id="lp-bonds-tbody"></tbody>
                     </table>
+                    <button type="button" class="lp-add-bond-btn" onclick="dgAddBond()"
+                        title="Switches to Edit mode with a new, blank Bond to fill in.">+ Add Bond</button>
                 </div>
             </div>
 
@@ -5133,6 +5135,21 @@ function addEmptyBond() {
 }
 
 /**
+ * A Bond gained in play, from Live Play's Bonds table or a link from the
+ * Agent File (?add_bond=1): leave Live Play for Edit mode, add a blank
+ * Bond, and put the cursor in its name -- no "Fix a Character Creation
+ * Mistake" needed, unlike the generator's own New Empty Bond.
+ */
+function dgAddBond() {
+    if (document.body.classList.contains('live-play') && typeof setLivePlay === 'function') setLivePlay(false);
+    addEmptyBond();
+    const entries = document.querySelectorAll('#cs-bonds .bond-entry');
+    const newEntry = entries[entries.length - 1];
+    if (newEntry) setTimeout(() => newEntry.scrollIntoView({ block: 'center' }), 50);
+}
+window.dgAddBond = dgAddBond;
+
+/**
  * Commits the currently generated bond to the character sheet.
  * Reads name, relationship, and description from appState.currentBond, assigns a unique
  * ID, and renders the entry. Son of Sam theme gets a runic reveal animation because
@@ -5301,7 +5318,7 @@ function renderBondsOnSheet() {
     const bondsContainer = document.getElementById('cs-bonds');
 
     if (window.bondsOnSheet.length === 0) {
-        bondsContainer.innerHTML = '<p style="opacity:0.8;margin:0;text-align:center;width:100%;">(No bonds yet — add bonds using the BONDS button to the left.)</p>';
+        bondsContainer.innerHTML = '<p style="opacity:0.8;margin:0;text-align:center;width:100%;">(No bonds yet — + Add Bond below adds one.)</p>';
         return;
     }
 

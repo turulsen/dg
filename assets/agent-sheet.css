@@ -57,6 +57,9 @@
 .as-wn{ font-family:'Special Elite',monospace; color:var(--as-ink); }
 .as-row{ display:flex; justify-content:space-between; gap:10px; border-bottom:1px dotted var(--as-rule); padding:4px 0; color:var(--as-ink); }
 .as-score{ font-family:'Special Elite',monospace; color:var(--as-red); }
+.as-add-bond{ display:inline-block; margin-top:8px; font:inherit; font-family:'Special Elite',monospace; font-size:12px; letter-spacing:.06em;
+  color:var(--as-red); background:none; border:1px dashed var(--as-red); padding:3px 10px; text-decoration:none; cursor:pointer; }
+.as-add-bond:hover{ background:rgba(139,26,26,.07); }
 
 /* Polaroid + the full-cover "Take Photo" post-it */
 .as-polaroid{ padding:6px 6px 18px; background:#fff; box-shadow:0 2px 7px rgba(0,0,0,.3); transform:rotate(-1.5deg); }

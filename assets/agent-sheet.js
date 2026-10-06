@@ -183,7 +183,8 @@
   }
 
   /* ── The paper ── */
-  // opts: { photoHtml, subtitle, cellName, members:[{name,codename,kia}], actionsHtml, noteHtml, emptySheetHtml }
+  // opts: { photoHtml, subtitle, cellName, members:[{name,codename,kia}], actionsHtml, noteHtml, emptySheetHtml,
+  //         addBondHtml (under the Bonds list -- the caller's own link/button to add one) }
   function render(sheet, opts) {
     opts = opts || {};
     var d = sheet.derived || {};
@@ -244,7 +245,7 @@
           ? '<div class="as-sec-hd">Statistics <span>×5</span></div><div class="as-stats">' + stats + '</div>' : '') +
         '<div class="as-sec-hd">Skills</div><div class="as-skills">' + skills + '</div>' +
         '<div class="as-cols"><div><div class="as-sec-hd">Weapons</div>' + weapons + '</div>' +
-        '<div><div class="as-sec-hd">Bonds</div>' + bonds + '</div></div>' +
+        '<div><div class="as-sec-hd">Bonds</div>' + bonds + (opts.addBondHtml || '') + '</div></div>' +
       '</div>' + (opts.noteHtml || '') + '</div>';
   }
 

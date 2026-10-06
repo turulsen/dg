@@ -6086,6 +6086,23 @@ Same report, not code bugs, made clearer instead:
   generation had been failing on the live site since the Sheet was
   retired, not only on the preview. Deployed 2026-10-01 with
   `firebase deploy --only functions:generatePrompt,functions:generatePlateImage,functions:dailyBackup`.
+  **That fix was only half of it (2026-10-05):** with the functions
+  deployed, the iPad still showed "the AI service did not answer" and
+  the prompt box stayed empty. The port from Apps Script had dropped
+  `generateAppearancePrompt()`'s try/catch, so anything the function
+  threw (a failed `fetch`, a key with a stray newline in the header)
+  still reached the player as the bare "internal", with nothing in the
+  message and nothing logged to say which. Both AI functions now trim
+  the key, catch any error and return it as a readable `ERROR` message
+  ("Prompt service error: …", or the Anthropic/Gemini error text), and
+  log the cause to `functions:log`. The rate-limit counter
+  (`checkRateLimit_`, a Firestore transaction) ran before that
+  try/catch and is the AI functions' only server-side Firestore use --
+  `exchangeAgentToken` never touches Firestore, so a service account
+  without database access would only ever show up here, as the same
+  bare "internal". A failing counter is now logged and the call let
+  through instead. Needs
+  `firebase deploy --only functions:generatePrompt,functions:generatePlateImage`.
 
 ## Agent Hub: the Agent's paper could stay blank on a slow load
 
@@ -6156,3 +6173,114 @@ Also found on the way: ambient/stinger files used a bare
 from `stats/assets/...`, which doesn't exist; they now resolve next to
 the script. New `test_table_radio_plays_while_audio_context_locked`
 (fails on the old code, 3 of 4 checks). `sw.js` `CACHE_NAME` v179.
+
+**Only half fixed (2026-10-05, at the table):** sound effects still
+silent and the volume slider dead on the iPad, and every song change sat
+paused until the player tapped again. Two things the fix above missed:
+- *"Any tap anywhere" wasn't.* In the hub shell (`hub.html`) the radio
+  lives in the outer page, but the sheet, Agent Hub and A-Cell load in
+  `#dg-shell-content`, and a tap in a frame never reaches the outer
+  document's listeners. The context only woke from the radio's own
+  controls, so almost everything stayed on the plain, unwired route (no
+  iOS volume). The tap listener now also hooks every same-origin frame
+  (re-hooked on each load, new frames picked up as they appear).
+- *A fresh element per sound.* Safari lets an `<audio>` element start by
+  itself only once that same element was played or loaded inside a tap.
+  The widget built a new element for every track, ambient loop and
+  stinger, so each song change was refused (Resume) and stingers, which
+  had no Resume, were silently dropped. Each tap now unlocks a few spare
+  elements (a muted 10 ms silent clip played inside the tap, the
+  howler.js technique); tracks, loops and stingers take a spare and
+  return it when done, with their listeners removed (`listen_` /
+  `releaseAudioEl_`). Elements already wired into a gain node stay wired
+  and are only reused for files the gain node can hear.
+Also: whatever was refused anyway now starts on the next tap anywhere,
+not only on Resume; the main track asks for `crossorigin` whenever the
+CORS probe says yes, whether or not the context runs yet, so a later
+tap can wire the playing track into the gain node mid-song
+(`wireLiveElements_`) instead of waiting for the next track; the
+half-second wait for the context is gone. New
+`test_table_radio_new_track_starts_without_a_tap` (Chromium made to
+refuse untapped elements like iOS, taps inside the shell's frame; fails
+on the old code, 4 of 6 checks). `sw.js` `CACHE_NAME` v184.
+
+## A-Cell Evidence: Agents listed by code when restricting an item
+
+Request: when restricting an Evidence item to specific Agents in a Cell,
+the checklist (and the card's "Restricted to:" line) showed Agent Codes,
+not names. The Evidence tab's code had no names of its own (the Cells
+tab's `agentName()` lives in a separate script block). It now loads them
+alongside the Cells -- the Agent File's name, else the name on the
+character sheet, Friendly pregens as "Friendly: name (title)", the code
+only when nothing has a name -- without holding up the Cells/Operations
+load; the code stays as the checkbox's tooltip and value.
+`test_acell_evidence` checks both places. `sw.js` `CACHE_NAME` v180.
+
+## The same Agent twice: one name, two codes ("Soko, Lenka")
+
+Reported by a second Handler trying the app: two Agents named "Soko,
+Lenka" for player "Zuzu", one with its clearance briefing accepted and
+one without. Read-only look at the live records: `characters/SOKO-HUBK`
+created 16:22, its Agent File auto-created 16:25, briefing accepted
+16:28; `characters/SOKO-GDBQ` created 16:30 with identical contents
+except for import-time bond IDs (timestamped 16:22 and 16:30) -- the
+same character imported twice, the second time on a blank sheet
+(another device, or after + New Recruit). A blank sheet always mints a
+new code in `ensureCloudCode()`, and nothing compared it with what the
+player already had. This is the same class as the two earlier
+duplicate-code fixes above ("Update Brief", "Open Agent File"), which
+each closed one caller; this closes it where every new code is made.
+A code minted on the page is now checked (after an import lands, and
+when a typed name is finished) against this device's roster and the
+player's Agents on file; if one has the same name the sheet asks
+"Update <CODE>" / "Keep both". Update saves the sheet onto the existing
+Agent, moves a briefing armed for the extra code onto it, and sends the
+extra code to Recently Deleted (restorable by the Handler for 24 hours).
+`dgConfirm()` takes optional button labels. New
+`test_import_same_agent_twice_offers_update`. `sw.js` `CACHE_NAME`
+v181. The existing pair needs tidying by hand: delete SOKO-GDBQ in
+A-Cell (it's the copy without the accepted briefing).
+
+## A-Cell Sheet: Agent Code and Created columns; KIA Agents out of initiative
+
+Requests from the Handler, alongside the duplicate-Agent fix:
+- **Sheet tab columns.** Agent Code and Created are now columns; HP and
+  SAN are gone (the KIA badge by the name still reads HP). There was no
+  creation date anywhere in the data, and the Firebase web SDK doesn't
+  expose a document's `createTime` -- the Firestore REST API does, and
+  `characters/` and `briefs/` are public-read, so the Sheet reads both
+  collections' `createTime` once per load (codes only, via a field mask)
+  and shows the earlier of the two; a dash until it arrives or if it
+  can't be read. A **Last Updated** column (asked for right after) uses
+  the same read: the later `updateTime` of the sheet and the Agent File,
+  falling back to the sheet's own `updated_at` until it arrives.
+  `test_acell_sheet` covers the columns and both dates.
+- **KIA Agents take no more turns.** An Agent whose saved sheet is at
+  0 HP or below is left out of the Cell Dashboard's Initiative Order
+  (A-Cell) and the Live Play initiative row (`stats/lp-initiative.js`),
+  including the player's own Agent; the row hides when no living
+  teammate is left. `test_acell_play` and `test_lp_initiative_order`
+  check it. `sw.js` `CACHE_NAME` v183.
+
+## Adding a Bond in play needed "Fix a Character Creation Mistake"
+
+Found at the table (2026-10-05): a player gaining a new Bond mid-session
+had to open the settings and switch on "Fix a Character Creation
+Mistake", because once an Agent is committed the whole Bond generator,
+New Empty Bond included, is hidden (`body.agent-committed` in
+`stats/styles.css`). That hiding is by design (the generator is
+creation-time clutter); the gap was that it took the only plain "add a
+Bond" button with it. Now:
+- **Edit mode:** `+ Add Bond` under the Bonds list (`#cs-add-bond-btn`),
+  always shown; the generator stays hidden for a committed Agent.
+- **Live Play:** `+ Add Bond` under the Bonds table switches to Edit mode
+  with a blank Bond and the cursor in its name (`dgAddBond()` in
+  `stats/scripts.js`).
+- **Agent File** (Agent Hub's paper and the notebook's quick look):
+  `+ Add Bond` opens the sheet as `stats/index.html?load=CODE&add_bond=1`,
+  which does the same once the Agent has loaded and then drops
+  `add_bond` from the address so a reload doesn't add another. The
+  Bond is still written by the sheet itself -- not from the Agent File
+  straight into `characters/{code}` -- because the sheet saves its whole
+  Bond list at once and would overwrite a Bond added behind its back.
+New `test_add_bond_in_play`. `sw.js` `CACHE_NAME` v185.

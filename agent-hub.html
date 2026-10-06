@@ -1510,6 +1510,8 @@
           physical: AS.physical(brief, sheet.physical),
           cellName: cell ? (cell.name || cell.cell_id) : '', members, opsHtml,
           incursion: AS.incursionText(charDoc, state),
+          // Opens the sheet in Edit mode with a blank Bond ready (stats/cloud-sync.js).
+          addBondHtml: state ? `<a class="as-add-bond" href="stats/index.html?load=${encodeURIComponent(a.code)}&add_bond=1">+ Add Bond</a>` : '',
           emptySheetHtml: state ? '' : '<p class="as-text as-k" style="margin-top:12px">No character sheet yet — Play builds one.</p>'
         });
         AS.wireRolls(out);

@@ -220,40 +220,177 @@
       // tap, and each element's own creation, which only ever happens
       // from a live snapshot after the widget's already been interacted
       // with once) is a reasonable place to nudge it awake.
-      if (audioCtx.state === 'suspended') audioCtx.resume().catch(function () { /* best effort */ });
+      if (audioCtx.state !== 'running') {
+        var resumed = audioCtx.resume();
+        if (resumed && resumed.then) resumed.then(wireLiveElements_, function () { /* best effort */ });
+      }
     } catch (e) { return null; }
     return audioCtx;
   }
   // Any tap or key on the page counts as the gesture iOS needs: create
-  // or resume the context then, so the next sound can use the gain node
-  // (the radio's own buttons aren't the only thing players touch).
-  ['pointerdown', 'touchend', 'keydown', 'click'].forEach(function (t) {
-    document.addEventListener(t, function () {
-      if (!audioCtx || audioCtx.state !== 'running') ensureAudioCtx_();
-    }, { capture: true, passive: true });
-  });
+  // or resume the context then (so sounds can use the gain node -- the
+  // radio's own buttons aren't the only thing players touch), unlock
+  // spare <audio> elements for the next tracks and sound effects, and
+  // retry anything the browser refused to start without a tap.
+  // pointerdown only wakes the context: Safari doesn't count it as the
+  // gesture media playback needs, touchend/click/keydown it does.
+  function onTap_(e) {
+    if (!audioCtx || audioCtx.state !== 'running') ensureAudioCtx_();
+    if (e.type === 'pointerdown') return;
+    topUpAudioPool_();
+    retryBlockedPlays_();
+    setTimeout(wireLiveElements_, 0);
+  }
+  // In the app shell (hub.html) this widget lives in the outer page while
+  // the sheet, Agent Hub and A-Cell load in #dg-shell-content -- where
+  // nearly every tap happens, and a tap in a frame never reaches the
+  // outer document's listeners. So listen in same-origin frames too
+  // (re-hooked on every load); the tap's permission to play sound
+  // carries up to this page (HTML user activation reaches ancestors).
+  function hookTaps_(doc) {
+    if (!doc || doc.__dgRadioTaps) return;
+    doc.__dgRadioTaps = true;
+    ['pointerdown', 'touchend', 'keydown', 'click'].forEach(function (t) {
+      doc.addEventListener(t, onTap_, { capture: true, passive: true });
+    });
+    var hookFrame = function (f) {
+      if (f.__dgRadioTapsFrame) return;
+      f.__dgRadioTapsFrame = true;
+      var hookNow = function () { try { hookTaps_(f.contentDocument); } catch (e) { /* cross-origin: not ours */ } };
+      f.addEventListener('load', hookNow);
+      hookNow();
+    };
+    Array.prototype.forEach.call(doc.querySelectorAll('iframe'), hookFrame);
+    if (window.MutationObserver && doc.documentElement) {
+      new MutationObserver(function (muts) {
+        muts.forEach(function (m) {
+          Array.prototype.forEach.call(m.addedNodes, function (n) {
+            if (n.nodeType !== 1) return;
+            if (n.tagName === 'IFRAME') hookFrame(n);
+            else if (n.querySelector && n.querySelector('iframe')) Array.prototype.forEach.call(n.querySelectorAll('iframe'), hookFrame);
+          });
+        });
+      }).observe(doc.documentElement, { childList: true, subtree: true });
+    }
+  }
+  hookTaps_(document);
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible' && audioCtx && audioCtx.state !== 'running') {
-      audioCtx.resume().catch(function () { /* needs a tap; the listener above has it */ });
+      var resumed = audioCtx.resume();
+      if (resumed && resumed.then) resumed.then(wireLiveElements_, function () { /* needs a tap; the listener above has it */ });
     }
   });
-  // cb(true) once the context is running, cb(false) if it isn't within
-  // `ms` (e.g. no gesture yet) -- the caller then plays without it.
-  function whenCtxRunning_(ms, cb) {
-    var ctx = ensureAudioCtx_();
-    if (!ctx) { cb(false); return; }
-    if (ctx.state === 'running') { cb(true); return; }
-    var done = false;
-    var finish = function (ok) { if (!done) { done = true; cb(ok); } };
-    setTimeout(function () { finish(false); }, ms);
-    try {
-      ctx.resume().then(function () { finish(ctx.state === 'running'); }, function () { finish(false); });
-    } catch (e) { finish(false); }
+
+  /* ── Unlocked <audio> elements (iOS) ──────────────────────────────
+     Safari lets an <audio> element start playing on its own only after
+     that same element was started (or loaded) inside a tap. The widget
+     used to build a fresh element for every track and every sound
+     effect, so on an iPhone/iPad each song change sat silent behind the
+     Resume button and sound effects never played at all. Now every tap
+     unlocks a few spare elements (a muted, 10 ms silent clip played
+     inside the tap -- the same trick audio libraries such as howler.js
+     use), tracks/ambience/stingers take one of those, and a finished one
+     goes back to the spares instead of being thrown away. An element
+     already wired into the gain node stays wired (Web Audio can't undo
+     that), so it is only reused for files the gain node can hear
+     (same-origin, or a host that sent CORS headers) while the context
+     is running. ── */
+  var SILENT_WAV_ = 'data:audio/wav;base64,UklGRnQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVAAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==';
+  var POOL_SIZE_ = 6;
+  var spareAudio = [];      // unlocked, never wired to Web Audio
+  var spareWiredAudio = []; // unlocked, already wired to a gain node
+  function resetAudioEl_(el) {
+    try { el.pause(); } catch (e) { /* already gone */ }
+    try { el.removeAttribute('src'); el.load(); } catch (e) { /* already gone */ }
+    el.removeAttribute('id');
+    el.removeAttribute('crossorigin');
+    el.loop = false;
+    el.muted = false;
+    el.volume = 1;
+    if (el.parentNode) el.parentNode.removeChild(el);
   }
-  // Wires one <audio> element through a GainNode. Can only ever be
-  // called once per element (a second call on the same node throws) --
-  // safe here because every call site is right after that exact
-  // element is freshly created. Returns null (caller falls back to the
+  function topUpAudioPool_() {
+    while (spareAudio.length < POOL_SIZE_) {
+      var el = document.createElement('audio');
+      el._dgOff = [];
+      spareAudio.push(el);
+      try {
+        el.muted = true;
+        el.src = SILENT_WAV_;
+        var p = el.play();
+        if (p && p.then) {
+          (function (a) {
+            var done = function () { if (!a._dgInUse) resetAudioEl_(a); };
+            p.then(done, done);
+          })(el);
+        } else {
+          resetAudioEl_(el);
+        }
+      } catch (e) { /* still usable, just maybe not unlocked */ }
+    }
+  }
+  // wireable: this file can go through the gain node (same origin, or a
+  // host that answered the CORS probe).
+  function takeAudioEl_(wireable) {
+    var el = null;
+    if (wireable && audioCtx && audioCtx.state === 'running') el = spareWiredAudio.shift() || null;
+    if (!el) el = spareAudio.shift() || null;
+    if (el) { resetAudioEl_(el); } else { el = document.createElement('audio'); }
+    el._dgOff = [];
+    el._dgInUse = true;
+    return el;
+  }
+  // addEventListener that releaseAudioEl_() undoes -- a reused element
+  // must not carry the last track's 'pause'/'ended'/'loadedmetadata'
+  // handlers into the next one.
+  function listen_(el, type, fn, opts) {
+    el.addEventListener(type, fn, opts);
+    (el._dgOff = el._dgOff || []).push([type, fn, opts]);
+  }
+  function releaseAudioEl_(el) {
+    if (!el) return;
+    (el._dgOff || []).forEach(function (l) { el.removeEventListener(l[0], l[1], l[2]); });
+    el._dgOff = [];
+    el._dgInUse = false;
+    blockedPlays = blockedPlays.filter(function (b) { return b.el !== el; });
+    resetAudioEl_(el);
+    var pool = el._dgGain ? spareWiredAudio : spareAudio;
+    if (pool.length < POOL_SIZE_ * 2) pool.push(el);
+  }
+  // play() the browser refused (no tap yet): try again on the next tap
+  // anywhere on the page, inside that tap.
+  var blockedPlays = [];
+  function retryOnTap_(el, fn) {
+    blockedPlays = blockedPlays.filter(function (b) { return b.el !== el; });
+    blockedPlays.push({ el: el, fn: fn });
+  }
+  function retryBlockedPlays_() {
+    var list = blockedPlays;
+    blockedPlays = [];
+    list.forEach(function (b) { try { b.fn(); } catch (e) { /* best effort */ } });
+  }
+  // Once the context runs, put what's already playing through the gain
+  // node too, so the volume slider works on iOS from the next tap on --
+  // not only for the next track.
+  function wireLiveElements_() {
+    if (!audioCtx || audioCtx.state !== 'running') return;
+    var changed = false;
+    var mainEl = document.getElementById('dg-radio-audio');
+    if (mainEl && trackWireable && !trackGainNode) {
+      trackGainNode = attachGain_(mainEl);
+      if (trackGainNode) { trackRoute = 'webaudio'; changed = true; }
+    }
+    [ambientAudioEls, stingerAudioEls].forEach(function (map) {
+      Object.keys(map).forEach(function (k) {
+        if (!map[k].gain) { map[k].gain = attachGain_(map[k].el); if (map[k].gain) changed = true; }
+      });
+    });
+    if (changed) applyLiveMuteVolume();
+  }
+  // Wires one <audio> element through a GainNode. Web Audio allows that
+  // once per element (a second createMediaElementSource throws), so the
+  // gain node is kept on the element (el._dgGain) and handed back when a
+  // reused element comes through here again. Returns null (caller falls back to the
   // old .volume/.muted path) if Web Audio isn't available at all, or if
   // wiring it up throws for any other reason -- better a listener stuck
   // with the old, known-limited-on-iOS behavior than no audio at all.
@@ -267,12 +404,14 @@
     // wire through the gain node while the context is really running;
     // otherwise play the element directly -- always audible, only its
     // volume is then ignored on iOS.
+    if (el._dgGain) return el._dgGain; // a reused element stays wired
     if (ctx.state !== 'running') return null;
     try {
       var source = ctx.createMediaElementSource(el);
       var gain = ctx.createGain();
       source.connect(gain);
       gain.connect(ctx.destination);
+      el._dgGain = gain;
       return gain;
     } catch (e) { return null; }
   }
@@ -366,6 +505,10 @@
   }
   // Which route the current main track took, for the debug readout.
   var trackRoute = null;
+  // Whether the current main track's file can go through the gain node
+  // (same origin, or a CORS "yes"): wireLiveElements_() wires it as soon
+  // as the AudioContext runs, even mid-track.
+  var trackWireable = false;
   // Bumped by destroyActivePlayers(): a probe answering for a track that
   // has since been replaced must not build its <audio> over the new one.
   var audioBuildSeq = 0;
@@ -525,7 +668,7 @@
       if (then) then();
     }
     if (audioEl.readyState >= 1) { apply(); return; }
-    audioEl.addEventListener('loadedmetadata', apply, { once: true });
+    listen_(audioEl, 'loadedmetadata', apply, { once: true });
   }
 
   function destroyActivePlayers() {
@@ -557,14 +700,15 @@
         // renderEmbed()'s 'audio' branch below), so this is safe to
         // leave set for however long it takes for that to happen.
         intentionalPause = true;
-        oldAudioEl.pause();
-        oldAudioEl.removeAttribute('src');
-        oldAudioEl.load();
+        // Back to the unlocked spares (listeners off, src cleared,
+        // paused) rather than thrown away -- see takeAudioEl_().
+        releaseAudioEl_(oldAudioEl);
       } catch (e) { /* already gone */ }
     }
     currentEmbedKind = null;
     trackGainNode = null;
     trackRoute = null;
+    trackWireable = false;
     audioBuildSeq++;
   }
 
@@ -611,14 +755,15 @@
     Object.keys(ambientAudioEls).forEach(function (id) {
       if (activeIds.indexOf(id) === -1) {
         var entry = ambientAudioEls[id];
-        try { entry.el.pause(); entry.el.src = ''; entry.el.remove(); } catch (e) { /* already gone */ }
+        try { releaseAudioEl_(entry.el); } catch (e) { /* already gone */ }
         delete ambientAudioEls[id];
       }
     });
     activeLayers.forEach(function (layer) {
       var entry = ambientAudioEls[layer.id];
       if (!entry) {
-        var el = document.createElement('audio');
+        // Same-origin file: always fine for the gain node.
+        var el = takeAudioEl_(true);
         el.src = ASSET_BASE_ + 'assets/ambient/' + layer.id + '.mp3';
         el.style.display = 'none';
         document.body.appendChild(el);
@@ -641,11 +786,20 @@
           // first Sound tap) always autoplays; a later mute-button tap
           // just flips .muted on an already-playing element.
           var p = entry.el.play();
-          if (p && p.catch) p.catch(function () { /* best effort -- ambience is cosmetic, no resume affordance needed */ });
+          // No Resume button for ambience: it just starts on the next tap.
+          if (p && p.catch) p.catch(function () {
+            if (ambientAudioEls[layer.id] === entry) retryOnTap_(entry.el, applyState);
+          });
         }
       };
       if (entry.el.readyState >= 1) applyState();
-      else entry.el.addEventListener('loadedmetadata', applyState, { once: true });
+      else {
+        listen_(entry.el, 'loadedmetadata', applyState, { once: true });
+        // iOS loads nothing into an element no tap has unlocked yet.
+        retryOnTap_(entry.el, function () {
+          if (ambientAudioEls[layer.id] === entry && entry.el.readyState < 1) applyState();
+        });
+      }
     });
   }
 
@@ -668,7 +822,7 @@
     Object.keys(stingerAudioEls).forEach(function (firedAtKey) {
       if (activeFiredAts.indexOf(Number(firedAtKey)) === -1) {
         var oldEntry = stingerAudioEls[firedAtKey];
-        try { oldEntry.el.pause(); oldEntry.el.src = ''; oldEntry.el.remove(); } catch (e) { /* already gone */ }
+        try { releaseAudioEl_(oldEntry.el); } catch (e) { /* already gone */ }
         delete stingerAudioEls[firedAtKey];
       }
     });
@@ -689,15 +843,15 @@
 
       var entry = stingerAudioEls[s.fired_at];
       if (!entry) {
-        var el = document.createElement('audio');
+        var el = takeAudioEl_(true);
         el.src = ASSET_BASE_ + 'assets/stingers/' + s.id + '.mp3';
         el.style.display = 'none';
         document.body.appendChild(el);
         var stingerGain = attachGain_(el);
         setAudioLevel_(el, stingerGain, mixedVolumePercent_('ambient'), isMuted());
-        el.addEventListener('ended', function () {
-          try { el.remove(); } catch (e) { /* already gone */ }
-          delete stingerAudioEls[s.fired_at];
+        listen_(el, 'ended', function () {
+          if (stingerAudioEls[s.fired_at] && stingerAudioEls[s.fired_at].el === el) delete stingerAudioEls[s.fired_at];
+          releaseAudioEl_(el);
         });
         entry = { el: el, key: '', gain: stingerGain };
         stingerAudioEls[s.fired_at] = entry;
@@ -712,19 +866,33 @@
           entry.el.pause();
         } else {
           var p = entry.el.play();
-          // A blocked/failed fire just silently doesn't play -- there's
-          // no sensible "tap to resume" affordance for a one-shot
-          // that's already fired and gone by the time anyone could tap
-          // it (a looped one will simply pick up on the next snapshot
-          // that actually changes something).
+          // Blocked (no tap yet on this device): a looped one starts on
+          // the next tap anywhere, a one-shot only if that tap comes
+          // before it would have finished anyway. No Resume button for
+          // these -- taken spare elements are unlocked, so this is rare.
           if (p && p.catch) p.catch(function () {
-            try { entry.el.remove(); } catch (e2) { /* already gone */ }
-            delete stingerAudioEls[s.fired_at];
+            if (stingerAudioEls[s.fired_at] !== entry) return;
+            retryOnTap_(entry.el, function () {
+              if (stingerAudioEls[s.fired_at] !== entry) return;
+              var d = entry.el.duration;
+              if (!s.loop && isFinite(d) && d > 0 && instanceElapsedSeconds_(s) >= d) {
+                delete stingerAudioEls[s.fired_at];
+                releaseAudioEl_(entry.el);
+                return;
+              }
+              applyState();
+            });
           });
         }
       };
       if (entry.el.readyState >= 1) applyState();
-      else entry.el.addEventListener('loadedmetadata', applyState, { once: true });
+      else {
+        listen_(entry.el, 'loadedmetadata', applyState, { once: true });
+        // iOS loads nothing into an element no tap has unlocked yet.
+        retryOnTap_(entry.el, function () {
+          if (stingerAudioEls[s.fired_at] === entry && entry.el.readyState < 1) applyState();
+        });
+      }
     });
   }
 
@@ -1405,17 +1573,27 @@
       var buildAudio = function (route) {
         if (buildSeq !== audioBuildSeq) return; // this track was replaced while we asked
         var askCors = route === 'webaudio' && !isSameOrigin_(np.track_url);
-        wrap.innerHTML = '<audio id="dg-radio-audio"' + (askCors ? ' crossorigin="anonymous"' : '') +
-          ' src="' + escapeHtml(np.track_url) + '"></audio>';
-        var audioEl = document.getElementById('dg-radio-audio');
-        trackGainNode = route === 'webaudio' ? attachGain_(audioEl) : null;
+        // An element a tap already unlocked (takeAudioEl_), so a new
+        // track starts by itself on iOS. crossorigin follows the CORS
+        // answer alone, not whether the AudioContext runs yet: then a
+        // later tap can still wire this same track into the gain node
+        // (wireLiveElements_) and the volume slider starts working.
+        releaseAudioEl_(document.getElementById('dg-radio-audio'));
+        wrap.innerHTML = '';
+        var audioEl = takeAudioEl_(route === 'webaudio');
+        audioEl.id = 'dg-radio-audio';
+        if (askCors) audioEl.setAttribute('crossorigin', 'anonymous');
+        audioEl.src = np.track_url;
+        wrap.appendChild(audioEl);
+        trackWireable = route === 'webaudio';
+        trackGainNode = trackWireable ? attachGain_(audioEl) : null;
         trackRoute = trackGainNode ? 'webaudio' : 'element';
         setAudioLevel_(audioEl, trackGainNode, mixedVolumePercent_('track'), muted);
         audioEl.loop = loop;
         refreshDebugLine_();
         // A bad/unreachable src (e.g. a broken Drive hotlink) otherwise
         // fails completely silently -- no sound, no visible sign why.
-        audioEl.addEventListener('error', function () {
+        listen_(audioEl, 'error', function () {
           // Asked for CORS on the strength of a remembered "yes" that no
           // longer holds (the bucket's CORS config was removed, or this
           // host answers differently per file): forget it and play the
@@ -1438,7 +1616,7 @@
         // intentionalPause first) -- any OTHER 'pause' event is the
         // browser's own doing, so resume immediately rather than leaving
         // the table silently stuck.
-        audioEl.addEventListener('pause', function () {
+        listen_(audioEl, 'pause', function () {
           if (!intentionalPause && !audioEl.ended) {
             // The same WebKit interruption that fires this unprompted
             // pause can also silently evict the element's buffered audio,
@@ -1451,15 +1629,10 @@
             // real Handler pause would have set intentionalPause first, so
             // reaching here with .paused true would be a stale reference,
             // hence the belt-and-suspenders check.
-            function resumeAfterInterruption() {
-              var p = audioEl.play();
-              if (p && p.catch) {
-                // Genuinely can't resume without a fresh user gesture --
-                // same fallback the initial play() attempt below already
-                // offers, not a new failure mode.
-                p.catch(function () { resumeBtn.style.display = 'block'; });
-              }
-            }
+            // Genuinely can't resume without a fresh user gesture --
+            // same fallback the initial play() attempt below already
+            // offers, not a new failure mode.
+            function resumeAfterInterruption() { startPlaying(); }
             if (window._dgRadioLast && !window._dgRadioLast.paused) {
               seekAudioToLive_(audioEl, window._dgRadioLast, resumeAfterInterruption);
             } else {
@@ -1467,21 +1640,45 @@
             }
           }
         });
-        seekAudioToLive_(audioEl, np, function () {
-          if (!isPaused) {
-            var playPromise = audioEl.play();
-            if (playPromise && playPromise.catch) {
-              playPromise.catch(function () { resumeBtn.style.display = 'block'; });
+        var showResume = function (on) {
+          var b = document.getElementById('dg-radio-resume');
+          if (b) b.style.display = on ? 'block' : 'none';
+        };
+        // Refused without a tap: show Resume, and also start on the next
+        // tap anywhere on the page (inside that tap, so iOS allows it).
+        var blocked = function () {
+          if (buildSeq !== audioBuildSeq) return;
+          showResume(true);
+          retryOnTap_(audioEl, function () {
+            if (buildSeq !== audioBuildSeq || intentionalPause || !audioEl.paused) return;
+            if (audioEl.readyState >= 1) {
+              seekAudioToLive_(audioEl, window._dgRadioLast || np, startPlaying);
+            } else {
+              // Nothing loaded yet (iOS loads nothing before a tap): play
+              // now, while the tap counts, and seek once it knows its length.
+              startPlaying();
+              seekAudioToLive_(audioEl, window._dgRadioLast || np, null);
             }
+          });
+        };
+        var startPlaying = function () {
+          var playPromise = audioEl.play();
+          if (playPromise && playPromise.then) {
+            playPromise.then(function () { if (buildSeq === audioBuildSeq) showResume(false); }, blocked);
           }
+        };
+        seekAudioToLive_(audioEl, np, function () {
+          if (!isPaused) startPlaying();
         });
+        // iOS may not even load an element no tap has unlocked, so the
+        // seek above can wait forever with no refusal to react to.
+        if (!isPaused) {
+          setTimeout(function () {
+            if (buildSeq === audioBuildSeq && !intentionalPause && audioEl.paused && audioEl.readyState < 1) blocked();
+          }, 4000);
+        }
       };
-      mainTrackRoute_(np.track_url, function (route) {
-        if (route !== 'webaudio') { buildAudio(route); return; }
-        // CORS allows the gain node -- but only use it if the context
-        // runs (Tune In's own tap wakes it; give that a moment).
-        whenCtxRunning_(500, function (ok) { buildAudio(ok ? 'webaudio' : 'element'); });
-      });
+      mainTrackRoute_(np.track_url, buildAudio);
     } else {
       // Generic embeddable URL, neither YouTube, SoundCloud, nor direct
       // audio -- no API, cross-origin, never controllable from here
