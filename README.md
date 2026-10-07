@@ -43,8 +43,9 @@ Design and every feedback round: `docs/field-notes-widget/SPEC.md`.
 **iPhone/iPad:** Safari plays nothing until the player has tapped the page once. After that first tap, new tracks and sound effects start by themselves, because the widget reuses `<audio>` elements a tap has unlocked. Any later tap anywhere, including inside the hub shell's content frame, also starts anything that was refused and routes the sound through Web Audio, the only volume control iOS honours. (See `BUGFIXES.md`, "Table Radio silent after the Storage CORS config".)
 
 A soundboard on A-Cell's Music tab layers **7 ambient loops** (toggled
-on/off per channel) and **18 one-shot stingers** (grouped Screams &
-Laughter / Impacts & Weather / Bells, Rhythm & Texture) under the main
+on/off per channel) and **24 one-shot stingers** (grouped Screams &
+Laughter / Impacts & Weather / Bells, Rhythm & Texture / Creatures &
+Voices) under the main
 track — real recorded SFX (`assets/ambient/`, `assets/stingers/`), both
 mirrored onto the same `radio/{channel}` Firestore doc Now Playing
 lives on so every tuned-in player's widget picks them up instantly. A
@@ -150,11 +151,11 @@ Everything else in this repo — the Agent Hub and Agent File, A-Cell, the Field
 
 ## QA
 
-There's an automated smoke-test suite in `test/` (135 test functions, 1,000+ individual checks) that exercises every page — `index.html`, `agent-hub.html` (each Agent's whole file), the Field Notes notebook and its clearance briefing, `field-id.html`, `stats/`, `a-cell.html`, `dg-id-creator.html`, `notes/` — including the Field IDs Fabricator, Export to Agent File, the Agent Roster, the Evidence Locker (folders, Released toggle, per-Agent restriction), Notes (Timeline, Pin, Tags, cross-tab search), Table Radio (main track, ambient layers, stingers), Cloud Save/Load by Code, and full offline/PWA behavior, with Firestore faked out in-page for every test page and every production Google/Firebase endpoint blocked, so it never touches real data (see `install_notes_firestore_stub`/`push_firestore_snapshot` in `test/run_tests.py` for the Firestore side). See `test/README.md`.
+There's an automated smoke-test suite in `test/` (136 test functions, 1,000+ individual checks) that exercises every page — `index.html`, `agent-hub.html` (each Agent's whole file), the Field Notes notebook and its clearance briefing, `field-id.html`, `stats/`, `a-cell.html`, `dg-id-creator.html`, `notes/` — including the Field IDs Fabricator, Export to Agent File, the Agent Roster, the Evidence Locker (folders, Released toggle, per-Agent restriction), Notes (Timeline, Pin, Tags, cross-tab search), Table Radio (main track, ambient layers, stingers), Cloud Save/Load by Code, and full offline/PWA behavior, with Firestore faked out in-page for every test page and every production Google/Firebase endpoint blocked, so it never touches real data (see `install_notes_firestore_stub`/`push_firestore_snapshot` in `test/run_tests.py` for the Firestore side). See `test/README.md`.
 
 ## Versioning & CI
 
-Releases are semver-tagged on `main` (`vMAJOR.MINOR.PATCH`); the current one is **v2.3.0** (PR #62: A-Cell Session Notes, full-body Outfit Plates); v2.2.0 (PR #61) was iOS radio autoplay and volume, `+ Add Bond` in play, A-Cell Sheet columns and one Agent per name; v2.1.0 was the Field Notes notebook (PRs #56–#58). A GitHub
+Releases are semver-tagged on `main` (`vMAJOR.MINOR.PATCH`); the current one is **v2.4.0** (PR #63: Session Notes pages uploaded and opened inside A-Cell, ticks remembered); v2.3.0 (PR #62) added A-Cell Session Notes and full-body Outfit Plates; v2.2.0 (PR #61) was iOS radio autoplay and volume, `+ Add Bond` in play, A-Cell Sheet columns and one Agent per name; v2.1.0 was the Field Notes notebook (PRs #56–#58). A GitHub
 Actions workflow runs the QA suite above plus a check that `sw.js`'s
 `CACHE_NAME` gets bumped alongside any shell-file change, on every push
 to `main`/`firebase-migration` (not on pull requests or session

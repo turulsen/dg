@@ -63,8 +63,13 @@ consumer depending on that history being versioned. v2.0.0 was cut
 reserved for it: the Google Sheet is retired and every page reads and
 writes Firestore directly (Code.gs v97 is left serving only the Drive
 image proxy for old `gdrive:` links; going live took the one-time steps
-in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v2.3.0**
-(2026-10-06) is PR #62:
+in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v2.4.0**
+(2026-10-06) is PR #63: Session Notes takes an uploaded `.html` page per
+language and opens it inside A-Cell (sealed frame), with the page's
+ticks and notes saved to Firestore so they follow the Handler between
+devices. Backend: `firestore.rules` changed (`session_notes/{document=**}`,
+needs a rules deploy); Code.gs and functions unchanged. Shell cache
+`dg-hub-shell-v188`. **v2.3.0** (2026-10-06) is PR #62:
 - A-Cell's Session Notes tab (the Handler's links to each scenario's
   prep pages, Hungarian and/or English, in Firestore `session_notes/`,
   Handler-only);
