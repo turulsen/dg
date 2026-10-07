@@ -4336,7 +4336,8 @@ const STINGER_IDS = [
   'scream-01', 'scream-02', 'scream-03', 'manic-laugh-01', 'manic-laugh-02', 'manic-laugh-03',
   'evil-baby-cry', 'evil-baby-sound', 'impact-ghost', 'impact-metal', 'impact-slam',
   'thunder-01', 'thunder-02', 'bells-distant', 'bells-vinyl',
-  'hell-drum-loop-01', 'hell-drum-loop-02', 'weird-choir-vinyl-crackle'
+  'hell-drum-loop-01', 'hell-drum-loop-02', 'weird-choir-vinyl-crackle',
+  'cat-whimper-01', 'cat-whimper-02', 'dog-whimper', 'child-laugh-01', 'child-laugh-02', 'whispers-dark'
 ];
 // Recent stinger fires kept per channel as an ARRAY, not a single scalar
 // (the abandoned branch's design) -- so a second stinger fired shortly

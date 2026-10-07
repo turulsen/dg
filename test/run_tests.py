@@ -4522,6 +4522,30 @@ def test_acell_evidence_create_verify_retries(p):
     page.close()
     return errs
 
+def test_stinger_files_exist(p):
+    """Every stinger on A-Cell's soundboard (STINGER_GROUPS) has its
+    assets/stingers/<id>.mp3, served as audio, and every file there is on
+    the soundboard -- a stinger added to one but not the other would play
+    silence for the whole table, or never be fireable."""
+    import re
+    src = open(os.path.join(HERE, "..", "a-cell.html"), encoding="utf-8").read()
+    block = src[src.index("var STINGER_GROUPS"):]
+    block = block[:block.index("];") + 2]
+    ids = re.findall(r"id: '([a-z0-9-]+)'", block)
+    files = sorted(f[:-4] for f in os.listdir(os.path.join(HERE, "..", "assets", "stingers")) if f.endswith(".mp3"))
+    record("radio", "every soundboard stinger has its .mp3, and every .mp3 is on the soundboard",
+           sorted(ids) == files and len(ids) == len(set(ids)), f"board-only={sorted(set(ids) - set(files))} file-only={sorted(set(files) - set(ids))}")
+    page = p.new_page()
+    bad = []
+    for sid in ids:
+        r = page.request.get(f"{BASE}/assets/stingers/{sid}.mp3")
+        head = r.body()[:3]
+        if r.status != 200 or not (head == b"ID3" or head[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2")):
+            bad.append(f"{sid}:{r.status}:{head!r}")
+    record("radio", "each stinger file is served and is an MP3 (iOS-safe)", not bad, ", ".join(bad))
+    page.close()
+    return []
+
 def test_acell_session_notes(p):
     """A-Cell's Session Notes tab: the Handler's links to a scenario's
     prep pages (Hungarian and/or English), kept in Firestore
@@ -12741,6 +12765,7 @@ def main():
 
         safe(test_acell_sheet, browser, area="acell")
         safe(test_acell_session_notes, browser, area="acell-notes")
+        safe(test_stinger_files_exist, browser, area="radio")
 
         safe(test_acell_music, browser, area="acell")
 

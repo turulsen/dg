@@ -473,9 +473,13 @@ timestamp every device reads. A small persistent widget
   the main track changes, and can be paused, seeked, or un-looped
   independently via A-Cell's Active Sounds panel (below) without
   turning it fully off.
-- **Stingers** — 18 one-shot sounds (`assets/stingers/*.mp3`, same
-  pack), grouped in the soundboard as Screams & Laughter, Impacts &
-  Weather, and Bells/Rhythm/Texture. Firing one appends a fresh
+- **Stingers** — 24 one-shot sounds (`assets/stingers/*.mp3`, same
+  pack, plus six added 2026-10-07: cat and dog whimpers, two child
+  laughs and whispers in the dark), grouped in the soundboard as
+  Screams & Laughter, Impacts & Weather, Bells/Rhythm/Texture, and
+  Creatures & Voices. A new one needs its file in `assets/stingers/`
+  (MP3: iOS doesn't reliably play Ogg) and an entry in A-Cell's
+  `STINGER_GROUPS`; `test_stinger_files_exist` checks the two match. Firing one appends a fresh
   instance (`id, fired_at, started_at, paused, paused_at, loop`) to an
   array of recent fires (non-looping ones trimmed to the last 5; a
   stinger a Handler turns into a loop is exempt from that trim and
