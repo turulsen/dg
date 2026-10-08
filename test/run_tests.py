@@ -10293,6 +10293,53 @@ def test_add_bond_in_play(p):
     page.close()
     return errs_all
 
+def test_agent_file_san_roll_and_member_cards(p):
+    """The Agent File (the notebook's quick look and Agent Hub's paper):
+    a Roll SAN button by the key stats (d100 against current SAN), and each
+    Cell member shown with their photo; tapping a member opens their card
+    with photo, name, cover and HP/WP/SAN/BP."""
+    errs_all = []
+    png = ("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
+    docs = _field_notes_docs()
+    stats = {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 11, "CHA": 13}
+    docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, {"v": 1, "bio": {"name": "Mara Voss", "player_name": "fn tester"},
+        "stats": stats, "csStats": stats, "derived": {"hp": 11, "wp": 11, "san": 55, "bp": 44}}, "fn tester")
+    docs[f"briefs/{FN_MATE}"]["face_plate_url"] = png
+    docs[f"characters/{FN_MATE}"] = character_doc(FN_MATE, {"v": 1, "bio": {"name": "Tom Hale"},
+        "derived": {"hp": 9, "wp": 10, "san": 45, "bp": 36}}, "x")
+    extra = "localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE
+    spy = "() => { window.__rolls = []; const r = window.dgDice.roll; window.dgDice.roll = function (t, l) { window.__rolls.push([t, l]); return r.apply(this, arguments); }; }"
+
+    def check(page, root, where):
+        # The notebook keeps more than one copy of a page; use the one on screen.
+        paper = page.locator(root + " .as-paper").filter(visible=True).first
+        paper.locator(".as-san-roll").wait_for(timeout=15000)
+        paper.locator(".as-mthumb img").first.wait_for(timeout=8000)
+        record("agent-file", where + ": a Cell member shows with their photo",
+               paper.locator(".as-mthumb img").first.get_attribute("src") == png, "")
+        paper.locator(".as-mbtn").first.click()
+        card = paper.locator(".as-mcard").inner_text()
+        record("agent-file", where + ": tapping a member opens their card (name, cover, HP/WP/SAN/BP)",
+               "Tom Hale" in card and "TIN CUP" in card and all(x in card for x in ("9", "10", "45", "36"))
+               and paper.locator(".as-mcard img").count() == 1, card)
+        paper.locator(".as-mbtn").first.click()
+        record("agent-file", where + ": tapping again closes it", paper.locator(".as-mcard").is_hidden(), "")
+        # Last: in the notebook a roll turns to the Dice Roller page.
+        page.evaluate(spy)
+        paper.locator(".as-san-roll").click()
+        rolls = page.evaluate("() => window.__rolls")
+        record("agent-file", where + ": Roll SAN by the key stats rolls d100 against current SAN",
+               rolls[:1] == [[55, "SAN"]], str(rolls))
+
+    page, errs = _field_notes_page(p, docs=docs, extra_init=extra)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    check(page, f"#ah-sheet-{FN_CODE}", "Agent Hub")
+    page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+    check(page, "#fn-veil", "Field Notes")
+    errs_all.extend(errs)
+    page.close()
+    return errs_all
+
 def test_mobile_notes_fullscreen(p):
     """Split View doesn't fit a phone-width screen, so mobile gets a
     separate control instead: a Notes widget (dgNotesFullscreen in
@@ -12982,6 +13029,7 @@ def main():
         safe(test_split_view_retired, browser, area="notebook")
         safe(test_cell_members_by_name_and_kia, browser, area="hub")
         safe(test_add_bond_in_play, browser, area="bonds")
+        safe(test_agent_file_san_roll_and_member_cards, browser, area="agent-file")
 
 
         safe(test_mobile_notes_fullscreen, browser, area="stats")

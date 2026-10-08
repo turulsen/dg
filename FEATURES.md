@@ -299,6 +299,22 @@ forwards old addresses (`?code=` -> the Agent's tab, `#cover` -> their
 photos, `#ids` -> the Fabricator). What follows describes the pieces as
 they were built on the portal; they work the same in their new place.
 
+**The Agent File paper's vitals and Cell (unreleased, next after v2.5.0).**
+The same paper is the notebook's Agent File page and Agent Hub's tab, so
+both get these. Next to HP/WP/SAN/BP sits **Roll SAN**: a d100 Sanity
+roll against current SAN through the Dice Roller (in the notebook it turns
+to the Dice page, as every roll on that page does). Each Cell member
+shows with their photo (`dgStore.mainPhoto` of their brief, else its
+`face_plate_url`). Tapping a member opens a card under the list: a
+larger polaroid, name (KIA stamped), cover name, and their current
+HP/WP/SAN/BP from `characters/{code}` `derived`; tap again to close.
+`AS.cellMember` returns `photo` and `derived`; `AS.wireMembers(el,
+members, loadPhoto)` fills the thumbnails and opens the card, each page
+passing its own photo loader (the notebook's `setImage`, Agent Hub's
+`loadFacePlate`, or the URL as is for `https:`/`data:`). The listener is
+wired once per element and reads the latest members on each tap, since a
+page can redraw the paper as more data arrives.
+
 **What it's for:** the actual in-fiction "dossier" for an Agent — a
 physical description brief (Profiling), an AI-assisted portrait-prompt
 generator, and the assembled read-only Agent File view a player

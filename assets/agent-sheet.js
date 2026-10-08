@@ -173,12 +173,19 @@
     var st = null;
     try { st = charDoc && charDoc.character_json ? JSON.parse(charDoc.character_json) : null; } catch (e) { st = null; }
     var sheetName = st && st.bio && String(st.bio.name || '').trim();
-    var hp = st && st.derived ? st.derived.hp : null;
+    var dv = (st && st.derived) || {};
+    var hp = dv.hp;
+    // The member's main photo (Active Era's Face Plate) and key derived
+    // attributes, for the member card on the paper (wireMembers below).
+    var photo = '';
+    try { photo = window.dgStore && window.dgStore.mainPhoto ? window.dgStore.mainPhoto(b) : (b.face_plate_url || ''); } catch (e) { photo = ''; }
     return {
       code: code,
       name: String(b.char_name || '').trim() || sheetName || ((cellNames || {})[code]) || code,
       codename: b.codename || '',
-      kia: typeof hp === 'number' && hp <= 0
+      kia: typeof hp === 'number' && hp <= 0,
+      photo: photo || '',
+      derived: { hp: dv.hp, wp: dv.wp, san: dv.san, bp: dv.bp }
     };
   }
 
@@ -194,7 +201,10 @@
         (opts.photoHtml ? '<div class="as-photo">' + opts.photoHtml + '</div>' : '') +
         '<div class="as-id"><div class="as-name">' + esc(sheet.name || opts.fallbackName || 'Unnamed Agent') + '</div>' +
           '<div class="as-sub">' + esc(opts.subtitle || [sheet.profession, sheet.employer].filter(Boolean).join(' · ')) + '</div></div>' +
-        (sheet.stats ? '<div class="as-vitals">' + vital('HP', d.hp) + vital('WP', d.wp) + vital('SAN', d.san) + vital('BP', d.bp) + '</div>' : '') +
+        (sheet.stats ? '<div class="as-vitals">' + vital('HP', d.hp) + vital('WP', d.wp) + vital('SAN', d.san) + vital('BP', d.bp) +
+          // A Sanity roll: d100 against current SAN, same dice as every other roll here.
+          (typeof d.san === 'number' && d.san > 0 ? '<button type="button" class="as-roll as-san-roll" data-roll="' + d.san + '" data-label="SAN">Roll SAN</button>' : '') +
+          '</div>' : '') +
       '</div>';
     var actions = opts.actionsHtml ? '<div class="as-actions">' + opts.actionsHtml + '</div>' : '';
     var phys = opts.physical || sheet.physical;
@@ -204,11 +214,15 @@
         '<div class="as-sec"><div class="as-sec-hd">Cell</div>' +
           (opts.cellName
             ? '<div class="as-cell"><b>' + esc(opts.cellName) + '</b>' +
-              '<ul class="as-members">' + ((opts.members || []).length ? opts.members.map(function (m) {
-                return '<li' + (m.kia ? ' class="as-kia"' : '') + '><span class="as-mname">' + esc(m.name) + '</span>' +
+              '<ul class="as-members">' + ((opts.members || []).length ? opts.members.map(function (m, i) {
+                // Photo + name; tapping opens their card (wireMembers).
+                return '<li' + (m.kia ? ' class="as-kia"' : '') + '><button type="button" class="as-mbtn" data-member="' + i + '" aria-expanded="false">' +
+                  '<span class="as-mthumb" data-as-mphoto="' + i + '"></span>' +
+                  '<span class="as-mname">' + esc(m.name) + '</span>' +
                   (m.codename ? ' <span class="as-k">“' + esc(m.codename) + '”</span>' : '') +
-                  (m.kia ? ' <span class="as-stamp">KIA</span>' : '') + '</li>';
-              }).join('') : '<li class="as-k">Only you so far.</li>') + '</ul></div>'
+                  (m.kia ? ' <span class="as-stamp">KIA</span>' : '') + '</button></li>';
+              }).join('') : '<li class="as-k">Only you so far.</li>') + '</ul>' +
+              '<div class="as-mcard" hidden></div></div>'
             : '<p class="as-text as-k">Not assigned to a Cell yet — your Handler does that.</p>') +
           (opts.opsHtml || '') +
         '</div>' +
@@ -267,6 +281,49 @@
     });
   }
 
+  // Cell members on the paper: fill their thumbnails, and open a member's
+  // card (photo, name, cover, HP/WP/SAN/BP) on a tap -- tap again, or
+  // another member, to switch. loadPhoto(el, src) is the page's own photo
+  // loader (it knows the legacy gdrive: proxy); without one, plain links
+  // still show.
+  function wireMembers(el, members, loadPhoto) {
+    if (!el || !members || !members.length) return;
+    var load = function (box, src) {
+      if (!box || !src) return;
+      if (loadPhoto) { loadPhoto(box, src); return; }
+      if (/^(https?:|data:)/.test(src)) box.innerHTML = '<img src="' + esc(src) + '" alt="">';
+    };
+    Array.prototype.forEach.call(el.querySelectorAll('[data-as-mphoto]'), function (box) {
+      var m = members[+box.getAttribute('data-as-mphoto')];
+      if (m && m.photo) load(box, m.photo);
+    });
+    // The page may redraw the paper into the same element (more data
+    // arriving): keep the latest members, and look the card up per tap.
+    el._asMembers = members;
+    el._asLoadPhoto = load;
+    if (el._asMembersWired) return;
+    el._asMembersWired = true;
+    el.addEventListener('click', function (e) {
+      var b = e.target.closest('.as-mbtn');
+      var card = el.querySelector('.as-mcard');
+      if (!b || !card || !el.contains(b)) return;
+      var i = +b.getAttribute('data-member');
+      var wasOpen = b.getAttribute('aria-expanded') === 'true';
+      Array.prototype.forEach.call(el.querySelectorAll('.as-mbtn'), function (x) { x.setAttribute('aria-expanded', 'false'); });
+      if (wasOpen) { card.hidden = true; return; }
+      var m = (el._asMembers || [])[i] || {}, d = m.derived || {};
+      load = el._asLoadPhoto || load;
+      var v = function (l, x) { return '<div class="as-vital"><div class="as-lbl">' + l + '</div><div class="as-val">' + esc(x == null || x === '' ? '—' : x) + '</div></div>'; };
+      card.innerHTML = '<div class="as-mcard-photo" data-as-mcard-photo>' + (m.photo ? '' : '<span class="as-k">No photo yet</span>') + '</div>' +
+        '<div class="as-mcard-id"><div class="as-mcard-name">' + esc(m.name) + (m.kia ? ' <span class="as-stamp">KIA</span>' : '') + '</div>' +
+        (m.codename ? '<div class="as-k">Cover “' + esc(m.codename) + '”</div>' : '') +
+        '<div class="as-vitals">' + v('HP', d.hp) + v('WP', d.wp) + v('SAN', d.san) + v('BP', d.bp) + '</div></div>';
+      if (m.photo) load(card.querySelector('[data-as-mcard-photo]'), m.photo);
+      card.hidden = false;
+      b.setAttribute('aria-expanded', 'true');
+    });
+  }
+
   // The photo block: the Face Plate, or a yellow "Take Photo" post-it
   // covering the whole Polaroid when there isn't one yet.
   function photoHtml(takePhotoAttr) {
@@ -287,6 +344,6 @@
 
   window.dgAgentSheet = {
     fromState: fromState, fromPregen: fromPregen, pregenToState: pregenToState,
-    physical: physical, cellMember: cellMember, render: render, wireRolls: wireRolls, photoHtml: photoHtml, esc: esc, incursionText: incursionText
+    physical: physical, cellMember: cellMember, render: render, wireRolls: wireRolls, wireMembers: wireMembers, photoHtml: photoHtml, esc: esc, incursionText: incursionText
   };
 })();

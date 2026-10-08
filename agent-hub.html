@@ -1515,6 +1515,14 @@
           emptySheetHtml: state ? '' : '<p class="as-text as-k" style="margin-top:12px">No character sheet yet — Play builds one.</p>'
         });
         AS.wireRolls(out);
+        // Member photos: loadFacePlate() writes into an element by id
+        // (and knows the legacy gdrive: proxy).
+        let mph = 0;
+        if (AS.wireMembers) AS.wireMembers(out, members, (box, src) => {
+          if (/^(https?:|data:)/.test(src)) { box.innerHTML = '<img src="' + escapeHtml(src) + '" alt="">'; return; }
+          box.id = box.id || ('ah-mph-' + a.code.replace(/[^a-zA-Z0-9]/g, '_') + '-' + (++mph));
+          loadFacePlate(a.code, src, box.id);
+        });
       });
     }).catch(err => console.error('agent-hub: could not build the Agent File paper for ' + a.code, err));
   }

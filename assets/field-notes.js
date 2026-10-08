@@ -855,6 +855,7 @@
         var f = faceUrl(a);
         if (f && ph) { ph.classList.add('as-has-photo'); var holder = document.createElement('div'); holder.style.cssText = 'position:absolute;inset:0'; ph.appendChild(holder); setImage(holder, f); }
         AS.wireRolls(body);
+        if (AS.wireMembers) AS.wireMembers(body, data.members || [], setImage);
         body.querySelector('[data-go="play"]').addEventListener('click', function () { navigate(url('stats/index.html?load=' + encodeURIComponent(a.code))); });
         body.querySelector('[data-go="file"]').addEventListener('click', function () { navigate(url('agent-hub.html?code=' + encodeURIComponent(a.code))); });
         var addBond = body.querySelector('[data-go="addbond"]');
