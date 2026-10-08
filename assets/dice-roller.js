@@ -386,7 +386,25 @@
         // A table's shared tablet can still hold the Handler's A-Cell
         // session in this tab -- the Friendly page is never the Handler's feed.
         if (isFriendly()) return false;
-        try { return !!sessionStorage.getItem(ACELL_SESSION_KEY); } catch (e) { return false; }
+        let signedIn = false;
+        try { signedIn = !!sessionStorage.getItem(ACELL_SESSION_KEY); } catch (e) { return false; }
+        return signedIn && onHandlerPage();
+    }
+    // The Handler's feed (every Cell's rolls, no dice) belongs on A-Cell
+    // only. A tab that once logged into A-Cell used to turn the roller
+    // into it on every page: on a shared tablet the players' own Field
+    // Notes then showed all tables' rolls and no dice. Anywhere else
+    // the roller is the current Agent's, Handler session or not. In the
+    // Hub shell this copy lives in the outer page, so it asks what the
+    // content frame is showing (the mode watcher re-asks as it changes).
+    function onHandlerPage() {
+        const isACell = p => /(^|\/)a-cell\.html$/.test(p || '');
+        if (isACell(location.pathname)) return true;
+        try {
+            const f = document.getElementById('dg-shell-content');
+            if (f && f.contentWindow) return isACell(f.contentWindow.location.pathname);
+        } catch (e) { /* not same-origin: not ours */ }
+        return false;
     }
 
     // A-Cell's real login flow is: the page loads (this panel builds
@@ -759,12 +777,56 @@
     // has a handful of Cells, not thousands; cells/{cellId} is public
     // read (see firestore.rules) so no extra auth is needed for this.
     let _cellNameMap = null;
+    let _cellHandlerMap = {};
+    /* Which Cells this device's Handler feed shows. The Handler password is
+       shared, so with two Handlers running separate tables (each with
+       their own Cells) every Handler -- and a shared table tablet logged
+       into A-Cell -- saw every table's rolls. A filter in the feed's
+       header picks All Cells, one Handler's Cells (the Cell's own
+       `handler` field), or a single Cell; remembered on this device. */
+    const CELL_FILTER_KEY = 'dg_dice_cell_filter';
+    let _handlerEntries = [];
+    function readCellFilter() {
+        try { return localStorage.getItem(CELL_FILTER_KEY) || ''; } catch (e) { return ''; }
+    }
+    function rollMatchesFilter(cellId, filter) {
+        if (!filter) return true;
+        if (filter.indexOf('c:') === 0) return cellId === filter.slice(2);
+        if (filter.indexOf('h:') === 0) return (_cellHandlerMap[cellId] || '') === filter.slice(2);
+        return true;
+    }
+    function renderHandlerHistory() {
+        const filter = readCellFilter();
+        renderHistoryList(_handlerEntries.filter(e => rollMatchesFilter(e.__cellId, filter)).slice(0, HISTORY_LIMIT));
+    }
+    function buildCellFilter() {
+        const sel = _e && _e.cellFilter;
+        if (!sel) return;
+        const handlers = [];
+        Object.keys(_cellHandlerMap).forEach(id => {
+            const h = _cellHandlerMap[id];
+            if (h && handlers.indexOf(h) === -1) handlers.push(h);
+        });
+        handlers.sort((a, b) => a.localeCompare(b));
+        const cells = Object.keys(_cellNameMap || {}).sort((a, b) => String(_cellNameMap[a]).localeCompare(String(_cellNameMap[b])));
+        const opt = (v, t) => '<option value="' + escapeHtml(v) + '">' + escapeHtml(t) + '</option>';
+        sel.innerHTML = opt('', 'Live rolls: all Cells') +
+            (handlers.length > 1 ? '<optgroup label="By Handler">' + handlers.map(h => opt('h:' + h, h + '\u2019s Cells')).join('') + '</optgroup>' : '') +
+            '<optgroup label="One Cell">' + cells.map(id => opt('c:' + id, _cellNameMap[id])).join('') + '</optgroup>';
+        const want = readCellFilter();
+        sel.value = want;
+        if (sel.value !== want) sel.value = ''; // a Cell or Handler that no longer exists
+        sel.style.display = '';
+    }
     function startHandlerHistoryFeed() {
         stopHistoryFeed();
         const db = window.firebase.firestore();
         const attachListener = () => {
+            buildCellFilter();
+            // Read more than one screenful, so a filtered view still fills up
+            // when other tables are rolling a lot.
             _historyUnsubscribe = db.collectionGroup('rolls')
-                .orderBy('created_at', 'desc').limit(HISTORY_LIMIT)
+                .orderBy('created_at', 'desc').limit(HISTORY_LIMIT * 6)
                 .onSnapshot(snap => {
                     const entries = [];
                     snap.forEach(doc => {
@@ -773,15 +835,21 @@
                         // solo:<code> is the internal pseudo-Cell for an Agent in
                         // no Cell -- show that, not the raw id.
                         data.cellName = (_cellNameMap && _cellNameMap[cellId]) || (cellId.indexOf('solo:') === 0 ? 'No Cell' : cellId);
+                        data.__cellId = cellId;
                         entries.push(data);
                     });
-                    renderHistoryList(entries);
+                    _handlerEntries = entries;
+                    renderHandlerHistory();
                 }, err => showHistoryError('Live Rolls feed error', err));
         };
         if (_cellNameMap) { attachListener(); return; }
         db.collection('cells').get().then(snap => {
             _cellNameMap = {};
-            snap.forEach(doc => { _cellNameMap[doc.id] = doc.data().name || doc.id; });
+            _cellHandlerMap = {};
+            snap.forEach(doc => {
+                _cellNameMap[doc.id] = doc.data().name || doc.id;
+                _cellHandlerMap[doc.id] = String(doc.data().handler || '').trim();
+            });
             attachListener();
         }).catch(() => { _cellNameMap = {}; attachListener(); });
     }
@@ -1267,6 +1335,9 @@
             // precedent, styled to match the rest of this panel) ──
             '#dr-history-section{border-top:1px solid rgba(128,128,128,.25);padding-top:8px;display:flex;flex-direction:column;gap:5px;}',
             '#dr-history-head{font-size:9px;letter-spacing:.12em;opacity:.5;text-transform:uppercase;text-align:center;}',
+            '#dr-cell-filter{width:100%;padding:4px 6px;font-size:10px;letter-spacing:.06em;background:transparent;color:inherit;',
+            'border:1px solid rgba(128,128,128,.35);border-radius:4px;font-family:inherit;cursor:pointer;}',
+            '#dr-cell-filter option,#dr-cell-filter optgroup{color:#111;background:#fff;}',
             '#dr-handler-gate{width:100%;padding:6px;font-size:10px;letter-spacing:.06em;background:transparent;',
             'border:1px solid rgba(128,128,128,.35);border-radius:4px;color:inherit;font-family:inherit;cursor:pointer;}',
             '#dr-handler-gate:hover{border-color:var(--dg-widget-accent);}',
@@ -1342,7 +1413,7 @@
   <div id="dr-hint">Click a skill value to roll D% · type 2d6+3 for custom rolls</div>
   `}
   <div id="dr-history-section">
-    <div id="dr-history-head">${handlerMode ? 'LIVE ROLLS -- ALL CELLS' : 'RECENT ROLLS'}</div>
+    ${handlerMode ? '<select id="dr-cell-filter" aria-label="Which Cells\u2019 rolls to show" style="display:none;"></select>' : '<div id="dr-history-head">RECENT ROLLS</div>'}
     ${handlerMode ? '<button type="button" id="dr-handler-gate" style="display:none;">Show Live Rolls (Handler)</button>' : ''}
     <div id="dr-history-list"><div class="dr-history-empty">${handlerMode ? '' : 'No rolls yet.'}</div></div>
   </div>
@@ -1374,6 +1445,7 @@
             dieBtns: panel.querySelectorAll('.dr-die-btn'),
             faceDivs: panel.querySelectorAll('.dr-die-face'),
             historyList: $('dr-history-list'),
+            cellFilter: $('dr-cell-filter'),
             handlerGate: $('dr-handler-gate'),
         };
 
@@ -1383,6 +1455,12 @@
             _e.dieBtns.forEach(b => b.addEventListener('click', () => selectDie(b.dataset.die)));
             $('dr-roll-btn').addEventListener('click', rollManual);
             _e.manualEl.addEventListener('keydown', e => { if (e.key === 'Enter') rollManual(); });
+        }
+        if (_e.cellFilter) {
+            _e.cellFilter.addEventListener('change', () => {
+                try { localStorage.setItem(CELL_FILTER_KEY, _e.cellFilter.value); } catch (e) { /* this view only */ }
+                renderHandlerHistory();
+            });
         }
         if (_e.handlerGate) {
             _e.handlerGate.addEventListener('click', () => {

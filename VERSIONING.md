@@ -63,8 +63,13 @@ consumer depending on that history being versioned. v2.0.0 was cut
 reserved for it: the Google Sheet is retired and every page reads and
 writes Firestore directly (Code.gs v97 is left serving only the Drive
 image proxy for old `gdrive:` links; going live took the one-time steps
-in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v2.4.0**
-(2026-10-06) is PR #63: Session Notes takes an uploaded `.html` page per
+in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v2.4.1**
+(2026-10-07) is PR #64: six new soundboard stingers in a Creatures &
+Voices group (cat and dog whimpers, two child laughs, whispers in the
+dark; Ogg converted to MP3 for iOS), and `test_stinger_files_exist`.
+No backend change; shell cache `dg-hub-shell-v189`. Its first CI run
+hung in "Install Playwright's Chromium" (runner setup, before any test)
+and was cancelled; a fresh run passed. **v2.4.0** (2026-10-06) is PR #63: Session Notes takes an uploaded `.html` page per
 language and opens it inside A-Cell (sealed frame), with the page's
 ticks and notes saved to Firestore so they follow the Handler between
 devices. Backend: `firestore.rules` changed (`session_notes/{document=**}`,
