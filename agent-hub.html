@@ -273,6 +273,11 @@
     width:88px; height:88px; flex-shrink:0; object-fit:cover; border:1px solid var(--rule); display:block;
     cursor:zoom-in;
   }
+  .ah-handout-pdf{
+    flex-shrink:0; align-self:flex-start; font-family:'Special Elite',monospace; font-size:12px; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--ink); border:1px solid var(--rule); padding:8px 12px; text-decoration:none;
+  }
+  .ah-handout-pdf:hover{ background:rgba(28,22,8,.06); }
   .ah-handout-text{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.7; flex:1; min-width:0; white-space:pre-wrap; }
 
   /* A thumbnail is fine for "there's a photo here" but useless for
@@ -399,6 +404,7 @@
 
 <script src="assets/agent-code.js"></script>
 <script src="assets/dg-store.js"></script>
+<script src="assets/evidence-viewer.js"></script>
 <script src="assets/appearance-gen.js"></script>
 <script src="assets/agent-file.js"></script>
 <script>
@@ -490,9 +496,10 @@
       if (json && json.status === 'OK' && json.dataUri) {
         const wrap = document.getElementById(wrapElId);
         if (wrap) {
+          if (isEvidencePdf(json.dataUri)) { wrap.innerHTML = handoutPdfLink(json.dataUri); return; }
           wrap.innerHTML = '<img class="ah-handout-photo" src="' + json.dataUri + '" alt="" data-lightbox-src="' + json.dataUri + '">';
           const img = wrap.querySelector('img');
-          if (img) img.addEventListener('click', () => openHandoutLightbox(img.dataset.lightboxSrc));
+          if (img) img.addEventListener('click', () => openHandoutLightbox(img.dataset.lightboxSrc, wrap.dataset.title));
         }
       }
     };
@@ -1155,9 +1162,12 @@
       // item with a raw data URI still on file renders directly.
       const photoDriveId = extractDriveId(h.photo);
       const photoElId = 'ah-handout-photo-' + code + '-' + h.evidence_id;
+      // A PDF is a link Safari's own viewer opens (an <img> of one
+      // just showed broken); a photo opens in the zoomable viewer.
       const photo = h.photo
-        ? (photoDriveId ? `<div class="ah-handout-photo-wrap" id="${photoElId}"></div>`
-                        : `<img class="ah-handout-photo" src="${h.photo}" alt="" data-lightbox-src="${h.photo}">`)
+        ? (photoDriveId ? `<div class="ah-handout-photo-wrap" id="${photoElId}" data-title="${escapeHtml(h.title)}"></div>`
+          : isEvidencePdf(h.photo) ? handoutPdfLink(h.photo)
+          : `<img class="ah-handout-photo" src="${escapeHtml(h.photo)}" alt="" data-lightbox-src="${escapeHtml(h.photo)}" data-title="${escapeHtml(h.title)}">`)
         : '';
       const myNote = notesByHandoutId[h.evidence_id] || '';
       return `<div class="ah-handout-card">
@@ -1177,7 +1187,7 @@
       </div>`;
     }).join('');
     el.querySelectorAll('[data-lightbox-src]').forEach(img => {
-      img.addEventListener('click', () => openHandoutLightbox(img.dataset.lightboxSrc));
+      img.addEventListener('click', () => openHandoutLightbox(img.dataset.lightboxSrc, img.dataset.title));
     });
     shown.forEach(h => {
       if (extractDriveId(h.photo)) loadHandoutPhoto(h.evidence_id, h.photo, 'ah-handout-photo-' + code + '-' + h.evidence_id);
@@ -1212,9 +1222,21 @@
     }).catch(() => { if (statusEl) statusEl.textContent = 'Could not save (offline?)'; });
   }
 
+  function isEvidencePdf(src) {
+    if (window.dgEvidenceViewer) return window.dgEvidenceViewer.isPdf(src);
+    return /^data:application\/pdf|\.pdf(\?|#|$)/i.test(String(src || ''));
+  }
+  function handoutPdfLink(src) {
+    const href = window.dgEvidenceViewer ? window.dgEvidenceViewer.pdfHref(src) : src;
+    return '<a class="ah-handout-pdf" href="' + escapeHtml(href) + '" target="_blank" rel="noopener">Open PDF</a>';
+  }
+
   // A thumbnail is fine for "there's a photo here" but useless for
-  // actually reading a filed document -- opens it at real size.
-  function openHandoutLightbox(src) {
+  // actually reading a filed document -- opens it full-screen, with
+  // pinch/double-tap zoom (assets/evidence-viewer.js; the plain overlay
+  // below is the fallback if that file didn't load).
+  function openHandoutLightbox(src, title) {
+    if (window.dgEvidenceViewer) { window.dgEvidenceViewer.open(src, title || 'Evidence'); return; }
     const overlay = document.createElement('div');
     overlay.className = 'ah-handout-lightbox';
     overlay.innerHTML = `<button type="button" class="ah-handout-lightbox-close">Close</button><img src="${src}" alt="">`;

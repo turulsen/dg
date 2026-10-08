@@ -382,6 +382,23 @@
     return sheetLibPromise;
   }
 
+  // The Evidence viewer (assets/evidence-viewer.js): a filed photo
+  // full-screen with its own pinch-zoom, and PDF links Safari can open.
+  // Notes (framed in the notebook) opens it on this page when it's here.
+  var viewerPromise = null;
+  function ensureViewer() {
+    if (window.dgEvidenceViewer) return Promise.resolve(window.dgEvidenceViewer);
+    if (viewerPromise) return viewerPromise;
+    viewerPromise = new Promise(function (resolve) {
+      var s = document.createElement('script');
+      s.src = url('assets/evidence-viewer.js');
+      s.onload = function () { resolve(window.dgEvidenceViewer); };
+      s.onerror = function () { viewerPromise = null; resolve(null); };
+      document.head.appendChild(s);
+    });
+    return viewerPromise;
+  }
+
   // The Field ID card templates (assets/field-id-cards.js), shared with
   // the Agent File's Field IDs tab.
   var idCardsPromise = null;
@@ -941,6 +958,7 @@
       needAgent(host.firstChild, 'Notes');
       return;
     }
+    ensureViewer();
     var src = url('notes/index.html?embed=spread&code=' + encodeURIComponent(a.code));
     var f = host.querySelector('iframe');
     if (!f || f.getAttribute('data-src') !== src) {
@@ -1088,7 +1106,8 @@
       window.dgStore.signInAgent(a.code).then(function () {
         return Promise.all([
           window.firebase.firestore().collection('evidence').where('visible_to', 'array-contains-any', [a.code, 'ALL']).get(),
-          window.dgStore.listHandoutNotes(a.code).catch(function () { return []; })
+          window.dgStore.listHandoutNotes(a.code).catch(function () { return []; }),
+          ensureViewer()
         ]);
       }).then(function (res) {
         if (!state.open || state.view !== 'evidence') return;
@@ -1124,16 +1143,45 @@
                 '<textarea class="fn-input" rows="2" placeholder="Only you see these." data-ev="' + esc(h.evidence_id) + '">' + esc(notes[h.evidence_id] || '') + '</textarea>' +
                 '<div class="fn-remark-status" data-ev-status="' + esc(h.evidence_id) + '"></div></div></div>';
           }).join('') : '<p class="fn-muted">Nothing filed under this Operation.</p>';
+          // A photo opens full-screen with its own zoom on a tap; a PDF
+          // is a link Safari's PDF viewer opens. (Both used to be a bare
+          // <img>: a PDF showed broken, a photo couldn't be enlarged.)
+          var V = res[2];
+          var pdfLink = function (src) {
+            return '<a class="fn-btn fn-ink fn-small fn-ev-pdf" href="' + esc(V ? V.pdfHref(src) : src) + '" target="_blank" rel="noopener">Open PDF</a>';
+          };
+          var isPdf = function (src) { return V ? V.isPdf(src) : /^data:application\/pdf|\.pdf(\?|#|$)/i.test(String(src || '')); };
           shown.forEach(function (h) {
             if (!h.photo) return;
             var holder = list.querySelector('[data-ev-photo="' + h.evidence_id + '"]');
             if (!holder) return;
+            if (isPdf(h.photo)) { holder.innerHTML = pdfLink(h.photo); return; }
             var box = document.createElement('div');
             holder.appendChild(box);
-            var mo = new MutationObserver(function () { var img = box.querySelector('img'); if (img) { img.className = 'fn-ev-photo'; mo.disconnect(); } });
+            var dress = function () {
+              var img = box.querySelector('img');
+              if (!img) return false;
+              // A legacy Drive link only says it was a PDF once it resolves.
+              if (isPdf(img.getAttribute('src'))) { box.innerHTML = pdfLink(img.getAttribute('src')); return true; }
+              img.className = 'fn-ev-photo';
+              box.className = 'fn-ev-zoom';
+              box.setAttribute('role', 'button');
+              box.setAttribute('tabindex', '0');
+              box.setAttribute('aria-label', 'Enlarge: ' + (h.title || 'evidence photo'));
+              if (!box.querySelector('.fn-ev-zoom-hint')) box.insertAdjacentHTML('beforeend', '<span class="fn-ev-zoom-hint">Tap to enlarge</span>');
+              return true;
+            };
+            var mo = new MutationObserver(function () { if (dress()) mo.disconnect(); });
             mo.observe(box, { childList: true });
             setImage(box, h.photo);
-            var img0 = box.querySelector('img'); if (img0) img0.className = 'fn-ev-photo';
+            if (dress()) mo.disconnect();
+            var openIt = function () {
+              var img = box.querySelector('img');
+              if (!img) return;
+              ensureViewer().then(function (v) { if (v) v.open(img.getAttribute('src'), h.title || 'Evidence'); });
+            };
+            box.addEventListener('click', openIt);
+            box.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openIt(); } });
           });
           var timers = {};
           Array.prototype.forEach.call(list.querySelectorAll('textarea[data-ev]'), function (ta) {
