@@ -392,8 +392,9 @@ purge of anything left in Recently Deleted), plus a separate listing
 for Agent-File-only entries (a Profiling brief with no character sheet
 yet) that the main delete list can't see.
 
-**Handler's Live Rolls** (the dice panel on A-Cell, and on any page in
-a tab logged into A-Cell): every Cell's rolls, via a
+**Handler's Live Rolls** (the dice panel on A-Cell only -- including A-Cell
+inside the Hub shell; on every other page the roller is the current
+Agent's, even in a tab logged into A-Cell): every Cell's rolls, via a
 `collectionGroup('rolls')` listener. A filter at the top narrows it to
 one Handler's Cells (the Cell's `handler` field) or a single Cell,
 filtered on the device and remembered there (`dg_dice_cell_filter`).

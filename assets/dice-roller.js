@@ -386,7 +386,25 @@
         // A table's shared tablet can still hold the Handler's A-Cell
         // session in this tab -- the Friendly page is never the Handler's feed.
         if (isFriendly()) return false;
-        try { return !!sessionStorage.getItem(ACELL_SESSION_KEY); } catch (e) { return false; }
+        let signedIn = false;
+        try { signedIn = !!sessionStorage.getItem(ACELL_SESSION_KEY); } catch (e) { return false; }
+        return signedIn && onHandlerPage();
+    }
+    // The Handler's feed (every Cell's rolls, no dice) belongs on A-Cell
+    // only. A tab that once logged into A-Cell used to turn the roller
+    // into it on every page: on a shared tablet the players' own Field
+    // Notes then showed all tables' rolls and no dice. Anywhere else
+    // the roller is the current Agent's, Handler session or not. In the
+    // Hub shell this copy lives in the outer page, so it asks what the
+    // content frame is showing (the mode watcher re-asks as it changes).
+    function onHandlerPage() {
+        const isACell = p => /(^|\/)a-cell\.html$/.test(p || '');
+        if (isACell(location.pathname)) return true;
+        try {
+            const f = document.getElementById('dg-shell-content');
+            if (f && f.contentWindow) return isACell(f.contentWindow.location.pathname);
+        } catch (e) { /* not same-origin: not ours */ }
+        return false;
     }
 
     // A-Cell's real login flow is: the page loads (this panel builds

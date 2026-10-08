@@ -4604,6 +4604,45 @@ def test_handler_rolls_filter_by_cell(p):
     page.close()
     return errs
 
+def test_player_pages_never_get_the_handler_feed(p):
+    """A shared tablet where the Handler logged into A-Cell, then players
+    played on: the tab's A-Cell session turned the Dice Roller into the
+    Handler's feed on every page, so the players' own Field Notes showed
+    every table's rolls (and no dice). Handler mode is now A-Cell's only:
+    on any other page the roller is the current Agent's, with their own
+    Cell's feed -- in the Hub shell too, switching as the content changes."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.add_init_script("""try {
+        sessionStorage.setItem('dg_boot_seen', '1'); sessionStorage.setItem('dg_acell_unlocked', '1');
+        sessionStorage.setItem('dg_acell_pw', 'testpw'); localStorage.setItem('dg_cover_identity', 'Ann');
+        localStorage.setItem('dg_stats_cloud_code', 'AGEN-1');
+    } catch (e) {}""")
+    install_firestore_backend(page, {
+        "cells/c_imp": {"name": "Impossible", "handler": "Gergo", "member_codes": ["AGEN-1"]},
+        "cells/c_s16": {"name": "Sweet 16", "handler": "Zuzu", "member_codes": ["SAND-1"]},
+        "characters/AGEN-1": character_doc("AGEN-1", {"v": 1, "bio": {"name": "Ann Agent"}}),
+    })
+    listens = lambda: page.evaluate("() => (window.__dgFirestoreListeners || []).filter(l => !l.isDoc).map(l => l.path)")
+    page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
+    _pump_until(page, lambda: "dice_rolls/c_imp/rolls" in listens() or "group:rolls" in listens(), timeout_ms=12000)
+    page.wait_for_timeout(500)
+    ls = listens()
+    record("dice", "a tab logged into A-Cell, on a player page in the Hub: the roller reads the Agent's own Cell, not every Cell",
+           "dice_rolls/c_imp/rolls" in ls and "group:rolls" not in ls, str(ls))
+    record("dice", "...and players can roll (dice shown, no Handler-only filter)",
+           page.locator("#dr-panel .dr-die-btn").count() > 0 and page.locator("#dr-cell-filter").count() == 0, "")
+    page.evaluate("() => { document.getElementById('dg-shell-content').src = 'a-cell.html'; }")
+    _pump_until(page, lambda: "group:rolls" in listens(), timeout_ms=10000)
+    record("dice", "switching the Hub to A-Cell turns it into the Handler's feed (all Cells, with the filter)",
+           "group:rolls" in listens() and page.locator("#dr-cell-filter").count() == 1, str(listens()))
+    record("dice", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_acell_session_notes(p):
     """A-Cell's Session Notes tab: the Handler's links to a scenario's
     prep pages (Hungarian and/or English), kept in Firestore
@@ -12823,6 +12862,7 @@ def main():
 
         safe(test_acell_sheet, browser, area="acell")
         safe(test_acell_session_notes, browser, area="acell-notes")
+        safe(test_player_pages_never_get_the_handler_feed, browser, area="dice")
         safe(test_handler_rolls_filter_by_cell, browser, area="dice")
         safe(test_stinger_files_exist, browser, area="radio")
 

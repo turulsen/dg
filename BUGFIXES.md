@@ -6350,3 +6350,20 @@ while other tables roll. It is a view filter, not access control:
 separating Handlers for real needs per-Handler sign-in (Issue #5).
 
 New `test_handler_rolls_filter_by_cell`. `sw.js` `CACHE_NAME` v190.
+
+**The players' side, found next (same day):** the players saw it in
+**their own Field Notes**, which the Handler filter alone doesn't
+explain. The cause: `isHandlerContext()` turned the roller into the
+Handler's feed on every page of a tab holding an A-Cell session
+(`dg_acell_pw`), not just on A-Cell; only the Friendly page was
+excluded. On a shared tablet, where the Handler logged into A-Cell and
+players then played on Agent Hub or their sheet, the notebook's Dice
+page showed every table's rolls, and no dice at all (Handler mode has
+none). Now the roller is the Handler's on A-Cell only (`onHandlerPage()`):
+- standalone, by the page's path;
+- in the Hub shell, by what `#dg-shell-content` is showing; the existing
+  mode watcher flips it as the Handler moves between A-Cell and the
+  player pages.
+Everywhere else it's the current Agent's, with their own Cell's feed.
+New `test_player_pages_never_get_the_handler_feed` (fails on the old
+code, 2 of 4 checks). `sw.js` `CACHE_NAME` v191.
