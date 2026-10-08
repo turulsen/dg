@@ -6327,3 +6327,26 @@ Bond" button with it. Now:
   straight into `characters/{code}` -- because the sheet saves its whole
   Bond list at once and would overwrite a Bond added behind its back.
 New `test_add_bond_in_play`. `sw.js` `CACHE_NAME` v185.
+
+## Handlers saw every table's rolls ("Cells can see other cells rolls")
+
+Reported 2026-10-08, with a second Handler (Zuzu, running "Sweet 16
+Music From a Darkened Room") now using the app alongside the original
+tables. Checked against the live `cells` collection (public read,
+nothing written): every Agent is in exactly one Cell, so a player's own
+feed -- `dice_rolls/{theirCell}/rolls`, Firestore-rule-gated to Cell
+members -- can't show another Cell's rolls. The cross-table view is the
+Handler's Live Rolls. It listens to `collectionGroup('rolls')` across
+every Cell, and the Handler password is shared, so each Handler, and any
+shared table tablet logged into A-Cell, saw every table's rolls mixed
+together.
+
+Fixed in `assets/dice-roller.js`: the Handler feed's header is a filter
+offering All Cells, each Handler's Cells (grouped by the Cell's own
+`handler` field) or one Cell. It's remembered on the device in
+localStorage (`dg_dice_cell_filter`), so each Handler's iPad sets it
+once. It reads 6× the history length so a filtered view still fills up
+while other tables roll. It is a view filter, not access control:
+separating Handlers for real needs per-Handler sign-in (Issue #5).
+
+New `test_handler_rolls_filter_by_cell`. `sw.js` `CACHE_NAME` v190.
