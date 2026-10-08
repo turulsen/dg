@@ -15,6 +15,7 @@
      itself for the full history. -->
 <script src="assets/js-error-banner.js" async></script>
 <script src="assets/incursion.js"></script>
+<script src="assets/disorders.js"></script>
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" type="image/png" href="assets/mars-tech-seal.png">
 <link rel="manifest" href="manifest.json">
@@ -285,6 +286,10 @@
   .pv-bond-row .bs{ font-family:'Courier Prime',monospace; color:var(--ink-3); flex-shrink:0; }
   .pv-empty-note{ font-size:11px; color:var(--ink-3); font-style:italic; font-family:'Courier Prime',monospace; }
   .pv-motivations{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.7; white-space:pre-wrap; }
+  .pv-disorders{ list-style:none; margin:0; padding:0; font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.55; }
+  .pv-disorders li{ padding:3px 0; }
+  .pv-disorders b{ color:var(--ink); }
+  .pv-dis-info{ display:block; font-size:11px; color:var(--ink-3); }
   .pv-incursion{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.7; }
   .pv-inc-by{ font-size:10px; letter-spacing:.06em; color:var(--ink-3, #8a7a5a); }
   .pv-inc-edit{ float:right; font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; background:transparent; border:1px solid currentColor; padding:1px 7px; cursor:pointer; color:inherit; opacity:.75; }
@@ -2794,6 +2799,11 @@
 
   function renderView(code, st) {
     var bio = st.bio || {};
+    // Mental Disorders are their own list (bio.disorders); an older sheet
+    // kept them in the Motivations text, split here for the view.
+    var motDis = Array.isArray(bio.disorders)
+      ? { motivations: bio.motivations || '', disorders: bio.disorders }
+      : (window.dgDisorders ? window.dgDisorders.splitText(bio.motivations || '') : { motivations: bio.motivations || '', disorders: [] });
     var stats = st.csStats || st.stats || {};
     var derived = st.derived || {};
     var skills = st.skills || {};
@@ -2865,8 +2875,15 @@
       '<div class="pv-skills">' + skillsHtml + '</div>' +
       '<div class="pv-sec-hd">Bonds</div>' +
       bondsHtml +
-      '<div class="pv-sec-hd">Motivations &amp; Disorders</div>' +
-      '<div class="pv-motivations">' + (bio.motivations ? escapeHtml(bio.motivations) : '<span class="pv-empty-note">None recorded.</span>') + '</div>' +
+      '<div class="pv-sec-hd">Motivations</div>' +
+      '<div class="pv-motivations">' + (motDis.motivations ? escapeHtml(motDis.motivations) : '<span class="pv-empty-note">None recorded.</span>') + '</div>' +
+      '<div class="pv-sec-hd">Mental Disorders</div>' +
+      (motDis.disorders.length
+        ? '<ul class="pv-disorders">' + motDis.disorders.map(function (d) {
+            var info = window.dgDisorders ? window.dgDisorders.describe(d) : '';
+            return '<li><b>' + escapeHtml(d) + '</b>' + (info ? '<span class="pv-dis-info">' + escapeHtml(info) + '</span>' : '') + '</li>';
+          }).join('') + '</ul>'
+        : '<div class="pv-motivations"><span class="pv-empty-note">None.</span></div>') +
       '<div class="pv-sec-hd">The Incursion <button type="button" class="pv-inc-edit" data-inc-edit="' + escapeHtml(code) + '">Edit</button></div>' +
       '<div class="pv-incursion" id="pv-incursion-' + escapeHtml(code) + '">' + incursionHtml_(st) + '</div>' +
       '<div class="pv-sec-hd">Sanity Adaptation</div>' +

@@ -154,7 +154,8 @@
             setField(form, "6 AGE AND DOB", bio.age);
             setField(form, "7 EDUCATION AND OCCUPATION", bio.education);
             setField(form, "10 PHYSICAL DESCRIPTION", bio.physicalDesc);
-            setField(form, "12 MOTIVATIONS AND MENTAL DISORDERSPSYCHOLOGICAL DATA", bio.motivations);
+            // Box 12 holds both; each disorder on its own "Disorder: …" line.
+            setField(form, "12 MOTIVATIONS AND MENTAL DISORDERSPSYCHOLOGICAL DATA", (window.dgDisorders ? window.dgDisorders.combine(bio.motivations, bio.disorders) : bio.motivations));
 
             // Statistics + distinguishing features
             ["STR", "CON", "DEX", "INT", "POW", "CHA"].forEach(st => {

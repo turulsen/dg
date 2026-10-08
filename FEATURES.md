@@ -131,6 +131,30 @@ the profession (`assets/appearance-gen.js`); loading an Agent brings it
 back from the brief. Finishing the wizard runs the sheet's own export
 (identity, build, outfit), so a new Agent's Agent File is complete.
 
+**Motivations and Mental Disorders, apart (unreleased, next after
+v2.5.0):** the Biography had one free-text box for both. Motivations
+keep that box (`#cs-motivations`, `bio.motivations`); Mental Disorders
+are their own list (`stats/disorders-sheet.js`, the hidden
+`#cs-disorders` -> `bio.disorders`, an array of names). Each row is a
+dropdown of the Rules reference's disorders (`assets/disorders.js`,
+`window.dgDisorders`: the 18 from `rules-reference.html`'s Violence /
+Helplessness / Unnatural tables, each with its kinds, trigger and
+effect, shown under the row) or **Other…** with the Handler's own
+words. Live Play shows and edits the same list under its own MENTAL
+DISORDERS heading. An older save has no `bio.disorders`: on load,
+`splitText()` moves lines marked `Disorder: …` or starting with a known
+disorder's name (or alias: DID, OCD, PTSD spelled out, Claustrophobia…)
+out of Motivations into the list. The printed DD Form 315 (PDF export),
+the Sheets export and the printable sheet still have one box 12 for
+both: `combine()` writes Motivations, then one `Disorder: …` line per
+disorder, so a re-import (PDF, Sheets, Kappa Black, older Foundry)
+splits them again. Foundry: a disorder is a `motivation` item carrying
+it in `system.disorder` (`crossedOut: true`, the motivation it
+replaced), read back the same way. A-Cell's dossier lists them under
+their own heading with each one's trigger. The Random Motivation button
+had pushed the Motivations box under its label at 160px wide in every
+theme; it now sits in the field column.
+
 **The Incursion (unreleased, on `claude/new-session-thjzt6` with the
 Field Notes notebook):** what first brought the Agent to Delta Green,
 part of the Agent the way Motivations are. One module,
@@ -263,6 +287,20 @@ see §12.
 "Restricted to:" line show Agent names, not Agent Codes (Agent File
 name first, then the sheet's, Friendlies as "Friendly: name"); the
 stored value is still the codes.
+
+**Opening an attachment (players; unreleased, next after v2.5.0):** a
+filed photo opens full-screen in `assets/evidence-viewer.js`
+(`window.dgEvidenceViewer.open(src, title)`) wherever a player sees
+Evidence: the notebook's Evidence page ("Tap to enlarge" under the
+photo), Agent Hub's Evidence (the thumbnail) and Notes' evidence modal.
+The viewer zooms the photo itself -- pinch, drag to pan, double-tap or
+double-click, mouse wheel, `+`/`−`/Fit buttons, Escape or Close -- with
+`touch-action:none` on its stage, because pinching the notebook (a
+fixed, scaled overlay) zoomed the whole page around a thumbnail on iOS
+Safari. Framed in the notebook (Notes), it opens on the top page. A PDF
+is never put in an `<img>`: it's an **Open PDF** link (`pdfHref()`: a
+Storage URL as is, a `data:` PDF as a `blob:` URL) that Safari's own PDF
+viewer opens and zooms in a new tab.
 
 **Terminology note:** the UI-visible label is "Evidence," but this
 started life as "Handouts" and some internal names (`HandoutNotes`, a

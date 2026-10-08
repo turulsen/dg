@@ -768,12 +768,21 @@
                                 id="cs-bio-education" value=""></label>
                         <label>Physical Description: <textarea id="cs-physical-desc" autocomplete="off"
                                 placeholder="Physical description of agent"></textarea></label>
-                        <label><span data-tooltip-key="bio_motivations">Motivations and Mental Disorders:</span>
+                        <label><span data-tooltip-key="bio_motivations">Motivations:</span>
                             <button type="button" id="random-motivation-button" onclick="generateRandomMotivation()"
                                 title="Rolls a Motivation on the book's own 1D12 category / 1D10 detail tables and adds it below -- roll again for each of the up to 5 Motivations an Agent can have.">RANDOM
                                 MOTIVATION?</button>
                             <textarea id="cs-motivations" autocomplete="off"
-                                placeholder="You may define up to 5 Motivations — deeply held beliefs, ideals, or drives that keep your agent going. Once per session, acting on a Motivation can restore lost Willpower. When your agent develops a Mental Disorder, it replaces one of their Motivations."></textarea></label>
+                                placeholder="You may define up to 5 Motivations — deeply held beliefs, ideals, or drives that keep your agent going. Once per session, acting on a Motivation can restore lost Willpower. When your agent develops a Mental Disorder, it replaces one of their Motivations: cross it out here and add the disorder below."></textarea></label>
+                        <!-- Mental Disorders: their own list, picked from the Rules
+                             reference's disorders (stats/disorders-sheet.js, kept in
+                             the hidden #cs-disorders as bio.disorders). -->
+                        <div class="cs-disorders" id="cs-disorders-block">
+                            <span class="cs-disorders-hd" data-tooltip-key="bio_motivations">Mental Disorders:</span>
+                            <div id="cs-disorders-list"></div>
+                            <button type="button" class="cs-dis-add" data-dis-add>+ Add Mental Disorder</button>
+                            <input type="hidden" id="cs-disorders" value="">
+                        </div>
                         <label><span data-tooltip-key="bio_personal_details">Personal Details and Notes:</span>
                             <textarea id="cs-personal-details" autocomplete="off"
                                 placeholder="Personal details, notes, and other information about your agent."></textarea></label>
@@ -1135,6 +1144,8 @@
         <script src="sheets-import.js"></script>
         <script src="../assets/incursion.js"></script>
     <script src="incursion-sheet.js"></script>
+    <script src="../assets/disorders.js"></script>
+    <script src="disorders-sheet.js"></script>
     <script src="../assets/appearance-gen.js"></script>
     <script src="appearance-sheet.js"></script>
     <script src="save-load.js"></script>

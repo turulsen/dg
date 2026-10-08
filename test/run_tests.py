@@ -3018,12 +3018,12 @@ def test_agent_hub_handouts(p):
 
     page.click("#ah-handouts-OWEN-CS12 .ah-handout-photo")
     page.wait_for_timeout(200)
-    record("hub", "clicking a handout photo opens it in a full-size lightbox",
-           page.is_visible(".ah-handout-lightbox"), "")
-    page.click(".ah-handout-lightbox-close")
+    record("hub", "clicking a handout photo opens it full-screen in the zoomable Evidence viewer",
+           page.is_visible(".dg-ev-viewer") and "Campaign Wide Notice" in page.inner_text(".dg-ev-viewer .dg-ev-title"), "")
+    page.click(".dg-ev-viewer [data-ev-close]")
     page.wait_for_timeout(200)
-    record("hub", "closing the lightbox hides it again",
-           not page.is_visible(".ah-handout-lightbox"), "")
+    record("hub", "closing the viewer hides it again",
+           not page.is_visible(".dg-ev-viewer"), "")
 
     page.click('.tw[data-tab="PRIY-AN34"]')
     page.wait_for_timeout(150)
@@ -10340,6 +10340,183 @@ def test_agent_file_san_roll_and_member_cards(p):
     page.close()
     return errs_all
 
+def test_evidence_attachments_open_and_zoom(p):
+    """Evidence attachments for players (reported from Safari: couldn't
+    open one, couldn't zoom to read it). In the Field Notes notebook a
+    photo was a fixed-size <img> with nothing to tap and a PDF showed as a
+    broken image. Now a photo opens full-screen in assets/evidence-viewer.js
+    (its own pinch / double-tap / +/- zoom, since pinching the notebook
+    zoomed the whole page instead) and a PDF is a link Safari's PDF viewer
+    opens. Agent Hub's Evidence gets the same."""
+    errs_all = []
+    svg = ("data:image/svg+xml;charset=utf-8," + "%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600'%3E"
+           "%3Crect width='800' height='600' fill='%23c9b98a'/%3E%3C/svg%3E")
+    pdf_url = "https://firebasestorage.googleapis.com/v0/b/x/o/evidence%2Fev_fn_pdf.pdf?alt=media&token=t"
+    pdf_data = "data:application/pdf;base64,JVBERi0xLjQKJSVFT0YK"
+    docs = _field_notes_docs()
+    docs["evidence/ev_fn_1"]["photo"] = svg
+    docs["evidence/ev_fn_pdf"] = {"title": "Autopsy Report", "body": "PDF.", "cell_id": FN_CELL, "operation_id": "op_fn_a",
+                                  "visible_to": [FN_CODE], "released": True, "created_at": 1400, "photo": pdf_url}
+    docs["evidence/ev_fn_pdf2"] = {"title": "Old Scan", "body": "Legacy.", "cell_id": FN_CELL, "operation_id": "op_fn_a",
+                                   "visible_to": [FN_CODE], "released": True, "created_at": 1300, "photo": pdf_data}
+    extra = "localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE
+    for width, height, where in ((1300, 860, "desktop"), (390, 844, "phone")):
+        page, errs = _field_notes_page(p, width=width, height=height, docs=docs, extra_init=extra)
+        page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+        page.evaluate("() => window.dgFieldNotes.open('evidence')")
+        photo = page.locator("#fn-veil .fn-ev-zoom").filter(visible=True).first
+        photo.wait_for(timeout=10000)
+        links = page.eval_on_selector_all("#fn-veil a.fn-ev-pdf", "els => els.map(a => [a.getAttribute('href'), a.target])")
+        record("evidence", where + ": a filed PDF is an Open PDF link (not a broken image) that opens in a new tab",
+               [pdf_url, "_blank"] in links and any(h.startswith("blob:") for h, _ in links)
+               and page.locator("#fn-veil img.fn-ev-photo[src^='data:application/pdf'], #fn-veil img[src*='.pdf']").count() == 0, str(links))
+        photo.click()
+        viewer = page.locator(".dg-ev-viewer")
+        viewer.wait_for(timeout=5000)
+        page.wait_for_function("() => document.querySelector('.dg-ev-viewer').getAttribute('data-zoom') === '1.00'", timeout=5000)
+        record("evidence", where + ": tapping a filed photo opens it full-screen, titled",
+               "Coroner's Preliminary" in page.inner_text(".dg-ev-title")
+               and page.evaluate("() => { const r = document.querySelector('.dg-ev-stage').getBoundingClientRect(); return r.width >= innerWidth - 1; }"), "")
+        zoom = lambda: float(page.get_attribute(".dg-ev-viewer", "data-zoom"))
+        page.locator(".dg-ev-stage").dblclick()
+        z_dbl = zoom()
+        page.click(".dg-ev-viewer [data-ev-z=fit]")
+        z_fit = zoom()
+        # A two-finger pinch, as Safari reports it: pointer events.
+        page.evaluate("""() => {
+          const st = document.querySelector('.dg-ev-stage'), r = st.getBoundingClientRect();
+          const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+          const ev = (t, id, x) => st.dispatchEvent(new PointerEvent(t, { pointerId: id, pointerType: 'touch', clientX: x, clientY: cy, bubbles: true, cancelable: true }));
+          ev('pointerdown', 1, cx - 20); ev('pointerdown', 2, cx + 20);
+          for (let i = 1; i <= 10; i++) { ev('pointermove', 1, cx - 20 - i * 8); ev('pointermove', 2, cx + 20 + i * 8); }
+          ev('pointerup', 1, cx - 100); ev('pointerup', 2, cx + 100);
+        }""")
+        z_pinch = zoom()
+        page.click(".dg-ev-viewer [data-ev-z=in]")
+        z_in = zoom()
+        record("evidence", where + ": the photo zooms in the viewer (double-tap, pinch, +) and Fit resets it",
+               z_dbl > 2 and z_fit == 1 and z_pinch > 2 and z_in > z_pinch, str([z_dbl, z_fit, z_pinch, z_in]))
+        page.click(".dg-ev-viewer [data-ev-close]")
+        record("evidence", where + ": Close shuts the viewer", page.locator(".dg-ev-viewer").count() == 0, "")
+        errs_all.extend(errs)
+        page.close()
+
+    # Agent Hub's Evidence: a PDF is a link too; a photo opens the same viewer.
+    page, errs = _field_notes_page(p, docs=docs, extra_init=extra)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    # The Hub's Evidence is a live query listener: the stub delivers what's pushed.
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 1, timeout_ms=8000)
+    page.wait_for_timeout(600)
+    ev = [dict(docs[k], id=k.split("/")[1]) for k in docs if k.startswith("evidence/")]
+    push_firestore_snapshot(page, "evidence", [["visible_to", "array-contains-any", [FN_CODE, "ALL"]]], ev)
+    page.locator(f"#ah-handouts-{FN_CODE} .ah-handout-photo").wait_for(timeout=10000)
+    hrefs = page.eval_on_selector_all(f"#ah-handouts-{FN_CODE} a.ah-handout-pdf", "els => els.map(a => a.getAttribute('href'))")
+    record("evidence", "Agent Hub: a filed PDF is an Open PDF link, not a broken image",
+           pdf_url in hrefs and any(h.startswith("blob:") for h in hrefs), str(hrefs))
+    page.click(f"#ah-handouts-{FN_CODE} .ah-handout-photo")
+    record("evidence", "Agent Hub: a filed photo opens in the zoomable viewer",
+           page.locator(".dg-ev-viewer").is_visible(), "")
+    errs_all.extend(errs)
+    page.close()
+    return errs_all
+
+def test_motivations_and_disorders_split(p):
+    """Motivations and Mental Disorders used to share one free-text box.
+    Now Mental Disorders are their own list (bio.disorders), each picked
+    from the Rules reference's disorders (or "Other…"), with its trigger
+    and effect shown. An older sheet's combined text is split on load;
+    Live Play edits the same list; the PDF/Sheets/printable exports, whose
+    printed form has one box for both, get both back ("Disorder: …"
+    lines, which a re-import splits again); A-Cell shows them apart."""
+    errs_all = []
+    code = "DISO-0001"
+    old_state = {"v": 1, "bio": {"name": "Ada Kerr", "player_name": "dis tester",
+                                 "motivations": "Protect my sister\nDisorder: PTSD\nParanoia (since the Vegas op)\nFind the truth"}}
+    page = p.new_page(viewport={"width": 1300, "height": 900})
+    errs = collect_errors(page)
+    _block_fonts(page)
+    route_apps_script_ok(page)
+    install_firestore_backend(page, {f"characters/{code}": dict(character_doc(code, old_state, "dis tester")),
+                                     f"briefs/{code}": {"agent_code": code, "char_name": "Ada Kerr", "player_name": "dis tester"}})
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); localStorage.setItem('dg_stats_cloud_code', '%s'); } catch (e) {}" % code)
+    page.goto(f"{BASE}/stats/index.html?load={code}", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: page.evaluate("() => document.getElementById('cs-name').value") == "Ada Kerr" or None, timeout_ms=10000)
+    page.wait_for_timeout(600)
+    mot = page.input_value("#cs-motivations")
+    dis = page.evaluate("() => window.dgDisordersSheet.get()")
+    record("disorders", "an older sheet's combined box is split on load: disorders out of Motivations, into their own list",
+           mot == "Protect my sister\nFind the truth" and dis == ["PTSD", "Paranoia (since the Vegas op)"], f"{mot!r} {dis}")
+    opts = page.eval_on_selector_all("#cs-disorders-list .cs-dis-select >> nth=0", "els => [...els[0].options].map(o => o.textContent)")
+    record("disorders", "each disorder is a dropdown of the Rules reference's disorders, plus Other…",
+           len(opts) == 20 and "Ligyrophobia" in opts and "Totemic Compulsion" in opts and opts[-1] == "Other…", str(opts))
+    info = page.inner_text("#cs-disorders-list [data-dis='0'] .cs-dis-info")
+    record("disorders", "a picked disorder shows its trigger and effect from the rules", "Reminders of past traumas" in info and "1D4 WP" in info, info)
+    record("disorders", "a disorder not on the list keeps its own words (Other…)",
+           page.input_value("#cs-disorders-list [data-dis='1'] .cs-dis-other") == "Paranoia (since the Vegas op)", "")
+    # Add one, change one, remove one.
+    page.click("#cs-disorders-block .cs-dis-add")
+    page.select_option("#cs-disorders-list [data-dis='2'] .cs-dis-select", "Ligyrophobia")
+    page.select_option("#cs-disorders-list [data-dis='1'] .cs-dis-select", "__other")
+    page.fill("#cs-disorders-list [data-dis='1'] .cs-dis-other", "Fear of mirrors")
+    page.click("#cs-disorders-list [data-dis='0'] .cs-dis-del")
+    st = json.loads(page.evaluate("() => JSON.stringify(window.dgSaveLoad.collectState().bio)"))
+    record("disorders", "adding, picking, writing in and removing disorders is saved with the sheet (bio.disorders)",
+           st.get("disorders") == ["Fear of mirrors", "Ligyrophobia"] and st.get("motivations") == "Protect my sister\nFind the truth", str(st.get("disorders")))
+    saved = wait_for_condition(lambda: (lambda b: b if b.get("disorders") == ["Fear of mirrors", "Ligyrophobia"] else None)(
+        json.loads((fs_doc(page, f"characters/{code}") or {}).get("character_json") or "{}").get("bio", {})), timeout_ms=8000)
+    record("disorders", "…and autosaved to the Agent's cloud record", bool(saved), "")
+    # Live Play edits the same list.
+    page.evaluate("setLivePlay(true)")
+    page.wait_for_timeout(700)
+    lp = page.eval_on_selector_all("#lp-disorders .cs-dis-row", "els => els.length")
+    page.click("#lp-sheet .lp-disorders-block .cs-dis-add")
+    page.select_option("#lp-disorders [data-dis='2'] .cs-dis-select", "Depression")
+    record("disorders", "Live Play shows the same list and adds to it",
+           lp == 2 and page.evaluate("() => window.dgDisordersSheet.get()") == ["Fear of mirrors", "Ligyrophobia", "Depression"]
+           and page.locator("#cs-disorders-list .cs-dis-row").count() == 3, str(lp))
+    page.evaluate("setLivePlay(false)")
+    # Exports: one box for both on the printed form; a re-import splits them.
+    combined = page.evaluate("() => window.dgDisorders.combine(document.getElementById('cs-motivations').value, window.dgDisordersSheet.get())")
+    back = page.evaluate("(t) => window.dgDisorders.splitText(t)", combined)
+    record("disorders", "the printed form's single box gets both, and splits back the same on import",
+           combined.endswith("Disorder: Fear of mirrors\nDisorder: Ligyrophobia\nDisorder: Depression")
+           and back == {"motivations": "Protect my sister\nFind the truth", "disorders": ["Fear of mirrors", "Ligyrophobia", "Depression"]}, combined)
+    fj = page.evaluate("() => buildFoundryJSON ? JSON.stringify(buildFoundryJSON()) : null") if page.evaluate("() => typeof buildFoundryJSON === 'function'") else None
+    if fj:
+        items = [i for i in json.loads(fj).get("items", []) if i.get("type") == "motivation"]
+        record("disorders", "Foundry export: each disorder is a motivation item carrying it (system.disorder)",
+               [i["system"].get("disorder") for i in items if i["system"].get("disorder")] == ["Fear of mirrors", "Ligyrophobia", "Depression"]
+               and [i["name"] for i in items if not i["system"].get("disorder")] == ["Protect my sister", "Find the truth"], str(items)[:300])
+    errs_all.extend(errs)
+    page.close()
+
+    # A-Cell's dossier: Motivations and Mental Disorders apart, with the rules' summary.
+    page = p.new_page(viewport={"width": 1300, "height": 900})
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    skip_acell_gate(page)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
+    install_notes_firestore_stub(page)
+    st = {"bio": {"name": "Ada Kerr", "motivations": "Protect my sister", "disorders": ["PTSD", "Fear of mirrors"]}, "csStats": {"STR": 10}, "derived": {"hp": 10}}
+    install_firestore_backend(page, {f"characters/{code}": dict(character_doc(code, st))})
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: any(l["path"] == "characters" for l in page.evaluate("() => window.__dgFirestoreListeners || []")), timeout_ms=8000)
+    push_firestore_snapshot(page, "characters", [], [{"id": code, "character_json": json.dumps(st), "updated_at": "", "player_name": ""}])
+    push_firestore_snapshot(page, "briefs", [], [{"id": code, "agent_code": code, "char_name": "Ada Kerr"}])
+    push_firestore_snapshot(page, "cells", [], [])
+    wait_for_condition(lambda: "Ada Kerr" in page.inner_text("#play-agent-list") or None, timeout_ms=8000)
+    page.click("#play-agent-list .play-agent-btn:first-child")
+    page.wait_for_selector("#play-view .pv-disorders", timeout=8000)
+    txt = page.inner_text("#play-view .pv-disorders")
+    record("disorders", "A-Cell's dossier lists Mental Disorders apart from Motivations, with each one's trigger",
+           "PTSD" in txt and "Reminders of past traumas" in txt and "Fear of mirrors" in txt
+           and "PTSD" not in page.inner_text("#play-view .pv-motivations"), txt)
+    errs_all.extend(errs)
+    page.close()
+    return errs_all
+
 def test_mobile_notes_fullscreen(p):
     """Split View doesn't fit a phone-width screen, so mobile gets a
     separate control instead: a Notes widget (dgNotesFullscreen in
@@ -13030,6 +13207,8 @@ def main():
         safe(test_cell_members_by_name_and_kia, browser, area="hub")
         safe(test_add_bond_in_play, browser, area="bonds")
         safe(test_agent_file_san_roll_and_member_cards, browser, area="agent-file")
+        safe(test_evidence_attachments_open_and_zoom, browser, area="evidence")
+        safe(test_motivations_and_disorders_split, browser, area="disorders")
 
 
         safe(test_mobile_notes_fullscreen, browser, area="stats")

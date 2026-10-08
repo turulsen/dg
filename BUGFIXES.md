@@ -6367,3 +6367,40 @@ none). Now the roller is the Handler's on A-Cell only (`onHandlerPage()`):
 Everywhere else it's the current Agent's, with their own Cell's feed.
 New `test_player_pages_never_get_the_handler_feed` (fails on the old
 code, 2 of 4 checks). `sw.js` `CACHE_NAME` v191.
+
+## Players couldn't open or zoom an Evidence attachment (Safari)
+
+Reported 2026-10-08: on Safari, players couldn't open an attachment in
+Evidence or zoom in to read it. This finishes an earlier fix rather than
+being a new bug. "Evidence PDFs opened a blank tab instead of the PDF"
+(above, under "Backend performance & security hardening") made PDFs open as `blob:` URLs in the places
+Evidence was shown then: Notes' modal and A-Cell. Evidence has since
+moved to the Field Notes notebook, which players now use, and that page
+never got any of it:
+- a filed photo was a bare `<img>`, 220px tall at most, with nothing to
+  tap;
+- a PDF went into an `<img>` too, so it showed as a broken image with no
+  way to open it;
+- pinching didn't help: the notebook is a fixed, scaled overlay, so iOS
+  zooms the whole page around the thumbnail.
+
+Agent Hub's Evidence had a click-to-enlarge lightbox, but it couldn't
+zoom and also put PDFs in an `<img>`.
+
+Fixed with one shared viewer, `assets/evidence-viewer.js`. A photo opens
+full-screen, and the viewer zooms the photo itself:
+- pinch, drag, double-tap or double-click, mouse wheel;
+- `+`, `−` and Fit buttons; Close or Escape to leave.
+
+Its stage takes the touches (`touch-action:none`, pointer events), so
+the page underneath doesn't zoom. The notebook, Agent Hub and Notes'
+modal all use it; Notes, framed inside the notebook, opens it on the top
+page. A PDF is now an **Open PDF** link everywhere a player sees one: a
+Storage URL as is, a `data:` PDF as a `blob:` URL, the same Safari
+workaround as before. Safari's own PDF viewer then opens it in a new tab
+and zooms it.
+
+New `test_evidence_attachments_open_and_zoom`, desktop and phone: the
+photo opens, double-tap, pinch (as pointer events) and `+` zoom, Fit
+resets, PDFs are links. `test_agent_hub_handouts` now checks the new
+viewer instead of the old lightbox. `sw.js` `CACHE_NAME` v193.
