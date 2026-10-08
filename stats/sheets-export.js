@@ -271,7 +271,8 @@
             s1 = writeCell(s1, "K10", bio.age);
             s1 = writeCell(s1, "Q10", bio.education);
             s1 = writeCell(s1, "C25", bio.physicalDesc);
-            s1 = writeCell(s1, "V20", bio.motivations);
+            // One cell for both, like the printed form's box 12.
+            s1 = writeCell(s1, "V20", (window.dgDisorders ? window.dgDisorders.combine(bio.motivations, bio.disorders) : bio.motivations));
 
             // ── Front: Stats + distinguishing features ───────────────────
             ["STR", "CON", "DEX", "INT", "POW", "CHA"].forEach((st, i) => {

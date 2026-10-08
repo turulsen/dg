@@ -92,6 +92,7 @@ function matchProfessionKey(profStr) {
             education: g('cs-bio-education'),
             physicalDesc: g('cs-physical-desc'),
             motivations: g('cs-motivations'),
+            disorders: (() => { try { const v = JSON.parse(g('cs-disorders') || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } })(),
             personalDetails: g('cs-personal-details'),
             incursion: (() => { try { return JSON.parse(g('cs-incursion') || 'null'); } catch (e) { return null; } })(),
         };
@@ -275,7 +276,17 @@ function matchProfessionKey(profStr) {
             set('cs-bio-age', state.bio.age);
             set('cs-bio-education', state.bio.education);
             set('cs-physical-desc', state.bio.physicalDesc);
-            if (state.bio.motivations !== undefined) set('cs-motivations', state.bio.motivations);
+            // Mental Disorders have their own list (bio.disorders). A save
+            // from before kept them in the Motivations box: split them out.
+            {
+                let mot = state.bio.motivations, dis = state.bio.disorders;
+                if (!Array.isArray(dis) && mot && window.dgDisorders) {
+                    const split = window.dgDisorders.splitText(mot);
+                    mot = split.motivations; dis = split.disorders;
+                }
+                if (mot !== undefined) set('cs-motivations', mot);
+                if (window.dgDisordersSheet) window.dgDisordersSheet.set(Array.isArray(dis) ? dis : [], { quiet: true });
+            }
             if (state.bio.personalDetails !== undefined) set('cs-personal-details', state.bio.personalDetails);
             if (window.dgIncursionSheet) window.dgIncursionSheet.set(state.bio.incursion || null);
             // Appearance lives on the Agent File, not in the sheet: fetch it.
@@ -697,6 +708,7 @@ function matchProfessionKey(profStr) {
             el.checked = false;
         });
         if (window.dgIncursionSheet) window.dgIncursionSheet.set(null);
+        if (window.dgDisordersSheet) window.dgDisordersSheet.set([], { quiet: true });
         if (window.dgAppearanceSheet) window.dgAppearanceSheet.clear();
         // Not the theme picker: it's a display setting, not character
         // data. Resetting it to its first option (X-Files) left the page

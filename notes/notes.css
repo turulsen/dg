@@ -505,7 +505,7 @@
   background:rgba(58,40,10,.08); border:none; color:#2b2416; font-size:18px; line-height:1; cursor:pointer;
 }
 .dg-notes-evidence-close:hover{ background:rgba(58,40,10,.18); }
-.dg-notes-evidence-photo-img{ max-width:100%; border-radius:4px; margin:8px 0; display:block; }
+.dg-notes-evidence-photo-img{ max-width:100%; border-radius:4px; margin:8px 0; display:block; cursor:zoom-in; }
 .dg-notes-evidence-photo-pdf{
   display:inline-flex; align-items:center; gap:6px; font-size:13px; margin:8px 0; padding:8px 12px;
   background:rgba(58,40,10,.06); border:1px solid rgba(58,40,10,.2); border-radius:4px;

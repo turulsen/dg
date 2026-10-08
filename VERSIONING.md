@@ -63,7 +63,14 @@ consumer depending on that history being versioned. v2.0.0 was cut
 reserved for it: the Google Sheet is retired and every page reads and
 writes Firestore directly (Code.gs v97 is left serving only the Drive
 image proxy for old `gdrive:` links; going live took the one-time steps
-in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v2.4.1**
+in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v2.5.0**
+(2026-10-08) is PR #65: the Handler's Live Rolls get a filter (one
+Handler's Cells, or one Cell; remembered per device), and the Handler's
+all-Cells feed now exists on A-Cell alone -- a tab logged into A-Cell
+used to turn every player page's Dice Roller into the Handler's, so
+players saw other Cells' rolls in their Field Notes. Frontend only
+(`assets/dice-roller.js`); no rules, Code.gs or functions change. Shell
+cache `dg-hub-shell-v191`. **v2.4.1**
 (2026-10-07) is PR #64: six new soundboard stingers in a Creatures &
 Voices group (cat and dog whimpers, two child laughs, whispers in the
 dark; Ogg converted to MP3 for iOS), and `test_stinger_files_exist`.

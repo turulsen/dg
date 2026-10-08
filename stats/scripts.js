@@ -2417,6 +2417,7 @@ function buildFoundryJSON() {
         };
 
         // Build motivation items — one per non-empty line of the motivations textarea
+        // (Mental Disorders follow, below)
         const motivationItems = motivations
             .split('\n')
             .map(s => s.trim())
@@ -2431,6 +2432,18 @@ function buildFoundryJSON() {
                 sort: 0,
                 flags: {}
             }));
+        // Mental Disorders: the Delta Green system keeps a disorder on a
+        // motivation item (system.disorder), the motivation it replaced
+        // crossed out.
+        (window.dgDisordersSheet ? window.dgDisordersSheet.get() : []).forEach(d => {
+            motivationItems.push({
+                name: 'Mental disorder',
+                type: 'motivation',
+                img: 'systems/deltagreen/assets/icons/swap-bag-black-bg.svg',
+                system: { name: '', description: '', disorder: d, crossedOut: true, disorderCured: false },
+                effects: [], folder: null, sort: 0, flags: {}
+            });
+        });
 
         // Read wounds from the LP sheet wounds field
         const lpWounds = document.getElementById('lp-wounds')?.value?.trim() || '';
@@ -2897,15 +2910,27 @@ function applyImportedAgentData(data) {
         }
 
         // Motivations — read from type:motivation items (real Foundry DG schema)
+        // A motivation item carrying a disorder (system.disorder) is a Mental
+        // Disorder; its motivation was crossed out when it replaced it.
         const motivationsEl = document.getElementById('cs-motivations');
         if (motivationsEl) {
-            const motivationNames = (data.items || [])
-                .filter(item => item.type === 'motivation')
+            const motItems = (data.items || []).filter(item => item.type === 'motivation');
+            const motivationNames = motItems
+                .filter(item => !(item.system?.disorder && item.system?.crossedOut))
                 .map(item => item.name || '')
-                .filter(n => n.length > 0);
-            motivationsEl.value = motivationNames.length > 0
+                .filter(n => n.length > 0 && n !== 'Mental disorder');
+            let disorders = motItems.map(item => String(item.system?.disorder || '').trim()).filter(Boolean);
+            let motText = motivationNames.length > 0
                 ? motivationNames.join('\n')
                 : (sys.biography?.motivations || '');
+            // Older exports (and Kappa Black) wrote both into one text.
+            if (window.dgDisorders) {
+                const split = window.dgDisorders.splitText(motText);
+                motText = split.motivations;
+                disorders = disorders.concat(split.disorders);
+            }
+            motivationsEl.value = motText;
+            if (window.dgDisordersSheet) window.dgDisordersSheet.set(disorders);
         }
 
         // Personal details — stored in sys.biography.notes
@@ -4217,9 +4242,14 @@ function buildLpSheet() {
                     </table>
                 </div>
                 <div class="lp-sp-col-r">
-                    <div class="lp-sec-hd">MOTIVATIONS &amp; MENTAL DISORDERS</div>
+                    <div class="lp-sec-hd">MOTIVATIONS</div>
                     <div class="lp-section-block">
                         <textarea class="lp-ta lp-proxy" name="cs-motivations" data-src="cs-motivations" autocomplete="off" style="min-height:28px;overflow:hidden;resize:none;"></textarea>
+                    </div>
+                    <div class="lp-sec-hd">MENTAL DISORDERS</div>
+                    <div class="lp-section-block lp-disorders-block">
+                        <div id="lp-disorders" class="cs-disorders-list"></div>
+                        <button type="button" class="cs-dis-add" data-dis-add>+ Add Mental Disorder</button>
                     </div>
                 </div>
             </div>
@@ -4382,6 +4412,8 @@ function syncLpFromForm() {
             const src = document.getElementById(id);
             if (src) syncProxy(id, src.value || '');
         });
+    // Mental Disorders: the same list as the sheet's (stats/disorders-sheet.js).
+    if (window.dgDisordersSheet) window.dgDisordersSheet.mount(document.getElementById('lp-disorders'));
 
     // ── Profession display (read-only span) ────────────────────────
     const profKey = document.getElementById('cs-profession-select')?.value || '';

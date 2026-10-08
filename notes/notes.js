@@ -860,6 +860,20 @@
         });
       }
 
+      // A tap on the photo opens it full-screen with pinch/double-tap
+      // zoom (assets/evidence-viewer.js; on the notebook's own page when
+      // Notes is framed in it).
+      if (!body._dgPhotoZoom) {
+        body._dgPhotoZoom = true;
+        body.addEventListener('click', e => {
+          const img = e.target.closest('.dg-notes-evidence-photo-img');
+          if (!img || !window.dgEvidenceViewer) return;
+          const cur = evidenceItems.find(x => x.evidence_id === body.dataset.evidenceId);
+          window.dgEvidenceViewer.open(img.getAttribute('src'), (cur && cur.title) || 'Evidence');
+        });
+      }
+      body.dataset.evidenceId = evidenceId;
+
       body.querySelector('.dg-notes-evidence-remark-add').addEventListener('click', () => {
         const input = body.querySelector('.dg-notes-evidence-remark-input');
         const text = input.value.trim();

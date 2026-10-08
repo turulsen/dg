@@ -414,6 +414,10 @@ html.dg-fn-host #split-view-btn{ display:none !important; }
 .fn-card-title{ font-family:var(--fn-type); font-size:14px; color:var(--fn-ink); margin-bottom:6px; }
 .fn-card-body{ font-size:12px; color:var(--fn-ink-2); line-height:1.7; white-space:pre-wrap; overflow-wrap:anywhere; }
 .fn-ev-photo{ max-width:100%; max-height:220px; display:block; margin:8px 0; box-shadow:0 2px 6px rgba(0,0,0,.25); }
+.fn-ev-zoom{ position:relative; display:inline-block; max-width:100%; cursor:zoom-in; }
+.fn-ev-zoom .fn-ev-photo{ margin:8px 0 0; }
+.fn-ev-zoom-hint{ display:block; margin:3px 0 8px; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#8a7a5a; }
+.fn-ev-pdf{ display:inline-block; margin:8px 0; text-decoration:none; }
 .fn-remark{ margin-top:9px; padding-top:9px; border-top:1px dashed rgba(160,130,70,.55); }
 .fn-remark-status{ font-size:10px; color:var(--fn-ink-3); margin-top:3px; min-height:1em; }
 .fn-filter{ display:flex; align-items:center; gap:10px; margin-bottom:12px; }

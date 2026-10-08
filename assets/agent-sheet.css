@@ -11,7 +11,10 @@
 .as-id{ min-width:0; flex:1 1 170px; }
 .as-name{ font-family:'Special Elite',monospace; font-size:21px; line-height:1.15; color:var(--as-ink); overflow-wrap:anywhere; }
 .as-sub{ color:var(--as-ink-3); font-size:11px; margin-top:3px; }
-.as-vitals{ display:flex; gap:14px; }
+.as-vitals{ display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+.as-paper .as-san-roll{ align-self:center; font-family:'Special Elite',monospace; font-size:11px; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--as-red); background:transparent; border:1.5px solid var(--as-red); padding:5px 10px; cursor:pointer; border-radius:0; }
+.as-paper .as-san-roll:hover{ background:rgba(139,26,26,.07); }
 .as-vital{ text-align:center; }
 .as-lbl{ font-size:9px; color:var(--as-ink-3); letter-spacing:.1em; }
 .as-val{ font-family:'Special Elite',monospace; font-size:18px; color:var(--as-ink); }
@@ -28,6 +31,18 @@
 .as-cell b{ display:block; font-family:'Courier Prime',monospace; font-weight:700; font-size:15px; letter-spacing:.04em; text-transform:uppercase; color:var(--as-ink); }
 .as-members{ list-style:none; margin:5px 0 0; padding:0 0 0 12px; border-left:2px solid var(--as-rule); }
 .as-members li{ padding:2px 0; font-size:12px; color:var(--as-ink); }
+.as-paper .as-mbtn{ display:flex; align-items:center; gap:8px; width:100%; padding:2px 0; background:transparent; border:0; color:inherit; text-align:left; cursor:pointer; flex-wrap:wrap; }
+.as-paper .as-mbtn[aria-expanded="true"] .as-mname{ text-decoration:underline; text-underline-offset:3px; }
+.as-mthumb{ flex:none; width:30px; height:30px; background:#e7dcc0; border:1px solid var(--as-rule); overflow:hidden; display:inline-block; }
+.as-mthumb img{ width:100%; height:100%; object-fit:cover; display:block; }
+.as-mcard{ display:flex; gap:12px; align-items:center; margin-top:8px; padding:10px; background:rgba(28,22,8,.04); border:1px solid var(--as-rule); }
+.as-mcard[hidden]{ display:none; }
+.as-mcard-photo{ flex:none; width:76px; height:88px; background:#fff; padding:4px 4px 12px; box-shadow:0 2px 6px rgba(0,0,0,.25); display:flex; align-items:center; justify-content:center; font-size:10px; text-align:center; }
+.as-mcard-photo img{ width:100%; height:100%; object-fit:cover; display:block; }
+.as-mcard-id{ min-width:0; flex:1; }
+.as-mcard-name{ font-family:'Special Elite',monospace; font-size:16px; color:var(--as-ink); margin-bottom:2px; }
+.as-mcard .as-vitals{ margin-top:6px; display:grid; grid-template-columns:repeat(2,auto); justify-content:start; gap:2px 16px; }
+.as-mcard .as-val{ font-size:15px; }
 .as-members li.as-kia .as-mname{ text-decoration:line-through; text-decoration-color:var(--as-red); text-decoration-thickness:1.5px; color:var(--as-red); }
 .as-members .as-stamp{ display:inline-block; margin-left:6px; font-family:'Special Elite',monospace; font-size:8px; letter-spacing:.14em; text-transform:uppercase; border:1.5px solid var(--as-red); color:var(--as-red); padding:0 5px; vertical-align:1px; }
 .as-ops{ margin-top:10px; }

@@ -71,7 +71,10 @@ function _dataFromDOM() {
     sex: document.getElementById('cs-bio-sex')?.value || '',
     age: document.getElementById('cs-bio-age')?.value || '',
     description: document.getElementById('cs-physical-desc')?.value || '',
-    motivations: document.getElementById('cs-motivations')?.value || '',
+    // Box 12 holds Motivations and Mental Disorders together.
+    motivations: window.dgDisorders
+      ? window.dgDisorders.combine(document.getElementById('cs-motivations')?.value || '', window.dgDisordersSheet ? window.dgDisordersSheet.get() : [])
+      : (document.getElementById('cs-motivations')?.value || ''),
     personalDetails: document.getElementById('cs-personal-details')?.value || '',
     employer: document.getElementById('cs-bio-employer')?.value || '',
     education: document.getElementById('cs-bio-education')?.value || ''
@@ -191,12 +194,19 @@ function _dataFromFoundryJSON(obj) {
 
   // Biography
   const biography = sys.biography || {};
+  // Motivations are items in the Delta Green system; one carrying a
+  // disorder (system.disorder) is a Mental Disorder.
+  const motItems = (obj.items || []).filter(i => i.type === 'motivation');
+  const motFromItems = motItems.filter(i => !(i.system?.disorder && i.system?.crossedOut) && i.name && i.name !== 'Mental disorder').map(i => i.name);
+  const disFromItems = motItems.map(i => String(i.system?.disorder || '').trim()).filter(Boolean);
   const bio = {
     nationality: biography.nationality || '',
     sex: biography.sex || '',
     age: biography.age !== undefined ? String(biography.age) : '',
     description: sys.physical?.description || '',
-    motivations: biography.motivations || '',
+    motivations: motItems.length
+      ? (window.dgDisorders ? window.dgDisorders.combine(motFromItems.join('\n'), disFromItems) : motFromItems.concat(disFromItems).join('\n'))
+      : (biography.motivations || ''),
     personalDetails: biography.notes || '',
     employer: biography.employer || '',
     education: biography.education || ''

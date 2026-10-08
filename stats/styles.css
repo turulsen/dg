@@ -8578,3 +8578,40 @@ body.dg-notes-fullscreen-active {
 .cs-appearance-grid input, .cs-appearance-grid textarea{ width:100%; box-sizing:border-box; }
 .cs-appearance-wide{ grid-column:1 / -1; }
 .cs-appearance-grid textarea{ min-height:60px; }
+
+/* Mental Disorders: their own list under Motivations (stats/disorders-sheet.js),
+   laid out like the Biography's labels (name column | field column). */
+#cs-biography-fieldset .cs-disorders{
+    display:grid; grid-template-columns:160px 1fr; align-items:start; gap:var(--spacing-md); margin-top:var(--spacing-sm);
+}
+#cs-biography-fieldset .cs-disorders > #cs-disorders-list,
+#cs-biography-fieldset .cs-disorders > .cs-dis-add{ grid-column:2; }
+#cs-biography-fieldset .cs-disorders > .cs-dis-add{ justify-self:start; }
+@media (max-width:700px){
+    #cs-biography-fieldset .cs-disorders{ grid-template-columns:1fr; gap:4px; }
+    #cs-biography-fieldset .cs-disorders > #cs-disorders-list,
+    #cs-biography-fieldset .cs-disorders > .cs-dis-add{ grid-column:1; }
+}
+/* The Random Motivation button took the field column, which pushed the
+   Motivations box under the label, 160px wide, in every theme. */
+#cs-biography-fieldset label > #cs-motivations{ grid-column:2; }
+@media (max-width:700px){ #cs-biography-fieldset label > #cs-motivations{ grid-column:auto; } }
+.cs-dis-row{ margin:0 0 8px; }
+#cs-disorders-list .cs-dis-select, #cs-disorders-list .cs-dis-other{ font-family:inherit; font-size:inherit; }
+.cs-dis-line{ display:flex; gap:6px; align-items:center; }
+.cs-dis-line .cs-dis-select{ flex:1; min-width:0; width:auto; }
+.cs-dis-other{ width:100%; margin-top:4px; box-sizing:border-box; }
+.cs-dis-info{ font-size:.85em; opacity:.8; margin-top:3px; line-height:1.4; }
+.cs-dis-none{ font-size:.9em; opacity:.7; font-style:italic; margin:2px 0 6px; }
+.cs-dis-del{ flex:none; width:30px !important; min-width:30px; height:30px; padding:0 !important; margin:0 !important; line-height:1; font-size:18px; }
+.cs-dis-add{ width:auto !important; padding:4px 12px !important; margin:2px 0 0 !important; }
+/* Live Play's copy */
+#lp-sheet .lp-disorders-block{ padding:4px 6px 6px; gap:2px; }
+#lp-sheet .lp-disorders-block .cs-dis-row{ margin:0 0 5px; }
+#lp-sheet .lp-disorders-block .cs-dis-select,
+#lp-sheet .lp-disorders-block .cs-dis-other{ font:inherit; font-size:10pt; color:var(--lp-ink); background:transparent; border:1px solid var(--lp-ink); padding:2px 4px; }
+#lp-sheet .lp-disorders-block .cs-dis-info{ font-size:8.5pt; }
+#lp-sheet .lp-disorders-block .cs-dis-del,
+#lp-sheet .lp-disorders-block .cs-dis-add{ font:inherit; font-size:10pt; color:var(--lp-ink); background:transparent; border:1px solid var(--lp-ink); cursor:pointer; box-shadow:none; }
+#lp-sheet .lp-disorders-block .cs-dis-del{ width:24px !important; min-width:24px; height:24px; }
+#lp-sheet .lp-disorders-block .cs-dis-add{ align-self:flex-start; padding:2px 10px !important; }
