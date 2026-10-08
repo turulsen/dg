@@ -131,8 +131,7 @@ the profession (`assets/appearance-gen.js`); loading an Agent brings it
 back from the brief. Finishing the wizard runs the sheet's own export
 (identity, build, outfit), so a new Agent's Agent File is complete.
 
-**Motivations and Mental Disorders, apart (unreleased, next after
-v2.5.0):** the Biography had one free-text box for both. Motivations
+**Motivations and Mental Disorders, apart (v2.6.0):** the Biography had one free-text box for both. Motivations
 keep that box (`#cs-motivations`, `bio.motivations`); Mental Disorders
 are their own list (`stats/disorders-sheet.js`, the hidden
 `#cs-disorders` -> `bio.disorders`, an array of names). Each row is a
@@ -288,7 +287,7 @@ see §12.
 name first, then the sheet's, Friendlies as "Friendly: name"); the
 stored value is still the codes.
 
-**Opening an attachment (players; unreleased, next after v2.5.0):** a
+**Opening an attachment (players; v2.6.0):** a
 filed photo opens full-screen in `assets/evidence-viewer.js`
 (`window.dgEvidenceViewer.open(src, title)`) wherever a player sees
 Evidence: the notebook's Evidence page ("Tap to enlarge" under the
@@ -337,7 +336,7 @@ forwards old addresses (`?code=` -> the Agent's tab, `#cover` -> their
 photos, `#ids` -> the Fabricator). What follows describes the pieces as
 they were built on the portal; they work the same in their new place.
 
-**The Agent File paper's vitals and Cell (unreleased, next after v2.5.0).**
+**The Agent File paper's vitals and Cell (v2.6.0).**
 The same paper is the notebook's Agent File page and Agent Hub's tab, so
 both get these. Next to HP/WP/SAN/BP sits **Roll SAN**: a d100 Sanity
 roll against current SAN through the Dice Roller (in the notebook it turns

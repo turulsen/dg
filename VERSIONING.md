@@ -63,7 +63,19 @@ consumer depending on that history being versioned. v2.0.0 was cut
 reserved for it: the Google Sheet is retired and every page reads and
 writes Firestore directly (Code.gs v97 is left serving only the Drive
 image proxy for old `gdrive:` links; going live took the one-time steps
-in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v2.5.0**
+in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v2.6.0**
+(2026-10-08) is PR #66:
+- the Agent File paper's **Roll SAN** button and Cell members with
+  photos and a tap-to-open card;
+- Evidence attachments that players can open and zoom (a shared
+  full-screen viewer with its own pinch/double-tap zoom, PDFs as links
+  for Safari's own viewer), reported from Safari;
+- Mental Disorders as their own list apart from Motivations, picked
+  from the Rules reference's disorders.
+
+Frontend only; no rules, Code.gs or functions change. Shell cache
+`dg-hub-shell-v193`. Full local suite 1165/1165, CI green before and
+after the merge. **v2.5.0**
 (2026-10-08) is PR #65: the Handler's Live Rolls get a filter (one
 Handler's Cells, or one Cell; remembered per device), and the Handler's
 all-Cells feed now exists on A-Cell alone -- a tab logged into A-Cell
