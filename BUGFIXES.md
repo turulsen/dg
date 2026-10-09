@@ -6449,10 +6449,13 @@ SDK scripts it loads in turn times out.
 This isn't a v2.8.0 regression. The read and its dead end are older; the
 drop-downs only made it more visible. It's related to Issue #8's
 slow-load family, but it's a separate symptom. Fixed in two places:
-- **`dgStore.getDoc`**: a failed `get()` (anything but
-  permission-denied) is tried once more through `onSnapshot`. The first
-  answer from the server, or a cached copy that exists, settles it,
-  within 25s.
+- **`dgStore.getDoc`**: a `get()` that fails because the connection
+  isn't there yet ("client is offline" / `unavailable`, or the 15s
+  timeout) is tried once more through `onSnapshot`. The first answer from
+  the server, or a cached copy that exists, settles it, within 12s. Any
+  other error is still final at once. A first version fell back on every
+  error, and the full suite caught it slowing the old sheet's
+  "backend error lifts the loading gate quickly" path.
 - **`agent-file.js`**: if the brief still can't be read, Appearance says
   "Still loading -- check your connection (reason)." with **Try again**,
   and Era photos says it is waiting for the Agent File. It retries by

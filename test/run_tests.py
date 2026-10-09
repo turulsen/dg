@@ -10618,6 +10618,8 @@ def test_field_notes_split(p):
     record("notebook", "phone: no Split tab, and no split even when it's remembered",
            page.is_hidden("#fn-veil .fn-tab-split") and page.is_hidden("#fn-veil [data-fn-slot=split-left]")
            and (page.text_content("#fn-veil [data-fn-slot=title]") or "") == "Agent File", "")
+    # The browser's storage is shared by later tests: leave Split off.
+    page.evaluate("() => { localStorage.removeItem('dg_fn_split'); localStorage.removeItem('dg_fn_split_view'); }")
     page.close()
 
 

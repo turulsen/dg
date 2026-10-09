@@ -611,7 +611,7 @@
     if (narrow() || !state.open) return;
     try { if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) { /* old browser */ }
     var book = root.querySelector('.fn-book');
-    var booklet = root.querySelector('.fn-booklet');
+    var booklet = root.querySelector('.fn-right .fn-booklet');
     var paper = booklet && booklet.querySelector('.fn-paper:not(.fn-leaf-front)');
     if (!paper || !paper.offsetWidth || book.classList.contains('fn-spreading')) return;
     var old = booklet.querySelector('.fn-leaf-wrap');

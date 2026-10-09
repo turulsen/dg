@@ -140,8 +140,10 @@
     return ready().then(() => {
       const ref = db().collection(coll).doc(id);
       return withTimeout(ref.get(), 15000, 'reading ' + coll).catch(err => {
-        if (err && err.code === 'permission-denied') throw err;
-        return viaListener(ref, 25000, err);
+        // Only a connection that isn't there yet; any other error is final.
+        const offline = err && (err.code === 'unavailable' || /offline|timed out/i.test(String(err.message || '')));
+        if (!offline) throw err;
+        return viaListener(ref, 12000, err);
       });
     }).then(docData);
   }
