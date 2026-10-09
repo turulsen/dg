@@ -867,7 +867,7 @@
         }).join('') : '<p class="as-text as-k">None filed yet.</p>') + '</div>' : '';
         var f = faceUrl(a);
         window.dgAgentPaper.mount(body, {
-          code: a.code, char: data.char, name: agentName(a), codename: brief.codename || a.codename || '', photo: f,
+          code: a.code, char: data.char, name: agentName(a), codename: brief.codename || a.codename || '', photo: f, brief: brief,
           photoHtml: AS.photoHtml('data-go="photo"'),
           onPhoto: function (el) {
             var ph = el.querySelector('[data-as-photo]');

@@ -158,7 +158,7 @@
   function mount(el, ctx) {
     var s = window.dgAgentLive.session(ctx.code, ctx.char);
     // The drop-downs stay as they were when the host draws the paper again.
-    var ui = { pop: '', san: { amount: '1d6', kind: 'violence', other: '' }, card: -1, gearCat: '', appear: !!el._apAppear, cellOpen: !!el._apCell };
+    var ui = { pop: '', san: { amount: '1d6', kind: 'violence', other: '' }, card: -1, gearCat: '', appear: !!el._apAppear, cellOpen: !!el._apCell, eraOpen: !!el._apEra };
     var members = (ctx.members || []).slice();
     var unwatch = [];
 
@@ -259,8 +259,8 @@
     }
     function fillThumbs() {
       if (!ctx.loadPhoto) return;
-      Array.prototype.forEach.call(el.querySelectorAll('[data-ap-mphoto],[data-ap-cardphoto]'), function (b) {
-        var src = b.getAttribute('data-ap-mphoto') || b.getAttribute('data-ap-cardphoto');
+      Array.prototype.forEach.call(el.querySelectorAll('[data-ap-mphoto],[data-ap-cardphoto],[data-ap-era]'), function (b) {
+        var src = b.getAttribute('data-ap-mphoto') || b.getAttribute('data-ap-cardphoto') || b.getAttribute('data-ap-era');
         if (src) ctx.loadPhoto(b, src);
       });
     }
@@ -453,10 +453,35 @@
     function cellDropHtml(x) {
       return ui.cellOpen ? '<div class="ap-appear ap-celldrop">' + cellHtml(x) + '</div>' : '';
     }
+    // Era photos (the notebook; Agent Hub has the full Era photos form):
+    // each era's Face and Outfit Plates from the brief (ctx.brief), and a
+    // way to make them on Agent Hub.
+    var ERA_NAME = { '90s': '1990s', '00s': '2000s', '10s': '2010s', '20s': '2020s' };
+    function eraList() {
+      var b = ctx.brief || {}, order = [];
+      try { order = Array.isArray(b.active_eras) ? b.active_eras : JSON.parse(b.active_eras || '[]'); } catch (e) { order = [b.active_eras]; }
+      order = (Array.isArray(order) ? order : []).filter(function (e) { return ERA_NAME[e]; });
+      if (!order.length) return b.face_plate_url ? [{ era: '', face: b.face_plate_url, outfit: b.outfit_plate_url || '' }] : [];
+      return order.map(function (e, i) {
+        return { era: e, face: b['era_' + e + '_face_url'] || (i === 0 ? b.face_plate_url || '' : ''), outfit: b['era_' + e + '_outfit_url'] || (i === 0 ? b.outfit_plate_url || '' : '') };
+      });
+    }
+    function eraDropHtml() {
+      if (ctx.appearanceOutside || !ui.eraOpen) return '';
+      var list = eraList();
+      function plate(src, label) {
+        return '<div class="ap-plate"><div class="ap-plate-img" data-ap-era="' + esc(src || '') + '">' + (src ? '' : '<span class="as-k">' + label + ' — not made yet</span>') + '</div><div class="ap-k">' + label + '</div></div>';
+      }
+      return '<div class="ap-appear ap-eradrop"><div class="as-sec-hd">Era photos <span>Face and Outfit Plates</span></div>' +
+        (list.length ? list.map(function (x) {
+          return '<div class="ap-era"><div class="ap-era-t">' + esc(ERA_NAME[x.era] || 'Photos') + '</div><div class="ap-plates">' + plate(x.face, 'Face Plate') + plate(x.outfit, 'Outfit Plate') + '</div></div>';
+        }).join('') : '<p class="as-text as-k">No era photos yet — they are made from the Appearance brief.</p>') +
+        '<div class="ap-btns"><button type="button" class="ap-btn ap-ghost" data-go="photo">Make or change photos on Agent Hub ↗</button></div></div>';
+    }
     function dropBtns() {
       if (ctx.appearanceOutside) return '';
-      return '<div class="ap-dropbtns"><button type="button" class="ap-mini ap-appear-btn" data-a="appear" aria-expanded="' + !!ui.appear + '">Appearance ' + (ui.appear ? '▴' : '▾') + '</button>' +
-        '<button type="button" class="ap-mini ap-appear-btn" data-a="cell" aria-expanded="' + !!ui.cellOpen + '">Cell ' + (ui.cellOpen ? '▴' : '▾') + '</button></div>';
+      function btn(a, label, on) { return '<button type="button" class="ap-mini ap-appear-btn" data-a="' + a + '" aria-expanded="' + !!on + '">' + label + ' ' + (on ? '▴' : '▾') + '</button>'; }
+      return '<div class="ap-dropbtns">' + btn('appear', 'Appearance', ui.appear) + btn('era', 'Era photos', ui.eraOpen) + btn('cell', 'Cell', ui.cellOpen) + '</div>';
     }
     // One numbered part of the file, like the sections of a DD 315.
     var PARTS = [['stats', 'Statistics'], ['skills', 'Skills'], ['psyche', 'Psyche'], ['kit', 'Combat & gear'], ['record', 'Record']];
@@ -476,7 +501,7 @@
       var inc = ctx.incursion ? '<div class="as-sec as-incursion"><div class="as-sec-hd">The Incursion</div><p class="as-text">' + esc(ctx.incursion) + '</p></div>'
         : (ctx.incursionEmptyHtml ? '<div class="as-sec as-incursion"><div class="as-sec-hd">The Incursion</div>' + ctx.incursionEmptyHtml + '</div>' : '');
       var n = 0;
-      return '<div class="as-paper ap ap-look-' + look() + (edit ? ' ap-editing' : '') + '">' + bar + (ctx.appearanceOutside ? cellDropHtml(x) : '') + headHtml(x, edit) + appearHtml(x) + (ctx.appearanceOutside ? '' : cellDropHtml(x)) + indexHtml(edit) +
+      return '<div class="as-paper ap ap-look-' + look() + (edit ? ' ap-editing' : '') + '">' + bar + (ctx.appearanceOutside ? cellDropHtml(x) : '') + headHtml(x, edit) + appearHtml(x) + eraDropHtml() + (ctx.appearanceOutside ? '' : cellDropHtml(x)) + indexHtml(edit) +
         (edit ? part('personal', '0', 'Personal data & appearance', '', personalHtml(x)) : '') +
         '<div class="as-sheet">' +
           part('stats', ++n, 'Statistics', '<span class="ap-part-note">' + (edit ? 'value · distinguishing feature' : 'tap to roll ×5 · distinguishing features') + '</span>', statsHtml(x, edit)) +
@@ -563,6 +588,7 @@
         case 'rollsan': rollPct(R().derived(s.state).san, 'SAN'); return;
         case 'appear': ui.appear = el._apAppear = !ui.appear; render(); return;
         case 'cell': ui.cellOpen = el._apCell = !ui.cellOpen; render(); return;
+        case 'era': ui.eraOpen = el._apEra = !ui.eraOpen; render(); return;
         case 'jump': {
           var tg = el.querySelector('.ap-part[data-part="' + b.getAttribute('data-part') + '"]');
           if (tg) tg.scrollIntoView({ block: 'start', behavior: 'smooth' });

@@ -162,6 +162,13 @@
 .ap-dropbtns{ display:flex; flex-direction:column; gap:4px; align-items:stretch; margin-top:6px; }
 .as-paper .ap-dropbtns .ap-appear-btn{ display:block; text-align:center; }
 .ap-celldrop .ap-init{ margin-top:2px; }
+.ap-era{ margin:8px 0 4px; }
+.ap-era-t{ font-family:'Special Elite',monospace; font-size:12px; letter-spacing:.12em; color:var(--as-ink); margin-bottom:5px; }
+.ap-plates{ display:flex; gap:12px; flex-wrap:wrap; }
+.ap-plate{ text-align:center; }
+.ap-plate-img{ position:relative; width:110px; height:138px; background:#fff; padding:5px 5px 14px; box-shadow:0 2px 6px rgba(0,0,0,.22); display:flex; align-items:center; justify-content:center; font-size:10px; overflow:hidden; }
+.ap-plate-img img{ width:100%; height:100%; object-fit:cover; display:block; }
+.ap-plate .ap-k{ font-size:10px; margin-top:4px; }
 .ap-appear{ margin-top:8px; padding:4px 12px 10px; background:#fbf7ea; border:1px solid var(--as-rule); }
 .ap-appear .as-sec-hd{ margin-top:8px; }
 /* A narrow paper (the notebook's page) stacks the two columns */

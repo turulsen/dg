@@ -10583,7 +10583,13 @@ def test_agent_file_parts_and_looks(p):
     ok = wait_for_condition(lambda: page.evaluate(f"""() => {{ const r = document.querySelector('{root} .ap-part[data-part=psyche]').getBoundingClientRect();
         return r.top >= -2 && r.top < 160; }}"""), timeout_ms=4000)
     record("agent-file-parts", "the index's Psyche button scrolls to Psyche", bool(ok), "")
-    # Era photos and Cell drop down from beside Appearance, under the photo.
+    # Era photos and Cell drop down from beside Appearance: on a desktop
+    # the three buttons stack to the right of the name.
+    geo = page.evaluate(f"""() => {{ const t = document.getElementById('ah-title-{FN_CODE}') || document.querySelector('#panel-{FN_CODE} .paper-title');
+        const b = document.querySelector('[data-ah-appear="{FN_CODE}"]'), c = document.querySelector('[data-ah-cell="{FN_CODE}"]');
+        const tr = t.getBoundingClientRect(), br = b.getBoundingClientRect(), cr = c.getBoundingClientRect();
+        return [br.left >= tr.right - 1, cr.top > br.top, Math.abs(cr.left - br.left) < 2]; }}""")
+    record("agent-file-parts", "desktop: Appearance / Era photos / Cell stack beside the name", all(geo), str(geo))
     record("agent-file-parts", "Agent Hub: Era photos and Cell start folded", page.is_hidden(f"#ah-era-{FN_CODE}") and page.locator(root + " .ap-celldrop").count() == 0, "")
     page.click(f"[data-ah-cell={FN_CODE}]")
     page.wait_for_selector(root + " .ap-celldrop .ap-init li", timeout=5000)
@@ -10625,6 +10631,9 @@ def test_agent_file_parts_and_looks(p):
            "watchful grey eyes" in V.locator(".ap-appear").first.inner_text(), "")
     V.locator("[data-a=cell]").click()
     record("agent-file-parts", "the notebook's Cell fold sits beside it", V.locator(".ap-celldrop .ap-init li").count() >= 1, "")
+    V.locator("[data-a=era]").click()
+    record("agent-file-parts", "…and Era photos, with the way to make them on Agent Hub",
+           V.locator(".ap-eradrop").count() == 1 and V.locator(".ap-eradrop [data-go=photo]").count() == 1, "")
     page.evaluate("() => window.dgFieldNotes.open('settings')")
     page.wait_for_selector("[data-s=paper-look]")
     opts = page.eval_on_selector_all("[data-s=paper-look] option", "els => els.map(e => e.value)")
@@ -10639,6 +10648,15 @@ def test_agent_file_parts_and_looks(p):
     V.wait_for(timeout=10000)
     record("agent-file-parts", "a paper drawn later (the notebook's) takes the chosen look", "ap-look-stamp" in (V.get_attribute("class") or ""), V.get_attribute("class") or "")
     record("agent-file-parts", "no JS exceptions", not errs, str(errs[:3]))
+    page.close()
+    # On a phone the buttons stack under the photo instead.
+    page, errs = _field_notes_page(p, width=390, height=844, docs=docs, extra_init=extra)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector(f"#ah-sheet-{FN_CODE} .ap-vitals", timeout=15000)
+    geo = page.evaluate(f"""() => {{ const ph = document.getElementById('ah-photo-{FN_CODE}').getBoundingClientRect();
+        const b = document.querySelector('[data-ah-appear="{FN_CODE}"]').getBoundingClientRect();
+        return [b.top >= ph.bottom - 1, b.left < ph.right]; }}""")
+    record("agent-file-parts", "phone: the buttons stack under the photo", all(geo), str(geo))
     page.close()
 
 

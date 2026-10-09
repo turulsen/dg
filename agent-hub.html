@@ -322,7 +322,16 @@
   .ah-sheet .ap .as-id{ flex:1 1 100%; }
   .ah-sheet .ap-vitals{ max-width:none; }
   .ah-photo-col{ display:flex; flex-direction:column; align-items:center; gap:6px; flex:none; }
-  .ah-photo-col .ah-appear-btn{ width:100%; text-align:center; }
+  .paper-header .lead.ah-lead{ display:grid; grid-template-columns:auto auto auto; grid-template-areas:"photo title btns"; align-items:center; column-gap:18px; row-gap:6px; }
+  .ah-lead > .ah-photo-col{ grid-area:photo; }
+  .ah-lead > div:nth-child(2){ grid-area:title; min-width:0; }
+  .ah-drop-btns{ grid-area:btns; display:flex; flex-direction:column; gap:6px; min-width:128px; }
+  .ah-drop-btns .ah-appear-btn{ width:100%; text-align:center; }
+  @media (max-width:560px){
+    .paper-header .lead.ah-lead{ grid-template-columns:auto 1fr; grid-template-areas:"photo title" "btns title"; column-gap:14px; }
+    .ah-drop-btns{ min-width:0; width:112px; }
+    .ah-drop-btns .ah-appear-btn{ font-size:10px; padding:4px 6px; letter-spacing:.06em; }
+  }
   .ah-era-drop .af-photos > .af-block-head{ border-top:0; margin-top:10px; padding-top:0; }
   .ah-appear-btn{ font-family:'Special Elite',monospace; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:#1c1608; background:#fbf7ea; border:1px solid rgba(160,130,70,.5); padding:4px 10px; cursor:pointer; border-radius:0; white-space:nowrap; }
   .ah-appear-btn:hover{ border-color:#8b1a1a; }
@@ -843,16 +852,20 @@
         <div class="holes"><div class="hole"></div><div class="hole"></div><div class="hole"></div></div>
         <div class="paper-content">
           <div class="paper-header">
-            <div class="lead">
+            <div class="lead ah-lead">
               <div class="ah-photo-col">
                 <div class="paper-photo" id="${photoId}">${a.face_plate_url ? '' : `<a class="photo-missing-note" href="#photos" data-ah-focus="photos" title="This Agent's photos are made from the Appearance brief, further down">Take Photo</a>`}</div>
-                <button type="button" class="ah-appear-btn" data-ah-appear="${escapeHtml(a.code)}" aria-expanded="false" aria-controls="ah-appear-${escapeHtml(a.code)}">Appearance &#9662;</button>
-                <button type="button" class="ah-appear-btn" data-ah-era="${escapeHtml(a.code)}" aria-expanded="false" aria-controls="ah-era-${escapeHtml(a.code)}">Era photos &#9662;</button>
-                <button type="button" class="ah-appear-btn" data-ah-cell="${escapeHtml(a.code)}" aria-expanded="false">Cell &#9662;</button>
               </div>
               <div>
                 <div class="paper-title-sub">Delta Green — Agent Roster</div>
                 <div class="paper-title" id="${titleId}">${escapeHtml(a.char_name || 'Unknown Agent')}</div>
+              </div>
+              <!-- Appearance, Era photos and Cell drop down from here: beside
+                   the name on a desktop, under the photo on a phone. -->
+              <div class="ah-drop-btns">
+                <button type="button" class="ah-appear-btn" data-ah-appear="${escapeHtml(a.code)}" aria-expanded="false" aria-controls="ah-appear-${escapeHtml(a.code)}">Appearance &#9662;</button>
+                <button type="button" class="ah-appear-btn" data-ah-era="${escapeHtml(a.code)}" aria-expanded="false" aria-controls="ah-era-${escapeHtml(a.code)}">Era photos &#9662;</button>
+                <button type="button" class="ah-appear-btn" data-ah-cell="${escapeHtml(a.code)}" aria-expanded="false">Cell &#9662;</button>
               </div>
             </div>
             <div class="paper-meta">CODE: ${escapeHtml(a.code)}<br>COVER: ${a.codename ? escapeHtml(a.codename) : '&mdash;'}<br>SAVED: ${a.saved_at ? new Date(a.saved_at).toLocaleDateString() : '&mdash;'}</div>
