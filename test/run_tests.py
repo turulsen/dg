@@ -779,6 +779,15 @@ def _open_appearance(page):
     except Exception:
         pass
 
+def _open_era(page):
+    """The era photos drop down from their button under the photo on Agent
+    Hub; open them (if folded) before a test works them."""
+    try:
+        page.evaluate("""() => { const f = document.getElementById('af-photos'); const d = f && f.closest('.ah-era-drop');
+            if (d && d.hidden) { const b = document.querySelector('[data-ah-era="' + d.id.replace('ah-era-', '') + '"]'); if (b) b.click(); } }""")
+    except Exception:
+        pass
+
 def fill_cover_form(page, agent, form_selector="#dg-form"):
     _open_appearance(page)
     text_fields = ["char_name","codename","nationality","face_shape","eye_color","eye_shape",
@@ -8707,6 +8716,7 @@ def test_agent_file_active_era_toggle(p):
 
     page.goto(f"{BASE}/agent-hub.html?code=ERAT-OGL01", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(800)
+    _open_era(page)
 
     # text-transform:uppercase is CSS-only -- Playwright's inner_text()
     # returns the rendered text, so this compares case-insensitively
@@ -8816,6 +8826,7 @@ def test_agent_file_outfit_plate_requires_face_first(p):
 
     page.goto(f"{BASE}/agent-hub.html?code=NOFA-CE01", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(800)
+    _open_era(page)
 
     # Outfit Plate button should refuse before any Face Plate exists.
     page.click('button[data-mode="mode1"]:has-text("Generate Image")')
@@ -11839,6 +11850,7 @@ def test_agent_file_storage_plates_and_refresh(p):
            bool(img) and img[0] == face and img[1] == "block", str(img))
     record("journey", "the era header says Photo On File", "Photo On File" in (page.text_content("#era-photo-90s") or ""), page.text_content("#era-photo-90s") or "")
     btn = 'button[data-era="90s"][data-mode="mode1"][onclick^="generatePlateImage"]'
+    _open_era(page)
     page.locator(btn).click()
     _pump_until(page, lambda: any(b.get("action") == "generate_plate_image" for b in posts), 6000)
     gen = [b for b in posts if b.get("action") == "generate_plate_image"]
@@ -11855,6 +11867,7 @@ def test_agent_file_storage_plates_and_refresh(p):
     _route_backend(page, respond, posts)
     page.goto(f"{BASE}/agent-hub.html?code=MARA-0001", wait_until="load", timeout=15000)
     page.wait_for_timeout(1500)
+    _open_era(page)
     page.locator('button[data-era="90s"][data-mode="mode0"][onclick^="generatePlateImage"]').click()
     _pump_until(page, lambda: "Photo On File" in (page.text_content("#era-photo-90s") or ""), 6000)
     record("journey", "generating a Face Plate flips the era header to Photo On File right away",
