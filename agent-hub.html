@@ -822,7 +822,7 @@
             <div class="paper-title-sub">Delta Green — Agent Roster</div>
             <div class="paper-title">No Agents on File</div>
           </div></div>
-          <p class="empty-copy">Nothing here yet. Build a new Agent via the New Recruit tab, then submit or export it to add it to this roster -- or enter your Cover Identity above if you've already made one on another device.</p>
+          <p class="empty-copy">Nothing here yet. Build a new Agent (or bring one in from a file) on the + New Recruit tab -- or enter your Cover Identity above if you've already made one on another device.</p>
         </div>
       </div>`;
       folderBody.appendChild(panel);
@@ -881,7 +881,7 @@
           <div class="stamps" id="${stampId}">${era ? `<div class="stamp">${escapeHtml(era)}</div>` : ''}</div>
           <div class="dossier-line" id="ah-meta-${escapeHtml(a.code)}"${meta ? '' : ' hidden'}>${meta}</div>
           <div class="paper-actions">
-            <a class="paper-btn primary" id="${playBtnId}" href="stats/index.html?load=${encodeURIComponent(a.code)}&live=1" hidden>Recruit</a>
+            <a class="paper-btn primary" id="${playBtnId}" href="agent-hub.html?recruit=${encodeURIComponent(a.code)}#new" hidden>Recruit</a>
           </div>
           <div class="ah-appear-callout" id="ah-callout-${escapeHtml(a.code)}" hidden>
             <span class="ah-appear-callout-text"></span>

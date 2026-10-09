@@ -136,7 +136,8 @@
       refresh: function () { var h = hostApi(); if (h) h.refresh(); },
       go: function (path) { var h = hostApi(); if (h && h.go) h.go(path); else location.href = url(path); },
       oath: function (o) { var h = hostApi(); return h && h.oath ? h.oath(o) : Promise.resolve(window.confirm('Save these edits?')); },
-      contract: function (o) { var h = hostApi(); return h && h.oath ? h.oath(Object.assign({}, o, { contract: true })) : Promise.resolve(window.confirm('Sign the Contract and file this Agent?')); }
+      contract: function (o) { var h = hostApi(); return h && h.oath ? h.oath(Object.assign({}, o, { contract: true })) : Promise.resolve(window.confirm('Sign the Contract and file this Agent?')); },
+      split: function (view) { var h = hostApi(); if (h && h.split) { h.split(view); return true; } return false; }
     };
     // Escape inside an embedded page (focus is in the iframe, so the
     // host never sees the key) or on a shell page under the open notebook.
@@ -940,7 +941,7 @@
             var w = g.getAttribute('data-go');
             if (w === 'file') navigate(url('agent-hub.html?code=' + encodeURIComponent(c.code)));
             else if (w === 'photo') navigate(url('agent-hub.html?code=' + encodeURIComponent(c.code) + '#photos'));
-            else if (w === 'recruit') navigate(url('stats/index.html?load=' + encodeURIComponent(c.code)));
+            else if (w === 'recruit') navigate(url('agent-hub.html?recruit=' + encodeURIComponent(c.code) + '#new'));
           });
         }
       }, function () { body.innerHTML = '<p class="fn-muted">Could not open the file — check the connection.</p>'; });
@@ -1650,8 +1651,13 @@
           '<button type="button" class="fn-btn fn-ink" data-s="load">Load</button></div></div>' +
         '<div class="fn-actions" style="margin:10px 0 4px"><button type="button" class="fn-btn" data-s="more">Import &amp; more sheet settings…</button></div>';
     } else if (a && !a.friendly) {
-      html += '<div class="fn-set-row"><div><div class="fn-set-t">Character sheet</div><div class="fn-set-s">Theme, exports, backups and imports for ' + esc(agentName(a)) + '.</div></div>' +
-        '<button type="button" class="fn-btn fn-ink" data-s="gosheet">Open sheet ↗</button></div>';
+      // The Agent File is the sheet: its export is built from the saved
+      // character. The old sheet stays reachable from here only.
+      html += '<div class="fn-set-row"><div><div class="fn-set-t">Export</div><div class="fn-set-s">A copy of ' + esc(agentName(a)) + ' to keep or print.</div></div>' +
+        '<button type="button" class="fn-btn fn-red" data-s="pdf">PDF (DD Form 315)</button></div>' +
+        '<div class="fn-set-status" data-s="pdf-status"></div>' +
+        '<div class="fn-set-row"><div><div class="fn-set-t">Old character sheet</div><div class="fn-set-s">The previous sheet, for anything the Agent File can\'t do yet.</div></div>' +
+        '<button type="button" class="fn-btn fn-ink" data-s="gosheet">Open ↗</button></div>';
     }
     html += '<div class="fn-set-row"><div><div class="fn-set-t">Boot splash</div><div class="fn-set-s">Plays the clearance terminal once per session. Off skips the animation; the same screen still shows while a page loads.</div></div>' +
         '<button type="button" class="fn-toggle' + (bootOff ? '' : ' fn-on') + '" data-s="boot">' + (bootOff ? 'OFF' : 'ON') + '</button></div>';
@@ -1666,6 +1672,7 @@
       else if (k === 'load' && sw && sw.dgCloudSave) { var v = body.querySelector('[data-s="code"]').value; close(); sw.dgCloudSave.loadFromCloud(v); }
       else if (k === 'more' && sw && sw.dgSettingsPanel) { close(); sw.dgSettingsPanel.open(); }
       else if (k === 'gosheet' && a) { try { sessionStorage.setItem(OPEN_ON_ARRIVAL_KEY, 'settings'); } catch (err) { /* private mode */ } navigate(url('stats/index.html?load=' + encodeURIComponent(a.code))); }
+      else if (k === 'pdf' && a) exportPdf(a, body.querySelector('[data-s="pdf-status"]'));
       else if (k === 'boot') { var off = lsGet(BOOT_OFF_KEY) !== '1'; lsSet(BOOT_OFF_KEY, off ? '1' : '0'); b.classList.toggle('fn-on', !off); b.textContent = off ? 'OFF' : 'ON'; }
       else if (k === 'reload') reloadMyAgents(body);
     };
@@ -1679,6 +1686,42 @@
       var t = sw.document.getElementById('cs-theme-select');
       if (t) { t.value = sel.value; t.dispatchEvent(new Event('change', { bubbles: true })); }
     });
+  }
+  // DD Form 315 from the saved character (stats/pdf-export.js fills the
+  // form; here its "current sheet" is this Agent's saved state).
+  function exportPdf(a, st) {
+    if (st) st.textContent = 'Building the PDF…';
+    ensureStore().then(function (S) { return S.getCharacter(a.code); }).then(function (doc) {
+      var state = null;
+      try { state = doc && doc.character_json ? JSON.parse(doc.character_json) : null; } catch (e) { state = null; }
+      if (!state) throw new Error('No character sheet saved for this Agent yet.');
+      state.bio = state.bio || {};
+      var label = professionLabel(state.bio.profession);
+      if (label) state.bio.profession = state.bio.professionTitle || (state.bio.posting ? state.bio.posting + ' (' + label + ')' : label);
+      return loadScriptOnce(url('stats/pdf-export.js'), function () { return typeof window.exportToPDF === 'function'; }).then(function () {
+        var prev = window.dgSaveLoad, prevToast = window.showToast, last = '';
+        window.dgSaveLoad = { collectState: function () { return state; } };
+        window.showToast = function (m) { last = String(m || ''); };
+        return Promise.resolve(window.exportToPDF()).then(function () {
+          window.dgSaveLoad = prev; window.showToast = prevToast;
+          if (/failed/i.test(last)) throw new Error(last);
+        });
+      });
+    }).then(function () { if (st) st.textContent = 'Downloaded.'; }, function (err) {
+      if (st) st.textContent = 'Could not make the PDF: ' + String((err && err.message) || err).slice(0, 140);
+    });
+  }
+  var scriptsOnce = {};
+  function loadScriptOnce(src, test) {
+    if (test()) return Promise.resolve();
+    if (scriptsOnce[src]) return scriptsOnce[src];
+    scriptsOnce[src] = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = src; s.onload = function () { resolve(); };
+      s.onerror = function () { scriptsOnce[src] = null; reject(new Error('Could not load ' + src)); };
+      document.head.appendChild(s);
+    });
+    return scriptsOnce[src];
   }
   // Same merge hub.html's Cover Identity preload does: this identity's
   // Agents replace the roster's, keeping entries with no player name.
@@ -1735,6 +1778,15 @@
     isHost: true,
     open: open, close: close, refresh: refresh, armOrders: armOrders, oath: oath,
     contract: function (o) { return oath(Object.assign({}, o, { contract: true })); },
+    // Split mode (desktop): the Agent File beside one of the brown tabs.
+    split: function (view) {
+      if (narrow()) { open('agentfile'); return true; }
+      if (!state.split) { state.split = true; lsSet(SPLIT_KEY, '1'); }
+      if (view && isTabView(view)) { state.splitView = view; lsSet(SPLIT_VIEW_KEY, view); state.view = view; }
+      else if (!isTabView(state.view)) state.view = state.splitView;
+      open(state.view);
+      return true;
+    },
     isOpen: function () { return state.open; },
     // A page inside the notebook (desktop Notes) going somewhere else: it
     // goes in the page under the notebook, not inside the notebook's own

@@ -2603,8 +2603,8 @@ def test_agent_hub(p):
 
     action_hrefs = page.eval_on_selector_all(
         "#panel-OWEN-CS12 .paper-actions .paper-btn", "els => els.map(e => e.getAttribute('href'))")
-    record("hub", "Play is the only button under the Agent's line, linking to stats/ for that exact agent (the rest lives in the notebook)",
-           action_hrefs == ["stats/index.html?load=OWEN-CS12&live=1"], str(action_hrefs))
+    record("hub", "Recruit is the only button under the Agent's line, opening New Recruit for that exact agent (the rest lives in the notebook)",
+           action_hrefs == ["agent-hub.html?recruit=OWEN-CS12#new"], str(action_hrefs))
     af = _af_state(page)
     record("hub", "the active Agent's tab carries their Agent File (Appearance, era photos), loaded for them",
            af.get("inTab") and af.get("code") == "OWEN-CS12", json.dumps(af))
@@ -10851,6 +10851,86 @@ def test_new_recruit_wizard(p):
     page.close()
 
 
+def test_new_recruit_imports_and_links(p):
+    """M2: bringing an Agent in through New Recruit's one drop zone
+    (assets/agent-import.js) -- Kappa Black .toml, a Foundry VTT actor,
+    this site's own save, the printable sheet -- lands at Personal data
+    with what the file carried; Recruit for an Agent with no sheet opens
+    the wizard under that Agent's own code; the notebook's Settings export
+    a DD Form 315 from the saved character (stats/pdf-export.js), and keep
+    the old sheet behind Open. Fake backend only."""
+    errs_all = []
+    toml = 'name = "Hollis, Ray"\nprofession = "Pilot"\nemployer = "USAF"\nhp = 12\nwp = 11\nsan = 50\nviolenceAdaptation = 2\nmotivationsAndDisorders = "Flying\\nMy daughter"\n' \
+           '[strength]\nscore = 12\n[constitution]\nscore = 12\n[dexterity]\nscore = 14\n[intelligence]\nscore = 11\n[power]\nscore = 11\n[charisma]\nscore = 12\n' \
+           '[[skills]]\nskill = "Pilot"\ntype = "Airplane"\nscore = 60\n[[skills]]\nskill = "Alertness"\nscore = 55\n[[bonds]]\nbond = "Ann Hollis (daughter)"\nscore = 12\n'
+    foundry = {"name": "Vera Lind", "system": {"statistics": {"str": {"value": 9}, "con": {"value": 11}, "dex": {"value": 13}, "int": {"value": 16}, "pow": {"value": 14}, "cha": {"value": 10, "distinguishing_feature": "Quiet"}},
+               "skills": {"search": {"proficiency": 60}, "occult": {"proficiency": 45}}, "biography": {"profession": "Anthropologist or Historian", "employer": "Smithsonian"},
+               "sanity": {"value": 66}, "typedSkills": {"a": {"group": "Foreign Language", "label": "Latin", "proficiency": 50}}},
+               "items": [{"type": "bond", "name": "Paul Lind", "system": {"relationship": "Brother", "score": 10}}, {"type": "motivation", "name": "Truth"}]}
+    native = {"v": 1, "bio": {"name": "Ines Moreau", "profession": "physician"}, "stats": {"STR": 10, "CON": 10, "DEX": 10, "INT": 15, "POW": 12, "CHA": 13},
+              "skills": {"medicine": 70}, "bonds": [{"name": "Luc", "relationship": "Husband", "score": 13}]}
+    html = '<html><body><script id="dg-state-blob" type="application/json">' + json.dumps(native).replace("Ines", "Odile") + '</script></body></html>'
+    cases = [("ray.toml", toml, "Hollis, Ray", lambda st: st["csStats"]["DEX"] == 14 and any(i["key"] == "pilot" and i["specialty"] == "Airplane" and i["value"] == 60 for i in st["specialtyInstances"])
+                 and st["skills"].get("alertness") == 55 and st["bio"]["profession"] == "pilot_sailor" and st["sanity"]["violence"] == [True, True, False]),
+             ("vera.json", json.dumps(foundry), "Vera Lind", lambda st: st["skills"].get("occult") == 45 and st["lpFeat"].get("CHA") == "Quiet" and st["bio"]["profession"] == "anthropologist"
+                 and any(i["specialty"] == "Latin" for i in st["specialtyInstances"]) and st["bonds"][0]["name"] == "Paul Lind"),
+             ("ines.json", json.dumps(native), "Ines Moreau", lambda st: st["skills"].get("medicine") == 70),
+             ("odile.html", html, "Odile Moreau", lambda st: st["bonds"][0]["name"] == "Luc")]
+    for fname, content, who, check in cases:
+        page, errs = _field_notes_page(p, width=1180, height=900)
+        page.goto(f"{BASE}/agent-hub.html#new", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_selector("#nr-root [data-file]", state="attached", timeout=15000)
+        page.set_input_files("#nr-root [data-file]", files=[{"name": fname, "mimeType": "text/plain", "buffer": content.encode()}])
+        ok = wait_for_condition(lambda: page.evaluate("() => { const w = window.dgRecruit._w(); return w && w.step === 5 ? 1 : null; }"), timeout_ms=10000)
+        nm = page.input_value("#nr-root [data-f='bio.name']") if ok else ""
+        st = page.evaluate("() => { const w = window.dgRecruit._w(); return w ? window.dgRecruit.build(w) : null; }") if ok else None
+        good = False
+        try: good = bool(st) and check(st)
+        except Exception as e: good = False
+        record("recruit-import", f"{fname}: lands at Personal data with the Agent's name, stats, skills and Bonds", bool(ok) and nm == who and good, f"{nm!r} {json.dumps(st)[:240] if st else page.text_content('#nr-root [data-err]')}")
+        errs_all.extend(errs)
+        page.close()
+    # A bad file says so, and stays on Start.
+    page, errs = _field_notes_page(p, width=1180, height=900)
+    page.goto(f"{BASE}/agent-hub.html#new", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector("#nr-root [data-file]", state="attached", timeout=15000)
+    page.set_input_files("#nr-root [data-file]", files=[{"name": "junk.txt", "mimeType": "text/plain", "buffer": b"hello there"}])
+    msg = wait_for_condition(lambda: (page.text_content("#nr-root [data-err]") or "").strip() if "Could not read" in (page.text_content("#nr-root [data-err]") or "") else None, timeout_ms=8000)
+    record("recruit-import", "an unreadable file says why and stays on Start", bool(msg) and page.evaluate("() => !window.dgRecruit._w()"), str(msg))
+    errs_all.extend(errs)
+    page.close()
+    # Recruit for an Agent already on file with no sheet: the wizard, same code.
+    docs = _field_notes_docs()
+    del docs[f"characters/{FN_CODE}"]
+    page, errs = _field_notes_page(p, width=1180, height=900, docs=docs)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    btn = f"#panel-{FN_CODE} .paper-actions a.paper-btn"
+    page.wait_for_selector(btn, state="visible", timeout=15000)
+    href = page.get_attribute(btn, "href") or ""
+    page.click(btn)
+    page.wait_for_function("() => window.dgRecruit && window.dgRecruit._w() && window.dgRecruit._w().code", timeout=15000)
+    w = page.evaluate("() => window.dgRecruit._w()")
+    named = wait_for_condition(lambda: page.evaluate("() => window.dgRecruit._w().bio.name") or None, timeout_ms=8000)
+    record("recruit-import", "Recruit (an Agent with no sheet) opens New Recruit under that Agent's own code, name from their brief",
+           "recruit=" + FN_CODE in href and w["code"] == FN_CODE and named == "Mara Voss" and page.is_visible("#panel-new.active"), href + " " + str(named))
+    errs_all.extend(errs)
+    page.close()
+    # Settings: Export builds the DD Form 315 from the saved character.
+    page, errs = _field_notes_page(p, width=1300, height=860,
+                                   extra_init="window.exportToPDF = function () { window.__pdfState = window.dgSaveLoad.collectState(); return Promise.resolve(); };")
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.evaluate("() => window.dgFieldNotes.open('settings')")
+    page.click("#fn-veil [data-s=pdf]")
+    got = wait_for_condition(lambda: page.evaluate("() => window.__pdfState || null"), timeout_ms=8000)
+    record("recruit-import", "notebook Settings: PDF (DD Form 315) is built from the Agent's saved character, profession written out",
+           bool(got) and got["bio"]["name"] == "Mara Voss" and got["bio"]["profession"] == "Federal Agent"
+           and "Downloaded" in (page.text_content("#fn-veil [data-s=pdf-status]") or ""), json.dumps(got)[:200] if got else "")
+    errs_all.extend(errs)
+    record("recruit-import", "no JS exceptions (imports and links)", not errs_all, str(errs_all[:3]))
+    page.close()
+
+
 def test_agent_file_parts_and_looks(p):
     """The Agent File in numbered parts (Statistics, Skills, Psyche, Combat
     & gear, Cell, Record) with a jump index; Find a skill (kept across a
@@ -12411,9 +12491,9 @@ def test_field_notes_notebook(p):
     rules = wait_for_condition(lambda: (_notebook_text(page) if "Skill Tests" in _notebook_text(page) else None), timeout_ms=8000) or ""
     record("notebook", "Rules reads the Rules Reference inline", "Skill Tests" in rules and "Sanity" in rules, rules[:120])
     page.click("#fn-veil .fn-tab[data-view=settings]")
-    record("notebook", "Settings off the sheet: Cover Identity, Boot splash, and a way to the sheet's own settings",
+    record("notebook", "Settings off the sheet: Cover Identity, Boot splash, Export as PDF, and the old sheet behind Open ↗",
            page.input_value("#fn-veil [data-s=ci]") == "fn tester" and page.is_visible("#fn-veil [data-s=boot]")
-           and page.is_visible("#fn-veil [data-s=gosheet]"), "")
+           and page.is_visible("#fn-veil [data-s=pdf]") and page.is_visible("#fn-veil [data-s=gosheet]"), "")
     page.keyboard.press("Escape")
     record("notebook", "Escape closes the notebook", page.evaluate("() => !window.dgFieldNotes.isOpen()"), "")
     errs_all.extend(errs)
@@ -12760,10 +12840,10 @@ def test_field_notes_round3(p):
     try:
         fr.wait_for_selector("#character-sheet-btn", state="visible", timeout=10000)
         fr.click("#character-sheet-btn")
-        page.wait_for_url("**/stats/index.html**", timeout=10000)
-        record("notebook", "the spread's Character Sheet button leaves for the sheet (no trap inside the notebook)", True, page.url)
+        page.wait_for_url("**/agent-hub.html?code=**", timeout=10000)
+        record("notebook", "the spread's Agent File button leaves for the Agent File (no trap inside the notebook)", True, page.url)
     except Exception as e:
-        record("notebook", "the spread's Character Sheet button leaves for the sheet (no trap inside the notebook)", False, str(e)[:200])
+        record("notebook", "the spread's Agent File button leaves for the Agent File (no trap inside the notebook)", False, str(e)[:200])
     errs_all.extend(errs)
     page.close()
 
@@ -12788,10 +12868,11 @@ def test_field_notes_round3(p):
     name = first.locator(".fc-name").inner_text().strip()
     first.click()
     page.click("#fr-keep")
-    page.wait_for_url("**/stats/index.html**", timeout=15000)
-    got = wait_for_condition(lambda: page.evaluate("() => { const n = document.getElementById('cs-name'); return n && n.value ? n.value : null; }"), timeout_ms=10000)
-    record("friendly", "Make this my Agent opens a real sheet with the pregen filled in", got == name, f"{got!r} vs {name!r}")
-    code = wait_for_condition(lambda: page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')"), timeout_ms=8000) or ""
+    page.wait_for_url("**/agent-hub.html?recruit=friendly**", timeout=15000)
+    got = wait_for_condition(lambda: page.evaluate("() => { const n = document.querySelector(\"#nr-root [data-f='bio.name']\"); return n && n.value ? n.value : null; }"), timeout_ms=12000)
+    record("friendly", "Make this my Agent opens New Recruit with the pregen filled in (at Personal data)", got == name, f"{got!r} vs {name!r}")
+    page.click("#nr-root [data-a=next]")
+    code = wait_for_condition(lambda: page.evaluate("() => (window.dgRecruit._w() || {}).code || null"), timeout_ms=10000) or ""
     def saved_stats():
         d = fs_doc(page, f"characters/{code}") if code else None
         if not d: return None
@@ -12799,8 +12880,8 @@ def test_field_notes_round3(p):
         return st if any(v != 3 for v in st.values()) else None
     st = wait_for_condition(saved_stats, timeout_ms=12000)
     record("friendly", "…saved under its own new Agent Code with the pregen's real stats (not the blank 3s)", bool(st), f"{code} {st}")
-    record("friendly", "…and the new Agent's Standing Orders are armed",
-           (json.loads(page.evaluate("() => localStorage.getItem('dg_fn_orders_pending')") or "null") or {}).get("code") == code, "")
+    record("friendly", "…not filed until the Contract is signed",
+           (json.loads((fs_doc(page, f"characters/{code}") or {}).get("character_json") or "{}")).get("creationCommitted") is False, "")
     errs_all.extend(errs)
     page.close()
     return errs_all
@@ -13893,6 +13974,7 @@ def main():
         safe(test_agent_file_brief_read_recovers, browser, area="agent-file")
         safe(test_agent_file_parts_and_looks, browser, area="agent-file-parts")
         safe(test_new_recruit_wizard, browser, area="recruit")
+        safe(test_new_recruit_imports_and_links, browser, area="recruit-import")
         safe(test_agent_rules_unit, browser, area="rules")
         safe(test_evidence_attachments_open_and_zoom, browser, area="evidence")
         safe(test_motivations_and_disorders_split, browser, area="disorders")

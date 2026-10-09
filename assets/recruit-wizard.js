@@ -717,6 +717,7 @@
       agent: { name: W.bio.name, profession: pi.title || '', employer: W.bio.employer, age: W.bio.age, sex: W.bio.sex, nationality: W.bio.nationality },
       bond: { name: x.name, relationship: x.relationship }, existing: x.description || ''
     }).then(function (res) {
+      if (res && res.status === 'ERROR') throw new Error(res.message || 'error');
       var text = String((res && (res.description || res.text)) || '').trim();
       if (!text) throw new Error('empty');
       W.bonds[i].description = text; saveDraft();
@@ -1202,6 +1203,30 @@
       startImported(st, 'Friendly: ' + p.name, p.profession || '');
     }, function () { ui.err = 'Could not load the Friendly.'; render(); });
   }
+  // A Friendly by its id (friendly.html's "Make this my Agent").
+  function openPregen(id) {
+    ui.start = 'friendly';
+    return fetch(ROOT + 'friendly/pregens.json').then(function (r) { return r.json(); }).then(function (j) {
+      ui.pregens = (Array.isArray(j) ? j : j.pregens || []).filter(function (p) { return p && p.name && p.stats; });
+      var i = ui.pregens.findIndex(function (p) { return String(p.id) === String(id); });
+      if (i === -1) { ui.err = 'That Friendly was not found; pick one below.'; render(); return; }
+      usePregen(i);
+    }, function () { ui.pregens = []; ui.err = 'Could not load the Friendlies.'; render(); });
+  }
+  // An Agent already on file with no character sheet (Agent Hub's and the
+  // notebook's Recruit): the wizard builds one under the same code.
+  function startForCode(code) {
+    var dr = loadDraft();
+    if (dr && dr.code === code) { W = dr; render(); return; }
+    W = freshDraft(); W.code = code;
+    render();
+    return (window.dgStore ? window.dgStore.getBrief(code) : Promise.resolve(null)).then(function (b) {
+      if (!b || !W || W.code !== code) return;
+      W.bio.name = b.char_name || ''; W.bio.codename = b.codename || ''; W.bio.nationality = b.nationality || '';
+      W.bio.sex = b.sex === 'Other' ? 'Non-binary' : (b.sex || '');
+      saveDraft(); render();
+    }, function () { /* fill in by hand */ });
+  }
   function loadSheetLib() { return loadScript('assets/agent-sheet.js', has('dgAgentSheet')).then(function () { return window.dgAgentSheet; }); }
   // An imported character becomes the draft; the wizard asks about what
   // it may not carry, from Personal data on.
@@ -1222,6 +1247,7 @@
     var I = window.dgAgentImport;
     var load = I ? Promise.resolve(I) : loadScript('assets/agent-import.js', has('dgAgentImport')).then(function () { return window.dgAgentImport; });
     ui.err = ''; ui.busy = 'Reading ' + file.name + '…';
+    var e0 = root.querySelector('[data-err]'); if (e0) e0.textContent = ui.busy;
     load.then(function (imp) {
       if (!imp) throw new Error('The importer is not available yet.');
       return imp.read(file);
@@ -1261,9 +1287,11 @@
     if (!readyP) {
       root.innerHTML = '<p class="nr-busy">Opening a new case file…</p>';
       readyP = deps().then(function () {
-        var params = new URLSearchParams(location.search);
+        var params = new URLSearchParams(location.search), rq = params.get('recruit') || '';
         var dr = loadDraft();
-        if (params.get('recruit') === 'resume' && dr) { W = dr; }
+        if (rq === 'resume' && dr) W = dr;
+        else if (rq === 'friendly' && params.get('pregen')) { render(); return openPregen(params.get('pregen')); }
+        else if (/^[A-Z0-9]+-[A-Z0-9]+$/i.test(rq)) return startForCode(rq.toUpperCase());
         render();
       }, function (err) {
         readyP = null;
