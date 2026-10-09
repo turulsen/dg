@@ -320,6 +320,8 @@
     var key = arguments.length ? k : bio && bio.profession;
     if (!key) return arguments.length ? '' : (data.brief && data.brief.profession) || '';
     try {
+      var rl = window.dgRecruitData && window.dgRecruitData.label(key);
+      if (rl) return rl;
       var p = window.professions || (contentWin() && contentWin().professions);
       if (p && p[key] && p[key].title) return p[key].title;
     } catch (e) { /* not on the sheet */ }
@@ -370,7 +372,8 @@
   var sheetLibPromise = null;
   var SHEET_LIB = [
     ['assets/agent-sheet.js', 'dgAgentSheet'], ['assets/disorders.js', 'dgDisorders'], ['assets/agent-rules.js', 'dgRules'],
-    ['assets/agent-live.js', 'dgAgentLive'], ['assets/agent-paper.js', 'dgAgentPaper']
+    ['assets/agent-live.js', 'dgAgentLive'], ['assets/agent-paper.js', 'dgAgentPaper'],
+    ['assets/recruit-data.js', 'dgRecruitData']
   ];
   function ensureSheetLib() {
     [['assets/agent-sheet.css', 'data-as-css'], ['assets/agent-paper.css', 'data-ap-css']].forEach(function (c) {

@@ -1595,6 +1595,8 @@
   // folder's own header above already carries the photo and name.
   function profTitle(key) {
     if (!key) return '';
+    const rl = window.dgRecruitData && window.dgRecruitData.label(key);
+    if (rl) return rl;
     if (window.professions && window.professions[key] && window.professions[key].title) return window.professions[key].title;
     return String(key).replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   }
