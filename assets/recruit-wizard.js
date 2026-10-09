@@ -656,11 +656,11 @@
     return wrap(head(5, 'Personal data', 'Who the Agent is on paper. Random Bio fills everything you leave empty.') +
       '<div class="nr-chips"><button type="button" class="nr-btn red" data-a="randbio">⚄ Random Bio</button></div>' +
       '<div class="nr-form">' + f('Name', 'name', 'Full name', ' autocomplete="off"') + f('Cover name (codename)', 'codename', 'e.g. Sparrow') +
-      '<label>Profession<input class="in" value="' + esc(pi.title || '') + '" disabled></label>' + f('Employer', 'employer', pi.employer || '') + f('Past employer (optional)', 'pastEmployer', 'e.g. Kansas City PD, 2009–2015') +
+      '<label>Profession<input class="in" value="' + esc(W.imported ? (W.importedLabel || '') : pi.title || '') + '" disabled></label>' + f('Employer', 'employer', pi.employer || '') + f('Past employer (optional)', 'pastEmployer', 'e.g. Kansas City PD, 2009–2015') +
       f('Nationality', 'nationality', 'e.g. American') +
       '<label>Sex<select class="in" data-f="bio.sex"><option value=""></option>' + ['Female', 'Male', 'Non-binary'].map(function (s) { return '<option' + (b.sex === s ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select></label>' +
       f('Age', 'age', 'e.g. 38', ' inputmode="numeric"') + f('Education', 'education', 'e.g. MA, Criminology') + '</div>' + ciBox + codeBox +
-      foot('Damaged Veteran', 'Bonds'));
+      foot(W.imported ? 'Start' : 'Damaged Veteran', 'Bonds', W.imported ? 'Brought in from ' + esc(W.importedFrom || 'a file') + '. Statistics, skills and profession come from it; change them later in the Agent File\'s Edit.' : ''));
   }
   function randomBio() {
     var B = BIO(), b = W.bio, s = finalStats(W);
