@@ -157,7 +157,8 @@
   /* ── The paper ── */
   function mount(el, ctx) {
     var s = window.dgAgentLive.session(ctx.code, ctx.char);
-    var ui = { pop: '', san: { amount: '1d6', kind: 'violence', other: '' }, card: -1, gearCat: '' };
+    // The drop-downs stay as they were when the host draws the paper again.
+    var ui = { pop: '', san: { amount: '1d6', kind: 'violence', other: '' }, card: -1, gearCat: '', appear: !!el._apAppear, cellOpen: !!el._apCell };
     var members = (ctx.members || []).slice();
     var unwatch = [];
 
@@ -193,8 +194,7 @@
       }
       var sub = [ctx.professionLabel ? ctx.professionLabel(bio.profession) : bio.profession, ctx.codename ? 'Cover “' + ctx.codename + '”' : ''].filter(Boolean).join(' · ');
       return '<div class="as-head ap-head">' +
-        (ctx.photoHtml ? '<div class="as-photo">' + ctx.photoHtml +
-          (ctx.appearanceOutside ? '' : '<button type="button" class="ap-mini ap-appear-btn" data-a="appear" aria-expanded="' + !!ui.appear + '">Appearance ' + (ui.appear ? '▴' : '▾') + '</button>') + '</div>' : '') +
+        (ctx.photoHtml ? '<div class="as-photo">' + ctx.photoHtml + dropBtns() + '</div>' : '') +
         '<div class="as-id">' +
           (edit ? '<input class="ap-in ap-name-in" data-e="bio.name" value="' + esc(bio.name) + '" aria-label="Name">' : '<div class="as-name">' + esc(bio.name || ctx.name || 'Unnamed Agent') + '</div>') +
           '<div class="as-sub">' + esc(sub) + '</div>' +
@@ -448,8 +448,18 @@
       return '<div class="ap-appear"><div class="as-sec-hd">Appearance <span>physical description</span></div>' +
         (p ? '<p class="as-text">' + esc(p) + '</p>' : '<p class="as-text as-k">Not described yet.</p>') + '</div>';
     }
+    // The Cell (initiative by DEX, member cards) drops down from beside
+    // Appearance; on Agent Hub from the hub's own button (api.toggleCell).
+    function cellDropHtml(x) {
+      return ui.cellOpen ? '<div class="ap-appear ap-celldrop">' + cellHtml(x) + '</div>' : '';
+    }
+    function dropBtns() {
+      if (ctx.appearanceOutside) return '';
+      return '<div class="ap-dropbtns"><button type="button" class="ap-mini ap-appear-btn" data-a="appear" aria-expanded="' + !!ui.appear + '">Appearance ' + (ui.appear ? '▴' : '▾') + '</button>' +
+        '<button type="button" class="ap-mini ap-appear-btn" data-a="cell" aria-expanded="' + !!ui.cellOpen + '">Cell ' + (ui.cellOpen ? '▴' : '▾') + '</button></div>';
+    }
     // One numbered part of the file, like the sections of a DD 315.
-    var PARTS = [['stats', 'Statistics'], ['skills', 'Skills'], ['psyche', 'Psyche'], ['kit', 'Combat & gear'], ['cell', 'Cell'], ['record', 'Record']];
+    var PARTS = [['stats', 'Statistics'], ['skills', 'Skills'], ['psyche', 'Psyche'], ['kit', 'Combat & gear'], ['record', 'Record']];
     function part(id, n, title, tools, body) {
       return '<section class="ap-part" data-part="' + id + '"><header class="ap-part-hd"><span class="ap-part-n">' + n + '</span><span class="ap-part-t">' + title + '</span>' +
         (tools ? '<span class="ap-part-tools">' + tools + '</span>' : '') + '</header><div class="ap-part-b">' + body + '</div></section>';
@@ -466,7 +476,7 @@
       var inc = ctx.incursion ? '<div class="as-sec as-incursion"><div class="as-sec-hd">The Incursion</div><p class="as-text">' + esc(ctx.incursion) + '</p></div>'
         : (ctx.incursionEmptyHtml ? '<div class="as-sec as-incursion"><div class="as-sec-hd">The Incursion</div>' + ctx.incursionEmptyHtml + '</div>' : '');
       var n = 0;
-      return '<div class="as-paper ap ap-look-' + look() + (edit ? ' ap-editing' : '') + '">' + bar + headHtml(x, edit) + appearHtml(x) + indexHtml(edit) +
+      return '<div class="as-paper ap ap-look-' + look() + (edit ? ' ap-editing' : '') + '">' + bar + (ctx.appearanceOutside ? cellDropHtml(x) : '') + headHtml(x, edit) + appearHtml(x) + (ctx.appearanceOutside ? '' : cellDropHtml(x)) + indexHtml(edit) +
         (edit ? part('personal', '0', 'Personal data & appearance', '', personalHtml(x)) : '') +
         '<div class="as-sheet">' +
           part('stats', ++n, 'Statistics', '<span class="ap-part-note">' + (edit ? 'value · distinguishing feature' : 'tap to roll ×5 · distinguishing features') + '</span>', statsHtml(x, edit)) +
@@ -476,7 +486,6 @@
           part('kit', ++n, 'Combat & gear', '',
             '<div class="as-cols"><div>' + weaponsHtml(x, edit) + (edit ? '' : woundsHtml(x)) + '</div><div>' + gearHtml(x, edit) + '</div></div>') +
         '</div>' +
-        part('cell', ++n, 'Cell', '', cellHtml(x)) +
         (edit ? '' : part('record', ++n, 'Record — Incursion & Operations', '', inc + (ctx.opsHtml || ''))) + (ctx.noteHtml || '') + '</div>';
     }
 
@@ -552,7 +561,8 @@
           if (f && ui.pop) f.focus();
           return;
         case 'rollsan': rollPct(R().derived(s.state).san, 'SAN'); return;
-        case 'appear': ui.appear = !ui.appear; render(); return;
+        case 'appear': ui.appear = el._apAppear = !ui.appear; render(); return;
+        case 'cell': ui.cellOpen = el._apCell = !ui.cellOpen; render(); return;
         case 'jump': {
           var tg = el.querySelector('.ap-part[data-part="' + b.getAttribute('data-part') + '"]');
           if (tg) tg.scrollIntoView({ block: 'start', behavior: 'smooth' });
@@ -759,7 +769,8 @@
     var api = {
       click: onClick, change: onChange, input: onInput, key: onKey,
       destroy: function () { off(); unwatch.forEach(function (u) { try { u(); } catch (e) { /* gone */ } }); unwatch = []; },
-      session: s, render: render
+      session: s, render: render,
+      toggleCell: function (open) { ui.cellOpen = el._apCell = open == null ? !ui.cellOpen : !!open; render(); return ui.cellOpen; }
     };
     el._ap = api;
     render();

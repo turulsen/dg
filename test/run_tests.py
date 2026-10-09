@@ -3124,6 +3124,7 @@ def test_agent_hub_dex_postit(p):
     page.add_init_script("localStorage.setItem('dg_agent_roster', JSON.stringify(%s));" % json.dumps({
         "OWEN-CS12": {"code": "OWEN-CS12", "char_name": "Owen Castillo", "codename": "Ferro", "saved_at": 2000}}))
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    _open_cell(page, code="OWEN-CS12")
     page.wait_for_selector("#ah-sheet-OWEN-CS12 .ap-init", timeout=10000)
     rows = page.eval_on_selector_all("#ah-sheet-OWEN-CS12 .ap-init li", "els => els.map(e => e.innerText.replace(/\\s+/g, ' ').trim())")
     record("hub", "the Agent's DEX leads their line in the Cell's initiative list (no DEX post-it any more)",
@@ -10204,6 +10205,7 @@ def test_cell_members_by_name_and_kia(p):
     extra = "localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE
     page, errs = _field_notes_page(p, docs=docs, extra_init=extra)
     page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    _open_cell(page, code=FN_CODE)
     page.wait_for_selector(f"#ah-sheet-{FN_CODE} .ap-init li", timeout=15000)
     page.wait_for_timeout(500)
     rows = page.eval_on_selector_all(f"#ah-sheet-{FN_CODE} .ap-init li", "els => els.map(e => [e.querySelector('.as-mname').textContent, e.classList.contains('as-kia'), !!e.querySelector('.as-stamp')])")
@@ -10215,6 +10217,9 @@ def test_cell_members_by_name_and_kia(p):
     record("hub", "…and a member at 0 HP is marked KIA (only them)",
            [r[1] and r[2] for r in rows] == [False, False, False, True], str(rows))
     page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+    nbp = page.locator("#fn-veil .as-paper.ap").filter(visible=True).first
+    nbp.wait_for(timeout=15000)
+    _open_cell(page, nbp)
     page.wait_for_selector("#fn-veil .ap-init li", timeout=15000)
     nb = page.eval_on_selector_all("#fn-veil .ap-init li", "els => els.map(e => [e.querySelector('.as-mname').textContent, e.classList.contains('as-kia')])")
     record("notebook", "the notebook's Agent File lists the same Cell by name, with KIA marked",
@@ -10332,6 +10337,8 @@ def test_agent_file_san_roll_and_member_cards(p):
         # The notebook keeps more than one copy of a page; use the one on screen.
         paper = page.locator(root + " .as-paper").filter(visible=True).first
         paper.locator("[data-a=rollsan]").wait_for(timeout=15000)
+        _open_cell(page, paper, FN_CODE)
+        paper = page.locator(root + " .as-paper").filter(visible=True).first
         paper.locator(".as-mthumb img").first.wait_for(timeout=8000)
         record("agent-file", where + ": a Cell member shows with their photo",
                paper.locator(".as-mthumb img").first.get_attribute("src") == png, "")
@@ -10521,6 +10528,19 @@ def test_agent_file_v2_play_and_edit(p):
     page.close()
     return errs_all
 
+def _open_cell(page, paper=None, code=None):
+    """The Cell is a drop-down beside Appearance: the notebook's paper has
+    its own Cell ▾ button, Agent Hub's is under the photo."""
+    if paper is not None and paper.locator("[data-a=cell]").count():
+        if not paper.locator(".ap-celldrop").count():
+            paper.locator("[data-a=cell]").first.click()
+        return
+    btn = f"[data-ah-cell={code}]"
+    page.wait_for_selector(f"#ah-sheet-{code} .ap-vitals", timeout=15000)
+    if not page.locator(f"#ah-sheet-{code} .ap-celldrop").count():
+        page.click(btn)
+
+
 def test_agent_file_parts_and_looks(p):
     """The Agent File in numbered parts (Statistics, Skills, Psyche, Combat
     & gear, Cell, Record) with a jump index; Find a skill (kept across a
@@ -10544,14 +10564,27 @@ def test_agent_file_parts_and_looks(p):
     root = f"#ah-sheet-{FN_CODE}"
     page.wait_for_selector(root + " .ap-part", timeout=15000)
     parts = page.eval_on_selector_all(root + " .ap-part", "els => els.map(e => e.getAttribute('data-part'))")
-    record("agent-file-parts", "the file is in six numbered parts, the Cell after the sheet",
-           parts == ["stats", "skills", "psyche", "kit", "cell", "record"], str(parts))
+    record("agent-file-parts", "the file is in five numbered parts (the Cell is a drop-down now)",
+           parts == ["stats", "skills", "psyche", "kit", "record"], str(parts))
     record("agent-file-parts", "Typed form is the default look",
            page.evaluate(f"() => document.querySelector('{root} .as-paper.ap').classList.contains('ap-look-form')"), "")
-    page.click(root + " [data-a=jump][data-part=cell]")
-    ok = wait_for_condition(lambda: page.evaluate(f"""() => {{ const r = document.querySelector('{root} .ap-part[data-part=cell]').getBoundingClientRect();
-        return r.top >= -2 && r.top < 120; }}"""), timeout_ms=4000)
-    record("agent-file-parts", "the index's Cell button scrolls to the Cell", bool(ok), "")
+    page.click(root + " [data-a=jump][data-part=psyche]")
+    ok = wait_for_condition(lambda: page.evaluate(f"""() => {{ const r = document.querySelector('{root} .ap-part[data-part=psyche]').getBoundingClientRect();
+        return r.top >= -2 && r.top < 160; }}"""), timeout_ms=4000)
+    record("agent-file-parts", "the index's Psyche button scrolls to Psyche", bool(ok), "")
+    # Era photos and Cell drop down from beside Appearance, under the photo.
+    record("agent-file-parts", "Agent Hub: Era photos and Cell start folded", page.is_hidden(f"#ah-era-{FN_CODE}") and page.locator(root + " .ap-celldrop").count() == 0, "")
+    page.click(f"[data-ah-cell={FN_CODE}]")
+    page.wait_for_selector(root + " .ap-celldrop .ap-init li", timeout=5000)
+    page.click(f"[data-ah-era={FN_CODE}]")
+    record("agent-file-parts", "Cell ▾ drops down the initiative list, Era photos ▾ the era photos",
+           page.locator(root + " .ap-celldrop .ap-init li").count() >= 1 and page.is_visible(f"#ah-era-{FN_CODE} #af-photos"), "")
+    page.click(root + " [data-a='wp-']")
+    page.wait_for_timeout(300)
+    record("agent-file-parts", "the Cell stays open when the sheet redraws", page.locator(root + " .ap-celldrop").count() == 1, "")
+    page.click(f"[data-ah-cell={FN_CODE}]")
+    page.click(f"[data-ah-era={FN_CODE}]")
+    record("agent-file-parts", "both fold again", page.is_hidden(f"#ah-era-{FN_CODE}") and page.locator(root + " .ap-celldrop").count() == 0, "")
     page.fill(root + " [data-u=skill-find]", "fir")
     vis = lambda: page.eval_on_selector_all(root + " .ap-part[data-part=skills] .as-skills > *", "els => els.filter(e => !e.hidden).map(e => e.querySelector('.as-sn').textContent)")
     v1 = vis()
@@ -10578,7 +10611,9 @@ def test_agent_file_parts_and_looks(p):
     V.wait_for(timeout=10000)
     V.locator("[data-a=appear]").click()
     record("agent-file-parts", "the notebook's Appearance fold under the photo shows the description",
-           "watchful grey eyes" in V.locator(".ap-appear").inner_text(), "")
+           "watchful grey eyes" in V.locator(".ap-appear").first.inner_text(), "")
+    V.locator("[data-a=cell]").click()
+    record("agent-file-parts", "the notebook's Cell fold sits beside it", V.locator(".ap-celldrop .ap-init li").count() >= 1, "")
     page.evaluate("() => window.dgFieldNotes.open('settings')")
     page.wait_for_selector("[data-s=paper-look]")
     opts = page.eval_on_selector_all("[data-s=paper-look] option", "els => els.map(e => e.value)")
@@ -12024,6 +12059,8 @@ def test_field_notes_notebook(p):
     page.click("#fn-closed .fn-cover")
     page.click("#fn-veil .fn-slot[data-view=agentfile]")
     txt = wait_for_condition(lambda: (_notebook_text(page) if "Operation FULL MOON" in _notebook_text(page) else None), timeout_ms=10000) or ""
+    _open_cell(page, page.locator("#fn-veil .as-paper.ap").filter(visible=True).first)
+    txt = wait_for_condition(lambda: (_notebook_text(page) if "Tom Hale" in _notebook_text(page) else None), timeout_ms=6000) or txt
     record("notebook", "Agent File has Edit and Whole Agent File, and no Play (the Agent File is the sheet)",
            page.evaluate("() => { const r = document.querySelector('#fn-veil [data-fn-slot=body] .as-paper'); return !!r && !!r.querySelector('[data-a=edit]') && !!r.querySelector('[data-go=file]') && !r.querySelector('[data-go=play]'); }"), "")
     record("notebook", "Agent File quick look: name, Cell, Cell members, Bonds, Operations",

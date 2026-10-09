@@ -159,7 +159,9 @@
 .as-paper .ap-find{ flex:1 1 180px; max-width:280px; font-size:12px; }
 .as-skills > [hidden]{ display:none !important; }
 /* Appearance fold under the photo (the notebook) */
-.as-photo .ap-appear-btn{ display:block; margin:6px auto 0; }
+.ap-dropbtns{ display:flex; flex-direction:column; gap:4px; align-items:stretch; margin-top:6px; }
+.as-paper .ap-dropbtns .ap-appear-btn{ display:block; text-align:center; }
+.ap-celldrop .ap-init{ margin-top:2px; }
 .ap-appear{ margin-top:8px; padding:4px 12px 10px; background:#fbf7ea; border:1px solid var(--as-rule); }
 .ap-appear .as-sec-hd{ margin-top:8px; }
 /* A narrow paper (the notebook's page) stacks the two columns */
