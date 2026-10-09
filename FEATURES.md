@@ -27,7 +27,7 @@ Check the current code before trusting a specific function name.
 |---|---|---|
 | `index.html` | Everyone | Boot-splash animation, then a three-card chooser: **Agent** (player), **Friendly** (one-shot player, pregen) or **A-Cell** (Handler, password-gated). Entry point for the whole site. |
 | `friendly.html` | One-shot players | Pick a pregenerated Agent (`friendly/pregens.json`, built by `scripts/pregens/`) and play: read-only dossier, every stat/skill/weapon rolls via the Dice Roller, HP/WP/SAN kept on paper. No Firebase sign-in unless the pregen is in a Cell (then its id — a valid Agent Code shape, e.g. `FR-USSS-PPD` — signs in through `exchangeAgentToken` like any Agent and rolls into that Cell's `dice_rolls` feed; no backend or rules change was needed). The Dice Roller takes its identity from the page (`dgDice.setIdentity`), never from the device's own roster. |
-| `agent-hub.html` | Players | A player's own hub and each Agent's whole file: one folder tab per Agent in this browser's roster, plus "+ New Recruit". An Agent's tab has **Play** (the one button left -- the rest lives in the Field Notes notebook), the Agent File paper, **Appearance** and the **era photos** (§5), Evidence, and (if unassigned) a Cover Identity search box. `?code=CODE[#appearance|#photos]` opens one Agent. |
+| `agent-hub.html` | Players | A player's own hub and each Agent's whole file: one folder tab per Agent in this browser's roster, plus "+ New Recruit". An Agent's tab has the Agent File paper, which since v2.7.0 is the character sheet (§5; the rest lives in the Field Notes notebook), **Appearance ▾** under the photo and the **era photos** (§5), Evidence, and (if unassigned) a Cover Identity search box. `?code=CODE[#appearance|#photos]` opens one Agent. |
 | `dg-agent-portal.html` | -- | Retired (the three-tab Agent Portal); forwards old addresses to Agent Hub / the Fabricator. See §5. |
 | `stats/index.html` | Players | The actual Delta Green character sheet/creator — stats, skills, professions, Bonds, equipment, dice roller, Live Play tracker bar, three visual themes, import from five different formats, Cloud Save. This is a ported third-party project, see §2. |
 | `a-cell.html` | Handler | The Handler's dashboard, password-gated. Tabs: **Play** (every Agent, simplified, for running the table), **Cells** (group Agents under a Handler), **Evidence** (file documents/photos, scoped to a Cell or campaign-wide), **Sheet** (dense Excel-style roster), **Music** (Table Radio broadcast controls), **Admin** (delete/restore Agents, including Agent-File-only entries). |
@@ -131,8 +131,7 @@ the profession (`assets/appearance-gen.js`); loading an Agent brings it
 back from the brief. Finishing the wizard runs the sheet's own export
 (identity, build, outfit), so a new Agent's Agent File is complete.
 
-**Motivations and Mental Disorders, apart (unreleased, next after
-v2.5.0):** the Biography had one free-text box for both. Motivations
+**Motivations and Mental Disorders, apart (v2.6.0, PR #66):** the Biography had one free-text box for both. Motivations
 keep that box (`#cs-motivations`, `bio.motivations`); Mental Disorders
 are their own list (`stats/disorders-sheet.js`, the hidden
 `#cs-disorders` -> `bio.disorders`, an array of names). Each row is a
@@ -288,7 +287,7 @@ see §12.
 name first, then the sheet's, Friendlies as "Friendly: name"); the
 stored value is still the codes.
 
-**Opening an attachment (players; unreleased, next after v2.5.0):** a
+**Opening an attachment (players; v2.6.0, PR #66):** a
 filed photo opens full-screen in `assets/evidence-viewer.js`
 (`window.dgEvidenceViewer.open(src, title)`) wherever a player sees
 Evidence: the notebook's Evidence page ("Tap to enlarge" under the
@@ -337,7 +336,7 @@ forwards old addresses (`?code=` -> the Agent's tab, `#cover` -> their
 photos, `#ids` -> the Fabricator). What follows describes the pieces as
 they were built on the portal; they work the same in their new place.
 
-**The Agent File paper's vitals and Cell (unreleased, next after v2.5.0).**
+**The Agent File paper's vitals and Cell (v2.6.0, PR #66).**
 The same paper is the notebook's Agent File page and Agent Hub's tab, so
 both get these. Next to HP/WP/SAN/BP sits **Roll SAN**: a d100 Sanity
 roll against current SAN through the Dice Roller (in the notebook it turns
@@ -352,6 +351,49 @@ passing its own photo loader (the notebook's `setImage`, Agent Hub's
 `loadFacePlate`, or the URL as is for `https:`/`data:`). The listener is
 wired once per element and reads the latest members on each tap, since a
 page can redraw the paper as more data arrives.
+
+**The Agent File as the character sheet (v2.7.0, PR #67; v2 milestone
+M1).** The paper is now the sheet an Agent plays from, in the notebook
+and on Agent Hub. Plan and milestones: M1 (this), M2 the New Recruit
+wizard, imports and PDF export, with the old sheet only behind Settings
+(v3.0.0), M3 the sanity meter's look, M4 deleting `stats/` once the user
+decides.
+- **`assets/agent-rules.js`** (`window.dgRules`): the rules as pure
+  functions on the saved state, no page code. Max values (HP = ⌈(STR+CON)/2⌉,
+  WP = POW, SAN = POW×5 capped at 99 − Unnatural), clamped `adjust`,
+  `stepBp` (± POW), the skills list with specialties, marks
+  (`lpCheckedSkills`; never Unnatural, only at 1%+), `improve` (+1D4 per
+  mark), `sanLoss(state, amount, kind)` returning the events it sets off
+  (`disorder` | `insanity` | `breaking` | `zero` | `incident`), `adapt`,
+  `addBond` (score = CHA), Motivations (`bio.motivations`, rolled from
+  `stats/bio.js`'s `motivationsData`) and Mental Disorders (`bio.disorders`;
+  a disorder triggers on a loss of 2+ when `dgDisorders` says its trigger
+  is losing 2+ SAN). `normalizeBio` splits an older combined text.
+- **`assets/agent-live.js`** (`window.dgAgentLive.session(code, char)`):
+  one session per Agent Code shared by every paper on the page. `update`
+  applies a change and saves 700ms later through `dgStore.saveCharacter`
+  (merge into `characters/{code}`); an `onSnapshot` on that document takes
+  another device's change unless a save of its own is pending. Edit mode is
+  a copy (`beginEdit` / `cancelEdit` / `commitEdit`); leaving with unsaved
+  edits asks first.
+- **`assets/agent-paper.js`** (`window.dgAgentPaper.mount(el, ctx)`) draws
+  play and Edit modes with delegated `data-a` actions; post-its go in a
+  full-page `#ap-posts`. Rolls go through the Dice Roller, which now
+  dispatches `dg-dice-result` (and posts it into child frames); the paper
+  falls back to a local roll after 6 s.
+- **New fields** in `character_json`: `sanLog` (incidents and episodes),
+  `adapted{violence,helplessness}`. Everything else uses the old sheet's
+  fields (`derived`, `sanity`, `lpCheckedSkills`, `lpWeapons`, `lpNotes`,
+  `equipment`, `bonds`, `bio`), so no migration.
+- **Save from Edit** calls `dgFieldNotes.oath({code, name, changes})`: the
+  changes and the five lines, then `CAN WE CALL ON YOU? [Y/N]`, resolving
+  true on Y and false on N/Escape.
+- **Agent Hub:** Play, the DEX post-it and `#af-vitals-section` are gone;
+  `dgAgentFile`'s instance moves into the drop-down under the photo
+  (`focus('appearance')` and an incomplete brief open it). The notebook's
+  Rules page opens with `missionHtml()` instead of the Oath.
+- Not changed: Firestore rules, Cloud Functions, Code.gs. The old sheet
+  (`stats/`) still works next to it.
 
 **What it's for:** the actual in-fiction "dossier" for an Agent — a
 physical description brief (Profiling), an AI-assisted portrait-prompt
@@ -952,7 +994,7 @@ full reasoning on the split (Issues = live status board, `BUGFIXES.md`
 = narrative archive of what shipped, this section = closed/decided
 matters worth a permanent note).
 
-As of 2026-10-06, four open tracked issues (#10 is closed; see
+As of 2026-10-09, four open tracked issues (#10 is closed; see
 `BUGFIXES.md`'s "Issue #10's actual root cause"): #5 (Handler-facing access
 control — shared A-Cell password, dossiers reachable by Agent Code, no
 per-player identity), #8 (Agent Hub: long load screen then empty

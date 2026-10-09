@@ -24,6 +24,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet"></noscript>
 <link rel="stylesheet" href="assets/agent-sheet.css">
+<link rel="stylesheet" href="assets/agent-paper.css">
 <link rel="stylesheet" href="assets/agent-file.css">
 <link rel="stylesheet" href="assets/theme-folder.css">
 <style>
@@ -316,8 +317,19 @@
   footer.site-footer{ font-family:'Courier Prime',monospace; text-align:center; color:#6a6250; font-size:11px; margin-top:56px; }
   /* The shared Agent File paper under the folder's own header (photo,
      name and buttons are up there already). */
-  .ah-sheet .as-photo, .ah-sheet .as-id{ display:none; }
-  .ah-sheet .as-head{ border-bottom:0; padding-bottom:0; justify-content:flex-end; margin-top:14px; }
+  .ah-sheet .as-photo, .ah-sheet .as-name, .ah-sheet .as-sub{ display:none; }
+  .ah-sheet .as-head{ border-bottom:0; padding-bottom:0; margin-top:10px; }
+  .ah-sheet .ap .as-id{ flex:1 1 100%; }
+  .ah-sheet .ap-vitals{ max-width:none; }
+  .ah-photo-col{ display:flex; flex-direction:column; align-items:center; gap:6px; flex:none; }
+  .ah-appear-btn{ font-family:'Special Elite',monospace; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:#1c1608; background:#fbf7ea; border:1px solid rgba(160,130,70,.5); padding:4px 10px; cursor:pointer; border-radius:0; white-space:nowrap; }
+  .ah-appear-btn:hover{ border-color:#8b1a1a; }
+  .ah-appear-drop[hidden]{ display:none !important; }
+  .paper-btn[hidden]{ display:none !important; }
+  .paper-actions:not(:has(.paper-btn:not([hidden]))){ display:none; }
+  .ah-appear-drop{ margin:12px 0 6px; padding:4px 14px 12px; background:#fbf7ea; border:1px solid rgba(160,130,70,.5); box-shadow:0 3px 10px rgba(0,0,0,.12); }
+  /* HP/WP/SAN/BP and Bonds are on the sheet now. */
+  #af-vitals-section{ display:none !important; }
   .ah-sheet:empty{ display:none; }
 </style>
 </head>
@@ -405,6 +417,9 @@
 <script src="assets/agent-code.js"></script>
 <script src="assets/dg-store.js"></script>
 <script src="assets/evidence-viewer.js"></script>
+<script src="assets/disorders.js"></script>
+<script src="assets/agent-rules.js"></script>
+<script src="assets/agent-live.js"></script>
 <script src="assets/appearance-gen.js"></script>
 <script src="assets/agent-file.js"></script>
 <script>
@@ -577,7 +592,7 @@
       const panel = document.getElementById('panel-' + code);
       // The one Agent File may be in this panel: lift it out first, or it
       // leaves the page with it.
-      if (panel && window.dgAgentFile && panel.querySelector('#af-root')) window.dgAgentFile.park();
+      if (panel && window.dgAgentFile && (panel.querySelector('#af-root') || panel.querySelector('#af-appear'))) { homeAppearance(); window.dgAgentFile.park(); }
       if (panel) panel.remove();
       agents = agents.filter(a => a.code !== code);
       if (wasActive) {
@@ -633,7 +648,44 @@
     });
     folderBody.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + id));
     const slot = document.getElementById('ah-file-' + id);
-    if (slot && window.dgAgentFile) window.dgAgentFile.mount(slot, id);
+    if (slot && window.dgAgentFile) { window.dgAgentFile.mount(slot, id); placeAppearance(id); }
+  }
+
+  // The Appearance form lives in the drop-down under the Agent's photo;
+  // the rest of the Agent File (the era photos) below the sheet. The form
+  // goes home into the file before the hub parks it.
+  let afAppearHome = null;
+  function homeAppearance() {
+    const f = document.getElementById('af-appear');
+    if (f && afAppearHome && f.parentNode !== afAppearHome.parent) afAppearHome.parent.insertBefore(f, afAppearHome.next);
+  }
+  function placeAppearance(id) {
+    const f = document.getElementById('af-appear'), drop = document.getElementById('ah-appear-' + id);
+    if (!f || !drop) return;
+    // Anything that sends a player to the Appearance form (a #photos link
+    // before it's finished, the callout, the onboarding nudge) opens the
+    // drop-down first.
+    const AF = window.dgAgentFile;
+    if (AF && !AF._dropFocus) {
+      const focus = AF.focus;
+      AF.focus = function (part) {
+        // (Before the Agent has loaded, focus() only queues itself and
+        // comes back here once it knows whether Appearance is finished.)
+        if (part === 'appearance' || (AF.data() && !AF.complete())) toggleAppearance(AF.code(), true);
+        return focus.call(AF, part);
+      };
+      AF._dropFocus = true;
+    }
+    if (!afAppearHome) afAppearHome = { parent: f.parentNode, next: f.nextSibling };
+    if (f.parentNode !== drop) drop.appendChild(f);
+  }
+  function toggleAppearance(code, open) {
+    const drop = document.getElementById('ah-appear-' + code);
+    const btn = document.querySelector('[data-ah-appear="' + code + '"]');
+    if (!drop) return;
+    const on = open == null ? drop.hidden : !!open;
+    drop.hidden = !on;
+    if (btn) { btn.setAttribute('aria-expanded', String(on)); btn.innerHTML = 'Appearance ' + (on ? '&#9652;' : '&#9662;'); }
   }
 
   // The phone's Agents menu: every Agent on this device (the open one
@@ -695,7 +747,7 @@
   // that tab no longer exists.
   function renderRoster(preserveActiveCode) {
     charDocCache = {}; // a re-render re-reads (e.g. after a Cover Identity lookup)
-    if (window.dgAgentFile) window.dgAgentFile.park(); // keep the Agent File out of the panels being dropped
+    if (window.dgAgentFile) { homeAppearance(); window.dgAgentFile.park(); } // keep the Agent File out of the panels being dropped
     tabStrip.querySelectorAll('.tw:not(.tw-new)').forEach(el => el.remove());
     folderBody.querySelectorAll('.tab-panel:not(#panel-new)').forEach(el => el.remove());
 
@@ -762,7 +814,10 @@
         <div class="paper-content">
           <div class="paper-header">
             <div class="lead">
-              <div class="paper-photo" id="${photoId}">${a.face_plate_url ? '' : `<a class="photo-missing-note" href="#photos" data-ah-focus="photos" title="This Agent's photos are made from the Appearance brief, further down">Take Photo</a>`}</div>
+              <div class="ah-photo-col">
+                <div class="paper-photo" id="${photoId}">${a.face_plate_url ? '' : `<a class="photo-missing-note" href="#photos" data-ah-focus="photos" title="This Agent's photos are made from the Appearance brief, further down">Take Photo</a>`}</div>
+                <button type="button" class="ah-appear-btn" data-ah-appear="${escapeHtml(a.code)}" aria-expanded="false" aria-controls="ah-appear-${escapeHtml(a.code)}">Appearance &#9662;</button>
+              </div>
               <div>
                 <div class="paper-title-sub">Delta Green — Agent Roster</div>
                 <div class="paper-title" id="${titleId}">${escapeHtml(a.char_name || 'Unknown Agent')}</div>
@@ -770,11 +825,13 @@
             </div>
             <div class="paper-meta">CODE: ${escapeHtml(a.code)}<br>COVER: ${a.codename ? escapeHtml(a.codename) : '&mdash;'}<br>SAVED: ${a.saved_at ? new Date(a.saved_at).toLocaleDateString() : '&mdash;'}</div>
           </div>
+          <!-- Appearance: the profiling form (assets/agent-file.js), dropped
+               down from the button under the photo. -->
+          <div class="ah-appear-drop af-root" id="ah-appear-${escapeHtml(a.code)}" hidden></div>
           <div class="stamps" id="${stampId}">${era ? `<div class="stamp">${escapeHtml(era)}</div>` : ''}</div>
           <div class="dossier-line" id="ah-meta-${escapeHtml(a.code)}"${meta ? '' : ' hidden'}>${meta}</div>
-          <div class="dex-postit" id="ah-dex-${a.code}"></div>
           <div class="paper-actions">
-            <a class="paper-btn primary" id="${playBtnId}" href="stats/index.html?load=${encodeURIComponent(a.code)}&live=1">Play</a>
+            <a class="paper-btn primary" id="${playBtnId}" href="stats/index.html?load=${encodeURIComponent(a.code)}&live=1" hidden>Recruit</a>
           </div>
           <div class="ah-appear-callout" id="ah-callout-${escapeHtml(a.code)}" hidden>
             <span class="ah-appear-callout-text"></span>
@@ -811,13 +868,12 @@
       // only calls it from inside an async JSONP callback; a setTimeout
       // here gets the same "run after the whole script has finished
       // executing once" effect without restructuring the file.
-      setTimeout(function () { startDexListenerFor(a.code); }, 0);
       setTimeout(function () { renderAgentSheetFor(a); }, 0);
 
       checkCharacterExists(a.code).then(exists => {
-        if (exists !== false) return; // true (has a sheet) or null (check failed) -> leave as Play
+        if (exists !== false) return; // true (has a sheet) or null (check failed): the Agent File is the sheet
         const btn = document.getElementById(playBtnId);
-        if (btn) { btn.textContent = 'Recruit'; btn.title = 'No character sheet on file yet for this Agent -- starts the Character Creation Wizard.'; }
+        if (btn) { btn.hidden = false; btn.title = 'No character sheet on file yet for this Agent -- starts the Character Creation Wizard.'; }
         const stamps = document.getElementById(stampId);
         if (stamps) stamps.insertAdjacentHTML('beforeend', '<div class="stamp">No Character Sheet Yet</div>');
         purgeIfFullyDeleted(a.code);
@@ -1487,6 +1543,11 @@
   // (assets/agent-sheet.js): vitals, physical description, Cell with its
   // members, then the Friendly-style sheet whose numbers roll. The
   // folder's own header above already carries the photo and name.
+  function profTitle(key) {
+    if (!key) return '';
+    if (window.professions && window.professions[key] && window.professions[key].title) return window.professions[key].title;
+    return String(key).replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
   function renderAgentSheetFor(a) {
     const el = document.getElementById('ah-sheet-' + a.code);
     // agent-sheet.js loads below this script: a slow page could reach
@@ -1522,29 +1583,40 @@
       ]).then(([b, ch]) => ({ c, b, ch })))).then(ms => {
         const names = (cell && cell.member_names) || {};
         const members = ms.map(m => AS.cellMember(m.c, m.b, m.ch, names));
-        const sheet = state ? AS.fromState(state) : { name: a.char_name || a.code };
         const opsHtml = cell ? '<div class="as-ops"><div class="as-sec-hd">Operations</div>' + (ops.length ? ops.map(o => {
           const on = active && o.operation_id === active.operation_id;
           return '<div class="as-op' + (on ? ' as-op-active' : '') + '"><span>' + escapeHtml(o.name || o.operation_id) + '</span>' + (on ? '<span class="as-stamp">Active</span>' : '') + '</div>';
         }).join('') : '<p class="as-text as-k">None filed yet.</p>') + '</div>' : '';
         const out = document.getElementById('ah-sheet-' + a.code) || el;
+        // Member photos: loadFacePlate() writes into an element by id
+        // (and knows the legacy gdrive: proxy).
+        let mph = 0;
+        const loadPhoto = (box, src) => {
+          if (/^(https?:|data:)/.test(src)) { box.innerHTML = '<img src="' + escapeHtml(src) + '" alt="">'; return; }
+          box.id = box.id || ('ah-mph-' + a.code.replace(/[^a-zA-Z0-9]/g, '_') + '-' + (++mph));
+          loadFacePlate(a.code, src, box.id);
+        };
+        // The Agent File is the character sheet (assets/agent-paper.js):
+        // played and edited right here.
+        if (window.dgAgentPaper && window.dgAgentLive && window.dgRules) {
+          window.dgAgentPaper.mount(out, {
+            code: a.code, char: charDoc, name: a.char_name || a.code, codename: brief.codename || a.codename || '',
+            photo: window.dgStore.mainPhoto ? window.dgStore.mainPhoto(brief) : (brief.face_plate_url || ''),
+            professionLabel: profTitle, members, cellName: cell ? (cell.name || cell.cell_id) : '', opsHtml,
+            physical: AS.physical(brief, ''), incursion: AS.incursionText(charDoc, state), loadPhoto,
+            emptySheetHtml: '<p class="as-text as-k" style="margin-top:12px">No character sheet yet — Recruit builds one.</p>'
+          });
+          return;
+        }
+        const sheet = state ? AS.fromState(state) : { name: a.char_name || a.code };
         out.innerHTML = AS.render(sheet, {
           physical: AS.physical(brief, sheet.physical),
           cellName: cell ? (cell.name || cell.cell_id) : '', members, opsHtml,
           incursion: AS.incursionText(charDoc, state),
-          // Opens the sheet in Edit mode with a blank Bond ready (stats/cloud-sync.js).
-          addBondHtml: state ? `<a class="as-add-bond" href="stats/index.html?load=${encodeURIComponent(a.code)}&add_bond=1">+ Add Bond</a>` : '',
-          emptySheetHtml: state ? '' : '<p class="as-text as-k" style="margin-top:12px">No character sheet yet — Play builds one.</p>'
+          emptySheetHtml: state ? '' : '<p class="as-text as-k" style="margin-top:12px">No character sheet yet — Recruit builds one.</p>'
         });
         AS.wireRolls(out);
-        // Member photos: loadFacePlate() writes into an element by id
-        // (and knows the legacy gdrive: proxy).
-        let mph = 0;
-        if (AS.wireMembers) AS.wireMembers(out, members, (box, src) => {
-          if (/^(https?:|data:)/.test(src)) { box.innerHTML = '<img src="' + escapeHtml(src) + '" alt="">'; return; }
-          box.id = box.id || ('ah-mph-' + a.code.replace(/[^a-zA-Z0-9]/g, '_') + '-' + (++mph));
-          loadFacePlate(a.code, src, box.id);
-        });
+        if (AS.wireMembers) AS.wireMembers(out, members, loadPhoto);
       });
     }).catch(err => console.error('agent-hub: could not build the Agent File paper for ' + a.code, err));
   }
@@ -1627,10 +1699,13 @@
     renderAgentSheetFor(a);
   });
   document.addEventListener('click', e => {
+    const ab = e.target.closest && e.target.closest('[data-ah-appear]');
+    if (ab) { toggleAppearance(ab.getAttribute('data-ah-appear')); return; }
     const b = e.target.closest && e.target.closest('[data-ah-focus]');
     if (!b || !window.dgAgentFile) return;
     e.preventDefault();
-    window.dgAgentFile.focus(b.getAttribute('data-ah-focus'));
+    const part = b.getAttribute('data-ah-focus');
+    window.dgAgentFile.focus(part);
   });
   tabStrip.addEventListener('click', e => {
     if (e.target.closest('.ah-agent-menu')) return;
@@ -1651,6 +1726,7 @@
 <script src="assets/table-radio.js"></script>
 <script src="assets/dice-roller.js?v=9"></script>
 <script src="assets/agent-sheet.js"></script>
+<script src="assets/agent-paper.js"></script>
 <script src="assets/field-notes.js"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>
 

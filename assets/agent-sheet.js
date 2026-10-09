@@ -185,7 +185,10 @@
       codename: b.codename || '',
       kia: typeof hp === 'number' && hp <= 0,
       photo: photo || '',
-      derived: { hp: dv.hp, wp: dv.wp, san: dv.san, bp: dv.bp }
+      derived: { hp: dv.hp, wp: dv.wp, san: dv.san, bp: dv.bp },
+      // Initiative (DEX) and the card's profession line.
+      dex: st ? num((st.csStats || st.stats || {}).DEX, 0) || null : null,
+      profession: (st && st.bio && st.bio.profession) || ''
     };
   }
 

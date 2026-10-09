@@ -32,7 +32,7 @@
    through this whole migration -- not random flakiness, one bad path
    silently breaking the update mechanism itself.
    ══════════════════════════════════════════════ */
-const CACHE_NAME = 'dg-hub-shell-v193';
+const CACHE_NAME = 'dg-hub-shell-v195';
 
 const SHELL_FILES = [
   './',
@@ -69,6 +69,10 @@ const SHELL_FILES = [
   'assets/agent-file.css',
   'assets/appearance-gen.js',
   'assets/agent-sheet.css',
+  'assets/agent-rules.js',
+  'assets/agent-live.js',
+  'assets/agent-paper.js',
+  'assets/agent-paper.css',
   'assets/field-id-cards.js',
   'assets/incursion.js',
   'assets/mars-tech-seal.png',

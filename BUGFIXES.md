@@ -6404,3 +6404,22 @@ New `test_evidence_attachments_open_and_zoom`, desktop and phone: the
 photo opens, double-tap, pinch (as pointer events) and `+` zoom, Fit
 resets, PDFs are links. `test_agent_hub_handouts` now checks the new
 viewer instead of the old lightbox. `sw.js` `CACHE_NAME` v193.
+
+## Rules page: adapting to Helplessness cost CHA instead of POW
+
+Found 2026-10-09, while porting the Sanity rules for the v2 Agent File.
+The Rules reference (`rules-reference.html`, Responding to SAN Loss)
+gave Adaptation to Helplessness the same cost as Adaptation to
+Violence: −1D6 CHA and the same from each Bond. In the book, adapting
+to Helplessness costs 1D6 POW, and only adapting to Violence costs CHA
+and Bonds. Likely a copy of the Violence row that was never changed.
+The row now reads −1D6 POW, and the Agent File's adaptation
+(`dgRules.adapt`) does the same; `test_agent_rules_unit` checks both
+costs. `sw.js` `CACHE_NAME` v195.
+
+**Still wrong, deliberately left:** the old sheet's Live Play **Roll
+Improvements** (`lpRollAdvancement` in `stats/scripts.js`) rolls d100
+per marked skill and adds 1D4 only if the roll beats the skill, which is
+Call of Cthulhu's rule. In Delta Green every marked skill gains 1D4. The
+Agent File's Roll improvements (v2.7.0) follows the book; the old
+sheet is being retired (v3.0.0), so it isn't patched there.

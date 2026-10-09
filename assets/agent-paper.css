@@ -1,0 +1,104 @@
+/* The Agent File as the character sheet (assets/agent-paper.js), on top
+   of the paper's own look (assets/agent-sheet.css). */
+.ap .as-head{ align-items:flex-start; }
+.ap .as-id{ flex:1 1 260px; }
+.ap-vitals{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; margin-top:10px; max-width:440px; }
+.ap-v{ text-align:center; border:1px solid var(--as-rule); padding:6px 2px; display:flex; flex-direction:column; align-items:center; gap:2px; }
+.ap-v .as-lbl{ font-size:9px; letter-spacing:.12em; }
+.ap-cur{ font-family:'Special Elite',monospace; font-size:20px; line-height:1.1; color:var(--as-ink); }
+.ap-v[data-v="bp"] .ap-cur{ color:var(--as-red); font-size:17px; }
+.ap-max{ font-size:10px; color:var(--as-ink-3); }
+.ap-pmrow{ display:flex; gap:6px; margin-top:4px; }
+.as-paper .ap-pm{ width:24px !important; min-width:24px !important; height:24px !important; line-height:20px; padding:0 !important; font:inherit; font-size:15px; color:var(--as-ink); background:transparent; border:1px solid var(--as-rule); cursor:pointer; border-radius:0; flex:none; }
+.as-paper .ap-pm:hover{ border-color:var(--as-red); background:rgba(139,26,26,.06); }
+.ap-btns{ display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; align-items:center; }
+.as-paper .ap-btn, .ap-btn{ font-family:'Special Elite',monospace; font-size:11px; letter-spacing:.08em; text-transform:uppercase; padding:6px 11px; cursor:pointer; border-radius:0; background:transparent; width:auto; }
+.as-paper .ap-btn:disabled{ opacity:.45; cursor:default; }
+.as-paper .ap-red{ color:var(--as-red); border:1.5px solid var(--as-red); }
+.as-paper .ap-ink{ color:#f4eed8; background:var(--as-ink); border:1.5px solid var(--as-ink); }
+.as-paper .ap-ghost{ color:var(--as-ink); border:1px solid var(--as-rule); }
+.ap-status{ min-height:14px; margin-top:4px; font-size:10px; color:var(--as-ink-3); letter-spacing:.06em; }
+.ap-hd{ display:flex; justify-content:space-between; align-items:center; gap:8px; }
+.ap-hbtns{ display:flex; gap:4px; }
+.as-paper .ap-mini{ font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--as-red); background:transparent; border:1px dashed var(--as-red); padding:2px 8px; cursor:pointer; border-radius:0; white-space:nowrap; width:auto; }
+.as-paper .ap-mini:disabled{ opacity:.45; cursor:default; }
+.ap-k{ font-size:10.5px; color:var(--as-ink-3); }
+.ap-note{ margin:-2px 0 6px; }
+/* Pop-down forms (SAN loss, + Bond, …) */
+.ap-pop{ margin:8px 0 10px; padding:12px 14px; background:#fbf7ea; border:1px solid var(--as-rule); box-shadow:0 6px 18px rgba(0,0,0,.18); max-width:380px; }
+.ap-pop-h{ margin:0 0 8px; font-family:'Special Elite',monospace; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--as-red); }
+.ap-chips{ display:flex; flex-wrap:wrap; gap:5px; margin:3px 0 8px; }
+.as-paper .ap-chip{ font-family:'Special Elite',monospace; font-size:12px; padding:4px 9px; border:1px solid var(--as-rule); background:transparent; color:var(--as-ink); cursor:pointer; border-radius:0; width:auto; }
+.as-paper .ap-chip.on{ background:var(--as-ink); color:#f4eed8; border-color:var(--as-ink); }
+.ap-row{ display:flex; gap:6px; align-items:center; margin-bottom:6px; }
+.ap-row > .ap-in{ flex:1; min-width:0; }
+/* Inputs (pop-downs and Edit mode) */
+.as-paper .ap-in{ font:inherit; font-size:12px; color:var(--as-ink); background:rgba(255,255,255,.55); border:0; border-bottom:1.5px solid var(--as-red); padding:2px 4px; width:100%; box-sizing:border-box; border-radius:0; margin:0; box-shadow:none; }
+.as-paper select.ap-in{ padding:2px 2px; }
+.as-paper .ap-num{ width:46px; flex:none; text-align:center; font-family:'Special Elite',monospace; font-size:14px; }
+.as-paper .ap-name-in{ font-family:'Special Elite',monospace; font-size:20px; }
+.ap-ta{ width:100%; box-sizing:border-box; font:inherit; font-size:12px; color:var(--as-ink); background:rgba(255,255,255,.35); border:1px solid var(--as-rule); padding:5px 7px; min-height:44px; resize:vertical; }
+.as-paper .ap-del{ color:var(--as-red); background:none; border:0; font-size:16px; cursor:pointer; padding:0 3px; width:auto; flex:none; }
+/* Initiative */
+.ap-init{ list-style:none; margin:6px 0 0; padding:0; }
+.ap-init li{ display:flex; align-items:center; gap:8px; border-bottom:1px dotted var(--as-rule); font-size:12px; color:var(--as-ink); }
+.ap-init .ap-dex{ font-family:'Special Elite',monospace; width:28px; text-align:right; color:var(--as-red); flex:none; }
+.ap-init .as-mbtn{ flex:1; padding:3px 0; }
+.ap-init .ap-me .as-mname{ font-weight:700; }
+.ap-init .ap-me .as-mbtn{ cursor:default; }
+.ap-init li.as-kia{ opacity:.65; }
+.ap-init .as-mthumb{ width:26px; height:26px; }
+.ap-mmeta{ font-size:11px; color:var(--as-ink-2); margin:1px 0; }
+/* Statistics */
+.ap-feat-t{ font-size:9.5px; color:var(--as-ink-3); margin-top:1px; }
+.ap-stat-e{ text-align:center; border:1px solid var(--as-rule); padding:5px 3px; display:flex; flex-direction:column; align-items:center; gap:2px; }
+.as-paper .ap-stat-e .ap-num{ width:40px; }
+.as-paper .ap-feat{ font-size:10px; margin-top:3px; text-align:center; }
+/* Skills: a failed roll marks the skill in red */
+.as-paper .ap-skill.ap-marked .as-sn, .as-paper .ap-skill.ap-marked .as-sv{ color:var(--as-red); font-weight:700; }
+.ap-skills-e{ align-items:center; }
+.ap-sk{ display:flex; align-items:center; gap:5px; border-bottom:1px dotted var(--as-rule); padding:3px 2px; font-size:12px; }
+.as-paper .ap-skn{ flex:1; text-align:left; background:none; border:0; padding:0; font:inherit; color:var(--as-ink-2); cursor:pointer; width:auto; min-width:0; }
+.ap-sk.ap-marked .ap-skn{ color:var(--as-red); font-weight:700; }
+.as-skills .ap-sk.ap-spec{ grid-column:span 2; }
+.ap-sk.ap-spec .ap-skn{ flex:none; }
+.as-paper .ap-specsel{ flex:1; min-width:0; font-size:11px; }
+/* Bonds, lists, adaptation */
+.ap-bond{ display:flex; align-items:center; gap:6px; border-bottom:1px dotted var(--as-rule); padding:4px 0; color:var(--as-ink); font-size:12px; }
+.ap-bond .ap-bn{ flex:1; min-width:0; }
+.ap-bscore{ font-family:'Special Elite',monospace; font-size:15px; color:var(--as-red); min-width:22px; text-align:center; }
+.ap-list{ margin:0; padding:0; list-style:none; }
+.ap-list li{ padding:3px 0; border-bottom:1px dotted var(--as-rule); font-size:12px; color:var(--as-ink); }
+.ap-list .ap-info{ display:block; font-size:10.5px; }
+.ap-list .ap-inl{ display:inline; }
+.ap-gear{ display:flex; align-items:center; gap:4px; }
+.ap-gear .ap-del{ margin-left:auto; }
+.ap-pre{ white-space:pre-wrap; }
+.ap-adapt{ display:flex; align-items:center; gap:7px; font-size:12px; color:var(--as-ink); padding:3px 0; flex-wrap:wrap; }
+.ap-adapt .ap-al{ width:92px; }
+.ap-adapt input{ width:14px; height:14px; margin:0; accent-color:#8b1a1a; }
+.ap-adapted{ color:var(--as-red); letter-spacing:.08em; text-transform:uppercase; font-size:10px; }
+.as-paper .ap-dmg{ width:64px; }
+/* Personal data (Edit) */
+.ap-pdata{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px 14px; }
+.ap-pdata label{ display:flex; flex-direction:column; gap:1px; color:var(--as-ink-3); font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; }
+.ap-pdata .ap-in{ font-size:12px; text-transform:none; letter-spacing:0; }
+@media (max-width:560px){ .ap-pdata{ grid-template-columns:1fr; } }
+/* Edit mode bar */
+.ap-editbar{ position:sticky; top:0; z-index:3; display:flex; justify-content:space-between; align-items:center; gap:10px; margin:0 0 10px; padding:8px 10px; background:var(--as-ink); color:#f4eed8; font-family:'Special Elite',monospace; font-size:12px; letter-spacing:.08em; text-transform:uppercase; flex-wrap:wrap; }
+.ap-editbar > span:last-child{ display:flex; gap:6px; }
+.as-paper .ap-editbar .ap-ghost{ color:#f4eed8; border-color:rgba(244,238,216,.5); }
+.as-paper .ap-save{ color:#f4eed8; background:var(--as-red); border:1.5px solid var(--as-red); }
+
+/* Post-its, over the whole page */
+#ap-posts{ position:fixed; inset:0; z-index:2147482000; background:rgba(10,8,4,.55); display:flex; align-items:center; justify-content:center; padding:20px; overflow:auto; }
+.ap-posts-stack{ display:flex; flex-direction:column; gap:14px; align-items:center; max-width:100%; }
+.ap-postit{ position:relative; width:380px; max-width:100%; box-sizing:border-box; padding:18px 20px 14px; background:#f6e98a; color:#3a2a04; box-shadow:0 10px 22px rgba(60,40,0,.32), inset 0 -10px 16px rgba(120,100,20,.14); transform:rotate(-1.2deg); font-family:'Courier Prime',monospace; font-size:13.5px; line-height:1.5; }
+.ap-postit:nth-child(even){ transform:rotate(.9deg); }
+.ap-postit.ap-pink{ background:#f3c9c0; }
+.ap-pt{ display:block; font-family:'Special Elite',monospace; font-weight:400; font-size:17px; letter-spacing:.06em; text-transform:uppercase; margin-bottom:4px; padding-right:18px; }
+.ap-x{ position:absolute; top:4px; right:8px; font-size:20px; color:#6a5410; background:none; border:0; cursor:pointer; padding:2px 4px; }
+.ap-pa{ display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; align-items:center; }
+.ap-pa button{ font-family:'Special Elite',monospace; font-size:12px; padding:4px 10px; border:1px solid rgba(58,42,4,.45); background:rgba(255,255,255,.4); color:#3a2a04; cursor:pointer; border-radius:0; }
+.ap-psel{ font:inherit; width:100%; box-sizing:border-box; margin-top:8px; background:rgba(255,255,255,.55); border:1px solid rgba(58,42,4,.35); padding:4px; color:#3a2a04; }
+.ap-pa .ap-psel{ margin-top:0; flex:1; min-width:140px; }
