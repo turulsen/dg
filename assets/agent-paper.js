@@ -133,6 +133,27 @@
     function closeAll() { ov.remove(); }
   }
 
+  /* ── The look of the parts' headings: a per-device choice ── */
+  var LOOK_KEY = 'dg_paper_look';
+  var LOOKS = [['form', 'Typed form'], ['folder', 'Folder tabs'], ['stamp', 'Rubber stamps']];
+  function look() {
+    var v = '';
+    try { v = localStorage.getItem(LOOK_KEY) || ''; } catch (e) { /* private mode */ }
+    return LOOKS.some(function (l) { return l[0] === v; }) ? v : 'form';
+  }
+  function applyLook() {
+    var v = look();
+    Array.prototype.forEach.call(document.querySelectorAll('.as-paper.ap'), function (p) {
+      LOOKS.forEach(function (l) { p.classList.toggle('ap-look-' + l[0], l[0] === v); });
+    });
+  }
+  function setLook(v) {
+    try { localStorage.setItem(LOOK_KEY, v); } catch (e) { /* private mode */ }
+    applyLook();
+  }
+  // Other pages and frames of this site pick the change up as it happens.
+  window.addEventListener('storage', function (e) { if (e.key === LOOK_KEY) applyLook(); });
+
   /* ── The paper ── */
   function mount(el, ctx) {
     var s = window.dgAgentLive.session(ctx.code, ctx.char);
@@ -445,7 +466,7 @@
       var inc = ctx.incursion ? '<div class="as-sec as-incursion"><div class="as-sec-hd">The Incursion</div><p class="as-text">' + esc(ctx.incursion) + '</p></div>'
         : (ctx.incursionEmptyHtml ? '<div class="as-sec as-incursion"><div class="as-sec-hd">The Incursion</div>' + ctx.incursionEmptyHtml + '</div>' : '');
       var n = 0;
-      return '<div class="as-paper ap' + (edit ? ' ap-editing' : '') + '">' + bar + headHtml(x, edit) + appearHtml(x) + indexHtml(edit) +
+      return '<div class="as-paper ap ap-look-' + look() + (edit ? ' ap-editing' : '') + '">' + bar + headHtml(x, edit) + appearHtml(x) + indexHtml(edit) +
         (edit ? part('personal', '0', 'Personal data & appearance', '', personalHtml(x)) : '') +
         '<div class="as-sheet">' +
           part('stats', ++n, 'Statistics', '<span class="ap-part-note">' + (edit ? 'value · distinguishing feature' : 'tap to roll ×5 · distinguishing features') + '</span>', statsHtml(x, edit)) +
@@ -772,5 +793,5 @@
     return out;
   }
 
-  window.dgAgentPaper = { mount: mount, rollExpr: rollExpr, postits: postits, diff: diff };
+  window.dgAgentPaper = { mount: mount, rollExpr: rollExpr, postits: postits, diff: diff, LOOKS: LOOKS, look: look, setLook: setLook };
 })();

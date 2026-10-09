@@ -10521,6 +10521,81 @@ def test_agent_file_v2_play_and_edit(p):
     page.close()
     return errs_all
 
+def test_agent_file_parts_and_looks(p):
+    """The Agent File in numbered parts (Statistics, Skills, Psyche, Combat
+    & gear, Cell, Record) with a jump index; Find a skill (kept across a
+    redraw); the physical description with Appearance -- in Agent Hub's
+    drop-down under the photo, a fold under the photo in the notebook, and
+    Edit's Personal data & appearance part; the parts' look picked per
+    device in the notebook's Settings (Typed form by default, Folder tabs,
+    Rubber stamps)."""
+    stats = {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 11, "CHA": 13}
+    state = {"v": 1, "stats": stats, "csStats": dict(stats), "derived": {"hp": 9, "wp": 8, "san": 52, "bp": 44},
+             "bio": {"name": "Mara Voss", "player_name": "fn tester", "profession": "federal_agent",
+                     "physicalDesc": "Lean, ash-brown hair tied back; watchful grey eyes."},
+             "skills": {"alertness": 60, "firearms": 50, "accounting": 10},
+             "bonds": [{"id": "b1", "name": "Lena Voss", "relationship": "Sister", "score": 11}]}
+    docs = _field_notes_docs()
+    docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, state, "fn tester")
+    extra = "localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE
+    page, errs = _field_notes_page(p, docs=docs, extra_init=extra)
+    page.on("dialog", lambda d: d.accept())
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    root = f"#ah-sheet-{FN_CODE}"
+    page.wait_for_selector(root + " .ap-part", timeout=15000)
+    parts = page.eval_on_selector_all(root + " .ap-part", "els => els.map(e => e.getAttribute('data-part'))")
+    record("agent-file-parts", "the file is in six numbered parts, the Cell after the sheet",
+           parts == ["stats", "skills", "psyche", "kit", "cell", "record"], str(parts))
+    record("agent-file-parts", "Typed form is the default look",
+           page.evaluate(f"() => document.querySelector('{root} .as-paper.ap').classList.contains('ap-look-form')"), "")
+    page.click(root + " [data-a=jump][data-part=cell]")
+    ok = wait_for_condition(lambda: page.evaluate(f"""() => {{ const r = document.querySelector('{root} .ap-part[data-part=cell]').getBoundingClientRect();
+        return r.top >= -2 && r.top < 120; }}"""), timeout_ms=4000)
+    record("agent-file-parts", "the index's Cell button scrolls to the Cell", bool(ok), "")
+    page.fill(root + " [data-u=skill-find]", "fir")
+    vis = lambda: page.eval_on_selector_all(root + " .ap-part[data-part=skills] .as-skills > *", "els => els.filter(e => !e.hidden).map(e => e.querySelector('.as-sn').textContent)")
+    v1 = vis()
+    record("agent-file-parts", "Find a skill leaves only the matching skills", "Firearms" in v1 and "First Aid" in v1 and "Accounting" not in v1, str(v1))
+    page.click(root + " [data-a='hp-']")
+    page.wait_for_timeout(300)
+    v2 = vis()
+    record("agent-file-parts", "the search survives a redraw (after HP −)", v2 == v1 and page.input_value(root + " [data-u=skill-find]") == "fir", str(v2))
+    body_txt = page.inner_text(root + " .as-paper.ap")
+    record("agent-file-parts", "the physical description is not in the sheet's body on Agent Hub", "watchful grey eyes" not in body_txt, "")
+    page.click(f"[data-ah-appear={FN_CODE}]")
+    desc = page.inner_text(f"#ah-desc-{FN_CODE}")
+    record("agent-file-parts", "it opens with Appearance, under the photo", "watchful grey eyes" in desc and page.is_visible(f"#ah-desc-{FN_CODE}"), desc[:80])
+    page.click(f"[data-ah-appear={FN_CODE}]")
+    page.click(root + " [data-a=edit]")
+    page.wait_for_selector(root + " .ap-part[data-part=personal]")
+    eparts = page.eval_on_selector_all(root + " .ap-part", "els => els.map(e => e.getAttribute('data-part'))")
+    record("agent-file-parts", "Edit opens with Personal data & appearance (the description there) and has no Record",
+           eparts[0] == "personal" and "record" not in eparts and "watchful" in page.input_value(root + " .ap-part[data-part=personal] [data-e='bio.physicalDesc']"), str(eparts))
+    page.click(root + " [data-a=cancel]")
+    # The notebook: the Appearance fold under the photo, and the look in Settings.
+    page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+    V = page.locator("#fn-veil .as-paper.ap").filter(visible=True).first
+    V.wait_for(timeout=10000)
+    V.locator("[data-a=appear]").click()
+    record("agent-file-parts", "the notebook's Appearance fold under the photo shows the description",
+           "watchful grey eyes" in V.locator(".ap-appear").inner_text(), "")
+    page.evaluate("() => window.dgFieldNotes.open('settings')")
+    page.wait_for_selector("[data-s=paper-look]")
+    opts = page.eval_on_selector_all("[data-s=paper-look] option", "els => els.map(e => e.value)")
+    page.select_option("[data-s=paper-look]", "folder")
+    page.wait_for_timeout(200)
+    on_hub = page.evaluate(f"() => document.querySelector('{root} .as-paper.ap').classList.contains('ap-look-folder')")
+    record("agent-file-parts", "Settings offers the three looks; Folder tabs applies at once and is kept on this device",
+           opts == ["form", "folder", "stamp"] and on_hub and page.evaluate("() => localStorage.getItem('dg_paper_look')") == "folder", str(opts))
+    page.select_option("[data-s=paper-look]", "stamp")
+    page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+    V = page.locator("#fn-veil .as-paper.ap").filter(visible=True).first
+    V.wait_for(timeout=10000)
+    record("agent-file-parts", "a paper drawn later (the notebook's) takes the chosen look", "ap-look-stamp" in (V.get_attribute("class") or ""), V.get_attribute("class") or "")
+    record("agent-file-parts", "no JS exceptions", not errs, str(errs[:3]))
+    page.close()
+
+
 def test_agent_rules_unit(p):
     """assets/agent-rules.js on its own: derived maximums, − / + limits,
     BP stepped by POW and reset to SAN − POW, SAN loss events (a disorder
@@ -13447,6 +13522,7 @@ def main():
         safe(test_add_bond_in_play, browser, area="bonds")
         safe(test_agent_file_san_roll_and_member_cards, browser, area="agent-file")
         safe(test_agent_file_v2_play_and_edit, browser, area="agent-file-v2")
+        safe(test_agent_file_parts_and_looks, browser, area="agent-file-parts")
         safe(test_agent_rules_unit, browser, area="rules")
         safe(test_evidence_attachments_open_and_zoom, browser, area="evidence")
         safe(test_motivations_and_disorders_split, browser, area="disorders")

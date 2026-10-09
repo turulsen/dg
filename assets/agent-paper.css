@@ -103,25 +103,54 @@
 .ap-psel{ font:inherit; width:100%; box-sizing:border-box; margin-top:8px; background:rgba(255,255,255,.55); border:1px solid rgba(58,42,4,.35); padding:4px; color:#3a2a04; }
 .ap-pa .ap-psel{ margin-top:0; flex:1; min-width:140px; }
 
-/* Parts of the file, numbered like the sections of a DD 315 */
+/* Parts of the file, numbered like the sections of a DD 315. The look of
+   their headings is a per-device choice (notebook Settings → Agent File
+   look): ap-look-form (default), ap-look-folder, ap-look-stamp. */
 .ap-index{ display:flex; flex-wrap:wrap; gap:4px; margin:12px 0 4px; }
 .as-paper .ap-index button{ font-family:'Special Elite',monospace; font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--as-ink); background:transparent; border:1px solid var(--as-rule); padding:4px 9px; cursor:pointer; border-radius:0; }
 .as-paper .ap-index button b{ color:var(--as-red); font-weight:400; margin-right:2px; }
 .as-paper .ap-index button:hover{ border-color:var(--as-red); }
-.ap-part{ margin-top:18px; border:1px solid var(--as-rule); border-top:0; background:rgba(255,255,255,.18); scroll-margin-top:8px; }
-.ap-part-hd{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:6px 10px; background:var(--as-ink); color:#f4eed8; font-family:'Special Elite',monospace; letter-spacing:.14em; text-transform:uppercase; }
-.ap-part-n{ display:inline-flex; align-items:center; justify-content:center; min-width:20px; height:20px; padding:0 4px; background:#f4eed8; color:var(--as-ink); font-size:12px; letter-spacing:0; }
-.ap-part-t{ font-size:13px; flex:1 1 auto; }
+.ap-part{ margin-top:26px; scroll-margin-top:30px; }
+.ap-part-hd{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; color:var(--as-ink); font-family:'Special Elite',monospace; letter-spacing:.16em; text-transform:uppercase; }
+.ap-part-n{ display:inline-flex; align-items:center; justify-content:center; color:var(--as-red); letter-spacing:0; }
+.ap-part-t{ font-size:13.5px; flex:1 1 auto; }
 .ap-part-tools{ display:flex; gap:5px; flex-wrap:wrap; align-items:center; letter-spacing:.06em; }
-.ap-part-note{ font-family:'Courier Prime',monospace; font-size:10px; letter-spacing:.04em; text-transform:none; color:rgba(244,238,216,.7); }
-.as-paper .ap-part-hd .ap-mini{ color:#f4eed8; border-color:rgba(244,238,216,.6); }
-.ap-part-b{ padding:4px 12px 12px; }
-.ap-part-b > .as-stats, .ap-part-b > .ap-pdata, .ap-part-b > .ap-skillbar, .ap-part-b > [data-p="cell"] > .as-sec-hd:first-child{ margin-top:10px; }
-.ap-part-b .as-sec-hd:first-child{ margin-top:10px; }
+.ap-part-note{ font-family:'Courier Prime',monospace; font-size:10px; letter-spacing:.04em; text-transform:none; color:var(--as-ink-3); }
+.ap-part-b{ padding:4px 0 6px; }
+.ap-part-b > .as-stats, .ap-part-b > .ap-pdata, .ap-part-b > .ap-skillbar{ margin-top:10px; }
+.ap-part-b .as-sec-hd:first-child, .ap-part-b > [data-p="cell"] > .as-sec-hd:first-child{ margin-top:10px; }
 .ap-part .as-incursion .as-sec-hd, .ap-part .as-ops .as-sec-hd{ margin-top:12px; }
+
+/* A — Typed form: a red number and the typed title over a double rule */
+.ap-look-form .ap-part-hd{ border-bottom:3px double var(--as-ink); padding-bottom:4px; }
+.ap-look-form .ap-part-n{ font-size:15px; }
+.ap-look-form .ap-part-n::after{ content:'.'; }
+.ap-look-form .ap-part[data-part="stats"] .as-stat, .ap-look-form .ap-part[data-part="stats"] .ap-stat-e{ border:1px solid var(--as-ink-3); outline:1px solid var(--as-rule); outline-offset:2px; }
+
+/* B — Folder dividers: a manila index tab over a lightly tinted panel */
+.ap-look-folder .ap-part{ margin-top:34px; border:1px solid var(--as-rule); background:rgba(233,217,168,.18); border-radius:0 3px 3px 3px; }
+.ap-look-folder .ap-part-hd{ position:relative; min-height:0; }
+.ap-look-folder .ap-part-n, .ap-look-folder .ap-part-t{ position:absolute; top:-25px; height:25px; background:#e8d8a6; border:1px solid var(--as-rule); border-bottom:0; }
+.ap-look-folder .ap-part-n{ left:-1px; min-width:24px; font-size:12px; border-radius:4px 0 0 0; }
+.ap-look-folder .ap-part-t{ left:23px; line-height:23px; padding:0 14px 0 6px; font-size:11.5px; border-left:0; border-radius:0 7px 0 0; white-space:nowrap; max-width:calc(100% - 30px); overflow:hidden; text-overflow:ellipsis; }
+.ap-look-folder .ap-part-tools{ margin:8px 12px 0 auto; }
+.ap-look-folder .ap-part-tools:has(> .ap-part-note:only-child){ display:none; }
+.ap-look-folder .ap-part-b{ padding:4px 12px 12px; }
+.ap-look-folder .ap-part-b > .as-stats, .ap-look-folder .ap-part-b > .ap-pdata, .ap-look-folder .ap-part-b > .ap-skillbar{ margin-top:12px; }
+
+/* C — Rubber stamps: a tilted red stamp, a dashed rule running on */
+.ap-look-stamp .ap-part-hd{ gap:8px; }
+.ap-look-stamp .ap-part-hd::after{ content:''; flex:1 1 30px; order:2; border-bottom:1.5px dashed rgba(139,26,26,.45); align-self:center; }
+.ap-look-stamp .ap-part-tools{ order:3; }
+.ap-look-stamp .ap-part-n, .ap-look-stamp .ap-part-t{ color:var(--as-red); border:2px solid var(--as-red); opacity:.85; }
+.ap-look-stamp .ap-part-n{ border-radius:50%; width:24px; height:24px; font-size:12px; transform:rotate(-4deg); }
+.ap-look-stamp .ap-part-t{ flex:0 1 auto; font-size:12.5px; padding:2px 9px; transform:rotate(-1.2deg); box-shadow:inset 0 0 0 1px rgba(139,26,26,.25); }
+.ap-look-stamp .ap-part:nth-of-type(even) .ap-part-t{ transform:rotate(.8deg); }
+
 /* Statistics: each one its own card */
-.ap-part[data-part="stats"] .as-stat{ background:#fbf7ea; border:1px solid var(--as-rule); border-top:3px solid var(--as-ink); padding:7px 2px 6px; }
-.ap-part[data-part="stats"] .as-stat .as-lbl{ font-family:'Special Elite',monospace; font-size:12px; letter-spacing:.14em; color:var(--as-ink); }
+.ap-part[data-part="stats"] .as-stat{ display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:1px; background:#fbf7ea; border:1px solid var(--as-rule); padding:7px 2px 6px; }
+.ap-part[data-part="stats"] .ap-stat-e{ background:#fbf7ea; }
+.ap-part[data-part="stats"] .as-lbl{ font-family:'Special Elite',monospace; font-size:12px; letter-spacing:.14em; color:var(--as-ink); }
 .ap-part[data-part="stats"] .as-stat .as-val{ font-size:24px; line-height:1.15; }
 .ap-part[data-part="stats"] .as-stat .as-x5{ font-size:10.5px; }
 .ap-part[data-part="stats"] .ap-feat-t{ font-style:italic; }
@@ -133,12 +162,9 @@
 .as-photo .ap-appear-btn{ display:block; margin:6px auto 0; }
 .ap-appear{ margin-top:8px; padding:4px 12px 10px; background:#fbf7ea; border:1px solid var(--as-rule); }
 .ap-appear .as-sec-hd{ margin-top:8px; }
-.ap-part[data-part="stats"] .as-stat{ display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:1px; }
 /* A narrow paper (the notebook's page) stacks the two columns */
 .as-paper.ap{ container-type:inline-size; }
 @container (max-width:520px){
   .ap .ap-part .as-cols{ grid-template-columns:1fr; }
   .ap .ap-part .as-stats{ grid-template-columns:repeat(3,1fr); }
 }
-.ap-part[data-part="stats"] .ap-stat-e{ background:#fbf7ea; border-top:3px solid var(--as-ink); }
-.ap-part[data-part="stats"] .ap-stat-e .as-lbl{ font-family:"Special Elite",monospace; font-size:12px; letter-spacing:.14em; color:var(--as-ink); }
