@@ -397,6 +397,9 @@ NOTES_FIRESTORE_STUB = """
           // answer, or fail, to exercise loading gates and error paths.
           if (window.__dgFsHang) return new Promise(function () {});
           if (window.__dgFsFail) return Promise.reject(new Error('stub: Firestore unavailable'));
+          // __dgFsFailGet(path): only this one-shot read fails (a phone's
+          // "client is offline"); its listeners still work.
+          if (window.__dgFsFailGet && window.__dgFsFailGet(docPath)) return Promise.reject(new Error('Failed to get document because the client is offline.'));
           // _route_backend(): a test's Python respond() answers reads of
           // characters/ and briefs/ ('__local__' = use this store).
           if (window.__dgBackendHook) {
@@ -427,6 +430,10 @@ NOTES_FIRESTORE_STUB = """
         onSnapshot: function (success, error) {
           var entry = { path: docPath, isDoc: true, success: success, error: error };
           window.__dgFirestoreListeners.push(entry);
+          // __dgFsListenNow: answer a new doc listener with what's stored,
+          // as the real SDK does; __dgFsListenError(path): fail it instead.
+          if (window.__dgFsListenError && window.__dgFsListenError(docPath)) setTimeout(function () { if (error) error(new Error('stub: listener failed')); }, 0);
+          else if (window.__dgFsListenNow) setTimeout(function () { if (window.__dgFirestoreListeners.indexOf(entry) !== -1) success(docSnapshot(docPath)); }, 0);
           return function () {
             var i = window.__dgFirestoreListeners.indexOf(entry);
             if (i !== -1) window.__dgFirestoreListeners.splice(i, 1);
@@ -10552,6 +10559,59 @@ def _open_cell(page, paper=None, code=None):
         page.click(btn)
 
 
+def test_agent_file_brief_read_recovers(p):
+    """Reported 2026-10-09 on an iPhone: Agent Hub's Appearance said
+    "Could not load -- check your connection." and Era photos "Finish the
+    Appearance brief" for an Agent whose brief was complete -- the one-shot
+    read of briefs/{code} failed once (while the sheet's live listener
+    worked) and nothing ever tried again. Now a failed get() is retried
+    through a listener (dgStore.getDoc), and if that fails too the file
+    says so, offers Try again, and retries by itself."""
+    brief = dict(_PROFILE_FIELDS, agent_code=FN_CODE, char_name="Mara Voss", active_eras='["90s"]',
+                 era_90s_mode0="portrait prompt", era_90s_mode1="reference prompt")
+    def setup(init):
+        docs = _field_notes_docs()
+        docs[f"briefs/{FN_CODE}"] = brief
+        extra = ("localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE) + init
+        page, errs = _field_notes_page(p, docs=docs, extra_init=extra)
+        page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+        _open_appearance(page)
+        return page, errs
+    on_file = lambda page: (page.text_content("#af-appear-state") or "").strip() == "On file"
+    # 1. get() fails ("client is offline"), the listener answers: loaded.
+    page, errs = setup("window.__dgFsFailGet = function (p) { return p === 'briefs/%s'; }; window.__dgFsListenNow = true;" % FN_CODE)
+    ok = wait_for_condition(lambda: on_file(page), timeout_ms=10000)
+    _open_era(page)
+    record("agent-file", "a failed one-shot read of the brief falls back to a listener: Appearance is On file",
+           bool(ok), page.text_content("#af-appear-state") or "")
+    record("agent-file", "…and the era photos show, not \"Finish the Appearance brief\"",
+           page.is_hidden("#af-photos-locked"), page.text_content("#af-photos-locked") or "")
+    page.close()
+    # 2. Both fail: the file says it's still loading, offers Try again,
+    #    and loads once the connection is back.
+    page, errs = setup("window.__dgFsFailGet = function (p) { return p === 'briefs/%s'; }; window.__dgFsListenError = function (p) { return p === 'briefs/%s'; };" % (FN_CODE, FN_CODE))
+    shown = wait_for_condition(lambda: page.locator("#af-appear-state .af-retry").count() == 1, timeout_ms=10000)
+    st = page.text_content("#af-appear-state") or ""
+    _open_era(page)
+    record("agent-file", "when every read fails the file says it's still loading, with Try again (not a dead end)",
+           bool(shown) and "Still loading" in st and "Could not load" not in st, st)
+    record("agent-file", "…and the era photos wait for it instead of saying the brief is unfinished",
+           "Waiting for the Agent File" in (page.text_content("#af-photos-locked") or ""), page.text_content("#af-photos-locked") or "")
+    page.evaluate("() => { window.__dgFsFailGet = null; window.__dgFsListenError = null; }")
+    page.click("#af-appear-state .af-retry")
+    ok = wait_for_condition(lambda: on_file(page), timeout_ms=8000)
+    record("agent-file", "Try again loads it once the connection is back", bool(ok), page.text_content("#af-appear-state") or "")
+    page.close()
+    # 3. …and without a tap: the automatic retry.
+    page, errs = setup("window.__dgFsFailGet = function (p) { return p === 'briefs/%s'; }; window.__dgFsListenError = function (p) { return p === 'briefs/%s'; };" % (FN_CODE, FN_CODE))
+    wait_for_condition(lambda: page.locator("#af-appear-state .af-retry").count() == 1, timeout_ms=10000)
+    page.evaluate("() => { window.__dgFsFailGet = null; window.__dgFsListenError = null; }")
+    ok = wait_for_condition(lambda: on_file(page), timeout_ms=9000)
+    record("agent-file", "the file retries by itself (within a few seconds) and loads", bool(ok), page.text_content("#af-appear-state") or "")
+    record("agent-file", "no JS exceptions (brief read recovery)", not errs, str(errs[:3]))
+    page.close()
+
+
 def test_agent_file_parts_and_looks(p):
     """The Agent File in numbered parts (Statistics, Skills, Psyche, Combat
     & gear, Cell, Record) with a jump index; Find a skill (kept across a
@@ -13590,6 +13650,7 @@ def main():
         safe(test_add_bond_in_play, browser, area="bonds")
         safe(test_agent_file_san_roll_and_member_cards, browser, area="agent-file")
         safe(test_agent_file_v2_play_and_edit, browser, area="agent-file-v2")
+        safe(test_agent_file_brief_read_recovers, browser, area="agent-file")
         safe(test_agent_file_parts_and_looks, browser, area="agent-file-parts")
         safe(test_agent_rules_unit, browser, area="rules")
         safe(test_evidence_attachments_open_and_zoom, browser, area="evidence")

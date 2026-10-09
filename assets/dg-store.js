@@ -131,8 +131,32 @@
 
   function db() { return window.firebase.firestore(); }
   function docData(snap) { return snap && snap.exists ? snap.data() : null; }
+  // A one-shot get() that fails (it can on a phone whose connection is
+  // still coming up: "client is offline", or the 15s timeout) is tried
+  // once more through a listener, which waits for the connection the way
+  // the pages' live listeners do; the first answer from the server (or a
+  // cached copy that exists) settles it.
   function getDoc(coll, id) {
-    return ready().then(() => withTimeout(db().collection(coll).doc(id).get(), 15000, 'reading ' + coll)).then(docData);
+    return ready().then(() => {
+      const ref = db().collection(coll).doc(id);
+      return withTimeout(ref.get(), 15000, 'reading ' + coll).catch(err => {
+        if (err && err.code === 'permission-denied') throw err;
+        return viaListener(ref, 25000, err);
+      });
+    }).then(docData);
+  }
+  function viaListener(ref, ms, firstErr) {
+    return new Promise((resolve, reject) => {
+      let done = false, unsub = null;
+      const finish = () => { done = true; clearTimeout(t); if (unsub) unsub(); };
+      const t = setTimeout(() => { finish(); reject(firstErr); }, ms);
+      unsub = ref.onSnapshot(snap => {
+        if (done) return;
+        if (snap && snap.metadata && snap.metadata.fromCache && !snap.exists) return; // wait for the server
+        finish(); resolve(snap);
+      }, err => { if (done) return; finish(); reject(err || firstErr); });
+      if (done && unsub) unsub();
+    });
   }
 
   // ── Characters ──────────────────────────────────────────────

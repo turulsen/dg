@@ -6423,3 +6423,45 @@ per marked skill and adds 1D4 only if the roll beats the skill, which is
 Call of Cthulhu's rule. In Delta Green every marked skill gains 1D4. The
 Agent File's Roll improvements (v2.7.0) follows the book; the old
 sheet is being retired (v3.0.0), so it isn't patched there.
+
+## Agent Hub: "Could not load" Appearance and "Finish the brief" Era photos for a finished Agent
+
+Reported 2026-10-09 on an iPhone, right after v2.8.0. On Daniela's tab,
+Appearance said "Could not load -- check your connection." and Era photos
+said "Finish the Appearance brief above to make this Agent's photos". Her
+brief was in fact complete: `briefs/DANI-U8BM` read fine from outside, at
+about 20 KB, with every field and three era Face Plates. Her sheet's
+HP/WP/SAN loaded on the same page.
+
+The cause: the Agent File reads the brief once (`afLoad_` →
+`dgStore.getBrief` → a one-shot `get()` with a 15s timeout). If that one
+read failed, nothing ever tried again. The message stayed until a
+reload, and the era photos stayed locked as if the brief were unfinished.
+The sheet's numbers come through a live listener on `characters/{code}`
+instead, and that path worked.
+
+A one-shot `get()` can fail while listeners work on a phone whose
+connection is still coming up. Firestore rejects it with "client is
+offline" or it hits the timeout, while a listener simply waits for the
+connection. The other way it fails is `dgStore.ready()`: one of the four
+SDK scripts it loads in turn times out.
+
+This isn't a v2.8.0 regression. The read and its dead end are older; the
+drop-downs only made it more visible. It's related to Issue #8's
+slow-load family, but it's a separate symptom. Fixed in two places:
+- **`dgStore.getDoc`**: a failed `get()` (anything but
+  permission-denied) is tried once more through `onSnapshot`. The first
+  answer from the server, or a cached copy that exists, settles it,
+  within 25s.
+- **`agent-file.js`**: if the brief still can't be read, Appearance says
+  "Still loading -- check your connection (reason)." with **Try again**,
+  and Era photos says it is waiting for the Agent File. It retries by
+  itself after 3s, 8s and 20s, then every 30s while the tab is open, and
+  at once when the phone comes back online or the page is shown again.
+
+New `test_agent_file_brief_read_recovers`. It covers three cases: a
+failed `get()` answered by the listener, both failing (Try again, then
+loaded), and the automatic retry. It fails on the old code with exactly
+the reported texts. The stub gained `__dgFsFailGet`, `__dgFsListenNow` and
+`__dgFsListenError`. `sw.js` `CACHE_NAME` v201.
+
