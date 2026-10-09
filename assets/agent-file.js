@@ -2225,6 +2225,7 @@ function rosterAddAgent(code, data) {
    AGENT HUB: one Agent File, mounted in whichever Agent's tab is open
    ══════════════════════════════════════════════ */
 var afMountedCode = null;  // the Agent whose tab this file is in
+var AF_PHOTOS_LOCKED_TEXT = "Finish the Appearance brief above to make this Agent's photos.";
 var afAppearOpen = false;  // Appearance unfolded by hand (Edit)
 var afShownFor = null;     // the Agent the file has finished loading
 var afPendingFocus = null; // a focus() asked for before that
@@ -2299,9 +2300,47 @@ function afRender_() {
   }
 }
 
+// A read that fails (a slow phone connection, an SDK script that didn't
+// load) is tried again by itself -- after 3s, 8s, 20s, then every 30s
+// while this Agent's tab is open -- and at once when the phone comes
+// back online or the page is shown again; Try again does it by hand.
+// One failed read used to leave "Could not load" there for good, and
+// the era photos saying the brief was unfinished.
+var afRetryTimer = null, afRetryN = 0;
+var AF_RETRY_MS = [3000, 8000, 20000, 30000];
+function afLoadFailed_(code, err) {
+  if (afMountedCode !== code) return;
+  console.warn('agent-file: could not load the brief for ' + code, err);
+  var why = String((err && err.message) || err || '').replace(/\s*--.*$/, '').slice(0, 120);
+  var st = document.getElementById('af-appear-state');
+  st.innerHTML = '';
+  st.appendChild(document.createTextNode('Still loading -- check your connection' + (why ? ' (' + why + ')' : '') + '. '));
+  var b = document.createElement('button');
+  b.type = 'button'; b.className = 'af-retry'; b.textContent = 'Try again';
+  b.addEventListener('click', function () { afRetryNow_(); });
+  st.appendChild(b);
+  var lock = document.getElementById('af-photos-locked');
+  if (lock) { lock.hidden = false; lock.textContent = 'Waiting for the Agent File to load…'; }
+  clearTimeout(afRetryTimer);
+  afRetryTimer = setTimeout(function () { afRetryNow_(); }, AF_RETRY_MS[Math.min(afRetryN, AF_RETRY_MS.length - 1)]);
+  afRetryN++;
+}
+function afRetryNow_() {
+  clearTimeout(afRetryTimer); afRetryTimer = null;
+  if (!afMountedCode || afData) return;
+  var st = document.getElementById('af-appear-state');
+  if (st) st.textContent = 'Loading…';
+  afLoad_(afMountedCode);
+}
+window.addEventListener('online', function () { if (afRetryTimer) afRetryNow_(); });
+document.addEventListener('visibilitychange', function () { if (!document.hidden && afRetryTimer) afRetryNow_(); });
+
 function afLoad_(code, retrying) {
   window.dgStore.getBrief(code).then(function (data) {
     if (afMountedCode !== code) return; // moved on to another tab meanwhile
+    clearTimeout(afRetryTimer); afRetryTimer = null; afRetryN = 0;
+    var lock = document.getElementById('af-photos-locked');
+    if (lock) lock.textContent = AF_PHOTOS_LOCKED_TEXT;
     if (data) {
       afData = data; afCode = code;
       persistAgent(code, data);
@@ -2315,10 +2354,7 @@ function afLoad_(code, retrying) {
     } else {
       afNoBrief_(code);
     }
-  }, function () {
-    if (afMountedCode !== code) return;
-    document.getElementById('af-appear-state').textContent = 'Could not load -- check your connection.';
-  });
+  }, function (err) { afLoadFailed_(code, err); });
 }
 // No Agent File yet and no character sheet to start one from: a blank
 // Appearance brief for this Agent, with what the roster already knows.
@@ -2361,6 +2397,7 @@ window.dgAgentFile = {
     if (afRootEl.parentNode !== slot) slot.appendChild(afRootEl);
     if (afMountedCode === code) return;
     afMountedCode = code;
+    clearTimeout(afRetryTimer); afRetryTimer = null; afRetryN = 0;
     afReset_();
     afLoad_(code);
   },

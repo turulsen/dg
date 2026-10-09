@@ -36,13 +36,31 @@ Check the current code before trusting a specific function name.
 | `field-id.html` | Players | The Field ID Fabricator (was the Agent Portal's Field IDs tab): agency/era credential cards from `assets/field-id-cards.js`. Lives in the Field Notes notebook; opened directly it forwards there. |
 | `the-incursion.html` | Players | The Incursion tables (what first brought the Agent to Delta Green): read them, roll them, or pick lines with the shared picker (`assets/incursion.js`). Linked from Agent Hub. See §2. |
 
-**Field Notes notebook (unreleased, on `claude/new-session-thjzt6`,
-not on `main`):** a leather notebook (`assets/field-notes.js`/`.css`)
+**Field Notes notebook (live since v2.1.0):** a leather notebook (`assets/field-notes.js`/`.css`)
 on every player page, replacing the floating Table Radio pill and Dice
 Roller panel and folding Agent File, Field ID, Requisition, Radio, Dice,
 Notes, Evidence, Rules and Settings into one place. Not on A-Cell. Full
 design and the record of each feedback round:
 `docs/field-notes-widget/SPEC.md`.
+
+**Split mode (v2.9.0, PR #69; desktop only).** The **Split** brown tab
+(`data-fn="split"`, under Settings) puts the Agent File on the left page
+(`[data-fn-slot=split-left]`, in place of `.fn-holder`) and the brown
+tabs' pages on the right. `state.split` and `state.splitView` are kept in
+`localStorage` as `dg_fn_split` / `dg_fn_split_view`; Evidences is the
+default.
+- **Notes** shows the whole Notes page (`notes/index.html?embed=notebook`,
+  `[data-fn-slot=embed-notes]`) instead of the two-page spread.
+- `show('agentfile')` lands on the right-page view, since the file is
+  already on the left.
+- A roll from the left page turns the right one to the Dice Roller
+  (`onRollStart`).
+- `renderSplitLeft()` redraws the left paper only when the Agent or their
+  loaded record changes.
+- The Field ID Fabricator's two-page spread still takes over both pages.
+- While Split is on, the card holder's pockets and the radio pager are
+  out of reach.
+- A phone (≤759px) never splits, and the tab is hidden there.
 
 Every page is a single self-contained HTML file with inline CSS/JS,
 except `stats/` (a direct multi-file copy of the upstream project, kept
@@ -423,6 +441,16 @@ testing found the one long paper hard to read, so it's grouped:
   them on Agent Hub) and Cell.
 - A narrow paper (the notebook page) stacks the two-column parts and puts
   the statistics in rows of three (a container query on `.as-paper.ap`).
+
+**The brief read recovers (v2.9.0, PR #69).** A failed read of
+`briefs/{code}` no longer leaves "Could not load" and locked Era photos
+until a reload (`BUGFIXES.md`).
+- `dgStore.getDoc` tries a get() that failed for lack of a connection
+  (offline, `unavailable` or the timeout) once more through `onSnapshot`,
+  within 12s.
+- `agent-file.js`'s `afLoad_` shows "Still loading" with the reason and
+  **Try again**, and Era photos waits. It retries after 3s, 8s, 20s, then
+  every 30s, and on `online` or `visibilitychange`.
 
 **What it's for:** the actual in-fiction "dossier" for an Agent — a
 physical description brief (Profiling), an AI-assisted portrait-prompt

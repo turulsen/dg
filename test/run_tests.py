@@ -397,6 +397,9 @@ NOTES_FIRESTORE_STUB = """
           // answer, or fail, to exercise loading gates and error paths.
           if (window.__dgFsHang) return new Promise(function () {});
           if (window.__dgFsFail) return Promise.reject(new Error('stub: Firestore unavailable'));
+          // __dgFsFailGet(path): only this one-shot read fails (a phone's
+          // "client is offline"); its listeners still work.
+          if (window.__dgFsFailGet && window.__dgFsFailGet(docPath)) return Promise.reject(new Error('Failed to get document because the client is offline.'));
           // _route_backend(): a test's Python respond() answers reads of
           // characters/ and briefs/ ('__local__' = use this store).
           if (window.__dgBackendHook) {
@@ -427,6 +430,10 @@ NOTES_FIRESTORE_STUB = """
         onSnapshot: function (success, error) {
           var entry = { path: docPath, isDoc: true, success: success, error: error };
           window.__dgFirestoreListeners.push(entry);
+          // __dgFsListenNow: answer a new doc listener with what's stored,
+          // as the real SDK does; __dgFsListenError(path): fail it instead.
+          if (window.__dgFsListenError && window.__dgFsListenError(docPath)) setTimeout(function () { if (error) error(new Error('stub: listener failed')); }, 0);
+          else if (window.__dgFsListenNow) setTimeout(function () { if (window.__dgFirestoreListeners.indexOf(entry) !== -1) success(docSnapshot(docPath)); }, 0);
           return function () {
             var i = window.__dgFirestoreListeners.indexOf(entry);
             if (i !== -1) window.__dgFirestoreListeners.splice(i, 1);
@@ -10552,6 +10559,123 @@ def _open_cell(page, paper=None, code=None):
         page.click(btn)
 
 
+def test_field_notes_split(p):
+    """Field Notes' Split mode (desktop): the Split brown tab puts the
+    Agent File on the left page, in place of the card holder, and the
+    brown tabs' pages -- Notes (the whole Notes page), Evidences, Rules,
+    Settings -- on the right. A roll from the left turns the right page to
+    the Dice Roller. Remembered on the device; never on a phone."""
+    extra = "localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE
+    page, errs = _field_notes_page(p, extra_init=extra)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+    page.locator("#fn-veil .as-paper.ap").filter(visible=True).first.wait_for(timeout=10000)
+    page.click("#fn-veil .fn-tab-split")
+    left = "#fn-veil [data-fn-slot=split-body] .as-paper.ap"
+    page.wait_for_selector(left, timeout=10000)
+    st = page.evaluate("""() => ({ holder: getComputedStyle(document.querySelector('#fn-veil .fn-holder')).display,
+        right: document.querySelector('#fn-veil [data-fn-slot=title]').textContent,
+        active: [...document.querySelectorAll('#fn-veil .fn-tab.fn-active')].map(t => t.textContent),
+        pressed: document.querySelector('#fn-veil .fn-tab-split').getAttribute('aria-pressed') })""")
+    record("notebook", "Split: the Agent File takes the left page (the card holder goes), Evidences on the right",
+           page.is_visible(left) and st["holder"] == "none" and st["right"] == "Evidences" and st["pressed"] == "true", str(st))
+    page.locator(left).evaluate("el => el.__mark = 1")
+    page.click("#fn-veil .fn-tab[data-view=rules]")
+    page.wait_for_selector("#fn-veil .fn-mission", timeout=5000)
+    record("notebook", "Split: Rules on the right, the same Agent File still on the left (not redrawn)",
+           page.locator(left).evaluate("el => el.__mark === 1"), "")
+    page.click("#fn-veil .fn-tab[data-view=notes]")
+    page.wait_for_selector("#fn-veil [data-fn-slot=embed-notes] iframe", timeout=5000)
+    src = page.get_attribute("#fn-veil [data-fn-slot=embed-notes] iframe", "src") or ""
+    record("notebook", "Split: Notes is the whole Notes page on the right, not the two-page spread",
+           "embed=notebook" in src and page.is_hidden("#fn-veil [data-fn-slot=spread]") and page.is_visible(left), src)
+    page.click("#fn-veil .fn-tab[data-view=evidence]")
+    page.locator(left + " .as-stat[data-a=pct]").first.click()
+    ok = wait_for_condition(lambda: (page.text_content("#fn-veil [data-fn-slot=title]") or "") == "Dice Roller", timeout_ms=5000)
+    record("notebook", "Split: a roll from the left page turns the right page to the Dice Roller, still split",
+           bool(ok) and page.is_visible(left) and page.get_attribute("#fn-veil .fn-tab-split", "aria-pressed") == "true"
+           and "fn-active" in (page.get_attribute("#fn-veil .fn-tab-split", "class") or ""), "")
+    page.evaluate("() => window.dgFieldNotes.close && window.dgFieldNotes.close()")
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+    page.wait_for_selector(left, timeout=10000)
+    record("notebook", "Split is remembered on this device (and Agent File opens it, Evidences on the right)",
+           page.is_visible(left) and (page.text_content("#fn-veil [data-fn-slot=title]") or "") == "Evidences", "")
+    page.click("#fn-veil .fn-tab-split")
+    page.wait_for_timeout(300)
+    record("notebook", "Split again: back to the card holder",
+           page.is_hidden("#fn-veil [data-fn-slot=split-left]") and page.is_visible("#fn-veil .fn-holder"), "")
+    record("notebook", "no JS exceptions (Split)", not errs, str(errs[:3]))
+    page.close()
+    # A phone never splits, even with it remembered.
+    page, errs = _field_notes_page(p, width=390, height=844, extra_init=extra + "localStorage.setItem('dg_fn_split', '1');")
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+    page.locator("#fn-veil .as-paper.ap").filter(visible=True).first.wait_for(timeout=10000)
+    record("notebook", "phone: no Split tab, and no split even when it's remembered",
+           page.is_hidden("#fn-veil .fn-tab-split") and page.is_hidden("#fn-veil [data-fn-slot=split-left]")
+           and (page.text_content("#fn-veil [data-fn-slot=title]") or "") == "Agent File", "")
+    # The browser's storage is shared by later tests: leave Split off.
+    page.evaluate("() => { localStorage.removeItem('dg_fn_split'); localStorage.removeItem('dg_fn_split_view'); }")
+    page.close()
+
+
+def test_agent_file_brief_read_recovers(p):
+    """Reported 2026-10-09 on an iPhone: Agent Hub's Appearance said
+    "Could not load -- check your connection." and Era photos "Finish the
+    Appearance brief" for an Agent whose brief was complete -- the one-shot
+    read of briefs/{code} failed once (while the sheet's live listener
+    worked) and nothing ever tried again. Now a failed get() is retried
+    through a listener (dgStore.getDoc), and if that fails too the file
+    says so, offers Try again, and retries by itself."""
+    brief = dict(_PROFILE_FIELDS, agent_code=FN_CODE, char_name="Mara Voss", active_eras='["90s"]',
+                 era_90s_mode0="portrait prompt", era_90s_mode1="reference prompt")
+    def setup(init):
+        docs = _field_notes_docs()
+        docs[f"briefs/{FN_CODE}"] = brief
+        extra = ("localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE) + init
+        page, errs = _field_notes_page(p, docs=docs, extra_init=extra)
+        page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+        _open_appearance(page)
+        return page, errs
+    on_file = lambda page: (page.text_content("#af-appear-state") or "").strip() == "On file"
+    # 1. get() fails ("client is offline"), the listener answers: loaded.
+    page, errs = setup("window.__dgFsFailGet = function (p) { return p === 'briefs/%s'; }; window.__dgFsListenNow = true;" % FN_CODE)
+    ok = wait_for_condition(lambda: on_file(page), timeout_ms=10000)
+    _open_era(page)
+    record("agent-file", "a failed one-shot read of the brief falls back to a listener: Appearance is On file",
+           bool(ok), page.text_content("#af-appear-state") or "")
+    record("agent-file", "…and the era photos show, not \"Finish the Appearance brief\"",
+           page.is_hidden("#af-photos-locked"), page.text_content("#af-photos-locked") or "")
+    page.close()
+    # 2. Both fail: the file says it's still loading, offers Try again,
+    #    and loads once the connection is back.
+    page, errs = setup("window.__dgFsFailGet = function (p) { return p === 'briefs/%s'; }; window.__dgFsListenError = function (p) { return p === 'briefs/%s'; };" % (FN_CODE, FN_CODE))
+    shown = wait_for_condition(lambda: page.locator("#af-appear-state .af-retry").count() == 1, timeout_ms=10000)
+    st = page.text_content("#af-appear-state") or ""
+    _open_era(page)
+    record("agent-file", "when every read fails the file says it's still loading, with Try again (not a dead end)",
+           bool(shown) and "Still loading" in st and "Could not load" not in st, st)
+    record("agent-file", "…and the era photos wait for it instead of saying the brief is unfinished",
+           "Waiting for the Agent File" in (page.text_content("#af-photos-locked") or ""), page.text_content("#af-photos-locked") or "")
+    page.evaluate("() => { window.__dgFsFailGet = null; window.__dgFsListenError = null; }")
+    page.click("#af-appear-state .af-retry")
+    ok = wait_for_condition(lambda: on_file(page), timeout_ms=8000)
+    record("agent-file", "Try again loads it once the connection is back", bool(ok), page.text_content("#af-appear-state") or "")
+    page.close()
+    # 3. …and without a tap: the automatic retry.
+    page, errs = setup("window.__dgFsFailGet = function (p) { return p === 'briefs/%s'; }; window.__dgFsListenError = function (p) { return p === 'briefs/%s'; };" % (FN_CODE, FN_CODE))
+    wait_for_condition(lambda: page.locator("#af-appear-state .af-retry").count() == 1, timeout_ms=10000)
+    page.evaluate("() => { window.__dgFsFailGet = null; window.__dgFsListenError = null; }")
+    ok = wait_for_condition(lambda: on_file(page), timeout_ms=9000)
+    record("agent-file", "the file retries by itself (within a few seconds) and loads", bool(ok), page.text_content("#af-appear-state") or "")
+    record("agent-file", "no JS exceptions (brief read recovery)", not errs, str(errs[:3]))
+    page.close()
+
+
 def test_agent_file_parts_and_looks(p):
     """The Agent File in numbered parts (Statistics, Skills, Psyche, Combat
     & gear, Cell, Record) with a jump index; Find a skill (kept across a
@@ -13590,6 +13714,8 @@ def main():
         safe(test_add_bond_in_play, browser, area="bonds")
         safe(test_agent_file_san_roll_and_member_cards, browser, area="agent-file")
         safe(test_agent_file_v2_play_and_edit, browser, area="agent-file-v2")
+        safe(test_field_notes_split, browser, area="notebook")
+        safe(test_agent_file_brief_read_recovers, browser, area="agent-file")
         safe(test_agent_file_parts_and_looks, browser, area="agent-file-parts")
         safe(test_agent_rules_unit, browser, area="rules")
         safe(test_evidence_attachments_open_and_zoom, browser, area="evidence")

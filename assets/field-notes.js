@@ -47,6 +47,7 @@
   var ORDERS_ACK_KEY = 'dg_fn_orders_ack';
   var ONBOARD_KEY = 'dg_fn_onboard';
   var VIEW_KEY = 'dg_fn_view';
+  var SPLIT_KEY = 'dg_fn_split', SPLIT_VIEW_KEY = 'dg_fn_split_view';
   var OPEN_ON_ARRIVAL_KEY = 'dg_fn_open';
   var BOOT_OFF_KEY = 'dg_boot_splash_off';
   var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
@@ -472,7 +473,14 @@
             '<button type="button" class="fn-kit-dice" data-fn="dice" title="Dice Roller"><img class="fn-tri" src="' + TRI + '" alt="">' +
               '<span class="fn-kit-dice-t">Dice</span><span class="fn-kit-dice-r" data-fn-slot="kit-dice-last"></span></button>' +
           '</div>' +
-        '</div></div>' +
+        '</div>' +
+        // Split (desktop): the Agent File on this page, in place of the card holder.
+        '<div class="fn-split-left" data-fn-slot="split-left" hidden><div class="fn-booklet fn-booklet-left"><div class="fn-paper">' +
+          '<div class="fn-page-head"><div class="fn-page-kicker"><span>Delta Green — Agent Roster</span><span data-fn-slot="split-meta"></span></div>' +
+          '<div class="fn-page-title">Agent File</div></div>' +
+          '<div class="fn-page-body" data-fn-slot="split-body"></div>' +
+        '</div></div></div>' +
+        '</div>' +
         '<div class="fn-right">' +
           '<div class="fn-booklet"><div class="fn-paper">' +
             '<div class="fn-page-head"><div class="fn-page-kicker"><span data-fn-slot="kicker"></span><span data-fn-slot="meta"></span></div>' +
@@ -481,9 +489,11 @@
             '<div class="fn-page-body" data-fn-slot="dice" hidden><div class="fn-dice-host" data-fn-slot="dice-host"></div></div>' +
             '<div class="fn-page-body fn-flush" data-fn-slot="embed-req" hidden></div>' +
             '<div class="fn-page-body fn-flush" data-fn-slot="embed-fab" hidden></div>' +
+            '<div class="fn-page-body fn-flush" data-fn-slot="embed-notes" hidden></div>' +
           '</div></div>' +
           '<div class="fn-tabs">' +
             TABS.map(function (t) { return '<button type="button" class="fn-tab" data-view="' + t.view + '"><span>' + t.label + '</span></button>'; }).join('') +
+            '<button type="button" class="fn-tab fn-tab-split" data-fn="split" aria-pressed="false" title="Split: the Agent File on the left page, this tab\'s page on the right"><span>Split</span></button>' +
           '</div>' +
         '</div>' +
         '<div class="fn-spread" data-fn-slot="spread" hidden></div>' +
@@ -492,10 +502,23 @@
 
   function slot(name) { return root.querySelector('[data-fn-slot="' + name + '"]'); }
 
-  var state = { open: false, view: lsGet(VIEW_KEY) || 'agentfile', suspended: false, notesMode: 'spread', evOp: '', fieldIdMode: 'card' };
+  var state = { open: false, view: lsGet(VIEW_KEY) || 'agentfile', suspended: false, notesMode: 'spread', evOp: '', fieldIdMode: 'card',
+    split: lsGet(SPLIT_KEY) === '1', splitView: lsGet(SPLIT_VIEW_KEY) || 'evidence' };
+  if (!TABS.some(function (t) { return t.view === state.splitView; })) state.splitView = 'evidence';
   if (VIEWS.indexOf(state.view) === -1) state.view = 'agentfile';
   var narrowMq = window.matchMedia ? window.matchMedia('(max-width:759px)') : { matches: false, addListener: function () {} };
   function narrow() { return !!narrowMq.matches; }
+  // Split (desktop only): the Agent File on the left page, the brown
+  // tabs' pages (Notes, Evidences, Rules, Settings) on the right.
+  function splitOn() { return state.split && !narrow(); }
+  function isTabView(v) { return TABS.some(function (t) { return t.view === v; }); }
+  function toggleSplit() {
+    state.split = !state.split;
+    lsSet(SPLIT_KEY, state.split ? '1' : '0');
+    if (state.split && !isTabView(state.view)) state.view = state.splitView;
+    if (!state.split) slot('split-body').innerHTML = '';
+    render();
+  }
 
   function mount() {
     document.body.appendChild(root);
@@ -540,9 +563,10 @@
     if (act === 'dice') { e.stopPropagation(); open('dice'); return; }
     if (act === 'close') { close(); return; }
     if (act === 'chip' || act === 'radio') { togglePager(); return; }
+    if (act === 'split') { toggleSplit(); return; }
     var v = t.getAttribute('data-view');
     if (!v) return;
-    if (t.classList.contains('fn-tab') && v === 'notes' && state.view === 'notes' && !narrow()) {
+    if (t.classList.contains('fn-tab') && v === 'notes' && state.view === 'notes' && !narrow() && !splitOn()) {
       // Notes is the one tab that takes both pages; tapping it again
       // folds back to the quick notes, with the card holder on the left.
       state.notesMode = state.notesMode === 'spread' ? 'quick' : 'spread';
@@ -587,7 +611,7 @@
     if (narrow() || !state.open) return;
     try { if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) { /* old browser */ }
     var book = root.querySelector('.fn-book');
-    var booklet = root.querySelector('.fn-booklet');
+    var booklet = root.querySelector('.fn-right .fn-booklet');
     var paper = booklet && booklet.querySelector('.fn-paper:not(.fn-leaf-front)');
     if (!paper || !paper.offsetWidth || book.classList.contains('fn-spreading')) return;
     var old = booklet.querySelector('.fn-leaf-wrap');
@@ -615,6 +639,8 @@
     setTimeout(done, 1400);
   }
   function show(view) {
+    if (splitOn() && view === 'agentfile') view = state.splitView; // it's on the left page already
+    if (splitOn() && isTabView(view)) { state.splitView = view; lsSet(SPLIT_VIEW_KEY, view); }
     if (state.open && view !== state.view && !spreadKind(view)) turnPage();
     state.view = view;
     lsSet(VIEW_KEY, view === 'dice' ? 'agentfile' : view);
@@ -781,7 +807,7 @@
     slot('kicker').textContent = m[0];
     slot('title').textContent = m[1];
     slot('meta').textContent = metaText || '';
-    Array.prototype.forEach.call(root.querySelectorAll('.fn-slot,.fn-tab'), function (b) {
+    Array.prototype.forEach.call(root.querySelectorAll('.fn-slot,.fn-tab:not(.fn-tab-split)'), function (b) {
       b.classList.toggle('fn-active', b.getAttribute('data-view') === view);
     });
   }
@@ -792,22 +818,32 @@
   // quick notes) and the Field ID Fabricator.
   function spreadKind(view) {
     if (narrow()) return '';
+    if (splitOn() && view === 'notes') return ''; // Split: Notes on the right page
     if (view === 'notes' && state.notesMode === 'spread') return 'notes';
     if (view === 'fieldid' && state.fieldIdMode === 'fab') return 'fab';
     return '';
   }
   function render() {
     if (!state.open) return;
+    if (splitOn() && state.view === 'agentfile') state.view = state.splitView;
     var view = state.view;
     var book = root.querySelector('.fn-book');
     var kind = spreadKind(view);
     var spread = !!kind;
+    var split = splitOn() && !spread;
     book.classList.toggle('fn-spreading', spread);
+    book.classList.toggle('fn-split', split);
     slot('spread').hidden = !spread;
-    var persistentSlot = PERSISTENT[view] || (view === 'fieldid' && state.fieldIdMode === 'fab' && !spread ? 'embed-fab' : null);
-    ['dice', 'embed-req', 'embed-fab'].forEach(function (s) { slot(s).hidden = s !== persistentSlot; });
+    slot('split-left').hidden = !split;
+    var sb = root.querySelector('.fn-tab-split');
+    if (sb) { sb.classList.toggle('fn-active', state.split); sb.setAttribute('aria-pressed', String(state.split)); }
+    var persistentSlot = PERSISTENT[view] || (view === 'fieldid' && state.fieldIdMode === 'fab' && !spread ? 'embed-fab' : null) ||
+      (split && view === 'notes' ? 'embed-notes' : null);
+    ['dice', 'embed-req', 'embed-fab', 'embed-notes'].forEach(function (s) { slot(s).hidden = s !== persistentSlot; });
     slot('body').hidden = !!persistentSlot;
     renderHead(view, '');
+    if (split) renderSplitLeft();
+    if (persistentSlot === 'embed-notes') { pageNotesPage(slot('embed-notes')); return; }
     var body = slot('body');
     if (!persistentSlot) { body.innerHTML = ''; body.scrollTop = 0; body.onclick = null; }
     if (kind === 'notes') { pageNotesSpread(); return; }
@@ -851,14 +887,24 @@
   function activeOp(ops) { return ops.filter(function (o) { return o.active === true; })[0] || ops[0] || null; }
 
   /* ── Agent File: the character sheet (assets/agent-paper.js) ── */
-  function pageAgentFile(body) {
+  // Split: the same file on the left page, drawn again only when the
+  // Agent or their loaded record changes (the paper follows itself live).
+  function renderSplitLeft() {
+    var sb = slot('split-body'), a = currentAgent();
+    slot('split-meta').textContent = a ? a.code : '';
+    var key = (a ? a.code : '') + '|' + (data.ready ? 1 : 0) + '|' + ((data.char && data.char.updated_at) || '') + '|' + (data.members || []).length;
+    if (sb._fnKey === key && sb.querySelector('.as-paper, .fn-p, .fn-muted')) return;
+    sb._fnKey = key;
+    pageAgentFile(sb, true);
+  }
+  function pageAgentFile(body, left) {
     var a = needAgent(body, 'The Agent File');
     if (!a) return;
-    renderHead('agentfile', a.code);
+    if (!left) renderHead('agentfile', a.code);
     loadingThen(body, function () {
       if (!(body._ap && body._ap.session && body._ap.session.code === a.code && body.querySelector('.as-paper'))) body.innerHTML = '<p class="fn-muted">Opening the file…</p>';
       ensureSheetLib().then(function (AS) {
-        if (!state.open || state.view !== 'agentfile') return;
+        if (!state.open || (left ? !splitOn() : state.view !== 'agentfile')) return;
         var brief = data.brief || {};
         var ops = cellOps(), act = activeOp(ops);
         var opsHtml = data.cell ? '<div class="as-ops"><div class="as-sec-hd">Operations</div>' + (ops.length ? ops.map(function (o) {
@@ -986,6 +1032,24 @@
       host.appendChild(f);
       host.querySelector('[data-spread="quick"]').addEventListener('click', function () { state.notesMode = 'quick'; render(); });
     }
+  }
+
+  // Split: Notes on the right page -- the Notes page itself (embed=notebook).
+  function pageNotesPage(host) {
+    var a = currentAgent();
+    if (!a || a.friendly) { host.innerHTML = '<div class="fn-page-body"></div>'; needAgent(host.firstChild, 'Notes'); return; }
+    ensureViewer();
+    var src = url('notes/index.html?embed=notebook&code=' + encodeURIComponent(a.code));
+    var f = host.querySelector('iframe');
+    if (f && f.getAttribute('data-src') === src) return;
+    host.innerHTML = '';
+    f = document.createElement('iframe');
+    f.className = 'fn-embed';
+    f.setAttribute('data-dg-embed', 'notes');
+    f.setAttribute('data-src', src);
+    f.title = 'Player Notes';
+    f.src = src;
+    host.appendChild(f);
   }
 
   var TAG_TYPES = [{ id: 'npc', label: 'NPC' }, { id: 'location', label: 'Location' }, { id: 'clue', label: 'Clue' }];

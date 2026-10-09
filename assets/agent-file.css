@@ -312,3 +312,4 @@
 .af-root .paper-stack .paper::before, .af-root .paper-stack .paper::after{ display:none; }
 .af-root .paper-stack .paper-rules, .af-root .paper-stack .paper-margin, .af-root .paper-stack .holes{ display:none; }
 .af-root .paper-stack .paper-content{ padding:0; }
+.af-root .af-retry{ margin-left:6px; font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--red); background:transparent; border:1px solid var(--red); padding:3px 9px; cursor:pointer; }
