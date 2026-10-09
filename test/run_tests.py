@@ -7278,24 +7278,24 @@ def test_shell_nav_tracks_in_page_navigation(p):
     # follows a same-origin relative link on its own.
     agent_file_href = page.eval_on_selector(
         "#dg-shell-content",
-        "el => { var a = el.contentDocument.querySelector('a[href*=\"stats/index.html?load=\"]'); "
+        "el => { var a = el.contentDocument.querySelector('a[href*=\"?recruit=\"]'); "
         "if (a) { a.target = ''; } return a && a.getAttribute('href'); }"
     )
     if not agent_file_href:
-        record("shell", "found an in-page Play link to click (roster has at least one Agent)", False, "no roster link found")
+        record("shell", "found an in-page Recruit link to click (roster has at least one Agent)", False, "no roster link found")
         record("shell", "no JS exceptions", len(errs) == 0, "; ".join(errs))
         page.close()
         return errs
 
-    page.eval_on_selector("#dg-shell-content", "el => { var a = el.contentDocument.querySelector('a[href*=\"stats/index.html?load=\"]'); a.click(); }")
+    page.eval_on_selector("#dg-shell-content", "el => { var a = el.contentDocument.querySelector('a[href*=\"?recruit=\"]'); a.click(); }")
     page.wait_for_function(
         "() => { var f = document.getElementById('dg-shell-content'); "
         "return f.contentDocument && f.contentDocument.readyState === 'complete' "
-        "&& /stats\\/index\\.html/.test(f.contentWindow.location.href); }")
+        "&& /recruit=/.test(f.contentWindow.location.href); }")
     page.wait_for_timeout(200)
 
     record("shell", "clicking an in-page link (not the shell's own nav) still navigates the content iframe",
-           "stats/index.html" in page.eval_on_selector("#dg-shell-content", "el => el.contentWindow.location.href"), "")
+           "recruit=OWEN-CS12" in page.eval_on_selector("#dg-shell-content", "el => el.contentWindow.location.href"), "")
     record("shell", "the outer Table Radio pill is untouched by an in-page navigation too",
            page.eval_on_selector("#dg-radio-pill", "el => el.dataset.dgTestTag") == "radio-still-here", "")
     record("shell", "the nav still reads this as Agent Hub territory, not blank",
