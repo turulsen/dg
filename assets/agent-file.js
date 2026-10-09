@@ -2405,6 +2405,11 @@ window.dgAgentFile = {
   park: function () {
     afHolderEl.appendChild(afRootEl);
   },
+  // Load this Agent again (the New Recruit wizard changed their brief).
+  reload: function (slot, code) {
+    afMountedCode = null;
+    this.mount(slot, code);
+  },
   code: function () { return afMountedCode; },
   data: function () { return afData; },
   complete: function () { return !!afData && isProfilingComplete(afData); },

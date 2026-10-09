@@ -396,6 +396,8 @@
   }
   function generatePrompt(code, payload) { return callFunction(code, 'generatePrompt', payload, 120000); }
   function generatePlateImage(code, payload) { return callFunction(code, 'generatePlateImage', payload, 180000); }
+  // A Bond's description, drafted from its name, relationship and the Agent.
+  function generateBondDescription(code, payload) { return callFunction(code, 'generateBondDescription', payload, 60000); }
 
   window.dgStore = {
     ready, loadScript, signInAgent,
@@ -403,6 +405,6 @@
     getBrief, updateBrief, submitBrief, findByPlayerName,
     listHandoutNotes, saveHandoutNote,
     getIdentities, saveIdentity, listSeen, markSeen, deleteOwnAgent, mainPhoto, photoRef,
-    generatePrompt, generatePlateImage
+    generatePrompt, generatePlateImage, generateBondDescription
   };
 })();

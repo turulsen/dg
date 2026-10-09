@@ -135,7 +135,8 @@
       armOrders: armOrders,
       refresh: function () { var h = hostApi(); if (h) h.refresh(); },
       go: function (path) { var h = hostApi(); if (h && h.go) h.go(path); else location.href = url(path); },
-      oath: function (o) { var h = hostApi(); return h && h.oath ? h.oath(o) : Promise.resolve(window.confirm('Save these edits?')); }
+      oath: function (o) { var h = hostApi(); return h && h.oath ? h.oath(o) : Promise.resolve(window.confirm('Save these edits?')); },
+      contract: function (o) { var h = hostApi(); return h && h.oath ? h.oath(Object.assign({}, o, { contract: true })) : Promise.resolve(window.confirm('Sign the Contract and file this Agent?')); }
     };
     // Escape inside an embedded page (focus is in the iframe, so the
     // host never sees the key) or on a shell page under the open notebook.
@@ -1733,6 +1734,7 @@
   window.dgFieldNotes = {
     isHost: true,
     open: open, close: close, refresh: refresh, armOrders: armOrders, oath: oath,
+    contract: function (o) { return oath(Object.assign({}, o, { contract: true })); },
     isOpen: function () { return state.open; },
     // A page inside the notebook (desktop Notes) going somewhere else: it
     // goes in the page under the notebook, not inside the notebook's own
@@ -1783,23 +1785,34 @@
     return new Promise(function (resolve) {
       var old = document.getElementById('fn-orders');
       if (old) old.remove();
-      var lines = [['fn-o-dim', '>amendment: agent file ' + (o.code || '')]];
-      if (o.changes && o.changes.length) lines.push(['fn-o-dim', '>changes: ' + o.changes.slice(0, 8).join(', ') + (o.changes.length > 8 ? ', +' + (o.changes.length - 8) + ' more' : '')]);
-      else lines.push(['fn-o-dim', '>changes: none']);
-      // Saving an edit: the Mission & Standing Orders (the Contract's full
-      // briefing is for a new Agent only).
-      lines = lines.concat([['', ''], ['fn-o-head', 'THE MISSION & STANDING ORDERS'], ['', '']],
-        MISSION.map(function (m) { return ['', m[0].toUpperCase().replace(/:$/, '') + (m[0] === 'First priority:' ? '' : ' PRIORITY') + ': ' + m[1].charAt(0).toUpperCase() + m[1].slice(1)]; }), [['', '']]);
+      var lines, contract = !!o.contract;
+      if (contract) {
+        // A new Agent (the New Recruit wizard, or an import): the Contract,
+        // the full clearance briefing, once.
+        lines = [['fn-o-dim', '>clearance_agreement: ready_to_sign'], ['fn-o-dim', '>briefing_codename: ' + briefingCodename()],
+          ['fn-o-dim', '>recruit: ' + (o.name ? o.name + ' (' + o.code + ')' : o.code) + (o.profession ? ' · ' + o.profession : '')]];
+        if (o.incursion) lines.push(['fn-o-dim', '>incident_on_file:'], ['fn-o-inc', o.incursion]);
+        lines = lines.concat([['', '']], ORDERS_TEXT, [['', '']]);
+      } else {
+        lines = [['fn-o-dim', '>amendment: agent file ' + (o.code || '')]];
+        if (o.changes && o.changes.length) lines.push(['fn-o-dim', '>changes: ' + o.changes.slice(0, 8).join(', ') + (o.changes.length > 8 ? ', +' + (o.changes.length - 8) + ' more' : '')]);
+        else lines.push(['fn-o-dim', '>changes: none']);
+        // Saving an edit: the Mission & Standing Orders (the Contract's full
+        // briefing is for a new Agent only).
+        lines = lines.concat([['', ''], ['fn-o-head', 'THE MISSION & STANDING ORDERS'], ['', '']],
+          MISSION.map(function (m) { return ['', m[0].toUpperCase().replace(/:$/, '') + (m[0] === 'First priority:' ? '' : ' PRIORITY') + ': ' + m[1].charAt(0).toUpperCase() + m[1].slice(1)]; }), [['', '']]);
+      }
       var ov = document.createElement('div');
       ov.id = 'fn-orders';
-      ov.className = 'fn-oath-save';
+      ov.className = contract ? 'fn-contract' : 'fn-oath-save';
       ov.setAttribute('role', 'dialog');
-      ov.setAttribute('aria-label', 'The Mission & Standing Orders');
+      ov.setAttribute('aria-label', contract ? 'The Contract' : 'The Mission & Standing Orders');
       ov.innerHTML = '<div class="fn-orders-term"><div class="fn-orders-why">' +
-        esc('Saving your edits to ' + (o.name || 'this Agent') + '. Y files them; N goes back to editing with nothing lost.') +
+        esc(contract ? (o.name || 'Your new Agent') + '\'s file is complete. Y signs the Contract and files them; N goes back to the review with nothing lost.'
+          : 'Saving your edits to ' + (o.name || 'this Agent') + '. Y files them; N goes back to editing with nothing lost.') +
         '</div><div data-o="log"></div><div data-o="prompt" hidden>' +
-        '<div>CAN WE CALL ON YOU? [<button type="button" class="fn-orders-key" data-o="y" aria-label="Y: file the edits">Y</button>/' +
-        '<button type="button" class="fn-orders-key" data-o="n" aria-label="N: back to editing">N</button>]<span class="fn-cursor"></span></div></div></div>';
+        '<div>CAN WE CALL ON YOU? [<button type="button" class="fn-orders-key" data-o="y" aria-label="' + (contract ? 'Y: sign and file the Agent' : 'Y: file the edits') + '">Y</button>/' +
+        '<button type="button" class="fn-orders-key" data-o="n" aria-label="' + (contract ? 'N: back to the review' : 'N: back to editing') + '">N</button>]<span class="fn-cursor"></span></div></div></div>';
       (root || document.body).appendChild(ov);
       ov.tabIndex = -1;
       try { ov.focus(); } catch (e) { /* best effort */ }
@@ -1811,12 +1824,13 @@
         log.innerHTML = lines.map(function (l) { return '<div class="' + l[0] + '">' + esc(l[1]) + '&nbsp;</div>'; }).join('');
         prompt.hidden = false;
       }
-      // Quicker than the first briefing: Enter skips it.
+      // The save screen types quicker than the Contract; Enter skips either.
+      var step = contract ? 3 : 6;
       var timer = setInterval(function () {
         if (li >= lines.length) { finishTyping(); return; }
         if (!cur) { cur = document.createElement('div'); cur.className = lines[li][0]; log.appendChild(cur); }
         var text = lines[li][1];
-        ci = Math.min(text.length, ci + 6);
+        ci = Math.min(text.length, ci + step);
         cur.innerHTML = esc(text.slice(0, ci)) + '&nbsp;';
         if (ci >= text.length) { li++; ci = 0; cur = null; }
       }, 12);
@@ -1825,8 +1839,17 @@
         if (yes && !done) { finishTyping(); return; }
         answered = true;
         cleanup();
+        if (yes && contract && o.code) {
+          // Signed: the clearance briefing is done for this Agent (it isn't
+          // shown again on the next page), and the photo / Field ID nudges follow.
+          var ack = ordersAck(); ack[o.code] = Date.now();
+          lsSet(ORDERS_ACK_KEY, JSON.stringify(ack));
+          var pend = lsJson(ORDERS_PENDING_KEY, null);
+          if (pend && pend.code === o.code) lsDel(ORDERS_PENDING_KEY);
+          lsSet(ONBOARD_KEY, JSON.stringify({ code: o.code, step: 'photo', at: Date.now() }));
+        }
         if (yes) {
-          var d = document.createElement('div'); d.className = 'fn-o-dim'; d.textContent = '>filed.'; log.appendChild(d);
+          var d = document.createElement('div'); d.className = 'fn-o-dim'; d.textContent = contract ? '>understood. we\'ll be in touch.' : '>filed.'; log.appendChild(d);
           prompt.hidden = true;
           setTimeout(function () { ov.remove(); }, 450);
         } else ov.remove();
