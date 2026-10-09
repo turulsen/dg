@@ -779,6 +779,15 @@ def _open_appearance(page):
     except Exception:
         pass
 
+def _open_era(page):
+    """The era photos drop down from their button under the photo on Agent
+    Hub; open them (if folded) before a test works them."""
+    try:
+        page.evaluate("""() => { const f = document.getElementById('af-photos'); const d = f && f.closest('.ah-era-drop');
+            if (d && d.hidden) { const b = document.querySelector('[data-ah-era="' + d.id.replace('ah-era-', '') + '"]'); if (b) b.click(); } }""")
+    except Exception:
+        pass
+
 def fill_cover_form(page, agent, form_selector="#dg-form"):
     _open_appearance(page)
     text_fields = ["char_name","codename","nationality","face_shape","eye_color","eye_shape",
@@ -3124,6 +3133,7 @@ def test_agent_hub_dex_postit(p):
     page.add_init_script("localStorage.setItem('dg_agent_roster', JSON.stringify(%s));" % json.dumps({
         "OWEN-CS12": {"code": "OWEN-CS12", "char_name": "Owen Castillo", "codename": "Ferro", "saved_at": 2000}}))
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    _open_cell(page, code="OWEN-CS12")
     page.wait_for_selector("#ah-sheet-OWEN-CS12 .ap-init", timeout=10000)
     rows = page.eval_on_selector_all("#ah-sheet-OWEN-CS12 .ap-init li", "els => els.map(e => e.innerText.replace(/\\s+/g, ' ').trim())")
     record("hub", "the Agent's DEX leads their line in the Cell's initiative list (no DEX post-it any more)",
@@ -8706,6 +8716,7 @@ def test_agent_file_active_era_toggle(p):
 
     page.goto(f"{BASE}/agent-hub.html?code=ERAT-OGL01", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(800)
+    _open_era(page)
 
     # text-transform:uppercase is CSS-only -- Playwright's inner_text()
     # returns the rendered text, so this compares case-insensitively
@@ -8815,6 +8826,7 @@ def test_agent_file_outfit_plate_requires_face_first(p):
 
     page.goto(f"{BASE}/agent-hub.html?code=NOFA-CE01", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(800)
+    _open_era(page)
 
     # Outfit Plate button should refuse before any Face Plate exists.
     page.click('button[data-mode="mode1"]:has-text("Generate Image")')
@@ -10204,6 +10216,7 @@ def test_cell_members_by_name_and_kia(p):
     extra = "localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE
     page, errs = _field_notes_page(p, docs=docs, extra_init=extra)
     page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    _open_cell(page, code=FN_CODE)
     page.wait_for_selector(f"#ah-sheet-{FN_CODE} .ap-init li", timeout=15000)
     page.wait_for_timeout(500)
     rows = page.eval_on_selector_all(f"#ah-sheet-{FN_CODE} .ap-init li", "els => els.map(e => [e.querySelector('.as-mname').textContent, e.classList.contains('as-kia'), !!e.querySelector('.as-stamp')])")
@@ -10215,6 +10228,9 @@ def test_cell_members_by_name_and_kia(p):
     record("hub", "…and a member at 0 HP is marked KIA (only them)",
            [r[1] and r[2] for r in rows] == [False, False, False, True], str(rows))
     page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+    nbp = page.locator("#fn-veil .as-paper.ap").filter(visible=True).first
+    nbp.wait_for(timeout=15000)
+    _open_cell(page, nbp)
     page.wait_for_selector("#fn-veil .ap-init li", timeout=15000)
     nb = page.eval_on_selector_all("#fn-veil .ap-init li", "els => els.map(e => [e.querySelector('.as-mname').textContent, e.classList.contains('as-kia')])")
     record("notebook", "the notebook's Agent File lists the same Cell by name, with KIA marked",
@@ -10332,6 +10348,8 @@ def test_agent_file_san_roll_and_member_cards(p):
         # The notebook keeps more than one copy of a page; use the one on screen.
         paper = page.locator(root + " .as-paper").filter(visible=True).first
         paper.locator("[data-a=rollsan]").wait_for(timeout=15000)
+        _open_cell(page, paper, FN_CODE)
+        paper = page.locator(root + " .as-paper").filter(visible=True).first
         paper.locator(".as-mthumb img").first.wait_for(timeout=8000)
         record("agent-file", where + ": a Cell member shows with their photo",
                paper.locator(".as-mthumb img").first.get_attribute("src") == png, "")
@@ -10520,6 +10538,127 @@ def test_agent_file_v2_play_and_edit(p):
     errs_all.extend(errs)
     page.close()
     return errs_all
+
+def _open_cell(page, paper=None, code=None):
+    """The Cell is a drop-down beside Appearance: the notebook's paper has
+    its own Cell ▾ button, Agent Hub's is under the photo."""
+    if paper is not None and paper.locator("[data-a=cell]").count():
+        if not paper.locator(".ap-celldrop").count():
+            paper.locator("[data-a=cell]").first.click()
+        return
+    btn = f"[data-ah-cell={code}]"
+    page.wait_for_selector(f"#ah-sheet-{code} .ap-vitals", timeout=15000)
+    if not page.locator(f"#ah-sheet-{code} .ap-celldrop").count():
+        page.click(btn)
+
+
+def test_agent_file_parts_and_looks(p):
+    """The Agent File in numbered parts (Statistics, Skills, Psyche, Combat
+    & gear, Cell, Record) with a jump index; Find a skill (kept across a
+    redraw); the physical description with Appearance -- in Agent Hub's
+    drop-down under the photo, a fold under the photo in the notebook, and
+    Edit's Personal data & appearance part; the parts' look picked per
+    device in the notebook's Settings (Typed form by default, Folder tabs,
+    Rubber stamps)."""
+    stats = {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 11, "CHA": 13}
+    state = {"v": 1, "stats": stats, "csStats": dict(stats), "derived": {"hp": 9, "wp": 8, "san": 52, "bp": 44},
+             "bio": {"name": "Mara Voss", "player_name": "fn tester", "profession": "federal_agent",
+                     "physicalDesc": "Lean, ash-brown hair tied back; watchful grey eyes."},
+             "skills": {"alertness": 60, "firearms": 50, "accounting": 10},
+             "bonds": [{"id": "b1", "name": "Lena Voss", "relationship": "Sister", "score": 11}]}
+    docs = _field_notes_docs()
+    docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, state, "fn tester")
+    extra = "localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE
+    page, errs = _field_notes_page(p, docs=docs, extra_init=extra)
+    page.on("dialog", lambda d: d.accept())
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    root = f"#ah-sheet-{FN_CODE}"
+    page.wait_for_selector(root + " .ap-part", timeout=15000)
+    parts = page.eval_on_selector_all(root + " .ap-part", "els => els.map(e => e.getAttribute('data-part'))")
+    record("agent-file-parts", "the file is in five numbered parts (the Cell is a drop-down now)",
+           parts == ["stats", "skills", "psyche", "kit", "record"], str(parts))
+    record("agent-file-parts", "Typed form is the default look",
+           page.evaluate(f"() => document.querySelector('{root} .as-paper.ap').classList.contains('ap-look-form')"), "")
+    page.click(root + " [data-a=jump][data-part=psyche]")
+    ok = wait_for_condition(lambda: page.evaluate(f"""() => {{ const r = document.querySelector('{root} .ap-part[data-part=psyche]').getBoundingClientRect();
+        return r.top >= -2 && r.top < 160; }}"""), timeout_ms=4000)
+    record("agent-file-parts", "the index's Psyche button scrolls to Psyche", bool(ok), "")
+    # Era photos and Cell drop down from beside Appearance: on a desktop
+    # the three buttons sit in a row to the right of the name.
+    geo = page.evaluate(f"""() => {{ const t = document.getElementById('ah-title-{FN_CODE}') || document.querySelector('#panel-{FN_CODE} .paper-title');
+        const b = document.querySelector('[data-ah-appear="{FN_CODE}"]'), c = document.querySelector('[data-ah-cell="{FN_CODE}"]');
+        const tr = t.getBoundingClientRect(), br = b.getBoundingClientRect(), cr = c.getBoundingClientRect();
+        return [br.left >= tr.right - 1, cr.left > br.right, Math.abs(cr.top - br.top) < 2]; }}""")
+    record("agent-file-parts", "desktop: Appearance / Era photos / Cell in a row beside the name", all(geo), str(geo))
+    record("agent-file-parts", "Agent Hub: Era photos and Cell start folded", page.is_hidden(f"#ah-era-{FN_CODE}") and page.locator(root + " .ap-celldrop").count() == 0, "")
+    page.click(f"[data-ah-cell={FN_CODE}]")
+    page.wait_for_selector(root + " .ap-celldrop .ap-init li", timeout=5000)
+    page.click(f"[data-ah-era={FN_CODE}]")
+    record("agent-file-parts", "Cell ▾ drops down the initiative list, Era photos ▾ the era photos",
+           page.locator(root + " .ap-celldrop .ap-init li").count() >= 1 and page.is_visible(f"#ah-era-{FN_CODE} #af-photos"), "")
+    page.click(root + " [data-a='wp-']")
+    page.wait_for_timeout(300)
+    record("agent-file-parts", "the Cell stays open when the sheet redraws", page.locator(root + " .ap-celldrop").count() == 1, "")
+    page.click(f"[data-ah-cell={FN_CODE}]")
+    page.click(f"[data-ah-era={FN_CODE}]")
+    record("agent-file-parts", "both fold again", page.is_hidden(f"#ah-era-{FN_CODE}") and page.locator(root + " .ap-celldrop").count() == 0, "")
+    page.fill(root + " [data-u=skill-find]", "fir")
+    vis = lambda: page.eval_on_selector_all(root + " .ap-part[data-part=skills] .as-skills > *", "els => els.filter(e => !e.hidden).map(e => e.querySelector('.as-sn').textContent)")
+    v1 = vis()
+    record("agent-file-parts", "Find a skill leaves only the matching skills", "Firearms" in v1 and "First Aid" in v1 and "Accounting" not in v1, str(v1))
+    page.click(root + " [data-a='hp-']")
+    page.wait_for_timeout(300)
+    v2 = vis()
+    record("agent-file-parts", "the search survives a redraw (after HP −)", v2 == v1 and page.input_value(root + " [data-u=skill-find]") == "fir", str(v2))
+    body_txt = page.inner_text(root + " .as-paper.ap")
+    record("agent-file-parts", "the physical description is not in the sheet's body on Agent Hub", "watchful grey eyes" not in body_txt, "")
+    page.click(f"[data-ah-appear={FN_CODE}]")
+    desc = page.inner_text(f"#ah-desc-{FN_CODE}")
+    record("agent-file-parts", "it opens with Appearance, under the photo", "watchful grey eyes" in desc and page.is_visible(f"#ah-desc-{FN_CODE}"), desc[:80])
+    page.click(f"[data-ah-appear={FN_CODE}]")
+    page.click(root + " [data-a=edit]")
+    page.wait_for_selector(root + " .ap-part[data-part=personal]")
+    eparts = page.eval_on_selector_all(root + " .ap-part", "els => els.map(e => e.getAttribute('data-part'))")
+    record("agent-file-parts", "Edit opens with Personal data & appearance (the description there) and has no Record",
+           eparts[0] == "personal" and "record" not in eparts and "watchful" in page.input_value(root + " .ap-part[data-part=personal] [data-e='bio.physicalDesc']"), str(eparts))
+    page.click(root + " [data-a=cancel]")
+    # The notebook: the Appearance fold under the photo, and the look in Settings.
+    page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+    V = page.locator("#fn-veil .as-paper.ap").filter(visible=True).first
+    V.wait_for(timeout=10000)
+    V.locator("[data-a=appear]").click()
+    record("agent-file-parts", "the notebook's Appearance fold under the photo shows the description",
+           "watchful grey eyes" in V.locator(".ap-appear").first.inner_text(), "")
+    V.locator("[data-a=cell]").click()
+    record("agent-file-parts", "the notebook's Cell fold sits beside it", V.locator(".ap-celldrop .ap-init li").count() >= 1, "")
+    V.locator("[data-a=era]").click()
+    record("agent-file-parts", "…and Era photos, with the way to make them on Agent Hub",
+           V.locator(".ap-eradrop").count() == 1 and V.locator(".ap-eradrop [data-go=photo]").count() == 1, "")
+    page.evaluate("() => window.dgFieldNotes.open('settings')")
+    page.wait_for_selector("[data-s=paper-look]")
+    opts = page.eval_on_selector_all("[data-s=paper-look] option", "els => els.map(e => e.value)")
+    page.select_option("[data-s=paper-look]", "folder")
+    page.wait_for_timeout(200)
+    on_hub = page.evaluate(f"() => document.querySelector('{root} .as-paper.ap').classList.contains('ap-look-folder')")
+    record("agent-file-parts", "Settings offers the three looks; Folder tabs applies at once and is kept on this device",
+           opts == ["form", "folder", "stamp"] and on_hub and page.evaluate("() => localStorage.getItem('dg_paper_look')") == "folder", str(opts))
+    page.select_option("[data-s=paper-look]", "stamp")
+    page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+    V = page.locator("#fn-veil .as-paper.ap").filter(visible=True).first
+    V.wait_for(timeout=10000)
+    record("agent-file-parts", "a paper drawn later (the notebook's) takes the chosen look", "ap-look-stamp" in (V.get_attribute("class") or ""), V.get_attribute("class") or "")
+    record("agent-file-parts", "no JS exceptions", not errs, str(errs[:3]))
+    page.close()
+    # On a phone the buttons stack under the photo instead.
+    page, errs = _field_notes_page(p, width=390, height=844, docs=docs, extra_init=extra)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector(f"#ah-sheet-{FN_CODE} .ap-vitals", timeout=15000)
+    geo = page.evaluate(f"""() => {{ const ph = document.getElementById('ah-photo-{FN_CODE}').getBoundingClientRect();
+        const b = document.querySelector('[data-ah-appear="{FN_CODE}"]').getBoundingClientRect();
+        return [b.top >= ph.bottom - 1, b.left < ph.right]; }}""")
+    record("agent-file-parts", "phone: the buttons stack under the photo", all(geo), str(geo))
+    page.close()
+
 
 def test_agent_rules_unit(p):
     """assets/agent-rules.js on its own: derived maximums, − / + limits,
@@ -11729,6 +11868,7 @@ def test_agent_file_storage_plates_and_refresh(p):
            bool(img) and img[0] == face and img[1] == "block", str(img))
     record("journey", "the era header says Photo On File", "Photo On File" in (page.text_content("#era-photo-90s") or ""), page.text_content("#era-photo-90s") or "")
     btn = 'button[data-era="90s"][data-mode="mode1"][onclick^="generatePlateImage"]'
+    _open_era(page)
     page.locator(btn).click()
     _pump_until(page, lambda: any(b.get("action") == "generate_plate_image" for b in posts), 6000)
     gen = [b for b in posts if b.get("action") == "generate_plate_image"]
@@ -11745,6 +11885,7 @@ def test_agent_file_storage_plates_and_refresh(p):
     _route_backend(page, respond, posts)
     page.goto(f"{BASE}/agent-hub.html?code=MARA-0001", wait_until="load", timeout=15000)
     page.wait_for_timeout(1500)
+    _open_era(page)
     page.locator('button[data-era="90s"][data-mode="mode0"][onclick^="generatePlateImage"]').click()
     _pump_until(page, lambda: "Photo On File" in (page.text_content("#era-photo-90s") or ""), 6000)
     record("journey", "generating a Face Plate flips the era header to Photo On File right away",
@@ -11949,6 +12090,8 @@ def test_field_notes_notebook(p):
     page.click("#fn-closed .fn-cover")
     page.click("#fn-veil .fn-slot[data-view=agentfile]")
     txt = wait_for_condition(lambda: (_notebook_text(page) if "Operation FULL MOON" in _notebook_text(page) else None), timeout_ms=10000) or ""
+    _open_cell(page, page.locator("#fn-veil .as-paper.ap").filter(visible=True).first)
+    txt = wait_for_condition(lambda: (_notebook_text(page) if "Tom Hale" in _notebook_text(page) else None), timeout_ms=6000) or txt
     record("notebook", "Agent File has Edit and Whole Agent File, and no Play (the Agent File is the sheet)",
            page.evaluate("() => { const r = document.querySelector('#fn-veil [data-fn-slot=body] .as-paper'); return !!r && !!r.querySelector('[data-a=edit]') && !!r.querySelector('[data-go=file]') && !r.querySelector('[data-go=play]'); }"), "")
     record("notebook", "Agent File quick look: name, Cell, Cell members, Bonds, Operations",
@@ -13447,6 +13590,7 @@ def main():
         safe(test_add_bond_in_play, browser, area="bonds")
         safe(test_agent_file_san_roll_and_member_cards, browser, area="agent-file")
         safe(test_agent_file_v2_play_and_edit, browser, area="agent-file-v2")
+        safe(test_agent_file_parts_and_looks, browser, area="agent-file-parts")
         safe(test_agent_rules_unit, browser, area="rules")
         safe(test_evidence_attachments_open_and_zoom, browser, area="evidence")
         safe(test_motivations_and_disorders_split, browser, area="disorders")

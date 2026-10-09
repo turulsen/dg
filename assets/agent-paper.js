@@ -133,10 +133,32 @@
     function closeAll() { ov.remove(); }
   }
 
+  /* ── The look of the parts' headings: a per-device choice ── */
+  var LOOK_KEY = 'dg_paper_look';
+  var LOOKS = [['form', 'Typed form'], ['folder', 'Folder tabs'], ['stamp', 'Rubber stamps']];
+  function look() {
+    var v = '';
+    try { v = localStorage.getItem(LOOK_KEY) || ''; } catch (e) { /* private mode */ }
+    return LOOKS.some(function (l) { return l[0] === v; }) ? v : 'form';
+  }
+  function applyLook() {
+    var v = look();
+    Array.prototype.forEach.call(document.querySelectorAll('.as-paper.ap'), function (p) {
+      LOOKS.forEach(function (l) { p.classList.toggle('ap-look-' + l[0], l[0] === v); });
+    });
+  }
+  function setLook(v) {
+    try { localStorage.setItem(LOOK_KEY, v); } catch (e) { /* private mode */ }
+    applyLook();
+  }
+  // Other pages and frames of this site pick the change up as it happens.
+  window.addEventListener('storage', function (e) { if (e.key === LOOK_KEY) applyLook(); });
+
   /* ── The paper ── */
   function mount(el, ctx) {
     var s = window.dgAgentLive.session(ctx.code, ctx.char);
-    var ui = { pop: '', san: { amount: '1d6', kind: 'violence', other: '' }, card: -1, gearCat: '' };
+    // The drop-downs stay as they were when the host draws the paper again.
+    var ui = { pop: '', san: { amount: '1d6', kind: 'violence', other: '' }, card: -1, gearCat: '', appear: !!el._apAppear, cellOpen: !!el._apCell, eraOpen: !!el._apEra };
     var members = (ctx.members || []).slice();
     var unwatch = [];
 
@@ -154,6 +176,7 @@
       if (sc && sc.scrollTop !== top) sc.scrollTop = top;
       if (ctx.onPhoto) ctx.onPhoto(el);
       fillThumbs();
+      filterSkills();
     }
     function emptyHtml() {
       return '<div class="as-paper ap"><div class="as-head">' + (ctx.photoHtml ? '<div class="as-photo">' + ctx.photoHtml + '</div>' : '') +
@@ -171,7 +194,7 @@
       }
       var sub = [ctx.professionLabel ? ctx.professionLabel(bio.profession) : bio.profession, ctx.codename ? 'Cover “' + ctx.codename + '”' : ''].filter(Boolean).join(' · ');
       return '<div class="as-head ap-head">' +
-        (ctx.photoHtml ? '<div class="as-photo">' + ctx.photoHtml + '</div>' : '') +
+        (ctx.photoHtml ? '<div class="as-photo">' + ctx.photoHtml + dropBtns() + '</div>' : '') +
         '<div class="as-id">' +
           (edit ? '<input class="ap-in ap-name-in" data-e="bio.name" value="' + esc(bio.name) + '" aria-label="Name">' : '<div class="as-name">' + esc(bio.name || ctx.name || 'Unnamed Agent') + '</div>') +
           '<div class="as-sub">' + esc(sub) + '</div>' +
@@ -206,7 +229,7 @@
         profession: x.bio && x.bio.profession, derived: d, photo: ctx.photo || '' };
     }
     function cellHtml(x) {
-      if (!ctx.cellName) return '<div class="as-sec" data-p="cell"><div class="as-sec-hd">Cell</div><p class="as-text as-k">Not assigned to a Cell yet — your Handler does that.</p></div>';
+      if (!ctx.cellName) return '<div data-p="cell"><p class="as-text as-k">Not assigned to a Cell yet — your Handler does that.</p></div>';
       var list = members.concat([selfMember(x)]).sort(function (a, b) {
         if (!!a.kia !== !!b.kia) return a.kia ? 1 : -1;
         var da = a.dex == null ? -1 : a.dex, db = b.dex == null ? -1 : b.dex;
@@ -222,7 +245,7 @@
           '<span class="as-mname">' + esc(m.name) + '</span>' + (m.me ? ' <span class="as-k">(you)</span>' : '') +
           (m.codename ? ' <span class="as-k">“' + esc(m.codename) + '”</span>' : '') + (m.kia ? ' <span class="as-stamp">KIA</span>' : '') + '</button></li>';
       }).join('');
-      return '<div class="as-sec" data-p="cell"><div class="as-sec-hd">Cell — ' + esc(ctx.cellName) + ' <span>initiative · DEX</span></div><ol class="ap-init">' + rows + '</ol>' + card + '</div>';
+      return '<div data-p="cell"><div class="as-sec-hd">' + esc(ctx.cellName) + ' <span>initiative · highest DEX first</span></div><ol class="ap-init">' + rows + '</ol>' + card + '</div>';
     }
     function memberCard(m) {
       var d = m.derived || {};
@@ -236,26 +259,25 @@
     }
     function fillThumbs() {
       if (!ctx.loadPhoto) return;
-      Array.prototype.forEach.call(el.querySelectorAll('[data-ap-mphoto],[data-ap-cardphoto]'), function (b) {
-        var src = b.getAttribute('data-ap-mphoto') || b.getAttribute('data-ap-cardphoto');
+      Array.prototype.forEach.call(el.querySelectorAll('[data-ap-mphoto],[data-ap-cardphoto],[data-ap-era]'), function (b) {
+        var src = b.getAttribute('data-ap-mphoto') || b.getAttribute('data-ap-cardphoto') || b.getAttribute('data-ap-era');
         if (src) ctx.loadPhoto(b, src);
       });
     }
 
     function statsHtml(x, edit) {
       var sv = R().stats(x), feat = x.lpFeat || {};
-      return '<div class="as-sec-hd">Statistics <span>×5 · distinguishing features</span></div><div class="as-stats">' + R().STATS.map(function (k) {
+      return '<div class="as-stats">' + R().STATS.map(function (k) {
         if (edit) return '<div class="ap-stat-e"><div class="as-lbl">' + k + '</div><input class="ap-in ap-num" inputmode="numeric" data-e="stat:' + k + '" value="' + sv[k] + '" aria-label="' + k + '"><div class="as-x5">' + sv[k] * 5 + '%</div>' +
           '<input class="ap-in ap-feat" data-e="feat:' + k + '" placeholder="feature" value="' + esc(feat[k] || '') + '" aria-label="' + k + ' distinguishing feature"></div>';
-        return '<button type="button" class="as-stat" data-a="pct" data-t="' + sv[k] * 5 + '" data-l="' + k + ' ×5"><div class="as-lbl">' + k + '</div><div class="as-val">' + sv[k] + '</div><div class="as-x5">' + sv[k] * 5 + '%</div>' +
+        return '<button type="button" class="as-stat" data-a="pct" data-t="' + sv[k] * 5 + '" data-l="' + k + ' ×5"><div class="as-lbl">' + k + '</div><div class="as-val">' + sv[k] + '</div><div class="as-x5">×5 = ' + sv[k] * 5 + '%</div>' +
           (feat[k] ? '<div class="ap-feat-t">' + esc(feat[k]) + '</div>' : '') + '</button>';
       }).join('') + '</div>';
     }
     function skillsHtml(x, edit) {
       if (edit) {
         var all = R().skillList(x, { all: true });
-        return '<div class="as-sec-hd ap-hd">Skills <span class="ap-hbtns"><button type="button" class="ap-mini" data-a="pop" data-pop="spec">+ Specialty</button><button type="button" class="ap-mini" data-a="pop" data-pop="own">+ Own skill</button></span></div>' +
-          (ui.pop === 'spec' ? specPopHtml() : '') + (ui.pop === 'own' ? ownPopHtml() : '') +
+        return (ui.pop === 'spec' ? specPopHtml() : '') + (ui.pop === 'own' ? ownPopHtml() : '') +
           '<div class="ap-k ap-note">Every skill, 0% too. Tap a name to set or clear its failed-roll mark.</div><div class="as-skills ap-skills-e">' +
           all.map(function (sk) {
             var spec = sk.kind === 'spec';
@@ -271,12 +293,24 @@
       }
       var list = R().skillList(x);
       var n = list.filter(function (sk) { return sk.marked; }).length;
-      return '<div class="as-sec-hd ap-hd">Skills <button type="button" class="ap-mini" data-a="improve"' + (n ? '' : ' disabled') + '>Roll improvements' + (n ? ' (' + n + ' failed)' : '') + '</button></div>' +
-        '<div class="ap-k ap-note">A failed roll marks the skill in red until the end-of-session improvement roll.</div><div class="as-skills">' +
+      return '<div class="ap-skillbar"><input class="ap-in ap-find" type="search" data-u="skill-find" placeholder="Find a skill…" value="' + esc(ui.find || '') + '" aria-label="Find a skill">' +
+        '<button type="button" class="ap-mini" data-a="improve"' + (n ? '' : ' disabled') + '>Roll improvements' + (n ? ' (' + n + ' failed)' : '') + '</button></div>' +
+        '<div class="as-skills">' +
         list.map(function (sk) {
           return '<button type="button" class="as-roll ap-skill' + (sk.marked ? ' ap-marked' : '') + (sk.value >= 50 ? ' as-strong' : '') + '" data-a="skill" data-id="' + esc(sk.id) + '" data-t="' + sk.value + '" data-l="' + esc(sk.label) + '">' +
             '<span class="as-sn">' + esc(sk.label) + '</span><span class="as-sv">' + sk.value + '%</span></button>';
         }).join('') + '<button type="button" class="as-roll" data-a="pct" data-t="50" data-l="Luck"><span class="as-sn">Luck</span><span class="as-sv">50%</span></button></div>';
+    }
+    function skillsTools(x, edit) {
+      if (edit) return '<button type="button" class="ap-mini" data-a="pop" data-pop="spec">+ Specialty</button><button type="button" class="ap-mini" data-a="pop" data-pop="own">+ Own skill</button>';
+      return '<span class="ap-part-note">tap to roll · a failed roll turns red</span>';
+    }
+    // "Find a skill": hides the rest, kept across redraws.
+    function filterSkills() {
+      var q = String(ui.find || '').trim().toLowerCase();
+      Array.prototype.forEach.call(el.querySelectorAll('.ap-part[data-part="skills"] .as-skills > *'), function (n) {
+        n.hidden = !!q && n.textContent.toLowerCase().indexOf(q) === -1;
+      });
     }
     function specPopHtml() {
       var keys = Object.keys(R().SPECIALTY_OPTIONS);
@@ -399,14 +433,66 @@
       var b = x.bio || {};
       var f = [['profession', 'Profession', ctx.professionLabel ? ctx.professionLabel(b.profession) : b.profession], ['employer', 'Employer', b.employer], ['nationality', 'Nationality', b.nationality],
         ['sex', 'Sex', b.sex], ['age', 'Age', b.age], ['education', 'Education', b.education]];
-      return '<div class="as-sec"><div class="as-sec-hd">Personal data</div><div class="ap-pdata">' + f.map(function (r) {
+      return '<div class="ap-pdata">' + f.map(function (r) {
         return '<label>' + r[1] + '<input class="ap-in" data-e="bio.' + r[0] + '" value="' + esc(r[2] == null ? '' : r[2]) + '"></label>';
-      }).join('') + '</div></div>';
+      }).join('') + '</div>' +
+        '<div class="as-sec-hd">Physical description <span>part of Appearance</span></div><textarea class="ap-ta" data-e="bio.physicalDesc">' + esc((x.bio && x.bio.physicalDesc) || '') + '</textarea>';
     }
-    function physHtml(x, edit) {
-      var p = (x.bio && x.bio.physicalDesc) || ctx.physical || '';
-      if (edit) return '<div class="as-sec"><div class="as-sec-hd">Physical description</div><textarea class="ap-ta" data-e="bio.physicalDesc">' + esc((x.bio && x.bio.physicalDesc) || '') + '</textarea></div>';
-      return p ? '<div class="as-sec"><div class="as-sec-hd">Physical description</div><p class="as-text">' + esc(p) + '</p></div>' : '';
+    // The physical description belongs with Appearance: on Agent Hub it
+    // sits in the Appearance drop-down under the photo (the hub fills it,
+    // ctx.appearanceOutside); here, a fold under the photo.
+    function physText(x) { return (x.bio && x.bio.physicalDesc) || ctx.physical || ''; }
+    function appearHtml(x) {
+      if (ctx.appearanceOutside || !ui.appear) return '';
+      var p = physText(x);
+      return '<div class="ap-appear"><div class="as-sec-hd">Appearance <span>physical description</span></div>' +
+        (p ? '<p class="as-text">' + esc(p) + '</p>' : '<p class="as-text as-k">Not described yet.</p>') + '</div>';
+    }
+    // The Cell (initiative by DEX, member cards) drops down from beside
+    // Appearance; on Agent Hub from the hub's own button (api.toggleCell).
+    function cellDropHtml(x) {
+      return ui.cellOpen ? '<div class="ap-appear ap-celldrop">' + cellHtml(x) + '</div>' : '';
+    }
+    // Era photos (the notebook; Agent Hub has the full Era photos form):
+    // each era's Face and Outfit Plates from the brief (ctx.brief), and a
+    // way to make them on Agent Hub.
+    var ERA_NAME = { '90s': '1990s', '00s': '2000s', '10s': '2010s', '20s': '2020s' };
+    function eraList() {
+      var b = ctx.brief || {}, order = [];
+      try { order = Array.isArray(b.active_eras) ? b.active_eras : JSON.parse(b.active_eras || '[]'); } catch (e) { order = [b.active_eras]; }
+      order = (Array.isArray(order) ? order : []).filter(function (e) { return ERA_NAME[e]; });
+      if (!order.length) return b.face_plate_url ? [{ era: '', face: b.face_plate_url, outfit: b.outfit_plate_url || '' }] : [];
+      return order.map(function (e, i) {
+        return { era: e, face: b['era_' + e + '_face_url'] || (i === 0 ? b.face_plate_url || '' : ''), outfit: b['era_' + e + '_outfit_url'] || (i === 0 ? b.outfit_plate_url || '' : '') };
+      });
+    }
+    function eraDropHtml() {
+      if (ctx.appearanceOutside || !ui.eraOpen) return '';
+      var list = eraList();
+      function plate(src, label) {
+        return '<div class="ap-plate"><div class="ap-plate-img" data-ap-era="' + esc(src || '') + '">' + (src ? '' : '<span class="as-k">' + label + ' — not made yet</span>') + '</div><div class="ap-k">' + label + '</div></div>';
+      }
+      return '<div class="ap-appear ap-eradrop"><div class="as-sec-hd">Era photos <span>Face and Outfit Plates</span></div>' +
+        (list.length ? list.map(function (x) {
+          return '<div class="ap-era"><div class="ap-era-t">' + esc(ERA_NAME[x.era] || 'Photos') + '</div><div class="ap-plates">' + plate(x.face, 'Face Plate') + plate(x.outfit, 'Outfit Plate') + '</div></div>';
+        }).join('') : '<p class="as-text as-k">No era photos yet — they are made from the Appearance brief.</p>') +
+        '<div class="ap-btns"><button type="button" class="ap-btn ap-ghost" data-go="photo">Make or change photos on Agent Hub ↗</button></div></div>';
+    }
+    function dropBtns() {
+      if (ctx.appearanceOutside) return '';
+      function btn(a, label, on) { return '<button type="button" class="ap-mini ap-appear-btn" data-a="' + a + '" aria-expanded="' + !!on + '">' + label + ' ' + (on ? '▴' : '▾') + '</button>'; }
+      return '<div class="ap-dropbtns">' + btn('appear', 'Appearance', ui.appear) + btn('era', 'Era photos', ui.eraOpen) + btn('cell', 'Cell', ui.cellOpen) + '</div>';
+    }
+    // One numbered part of the file, like the sections of a DD 315.
+    var PARTS = [['stats', 'Statistics'], ['skills', 'Skills'], ['psyche', 'Psyche'], ['kit', 'Combat & gear'], ['record', 'Record']];
+    function part(id, n, title, tools, body) {
+      return '<section class="ap-part" data-part="' + id + '"><header class="ap-part-hd"><span class="ap-part-n">' + n + '</span><span class="ap-part-t">' + title + '</span>' +
+        (tools ? '<span class="ap-part-tools">' + tools + '</span>' : '') + '</header><div class="ap-part-b">' + body + '</div></section>';
+    }
+    function indexHtml(edit) {
+      return '<nav class="ap-index" aria-label="Parts of the file">' + PARTS.filter(function (p) { return !edit || p[0] !== 'record'; }).map(function (p, i) {
+        return '<button type="button" data-a="jump" data-part="' + p[0] + '"><b>' + (i + 1) + '</b> ' + esc(p[1]) + '</button>';
+      }).join('') + '</nav>';
     }
     function paperHtml() {
       var x = st(), edit = !!s.edit;
@@ -414,12 +500,18 @@
         '<button type="button" class="ap-btn ap-save" data-a="save">Save</button></span></div>' : '';
       var inc = ctx.incursion ? '<div class="as-sec as-incursion"><div class="as-sec-hd">The Incursion</div><p class="as-text">' + esc(ctx.incursion) + '</p></div>'
         : (ctx.incursionEmptyHtml ? '<div class="as-sec as-incursion"><div class="as-sec-hd">The Incursion</div>' + ctx.incursionEmptyHtml + '</div>' : '');
-      return '<div class="as-paper ap' + (edit ? ' ap-editing' : '') + '">' + bar + headHtml(x, edit) +
-        cellHtml(x) + (edit ? personalHtml(x) : '') + physHtml(x, edit) +
-        '<div class="as-sheet">' + statsHtml(x, edit) + skillsHtml(x, edit) +
-          '<div class="as-cols"><div>' + bondsHtml(x, edit) + motHtml(x, edit) + disHtml(x, edit) + adaptHtml(x, edit) + '</div>' +
-          '<div>' + weaponsHtml(x, edit) + gearHtml(x, edit) + (edit ? '' : woundsHtml(x)) + '</div></div>' +
-        '</div>' + (edit ? '' : inc + (ctx.opsHtml || '')) + (ctx.noteHtml || '') + '</div>';
+      var n = 0;
+      return '<div class="as-paper ap ap-look-' + look() + (edit ? ' ap-editing' : '') + '">' + bar + (ctx.appearanceOutside ? cellDropHtml(x) : '') + headHtml(x, edit) + appearHtml(x) + eraDropHtml() + (ctx.appearanceOutside ? '' : cellDropHtml(x)) + indexHtml(edit) +
+        (edit ? part('personal', '0', 'Personal data & appearance', '', personalHtml(x)) : '') +
+        '<div class="as-sheet">' +
+          part('stats', ++n, 'Statistics', '<span class="ap-part-note">' + (edit ? 'value · distinguishing feature' : 'tap to roll ×5 · distinguishing features') + '</span>', statsHtml(x, edit)) +
+          part('skills', ++n, 'Skills', skillsTools(x, edit), skillsHtml(x, edit)) +
+          part('psyche', ++n, 'Psyche — Bonds, Motivations, Sanity', '',
+            '<div class="as-cols"><div>' + bondsHtml(x, edit) + motHtml(x, edit) + '</div><div>' + disHtml(x, edit) + adaptHtml(x, edit) + '</div></div>') +
+          part('kit', ++n, 'Combat & gear', '',
+            '<div class="as-cols"><div>' + weaponsHtml(x, edit) + (edit ? '' : woundsHtml(x)) + '</div><div>' + gearHtml(x, edit) + '</div></div>') +
+        '</div>' +
+        (edit ? '' : part('record', ++n, 'Record — Incursion & Operations', '', inc + (ctx.opsHtml || ''))) + (ctx.noteHtml || '') + '</div>';
     }
 
     /* ── Sanity: what a loss sets off ── */
@@ -494,6 +586,14 @@
           if (f && ui.pop) f.focus();
           return;
         case 'rollsan': rollPct(R().derived(s.state).san, 'SAN'); return;
+        case 'appear': ui.appear = el._apAppear = !ui.appear; render(); return;
+        case 'cell': ui.cellOpen = el._apCell = !ui.cellOpen; render(); return;
+        case 'era': ui.eraOpen = el._apEra = !ui.eraOpen; render(); return;
+        case 'jump': {
+          var tg = el.querySelector('.ap-part[data-part="' + b.getAttribute('data-part') + '"]');
+          if (tg) tg.scrollIntoView({ block: 'start', behavior: 'smooth' });
+          return;
+        }
         case 'san-amt': ui.san.amount = b.getAttribute('data-v'); render(); return;
         case 'san-kind': ui.san.kind = b.getAttribute('data-v'); render(); return;
         case 'san-go': {
@@ -619,6 +719,7 @@
         return;
       }
       if (t.getAttribute('data-u') === 'san-other') { ui.san.other = t.value; return; }
+      if (t.getAttribute('data-u') === 'skill-find') { ui.find = t.value; filterSkills(); return; }
       var ed = t.getAttribute('data-e');
       if (ed && s.edit) applyEdit(ed, t.value);
     }
@@ -694,7 +795,8 @@
     var api = {
       click: onClick, change: onChange, input: onInput, key: onKey,
       destroy: function () { off(); unwatch.forEach(function (u) { try { u(); } catch (e) { /* gone */ } }); unwatch = []; },
-      session: s, render: render
+      session: s, render: render,
+      toggleCell: function (open) { ui.cellOpen = el._apCell = open == null ? !ui.cellOpen : !!open; render(); return ui.cellOpen; }
     };
     el._ap = api;
     render();
@@ -728,5 +830,5 @@
     return out;
   }
 
-  window.dgAgentPaper = { mount: mount, rollExpr: rollExpr, postits: postits, diff: diff };
+  window.dgAgentPaper = { mount: mount, rollExpr: rollExpr, postits: postits, diff: diff, LOOKS: LOOKS, look: look, setLook: setLook };
 })();

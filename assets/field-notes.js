@@ -867,7 +867,7 @@
         }).join('') : '<p class="as-text as-k">None filed yet.</p>') + '</div>' : '';
         var f = faceUrl(a);
         window.dgAgentPaper.mount(body, {
-          code: a.code, char: data.char, name: agentName(a), codename: brief.codename || a.codename || '', photo: f,
+          code: a.code, char: data.char, name: agentName(a), codename: brief.codename || a.codename || '', photo: f, brief: brief,
           photoHtml: AS.photoHtml('data-go="photo"'),
           onPhoto: function (el) {
             var ph = el.querySelector('[data-as-photo]');
@@ -1537,6 +1537,8 @@
     var w = contentWin();
     return w && onStatsPage(w) && w.document.getElementById('settings-panel') ? w : null;
   }
+  // Kept in step with dgAgentPaper.LOOKS, which may not be loaded yet.
+  var PAPER_LOOKS = [['form', 'Typed form'], ['folder', 'Folder tabs'], ['stamp', 'Rubber stamps']];
   function pageSettings(body) {
     renderHead('settings', '');
     var a = currentAgent();
@@ -1556,6 +1558,12 @@
         '<div class="fn-row" style="margin-top:6px"><input class="fn-input" style="flex:1;min-width:0" data-s="ci" value="' + esc(ci) + '" placeholder="e.g. Gergo">' +
         '<button type="button" class="fn-btn fn-red" data-s="reload">Save &amp; Reload My Agents</button></div>' +
         '<div class="fn-set-status" data-s="ci-status"></div></div>';
+    // The Agent File's look (assets/agent-paper.js): stored on this device.
+    var curLook = lsGet('dg_paper_look') || 'form';
+    html += '<div class="fn-set-row"><div><div class="fn-set-t">Agent File look</div><div class="fn-set-s">How the Agent File\'s sections are headed, on this device.</div></div>' +
+      '<select class="fn-select" data-s="paper-look">' + PAPER_LOOKS.map(function (l) {
+        return '<option value="' + l[0] + '"' + (l[0] === curLook ? ' selected' : '') + '>' + esc(l[1]) + '</option>';
+      }).join('') + '</select></div>';
     if (sw) {
       var has = function (id) { return !!sw.document.getElementById(id); };
       html += (has('creation-tools-unlocked-btn') ? '<div class="fn-set-row"><div><div class="fn-set-t">Fix a Creation Mistake</div><div class="fn-set-s">Brings back the Bonus Points panel and Bond generator until your next visit.</div></div>' +
@@ -1593,6 +1601,11 @@
       else if (k === 'boot') { var off = lsGet(BOOT_OFF_KEY) !== '1'; lsSet(BOOT_OFF_KEY, off ? '1' : '0'); b.classList.toggle('fn-on', !off); b.textContent = off ? 'OFF' : 'ON'; }
       else if (k === 'reload') reloadMyAgents(body);
     };
+    var lookSel = body.querySelector('[data-s="paper-look"]');
+    if (lookSel) lookSel.addEventListener('change', function () {
+      lsSet('dg_paper_look', lookSel.value);
+      if (window.dgAgentPaper && window.dgAgentPaper.setLook) window.dgAgentPaper.setLook(lookSel.value);
+    });
     var sel = body.querySelector('[data-s="theme"]');
     if (sel && sw) sel.addEventListener('change', function () {
       var t = sw.document.getElementById('cs-theme-select');
