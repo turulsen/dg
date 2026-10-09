@@ -10559,6 +10559,68 @@ def _open_cell(page, paper=None, code=None):
         page.click(btn)
 
 
+def test_field_notes_split(p):
+    """Field Notes' Split mode (desktop): the Split brown tab puts the
+    Agent File on the left page, in place of the card holder, and the
+    brown tabs' pages -- Notes (the whole Notes page), Evidences, Rules,
+    Settings -- on the right. A roll from the left turns the right page to
+    the Dice Roller. Remembered on the device; never on a phone."""
+    extra = "localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE
+    page, errs = _field_notes_page(p, extra_init=extra)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+    page.locator("#fn-veil .as-paper.ap").filter(visible=True).first.wait_for(timeout=10000)
+    page.click("#fn-veil .fn-tab-split")
+    left = "#fn-veil [data-fn-slot=split-body] .as-paper.ap"
+    page.wait_for_selector(left, timeout=10000)
+    st = page.evaluate("""() => ({ holder: getComputedStyle(document.querySelector('#fn-veil .fn-holder')).display,
+        right: document.querySelector('#fn-veil [data-fn-slot=title]').textContent,
+        active: [...document.querySelectorAll('#fn-veil .fn-tab.fn-active')].map(t => t.textContent),
+        pressed: document.querySelector('#fn-veil .fn-tab-split').getAttribute('aria-pressed') })""")
+    record("notebook", "Split: the Agent File takes the left page (the card holder goes), Evidences on the right",
+           page.is_visible(left) and st["holder"] == "none" and st["right"] == "Evidences" and st["pressed"] == "true", str(st))
+    page.locator(left).evaluate("el => el.__mark = 1")
+    page.click("#fn-veil .fn-tab[data-view=rules]")
+    page.wait_for_selector("#fn-veil .fn-mission", timeout=5000)
+    record("notebook", "Split: Rules on the right, the same Agent File still on the left (not redrawn)",
+           page.locator(left).evaluate("el => el.__mark === 1"), "")
+    page.click("#fn-veil .fn-tab[data-view=notes]")
+    page.wait_for_selector("#fn-veil [data-fn-slot=embed-notes] iframe", timeout=5000)
+    src = page.get_attribute("#fn-veil [data-fn-slot=embed-notes] iframe", "src") or ""
+    record("notebook", "Split: Notes is the whole Notes page on the right, not the two-page spread",
+           "embed=notebook" in src and page.is_hidden("#fn-veil [data-fn-slot=spread]") and page.is_visible(left), src)
+    page.click("#fn-veil .fn-tab[data-view=evidence]")
+    page.locator(left + " .as-stat[data-a=pct]").first.click()
+    ok = wait_for_condition(lambda: (page.text_content("#fn-veil [data-fn-slot=title]") or "") == "Dice Roller", timeout_ms=5000)
+    record("notebook", "Split: a roll from the left page turns the right page to the Dice Roller, still split",
+           bool(ok) and page.is_visible(left) and page.get_attribute("#fn-veil .fn-tab-split", "aria-pressed") == "true"
+           and "fn-active" in (page.get_attribute("#fn-veil .fn-tab-split", "class") or ""), "")
+    page.evaluate("() => window.dgFieldNotes.close && window.dgFieldNotes.close()")
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+    page.wait_for_selector(left, timeout=10000)
+    record("notebook", "Split is remembered on this device (and Agent File opens it, Evidences on the right)",
+           page.is_visible(left) and (page.text_content("#fn-veil [data-fn-slot=title]") or "") == "Evidences", "")
+    page.click("#fn-veil .fn-tab-split")
+    page.wait_for_timeout(300)
+    record("notebook", "Split again: back to the card holder",
+           page.is_hidden("#fn-veil [data-fn-slot=split-left]") and page.is_visible("#fn-veil .fn-holder"), "")
+    record("notebook", "no JS exceptions (Split)", not errs, str(errs[:3]))
+    page.close()
+    # A phone never splits, even with it remembered.
+    page, errs = _field_notes_page(p, width=390, height=844, extra_init=extra + "localStorage.setItem('dg_fn_split', '1');")
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+    page.locator("#fn-veil .as-paper.ap").filter(visible=True).first.wait_for(timeout=10000)
+    record("notebook", "phone: no Split tab, and no split even when it's remembered",
+           page.is_hidden("#fn-veil .fn-tab-split") and page.is_hidden("#fn-veil [data-fn-slot=split-left]")
+           and (page.text_content("#fn-veil [data-fn-slot=title]") or "") == "Agent File", "")
+    page.close()
+
+
 def test_agent_file_brief_read_recovers(p):
     """Reported 2026-10-09 on an iPhone: Agent Hub's Appearance said
     "Could not load -- check your connection." and Era photos "Finish the
@@ -13650,6 +13712,7 @@ def main():
         safe(test_add_bond_in_play, browser, area="bonds")
         safe(test_agent_file_san_roll_and_member_cards, browser, area="agent-file")
         safe(test_agent_file_v2_play_and_edit, browser, area="agent-file-v2")
+        safe(test_field_notes_split, browser, area="notebook")
         safe(test_agent_file_brief_read_recovers, browser, area="agent-file")
         safe(test_agent_file_parts_and_looks, browser, area="agent-file-parts")
         safe(test_agent_rules_unit, browser, area="rules")

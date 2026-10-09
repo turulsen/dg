@@ -337,6 +337,18 @@ html.dg-fn-host #split-view-btn{ display:none !important; }
 #fn-root .fn-tab.fn-active{ background-image:var(--fn-grain), linear-gradient(90deg,#8f5227,#a9642f); margin-left:-4px; }
 #fn-root .fn-tab.fn-active span{ color:#f7e9d4; }
 
+/* Split (desktop): the Agent File on the left page in place of the card
+   holder; the brown tabs' pages on the right. The Split tab toggles it. */
+.fn-split-left{ flex:1; display:flex; min-height:0; min-width:0; }
+.fn-split-left[hidden]{ display:none; }
+#fn-root .fn-book.fn-split .fn-holder{ display:none; }
+.fn-booklet-left{ margin:0 0 8px 8px; }
+.fn-booklet-left::before{ transform:translate(-7px,7px) rotate(-.5deg); }
+.fn-booklet-left::after{ transform:translate(-3.5px,3.5px) rotate(.3deg); }
+.fn-booklet-left > .fn-paper{ border-radius:5px 2px 2px 5px; }
+#fn-root .fn-tab.fn-tab-split{ margin-top:10px; }
+#fn-root .fn-tab.fn-tab-split.fn-active{ background-image:var(--fn-grain), linear-gradient(90deg,#3f5a2a,#56733a); }
+
 /* Notes spread: one sheet across both pages */
 #fn-root .fn-book.fn-spreading .fn-left, #fn-root .fn-book.fn-spreading .fn-booklet{ display:none; }
 #fn-root .fn-book.fn-spreading .fn-spine{ display:none; }
@@ -535,6 +547,7 @@ html.dg-fn-host #split-view-btn{ display:none !important; }
   #fn-root .fn-tab{ flex:1; min-width:0; min-height:46px; padding:0 4px; border-radius:0 0 6px 6px; }
   #fn-root .fn-tab span{ writing-mode:horizontal-tb; transform:none; font-size:9px; letter-spacing:.1em; }
   #fn-root .fn-tab.fn-active{ margin-left:0; }
+  #fn-root .fn-tab.fn-tab-split{ display:none; }
   #fn-root .fn-chipbtn{ min-height:44px; padding:0 14px; }
   #fn-root .fn-btn{ padding:11px 14px; }
   #fn-peek{ right:12px; bottom:calc(env(safe-area-inset-bottom,0px) + 72px); }
