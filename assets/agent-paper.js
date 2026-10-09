@@ -330,7 +330,7 @@
     function bondsHtml(x, edit) {
       var bonds = (x.bonds || []).filter(Boolean);
       return '<div class="as-sec-hd ap-hd">Bonds ' + (edit ? '' : '<button type="button" class="ap-mini" data-a="pop" data-pop="bond">+ Bond</button>') + '</div>' +
-        (ui.pop === 'bond' && !edit ? '<div class="ap-pop"><div class="ap-pop-h">New Bond (score = CHA ' + R().stats(x).CHA + ')</div><div class="ap-row">' +
+        (ui.pop === 'bond' && !edit ? '<div class="ap-pop"><div class="ap-pop-h">New Bond (score = CHA ' + R().stats(x).CHA + ')</div>' + bondCellPick(x) + '<div class="ap-row">' +
           '<input class="ap-in" data-u="bond-name" placeholder="Name"><input class="ap-in" data-u="bond-rel" placeholder="Relationship"></div>' +
           '<div class="ap-btns"><button type="button" class="ap-btn ap-ink" data-a="bond-add">Add Bond</button><button type="button" class="ap-btn ap-ghost" data-a="pop" data-pop="">Cancel</button></div></div>' : '') +
         (bonds.length ? bonds.map(function (b, i) {
@@ -341,13 +341,22 @@
             '<button type="button" class="ap-pm" data-a="bond+" data-i="' + i + '" aria-label="' + esc(b.name) + ' up">+</button></div>';
         }).join('') : '<p class="as-text as-k">No Bonds yet.</p>');
     }
+    // + Bond: a Cell member, picked from the list, is a Delta Green Bond.
+    function bondCellPick(x) {
+      var have = (x.bonds || []).map(function (b) { return String(b && b.name || '').toLowerCase(); });
+      var list = members.filter(function (m) { return m && m.name && have.indexOf(String(m.name).toLowerCase()) === -1; });
+      if (!list.length) return '';
+      return '<div class="ap-k">From your Cell</div><div class="ap-row"><select class="ap-in" data-u="bond-cell"><option value="">— Someone else —</option>' +
+        list.map(function (m) { return '<option value="' + esc(m.name) + '">' + esc(m.name) + (m.codename ? ' “' + esc(m.codename) + '”' : '') + (m.kia ? ' (KIA)' : '') + '</option>'; }).join('') + '</select></div>';
+    }
     function motHtml(x, edit) {
-      var list = R().motivations(x);
+      var list = R().motivations(x), crossed = R().crossedMotivations(x);
       return '<div class="as-sec-hd ap-hd">Motivations ' + (edit ? '' : '<span class="ap-hbtns"><button type="button" class="ap-mini" data-a="mot-roll">+ Roll</button><button type="button" class="ap-mini" data-a="pop" data-pop="mot">+ Write</button></span>') + '</div>' +
         (ui.pop === 'mot' && !edit ? '<div class="ap-pop"><div class="ap-row"><input class="ap-in" data-u="mot" placeholder="What keeps this Agent going?"></div>' +
           '<div class="ap-btns"><button type="button" class="ap-btn ap-ink" data-a="mot-add">Add</button><button type="button" class="ap-btn ap-ghost" data-a="pop" data-pop="">Cancel</button></div></div>' : '') +
         (list.length ? '<ul class="ap-list">' + list.map(function (m, i) {
-          return '<li>' + (edit ? '<div class="ap-row"><input class="ap-in" data-e="mot:' + i + '" value="' + esc(m) + '" aria-label="Motivation"><button type="button" class="ap-del" data-a="rm" data-what="mot" data-i="' + i + '" aria-label="Remove">×</button></div>' : esc(m)) + '</li>';
+          var gone = crossed.indexOf(m) !== -1;
+          return '<li' + (gone ? ' class="ap-crossed" title="Crossed off at a Breaking Point"' : '') + '>' + (edit ? '<div class="ap-row"><input class="ap-in" data-e="mot:' + i + '" value="' + esc(m) + '" aria-label="Motivation"><button type="button" class="ap-del" data-a="rm" data-what="mot" data-i="' + i + '" aria-label="Remove">×</button></div>' : esc(m)) + '</li>';
         }).join('') + '</ul>' : '<p class="as-text as-k">None yet.</p>');
     }
     function disHtml(x, edit) {
@@ -527,7 +536,7 @@
             (kind !== 'unnatural' ? ' ' + esc(cap(kind)) + ' adaptation marks are cleared.' : ''),
             actions: ((s.state.bonds || []).length ? [{ label: 'Project onto a Bond…', fn: function (n) { projectForm(n); return true; } }] : []).concat([{ label: 'Noted' }]) });
         } else if (ev.type === 'breaking') {
-          list.push({ title: 'Breaking Point', html: 'SAN ' + ev.san + ' is at or below BP ' + ev.bp + '. Pick the new disorder; BP resets to SAN − POW.' + disorderPicker(),
+          list.push({ title: 'Breaking Point', html: 'SAN ' + ev.san + ' is at or below BP ' + ev.bp + '. Pick the new disorder and cross off one Motivation; BP resets to SAN − POW.' + disorderPicker() + motivationPicker(),
             actions: [{ label: 'Confirm', fn: function (n) { return !pickDisorder(n); } }] });
         } else if (ev.type === 'zero') {
           list.push({ tone: 'pink', title: 'SAN 0', html: 'The Agent is permanently insane. Talk to your Handler.', actions: [{ label: 'Noted' }] });
@@ -544,12 +553,21 @@
       return '<select class="ap-psel" data-pp="dis"><option value="">Choose a disorder…</option>' + (Dd ? Dd.list : []).map(function (d) { return '<option>' + esc(d.name) + '</option>'; }).join('') +
         '<option value="__other">Other…</option></select><input class="ap-psel" data-pp="dis-other" placeholder="…or name it" hidden>';
     }
+    function motivationPicker() {
+      var crossed = R().crossedMotivations(s.state);
+      var left = R().motivations(s.state).filter(function (m) { return crossed.indexOf(m) === -1; });
+      if (!left.length) return '';
+      return '<select class="ap-psel" data-pp="mot"><option value="">Cross off a Motivation…</option>' + left.map(function (m) { return '<option>' + esc(m) + '</option>'; }).join('') + '</select>';
+    }
     function pickDisorder(n) {
       var sel = n.querySelector('[data-pp="dis"]'), other = n.querySelector('[data-pp="dis-other"]');
       if (sel.value === '__other' && other.hidden) { other.hidden = false; other.focus(); return false; }
       var name = sel.value === '__other' ? other.value.trim() : sel.value;
       if (!name) { sel.focus(); return false; }
-      s.update(function (x) { R().addDisorder(x, name); R().resetBp(x); });
+      var ms = n.querySelector('[data-pp="mot"]');
+      if (ms && !ms.value) { ms.focus(); return false; }
+      var mot = ms ? ms.value : '';
+      s.update(function (x) { R().addDisorder(x, name); if (mot) R().crossOffMotivation(x, mot); R().resetBp(x); });
       return true;
     }
     function projectForm(n) {
@@ -706,6 +724,12 @@
       }
       var u = t.getAttribute('data-u');
       if (u === 'gear-cat') { ui.gearCat = t.value; render(); return; }
+      if (u === 'bond-cell') {
+        var bn = el.querySelector('[data-u="bond-name"]'), br = el.querySelector('[data-u="bond-rel"]');
+        if (bn) bn.value = t.value || '';
+        if (br) br.value = t.value ? 'Delta Green' : '';
+        return;
+      }
       if (u === 'spec-key') { ui.specKey = t.value; render(); return; }
       if (u === 'dis') { ui.disOther = t.value === '__other'; if (ui.disOther) { render(); var f = el.querySelector('[data-u="dis-other"]'); if (f) f.focus(); } return; }
       var ed = t.getAttribute('data-e');

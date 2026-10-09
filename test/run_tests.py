@@ -10326,6 +10326,15 @@ def test_add_bond_in_play(p):
            bool(saved) and saved[0]["score"] == 13 and saved[0]["relationship"] == "Priest", str(saved))
     record("bonds", "…and it shows on the paper with − / + for its score",
            "Father Ruiz" in page.inner_text(f"#ah-sheet-{FN_CODE} .as-sheet") and page.locator(f"#ah-sheet-{FN_CODE} [data-a='bond+']").count() == 2, "")
+    # A Cell member, picked from the list, is a Delta Green Bond.
+    page.click(f"#ah-sheet-{FN_CODE} [data-pop=bond]")
+    opts = page.eval_on_selector_all(f"#ah-sheet-{FN_CODE} [data-u=bond-cell] option", "els => els.map(e => e.value)")
+    page.select_option(f"#ah-sheet-{FN_CODE} [data-u=bond-cell]", "Tom Hale")
+    filled = [page.input_value(f"#ah-sheet-{FN_CODE} [data-u=bond-name]"), page.input_value(f"#ah-sheet-{FN_CODE} [data-u=bond-rel]")]
+    page.click(f"#ah-sheet-{FN_CODE} [data-a=bond-add]")
+    tom = wait_for_condition(lambda: [b for b in json.loads((fs_doc(page, f"characters/{FN_CODE}") or {}).get("character_json") or "{}").get("bonds", []) if b.get("name") == "Tom Hale"] or None, timeout_ms=8000)
+    record("bonds", "+ Bond offers the Cell's members; picking one makes a Delta Green Bond",
+           "Tom Hale" in opts and filled == ["Tom Hale", "Delta Green"] and bool(tom) and tom[0]["relationship"] == "Delta Green", str(opts) + str(filled))
     page.evaluate("() => window.dgFieldNotes.open('agentfile')")
     page.wait_for_selector("#fn-veil .as-paper [data-pop=bond]", timeout=15000)
     record("bonds", "the notebook's Agent File has the same + Bond (no link to the sheet)",
@@ -10461,8 +10470,13 @@ def test_agent_file_v2_play_and_edit(p):
            "Temporary insanity" in p2 and "Breaking Point" in p2, str(p2))
     page.select_option("#ap-posts [data-pp=dis]", "Amnesia")
     page.locator("#ap-posts .ap-postit", has_text="Breaking Point").locator("[data-pa]").click()
-    record("agent-file-v2", "Breaking Point: the picked disorder is added and BP resets to SAN − POW",
-           bool(until(lambda st: "Amnesia" in st["bio"]["disorders"] and st["derived"]["san"] == 43 and st["derived"]["bp"] == 32)), str(saved().get("derived")) + str(saved().get("bio", {}).get("disorders")))
+    record("agent-file-v2", "Breaking Point asks for a Motivation to cross off before it closes",
+           page.locator("#ap-posts .ap-postit", has_text="Breaking Point").count() == 1, "")
+    page.select_option("#ap-posts [data-pp=mot]", "Protect my sister")
+    page.locator("#ap-posts .ap-postit", has_text="Breaking Point").locator("[data-pa]").click()
+    record("agent-file-v2", "Breaking Point: the picked disorder is added, the Motivation crossed off, and BP resets to SAN − POW",
+           bool(until(lambda st: "Amnesia" in st["bio"]["disorders"] and st["derived"]["san"] == 43 and st["derived"]["bp"] == 32
+                      and st["bio"].get("motivationsCrossed") == ["Protect my sister"])), str(saved().get("derived")) + str(saved().get("bio", {})))
     clear_posts()
 
     # The third Violence incident: adapted, −1D6 CHA and from each Bond (a 4 here).
@@ -10507,7 +10521,10 @@ def test_agent_file_v2_play_and_edit(p):
     oath_txt = page.inner_text("#fn-orders")
     page.keyboard.press("n")
     page.wait_for_timeout(1000)
-    record("agent-file-v2", "Save shows the Oath, listing the changes; N goes back to editing and saves nothing",
+    record("agent-file-v2", "Save shows the Mission & Standing Orders (priorities in caps) and CAN WE CALL ON YOU?",
+           "THE MISSION & STANDING ORDERS" in oath_txt and "FIRST PRIORITY: Stop the incursion" in oath_txt and "SECOND PRIORITY:" in oath_txt
+           and "CAN WE CALL ON YOU?" in oath_txt and "IT HAS HAPPENED BEFORE" not in oath_txt, oath_txt[:400])
+    record("agent-file-v2", "Save lists the changes; N goes back to editing and saves nothing",
            "STR 10→12" in oath_txt and "Accounting 10→20" in oath_txt and page.locator("#fn-orders").count() == 0
            and page.locator(root + " .ap-editbar").count() == 1 and saved()["csStats"]["STR"] == 10, oath_txt[:300])
     page.click(root + " [data-a=save]")

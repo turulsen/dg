@@ -1783,14 +1783,17 @@
       var lines = [['fn-o-dim', '>amendment: agent file ' + (o.code || '')]];
       if (o.changes && o.changes.length) lines.push(['fn-o-dim', '>changes: ' + o.changes.slice(0, 8).join(', ') + (o.changes.length > 8 ? ', +' + (o.changes.length - 8) + ' more' : '')]);
       else lines.push(['fn-o-dim', '>changes: none']);
-      lines = lines.concat([['', '']], ORDERS_TEXT.filter(function (l) { return /^\d\./.test(l[1]); }).map(function (l) { return ['', l[1].replace(/^(\d\.\s*[^.]+\.).*$/, '$1')]; }), [['', '']]);
+      // Saving an edit: the Mission & Standing Orders (the Contract's full
+      // briefing is for a new Agent only).
+      lines = lines.concat([['', ''], ['fn-o-head', 'THE MISSION & STANDING ORDERS'], ['', '']],
+        MISSION.map(function (m) { return ['', m[0].toUpperCase().replace(/:$/, '') + (m[0] === 'First priority:' ? '' : ' PRIORITY') + ': ' + m[1].charAt(0).toUpperCase() + m[1].slice(1)]; }), [['', '']]);
       var ov = document.createElement('div');
       ov.id = 'fn-orders';
       ov.className = 'fn-oath-save';
       ov.setAttribute('role', 'dialog');
-      ov.setAttribute('aria-label', 'The Oath');
+      ov.setAttribute('aria-label', 'The Mission & Standing Orders');
       ov.innerHTML = '<div class="fn-orders-term"><div class="fn-orders-why">' +
-        esc('Saving your edits to ' + (o.name || 'this Agent') + '. Take the Oath to file them; N goes back to editing with nothing lost.') +
+        esc('Saving your edits to ' + (o.name || 'this Agent') + '. Y files them; N goes back to editing with nothing lost.') +
         '</div><div data-o="log"></div><div data-o="prompt" hidden>' +
         '<div>CAN WE CALL ON YOU? [<button type="button" class="fn-orders-key" data-o="y" aria-label="Y: file the edits">Y</button>/' +
         '<button type="button" class="fn-orders-key" data-o="n" aria-label="N: back to editing">N</button>]<span class="fn-cursor"></span></div></div></div>';

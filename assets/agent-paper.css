@@ -177,3 +177,4 @@
   .ap .ap-part .as-cols{ grid-template-columns:1fr; }
   .ap .ap-part .as-stats{ grid-template-columns:repeat(3,1fr); }
 }
+.ap-list li.ap-crossed{ text-decoration:line-through; text-decoration-color:var(--as-red); color:var(--as-ink-3); }

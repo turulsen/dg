@@ -294,6 +294,15 @@
     state.bio.motivations = list.map(function (s) { return String(s).trim(); }).filter(Boolean).join('\n');
   }
   function addMotivation(state, text) { var l = motivations(state); l.push(text); setMotivations(state, l); }
+  // Each Breaking Point crosses off one Motivation (Agent's Handbook): it
+  // stays on the sheet, struck through, in bio.motivationsCrossed.
+  function crossedMotivations(state) { return ((state.bio && state.bio.motivationsCrossed) || []).slice(); }
+  function crossOffMotivation(state, text) {
+    state.bio = state.bio || {};
+    var c = crossedMotivations(state);
+    if (text && c.indexOf(text) === -1) c.push(text);
+    state.bio.motivationsCrossed = c;
+  }
   // A Motivation from the Briefing Documents' tables (stats/bio.js).
   function rollMotivation() {
     var M = window.motivationsData || (typeof motivationsData !== 'undefined' ? motivationsData : null); // eslint-disable-line no-undef
@@ -326,6 +335,7 @@
   }
 
   window.dgRules = {
+    crossedMotivations: crossedMotivations, crossOffMotivation: crossOffMotivation,
     STATS: STATS, SKILLS: SKILLS, SPECIALTY_OPTIONS: SPECIALTY_OPTIONS, SPEC_LABEL: SPEC_LABEL, KINDS: KINDS,
     num: num, stats: stats, setStat: setStat, maxes: maxes, derived: derived, adjust: adjust, stepBp: stepBp, resetBp: resetBp,
     skillList: skillList, findSkill: findSkill, setSkillValue: setSkillValue, setSpecialty: setSpecialty, addSpecialty: addSpecialty,
