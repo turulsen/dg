@@ -102,3 +102,43 @@
 .ap-pa button{ font-family:'Special Elite',monospace; font-size:12px; padding:4px 10px; border:1px solid rgba(58,42,4,.45); background:rgba(255,255,255,.4); color:#3a2a04; cursor:pointer; border-radius:0; }
 .ap-psel{ font:inherit; width:100%; box-sizing:border-box; margin-top:8px; background:rgba(255,255,255,.55); border:1px solid rgba(58,42,4,.35); padding:4px; color:#3a2a04; }
 .ap-pa .ap-psel{ margin-top:0; flex:1; min-width:140px; }
+
+/* Parts of the file, numbered like the sections of a DD 315 */
+.ap-index{ display:flex; flex-wrap:wrap; gap:4px; margin:12px 0 4px; }
+.as-paper .ap-index button{ font-family:'Special Elite',monospace; font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--as-ink); background:transparent; border:1px solid var(--as-rule); padding:4px 9px; cursor:pointer; border-radius:0; }
+.as-paper .ap-index button b{ color:var(--as-red); font-weight:400; margin-right:2px; }
+.as-paper .ap-index button:hover{ border-color:var(--as-red); }
+.ap-part{ margin-top:18px; border:1px solid var(--as-rule); border-top:0; background:rgba(255,255,255,.18); scroll-margin-top:8px; }
+.ap-part-hd{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:6px 10px; background:var(--as-ink); color:#f4eed8; font-family:'Special Elite',monospace; letter-spacing:.14em; text-transform:uppercase; }
+.ap-part-n{ display:inline-flex; align-items:center; justify-content:center; min-width:20px; height:20px; padding:0 4px; background:#f4eed8; color:var(--as-ink); font-size:12px; letter-spacing:0; }
+.ap-part-t{ font-size:13px; flex:1 1 auto; }
+.ap-part-tools{ display:flex; gap:5px; flex-wrap:wrap; align-items:center; letter-spacing:.06em; }
+.ap-part-note{ font-family:'Courier Prime',monospace; font-size:10px; letter-spacing:.04em; text-transform:none; color:rgba(244,238,216,.7); }
+.as-paper .ap-part-hd .ap-mini{ color:#f4eed8; border-color:rgba(244,238,216,.6); }
+.ap-part-b{ padding:4px 12px 12px; }
+.ap-part-b > .as-stats, .ap-part-b > .ap-pdata, .ap-part-b > .ap-skillbar, .ap-part-b > [data-p="cell"] > .as-sec-hd:first-child{ margin-top:10px; }
+.ap-part-b .as-sec-hd:first-child{ margin-top:10px; }
+.ap-part .as-incursion .as-sec-hd, .ap-part .as-ops .as-sec-hd{ margin-top:12px; }
+/* Statistics: each one its own card */
+.ap-part[data-part="stats"] .as-stat{ background:#fbf7ea; border:1px solid var(--as-rule); border-top:3px solid var(--as-ink); padding:7px 2px 6px; }
+.ap-part[data-part="stats"] .as-stat .as-lbl{ font-family:'Special Elite',monospace; font-size:12px; letter-spacing:.14em; color:var(--as-ink); }
+.ap-part[data-part="stats"] .as-stat .as-val{ font-size:24px; line-height:1.15; }
+.ap-part[data-part="stats"] .as-stat .as-x5{ font-size:10.5px; }
+.ap-part[data-part="stats"] .ap-feat-t{ font-style:italic; }
+/* Skills: find box */
+.ap-skillbar{ display:flex; gap:8px; align-items:center; margin-bottom:6px; flex-wrap:wrap; }
+.as-paper .ap-find{ flex:1 1 180px; max-width:280px; font-size:12px; }
+.as-skills > [hidden]{ display:none !important; }
+/* Appearance fold under the photo (the notebook) */
+.as-photo .ap-appear-btn{ display:block; margin:6px auto 0; }
+.ap-appear{ margin-top:8px; padding:4px 12px 10px; background:#fbf7ea; border:1px solid var(--as-rule); }
+.ap-appear .as-sec-hd{ margin-top:8px; }
+.ap-part[data-part="stats"] .as-stat{ display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:1px; }
+/* A narrow paper (the notebook's page) stacks the two columns */
+.as-paper.ap{ container-type:inline-size; }
+@container (max-width:520px){
+  .ap .ap-part .as-cols{ grid-template-columns:1fr; }
+  .ap .ap-part .as-stats{ grid-template-columns:repeat(3,1fr); }
+}
+.ap-part[data-part="stats"] .ap-stat-e{ background:#fbf7ea; border-top:3px solid var(--as-ink); }
+.ap-part[data-part="stats"] .ap-stat-e .as-lbl{ font-family:"Special Elite",monospace; font-size:12px; letter-spacing:.14em; color:var(--as-ink); }

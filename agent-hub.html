@@ -325,6 +325,8 @@
   .ah-appear-btn{ font-family:'Special Elite',monospace; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:#1c1608; background:#fbf7ea; border:1px solid rgba(160,130,70,.5); padding:4px 10px; cursor:pointer; border-radius:0; white-space:nowrap; }
   .ah-appear-btn:hover{ border-color:#8b1a1a; }
   .ah-appear-drop[hidden]{ display:none !important; }
+  .ah-appear-desc{ padding:2px 0 10px; margin-bottom:6px; border-bottom:1px dashed rgba(160,130,70,.5); }
+  .ah-appear-desc:empty{ display:none; }
   .paper-btn[hidden]{ display:none !important; }
   .paper-actions:not(:has(.paper-btn:not([hidden]))){ display:none; }
   .ah-appear-drop{ margin:12px 0 6px; padding:4px 14px 12px; background:#fbf7ea; border:1px solid rgba(160,130,70,.5); box-shadow:0 3px 10px rgba(0,0,0,.12); }
@@ -827,7 +829,7 @@
           </div>
           <!-- Appearance: the profiling form (assets/agent-file.js), dropped
                down from the button under the photo. -->
-          <div class="ah-appear-drop af-root" id="ah-appear-${escapeHtml(a.code)}" hidden></div>
+          <div class="ah-appear-drop af-root" id="ah-appear-${escapeHtml(a.code)}" hidden><div class="ah-appear-desc as-paper" id="ah-desc-${escapeHtml(a.code)}"></div></div>
           <div class="stamps" id="${stampId}">${era ? `<div class="stamp">${escapeHtml(era)}</div>` : ''}</div>
           <div class="dossier-line" id="ah-meta-${escapeHtml(a.code)}"${meta ? '' : ' hidden'}>${meta}</div>
           <div class="paper-actions">
@@ -1599,11 +1601,18 @@
         // The Agent File is the character sheet (assets/agent-paper.js):
         // played and edited right here.
         if (window.dgAgentPaper && window.dgAgentLive && window.dgRules) {
+          // The physical description sits with Appearance, in the drop-down.
+          const desc = document.getElementById('ah-desc-' + a.code);
+          if (desc) {
+            const pd = (state && state.bio && state.bio.physicalDesc) || AS.physical(brief, '');
+            desc.innerHTML = '<div class="as-sec-hd">Physical description</div><p class="as-text' + (pd ? '' : ' as-k') + '">' + escapeHtml(pd || 'Not described yet — fill in the brief below.') + '</p>';
+          }
           window.dgAgentPaper.mount(out, {
             code: a.code, char: charDoc, name: a.char_name || a.code, codename: brief.codename || a.codename || '',
             photo: window.dgStore.mainPhoto ? window.dgStore.mainPhoto(brief) : (brief.face_plate_url || ''),
             professionLabel: profTitle, members, cellName: cell ? (cell.name || cell.cell_id) : '', opsHtml,
             physical: AS.physical(brief, ''), incursion: AS.incursionText(charDoc, state), loadPhoto,
+            appearanceOutside: true,
             emptySheetHtml: '<p class="as-text as-k" style="margin-top:12px">No character sheet yet — Recruit builds one.</p>'
           });
           return;
