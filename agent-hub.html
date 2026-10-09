@@ -325,10 +325,12 @@
   .paper-header .lead.ah-lead{ display:grid; grid-template-columns:auto auto auto; grid-template-areas:"photo title btns"; align-items:center; column-gap:18px; row-gap:6px; }
   .ah-lead > .ah-photo-col{ grid-area:photo; }
   .ah-lead > div:nth-child(2){ grid-area:title; min-width:0; }
-  .ah-drop-btns{ grid-area:btns; display:flex; flex-direction:column; gap:6px; min-width:128px; }
-  .ah-drop-btns .ah-appear-btn{ width:100%; text-align:center; }
+  .ah-drop-btns{ grid-area:btns; display:flex; flex-direction:row; flex-wrap:wrap; gap:6px; align-self:end; }
+  .ah-drop-btns .ah-appear-btn{ text-align:center; }
   @media (max-width:560px){
     .paper-header .lead.ah-lead{ grid-template-columns:auto 1fr; grid-template-areas:"photo title" "btns title"; column-gap:14px; }
+    .ah-drop-btns{ flex-direction:column; flex-wrap:nowrap; align-self:auto; }
+    .ah-drop-btns .ah-appear-btn{ width:100%; }
     .ah-drop-btns{ min-width:0; width:112px; }
     .ah-drop-btns .ah-appear-btn{ font-size:10px; padding:4px 6px; letter-spacing:.06em; }
   }

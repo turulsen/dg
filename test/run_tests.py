@@ -10584,12 +10584,12 @@ def test_agent_file_parts_and_looks(p):
         return r.top >= -2 && r.top < 160; }}"""), timeout_ms=4000)
     record("agent-file-parts", "the index's Psyche button scrolls to Psyche", bool(ok), "")
     # Era photos and Cell drop down from beside Appearance: on a desktop
-    # the three buttons stack to the right of the name.
+    # the three buttons sit in a row to the right of the name.
     geo = page.evaluate(f"""() => {{ const t = document.getElementById('ah-title-{FN_CODE}') || document.querySelector('#panel-{FN_CODE} .paper-title');
         const b = document.querySelector('[data-ah-appear="{FN_CODE}"]'), c = document.querySelector('[data-ah-cell="{FN_CODE}"]');
         const tr = t.getBoundingClientRect(), br = b.getBoundingClientRect(), cr = c.getBoundingClientRect();
-        return [br.left >= tr.right - 1, cr.top > br.top, Math.abs(cr.left - br.left) < 2]; }}""")
-    record("agent-file-parts", "desktop: Appearance / Era photos / Cell stack beside the name", all(geo), str(geo))
+        return [br.left >= tr.right - 1, cr.left > br.right, Math.abs(cr.top - br.top) < 2]; }}""")
+    record("agent-file-parts", "desktop: Appearance / Era photos / Cell in a row beside the name", all(geo), str(geo))
     record("agent-file-parts", "Agent Hub: Era photos and Cell start folded", page.is_hidden(f"#ah-era-{FN_CODE}") and page.locator(root + " .ap-celldrop").count() == 0, "")
     page.click(f"[data-ah-cell={FN_CODE}]")
     page.wait_for_selector(root + " .ap-celldrop .ap-init li", timeout=5000)
