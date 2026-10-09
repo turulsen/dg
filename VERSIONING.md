@@ -63,7 +63,18 @@ consumer depending on that history being versioned. v2.0.0 was cut
 reserved for it: the Google Sheet is retired and every page reads and
 writes Firestore directly (Code.gs v97 is left serving only the Drive
 image proxy for old `gdrive:` links; going live took the one-time steps
-in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v2.7.0**
+in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v2.8.0**
+(2026-10-09) is PR #68: the Agent File in five numbered parts
+(Statistics, Skills with Find a skill, Psyche, Combat & gear, Record)
+with jump buttons; three looks for their headings (Typed form, Folder
+tabs, Rubber stamps), picked per device in the notebook's Settings;
+Appearance (now with the physical description), Era photos and Cell as
+drop-downs beside the photo -- in a row beside the name on a desktop,
+under the photo on a phone, and as folds in the notebook, where Era
+photos is new. Play-tested on the preview channel before the merge.
+Frontend only: no rules, functions or Code.gs change. Shell cache
+`dg-hub-shell-v200`. No tag yet: make it from the release page as for
+v2.1.0 below. **v2.7.0**
 (2026-10-09) is PR #67, v2 milestone M1: the Agent File paper becomes
 the character sheet players play from (notebook and Agent Hub alike):
 framed HP/WP/SAN/BP with − / +, Roll SAN, SAN loss as the Handler

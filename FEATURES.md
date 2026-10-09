@@ -27,7 +27,7 @@ Check the current code before trusting a specific function name.
 |---|---|---|
 | `index.html` | Everyone | Boot-splash animation, then a three-card chooser: **Agent** (player), **Friendly** (one-shot player, pregen) or **A-Cell** (Handler, password-gated). Entry point for the whole site. |
 | `friendly.html` | One-shot players | Pick a pregenerated Agent (`friendly/pregens.json`, built by `scripts/pregens/`) and play: read-only dossier, every stat/skill/weapon rolls via the Dice Roller, HP/WP/SAN kept on paper. No Firebase sign-in unless the pregen is in a Cell (then its id — a valid Agent Code shape, e.g. `FR-USSS-PPD` — signs in through `exchangeAgentToken` like any Agent and rolls into that Cell's `dice_rolls` feed; no backend or rules change was needed). The Dice Roller takes its identity from the page (`dgDice.setIdentity`), never from the device's own roster. |
-| `agent-hub.html` | Players | A player's own hub and each Agent's whole file: one folder tab per Agent in this browser's roster, plus "+ New Recruit". An Agent's tab has the Agent File paper, which since v2.7.0 is the character sheet (§5; the rest lives in the Field Notes notebook), **Appearance ▾** under the photo and the **era photos** (§5), Evidence, and (if unassigned) a Cover Identity search box. `?code=CODE[#appearance|#photos]` opens one Agent. |
+| `agent-hub.html` | Players | A player's own hub and each Agent's whole file: one folder tab per Agent in this browser's roster, plus "+ New Recruit". An Agent's tab has the Agent File paper, which since v2.7.0 is the character sheet (§5; the rest lives in the Field Notes notebook), and **Appearance ▾ / Era photos ▾ / Cell ▾** drop-downs beside the photo (§5), Evidence, and (if unassigned) a Cover Identity search box. `?code=CODE[#appearance|#photos]` opens one Agent. |
 | `dg-agent-portal.html` | -- | Retired (the three-tab Agent Portal); forwards old addresses to Agent Hub / the Fabricator. See §5. |
 | `stats/index.html` | Players | The actual Delta Green character sheet/creator — stats, skills, professions, Bonds, equipment, dice roller, Live Play tracker bar, three visual themes, import from five different formats, Cloud Save. This is a ported third-party project, see §2. |
 | `a-cell.html` | Handler | The Handler's dashboard, password-gated. Tabs: **Play** (every Agent, simplified, for running the table), **Cells** (group Agents under a Handler), **Evidence** (file documents/photos, scoped to a Cell or campaign-wide), **Sheet** (dense Excel-style roster), **Music** (Table Radio broadcast controls), **Admin** (delete/restore Agents, including Agent-File-only entries). |
@@ -394,6 +394,35 @@ decides.
   Rules page opens with `missionHtml()` instead of the Oath.
 - Not changed: Firestore rules, Cloud Functions, Code.gs. The old sheet
   (`stats/`) still works next to it.
+
+**The Agent File in parts, and its drop-downs (v2.8.0, PR #68).** Play-
+testing found the one long paper hard to read, so it's grouped:
+- **Five numbered parts** (`part()` in `agent-paper.js`, `data-part`):
+  `stats`, `skills`, `psyche` (Bonds, Motivations | Mental Disorders,
+  Sanity adaptation), `kit` (Weapons, Wounds | Gear & Armor), `record`
+  (Incursion, Operations; not in Edit). Edit adds part 0, `personal`
+  (Personal data and the physical description). A jump index
+  (`data-a=jump`) scrolls to each. **Find a skill…** (`data-u=skill-find`)
+  hides the rest and is re-applied after every redraw.
+- **Looks:** the parts' headings are styled by a class on the paper,
+  `ap-look-form` (default) / `ap-look-folder` / `ap-look-stamp`, from
+  `localStorage` `dg_paper_look`. The notebook's Settings → Agent File look
+  sets it (`dgAgentPaper.setLook`); every paper on the page switches at once,
+  other frames through the `storage` event.
+- **Drop-downs beside the photo.** On Agent Hub, `.ah-drop-btns` holds
+  Appearance ▾ (the drop now opens with the physical description,
+  `#ah-desc-CODE`, above the Profiling form), Era photos ▾ (`#af-photos`
+  moved into `#ah-era-CODE` as the form is into `#ah-appear-CODE`, and sent
+  home before `park()`; `focus('photos')` opens it) and Cell ▾ (drawn by
+  the paper: `api.toggleCell()`, the open state kept on the element across
+  redraws). A CSS grid puts them in a row beside the name on a desktop and
+  in a column under the photo at 560px and below. The paper is mounted with
+  `appearanceOutside: true` there. In the notebook the paper draws its own
+  folds under the photo: Appearance (the description), Era photos (each
+  active era's Face and Outfit Plates from `ctx.brief`, and a link to make
+  them on Agent Hub) and Cell.
+- A narrow paper (the notebook page) stacks the two-column parts and puts
+  the statistics in rows of three (a container query on `.as-paper.ap`).
 
 **What it's for:** the actual in-fiction "dossier" for an Agent — a
 physical description brief (Profiling), an AI-assisted portrait-prompt
@@ -994,7 +1023,7 @@ full reasoning on the split (Issues = live status board, `BUGFIXES.md`
 = narrative archive of what shipped, this section = closed/decided
 matters worth a permanent note).
 
-As of 2026-10-09, four open tracked issues (#10 is closed; see
+As of 2026-10-09 (checked again for v2.8.0), four open tracked issues (#10 is closed; see
 `BUGFIXES.md`'s "Issue #10's actual root cause"): #5 (Handler-facing access
 control — shared A-Cell password, dossiers reachable by Agent Code, no
 per-player identity), #8 (Agent Hub: long load screen then empty
