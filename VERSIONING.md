@@ -63,7 +63,15 @@ consumer depending on that history being versioned. v2.0.0 was cut
 reserved for it: the Google Sheet is retired and every page reads and
 writes Firestore directly (Code.gs v97 is left serving only the Drive
 image proxy for old `gdrive:` links; going live took the one-time steps
-in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v2.8.0**
+in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v2.9.0**
+(2026-10-09) is PR #69: Field Notes' Split mode (desktop) -- the Agent
+File on the left page, the brown tabs' pages (Notes as the whole Notes
+page, Evidences, Rules, Settings) on the right, remembered per device --
+and a fix: one failed read of an Agent's brief left Appearance on "Could
+not load" and Era photos on "Finish the brief" until a reload (reported
+on an iPhone); it now falls back to a listener, retries and offers Try
+again. Frontend only. Shell cache `dg-hub-shell-v203`. No tag yet.
+**v2.8.0**
 (2026-10-09) is PR #68: the Agent File in five numbered parts
 (Statistics, Skills with Find a skill, Psyche, Combat & gear, Record)
 with jump buttons; three looks for their headings (Typed form, Folder
