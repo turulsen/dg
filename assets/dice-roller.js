@@ -642,12 +642,31 @@
         });
     }
 
+    // Every finished roll, to this page and to the pages framed in it (the
+    // Agent File marks a failed skill, takes a rolled SAN loss): a
+    // 'dg-dice-result' event with the roll as its detail.
+    function announceResult(rollData) {
+        try { window.dispatchEvent(new CustomEvent('dg-dice-result', { detail: rollData })); } catch (e) { /* old engine */ }
+        try {
+            document.querySelectorAll('iframe').forEach(f => {
+                try { if (f.contentWindow) f.contentWindow.postMessage({ type: 'dg-dice-result', detail: rollData }, location.origin); } catch (e) { /* gone */ }
+            });
+        } catch (e) { /* no frames */ }
+    }
+    // A framed page whose rolls go up to the top page's roller hears the
+    // results back from it.
+    window.addEventListener('message', e => {
+        if (e.origin !== location.origin || window.top === window) return;
+        if (e.data && e.data.type === 'dg-dice-result') announceResult(e.data.detail);
+    });
+
     // Best-effort: any failure anywhere in this chain (no context yet,
     // sign-in rejected, Firestore write rejected) is swallowed -- the
     // roll already happened and already showed its result on screen
     // before this is even called; history is a nice-to-have layered on
     // top, never a gate on rolling itself.
     function recordRoll(rollData) {
+        announceResult(rollData);
         resolveRollContext().then(ctx => {
             if (ctx.mode === 'local') {
                 pushLocalHistory(Object.assign({ agent_name: currentAgentName() || 'Friendly', created_at: Date.now() }, rollData));

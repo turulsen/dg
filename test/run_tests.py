@@ -759,16 +759,28 @@ def push_firestore_doc_snapshot(page, path, exists, data=None):
     reasoning as push_firestore_snapshot()."""
     page.evaluate(
         """([path, exists, data]) => {
-            var match = (window.__dgFirestoreListeners || []).find(function (l) {
+            // Every listener on the document, like the real thing.
+            var matches = (window.__dgFirestoreListeners || []).filter(function (l) {
                 return l.isDoc && l.path === path;
             });
-            if (!match) throw new Error('no Firestore doc listener registered for ' + path);
-            match.success({ exists: exists, data: function () { return data; } });
+            if (!matches.length) throw new Error('no Firestore doc listener registered for ' + path);
+            matches.forEach(function (match) { match.success({ exists: exists, data: function () { return data; } }); });
         }""",
         [path, exists, data],
     )
 
+def _open_appearance(page):
+    """v2: on Agent Hub the Appearance form drops down from the button
+    under the Agent's photo; open it (if it's there and folded) before a
+    test works the form."""
+    try:
+        page.evaluate("""() => { const f = document.getElementById('af-appear'); const d = f && f.closest('.ah-appear-drop');
+            if (d && d.hidden) { const b = document.querySelector('[data-ah-appear="' + d.id.replace('ah-appear-', '') + '"]'); if (b) b.click(); } }""")
+    except Exception:
+        pass
+
 def fill_cover_form(page, agent, form_selector="#dg-form"):
+    _open_appearance(page)
     text_fields = ["char_name","codename","nationality","face_shape","eye_color","eye_shape",
                    "nose","lips","skin","facial_hair","face_scars","hair_color","hair_style",
                    "hair_texture","build","posture","body_markers","jacket","shirt","trousers",
@@ -3092,49 +3104,39 @@ def test_agent_hub_handout_notes(p):
     return errs
 
 def test_agent_hub_dex_postit(p):
-    """agent-hub.html's Initiative/DEX post-it (yellow sticky note in each
-    Agent's dossier header, mirroring a-cell.html's own Cell-wide
-    Initiative Tracker) -- a live characters/{code} doc listener, since
-    characters is public-read (see firestore.rules) and needs no
-    per-Agent sign-in unlike the Evidence listener. Empty/missing DEX
-    just leaves the post-it blank (:empty hides it), not an error."""
+    """v2: the Agent's DEX is in the Agent File's Cell section, the
+    initiative list (it replaced the yellow DEX post-it in the dossier
+    header), and follows the Agent's characters/{code} document live. A
+    Cell member with no character sheet yet is listed without a DEX ("—")."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
-    install_notes_firestore_stub(page)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    st = {"v": 1, "stats": {"DEX": 14, "STR": 10, "CON": 10, "POW": 10}, "csStats": {"DEX": 14, "STR": 10, "CON": 10, "POW": 10},
+          "derived": {"hp": 10, "wp": 10, "san": 50, "bp": 40}, "bio": {"name": "Owen Castillo"}}
     install_firestore_backend(page, {
         "briefs/OWEN-CS12": {"char_name": "Owen Castillo", "codename": "Ferro"},
         "briefs/PRIY-AN34": {"char_name": "Priya Anand"},
+        "characters/OWEN-CS12": character_doc("OWEN-CS12", st),
+        "cells/cell_1": {"name": "Cell Alpha", "member_codes": ["OWEN-CS12", "PRIY-AN34"]},
     })
-
+    page.add_init_script("localStorage.setItem('dg_agent_roster', JSON.stringify(%s));" % json.dumps({
+        "OWEN-CS12": {"code": "OWEN-CS12", "char_name": "Owen Castillo", "codename": "Ferro", "saved_at": 2000}}))
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
-    roster = {
-        "OWEN-CS12": {"code": "OWEN-CS12", "char_name": "Owen Castillo", "codename": "Ferro", "saved_at": 2000},
-        "PRIY-AN34": {"code": "PRIY-AN34", "char_name": "Priya Anand", "codename": "", "saved_at": 1000},
-    }
-    page.evaluate("(r) => localStorage.setItem('dg_agent_roster', JSON.stringify(r))", roster)
-    page.reload(wait_until="domcontentloaded")
-    page.wait_for_timeout(500)
-
-    wait_for_condition(lambda: any(l["path"] == "characters/OWEN-CS12" for l in page.evaluate("() => window.__dgFirestoreListeners || []"))
-                        and any(l["path"] == "characters/PRIY-AN34" for l in page.evaluate("() => window.__dgFirestoreListeners || []")),
-                        timeout_ms=8000)
-    push_firestore_doc_snapshot(page, "characters/OWEN-CS12", True,
-                                 {"character_json": json.dumps({"csStats": {"DEX": 14}})})
-    push_firestore_doc_snapshot(page, "characters/PRIY-AN34", False, None)
-
-    owen_dex = wait_for_condition(lambda: (page.inner_text("#ah-dex-OWEN-CS12") or None))
-    record("hub", "an Agent's Initiative post-it shows their live DEX score",
-           owen_dex is not None and "14" in owen_dex, owen_dex)
-    priya_postit = page.inner_text("#ah-dex-PRIY-AN34")
-    record("hub", "an Agent with no character sheet yet shows an empty (hidden) post-it, not an error",
-           priya_postit.strip() == "", repr(priya_postit))
-
-    errs_all = list(errs)
+    page.wait_for_selector("#ah-sheet-OWEN-CS12 .ap-init", timeout=10000)
+    rows = page.eval_on_selector_all("#ah-sheet-OWEN-CS12 .ap-init li", "els => els.map(e => e.innerText.replace(/\\s+/g, ' ').trim())")
+    record("hub", "the Agent's DEX leads their line in the Cell's initiative list (no DEX post-it any more)",
+           len(rows) == 2 and rows[0].startswith("14") and "Owen Castillo" in rows[0] and page.locator("#ah-dex-OWEN-CS12").count() == 0, str(rows))
+    record("hub", "a Cell member with no character sheet is listed without a DEX",
+           rows[1].startswith("—") and "Priya Anand" in rows[1], str(rows))
+    wait_for_condition(lambda: any(l["path"] == "characters/OWEN-CS12" for l in page.evaluate("() => window.__dgFirestoreListeners || []")), timeout_ms=8000)
+    st2 = dict(st, csStats=dict(st["csStats"], DEX=16), stats=dict(st["stats"], DEX=16))
+    push_firestore_doc_snapshot(page, "characters/OWEN-CS12", True, {"character_json": json.dumps(st2)})
+    live = wait_for_condition(lambda: (lambda t: t if t.startswith("16") else None)(page.inner_text("#ah-sheet-OWEN-CS12 .ap-init li:first-child")), timeout_ms=6000)
+    record("hub", "…and follows a change to the Agent's sheet live", bool(live), str(live))
     page.close()
-    return errs_all
+    return errs
 
 def test_agent_hub_recruit_flag(p):
     """Bug fix: an Agent File can exist (submitted via Cover form /
@@ -3169,8 +3171,10 @@ def test_agent_hub_recruit_flag(p):
     page.reload(wait_until="domcontentloaded")
     page.wait_for_timeout(1200)
 
-    owen_btn = page.eval_on_selector('#ah-play-OWEN-CS12', "el => el.textContent.trim()")
-    record("hub", "Agent with an existing character keeps the Play label", "Play" in owen_btn, owen_btn)
+    # v2: the Agent File is the character sheet -- no Play button; Recruit
+    # only for an Agent with no sheet yet.
+    owen_hidden = page.eval_on_selector('#ah-play-OWEN-CS12', "el => el.hidden")
+    record("hub", "an Agent with a character sheet gets no Play/Recruit button (the Agent File is the sheet)", owen_hidden, str(owen_hidden))
     # textContent, not inner_text: the stamp's CSS applies text-transform:
     # uppercase, which inner_text would render as-displayed rather than
     # the raw DOM text this is actually checking for.
@@ -3704,7 +3708,7 @@ def test_agent_hub_checks_read_firestore(p):
     labels = page.eval_on_selector_all(".tw:not(.tw-switch) > span", "els => els.map(e=>e.textContent)")
     record("hub", "a failed Firestore read never marks an Agent as having no sheet",
            "No Character Sheet Yet" not in page.eval_on_selector("#ah-charstamp-ALIV-0002", "el => el.textContent")
-           and "Play" in page.eval_on_selector("#ah-play-ALIV-0002", "el => el.textContent"), "")
+           and page.eval_on_selector("#ah-play-ALIV-0002", "el => el.hidden"), "")
     record("hub", "a failed Firestore read never purges an Agent from this device's roster",
            any("Priya" in l for l in labels) and any("Owen" in l for l in labels), str(labels))
     page.close()
@@ -8194,6 +8198,7 @@ def test_agent_portal_cover(p, agent):
     record("agent-file", "profession dropdown has full list (regression)", opt_count >= 15, f"{opt_count} options")
     prof_id = agent.get("profession_id", "")
     if prof_id and page.locator(f"#rand-profession option[value={prof_id}]").count():
+        _open_appearance(page)
         page.select_option("#rand-profession", prof_id)
         page.locator("button:has-text('Generate')").first.click()
         page.wait_for_timeout(200)
@@ -8290,6 +8295,7 @@ def test_agent_portal_incomplete_submit_blocked(p):
     install_firestore_backend(page, {"briefs/IVYI-NC01": {"char_name": "Incomplete Ivy", "agent_code": "IVYI-NC01"}})
     page.goto(f"{BASE}/agent-hub.html?code=IVYI-NC01", wait_until="domcontentloaded", timeout=15000)
     _af_state(page)
+    _open_appearance(page)
     page.click("#submit-btn")
     page.wait_for_timeout(400)
     saved = fs_doc(page, "briefs/IVYI-NC01") or {}
@@ -8907,17 +8913,17 @@ def test_agent_file_vitals_and_bonds(p):
     jsonp_backend(page, fake_apps_script)
 
     page.goto(f"{BASE}/agent-hub.html?code=VITL-0001", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_selector("#ah-sheet-VITL-0001 .as-vitals", timeout=10000)
-    vit = page.inner_text("#ah-sheet-VITL-0001 .as-vitals").upper()
+    page.wait_for_selector("#ah-sheet-VITL-0001 .ap-vitals", timeout=10000)
+    vit = page.inner_text("#ah-sheet-VITL-0001 .ap-vitals").upper()
     record("agent-file", "HP/WP/SAN/BP show the saved sheet's actual values on the Agent's file",
            all(re.search(lab + r"\D*" + val + r"\b", vit) for lab, val in (("HP", "11"), ("WP", "9"), ("SAN", "55"), ("BP", "20"))), vit)
     bonds_text = page.inner_text("#ah-sheet-VITL-0001")
     record("agent-file", "both Bonds show up with their names",
            "Marcus Webb" in bonds_text and "Delta Green" in bonds_text, bonds_text[:400])
-    zero = page.evaluate("""() => [].some.call(document.querySelectorAll('#ah-sheet-VITL-0001 .as-row'), r => /Marcus Webb/.test(r.textContent) && (r.querySelector('.as-score') || {}).textContent === '0')""")
+    zero = page.evaluate("""() => [].some.call(document.querySelectorAll('#ah-sheet-VITL-0001 .ap-bond'), r => /Marcus Webb/.test(r.textContent) && (r.querySelector('.ap-bscore') || {}).textContent === '0')""")
     record("agent-file", "a Bond with a legitimate score of 0 still shows 0, not hidden as if it had no score", zero, "")
     record("agent-file", "the other Bond's non-zero score also shows",
-           page.evaluate("""() => [].some.call(document.querySelectorAll('#ah-sheet-VITL-0001 .as-row'), r => /Delta Green/.test(r.textContent) && (r.querySelector('.as-score') || {}).textContent === '12')"""), "")
+           page.evaluate("""() => [].some.call(document.querySelectorAll('#ah-sheet-VITL-0001 .ap-bond'), r => /Delta Green/.test(r.textContent) && (r.querySelector('.ap-bscore') || {}).textContent === '12')"""), "")
 
     record("agent-file", "no JS exceptions", len(errs) == 0, "; ".join(errs))
     page.close()
@@ -10198,19 +10204,21 @@ def test_cell_members_by_name_and_kia(p):
     extra = "localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE
     page, errs = _field_notes_page(p, docs=docs, extra_init=extra)
     page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_selector(f"#ah-sheet-{FN_CODE} .as-members li", timeout=15000)
+    page.wait_for_selector(f"#ah-sheet-{FN_CODE} .ap-init li", timeout=15000)
     page.wait_for_timeout(500)
-    rows = page.eval_on_selector_all(f"#ah-sheet-{FN_CODE} .as-members li", "els => els.map(e => [e.querySelector('.as-mname') ? e.querySelector('.as-mname').textContent : e.textContent, e.classList.contains('as-kia'), !!e.querySelector('.as-stamp')])")
+    rows = page.eval_on_selector_all(f"#ah-sheet-{FN_CODE} .ap-init li", "els => els.map(e => [e.querySelector('.as-mname').textContent, e.classList.contains('as-kia'), !!e.querySelector('.as-stamp')])")
     names = [r[0] for r in rows]
+    # The Cell is the initiative list now: this Agent included, by DEX,
+    # with KIA members last.
     record("hub", "Agent Hub's Cell lists members by name (Agent File, else character sheet), not by code",
-           names == ["Tom Hale", "Ruth Okafor", "Sam Doyle"], str(rows))
+           sorted(names) == sorted(["Mara Voss", "Tom Hale", "Ruth Okafor", "Sam Doyle"]) and names[-1] == "Sam Doyle", str(rows))
     record("hub", "…and a member at 0 HP is marked KIA (only them)",
-           [r[1] and r[2] for r in rows] == [False, False, True], str(rows))
+           [r[1] and r[2] for r in rows] == [False, False, False, True], str(rows))
     page.evaluate("() => window.dgFieldNotes.open('agentfile')")
-    page.wait_for_selector("#fn-veil .as-members li", timeout=15000)
-    nb = page.eval_on_selector_all("#fn-veil .as-members li", "els => els.map(e => [e.querySelector('.as-mname').textContent, e.classList.contains('as-kia')])")
+    page.wait_for_selector("#fn-veil .ap-init li", timeout=15000)
+    nb = page.eval_on_selector_all("#fn-veil .ap-init li", "els => els.map(e => [e.querySelector('.as-mname').textContent, e.classList.contains('as-kia')])")
     record("notebook", "the notebook's Agent File lists the same Cell by name, with KIA marked",
-           nb == [["Tom Hale", False], ["Ruth Okafor", False], ["Sam Doyle", True]], str(nb))
+           nb == [[r[0], r[1]] for r in rows], str(nb))
     page.evaluate("() => window.dgFieldNotes.open('fieldid')")
     page.wait_for_selector("#fn-veil [data-go=fab]", timeout=10000)
     record("notebook", "Field ID offers the Fabricator only (no Blank ID Creator)",
@@ -10277,18 +10285,28 @@ def test_add_bond_in_play(p):
     errs_all.extend(errs)
     page.close()
 
-    page, errs = _field_notes_page(p, extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+    # v2: the Agent File adds a Bond itself (score = CHA), saved to the
+    # Agent's record straight away -- no trip to the sheet.
+    docs = _field_notes_docs()
+    st = json.loads(docs[f"characters/{FN_CODE}"]["character_json"])
+    st["stats"] = st["csStats"] = {"STR": 10, "CON": 10, "DEX": 10, "INT": 10, "POW": 10, "CHA": 13}
+    docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, st, "fn tester")
+    page, errs = _field_notes_page(p, docs=docs, extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
     page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_selector(f"#ah-sheet-{FN_CODE} .as-add-bond", timeout=15000)
-    href = page.get_attribute(f"#ah-sheet-{FN_CODE} .as-add-bond", "href")
-    record("bonds", "Agent Hub's Agent File has + Add Bond, linking to the sheet with add_bond=1",
-           href == f"stats/index.html?load={FN_CODE}&add_bond=1", str(href))
+    page.wait_for_selector(f"#ah-sheet-{FN_CODE} [data-pop=bond]", timeout=15000)
+    page.click(f"#ah-sheet-{FN_CODE} [data-pop=bond]")
+    page.fill(f"#ah-sheet-{FN_CODE} [data-u=bond-name]", "Father Ruiz")
+    page.fill(f"#ah-sheet-{FN_CODE} [data-u=bond-rel]", "Priest")
+    page.click(f"#ah-sheet-{FN_CODE} [data-a=bond-add]")
+    saved = wait_for_condition(lambda: [b for b in json.loads((fs_doc(page, f"characters/{FN_CODE}") or {}).get("character_json") or "{}").get("bonds", []) if b.get("name") == "Father Ruiz"] or None, timeout_ms=8000)
+    record("bonds", "Agent Hub's Agent File: + Bond adds one with score = CHA, saved to the Agent's record",
+           bool(saved) and saved[0]["score"] == 13 and saved[0]["relationship"] == "Priest", str(saved))
+    record("bonds", "…and it shows on the paper with − / + for its score",
+           "Father Ruiz" in page.inner_text(f"#ah-sheet-{FN_CODE} .as-sheet") and page.locator(f"#ah-sheet-{FN_CODE} [data-a='bond+']").count() == 2, "")
     page.evaluate("() => window.dgFieldNotes.open('agentfile')")
-    page.wait_for_selector("#fn-veil [data-go=addbond]", timeout=15000)
-    page.click("#fn-veil [data-go=addbond]")
-    _pump_until(page, lambda: "stats/index.html" in page.url, timeout_ms=8000)
-    record("bonds", "the notebook's Agent File + Add Bond opens that Agent's sheet to add one",
-           "stats/index.html" in page.url and f"load={FN_CODE}" in page.url, page.url)
+    page.wait_for_selector("#fn-veil .as-paper [data-pop=bond]", timeout=15000)
+    record("bonds", "the notebook's Agent File has the same + Bond (no link to the sheet)",
+           page.locator("#fn-veil [data-go=addbond]").count() == 0 and "Father Ruiz" in page.inner_text("#fn-veil .as-paper"), "")
     errs_all.extend(errs)
     page.close()
     return errs_all
@@ -10313,20 +10331,20 @@ def test_agent_file_san_roll_and_member_cards(p):
     def check(page, root, where):
         # The notebook keeps more than one copy of a page; use the one on screen.
         paper = page.locator(root + " .as-paper").filter(visible=True).first
-        paper.locator(".as-san-roll").wait_for(timeout=15000)
+        paper.locator("[data-a=rollsan]").wait_for(timeout=15000)
         paper.locator(".as-mthumb img").first.wait_for(timeout=8000)
         record("agent-file", where + ": a Cell member shows with their photo",
                paper.locator(".as-mthumb img").first.get_attribute("src") == png, "")
-        paper.locator(".as-mbtn").first.click()
+        paper.locator(".as-mbtn[data-a=card]").first.click()
         card = paper.locator(".as-mcard").inner_text()
         record("agent-file", where + ": tapping a member opens their card (name, cover, HP/WP/SAN/BP)",
-               "Tom Hale" in card and "TIN CUP" in card and all(x in card for x in ("9", "10", "45", "36"))
+               "Tom Hale" in card and "Cover “TIN CUP”" in card and all(x in card for x in ("9", "10", "45", "36"))
                and paper.locator(".as-mcard img").count() == 1, card)
-        paper.locator(".as-mbtn").first.click()
+        paper.locator(".as-mbtn[data-a=card]").first.click()
         record("agent-file", where + ": tapping again closes it", paper.locator(".as-mcard").is_hidden(), "")
         # Last: in the notebook a roll turns to the Dice Roller page.
         page.evaluate(spy)
-        paper.locator(".as-san-roll").click()
+        paper.locator("[data-a=rollsan]").click()
         rolls = page.evaluate("() => window.__rolls")
         record("agent-file", where + ": Roll SAN by the key stats rolls d100 against current SAN",
                rolls[:1] == [[55, "SAN"]], str(rolls))
@@ -10339,6 +10357,224 @@ def test_agent_file_san_roll_and_member_cards(p):
     errs_all.extend(errs)
     page.close()
     return errs_all
+
+def test_agent_file_v2_play_and_edit(p):
+    """v2: the Agent File is the character sheet (assets/agent-paper.js,
+    agent-rules.js, agent-live.js). Played at the table with every change
+    saved to the Agent's record: HP/WP/SAN − / +, SAN loss as the Handler
+    announced it (no d100 inside) and the post-its it sets off -- a
+    disorder that triggers on losing 2+ SAN, temporary insanity at 5+,
+    Breaking Point with a new disorder and BP reset to SAN − POW, an
+    incident ticked and the third one adapting the Agent (Violence: −1D6
+    CHA and from every Bond) -- a failed skill roll marking the skill red,
+    Roll improvements (+1D4 each, marks cleared), Bonds. Edit mode works
+    on a copy: Save asks for the Oath (N: back to editing, nothing saved;
+    Y: saved), Cancel throws the copy away. The Rules page opens with the
+    Mission & Standing Orders, not the Oath."""
+    errs_all = []
+    stats = {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 11, "CHA": 13}
+    state = {"v": 1, "stats": stats, "csStats": dict(stats), "derived": {"hp": 9, "wp": 8, "san": 52, "bp": 44},
+             "bio": {"name": "Mara Voss", "player_name": "fn tester", "profession": "federal_agent", "employer": "FBI",
+                     "motivations": "Protect my sister", "disorders": ["Paranoia"]},
+             "skills": {"alertness": 60, "firearms": 50, "accounting": 10},
+             "bonds": [{"id": "b1", "name": "Lena Voss", "relationship": "Sister", "score": 11},
+                       {"id": "b2", "name": "Dr. Paul Ames", "relationship": "Therapist", "score": 13}],
+             "sanity": {"violence": [True, False, False], "helplessness": [False, False, False]},
+             "lpCheckedSkills": [{"type": "key", "key": "firearms"}],
+             "lpWeapons": [{"name": "Glock 17", "skillPct": "50", "damage": "1D10"}]}
+    docs = _field_notes_docs()
+    docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, state, "fn tester")
+    extra = "localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE
+    page, errs = _field_notes_page(p, docs=docs, extra_init=extra)
+    page.on("dialog", lambda d: d.accept())
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    root = f"#ah-sheet-{FN_CODE}"
+    page.wait_for_selector(root + " .ap-vitals", timeout=15000)
+
+    def saved():
+        return json.loads((fs_doc(page, f"characters/{FN_CODE}") or {}).get("character_json") or "{}")
+    def until(fn, ms=8000):
+        return wait_for_condition(lambda: (lambda v: v if v else None)(fn(saved())), timeout_ms=ms)
+    def posts():
+        return page.eval_on_selector_all("#ap-posts .ap-pt", "els => els.map(e => e.textContent)")
+    def clear_posts():
+        while page.locator("#ap-posts .ap-x").count():
+            page.locator("#ap-posts .ap-x").first.click()
+    def san_loss(amount, kind):
+        page.click(root + " [data-a=pop][data-pop=san]")
+        if amount in ("1", "2", "3"):
+            page.click(root + f" [data-a=san-amt][data-v='{amount}']")
+        else:
+            page.click(root + " [data-a=san-amt][data-v=other]")
+            page.fill(root + " [data-u=san-other]", amount)
+        page.click(root + f" [data-a=san-kind][data-v={kind}]")
+        page.click(root + " [data-a=san-go]")
+
+    # − / + : saved straight away.
+    page.click(root + " [data-a='hp-']")
+    record("agent-file-v2", "HP − takes one off and saves it to the Agent's record", bool(until(lambda st: st.get("derived", {}).get("hp") == 8)), str(saved().get("derived")))
+    record("agent-file-v2", "there is no Play button (Edit takes its place)",
+           page.locator(f"#ah-play-{FN_CODE}").is_hidden() and page.locator(root + " [data-a=edit]").is_visible(), "")
+
+    # SAN loss 3 (Violence): Paranoia triggers on losing 2+ SAN; an incident box ticks.
+    san_loss("3", "violence")
+    page.wait_for_selector("#ap-posts .ap-postit", timeout=8000)
+    p1 = posts()
+    record("agent-file-v2", "SAN loss takes the announced amount off SAN, with no d100 test",
+           bool(until(lambda st: st["derived"]["san"] == 49)), str(saved().get("derived")))
+    record("agent-file-v2", "a loss of 2+ with a disorder that triggers on it shows the 'Disorder triggered' post-it over the page",
+           p1 == ["Disorder triggered — Paranoia"] and page.evaluate("() => { const r = document.getElementById('ap-posts').getBoundingClientRect(); return r.width >= innerWidth - 1 && r.height >= innerHeight - 1; }"), str(p1))
+    record("agent-file-v2", "…the episode is logged, and a Violence loss without insanity ticks an incident box",
+           bool(until(lambda st: st.get("sanity", {}).get("violence") == [True, True, False] and st.get("sanLog", [{}])[-1].get("triggered") == ["Paranoia"])), str(saved().get("sanity")))
+    clear_posts()
+
+    # SAN loss 6 (Helplessness): temporary insanity, and SAN 43 is at or below BP 44.
+    san_loss("6", "helplessness")
+    page.wait_for_function("() => document.querySelectorAll('#ap-posts .ap-postit').length >= 3", timeout=8000)
+    p2 = posts()
+    record("agent-file-v2", "a loss of 5+ shows Temporary insanity, and reaching the Breaking Point shows its post-it",
+           "Temporary insanity" in p2 and "Breaking Point" in p2, str(p2))
+    page.select_option("#ap-posts [data-pp=dis]", "Amnesia")
+    page.locator("#ap-posts .ap-postit", has_text="Breaking Point").locator("[data-pa]").click()
+    record("agent-file-v2", "Breaking Point: the picked disorder is added and BP resets to SAN − POW",
+           bool(until(lambda st: "Amnesia" in st["bio"]["disorders"] and st["derived"]["san"] == 43 and st["derived"]["bp"] == 32)), str(saved().get("derived")) + str(saved().get("bio", {}).get("disorders")))
+    clear_posts()
+
+    # The third Violence incident: adapted, −1D6 CHA and from each Bond (a 4 here).
+    page.evaluate("() => { Math.random = () => 0.5; }")
+    page.click(root + " [data-a=pop][data-pop=inc]")
+    page.click(root + " [data-a=inc][data-k=violence]")
+    page.wait_for_selector("#ap-posts .ap-postit", timeout=10000)
+    record("agent-file-v2", "the third incident adapts the Agent: −1D6 CHA and the same from every Bond (rolled in the Dice Roller)",
+           bool(until(lambda st: st.get("adapted", {}).get("violence") and st["csStats"]["CHA"] == 9 and [b["score"] for b in st["bonds"]] == [7, 9], 12000))
+           and posts() == ["Adapted to Violence"], str(saved().get("csStats")) + str([b.get("score") for b in saved().get("bonds", [])]))
+    clear_posts()
+
+    # A failed skill roll marks the skill red; Roll improvements adds 1D4 to each.
+    page.evaluate("() => { Math.random = () => 0.995; }")
+    page.locator(root + " [data-a=skill]", has_text="Alertness").click()
+    record("agent-file-v2", "a failed roll marks the skill (bold red) until the improvement roll",
+           bool(until(lambda st: {"type": "key", "key": "alertness"} in st.get("lpCheckedSkills", []), 10000))
+           and bool(wait_for_condition(lambda: page.locator(root + " .ap-skill.ap-marked", has_text="Alertness").count() or None, timeout_ms=5000)), "")
+    page.evaluate("() => { Math.random = () => 0.5; }")
+    page.click(root + " [data-a=improve]")
+    record("agent-file-v2", "Roll improvements: +1D4 to each marked skill, then the marks are cleared",
+           bool(until(lambda st: st["skills"].get("alertness") == 63 and st["skills"].get("firearms") == 53 and not st.get("lpCheckedSkills"), 15000)),
+           str(saved().get("skills")) + str(saved().get("lpCheckedSkills")))
+    clear_posts()
+
+    # Edit mode: Save asks for the Oath. N keeps editing, nothing saved; Y saves.
+    page.click(root + " [data-a=edit]")
+    page.wait_for_selector(root + " .ap-editbar", timeout=5000)
+    record("agent-file-v2", "Edit mode lists every skill, 0% ones too",
+           page.locator(root + " .ap-skills-e .ap-sk").count() >= 36, str(page.locator(root + " .ap-skills-e .ap-sk").count()))
+    page.fill(root + " [data-e='stat:STR']", "12")
+    page.dispatch_event(root + " [data-e='stat:STR']", "change")
+    page.fill(root + " [data-e='skill:key:accounting']", "20")
+    page.click(root + " [data-a=pop][data-pop=spec]")
+    page.select_option(root + " [data-u=spec-key]", "craft")
+    page.fill(root + " [data-u=spec-name]", "Locksmith")
+    page.fill(root + " [data-u=spec-val]", "20")
+    page.click(root + " [data-a=spec-add]")
+    page.click(root + " [data-a=save]")
+    page.wait_for_selector("#fn-orders.fn-oath-save", timeout=5000)
+    page.keyboard.press("Enter")
+    oath_txt = page.inner_text("#fn-orders")
+    page.keyboard.press("n")
+    page.wait_for_timeout(1000)
+    record("agent-file-v2", "Save shows the Oath, listing the changes; N goes back to editing and saves nothing",
+           "STR 10→12" in oath_txt and "Accounting 10→20" in oath_txt and page.locator("#fn-orders").count() == 0
+           and page.locator(root + " .ap-editbar").count() == 1 and saved()["csStats"]["STR"] == 10, oath_txt[:300])
+    page.click(root + " [data-a=save]")
+    page.wait_for_selector("#fn-orders.fn-oath-save", timeout=5000)
+    page.keyboard.press("Enter")
+    page.keyboard.press("y")
+    record("agent-file-v2", "…and Y files the edits (statistics, skills, a new specialty)",
+           bool(until(lambda st: st["csStats"]["STR"] == 12 and st["skills"]["accounting"] == 20
+                      and any(i.get("key") == "craft" and i.get("specialty") == "Locksmith" and i.get("value") == 20 for i in st.get("specialtyInstances", []))))
+           and bool(wait_for_condition(lambda: page.locator(root + " .ap-editbar").count() == 0 or None, timeout_ms=4000)), str(saved().get("csStats")))
+    page.click(root + " [data-a=edit]")
+    page.fill(root + " [data-e='bio.employer']", "DEA")
+    page.click(root + " [data-a=cancel]")
+    page.wait_for_timeout(1000)
+    record("agent-file-v2", "Cancel throws the edit away",
+           page.locator(root + " .ap-editbar").count() == 0 and saved()["bio"]["employer"] == "FBI", saved()["bio"].get("employer"))
+
+    # The Rules page: the Mission card, no Oath.
+    page.evaluate("() => window.dgFieldNotes.open('rules')")
+    page.wait_for_selector("#fn-veil .fn-mission", timeout=10000)
+    mt = page.inner_text("#fn-veil .fn-mission")
+    record("agent-file-v2", "the Rules page opens with the Mission & Standing Orders instead of the Oath",
+           "MISSION" in mt.upper() and "disinformation" in mt and "Oath" not in page.inner_text("#fn-veil [data-fn-slot=body]"), mt[:200])
+    errs_all.extend(errs)
+    page.close()
+
+    # Phone: the notebook's Agent File fits, nothing sideways.
+    page, errs = _field_notes_page(p, width=390, height=844, docs=docs, extra_init=extra)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+    page.locator("#fn-veil .as-paper.ap").filter(visible=True).first.wait_for(timeout=10000)
+    record("agent-file-v2", "phone: the notebook's Agent File has its controls and no sideways scroll",
+           page.evaluate("() => document.documentElement.scrollWidth <= innerWidth") and page.locator("#fn-veil [data-a=pop][data-pop=san]").filter(visible=True).count() >= 1, "")
+    errs_all.extend(errs)
+    page.close()
+    return errs_all
+
+def test_agent_rules_unit(p):
+    """assets/agent-rules.js on its own: derived maximums, − / + limits,
+    BP stepped by POW and reset to SAN − POW, SAN loss events (a disorder
+    that triggers on 2+ only for a loss of 2+, insanity at 5+ clearing that
+    kind's marks, the Breaking Point only when crossed, SAN 0), Unnatural
+    never marked by a failed roll, adaptation costs, and an old sheet's
+    disorders split out of its Motivations."""
+    page = p.new_page()
+    errs = collect_errors(page)
+    _block_fonts(page)
+    install_firestore_backend(page, {})
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgRules && window.dgDisorders", timeout=10000)
+    r = page.evaluate("""async () => {
+      const R = window.dgRules, out = {};
+      const base = () => ({ v: 1, csStats: { STR: 10, CON: 13, DEX: 10, INT: 10, POW: 12, CHA: 11 }, derived: { hp: 12, wp: 12, san: 50, bp: 45 },
+        skills: { unnatural: 5, alertness: 40 }, bio: { disorders: ['Depression', 'Paranoia'] }, bonds: [{ name: 'A', score: 11 }] });
+      let s = base();
+      out.max = R.maxes(s);
+      R.adjust(s, 'hp', +5); out.hpCap = s.derived.hp;
+      R.adjust(s, 'wp', -20); out.wpFloor = s.derived.wp;
+      R.stepBp(s, 1); out.bpUp = s.derived.bp; R.resetBp(s); out.bpReset = s.derived.bp;
+      s = base(); out.loss1 = R.sanLoss(s, 1, 'violence').events.map(e => e.type);
+      s = base(); out.loss2 = R.sanLoss(s, 2, 'violence').events;
+      s = base(); s.sanity = { violence: [true, true, false], helplessness: [false, false, false] };
+      out.loss5 = R.sanLoss(s, 5, 'violence').events.map(e => e.type); out.marks5 = s.sanity.violence;
+      s = base(); out.bp1 = R.sanLoss(s, 6, 'unnatural').events.map(e => e.type);
+      s = base(); s.derived.san = 40; out.bpAgain = R.sanLoss(s, 2, 'unnatural').events.map(e => e.type);
+      s = base(); s.derived.san = 3; out.zero = R.sanLoss(s, 9, 'unnatural').events.map(e => e.type); out.zeroSan = s.derived.san;
+      s = base(); out.unnat = R.markFailed(s, 'key:unnatural'); out.alert = R.markFailed(s, 'key:alertness');
+      s = base(); const fixed = () => Promise.resolve(3);
+      await R.adapt(s, 'violence', fixed); out.vio = [s.csStats.CHA, s.bonds[0].score, s.adapted.violence];
+      s = base(); await R.adapt(s, 'helplessness', fixed); out.help = [s.csStats.POW, s.csStats.CHA];
+      const old = { bio: { motivations: 'Keep the family safe\\nDisorder: PTSD' } };
+      R.normalizeBio(old); out.split = [old.bio.motivations, old.bio.disorders];
+      return out;
+    }""")
+    record("rules", "maximums: HP ⌈(STR+CON)/2⌉, WP POW, SAN POW×5, SAN cap 99 − Unnatural",
+           r["max"] == {"hp": 12, "wp": 12, "san": 60, "sanCap": 94}, str(r["max"]))
+    record("rules", "− / + never go past the maximum or below 0", r["hpCap"] == 12 and r["wpFloor"] == 0, f"{r['hpCap']} {r['wpFloor']}")
+    record("rules", "BP steps by POW and resets to SAN − POW", r["bpUp"] == 57 and r["bpReset"] == 38, f"{r['bpUp']} {r['bpReset']}")
+    record("rules", "a loss of 1 sets off no disorder; a loss of 2 sets off only the disorder that triggers on losing 2+ SAN",
+           r["loss1"] == ["incident"] and r["loss2"][0]["type"] == "disorder" and r["loss2"][0]["names"] == ["Paranoia"], str(r["loss1"]) + str(r["loss2"]))
+    record("rules", "a loss of 5 is temporary insanity, clears that kind's incident marks, ticks none",
+           "insanity" in r["loss5"] and "incident" not in r["loss5"] and r["marks5"] == [False, False, False], str(r["loss5"]) + str(r["marks5"]))
+    record("rules", "the Breaking Point fires when SAN crosses it, not again once below",
+           "breaking" in r["bp1"] and "breaking" not in r["bpAgain"], str(r["bp1"]) + str(r["bpAgain"]))
+    record("rules", "SAN 0 is its own event, and SAN never goes below 0", "zero" in r["zero"] and r["zeroSan"] == 0, str(r["zero"]))
+    record("rules", "a failed roll marks a skill, never Unnatural", r["unnat"] is False and r["alert"] is True, str([r["unnat"], r["alert"]]))
+    record("rules", "adapting to Violence: −1D6 CHA and each Bond; to Helplessness: −1D6 POW",
+           r["vio"] == [8, 8, True] and r["help"] == [9, 11], str(r["vio"]) + str(r["help"]))
+    record("rules", "an old sheet's disorders come out of its Motivations text", r["split"] == ["Keep the family safe", ["PTSD"]], str(r["split"]))
+    page.close()
+    return errs
 
 def test_evidence_attachments_open_and_zoom(p):
     """Evidence attachments for players (reported from Safari: couldn't
@@ -11548,6 +11784,9 @@ def test_profiling_edit_keeps_agent_file(p):
     page.route("**/firebasestorage.googleapis.com/**", lambda r: r.abort())
     page.goto(f"{BASE}/agent-hub.html?code=MARA-0001", wait_until="load", timeout=15000)
     page.wait_for_timeout(1500)
+    # v2: the Appearance form drops down from the button under the photo.
+    if page.locator("#ah-appear-MARA-0001[hidden]").count():
+        page.click("[data-ah-appear=MARA-0001]")
     page.evaluate("() => window.dgAgentFile.focus('appearance')")  # Edit
     page.fill("#dg-form [name=eye_color]", "storm grey")
     page.evaluate("() => handleSubmit()")
@@ -11710,8 +11949,8 @@ def test_field_notes_notebook(p):
     page.click("#fn-closed .fn-cover")
     page.click("#fn-veil .fn-slot[data-view=agentfile]")
     txt = wait_for_condition(lambda: (_notebook_text(page) if "Operation FULL MOON" in _notebook_text(page) else None), timeout_ms=10000) or ""
-    record("notebook", "Agent File starts with Play and Open Agent File",
-           page.evaluate("() => { const b = document.querySelectorAll('#fn-veil [data-fn-slot=body] .as-actions button'); return b.length > 1 && b[0].dataset.go === 'play' && b[1].dataset.go === 'file'; }"), "")
+    record("notebook", "Agent File has Edit and Whole Agent File, and no Play (the Agent File is the sheet)",
+           page.evaluate("() => { const r = document.querySelector('#fn-veil [data-fn-slot=body] .as-paper'); return !!r && !!r.querySelector('[data-a=edit]') && !!r.querySelector('[data-go=file]') && !r.querySelector('[data-go=play]'); }"), "")
     record("notebook", "Agent File quick look: name, Cell, Cell members, Bonds, Operations",
            all(s.lower() in txt.lower() for s in ["Mara Voss", "Night Shift", "Tom Hale", "Lena Voss", "Operation FULL MOON", "Operation LOW TIDE"]), txt[:300])
     record("notebook", "the Handler's Active operation is the one marked Active",
@@ -13207,6 +13446,8 @@ def main():
         safe(test_cell_members_by_name_and_kia, browser, area="hub")
         safe(test_add_bond_in_play, browser, area="bonds")
         safe(test_agent_file_san_roll_and_member_cards, browser, area="agent-file")
+        safe(test_agent_file_v2_play_and_edit, browser, area="agent-file-v2")
+        safe(test_agent_rules_unit, browser, area="rules")
         safe(test_evidence_attachments_open_and_zoom, browser, area="evidence")
         safe(test_motivations_and_disorders_split, browser, area="disorders")
 

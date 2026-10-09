@@ -133,7 +133,8 @@
       close: function () { var h = hostApi(); if (h) h.close(); },
       armOrders: armOrders,
       refresh: function () { var h = hostApi(); if (h) h.refresh(); },
-      go: function (path) { var h = hostApi(); if (h && h.go) h.go(path); else location.href = url(path); }
+      go: function (path) { var h = hostApi(); if (h && h.go) h.go(path); else location.href = url(path); },
+      oath: function (o) { var h = hostApi(); return h && h.oath ? h.oath(o) : Promise.resolve(window.confirm('Save these edits?')); }
     };
     // Escape inside an embedded page (focus is in the iframe, so the
     // host never sees the key) or on a shell page under the open notebook.
@@ -313,10 +314,10 @@
     var bio = data.code === a.code && data.state && data.state.bio;
     return (bio && bio.name) || (data.code === a.code && data.brief && data.brief.char_name) || a.name || a.code;
   }
-  function professionLabel() {
+  function professionLabel(k) {
     var bio = data.state && data.state.bio;
-    var key = bio && bio.profession;
-    if (!key) return (data.brief && data.brief.profession) || '';
+    var key = arguments.length ? k : bio && bio.profession;
+    if (!key) return arguments.length ? '' : (data.brief && data.brief.profession) || '';
     try {
       var p = window.professions || (contentWin() && contentWin().professions);
       if (p && p[key] && p[key].title) return p[key].title;
@@ -362,23 +363,35 @@
   var VIEWS = ['agentfile', 'fieldid', 'req', 'dice', 'notes', 'evidence', 'rules', 'settings'];
 
   // The Agent File paper (assets/agent-sheet.js + .css) is shared with
-  // the Agent Hub roster; pages that don't load it get it from here.
+  // the Agent Hub roster; pages that don't load it get it from here,
+  // along with what makes it the character sheet: the disorders list,
+  // the rules, the live session and the paper (assets/agent-paper.*).
   var sheetLibPromise = null;
+  var SHEET_LIB = [
+    ['assets/agent-sheet.js', 'dgAgentSheet'], ['assets/disorders.js', 'dgDisorders'], ['assets/agent-rules.js', 'dgRules'],
+    ['assets/agent-live.js', 'dgAgentLive'], ['assets/agent-paper.js', 'dgAgentPaper']
+  ];
   function ensureSheetLib() {
-    if (!document.querySelector('link[data-as-css]')) {
+    [['assets/agent-sheet.css', 'data-as-css'], ['assets/agent-paper.css', 'data-ap-css']].forEach(function (c) {
+      if (document.querySelector('link[' + c[1] + ']') || document.querySelector('link[href$="' + c[0] + '"]')) return;
       var l = document.createElement('link');
-      l.rel = 'stylesheet'; l.href = url('assets/agent-sheet.css'); l.setAttribute('data-as-css', '1');
+      l.rel = 'stylesheet'; l.href = url(c[0]); l.setAttribute(c[1], '1');
       document.head.appendChild(l);
-    }
-    if (window.dgAgentSheet) return Promise.resolve(window.dgAgentSheet);
-    if (sheetLibPromise) return sheetLibPromise;
-    sheetLibPromise = new Promise(function (resolve, reject) {
-      var s = document.createElement('script');
-      s.src = url('assets/agent-sheet.js');
-      s.onload = function () { resolve(window.dgAgentSheet); };
-      s.onerror = function () { sheetLibPromise = null; reject(new Error('agent-sheet.js')); };
-      document.head.appendChild(s);
     });
+    if (SHEET_LIB.every(function (x) { return window[x[1]]; })) return Promise.resolve(window.dgAgentSheet);
+    if (sheetLibPromise) return sheetLibPromise;
+    sheetLibPromise = SHEET_LIB.reduce(function (p, x) {
+      return p.then(function () {
+        if (window[x[1]]) return;
+        return new Promise(function (resolve, reject) {
+          var s = document.createElement('script');
+          s.src = url(x[0]);
+          s.onload = function () { resolve(); };
+          s.onerror = function () { reject(new Error(x[0])); };
+          document.head.appendChild(s);
+        });
+      });
+    }, Promise.resolve()).then(function () { return window.dgAgentSheet; }, function (err) { sheetLibPromise = null; throw err; });
     return sheetLibPromise;
   }
 
@@ -837,48 +850,49 @@
   }
   function activeOp(ops) { return ops.filter(function (o) { return o.active === true; })[0] || ops[0] || null; }
 
-  /* ── Agent File: the shared Agent File paper ── */
+  /* ── Agent File: the character sheet (assets/agent-paper.js) ── */
   function pageAgentFile(body) {
     var a = needAgent(body, 'The Agent File');
     if (!a) return;
     renderHead('agentfile', a.code);
     loadingThen(body, function () {
-      body.innerHTML = '<p class="fn-muted">Opening the file…</p>';
+      if (!(body._ap && body._ap.session && body._ap.session.code === a.code && body.querySelector('.as-paper'))) body.innerHTML = '<p class="fn-muted">Opening the file…</p>';
       ensureSheetLib().then(function (AS) {
         if (!state.open || state.view !== 'agentfile') return;
         var brief = data.brief || {};
-        var sheet = data.state ? AS.fromState(data.state) : { name: agentName(a), profession: professionLabel() };
-        if (!sheet.name) sheet.name = agentName(a);
-        if (data.state && data.state.bio && data.state.bio.profession) sheet.profession = professionLabel();
         var ops = cellOps(), act = activeOp(ops);
         var opsHtml = data.cell ? '<div class="as-ops"><div class="as-sec-hd">Operations</div>' + (ops.length ? ops.map(function (o) {
           var on = act && o.operation_id === act.operation_id;
           return '<div class="as-op' + (on ? ' as-op-active' : '') + '"><span>' + esc(o.name || o.operation_id) + '</span>' + (on ? '<span class="as-stamp">Active</span>' : '') + '</div>';
         }).join('') : '<p class="as-text as-k">None filed yet.</p>') + '</div>' : '';
-        body.innerHTML = AS.render(sheet, {
+        var f = faceUrl(a);
+        window.dgAgentPaper.mount(body, {
+          code: a.code, char: data.char, name: agentName(a), codename: brief.codename || a.codename || '', photo: f,
           photoHtml: AS.photoHtml('data-go="photo"'),
-          subtitle: [sheet.profession, brief.codename ? 'Cover “' + brief.codename + '”' : ''].filter(Boolean).join(' · '),
-          physical: AS.physical(brief, sheet.physical),
-          cellName: data.cell ? (data.cell.name || data.cell.cell_id) : '',
+          onPhoto: function (el) {
+            var ph = el.querySelector('[data-as-photo]');
+            if (f && ph && !ph.querySelector('img')) { ph.classList.add('as-has-photo'); var holder = document.createElement('div'); holder.style.cssText = 'position:absolute;inset:0'; ph.appendChild(holder); setImage(holder, f); }
+          },
+          professionLabel: professionLabel, loadPhoto: setImage,
+          physical: AS.physical(brief, ''), cellName: data.cell ? (data.cell.name || data.cell.cell_id) : '',
           members: data.members, opsHtml: opsHtml,
           incursion: AS.incursionText(data.char, data.state),
-          incursionEmptyHtml: '<p class="as-text as-k">Not written yet — the Incursion section of the character sheet.</p>',
-          addBondHtml: data.state ? '<button type="button" class="as-add-bond" data-go="addbond">+ Add Bond</button>' : '',
-          actionsHtml: '<button type="button" class="fn-btn fn-red" data-go="play">Play (Live) ↗</button>' +
-            '<button type="button" class="fn-btn fn-ink" data-go="file">Whole Agent File ↗</button>',
-          emptySheetHtml: data.state ? '' : '<p class="as-text as-k" style="margin-top:14px">No character sheet yet — Play opens character creation.</p>'
+          incursionEmptyHtml: '<p class="as-text as-k">Not written yet.</p>',
+          actionsHtml: '<button type="button" class="ap-btn ap-ghost" data-go="file">Whole Agent File ↗</button>',
+          emptySheetHtml: '<p class="as-text as-k" style="margin-top:14px">No character sheet yet.</p><div class="ap-btns"><button type="button" class="ap-btn ap-red" data-go="recruit">Recruit ↗</button></div>'
         });
-        var ph = body.querySelector('[data-as-photo]');
-        var f = faceUrl(a);
-        if (f && ph) { ph.classList.add('as-has-photo'); var holder = document.createElement('div'); holder.style.cssText = 'position:absolute;inset:0'; ph.appendChild(holder); setImage(holder, f); }
-        AS.wireRolls(body);
-        if (AS.wireMembers) AS.wireMembers(body, data.members || [], setImage);
-        body.querySelector('[data-go="play"]').addEventListener('click', function () { navigate(url('stats/index.html?load=' + encodeURIComponent(a.code))); });
-        body.querySelector('[data-go="file"]').addEventListener('click', function () { navigate(url('agent-hub.html?code=' + encodeURIComponent(a.code))); });
-        var addBond = body.querySelector('[data-go="addbond"]');
-        if (addBond) addBond.addEventListener('click', function () { navigate(url('stats/index.html?load=' + encodeURIComponent(a.code) + '&add_bond=1')); });
-        var photoBtn = body.querySelector('[data-go="photo"]');
-        if (photoBtn) photoBtn.addEventListener('click', function () { navigate(url('agent-hub.html?code=' + encodeURIComponent(a.code) + '#photos')); });
+        if (!body._fnGo) {
+          body._fnGo = true;
+          body.addEventListener('click', function (e) {
+            var g = e.target.closest('[data-go]');
+            if (!g || !body.contains(g) || !g.closest('.as-paper')) return;
+            var c = currentAgent(); if (!c) return;
+            var w = g.getAttribute('data-go');
+            if (w === 'file') navigate(url('agent-hub.html?code=' + encodeURIComponent(c.code)));
+            else if (w === 'photo') navigate(url('agent-hub.html?code=' + encodeURIComponent(c.code) + '#photos'));
+            else if (w === 'recruit') navigate(url('stats/index.html?load=' + encodeURIComponent(c.code)));
+          });
+        }
       }, function () { body.innerHTML = '<p class="fn-muted">Could not open the file — check the connection.</p>'; });
     });
   }
@@ -1424,12 +1438,19 @@
   }
   // The five tenets again, as the oath at the head of the Rules -- the
   // same text as the new-Agent clearance briefing (ORDERS_TEXT below).
-  function oathHtml() {
-    return '<div class="fn-oath"><div class="fn-oath-k">The Agent\'s Oath</div><ol>' +
-      ORDERS_TEXT.filter(function (l) { return /^\d\./.test(l[1]); }).map(function (l) {
-        var m = /^\d\.\s*([^.]+\.)\s*(.*)$/.exec(l[1]);
-        return '<li><b>' + esc(m ? m[1] : l[1]) + '</b> ' + esc(m ? m[2] : '') + '</li>';
-      }).join('') + '</ol><div class="fn-oath-foot">We need your silence.</div></div>';
+  // Top of the Rules: the Program's standing priorities (Tradecraft, in
+  // our own words). The Oath itself is taken when an Agent is filed:
+  // after creation, and on every save from Edit mode (oath() below).
+  var MISSION = [
+    ['First priority:', 'stop the incursion.'],
+    ['Second:', 'bury what was seen. Cover stories, misdirection and disinformation, until no one believes it happened.'],
+    ['Third:', 'hide the Program\'s hand; secure or destroy the evidence.'],
+    ['Fourth:', 'secure samples, documents and technology for collection.'],
+    ['Fifth:', 'save lives — as many as you can.']
+  ];
+  function missionHtml() {
+    return '<div class="fn-oath fn-mission"><div class="fn-oath-k">The Mission &amp; Standing Orders</div><ol>' +
+      MISSION.map(function (m) { return '<li><b>' + esc(m[0]) + '</b> ' + esc(m[1]) + '</li>'; }).join('') + '</ol></div>';
   }
   function pageRules(body) {
     renderHead('rules', '');
@@ -1438,7 +1459,7 @@
       if (!state.open || state.view !== 'rules') return;
       renderHead('rules', secs.length + ' sections');
       if (rules.reading) { renderRuleRead(body); return; }
-      body.innerHTML = oathHtml() +
+      body.innerHTML = missionHtml() +
         '<input class="fn-input fn-search" type="search" data-r="q" placeholder="Search the rules" value="' + esc(rules.q) + '">' +
         '<div data-r="list"></div>';
       var qi = body.querySelector('[data-r="q"]');
@@ -1631,7 +1652,7 @@
   /* ── Public API ── */
   window.dgFieldNotes = {
     isHost: true,
-    open: open, close: close, refresh: refresh, armOrders: armOrders,
+    open: open, close: close, refresh: refresh, armOrders: armOrders, oath: oath,
     isOpen: function () { return state.open; },
     // A page inside the notebook (desktop Notes) going somewhere else: it
     // goes in the page under the notebook, not inside the notebook's own
@@ -1672,6 +1693,79 @@
     if (!p || !p.code) return;
     if (ordersAck()[p.code]) { lsDel(ORDERS_PENDING_KEY); return; }
     showOrders(p);
+  }
+  // The Oath on saving an edit to the Agent File: a short terminal, the
+  // changes listed, the five lines, then CAN WE CALL ON YOU? [Y/N].
+  // Resolves true for Y (file the edits), false for N or Escape (back to
+  // editing, nothing lost).
+  function oath(o) {
+    o = o || {};
+    return new Promise(function (resolve) {
+      var old = document.getElementById('fn-orders');
+      if (old) old.remove();
+      var lines = [['fn-o-dim', '>amendment: agent file ' + (o.code || '')]];
+      if (o.changes && o.changes.length) lines.push(['fn-o-dim', '>changes: ' + o.changes.slice(0, 8).join(', ') + (o.changes.length > 8 ? ', +' + (o.changes.length - 8) + ' more' : '')]);
+      else lines.push(['fn-o-dim', '>changes: none']);
+      lines = lines.concat([['', '']], ORDERS_TEXT.filter(function (l) { return /^\d\./.test(l[1]); }).map(function (l) { return ['', l[1].replace(/^(\d\.\s*[^.]+\.).*$/, '$1')]; }), [['', '']]);
+      var ov = document.createElement('div');
+      ov.id = 'fn-orders';
+      ov.className = 'fn-oath-save';
+      ov.setAttribute('role', 'dialog');
+      ov.setAttribute('aria-label', 'The Oath');
+      ov.innerHTML = '<div class="fn-orders-term"><div class="fn-orders-why">' +
+        esc('Saving your edits to ' + (o.name || 'this Agent') + '. Take the Oath to file them; N goes back to editing with nothing lost.') +
+        '</div><div data-o="log"></div><div data-o="prompt" hidden>' +
+        '<div>CAN WE CALL ON YOU? [<button type="button" class="fn-orders-key" data-o="y" aria-label="Y: file the edits">Y</button>/' +
+        '<button type="button" class="fn-orders-key" data-o="n" aria-label="N: back to editing">N</button>]<span class="fn-cursor"></span></div></div></div>';
+      (root || document.body).appendChild(ov);
+      ov.tabIndex = -1;
+      try { ov.focus(); } catch (e) { /* best effort */ }
+      var log = ov.querySelector('[data-o="log"]'), prompt = ov.querySelector('[data-o="prompt"]');
+      var li = 0, ci = 0, cur = null, done = false, answered = false;
+      function finishTyping() {
+        if (done) return;
+        done = true; clearInterval(timer);
+        log.innerHTML = lines.map(function (l) { return '<div class="' + l[0] + '">' + esc(l[1]) + '&nbsp;</div>'; }).join('');
+        prompt.hidden = false;
+      }
+      // Quicker than the first briefing: Enter skips it.
+      var timer = setInterval(function () {
+        if (li >= lines.length) { finishTyping(); return; }
+        if (!cur) { cur = document.createElement('div'); cur.className = lines[li][0]; log.appendChild(cur); }
+        var text = lines[li][1];
+        ci = Math.min(text.length, ci + 6);
+        cur.innerHTML = esc(text.slice(0, ci)) + '&nbsp;';
+        if (ci >= text.length) { li++; ci = 0; cur = null; }
+      }, 12);
+      function answer(yes) {
+        if (answered) return;
+        if (yes && !done) { finishTyping(); return; }
+        answered = true;
+        cleanup();
+        if (yes) {
+          var d = document.createElement('div'); d.className = 'fn-o-dim'; d.textContent = '>filed.'; log.appendChild(d);
+          prompt.hidden = true;
+          setTimeout(function () { ov.remove(); }, 450);
+        } else ov.remove();
+        resolve(!!yes);
+      }
+      function handleKey(key) {
+        if (key === 'Escape' || key === 'n' || key === 'N') { if (key === 'Escape' || done) answer(false); return true; }
+        if (key === 'y' || key === 'Y') { answer(true); return true; }
+        if (!done && (key === 'Enter' || key === ' ')) { finishTyping(); return true; }
+        return false;
+      }
+      function onKey(e) { if (handleKey(e.key)) { e.preventDefault(); e.stopPropagation(); } }
+      ordersKeyHandler = handleKey;
+      function cleanup() { clearInterval(timer); document.removeEventListener('keydown', onKey, true); ordersKeyHandler = null; }
+      document.addEventListener('keydown', onKey, true);
+      ov.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-o]'), k = b && b.getAttribute('data-o');
+        if (k === 'y') answer(true);
+        else if (k === 'n') answer(false);
+        else if (!done) finishTyping();
+      });
+    });
   }
   function showOrders(p) {
     close();
