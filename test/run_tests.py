@@ -545,6 +545,11 @@ NOTES_FIRESTORE_STUB = """
                 ? { status: 'OK', prompt: 'STUB PROMPT' }
                 : { status: 'OK', image_base64: 'data:image/png;base64,iVBORw0KGgo=' } });
             }
+            // The New Recruit wizard's Bond description (canned, recorded).
+            if (name === 'generateBondDescription') {
+              (window.__dgFunctionCalls = window.__dgFunctionCalls || []).push({ name: name, payload: payload });
+              return Promise.resolve({ data: { status: 'OK', description: 'STUB BOND: ' + ((payload && payload.bond && payload.bond.name) || '') } });
+            }
             return Promise.resolve({ data: {} });
           };
         }
@@ -10693,6 +10698,159 @@ def test_agent_file_brief_read_recovers(p):
     page.close()
 
 
+def test_new_recruit_wizard(p):
+    """M2: Agent Hub's + New Recruit is a twelve-step wizard
+    (assets/recruit-wizard.js). A whole run -- point buy, one of The
+    Complex's professions (Marine Interdiction Agent: 2 Bonds, Pilot (Boat)
+    60%, its suggested bonus skills pre-placed), Damaged Veteran (Extreme
+    Violence + Hard Experience), personal data (the Agent Code is made
+    here, filed under the Cover Identity), a generated Bond with an AI
+    description, Motivations, the Incursion, the kit, Profiling (the Agent
+    File's own brief, the play era written), the review -- then the
+    Contract: N goes back with nothing lost, Y files the Agent
+    (creationCommitted, standing_orders_ack_at) and opens their tab. The
+    saved character is the sheet's own v1 shape. Fake backend only."""
+    page, errs = _field_notes_page(p, width=1180, height=900,
+                                   extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+    page.goto(f"{BASE}/agent-hub.html#new", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector("#nr-root [data-a=begin]", timeout=15000)
+    R = "#nr-root "
+    def err():
+        return (page.text_content(R + "[data-err]") or "").strip() if page.locator(R + "[data-err]").count() else ""
+    def step():
+        return page.evaluate("() => (window.dgRecruit._w() || {}).step")
+    page.click(R + "[data-a=begin]")
+    record("recruit", "+ New Recruit opens the wizard at Statistics, with what each statistic means",
+           step() == 1 and "Physical power" in (page.text_content(R + ".nr-stats") or ""), str(step()))
+    # Point buy: 72 exactly; over budget is refused.
+    record("recruit", "point buy: + is refused once all 72 points are spent",
+           page.is_disabled(R + "[data-a=st][data-k=INT][data-d='1']") and page.text_content(R + "[data-left]").strip() == "0", page.text_content(R + "[data-left]"))
+    page.click(R + "[data-a=st][data-k=STR][data-d='-1']")
+    page.click(R + "[data-a=next]")
+    record("recruit", "point buy: going on with points unspent is refused, saying how many",
+           step() == 1 and "1 left" in err(), err())
+    page.click(R + "[data-a=st][data-k=INT][data-d='1']")
+    page.click(R + "[data-a=feat][data-k=STR]")
+    feat = page.input_value(R + "[data-f='feat.STR']")
+    record("recruit", "a distinguishing feature is suggested from the score, and stays editable", bool(feat), feat)
+    page.fill(R + "[data-f='feat.STR']", "Ex-rower's shoulders")
+    page.click(R + "[data-a=next]")
+    # Profession: The Complex.
+    page.click(R + "[data-a=prof][data-src=cx][data-key=cbp_marine]")
+    det = page.inner_html(R + "[data-detail]")
+    record("recruit", "profession detail: every skill with its value, profession skills red bold, suggested bonus skills black bold",
+           'class="pro"><span>Pilot (Boat)</span><span>60%' in det and 'class="bon"><span>SIGINT' in det and "Stealth" in det, det[:200])
+    page.click(R + "[data-a=next]")
+    used = page.evaluate("() => Object.values(dgRecruit._w().bonus).reduce((a, b) => a + b, 0)")
+    record("recruit", "the profession's suggested bonus skills are pre-placed on Bonus skills", used == 4, str(used))
+    page.click(R + "[data-a=next]")
+    record("recruit", "bonus skills: all eight boosts must be placed", step() == 3 and "4 left" in err(), err())
+    for k in ["firearms", "first_aid", "stealth", "occult"]:
+        page.click(R + "[data-a=bonus][data-id='key:%s'][data-d='1']" % k)
+    page.click(R + "[data-a=next]")
+    # Damaged Veteran.
+    page.click(R + "[data-a=vet][data-k=violence]")
+    page.click(R + "[data-a=vet][data-k=hard]")
+    for i, k in enumerate(["key:search", "key:swim", "key:law", "key:drive"]):
+        page.select_option(R + "[data-u=vet-hard][data-i='%d']" % i, k)
+    diff = page.text_content(R + ".nr-diff") or ""
+    record("recruit", "Damaged Veteran is applied and shown (Occult +20, CHA −3, SAN −10)",
+           "Occult 30% → 50%" in diff and "Search 70% → 80%" in diff and "CHA 12 → 9" in diff and "SAN 60 → 50" in diff, diff)
+    page.click(R + "[data-a=next]")
+    # Personal data: the code.
+    page.fill(R + "[data-f='bio.name']", "Nadia Kerr")
+    page.fill(R + "[data-f='bio.codename']", "Sparrow")
+    page.fill(R + "[data-f='bio.pastEmployer']", "Miami-Dade PD")
+    page.fill(R + "[data-f='bio.age']", "34")
+    page.select_option(R + "[data-f='bio.sex']", "Female")
+    page.click(R + "[data-a=randbio]")
+    page.click(R + "[data-a=next]")
+    page.wait_for_function("() => (window.dgRecruit._w() || {}).step === 6", timeout=10000)
+    code = page.evaluate("() => dgRecruit._w().code")
+    brief = page.evaluate("(c) => window.__dgFirestoreDocs['briefs/' + c]", code)
+    record("recruit", "the Agent Code is made at Personal data: brief filed under the Cover Identity, codename and age range",
+           bool(code) and brief and brief.get("char_name") == "Nadia Kerr" and brief.get("player_name") == "fn tester"
+           and brief.get("codename") == "Sparrow" and brief.get("age_range") == "Mid 30s", json.dumps(brief)[:300] if brief else str(code))
+    draft = page.evaluate("(c) => { const d = window.__dgFirestoreDocs['characters/' + c]; return d ? JSON.parse(d.character_json) : null; }", code)
+    record("recruit", "…and the draft is saved to the cloud, not yet committed",
+           bool(draft) and draft.get("creationCommitted") is False, str(draft and draft.get("creationCommitted")))
+    # Bonds: Marine Interdiction has 2, Hard Experience takes one.
+    n = page.locator(R + ".nr-bondc").count()
+    record("recruit", "Bonds: the profession's count less Hard Experience's one (2 → 1)", n == 1, str(n))
+    record("recruit", "Bond categories: Family and Friends apart, Other Governments, no LGBTQ",
+           all(t in (page.text_content(R + ".nr-chips") or "") for t in ["Family", "Friends", "Delta Green", "Other Governments", "Underworld"])
+           and "LGBTQ" not in (page.text_content(R) or ""), page.text_content(R + ".nr-chips"))
+    page.click(R + "[data-a=bond-gen]")
+    gen_name = page.input_value(R + "[data-f='bonds.0.name']")
+    record("recruit", "Generate a Bond fills a Bond from the generator, with ⚄ Another", bool(gen_name) and page.locator(R + "[data-a=bond-another]").count() == 1, gen_name)
+    page.fill(R + "[data-f='bonds.0.name']", "Ruth Kerr")
+    page.fill(R + "[data-f='bonds.0.relationship']", "Mother")
+    record("recruit", "the description button is a plain Generate", (page.text_content(R + "[data-a=bond-ai]") or "").strip() == "Generate", page.text_content(R + "[data-a=bond-ai]"))
+    page.click(R + "[data-a=bond-ai]")
+    page.wait_for_function("() => (document.querySelector(\"#nr-root [data-f='bonds.0.description']\") || {}).value === 'STUB BOND: Ruth Kerr'", timeout=8000)
+    record("recruit", "Generate drafts the Bond's description (Cloud Function), still editable", True, "")
+    page.click(R + "[data-a=next]")
+    page.fill(R + "[data-f='motivations.0']", "Keep my mother out of this")
+    page.click(R + "[data-a=next]")
+    page.wait_for_timeout(300)
+    page.locator(R + "[data-inc] textarea").first.fill("A boat came back from the Keys with no crew.") if page.locator(R + "[data-inc] textarea").count() else None
+    page.click(R + "[data-a=next]")
+    kit = page.text_content(R + ".nr-kit") or ""
+    record("recruit", "Equipment: the profession's kit, catalog items with their numbers",
+           "Medium pistol" in kit and "1D10" in kit and "Water survival gear" in kit, kit[:200])
+    page.click(R + "[data-a=next]")
+    page.wait_for_selector(R + "[data-afslot] #dg-form", timeout=10000)
+    page.wait_for_function("(c) => { const b = window.__dgFirestoreDocs['briefs/' + c]; return b && b.active_eras === '[\"20s\"]'; }", arg=code, timeout=8000)
+    record("recruit", "Profiling: the Agent File's own Appearance brief, the play era written (2020s)",
+           page.input_value(R + "[data-afslot] [name=char_name]") == "Nadia Kerr", page.input_value(R + "[data-afslot] [name=char_name]"))
+    page.click(R + "[data-era] [data-e='90s']") if page.locator(R + "[data-era]").count() else page.click(R + "[data-a=era][data-e='90s']")
+    page.wait_for_function("(c) => { const b = window.__dgFirestoreDocs['briefs/' + c]; return b && /^\\[\"90s\"/.test(b.active_eras) && b.campaign_era === '90s'; }", arg=code, timeout=8000)
+    record("recruit", "changing the play era rewrites it on the brief", True, "")
+    page.click(R + "[data-a=next]")
+    rv = page.text_content(R + ".nr-review") or ""
+    record("recruit", "Review: everything in one place", all(t in rv for t in ["Nadia Kerr", "Marine Interdiction Agent", "Ruth Kerr (Mother)", "Keep my mother out of this", "Medium pistol"]), rv[:300])
+    # The Contract: N, then Y.
+    page.click(R + "[data-a=sign]")
+    page.wait_for_selector("#fn-orders.fn-contract", timeout=8000)
+    page.keyboard.press("Enter")
+    txt = page.text_content("#fn-orders") or ""
+    record("recruit", "the Contract is the full clearance briefing, with the second sentences, and \"We need your silence.\"",
+           "IT HAS HAPPENED BEFORE. Unnatural incursions are real, and they kill." in txt and "We need your silence." in txt and "CAN WE CALL ON YOU?" in txt, txt[:300])
+    page.keyboard.press("n")
+    page.wait_for_timeout(300)
+    record("recruit", "N goes back to the review with nothing lost (and nothing filed)",
+           page.locator("#fn-orders").count() == 0 and step() == 11 and page.evaluate("(c) => JSON.parse(window.__dgFirestoreDocs['characters/' + c].character_json).creationCommitted", code) is False, "")
+    page.click(R + "[data-a=sign]")
+    page.wait_for_selector("#fn-orders.fn-contract", timeout=8000)
+    page.keyboard.press("Enter")
+    page.keyboard.press("y")
+    page.wait_for_selector(f".tw.active[data-tab='{code}']", timeout=10000)
+    st = page.evaluate("(c) => JSON.parse(window.__dgFirestoreDocs['characters/' + c].character_json)", code)
+    brief = page.evaluate("(c) => window.__dgFirestoreDocs['briefs/' + c]", code)
+    record("recruit", "Y files the Agent: committed, the Contract recorded on the brief, their tab opened",
+           st.get("creationCommitted") is True and bool(brief.get("standing_orders_ack_at")) and page.evaluate("() => !localStorage.getItem('dg_recruit_draft')"), str(st.get("creationCommitted")))
+    sp = {(i["key"], i["specialty"]): i["value"] for i in st.get("specialtyInstances", [])}
+    sk = st.get("skills", {})
+    record("recruit", "saved skills: profession, bonus (80% cap), Damaged Veteran (+10 Occult each, Hard Experience +10)",
+           sp.get(("pilot", "Boat")) == 60 and sp.get(("foreign_language", "Spanish")) == 50 and sk.get("alertness") == 70
+           and sk.get("firearms") == 70 and sk.get("occult") == 50 and sk.get("search") == 80 and sk.get("unarmed_combat") == 60,
+           json.dumps({k: sk.get(k) for k in ["alertness", "firearms", "occult", "search", "swim"]}) + str(sp))
+    record("recruit", "saved stats, derived, Bonds at CHA, Violence adapted",
+           st["stats"]["CHA"] == 9 and st["derived"]["san"] == 50 and st["derived"]["bp"] == 38 and st["bonds"][0]["score"] == 9
+           and st["bonds"][0]["description"] == "STUB BOND: Ruth Kerr" and st["sanity"]["violence"] == [True, True, True] and st["adapted"].get("violence") is True,
+           json.dumps({"stats": st["stats"], "derived": st["derived"]}))
+    record("recruit", "saved bio: name, codename, past employer, Complex profession key, features",
+           st["bio"]["name"] == "Nadia Kerr" and st["bio"]["codename"] == "Sparrow" and st["bio"]["pastEmployer"] == "Miami-Dade PD"
+           and st["bio"]["profession"] == "cbp_marine" and st["lpFeat"]["STR"] == "Ex-rower's shoulders" and st["bio"]["motivations"] == "Keep my mother out of this", json.dumps(st["bio"])[:300])
+    record("recruit", "saved kit: the pistol on the weapons table with its Firearms %, gear as items",
+           any(w["name"] == "Medium pistol" and w["skillPct"] == "70" for w in st["lpWeapons"]) and "Kevlar vest" in st["equipment"], json.dumps(st["lpWeapons"])[:200])
+    page.wait_for_selector(f"#ah-sheet-{code} .ap-vitals", timeout=10000)
+    record("recruit", "the new Agent's tab shows their Agent File, profession from The Complex",
+           "Marine Interdiction Agent" in (page.text_content(f"#panel-{code}") or ""), "")
+    record("recruit", "no JS exceptions (New Recruit wizard)", not errs, str(errs[:3]))
+    page.close()
+
+
 def test_agent_file_parts_and_looks(p):
     """The Agent File in numbered parts (Statistics, Skills, Psyche, Combat
     & gear, Cell, Record) with a jump index; Find a skill (kept across a
@@ -13734,6 +13892,7 @@ def main():
         safe(test_field_notes_split, browser, area="notebook")
         safe(test_agent_file_brief_read_recovers, browser, area="agent-file")
         safe(test_agent_file_parts_and_looks, browser, area="agent-file-parts")
+        safe(test_new_recruit_wizard, browser, area="recruit")
         safe(test_agent_rules_unit, browser, area="rules")
         safe(test_evidence_attachments_open_and_zoom, browser, area="evidence")
         safe(test_motivations_and_disorders_split, browser, area="disorders")

@@ -207,6 +207,52 @@ exports.generatePrompt = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 
   }
 });
 
+// A Bond's description for the New Recruit wizard (assets/recruit-wizard.js):
+// two or three sentences, in the Agent's own voice, from the Bond's name
+// and relationship and what the wizard knows of the Agent so far. Same
+// sign-in and rate limiting as the prompts above.
+function clip_(v, n) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n); }
+function bondPrompt_(d) {
+  const a = d.agent || {}, b = d.bond || {};
+  const who = [clip_(a.name, 80), clip_(a.profession, 80), a.employer ? 'working for ' + clip_(a.employer, 80) : '',
+    a.age ? 'age ' + clip_(a.age, 10) : '', clip_(a.sex, 20), clip_(a.nationality, 60)].filter(Boolean).join(', ');
+  const existing = clip_(d.existing, 600);
+  return 'You are helping a player create an Agent for the tabletop game Delta Green (a modern horror game about ' +
+    'government agents who secretly fight the unnatural). A Bond is a person the Agent cares about, whose relationship ' +
+    'the work slowly erodes.\n\nAgent: ' + (who || 'not described yet') + '.\nBond: ' + clip_(b.name, 80) +
+    (b.relationship ? ' (' + clip_(b.relationship, 80) + ')' : '') + '.\n' +
+    (existing ? 'The player\'s notes so far, to keep and build on: ' + existing + '\n' : '') +
+    '\nWrite two or three short sentences, in the first person as the Agent, about who this person is to them: ' +
+    'something specific and human about the relationship, and one quiet hint of strain or of what the Agent keeps from them. ' +
+    'No supernatural events, no melodrama, no names other than the Bond\'s. Reply with the sentences only.';
+}
+exports.generateBondDescription = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 60 }, async (request) => {
+  const key = callerKey_(request);
+  await checkRateLimit_(key, 'bond', 20, 600);
+  const data = request.data || {};
+  if (!clip_(data.bond && data.bond.name, 80)) throw new HttpsError('invalid-argument', 'The Bond needs a name.');
+  if (IN_EMULATOR) return { status: 'OK', description: 'EMULATOR BOND: ' + clip_(data.bond.name, 80) };
+  const apiKey = String(ANTHROPIC_API_KEY.value() || '').trim();
+  if (!apiKey) throw new HttpsError('failed-precondition', 'ANTHROPIC_API_KEY is not set on the server.');
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 300, messages: [{ role: 'user', content: bondPrompt_(data) }] })
+    });
+    const result = await resp.json().catch(() => ({}));
+    if (result.content && result.content[0] && result.content[0].text) {
+      return { status: 'OK', description: String(result.content[0].text).trim() };
+    }
+    const message = (result.error && result.error.message) || ('No content returned (HTTP ' + resp.status + ').');
+    logger.error('generateBondDescription: Anthropic API error', { status: resp.status, error: result.error || null });
+    return { status: 'ERROR', message: message };
+  } catch (err) {
+    logger.error('generateBondDescription failed', err);
+    return { status: 'ERROR', message: 'Bond service error: ' + ((err && err.message) || String(err)) };
+  }
+});
+
 // Reads one of this project's own Plate/reference images straight out
 // of Storage (no CORS involved server-side) -- only agent-plates/ and
 // agent-refs/ objects, never an arbitrary URL.
