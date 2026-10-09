@@ -63,7 +63,31 @@ consumer depending on that history being versioned. v2.0.0 was cut
 reserved for it: the Google Sheet is retired and every page reads and
 writes Firestore directly (Code.gs v97 is left serving only the Drive
 image proxy for old `gdrive:` links; going live took the one-time steps
-in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v2.5.0**
+in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v2.7.0**
+(2026-10-09) is PR #67, v2 milestone M1: the Agent File paper becomes
+the character sheet players play from (notebook and Agent Hub alike):
+framed HP/WP/SAN/BP with − / +, Roll SAN, SAN loss as the Handler
+announces it with full-page post-its (disorder on 2+, temporary insanity
+at 5+, Breaking Point, adaptation), failed rolls marking skills for
+Roll improvements, Bonds/Motivations/Disorders/incidents/weapons/gear/
+wounds added in play, the Cell as DEX initiative, and Edit mode whose
+Save asks for a short Oath (Y files, N keeps editing). Agent Hub loses
+Play and the duplicate vitals; Appearance drops down from under the
+photo; the Rules page opens with The Mission & Standing Orders, and its
+Helplessness adaptation now costs POW as in the book. New
+`assets/agent-rules.js`, `agent-live.js`, `agent-paper.js`/`.css`. It
+was play-tested on a Firebase Hosting preview channel against live data
+before the merge (the first time a release went through one). Frontend
+only: no Firestore rules, functions or Code.gs change; the old sheet
+still works beside it and retires in v3.0.0 (M2). Shell cache
+`dg-hub-shell-v195`. **v2.6.0** (2026-10-08) is PR #66: Roll SAN and
+Cell member cards (photo, cover, HP/WP/SAN/BP) on the Agent File;
+Evidence attachments open full-screen with their own zoom, and PDFs as
+links Safari opens (`assets/evidence-viewer.js`); Mental Disorders as
+their own list picked from the rules (`assets/disorders.js`), apart
+from Motivations. Frontend only; shell cache `dg-hub-shell-v193`.
+Neither tag exists yet: make both from the release page as for v2.1.0
+below (v2.6.0 on merge commit `8e07176`). **v2.5.0**
 (2026-10-08) is PR #65: the Handler's Live Rolls get a filter (one
 Handler's Cells, or one Cell; remembered per device), and the Handler's
 all-Cells feed now exists on A-Cell alone -- a tab logged into A-Cell
