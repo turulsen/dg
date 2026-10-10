@@ -11002,12 +11002,14 @@ def test_agent_file_wear(p):
         return page, errs
     sel = f"#ah-sheet-{FN_CODE} .as-paper.ap"
     # The stamp sits on the header's name (photo and name), not over the buttons.
-    probe = """(s) => { const el = document.querySelector(s), b = getComputedStyle(el, '::before'),
+    # The wear is on the whole page (Agent Hub's .paper), not the Agent File inside it.
+    probe = """(s) => { const el = document.querySelector(s), pg = el.closest('.paper'), b = getComputedStyle(pg, '::before'),
               h = document.getElementById('ah-title-%s'), a = getComputedStyle(h, '::after');
         return { tier: el.getAttribute('data-sanity-tier') || '0', insane: getComputedStyle(h).getPropertyValue('--insane').trim(),
                  fill: getComputedStyle(h).getPropertyValue('--fill').trim(), bg: b.backgroundImage !== 'none' && b.content !== 'none',
                  host: h.hasAttribute('data-wear-stamp'), paperStamp: getComputedStyle(el, '::after').content,
-                 stamp: a.content, stampOp: a.opacity, mask: getComputedStyle(el).maskImage || getComputedStyle(el).webkitMaskImage || 'none' }; }""" % FN_CODE
+                 stamp: a.content, stampOp: a.opacity, mask: getComputedStyle(pg).maskImage || getComputedStyle(pg).webkitMaskImage || 'none',
+                 ownWear: getComputedStyle(el, '::before').backgroundImage }; }""" % FN_CODE
     want = {55: ("0", False), 45: ("1", False), 35: ("2", False), 25: ("3", False), 15: ("4", False), 9: ("5", True), 5: ("5", True), 2: ("5", True), 0: ("6", True)}
     page, errs = page_at(55)
     got = {}
@@ -11016,13 +11018,13 @@ def test_agent_file_wear(p):
         page, errs = page_at(san)
         page.wait_for_timeout(1500)
         got[san] = page.evaluate(probe, sel)
-    ok = all(got[s]["tier"] == want[s][0] and (got[s]["bg"] == (want[s][0] != "0")) and (('INSANE' in got[s]["stamp"]) == want[s][1]) and got[s]["host"] == want[s][1] and 'INSANE' not in got[s]["paperStamp"] for s in want)
-    record("wear", "the stage follows SAN: clean at 50+, stages 1-4 by tens, 5 from 9, 6 at 0; INSANE only from 9, on the header name",
+    ok = all(got[s]["tier"] == want[s][0] and (got[s]["bg"] == (want[s][0] != "0")) and (('INSANE' in got[s]["stamp"]) == want[s][1]) and got[s]["host"] == want[s][1] and 'INSANE' not in got[s]["paperStamp"] and got[s]["ownWear"] == 'none' for s in want)
+    record("wear", "the stage follows SAN, worn over the whole page: clean at 50+, stages 1-4 by tens, 5 from 9, 6 at 0; INSANE only from 9, on the header name",
            ok, json.dumps({s: [got[s]["tier"], got[s]["bg"], 'INSANE' in got[s]["stamp"]] for s in got}))
     record("wear", "the stamp: worn from 9 (no fill), filling in from 5, solid at 0",
            got[9]["fill"] == "0" and float(got[9]["insane"]) >= .3 and got[5]["fill"] == "0" and float(got[2]["fill"]) > 0 and got[0]["fill"] == "1" and got[0]["insane"] == "1",
            json.dumps({s: [got[s]["insane"], got[s]["fill"]] for s in (9, 5, 2, 0)}))
-    record("wear", "a torn margin of its own from SAN 9 (the data isn't cut): border and edge mask on stages 5-6 only",
+    record("wear", "the page's own edge tears from SAN 9 (inside its padding): edge mask on stages 5-6 only",
            "url(" in got[5]["mask"] and "url(" in got[0]["mask"] and got[15]["mask"] in ("none", ""), got[5]["mask"][:60])
     page.close(); errs_all.extend(errs)
     # Dropping SAN in play: 50 -> 49 moves to stage 1, with the fade.
@@ -11033,7 +11035,7 @@ def test_agent_file_wear(p):
     # Settings: off, on this device.
     page.evaluate("() => window.dgFieldNotes.open('settings')")
     page.click("#fn-veil [data-s=wear]")
-    off = page.evaluate("(s) => document.documentElement.classList.contains('dg-no-wear') && getComputedStyle(document.querySelector(s), '::before').display === 'none' && localStorage.getItem('dg_paper_wear') === 'off'", sel)
+    off = page.evaluate("(s) => { const pg = document.querySelector(s).closest('.paper'); return document.documentElement.classList.contains('dg-no-wear') && getComputedStyle(pg, '::before').backgroundImage === 'none' && (getComputedStyle(pg).maskImage || 'none') === 'none' && localStorage.getItem('dg_paper_wear') === 'off'; }", sel)
     page.click("#fn-veil [data-s=wear]")
     on = page.evaluate("() => !document.documentElement.classList.contains('dg-no-wear') && localStorage.getItem('dg_paper_wear') === 'on'")
     record("wear", "the notebook's Settings switch the wear off and on again, on this device", bool(off) and bool(on), f"off={off} on={on}")
