@@ -25,6 +25,7 @@
 <noscript><link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet"></noscript>
 <link rel="stylesheet" href="assets/agent-sheet.css">
 <link rel="stylesheet" href="assets/agent-paper.css">
+<link rel="stylesheet" href="assets/agent-wear.css">
 <link rel="stylesheet" href="assets/agent-file.css">
 <link rel="stylesheet" href="assets/theme-folder.css">
 <link rel="stylesheet" href="assets/recruit-wizard.css">
@@ -1680,6 +1681,14 @@
             professionLabel: profTitle, members, cellName: cell ? (cell.name || cell.cell_id) : '', opsHtml,
             physical: AS.physical(brief, ''), incursion: AS.incursionText(charDoc, state), loadPhoto,
             appearanceOutside: true,
+            // The INSANE stamp (low SAN) goes on the name in the header above.
+            stampHost: () => document.getElementById('ah-title-' + a.code),
+            // The disorder stamps scatter over that header too, and the gap below its rule.
+            disorderArea: () => {
+              const t = document.getElementById('ah-title-' + a.code), h = t && t.closest('.paper-header');
+              if (h) h.setAttribute('data-dis-extend', '34');
+              return h;
+            },
             emptySheetHtml: '<p class="as-text as-k" style="margin-top:12px">No character sheet yet — Recruit builds one.</p>'
           });
           return;

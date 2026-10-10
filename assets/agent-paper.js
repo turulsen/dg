@@ -154,6 +154,98 @@
   // Other pages and frames of this site pick the change up as it happens.
   window.addEventListener('storage', function (e) { if (e.key === LOOK_KEY) applyLook(); });
 
+  /* ── Wear: the paper ages as SAN falls (assets/agent-wear.css) ── */
+  // Stages by SAN: 50+ clean; 49-40, 39-30, 29-20, 19-10, 9-1, 0. The
+  // INSANE stamp shows from 9 (worn) and fills in from 5 to solid at 0.
+  // Switched off per device in the notebook's Settings (dg_paper_wear).
+  var WEAR_KEY = 'dg_paper_wear';
+  function wearOn() { try { return localStorage.getItem(WEAR_KEY) !== 'off'; } catch (e) { return true; } }
+  function applyWear() { document.documentElement.classList.toggle('dg-no-wear', !wearOn()); }
+  function setWear(on) {
+    try { localStorage.setItem(WEAR_KEY, on ? 'on' : 'off'); } catch (e) { /* private mode */ }
+    applyWear();
+  }
+  function wearTier(san) {
+    san = num(san);
+    if (san >= 50) return 0;
+    if (san <= 0) return 6;
+    if (san <= 9) return 5;
+    return 1 + Math.floor((49 - san) / 10);
+  }
+  function wearVars(san) {
+    san = num(san);
+    var insane = san > 9 ? 0 : san > 5 ? .35 + (9 - san) * .125 : Math.min(1, .85 + (5 - san) * .03);
+    var fill = san >= 5 ? 0 : Math.min(1, (5 - san) / 5);
+    return { tier: wearTier(san), insane: Math.round(insane * 100) / 100, fill: Math.round(fill * 100) / 100 };
+  }
+  function wearAttrs(x) {
+    var w = wearVars(R().derived(x).san);
+    return w.tier ? ' data-sanity-tier="' + w.tier + '"' : '';
+  }
+  // The INSANE stamp sits on the Agent's name (the host's, e.g. Agent Hub's
+  // header, or the paper's own), so it never lies over a button.
+  function placeStamp(host, x) {
+    if (!host) return;
+    var w = x ? wearVars(R().derived(x).san) : { tier: 0 };
+    if (w.tier >= 5) {
+      host.setAttribute('data-wear-stamp', '');
+      host.style.setProperty('--insane', w.insane);
+      host.style.setProperty('--fill', w.fill);
+    } else if (host.hasAttribute('data-wear-stamp')) {
+      host.removeAttribute('data-wear-stamp');
+      host.style.removeProperty('--insane'); host.style.removeProperty('--fill');
+    }
+  }
+  // One small rubber stamp per Mental Disorder, scattered over the header
+  // (photo, margins, the gaps by the rule) and never on a button, the name,
+  // the vitals or the INSANE stamp. Each one's spot comes from the Agent's
+  // code and the disorder's name, so it lands in the same place on every
+  // drawing and an earlier stamp doesn't move when a new one is added.
+  var DIS_INKS = ['#9c1010', '#3d2a66', '#1f2a44'];
+  function hashStr(t) { var h = 2166136261; for (var i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h; }
+  function placeDisorders(area, names, code, fresh) {
+    if (!area) return;
+    Array.prototype.forEach.call(area.querySelectorAll('.ap-dis-stamp'), function (n) { n.remove(); });
+    if (!names.length || !area.getClientRects().length) return;
+    if (getComputedStyle(area).position === 'static') area.style.position = 'relative';
+    var b0 = area.getBoundingClientRect(), extend = +(area.getAttribute('data-dis-extend') || 0);
+    var box = { left: b0.left, top: b0.top, width: b0.width, height: b0.height + extend };
+    var avoid = Array.prototype.map.call(area.querySelectorAll('button, a, input, select, textarea, .ap-vitals, .ap-pop, .ap-status, .paper-meta, .paper-title, .as-name, .as-sub'),
+      function (e) { return e.getBoundingClientRect(); }).filter(function (r) { return r.width; });
+    var ws = document.querySelector('[data-wear-stamp]');
+    if (ws && area.contains(ws)) {
+      var r = ws.getBoundingClientRect(), fs = parseFloat(getComputedStyle(ws).fontSize) || 16;
+      avoid.push({ left: r.left - .6 * fs, top: r.top - .3 * fs, right: r.left + 6.6 * fs, bottom: r.bottom + 1.1 * fs });
+    }
+    function hit(a, c, pad) { return !(a.right + pad < c.left || a.left - pad > c.right || a.bottom + pad < c.top || a.top - pad > c.bottom); }
+    var placed = [];
+    names.forEach(function (n, i) {
+      var seed = hashStr(code + '|' + n);
+      function rnd() { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; }
+      var sp = document.createElement('span');
+      sp.className = 'ap-dis-stamp' + (fresh.indexOf(n) >= 0 ? ' ap-dis-new' : '');
+      sp.textContent = n;
+      sp.setAttribute('aria-hidden', 'true');
+      sp.style.color = DIS_INKS[i % DIS_INKS.length];   // red, violet, blue-black in turn
+      area.appendChild(sp);
+      var w = sp.offsetWidth, h = sp.offsetHeight;
+      // A crowded header: after 300 tries, let it spill a little lower.
+      for (var k = 0; k < 600; k++) {
+        var bh = box.height + (k < 300 ? 0 : 36);
+        var x = rnd() * Math.max(1, box.width - w), y = rnd() * Math.max(1, bh - h), rot = rnd() * 28 - 14, op = .8 + rnd() * .18;
+        var rr = { left: box.left + x, top: box.top + y, right: box.left + x + w, bottom: box.top + y + h };
+        if (avoid.some(function (a) { return hit(rr, a, 4); }) || placed.some(function (a) { return hit(rr, a, 6); })) continue;
+        sp.style.left = x.toFixed(1) + 'px'; sp.style.top = y.toFixed(1) + 'px';
+        sp.style.setProperty('--rot', rot.toFixed(1) + 'deg'); sp.style.setProperty('--op', op.toFixed(2));
+        placed.push(rr);
+        return;
+      }
+      sp.remove();   // no free spot left in this header: better none than one on a button
+    });
+  }
+  applyWear();
+  window.addEventListener('storage', function (e) { if (e.key === WEAR_KEY) applyWear(); });
+
   /* ── The paper ── */
   function mount(el, ctx) {
     var s = window.dgAgentLive.session(ctx.code, ctx.char);
@@ -168,9 +260,27 @@
       while (n && n !== document.body) { if (n.scrollHeight > n.clientHeight + 2 && /(auto|scroll)/.test(getComputedStyle(n).overflowY)) return n; n = n.parentElement; }
       return document.scrollingElement;
     }
+    // The disorder stamps: new ones (since the last drawing) come down with a thump.
+    function stampDisorders() {
+      var names = s.state ? R().disorders(st()).filter(Boolean) : [];
+      var prev = el._apDis, fresh = prev ? names.filter(function (n) { return prev.indexOf(n) < 0; }) : [];
+      el._apDis = names;
+      placeDisorders(ctx.disorderArea ? ctx.disorderArea() : el.querySelector('.as-head'), names, s.code, fresh);
+    }
+    var disT = 0;
+    function reStamp() { clearTimeout(disT); disT = setTimeout(function () { if (el.isConnected && el._ap === api) placeDisorders(ctx.disorderArea ? ctx.disorderArea() : el.querySelector('.as-head'), el._apDis || [], s.code, []); }, 150); }
+    window.addEventListener('resize', reStamp);
+    unwatch.push(function () { window.removeEventListener('resize', reStamp); });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(reStamp);
     function render() {
       var sc = scroller(), top = sc ? sc.scrollTop : 0;
       el.innerHTML = s.state ? paperHtml() : emptyHtml();
+      // A new stage of wear fades in (not on the first drawing).
+      var pp = el.querySelector('.as-paper.ap'), tier = pp ? pp.getAttribute('data-sanity-tier') || '0' : '0';
+      if (pp && el._apTier != null && el._apTier !== tier) pp.classList.add('ap-wear-change');
+      el._apTier = tier;
+      placeStamp(ctx.stampHost ? ctx.stampHost() : el.querySelector('.as-head .as-name'), s.state ? st() : null);
+      stampDisorders();
       // Only when the redraw moved it: setting it anyway would stop a
       // smooth scroll already on its way (a #photos link on Agent Hub).
       if (sc && sc.scrollTop !== top) sc.scrollTop = top;
@@ -510,7 +620,7 @@
       var inc = ctx.incursion ? '<div class="as-sec as-incursion"><div class="as-sec-hd">The Incursion</div><p class="as-text">' + esc(ctx.incursion) + '</p></div>'
         : (ctx.incursionEmptyHtml ? '<div class="as-sec as-incursion"><div class="as-sec-hd">The Incursion</div>' + ctx.incursionEmptyHtml + '</div>' : '');
       var n = 0;
-      return '<div class="as-paper ap ap-look-' + look() + (edit ? ' ap-editing' : '') + '">' + bar + (ctx.appearanceOutside ? cellDropHtml(x) : '') + headHtml(x, edit) + appearHtml(x) + eraDropHtml() + (ctx.appearanceOutside ? '' : cellDropHtml(x)) + indexHtml(edit) +
+      return '<div class="as-paper ap ap-look-' + look() + (edit ? ' ap-editing' : '') + '"' + wearAttrs(x) + '>' + bar + (ctx.appearanceOutside ? cellDropHtml(x) : '') + headHtml(x, edit) + appearHtml(x) + eraDropHtml() + (ctx.appearanceOutside ? '' : cellDropHtml(x)) + indexHtml(edit) +
         (edit ? part('personal', '0', 'Personal data & appearance', '', personalHtml(x)) : '') +
         '<div class="as-sheet">' +
           part('stats', ++n, 'Statistics', '<span class="ap-part-note">' + (edit ? 'value · distinguishing feature' : 'tap to roll ×5 · distinguishing features') + '</span>', statsHtml(x, edit)) +
@@ -854,5 +964,6 @@
     return out;
   }
 
-  window.dgAgentPaper = { mount: mount, rollExpr: rollExpr, postits: postits, diff: diff, LOOKS: LOOKS, look: look, setLook: setLook };
+  window.dgAgentPaper = { mount: mount, rollExpr: rollExpr, postits: postits, diff: diff, LOOKS: LOOKS, look: look, setLook: setLook,
+    wearOn: wearOn, setWear: setWear, wearVars: wearVars };
 })();

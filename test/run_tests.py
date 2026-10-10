@@ -10982,6 +10982,137 @@ def test_recruit_play_test_round1(p):
     record("recruit-fix", "no JS exceptions (play-test fixes)", not errs_all, str(errs_all[:3]))
 
 
+def test_agent_file_wear(p):
+    """M3: the Agent File's paper wears as SAN falls (assets/agent-wear.css,
+    built by scripts/agent-wear/build.py; agent-paper.js sets the stage).
+    50+ clean; 49-40, 39-30, 29-20, 19-10 stages 1-4; 9-1 stage 5 with a torn
+    margin and the INSANE stamp (worn, filling in from SAN 5); 0 stage 6, the
+    stamp solid. Dropping SAN in play moves the stage with a fade; the
+    notebook's Settings switch it off on this device."""
+    errs_all = []
+    def page_at(san, width=1180):
+        docs = _field_notes_docs()
+        st = {"v": 1, "stats": {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 12, "CHA": 13},
+              "derived": {"hp": 11, "wp": 12, "san": san, "bp": 43}, "bio": {"name": "Mara Voss", "profession": "federal_agent", "player_name": "fn tester"}}
+        docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, st, "fn tester")
+        page, errs = _field_notes_page(p, width=width, docs=docs,
+                                       extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+        page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_selector(f"#ah-sheet-{FN_CODE} .as-paper.ap .ap-vitals", timeout=15000)
+        return page, errs
+    sel = f"#ah-sheet-{FN_CODE} .as-paper.ap"
+    # The stamp sits on the header's name (photo and name), not over the buttons.
+    # The wear is on the whole page (Agent Hub's .paper), not the Agent File inside it.
+    probe = """(s) => { const el = document.querySelector(s), pg = el.closest('.paper'), b = getComputedStyle(pg, '::before'),
+              h = document.getElementById('ah-title-%s'), a = getComputedStyle(h, '::after');
+        return { tier: el.getAttribute('data-sanity-tier') || '0', insane: getComputedStyle(h).getPropertyValue('--insane').trim(),
+                 fill: getComputedStyle(h).getPropertyValue('--fill').trim(), bg: b.backgroundImage !== 'none' && b.content !== 'none',
+                 host: h.hasAttribute('data-wear-stamp'), paperStamp: getComputedStyle(el, '::after').content,
+                 stamp: a.content, stampOp: a.opacity, mask: getComputedStyle(pg).maskImage || getComputedStyle(pg).webkitMaskImage || 'none',
+                 ownWear: getComputedStyle(el, '::before').backgroundImage, op: b.opacity }; }""" % FN_CODE
+    want = {55: ("0", False), 45: ("1", False), 35: ("2", False), 25: ("3", False), 15: ("4", False), 9: ("5", True), 5: ("5", True), 2: ("5", True), 0: ("6", True)}
+    page, errs = page_at(55)
+    got = {}
+    for san in want:
+        page.close(); errs_all.extend(errs)
+        page, errs = page_at(san)
+        page.wait_for_timeout(1500)
+        got[san] = page.evaluate(probe, sel)
+    ok = all(got[s]["tier"] == want[s][0] and (got[s]["bg"] == (want[s][0] != "0")) and (('INSANE' in got[s]["stamp"]) == want[s][1]) and got[s]["host"] == want[s][1] and 'INSANE' not in got[s]["paperStamp"] and got[s]["ownWear"] == 'none' for s in want)
+    record("wear", "the stage follows SAN, worn over the whole page: clean at 50+, stages 1-4 by tens, 5 from 9, 6 at 0; INSANE only from 9, on the header name",
+           ok, json.dumps({s: [got[s]["tier"], got[s]["bg"], 'INSANE' in got[s]["stamp"]] for s in got}))
+    record("wear", "every stage is drawn at 90% (a touch lighter than the full stack)",
+           all(abs(float(got[t]["op"]) - .9) < .01 for t in (45, 25, 9, 0)), json.dumps({t: got[t]["op"] for t in (45, 25, 9, 0)}))
+    record("wear", "the stamp: worn from 9 (no fill), filling in from 5, solid at 0",
+           got[9]["fill"] == "0" and float(got[9]["insane"]) >= .3 and got[5]["fill"] == "0" and float(got[2]["fill"]) > 0 and got[0]["fill"] == "1" and got[0]["insane"] == "1",
+           json.dumps({s: [got[s]["insane"], got[s]["fill"]] for s in (9, 5, 2, 0)}))
+    record("wear", "the page's own edge tears from SAN 9 (inside its padding): edge mask on stages 5-6 only",
+           "url(" in got[5]["mask"] and "url(" in got[0]["mask"] and got[15]["mask"] in ("none", ""), got[5]["mask"][:60])
+    page.close(); errs_all.extend(errs)
+    # Dropping SAN in play: 50 -> 49 moves to stage 1, with the fade.
+    page, errs = page_at(50)
+    page.click(f"{sel} [data-a='san-']")
+    page.wait_for_function("(s) => document.querySelector(s).getAttribute('data-sanity-tier') === '1'", arg=sel, timeout=6000)
+    record("wear", "losing SAN in play moves the paper to the next stage, fading in", page.evaluate("(s) => document.querySelector(s).classList.contains('ap-wear-change')", sel), "")
+    # Settings: off, on this device.
+    page.evaluate("() => window.dgFieldNotes.open('settings')")
+    page.click("#fn-veil [data-s=wear]")
+    off = page.evaluate("(s) => { const pg = document.querySelector(s).closest('.paper'); return document.documentElement.classList.contains('dg-no-wear') && getComputedStyle(pg, '::before').backgroundImage === 'none' && (getComputedStyle(pg).maskImage || 'none') === 'none' && localStorage.getItem('dg_paper_wear') === 'off'; }", sel)
+    page.click("#fn-veil [data-s=wear]")
+    on = page.evaluate("() => !document.documentElement.classList.contains('dg-no-wear') && localStorage.getItem('dg_paper_wear') === 'on'")
+    record("wear", "the notebook's Settings switch the wear off and on again, on this device", bool(off) and bool(on), f"off={off} on={on}")
+    errs_all.extend(errs)
+    record("wear", "no JS exceptions (paper wear)", not errs_all, str(errs_all[:3]))
+    page.close()
+
+
+def test_agent_file_disorder_stamps(p):
+    """A small rubber stamp per Mental Disorder, scattered over the header
+    (agent-paper.js placeDisorders): on Agent Hub's .paper-header and the
+    notebook's .as-head; never on a button, the name or the vitals, nor on
+    each other; the same spots after a reload; a new disorder thumps in; the
+    wear switch in Settings hides them."""
+    dis = ["PTSD", "Paranoia", "Sleep Disorder"]
+    errs_all = []
+    def page_at(width):
+        docs = _field_notes_docs()
+        st = {"v": 1, "stats": {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 12, "CHA": 13},
+              "derived": {"hp": 11, "wp": 12, "san": 25, "bp": 43},
+              "bio": {"name": "Mara Voss", "profession": "federal_agent", "player_name": "fn tester", "disorders": dis}}
+        docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, st, "fn tester")
+        page, errs = _field_notes_page(p, width=width, docs=docs,
+                                       extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+        page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_selector(f"#ah-sheet-{FN_CODE} .as-paper.ap .ap-vitals", timeout=15000)
+        # The stamps are placed again once the typewriter font is in (their widths change).
+        page.evaluate("() => document.fonts.ready")
+        page.wait_for_timeout(800)
+        return page, errs
+    probe = """(area) => { const a = document.querySelector(area), st = [...a.querySelectorAll('.ap-dis-stamp')];
+        const R = e => e.getBoundingClientRect(), hit = (x, y) => !(x.right <= y.left || x.left >= y.right || x.bottom <= y.top || x.top >= y.bottom);
+        const keep = [...a.querySelectorAll('button, input, select, .ap-vitals, .paper-title, .paper-meta, .as-name')].map(R).filter(r => r.width);
+        return { n: st.length, names: st.map(e => e.textContent), inks: [...new Set(st.map(e => getComputedStyle(e).color))].length,
+                 clash: st.some(e => keep.some(k => hit(R(e), k))) || st.some((e, i) => st.some((f, j) => j > i && hit(R(e), R(f)))),
+                 why: st.filter(e => keep.some(k => hit(R(e), k))).map(e => e.textContent + ':' + e.className + ':' + getComputedStyle(e).transform),
+                 spots: st.map(e => e.style.left + ',' + e.style.top + ',' + e.style.getPropertyValue('--rot')) }; }"""
+    hub_area = f"#panel-{FN_CODE} .paper-header"
+    for width in (1180, 390):
+        page, errs = page_at(width)
+        a = page.evaluate(probe, hub_area)
+        page.close(); errs_all.extend(errs)
+        page, errs = page_at(width)
+        b = page.evaluate(probe, hub_area)
+        record("disorders", f"one stamp per disorder on Agent Hub's header, clear of buttons, name, vitals and each other ({width}px)",
+               a["n"] == 3 and sorted(a["names"]) == sorted(dis) and not a["clash"], json.dumps(a))
+        record("disorders", f"the stamps land in the same spots after a reload ({width}px)", a["spots"] == b["spots"], f"{a['spots']} / {b['spots']}")
+        if width == 1180:
+            record("disorders", "the stamps come in more than one ink", a["inks"] >= 2, str(a["inks"]))
+            # A new disorder from the paper's + Disorder: its stamp thumps in, the others stay put.
+            b = page.evaluate(probe, hub_area)
+            page.click(f"#ah-sheet-{FN_CODE} [data-a='pop'][data-pop='dis']")
+            page.select_option(f"#ah-sheet-{FN_CODE} [data-u='dis']", "Obsession")
+            page.click(f"#ah-sheet-{FN_CODE} [data-a='dis-add']")
+            page.wait_for_function("(a) => document.querySelectorAll(a + ' .ap-dis-stamp').length === 4", arg=hub_area, timeout=6000)
+            # Past the thump (it lands scaled up).
+            page.wait_for_function("(a) => [...document.querySelectorAll(a + ' .ap-dis-stamp')].every(e => e.getAnimations().every(a => a.playState !== 'running'))", arg=hub_area, timeout=6000)
+            c = page.evaluate(probe, hub_area)
+            new = page.evaluate("(a) => [...document.querySelectorAll(a + ' .ap-dis-stamp.ap-dis-new')].map(e => e.textContent)", hub_area)
+            record("disorders", "a new disorder adds its stamp with a thump; the earlier stamps don't move",
+                   new == ["Obsession"] and c["spots"][:3] == b["spots"] and not c["clash"], f"new={new} {c['spots']} was {b['spots']} why={c['why']}")
+            # The notebook's Agent File: on its own header.
+            page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+            page.wait_for_selector("#fn-veil .as-paper.ap .as-head .ap-dis-stamp", timeout=8000)
+            nb = page.evaluate(probe, "#fn-veil .as-paper.ap .as-head")
+            record("disorders", "the notebook's Agent File stamps its own header the same way", nb["n"] == 4 and not nb["clash"], json.dumps(nb))
+            page.evaluate("() => window.dgFieldNotes.open('settings')")
+            page.click("#fn-veil [data-s=wear]")
+            hidden = page.evaluate("(a) => [...document.querySelectorAll(a + ' .ap-dis-stamp')].every(e => getComputedStyle(e).display === 'none')", hub_area)
+            page.click("#fn-veil [data-s=wear]")
+            record("disorders", "the wear switch in Settings hides the stamps too", hidden, "")
+        page.close(); errs_all.extend(errs)
+    record("disorders", "no JS exceptions (disorder stamps)", not errs_all, str(errs_all[:3]))
+
+
 def test_agent_file_parts_and_looks(p):
     """The Agent File in numbered parts (Statistics, Skills, Psyche, Combat
     & gear, Cell, Record) with a jump index; Find a skill (kept across a
@@ -14027,6 +14158,8 @@ def main():
         safe(test_new_recruit_wizard, browser, area="recruit")
         safe(test_new_recruit_imports_and_links, browser, area="recruit-import")
         safe(test_recruit_play_test_round1, browser, area="recruit-fix")
+        safe(test_agent_file_wear, browser, area="wear")
+        safe(test_agent_file_disorder_stamps, browser, area="disorders")
         safe(test_agent_rules_unit, browser, area="rules")
         safe(test_evidence_attachments_open_and_zoom, browser, area="evidence")
         safe(test_motivations_and_disorders_split, browser, area="disorders")

@@ -378,7 +378,7 @@
     ['assets/recruit-data.js', 'dgRecruitData']
   ];
   function ensureSheetLib() {
-    [['assets/agent-sheet.css', 'data-as-css'], ['assets/agent-paper.css', 'data-ap-css']].forEach(function (c) {
+    [['assets/agent-sheet.css', 'data-as-css'], ['assets/agent-paper.css', 'data-ap-css'], ['assets/agent-wear.css', 'data-aw-css']].forEach(function (c) {
       if (document.querySelector('link[' + c[1] + ']') || document.querySelector('link[href$="' + c[0] + '"]')) return;
       var l = document.createElement('link');
       l.rel = 'stylesheet'; l.href = url(c[0]); l.setAttribute(c[1], '1');
@@ -1659,6 +1659,9 @@
         '<div class="fn-set-row"><div><div class="fn-set-t">Old character sheet</div><div class="fn-set-s">The previous sheet, for anything the Agent File can\'t do yet.</div></div>' +
         '<button type="button" class="fn-btn fn-ink" data-s="gosheet">Open ↗</button></div>';
     }
+    var wearOff = lsGet('dg_paper_wear') === 'off';
+    html += '<div class="fn-set-row"><div><div class="fn-set-t">Paper wears as SAN falls</div><div class="fn-set-s">Below SAN 50 the Agent File ages, stains and tears; INSANE is stamped near 0. Off keeps it clean, on this device.</div></div>' +
+        '<button type="button" class="fn-toggle' + (wearOff ? '' : ' fn-on') + '" data-s="wear">' + (wearOff ? 'OFF' : 'ON') + '</button></div>';
     html += '<div class="fn-set-row"><div><div class="fn-set-t">Boot splash</div><div class="fn-set-s">Plays the clearance terminal once per session. Off skips the animation; the same screen still shows while a page loads.</div></div>' +
         '<button type="button" class="fn-toggle' + (bootOff ? '' : ' fn-on') + '" data-s="boot">' + (bootOff ? 'OFF' : 'ON') + '</button></div>';
     body.innerHTML = html;
@@ -1673,6 +1676,12 @@
       else if (k === 'more' && sw && sw.dgSettingsPanel) { close(); sw.dgSettingsPanel.open(); }
       else if (k === 'gosheet' && a) { try { sessionStorage.setItem(OPEN_ON_ARRIVAL_KEY, 'settings'); } catch (err) { /* private mode */ } navigate(url('stats/index.html?load=' + encodeURIComponent(a.code))); }
       else if (k === 'pdf' && a) exportPdf(a, body.querySelector('[data-s="pdf-status"]'));
+      else if (k === 'wear') {
+        var on = lsGet('dg_paper_wear') === 'off';
+        lsSet('dg_paper_wear', on ? 'on' : 'off'); b.classList.toggle('fn-on', on); b.textContent = on ? 'ON' : 'OFF';
+        document.documentElement.classList.toggle('dg-no-wear', !on);
+        try { var cw = contentWin(); if (cw && cw.document) cw.document.documentElement.classList.toggle('dg-no-wear', !on); } catch (err) { /* another origin */ }
+      }
       else if (k === 'boot') { var off = lsGet(BOOT_OFF_KEY) !== '1'; lsSet(BOOT_OFF_KEY, off ? '1' : '0'); b.classList.toggle('fn-on', !off); b.textContent = off ? 'OFF' : 'ON'; }
       else if (k === 'reload') reloadMyAgents(body);
     };
