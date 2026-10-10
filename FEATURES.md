@@ -27,9 +27,9 @@ Check the current code before trusting a specific function name.
 |---|---|---|
 | `index.html` | Everyone | Boot-splash animation, then a three-card chooser: **Agent** (player), **Friendly** (one-shot player, pregen) or **A-Cell** (Handler, password-gated). Entry point for the whole site. |
 | `friendly.html` | One-shot players | Pick a pregenerated Agent (`friendly/pregens.json`, built by `scripts/pregens/`) and play: read-only dossier, every stat/skill/weapon rolls via the Dice Roller, HP/WP/SAN kept on paper. No Firebase sign-in unless the pregen is in a Cell (then its id — a valid Agent Code shape, e.g. `FR-USSS-PPD` — signs in through `exchangeAgentToken` like any Agent and rolls into that Cell's `dice_rolls` feed; no backend or rules change was needed). The Dice Roller takes its identity from the page (`dgDice.setIdentity`), never from the device's own roster. |
-| `agent-hub.html` | Players | A player's own hub and each Agent's whole file: one folder tab per Agent in this browser's roster, plus "+ New Recruit". An Agent's tab has the Agent File paper, which since v2.7.0 is the character sheet (§5; the rest lives in the Field Notes notebook), and **Appearance ▾ / Era photos ▾ / Cell ▾** drop-downs beside the photo (§5), Evidence, and (if unassigned) a Cover Identity search box. `?code=CODE[#appearance|#photos]` opens one Agent. |
+| `agent-hub.html` | Players | A player's own hub and each Agent's whole file: one folder tab per Agent in this browser's roster, plus "+ New Recruit" (the creation wizard since v3.0.0, §5). An Agent's tab has the Agent File paper, which since v2.7.0 is the character sheet (§5; the rest lives in the Field Notes notebook), and **Appearance ▾ / Era photos ▾ / Cell ▾** drop-downs beside the photo (§5), Evidence, and (if unassigned) a Cover Identity search box. `?code=CODE[#appearance|#photos]` opens one Agent. |
 | `dg-agent-portal.html` | -- | Retired (the three-tab Agent Portal); forwards old addresses to Agent Hub / the Fabricator. See §5. |
-| `stats/index.html` | Players | The actual Delta Green character sheet/creator — stats, skills, professions, Bonds, equipment, dice roller, Live Play tracker bar, three visual themes, import from five different formats, Cloud Save. This is a ported third-party project, see §2. |
+| `stats/index.html` | Players | Retired in v3.0.0 (creation is Agent Hub's New Recruit, play is the Agent File); reachable only from the notebook's Settings → Old character sheet. The old Delta Green character sheet/creator — stats, skills, professions, Bonds, equipment, dice roller, Live Play tracker bar, three visual themes, import from five different formats, Cloud Save. This is a ported third-party project, see §2. |
 | `a-cell.html` | Handler | The Handler's dashboard, password-gated. Tabs: **Play** (every Agent, simplified, for running the table), **Cells** (group Agents under a Handler), **Evidence** (file documents/photos, scoped to a Cell or campaign-wide), **Sheet** (dense Excel-style roster), **Music** (Table Radio broadcast controls), **Admin** (delete/restore Agents, including Agent-File-only entries). |
 | `dg-id-creator.html` | Players | A standalone, older fake-ID-card generator. Superseded by the Field IDs tab's own Fabricator; kept in the repo, not linked from anywhere, no code system of its own left. |
 | `notes/index.html` | Players & Handler | Player Notes — a shared/private notebook scoped to a Cell. See §3. |
@@ -451,6 +451,87 @@ until a reload (`BUGFIXES.md`).
 - `agent-file.js`'s `afLoad_` shows "Still loading" with the reason and
   **Try again**, and Era photos waits. It retries after 3s, 8s, 20s, then
   every 30s, and on `online` or `visibilitychange`.
+
+**New Recruit: the creation wizard (v3.0.0, PR #70; v2 milestone
+M2).** Agent Hub's **+ New Recruit** tab is a twelve-step wizard
+(`assets/recruit-wizard.js` / `.css`, data in `assets/recruit-data.js`).
+It replaces the old sheet's creator: `stats/` is now reached only from
+the notebook's Settings ("Old character sheet → Open ↗").
+- **Steps:**
+  - **0 Start:** build one, or bring one in through a single drop zone,
+    a Friendly pregen, or Load by Agent Code; a draft found on the device
+    can be resumed or discarded.
+  - **1 Statistics:** point buy (72, each 3–18), 4D6 drop lowest (tap two
+    values to swap them) or fully random. Each statistic has an explainer
+    in our own words and a distinguishing feature suggested from its
+    score (`STAT_INFO`, `suggestFeature`), editable.
+  - **2 Profession:** the Agent's Handbook's 18 (`stats/professions.js`),
+    The Complex's 20 grouped by agency (`COMPLEX`), an Agency postings
+    filter (~60 `POSTINGS`: a Handbook profession with agency, employer,
+    suggested bonus skills and kit), or Build your own (10 skills, 400
+    points ± 50 per Bond, 60% cap). The chosen one's detail opens under
+    its own group: every skill at its value, profession skills red bold,
+    suggested bonus skills black bold, Bonds, employer, kit.
+  - **3 Bonus skills:** 8 × +20%, 80% cap, not Unnatural; the
+    profession's suggestions are pre-placed; packages (`BONUS_PACKAGES`,
+    copied from `stats/scripts.js`); specialties added by name.
+  - **4 Damaged Veteran** (Agent's Handbook p.39, `VETERAN`): Extreme
+    Violence, Captivity, Hard Experience (four skills +10%, may pass 80%;
+    one Bond fewer), Things Man Was Not Meant to Know (a disorder from the
+    Unnatural list). The changes are applied and listed.
+  - **5 Personal data:** name, codename, past employer, Random Bio
+    (`stats/bio.js`). Going on makes the Agent Code
+    (`dgStore.submitBrief`, filed under the device's Cover Identity) or
+    updates that brief.
+  - **6 Bonds:** count from the profession; the generator's categories
+    (Family, Friends, Delta Green, Other Governments, Underworld;
+    `BOND_CATS`/`bondList` regroup `stats/bonds.js`, LGBTQ dropped), ⚄
+    Another, and **Generate** for a description
+    (`generateBondDescription`, §12).
+  - **7 Motivations & Mental Disorders**, **8 Incursion**
+    (`dgIncursion.mount`), **9 Equipment:** the profession's kit
+    (`KITS`/`kitFor`, matched to `stats/equipment-data.js`; catalog
+    weapons go on the weapons table with their skill %).
+  - **10 Profiling:** the play era (written to the brief as
+    `active_eras`/`campaign_era`), then the Agent File's own Appearance
+    brief and era page (`dgAgentFile.reload` into the wizard's slot).
+  - **11 Review & Contract:** **Sign the Contract** opens the full
+    clearance briefing (`dgFieldNotes.contract`: `oath()` with
+    `contract:true`). Y files the Agent (character `creationCommitted:
+    true`, `standing_orders_ack_at` on the brief, the Incursion via
+    `saveIncursion`, the roster, `dg_stats_cloud_code`) and opens their
+    tab (`dg-recruit-filed`); N goes back with nothing lost.
+- **The saved character** is rebuilt from the wizard's choices each time
+  (`dgRecruit.build(W)`), in the sheet's own v1 shape: `skills`,
+  `specialtyInstances`, `bonds` at CHA, `sanity`/`adapted` for a Veteran,
+  `bio` (with `codename`, `pastEmployer`, `posting`, Complex keys as
+  `profession`), `lpFeat`, `equipment`, `lpWeapons`, plus a `recruit`
+  note of how it was made.
+- **The draft** (`W`) is kept in `localStorage` (`dg_recruit_draft`);
+  once there's a code it is also saved to `characters/{code}` with
+  `creationCommitted:false` on each step. Discard sends a coded draft to
+  Recently Deleted (`deleteOwnAgent`).
+- **Imports** (`assets/agent-import.js`, `dgAgentImport.read(file)`):
+  Foundry VTT actor, Kappa Black `.toml` (or its Foundry `.json`), this
+  site's v1 save, the printable sheet's embedded state, the DD Form 315
+  PDF and the Sheets `.xlsx` (the last two through the old sheet's own
+  readers, with `window.dgSaveLoad` briefly a catcher). An import starts
+  at Personal data; statistics, skills and profession come from the file.
+- **Deep links:** `agent-hub.html?recruit=CODE#new` (an Agent with no
+  sheet: Agent Hub's and the notebook's **Recruit**), `?recruit=friendly
+  &pregen=ID` (Friendly's **Make this my Agent**), `?recruit=resume`.
+- **Elsewhere:** a Cell member can be picked as a new Bond in play
+  (relationship "Delta Green"); Breaking Point crosses off a Motivation
+  (`bio.motivationsCrossed`); saving an edit shows the Mission & Standing
+  Orders, priorities in capitals. Notes' Split View opens the notebook's
+  Split and "Character Sheet" is now "Agent File". The notebook's Settings
+  export a DD Form 315 from the saved character (`stats/pdf-export.js`,
+  its template now found next to the script). On a phone the terminal
+  (Contract, Standing Orders, saving an edit) scrolls and has big Y / N
+  buttons. Profiling's Random Agent Generator lists The Complex's
+  professions (own clothing over the nearest Handbook look,
+  `COMPLEX_LOOKS`) grouped by agency, starting on the Agent's own; era
+  prompts have **Redraft**.
 
 **What it's for:** the actual in-fiction "dossier" for an Agent — a
 physical description brief (Profiling), an AI-assisted portrait-prompt
@@ -1039,6 +1120,15 @@ September addressing bugs the shell surfaced (Dice Roller state going
 stale, Split View, Notes block picker, back-navigation, duplicate
 widgets). Live and current — no longer just planned.
 
+**Cloud Functions in v3.0.0 (PR #70).** New `generateBondDescription`
+(the New Recruit wizard's Bond **Generate**: same sign-in and Anthropic
+key as `generatePrompt`, 20 calls per 10 minutes per Agent, an emulator
+canned reply). `functions/ai-prompts.js` now labels the Agent's age in
+the character spec and requires it in every mode's instructions; before,
+the prompts usually dropped it. Both need `firebase deploy --only
+functions` once; an era prompt written before it can be written again
+with **Redraft**.
+
 ---
 
 ## 13. Open / known-incomplete work
@@ -1051,7 +1141,7 @@ full reasoning on the split (Issues = live status board, `BUGFIXES.md`
 = narrative archive of what shipped, this section = closed/decided
 matters worth a permanent note).
 
-As of 2026-10-09 (checked again for v2.8.0), four open tracked issues (#10 is closed; see
+As of 2026-10-10 (checked again for v3.0.0), four open tracked issues (#10 is closed; see
 `BUGFIXES.md`'s "Issue #10's actual root cause"): #5 (Handler-facing access
 control — shared A-Cell password, dossiers reachable by Agent Code, no
 per-player identity), #8 (Agent Hub: long load screen then empty

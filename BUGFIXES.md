@@ -6468,3 +6468,36 @@ loaded), and the automatic retry. It fails on the old code with exactly
 the reported texts. The stub gained `__dgFsFailGet`, `__dgFsListenNow` and
 `__dgFsListenError`. `sw.js` `CACHE_NAME` v201.
 
+
+## v3.0.0 play-test: Plates without the Agent's age; the terminal on a phone
+
+Found play-testing the New Recruit wizard on the preview (2026-10-10).
+
+**The Face and Outfit Plates ignored the Agent's age.** The age range was
+sent to `generatePrompt`, but `functions/ai-prompts.js` put it in the
+character spec as a bare "Mid 30s", and no paragraph of any mode's
+instructions asked for it. The prompt writer left it out, so the image
+model never saw it. The spec now says "Apparent age: mid 30s", and every
+mode's instructions require it stated plainly ("a woman in her mid
+30s"), shown in the face, skin and hair. Prompts already saved for an era
+don't change by themselves; each era prompt has a **Redraft** button
+that writes it again from the brief. Needs `firebase deploy --only
+functions`. Covered by `test_recruit_play_test_round1`.
+
+**Signing the Contract, or saving an edit, was impossible on a phone.**
+The terminal (`#fn-orders`) was a fixed, full-screen flex box that
+centered its content and couldn't scroll. On a phone the full briefing
+is taller than the screen, so the top and the **[Y/N]** line were cut
+off, and the only keys were two tiny letters. It now scrolls (the
+terminal is centered by auto margins, so a tall one starts at the top),
+a tap finishes the typing and brings the prompt into view, and below
+760px or on a touch screen there are big **Y / N** buttons. Desktop
+still shows only the terminal's own [Y/N]. The same fix covers the first
+clearance briefing and the Mission & Standing Orders on save.
+
+**The PDF export printed "[object Object]" for written-in gear.** With
+no equipment picker on the page, `stats/pdf-export.js` listed
+`equipment` as it was, and a written-in item is `{isCustom, name}`. It
+now writes the item's name. Its template URL is also resolved next to
+the script, so the export works from any page (the notebook's Settings),
+not just `stats/`.

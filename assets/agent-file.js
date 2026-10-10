@@ -415,14 +415,38 @@ function isProfilingComplete(data) {
   setTimeout(() => {
     const sel = document.getElementById('rand-profession');
     if (!sel || sel.options.length > 1) return;
+    // Grouped: the Agent's Handbook, then The Complex by agency.
+    const groups = {};
     ARCHETYPES.forEach(a => {
+      const g = a.group || "Agent's Handbook";
+      if (!groups[g]) {
+        groups[g] = document.createElement('optgroup');
+        groups[g].label = g === "Agent's Handbook" ? g : 'The Complex — ' + g;
+        sel.appendChild(groups[g]);
+      }
       const opt = document.createElement('option');
       opt.value = a.id;
       opt.textContent = a.label;
-      sel.appendChild(opt);
+      groups[g].appendChild(opt);
     });
+    afPresetArchetype_();
   }, 50);
 })();
+
+// The generator's profession follows the Agent's own, when it has one
+// (the brief's `profession`, written by the New Recruit wizard) and
+// nothing has been picked yet.
+const AF_ARCH_ALIAS_ = { 'anthropologist or historian': 'academic', 'computer scientist or engineer': 'engineer',
+  'intelligence analyst': 'spook', 'lawyer or business executive': 'lawyer' };
+function afPresetArchetype_() {
+  const sel = document.getElementById('rand-profession');
+  if (!sel || sel.value || typeof ARCHETYPES === 'undefined') return;
+  const t = String((afData && afData.profession) || '').trim().toLowerCase();
+  if (!t) return;
+  const a = ARCHETYPES.filter(x => x.label.toLowerCase() === t)[0];
+  const id = a ? a.id : AF_ARCH_ALIAS_[t];
+  if (id) sel.value = id;
+}
 
 /* ── PHOTO ── */
 let photoDataUrl = null;
@@ -1130,6 +1154,7 @@ function renderEraStack(eras, data) {
       + '<textarea id="prompt-mode0-' + era + '" style="width:100%;background:rgba(0,0,0,.04);border:none;border-left:2px solid rgba(160,130,70,.35);padding:8px 12px;font-family:Courier Prime,monospace;font-size:10px;line-height:1.7;color:#4a3f28;min-height:60px;resize:vertical;box-sizing:border-box;">' + (mode0||'') + '</textarea>'
       + '<div style="display:flex;gap:8px;margin-top:4px;">'
       + '<button data-era="' + era + '" data-mode="mode0" onclick="saveEraPrompt(this)" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:#1c1608;color:#f4eed8;border:none;padding:4px 10px;cursor:pointer;">Save</button>'
+      + '<button data-era="' + era + '" data-mode="mode0" onclick="redraftEraPrompt(this)" title="Write this prompt again from the brief as it is now" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:transparent;color:#4a3f28;border:1px solid rgba(160,130,70,.35);padding:4px 10px;cursor:pointer;">Redraft</button>'
       + '<button data-target="prompt-mode0-' + era + '" onclick="copyPrompt(this.dataset.target)" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:transparent;color:#4a3f28;border:1px solid rgba(160,130,70,.35);padding:4px 10px;cursor:pointer;">Copy</button>'
       + '<button data-era="' + era + '" data-mode="mode0" onclick="generatePlateImage(this.dataset.era,this.dataset.mode,this)" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:transparent;color:#8b1a1a;border:1px solid rgba(139,26,26,.4);padding:4px 10px;cursor:pointer;">Generate Image</button>'
       + '<span id="prompt-mode0-status-' + era + '" style="font-family:Courier Prime,monospace;font-size:9px;font-style:italic;color:#8a7a5a;align-self:center;"></span>'
@@ -1140,6 +1165,7 @@ function renderEraStack(eras, data) {
       + '<textarea id="prompt-mode1-' + era + '" style="width:100%;background:rgba(0,0,0,.04);border:none;border-left:2px solid rgba(160,130,70,.35);padding:8px 12px;font-family:Courier Prime,monospace;font-size:10px;line-height:1.7;color:#4a3f28;min-height:60px;resize:vertical;box-sizing:border-box;">' + (mode1||'') + '</textarea>'
       + '<div style="display:flex;gap:8px;margin-top:4px;">'
       + '<button data-era="' + era + '" data-mode="mode1" onclick="saveEraPrompt(this)" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:#1c1608;color:#f4eed8;border:none;padding:4px 10px;cursor:pointer;">Save</button>'
+      + '<button data-era="' + era + '" data-mode="mode1" onclick="redraftEraPrompt(this)" title="Write this prompt again from the brief as it is now" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:transparent;color:#4a3f28;border:1px solid rgba(160,130,70,.35);padding:4px 10px;cursor:pointer;">Redraft</button>'
       + '<button data-target="prompt-mode1-' + era + '" onclick="copyPrompt(this.dataset.target)" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:transparent;color:#4a3f28;border:1px solid rgba(160,130,70,.35);padding:4px 10px;cursor:pointer;">Copy</button>'
       + '<button data-era="' + era + '" data-mode="mode1" onclick="generatePlateImage(this.dataset.era,this.dataset.mode,this)" title="' + (faceUrl ? 'Uses the Face Plate as a reference for character consistency' : 'Generate a Face Plate first -- the Outfit Plate uses it as a reference') + '" style="font-family:Special Elite,monospace;font-size:7px;letter-spacing:.1em;text-transform:uppercase;background:transparent;color:#8b1a1a;border:1px solid rgba(139,26,26,.4);padding:4px 10px;cursor:pointer;' + (faceUrl ? '' : 'opacity:.5;') + '">Generate Image</button>'
       + '<span id="prompt-mode1-status-' + era + '" style="font-family:Courier Prime,monospace;font-size:9px;font-style:italic;color:#8a7a5a;align-self:center;"></span>'
@@ -1638,6 +1664,18 @@ function autoGenerateEraPrompts(era) {
     })
     .catch(function() { if (st1) st1.textContent = 'Error: connection failed.'; });
   }
+}
+
+// Redraft: write this era's prompt again from the brief as it is now
+// (an older prompt may predate a brief change, or the age fix).
+function redraftEraPrompt(btn) {
+  const era = btn.dataset.era, mode = btn.dataset.mode;
+  if (!afData || !afCode) return;
+  afData['era_' + era + '_' + mode] = '';
+  const ta = document.getElementById('prompt-' + mode + '-' + era);
+  if (ta) ta.value = '';
+  // autoGenerateEraPrompts() redoes whichever of the two is now empty.
+  autoGenerateEraPrompts(era);
 }
 
 function saveEraPrompt(btn) {
@@ -2248,6 +2286,7 @@ function afReset_() {
   document.getElementById('code-load-status').textContent = '';
   document.getElementById('rand-result-bar').style.display = 'none';
   document.getElementById('rand-reroll-btn').style.display = 'none';
+  const rp = document.getElementById('rand-profession'); if (rp) rp.value = '';
   document.getElementById('af-content').style.display = 'none';
   document.getElementById('era-stack').innerHTML = '';
   document.getElementById('af-appear-state').textContent = 'Loading…';
@@ -2346,6 +2385,7 @@ function afLoad_(code, retrying) {
       persistAgent(code, data);
       healMainPhoto();
       populateCoverForm(data);
+      afPresetArchetype_();
       afRender_();
     } else if (!retrying) {
       autoCreateBriefFromCharacterThenRetry_(code,
@@ -2404,6 +2444,11 @@ window.dgAgentFile = {
   // Out of the way while the hub rebuilds its tabs (keeps state).
   park: function () {
     afHolderEl.appendChild(afRootEl);
+  },
+  // Load this Agent again (the New Recruit wizard changed their brief).
+  reload: function (slot, code) {
+    afMountedCode = null;
+    this.mount(slot, code);
   },
   code: function () { return afMountedCode; },
   data: function () { return afData; },

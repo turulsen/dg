@@ -9,7 +9,11 @@
 (function () {
     "use strict";
 
-    const TEMPLATE_URL = "assets/Delta-Green-RPG-Character-Sheet.pdf";
+    // Next to this script (stats/assets/), whichever page loaded it: the
+    // Field Notes notebook's Export loads it on any page.
+    const TEMPLATE_URL = (document.currentScript && document.currentScript.src)
+        ? new URL("assets/Delta-Green-RPG-Character-Sheet.pdf", document.currentScript.src).href
+        : "assets/Delta-Green-RPG-Character-Sheet.pdf";
     const PDF_LIB_CDN = "https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js";
 
     const SKILL_FIELD = {
@@ -271,7 +275,7 @@
                     .forEach(item => { if (item.name) gearLines.push(item.name); });
             } else {
                 // Fallback: dump all equipment names (no type info available)
-                equipment.forEach(n => { if (n) gearLines.push(n); });
+                equipment.forEach(n => { const nm = typeof n === "string" ? n : (n && n.name) || ""; if (nm) gearLines.push(nm); });
             }
             setField(form, "15 ARMOR AND GEAR", gearLines.join("\n").trim());
 

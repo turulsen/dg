@@ -225,7 +225,7 @@
 
 <div class="change-context hidden" id="change-context-row">
   <button type="button" id="split-view-btn">Split View</button>
-  <button type="button" id="character-sheet-btn">Character Sheet</button>
+  <button type="button" id="character-sheet-btn">Agent File</button>
 </div>
 
 <div class="notes-mount hidden" id="notes-mount"></div>
@@ -466,13 +466,16 @@
       location.href = '../' + path;
     }
   }
+  // Split View: the Field Notes notebook's Split (the Agent File beside
+  // Notes); without the notebook, the Agent File on Agent Hub.
   splitViewBtn.addEventListener('click', () => {
     if (!currentAgentCode) return;
-    goOut('stats/index.html?load=' + encodeURIComponent(currentAgentCode) + '&split=1');
+    if (window.dgFieldNotes && window.dgFieldNotes.split && window.dgFieldNotes.split('notes')) return;
+    goOut('agent-hub.html?code=' + encodeURIComponent(currentAgentCode));
   });
   characterSheetBtn.addEventListener('click', () => {
     if (!currentAgentCode) return;
-    goOut('stats/index.html?load=' + encodeURIComponent(currentAgentCode));
+    goOut('agent-hub.html?code=' + encodeURIComponent(currentAgentCode));
   });
 
   init();

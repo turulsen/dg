@@ -27,6 +27,7 @@
 <link rel="stylesheet" href="assets/agent-paper.css">
 <link rel="stylesheet" href="assets/agent-file.css">
 <link rel="stylesheet" href="assets/theme-folder.css">
+<link rel="stylesheet" href="assets/recruit-wizard.css">
 <style>
   *{box-sizing:border-box;}
   .hub-header{ max-width:900px; margin:0 auto; padding:6px 6px 22px; }
@@ -395,10 +396,8 @@
                 <div class="paper-title">New Recruit</div>
               </div>
             </div>
-            <p class="recruit-copy">Full character creation — stats, 18 professions, bonus skill points, random bio, Bonds, equipment, dice roller, and a dedicated Live Play theme. Auto-saves as you go, and always opens blank.</p>
-            <div class="paper-actions">
-              <a class="paper-btn primary" href="stats/index.html?new=1">-&gt; Build a Character</a>
-            </div>
+            <!-- The New Recruit wizard (assets/recruit-wizard.js) draws here. -->
+            <div class="nr" id="nr-root"><p class="recruit-copy">Build a new Agent step by step, from the dice to the Contract, or bring one in from a file.</p></div>
           </div>
         </div>
       </div>
@@ -664,6 +663,7 @@
     folderBody.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + id));
     const slot = document.getElementById('ah-file-' + id);
     if (slot && window.dgAgentFile) { window.dgAgentFile.mount(slot, id); placeAppearance(id); }
+    if (id === 'new' && window.dgRecruit) window.dgRecruit.show();
   }
 
   // The Appearance form lives in the drop-down under the Agent's photo;
@@ -822,11 +822,11 @@
             <div class="paper-title-sub">Delta Green — Agent Roster</div>
             <div class="paper-title">No Agents on File</div>
           </div></div>
-          <p class="empty-copy">Nothing here yet. Build a new Agent via the New Recruit tab, then submit or export it to add it to this roster -- or enter your Cover Identity above if you've already made one on another device.</p>
+          <p class="empty-copy">Nothing here yet. Build a new Agent (or bring one in from a file) on the + New Recruit tab -- or enter your Cover Identity above if you've already made one on another device.</p>
         </div>
       </div>`;
       folderBody.appendChild(panel);
-      setActiveTab('empty');
+      setActiveTab(preserveActiveCode === 'new' ? 'new' : 'empty');
       return;
     }
 
@@ -881,7 +881,7 @@
           <div class="stamps" id="${stampId}">${era ? `<div class="stamp">${escapeHtml(era)}</div>` : ''}</div>
           <div class="dossier-line" id="ah-meta-${escapeHtml(a.code)}"${meta ? '' : ' hidden'}>${meta}</div>
           <div class="paper-actions">
-            <a class="paper-btn primary" id="${playBtnId}" href="stats/index.html?load=${encodeURIComponent(a.code)}&live=1" hidden>Recruit</a>
+            <a class="paper-btn primary" id="${playBtnId}" href="agent-hub.html?recruit=${encodeURIComponent(a.code)}#new" hidden>Recruit</a>
           </div>
           <div class="ah-appear-callout" id="ah-callout-${escapeHtml(a.code)}" hidden>
             <span class="ah-appear-callout-text"></span>
@@ -940,13 +940,30 @@
       });
     });
 
-    const activeCode = (preserveActiveCode && agents.some(a => a.code === preserveActiveCode))
-      ? preserveActiveCode : agents[0].code;
+    // + New Recruit stays open through a re-render (a Cover Identity
+    // lookup finishing while the player is in the wizard).
+    const activeCode = preserveActiveCode === 'new' ? 'new'
+      : (preserveActiveCode && agents.some(a => a.code === preserveActiveCode)) ? preserveActiveCode : agents[0].code;
     setActiveTab(activeCode);
     loadHandouts();
   }
 
   renderRoster();
+
+  // The New Recruit wizard (assets/recruit-wizard.js) borrows the Agent
+  // File for its Profiling step, and files the new Agent here when the
+  // Contract is signed: their tab opens, Agent File first.
+  window.dgHub = { homeAppearance, renderRoster, setActiveTab };
+  window.addEventListener('dg-recruit-filed', e => {
+    const code = e.detail && e.detail.code;
+    if (!code) return;
+    renderRoster(code);
+    setActiveTab(code);
+    const panel = document.getElementById('panel-' + code);
+    if (panel && panel.scrollIntoView) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  // ?recruit=resume or #new opens + New Recruit.
+  if (/[?&]recruit=/.test(location.search) || location.hash === '#new') setActiveTab('new');
 
   // A link to one Agent (the retired Agent Portal's addresses forward
   // here): ?code=CODE opens their tab, #appearance or #photos goes to
@@ -1595,6 +1612,8 @@
   // folder's own header above already carries the photo and name.
   function profTitle(key) {
     if (!key) return '';
+    const rl = window.dgRecruitData && window.dgRecruitData.label(key);
+    if (rl) return rl;
     if (window.professions && window.professions[key] && window.professions[key].title) return window.professions[key].title;
     return String(key).replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   }
@@ -1786,6 +1805,7 @@
 <script src="assets/dice-roller.js?v=9"></script>
 <script src="assets/agent-sheet.js"></script>
 <script src="assets/agent-paper.js"></script>
+<script src="assets/recruit-wizard.js"></script>
 <script src="assets/field-notes.js"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>
 

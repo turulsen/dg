@@ -33,8 +33,16 @@ function buildAppearancePrompt(data) {
     const isOutfit = data.mode === 'outfit';
     const isSurveillance = data.mode === 'surveillance';
 
+    // The age went in as a bare "Mid 30s" and no paragraph asked for it,
+    // so the written prompt (and the Plate) usually lost it; it is now
+    // labelled here and every mode's instructions require it.
+    const ageText = String(char.age_range || '').trim();
+    const ageLine = ageText ? 'Apparent age: ' + ageText.toLowerCase() : '';
+    const ageRule = ageText
+      ? 'State the apparent age plainly and early (for example "a ' + (char.sex === 'Female' ? 'woman' : char.sex === 'Male' ? 'man' : 'person') + ' in ' + (char.sex === 'Female' ? 'her' : char.sex === 'Male' ? 'his' : 'their') + ' ' + ageText.toLowerCase() + '"), and let it show in the face, skin and hair. '
+      : '';
     const baseDesc = [
-      char.age_range, char.sex, char.nationality,
+      ageLine, char.sex, char.nationality,
       'Build: ' + char.build,
       'Face: ' + [char.face_shape, char.eye_color + ' ' + char.eye_shape + ' eyes', char.nose, char.lips, char.skin].filter(Boolean).join(', '),
       'Hair: ' + [char.hair_color, char.hair_style, char.hair_texture].filter(Boolean).join(', '),
@@ -87,9 +95,9 @@ function buildAppearancePrompt(data) {
         + (char.face_scars ? 'Identity markers: ' + char.face_scars + '\n' : '')
         + (char.expression ? 'Expression: ' + char.expression + '\n' : '')
         + (eraNote ? '\nERA CONTEXT: ' + eraNote + '\n' : '')
-        + '\nWrite the prompt using this EXACT structure — two paragraphs, no preamble, no labels:\n\n'
+        + '\nWrite the prompt using this EXACT structure — two paragraphs, no preamble, no labels. ' + ageRule + '\n\n'
         + 'PARAGRAPH 1: Open with "A clean cinema-character-reference 3:4 headshot, framed from forehead to upper chest with the face filling most of the frame." '
-        + 'Then: full identity description — heritage/nationality, build, skin tone and finish, hair (color, length, texture), face register (jaw, cheekbones, brow, eye shape and color, nose, lips), all identity markers. '
+        + 'Then: full identity description — apparent age, sex, heritage/nationality, build, skin tone and finish, hair (color, length, texture), face register (jaw, cheekbones, brow, eye shape and color, nose, lips), all identity markers. '
         + 'Then: wardrobe baseline, describing exactly this collar/shoulder line: "' + topWearDesc + ', no jewelry, no logos, no graphics." '
         + 'Then: "Body squared to camera, head level, neutral relaxed expression, eyes to camera, lips closed and relaxed, subtle controlled energy."\n\n'
         + 'PARAGRAPH 2: Open with "Mid-gray seamless studio background — even neutral mid-gray, no seam line, no gradient, no falloff to black or white." '
@@ -111,7 +119,8 @@ function buildAppearancePrompt(data) {
         + (eraNote ? 'ERA CONTEXT: ' + eraNote + '\n\n' : '')
         + (char.expression ? 'Expression/stance: ' + char.expression + '\n\n' : '')
         + 'Write the prompt using this EXACT structure — two paragraphs, no preamble, no labels:\n\n'
-        + 'PARAGRAPH 1: Full visual description of the character — hair, face briefly, then COMPLETE OUTFIT head-to-toe in order: '
+        + ageRule
+        + 'PARAGRAPH 1: Full visual description of the character — apparent age and sex first, then hair, face briefly, then COMPLETE OUTFIT head-to-toe in order: '
         + 'jacket/outerwear, shirt/top, trousers/skirt, footwear, accessories, jewelry. '
         + 'Then pose: "Standing in a cocked-hip model stance, body angled [15-30] degrees from camera, weight shifted onto one hip, chin slightly tucked, eyes to camera, [expression]." '
         + 'NEVER mention headshot, portrait, chest-up, or upper body framing in this paragraph.\n\n'
@@ -141,6 +150,7 @@ function buildAppearancePrompt(data) {
         + 'The prompt must incorporate all appearance impact notes from the medical record.\n\n'
         + 'BASE CHARACTER:\n' + baseDesc + '\n\n'
         + 'MEDICAL RECORD — APPEARANCE IMPACTS:\n' + (injuryDesc || 'None on file.') + '\n\n'
+        + ageRule
         + 'Write only the image prompt. 2-3 paragraphs. Photorealistic, clinical lighting, full body visible. '
         + 'Begin with the physical description, end with lighting and camera notes.';
     }

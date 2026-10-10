@@ -135,7 +135,9 @@
       armOrders: armOrders,
       refresh: function () { var h = hostApi(); if (h) h.refresh(); },
       go: function (path) { var h = hostApi(); if (h && h.go) h.go(path); else location.href = url(path); },
-      oath: function (o) { var h = hostApi(); return h && h.oath ? h.oath(o) : Promise.resolve(window.confirm('Save these edits?')); }
+      oath: function (o) { var h = hostApi(); return h && h.oath ? h.oath(o) : Promise.resolve(window.confirm('Save these edits?')); },
+      contract: function (o) { var h = hostApi(); return h && h.oath ? h.oath(Object.assign({}, o, { contract: true })) : Promise.resolve(window.confirm('Sign the Contract and file this Agent?')); },
+      split: function (view) { var h = hostApi(); if (h && h.split) { h.split(view); return true; } return false; }
     };
     // Escape inside an embedded page (focus is in the iframe, so the
     // host never sees the key) or on a shell page under the open notebook.
@@ -320,6 +322,8 @@
     var key = arguments.length ? k : bio && bio.profession;
     if (!key) return arguments.length ? '' : (data.brief && data.brief.profession) || '';
     try {
+      var rl = window.dgRecruitData && window.dgRecruitData.label(key);
+      if (rl) return rl;
       var p = window.professions || (contentWin() && contentWin().professions);
       if (p && p[key] && p[key].title) return p[key].title;
     } catch (e) { /* not on the sheet */ }
@@ -370,7 +374,8 @@
   var sheetLibPromise = null;
   var SHEET_LIB = [
     ['assets/agent-sheet.js', 'dgAgentSheet'], ['assets/disorders.js', 'dgDisorders'], ['assets/agent-rules.js', 'dgRules'],
-    ['assets/agent-live.js', 'dgAgentLive'], ['assets/agent-paper.js', 'dgAgentPaper']
+    ['assets/agent-live.js', 'dgAgentLive'], ['assets/agent-paper.js', 'dgAgentPaper'],
+    ['assets/recruit-data.js', 'dgRecruitData']
   ];
   function ensureSheetLib() {
     [['assets/agent-sheet.css', 'data-as-css'], ['assets/agent-paper.css', 'data-ap-css']].forEach(function (c) {
@@ -936,7 +941,7 @@
             var w = g.getAttribute('data-go');
             if (w === 'file') navigate(url('agent-hub.html?code=' + encodeURIComponent(c.code)));
             else if (w === 'photo') navigate(url('agent-hub.html?code=' + encodeURIComponent(c.code) + '#photos'));
-            else if (w === 'recruit') navigate(url('stats/index.html?load=' + encodeURIComponent(c.code)));
+            else if (w === 'recruit') navigate(url('agent-hub.html?recruit=' + encodeURIComponent(c.code) + '#new'));
           });
         }
       }, function () { body.innerHTML = '<p class="fn-muted">Could not open the file — check the connection.</p>'; });
@@ -1646,8 +1651,13 @@
           '<button type="button" class="fn-btn fn-ink" data-s="load">Load</button></div></div>' +
         '<div class="fn-actions" style="margin:10px 0 4px"><button type="button" class="fn-btn" data-s="more">Import &amp; more sheet settings…</button></div>';
     } else if (a && !a.friendly) {
-      html += '<div class="fn-set-row"><div><div class="fn-set-t">Character sheet</div><div class="fn-set-s">Theme, exports, backups and imports for ' + esc(agentName(a)) + '.</div></div>' +
-        '<button type="button" class="fn-btn fn-ink" data-s="gosheet">Open sheet ↗</button></div>';
+      // The Agent File is the sheet: its export is built from the saved
+      // character. The old sheet stays reachable from here only.
+      html += '<div class="fn-set-row"><div><div class="fn-set-t">Export</div><div class="fn-set-s">A copy of ' + esc(agentName(a)) + ' to keep or print.</div></div>' +
+        '<button type="button" class="fn-btn fn-red" data-s="pdf">PDF (DD Form 315)</button></div>' +
+        '<div class="fn-set-status" data-s="pdf-status"></div>' +
+        '<div class="fn-set-row"><div><div class="fn-set-t">Old character sheet</div><div class="fn-set-s">The previous sheet, for anything the Agent File can\'t do yet.</div></div>' +
+        '<button type="button" class="fn-btn fn-ink" data-s="gosheet">Open ↗</button></div>';
     }
     html += '<div class="fn-set-row"><div><div class="fn-set-t">Boot splash</div><div class="fn-set-s">Plays the clearance terminal once per session. Off skips the animation; the same screen still shows while a page loads.</div></div>' +
         '<button type="button" class="fn-toggle' + (bootOff ? '' : ' fn-on') + '" data-s="boot">' + (bootOff ? 'OFF' : 'ON') + '</button></div>';
@@ -1662,6 +1672,7 @@
       else if (k === 'load' && sw && sw.dgCloudSave) { var v = body.querySelector('[data-s="code"]').value; close(); sw.dgCloudSave.loadFromCloud(v); }
       else if (k === 'more' && sw && sw.dgSettingsPanel) { close(); sw.dgSettingsPanel.open(); }
       else if (k === 'gosheet' && a) { try { sessionStorage.setItem(OPEN_ON_ARRIVAL_KEY, 'settings'); } catch (err) { /* private mode */ } navigate(url('stats/index.html?load=' + encodeURIComponent(a.code))); }
+      else if (k === 'pdf' && a) exportPdf(a, body.querySelector('[data-s="pdf-status"]'));
       else if (k === 'boot') { var off = lsGet(BOOT_OFF_KEY) !== '1'; lsSet(BOOT_OFF_KEY, off ? '1' : '0'); b.classList.toggle('fn-on', !off); b.textContent = off ? 'OFF' : 'ON'; }
       else if (k === 'reload') reloadMyAgents(body);
     };
@@ -1675,6 +1686,42 @@
       var t = sw.document.getElementById('cs-theme-select');
       if (t) { t.value = sel.value; t.dispatchEvent(new Event('change', { bubbles: true })); }
     });
+  }
+  // DD Form 315 from the saved character (stats/pdf-export.js fills the
+  // form; here its "current sheet" is this Agent's saved state).
+  function exportPdf(a, st) {
+    if (st) st.textContent = 'Building the PDF…';
+    ensureStore().then(function (S) { return S.getCharacter(a.code); }).then(function (doc) {
+      var state = null;
+      try { state = doc && doc.character_json ? JSON.parse(doc.character_json) : null; } catch (e) { state = null; }
+      if (!state) throw new Error('No character sheet saved for this Agent yet.');
+      state.bio = state.bio || {};
+      var label = professionLabel(state.bio.profession);
+      if (label) state.bio.profession = state.bio.professionTitle || (state.bio.posting ? state.bio.posting + ' (' + label + ')' : label);
+      return loadScriptOnce(url('stats/pdf-export.js'), function () { return typeof window.exportToPDF === 'function'; }).then(function () {
+        var prev = window.dgSaveLoad, prevToast = window.showToast, last = '';
+        window.dgSaveLoad = { collectState: function () { return state; } };
+        window.showToast = function (m) { last = String(m || ''); };
+        return Promise.resolve(window.exportToPDF()).then(function () {
+          window.dgSaveLoad = prev; window.showToast = prevToast;
+          if (/failed/i.test(last)) throw new Error(last);
+        });
+      });
+    }).then(function () { if (st) st.textContent = 'Downloaded.'; }, function (err) {
+      if (st) st.textContent = 'Could not make the PDF: ' + String((err && err.message) || err).slice(0, 140);
+    });
+  }
+  var scriptsOnce = {};
+  function loadScriptOnce(src, test) {
+    if (test()) return Promise.resolve();
+    if (scriptsOnce[src]) return scriptsOnce[src];
+    scriptsOnce[src] = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = src; s.onload = function () { resolve(); };
+      s.onerror = function () { scriptsOnce[src] = null; reject(new Error('Could not load ' + src)); };
+      document.head.appendChild(s);
+    });
+    return scriptsOnce[src];
   }
   // Same merge hub.html's Cover Identity preload does: this identity's
   // Agents replace the roster's, keeping entries with no player name.
@@ -1730,6 +1777,16 @@
   window.dgFieldNotes = {
     isHost: true,
     open: open, close: close, refresh: refresh, armOrders: armOrders, oath: oath,
+    contract: function (o) { return oath(Object.assign({}, o, { contract: true })); },
+    // Split mode (desktop): the Agent File beside one of the brown tabs.
+    split: function (view) {
+      if (narrow()) { open('agentfile'); return true; }
+      if (!state.split) { state.split = true; lsSet(SPLIT_KEY, '1'); }
+      if (view && isTabView(view)) { state.splitView = view; lsSet(SPLIT_VIEW_KEY, view); state.view = view; }
+      else if (!isTabView(state.view)) state.view = state.splitView;
+      open(state.view);
+      return true;
+    },
     isOpen: function () { return state.open; },
     // A page inside the notebook (desktop Notes) going somewhere else: it
     // goes in the page under the notebook, not inside the notebook's own
@@ -1764,6 +1821,11 @@
     return r(BRIEFING_WORDS[0]) + ' ' + r(BRIEFING_WORDS[1]);
   }
   var ordersKeyHandler = null;
+  // The [Y/N] prompt into view once it shows (on a phone the briefing is
+  // taller than the screen).
+  function showPrompt(ov, prompt) {
+    try { if (ov.scrollHeight > ov.clientHeight) prompt.scrollIntoView({ block: 'end', behavior: 'smooth' }); } catch (e) { /* old engine */ }
+  }
   function maybeShowOrders() {
     if (document.getElementById('fn-orders')) return;
     var p = lsJson(ORDERS_PENDING_KEY, null);
@@ -1780,20 +1842,35 @@
     return new Promise(function (resolve) {
       var old = document.getElementById('fn-orders');
       if (old) old.remove();
-      var lines = [['fn-o-dim', '>amendment: agent file ' + (o.code || '')]];
-      if (o.changes && o.changes.length) lines.push(['fn-o-dim', '>changes: ' + o.changes.slice(0, 8).join(', ') + (o.changes.length > 8 ? ', +' + (o.changes.length - 8) + ' more' : '')]);
-      else lines.push(['fn-o-dim', '>changes: none']);
-      lines = lines.concat([['', '']], ORDERS_TEXT.filter(function (l) { return /^\d\./.test(l[1]); }).map(function (l) { return ['', l[1].replace(/^(\d\.\s*[^.]+\.).*$/, '$1')]; }), [['', '']]);
+      var lines, contract = !!o.contract;
+      if (contract) {
+        // A new Agent (the New Recruit wizard, or an import): the Contract,
+        // the full clearance briefing, once.
+        lines = [['fn-o-dim', '>clearance_agreement: ready_to_sign'], ['fn-o-dim', '>briefing_codename: ' + briefingCodename()],
+          ['fn-o-dim', '>recruit: ' + (o.name ? o.name + ' (' + o.code + ')' : o.code) + (o.profession ? ' · ' + o.profession : '')]];
+        if (o.incursion) lines.push(['fn-o-dim', '>incident_on_file:'], ['fn-o-inc', o.incursion]);
+        lines = lines.concat([['', '']], ORDERS_TEXT, [['', '']]);
+      } else {
+        lines = [['fn-o-dim', '>amendment: agent file ' + (o.code || '')]];
+        if (o.changes && o.changes.length) lines.push(['fn-o-dim', '>changes: ' + o.changes.slice(0, 8).join(', ') + (o.changes.length > 8 ? ', +' + (o.changes.length - 8) + ' more' : '')]);
+        else lines.push(['fn-o-dim', '>changes: none']);
+        // Saving an edit: the Mission & Standing Orders (the Contract's full
+        // briefing is for a new Agent only).
+        lines = lines.concat([['', ''], ['fn-o-head', 'THE MISSION & STANDING ORDERS'], ['', '']],
+          MISSION.map(function (m) { return ['', m[0].toUpperCase().replace(/:$/, '') + (m[0] === 'First priority:' ? '' : ' PRIORITY') + ': ' + m[1].charAt(0).toUpperCase() + m[1].slice(1)]; }), [['', '']]);
+      }
       var ov = document.createElement('div');
       ov.id = 'fn-orders';
-      ov.className = 'fn-oath-save';
+      ov.className = contract ? 'fn-contract' : 'fn-oath-save';
       ov.setAttribute('role', 'dialog');
-      ov.setAttribute('aria-label', 'The Oath');
+      ov.setAttribute('aria-label', contract ? 'The Contract' : 'The Mission & Standing Orders');
       ov.innerHTML = '<div class="fn-orders-term"><div class="fn-orders-why">' +
-        esc('Saving your edits to ' + (o.name || 'this Agent') + '. Take the Oath to file them; N goes back to editing with nothing lost.') +
+        esc(contract ? (o.name || 'Your new Agent') + '\'s file is complete. Y signs the Contract and files them; N goes back to the review with nothing lost.'
+          : 'Saving your edits to ' + (o.name || 'this Agent') + '. Y files them; N goes back to editing with nothing lost.') +
         '</div><div data-o="log"></div><div data-o="prompt" hidden>' +
-        '<div>CAN WE CALL ON YOU? [<button type="button" class="fn-orders-key" data-o="y" aria-label="Y: file the edits">Y</button>/' +
-        '<button type="button" class="fn-orders-key" data-o="n" aria-label="N: back to editing">N</button>]<span class="fn-cursor"></span></div></div></div>';
+        '<div>CAN WE CALL ON YOU? [<button type="button" class="fn-orders-key" data-o="y" aria-label="' + (contract ? 'Y: sign and file the Agent' : 'Y: file the edits') + '">Y</button>/' +
+        '<button type="button" class="fn-orders-key" data-o="n" aria-label="' + (contract ? 'N: back to the review' : 'N: back to editing') + '">N</button>]<span class="fn-cursor"></span></div>' +
+        '<div class="fn-orders-tap"><button type="button" data-o="y">' + (contract ? 'Y — sign' : 'Y — file it') + '</button><button type="button" data-o="n">' + (contract ? 'N — back' : 'N — keep editing') + '</button></div></div></div>';
       (root || document.body).appendChild(ov);
       ov.tabIndex = -1;
       try { ov.focus(); } catch (e) { /* best effort */ }
@@ -1804,13 +1881,15 @@
         done = true; clearInterval(timer);
         log.innerHTML = lines.map(function (l) { return '<div class="' + l[0] + '">' + esc(l[1]) + '&nbsp;</div>'; }).join('');
         prompt.hidden = false;
+        showPrompt(ov, prompt);
       }
-      // Quicker than the first briefing: Enter skips it.
+      // The save screen types quicker than the Contract; Enter skips either.
+      var step = contract ? 3 : 6;
       var timer = setInterval(function () {
         if (li >= lines.length) { finishTyping(); return; }
         if (!cur) { cur = document.createElement('div'); cur.className = lines[li][0]; log.appendChild(cur); }
         var text = lines[li][1];
-        ci = Math.min(text.length, ci + 6);
+        ci = Math.min(text.length, ci + step);
         cur.innerHTML = esc(text.slice(0, ci)) + '&nbsp;';
         if (ci >= text.length) { li++; ci = 0; cur = null; }
       }, 12);
@@ -1819,8 +1898,17 @@
         if (yes && !done) { finishTyping(); return; }
         answered = true;
         cleanup();
+        if (yes && contract && o.code) {
+          // Signed: the clearance briefing is done for this Agent (it isn't
+          // shown again on the next page), and the photo / Field ID nudges follow.
+          var ack = ordersAck(); ack[o.code] = Date.now();
+          lsSet(ORDERS_ACK_KEY, JSON.stringify(ack));
+          var pend = lsJson(ORDERS_PENDING_KEY, null);
+          if (pend && pend.code === o.code) lsDel(ORDERS_PENDING_KEY);
+          lsSet(ONBOARD_KEY, JSON.stringify({ code: o.code, step: 'photo', at: Date.now() }));
+        }
         if (yes) {
-          var d = document.createElement('div'); d.className = 'fn-o-dim'; d.textContent = '>filed.'; log.appendChild(d);
+          var d = document.createElement('div'); d.className = 'fn-o-dim'; d.textContent = contract ? '>understood. we\'ll be in touch.' : '>filed.'; log.appendChild(d);
           prompt.hidden = true;
           setTimeout(function () { ov.remove(); }, 450);
         } else ov.remove();
@@ -1869,7 +1957,8 @@
       '</div><div data-o="log"></div><div data-o="prompt" hidden>' +
       // Just the terminal's own [Y/N]: type it, or tap the letter.
       '<div>CAN WE CALL ON YOU? [<button type="button" class="fn-orders-key" data-o="y" aria-label="Y: you can call on me">Y</button>/' +
-      '<button type="button" class="fn-orders-key" data-o="n" aria-label="N: not now">N</button>]<span class="fn-cursor"></span></div></div></div>';
+      '<button type="button" class="fn-orders-key" data-o="n" aria-label="N: not now">N</button>]<span class="fn-cursor"></span></div>' +
+      '<div class="fn-orders-tap"><button type="button" data-o="y">Y — you can</button><button type="button" data-o="n">N — not now</button></div></div></div>';
     root.appendChild(ov);
     ov.tabIndex = -1;
     try { ov.focus(); } catch (e) { /* best effort */ }
@@ -1882,6 +1971,7 @@
       clearInterval(timer);
       log.innerHTML = lines.map(function (l) { return '<div class="' + l[0] + '">' + esc(l[1]) + '&nbsp;</div>'; }).join('');
       prompt.hidden = false;
+      showPrompt(ov, prompt);
     }
     timer = setInterval(function () {
       if (li >= lines.length) { finishTyping(); return; }
