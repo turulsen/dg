@@ -3,7 +3,7 @@
   "private": true,
   "description": "Cloud Functions for the Firebase migration: the auth bridge (exchangeAgentToken, handlerLogin) plus the mirror-as-a-schedule option for Phase 1.",
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "main": "index.js",
   "scripts": {

@@ -63,7 +63,13 @@ consumer depending on that history being versioned. v2.0.0 was cut
 reserved for it: the Google Sheet is retired and every page reads and
 writes Firestore directly (Code.gs v97 is left serving only the Drive
 image proxy for old `gdrive:` links; going live took the one-time steps
-in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v3.0.0**
+in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v3.0.1**
+(2026-10-10) moves Cloud Functions from Node.js 20 to 22
+(`functions/package.json` `engines.node`): Google retires Node 20 for
+Cloud Functions on 2026-10-30, after which a Node 20 codebase can no
+longer be deployed. No code change; it needs `firebase deploy --only
+functions` once. The tags v2.2.0–v2.9.0 and v3.0.0 now exist, with
+releases (2026-10-10). **v3.0.0**
 (2026-10-10) is PR #70, the major bump the v2 plan reserved for retiring
 the old character sheet (milestone M2): Agent Hub's **+ New Recruit** is
 a twelve-step creation wizard (statistics to the Contract, The Complex's
@@ -77,7 +83,7 @@ Motivation, the Mission & Standing Orders on save, and the play-test
 fixes (the age in the Plates' prompts, the terminal on a phone).
 Backend: `firebase deploy --only functions` (new
 `generateBondDescription`, the prompts' age); no Apps Script change.
-Shell cache `dg-hub-shell-v209`. No tag yet. **v2.9.0**
+Shell cache `dg-hub-shell-v209`. Merge commit `c9a2702`. **v2.9.0**
 (2026-10-09) is PR #69: Field Notes' Split mode (desktop) -- the Agent
 File on the left page, the brown tabs' pages (Notes as the whole Notes
 page, Evidences, Rules, Settings) on the right, remembered per device --

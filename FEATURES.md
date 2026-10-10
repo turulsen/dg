@@ -1120,6 +1120,10 @@ September addressing bugs the shell surfaced (Dice Roller state going
 stale, Split View, Notes block picker, back-navigation, duplicate
 widgets). Live and current — no longer just planned.
 
+**Node.js 22 (v3.0.1).** `functions/package.json` asks for Node 22: Google
+retires Node 20 for Cloud Functions on 2026-10-30, and deploys of a Node
+20 codebase stop working then.
+
 **Cloud Functions in v3.0.0 (PR #70).** New `generateBondDescription`
 (the New Recruit wizard's Bond **Generate**: same sign-in and Anthropic
 key as `generatePrompt`, 20 calls per 10 minutes per Agent, an emulator
