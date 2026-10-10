@@ -11001,10 +11001,13 @@ def test_agent_file_wear(p):
         page.wait_for_selector(f"#ah-sheet-{FN_CODE} .as-paper.ap .ap-vitals", timeout=15000)
         return page, errs
     sel = f"#ah-sheet-{FN_CODE} .as-paper.ap"
-    probe = """(s) => { const el = document.querySelector(s), b = getComputedStyle(el, '::before'), a = getComputedStyle(el, '::after');
-        return { tier: el.getAttribute('data-sanity-tier') || '0', insane: getComputedStyle(el).getPropertyValue('--insane').trim(),
-                 fill: getComputedStyle(el).getPropertyValue('--fill').trim(), bg: b.backgroundImage !== 'none' && b.content !== 'none',
-                 stamp: a.content, stampOp: a.opacity, mask: getComputedStyle(el).maskImage || getComputedStyle(el).webkitMaskImage || 'none' }; }"""
+    # The stamp sits on the header's name (photo and name), not over the buttons.
+    probe = """(s) => { const el = document.querySelector(s), b = getComputedStyle(el, '::before'),
+              h = document.getElementById('ah-title-%s'), a = getComputedStyle(h, '::after');
+        return { tier: el.getAttribute('data-sanity-tier') || '0', insane: getComputedStyle(h).getPropertyValue('--insane').trim(),
+                 fill: getComputedStyle(h).getPropertyValue('--fill').trim(), bg: b.backgroundImage !== 'none' && b.content !== 'none',
+                 host: h.hasAttribute('data-wear-stamp'), paperStamp: getComputedStyle(el, '::after').content,
+                 stamp: a.content, stampOp: a.opacity, mask: getComputedStyle(el).maskImage || getComputedStyle(el).webkitMaskImage || 'none' }; }""" % FN_CODE
     want = {55: ("0", False), 45: ("1", False), 35: ("2", False), 25: ("3", False), 15: ("4", False), 9: ("5", True), 5: ("5", True), 2: ("5", True), 0: ("6", True)}
     page, errs = page_at(55)
     got = {}
@@ -11013,8 +11016,8 @@ def test_agent_file_wear(p):
         page, errs = page_at(san)
         page.wait_for_timeout(1500)
         got[san] = page.evaluate(probe, sel)
-    ok = all(got[s]["tier"] == want[s][0] and (got[s]["bg"] == (want[s][0] != "0")) and (('INSANE' in got[s]["stamp"]) == want[s][1]) for s in want)
-    record("wear", "the stage follows SAN: clean at 50+, stages 1-4 by tens, 5 from 9, 6 at 0; INSANE only from 9",
+    ok = all(got[s]["tier"] == want[s][0] and (got[s]["bg"] == (want[s][0] != "0")) and (('INSANE' in got[s]["stamp"]) == want[s][1]) and got[s]["host"] == want[s][1] and 'INSANE' not in got[s]["paperStamp"] for s in want)
+    record("wear", "the stage follows SAN: clean at 50+, stages 1-4 by tens, 5 from 9, 6 at 0; INSANE only from 9, on the header name",
            ok, json.dumps({s: [got[s]["tier"], got[s]["bg"], 'INSANE' in got[s]["stamp"]] for s in got}))
     record("wear", "the stamp: worn from 9 (no fill), filling in from 5, solid at 0",
            got[9]["fill"] == "0" and float(got[9]["insane"]) >= .3 and got[5]["fill"] == "0" and float(got[2]["fill"]) > 0 and got[0]["fill"] == "1" and got[0]["insane"] == "1",

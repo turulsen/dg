@@ -180,7 +180,21 @@
   }
   function wearAttrs(x) {
     var w = wearVars(R().derived(x).san);
-    return w.tier ? ' data-sanity-tier="' + w.tier + '" style="--insane:' + w.insane + ';--fill:' + w.fill + '"' : '';
+    return w.tier ? ' data-sanity-tier="' + w.tier + '"' : '';
+  }
+  // The INSANE stamp sits on the Agent's name (the host's, e.g. Agent Hub's
+  // header, or the paper's own), so it never lies over a button.
+  function placeStamp(host, x) {
+    if (!host) return;
+    var w = x ? wearVars(R().derived(x).san) : { tier: 0 };
+    if (w.tier >= 5) {
+      host.setAttribute('data-wear-stamp', '');
+      host.style.setProperty('--insane', w.insane);
+      host.style.setProperty('--fill', w.fill);
+    } else if (host.hasAttribute('data-wear-stamp')) {
+      host.removeAttribute('data-wear-stamp');
+      host.style.removeProperty('--insane'); host.style.removeProperty('--fill');
+    }
   }
   applyWear();
   window.addEventListener('storage', function (e) { if (e.key === WEAR_KEY) applyWear(); });
@@ -206,6 +220,7 @@
       var pp = el.querySelector('.as-paper.ap'), tier = pp ? pp.getAttribute('data-sanity-tier') || '0' : '0';
       if (pp && el._apTier != null && el._apTier !== tier) pp.classList.add('ap-wear-change');
       el._apTier = tier;
+      placeStamp(ctx.stampHost ? ctx.stampHost() : el.querySelector('.as-head .as-name'), s.state ? st() : null);
       // Only when the redraw moved it: setting it anyway would stop a
       // smooth scroll already on its way (a #photos link on Agent Hub).
       if (sc && sc.scrollTop !== top) sc.scrollTop = top;

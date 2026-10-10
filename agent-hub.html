@@ -1681,6 +1681,8 @@
             professionLabel: profTitle, members, cellName: cell ? (cell.name || cell.cell_id) : '', opsHtml,
             physical: AS.physical(brief, ''), incursion: AS.incursionText(charDoc, state), loadPhoto,
             appearanceOutside: true,
+            // The INSANE stamp (low SAN) goes on the name in the header above.
+            stampHost: () => document.getElementById('ah-title-' + a.code),
             emptySheetHtml: '<p class="as-text as-k" style="margin-top:12px">No character sheet yet — Recruit builds one.</p>'
           });
           return;

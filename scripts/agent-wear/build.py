@@ -12,7 +12,9 @@ and stacked by the stages:
   tier 6  SAN  0     the worst of it
 
 The INSANE stamp shows from SAN 9 (worn, patchy) and fills in from SAN 5 to
-solid at 0; assets/agent-paper.js sets data-sanity-tier, --insane and --fill.
+solid at 0, on the Agent's name (data-wear-stamp), clear of the buttons;
+assets/agent-paper.js sets data-sanity-tier on the paper and --insane /
+--fill on the name.
 
 Run:  python3 scripts/agent-wear/build.py   (rewrites assets/agent-wear.css)
 """
@@ -171,16 +173,22 @@ tm = ('linear-gradient(#000,#000) padding-box, var(--w-tT) top/900px 14px repeat
       'var(--w-tL) left/14px 900px repeat-y border-box, var(--w-tR) right/14px 900px repeat-y border-box')
 css.append(f'{P}[data-sanity-tier="5"], {P}[data-sanity-tier="6"]{{ border:14px solid transparent; margin:-14px; -webkit-mask:{tm}; mask:{tm}; }}')
 css.append(f'{P}[data-sanity-tier="5"]::before, {P}[data-sanity-tier="6"]::before{{ inset:-14px; }}')
-# The stamp: the page's typewriter face, worn ink that fills in as --fill rises.
+# The stamp: on the Agent's name (and leaning back over the photo), never on
+# the buttons -- agent-paper.js marks the name with data-wear-stamp and sets
+# --insane / --fill there (Agent Hub's header name, or the paper's own).
 ink = 'var(--w-ink) 0 0/400px 160px, linear-gradient(rgba(0,0,0,var(--fill)),rgba(0,0,0,var(--fill)))'
-css.append(f'{P}[data-sanity-tier="5"]::after, {P}[data-sanity-tier="6"]::after{{ content:"INSANE"; position:absolute; left:50%; top:150px; z-index:6; pointer-events:none; '
-           f'transform:translateX(-50%) rotate(-11deg); padding:2px 22px 0; font-family:"Special Elite","Courier New",monospace; font-size:clamp(40px,13cqw,84px); line-height:1.15; letter-spacing:.14em; '
-           f'color:#9c1010; border:7px double #9c1010; border-radius:6px; opacity:var(--insane); mix-blend-mode:multiply; -webkit-mask:{ink}; mask:{ink}; filter:blur(.3px); }}')
+css.append(f'[data-wear-stamp]{{ --w-ink:{V["ink"]}; position:relative; z-index:7; transition:--insane 1.2s ease, --fill 1.2s ease; }}')
+css.append(f'[data-wear-stamp]::after{{ content:"INSANE"; position:absolute; left:-.4em; top:75%; pointer-events:none; white-space:nowrap; '
+           f'transform:translateY(-50%) rotate(-7deg); padding:.04em .3em 0; font-family:"Special Elite","Courier New",monospace; font-size:1.6em; font-weight:400; line-height:1.15; letter-spacing:.14em; text-transform:none; '
+           f'color:#9c1010; border:.09em double #9c1010; border-width:.1em; border-radius:.08em; opacity:var(--insane); mix-blend-mode:multiply; -webkit-mask:{ink}; mask:{ink}; filter:blur(.3px); }}')
 # A new stage fades in; none of it with reduced motion, or when switched off in Settings.
 css.append('@keyframes ap-wear-in{ from{ opacity:0; } to{ opacity:1; } }')
 css.append(f'{P}.ap-wear-change::before{{ animation:ap-wear-in 1.6s ease both; }}')
-css.append('@media (prefers-reduced-motion:reduce){ ' + f'{P}.ap-wear-change::before{{ animation:none; }} {P}[data-sanity-tier]{{ transition:none; }} }}')
-css.append(f'html.dg-no-wear {P}[data-sanity-tier]::before, html.dg-no-wear {P}[data-sanity-tier]::after{{ display:none; }}')
+# Phones: smaller and from the name's own left edge, so it stays on the paper
+# and off the photo's buttons.
+css.append('@media (max-width:600px){ [data-wear-stamp]::after{ left:0; font-size:min(1.2em, 5.6vw); } }')
+css.append('@media (prefers-reduced-motion:reduce){ ' + f'{P}.ap-wear-change::before{{ animation:none; }} {P}[data-sanity-tier], [data-wear-stamp]{{ transition:none; }} }}')
+css.append(f'html.dg-no-wear {P}[data-sanity-tier]::before, html.dg-no-wear [data-wear-stamp]::after{{ display:none; }}')
 css.append(f'html.dg-no-wear {P}[data-sanity-tier="5"], html.dg-no-wear {P}[data-sanity-tier="6"]{{ border:0; margin:0; -webkit-mask:none; mask:none; }}')
 root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 open(os.path.join(root, 'assets', 'agent-wear.css'), 'w').write('\n'.join(css) + '\n')
