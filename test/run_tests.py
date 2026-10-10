@@ -13289,8 +13289,8 @@ def test_field_notes_standing_orders(p):
                                    "ASK NOTHING", "We need your silence", "CAN WE CALL ON YOU? [Y/N]", "briefing_codename:"]), term[:400])
     record("onboarding", "the briefing says, out of character, why it came up: this Agent is saved, and it's once",
            "Ivy Imported is saved" in term and "once" in term, term[:200])
-    record("onboarding", "no call-to-action buttons under the prompt: only the terminal's own [Y/N], each letter tappable",
-           page.eval_on_selector_all("#fn-orders button", "els => els.map(e => e.textContent)") == ["Y", "N"], "")
+    record("onboarding", "desktop: no call-to-action buttons under the prompt, only the terminal's own [Y/N], each letter tappable (a phone also gets big Y / N buttons)",
+           page.eval_on_selector_all("#fn-orders button", "els => els.filter(e => e.offsetParent !== null).map(e => e.textContent)") == ["Y", "N"], "")
     page.keyboard.press("n")
     page.wait_for_timeout(300)
     record("onboarding", "N closes it and keeps the orders pending",
