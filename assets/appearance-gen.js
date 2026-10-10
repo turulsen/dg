@@ -28,7 +28,56 @@ const ARCHETYPES = [
   { id:'fso',       label:'Foreign Service Officer'  },
   { id:'firefighter',label:'Firefighter'             },
   { id:'program',   label:'Program Manager'          },
+  // The Complex's professions: each starts from the closest Handbook
+  // look (`base`) with its own clothing on top (COMPLEX_LOOKS below).
+  { id:'cbp_marine',   label:'Marine Interdiction Agent',            group:'Customs & Border Protection', base:'fed' },
+  { id:'cbp_bortac',   label:'Border Tactical Unit Operator',        group:'Customs & Border Protection', base:'mil' },
+  { id:'cbp_borstar',  label:'Search, Trauma & Rescue Agent',        group:'Customs & Border Protection', base:'medic' },
+  { id:'atf_medic',    label:'Tactical Medic',                       group:'ATF', base:'medic' },
+  { id:'atf_tactical', label:'Tactical Operator',                    group:'ATF', base:'mil' },
+  { id:'atf_analyst',  label:'Criminal Investigative Analyst',       group:'ATF', base:'spook' },
+  { id:'atf_explosives',label:'Explosives Specialist',               group:'ATF', base:'fed' },
+  { id:'usss_ppd',     label:'Protective Detail Agent',              group:'Secret Service', base:'fed' },
+  { id:'usss_cat',     label:'Counter Assault Team Operator',        group:'Secret Service', base:'mil' },
+  { id:'uscg_sar',     label:'Search and Rescue Swimmer',            group:'Coast Guard', base:'soldier' },
+  { id:'uscg_hitron',  label:'Helicopter Interdiction Sniper',       group:'Coast Guard', base:'mil' },
+  { id:'uscg_taclet',  label:'Tactical Law Enforcement Team Member', group:'Coast Guard', base:'soldier' },
+  { id:'uscg_msst',    label:'Maritime Safety & Security Team Member', group:'Coast Guard', base:'soldier' },
+  { id:'uscg_msrt',    label:'Maritime Security Response Operator',  group:'Coast Guard', base:'mil' },
+  { id:'nsa_crypto',   label:'Cryptanalyst',                         group:'NSA', base:'engineer' },
+  { id:'nsa_tao',      label:'Tailored Access Operations Hacker',    group:'NSA', base:'engineer' },
+  { id:'nsa_remote',   label:'Remote Device Technician',             group:'NSA', base:'spook' },
+  { id:'nps_interpretive', label:'Interpretive Ranger',              group:'National Park Service', base:'academic' },
+  { id:'nasa_astronaut', label:'Astronaut',                          group:'NASA', base:'pilot' },
+  { id:'contractor_targeting', label:'Targeting Officer',            group:'Contractors (CACI / Booz Allen)', base:'spook' },
 ];
+ARCHETYPES.forEach(function (a) { if (!a.group) a.group = "Agent's Handbook"; });
+
+// Clothing for The Complex's professions (our own ideas of what each
+// wears off duty or on a quiet day), over its base look.
+const COMPLEX_LOOKS = {
+  cbp_marine:   { jacket:['navy waterproof boat jacket, agency patch removed','salt-stained softshell'], footwear:['non-slip deck boots','worn boat shoes'], accessories:['sunglasses on a retainer cord','dry bag slung over a shoulder'] },
+  cbp_bortac:   { jacket:['desert-tan softshell','faded olive field jacket'], trousers:['tan tactical pants','sun-bleached cargo pants'], accessories:['wide-brimmed boonie hat','hydration pack straps'] },
+  cbp_borstar:  { jacket:['rescue-orange softshell, faded','tan field jacket'], accessories:['trauma shears clipped to a pocket','radio harness'] },
+  atf_medic:    { jacket:['black windbreaker, yellow letters removed'], accessories:['tourniquet in a belt pouch','medic shears on a lanyard'] },
+  atf_tactical: { jacket:['black softshell, no markings'], trousers:['black tactical pants'], accessories:['plate-carrier strap marks on the shoulders','sidearm in a drop holster'] },
+  atf_analyst:  { jacket:['plain gray blazer','navy cardigan'], shirt:['button-down, sleeves rolled','turtleneck'], accessories:['reading glasses pushed up','case binders under one arm'] },
+  atf_explosives:{ jacket:['canvas work jacket','dark windbreaker'], accessories:['bomb-tech pin on the lapel','toolkit roll in a back pocket'] },
+  usss_ppd:     { jacket:['dark suit jacket cut loose for a holster'], shirt:['white dress shirt, dark tie'], accessories:['clear coiled earpiece','lapel pin of the day'], jewelry:['plain steel watch'] },
+  usss_cat:     { jacket:['black tactical jacket'], trousers:['black BDU pants'], accessories:['earpiece and throat mic','black ballcap, no logo'] },
+  uscg_sar:     { jacket:['orange-trimmed rescue jacket','Coast Guard sweatshirt, faded'], shirt:['rash guard under a hoodie'], footwear:['dive booties tied to a bag','running shoes'], accessories:['swim fins hooked to a pack'] },
+  uscg_hitron:  { jacket:['olive flight jacket'], accessories:['aviator sunglasses','headset dents in the hair'] },
+  uscg_taclet:  { jacket:['blue operational jacket, rank removed'], accessories:['boarding gloves in a back pocket'] },
+  uscg_msst:    { jacket:['navy foul-weather jacket'], footwear:['deck boots'], accessories:['knit watch cap'] },
+  uscg_msrt:    { jacket:['black softshell'], trousers:['black tactical pants'], accessories:['wet-suit tan lines','dive watch'] },
+  nsa_crypto:   { jacket:['shapeless fleece','cardigan with stretched pockets'], shirt:['math-joke t-shirt','plaid button-down'], accessories:['badge on a lanyard, tucked away','pencil behind the ear'] },
+  nsa_tao:      { jacket:['black hoodie','conference-swag zip-up'], shirt:['band t-shirt'], accessories:['noise-canceling headphones around the neck','laptop full of stickers'] },
+  nsa_remote:   { jacket:['utility jacket full of pockets'], accessories:['electronics toolkit pouch','spare SIM cards in a tin'] },
+  nps_interpretive:{ jacket:['ranger fleece, park patch','green-gray field jacket'], shirt:['gray ranger shirt'], accessories:['flat hat in hand','binoculars on a strap'], footwear:['broken-in hiking boots'] },
+  nasa_astronaut:{ jacket:['blue flight jacket with mission patches','NASA windbreaker'], shirt:['polo with a mission logo'], accessories:['aviator watch','lanyard of center badges'] },
+  contractor_targeting:{ jacket:['quarter-zip pullover, company logo','business-casual blazer'], shirt:['company polo','oxford, no tie'], accessories:['clearance badge clipped to the belt','government-issue laptop bag'] }
+};
+
 
 const RAND_TABLES = {
 
@@ -403,9 +452,11 @@ function generateAgent(archetypeId) {
   const firstName = sex === 'Male' ? rnd(RAND_TABLES.first_m) : rnd(RAND_TABLES.first_f);
   const lastName = rnd(RAND_TABLES.last);
 
-  const ao = archetypeId && RAND_TABLES.archetype_overrides[archetypeId]
-    ? RAND_TABLES.archetype_overrides[archetypeId]
-    : null;
+  // A Complex profession: its base look with its own clothing on top.
+  const arch = archetypeId ? ARCHETYPES.filter(function (a) { return a.id === archetypeId; })[0] : null;
+  const baseO = arch && arch.base ? RAND_TABLES.archetype_overrides[arch.base] : null;
+  const ownO = archetypeId ? (RAND_TABLES.archetype_overrides[archetypeId] || COMPLEX_LOOKS[archetypeId]) : null;
+  const ao = baseO || ownO ? Object.assign({}, baseO || {}, ownO || {}) : null;
 
   const expressionPool = ao?.expression_bias
     ? [...ao.expression_bias, ...RAND_TABLES.expression]
@@ -443,4 +494,4 @@ function generateAgent(archetypeId) {
 }
 
 
-window.dgAppearanceGen = { ARCHETYPES: ARCHETYPES, RAND_TABLES: RAND_TABLES, generate: generateAgent };
+window.dgAppearanceGen = { ARCHETYPES: ARCHETYPES, RAND_TABLES: RAND_TABLES, COMPLEX_LOOKS: COMPLEX_LOOKS, generate: generateAgent };

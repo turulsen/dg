@@ -211,3 +211,13 @@
   .nr-stat .ft{ grid-area:ft; } .nr-stat input.fvb{ grid-area:in; }
   .nr-stat .v{ font-size:22px; min-width:28px; }
 }
+/* Review & Contract on a phone: one column, the sign button full width. */
+@media (max-width:560px){
+  .nr-review{ grid-template-columns:1fr; gap:8px; }
+  .nr-review .nr-panel{ padding:8px 10px 10px; }
+  .nr-foot{ gap:8px; }
+  .nr-foot > .nr-btn{ flex:1 1 auto; text-align:center; }
+  .nr-foot > [data-a="sign"], .nr-foot > [data-a="next"]{ flex-basis:100%; order:2; padding:12px 14px; }
+  .nr-foot > [data-a="back"]{ order:3; }
+  .nr-mini-stats b{ font-size:13px; }
+}

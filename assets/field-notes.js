@@ -1821,6 +1821,11 @@
     return r(BRIEFING_WORDS[0]) + ' ' + r(BRIEFING_WORDS[1]);
   }
   var ordersKeyHandler = null;
+  // The [Y/N] prompt into view once it shows (on a phone the briefing is
+  // taller than the screen).
+  function showPrompt(ov, prompt) {
+    try { if (ov.scrollHeight > ov.clientHeight) prompt.scrollIntoView({ block: 'end', behavior: 'smooth' }); } catch (e) { /* old engine */ }
+  }
   function maybeShowOrders() {
     if (document.getElementById('fn-orders')) return;
     var p = lsJson(ORDERS_PENDING_KEY, null);
@@ -1864,7 +1869,8 @@
           : 'Saving your edits to ' + (o.name || 'this Agent') + '. Y files them; N goes back to editing with nothing lost.') +
         '</div><div data-o="log"></div><div data-o="prompt" hidden>' +
         '<div>CAN WE CALL ON YOU? [<button type="button" class="fn-orders-key" data-o="y" aria-label="' + (contract ? 'Y: sign and file the Agent' : 'Y: file the edits') + '">Y</button>/' +
-        '<button type="button" class="fn-orders-key" data-o="n" aria-label="' + (contract ? 'N: back to the review' : 'N: back to editing') + '">N</button>]<span class="fn-cursor"></span></div></div></div>';
+        '<button type="button" class="fn-orders-key" data-o="n" aria-label="' + (contract ? 'N: back to the review' : 'N: back to editing') + '">N</button>]<span class="fn-cursor"></span></div>' +
+        '<div class="fn-orders-tap"><button type="button" data-o="y">' + (contract ? 'Y — sign' : 'Y — file it') + '</button><button type="button" data-o="n">' + (contract ? 'N — back' : 'N — keep editing') + '</button></div></div></div>';
       (root || document.body).appendChild(ov);
       ov.tabIndex = -1;
       try { ov.focus(); } catch (e) { /* best effort */ }
@@ -1875,6 +1881,7 @@
         done = true; clearInterval(timer);
         log.innerHTML = lines.map(function (l) { return '<div class="' + l[0] + '">' + esc(l[1]) + '&nbsp;</div>'; }).join('');
         prompt.hidden = false;
+        showPrompt(ov, prompt);
       }
       // The save screen types quicker than the Contract; Enter skips either.
       var step = contract ? 3 : 6;
@@ -1950,7 +1957,8 @@
       '</div><div data-o="log"></div><div data-o="prompt" hidden>' +
       // Just the terminal's own [Y/N]: type it, or tap the letter.
       '<div>CAN WE CALL ON YOU? [<button type="button" class="fn-orders-key" data-o="y" aria-label="Y: you can call on me">Y</button>/' +
-      '<button type="button" class="fn-orders-key" data-o="n" aria-label="N: not now">N</button>]<span class="fn-cursor"></span></div></div></div>';
+      '<button type="button" class="fn-orders-key" data-o="n" aria-label="N: not now">N</button>]<span class="fn-cursor"></span></div>' +
+      '<div class="fn-orders-tap"><button type="button" data-o="y">Y — you can</button><button type="button" data-o="n">N — not now</button></div></div></div>';
     root.appendChild(ov);
     ov.tabIndex = -1;
     try { ov.focus(); } catch (e) { /* best effort */ }
@@ -1963,6 +1971,7 @@
       clearInterval(timer);
       log.innerHTML = lines.map(function (l) { return '<div class="' + l[0] + '">' + esc(l[1]) + '&nbsp;</div>'; }).join('');
       prompt.hidden = false;
+      showPrompt(ov, prompt);
     }
     timer = setInterval(function () {
       if (li >= lines.length) { finishTyping(); return; }

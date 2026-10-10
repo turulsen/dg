@@ -11,7 +11,7 @@ Usage:
 """
 import json
 from types import SimpleNamespace
-import re, os, sys, time
+import re, os, sys, time, subprocess
 from playwright.sync_api import sync_playwright
 
 BASE = os.environ.get("DG_TEST_BASE", "http://127.0.0.1:8949")
@@ -10931,6 +10931,57 @@ def test_new_recruit_imports_and_links(p):
     page.close()
 
 
+def test_recruit_play_test_round1(p):
+    """Play-test fixes for M2 (2026-10-10): on a phone the terminal (the
+    Contract, and saving an edit) scrolls and has big Y / N buttons, which
+    file it; Profiling's generator lists The Complex's professions grouped
+    by agency and starts on the Agent's own profession; the image prompts
+    carry the Agent's age (functions/ai-prompts.js)."""
+    errs_all = []
+    # 1. Phone: the save terminal scrolls to a tappable Y.
+    page, errs = _field_notes_page(p, width=390, height=640)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.evaluate("() => { window.__oath = 'pending'; window.dgFieldNotes.contract({ code: 'FNRT-0001', name: 'Mara Voss', profession: 'Federal Agent', incursion: 'A long night in a quiet town that nobody would talk about afterwards, twice over.' }).then(v => { window.__oath = v; }); }")
+    page.wait_for_selector("#fn-orders", timeout=5000)
+    page.click("#fn-orders")
+    tap = "#fn-orders .fn-orders-tap [data-o=y]"
+    page.wait_for_selector(tap, state="visible", timeout=5000)
+    page.wait_for_timeout(700)
+    inview = page.evaluate("(s) => { const r = document.querySelector(s).getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight && r.height >= 44; }", tap)
+    scrolls = page.evaluate("() => { const o = document.getElementById('fn-orders'); return getComputedStyle(o).overflowY === 'auto'; }")
+    page.click(tap)
+    ok = wait_for_condition(lambda: page.evaluate("() => window.__oath === true"), timeout_ms=4000)
+    record("recruit-fix", "phone: the Contract scrolls, its big Y is on screen and tappable, and Y signs", bool(inview) and bool(scrolls) and bool(ok), f"inview={inview} scrolls={scrolls} ok={ok}")
+    errs_all.extend(errs)
+    page.close()
+    # 2. Profiling's generator: grouped, The Complex included, preset from the brief.
+    docs = _field_notes_docs()
+    docs[f"briefs/{FN_CODE}"]["profession"] = "Protective Detail Agent"
+    page, errs = _field_notes_page(p, width=1180, height=900, docs=docs)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => document.querySelectorAll('#rand-profession optgroup').length > 3", timeout=10000)
+    groups = page.eval_on_selector_all("#rand-profession optgroup", "els => els.map(e => e.label)")
+    val = wait_for_condition(lambda: page.evaluate("() => document.getElementById('rand-profession').value") or None, timeout_ms=8000)
+    record("recruit-fix", "Profiling's generator: the Handbook, then The Complex by agency, starting on the Agent's own profession",
+           groups[0] == "Agent's Handbook" and "The Complex — Secret Service" in groups and "The Complex — NSA" in groups and val == "usss_ppd", f"{groups} {val}")
+    look = page.evaluate("() => { for (let i = 0; i < 30; i++) { const a = window.dgAppearanceGen.generate('nsa_tao'); if (a.jacket) return a.jacket; } return ''; }")
+    record("recruit-fix", "a Complex profession has its own clothing (over the closest Handbook look)",
+           look in ["black hoodie", "conference-swag zip-up"], look)
+    errs_all.extend(errs)
+    page.close()
+    # 3. The age reaches the image prompt instructions.
+    try:
+        out = subprocess.run(["node", "-e", "const {buildAppearancePrompt}=require('./functions/ai-prompts.js');"
+                              "const c={age_range:'Late 40s',sex:'Female',nationality:'American',build:'lean'};"
+                              "console.log(['base','outfit'].every(m=>{const t=buildAppearancePrompt({character:c,injuries:[],mode:m,era:'20s'});return /Apparent age: late 40s/.test(t)&&/in her late 40s/.test(t);}))"],
+                             capture_output=True, text=True, timeout=30, cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        record("recruit-fix", "image prompts: the age is labelled and required, Face and Outfit Plate alike", out.stdout.strip() == "true", out.stdout + out.stderr[:200])
+    except FileNotFoundError:
+        record("recruit-fix", "image prompts: the age is labelled and required (node not installed; skipped)", True, "")
+    record("recruit-fix", "no JS exceptions (play-test fixes)", not errs_all, str(errs_all[:3]))
+
+
 def test_agent_file_parts_and_looks(p):
     """The Agent File in numbered parts (Statistics, Skills, Psyche, Combat
     & gear, Cell, Record) with a jump index; Find a skill (kept across a
@@ -13975,6 +14026,7 @@ def main():
         safe(test_agent_file_parts_and_looks, browser, area="agent-file-parts")
         safe(test_new_recruit_wizard, browser, area="recruit")
         safe(test_new_recruit_imports_and_links, browser, area="recruit-import")
+        safe(test_recruit_play_test_round1, browser, area="recruit-fix")
         safe(test_agent_rules_unit, browser, area="rules")
         safe(test_evidence_attachments_open_and_zoom, browser, area="evidence")
         safe(test_motivations_and_disorders_split, browser, area="disorders")

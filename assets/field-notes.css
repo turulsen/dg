@@ -554,11 +554,21 @@ html.dg-fn-host #split-view-btn{ display:none !important; }
 }
 
 /* ── Clearance briefing terminal (new-Agent onboarding) ── */
+/* Scrolls when the briefing is taller than the screen (a phone): the
+   terminal is centered by its own auto margins, so a tall one starts
+   at the top instead of being cut off above and below. */
 #fn-orders{
-  position:fixed; inset:0; z-index:10000; background:#000; display:flex; align-items:center; justify-content:center;
-  padding:20px; font-family:'JetBrains Mono',ui-monospace,monospace; animation:fn-veil .2s ease both;
+  position:fixed; inset:0; z-index:10000; background:#000; display:flex;
+  overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
+  padding:20px 20px calc(env(safe-area-inset-bottom,0px) + 24px); font-family:'JetBrains Mono',ui-monospace,monospace; animation:fn-veil .2s ease both;
 }
-.fn-orders-term{ color:#3ef07a; font-size:clamp(12px,3.2vw,15px); line-height:1.8; text-shadow:0 0 8px rgba(62,240,122,.55); max-width:560px; width:100%; white-space:pre-wrap; }
+.fn-orders-term{ margin:auto; color:#3ef07a; font-size:clamp(12px,3.2vw,15px); line-height:1.8; text-shadow:0 0 8px rgba(62,240,122,.55); max-width:560px; width:100%; white-space:pre-wrap; }
+/* Big Y / N for a finger, under the terminal's own [Y/N]. */
+#fn-root .fn-orders-tap{ display:flex; gap:10px; margin-top:14px; white-space:normal; }
+#fn-root .fn-orders-tap button{ flex:1 1 0; min-height:48px; padding:10px 12px; font-family:inherit; font-size:13px; letter-spacing:.08em; text-transform:uppercase;
+  color:#3ef07a; background:transparent; border:1px solid #2fb862; border-radius:0; text-shadow:inherit; cursor:pointer; }
+#fn-root .fn-orders-tap button[data-o="y"]{ color:#000; background:#3ef07a; text-shadow:none; }
+@media (hover:hover) and (pointer:fine) and (min-width:760px){ #fn-root .fn-orders-tap{ display:none; } }
 .fn-orders-term .fn-o-dim{ color:#1e9a52; }
 .fn-orders-term .fn-orders-why{ font-family:'Courier Prime','Courier New',monospace; font-size:12px; line-height:1.5; color:#9ab8a4; text-shadow:none; border-bottom:1px solid #1e5a36; padding-bottom:10px; margin-bottom:12px; white-space:normal; }
 .fn-orders-term .fn-o-inc{ color:#9ff0bd; padding-left:2ch; font-style:italic; }
