@@ -415,7 +415,16 @@ page can redraw the paper as more data arrives.
   `dg_paper_wear`) sets `html.dg-no-wear`, which turns off the wear, the
   tear and both kinds of stamp. The CSS is loaded on Agent Hub and in the
   notebook only, so A-Cell stays clean.
-- Tests: `test_agent_file_wear`, `test_agent_file_disorder_stamps`.
+- **SAN 0 marked like KIA:** an Agent at SAN 0 (and with a SAN to lose)
+  is struck through with a small INSANE stamp, wherever KIA is shown:
+  Agent Hub's tab, header and stamp row (`checkAgentFate` /
+  `setAgentFate`, kept live by the paper's `onFate`), the Agent File's
+  Cell list and member cards (`fateStamps`), the read-only paper's
+  members, and A-Cell's Cell cards, dossier and Sheet. The disorder
+  stamps keep off Agent Hub's stamp row and are re-placed when it
+  changes.
+- Tests: `test_agent_file_wear`, `test_agent_file_disorder_stamps`,
+  `test_insane_struck_like_kia`.
 
 **The Agent File as the character sheet (v2.7.0, PR #67; v2 milestone
 M1).** The paper is now the sheet an Agent plays from, in the notebook

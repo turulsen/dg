@@ -180,11 +180,12 @@
   }
   .ah-erase-confirm:disabled{ background:#a89a78; border-color:#a89a78; cursor:not-allowed; opacity:.6; }
 
-  /* ── KIA: a live read of the Agent's saved character sheet, shown on
-     the roster tab strip and the Agent's panel -- see checkAgentKia()
-     below. .stamp is already red by default (theme-folder.css), so the
-     "KIA" stamp itself needs no extra styling; this covers the
-     struck-through name on both the tab label and the panel title. ── */
+  /* ── KIA (HP 0) and INSANE (SAN 0): a live read of the Agent's saved
+     character sheet, shown on the roster tab strip and the Agent's panel
+     -- see checkAgentFate() and setAgentFate() below. .stamp is already
+     red by default (theme-folder.css), so the KIA / INSANE stamp needs no
+     extra styling; this covers the struck-through name on both the tab
+     label and the panel title. ── */
   .kia-name{ color:var(--red); text-decoration:line-through; text-decoration-thickness:2px; text-decoration-color:var(--red); }
 
   /* ── Phone: the Agents menu. Past one Agent, the roster's tabs wrapped
@@ -623,13 +624,34 @@
   // Agent back above 0 and this clears on its own next time the roster
   // renders. Best-effort, same as everything else here -- a check that
   // errors or times out just leaves the name unmarked.
-  function checkAgentKia(code) {
+  // KIA (HP 0) and INSANE (SAN 0), from the saved sheet.
+  function checkAgentFate(code) {
     return firestoreCharDoc(code).then(doc => {
-      if (!doc) return false;
+      if (!doc) return { kia: false, insane: false };
       let state;
-      try { state = JSON.parse(doc.character_json); } catch (e) { return false; }
-      const hp = state && state.derived && state.derived.hp;
-      return typeof hp === 'number' && hp <= 0;
+      try { state = JSON.parse(doc.character_json); } catch (e) { return { kia: false, insane: false }; }
+      const d = (state && state.derived) || {}, pow = +(((state && (state.csStats || state.stats)) || {}).POW) || 0;
+      return { kia: typeof d.hp === 'number' && d.hp <= 0, insane: typeof d.san === 'number' && d.san <= 0 && pow > 0 };
+    });
+  }
+  // The tab's name and the header's struck through, and a KIA / INSANE
+  // stamp in the stamp row -- set on load and again whenever the Agent
+  // File redraws (its onFate), so SAN 0 in play shows straight away.
+  function setAgentFate(code, f) {
+    const stamps = document.getElementById('ah-charstamp-' + code);
+    let moved = false;
+    if (stamps) [['kia', 'KIA'], ['insane', 'INSANE']].forEach(function (k) {
+      const had = stamps.querySelector('.stamp[data-fate="' + k[0] + '"]');
+      if (f[k[0]] && !had) { stamps.insertAdjacentHTML('afterbegin', '<div class="stamp" data-fate="' + k[0] + '">' + k[1] + '</div>'); moved = true; }
+      else if (!f[k[0]] && had) { had.remove(); moved = true; }
+    });
+    // The disorder stamps keep off this row: place them again when it changed.
+    const sheet = document.getElementById('ah-sheet-' + code);
+    if (moved && sheet && sheet._ap && sheet._ap.restamp) sheet._ap.restamp();
+    const struck = !!(f.kia || f.insane);
+    ['ah-tablabel-' + code, 'ah-title-' + code].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (el) el.classList.toggle('kia-name', struck);
     });
   }
 
@@ -930,15 +952,7 @@
         purgeIfFullyDeleted(a.code);
       });
 
-      checkAgentKia(a.code).then(kia => {
-        if (!kia) return;
-        const stamps = document.getElementById(stampId);
-        if (stamps) stamps.insertAdjacentHTML('afterbegin', '<div class="stamp">KIA</div>');
-        const tabSpan = document.getElementById(tabLabelId);
-        if (tabSpan) tabSpan.classList.add('kia-name');
-        const title = document.getElementById(titleId);
-        if (title) title.classList.add('kia-name');
-      });
+      checkAgentFate(a.code).then(f => setAgentFate(a.code, f));
     });
 
     // + New Recruit stays open through a re-render (a Cover Identity
@@ -1683,6 +1697,7 @@
             appearanceOutside: true,
             // The INSANE stamp (low SAN) goes on the name in the header above.
             stampHost: () => document.getElementById('ah-title-' + a.code),
+            onFate: (f) => setAgentFate(a.code, f),
             // The disorder stamps scatter over that header too, and the gap below its rule.
             disorderArea: () => {
               const t = document.getElementById('ah-title-' + a.code), h = t && t.closest('.paper-header');

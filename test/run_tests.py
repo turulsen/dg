@@ -11163,6 +11163,50 @@ def test_appearance_carries_over_from_sheet(p):
     page.close()
 
 
+def test_insane_struck_like_kia(p):
+    """SAN 0 is marked the way KIA is: the Agent's name struck through on
+    Agent Hub's tab and header, a small INSANE stamp in the stamp row, and
+    in the Agent File's Cell list the name struck with an INSANE stamp.
+    Live as SAN reaches 0 in play (agent-paper.js onFate ->
+    setAgentFate), and on a fresh load."""
+    errs_all = []
+    def page_at(san):
+        docs = _field_notes_docs()
+        st = {"v": 1, "stats": {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 12, "CHA": 13},
+              "derived": {"hp": 11, "wp": 12, "san": san, "bp": 0}, "bio": {"name": "Mara Voss", "profession": "federal_agent", "player_name": "fn tester"}}
+        docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, st, "fn tester")
+        page, errs = _field_notes_page(p, docs=docs,
+                                       extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+        page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_selector(f"#ah-sheet-{FN_CODE} .as-paper.ap .ap-vitals", timeout=15000)
+        page.wait_for_timeout(600)
+        return page, errs
+    probe = """(c) => { const st = document.getElementById('ah-charstamp-' + c), me = document.querySelector('#ah-sheet-' + c + ' .ap-init li.ap-me');
+        return { tab: document.getElementById('ah-tablabel-' + c).classList.contains('kia-name'),
+                 title: document.getElementById('ah-title-' + c).classList.contains('kia-name'),
+                 stamp: !!(st && st.querySelector('.stamp[data-fate="insane"]')), kiaStamp: !!(st && st.querySelector('.stamp[data-fate="kia"]')),
+                 cell: !!(me && me.classList.contains('as-kia') && /INSANE/.test(me.textContent)) }; }"""
+    page, errs = page_at(1)
+    before = page.evaluate(probe, FN_CODE)
+    record("insane", "at SAN 1 nothing is struck and there's no INSANE stamp",
+           not any(before.values()), json.dumps(before))
+    page.click(f"#ah-sheet-{FN_CODE} [data-a='san-']")
+    page.wait_for_function("(c) => !!document.querySelector('#ah-charstamp-' + c + ' .stamp[data-fate=\"insane\"]')", arg=FN_CODE, timeout=6000)
+    live = page.evaluate(probe, FN_CODE)
+    record("insane", "losing the last SAN point in play strikes the name on the tab and header and stamps INSANE, at once",
+           live["tab"] and live["title"] and live["stamp"] and not live["kiaStamp"], json.dumps(live))
+    page.close(); errs_all.extend(errs)
+    page, errs = page_at(0)
+    page.wait_for_function("(c) => !!document.querySelector('#ah-charstamp-' + c + ' .stamp[data-fate=\"insane\"]')", arg=FN_CODE, timeout=6000)
+    page.evaluate("(c) => document.getElementById('ah-sheet-' + c)._ap.toggleCell(true)", FN_CODE)   # the Cell drop-down
+    page.wait_for_selector(f"#ah-sheet-{FN_CODE} .ap-init li.ap-me", timeout=6000)
+    loaded = page.evaluate(probe, FN_CODE)
+    record("insane", "an Agent saved at SAN 0 opens struck through and stamped INSANE, the Cell list too",
+           loaded["tab"] and loaded["title"] and loaded["stamp"] and loaded["cell"], json.dumps(loaded))
+    page.close(); errs_all.extend(errs)
+    record("insane", "no JS exceptions (INSANE like KIA)", not errs_all, str(errs_all[:3]))
+
+
 def test_agent_file_parts_and_looks(p):
     """The Agent File in numbered parts (Statistics, Skills, Psyche, Combat
     & gear, Cell, Record) with a jump index; Find a skill (kept across a
@@ -14211,6 +14255,7 @@ def main():
         safe(test_agent_file_wear, browser, area="wear")
         safe(test_agent_file_disorder_stamps, browser, area="disorders")
         safe(test_appearance_carries_over_from_sheet, browser, area="appearance")
+        safe(test_insane_struck_like_kia, browser, area="insane")
         safe(test_agent_rules_unit, browser, area="rules")
         safe(test_evidence_attachments_open_and_zoom, browser, area="evidence")
         safe(test_motivations_and_disorders_split, browser, area="disorders")

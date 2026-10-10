@@ -178,3 +178,5 @@
   .ap .ap-part .as-stats{ grid-template-columns:repeat(3,1fr); }
 }
 .ap-list li.ap-crossed{ text-decoration:line-through; text-decoration-color:var(--as-red); color:var(--as-ink-3); }
+/* SAN 0: the Agent's name struck through, as for KIA (agent-paper.js placeStamp). */
+.ap-struck{ color:var(--as-red, #8b1a1a); text-decoration:line-through; text-decoration-thickness:2px; text-decoration-color:var(--as-red, #8b1a1a); }

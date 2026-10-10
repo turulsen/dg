@@ -184,8 +184,20 @@
   }
   // The INSANE stamp sits on the Agent's name (the host's, e.g. Agent Hub's
   // header, or the paper's own), so it never lies over a button.
+  // KIA (HP 0) and INSANE (SAN 0): the name struck through and a small
+  // stamp, in the Cell list, the member cards and Agent Hub's tab.
+  function fateStamps(m) {
+    return (m.kia ? ' <span class="as-stamp">KIA</span>' : '') + (m.insane ? ' <span class="as-stamp">INSANE</span>' : '');
+  }
+  // The saved HP / SAN, the same test Agent Hub and A-Cell make.
+  function fateOf(x) {
+    // (SAN 0 counts only on a sheet that has a SAN to lose -- a blank one reads 0.)
+    var d = (x && x.derived) || {};
+    return { kia: typeof d.hp === 'number' && d.hp <= 0, insane: !!x && typeof d.san === 'number' && d.san <= 0 && R().maxes(x).san > 0 };
+  }
   function placeStamp(host, x) {
     if (!host) return;
+    host.classList.toggle('ap-struck', fateOf(x).insane);   // SAN 0: struck like KIA
     var w = x ? wearVars(R().derived(x).san) : { tier: 0 };
     if (w.tier >= 5) {
       host.setAttribute('data-wear-stamp', '');
@@ -212,6 +224,10 @@
     var box = { left: b0.left, top: b0.top, width: b0.width, height: b0.height + extend };
     var avoid = Array.prototype.map.call(area.querySelectorAll('button, a, input, select, textarea, .ap-vitals, .ap-pop, .ap-status, .paper-meta, .paper-title, .as-name, .as-sub'),
       function (e) { return e.getBoundingClientRect(); }).filter(function (r) { return r.width; });
+    // Agent Hub's stamp row (the era, KIA, INSANE) sits in the strip below the rule.
+    Array.prototype.forEach.call(document.querySelectorAll('.stamps .stamp'), function (e) {
+      var r = e.getBoundingClientRect(); if (r.width) avoid.push(r);
+    });
     var ws = document.querySelector('[data-wear-stamp]');
     if (ws && area.contains(ws)) {
       var r = ws.getBoundingClientRect(), fs = parseFloat(getComputedStyle(ws).fontSize) || 16;
@@ -280,6 +296,7 @@
       if (pp && el._apTier != null && el._apTier !== tier) pp.classList.add('ap-wear-change');
       el._apTier = tier;
       placeStamp(ctx.stampHost ? ctx.stampHost() : el.querySelector('.as-head .as-name'), s.state ? st() : null);
+      if (ctx.onFate && s.state) ctx.onFate(fateOf(st()));
       stampDisorders();
       // Only when the redraw moved it: setting it anyway would stop a
       // smooth scroll already on its way (a #photos link on Agent Hub).
@@ -335,7 +352,7 @@
     /* Cell: initiative by DEX */
     function selfMember(x) {
       var d = R().derived(x);
-      return { code: s.code, name: (x.bio && x.bio.name) || ctx.name || s.code, codename: ctx.codename || '', dex: R().stats(x).DEX || null, kia: d.hp <= 0 && R().maxes(x).hp > 0, me: true,
+      return { code: s.code, name: (x.bio && x.bio.name) || ctx.name || s.code, codename: ctx.codename || '', dex: R().stats(x).DEX || null, kia: d.hp <= 0 && R().maxes(x).hp > 0, insane: d.san <= 0 && R().maxes(x).san > 0, me: true,
         profession: x.bio && x.bio.profession, derived: d, photo: ctx.photo || '' };
     }
     function cellHtml(x) {
@@ -349,11 +366,11 @@
       var rows = list.map(function (m, i) {
         var open = !m.me && ui.card === i;
         if (open) card = memberCard(m, i);
-        return '<li class="' + (m.kia ? 'as-kia' : '') + (m.me ? ' ap-me' : '') + '"><span class="ap-dex">' + (m.dex == null ? '—' : m.dex) + '</span>' +
+        return '<li class="' + (m.kia || m.insane ? 'as-kia' : '') + (m.me ? ' ap-me' : '') + '"><span class="ap-dex">' + (m.dex == null ? '—' : m.dex) + '</span>' +
           '<button type="button" class="as-mbtn" data-a="' + (m.me ? '' : 'card') + '" data-i="' + i + '" aria-expanded="' + open + '"' + (m.me ? ' tabindex="-1"' : '') + '>' +
           '<span class="as-mthumb" data-ap-mphoto="' + esc(m.photo || '') + '"></span>' +
           '<span class="as-mname">' + esc(m.name) + '</span>' + (m.me ? ' <span class="as-k">(you)</span>' : '') +
-          (m.codename ? ' <span class="as-k">“' + esc(m.codename) + '”</span>' : '') + (m.kia ? ' <span class="as-stamp">KIA</span>' : '') + '</button></li>';
+          (m.codename ? ' <span class="as-k">“' + esc(m.codename) + '”</span>' : '') + fateStamps(m) + '</button></li>';
       }).join('');
       return '<div data-p="cell"><div class="as-sec-hd">' + esc(ctx.cellName) + ' <span>initiative · highest DEX first</span></div><ol class="ap-init">' + rows + '</ol>' + card + '</div>';
     }
@@ -362,7 +379,7 @@
       function v(l, x) { return '<div class="as-vital"><div class="as-lbl">' + l + '</div><div class="as-val">' + esc(x == null || x === '' ? '—' : x) + '</div></div>'; }
       var prof = ctx.professionLabel ? ctx.professionLabel(m.profession) : m.profession;
       return '<div class="as-mcard"><div class="as-mcard-photo" data-ap-cardphoto="' + esc(m.photo || '') + '">' + (m.photo ? '' : '<span class="as-k">No photo yet</span>') + '</div>' +
-        '<div class="as-mcard-id"><div class="as-mcard-name">' + esc(m.name) + (m.kia ? ' <span class="as-stamp">KIA</span>' : '') + '</div>' +
+        '<div class="as-mcard-id"><div class="as-mcard-name">' + esc(m.name) + fateStamps(m) + '</div>' +
         (prof ? '<div class="ap-mmeta">' + esc(prof) + '</div>' : '') +
         '<div class="ap-mmeta">' + (m.codename ? 'Cover “' + esc(m.codename) + '”' : 'No cover name') + (m.dex != null ? ' · DEX ' + m.dex : '') + '</div>' +
         '<div class="as-vitals">' + v('HP', d.hp) + v('WP', d.wp) + v('SAN', d.san) + v('BP', d.bp) + '</div></div></div>';
@@ -914,7 +931,7 @@
             if (!x || !el.isConnected) return;
             var dd = x.derived || {};
             m.dex = R().stats(x).DEX || m.dex; m.derived = { hp: dd.hp, wp: dd.wp, san: dd.san, bp: dd.bp };
-            m.kia = typeof dd.hp === 'number' && dd.hp <= 0; m.profession = (x.bio && x.bio.profession) || m.profession;
+            m.kia = typeof dd.hp === 'number' && dd.hp <= 0; m.insane = typeof dd.san === 'number' && dd.san <= 0; m.profession = (x.bio && x.bio.profession) || m.profession;
             if (el._ap !== api) return;
             var sec = el.querySelector('[data-p="cell"]');
             if (sec && s.state) { var tmp = document.createElement('div'); tmp.innerHTML = cellHtml(st()); sec.replaceWith(tmp.firstChild); fillThumbs(); }
@@ -929,7 +946,7 @@
     var api = {
       click: onClick, change: onChange, input: onInput, key: onKey,
       destroy: function () { off(); unwatch.forEach(function (u) { try { u(); } catch (e) { /* gone */ } }); unwatch = []; },
-      session: s, render: render,
+      session: s, render: render, restamp: reStamp,
       toggleCell: function (open) { ui.cellOpen = el._apCell = open == null ? !ui.cellOpen : !!open; render(); return ui.cellOpen; }
     };
     el._ap = api;

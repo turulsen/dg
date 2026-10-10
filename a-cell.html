@@ -2619,11 +2619,12 @@
         var derived = c.state.derived || {};
         var name = bio.name || 'Unknown Agent';
         var kia = typeof derived.hp === 'number' && derived.hp <= 0;
+        var insane = typeof derived.san === 'number' && derived.san <= 0;
         function vital(lbl, v) {
           return '<div class="cdb-vital"><span class="lbl">' + lbl + '</span><span class="val">' + (v === undefined || v === null ? '&mdash;' : v) + '</span></div>';
         }
         return '<div class="cdb-row" data-i="' + i + '">' +
-          '<div class="cdb-name' + (kia ? ' kia-name' : '') + '">' + escapeHtml(name) + (kia ? ' <span class="stamp">KIA</span>' : '') + '</div>' +
+          '<div class="cdb-name' + (kia || insane ? ' kia-name' : '') + '">' + escapeHtml(name) + (kia ? ' <span class="stamp">KIA</span>' : '') + (insane ? ' <span class="stamp">INSANE</span>' : '') + '</div>' +
           '<div class="cdb-vitals">' + vital('HP', derived.hp) + vital('WP', derived.wp) + vital('SAN', derived.san) + vital('BP', derived.bp) + '</div>' +
           '</div>';
       }).join('') +
@@ -2844,12 +2845,13 @@
     // flag -- heal the Agent back above 0 and this clears on its own
     // next time this view renders.
     var kia = typeof derived.hp === 'number' && derived.hp <= 0;
+    var insane = typeof derived.san === 'number' && derived.san <= 0;   // SAN 0: the same, INSANE
 
     viewEl.innerHTML =
       '<div class="pv-sticky">' +
       '<div class="pv-photo" id="' + photoId + '">' + (bio.name || '?').charAt(0).toUpperCase() + '</div>' +
       '<div class="pv-sticky-info">' +
-      '<div class="pv-bio"><span class="' + (kia ? 'kia-name' : '') + '">' + escapeHtml(bio.name || 'Unknown Agent') + '</span>' + (kia ? ' <span class="stamp">KIA</span>' : '') + '</div>' +
+      '<div class="pv-bio"><span class="' + (kia || insane ? 'kia-name' : '') + '">' + escapeHtml(bio.name || 'Unknown Agent') + '</span>' + (kia ? ' <span class="stamp">KIA</span>' : '') + (insane ? ' <span class="stamp">INSANE</span>' : '') + '</div>' +
       '<div class="pv-sub">' + subParts.join(' &middot; ') + '</div>' +
       '<div class="pv-player">Player: <b>' + (bio.player_name ? escapeHtml(bio.player_name) : '<span class="pv-empty-note">not set</span>') + '</b></div>' +
       // The clearance briefing (Field Notes' Standing Orders) the Agent
@@ -4536,12 +4538,12 @@
       return;
     }
     var body = rows.map(function (r, i) {
-      var kia = typeof r.hp === 'number' && r.hp <= 0;
+      var kia = typeof r.hp === 'number' && r.hp <= 0, insane = typeof r.san === 'number' && r.san <= 0;
       return '<tr>' +
         '<td><input type="checkbox" class="sheet-select-cb" data-code="' + escapeHtml(r.code) + '"' + (selectedCodes[r.code] ? ' checked' : '') + '></td>' +
         '<td>' + cell(r.cellNames) + '</td>' +
         '<td>' + cell(r.handlers) + '</td>' +
-        '<td>' + (kia ? '<span class="kia-name">' + cell(r.name) + '</span>' : cell(r.name)) + (kia ? ' <span class="sheet-kia-badge">KIA</span>' : '') + '</td>' +
+        '<td>' + (kia || insane ? '<span class="kia-name">' + cell(r.name) + '</span>' : cell(r.name)) + (kia ? ' <span class="sheet-kia-badge">KIA</span>' : '') + (insane ? ' <span class="sheet-kia-badge">INSANE</span>' : '') + '</td>' +
         '<td class="sheet-code">' + escapeHtml(r.code) + '</td>' +
         '<td>' + playerNameCell(r.playerName, r.code) + '</td>' +
         '<td>' + createdCell(r.code) + '</td>' +

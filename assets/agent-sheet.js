@@ -184,6 +184,7 @@
       name: String(b.char_name || '').trim() || sheetName || ((cellNames || {})[code]) || code,
       codename: b.codename || '',
       kia: typeof hp === 'number' && hp <= 0,
+      insane: typeof dv.san === 'number' && dv.san <= 0,
       photo: photo || '',
       derived: { hp: dv.hp, wp: dv.wp, san: dv.san, bp: dv.bp },
       // Initiative (DEX) and the card's profession line.
@@ -219,11 +220,11 @@
             ? '<div class="as-cell"><b>' + esc(opts.cellName) + '</b>' +
               '<ul class="as-members">' + ((opts.members || []).length ? opts.members.map(function (m, i) {
                 // Photo + name; tapping opens their card (wireMembers).
-                return '<li' + (m.kia ? ' class="as-kia"' : '') + '><button type="button" class="as-mbtn" data-member="' + i + '" aria-expanded="false">' +
+                return '<li' + (m.kia || m.insane ? ' class="as-kia"' : '') + '><button type="button" class="as-mbtn" data-member="' + i + '" aria-expanded="false">' +
                   '<span class="as-mthumb" data-as-mphoto="' + i + '"></span>' +
                   '<span class="as-mname">' + esc(m.name) + '</span>' +
                   (m.codename ? ' <span class="as-k">“' + esc(m.codename) + '”</span>' : '') +
-                  (m.kia ? ' <span class="as-stamp">KIA</span>' : '') + '</button></li>';
+                  (m.kia ? ' <span class="as-stamp">KIA</span>' : '') + (m.insane ? ' <span class="as-stamp">INSANE</span>' : '') + '</button></li>';
               }).join('') : '<li class="as-k">Only you so far.</li>') + '</ul>' +
               '<div class="as-mcard" hidden></div></div>'
             : '<p class="as-text as-k">Not assigned to a Cell yet — your Handler does that.</p>') +
@@ -318,7 +319,7 @@
       load = el._asLoadPhoto || load;
       var v = function (l, x) { return '<div class="as-vital"><div class="as-lbl">' + l + '</div><div class="as-val">' + esc(x == null || x === '' ? '—' : x) + '</div></div>'; };
       card.innerHTML = '<div class="as-mcard-photo" data-as-mcard-photo>' + (m.photo ? '' : '<span class="as-k">No photo yet</span>') + '</div>' +
-        '<div class="as-mcard-id"><div class="as-mcard-name">' + esc(m.name) + (m.kia ? ' <span class="as-stamp">KIA</span>' : '') + '</div>' +
+        '<div class="as-mcard-id"><div class="as-mcard-name">' + esc(m.name) + (m.kia ? ' <span class="as-stamp">KIA</span>' : '') + (m.insane ? ' <span class="as-stamp">INSANE</span>' : '') + '</div>' +
         (m.codename ? '<div class="as-k">Cover “' + esc(m.codename) + '”</div>' : '') +
         '<div class="as-vitals">' + v('HP', d.hp) + v('WP', d.wp) + v('SAN', d.san) + v('BP', d.bp) + '</div></div>';
       if (m.photo) load(card.querySelector('[data-as-mcard-photo]'), m.photo);
