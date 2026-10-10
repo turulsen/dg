@@ -1209,10 +1209,14 @@ stays open until it's confirmed on a real device).
 **Resolved, kept here as a permanent record (not re-opened as issues):**
 
 - ~~Agent File not prefilling fully after character-sheet export~~ —
-  not a bug. Appearance fields can't be derived from a stat block by
-  design; players complete them manually or via the Random Agent
-  Generator. The confusing bounce-with-no-explanation was fixed with a
-  banner (`2f39fe9`). See §5.
+  face and hair can't be derived from a stat block, by design; players
+  complete them by hand or with the Random Agent Generator. The
+  confusing bounce-with-no-explanation was fixed with a banner
+  (`2f39fe9`). What the sheet *does* know (sex, age range, nationality,
+  a build from STR+CON, clothes for the profession) is carried into
+  every Agent's Appearance since v3.1.1, wherever the Agent was made
+  (`afCarryFromCharacter_`; see `BUGFIXES.md`, "the character sheet's
+  sex, age, build and profession didn't carry over"). See §5.
 - ~~The Firebase "one-page iframe shell" idea~~ — shipped, see §12.
 - ~~`stats/`'s Share URL is a fourth save mechanism untracked by the
   backend/Cover Identity/Handler lookup~~ (issue #6) — not actually

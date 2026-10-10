@@ -438,13 +438,16 @@ function isProfilingComplete(data) {
 // nothing has been picked yet.
 const AF_ARCH_ALIAS_ = { 'anthropologist or historian': 'academic', 'computer scientist or engineer': 'engineer',
   'intelligence analyst': 'spook', 'lawyer or business executive': 'lawyer' };
+function afArchetypeFor_(profession) {
+  const t = String(profession || '').trim().toLowerCase();
+  if (!t || typeof ARCHETYPES === 'undefined') return '';
+  const a = ARCHETYPES.filter(x => x.label.toLowerCase() === t)[0];
+  return a ? a.id : (AF_ARCH_ALIAS_[t] || '');
+}
 function afPresetArchetype_() {
   const sel = document.getElementById('rand-profession');
-  if (!sel || sel.value || typeof ARCHETYPES === 'undefined') return;
-  const t = String((afData && afData.profession) || '').trim().toLowerCase();
-  if (!t) return;
-  const a = ARCHETYPES.filter(x => x.label.toLowerCase() === t)[0];
-  const id = a ? a.id : AF_ARCH_ALIAS_[t];
+  if (!sel || sel.value) return;
+  const id = afArchetypeFor_(afData && afData.profession);
   if (id) sel.value = id;
 }
 
@@ -2149,7 +2152,10 @@ function fillFormFromAgent(agent) {
 }
 
 function randomizeAgent(archetypeId) {
-  const agent = generateAgent(archetypeId || null);
+  // The Agent's own sex (from the sheet, or already chosen) holds, so the
+  // facial hair and hair styles it rolls fit them.
+  const sexEl = document.getElementById('dg-form').elements['sex'];
+  const agent = generateAgent(archetypeId || null, { sex: sexEl && sexEl.value });
   fillFormFromAgent(agent);
   // Scroll to form
   document.getElementById('dg-form').scrollIntoView({behavior:'smooth'});
@@ -2374,6 +2380,83 @@ function afRetryNow_() {
 window.addEventListener('online', function () { if (afRetryTimer) afRetryNow_(); });
 document.addEventListener('visibilitychange', function () { if (!document.hidden && afRetryTimer) afRetryNow_(); });
 
+/* What the character sheet already knows goes into the brief by itself:
+   sex, age range and nationality from the Biography, a build from STR+CON,
+   and clothes that fit the profession (the Random Agent Generator's own
+   per-profession pools). Only into fields the brief leaves empty, never
+   over anything the player wrote; saved to the brief straight away so the
+   "still to fill in" count goes down. Sex, age and build are the sheet's
+   own facts and stay locked against Random Generate; the clothes are a
+   suggestion it may reroll. */
+const AF_BUILD_WORDS_ = {
+  high: ['heavily built', 'powerfully built', 'broad-shouldered and solid', 'thick-set', 'stocky and strong', 'imposing in frame'],
+  athletic: ['athletic', 'lean and muscular', 'fit and rangy', 'well-conditioned'],
+  average: ['average build', 'medium build', 'neither large nor slight', 'ordinary physique'],
+  low: ['lean', 'slight', 'wiry', 'thin but not fragile', 'spare in frame', 'slender']
+};
+function afSexOption_(sex) {
+  const s = String(sex || '').trim().toLowerCase();
+  if (!s) return '';
+  if (s === 'male' || s === 'm' || s === 'man') return 'Male';
+  if (s === 'female' || s === 'f' || s === 'woman') return 'Female';
+  return 'Other';
+}
+function afAgeRange_(age) {
+  const t = String(age == null ? '' : age).trim();
+  const named = /^(early|mid|late)\s*(\d0)s$/i.exec(t);
+  if (named) return named[1][0].toUpperCase() + named[1].slice(1).toLowerCase() + ' ' + named[2] + 's';
+  const a = parseInt(t, 10);
+  if (!a || isNaN(a)) return '';
+  if (a >= 60) return '60s or older';
+  if (a < 20) return 'Early 20s';
+  const dec = Math.floor(a / 10) * 10, r = a % 10;
+  return (r <= 3 ? 'Early ' : r <= 6 ? 'Mid ' : 'Late ') + dec + 's';
+}
+function afBuildFromStats_(stats, code) {
+  const str = +((stats || {}).STR) || 0, con = +((stats || {}).CON) || 0;
+  if (!str && !con) return '';
+  const sum = (str || 10) + (con || 10);
+  const pool = AF_BUILD_WORDS_[sum >= 36 ? 'high' : sum >= 28 ? 'athletic' : sum >= 22 ? 'average' : 'low'];
+  let h = 0; String(code || '').split('').forEach(function (c) { h = (h * 31 + c.charCodeAt(0)) >>> 0; });
+  return pool[h % pool.length];   // the same word for this Agent every time
+}
+function afCarryFromCharacter_(code) {
+  if (!window.dgStore || !window.dgStore.getCharacter) return Promise.resolve();
+  return window.dgStore.getCharacter(code).then(function (doc) {
+    if (afMountedCode !== code || !doc) return;
+    let st = null;
+    try { st = JSON.parse(doc.character_json); } catch (e) { st = null; }
+    if (!st) return;
+    const bio = st.bio || {}, form = document.getElementById('dg-form');
+    const have = function (k) { const v = (afData || {})[k]; return v != null && String(v).trim() !== ''; };
+    const fill = {}, locked = {};
+    const put = function (k, v, lock) { if (v && !have(k)) { fill[k] = v; if (lock) locked[k] = 1; } };
+    put('sex', afSexOption_(bio.sex), true);
+    put('age_range', afAgeRange_(bio.age), true);
+    put('nationality', String(bio.nationality || '').trim(), true);
+    put('build', afBuildFromStats_(st.csStats || st.stats, code), true);
+    // Clothes from the profession, through the generator's pools.
+    // (by the profession's name: the generator's list fills in on a timer)
+    const arch = afArchetypeFor_((afData || {}).profession);
+    if (arch && typeof generateAgent === 'function' && ['jacket', 'shirt', 'trousers', 'footwear'].some(function (k) { return !have(k); })) {
+      const g = generateAgent(arch, { sex: fill.sex || (afData || {}).sex });
+      ['jacket', 'shirt', 'trousers', 'footwear'].forEach(function (k) { put(k, g[k], false); });
+    }
+    const keys = Object.keys(fill);
+    if (!keys.length) return;
+    afData = Object.assign({}, afData || {}, fill);
+    keys.forEach(function (k) {
+      const el = form && form.elements[k];
+      if (!el || el.type === 'file') return;
+      el.value = fill[k];
+      if (locked[k]) el.dataset.locked = '1';
+    });
+    afRender_();
+    if (afData.agent_code || afCode) {
+      return window.dgStore.updateBrief(code, fill).catch(function (e) { console.warn('agent-file: carry-over not saved', e); });
+    }
+  }).catch(function (e) { console.warn('agent-file: no character sheet to carry over', e); });
+}
 function afLoad_(code, retrying) {
   window.dgStore.getBrief(code).then(function (data) {
     if (afMountedCode !== code) return; // moved on to another tab meanwhile
@@ -2387,6 +2470,7 @@ function afLoad_(code, retrying) {
       populateCoverForm(data);
       afPresetArchetype_();
       afRender_();
+      afCarryFromCharacter_(code);
     } else if (!retrying) {
       autoCreateBriefFromCharacterThenRetry_(code,
         function () { afLoad_(code, true); },

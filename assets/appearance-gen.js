@@ -447,8 +447,10 @@ function rnd(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function generateAgent(archetypeId) {
-  const sex = Math.random() > 0.55 ? 'Male' : 'Female';
+// opts.sex: keep this Agent's own (Male / Female / Other) instead of rolling one.
+function generateAgent(archetypeId, opts) {
+  const given = opts && opts.sex;
+  const sex = given === 'Male' || given === 'Female' ? given : given === 'Other' ? (Math.random() > 0.5 ? 'Male' : 'Female') : (Math.random() > 0.55 ? 'Male' : 'Female');
   const firstName = sex === 'Male' ? rnd(RAND_TABLES.first_m) : rnd(RAND_TABLES.first_f);
   const lastName = rnd(RAND_TABLES.last);
 

@@ -11113,6 +11113,56 @@ def test_agent_file_disorder_stamps(p):
     record("disorders", "no JS exceptions (disorder stamps)", not errs_all, str(errs_all[:3]))
 
 
+def test_appearance_carries_over_from_sheet(p):
+    """The Appearance brief picks up what the character sheet already knows
+    (agent-file.js afCarryFromCharacter_): sex, age range and nationality
+    from the Biography, a build from STR+CON and clothes that fit the
+    profession -- into empty fields only, saved to the brief so the count
+    goes down. Found play-testing: a New Recruit Agent showed "20 of 22
+    still to fill in" with sex and age blank. Random Generate keeps the
+    sheet's sex."""
+    docs = _field_notes_docs()
+    st = {"v": 1, "stats": {"STR": 15, "CON": 16, "DEX": 11, "INT": 14, "POW": 12, "CHA": 13},
+          "csStats": {"STR": 15, "CON": 16, "DEX": 11, "INT": 14, "POW": 12, "CHA": 13},
+          "derived": {"hp": 16, "wp": 12, "san": 60, "bp": 48},
+          "bio": {"name": "Alistair Lagavulin", "profession": "pilot_sailor", "player_name": "fn tester",
+                  "sex": "male", "age": "52", "nationality": "Scottish"}}
+    docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, st, "fn tester")
+    docs[f"briefs/{FN_CODE}"] = {"agent_code": FN_CODE, "char_name": "Alistair Lagavulin", "nationality": "Scottish",
+                                 "profession": "Pilot or Sailor", "player_name": "fn tester", "player_name_lc": "fn tester",
+                                 "shirt": "his own grey wool jumper"}
+    page, errs = _field_notes_page(p, docs=docs,
+                                   extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    _af_state(page)
+    page.wait_for_function("() => { const f = document.getElementById('dg-form'); return f && f.elements['build'] && f.elements['build'].value; }", timeout=10000)
+    form = page.evaluate("""() => { const f = document.getElementById('dg-form'), v = k => f.elements[k].value;
+        return { sex: v('sex'), age: v('age_range'), build: v('build'), jacket: v('jacket'), shirt: v('shirt'), trousers: v('trousers'),
+                 footwear: v('footwear'), locked: ['sex', 'age_range', 'build'].every(k => f.elements[k].dataset.locked === '1'),
+                 state: document.getElementById('af-appear-state').textContent }; }""")
+    record("appearance", "sex and age range come over from the sheet's Biography (\"male\", 52 -> Male, Early 50s)",
+           form["sex"] == "Male" and form["age"] == "Early 50s", json.dumps(form))
+    record("appearance", "a build from STR+CON (15+16: athletic) and clothes for a Pilot or Sailor",
+           form["build"] in ("athletic", "lean and muscular", "fit and rangy", "well-conditioned") and all(form[k] for k in ("jacket", "trousers", "footwear")), json.dumps(form))
+    record("appearance", "what the player already wrote stays (the shirt is untouched)", form["shirt"] == "his own grey wool jumper", form["shirt"])
+    _pump_until(page, lambda: (fs_doc(page, f"briefs/{FN_CODE}") or {}).get("build"), timeout_ms=6000)
+    b = fs_doc(page, f"briefs/{FN_CODE}") or {}
+    record("appearance", "the carried values are saved to the brief, and the count goes down",
+           b.get("sex") == "Male" and b.get("age_range") == "Early 50s" and b.get("build") == form["build"] and b.get("jacket") == form["jacket"]
+           and b.get("shirt") == "his own grey wool jumper" and form["state"] == "13 of 22 still to fill in", json.dumps({k: b.get(k) for k in ("sex", "age_range", "build", "jacket", "shirt")}) + " " + form["state"])
+    # Random Generate fills the rest, keeps the sheet's facts, and its facial hair fits a man.
+    page.evaluate("() => randomizeAgent(document.getElementById('rand-profession').value || null)")
+    after = page.evaluate("""() => { const f = document.getElementById('dg-form'), v = k => f.elements[k].value;
+        return { sex: v('sex'), age: v('age_range'), build: v('build'), face: v('face_shape'), fh: v('facial_hair') }; }""")
+    female_fh = page.evaluate("() => (window.dgAppearanceGen.RAND_TABLES.facial_hair_female || [])")
+    male_fh = page.evaluate("() => (window.dgAppearanceGen.RAND_TABLES.facial_hair_male || [])")
+    record("appearance", "Random Generate fills the rest but keeps sex, age and build, and rolls facial hair for the Agent's own sex",
+           after["sex"] == "Male" and after["age"] == "Early 50s" and after["build"] == form["build"] and after["face"]
+           and (after["fh"] in male_fh or after["fh"] not in female_fh), json.dumps(after))
+    record("appearance", "no JS exceptions (carry-over)", not errs, str(errs[:3]))
+    page.close()
+
+
 def test_agent_file_parts_and_looks(p):
     """The Agent File in numbered parts (Statistics, Skills, Psyche, Combat
     & gear, Cell, Record) with a jump index; Find a skill (kept across a
@@ -14160,6 +14210,7 @@ def main():
         safe(test_recruit_play_test_round1, browser, area="recruit-fix")
         safe(test_agent_file_wear, browser, area="wear")
         safe(test_agent_file_disorder_stamps, browser, area="disorders")
+        safe(test_appearance_carries_over_from_sheet, browser, area="appearance")
         safe(test_agent_rules_unit, browser, area="rules")
         safe(test_evidence_attachments_open_and_zoom, browser, area="evidence")
         safe(test_motivations_and_disorders_split, browser, area="disorders")

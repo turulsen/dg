@@ -6501,3 +6501,43 @@ no equipment picker on the page, `stats/pdf-export.js` listed
 now writes the item's name. Its template URL is also resolved next to
 the script, so the export works from any page (the notebook's Settings),
 not just `stats/`.
+
+## Appearance: the character sheet's sex, age, build and profession didn't carry over
+
+Found in play (2026-10-10): a New Recruit Agent's Appearance said "20 of
+22 still to fill in". Only the name and nationality were there; sex and
+age were blank, and there was no build and no clothes, although the
+sheet had all of it.
+
+This is the old "my info didn't carry over" report back again, and the
+earlier fix was only partial (see **Cover/Profiling tab not
+pre-filling** and the auto-export banner above). The carry-over lived in
+the old sheet's **Open Agent File** export
+(`stats/agent-portal-export.js`): sex and age matched to the form's
+options, a build from STR+CON, an outfit from the profession. Since
+v3.0.0, Agents are made by Agent Hub's New Recruit wizard, and its
+`briefFields()` sends only the name, codename, nationality, profession,
+sex and age range. It never derives a build or an outfit. If the sheet's
+sex or age didn't make it into the brief, nothing read them later
+either. The only other path that reads the sheet,
+`autoCreateBriefFromCharacterThenRetry_`, runs only when an Agent has no
+brief at all, which is never the case for a wizard-made Agent.
+
+Fixed in `assets/agent-file.js`. `afCarryFromCharacter_` runs whenever
+an Agent's Appearance loads (Agent Hub, the notebook, the wizard's
+Profiling step). It reads the saved sheet and fills only the empty brief
+fields:
+- sex, matched to Male / Female / Other;
+- the age range, from a number or "mid 40s";
+- the nationality;
+- a build from STR+CON, the same word for that Agent every time;
+- jacket, shirt, trousers and footwear from the profession's look in the
+  Random Agent Generator.
+
+It saves them to the brief straight away, so the count drops, and never
+overwrites what the player wrote. Sex, age and build are locked against
+Random Generate. The clothes stay rerollable. Random Generate also keeps
+the Agent's own sex now (`generateAgent(archetype, { sex })`), so the
+facial hair and hair styles it rolls fit. Existing Agents fix themselves
+the next time their Appearance opens. Covered by
+`test_appearance_carries_over_from_sheet`.
