@@ -154,6 +154,37 @@
   // Other pages and frames of this site pick the change up as it happens.
   window.addEventListener('storage', function (e) { if (e.key === LOOK_KEY) applyLook(); });
 
+  /* ── Wear: the paper ages as SAN falls (assets/agent-wear.css) ── */
+  // Stages by SAN: 50+ clean; 49-40, 39-30, 29-20, 19-10, 9-1, 0. The
+  // INSANE stamp shows from 9 (worn) and fills in from 5 to solid at 0.
+  // Switched off per device in the notebook's Settings (dg_paper_wear).
+  var WEAR_KEY = 'dg_paper_wear';
+  function wearOn() { try { return localStorage.getItem(WEAR_KEY) !== 'off'; } catch (e) { return true; } }
+  function applyWear() { document.documentElement.classList.toggle('dg-no-wear', !wearOn()); }
+  function setWear(on) {
+    try { localStorage.setItem(WEAR_KEY, on ? 'on' : 'off'); } catch (e) { /* private mode */ }
+    applyWear();
+  }
+  function wearTier(san) {
+    san = num(san);
+    if (san >= 50) return 0;
+    if (san <= 0) return 6;
+    if (san <= 9) return 5;
+    return 1 + Math.floor((49 - san) / 10);
+  }
+  function wearVars(san) {
+    san = num(san);
+    var insane = san > 9 ? 0 : san > 5 ? .35 + (9 - san) * .125 : Math.min(1, .85 + (5 - san) * .03);
+    var fill = san >= 5 ? 0 : Math.min(1, (5 - san) / 5);
+    return { tier: wearTier(san), insane: Math.round(insane * 100) / 100, fill: Math.round(fill * 100) / 100 };
+  }
+  function wearAttrs(x) {
+    var w = wearVars(R().derived(x).san);
+    return w.tier ? ' data-sanity-tier="' + w.tier + '" style="--insane:' + w.insane + ';--fill:' + w.fill + '"' : '';
+  }
+  applyWear();
+  window.addEventListener('storage', function (e) { if (e.key === WEAR_KEY) applyWear(); });
+
   /* ── The paper ── */
   function mount(el, ctx) {
     var s = window.dgAgentLive.session(ctx.code, ctx.char);
@@ -171,6 +202,10 @@
     function render() {
       var sc = scroller(), top = sc ? sc.scrollTop : 0;
       el.innerHTML = s.state ? paperHtml() : emptyHtml();
+      // A new stage of wear fades in (not on the first drawing).
+      var pp = el.querySelector('.as-paper.ap'), tier = pp ? pp.getAttribute('data-sanity-tier') || '0' : '0';
+      if (pp && el._apTier != null && el._apTier !== tier) pp.classList.add('ap-wear-change');
+      el._apTier = tier;
       // Only when the redraw moved it: setting it anyway would stop a
       // smooth scroll already on its way (a #photos link on Agent Hub).
       if (sc && sc.scrollTop !== top) sc.scrollTop = top;
@@ -510,7 +545,7 @@
       var inc = ctx.incursion ? '<div class="as-sec as-incursion"><div class="as-sec-hd">The Incursion</div><p class="as-text">' + esc(ctx.incursion) + '</p></div>'
         : (ctx.incursionEmptyHtml ? '<div class="as-sec as-incursion"><div class="as-sec-hd">The Incursion</div>' + ctx.incursionEmptyHtml + '</div>' : '');
       var n = 0;
-      return '<div class="as-paper ap ap-look-' + look() + (edit ? ' ap-editing' : '') + '">' + bar + (ctx.appearanceOutside ? cellDropHtml(x) : '') + headHtml(x, edit) + appearHtml(x) + eraDropHtml() + (ctx.appearanceOutside ? '' : cellDropHtml(x)) + indexHtml(edit) +
+      return '<div class="as-paper ap ap-look-' + look() + (edit ? ' ap-editing' : '') + '"' + wearAttrs(x) + '>' + bar + (ctx.appearanceOutside ? cellDropHtml(x) : '') + headHtml(x, edit) + appearHtml(x) + eraDropHtml() + (ctx.appearanceOutside ? '' : cellDropHtml(x)) + indexHtml(edit) +
         (edit ? part('personal', '0', 'Personal data & appearance', '', personalHtml(x)) : '') +
         '<div class="as-sheet">' +
           part('stats', ++n, 'Statistics', '<span class="ap-part-note">' + (edit ? 'value · distinguishing feature' : 'tap to roll ×5 · distinguishing features') + '</span>', statsHtml(x, edit)) +
@@ -854,5 +889,6 @@
     return out;
   }
 
-  window.dgAgentPaper = { mount: mount, rollExpr: rollExpr, postits: postits, diff: diff, LOOKS: LOOKS, look: look, setLook: setLook };
+  window.dgAgentPaper = { mount: mount, rollExpr: rollExpr, postits: postits, diff: diff, LOOKS: LOOKS, look: look, setLook: setLook,
+    wearOn: wearOn, setWear: setWear, wearVars: wearVars };
 })();
