@@ -11044,6 +11044,73 @@ def test_agent_file_wear(p):
     page.close()
 
 
+def test_agent_file_disorder_stamps(p):
+    """A small rubber stamp per Mental Disorder, scattered over the header
+    (agent-paper.js placeDisorders): on Agent Hub's .paper-header and the
+    notebook's .as-head; never on a button, the name or the vitals, nor on
+    each other; the same spots after a reload; a new disorder thumps in; the
+    wear switch in Settings hides them."""
+    dis = ["PTSD", "Paranoia", "Sleep Disorder"]
+    errs_all = []
+    def page_at(width):
+        docs = _field_notes_docs()
+        st = {"v": 1, "stats": {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 12, "CHA": 13},
+              "derived": {"hp": 11, "wp": 12, "san": 25, "bp": 43},
+              "bio": {"name": "Mara Voss", "profession": "federal_agent", "player_name": "fn tester", "disorders": dis}}
+        docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, st, "fn tester")
+        page, errs = _field_notes_page(p, width=width, docs=docs,
+                                       extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+        page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_selector(f"#ah-sheet-{FN_CODE} .as-paper.ap .ap-vitals", timeout=15000)
+        # The stamps are placed again once the typewriter font is in (their widths change).
+        page.evaluate("() => document.fonts.ready")
+        page.wait_for_timeout(800)
+        return page, errs
+    probe = """(area) => { const a = document.querySelector(area), st = [...a.querySelectorAll('.ap-dis-stamp')];
+        const R = e => e.getBoundingClientRect(), hit = (x, y) => !(x.right <= y.left || x.left >= y.right || x.bottom <= y.top || x.top >= y.bottom);
+        const keep = [...a.querySelectorAll('button, input, select, .ap-vitals, .paper-title, .paper-meta, .as-name')].map(R).filter(r => r.width);
+        return { n: st.length, names: st.map(e => e.textContent), inks: [...new Set(st.map(e => getComputedStyle(e).color))].length,
+                 clash: st.some(e => keep.some(k => hit(R(e), k))) || st.some((e, i) => st.some((f, j) => j > i && hit(R(e), R(f)))),
+                 why: st.filter(e => keep.some(k => hit(R(e), k))).map(e => e.textContent + ':' + e.className + ':' + getComputedStyle(e).transform),
+                 spots: st.map(e => e.style.left + ',' + e.style.top + ',' + e.style.getPropertyValue('--rot')) }; }"""
+    hub_area = f"#panel-{FN_CODE} .paper-header"
+    for width in (1180, 390):
+        page, errs = page_at(width)
+        a = page.evaluate(probe, hub_area)
+        page.close(); errs_all.extend(errs)
+        page, errs = page_at(width)
+        b = page.evaluate(probe, hub_area)
+        record("disorders", f"one stamp per disorder on Agent Hub's header, clear of buttons, name, vitals and each other ({width}px)",
+               a["n"] == 3 and sorted(a["names"]) == sorted(dis) and not a["clash"], json.dumps(a))
+        record("disorders", f"the stamps land in the same spots after a reload ({width}px)", a["spots"] == b["spots"], f"{a['spots']} / {b['spots']}")
+        if width == 1180:
+            record("disorders", "the stamps come in more than one ink", a["inks"] >= 2, str(a["inks"]))
+            # A new disorder from the paper's + Disorder: its stamp thumps in, the others stay put.
+            b = page.evaluate(probe, hub_area)
+            page.click(f"#ah-sheet-{FN_CODE} [data-a='pop'][data-pop='dis']")
+            page.select_option(f"#ah-sheet-{FN_CODE} [data-u='dis']", "Obsession")
+            page.click(f"#ah-sheet-{FN_CODE} [data-a='dis-add']")
+            page.wait_for_function("(a) => document.querySelectorAll(a + ' .ap-dis-stamp').length === 4", arg=hub_area, timeout=6000)
+            # Past the thump (it lands scaled up).
+            page.wait_for_function("(a) => [...document.querySelectorAll(a + ' .ap-dis-stamp')].every(e => e.getAnimations().every(a => a.playState !== 'running'))", arg=hub_area, timeout=6000)
+            c = page.evaluate(probe, hub_area)
+            new = page.evaluate("(a) => [...document.querySelectorAll(a + ' .ap-dis-stamp.ap-dis-new')].map(e => e.textContent)", hub_area)
+            record("disorders", "a new disorder adds its stamp with a thump; the earlier stamps don't move",
+                   new == ["Obsession"] and c["spots"][:3] == b["spots"] and not c["clash"], f"new={new} {c['spots']} was {b['spots']} why={c['why']}")
+            # The notebook's Agent File: on its own header.
+            page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+            page.wait_for_selector("#fn-veil .as-paper.ap .as-head .ap-dis-stamp", timeout=8000)
+            nb = page.evaluate(probe, "#fn-veil .as-paper.ap .as-head")
+            record("disorders", "the notebook's Agent File stamps its own header the same way", nb["n"] == 4 and not nb["clash"], json.dumps(nb))
+            page.evaluate("() => window.dgFieldNotes.open('settings')")
+            page.click("#fn-veil [data-s=wear]")
+            hidden = page.evaluate("(a) => [...document.querySelectorAll(a + ' .ap-dis-stamp')].every(e => getComputedStyle(e).display === 'none')", hub_area)
+            page.click("#fn-veil [data-s=wear]")
+            record("disorders", "the wear switch in Settings hides the stamps too", hidden, "")
+        page.close(); errs_all.extend(errs)
+    record("disorders", "no JS exceptions (disorder stamps)", not errs_all, str(errs_all[:3]))
+
+
 def test_agent_file_parts_and_looks(p):
     """The Agent File in numbered parts (Statistics, Skills, Psyche, Combat
     & gear, Cell, Record) with a jump index; Find a skill (kept across a
@@ -14090,6 +14157,7 @@ def main():
         safe(test_new_recruit_imports_and_links, browser, area="recruit-import")
         safe(test_recruit_play_test_round1, browser, area="recruit-fix")
         safe(test_agent_file_wear, browser, area="wear")
+        safe(test_agent_file_disorder_stamps, browser, area="disorders")
         safe(test_agent_rules_unit, browser, area="rules")
         safe(test_evidence_attachments_open_and_zoom, browser, area="evidence")
         safe(test_motivations_and_disorders_split, browser, area="disorders")

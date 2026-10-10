@@ -13,7 +13,8 @@ by the stages, over that whole page:
   tier 6  SAN  0     the worst of it
 
 The INSANE stamp shows from SAN 9 (worn, patchy) and fills in from SAN 5 to
-solid at 0, on the Agent's name (data-wear-stamp), clear of the buttons;
+solid at 0, on the Agent's name (data-wear-stamp), clear of the buttons; a
+small stamp per Mental Disorder scatters over the header (.ap-dis-stamp);
 assets/agent-paper.js sets data-sanity-tier on the paper and --insane /
 --fill on the name.
 
@@ -106,13 +107,16 @@ def blood(seed, n, W=1100, big=1.0, smear=0):
     return uri(SVG.format(w=W,h=W,d=''.join(out)))
 # Torn strips for the margin: a soft, uneven edge (sum of slow waves),
 # a few real rips, mostly intact -- not a saw-tooth.
-def strip(seed, horiz, L=900, D=14, far=False):
+# soft: the sides -- shallower, gentler waves, at most one small rip.
+def strip(seed, horiz, L=900, D=14, far=False, soft=False):
     r=random.Random(seed)
-    waves=[(r.uniform(.004,.012), r.uniform(0,6.28), r.uniform(.8,2.2)) for _ in range(3)] + [(r.uniform(.05,.09), r.uniform(0,6.28), .5)]
-    rips=[(r.uniform(60,L-60), r.uniform(10,26), r.uniform(D*.6,D*.95)) for _ in range(r.randint(1,3))]
+    k=.45 if soft else 1
+    waves=[(r.uniform(.004,.012), r.uniform(0,6.28), r.uniform(.8,2.2)*k) for _ in range(3)] + [(r.uniform(.05,.09), r.uniform(0,6.28), .5*k)]
+    rips=([(r.uniform(60,L-60), r.uniform(8,16), r.uniform(D*.45,D*.65)) for _ in range(r.randint(0,1))] if soft else
+          [(r.uniform(60,L-60), r.uniform(10,26), r.uniform(D*.6,D*.95)) for _ in range(r.randint(1,3))])
     pts=[]
     for i in range(0, L+1, 3):
-        dep=2.2+sum(a*math.sin(i*f*6.283/1+p) for f,p,a in waves)
+        dep=(1.4 if soft else 2.2)+sum(a*math.sin(i*f*6.283/1+p) for f,p,a in waves)
         for c,w,dd in rips:
             if abs(i-c)<w: dep=max(dep, dd*(1-abs(i-c)/w)**.8)
         pts.append((i, max(0,min(D,dep))))
@@ -129,8 +133,10 @@ DISTRESS=uri(SVG.format(w=400,h=160,d=(
   '<feTurbulence type="fractalNoise" baseFrequency=".012 .02" numOctaves="2" seed="3" result="lo"/>'
   '<feColorMatrix in="lo" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  -4 0 0 0 2.75" result="patch"/>'
   '<feComposite in="speck" in2="patch" operator="in"/></filter><rect width="100%" height="100%" filter="url(#d)"/>')))
-SL,SR,ST,SB = strip(11,False), strip(12,False,far=True), strip(13,True), strip(14,True,far=True)
-SL10,SR10,ST10,SB10 = strip(11,False,D=10), strip(12,False,D=10,far=True), strip(13,True,D=10), strip(14,True,D=10,far=True)
+# Top and bottom 14px deep (10 on phones); the sides 8px (6), and softer.
+SIDE, SIDE_PH = 8, 6
+SL,SR,ST,SB = strip(11,False,D=SIDE,soft=True), strip(12,False,D=SIDE,far=True,soft=True), strip(13,True), strip(14,True,far=True)
+SL10,SR10,ST10,SB10 = strip(11,False,D=SIDE_PH,soft=True), strip(12,False,D=SIDE_PH,far=True,soft=True), strip(13,True,D=10), strip(14,True,D=10,far=True)
 
 
 V = {
@@ -186,14 +192,15 @@ for t, (names, extra, ink, ink2, shadow) in TIERS.items():
     css.append(f'{on(t)}{{ {stack(names, extra)} }}')
     if shadow: css.append(f'{sel} .as-name, {sel} .ap-cur{{ text-shadow:{shadow}; }}')
 # Torn edge (stages 5-6): the page's own edge, inside its padding, so no data
-# is cut. 14px deep; 10px on phones, where Agent Hub's page pads 12px.
-def tear(d, k=''):
-    return (f'linear-gradient(#000,#000) center/calc(100% - {2*d}px) calc(100% - {2*d}px) no-repeat, '
+# is cut: 14px deep at top and bottom (10px on phones, where Agent Hub's page
+# pads 12px), and a gentler 8px (6px) on the sides.
+def tear(d, sd, k=''):
+    return (f'linear-gradient(#000,#000) center/calc(100% - {2*sd}px) calc(100% - {2*d}px) no-repeat, '
             f'var(--w-tT{k}) top/900px {d}px repeat-x, var(--w-tB{k}) bottom/900px {d}px repeat-x, '
-            f'var(--w-tL{k}) left/{d}px 900px repeat-y, var(--w-tR{k}) right/{d}px 900px repeat-y')
+            f'var(--w-tL{k}) left/{sd}px 900px repeat-y, var(--w-tR{k}) right/{sd}px 900px repeat-y')
 torn = on(5, False) + ', ' + on(6, False)
-css.append(f'{torn}{{ box-shadow:none; -webkit-mask:{tear(14)}; mask:{tear(14)}; }}')
-css.append(f'@media (max-width:560px){{ {torn}{{ -webkit-mask:{tear(10, "10")}; mask:{tear(10, "10")}; }} }}')
+css.append(f'{torn}{{ box-shadow:none; -webkit-mask:{tear(14, SIDE)}; mask:{tear(14, SIDE)}; }}')
+css.append(f'@media (max-width:560px){{ {torn}{{ -webkit-mask:{tear(10, SIDE_PH, "10")}; mask:{tear(10, SIDE_PH, "10")}; }} }}')
 # The Appearance form's reference-image viewer is fixed-position inside the
 # page; the mask would clip it to the sheet, so the tear lifts while it's open.
 css.append(f'{", ".join("html " + h + ":has(#aar-detail-overlay.open)" for h, _ in HOSTS)}{{ -webkit-mask:none !important; mask:none !important; }}')
@@ -201,18 +208,28 @@ css.append(f'{", ".join("html " + h + ":has(#aar-detail-overlay.open)" for h, _ 
 # the buttons -- agent-paper.js marks the name with data-wear-stamp and sets
 # --insane / --fill there (Agent Hub's header name, or the paper's own).
 ink = 'var(--w-ink) 0 0/400px 160px, linear-gradient(rgba(0,0,0,var(--fill)),rgba(0,0,0,var(--fill)))'
-css.append(f'[data-wear-stamp]{{ --w-ink:{V["ink"]}; position:relative; z-index:7; transition:--insane 1.2s ease, --fill 1.2s ease; }}')
+css.append(f':root{{ --w-ink:{V["ink"]}; }}')
+css.append(f'[data-wear-stamp]{{ position:relative; z-index:7; transition:--insane 1.2s ease, --fill 1.2s ease; }}')
 css.append(f'[data-wear-stamp]::after{{ content:"INSANE"; position:absolute; left:-.4em; top:75%; pointer-events:none; white-space:nowrap; '
            f'transform:translateY(-50%) rotate(-7deg); padding:.04em .3em 0; font-family:"Special Elite","Courier New",monospace; font-size:1.6em; font-weight:400; line-height:1.15; letter-spacing:.14em; text-transform:none; '
            f'color:#9c1010; border:.09em double #9c1010; border-width:.1em; border-radius:.08em; opacity:var(--insane); mix-blend-mode:multiply; -webkit-mask:{ink}; mask:{ink}; filter:blur(.3px); }}')
+# The disorder stamps (agent-paper.js placeDisorders): small, like the Hub's
+# KIA / ACTIVE stamps, in the ink agent-paper.js picks (red, violet or
+# blue-black), worn by the same distress mask; a new one comes down with a thump.
+dmask = 'var(--w-ink) 0 0/400px 160px, linear-gradient(rgba(0,0,0,.85),rgba(0,0,0,.85))'
+css.append(f'.ap-dis-stamp{{ position:absolute; z-index:6; pointer-events:none; white-space:nowrap; font-family:"Special Elite","Courier New",monospace; font-size:9px; font-weight:400; line-height:1.2; '
+           f'letter-spacing:.14em; text-transform:uppercase; border:1.5px solid currentColor; padding:2px 7px; border-radius:2px; transform:rotate(var(--rot,0deg)); opacity:var(--op,.88); '
+           f'mix-blend-mode:multiply; -webkit-mask:{dmask}; mask:{dmask}; }}')
+css.append('@keyframes ap-dis-thump{ 0%{ opacity:0; transform:rotate(var(--rot,0deg)) scale(1.9); } 60%{ opacity:var(--op,.88); transform:rotate(var(--rot,0deg)) scale(.94); } 100%{ opacity:var(--op,.88); transform:rotate(var(--rot,0deg)) scale(1); } }')
+css.append('.ap-dis-stamp.ap-dis-new{ animation:ap-dis-thump .45s cubic-bezier(.3,.7,.4,1) both; }')
 # A new stage fades in; none of it with reduced motion, or when switched off in Settings.
 css.append('@keyframes ap-wear-in{ from{ opacity:0; } to{ opacity:1; } }')
 css.append(', '.join(f'html:not(.dg-no-wear) {h}:has({P}.ap-wear-change){ps}' for h, ps in HOSTS) + '{ animation:ap-wear-in 1.6s ease both; }')
 # Phones: smaller and from the name's own left edge, so it stays on the paper
 # and off the photo's buttons.
 css.append('@media (max-width:600px){ [data-wear-stamp]::after{ left:0; font-size:min(1.2em, 5.6vw); } }')
-css.append('@media (prefers-reduced-motion:reduce){ ' + ', '.join(f'html:not(.dg-no-wear) {h}:has({P}.ap-wear-change){ps}' for h, ps in HOSTS) + '{ animation:none; } [data-wear-stamp]{ transition:none; } }')
-css.append('html.dg-no-wear [data-wear-stamp]::after{ display:none; }')
+css.append('@media (prefers-reduced-motion:reduce){ ' + ', '.join(f'html:not(.dg-no-wear) {h}:has({P}.ap-wear-change){ps}' for h, ps in HOSTS) + '{ animation:none; } [data-wear-stamp]{ transition:none; } .ap-dis-stamp.ap-dis-new{ animation:none; } }')
+css.append('html.dg-no-wear [data-wear-stamp]::after, html.dg-no-wear .ap-dis-stamp{ display:none; }')
 root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 open(os.path.join(root, 'assets', 'agent-wear.css'), 'w').write('\n'.join(css) + '\n')
 print('assets/agent-wear.css', sum(len(c) for c in css), 'bytes')
