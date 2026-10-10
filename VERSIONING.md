@@ -63,7 +63,21 @@ consumer depending on that history being versioned. v2.0.0 was cut
 reserved for it: the Google Sheet is retired and every page reads and
 writes Firestore directly (Code.gs v97 is left serving only the Drive
 image proxy for old `gdrive:` links; going live took the one-time steps
-in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v2.9.0**
+in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v3.0.0**
+(2026-10-10) is PR #70, the major bump the v2 plan reserved for retiring
+the old character sheet (milestone M2): Agent Hub's **+ New Recruit** is
+a twelve-step creation wizard (statistics to the Contract, The Complex's
+professions and agency postings, Damaged Veteran, the Bond generator
+with an AI description, the profession's kit, Profiling with the play
+era) and one drop zone for every import format; Recruit, Friendly's
+Make this my Agent and Notes' links open it or the Agent File; the
+notebook's Settings export a DD Form 315 and keep the old sheet behind
+Open ↗. Also a Cell member as a Bond, Breaking Point crossing off a
+Motivation, the Mission & Standing Orders on save, and the play-test
+fixes (the age in the Plates' prompts, the terminal on a phone).
+Backend: `firebase deploy --only functions` (new
+`generateBondDescription`, the prompts' age); no Apps Script change.
+Shell cache `dg-hub-shell-v209`. No tag yet. **v2.9.0**
 (2026-10-09) is PR #69: Field Notes' Split mode (desktop) -- the Agent
 File on the left page, the brown tabs' pages (Notes as the whole Notes
 page, Evidences, Rules, Settings) on the right, remembered per device --
