@@ -254,7 +254,7 @@
         '<td>' + (dmg && rollable ? '<button type="button" class="as-roll as-chip" data-damage="' + esc(dmg) + '" data-label="' + esc(w.name) + ' damage"><span class="as-sv">' + esc(dmg) + '</span></button>' : esc(dmg)) + '</td></tr>';
     }).join('') + '</tbody></table>' : '<p class="as-text as-k">None.</p>';
     var bonds = sheet.bonds.length ? sheet.bonds.map(function (b) {
-      return '<div class="as-row"><span>' + esc(b.name) + (b.relationship ? ' <span class="as-k">· ' + esc(b.relationship) + '</span>' : '') + '</span><span class="as-score">' + esc(b.score == null ? '' : b.score) + '</span></div>';
+      return '<div class="as-row' + (b.score != null && +b.score <= 0 ? ' as-bond-broken' : '') + '"><span>' + esc(b.name) + (b.relationship ? ' <span class="as-k">· ' + esc(b.relationship) + '</span>' : '') + '</span><span class="as-score">' + esc(b.score == null ? '' : b.score) + '</span></div>';
     }).join('') : '<p class="as-text as-k">No bonds on the sheet yet.</p>';
     return '<div class="as-paper">' + head + actions + about +
       '<div class="as-sheet">' +

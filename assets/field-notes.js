@@ -1732,8 +1732,9 @@
     });
     return scriptsOnce[src];
   }
-  // Same merge hub.html's Cover Identity preload does: this identity's
-  // Agents replace the roster's, keeping entries with no player name.
+  // Same as Agent Hub's Cover Identity lookup: this identity's Agents
+  // replace the roster, nothing else stays (not even unnamed Agents --
+  // they piled up from other players on a home-screen app).
   function reloadMyAgents(body) {
     var input = body.querySelector('[data-s="ci"]');
     var st = body.querySelector('[data-s="ci-status"]');
@@ -1742,8 +1743,7 @@
     lsSet('dg_cover_identity', name);
     st.textContent = 'Looking up your Agents…';
     ensureStore().then(function (st) { return st.findByPlayerName(name); }).then(function (agents) {
-      var prior = roster(), next = {};
-      Object.keys(prior).forEach(function (c) { if (!prior[c].player_name) next[c] = prior[c]; });
+      var next = {};
       (agents || []).forEach(function (a) {
         if (!a.code) return;
         next[a.code] = {

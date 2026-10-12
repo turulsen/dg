@@ -176,7 +176,19 @@
     san = num(san);
     var insane = san > 9 ? 0 : san > 5 ? .35 + (9 - san) * .125 : Math.min(1, .85 + (5 - san) * .03);
     var fill = san >= 5 ? 0 : Math.min(1, (5 - san) / 5);
-    return { tier: wearTier(san), insane: Math.round(insane * 100) / 100, fill: Math.round(fill * 100) / 100 };
+    return { tier: wearTier(san), insane: Math.round(insane * 100) / 100, fill: Math.round(fill * 100) / 100, op: wearOpacity(san) };
+  }
+  // How strongly the wear shows, rising point by point as SAN falls (the
+  // user's curve, 2026-10-12): 49-40 1-5%, 39-30 6-10%, 29-20 11-25%,
+  // 19-10 26-50%, 9-0 51-100%; nothing at 50+.
+  var WEAR_BANDS = [[49, 40, .01, .05], [39, 30, .06, .10], [29, 20, .11, .25], [19, 10, .26, .50], [9, 0, .51, 1]];
+  function wearOpacity(san) {
+    san = Math.max(0, Math.round(num(san)));
+    for (var i = 0; i < WEAR_BANDS.length; i++) {
+      var b = WEAR_BANDS[i];
+      if (san <= b[0] && san >= b[1]) return Math.round((b[2] + (b[0] - san) / (b[0] - b[1]) * (b[3] - b[2])) * 1000) / 1000;
+    }
+    return 0;
   }
   function wearAttrs(x) {
     var w = wearVars(R().derived(x).san);
@@ -295,6 +307,9 @@
       var pp = el.querySelector('.as-paper.ap'), tier = pp ? pp.getAttribute('data-sanity-tier') || '0' : '0';
       if (pp && el._apTier != null && el._apTier !== tier) pp.classList.add('ap-wear-change');
       el._apTier = tier;
+      // The page the wear is drawn on takes this Agent's opacity.
+      var page = el.closest('.paper, .fn-paper');
+      if (page) page.style.setProperty('--w-op', s.state ? wearVars(R().derived(st()).san).op : 0);
       placeStamp(ctx.stampHost ? ctx.stampHost() : el.querySelector('.as-head .as-name'), s.state ? st() : null);
       if (ctx.onFate && s.state) ctx.onFate(fateOf(st()));
       stampDisorders();
@@ -463,7 +478,8 @@
         (bonds.length ? bonds.map(function (b, i) {
           if (edit) return '<div class="ap-bond"><input class="ap-in" data-e="bond:' + i + ':name" value="' + esc(b.name) + '" aria-label="Bond name"><input class="ap-in" data-e="bond:' + i + ':relationship" value="' + esc(b.relationship || '') + '" placeholder="Relationship" aria-label="Relationship">' +
             '<input class="ap-in ap-num" inputmode="numeric" data-e="bond:' + i + ':score" value="' + num(b.score) + '" aria-label="Score"><button type="button" class="ap-del" data-a="rm" data-what="bond" data-i="' + i + '" aria-label="Remove ' + esc(b.name) + '">×</button></div>';
-          return '<div class="ap-bond"><span class="ap-bn">' + esc(b.name) + (b.relationship ? ' <span class="as-k">· ' + esc(b.relationship) + '</span>' : '') + '</span>' +
+          // A Bond at 0 is broken: struck through in red (+ still brings it back).
+          return '<div class="ap-bond' + (num(b.score) <= 0 ? ' ap-bond-broken' : '') + '"><span class="ap-bn">' + esc(b.name) + (b.relationship ? ' <span class="as-k">· ' + esc(b.relationship) + '</span>' : '') + '</span>' +
             '<button type="button" class="ap-pm" data-a="bond-" data-i="' + i + '" aria-label="' + esc(b.name) + ' down">−</button><span class="ap-bscore">' + num(b.score) + '</span>' +
             '<button type="button" class="ap-pm" data-a="bond+" data-i="' + i + '" aria-label="' + esc(b.name) + ' up">+</button></div>';
         }).join('') : '<p class="as-text as-k">No Bonds yet.</p>');

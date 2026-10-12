@@ -91,3 +91,5 @@
 .as-polaroid-img.as-has-photo .as-take-photo{ display:none; }
 .as-incursion{ margin-top:2px; }
 .as-incursion .as-text{ font-style:italic; }
+/* A Bond at 0: struck through in red. */
+.as-row.as-bond-broken > span{ color:var(--as-red); text-decoration:line-through; text-decoration-color:var(--as-red); }

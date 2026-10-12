@@ -180,3 +180,6 @@
 .ap-list li.ap-crossed{ text-decoration:line-through; text-decoration-color:var(--as-red); color:var(--as-ink-3); }
 /* SAN 0: the Agent's name struck through, as for KIA (agent-paper.js placeStamp). */
 .ap-struck{ color:var(--as-red, #8b1a1a); text-decoration:line-through; text-decoration-thickness:2px; text-decoration-color:var(--as-red, #8b1a1a); }
+/* A Bond at 0: struck through in red (agent-paper.js bondsHtml). */
+.ap-bond.ap-bond-broken .ap-bn, .ap-bond.ap-bond-broken .ap-bscore{ color:var(--as-red, #8b1a1a); text-decoration:line-through; text-decoration-color:var(--as-red, #8b1a1a); text-decoration-thickness:1.5px; }
+.as-row.as-bond-broken > span{ color:var(--as-red, #8b1a1a); text-decoration:line-through; text-decoration-color:var(--as-red, #8b1a1a); }

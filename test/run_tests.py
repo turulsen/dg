@@ -2655,17 +2655,12 @@ def test_agent_hub_cover_identity(p):
     PATRICK = {"code": "GERG-P001", "char_name": "Patrick Montgomery", "codename": "", "sex": "Male",
                "age_range": "Mid 30s", "nationality": "American"}
 
-    # Entering a name and finding 2 Agents replaces the *claimed* part of
-    # the roster (which starts out seeded with two locally-added Agents:
-    # one already tied to a different real name, one nobody's claimed
-    # yet) -- the one already claimed by someone else is dropped, and the
-    # unclaimed one survives regardless of how long it's been sitting
-    # there: there's nothing yet distinguishing it from "belongs to this
-    # identity", and this campaign plays roughly every 3-5 weeks, so a
-    # player rolling a new Agent and not getting to Cover Identity right
-    # away is the normal case -- any fixed expiry short enough to matter
-    # would risk that same player coming back next session to find their
-    # own not-yet-named Agent gone.
+    # Entering a name and finding 2 Agents replaces the whole roster
+    # (which starts out seeded with two locally-added Agents: one already
+    # tied to a different real name, one nobody's claimed yet). Both
+    # strays go: unnamed Agents used to be kept, which on a home-screen
+    # app piled up every Agent ever opened by a link or by looking up
+    # another player (2026-10-12, the user's choice: matching name only).
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -2701,8 +2696,8 @@ def test_agent_hub_cover_identity(p):
            {"Patrick Montgomery", "Danielle Mitchell"}.issubset(set(tab_labels)), str(tab_labels))
     record("hub", "the stray Agent already claimed by a different real name is gone",
            "Claimed By Someone Else" not in tab_labels, str(tab_labels))
-    record("hub", "the unclaimed local draft survives the search even after sitting untouched for days",
-           "Unclaimed Local Draft" in tab_labels, str(tab_labels))
+    record("hub", "an unnamed Agent from earlier doesn't stay either: only that name's Agents remain",
+           "Unclaimed Local Draft" not in tab_labels, str(tab_labels))
     record("hub", "the status line confirms how many Agents were loaded",
            "2" in page.inner_text("#ci-status"), page.inner_text("#ci-status"))
     record("hub", "the entered Cover Identity is remembered for next time",
@@ -11023,8 +11018,10 @@ def test_agent_file_wear(p):
     ok = all(got[s]["tier"] == want[s][0] and (got[s]["bg"] == (want[s][0] != "0")) and (('INSANE' in got[s]["stamp"]) == want[s][1]) and got[s]["host"] == want[s][1] and 'INSANE' not in got[s]["paperStamp"] and got[s]["ownWear"] == 'none' for s in want)
     record("wear", "the stage follows SAN, worn over the whole page: clean at 50+, stages 1-4 by tens, 5 from 9, 6 at 0; INSANE only from 9, on the header name",
            ok, json.dumps({s: [got[s]["tier"], got[s]["bg"], 'INSANE' in got[s]["stamp"]] for s in got}))
-    record("wear", "every stage is drawn at 90% (a touch lighter than the full stack)",
-           all(abs(float(got[t]["op"]) - .9) < .01 for t in (45, 25, 9, 0)), json.dumps({t: got[t]["op"] for t in (45, 25, 9, 0)}))
+    # The user's curve: 49-40 1-5%, 39-30 6-10%, 29-20 11-25%, 19-10 26-50%, 9-0 51-100%.
+    want_op = {45: .028, 35: .078, 25: .172, 15: .367, 9: .51, 5: .728, 2: .891, 0: 1}
+    record("wear", "the wear's opacity follows SAN point by point (1-5% at 49-40 ... 51-100% at 9-0, 100% at SAN 0)",
+           all(abs(float(got[t]["op"]) - want_op[t]) < .006 for t in want_op), json.dumps({t: got[t]["op"] for t in want_op}))
     record("wear", "the stamp: worn from 9 (no fill), filling in from 5, solid at 0",
            got[9]["fill"] == "0" and float(got[9]["insane"]) >= .3 and got[5]["fill"] == "0" and float(got[2]["fill"]) > 0 and got[0]["fill"] == "1" and got[0]["insane"] == "1",
            json.dumps({s: [got[s]["insane"], got[s]["fill"]] for s in (9, 5, 2, 0)}))
@@ -11207,6 +11204,32 @@ def test_insane_struck_like_kia(p):
            loaded["tab"] and loaded["title"] and loaded["stamp"] and loaded["cell"], json.dumps(loaded))
     page.close(); errs_all.extend(errs)
     record("insane", "no JS exceptions (INSANE like KIA)", not errs_all, str(errs_all[:3]))
+
+
+def test_bond_at_zero_struck(p):
+    """A Bond whose score reaches 0 is struck through in red on the Agent
+    File; − to 0 in play strikes it at once, + brings it back."""
+    docs = _field_notes_docs()
+    st = {"v": 1, "stats": {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 12, "CHA": 13},
+          "derived": {"hp": 11, "wp": 12, "san": 60, "bp": 48}, "bio": {"name": "Mara Voss", "profession": "federal_agent", "player_name": "fn tester"},
+          "bonds": [{"name": "Lena Voss", "relationship": "Sister", "score": 0}, {"name": "Tom Hale", "relationship": "Partner", "score": 1}]}
+    docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, st, "fn tester")
+    page, errs = _field_notes_page(p, docs=docs,
+                                   extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector(f"#ah-sheet-{FN_CODE} .ap-bond", timeout=15000)
+    broken = lambda: page.evaluate("(c) => [...document.querySelectorAll('#ah-sheet-' + c + ' .ap-bond')].map(b => b.classList.contains('ap-bond-broken'))", FN_CODE)
+    first = broken()
+    sel = f"#ah-sheet-{FN_CODE} .ap-bond"
+    deco = page.evaluate("(s) => getComputedStyle(document.querySelector(s + '.ap-bond-broken .ap-bn')).textDecorationLine", sel)
+    record("bonds", "a Bond at 0 is struck through in red; one above 0 isn't", first == [True, False] and "line-through" in deco, f"{first} {deco}")
+    page.click(f"{sel} >> nth=1 >> [data-a='bond-']")
+    page.wait_for_function("(c) => document.querySelectorAll('#ah-sheet-' + c + ' .ap-bond.ap-bond-broken').length === 2", arg=FN_CODE, timeout=6000)
+    page.click(f"{sel} >> nth=0 >> [data-a='bond+']")
+    page.wait_for_function("(c) => !document.querySelector('#ah-sheet-' + c + ' .ap-bond').classList.contains('ap-bond-broken')", arg=FN_CODE, timeout=6000)
+    record("bonds", "taking a Bond to 0 in play strikes it at once, and + brings it back", True, "")
+    record("bonds", "no JS exceptions (broken Bonds)", not errs, str(errs[:3]))
+    page.close()
 
 
 def test_agent_file_parts_and_looks(p):
@@ -14316,6 +14339,7 @@ def main():
         safe(test_appearance_carries_over_from_sheet, browser, area="appearance")
         safe(test_insane_struck_like_kia, browser, area="insane")
         safe(test_plate_save_survives_a_dropped_connection, browser, area="plates")
+        safe(test_bond_at_zero_struck, browser, area="bonds")
         safe(test_agent_rules_unit, browser, area="rules")
         safe(test_evidence_attachments_open_and_zoom, browser, area="evidence")
         safe(test_motivations_and_disorders_split, browser, area="disorders")

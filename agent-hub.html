@@ -1162,31 +1162,14 @@
       // Replaces the roster rather than merging into it -- this browser's
       // roster is scoped to whichever Cover Identity is currently entered,
       // not a running accumulation of every Agent this device has ever
-      // touched. The one exception: an Agent nobody's claimed yet (no
-      // Player Name given by the player, and none assigned by a Handler
-      // in A-Cell's Sheet tab) is kept regardless of what's searched --
-      // there's nothing yet to tell it apart from "belongs to this
-      // identity", so dropping it would be silent local data loss for a
-      // brand-new Agent that hasn't been claimed yet either way. This
-      // campaign plays roughly every 3-5 weeks, so a player rolling a new
-      // Agent and not getting around to Cover Identity right away is the
-      // normal case, not the exception -- any fixed expiry window short
-      // enough to matter would risk exactly that player coming back next
-      // session to find their own not-yet-named Agent gone. The tradeoff
-      // (a stray code picked up some other way, e.g. a bare Notes/Portal
-      // ?code= link for someone else's Agent, can stick around
-      // indefinitely until it's ever given a name) is accepted as the
-      // safer failure mode. Once it IS given a name (by either path), the
-      // next search either finds it as a match (kept) or, if the name
-      // doesn't match, drops it like any other claimed-by-someone-else
-      // Agent.
-      const prior = rosterLoad();
+      // touched. Only that name's Agents stay: an Agent with no Player
+      // Name used to be kept whatever was searched (to spare a brand-new,
+      // still-unnamed Agent), but on a home-screen app that let every
+      // Agent ever opened by a link or by looking up another player pile
+      // up (2026-10-12: the Handler's iPhone showed several players'
+      // Agents). An unnamed Agent comes back with Load by Code, or once it
+      // has a Player Name.
       const roster = {};
-      Object.keys(prior).forEach(code => {
-        if (!prior[code].player_name) {
-          roster[code] = prior[code];
-        }
-      });
       const needle = name.trim().toLowerCase();
       res.agents.forEach(a => {
         if (!a.code) return;

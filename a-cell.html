@@ -284,6 +284,7 @@
   }
   .pv-bond-row .bn{ font-family:'Special Elite',monospace; color:var(--ink); }
   .pv-bond-row .bs{ font-family:'Courier Prime',monospace; color:var(--ink-3); flex-shrink:0; }
+  .pv-bond-row.kia-name .bn, .pv-bond-row.kia-name .bs{ color:var(--red); }   /* a Bond at 0: struck through */
   .pv-empty-note{ font-size:11px; color:var(--ink-3); font-style:italic; font-family:'Courier Prime',monospace; }
   .pv-motivations{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.7; white-space:pre-wrap; }
   .pv-disorders{ list-style:none; margin:0; padding:0; font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.55; }
@@ -2830,7 +2831,7 @@
     var bondsHtml = bonds.length
       ? bonds.map(function (b) {
           var label = [b.name, b.relationship].filter(Boolean).map(escapeHtml).join(' &middot; ');
-          return '<div class="pv-bond-row"><span class="bn">' + (label || 'Unnamed Bond') + '</span><span class="bs">' + (b.score ?? '&mdash;') + '</span></div>';
+          return '<div class="pv-bond-row' + (typeof b.score === 'number' && b.score <= 0 ? ' kia-name' : '') + '"><span class="bn">' + (label || 'Unnamed Bond') + '</span><span class="bs">' + (b.score ?? '&mdash;') + '</span></div>';
         }).join('')
       : '<div class="pv-empty-note">No bonds recorded.</div>';
 
