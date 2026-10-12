@@ -6541,3 +6541,38 @@ the Agent's own sex now (`generateAgent(archetype, { sex })`), so the
 facial hair and hair styles it rolls fit. Existing Agents fix themselves
 the next time their Appearance opens. Covered by
 `test_appearance_carries_over_from_sheet`.
+
+## A Face Plate showed on screen but was never saved (Richard Phaucet, Milk)
+
+Reported 2026-10-10. Two players generated their Face Plate in the app,
+saw it, downloaded it and shared it, yet the Cell and A-Cell showed no
+photo for Richard and the old 5 October photo for Milk. The live data
+confirmed it: Richard's brief had a 2010s prompt but no Plate anywhere,
+and Storage had no file. Milk's only Plate in Storage was still the one
+from 5 October. Uploading the same images by hand sometimes worked and
+sometimes didn't: a flaky connection, not a rules or CORS problem (both
+checked: any signed-in Agent may write `agent-plates/`, and the upload
+endpoint answers CORS for any origin).
+
+The real fault was how the page handled a failed save.
+`saveGeneratedPlate()` puts the new image in the plate box first, then
+signs in, uploads to Storage and writes the link to the brief. When any
+step failed:
+- the photo stayed on screen;
+- the generator's status said only "Error.";
+- a hand upload's button went back to "Replace Face Plate";
+- nothing was retried.
+
+So a lost upload looked exactly like a saved one.
+
+Now (`assets/agent-file.js`):
+- The save tries three times (after 2s, then 5s).
+- If it still fails, the photo carries a red "Not saved — the connection
+  dropped" note with **Save again**, which keeps the image, so nothing has
+  to be generated again.
+- The generator's status reads "Image made, but not saved (connection)".
+- The upload button reads "Not saved — try again".
+- A successful save says "Image generated and saved."
+
+Covered by `test_plate_save_survives_a_dropped_connection` (the Storage
+fake can now fail the next N uploads).

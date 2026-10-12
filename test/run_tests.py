@@ -560,6 +560,8 @@ NOTES_FIRESTORE_STUB = """
         ref: function (path) {
           return {
             put: function (file, opts) {
+              // A dropped connection: tests set __dgStorageFail to fail the next N uploads.
+              if ((window.__dgStorageFail || 0) > 0) { window.__dgStorageFail--; return Promise.reject(new Error('storage/retry-limit-exceeded')); }
               window.__dgStorageUploads.push({ path: path, file: file, opts: opts });
               return Promise.resolve({
                 ref: { getDownloadURL: function () { return Promise.resolve('https://fake-storage.example/' + path); } }
@@ -12559,6 +12561,63 @@ def test_agent_file_storage_plates_and_refresh(p):
     page.close()
     return errs
 
+def test_plate_save_survives_a_dropped_connection(p):
+    """A Plate generated or uploaded on a shaky connection: the photo showed
+    on screen while the save failed, and the upload button went back to
+    "Replace Face Plate", so it looked saved and wasn't (Richard Phaucet,
+    Milk). The save now retries by itself (3 tries), and if it still fails
+    says so on the photo -- "Not saved" with Save again, which keeps the
+    image -- and the button says "Not saved -- try again"."""
+    local = dict(_PROFILE_FIELDS, agent_code="MARA-0001", submitted_at="2026-09-27T19:00:00.000Z",
+                 active_eras='["90s"]', era_90s_mode0="portrait prompt", era_90s_mode1="reference prompt")
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    posts = []
+    def respond(method, q, body):
+        if method == "GET" and q.get("code"):
+            return {"status": "OK", "data": local}
+        if body and body.get("action") == "generate_plate_image":
+            return {"status": "OK", "image_base64": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="}
+        return None
+    _route_backend(page, respond, posts)
+    page.goto(f"{BASE}/agent-hub.html?code=MARA-0001", wait_until="load", timeout=15000)
+    page.wait_for_timeout(1500)
+    _open_era(page)
+    # (the brief write of the Plate's link -- _route_backend reports it as update_field)
+    saves = lambda: [b for b in posts if b.get("action") == "update_field" and b.get("field") == "era_90s_face_url" and b.get("value")]
+    # Two drops, then it goes through: saved, by itself.
+    page.evaluate("() => { window.__dgStorageFail = 2; }")
+    page.locator('button[data-era="90s"][data-mode="mode0"][onclick^="generatePlateImage"]').click()
+    _pump_until(page, lambda: len(saves()) >= 1, 15000)
+    st = page.text_content("#prompt-mode0-status-90s") or ""
+    record("plates", "a generated Face Plate is saved after two dropped uploads, with no help",
+           len(saves()) == 1 and page.locator("#plate-face-90s .af-plate-unsaved").count() == 0 and "saved" in st, st)
+    # Upload by hand on a dead connection: the photo says Not saved, the button too.
+    page.evaluate("() => { window.__dgStorageFail = 99; }")
+    import tempfile
+    tmp = tempfile.NamedTemporaryFile("wb", suffix=".png", delete=False)
+    tmp.write(bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8cfc0f01f0005000201a5c8d5d40000000049454e44ae426082")); tmp.close()
+    page.set_input_files("#upload-face-90s", tmp.name)
+    page.wait_for_selector("#plate-face-90s .af-plate-unsaved", timeout=15000)
+    lbl = page.evaluate("() => document.getElementById('upload-face-90s').previousElementSibling.textContent")
+    note = page.text_content("#plate-face-90s .af-plate-unsaved") or ""
+    record("plates", "a failed upload says Not saved on the photo, and the button says so too (not \"Replace\")",
+           "Not saved" in note and "Save again" in note and "Not saved" in lbl and len(saves()) == 1, f"{note!r} {lbl!r}")
+    # Back online: Save again stores that same photo.
+    page.evaluate("() => { window.__dgStorageFail = 0; }")
+    page.click("#plate-face-90s .af-plate-unsaved button")
+    _pump_until(page, lambda: len(saves()) >= 2, 10000)
+    record("plates", "Save again stores the same photo once the connection is back, and the note goes",
+           len(saves()) == 2 and page.locator("#plate-face-90s .af-plate-unsaved").count() == 0
+           and page.evaluate("() => document.getElementById('upload-face-90s').previousElementSibling.textContent") == "Replace Face Plate", str(len(saves())))
+    os.unlink(tmp.name)
+    errs = [e for e in errs if "Plate save:" not in e]   # the failed save logs on purpose
+    record("plates", "no JS exceptions (plate save retries)", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_profiling_edit_keeps_agent_file(p):
     """Editing Profiling ("Update Brief") after building an Agent File sent
     only the form's own fields, and the brief upsert blanked every other
@@ -14256,6 +14315,7 @@ def main():
         safe(test_agent_file_disorder_stamps, browser, area="disorders")
         safe(test_appearance_carries_over_from_sheet, browser, area="appearance")
         safe(test_insane_struck_like_kia, browser, area="insane")
+        safe(test_plate_save_survives_a_dropped_connection, browser, area="plates")
         safe(test_agent_rules_unit, browser, area="rules")
         safe(test_evidence_attachments_open_and_zoom, browser, area="evidence")
         safe(test_motivations_and_disorders_split, browser, area="disorders")
