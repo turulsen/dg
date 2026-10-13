@@ -1211,7 +1211,9 @@
       return notesCol(cellId).doc(blockId).set({
         agent_code: a.code, block_type: 'paragraph', text: JSON.stringify(dataObj),
         shared: !!block.shared, sort_order: block.sort_order, created_at: now, updated_at: now,
-        pinned: false, tags: JSON.stringify(tags)
+        pinned: false, tags: JSON.stringify(tags),
+        // Waits in the full notes' Quick notes list until "Add to page".
+        quick: true
       });
     }).then(function () {
       block.pending = false;

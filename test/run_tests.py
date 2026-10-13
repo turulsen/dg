@@ -9480,8 +9480,8 @@ def test_notes_v2_editorjs(p):
            tag_btn.get_attribute("disabled") is None, "")
     tag_btn.click()
     page.wait_for_timeout(200)
-    record("notes", "the Tag popover offers NPC/Location/Clue type chips",
-           page.locator(".dg-notes-tag-type-chip").count() == 3, "")
+    record("notes", "the Tag popover offers NPC/Location/Clue/Operation type chips",
+           page.locator(".dg-notes-tag-type-chip").count() == 4, "")
     page.click('.dg-notes-tag-type-chip[data-type="location"]')
     page.fill(".dg-notes-tag-input", "Old Lighthouse")
     clear_firestore_writes(page)
@@ -11330,6 +11330,89 @@ def test_evidence_sort(p):
     errs_all.extend(errs)
     errs = errs_all
     record("evidence", "no JS exceptions (evidence sort)", not errs, str(errs[:3]))
+    page.close()
+
+
+def test_notes_tags_quick_and_arrange(p):
+    """Notes, as play-tested (2026-10-12: "tagging doesn't work" -- a tag
+    was saved but shown nowhere): highlight words -> "Tag as" NPC /
+    Location / Clue / Operation wraps them in a tag, saved in the block
+    (tags list marked inline); the sidebar's Tags list counts them and a
+    tap filters the page; the search finds tags; the notebook's Quick
+    notes (quick:true) wait in the sidebar, not on the page, until "Add to
+    page"; ✎ Arrange hides and orders the sidebar's lists, per device."""
+    page = p.new_page(viewport={"width": 1280, "height": 900})
+    page.set_default_timeout(15000)
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    cell = {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"]}
+    seed_cells_docs(page, [cell])
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    page.add_init_script("""try { localStorage.setItem('dg_agent_roster', JSON.stringify({'OWEN-CS12': {code: 'OWEN-CS12', char_name: 'Owen Castillo', saved_at: Date.now()}}));
+      localStorage.setItem('dg_notes_identity_OWEN-CS12', JSON.stringify({color: '#2b6cb0', font: 'kalam'})); } catch (e) {}""")
+    page.goto(f"{BASE}/notes/index.html", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: page.query_selector(".dg-notes-identity-modal") is not None or page.query_selector("#dg-notes-editor-mount") is not None, timeout_ms=8000)
+    if page.query_selector(".dg-notes-identity-modal"):
+        page.click(".dg-notes-color-swatch"); page.click(".dg-notes-identity-confirm")
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 2, timeout_ms=8000)
+    own = [
+        {"id": "blk1", "agent_code": "OWEN-CS12", "block_type": "paragraph", "text": json.dumps({"text": "We met Dr Hale at the Old Lighthouse."}), "shared": False, "sort_order": 1000, "created_at": 1, "updated_at": 1, "tags": "[]"},
+        {"id": "blk2", "agent_code": "OWEN-CS12", "block_type": "paragraph", "text": json.dumps({"text": "The weather turned."}), "shared": False, "sort_order": 2000, "created_at": 2, "updated_at": 2, "tags": "[]"},
+        {"id": "q1", "agent_code": "OWEN-CS12", "block_type": "paragraph", "text": json.dumps({"text": "Hale lied about the 14th."}), "shared": False, "sort_order": 3000, "created_at": 3, "updated_at": 3,
+         "tags": json.dumps([{"type": "clue", "label": "Clue"}]), "quick": True},
+    ]
+    push_firestore_snapshot(page, "cells/cell_1/notes", [["shared", "==", True]], [])
+    push_firestore_snapshot(page, "cells/cell_1/notes", [["agent_code", "==", "OWEN-CS12"]], own)
+    wait_for_condition(lambda: page.locator("#dg-notes-editor-mount .ce-block").count() >= 2 or None, timeout_ms=8000)
+    blocks = lambda: page.evaluate("() => [...document.querySelectorAll('#dg-notes-editor-mount .ce-block')].map(b => b.innerText.trim())")
+    record("notes-tags", "a Quick note waits in the sidebar's Quick notes, not on the page",
+           "Hale lied about the 14th." not in " ".join(blocks()) and "Hale lied" in (page.text_content("#dg-notes-quick-mount") or ""), json.dumps(blocks()))
+    # Highlight "Dr Hale" and tag it NPC.
+    page.evaluate("""() => { const el = document.querySelector('#dg-notes-editor-mount .ce-block [contenteditable]'); const tn = el.firstChild;
+        const i = tn.textContent.indexOf('Dr Hale'); el.focus(); const r = document.createRange(); r.setStart(tn, i); r.setEnd(tn, i + 7);
+        const s = document.getSelection(); s.removeAllRanges(); s.addRange(r); }""")
+    page.wait_for_selector(".dg-notes-tagbar:not([hidden])", timeout=5000)
+    record("notes-tags", "highlighting words shows \"Tag as\" NPC / Location / Clue / Operation under them",
+           page.locator(".dg-notes-tagbar [data-tagtype]").count() == 4, "")
+    clear_firestore_writes(page)
+    page.click(".dg-notes-tagbar [data-tagtype=npc]")
+    w = wait_for_condition(lambda: next((x for x in firestore_writes(page, "cells/cell_1/notes/blk1") if "dg-tag" in (x["data"].get("text") or "")), None), timeout_ms=20000)
+    tags = json.loads((w or {}).get("data", {}).get("tags") or "[]")
+    record("notes-tags", "the words are wrapped in a tag in the note itself, and the block's tags list carries it",
+           bool(w) and 'data-tag=\\"npc\\"' in w["data"]["text"] and {"type": "npc", "label": "Dr Hale", "inline": True} in tags, json.dumps(w)[:400] if w else "no write")
+    record("notes-tags", "the tagged words are marked on the page", page.locator("#dg-notes-editor-mount .dg-tag.dg-tag-npc").count() == 1, "")
+    wait_for_condition(lambda: "Dr Hale" in (page.text_content("#dg-notes-tags-mount") or "") or None, timeout_ms=6000)
+    record("notes-tags", "the sidebar's Tags list shows it under NPC with a count", "NPC" in (page.text_content("#dg-notes-tags-mount") or "") and "Dr Hale 1" in (page.text_content("#dg-notes-tags-mount") or ""),
+           page.text_content("#dg-notes-tags-mount") or "")
+    page.click("#dg-notes-tags-mount [data-tagfilter]")
+    hidden = page.evaluate("() => [...document.querySelectorAll('#dg-notes-editor-mount .ce-block')].map(b => b.classList.contains('dg-notes-filtered-out'))")
+    record("notes-tags", "tapping a tag shows only the notes with it (the others are hidden, not changed)", hidden == [False, True], str(hidden))
+    page.click("[data-tag-clear]")
+    record("notes-tags", "...and the filter clears", page.locator("#dg-notes-editor-mount .ce-block.dg-notes-filtered-out").count() == 0, "")
+    page.fill(".dg-notes-search", "#npc")
+    page.check(".dg-notes-search-everywhere")
+    wait_for_condition(lambda: "We met" in (page.text_content("#dg-notes-toc-mount") or "") or None, timeout_ms=6000)
+    record("notes-tags", "the search finds tags too (\"#npc\" finds the note tagged NPC)",
+           "We met" in (page.text_content("#dg-notes-toc-mount") or "") and "weather" not in (page.text_content("#dg-notes-toc-mount") or ""), page.text_content("#dg-notes-toc-mount") or "")
+    page.uncheck(".dg-notes-search-everywhere"); page.fill(".dg-notes-search", "")
+    # Quick note -> Add to page.
+    wait_for_condition(lambda: page.locator("[data-qn-add]").count() == 1 or None, timeout_ms=6000)
+    clear_firestore_writes(page)
+    page.click("[data-qn-add]")
+    w = wait_for_condition(lambda: next((x for x in firestore_writes(page, "cells/cell_1/notes/q1") if x["data"].get("quick") is False), None), timeout_ms=20000)
+    record("notes-tags", "\"Add to page\" puts the Quick note on the page (saved, no longer waiting) and out of the list",
+           bool(w) and "Hale lied about the 14th." in " ".join(blocks()) and page.locator("[data-qn-add]").count() == 0, json.dumps(blocks()))
+    # ✎ Arrange: hide Tags, move Evidence up -- remembered.
+    page.click("[data-arrange]")
+    page.uncheck(".dg-notes-arrange [data-arr-on=tags]")
+    record("notes-tags", "✎ Arrange hides a list (Tags)", page.evaluate("() => document.querySelector('.dg-notes-side[data-side=tags]').hidden"), "")
+    page.click(".dg-notes-arrange [data-arr-up='3']")
+    order = page.evaluate("() => [...document.querySelectorAll('.dg-notes-side')].map(e => e.dataset.side)")
+    saved = page.evaluate("() => JSON.parse(localStorage.getItem('dg_notes_sidebar') || '[]')")
+    record("notes-tags", "...and orders them (Evidence up one), remembered on this device",
+           order == ["index", "tags", "evidence", "quick"] and [x["id"] for x in saved] == order and not [x for x in saved if x["id"] == "tags"][0]["on"], f"{order} {saved}")
+    record("notes-tags", "no JS exceptions (tags, quick notes, arrange)", not errs, str(errs[:3]))
     page.close()
 
 
@@ -14443,6 +14526,7 @@ def main():
         safe(test_bond_at_zero_struck, browser, area="bonds")
         safe(test_notebook_flip_agents, browser, area="flip")
         safe(test_evidence_sort, browser, area="evidence")
+        safe(test_notes_tags_quick_and_arrange, browser, area="notes-tags")
         safe(test_agent_rules_unit, browser, area="rules")
         safe(test_evidence_attachments_open_and_zoom, browser, area="evidence")
         safe(test_motivations_and_disorders_split, browser, area="disorders")

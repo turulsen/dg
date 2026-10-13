@@ -604,3 +604,7 @@ html.dg-fn-host #split-view-btn{ display:none !important; }
 @keyframes fn-flip-l{ from{ transform:translateX(-38%) rotate(-3deg); opacity:0; } to{ transform:none; opacity:1; } }
 .fn-card.fn-flip-in-r{ animation:fn-flip-r .32s ease-out; }
 .fn-card.fn-flip-in-l{ animation:fn-flip-l .32s ease-out; }
+/* The phone header's ‹ › are small text arrows, not the header's icon buttons. */
+#fn-root .fn-phone-head .fn-phone-flip button{ width:auto; height:auto; min-width:0; background:none; border:0; box-shadow:none; padding:0 6px; color:#f0dcb4; font-size:18px; line-height:1; }
+#fn-root .fn-phone-head .fn-phone-flip{ display:inline-flex; align-items:center; gap:2px; }
+#fn-root .fn-phone-head .fn-phone-flip[hidden]{ display:none; }
