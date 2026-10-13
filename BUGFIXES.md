@@ -6576,3 +6576,32 @@ Now (`assets/agent-file.js`):
 
 Covered by `test_plate_save_survives_a_dropped_connection` (the Storage
 fake can now fail the next N uploads).
+
+## Several players' Agents piled up on a home-screen app's roster
+
+Reported 2026-10-12. On the home-screen app (a saved bookmark), after
+loading other players' Agents, the roster kept the old ones, so one
+device showed several players' Agents. A Cover Identity lookup
+(`agent-hub.html` `lookupCoverIdentity`, and the notebook's Settings
+`reloadMyAgents`) already replaced the roster with that name's Agents.
+It deliberately kept every Agent with no Player Name, to spare a
+brand-new, still-unnamed Agent. Several live Agents have no Player Name
+(Milk, Garfield, Colin, Eli, Daniela), and every Agent ever opened by a
+link stayed on the device too. Now, as the user chose, a lookup keeps
+only that name's Agents. An unnamed one comes back with Load by Code.
+`test_agent_hub_cover_identity` updated.
+
+## Notes: tagging "didn't work"
+
+Reported 2026-10-12. The Tag popover saved a tag to the block's `tags`,
+but nothing showed it:
+- it wasn't marked in the note;
+- it wasn't listed anywhere;
+- the search didn't find it;
+- it couldn't filter the notes.
+
+So it looked like tagging did nothing. Tagging is now done by
+highlighting words ("Tag as" NPC / Location / Clue / Operation). The
+tags are marked in the note, listed with counts in the sidebar's Tags
+list (a tap filters), and found by the search. See FEATURES §3.
+`test_notes_tags_quick_and_arrange`.

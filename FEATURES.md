@@ -229,6 +229,32 @@ their own notes visible to the whole Cell without moving it out of
 their own tab — the note stays "theirs" but becomes readable by
 everyone in the shared feed.
 
+**Tags, the Tags filter, Quick notes and Arrange (v3.2.0, PR #73).**
+- **Tagging:** highlight words on your own page and a "Tag as" bar
+  (`.dg-notes-tagbar`) offers NPC, Location, Clue and Operation. A tap
+  wraps the words in `<span class="dg-tag dg-tag-TYPE" data-tag>`.
+  `DgTagInline`, a small Editor.js inline tool, keeps those spans
+  through the sanitizer on save, and its "#" in the selection toolbar
+  removes a tag.
+- **Stored tags:** the block's `tags` list carries the inline tags,
+  marked `inline:true`, next to whole-block tags from the Tag popover
+  (which also gained Operation). `persistBlockFromSaved` rebuilds the
+  inline ones from the HTML on every save.
+- **Tags list and search:** the sidebar's Tags list counts names per
+  type. A tap sets `tagFilter`: on your page the other blocks get
+  `.dg-notes-filtered-out` (hidden, not changed), and the Shared feed
+  filters too. `matchesSearch` also matches a tag's name, or its type
+  ("npc", "#location").
+- **Before this:** the 2026-10-12 play-test found tagging "doesn't
+  work". The popover saved a tag, but it was shown nowhere.
+- **Quick notes:** the notebook's Quick notes now write `quick:true`.
+  Such a block stays off the page and waits in the sidebar's Quick
+  notes until "Add to page" inserts it at the cursor (same block id).
+  Every page save writes `quick:false`.
+- **✎ Arrange:** shows, hides and orders the sidebar's lists (Index,
+  Tags, Quick notes, Evidence), in `localStorage` `dg_notes_sidebar`.
+- Test: `test_notes_tags_quick_and_arrange`.
+
 **Solo mode**: an Agent not yet assigned to any Cell still gets a
 fully live, editable Notes panel — keyed to a synthesized
 `solo:<agentCode>` pseudo-cell-id instead of blocking them entirely
@@ -423,8 +449,30 @@ page can redraw the paper as more data arrives.
   members, and A-Cell's Cell cards, dossier and Sheet. The disorder
   stamps keep off Agent Hub's stamp row and are re-placed when it
   changes.
+- **Opacity by SAN (v3.2.0):** `wearOpacity` in `agent-paper.js` sets
+  `--w-op` on the page, rising point by point with SAN: 49–40 1–5%,
+  39–30 6–10%, 29–20 11–25%, 19–10 26–50%, 9–0 51–100%, and 100% at 0.
+- **A Bond at 0 (v3.2.0)** is struck through in red: `.ap-bond-broken`
+  on the Agent File, `.as-bond-broken` on the read-only paper, and
+  `kia-name` on A-Cell's dossier rows.
+- **Notebook, v3.2.0:**
+  - **Flip through Agents:** the Agent File card flips through this
+    player's Agents (`flipAgent`, `myAgents`, sorted by name), with
+    ‹ n of N › on the pocket, a card peeking behind, a swipe, and the
+    phone header's arrows. A flip sets `dg_stats_cloud_code`, the key
+    the Dice Roller follows, then calls `refresh()`.
+  - **Evidence sort:** Newest first, Oldest first, A→Z or Z→A, on the
+    notebook's Evidence page and on Agent Hub's list, both reading
+    `localStorage` `dg_evidence_sort`.
+- **Cover Identity lookup (v3.2.0):** on Agent Hub and in the notebook's
+  Settings, a lookup now keeps only that name's Agents. Agents with no
+  Player Name are no longer kept: on a home-screen app, every Agent ever
+  opened by a link or by another player's lookup piled up. An unnamed
+  Agent comes back with Load by Code.
 - Tests: `test_agent_file_wear`, `test_agent_file_disorder_stamps`,
-  `test_insane_struck_like_kia`.
+  `test_insane_struck_like_kia`, `test_bond_at_zero_struck`,
+  `test_notebook_flip_agents`, `test_evidence_sort`,
+  `test_agent_hub_cover_identity`.
 
 **The Agent File as the character sheet (v2.7.0, PR #67; v2 milestone
 M1).** The paper is now the sheet an Agent plays from, in the notebook
@@ -1201,7 +1249,7 @@ full reasoning on the split (Issues = live status board, `BUGFIXES.md`
 = narrative archive of what shipped, this section = closed/decided
 matters worth a permanent note).
 
-As of 2026-10-10 (checked again for v3.1.0), four open tracked issues (#10 is closed; see
+As of 2026-10-13 (checked again for v3.2.0), four open tracked issues (#10 is closed; see
 `BUGFIXES.md`'s "Issue #10's actual root cause"): #5 (Handler-facing access
 control — shared A-Cell password, dossiers reachable by Agent Code, no
 per-player identity), #8 (Agent Hub: long load screen then empty
