@@ -212,6 +212,7 @@
   .ah-agent-menu button:hover, .ah-agent-menu button:focus-visible{ background:rgba(139,26,26,.08); outline:none; }
   .ah-agent-menu button[aria-current="true"]::after{ content:'\2713'; margin-left:auto; color:var(--red); }
   .ah-agent-menu .kia-name{ text-decoration-thickness:1.5px; }
+  .ah-agent-menu .ah-menu-stamp{ flex:none; font-size:8px; letter-spacing:.14em; border:1.5px solid var(--red); color:var(--red); padding:0 5px; }
   @media (max-width:560px){
     .tab-strip.ah-switching .tw:not(.tw-new):not(.tw-switch):not(.active){ display:none; }
     .tab-strip.ah-switching .tw.tw-switch{ display:flex; }
@@ -651,7 +652,10 @@
     const struck = !!(f.kia || f.insane);
     ['ah-tablabel-' + code, 'ah-title-' + code].forEach(function (id) {
       const el = document.getElementById(id);
-      if (el) el.classList.toggle('kia-name', struck);
+      if (!el) return;
+      el.classList.toggle('kia-name', struck);
+      // The Agents menu (phone) reads these for its KIA / INSANE stamps.
+      el.dataset.kia = f.kia ? '1' : ''; el.dataset.insane = f.insane ? '1' : '';
     });
   }
 
@@ -772,10 +776,11 @@
     if (!sw) return;
     const current = (tabStrip.querySelector('.tw.active') || {}).dataset || {};
     agentMenu.innerHTML = agents.map(a => {
-      const kia = !!(tabStrip.querySelector('.tw[data-tab="' + CSS.escape(a.code) + '"] .kia-name'));
+      const lbl = tabStrip.querySelector('.tw[data-tab="' + CSS.escape(a.code) + '"] .kia-name');
+      const stamps = lbl ? [['kia', 'KIA'], ['insane', 'INSANE']].filter(k => lbl.dataset[k[0]]).map(k => '<span class="ah-menu-stamp" data-fate="' + k[0] + '">' + k[1] + '</span>').join('') : '';
       return '<button type="button" role="menuitem" data-code="' + escapeHtml(a.code) + '"' +
-        (current.tab === a.code ? ' aria-current="true"' : '') + '><span' + (kia ? ' class="kia-name"' : '') + '>' +
-        escapeHtml(tabLabel(a)) + '</span></button>';
+        (current.tab === a.code ? ' aria-current="true"' : '') + '><span' + (lbl ? ' class="kia-name"' : '') + '>' +
+        escapeHtml(tabLabel(a)) + '</span>' + stamps + '</button>';
     }).join('') + '<button type="button" role="menuitem" data-code="new">+ New Recruit</button>';
     const box = agentMenu.parentNode.getBoundingClientRect(), r = sw.getBoundingClientRect();
     agentMenu.style.left = (r.left - box.left) + 'px';

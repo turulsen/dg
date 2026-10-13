@@ -6605,3 +6605,19 @@ highlighting words ("Tag as" NPC / Location / Clue / Operation). The
 tags are marked in the note, listed with counts in the sidebar's Tags
 list (a tap filters), and found by the search. See FEATURES §3.
 `test_notes_tags_quick_and_arrange`.
+
+## SAN 0: the Cell list and the phone's Agents menu weren't struck in red
+
+Reported 2026-10-13 with two phone screenshots, right after v3.2.0. This
+finishes v3.2.0's "SAN 0 marked like KIA" rather than being a new bug.
+v3.2.0 gave the Agent File's Cell list the KIA/INSANE class (`as-kia`)
+and the INSANE stamp markup. But the red strike and the stamp's border
+were only styled for the read-only paper's members (`agent-sheet.css`
+`.as-members`). On the live paper (`.ap-init` in `agent-paper.css`) the
+names were only faded, and the stamp showed as plain grey text. Both
+are now styled there too, for KIA as well as INSANE. The phone's Agents
+menu struck the names but had no stamp. It now shows a small KIA or
+INSANE stamp beside the name: `setAgentFate` records which on the tab
+label (`data-kia` / `data-insane`), and the menu reads that. The new
+checks are in `test_insane_struck_like_kia`, including the menu at 390px
+with a fit check. `sw.js` `CACHE_NAME` v222.
