@@ -11169,13 +11169,20 @@ def test_insane_struck_like_kia(p):
     Live as SAN reaches 0 in play (agent-paper.js onFate ->
     setAgentFate), and on a fresh load."""
     errs_all = []
-    def page_at(san):
+    def page_at(san, width=None, two=False):
         docs = _field_notes_docs()
+        extra = ""
+        if two:   # a second Agent, so the phone shows the Agents (N) menu
+            ANA = "ANAR-0002"
+            docs[f"briefs/{ANA}"] = {"agent_code": ANA, "char_name": "Ana Reyes", "player_name": "fn tester", "player_name_lc": "fn tester"}
+            roster = {FN_CODE: {"code": FN_CODE, "char_name": "Mara Voss", "player_name": "fn tester", "saved_at": 5},
+                      ANA: {"code": ANA, "char_name": "Ana Reyes", "player_name": "fn tester", "saved_at": 4}}
+            extra = "localStorage.setItem('dg_agent_roster', %s);" % json.dumps(json.dumps(roster))
         st = {"v": 1, "stats": {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 12, "CHA": 13},
               "derived": {"hp": 11, "wp": 12, "san": san, "bp": 0}, "bio": {"name": "Mara Voss", "profession": "federal_agent", "player_name": "fn tester"}}
         docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, st, "fn tester")
-        page, errs = _field_notes_page(p, docs=docs,
-                                       extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+        page, errs = _field_notes_page(p, docs=docs, **({'width': width} if width else {}),
+                                       extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE + extra)
         page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
         page.wait_for_selector(f"#ah-sheet-{FN_CODE} .as-paper.ap .ap-vitals", timeout=15000)
         page.wait_for_timeout(600)
@@ -11202,6 +11209,20 @@ def test_insane_struck_like_kia(p):
     loaded = page.evaluate(probe, FN_CODE)
     record("insane", "an Agent saved at SAN 0 opens struck through and stamped INSANE, the Cell list too",
            loaded["tab"] and loaded["title"] and loaded["stamp"] and loaded["cell"], json.dumps(loaded))
+    look = page.evaluate("""(c) => { const me = document.querySelector('#ah-sheet-' + c + ' .ap-init li.ap-me'), n = getComputedStyle(me.querySelector('.as-mname')), st = getComputedStyle(me.querySelector('.as-stamp'));
+        return { deco: n.textDecorationLine, color: n.color, border: st.borderTopStyle, stampColor: st.color }; }""", FN_CODE)
+    record("insane", "in the Cell list the INSANE Agent's name is struck through in red, with a bordered red stamp",
+           "line-through" in look["deco"] and look["color"] == look["stampColor"] and look["border"] == "solid", json.dumps(look))
+    page.close(); errs_all.extend(errs)
+    # Phone: the Agents menu shows the struck name and its INSANE stamp.
+    page, errs = page_at(0, width=390, two=True)
+    page.wait_for_function("(c) => !!document.querySelector('#ah-charstamp-' + c + ' .stamp[data-fate=\"insane\"]')", arg=FN_CODE, timeout=6000)
+    page.click("#tab-strip .tw-switch")
+    page.wait_for_selector(".ah-agent-menu:not([hidden]) button[data-code]", timeout=6000)
+    menu = page.evaluate("""(c) => { const b = document.querySelector('.ah-agent-menu button[data-code="' + c + '"]');
+        return { struck: !!b.querySelector('.kia-name'), stamps: [...b.querySelectorAll('.ah-menu-stamp')].map(e => e.textContent), fits: b.scrollWidth <= b.clientWidth + 1 }; }""", FN_CODE)
+    record("insane", "on a phone the Agents menu shows the INSANE Agent struck through with an INSANE stamp that fits",
+           menu["struck"] and menu["stamps"] == ["INSANE"] and menu["fits"], json.dumps(menu))
     page.close(); errs_all.extend(errs)
     record("insane", "no JS exceptions (INSANE like KIA)", not errs_all, str(errs_all[:3]))
 

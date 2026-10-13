@@ -47,6 +47,9 @@
 .ap-init .ap-me .as-mname{ font-weight:700; }
 .ap-init .ap-me .as-mbtn{ cursor:default; }
 .ap-init li.as-kia{ opacity:.65; }
+/* KIA / INSANE in the Cell list: the name struck in red, and the small stamp. */
+.ap-init li.as-kia .as-mname{ text-decoration:line-through; text-decoration-color:var(--as-red); text-decoration-thickness:1.5px; color:var(--as-red); }
+.ap-init .as-stamp{ display:inline-block; margin-left:6px; font-family:'Special Elite',monospace; font-size:8px; letter-spacing:.14em; text-transform:uppercase; border:1.5px solid var(--as-red); color:var(--as-red); padding:0 5px; vertical-align:1px; white-space:nowrap; }
 .ap-init .as-mthumb{ width:26px; height:26px; }
 .ap-mmeta{ font-size:11px; color:var(--as-ink-2); margin:1px 0; }
 /* Statistics */

@@ -446,7 +446,9 @@ page can redraw the paper as more data arrives.
   Agent Hub's tab, header and stamp row (`checkAgentFate` /
   `setAgentFate`, kept live by the paper's `onFate`), the Agent File's
   Cell list and member cards (`fateStamps`), the read-only paper's
-  members, and A-Cell's Cell cards, dossier and Sheet. The disorder
+  members, A-Cell's Cell cards, dossier and Sheet, and (since v3.2.1)
+  the phone's Agents menu, which shows a KIA / INSANE stamp beside the
+  struck name. In the Cell list the name is struck in red. The disorder
   stamps keep off Agent Hub's stamp row and are re-placed when it
   changes.
 - **Opacity by SAN (v3.2.0):** `wearOpacity` in `agent-paper.js` sets

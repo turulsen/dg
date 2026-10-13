@@ -80,7 +80,11 @@ in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v3.2.0**
 - **Cover Identity lookup:** keeps only that name's Agents.
 
 Frontend only: no Code.gs or Functions change. The shell cache is
-`dg-hub-shell-v221`. Its tag doesn't exist yet. **v3.1.0**
+`dg-hub-shell-v221`. **v3.2.1** (2026-10-13) finishes v3.2.0's SAN 0
+marking. In the Agent File's Cell list, KIA and INSANE names are now
+struck in red with a bordered stamp. The phone's Agents menu shows a
+KIA / INSANE stamp beside the struck name. It is frontend only, with
+shell cache `dg-hub-shell-v222`, and its tag doesn't exist yet. **v3.1.0**
 (2026-10-10) is PR #72, v2 milestone M3: the Agent File's paper wears as
 SAN falls. Stains, a fold, a coffee ring, blood and, from SAN 9, a torn
 edge are drawn over the whole page on Agent Hub and in the notebook
