@@ -8877,8 +8877,8 @@ def test_new_recruit_imports_and_links(p):
     this site's own save, the printable sheet -- lands at Personal data
     with what the file carried; Recruit for an Agent with no sheet opens
     the wizard under that Agent's own code; the notebook's Settings export
-    a DD Form 315 from the saved character (assets/sheet-io/pdf-export.js), and keep
-    the old sheet behind Open. Fake backend only."""
+    a DD Form 315 from the saved character (assets/sheet-io/pdf-export.js).
+    Fake backend only."""
     errs_all = []
     toml = 'name = "Hollis, Ray"\nprofession = "Pilot"\nemployer = "USAF"\nhp = 12\nwp = 11\nsan = 50\nviolenceAdaptation = 2\nmotivationsAndDisorders = "Flying\\nMy daughter"\n' \
            '[strength]\nscore = 12\n[constitution]\nscore = 12\n[dexterity]\nscore = 14\n[intelligence]\nscore = 11\n[power]\nscore = 11\n[charisma]\nscore = 12\n' \
@@ -9842,9 +9842,9 @@ def test_motivations_and_disorders_split(p):
     page, errs = _field_notes_page(p, docs=docs, extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
     page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_selector(f"#ah-sheet-{FN_CODE} .as-paper.ap .ap-vitals", timeout=15000)
-    split = page.evaluate("(st) => ({ m: window.dgRules.motivations(st), d: window.dgRules.disorders(st) })", st0)
+    split = page.evaluate("(st) => { const b = window.dgRules.normalizeBio(JSON.parse(JSON.stringify(st))).bio; return { m: b.motivations, d: b.disorders }; }", st0)
     record("disorders", "an older sheet's combined box is read apart: disorders out of Motivations, into their own list",
-           split["m"] == ["Protect my sister", "Find the truth"] and split["d"] == ["PTSD", "Paranoia (since the Vegas op)"], json.dumps(split))
+           split["m"] == "Protect my sister\nFind the truth" and split["d"] == ["PTSD", "Paranoia (since the Vegas op)"], json.dumps(split))
     paper = page.inner_text(f"#ah-sheet-{FN_CODE} .as-sheet")
     record("disorders", "the Agent File lists them apart, a known disorder with its trigger and effect from the rules",
            "Paranoia (since the Vegas op)" in paper and "Reminders of past traumas" in paper and "Disorder: PTSD" not in paper, paper[:300])
@@ -10500,9 +10500,9 @@ def test_field_notes_notebook(p):
     rules = wait_for_condition(lambda: (_notebook_text(page) if "Skill Tests" in _notebook_text(page) else None), timeout_ms=8000) or ""
     record("notebook", "Rules reads the Rules Reference inline", "Skill Tests" in rules and "Sanity" in rules, rules[:120])
     page.click("#fn-veil .fn-tab[data-view=settings]")
-    record("notebook", "Settings off the sheet: Cover Identity, Boot splash, Export as PDF, and the old sheet behind Open ↗",
+    record("notebook", "Settings: Cover Identity, Boot splash, Export as PDF, and no way back to the removed old sheet",
            page.input_value("#fn-veil [data-s=ci]") == "fn tester" and page.is_visible("#fn-veil [data-s=boot]")
-           and page.is_visible("#fn-veil [data-s=pdf]") and page.is_visible("#fn-veil [data-s=gosheet]"), "")
+           and page.is_visible("#fn-veil [data-s=pdf]") and page.locator("#fn-veil [data-s=gosheet]").count() == 0, "")
     page.keyboard.press("Escape")
     record("notebook", "Escape closes the notebook", page.evaluate("() => !window.dgFieldNotes.isOpen()"), "")
     errs_all.extend(errs)

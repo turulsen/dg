@@ -6621,3 +6621,27 @@ INSANE stamp beside the name: `setAgentFate` records which on the tab
 label (`data-kia` / `data-insane`), and the menu reads that. The new
 checks are in `test_insane_struck_like_kia`, including the menu at 390px
 with a fit check. `sw.js` `CACHE_NAME` v222.
+
+## The old character sheet removed (v3.3.0): what the sweep found
+
+Not a reported bug: v2 milestone M4 deleted `stats/`, and a sweep of the
+whole codebase for anything still leaning on it turned up three real
+problems, fixed in the same change.
+- **"Discard draft" and "Throw away these edits?" couldn't say yes on an
+  iPhone home-screen app.** New Recruit's Discard called
+  `window.dgConfirm`, which only the old sheet's `save-load.js` ever
+  defined, so on Agent Hub it always fell back to `confirm()`. The
+  Agent File's Cancel used `confirm()` directly. In a home-screen app
+  `confirm()` shows nothing and answers no. `window.dgConfirm` now lives
+  in `assets/field-notes.js` (every player page); both ask in the page.
+- **The DD Form 315 export wrote current HP/WP/SAN as the maximums.**
+  The exporter came from the old sheet, where `derived` held the
+  maximums; on the Agent File it holds the current values. The
+  maximums now come from `dgRules.maxes()`.
+- **The PDF and xlsx imports went through the old sheet's own code**,
+  with `window.dgSaveLoad` swapped for a catcher while they ran. They
+  are now plain readers (`dgSheetPdf.read`, `dgSheetXlsx.read`) and,
+  for the first time, tested with real files: a PDF exported by the
+  notebook is read back through New Recruit.
+`test_sheet_io_real_files`, and the Agent File cancel check in
+`test_agent_file_v2_play_and_edit`. `sw.js` `CACHE_NAME` v223.

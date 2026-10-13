@@ -114,6 +114,8 @@
   }
   if (GUEST) {
     var guestStyle = document.createElement('style');
+    // Notes' own Split View button: inside the shell the notebook's Split mode does that.
+    guestStyle.textContent = 'html.dg-fn-host #split-view-btn{display:none!important}';
     document.head.appendChild(guestStyle);
     if (hostApi()) document.documentElement.classList.add('dg-fn-host');
     // Phone: leave room under the page for the closed notebook's buttons

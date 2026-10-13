@@ -193,38 +193,16 @@ to share with yet). The first time a Handler assigns that Agent to a
 real Cell, `updateCellMembers()`'s `migrateSoloNotesToCell_()` carries
 the solo notes forward onto the real cell_id automatically.
 
-**[Retired with the Field Notes notebook]** Split View's buttons are
-hidden wherever the notebook runs (`assets/field-notes.css`); the
-notebook's Notes sit beside any page. Described below as it was.
-
-**Split View** (`stats/index.html`): the character sheet and Notes
-side by side in two panes (desktop/tablet), or a full-screen flip
-between them on a phone (Table Radio and the settings cog hide
-themselves while Notes is fullscreen). A dice roll made by clicking a
-skill inside Split View's *embedded* sheet iframe relays to the
-outer page's visible dice panel via `postMessage`, since the iframe's
-own dice panel is hidden by design there.
+**Split View / Agent File buttons:** on the standalone Notes page,
+**Split View** opens the Field Notes notebook's Split mode (the Agent
+File beside Notes) and **Agent File** opens the Agent on Agent Hub.
+Split View's button is hidden inside the notebook (its own Split does
+that) and below 900px.
 
 **Identity color/font**: each Agent picks (and the backend remembers,
 via `save_agent_identity`) an ink color and handwriting-style font, so
 Notes visually distinguishes who wrote what without needing names on
 every line.
-
-**Getting to the sheet from Notes**: the "← Agent Hub" backlink and
-"Change Agent" button that used to sit at the top of `notes/index.html`
-are gone -- replaced by **Split View** and **Character Sheet** buttons
-(same spot the "Change Agent" button used to occupy), both navigating
-to `stats/index.html?load=CODE` for whichever Agent's Notes are open
-(`&split=1` added for the Split View one, picked up by a small addition
-to `stats/cloud-sync.js`'s existing `?load=` handler -- mirrors the
-already-existing `?live=1` pattern that jumps straight to Live Play).
-The embed=fullscreen "Play" flip-back button (Split View's own way back
-to the sheet when Notes is the mobile fullscreen pane, see above) is
-untouched -- this only affects Notes reached normally, not embedded.
-Split View hides below 900px width (`#split-view-btn`'s own media
-query in `notes/index.html`), the same cutoff `stats/index.html`'s own
-`#split-view-toggle-btn` already uses -- Character Sheet alone still
-makes sense on a phone; Split View's two panes don't fit there.
 
 ---
 
@@ -300,10 +278,9 @@ the open Agent's code, so renaming renames (the portal guessed the code
 from the name or roster). The gate below still holds, as presentation:
 Appearance stays open with "N of 22 still to fill in" (and a callout under
 Play) until complete, then folds with Edit; the era photos wait until
-then. The wizard has an **Appearance** step (`stats/appearance-sheet.js`)
-that writes the same fields straight to `briefs/{code}`, and finishing the
-wizard runs the sheet's export, so a new Agent arrives with a complete
-Agent File. The random generator's tables are shared,
+then. New Recruit's **Profiling** step mounts this same brief, so a new
+Agent arrives with a complete Agent File, and since v3.2.0 the brief
+fills its empty fields from the character sheet (`afCarryFromCharacter_`). The random generator's tables are shared,
 `assets/appearance-gen.js`. The Field IDs tab became `field-id.html`,
 embedded in the notebook's Field ID page. `dg-agent-portal.html` only
 forwards old addresses (`?code=` -> the Agent's tab, `#cover` -> their
@@ -410,8 +387,8 @@ page can redraw the paper as more data arrives.
 M1).** The paper is now the sheet an Agent plays from, in the notebook
 and on Agent Hub. Plan and milestones: M1 (this), M2 the New Recruit
 wizard, imports and PDF export, with the old sheet only behind Settings
-(v3.0.0), M3 the sanity meter's look, M4 deleting `stats/` once the user
-decides.
+(v3.0.0), M3 the sanity meter's look (v3.1.0), M4 deleting `stats/`
+(v3.3.0, §2).
 - **`assets/agent-rules.js`** (`window.dgRules`): the rules as pure
   functions on the saved state, no page code. Max values (HP = ⌈(STR+CON)/2⌉,
   WP = POW, SAN = POW×5 capped at 99 − Unnatural), clamped `adjust`,
@@ -420,7 +397,7 @@ decides.
   mark), `sanLoss(state, amount, kind)` returning the events it sets off
   (`disorder` | `insanity` | `breaking` | `zero` | `incident`), `adapt`,
   `addBond` (score = CHA), Motivations (`bio.motivations`, rolled from
-  `stats/bio.js`'s `motivationsData`) and Mental Disorders (`bio.disorders`;
+  `assets/data/bio.js`'s `motivationsData`) and Mental Disorders (`bio.disorders`;
   a disorder triggers on a loss of 2+ when `dgDisorders` says its trigger
   is losing 2+ SAN). `normalizeBio` splits an older combined text.
 - **`assets/agent-live.js`** (`window.dgAgentLive.session(code, char)`):
@@ -447,7 +424,7 @@ decides.
   (`focus('appearance')` and an incomplete brief open it). The notebook's
   Rules page opens with `missionHtml()` instead of the Oath.
 - Not changed: Firestore rules, Cloud Functions, Code.gs. The old sheet
-  (`stats/`) still works next to it.
+  (`stats/`) still worked next to it, until v3.3.0 removed it.
 
 **The Agent File in parts, and its drop-downs (v2.8.0, PR #68).** Play-
 testing found the one long paper hard to read, so it's grouped:
@@ -491,8 +468,8 @@ until a reload (`BUGFIXES.md`).
 **New Recruit: the creation wizard (v3.0.0, PR #70; v2 milestone
 M2).** Agent Hub's **+ New Recruit** tab is a twelve-step wizard
 (`assets/recruit-wizard.js` / `.css`, data in `assets/recruit-data.js`).
-It replaces the old sheet's creator: `stats/` is now reached only from
-the notebook's Settings ("Old character sheet → Open ↗").
+It replaced the old sheet's creator (the old sheet stayed behind the
+notebook's Settings until v3.3.0 deleted it, §2).
 - **Steps:**
   - **0 Start:** build one, or bring one in through a single drop zone,
     a Friendly pregen, or Load by Agent Code; a draft found on the device
@@ -501,7 +478,7 @@ the notebook's Settings ("Old character sheet → Open ↗").
     values to swap them) or fully random. Each statistic has an explainer
     in our own words and a distinguishing feature suggested from its
     score (`STAT_INFO`, `suggestFeature`), editable.
-  - **2 Profession:** the Agent's Handbook's 18 (`stats/professions.js`),
+  - **2 Profession:** the Agent's Handbook's 18 (`assets/data/professions.js`),
     The Complex's 20 grouped by agency (`COMPLEX`), an Agency postings
     filter (~60 `POSTINGS`: a Handbook profession with agency, employer,
     suggested bonus skills and kit), or Build your own (10 skills, 400
@@ -510,23 +487,23 @@ the notebook's Settings ("Old character sheet → Open ↗").
     suggested bonus skills black bold, Bonds, employer, kit.
   - **3 Bonus skills:** 8 × +20%, 80% cap, not Unnatural; the
     profession's suggestions are pre-placed; packages (`BONUS_PACKAGES`,
-    copied from `stats/scripts.js`); specialties added by name.
+    carried over from the old sheet); specialties added by name.
   - **4 Damaged Veteran** (Agent's Handbook p.39, `VETERAN`): Extreme
     Violence, Captivity, Hard Experience (four skills +10%, may pass 80%;
     one Bond fewer), Things Man Was Not Meant to Know (a disorder from the
     Unnatural list). The changes are applied and listed.
   - **5 Personal data:** name, codename, past employer, Random Bio
-    (`stats/bio.js`). Going on makes the Agent Code
+    (`assets/data/bio.js`). Going on makes the Agent Code
     (`dgStore.submitBrief`, filed under the device's Cover Identity) or
     updates that brief.
   - **6 Bonds:** count from the profession; the generator's categories
     (Family, Friends, Delta Green, Other Governments, Underworld;
-    `BOND_CATS`/`bondList` regroup `stats/bonds.js`, LGBTQ dropped), ⚄
+    `BOND_CATS`/`bondList` regroup `assets/data/bonds.js`, LGBTQ dropped), ⚄
     Another, and **Generate** for a description
     (`generateBondDescription`, §12).
   - **7 Motivations & Mental Disorders**, **8 Incursion**
     (`dgIncursion.mount`), **9 Equipment:** the profession's kit
-    (`KITS`/`kitFor`, matched to `stats/equipment-data.js`; catalog
+    (`KITS`/`kitFor`, matched to `assets/data/equipment-data.js`; catalog
     weapons go on the weapons table with their skill %).
   - **10 Profiling:** the play era (written to the brief as
     `active_eras`/`campaign_era`), then the Agent File's own Appearance
@@ -550,8 +527,8 @@ the notebook's Settings ("Old character sheet → Open ↗").
 - **Imports** (`assets/agent-import.js`, `dgAgentImport.read(file)`):
   Foundry VTT actor, Kappa Black `.toml` (or its Foundry `.json`), this
   site's v1 save, the printable sheet's embedded state, the DD Form 315
-  PDF and the Sheets `.xlsx` (the last two through the old sheet's own
-  readers, with `window.dgSaveLoad` briefly a catcher). An import starts
+  PDF and the Sheets `.xlsx` (the last two through `dgSheetPdf.read` /
+  `dgSheetXlsx.read`, `assets/sheet-io/`, since v3.3.0). An import starts
   at Personal data; statistics, skills and profession come from the file.
 - **Deep links:** `agent-hub.html?recruit=CODE#new` (an Agent with no
   sheet: Agent Hub's and the notebook's **Recruit**), `?recruit=friendly
@@ -561,8 +538,8 @@ the notebook's Settings ("Old character sheet → Open ↗").
   (`bio.motivationsCrossed`); saving an edit shows the Mission & Standing
   Orders, priorities in capitals. Notes' Split View opens the notebook's
   Split and "Character Sheet" is now "Agent File". The notebook's Settings
-  export a DD Form 315 from the saved character (`stats/pdf-export.js`,
-  its template now found next to the script). On a phone the terminal
+  export a DD Form 315 from the saved character (`dgSheetPdf.download`,
+  `assets/sheet-io/pdf-export.js`, its template next to the script). On a phone the terminal
   (Contract, Standing Orders, saving an edit) scrolls and has big Y / N
   buttons. Profiling's Random Agent Generator lists The Complex's
   professions (own clothing over the nearest Handbook look,
@@ -654,7 +631,7 @@ Updated come from Firestore's own document times (earliest
 expose). HP and SAN left this table in v2.2.0; they're on the Play tab.
 
 **Play tab's Initiative Tracker** leaves out KIA Agents (derived HP 0
-or below), the same rule as the players' Live Play initiative row.
+or below), the same rule as the Agent File's Cell list.
 
 **Admin tab:** soft-delete/restore an Agent (`delete_character`/
 `restore_character` — archives rather than destroys, with a 24h auto-
@@ -895,7 +872,7 @@ deploy has taken over.
 screen-installed (standalone) PWA — they do nothing and return
 immediately, which is exactly this app's primary intended use mode.
 Every confirmation/prompt in this codebase uses real in-page UI
-instead (inline text inputs, `dgConfirm()` in `stats/save-load.js`, or
+instead (inline text inputs, `window.dgConfirm()` in `assets/field-notes.js`, or
 a plain browser `confirm()` only on pages/flows confirmed not to need
 standalone support) — if a fix ever reaches for a native dialog,
 check whether the page it's on needs to work standalone first.
@@ -1207,7 +1184,7 @@ stays open until it's confirmed on a real device).
   (`afCarryFromCharacter_`; see `BUGFIXES.md`, "the character sheet's
   sex, age, build and profession didn't carry over"). See §5.
 - ~~The Firebase "one-page iframe shell" idea~~ — shipped, see §12.
-- ~~`stats/`'s Share URL is a fourth save mechanism untracked by the
+- ~~`stats/`'s (removed in v3.3.0) Share URL is a fourth save mechanism untracked by the
   backend/Cover Identity/Handler lookup~~ (issue #6) — not actually
   true of the current code. `applyState()` in `stats/save-load.js`
   (which `loadFromURL()`'s share-link path already routes through, same
