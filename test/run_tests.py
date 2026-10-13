@@ -11232,6 +11232,107 @@ def test_bond_at_zero_struck(p):
     page.close()
 
 
+def test_notebook_flip_agents(p):
+    """The notebook's Agent File card flips through this player's Agents:
+    ‹ n of N › on the pocket (a second card peeks behind), the same in the
+    phone's header; a flip makes that Agent the current one (the Dice
+    Roller's key) and the card and pages follow."""
+    ANA = "ANAR-0002"
+    docs = _field_notes_docs()
+    docs[f"briefs/{ANA}"] = {"agent_code": ANA, "char_name": "Ana Reyes", "player_name": "fn tester", "player_name_lc": "fn tester"}
+    roster = {FN_CODE: {"code": FN_CODE, "char_name": "Mara Voss", "codename": "PARADE", "player_name": "fn tester", "saved_at": 5},
+              ANA: {"code": ANA, "char_name": "Ana Reyes", "player_name": "fn tester", "saved_at": 4}}
+    extra = ("localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000, '%s': 1790000000000}));" % (FN_CODE, ANA) +
+             "localStorage.setItem('dg_agent_roster', %s); if (!sessionStorage.getItem('fl_seeded')) { sessionStorage.setItem('fl_seeded', '1'); localStorage.setItem('dg_stats_cloud_code', '%s'); }" % (json.dumps(json.dumps(roster)), FN_CODE))
+    errs_all = []
+    for width in (1300, 390):
+        page, errs = _field_notes_page(p, width=width, docs=docs, extra_init=extra)
+        page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_timeout(1500)
+        page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+        page.wait_for_timeout(1200)
+        cnt = "#fn-root [data-fn-slot=flip-count]" if width > 600 else "#fn-root [data-fn-slot=phone-flip-count]"
+        before = page.evaluate("(c) => ({ count: document.querySelector(c).textContent, name: document.querySelector('#fn-root [data-fn-slot=card-name]').textContent, behind: !document.querySelector('#fn-root [data-fn-slot=card-behind]').hidden })", cnt)
+        record("flip", f"the Agent File card shows 2 of 2 for Mara Voss (by name), with a card behind ({width}px)",
+               before["count"] == "2 of 2" and before["name"] == "Mara Voss" and before["behind"], json.dumps(before))
+        btn = "#fn-root .fn-flip [data-fn=flip-next]" if width > 600 else "#fn-root .fn-phone-flip [data-fn=flip-next]"
+        page.click(btn)
+        page.wait_for_function("(c) => document.querySelector(c).textContent === '1 of 2'", arg=cnt, timeout=6000)
+        after = page.evaluate("() => ({ name: document.querySelector('#fn-root [data-fn-slot=card-name]').textContent, phone: document.querySelector('#fn-root [data-fn-slot=phone-name]').textContent, code: localStorage.getItem('dg_stats_cloud_code') })")
+        record("flip", f"› turns to Ana Reyes: the card, the header and the current Agent follow ({width}px)",
+               after["code"] == ANA and "Ana Reyes" in (after["name"] + after["phone"]), json.dumps(after))
+        if width > 600:
+            record("flip", "flipping doesn't open the Agent File page by itself (the arrows aren't the card)",
+                   page.evaluate("() => !document.getElementById('fn-veil').hidden"), "")
+        page.close(); errs_all.extend(errs)
+    # One Agent: no arrows.
+    page, errs = _field_notes_page(p, width=1300, extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(1200)
+    page.evaluate("() => window.dgFieldNotes.open('agentfile')"); page.wait_for_timeout(800)
+    record("flip", "with only one Agent there's nothing to flip: no arrows, no card behind",
+           page.evaluate("() => document.querySelector('#fn-root [data-fn-slot=flip]').hidden && document.querySelector('#fn-root [data-fn-slot=card-behind]').hidden"), "")
+    page.close(); errs_all.extend(errs)
+    record("flip", "no JS exceptions (flip Agents)", not errs_all, str(errs_all[:3]))
+
+
+def test_evidence_sort(p):
+    """Evidence on the player side sorts by date or title -- Newest first
+    (default), Oldest first, A -> Z, Z -> A -- in the notebook's Evidence
+    page and on Agent Hub, remembered on this device (one key for both)."""
+    docs = _field_notes_docs()
+    for i, (title, when) in enumerate([("Morgue Photographs", 3000), ("Harbour Master's Log", 1000), ("Coroner's Preliminary", 2000)]):
+        docs[f"evidence/ev_s{i}"] = {"title": title, "body": "-", "cell_id": FN_CELL, "operation_id": "op_fn_a", "visible_to": [FN_CODE], "released": True, "created_at": when}
+    docs.pop("evidence/ev_fn_1", None)
+    page, errs = _field_notes_page(p, docs=docs, extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(1500)
+    page.evaluate("() => window.dgFieldNotes.open('evidence')")
+    page.wait_for_selector("#fn-veil [data-ev-sort]", timeout=10000)
+    titles = lambda: page.evaluate("() => [...document.querySelectorAll('#fn-veil .fn-card-sheet .fn-card-title')].map(e => e.textContent)")
+    wait_for_condition(lambda: len(titles()) == 3 or None, timeout_ms=8000)
+    got = {"new": titles()}
+    for how in ("old", "az", "za"):
+        page.select_option("#fn-veil [data-ev-sort]", how)
+        got[how] = titles()
+    want = {"new": ["Morgue Photographs", "Coroner's Preliminary", "Harbour Master's Log"],
+            "old": ["Harbour Master's Log", "Coroner's Preliminary", "Morgue Photographs"],
+            "az": ["Coroner's Preliminary", "Harbour Master's Log", "Morgue Photographs"],
+            "za": ["Morgue Photographs", "Harbour Master's Log", "Coroner's Preliminary"]}
+    record("evidence", "the notebook's Evidence sorts Newest first by default, then Oldest first, A -> Z, Z -> A", got == want, json.dumps(got))
+    errs_all = list(errs)
+    page.close()
+    # Agent Hub's list: the same Sort, and the same remembered choice.
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    install_firestore_backend(page, {"cells/cell_1": {"name": "Cell Alpha", "member_codes": ["OWEN-CS12"]},
+                                     "briefs/OWEN-CS12": {"char_name": "Owen Castillo"}})
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.evaluate("() => { localStorage.setItem('dg_agent_roster', JSON.stringify({'OWEN-CS12': {code: 'OWEN-CS12', char_name: 'Owen Castillo', saved_at: 1}})); localStorage.setItem('dg_evidence_sort', 'za'); }")
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_timeout(900)
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 1, timeout_ms=8000)
+    ev = [{"id": f"ev{i}", "evidence_id": f"ev{i}", "title": t, "body": "-", "photo": "", "cell_id": "", "created_at": str(w), "visible_to": ["ALL"]}
+          for i, (t, w) in enumerate([("Morgue Photographs", 3000), ("Harbour Master's Log", 1000), ("Coroner's Preliminary", 2000)])]
+    push_firestore_snapshot(page, "evidence", [["visible_to", "array-contains-any", ["OWEN-CS12", "ALL"]]], ev)
+    hub = "#ah-handouts-OWEN-CS12 .ah-handout-title"
+    page.wait_for_selector(hub, timeout=8000)
+    hub_t = page.evaluate("(s) => [...document.querySelectorAll(s)].map(e => e.textContent)", hub)
+    sel = page.evaluate("() => (document.querySelector('#ah-handouts-filter-OWEN-CS12 select[data-ev-sort]') || {}).value")
+    record("evidence", "Agent Hub's Evidence list has the same Sort, and remembers the choice (Z -> A)", hub_t == want["za"] and sel == "za", f"{hub_t} {sel}")
+    page.select_option("#ah-handouts-filter-OWEN-CS12 select[data-ev-sort]", "az")
+    record("evidence", "...and sorting there works too (A -> Z), saved for the notebook as well",
+           page.evaluate("(s) => [...document.querySelectorAll(s)].map(e => e.textContent)", hub) == want["az"]
+           and page.evaluate("() => localStorage.getItem('dg_evidence_sort')") == "az", "")
+    errs_all.extend(errs)
+    errs = errs_all
+    record("evidence", "no JS exceptions (evidence sort)", not errs, str(errs[:3]))
+    page.close()
+
+
 def test_agent_file_parts_and_looks(p):
     """The Agent File in numbered parts (Statistics, Skills, Psyche, Combat
     & gear, Cell, Record) with a jump index; Find a skill (kept across a
@@ -14340,6 +14441,8 @@ def main():
         safe(test_insane_struck_like_kia, browser, area="insane")
         safe(test_plate_save_survives_a_dropped_connection, browser, area="plates")
         safe(test_bond_at_zero_struck, browser, area="bonds")
+        safe(test_notebook_flip_agents, browser, area="flip")
+        safe(test_evidence_sort, browser, area="evidence")
         safe(test_agent_rules_unit, browser, area="rules")
         safe(test_evidence_attachments_open_and_zoom, browser, area="evidence")
         safe(test_motivations_and_disorders_split, browser, area="disorders")

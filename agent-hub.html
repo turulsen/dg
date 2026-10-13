@@ -264,7 +264,7 @@
      uses, just a single dropdown here rather than a full folder list
      since a player only ever sees their own, already-small slice. ── */
   .ah-handouts-filter{
-    display:flex; align-items:center; gap:8px; margin-bottom:4px;
+    display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;
     font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3);
   }
   .ah-handouts-filter select{
@@ -1226,6 +1226,24 @@
     return 'Filed ' + new Date(n).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   }
 
+  // Evidence sorted by date or title, remembered on this device (the same
+  // key the notebook's Evidence page uses).
+  const EV_SORT_KEY = 'dg_evidence_sort';
+  const EV_SORTS = [['new', 'Newest first'], ['old', 'Oldest first'], ['az', 'A → Z'], ['za', 'Z → A']];
+  function evSort() {
+    let v = ''; try { v = localStorage.getItem(EV_SORT_KEY) || ''; } catch (e) { /* private mode */ }
+    return EV_SORTS.some(o => o[0] === v) ? v : 'new';
+  }
+  function evSortSelectHtml() {
+    return `<span>Sort:</span><select data-ev-sort>${EV_SORTS.map(o => `<option value="${o[0]}"${evSort() === o[0] ? ' selected' : ''}>${o[1]}</option>`).join('')}</select>`;
+  }
+  function sortEvidence(list, how) {
+    const t = h => String(h.title || '').toLowerCase(), d = h => Number(h.created_at || 0);
+    return list.slice().sort((x, y) => how === 'old' ? d(x) - d(y)
+      : how === 'az' ? (t(x).localeCompare(t(y)) || d(y) - d(x))
+      : how === 'za' ? (t(y).localeCompare(t(x)) || d(y) - d(x))
+      : d(y) - d(x));
+  }
   function renderHandoutsFor(code, handouts, cellsById, notesByHandoutId) {
     const el = document.getElementById('ah-handouts-' + code);
     const filterWrapEl = document.getElementById('ah-handouts-filter-' + code);
@@ -1252,21 +1270,26 @@
         let optsHtml = '<option value="">All Operations</option>';
         if (hasUnfiled) optsHtml += `<option value="UNFILED"${selected === 'UNFILED' ? ' selected' : ''}>Unfiled</option>`;
         opOptions.forEach(o => { optsHtml += `<option value="${escapeHtml(o.id)}"${selected === o.id ? ' selected' : ''}>${escapeHtml(o.label)}</option>`; });
-        filterWrapEl.innerHTML = `<div class="ah-handouts-filter"><span>Operation:</span><select data-op-filter-code="${escapeHtml(code)}">${optsHtml}</select></div>`;
-        const sel = filterWrapEl.querySelector('select');
+        filterWrapEl.innerHTML = `<div class="ah-handouts-filter"><span>Operation:</span><select data-op-filter-code="${escapeHtml(code)}">${optsHtml}</select>${evSortSelectHtml()}</div>`;
+        const sel = filterWrapEl.querySelector('select[data-op-filter-code]');
         sel.addEventListener('change', () => {
           opFilterByCode[code] = sel.value;
           renderHandoutsFor(code, lastEvidenceByCode[code] || handouts, cellsById, notesByHandoutIdByCode[code]);
         });
       } else {
-        filterWrapEl.innerHTML = '';
+        filterWrapEl.innerHTML = `<div class="ah-handouts-filter">${evSortSelectHtml()}</div>`;
       }
+      const sortSel = filterWrapEl.querySelector('select[data-ev-sort]');
+      if (sortSel) sortSel.addEventListener('change', () => {
+        try { localStorage.setItem(EV_SORT_KEY, sortSel.value); } catch (e) { /* private mode */ }
+        renderHandoutsFor(code, lastEvidenceByCode[code] || handouts, cellsById, notesByHandoutIdByCode[code]);
+      });
     }
 
     const activeFilter = opFilterByCode[code] || '';
-    const shown = activeFilter
+    const shown = sortEvidence((activeFilter
       ? handouts.filter(h => activeFilter === 'UNFILED' ? !h.operation_id : h.operation_id === activeFilter)
-      : handouts;
+      : handouts), evSort());
     if (!shown.length) {
       el.innerHTML = '<div class="ah-handouts-empty">Nothing filed under this Operation.</div>';
       return;
