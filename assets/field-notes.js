@@ -455,7 +455,8 @@
         '<span class="fn-stitch"></span>' +
         '<button type="button" class="fn-close" data-fn="close" title="Close" aria-label="Close">X</button>' +
         '<div class="fn-phone-head">' +
-          '<div class="fn-phone-head-t"><div class="fn-phone-head-k">Field Notes</div><div class="fn-phone-head-n" data-fn-slot="phone-name"></div></div>' +
+          '<div class="fn-phone-head-t"><div class="fn-phone-head-k">Field Notes <span class="fn-phone-flip" data-fn-slot="phone-flip" hidden><button type="button" data-fn="flip-prev" aria-label="Previous Agent">‹</button><span data-fn-slot="phone-flip-count"></span><button type="button" data-fn="flip-next" aria-label="Next Agent">›</button></span></div>' +
+            '<div class="fn-phone-head-n" data-fn-slot="phone-name"></div></div>' +
           '<button type="button" data-fn="radio" title="Table Radio" aria-label="Table Radio" class="fn-ph-radio"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 8 L17 3"/><rect x="3" y="8" width="18" height="12" rx="2"/><circle cx="15.5" cy="14" r="3"/><path d="M6 12h4M6 15h4"/></svg><span class="fn-chip-dot"></span></button>' +
           '<button type="button" data-fn="dice" title="Dice roller" aria-label="Dice roller"><img class="fn-tri" src="' + TRI + '" alt=""></button>' +
           '<button type="button" data-fn="close" title="Close" aria-label="Close">X</button>' +
@@ -463,10 +464,14 @@
         '<div class="fn-spine"></div>' +
         '<div class="fn-left"><div class="fn-holder">' +
           '<div class="fn-slot" data-view="agentfile" role="button" tabindex="0" aria-label="Agent File">' +
+            '<div class="fn-card fn-card-behind" data-fn-slot="card-behind" hidden></div>' +
             '<div class="fn-card fn-card-photo"><div class="fn-card-ph" data-fn-slot="card-photo"></div>' +
               '<div class="fn-card-txt"><div class="fn-card-k">Delta Green — Agent File</div><div class="fn-card-n" data-fn-slot="card-name"></div>' +
               '<div class="fn-card-s" data-fn-slot="card-meta"></div></div></div>' +
-            '<div class="fn-slot-lip"></div></div>' +
+            '<div class="fn-slot-lip"></div>' +
+            // Flip through this player's Agents: ‹ 1 of 3 › on the pocket.
+            '<div class="fn-flip" data-fn-slot="flip" hidden><button type="button" data-fn="flip-prev" aria-label="Previous Agent">‹</button>' +
+              '<span data-fn-slot="flip-count"></span><button type="button" data-fn="flip-next" aria-label="Next Agent">›</button></div></div>' +
           '<div class="fn-slot" data-view="fieldid" role="button" tabindex="0" aria-label="Field ID">' +
             '<div class="fn-card fn-card-biz" data-fn-slot="card-biz"></div><div class="fn-slot-lip"></div></div>' +
           '<div class="fn-slot" data-view="req" role="button" tabindex="0" aria-label="Requisition">' +
@@ -550,6 +555,7 @@
       if (c) drawIdCard(c, 1.25, 340);
     });
     renderChrome();
+    wireFlipSwipe();
     loadData().then(renderChrome);
     if (IS_SHELL) {
       shellFrame.addEventListener('load', onShellPageChange);
@@ -569,6 +575,7 @@
     if (act === 'close') { close(); return; }
     if (act === 'chip' || act === 'radio') { togglePager(); return; }
     if (act === 'split') { toggleSplit(); return; }
+    if (act === 'flip-prev' || act === 'flip-next') { e.stopPropagation(); flipAgent(act === 'flip-next' ? 1 : -1); return; }
     var v = t.getAttribute('data-view');
     if (!v) return;
     if (t.classList.contains('fn-tab') && v === 'notes' && state.view === 'notes' && !narrow() && !splitOn()) {
@@ -806,6 +813,46 @@
     if (f) { if (ph.getAttribute('data-src') !== f) { ph.setAttribute('data-src', f); ph.textContent = ''; setImage(ph, f); } }
     else { ph.removeAttribute('data-src'); ph.innerHTML = '<span>No photo</span>'; }
     drawIdCard(slot('card-biz'), 1);
+    var list = myAgents(), i = a ? list.map(function (x) { return x.code; }).indexOf(a.code) : -1, many = list.length > 1 && i >= 0;
+    slot('flip').hidden = !many; slot('phone-flip').hidden = !many; slot('card-behind').hidden = !many;
+    if (many) slot('flip-count').textContent = slot('phone-flip-count').textContent = (i + 1) + ' of ' + list.length;
+  }
+  // This player's Agents, in a steady order (by name), for ‹ n of N ›.
+  // The roster holds only the Cover Identity's Agents (a lookup replaces it).
+  function myAgents() {
+    if (friendlyActive()) return [];
+    var r = roster();
+    return Object.keys(r).map(function (k) { return r[k]; }).filter(function (x) { return x && x.code; })
+      .sort(function (x, y) { return String(x.char_name || x.code).localeCompare(String(y.char_name || y.code)); });
+  }
+  // The next or previous Agent's card slides into the pocket, and every
+  // notebook page turns to them (the same key the Dice Roller follows).
+  function flipAgent(dir) {
+    var list = myAgents(), a = currentAgent();
+    if (list.length < 2 || !a) return;
+    var i = list.map(function (x) { return x.code; }).indexOf(a.code);
+    var next = list[(i + dir + list.length) % list.length];
+    var card = root.querySelector('.fn-slot[data-view="agentfile"] .fn-card-photo');
+    if (card && !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+      card.classList.remove('fn-flip-in-l', 'fn-flip-in-r'); void card.offsetWidth;
+      card.classList.add(dir > 0 ? 'fn-flip-in-r' : 'fn-flip-in-l');
+    }
+    lsSet(CLOUD_CODE_KEY, next.code);
+    try { window.dispatchEvent(new CustomEvent('dg-cloud-code-set', { detail: { code: next.code } })); } catch (e) { /* old engine */ }
+    renderChrome();
+    refresh();
+  }
+  // A swipe on the Agent File card flips too.
+  function wireFlipSwipe() {
+    var sl = root.querySelector('.fn-slot[data-view="agentfile"]');
+    if (!sl) return;
+    var x0 = null, y0 = 0;
+    sl.addEventListener('touchstart', function (e) { var t = e.touches[0]; x0 = t.clientX; y0 = t.clientY; }, { passive: true });
+    sl.addEventListener('touchend', function (e) {
+      if (x0 == null) return;
+      var t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0; x0 = null;
+      if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.5 && myAgents().length > 1) { e.preventDefault(); flipAgent(dx < 0 ? 1 : -1); }
+    });
   }
   function renderHead(view, metaText) {
     var m = META[view] || ['', ''];
@@ -1164,7 +1211,9 @@
       return notesCol(cellId).doc(blockId).set({
         agent_code: a.code, block_type: 'paragraph', text: JSON.stringify(dataObj),
         shared: !!block.shared, sort_order: block.sort_order, created_at: now, updated_at: now,
-        pinned: false, tags: JSON.stringify(tags)
+        pinned: false, tags: JSON.stringify(tags),
+        // Waits in the full notes' Quick notes list until "Add to page".
+        quick: true
       });
     }).then(function () {
       block.pending = false;
@@ -1178,7 +1227,20 @@
     });
   }
 
-  /* ── Evidences, filtered by Operation ── */
+  /* ── Evidences, filtered by Operation and sorted (by date or title,
+     remembered on this device -- the same key Agent Hub's list uses) ── */
+  var EV_SORT_KEY = 'dg_evidence_sort';
+  var EV_SORTS = [['new', 'Newest first'], ['old', 'Oldest first'], ['az', 'A → Z'], ['za', 'Z → A']];
+  function evSort() { var v = lsGet(EV_SORT_KEY); return EV_SORTS.some(function (o) { return o[0] === v; }) ? v : 'new'; }
+  function sortEvidence(list, how) {
+    var t = function (h) { return String(h.title || '').toLowerCase(); }, d = function (h) { return Number(h.created_at || 0); };
+    return list.slice().sort(function (x, y) {
+      if (how === 'old') return d(x) - d(y);
+      if (how === 'az') return t(x).localeCompare(t(y)) || d(y) - d(x);
+      if (how === 'za') return t(y).localeCompare(t(x)) || d(y) - d(x);
+      return d(y) - d(x);
+    });
+  }
   function pageEvidence(body) {
     var a = needAgent(body, 'Evidence');
     if (!a) return;
@@ -1208,9 +1270,11 @@
           '<option value="">All operations</option>' +
           opIds.map(function (id) { return '<option value="' + esc(id) + '"' + (state.evOp === id ? ' selected' : '') + '>' + esc(opName(id)) + '</option>'; }).join('') +
           (hasUnfiled ? '<option value="UNFILED"' + (state.evOp === 'UNFILED' ? ' selected' : '') + '>Unfiled</option>' : '') +
+          '</select><label>Sort</label><select class="fn-select" data-ev-sort>' +
+          EV_SORTS.map(function (o) { return '<option value="' + o[0] + '"' + (evSort() === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
           '</select></div><div data-ev-list></div>';
         function draw() {
-          var shown = items.filter(function (h) { return !state.evOp || (state.evOp === 'UNFILED' ? !h.operation_id : h.operation_id === state.evOp); });
+          var shown = sortEvidence(items.filter(function (h) { return !state.evOp || (state.evOp === 'UNFILED' ? !h.operation_id : h.operation_id === state.evOp); }), evSort());
           var list = body.querySelector('[data-ev-list]');
           list.innerHTML = shown.length ? shown.map(function (h) {
             var scope = h.cell_id ? ((cellsById[h.cell_id] && cellsById[h.cell_id].name) || h.cell_id) : 'All Cells';
@@ -1283,6 +1347,7 @@
           });
         }
         body.querySelector('[data-ev-filter]').addEventListener('change', function (e) { state.evOp = e.target.value; draw(); });
+        body.querySelector('[data-ev-sort]').addEventListener('change', function (e) { lsSet(EV_SORT_KEY, e.target.value); draw(); });
         draw();
       }).catch(function (err) {
         body.innerHTML = '<p class="fn-muted">Could not open the locker — check the connection. (' + esc(err && (err.code || err.message) || err) + ')</p>';
@@ -1732,8 +1797,9 @@
     });
     return scriptsOnce[src];
   }
-  // Same merge hub.html's Cover Identity preload does: this identity's
-  // Agents replace the roster's, keeping entries with no player name.
+  // Same as Agent Hub's Cover Identity lookup: this identity's Agents
+  // replace the roster, nothing else stays (not even unnamed Agents --
+  // they piled up from other players on a home-screen app).
   function reloadMyAgents(body) {
     var input = body.querySelector('[data-s="ci"]');
     var st = body.querySelector('[data-s="ci-status"]');
@@ -1742,8 +1808,7 @@
     lsSet('dg_cover_identity', name);
     st.textContent = 'Looking up your Agents…';
     ensureStore().then(function (st) { return st.findByPlayerName(name); }).then(function (agents) {
-      var prior = roster(), next = {};
-      Object.keys(prior).forEach(function (c) { if (!prior[c].player_name) next[c] = prior[c]; });
+      var next = {};
       (agents || []).forEach(function (a) {
         if (!a.code) return;
         next[a.code] = {

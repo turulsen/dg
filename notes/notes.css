@@ -583,3 +583,41 @@
   #dg-notes-panel .dg-notes-paper{ padding:var(--s5) var(--s3) var(--s5) 40px; }
   #dg-notes-panel .dg-notes-search{ flex-basis:100%; }
 }
+
+/* ── Tags (notes.js): highlighted words tagged NPC / Location / Clue /
+   Operation, the "Tag as" bar under a selection, the sidebar's Tags list
+   (a tap filters), Quick notes waiting for "Add to page", ✎ Arrange. ── */
+#dg-notes-panel .dg-tag{ border-radius:2px; padding:0 1px; }
+#dg-notes-panel .dg-tag-npc{ background:rgba(46,110,170,.16); border-bottom:2px solid #2e6eaa; }
+#dg-notes-panel .dg-tag-location{ background:rgba(48,130,80,.16); border-bottom:2px solid #308250; }
+#dg-notes-panel .dg-tag-clue{ background:rgba(180,120,20,.18); border-bottom:2px solid #b47814; }
+#dg-notes-panel .dg-tag-operation{ background:rgba(139,26,26,.12); border-bottom:2px solid #8b1a1a; }
+#dg-notes-panel .dg-notes-tag-chip-operation{ background:#f1cfcf; }
+.dg-notes-tagbar{ position:fixed; z-index:60; display:flex; gap:5px; align-items:center; padding:6px 8px; background:#1c1608; color:#f4eed8;
+  border-radius:3px; box-shadow:0 6px 16px rgba(0,0,0,.4); font:12px 'Courier Prime',monospace; }
+.dg-notes-tagbar[hidden]{ display:none; }
+.dg-notes-tagbar span{ margin-right:3px; }
+.dg-notes-tagbar button{ border:0; border-radius:10px; padding:4px 10px; color:#fff; font:11px 'Courier Prime',monospace; letter-spacing:.06em; text-transform:uppercase; cursor:pointer; }
+.dg-tagbar-npc{ background:#2e6eaa; } .dg-tagbar-location{ background:#308250; } .dg-tagbar-clue{ background:#b47814; } .dg-tagbar-operation{ background:#8b1a1a; }
+#dg-notes-panel .dg-tc{ display:inline-block; font-size:9px; letter-spacing:.08em; text-transform:uppercase; padding:1px 7px; border-radius:9px; color:#fff; margin-right:5px; }
+#dg-notes-panel .dg-tc-npc{ background:#2e6eaa; } #dg-notes-panel .dg-tc-location{ background:#308250; }
+#dg-notes-panel .dg-tc-clue{ background:#b47814; } #dg-notes-panel .dg-tc-operation{ background:#8b1a1a; }
+#dg-notes-panel .dg-notes-tagrow{ font-size:12px; line-height:1.9; }
+#dg-notes-panel .dg-notes-tagname{ color:inherit; text-decoration:none; }
+#dg-notes-panel .dg-notes-tagname span{ color:#8a7a5a; font-size:11px; }
+#dg-notes-panel .dg-notes-tagname.active{ font-weight:700; text-decoration:underline; text-decoration-color:#8b1a1a; }
+#dg-notes-panel .dg-notes-side-hd{ display:flex; justify-content:space-between; align-items:baseline; }
+#dg-notes-panel .dg-notes-tag-filter-x{ color:#8b1a1a; cursor:pointer; text-transform:none; letter-spacing:.02em; }
+#dg-notes-panel .ce-block.dg-notes-filtered-out{ display:none; }
+#dg-notes-panel .dg-notes-qn{ border-left:3px solid #b47814; background:rgba(255,255,255,.4); padding:5px 8px; margin:5px 0; font-size:12px; line-height:1.4; }
+#dg-notes-panel .dg-notes-qn-npc{ border-left-color:#2e6eaa; } #dg-notes-panel .dg-notes-qn-location{ border-left-color:#308250; }
+#dg-notes-panel .dg-notes-qn-add{ display:block; margin-top:3px; background:none; border:0; padding:0; color:#8b1a1a; cursor:pointer;
+  font:9px 'Special Elite',monospace; letter-spacing:.1em; text-transform:uppercase; }
+#dg-notes-panel .dg-notes-arrange-btn{ float:right; background:none; border:0; color:#4a3f28; cursor:pointer; font:9px 'Special Elite',monospace; letter-spacing:.1em; text-transform:uppercase; }
+#dg-notes-panel .dg-notes-arrange{ clear:both; border:1px solid rgba(28,22,8,.25); background:rgba(255,255,255,.5); padding:6px 8px; margin:4px 0 8px; font-size:12px; }
+#dg-notes-panel .dg-notes-arrange[hidden]{ display:none; }
+#dg-notes-panel .dg-notes-arrange-hd{ font:9px 'Special Elite',monospace; letter-spacing:.12em; text-transform:uppercase; color:#4a3f28; margin-bottom:4px; }
+#dg-notes-panel .dg-notes-arrange-row{ display:flex; justify-content:space-between; align-items:center; padding:2px 0; }
+#dg-notes-panel .dg-notes-arrange-row button{ background:none; border:1px solid rgba(28,22,8,.3); margin-left:3px; cursor:pointer; padding:0 5px; }
+#dg-notes-panel .dg-notes-side[hidden]{ display:none; }
+.ce-inline-tool.dg-tag-untag{ font-weight:700; }

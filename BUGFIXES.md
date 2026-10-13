@@ -6501,3 +6501,107 @@ no equipment picker on the page, `stats/pdf-export.js` listed
 now writes the item's name. Its template URL is also resolved next to
 the script, so the export works from any page (the notebook's Settings),
 not just `stats/`.
+
+## Appearance: the character sheet's sex, age, build and profession didn't carry over
+
+Found in play (2026-10-10): a New Recruit Agent's Appearance said "20 of
+22 still to fill in". Only the name and nationality were there; sex and
+age were blank, and there was no build and no clothes, although the
+sheet had all of it.
+
+This is the old "my info didn't carry over" report back again, and the
+earlier fix was only partial (see **Cover/Profiling tab not
+pre-filling** and the auto-export banner above). The carry-over lived in
+the old sheet's **Open Agent File** export
+(`stats/agent-portal-export.js`): sex and age matched to the form's
+options, a build from STR+CON, an outfit from the profession. Since
+v3.0.0, Agents are made by Agent Hub's New Recruit wizard, and its
+`briefFields()` sends only the name, codename, nationality, profession,
+sex and age range. It never derives a build or an outfit. If the sheet's
+sex or age didn't make it into the brief, nothing read them later
+either. The only other path that reads the sheet,
+`autoCreateBriefFromCharacterThenRetry_`, runs only when an Agent has no
+brief at all, which is never the case for a wizard-made Agent.
+
+Fixed in `assets/agent-file.js`. `afCarryFromCharacter_` runs whenever
+an Agent's Appearance loads (Agent Hub, the notebook, the wizard's
+Profiling step). It reads the saved sheet and fills only the empty brief
+fields:
+- sex, matched to Male / Female / Other;
+- the age range, from a number or "mid 40s";
+- the nationality;
+- a build from STR+CON, the same word for that Agent every time;
+- jacket, shirt, trousers and footwear from the profession's look in the
+  Random Agent Generator.
+
+It saves them to the brief straight away, so the count drops, and never
+overwrites what the player wrote. Sex, age and build are locked against
+Random Generate. The clothes stay rerollable. Random Generate also keeps
+the Agent's own sex now (`generateAgent(archetype, { sex })`), so the
+facial hair and hair styles it rolls fit. Existing Agents fix themselves
+the next time their Appearance opens. Covered by
+`test_appearance_carries_over_from_sheet`.
+
+## A Face Plate showed on screen but was never saved (Richard Phaucet, Milk)
+
+Reported 2026-10-10. Two players generated their Face Plate in the app,
+saw it, downloaded it and shared it, yet the Cell and A-Cell showed no
+photo for Richard and the old 5 October photo for Milk. The live data
+confirmed it: Richard's brief had a 2010s prompt but no Plate anywhere,
+and Storage had no file. Milk's only Plate in Storage was still the one
+from 5 October. Uploading the same images by hand sometimes worked and
+sometimes didn't: a flaky connection, not a rules or CORS problem (both
+checked: any signed-in Agent may write `agent-plates/`, and the upload
+endpoint answers CORS for any origin).
+
+The real fault was how the page handled a failed save.
+`saveGeneratedPlate()` puts the new image in the plate box first, then
+signs in, uploads to Storage and writes the link to the brief. When any
+step failed:
+- the photo stayed on screen;
+- the generator's status said only "Error.";
+- a hand upload's button went back to "Replace Face Plate";
+- nothing was retried.
+
+So a lost upload looked exactly like a saved one.
+
+Now (`assets/agent-file.js`):
+- The save tries three times (after 2s, then 5s).
+- If it still fails, the photo carries a red "Not saved — the connection
+  dropped" note with **Save again**, which keeps the image, so nothing has
+  to be generated again.
+- The generator's status reads "Image made, but not saved (connection)".
+- The upload button reads "Not saved — try again".
+- A successful save says "Image generated and saved."
+
+Covered by `test_plate_save_survives_a_dropped_connection` (the Storage
+fake can now fail the next N uploads).
+
+## Several players' Agents piled up on a home-screen app's roster
+
+Reported 2026-10-12. On the home-screen app (a saved bookmark), after
+loading other players' Agents, the roster kept the old ones, so one
+device showed several players' Agents. A Cover Identity lookup
+(`agent-hub.html` `lookupCoverIdentity`, and the notebook's Settings
+`reloadMyAgents`) already replaced the roster with that name's Agents.
+It deliberately kept every Agent with no Player Name, to spare a
+brand-new, still-unnamed Agent. Several live Agents have no Player Name
+(Milk, Garfield, Colin, Eli, Daniela), and every Agent ever opened by a
+link stayed on the device too. Now, as the user chose, a lookup keeps
+only that name's Agents. An unnamed one comes back with Load by Code.
+`test_agent_hub_cover_identity` updated.
+
+## Notes: tagging "didn't work"
+
+Reported 2026-10-12. The Tag popover saved a tag to the block's `tags`,
+but nothing showed it:
+- it wasn't marked in the note;
+- it wasn't listed anywhere;
+- the search didn't find it;
+- it couldn't filter the notes.
+
+So it looked like tagging did nothing. Tagging is now done by
+highlighting words ("Tag as" NPC / Location / Clue / Operation). The
+tags are marked in the note, listed with counts in the sidebar's Tags
+list (a tap filters), and found by the search. See FEATURES §3.
+`test_notes_tags_quick_and_arrange`.

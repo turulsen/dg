@@ -271,6 +271,8 @@
         agent_code: agentCode, block_type: blockType, text: text || '',
         shared: !!shared, sort_order: sortOrder, created_at: createdAt,
         updated_at: now, pinned: !!pinned, tags: tags,
+        // Saved from the page itself: no longer waiting in Quick notes.
+        quick: false,
       });
       return db.runTransaction(tx => tx.get(docRef).then(snap => {
         const now = Date.now();
@@ -375,6 +377,71 @@
       return { type: 'paragraph', data: { text: escapeHtml(rawText || '') } };
     }
   }
+
+  /* ── Tags: highlight words, tag them (NPC / Location / Clue /
+     Operation). A tag is a <span class="dg-tag dg-tag-TYPE" data-tag> in
+     the block's own HTML, so it stays where it was written; the block's
+     `tags` list carries them too (marked inline:true) for the sidebar,
+     search, the notebook's Quick notes and older readers. ── */
+  function tagKey(t) { return String(t.type || '') + '|' + String(t.label || '').trim().toLowerCase(); }
+  function mergeTags(a, b) {
+    const seen = {}, out = [];
+    (a || []).concat(b || []).forEach(t => { if (!t || !t.type || !String(t.label || '').trim()) return; const k = tagKey(t); if (seen[k]) return; seen[k] = 1; out.push(t); });
+    return out;
+  }
+  function inlineTagsOf(type, data) {
+    data = data || {};
+    const htmls = type === 'list' ? (data.items || []).map(listItemContent) : [data.text || ''];
+    const out = [];
+    htmls.forEach(h => {
+      if (String(h).indexOf('dg-tag') === -1) return;
+      const d = document.createElement('div');
+      d.innerHTML = h;
+      d.querySelectorAll('span.dg-tag[data-tag]').forEach(el => {
+        const label = (el.textContent || '').replace(/\s+/g, ' ').trim();
+        if (label) out.push({ type: el.getAttribute('data-tag'), label: label, inline: true });
+      });
+    });
+    return mergeTags([], out);
+  }
+  // Editor.js inline tool: lets the tag <span>s through the sanitizer on
+  // save, and shows as "#" in the selection toolbar inside a tag, to remove it.
+  class DgTagInline {
+    static get isInline() { return true; }
+    static get title() { return 'Remove tag'; }
+    static get sanitize() { return { span: { class: true, 'data-tag': true } }; }
+    constructor({ api }) { this.api = api; }
+    render() {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'ce-inline-tool dg-tag-untag'; b.textContent = '#'; b.title = 'Remove this tag';
+      this.button = b;
+      return b;
+    }
+    surround() {
+      const t = this.api.selection.findParentTag('SPAN', 'dg-tag');
+      if (!t) return;
+      const p = t.parentNode;
+      while (t.firstChild) p.insertBefore(t.firstChild, t);
+      p.removeChild(t);
+    }
+    checkState() {
+      const t = this.api.selection.findParentTag('SPAN', 'dg-tag');
+      if (this.button) { this.button.classList.toggle('ce-inline-tool--active', !!t); this.button.style.display = t ? '' : 'none'; }
+      return !!t;
+    }
+  }
+  // The sidebar's lists, their order and which show (✎ Arrange), per device.
+  const SIDEBAR_KEY = 'dg_notes_sidebar';
+  const SIDEBAR_SECTIONS = [['index', 'Index'], ['tags', 'Tags'], ['quick', 'Quick notes'], ['evidence', 'Evidence']];
+  function sidebarLayout() {
+    let saved = [];
+    try { saved = JSON.parse(localStorage.getItem(SIDEBAR_KEY) || '[]'); } catch (e) { saved = []; }
+    const ids = SIDEBAR_SECTIONS.map(x => x[0]);
+    const out = (Array.isArray(saved) ? saved : []).filter(x => x && ids.indexOf(x.id) !== -1);
+    ids.forEach(id => { if (!out.some(x => x.id === id)) out.push({ id: id, on: true }); });
+    return out;
+  }
+  function saveSidebarLayout(l) { try { localStorage.setItem(SIDEBAR_KEY, JSON.stringify(l)); } catch (e) { /* private mode */ } }
 
   function init(container, opts) {
     opts = opts || {};
@@ -482,7 +549,11 @@
       { id: 'npc', label: 'NPC' },
       { id: 'location', label: 'Location' },
       { id: 'clue', label: 'Clue' },
+      { id: 'operation', label: 'Operation' },
     ];
+    // The sidebar's tag filter ("type|label", lower-cased) and its lists.
+    let tagFilter = '';
+    let tagBarSelHandler = null;
     let tagPopoverOpen = false;
     let tagPopoverType = TAG_TYPES[0].id;
 
@@ -948,7 +1019,15 @@
     }
     function matchesSearch(block) {
       if (!searchTerm) return true;
-      return plainTextOf(block.type, block.data).toLowerCase().includes(searchTerm.toLowerCase());
+      const q = searchTerm.toLowerCase().replace(/^#/, '');
+      if (plainTextOf(block.type, block.data).toLowerCase().includes(q)) return true;
+      // ...and a tag's name or type ("npc", "#location", "hale").
+      return (block.tags || []).some(t => String(t.label || '').toLowerCase().includes(q) || t.type === q ||
+        String((TAG_TYPES.find(x => x.id === t.type) || {}).label || '').toLowerCase() === q);
+    }
+    function matchesTagFilter(block) {
+      if (!tagFilter) return true;
+      return (block.tags || []).some(t => tagKey(t) === tagFilter);
     }
 
     function upsertLocalMeta(ownerCode, blockId, patch) {
@@ -1057,14 +1136,16 @@
         '<label class="dg-notes-toggle-label-inline"><input type="checkbox" class="dg-notes-plain-fonts"' + (plainFonts ? ' checked' : '') + '> Plain fonts</label>' +
         '</div>' +
         '<div class="dg-notes-body">' +
-        '<aside class="dg-notes-toc"><div class="dg-notes-toc-label">Index</div><div id="dg-notes-toc-mount"></div>' +
-        '<div id="dg-notes-evidence-mount"></div></aside>' +
+        '<aside class="dg-notes-toc">' + sidebarHtml() + '</aside>' +
         '<main class="dg-notes-main">' +
         bodyHtml +
         '</main></div>' +
         '</div></div></div></div>';
 
+      container.insertAdjacentHTML('beforeend', '<div class="dg-notes-tagbar" hidden><span>Tag as</span>' +
+        TAG_TYPES.map(t => '<button type="button" class="dg-tagbar-' + t.id + '" data-tagtype="' + t.id + '">' + t.label + '</button>').join('') + '</div>');
       wireShellEvents();
+      wireSidebar();
       if (isOwnTab) {
         mountEditor();
       } else {
@@ -1074,11 +1155,179 @@
       refreshEvidenceSidebar();
     }
 
+    // The sidebar: Index, Tags, Quick notes, Evidence -- in the order and
+    // with the ones shown that ✎ Arrange set on this device.
+    function sidebarHtml() {
+      const parts = {
+        index: '<div class="dg-notes-toc-label">Index</div><div id="dg-notes-toc-mount"></div>',
+        tags: '<div class="dg-notes-toc-subhead dg-notes-side-hd">Tags<span class="dg-notes-tag-filter-x" data-tag-clear hidden></span></div><div id="dg-notes-tags-mount"></div>',
+        quick: activeCode === agentCode ? '<div class="dg-notes-toc-subhead dg-notes-side-hd">Quick notes</div><div id="dg-notes-quick-mount"></div>' : '',
+        evidence: '<div id="dg-notes-evidence-mount"></div>'
+      };
+      const l = sidebarLayout();
+      return '<button type="button" class="dg-notes-arrange-btn" data-arrange>✎ Arrange</button><div class="dg-notes-arrange" hidden></div>' +
+        l.map(x => '<section class="dg-notes-side" data-side="' + x.id + '"' + (x.on ? '' : ' hidden') + '>' + parts[x.id] + '</section>').join('');
+    }
+    function wireSidebar() {
+      const btn = container.querySelector('[data-arrange]'), box = container.querySelector('.dg-notes-arrange');
+      if (!btn || !box) return;
+      const draw = () => {
+        const l = sidebarLayout();
+        box.innerHTML = '<div class="dg-notes-arrange-hd">Show and order the lists</div>' + l.map((x, i) =>
+          '<div class="dg-notes-arrange-row"><label><input type="checkbox" data-arr-on="' + x.id + '"' + (x.on ? ' checked' : '') + '> ' +
+          SIDEBAR_SECTIONS.find(y => y[0] === x.id)[1] + '</label><span><button type="button" data-arr-up="' + i + '"' + (i ? '' : ' disabled') + ' aria-label="Up">↑</button>' +
+          '<button type="button" data-arr-down="' + i + '"' + (i < l.length - 1 ? '' : ' disabled') + ' aria-label="Down">↓</button></span></div>').join('');
+      };
+      btn.addEventListener('click', () => { box.hidden = !box.hidden; if (!box.hidden) draw(); });
+      box.addEventListener('click', e => {
+        const l = sidebarLayout(), up = e.target.getAttribute('data-arr-up'), down = e.target.getAttribute('data-arr-down');
+        if (up == null && down == null) return;
+        const i = +(up != null ? up : down), j = up != null ? i - 1 : i + 1;
+        if (j < 0 || j >= l.length) return;
+        const t = l[i]; l[i] = l[j]; l[j] = t;
+        saveSidebarLayout(l); render();
+        const btn2 = container.querySelector('[data-arrange]'); if (btn2) btn2.click();   // keep the panel open
+      });
+      box.addEventListener('change', e => {
+        const id = e.target.getAttribute('data-arr-on');
+        if (!id) return;
+        const l = sidebarLayout(); l.forEach(x => { if (x.id === id) x.on = e.target.checked; });
+        saveSidebarLayout(l);
+        const sec = container.querySelector('.dg-notes-side[data-side="' + id + '"]'); if (sec) sec.hidden = !e.target.checked;
+      });
+      const clear = container.querySelector('[data-tag-clear]');
+      if (clear) clear.addEventListener('click', () => { tagFilter = ''; afterTagFilterChange(); });
+    }
+
+    /* Tags list (counts per name, grouped by type); a tap filters the notes. */
+    function scopeBlocksForSidebar() {
+      return (activeCode === SHARED_TAB ? sharedBlocksSorted() : (notesByCode[agentCode] || []).filter(b => b.type !== 'evidence_remark'));
+    }
+    function refreshTags() {
+      const mount = container.querySelector('#dg-notes-tags-mount');
+      if (!mount) return;
+      const agg = {};
+      // Named tags on the page only: a note still waiting in Quick notes,
+      // or a tag that's just its type (the notebook's quick tags), aren't names.
+      scopeBlocksForSidebar().filter(b => !b.quick).forEach(b => (b.tags || []).forEach(t => {
+        const tl = (TAG_TYPES.find(x => x.id === t.type) || {}).label || '';
+        if (String(t.label || '').trim().toLowerCase() === tl.toLowerCase()) return;
+        const k = tagKey(t);
+        if (!agg[k]) agg[k] = { type: t.type, label: String(t.label).trim(), n: 0 };
+        agg[k].n++;
+      }));
+      const keys = Object.keys(agg);
+      const clear = container.querySelector('[data-tag-clear]');
+      if (clear) { clear.hidden = !tagFilter; clear.textContent = tagFilter ? 'filter: ' + ((agg[tagFilter] || {}).label || '') + ' ×' : ''; }
+      if (!keys.length) { mount.innerHTML = '<div class="dg-notes-toc-empty">Highlight words in a note to tag them.</div>'; return; }
+      mount.innerHTML = TAG_TYPES.map(tt => {
+        const list = keys.filter(k => agg[k].type === tt.id).sort((a, b) => agg[b].n - agg[a].n || agg[a].label.localeCompare(agg[b].label));
+        if (!list.length) return '';
+        return '<div class="dg-notes-tagrow"><span class="dg-tc dg-tc-' + tt.id + '">' + tt.label + '</span>' +
+          list.map(k => '<a href="#" class="dg-notes-tagname' + (k === tagFilter ? ' active' : '') + '" data-tagfilter="' + escapeHtml(k) + '">' +
+            escapeHtml(agg[k].label) + ' <span>' + agg[k].n + '</span></a>').join(' · ') + '</div>';
+      }).join('');
+      mount.querySelectorAll('[data-tagfilter]').forEach(a => a.addEventListener('click', e => {
+        e.preventDefault();
+        const k = a.getAttribute('data-tagfilter');
+        tagFilter = tagFilter === k ? '' : k;
+        afterTagFilterChange();
+      }));
+    }
+    function afterTagFilterChange() {
+      refreshTags();
+      if (activeCode === agentCode) applyTagFilter(); else refreshReadOnlyFeed();
+    }
+    // On your own page: hide the blocks the filter leaves out (nothing is changed).
+    function applyTagFilter() {
+      const mount = container.querySelector('#dg-notes-editor-mount');
+      if (!mount) return;
+      const byId = {};
+      (notesByCode[agentCode] || []).forEach(b => { byId[b.block_id] = b; });
+      mount.querySelectorAll('.ce-block').forEach(el => {
+        const b = byId[el.dataset.id];
+        el.classList.toggle('dg-notes-filtered-out', !!tagFilter && !(b && matchesTagFilter(b)));
+      });
+    }
+
+    /* Quick notes (written in the notebook) wait here until "Add to page"
+       drops them where your cursor is. */
+    function refreshQuick() {
+      const mount = container.querySelector('#dg-notes-quick-mount');
+      if (!mount) return;
+      const list = (notesByCode[agentCode] || []).filter(b => b.quick).sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+      if (!list.length) { mount.innerHTML = '<div class="dg-notes-toc-empty">None waiting. Quick notes from the notebook land here.</div>'; return; }
+      mount.innerHTML = list.map(b => {
+        const t = (b.tags || [])[0];
+        return '<div class="dg-notes-qn' + (t ? ' dg-notes-qn-' + escapeHtml(t.type) : '') + '">' + escapeHtml(plainTextOf(b.type, b.data) || '') +
+          '<button type="button" class="dg-notes-qn-add" data-qn-add="' + escapeHtml(b.block_id) + '">Add to page ↘</button></div>';
+      }).join('');
+      mount.querySelectorAll('[data-qn-add]').forEach(btn => btn.addEventListener('click', () => addQuickToPage(btn.getAttribute('data-qn-add'))));
+    }
+    function addQuickToPage(blockId) {
+      const b = (notesByCode[agentCode] || []).find(x => x.block_id === blockId);
+      if (!b || !editorInstance) return;
+      b.quick = false;
+      sharedByBlockId[blockId] = !!b.shared;
+      pinnedByBlockId[blockId] = !!b.pinned;
+      tagsByBlockId[blockId] = (b.tags || []).filter(t => !t.inline);
+      let at = -1;
+      try { at = editorInstance.blocks.getCurrentBlockIndex(); } catch (e) { at = -1; }
+      const n = editorInstance.blocks.getBlocksCount();
+      const index = at >= 0 ? at + 1 : n;
+      try { editorInstance.blocks.insert(b.type === 'list' || b.type === 'header' ? b.type : 'paragraph', b.data, {}, index, true, false, blockId); }
+      catch (e) { editorInstance.blocks.insert('paragraph', b.data, {}, index, true); }
+      scheduleSave(blockId);
+      setTimeout(resyncOrder, SAVE_DEBOUNCE_MS + 50);
+      refreshQuick();
+    }
+
+    /* Highlight words on your own page -> "Tag as NPC / Location / Clue /
+       Operation" under them; a tap wraps them in a tag. */
+    function wireTagBar() {
+      const bar = container.querySelector('.dg-notes-tagbar');
+      const mount = container.querySelector('#dg-notes-editor-mount');
+      if (!bar || !mount || bar._wired) return;
+      bar._wired = true;
+      let range = null;
+      const hide = () => { bar.hidden = true; range = null; };
+      const onSel = () => {
+        const sel = document.getSelection();
+        if (!sel || !sel.rangeCount || sel.isCollapsed) { hide(); return; }
+        const r = sel.getRangeAt(0);
+        const host = r.commonAncestorContainer.nodeType === 1 ? r.commonAncestorContainer : r.commonAncestorContainer.parentNode;
+        const editable = host && host.closest && host.closest('[contenteditable="true"]');
+        if (!editable || !mount.contains(editable) || host.closest('.dg-tag') || !String(sel).trim()) { hide(); return; }
+        range = r.cloneRange();
+        const rect = r.getBoundingClientRect();
+        bar.hidden = false;
+        bar.style.left = Math.max(8, Math.min(window.innerWidth - bar.offsetWidth - 8, rect.left)) + 'px';
+        bar.style.top = (rect.bottom + 8) + 'px';
+      };
+      if (tagBarSelHandler) document.removeEventListener('selectionchange', tagBarSelHandler);
+      tagBarSelHandler = onSel;
+      document.addEventListener('selectionchange', onSel);
+      bar.addEventListener('mousedown', e => e.preventDefault());   // keep the selection
+      bar.addEventListener('click', e => {
+        const type = e.target.getAttribute && e.target.getAttribute('data-tagtype');
+        if (!type || !range) return;
+        const span = document.createElement('span');
+        span.className = 'dg-tag dg-tag-' + type;
+        span.setAttribute('data-tag', type);
+        try { span.appendChild(range.extractContents()); range.insertNode(span); } catch (err) { hide(); return; }
+        const blockEl = span.closest('.ce-block');
+        const sel = document.getSelection(); if (sel) sel.removeAllRanges();
+        hide();
+        if (blockEl && blockEl.dataset.id) { currentBlockId = blockEl.dataset.id; scheduleSave(blockEl.dataset.id); }
+      });
+    }
+
     // Updates just the TOC and tab ink colors in place, without
     // touching the editor mount or the read-only feed's own content --
     // safe to call after every poll and every debounced save.
     function refreshChrome() {
       refreshToc();
+      applyTagFilter();
       container.querySelectorAll('[data-tab]').forEach(btn => {
         const code = btn.dataset.tab;
         if (code === SHARED_TAB) return;
@@ -1097,6 +1346,11 @@
     }
 
     function refreshToc() {
+      refreshTocIndex();
+      refreshTags();
+      refreshQuick();
+    }
+    function refreshTocIndex() {
       const mount = container.querySelector('#dg-notes-toc-mount');
       const label = container.querySelector('.dg-notes-toc-label');
       if (!mount) return;
@@ -1208,7 +1462,7 @@
     function refreshReadOnlyFeed() {
       const mount = container.querySelector('#dg-notes-readonly-feed');
       if (!mount) return;
-      const blocks = sharedBlocksSorted().filter(matchesSearch);
+      const blocks = sharedBlocksSorted().filter(b => matchesSearch(b) && matchesTagFilter(b));
       const emptyLabel = searchTerm ? 'No shared blocks match your search.' : 'Nothing shared yet.';
       // This whole feed is read-only (see the file header comment for
       // why) -- without this, the Shared tab is a total dead end with
@@ -1528,12 +1782,12 @@
         // tool Editor.js has registered -- keep them out of the live
         // document entirely, they're rendered only in the Evidence
         // detail modal.
-        .filter(b => b.type !== 'evidence_remark')
+        .filter(b => b.type !== 'evidence_remark' && !b.quick)   // Quick notes wait in the sidebar
         .sort((a, b) => a.sort_order - b.sort_order)
         .map(b => {
           sharedByBlockId[b.block_id] = !!b.shared;
           pinnedByBlockId[b.block_id] = !!b.pinned;
-          tagsByBlockId[b.block_id] = b.tags || [];
+          tagsByBlockId[b.block_id] = (b.tags || []).filter(t => !t.inline);
           return { id: b.block_id, type: b.type, data: b.data };
         });
       editorInstance = new EditorJS({
@@ -1548,6 +1802,9 @@
           list: EditorjsList,
           delimiter: Delimiter,
           marker: Marker,
+          // Keeps highlight-tags (<span class="dg-tag" data-tag>) through
+          // Editor.js's sanitizer, and removes one ("#" in the toolbar).
+          dgtag: DgTagInline,
         },
         onReady: () => {
           applyOwnInkStyle();
@@ -1560,6 +1817,8 @@
             updateTagButton();
           });
           lockBodyScrollWhilePopoverOpen(mount);
+          wireTagBar();
+          applyTagFilter();
         },
         onChange: handleEditorChange,
       });
@@ -1616,8 +1875,8 @@
       const idx = out.blocks.indexOf(b);
       const shared = !!sharedByBlockId[blockId];
       const pinned = !!pinnedByBlockId[blockId];
-      const tags = tagsByBlockId[blockId] || [];
-      const meta = upsertLocalMeta(agentCode, blockId, { type: b.type, data: b.data, shared, pinned, tags, sort_order: idx * 1000 });
+      const tags = mergeTags((tagsByBlockId[blockId] || []).filter(t => !t.inline), inlineTagsOf(b.type, b.data));
+      const meta = upsertLocalMeta(agentCode, blockId, { type: b.type, data: b.data, shared, pinned, tags, quick: false, sort_order: idx * 1000 });
       saveNoteBlockFirestore_(cellId, agentCode, blockId, b.type, JSON.stringify(b.data), shared, pinned, JSON.stringify(tags), meta.sort_order)
         .catch(() => { });
     }
@@ -1682,7 +1941,7 @@
       try { tags = JSON.parse(row.tags || '[]'); } catch (e) { tags = []; }
       return {
         block_id: doc.id, agent_code: row.agent_code, type: b.type, data: b.data,
-        shared: !!row.shared, pinned: !!row.pinned, tags: tags,
+        shared: !!row.shared, pinned: !!row.pinned, tags: tags, quick: !!row.quick,
         sort_order: row.sort_order, created_at: row.created_at, updated_at: row.updated_at,
       };
     }
@@ -1763,14 +2022,15 @@
     function loadOwnBlocksIntoEditor() {
       if (!editorInstance) return;
       const initialBlocks = (notesByCode[agentCode] || []).slice()
-        .filter(b => b.type !== 'evidence_remark') // see mountEditor()'s own filter for why
+        .filter(b => b.type !== 'evidence_remark' && !b.quick) // see mountEditor()'s own filter for why
         .sort((a, b) => a.sort_order - b.sort_order)
         .map(b => {
           sharedByBlockId[b.block_id] = !!b.shared;
           pinnedByBlockId[b.block_id] = !!b.pinned;
-          tagsByBlockId[b.block_id] = b.tags || [];
+          tagsByBlockId[b.block_id] = (b.tags || []).filter(t => !t.inline);
           return { id: b.block_id, type: b.type, data: b.data };
         });
+      refreshQuick();
       if (!initialBlocks.length) return;
       // .blocks (and every other public API method) isn't attached to
       // the instance until Editor.js's own internal async init
@@ -1783,7 +2043,7 @@
       const inst = editorInstance;
       inst.isReady.then(() => {
         if (editorInstance !== inst) return; // tab switched away/unmounted before this resolved
-        inst.blocks.render({ blocks: initialBlocks });
+        inst.blocks.render({ blocks: initialBlocks }).then(() => applyTagFilter());
       });
     }
 

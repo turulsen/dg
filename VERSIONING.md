@@ -63,7 +63,24 @@ consumer depending on that history being versioned. v2.0.0 was cut
 reserved for it: the Google Sheet is retired and every page reads and
 writes Firestore directly (Code.gs v97 is left serving only the Drive
 image proxy for old `gdrive:` links; going live took the one-time steps
-in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v3.1.0**
+in `docs/firebase-migration/SHEET-RETIREMENT.md`). **v3.2.0**
+(2026-10-13) is PR #73: play-test fixes and the second patch pack.
+- **Appearance:** takes sex, age range, nationality, a build (from
+  STR+CON) and clothes for the profession from the character sheet.
+- **SAN 0:** strikes the name through with an INSANE stamp everywhere
+  KIA shows.
+- **Bonds at 0:** struck through in red.
+- **Plates:** Face and Outfit Plates retry a dropped save, and say "Not
+  saved" with **Save again** instead of looking saved.
+- **Notebook:** the Agent card flips through the player's Agents.
+- **Evidence:** sorts by date or title.
+- **Notes:** highlight-to-tag (NPC, Location, Clue, Operation), a Tags
+  filter, Quick notes waiting for *Add to page*, and ✎ Arrange.
+- **Paper wear:** follows SAN point by point.
+- **Cover Identity lookup:** keeps only that name's Agents.
+
+Frontend only: no Code.gs or Functions change. The shell cache is
+`dg-hub-shell-v221`. Its tag doesn't exist yet. **v3.1.0**
 (2026-10-10) is PR #72, v2 milestone M3: the Agent File's paper wears as
 SAN falls. Stains, a fold, a coffee ring, blood and, from SAN 9, a torn
 edge are drawn over the whole page on Agent Hub and in the notebook
@@ -72,7 +89,7 @@ kept light enough to play from even when INSANE. The INSANE stamp sits
 on the photo and name, and there is a rubber stamp per Mental Disorder on
 the header. The notebook's Settings switch it off per device. Frontend
 only, with no backend or Functions change; the shell cache is
-`dg-hub-shell-v215`. Its tag doesn't exist yet. **v3.0.1**
+`dg-hub-shell-v215`. **v3.0.1**
 (2026-10-10) moves Cloud Functions from Node.js 20 to 22
 (`functions/package.json` `engines.node`): Google retires Node 20 for
 Cloud Functions on 2026-10-30, after which a Node 20 codebase can no

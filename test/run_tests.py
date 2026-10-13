@@ -560,6 +560,8 @@ NOTES_FIRESTORE_STUB = """
         ref: function (path) {
           return {
             put: function (file, opts) {
+              // A dropped connection: tests set __dgStorageFail to fail the next N uploads.
+              if ((window.__dgStorageFail || 0) > 0) { window.__dgStorageFail--; return Promise.reject(new Error('storage/retry-limit-exceeded')); }
               window.__dgStorageUploads.push({ path: path, file: file, opts: opts });
               return Promise.resolve({
                 ref: { getDownloadURL: function () { return Promise.resolve('https://fake-storage.example/' + path); } }
@@ -2653,17 +2655,12 @@ def test_agent_hub_cover_identity(p):
     PATRICK = {"code": "GERG-P001", "char_name": "Patrick Montgomery", "codename": "", "sex": "Male",
                "age_range": "Mid 30s", "nationality": "American"}
 
-    # Entering a name and finding 2 Agents replaces the *claimed* part of
-    # the roster (which starts out seeded with two locally-added Agents:
-    # one already tied to a different real name, one nobody's claimed
-    # yet) -- the one already claimed by someone else is dropped, and the
-    # unclaimed one survives regardless of how long it's been sitting
-    # there: there's nothing yet distinguishing it from "belongs to this
-    # identity", and this campaign plays roughly every 3-5 weeks, so a
-    # player rolling a new Agent and not getting to Cover Identity right
-    # away is the normal case -- any fixed expiry short enough to matter
-    # would risk that same player coming back next session to find their
-    # own not-yet-named Agent gone.
+    # Entering a name and finding 2 Agents replaces the whole roster
+    # (which starts out seeded with two locally-added Agents: one already
+    # tied to a different real name, one nobody's claimed yet). Both
+    # strays go: unnamed Agents used to be kept, which on a home-screen
+    # app piled up every Agent ever opened by a link or by looking up
+    # another player (2026-10-12, the user's choice: matching name only).
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
@@ -2699,8 +2696,8 @@ def test_agent_hub_cover_identity(p):
            {"Patrick Montgomery", "Danielle Mitchell"}.issubset(set(tab_labels)), str(tab_labels))
     record("hub", "the stray Agent already claimed by a different real name is gone",
            "Claimed By Someone Else" not in tab_labels, str(tab_labels))
-    record("hub", "the unclaimed local draft survives the search even after sitting untouched for days",
-           "Unclaimed Local Draft" in tab_labels, str(tab_labels))
+    record("hub", "an unnamed Agent from earlier doesn't stay either: only that name's Agents remain",
+           "Unclaimed Local Draft" not in tab_labels, str(tab_labels))
     record("hub", "the status line confirms how many Agents were loaded",
            "2" in page.inner_text("#ci-status"), page.inner_text("#ci-status"))
     record("hub", "the entered Cover Identity is remembered for next time",
@@ -9483,8 +9480,8 @@ def test_notes_v2_editorjs(p):
            tag_btn.get_attribute("disabled") is None, "")
     tag_btn.click()
     page.wait_for_timeout(200)
-    record("notes", "the Tag popover offers NPC/Location/Clue type chips",
-           page.locator(".dg-notes-tag-type-chip").count() == 3, "")
+    record("notes", "the Tag popover offers NPC/Location/Clue/Operation type chips",
+           page.locator(".dg-notes-tag-type-chip").count() == 4, "")
     page.click('.dg-notes-tag-type-chip[data-type="location"]')
     page.fill(".dg-notes-tag-input", "Old Lighthouse")
     clear_firestore_writes(page)
@@ -11021,8 +11018,10 @@ def test_agent_file_wear(p):
     ok = all(got[s]["tier"] == want[s][0] and (got[s]["bg"] == (want[s][0] != "0")) and (('INSANE' in got[s]["stamp"]) == want[s][1]) and got[s]["host"] == want[s][1] and 'INSANE' not in got[s]["paperStamp"] and got[s]["ownWear"] == 'none' for s in want)
     record("wear", "the stage follows SAN, worn over the whole page: clean at 50+, stages 1-4 by tens, 5 from 9, 6 at 0; INSANE only from 9, on the header name",
            ok, json.dumps({s: [got[s]["tier"], got[s]["bg"], 'INSANE' in got[s]["stamp"]] for s in got}))
-    record("wear", "every stage is drawn at 90% (a touch lighter than the full stack)",
-           all(abs(float(got[t]["op"]) - .9) < .01 for t in (45, 25, 9, 0)), json.dumps({t: got[t]["op"] for t in (45, 25, 9, 0)}))
+    # The user's curve: 49-40 1-5%, 39-30 6-10%, 29-20 11-25%, 19-10 26-50%, 9-0 51-100%.
+    want_op = {45: .028, 35: .078, 25: .172, 15: .367, 9: .51, 5: .728, 2: .891, 0: 1}
+    record("wear", "the wear's opacity follows SAN point by point (1-5% at 49-40 ... 51-100% at 9-0, 100% at SAN 0)",
+           all(abs(float(got[t]["op"]) - want_op[t]) < .006 for t in want_op), json.dumps({t: got[t]["op"] for t in want_op}))
     record("wear", "the stamp: worn from 9 (no fill), filling in from 5, solid at 0",
            got[9]["fill"] == "0" and float(got[9]["insane"]) >= .3 and got[5]["fill"] == "0" and float(got[2]["fill"]) > 0 and got[0]["fill"] == "1" and got[0]["insane"] == "1",
            json.dumps({s: [got[s]["insane"], got[s]["fill"]] for s in (9, 5, 2, 0)}))
@@ -11111,6 +11110,310 @@ def test_agent_file_disorder_stamps(p):
             record("disorders", "the wear switch in Settings hides the stamps too", hidden, "")
         page.close(); errs_all.extend(errs)
     record("disorders", "no JS exceptions (disorder stamps)", not errs_all, str(errs_all[:3]))
+
+
+def test_appearance_carries_over_from_sheet(p):
+    """The Appearance brief picks up what the character sheet already knows
+    (agent-file.js afCarryFromCharacter_): sex, age range and nationality
+    from the Biography, a build from STR+CON and clothes that fit the
+    profession -- into empty fields only, saved to the brief so the count
+    goes down. Found play-testing: a New Recruit Agent showed "20 of 22
+    still to fill in" with sex and age blank. Random Generate keeps the
+    sheet's sex."""
+    docs = _field_notes_docs()
+    st = {"v": 1, "stats": {"STR": 15, "CON": 16, "DEX": 11, "INT": 14, "POW": 12, "CHA": 13},
+          "csStats": {"STR": 15, "CON": 16, "DEX": 11, "INT": 14, "POW": 12, "CHA": 13},
+          "derived": {"hp": 16, "wp": 12, "san": 60, "bp": 48},
+          "bio": {"name": "Alistair Lagavulin", "profession": "pilot_sailor", "player_name": "fn tester",
+                  "sex": "male", "age": "52", "nationality": "Scottish"}}
+    docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, st, "fn tester")
+    docs[f"briefs/{FN_CODE}"] = {"agent_code": FN_CODE, "char_name": "Alistair Lagavulin", "nationality": "Scottish",
+                                 "profession": "Pilot or Sailor", "player_name": "fn tester", "player_name_lc": "fn tester",
+                                 "shirt": "his own grey wool jumper"}
+    page, errs = _field_notes_page(p, docs=docs,
+                                   extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    _af_state(page)
+    page.wait_for_function("() => { const f = document.getElementById('dg-form'); return f && f.elements['build'] && f.elements['build'].value; }", timeout=10000)
+    form = page.evaluate("""() => { const f = document.getElementById('dg-form'), v = k => f.elements[k].value;
+        return { sex: v('sex'), age: v('age_range'), build: v('build'), jacket: v('jacket'), shirt: v('shirt'), trousers: v('trousers'),
+                 footwear: v('footwear'), locked: ['sex', 'age_range', 'build'].every(k => f.elements[k].dataset.locked === '1'),
+                 state: document.getElementById('af-appear-state').textContent }; }""")
+    record("appearance", "sex and age range come over from the sheet's Biography (\"male\", 52 -> Male, Early 50s)",
+           form["sex"] == "Male" and form["age"] == "Early 50s", json.dumps(form))
+    record("appearance", "a build from STR+CON (15+16: athletic) and clothes for a Pilot or Sailor",
+           form["build"] in ("athletic", "lean and muscular", "fit and rangy", "well-conditioned") and all(form[k] for k in ("jacket", "trousers", "footwear")), json.dumps(form))
+    record("appearance", "what the player already wrote stays (the shirt is untouched)", form["shirt"] == "his own grey wool jumper", form["shirt"])
+    _pump_until(page, lambda: (fs_doc(page, f"briefs/{FN_CODE}") or {}).get("build"), timeout_ms=6000)
+    b = fs_doc(page, f"briefs/{FN_CODE}") or {}
+    record("appearance", "the carried values are saved to the brief, and the count goes down",
+           b.get("sex") == "Male" and b.get("age_range") == "Early 50s" and b.get("build") == form["build"] and b.get("jacket") == form["jacket"]
+           and b.get("shirt") == "his own grey wool jumper" and form["state"] == "13 of 22 still to fill in", json.dumps({k: b.get(k) for k in ("sex", "age_range", "build", "jacket", "shirt")}) + " " + form["state"])
+    # Random Generate fills the rest, keeps the sheet's facts, and its facial hair fits a man.
+    page.evaluate("() => randomizeAgent(document.getElementById('rand-profession').value || null)")
+    after = page.evaluate("""() => { const f = document.getElementById('dg-form'), v = k => f.elements[k].value;
+        return { sex: v('sex'), age: v('age_range'), build: v('build'), face: v('face_shape'), fh: v('facial_hair') }; }""")
+    female_fh = page.evaluate("() => (window.dgAppearanceGen.RAND_TABLES.facial_hair_female || [])")
+    male_fh = page.evaluate("() => (window.dgAppearanceGen.RAND_TABLES.facial_hair_male || [])")
+    record("appearance", "Random Generate fills the rest but keeps sex, age and build, and rolls facial hair for the Agent's own sex",
+           after["sex"] == "Male" and after["age"] == "Early 50s" and after["build"] == form["build"] and after["face"]
+           and (after["fh"] in male_fh or after["fh"] not in female_fh), json.dumps(after))
+    record("appearance", "no JS exceptions (carry-over)", not errs, str(errs[:3]))
+    page.close()
+
+
+def test_insane_struck_like_kia(p):
+    """SAN 0 is marked the way KIA is: the Agent's name struck through on
+    Agent Hub's tab and header, a small INSANE stamp in the stamp row, and
+    in the Agent File's Cell list the name struck with an INSANE stamp.
+    Live as SAN reaches 0 in play (agent-paper.js onFate ->
+    setAgentFate), and on a fresh load."""
+    errs_all = []
+    def page_at(san):
+        docs = _field_notes_docs()
+        st = {"v": 1, "stats": {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 12, "CHA": 13},
+              "derived": {"hp": 11, "wp": 12, "san": san, "bp": 0}, "bio": {"name": "Mara Voss", "profession": "federal_agent", "player_name": "fn tester"}}
+        docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, st, "fn tester")
+        page, errs = _field_notes_page(p, docs=docs,
+                                       extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+        page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_selector(f"#ah-sheet-{FN_CODE} .as-paper.ap .ap-vitals", timeout=15000)
+        page.wait_for_timeout(600)
+        return page, errs
+    probe = """(c) => { const st = document.getElementById('ah-charstamp-' + c), me = document.querySelector('#ah-sheet-' + c + ' .ap-init li.ap-me');
+        return { tab: document.getElementById('ah-tablabel-' + c).classList.contains('kia-name'),
+                 title: document.getElementById('ah-title-' + c).classList.contains('kia-name'),
+                 stamp: !!(st && st.querySelector('.stamp[data-fate="insane"]')), kiaStamp: !!(st && st.querySelector('.stamp[data-fate="kia"]')),
+                 cell: !!(me && me.classList.contains('as-kia') && /INSANE/.test(me.textContent)) }; }"""
+    page, errs = page_at(1)
+    before = page.evaluate(probe, FN_CODE)
+    record("insane", "at SAN 1 nothing is struck and there's no INSANE stamp",
+           not any(before.values()), json.dumps(before))
+    page.click(f"#ah-sheet-{FN_CODE} [data-a='san-']")
+    page.wait_for_function("(c) => !!document.querySelector('#ah-charstamp-' + c + ' .stamp[data-fate=\"insane\"]')", arg=FN_CODE, timeout=6000)
+    live = page.evaluate(probe, FN_CODE)
+    record("insane", "losing the last SAN point in play strikes the name on the tab and header and stamps INSANE, at once",
+           live["tab"] and live["title"] and live["stamp"] and not live["kiaStamp"], json.dumps(live))
+    page.close(); errs_all.extend(errs)
+    page, errs = page_at(0)
+    page.wait_for_function("(c) => !!document.querySelector('#ah-charstamp-' + c + ' .stamp[data-fate=\"insane\"]')", arg=FN_CODE, timeout=6000)
+    page.evaluate("(c) => document.getElementById('ah-sheet-' + c)._ap.toggleCell(true)", FN_CODE)   # the Cell drop-down
+    page.wait_for_selector(f"#ah-sheet-{FN_CODE} .ap-init li.ap-me", timeout=6000)
+    loaded = page.evaluate(probe, FN_CODE)
+    record("insane", "an Agent saved at SAN 0 opens struck through and stamped INSANE, the Cell list too",
+           loaded["tab"] and loaded["title"] and loaded["stamp"] and loaded["cell"], json.dumps(loaded))
+    page.close(); errs_all.extend(errs)
+    record("insane", "no JS exceptions (INSANE like KIA)", not errs_all, str(errs_all[:3]))
+
+
+def test_bond_at_zero_struck(p):
+    """A Bond whose score reaches 0 is struck through in red on the Agent
+    File; − to 0 in play strikes it at once, + brings it back."""
+    docs = _field_notes_docs()
+    st = {"v": 1, "stats": {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 12, "CHA": 13},
+          "derived": {"hp": 11, "wp": 12, "san": 60, "bp": 48}, "bio": {"name": "Mara Voss", "profession": "federal_agent", "player_name": "fn tester"},
+          "bonds": [{"name": "Lena Voss", "relationship": "Sister", "score": 0}, {"name": "Tom Hale", "relationship": "Partner", "score": 1}]}
+    docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, st, "fn tester")
+    page, errs = _field_notes_page(p, docs=docs,
+                                   extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector(f"#ah-sheet-{FN_CODE} .ap-bond", timeout=15000)
+    broken = lambda: page.evaluate("(c) => [...document.querySelectorAll('#ah-sheet-' + c + ' .ap-bond')].map(b => b.classList.contains('ap-bond-broken'))", FN_CODE)
+    first = broken()
+    sel = f"#ah-sheet-{FN_CODE} .ap-bond"
+    deco = page.evaluate("(s) => getComputedStyle(document.querySelector(s + '.ap-bond-broken .ap-bn')).textDecorationLine", sel)
+    record("bonds", "a Bond at 0 is struck through in red; one above 0 isn't", first == [True, False] and "line-through" in deco, f"{first} {deco}")
+    page.click(f"{sel} >> nth=1 >> [data-a='bond-']")
+    page.wait_for_function("(c) => document.querySelectorAll('#ah-sheet-' + c + ' .ap-bond.ap-bond-broken').length === 2", arg=FN_CODE, timeout=6000)
+    page.click(f"{sel} >> nth=0 >> [data-a='bond+']")
+    page.wait_for_function("(c) => !document.querySelector('#ah-sheet-' + c + ' .ap-bond').classList.contains('ap-bond-broken')", arg=FN_CODE, timeout=6000)
+    record("bonds", "taking a Bond to 0 in play strikes it at once, and + brings it back", True, "")
+    record("bonds", "no JS exceptions (broken Bonds)", not errs, str(errs[:3]))
+    page.close()
+
+
+def test_notebook_flip_agents(p):
+    """The notebook's Agent File card flips through this player's Agents:
+    ‹ n of N › on the pocket (a second card peeks behind), the same in the
+    phone's header; a flip makes that Agent the current one (the Dice
+    Roller's key) and the card and pages follow."""
+    ANA = "ANAR-0002"
+    docs = _field_notes_docs()
+    docs[f"briefs/{ANA}"] = {"agent_code": ANA, "char_name": "Ana Reyes", "player_name": "fn tester", "player_name_lc": "fn tester"}
+    roster = {FN_CODE: {"code": FN_CODE, "char_name": "Mara Voss", "codename": "PARADE", "player_name": "fn tester", "saved_at": 5},
+              ANA: {"code": ANA, "char_name": "Ana Reyes", "player_name": "fn tester", "saved_at": 4}}
+    extra = ("localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000, '%s': 1790000000000}));" % (FN_CODE, ANA) +
+             "localStorage.setItem('dg_agent_roster', %s); if (!sessionStorage.getItem('fl_seeded')) { sessionStorage.setItem('fl_seeded', '1'); localStorage.setItem('dg_stats_cloud_code', '%s'); }" % (json.dumps(json.dumps(roster)), FN_CODE))
+    errs_all = []
+    for width in (1300, 390):
+        page, errs = _field_notes_page(p, width=width, docs=docs, extra_init=extra)
+        page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_timeout(1500)
+        page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+        page.wait_for_timeout(1200)
+        cnt = "#fn-root [data-fn-slot=flip-count]" if width > 600 else "#fn-root [data-fn-slot=phone-flip-count]"
+        before = page.evaluate("(c) => ({ count: document.querySelector(c).textContent, name: document.querySelector('#fn-root [data-fn-slot=card-name]').textContent, behind: !document.querySelector('#fn-root [data-fn-slot=card-behind]').hidden })", cnt)
+        record("flip", f"the Agent File card shows 2 of 2 for Mara Voss (by name), with a card behind ({width}px)",
+               before["count"] == "2 of 2" and before["name"] == "Mara Voss" and before["behind"], json.dumps(before))
+        btn = "#fn-root .fn-flip [data-fn=flip-next]" if width > 600 else "#fn-root .fn-phone-flip [data-fn=flip-next]"
+        page.click(btn)
+        page.wait_for_function("(c) => document.querySelector(c).textContent === '1 of 2'", arg=cnt, timeout=6000)
+        after = page.evaluate("() => ({ name: document.querySelector('#fn-root [data-fn-slot=card-name]').textContent, phone: document.querySelector('#fn-root [data-fn-slot=phone-name]').textContent, code: localStorage.getItem('dg_stats_cloud_code') })")
+        record("flip", f"› turns to Ana Reyes: the card, the header and the current Agent follow ({width}px)",
+               after["code"] == ANA and "Ana Reyes" in (after["name"] + after["phone"]), json.dumps(after))
+        if width > 600:
+            record("flip", "flipping doesn't open the Agent File page by itself (the arrows aren't the card)",
+                   page.evaluate("() => !document.getElementById('fn-veil').hidden"), "")
+        page.close(); errs_all.extend(errs)
+    # One Agent: no arrows.
+    page, errs = _field_notes_page(p, width=1300, extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(1200)
+    page.evaluate("() => window.dgFieldNotes.open('agentfile')"); page.wait_for_timeout(800)
+    record("flip", "with only one Agent there's nothing to flip: no arrows, no card behind",
+           page.evaluate("() => document.querySelector('#fn-root [data-fn-slot=flip]').hidden && document.querySelector('#fn-root [data-fn-slot=card-behind]').hidden"), "")
+    page.close(); errs_all.extend(errs)
+    record("flip", "no JS exceptions (flip Agents)", not errs_all, str(errs_all[:3]))
+
+
+def test_evidence_sort(p):
+    """Evidence on the player side sorts by date or title -- Newest first
+    (default), Oldest first, A -> Z, Z -> A -- in the notebook's Evidence
+    page and on Agent Hub, remembered on this device (one key for both)."""
+    docs = _field_notes_docs()
+    for i, (title, when) in enumerate([("Morgue Photographs", 3000), ("Harbour Master's Log", 1000), ("Coroner's Preliminary", 2000)]):
+        docs[f"evidence/ev_s{i}"] = {"title": title, "body": "-", "cell_id": FN_CELL, "operation_id": "op_fn_a", "visible_to": [FN_CODE], "released": True, "created_at": when}
+    docs.pop("evidence/ev_fn_1", None)
+    page, errs = _field_notes_page(p, docs=docs, extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(1500)
+    page.evaluate("() => window.dgFieldNotes.open('evidence')")
+    page.wait_for_selector("#fn-veil [data-ev-sort]", timeout=10000)
+    titles = lambda: page.evaluate("() => [...document.querySelectorAll('#fn-veil .fn-card-sheet .fn-card-title')].map(e => e.textContent)")
+    wait_for_condition(lambda: len(titles()) == 3 or None, timeout_ms=8000)
+    got = {"new": titles()}
+    for how in ("old", "az", "za"):
+        page.select_option("#fn-veil [data-ev-sort]", how)
+        got[how] = titles()
+    want = {"new": ["Morgue Photographs", "Coroner's Preliminary", "Harbour Master's Log"],
+            "old": ["Harbour Master's Log", "Coroner's Preliminary", "Morgue Photographs"],
+            "az": ["Coroner's Preliminary", "Harbour Master's Log", "Morgue Photographs"],
+            "za": ["Morgue Photographs", "Harbour Master's Log", "Coroner's Preliminary"]}
+    record("evidence", "the notebook's Evidence sorts Newest first by default, then Oldest first, A -> Z, Z -> A", got == want, json.dumps(got))
+    errs_all = list(errs)
+    page.close()
+    # Agent Hub's list: the same Sort, and the same remembered choice.
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    install_firestore_backend(page, {"cells/cell_1": {"name": "Cell Alpha", "member_codes": ["OWEN-CS12"]},
+                                     "briefs/OWEN-CS12": {"char_name": "Owen Castillo"}})
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.evaluate("() => { localStorage.setItem('dg_agent_roster', JSON.stringify({'OWEN-CS12': {code: 'OWEN-CS12', char_name: 'Owen Castillo', saved_at: 1}})); localStorage.setItem('dg_evidence_sort', 'za'); }")
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_timeout(900)
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 1, timeout_ms=8000)
+    ev = [{"id": f"ev{i}", "evidence_id": f"ev{i}", "title": t, "body": "-", "photo": "", "cell_id": "", "created_at": str(w), "visible_to": ["ALL"]}
+          for i, (t, w) in enumerate([("Morgue Photographs", 3000), ("Harbour Master's Log", 1000), ("Coroner's Preliminary", 2000)])]
+    push_firestore_snapshot(page, "evidence", [["visible_to", "array-contains-any", ["OWEN-CS12", "ALL"]]], ev)
+    hub = "#ah-handouts-OWEN-CS12 .ah-handout-title"
+    page.wait_for_selector(hub, timeout=8000)
+    hub_t = page.evaluate("(s) => [...document.querySelectorAll(s)].map(e => e.textContent)", hub)
+    sel = page.evaluate("() => (document.querySelector('#ah-handouts-filter-OWEN-CS12 select[data-ev-sort]') || {}).value")
+    record("evidence", "Agent Hub's Evidence list has the same Sort, and remembers the choice (Z -> A)", hub_t == want["za"] and sel == "za", f"{hub_t} {sel}")
+    page.select_option("#ah-handouts-filter-OWEN-CS12 select[data-ev-sort]", "az")
+    record("evidence", "...and sorting there works too (A -> Z), saved for the notebook as well",
+           page.evaluate("(s) => [...document.querySelectorAll(s)].map(e => e.textContent)", hub) == want["az"]
+           and page.evaluate("() => localStorage.getItem('dg_evidence_sort')") == "az", "")
+    errs_all.extend(errs)
+    errs = errs_all
+    record("evidence", "no JS exceptions (evidence sort)", not errs, str(errs[:3]))
+    page.close()
+
+
+def test_notes_tags_quick_and_arrange(p):
+    """Notes, as play-tested (2026-10-12: "tagging doesn't work" -- a tag
+    was saved but shown nowhere): highlight words -> "Tag as" NPC /
+    Location / Clue / Operation wraps them in a tag, saved in the block
+    (tags list marked inline); the sidebar's Tags list counts them and a
+    tap filters the page; the search finds tags; the notebook's Quick
+    notes (quick:true) wait in the sidebar, not on the page, until "Add to
+    page"; ✎ Arrange hides and orders the sidebar's lists, per device."""
+    page = p.new_page(viewport={"width": 1280, "height": 900})
+    page.set_default_timeout(15000)
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    cell = {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"]}
+    seed_cells_docs(page, [cell])
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    page.add_init_script("""try { localStorage.setItem('dg_agent_roster', JSON.stringify({'OWEN-CS12': {code: 'OWEN-CS12', char_name: 'Owen Castillo', saved_at: Date.now()}}));
+      localStorage.setItem('dg_notes_identity_OWEN-CS12', JSON.stringify({color: '#2b6cb0', font: 'kalam'})); } catch (e) {}""")
+    page.goto(f"{BASE}/notes/index.html", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: page.query_selector(".dg-notes-identity-modal") is not None or page.query_selector("#dg-notes-editor-mount") is not None, timeout_ms=8000)
+    if page.query_selector(".dg-notes-identity-modal"):
+        page.click(".dg-notes-color-swatch"); page.click(".dg-notes-identity-confirm")
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 2, timeout_ms=8000)
+    own = [
+        {"id": "blk1", "agent_code": "OWEN-CS12", "block_type": "paragraph", "text": json.dumps({"text": "We met Dr Hale at the Old Lighthouse."}), "shared": False, "sort_order": 1000, "created_at": 1, "updated_at": 1, "tags": "[]"},
+        {"id": "blk2", "agent_code": "OWEN-CS12", "block_type": "paragraph", "text": json.dumps({"text": "The weather turned."}), "shared": False, "sort_order": 2000, "created_at": 2, "updated_at": 2, "tags": "[]"},
+        {"id": "q1", "agent_code": "OWEN-CS12", "block_type": "paragraph", "text": json.dumps({"text": "Hale lied about the 14th."}), "shared": False, "sort_order": 3000, "created_at": 3, "updated_at": 3,
+         "tags": json.dumps([{"type": "clue", "label": "Clue"}]), "quick": True},
+    ]
+    push_firestore_snapshot(page, "cells/cell_1/notes", [["shared", "==", True]], [])
+    push_firestore_snapshot(page, "cells/cell_1/notes", [["agent_code", "==", "OWEN-CS12"]], own)
+    wait_for_condition(lambda: page.locator("#dg-notes-editor-mount .ce-block").count() >= 2 or None, timeout_ms=8000)
+    blocks = lambda: page.evaluate("() => [...document.querySelectorAll('#dg-notes-editor-mount .ce-block')].map(b => b.innerText.trim())")
+    record("notes-tags", "a Quick note waits in the sidebar's Quick notes, not on the page",
+           "Hale lied about the 14th." not in " ".join(blocks()) and "Hale lied" in (page.text_content("#dg-notes-quick-mount") or ""), json.dumps(blocks()))
+    # Highlight "Dr Hale" and tag it NPC.
+    page.evaluate("""() => { const el = document.querySelector('#dg-notes-editor-mount .ce-block [contenteditable]'); const tn = el.firstChild;
+        const i = tn.textContent.indexOf('Dr Hale'); el.focus(); const r = document.createRange(); r.setStart(tn, i); r.setEnd(tn, i + 7);
+        const s = document.getSelection(); s.removeAllRanges(); s.addRange(r); }""")
+    page.wait_for_selector(".dg-notes-tagbar:not([hidden])", timeout=5000)
+    record("notes-tags", "highlighting words shows \"Tag as\" NPC / Location / Clue / Operation under them",
+           page.locator(".dg-notes-tagbar [data-tagtype]").count() == 4, "")
+    clear_firestore_writes(page)
+    page.click(".dg-notes-tagbar [data-tagtype=npc]")
+    w = wait_for_condition(lambda: next((x for x in firestore_writes(page, "cells/cell_1/notes/blk1") if "dg-tag" in (x["data"].get("text") or "")), None), timeout_ms=20000)
+    tags = json.loads((w or {}).get("data", {}).get("tags") or "[]")
+    record("notes-tags", "the words are wrapped in a tag in the note itself, and the block's tags list carries it",
+           bool(w) and 'data-tag=\\"npc\\"' in w["data"]["text"] and {"type": "npc", "label": "Dr Hale", "inline": True} in tags, json.dumps(w)[:400] if w else "no write")
+    record("notes-tags", "the tagged words are marked on the page", page.locator("#dg-notes-editor-mount .dg-tag.dg-tag-npc").count() == 1, "")
+    wait_for_condition(lambda: "Dr Hale" in (page.text_content("#dg-notes-tags-mount") or "") or None, timeout_ms=6000)
+    record("notes-tags", "the sidebar's Tags list shows it under NPC with a count", "NPC" in (page.text_content("#dg-notes-tags-mount") or "") and "Dr Hale 1" in (page.text_content("#dg-notes-tags-mount") or ""),
+           page.text_content("#dg-notes-tags-mount") or "")
+    page.click("#dg-notes-tags-mount [data-tagfilter]")
+    hidden = page.evaluate("() => [...document.querySelectorAll('#dg-notes-editor-mount .ce-block')].map(b => b.classList.contains('dg-notes-filtered-out'))")
+    record("notes-tags", "tapping a tag shows only the notes with it (the others are hidden, not changed)", hidden == [False, True], str(hidden))
+    page.click("[data-tag-clear]")
+    record("notes-tags", "...and the filter clears", page.locator("#dg-notes-editor-mount .ce-block.dg-notes-filtered-out").count() == 0, "")
+    page.fill(".dg-notes-search", "#npc")
+    page.check(".dg-notes-search-everywhere")
+    wait_for_condition(lambda: "We met" in (page.text_content("#dg-notes-toc-mount") or "") or None, timeout_ms=6000)
+    record("notes-tags", "the search finds tags too (\"#npc\" finds the note tagged NPC)",
+           "We met" in (page.text_content("#dg-notes-toc-mount") or "") and "weather" not in (page.text_content("#dg-notes-toc-mount") or ""), page.text_content("#dg-notes-toc-mount") or "")
+    page.uncheck(".dg-notes-search-everywhere"); page.fill(".dg-notes-search", "")
+    # Quick note -> Add to page.
+    wait_for_condition(lambda: page.locator("[data-qn-add]").count() == 1 or None, timeout_ms=6000)
+    clear_firestore_writes(page)
+    page.click("[data-qn-add]")
+    w = wait_for_condition(lambda: next((x for x in firestore_writes(page, "cells/cell_1/notes/q1") if x["data"].get("quick") is False), None), timeout_ms=20000)
+    record("notes-tags", "\"Add to page\" puts the Quick note on the page (saved, no longer waiting) and out of the list",
+           bool(w) and "Hale lied about the 14th." in " ".join(blocks()) and page.locator("[data-qn-add]").count() == 0, json.dumps(blocks()))
+    # ✎ Arrange: hide Tags, move Evidence up -- remembered.
+    page.click("[data-arrange]")
+    page.uncheck(".dg-notes-arrange [data-arr-on=tags]")
+    record("notes-tags", "✎ Arrange hides a list (Tags)", page.evaluate("() => document.querySelector('.dg-notes-side[data-side=tags]').hidden"), "")
+    page.click(".dg-notes-arrange [data-arr-up='3']")
+    order = page.evaluate("() => [...document.querySelectorAll('.dg-notes-side')].map(e => e.dataset.side)")
+    saved = page.evaluate("() => JSON.parse(localStorage.getItem('dg_notes_sidebar') || '[]')")
+    record("notes-tags", "...and orders them (Evidence up one), remembered on this device",
+           order == ["index", "tags", "evidence", "quick"] and [x["id"] for x in saved] == order and not [x for x in saved if x["id"] == "tags"][0]["on"], f"{order} {saved}")
+    record("notes-tags", "no JS exceptions (tags, quick notes, arrange)", not errs, str(errs[:3]))
+    page.close()
 
 
 def test_agent_file_parts_and_looks(p):
@@ -12462,6 +12765,63 @@ def test_agent_file_storage_plates_and_refresh(p):
     record("journey", "+ Add Era offers only eras not already on file, and says so",
            "another era" in picker[0] and not any("'90s'" in o for o in picker[1]) and len(picker[1]) == 3, str(picker))
     record("journey", "no JS exceptions (agent file plates)", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
+def test_plate_save_survives_a_dropped_connection(p):
+    """A Plate generated or uploaded on a shaky connection: the photo showed
+    on screen while the save failed, and the upload button went back to
+    "Replace Face Plate", so it looked saved and wasn't (Richard Phaucet,
+    Milk). The save now retries by itself (3 tries), and if it still fails
+    says so on the photo -- "Not saved" with Save again, which keeps the
+    image -- and the button says "Not saved -- try again"."""
+    local = dict(_PROFILE_FIELDS, agent_code="MARA-0001", submitted_at="2026-09-27T19:00:00.000Z",
+                 active_eras='["90s"]', era_90s_mode0="portrait prompt", era_90s_mode1="reference prompt")
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    posts = []
+    def respond(method, q, body):
+        if method == "GET" and q.get("code"):
+            return {"status": "OK", "data": local}
+        if body and body.get("action") == "generate_plate_image":
+            return {"status": "OK", "image_base64": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="}
+        return None
+    _route_backend(page, respond, posts)
+    page.goto(f"{BASE}/agent-hub.html?code=MARA-0001", wait_until="load", timeout=15000)
+    page.wait_for_timeout(1500)
+    _open_era(page)
+    # (the brief write of the Plate's link -- _route_backend reports it as update_field)
+    saves = lambda: [b for b in posts if b.get("action") == "update_field" and b.get("field") == "era_90s_face_url" and b.get("value")]
+    # Two drops, then it goes through: saved, by itself.
+    page.evaluate("() => { window.__dgStorageFail = 2; }")
+    page.locator('button[data-era="90s"][data-mode="mode0"][onclick^="generatePlateImage"]').click()
+    _pump_until(page, lambda: len(saves()) >= 1, 15000)
+    st = page.text_content("#prompt-mode0-status-90s") or ""
+    record("plates", "a generated Face Plate is saved after two dropped uploads, with no help",
+           len(saves()) == 1 and page.locator("#plate-face-90s .af-plate-unsaved").count() == 0 and "saved" in st, st)
+    # Upload by hand on a dead connection: the photo says Not saved, the button too.
+    page.evaluate("() => { window.__dgStorageFail = 99; }")
+    import tempfile
+    tmp = tempfile.NamedTemporaryFile("wb", suffix=".png", delete=False)
+    tmp.write(bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8cfc0f01f0005000201a5c8d5d40000000049454e44ae426082")); tmp.close()
+    page.set_input_files("#upload-face-90s", tmp.name)
+    page.wait_for_selector("#plate-face-90s .af-plate-unsaved", timeout=15000)
+    lbl = page.evaluate("() => document.getElementById('upload-face-90s').previousElementSibling.textContent")
+    note = page.text_content("#plate-face-90s .af-plate-unsaved") or ""
+    record("plates", "a failed upload says Not saved on the photo, and the button says so too (not \"Replace\")",
+           "Not saved" in note and "Save again" in note and "Not saved" in lbl and len(saves()) == 1, f"{note!r} {lbl!r}")
+    # Back online: Save again stores that same photo.
+    page.evaluate("() => { window.__dgStorageFail = 0; }")
+    page.click("#plate-face-90s .af-plate-unsaved button")
+    _pump_until(page, lambda: len(saves()) >= 2, 10000)
+    record("plates", "Save again stores the same photo once the connection is back, and the note goes",
+           len(saves()) == 2 and page.locator("#plate-face-90s .af-plate-unsaved").count() == 0
+           and page.evaluate("() => document.getElementById('upload-face-90s').previousElementSibling.textContent") == "Replace Face Plate", str(len(saves())))
+    os.unlink(tmp.name)
+    errs = [e for e in errs if "Plate save:" not in e]   # the failed save logs on purpose
+    record("plates", "no JS exceptions (plate save retries)", len(errs) == 0, "; ".join(errs))
     page.close()
     return errs
 
@@ -14160,6 +14520,13 @@ def main():
         safe(test_recruit_play_test_round1, browser, area="recruit-fix")
         safe(test_agent_file_wear, browser, area="wear")
         safe(test_agent_file_disorder_stamps, browser, area="disorders")
+        safe(test_appearance_carries_over_from_sheet, browser, area="appearance")
+        safe(test_insane_struck_like_kia, browser, area="insane")
+        safe(test_plate_save_survives_a_dropped_connection, browser, area="plates")
+        safe(test_bond_at_zero_struck, browser, area="bonds")
+        safe(test_notebook_flip_agents, browser, area="flip")
+        safe(test_evidence_sort, browser, area="evidence")
+        safe(test_notes_tags_quick_and_arrange, browser, area="notes-tags")
         safe(test_agent_rules_unit, browser, area="rules")
         safe(test_evidence_attachments_open_and_zoom, browser, area="evidence")
         safe(test_motivations_and_disorders_split, browser, area="disorders")

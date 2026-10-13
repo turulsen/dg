@@ -180,11 +180,12 @@
   }
   .ah-erase-confirm:disabled{ background:#a89a78; border-color:#a89a78; cursor:not-allowed; opacity:.6; }
 
-  /* ── KIA: a live read of the Agent's saved character sheet, shown on
-     the roster tab strip and the Agent's panel -- see checkAgentKia()
-     below. .stamp is already red by default (theme-folder.css), so the
-     "KIA" stamp itself needs no extra styling; this covers the
-     struck-through name on both the tab label and the panel title. ── */
+  /* ── KIA (HP 0) and INSANE (SAN 0): a live read of the Agent's saved
+     character sheet, shown on the roster tab strip and the Agent's panel
+     -- see checkAgentFate() and setAgentFate() below. .stamp is already
+     red by default (theme-folder.css), so the KIA / INSANE stamp needs no
+     extra styling; this covers the struck-through name on both the tab
+     label and the panel title. ── */
   .kia-name{ color:var(--red); text-decoration:line-through; text-decoration-thickness:2px; text-decoration-color:var(--red); }
 
   /* ── Phone: the Agents menu. Past one Agent, the roster's tabs wrapped
@@ -263,7 +264,7 @@
      uses, just a single dropdown here rather than a full folder list
      since a player only ever sees their own, already-small slice. ── */
   .ah-handouts-filter{
-    display:flex; align-items:center; gap:8px; margin-bottom:4px;
+    display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;
     font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3);
   }
   .ah-handouts-filter select{
@@ -623,13 +624,34 @@
   // Agent back above 0 and this clears on its own next time the roster
   // renders. Best-effort, same as everything else here -- a check that
   // errors or times out just leaves the name unmarked.
-  function checkAgentKia(code) {
+  // KIA (HP 0) and INSANE (SAN 0), from the saved sheet.
+  function checkAgentFate(code) {
     return firestoreCharDoc(code).then(doc => {
-      if (!doc) return false;
+      if (!doc) return { kia: false, insane: false };
       let state;
-      try { state = JSON.parse(doc.character_json); } catch (e) { return false; }
-      const hp = state && state.derived && state.derived.hp;
-      return typeof hp === 'number' && hp <= 0;
+      try { state = JSON.parse(doc.character_json); } catch (e) { return { kia: false, insane: false }; }
+      const d = (state && state.derived) || {}, pow = +(((state && (state.csStats || state.stats)) || {}).POW) || 0;
+      return { kia: typeof d.hp === 'number' && d.hp <= 0, insane: typeof d.san === 'number' && d.san <= 0 && pow > 0 };
+    });
+  }
+  // The tab's name and the header's struck through, and a KIA / INSANE
+  // stamp in the stamp row -- set on load and again whenever the Agent
+  // File redraws (its onFate), so SAN 0 in play shows straight away.
+  function setAgentFate(code, f) {
+    const stamps = document.getElementById('ah-charstamp-' + code);
+    let moved = false;
+    if (stamps) [['kia', 'KIA'], ['insane', 'INSANE']].forEach(function (k) {
+      const had = stamps.querySelector('.stamp[data-fate="' + k[0] + '"]');
+      if (f[k[0]] && !had) { stamps.insertAdjacentHTML('afterbegin', '<div class="stamp" data-fate="' + k[0] + '">' + k[1] + '</div>'); moved = true; }
+      else if (!f[k[0]] && had) { had.remove(); moved = true; }
+    });
+    // The disorder stamps keep off this row: place them again when it changed.
+    const sheet = document.getElementById('ah-sheet-' + code);
+    if (moved && sheet && sheet._ap && sheet._ap.restamp) sheet._ap.restamp();
+    const struck = !!(f.kia || f.insane);
+    ['ah-tablabel-' + code, 'ah-title-' + code].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (el) el.classList.toggle('kia-name', struck);
     });
   }
 
@@ -930,15 +952,7 @@
         purgeIfFullyDeleted(a.code);
       });
 
-      checkAgentKia(a.code).then(kia => {
-        if (!kia) return;
-        const stamps = document.getElementById(stampId);
-        if (stamps) stamps.insertAdjacentHTML('afterbegin', '<div class="stamp">KIA</div>');
-        const tabSpan = document.getElementById(tabLabelId);
-        if (tabSpan) tabSpan.classList.add('kia-name');
-        const title = document.getElementById(titleId);
-        if (title) title.classList.add('kia-name');
-      });
+      checkAgentFate(a.code).then(f => setAgentFate(a.code, f));
     });
 
     // + New Recruit stays open through a re-render (a Cover Identity
@@ -1148,31 +1162,14 @@
       // Replaces the roster rather than merging into it -- this browser's
       // roster is scoped to whichever Cover Identity is currently entered,
       // not a running accumulation of every Agent this device has ever
-      // touched. The one exception: an Agent nobody's claimed yet (no
-      // Player Name given by the player, and none assigned by a Handler
-      // in A-Cell's Sheet tab) is kept regardless of what's searched --
-      // there's nothing yet to tell it apart from "belongs to this
-      // identity", so dropping it would be silent local data loss for a
-      // brand-new Agent that hasn't been claimed yet either way. This
-      // campaign plays roughly every 3-5 weeks, so a player rolling a new
-      // Agent and not getting around to Cover Identity right away is the
-      // normal case, not the exception -- any fixed expiry window short
-      // enough to matter would risk exactly that player coming back next
-      // session to find their own not-yet-named Agent gone. The tradeoff
-      // (a stray code picked up some other way, e.g. a bare Notes/Portal
-      // ?code= link for someone else's Agent, can stick around
-      // indefinitely until it's ever given a name) is accepted as the
-      // safer failure mode. Once it IS given a name (by either path), the
-      // next search either finds it as a match (kept) or, if the name
-      // doesn't match, drops it like any other claimed-by-someone-else
-      // Agent.
-      const prior = rosterLoad();
+      // touched. Only that name's Agents stay: an Agent with no Player
+      // Name used to be kept whatever was searched (to spare a brand-new,
+      // still-unnamed Agent), but on a home-screen app that let every
+      // Agent ever opened by a link or by looking up another player pile
+      // up (2026-10-12: the Handler's iPhone showed several players'
+      // Agents). An unnamed Agent comes back with Load by Code, or once it
+      // has a Player Name.
       const roster = {};
-      Object.keys(prior).forEach(code => {
-        if (!prior[code].player_name) {
-          roster[code] = prior[code];
-        }
-      });
       const needle = name.trim().toLowerCase();
       res.agents.forEach(a => {
         if (!a.code) return;
@@ -1229,6 +1226,24 @@
     return 'Filed ' + new Date(n).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   }
 
+  // Evidence sorted by date or title, remembered on this device (the same
+  // key the notebook's Evidence page uses).
+  const EV_SORT_KEY = 'dg_evidence_sort';
+  const EV_SORTS = [['new', 'Newest first'], ['old', 'Oldest first'], ['az', 'A → Z'], ['za', 'Z → A']];
+  function evSort() {
+    let v = ''; try { v = localStorage.getItem(EV_SORT_KEY) || ''; } catch (e) { /* private mode */ }
+    return EV_SORTS.some(o => o[0] === v) ? v : 'new';
+  }
+  function evSortSelectHtml() {
+    return `<span>Sort:</span><select data-ev-sort>${EV_SORTS.map(o => `<option value="${o[0]}"${evSort() === o[0] ? ' selected' : ''}>${o[1]}</option>`).join('')}</select>`;
+  }
+  function sortEvidence(list, how) {
+    const t = h => String(h.title || '').toLowerCase(), d = h => Number(h.created_at || 0);
+    return list.slice().sort((x, y) => how === 'old' ? d(x) - d(y)
+      : how === 'az' ? (t(x).localeCompare(t(y)) || d(y) - d(x))
+      : how === 'za' ? (t(y).localeCompare(t(x)) || d(y) - d(x))
+      : d(y) - d(x));
+  }
   function renderHandoutsFor(code, handouts, cellsById, notesByHandoutId) {
     const el = document.getElementById('ah-handouts-' + code);
     const filterWrapEl = document.getElementById('ah-handouts-filter-' + code);
@@ -1255,21 +1270,26 @@
         let optsHtml = '<option value="">All Operations</option>';
         if (hasUnfiled) optsHtml += `<option value="UNFILED"${selected === 'UNFILED' ? ' selected' : ''}>Unfiled</option>`;
         opOptions.forEach(o => { optsHtml += `<option value="${escapeHtml(o.id)}"${selected === o.id ? ' selected' : ''}>${escapeHtml(o.label)}</option>`; });
-        filterWrapEl.innerHTML = `<div class="ah-handouts-filter"><span>Operation:</span><select data-op-filter-code="${escapeHtml(code)}">${optsHtml}</select></div>`;
-        const sel = filterWrapEl.querySelector('select');
+        filterWrapEl.innerHTML = `<div class="ah-handouts-filter"><span>Operation:</span><select data-op-filter-code="${escapeHtml(code)}">${optsHtml}</select>${evSortSelectHtml()}</div>`;
+        const sel = filterWrapEl.querySelector('select[data-op-filter-code]');
         sel.addEventListener('change', () => {
           opFilterByCode[code] = sel.value;
           renderHandoutsFor(code, lastEvidenceByCode[code] || handouts, cellsById, notesByHandoutIdByCode[code]);
         });
       } else {
-        filterWrapEl.innerHTML = '';
+        filterWrapEl.innerHTML = `<div class="ah-handouts-filter">${evSortSelectHtml()}</div>`;
       }
+      const sortSel = filterWrapEl.querySelector('select[data-ev-sort]');
+      if (sortSel) sortSel.addEventListener('change', () => {
+        try { localStorage.setItem(EV_SORT_KEY, sortSel.value); } catch (e) { /* private mode */ }
+        renderHandoutsFor(code, lastEvidenceByCode[code] || handouts, cellsById, notesByHandoutIdByCode[code]);
+      });
     }
 
     const activeFilter = opFilterByCode[code] || '';
-    const shown = activeFilter
+    const shown = sortEvidence((activeFilter
       ? handouts.filter(h => activeFilter === 'UNFILED' ? !h.operation_id : h.operation_id === activeFilter)
-      : handouts;
+      : handouts), evSort());
     if (!shown.length) {
       el.innerHTML = '<div class="ah-handouts-empty">Nothing filed under this Operation.</div>';
       return;
@@ -1683,6 +1703,7 @@
             appearanceOutside: true,
             // The INSANE stamp (low SAN) goes on the name in the header above.
             stampHost: () => document.getElementById('ah-title-' + a.code),
+            onFate: (f) => setAgentFate(a.code, f),
             // The disorder stamps scatter over that header too, and the gap below its rule.
             disorderArea: () => {
               const t = document.getElementById('ah-title-' + a.code), h = t && t.closest('.paper-header');

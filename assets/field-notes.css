@@ -432,7 +432,7 @@ html.dg-fn-host #split-view-btn{ display:none !important; }
 .fn-ev-pdf{ display:inline-block; margin:8px 0; text-decoration:none; }
 .fn-remark{ margin-top:9px; padding-top:9px; border-top:1px dashed rgba(160,130,70,.55); }
 .fn-remark-status{ font-size:10px; color:var(--fn-ink-3); margin-top:3px; min-height:1em; }
-.fn-filter{ display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+.fn-filter{ display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
 .fn-filter label{ font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:var(--fn-ink-3); }
 /* quick notes (kept class names) */
 #fn-root .fn-chipbtn{
@@ -589,3 +589,22 @@ html.dg-fn-host #split-view-btn{ display:none !important; }
   box-shadow:1px 3px 8px rgba(0,0,0,.35); transform:rotate(-1deg); animation:fn-snap .3s ease both;
 }
 @media (max-width:759px){ .fn-nudge{ right:12px; bottom:calc(env(safe-area-inset-bottom,0px) + 72px); } }
+/* Flip through this player's Agents (field-notes.js flipAgent): ‹ 1 of 3 ›
+   on the Agent File pocket's lip, a second card peeking behind, and the
+   same arrows in the phone's header. */
+.fn-card.fn-card-behind{ transform:rotate(1.6deg) translate(6px,-4px); opacity:.85; box-shadow:0 2px 5px rgba(0,0,0,.35); }
+#fn-root .fn-slot:hover .fn-card.fn-card-behind, #fn-root .fn-slot.fn-active .fn-card.fn-card-behind{ transform:rotate(1.6deg) translate(6px,-8px); box-shadow:0 2px 5px rgba(0,0,0,.35); }
+.fn-flip{ position:absolute; left:0; right:0; bottom:3px; height:30px; z-index:2; display:flex; align-items:center; justify-content:center; gap:10px;
+  font-family:var(--fn-type); font-size:11px; letter-spacing:.1em; color:#f0dcb4; text-transform:uppercase; pointer-events:none; }
+.fn-flip button, .fn-phone-flip button{ pointer-events:auto; background:none; border:0; color:#f0dcb4; font-size:22px; line-height:1; padding:0 8px; cursor:pointer; }
+.fn-flip button:hover, .fn-phone-flip button:hover{ color:#fff; }
+.fn-phone-flip{ margin-left:8px; font-size:10px; letter-spacing:.08em; white-space:nowrap; }
+.fn-phone-flip button{ font-size:18px; padding:0 6px; vertical-align:-2px; }
+@keyframes fn-flip-r{ from{ transform:translateX(38%) rotate(3deg); opacity:0; } to{ transform:none; opacity:1; } }
+@keyframes fn-flip-l{ from{ transform:translateX(-38%) rotate(-3deg); opacity:0; } to{ transform:none; opacity:1; } }
+.fn-card.fn-flip-in-r{ animation:fn-flip-r .32s ease-out; }
+.fn-card.fn-flip-in-l{ animation:fn-flip-l .32s ease-out; }
+/* The phone header's ‹ › are small text arrows, not the header's icon buttons. */
+#fn-root .fn-phone-head .fn-phone-flip button{ width:auto; height:auto; min-width:0; background:none; border:0; box-shadow:none; padding:0 6px; color:#f0dcb4; font-size:18px; line-height:1; }
+#fn-root .fn-phone-head .fn-phone-flip{ display:inline-flex; align-items:center; gap:2px; }
+#fn-root .fn-phone-head .fn-phone-flip[hidden]{ display:none; }
