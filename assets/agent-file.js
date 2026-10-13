@@ -389,13 +389,11 @@ function persistAgent(code, data) {
 }
 
 
-// "Filled out totally and submitted", not just "a Delta Green Briefs
-// row exists" -- stats/'s "Open Agent File" button (goToAgentFile() in
-// agent-portal-export.js) auto-exports a real row with only name / age
-// range / sex / nationality / profession / build / outfit set, POSTed
-// directly rather than through this form's own required-field
-// validation, so a freshly-auto-exported Agent can have a row on the
-// backend while still being nowhere near a finished Profiling brief.
+// "Filled out totally and submitted", not just "a brief exists" -- a
+// brief can be auto-created from the character sheet (see
+// autoCreateBriefFromCharacterThenRetry_ and afCarryFromCharacter_) with
+// only name / sex / nationality / profession set, so an Agent can have
+// a brief while still being nowhere near a finished Profiling brief.
 // Reads #dg-form's own [required] fields rather than a hardcoded list,
 // so this stays correct if the form's required fields ever change.
 function isProfilingComplete(data) {
@@ -569,8 +567,7 @@ function extensionForFile_(file) {
   return m ? m[0] : '';
 }
 
-/* ── CODE GENERATION -- shared with stats/cloud-sync.js and
-   stats/agent-portal-export.js via assets/agent-code.js ── */
+/* ── CODE GENERATION -- shared with New Recruit via assets/agent-code.js ── */
 function genCode(name) {
   return window.dgAgentCode.gen(name);
 }
@@ -695,9 +692,8 @@ function populateCoverForm(data){
     el.value = val;
     // Locks this field against the Random Agent Generator (see
     // fillFormFromAgent()) -- a field with real, already-known Agent
-    // data (a prior submission, a restore, or -- via stats/'s
-    // "Open Agent File" auto-export -- the linked character sheet's own
-    // name/sex/profession/build) shouldn't get silently rerolled into
+    // data (a prior submission, a restore, or the carry-over from the
+    // Agent's character sheet) shouldn't get silently rerolled into
     // something else just because the player clicked Random Generate to
     // fill in the rest. An empty value un-locks the field, so clearing
     // it by hand still leaves it randomizable.
@@ -710,24 +706,16 @@ function populateCoverForm(data){
 }
 
 /* ── AUTO-CREATE A MISSING BRIEF FROM THE CHARACTER SHEET ──
-   A real report (Eli Filagree): a Kappa Black import synced fine to
-   the Characters sheet, but nobody had ever clicked stats/'s "Open
-   Agent File" button for this Agent -- so no Delta Green Briefs row
-   existed at all, and EVERY way of reaching the Agent File (the Hub's
-   own "Agent File" link, the Cover tab's "RETURNING AGENT" code box)
-   returned a correct but unhelpful NOT_FOUND forever, with no
-   indication that the character sheet itself was actually fine.
-   stats/agent-portal-export.js already solves this exact gap, but only
-   for the ONE entry point a player happens to click that specific
-   button from -- this is the same auto-export, triggered instead the
-   moment ANY entry point discovers a missing Brief for an Agent who
-   does have a saved character, so the gap self-heals regardless of
-   which door the player came in through. Deliberately minimal (name/
-   profession/nationality/sex only, no outfit/build derivation --
-   Agent Hub doesn't have stats/'s professions.js/bio.js
-   loaded to do that part the same way) -- isProfilingComplete()'s
-   existing incomplete-Profiling banner already prompts the player to
-   fill in the rest, same as any other partial brief. */
+   A real report (Eli Filagree): an Agent with a saved character sheet
+   but no brief at all got a correct but unhelpful NOT_FOUND from every
+   way of reaching the Agent File, with no indication that the character
+   sheet itself was fine. The moment ANY entry point finds a missing
+   brief for an Agent who does have a saved character, one is created
+   from it, so the gap self-heals whichever door the player came in
+   through. Deliberately minimal (name/profession/nationality/sex);
+   afCarryFromCharacter_ fills in the rest of the Appearance once the
+   brief exists, and isProfilingComplete()'s incomplete-Profiling banner
+   prompts the player for the remainder. */
 function autoCreateBriefFromCharacterThenRetry_(code, onCreated, onGiveUp) {
   window._acbCallback = function (json) {
     delete window._acbCallback;
@@ -740,9 +728,9 @@ function autoCreateBriefFromCharacterThenRetry_(code, onCreated, onGiveUp) {
     if (!bio || !name || name === 'Agent') { onGiveUp(); return; }
     const sexRaw = (bio.sex || '').trim().toLowerCase();
     const sex = sexRaw === 'male' || sexRaw === 'm' ? 'Male' : sexRaw === 'female' || sexRaw === 'f' ? 'Female' : sexRaw ? 'Other' : '';
-    // bio.profession is stats/'s internal key ("federal_agent"), not the
+    // bio.profession is the internal key ("federal_agent"), not the
     // title -- the dossier used to print it raw. Same titles as
-    // stats/professions.js (not loaded on this page).
+    // assets/data/professions.js (not loaded on this page).
     const PROF_TITLES = {
       anthropologist: 'Anthropologist or Historian', federal_agent: 'Federal Agent', physician: 'Physician',
       computer_scientist: 'Computer Scientist or Engineer', scientist: 'Scientist', special_operator: 'Special Operator',
@@ -796,8 +784,7 @@ function driveDirectUrl(url) {
 }
 // Plates uploaded since the Firebase Storage move (Phase 4) are plain,
 // publicly readable https:// download URLs -- an <img> can load those
-// directly, same as agent-hub.html's loadFacePlate() and
-// lp-tracker-photo.js already do. Everything below used to assume a
+// directly, same as agent-hub.html's loadFacePlate() does. Everything below used to assume a
 // gdrive:FILE_ID, so a Storage-hosted Face/Outfit Plate rendered as an
 // empty box on every return to the Agent File (and never reached the
 // Field ID card or the roster drawer).
@@ -928,8 +915,7 @@ function afEscapeHtml(str) {
 }
 
 /* ── KIA stamp + Vitals/Bonds: a live read of this Agent's saved
-   character sheet (the Cloud Save record stats/ writes to, not this
-   file's own Briefs data), so it reflects whatever was last synced --
+   character sheet (characters/{code}, not this file's own brief), so it reflects whatever was last synced --
    heal the Agent back above 0 and the KIA stamp clears on its own next
    time this loads, same as it appeared. The HP/WP/SAN/BP scores and
    Bond list mirror what A-Cell's Handler-only Play view already shows
@@ -1215,7 +1201,7 @@ function renderEraStack(eras, data) {
 }
 
 // face_plate_url is the Agent's main photo everywhere else (Hub card,
-// Live Play tracker, A-Cell, Field ID, Field Notes) and is meant to be a
+// A-Cell, Field ID, Field Notes) and is meant to be a
 // copy of the Active Era's Face Plate -- but it was only ever set in a
 // few narrow cases (a Plate made while its era was already active, or
 // "Make Active Era" pressed after the Plate existed), and older versions
@@ -1403,7 +1389,7 @@ function savePlateOnce_(dataUrl, era, type, imageName, fieldKey, charName, mime,
     // a re-render of this era stack) sees the Plate that now exists.
     if (afData) afData[fieldKey] = storageUrl;
     // The Agent's main photo (face_plate_url -- Agent Hub's roster card,
-    // Live Play's tracker photo, A-Cell) was only ever set by "Make
+    // A-Cell) was only ever set by "Make
     // Active Era". A new player's first era is already shown as the
     // Active Era, so they never press it -- and generating or uploading
     // its Face Plate left the Hub saying "Take Photo" for good. A Face

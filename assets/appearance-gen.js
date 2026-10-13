@@ -1,8 +1,8 @@
 /* ══════════════════════════════════════════════
    APPEARANCE GENERATOR -- the Random Agent Generator's tables and
    generateAgent(), shared by the Agent File's Appearance brief
-   (assets/agent-file.js) and the character sheet's Appearance section
-   and wizard step (stats/appearance-sheet.js). Classic script on
+   (assets/agent-file.js) and New Recruit's Profiling step
+   (assets/recruit-wizard.js). Classic script on
    purpose: agent-file.js uses ARCHETYPES / generateAgent() as globals,
    as the Agent Portal did.
 

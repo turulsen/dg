@@ -43,7 +43,6 @@
 
   var ROSTER_KEY = 'dg_agent_roster';
   var CLOUD_CODE_KEY = 'dg_stats_cloud_code';
-  var ORDERS_PENDING_KEY = 'dg_fn_orders_pending';
   var ORDERS_ACK_KEY = 'dg_fn_orders_ack';
   var ONBOARD_KEY = 'dg_fn_onboard';
   var VIEW_KEY = 'dg_fn_view';
@@ -61,53 +60,49 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
-  function onStatsPage(win) {
-    try { return (win || window).location.pathname.indexOf('/stats/') !== -1; } catch (e) { return false; }
+  /* ── An in-page yes/no (window.dgConfirm) ──
+     confirm() shows nothing in an iOS home-screen app and just returns
+     false, so a question that must work there asks in the page instead.
+     dgConfirm(message, { ok, cancel }) -> Promise<boolean>. */
+  function dgConfirm(message, opts) {
+    opts = opts || {};
+    return new Promise(function (resolve) {
+      if (!document.getElementById('fn-confirm-style')) {
+        var css = document.createElement('style');
+        css.id = 'fn-confirm-style';
+        css.textContent = '#fn-confirm{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(10,8,4,.55)}' +
+          '#fn-confirm .fn-cf-box{max-width:360px;width:100%;background:#f6e27a;color:#2a2212;padding:16px 16px 12px;box-shadow:0 8px 24px rgba(0,0,0,.45);font:14px/1.45 "Courier Prime",monospace;transform:rotate(-.6deg)}' +
+          '#fn-confirm .fn-cf-act{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}' +
+          '#fn-confirm button{font:11px "Special Elite",monospace;letter-spacing:.1em;text-transform:uppercase;padding:9px 14px;border:1.5px solid #1c1608;background:transparent;color:#1c1608;cursor:pointer}' +
+          '#fn-confirm button[data-cf=ok]{background:#8b1a1a;border-color:#8b1a1a;color:#f4eed8}';
+        document.head.appendChild(css);
+      }
+      var old = document.getElementById('fn-confirm');
+      if (old) old.remove();
+      var ov = document.createElement('div');
+      ov.id = 'fn-confirm';
+      ov.setAttribute('role', 'alertdialog');
+      ov.innerHTML = '<div class="fn-cf-box"><div class="fn-cf-msg"></div><div class="fn-cf-act">' +
+        '<button type="button" data-cf="cancel"></button><button type="button" data-cf="ok"></button></div></div>';
+      ov.querySelector('.fn-cf-msg').textContent = String(message || '');
+      ov.querySelector('[data-cf=cancel]').textContent = opts.cancel || 'Cancel';
+      ov.querySelector('[data-cf=ok]').textContent = opts.ok || 'Continue';
+      function done(v) { document.removeEventListener('keydown', onKey, true); ov.remove(); resolve(v); }
+      function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); done(false); } }
+      ov.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-cf]');
+        if (b) done(b.getAttribute('data-cf') === 'ok');
+        else if (e.target === ov) done(false);
+      });
+      document.addEventListener('keydown', onKey, true);
+      document.body.appendChild(ov);
+      ov.querySelector('[data-cf=ok]').focus();
+    });
   }
+  if (!window.dgConfirm) window.dgConfirm = dgConfirm;
 
-  /* ── Standing Orders: arming (runs on the character sheet, host or guest) ── */
-  // Armed when the wizard finishes or an Agent is imported onto the sheet;
-  // shown the next time the player lands on any page that isn't the sheet.
+  /* ── Standing Orders: which Agents have signed ── */
   function ordersAck() { return lsJson(ORDERS_ACK_KEY, {}); }
-  function armOrders(code, name) {
-    code = String(code || '').trim().toUpperCase();
-    if (!code || ordersAck()[code]) return;
-    // On the sheet, the Incursion just written rides along, so the briefing
-    // can open with the Agent's own incident.
-    var inc = '';
-    try { if (window.dgIncursionSheet && window.dgIncursion) inc = window.dgIncursion.textOf(window.dgIncursionSheet.get()); } catch (e) { /* not on the sheet */ }
-    lsSet(ORDERS_PENDING_KEY, JSON.stringify({ code: code, name: name || '', incursion: inc, at: Date.now() }));
-  }
-  function sheetName() {
-    var el = document.getElementById('cs-name');
-    return el ? String(el.value || '').trim() : '';
-  }
-  function wireSheetArming() {
-    if (!onStatsPage()) return;
-    window.addEventListener('dg-wizard-finished', function () {
-      armOrders(lsGet(CLOUD_CODE_KEY), sheetName());
-    });
-    // Imports: the drop zone and the paste box both funnel through these
-    // two globals (stats/scripts.js). Wrapped, not edited, so every
-    // format's own importer stays untouched; armed once the imported
-    // Agent's name actually lands on the sheet.
-    function watchImport() {
-      var before = sheetName();
-      var started = Date.now();
-      var iv = setInterval(function () {
-        var now = sheetName();
-        if (now && now !== before) { clearInterval(iv); armOrders(lsGet(CLOUD_CODE_KEY), now); }
-        else if (Date.now() - started > 15000) clearInterval(iv);
-      }, 400);
-    }
-    ['importAgentAuto', 'importAgentText'].forEach(function (fn) {
-      var orig = window[fn];
-      if (typeof orig !== 'function' || orig._fnWrapped) return;
-      var wrapped = function () { watchImport(); return orig.apply(this, arguments); };
-      wrapped._fnWrapped = true;
-      window[fn] = wrapped;
-    });
-  }
 
   /* ── Guest mode: a page inside the shell or inside the notebook ── */
   function hostApi() {
@@ -119,7 +114,6 @@
   }
   if (GUEST) {
     var guestStyle = document.createElement('style');
-    guestStyle.textContent = 'html.dg-fn-host #settings-cog-btn,html.dg-fn-host #notes-widget-btn,html.dg-fn-host #split-view-toggle-btn,html.dg-fn-host #split-view-btn{display:none!important}';
     document.head.appendChild(guestStyle);
     if (hostApi()) document.documentElement.classList.add('dg-fn-host');
     // Phone: leave room under the page for the closed notebook's buttons
@@ -132,7 +126,6 @@
       isHost: false,
       open: function (view) { var h = hostApi(); if (h) h.open(view); },
       close: function () { var h = hostApi(); if (h) h.close(); },
-      armOrders: armOrders,
       refresh: function () { var h = hostApi(); if (h) h.refresh(); },
       go: function (path) { var h = hostApi(); if (h && h.go) h.go(path); else location.href = url(path); },
       oath: function (o) { var h = hostApi(); return h && h.oath ? h.oath(o) : Promise.resolve(window.confirm('Save these edits?')); },
@@ -154,8 +147,6 @@
       var h = hostApi();
       if (h && h.pagePointer) h.pagePointer();
     }, true);
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wireSheetArming);
-    else wireSheetArming();
     return;
   }
 
@@ -563,7 +554,6 @@
     } else {
       afterPageArrival();
     }
-    wireSheetArming();
   }
 
   function onClick(e) {
@@ -1653,40 +1643,14 @@
   }
 
   /* ── Settings ── */
-  // The character sheet's own cog (stats/index.html #settings-panel) is
-  // the source of truth for its settings: these buttons press the sheet's
-  // real controls, so every confirm/prompt and edge case stays theirs.
-  var EXPORTS = [
-    { id: 'export-printable', label: 'Printable sheet' },
-    { id: 'export-pdf', label: 'PDF (DD Form 315)' },
-    { id: 'export-sheets', label: 'Google Sheet (.xlsx)' },
-    { id: 'export-agent-file-btn', label: 'To the Agent File' }
-  ];
-  var SHEET_ACTIONS = [
-    { id: 'download-sheet-btn', label: 'Download Sheet' },
-    { id: 'upload-sheet-btn', label: 'Upload Sheet' },
-    { id: 'copy-link-btn', label: 'Copy Share Link' }
-  ];
-  function sheetWin() {
-    var w = contentWin();
-    return w && onStatsPage(w) && w.document.getElementById('settings-panel') ? w : null;
-  }
   // Kept in step with dgAgentPaper.LOOKS, which may not be loaded yet.
   var PAPER_LOOKS = [['form', 'Typed form'], ['folder', 'Folder tabs'], ['stamp', 'Rubber stamps']];
   function pageSettings(body) {
     renderHead('settings', '');
     var a = currentAgent();
-    var sw = sheetWin();
     var ci = lsGet('dg_cover_identity') || '';
     var bootOff = lsGet(BOOT_OFF_KEY) === '1';
     var html = '';
-    if (sw) {
-      var themeSel = sw.document.getElementById('cs-theme-select');
-      html += '<div class="fn-set-row"><div><div class="fn-set-t">Theme</div><div class="fn-set-s">How the character sheet looks on this device.</div></div>' +
-        '<select class="fn-select" data-s="theme">' + (themeSel ? Array.prototype.map.call(themeSel.options, function (o) {
-          return '<option value="' + esc(o.value) + '"' + (o.value === themeSel.value ? ' selected' : '') + '>' + esc(o.textContent) + '</option>';
-        }).join('') : '') + '</select></div>';
-    }
     html += '<div class="fn-set-row fn-set-col"><div class="fn-set-t">Cover Identity</div>' +
         '<div class="fn-set-s">Your real name — how this device finds your Agents.</div>' +
         '<div class="fn-row" style="margin-top:6px"><input class="fn-input" style="flex:1;min-width:0" data-s="ci" value="' + esc(ci) + '" placeholder="e.g. Gergo">' +
@@ -1698,31 +1662,11 @@
       '<select class="fn-select" data-s="paper-look">' + PAPER_LOOKS.map(function (l) {
         return '<option value="' + l[0] + '"' + (l[0] === curLook ? ' selected' : '') + '>' + esc(l[1]) + '</option>';
       }).join('') + '</select></div>';
-    if (sw) {
-      var has = function (id) { return !!sw.document.getElementById(id); };
-      html += (has('creation-tools-unlocked-btn') ? '<div class="fn-set-row"><div><div class="fn-set-t">Fix a Creation Mistake</div><div class="fn-set-s">Brings back the Bonus Points panel and Bond generator until your next visit.</div></div>' +
-          '<button type="button" class="fn-btn fn-ink" data-s-btn="creation-tools-unlocked-btn">Fix</button></div>' : '') +
-        '<div class="fn-set-row"><div><div class="fn-set-t">Export</div><div class="fn-set-s">A copy of this character, in the format you pick.</div></div>' +
-          '<div class="fn-menu"><button type="button" class="fn-btn fn-red" data-s="export">Export ▾</button>' +
-          '<div class="fn-menu-list" data-s="export-list" hidden>' + EXPORTS.filter(function (x) { return has(x.id); }).map(function (x) {
-            return '<button type="button" data-s-btn="' + x.id + '">' + esc(x.label) + '</button>';
-          }).join('') + '</div></div></div>' +
-        '<div class="fn-set-row fn-set-col"><div class="fn-set-t">Backup</div>' +
-          '<div class="fn-set-grid">' + SHEET_ACTIONS.filter(function (x) { return has(x.id); }).map(function (x, i) {
-            return '<button type="button" class="fn-btn ' + (i % 2 ? 'fn-ink' : 'fn-red') + '" data-s-btn="' + x.id + '">' + esc(x.label) + '</button>';
-          }).join('') + '</div></div>' +
-        '<div class="fn-set-row fn-set-col"><div class="fn-set-t">Load by Agent Code</div>' +
-          '<div class="fn-row" style="margin-top:6px"><input class="fn-input" style="flex:1;min-width:0;text-transform:uppercase" data-s="code" placeholder="AGENT CODE">' +
-          '<button type="button" class="fn-btn fn-ink" data-s="load">Load</button></div></div>' +
-        '<div class="fn-actions" style="margin:10px 0 4px"><button type="button" class="fn-btn" data-s="more">Import &amp; more sheet settings…</button></div>';
-    } else if (a && !a.friendly) {
-      // The Agent File is the sheet: its export is built from the saved
-      // character. The old sheet stays reachable from here only.
+    if (a && !a.friendly) {
+      // The Agent File is the sheet: its export is built from the saved character.
       html += '<div class="fn-set-row"><div><div class="fn-set-t">Export</div><div class="fn-set-s">A copy of ' + esc(agentName(a)) + ' to keep or print.</div></div>' +
         '<button type="button" class="fn-btn fn-red" data-s="pdf">PDF (DD Form 315)</button></div>' +
-        '<div class="fn-set-status" data-s="pdf-status"></div>' +
-        '<div class="fn-set-row"><div><div class="fn-set-t">Old character sheet</div><div class="fn-set-s">The previous sheet, for anything the Agent File can\'t do yet.</div></div>' +
-        '<button type="button" class="fn-btn fn-ink" data-s="gosheet">Open ↗</button></div>';
+        '<div class="fn-set-status" data-s="pdf-status"></div>';
     }
     var wearOff = lsGet('dg_paper_wear') === 'off';
     html += '<div class="fn-set-row"><div><div class="fn-set-t">Paper wears as SAN falls</div><div class="fn-set-s">Below SAN 50 the Agent File ages, stains and tears; INSANE is stamped near 0. Off keeps it clean, on this device.</div></div>' +
@@ -1731,16 +1675,10 @@
         '<button type="button" class="fn-toggle' + (bootOff ? '' : ' fn-on') + '" data-s="boot">' + (bootOff ? 'OFF' : 'ON') + '</button></div>';
     body.innerHTML = html;
     body.onclick = function (e) { // one handler, as in quick notes
-      var b = e.target.closest('[data-s],[data-s-btn]');
+      var b = e.target.closest('[data-s]');
       if (!b) return;
-      var id = b.getAttribute('data-s-btn');
-      if (id && sw) { var el = sw.document.getElementById(id); if (el) { close(); el.click(); } return; }
       var k = b.getAttribute('data-s');
-      if (k === 'export') { var m = body.querySelector('[data-s="export-list"]'); m.hidden = !m.hidden; }
-      else if (k === 'load' && sw && sw.dgCloudSave) { var v = body.querySelector('[data-s="code"]').value; close(); sw.dgCloudSave.loadFromCloud(v); }
-      else if (k === 'more' && sw && sw.dgSettingsPanel) { close(); sw.dgSettingsPanel.open(); }
-      else if (k === 'gosheet' && a) { try { sessionStorage.setItem(OPEN_ON_ARRIVAL_KEY, 'settings'); } catch (err) { /* private mode */ } navigate(url('stats/index.html?load=' + encodeURIComponent(a.code))); }
-      else if (k === 'pdf' && a) exportPdf(a, body.querySelector('[data-s="pdf-status"]'));
+      if (k === 'pdf' && a) exportPdf(a, body.querySelector('[data-s="pdf-status"]'));
       else if (k === 'wear') {
         var on = lsGet('dg_paper_wear') === 'off';
         lsSet('dg_paper_wear', on ? 'on' : 'off'); b.classList.toggle('fn-on', on); b.textContent = on ? 'ON' : 'OFF';
@@ -1755,14 +1693,8 @@
       lsSet('dg_paper_look', lookSel.value);
       if (window.dgAgentPaper && window.dgAgentPaper.setLook) window.dgAgentPaper.setLook(lookSel.value);
     });
-    var sel = body.querySelector('[data-s="theme"]');
-    if (sel && sw) sel.addEventListener('change', function () {
-      var t = sw.document.getElementById('cs-theme-select');
-      if (t) { t.value = sel.value; t.dispatchEvent(new Event('change', { bubbles: true })); }
-    });
   }
-  // DD Form 315 from the saved character (stats/pdf-export.js fills the
-  // form; here its "current sheet" is this Agent's saved state).
+  // DD Form 315 from the saved character (assets/sheet-io/pdf-export.js).
   function exportPdf(a, st) {
     if (st) st.textContent = 'Building the PDF…';
     ensureStore().then(function (S) { return S.getCharacter(a.code); }).then(function (doc) {
@@ -1772,14 +1704,8 @@
       state.bio = state.bio || {};
       var label = professionLabel(state.bio.profession);
       if (label) state.bio.profession = state.bio.professionTitle || (state.bio.posting ? state.bio.posting + ' (' + label + ')' : label);
-      return loadScriptOnce(url('stats/pdf-export.js'), function () { return typeof window.exportToPDF === 'function'; }).then(function () {
-        var prev = window.dgSaveLoad, prevToast = window.showToast, last = '';
-        window.dgSaveLoad = { collectState: function () { return state; } };
-        window.showToast = function (m) { last = String(m || ''); };
-        return Promise.resolve(window.exportToPDF()).then(function () {
-          window.dgSaveLoad = prev; window.showToast = prevToast;
-          if (/failed/i.test(last)) throw new Error(last);
-        });
+      return loadScriptOnce(url('assets/sheet-io/pdf-export.js'), function () { return !!window.dgSheetPdf; }).then(function () {
+        return window.dgSheetPdf.download(state);
       });
     }).then(function () { if (st) st.textContent = 'Downloaded.'; }, function (err) {
       if (st) st.textContent = 'Could not make the PDF: ' + String((err && err.message) || err).slice(0, 140);
@@ -1835,8 +1761,6 @@
   function afterPageArrival() {
     if (state.suspended) return;
     var w = contentWin();
-    var onSheet = onStatsPage(w);
-    if (!onSheet) maybeShowOrders();
     onboardingNudge();
     // ?fn=VIEW on the page (or the shell) opens the notebook there --
     // how requisition.html visited directly forwards into it.
@@ -1850,7 +1774,7 @@
   /* ── Public API ── */
   window.dgFieldNotes = {
     isHost: true,
-    open: open, close: close, refresh: refresh, armOrders: armOrders, oath: oath,
+    open: open, close: close, refresh: refresh, oath: oath,
     contract: function (o) { return oath(Object.assign({}, o, { contract: true })); },
     // Split mode (desktop): the Agent File beside one of the brown tabs.
     split: function (view) {
@@ -1899,13 +1823,6 @@
   // taller than the screen).
   function showPrompt(ov, prompt) {
     try { if (ov.scrollHeight > ov.clientHeight) prompt.scrollIntoView({ block: 'end', behavior: 'smooth' }); } catch (e) { /* old engine */ }
-  }
-  function maybeShowOrders() {
-    if (document.getElementById('fn-orders')) return;
-    var p = lsJson(ORDERS_PENDING_KEY, null);
-    if (!p || !p.code) return;
-    if (ordersAck()[p.code]) { lsDel(ORDERS_PENDING_KEY); return; }
-    showOrders(p);
   }
   // The Oath on saving an edit to the Agent File: a short terminal, the
   // changes listed, the five lines, then CAN WE CALL ON YOU? [Y/N].
@@ -1977,8 +1894,6 @@
           // shown again on the next page), and the photo / Field ID nudges follow.
           var ack = ordersAck(); ack[o.code] = Date.now();
           lsSet(ORDERS_ACK_KEY, JSON.stringify(ack));
-          var pend = lsJson(ORDERS_PENDING_KEY, null);
-          if (pend && pend.code === o.code) lsDel(ORDERS_PENDING_KEY);
           lsSet(ONBOARD_KEY, JSON.stringify({ code: o.code, step: 'photo', at: Date.now() }));
         }
         if (yes) {
@@ -2006,115 +1921,6 @@
       });
     });
   }
-  function showOrders(p) {
-    close();
-    var who = p.name ? p.name + ' (' + p.code + ')' : p.code;
-    var lines = [['fn-o-dim', '>clearance_agreement: signed'], ['fn-o-dim', '>briefing_codename: ' + briefingCodename()],
-      ['fn-o-dim', '>recruit: ' + who]];
-    // The incident that brought this recruit in, when there is one on file.
-    var inc = p.incursion || '';
-    if (!inc && data.code === p.code) {
-      var v = (data.char && data.char.incursion) || (data.state && data.state.bio && data.state.bio.incursion) || null;
-      if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = { text: v }; } }
-      inc = String((v && v.text) || '').trim();
-    }
-    if (inc) lines.push(['fn-o-dim', '>incident_on_file:'], ['fn-o-inc', inc]);
-    lines = lines.concat([['', '']], ORDERS_TEXT);
-    var ov = document.createElement('div');
-    ov.id = 'fn-orders';
-    ov.setAttribute('role', 'dialog');
-    ov.setAttribute('aria-label', 'Clearance briefing');
-    // Out of character, so the player knows why this came up: it
-    // isn't an error or a lost page, the Agent is saved, and it's once.
-    ov.innerHTML = '<div class="fn-orders-term"><div class="fn-orders-why">' +
-      esc((p.name || 'Your new Agent') + ' is saved. Before their first assignment, the clearance briefing every new Agent gets, once.') +
-      '</div><div data-o="log"></div><div data-o="prompt" hidden>' +
-      // Just the terminal's own [Y/N]: type it, or tap the letter.
-      '<div>CAN WE CALL ON YOU? [<button type="button" class="fn-orders-key" data-o="y" aria-label="Y: you can call on me">Y</button>/' +
-      '<button type="button" class="fn-orders-key" data-o="n" aria-label="N: not now">N</button>]<span class="fn-cursor"></span></div>' +
-      '<div class="fn-orders-tap"><button type="button" data-o="y">Y — you can</button><button type="button" data-o="n">N — not now</button></div></div></div>';
-    root.appendChild(ov);
-    ov.tabIndex = -1;
-    try { ov.focus(); } catch (e) { /* best effort */ }
-    var log = ov.querySelector('[data-o="log"]');
-    var prompt = ov.querySelector('[data-o="prompt"]');
-    var li = 0, ci = 0, cur = null, timer = null, done = false, answered = false;
-    function finishTyping() {
-      if (done) return;
-      done = true;
-      clearInterval(timer);
-      log.innerHTML = lines.map(function (l) { return '<div class="' + l[0] + '">' + esc(l[1]) + '&nbsp;</div>'; }).join('');
-      prompt.hidden = false;
-      showPrompt(ov, prompt);
-    }
-    timer = setInterval(function () {
-      if (li >= lines.length) { finishTyping(); return; }
-      if (!cur) { cur = document.createElement('div'); cur.className = lines[li][0]; log.appendChild(cur); }
-      var text = lines[li][1];
-      ci = Math.min(text.length, ci + 3);
-      cur.innerHTML = esc(text.slice(0, ci)) + '&nbsp;';
-      if (ci >= text.length) { li++; ci = 0; cur = null; }
-    }, 16);
-    function say(t) { var d = document.createElement('div'); d.className = 'fn-o-dim'; d.textContent = t; log.appendChild(d); }
-    function decline() {
-      if (answered) return;
-      answered = true;
-      cleanup();
-      ov.remove();
-    }
-    function accept() {
-      if (answered) return;
-      if (!done) { finishTyping(); return; }
-      answered = true;
-      prompt.hidden = true;
-      var ack = ordersAck(); ack[p.code] = Date.now();
-      lsSet(ORDERS_ACK_KEY, JSON.stringify(ack));
-      lsDel(ORDERS_PENDING_KEY);
-      lsSet(ONBOARD_KEY, JSON.stringify({ code: p.code, step: 'photo', at: Date.now() }));
-      say('>understood. we\'ll be in touch.');
-      say('>filing_clearance…');
-      // Recorded on the Agent's own brief so the Handler has it too --
-      // only when that brief already exists: creating a stray, nameless
-      // brief here would show up as a blank Agent in A-Cell.
-      var saved = ensureStore().then(function (st) {
-        return st.getBrief(p.code).then(function (b) {
-          if (!b) return 'local';
-          return st.updateBrief(p.code, { standing_orders_ack_at: new Date().toISOString() }).then(function () { return 'ok'; });
-        });
-      });
-      var timeout = new Promise(function (res) { setTimeout(function () { res('slow'); }, 6000); });
-      Promise.race([saved, timeout]).then(function (r) {
-        say(r === 'ok' ? '>filed.' : '>noted_on_this_device.');
-      }, function () { say('>noted_on_this_device.'); }).then(function () {
-        say('>opening_agent_file: take_your_photo');
-        setTimeout(function () {
-          cleanup();
-          ov.remove();
-          navigate(url('agent-hub.html?code=' + encodeURIComponent(p.code) + '#photos'));
-        }, 900);
-      });
-    }
-    function handleKey(key) {
-      if (key === 'Escape' || key === 'n' || key === 'N') { if (key === 'Escape' || done) decline(); return true; }
-      if (key === 'y' || key === 'Y') { accept(); return true; }
-      if (!done && (key === 'Enter' || key === ' ')) { finishTyping(); return true; }
-      return false;
-    }
-    function onKeyOrders(e) {
-      if (handleKey(e.key)) { e.preventDefault(); e.stopPropagation(); }
-    }
-    ordersKeyHandler = handleKey;
-    function cleanup() { clearInterval(timer); document.removeEventListener('keydown', onKeyOrders, true); ordersKeyHandler = null; }
-    document.addEventListener('keydown', onKeyOrders, true);
-    ov.addEventListener('click', function (e) {
-      var b = e.target.closest('[data-o]');
-      var k = b && b.getAttribute('data-o');
-      if (k === 'y') accept();
-      else if (k === 'n') decline();
-      else if (!done) finishTyping();
-    });
-  }
-
   /* ── After the orders: photo, then Field ID ── */
   var nudgePoll = null;
   function onboardingNudge() {

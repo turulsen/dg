@@ -29,7 +29,7 @@ Check the current code before trusting a specific function name.
 | `friendly.html` | One-shot players | Pick a pregenerated Agent (`friendly/pregens.json`, built by `scripts/pregens/`) and play: read-only dossier, every stat/skill/weapon rolls via the Dice Roller, HP/WP/SAN kept on paper. No Firebase sign-in unless the pregen is in a Cell (then its id — a valid Agent Code shape, e.g. `FR-USSS-PPD` — signs in through `exchangeAgentToken` like any Agent and rolls into that Cell's `dice_rolls` feed; no backend or rules change was needed). The Dice Roller takes its identity from the page (`dgDice.setIdentity`), never from the device's own roster. |
 | `agent-hub.html` | Players | A player's own hub and each Agent's whole file: one folder tab per Agent in this browser's roster, plus "+ New Recruit" (the creation wizard since v3.0.0, §5). An Agent's tab has the Agent File paper, which since v2.7.0 is the character sheet (§5; the rest lives in the Field Notes notebook), and **Appearance ▾ / Era photos ▾ / Cell ▾** drop-downs beside the photo (§5), Evidence, and (if unassigned) a Cover Identity search box. `?code=CODE[#appearance|#photos]` opens one Agent. |
 | `dg-agent-portal.html` | -- | Retired (the three-tab Agent Portal); forwards old addresses to Agent Hub / the Fabricator. See §5. |
-| `stats/index.html` | Players | Retired in v3.0.0 (creation is Agent Hub's New Recruit, play is the Agent File); reachable only from the notebook's Settings → Old character sheet. The old Delta Green character sheet/creator — stats, skills, professions, Bonds, equipment, dice roller, Live Play tracker bar, three visual themes, import from five different formats, Cloud Save. This is a ported third-party project, see §2. |
+| `404.html` | -- | The not-found page; forwards old `stats/index.html?load=CODE` links (the original character sheet, removed in v3.3.0, §2) to that Agent on Agent Hub, and `?new=1` to New Recruit. |
 | `a-cell.html` | Handler | The Handler's dashboard, password-gated. Tabs: **Play** (every Agent, simplified, for running the table), **Cells** (group Agents under a Handler), **Evidence** (file documents/photos, scoped to a Cell or campaign-wide), **Sheet** (dense Excel-style roster), **Music** (Table Radio broadcast controls), **Admin** (delete/restore Agents, including Agent-File-only entries). |
 | `dg-id-creator.html` | Players | A standalone, older fake-ID-card generator. Superseded by the Field IDs tab's own Fabricator; kept in the repo, not linked from anywhere, no code system of its own left. |
 | `notes/index.html` | Players & Handler | Player Notes — a shared/private notebook scoped to a Cell. See §3. |
@@ -62,151 +62,81 @@ default.
   out of reach.
 - A phone (≤759px) never splits, and the tab is hidden there.
 
-Every page is a single self-contained HTML file with inline CSS/JS,
-except `stats/` (a direct multi-file copy of the upstream project, kept
-diffable) and `notes/` (its own small file set). No build step,
-anywhere.
+Pages are HTML files with inline CSS/JS plus the shared scripts in
+`assets/` (data tables in `assets/data/`, the DD Form 315 / spreadsheet
+readers in `assets/sheet-io/`); `notes/` has its own small file set. No
+build step, anywhere.
 
 ---
 
-## 2. Character Creator (`stats/`)
+## 2. The original character sheet (`stats/`, removed in v3.3.0)
 
-**What it is:** the actual Delta Green character sheet. Point-buy or
-dice-roll stats, 18 professions with contextual skill packages, bonus
-skill points, Bonds, an equipment loadout picker, a general-purpose
-dice roller, and export to PDF/Foundry VTT. It's a direct,
-unminified port of a third-party open-source project — **[pigeon-
-labs-stack's DELTA-GREEN-STATS](https://github.com/pigeon-labs-stack/DELTA-GREEN-STATS)**
-— kept as a multi-file copy specifically so it can still be diffed
-against upstream if ever worth re-syncing. This is what "Pigeon" means
-whenever it comes up in this project's history; it is not itself an
-import format.
+**What it was:** the app's first character sheet and creator, a direct
+multi-file port of **[pigeon-labs-stack's DELTA-GREEN-STATS](https://github.com/pigeon-labs-stack/DELTA-GREEN-STATS)**
+("Pigeon" in this project's history): point-buy or dice-roll stats, the
+professions, bonus skills, Bonds, equipment, themes, Live Play's tracker
+bar, a wizard, five import formats and a background Cloud Save. The
+Agent File replaced it as the sheet players play from (v2.7.0, §5),
+Agent Hub's New Recruit replaced its creation and imports (v3.0.0), and
+v3.3.0 (v2 plan milestone M4) deleted the folder. Saved characters kept
+its format (`characters/{code}.character_json`, the v1 state), so
+nothing needed migrating.
 
-**Three visual themes** (X-Files, Son of Sam, Field Notes) — all
-upstream, all made mobile-responsive by this project (the upstream
-themes were desktop-first and genuinely broke on a phone; see
-`BUGFIXES.md`'s mobile-layout section for the specifics). A fourth
-upstream theme, Modern (Catppuccin Mocha), was later removed as
-redundant with the other three; Field Notes was also realigned to the
-same paper/ink/typewriter system (`assets/theme-folder.css`) the rest
-of the hub already uses, rather than its own separate cardboard/
-marker-pen look. A separate, non-upstream **Mobile** theme (auto-applied
-below a 768px screen width) was retired later still: its own CSS
-predated the Field Notes dark-desk realignment above and had gone
-stale against it, and everything it did beyond that was either
-redundant with the responsive fixes below or with Field Notes' own
-current styling. Phones now land on Field Notes by default instead.
+**What lives on:**
+- Its data tables, in `assets/data/`: `professions.js` (`professions`),
+  `bonds.js` (`bonds`), `bio.js` (`bioData`, `motivationsData`) and
+  `equipment-data.js` (`DG_EQUIPMENT_CATALOG`), loaded on first use by
+  New Recruit and the Agent File. PolyForm Noncommercial 1.0.0, notice
+  in each file and `assets/data/LICENSE-UPSTREAM.md`.
+- Its DD Form 315 reader/writer and Google Sheets reader, in
+  `assets/sheet-io/`: `window.dgSheetPdf = { build(state), download(state),
+  read(file) }` (the fillable template sits next to it; pdf-lib loads
+  from a CDN on first use) and `window.dgSheetXlsx = { read(file) }`
+  (JSZip from a CDN). The notebook's Settings → Export → PDF calls
+  `download`; New Recruit's import calls the readers
+  (`assets/agent-import.js`).
+- The bonus skill packages, now `dgRecruitData.BONUS_PACKAGES`
+  (`assets/recruit-data.js`), which `scripts/pregens/build.js` also reads.
+- Its in-page yes/no, now `window.dgConfirm(message, {ok, cancel})` in
+  `assets/field-notes.js` (on every player page), because `confirm()`
+  shows nothing in an iOS home-screen app.
+- Old links: `404.html` forwards `stats/index.html?load=CODE` to
+  `agent-hub.html?code=CODE` and `?new=1` to New Recruit.
 
-**Live Play** is an orthogonal mode layered on top of whichever theme
-is active (not a theme of its own) — a sticky HP/WP/SAN/BP tracker bar
-across the top, meant for actual table use. Above it, the Cell's
-initiative row lists the Cell in DEX order (`stats/lp-initiative.js`);
-a KIA Agent (HP 0 or below on their saved sheet) drops out of it.
+**Motivations and Mental Disorders, apart (v2.6.0, PR #66).** Motivations
+are `bio.motivations` (text), Mental Disorders `bio.disorders` (an
+array of names). `assets/disorders.js` (`window.dgDisorders`) holds the
+18 disorders from `rules-reference.html`'s Violence / Helplessness /
+Unnatural tables, each with its kinds, trigger and effect; a name not on
+the list is the player's or Handler's own words. An older save with no
+`bio.disorders` is read apart by `splitText()` (lines marked `Disorder:
+…`, or starting with a known disorder's name or alias); the Agent File
+does this through `dgRules.disorders()` / `normalizeBio()`. The printed
+DD Form 315 has one box 12 for both: `combine()` writes Motivations,
+then one `Disorder: …` line per disorder, so a re-import splits them
+again. A-Cell's dossier lists them under their own heading with each
+one's trigger.
 
-**Bonds after creation (v2.2.0).** Once an Agent is committed (first
-Live Play), the Bond *generator* hides, as the Bonus Points panel does;
-`+ Add Bond` replaces it for Bonds gained in play: under the Bonds list
-in Edit mode, under Live Play's Bonds table (to Edit mode with a blank
-Bond, `dgAddBond()`), and on the Agent File, which opens
-`stats/index.html?load=CODE&add_bond=1`. The sheet writes the Bond
-itself (its save covers the whole list, so nothing else edits Bonds in
-`characters/{code}`).
-
-**One Agent, one code (v2.2.0).** When a blank sheet mints a new Agent
-Code and the player already has an Agent of that name (this device's
-roster, or `dgStore.findByPlayerName` in Firestore), the sheet asks
-whether to update that Agent instead (`checkForTwin` in
-`stats/cloud-sync.js`). Update moves the data and any pending briefing
-onto the existing code and sends the new one to Recently Deleted.
-
-**Import**, one drop zone, five formats auto-detected and routed to
-the right parser (`importAgentAuto()`): this hub's own printable/PDF
-export, official published Delta Green Agent PDFs (same AcroForm field
-names), a round-tripped Google Sheets export, Foundry VTT actor JSON
-(native to the upstream project), and **Kappa Black** (`.toml`) — a
-completely separate third-party character-builder app with its own
-flat export format, parsed by a hand-rolled TOML parser scoped to
-exactly what Kappa Black's export uses (`parseSimpleTOML()` /
-`convertKappaBlackToAgentData()`), then reshaped into the same
-Foundry-actor-shaped object every other importer produces so the
-~150-line field-mapping function (`applyImportedAgentData()`) is
-shared code, not duplicated per format.
-
-**Cloud Save** (`stats/cloud-sync.js`): fully automatic background
-sync to the backend, keyed by an Agent Code — starts the moment a real
-name is entered, debounces every edit after that, no Start/Stop
-button. This is what lets a character follow a player between devices
-without a file changing hands.
-
-**Appearance step (unreleased, same branch):** the creation wizard's
-step 4 of 10 (`#cs-appearance-fieldset`, shown only inside the wizard;
-`stats/appearance-sheet.js`) -- how the Agent looks, the part of the Agent
-File's Appearance brief a sheet can't work out (face, eyes, hair,
-posture, expression, the feel of the person). Saved straight to
-`briefs/{code}`, the same fields Agent Hub's Appearance edits (§5); "Fill
-the rest at random" fills only blanks, suited to the sex on the sheet and
-the profession (`assets/appearance-gen.js`); loading an Agent brings it
-back from the brief. Finishing the wizard runs the sheet's own export
-(identity, build, outfit), so a new Agent's Agent File is complete.
-
-**Motivations and Mental Disorders, apart (v2.6.0, PR #66):** the Biography had one free-text box for both. Motivations
-keep that box (`#cs-motivations`, `bio.motivations`); Mental Disorders
-are their own list (`stats/disorders-sheet.js`, the hidden
-`#cs-disorders` -> `bio.disorders`, an array of names). Each row is a
-dropdown of the Rules reference's disorders (`assets/disorders.js`,
-`window.dgDisorders`: the 18 from `rules-reference.html`'s Violence /
-Helplessness / Unnatural tables, each with its kinds, trigger and
-effect, shown under the row) or **Other…** with the Handler's own
-words. Live Play shows and edits the same list under its own MENTAL
-DISORDERS heading. An older save has no `bio.disorders`: on load,
-`splitText()` moves lines marked `Disorder: …` or starting with a known
-disorder's name (or alias: DID, OCD, PTSD spelled out, Claustrophobia…)
-out of Motivations into the list. The printed DD Form 315 (PDF export),
-the Sheets export and the printable sheet still have one box 12 for
-both: `combine()` writes Motivations, then one `Disorder: …` line per
-disorder, so a re-import (PDF, Sheets, Kappa Black, older Foundry)
-splits them again. Foundry: a disorder is a `motivation` item carrying
-it in `system.disorder` (`crossedOut: true`, the motivation it
-replaced), read back the same way. A-Cell's dossier lists them under
-their own heading with each one's trigger. The Random Motivation button
-had pushed the Motivations box under its label at 160px wide in every
-theme; it now sits in the field column.
-
-**The Incursion (unreleased, on `claude/new-session-thjzt6` with the
-Field Notes notebook):** what first brought the Agent to Delta Green,
-part of the Agent the way Motivations are. One module,
-`assets/incursion.js` (`window.dgIncursion`), holds the five tables
-(Environment D4, Vector D6, Cover Story D8, Complication D10, Incursion
-D12, worded exactly as `the-incursion.html` always had them) and a
-picker: roll all, roll or choose any one line (mix and match), and/or
-write it freehand. The text follows the picks until the player writes
-their own; "Rewrite from the lines above" hands it back. Value shape:
-`{ picks: {environment, vector, cover, complication, incursion}, text,
-custom }` (picks are 1-based rows, 0 = not chosen). Where it lives:
-- the character sheet's Incursion fieldset (after Biography) and its own
-  creation-wizard step (`stats/incursion-sheet.js`), saved in the sheet
-  state as `bio.incursion`;
+**The Incursion.** What first brought the Agent to Delta Green, part
+of the Agent the way Motivations are. One module, `assets/incursion.js`
+(`window.dgIncursion`), holds the five tables (Environment D4, Vector
+D6, Cover Story D8, Complication D10, Incursion D12) and a picker: roll
+all, roll or choose any one line (mix and match), and/or write it
+freehand. The text follows the picks until the player writes their own;
+"Rewrite from the lines above" hands it back. Value shape: `{ picks:
+{environment, vector, cover, complication, incursion}, text, custom }`
+(picks are 1-based rows, 0 = not chosen). Where it lives:
+- New Recruit's Incursion step, saved in the character as
+  `bio.incursion`;
 - the Agent's record, `characters/{code}.incursion`, with `by`
   (`player`/`handler`) and `updated_at`, written by
-  `dgStore.saveIncursion()` (merge, so the sheet's autosave never wipes
-  it). When the sheet loads, the record's copy wins;
-- read on the notebook's Agent File page and its orders terminal
-  (`>incident_on_file:`), via `dgAgentSheet.incursionText()`;
+  `dgStore.saveIncursion()` (merge, so the Agent File's saves never wipe
+  it). The record's copy wins over the one inside the character;
+- the Agent File shows it, via `dgAgentSheet.incursionText()`, and the
+  Contract opens with it (`>incident_on_file:`);
 - A-Cell's dossier shows it, and the Handler can edit it there
   (`set_incursion`), using the same picker;
-- `the-incursion.html` uses the same picker in place of its old roll UI.
-
-**Export to Agent File** (`stats/agent-portal-export.js`): the "Open
-Agent File" button sends a finished character to the Agent Portal
-using the *exact same submission path* the Portal's own Profiling
-form uses. It reuses the character's existing Cloud Save code (never
-mints an unrelated second one), and carries over name, age range, sex,
-nationality, profession, a derived build description, and a
-profession-appropriate default outfit — nothing about physical
-appearance beyond that, since a character sheet has no source for face
-shape, eye color, hair, etc. Those stay for the Profiling form to fill
-in by hand, which is why a just-exported Agent File visit lands back
-on Profiling instead of the finished dossier — see §5.
+- `the-incursion.html` uses the same picker.
 
 ---
 

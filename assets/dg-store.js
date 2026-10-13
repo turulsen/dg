@@ -245,7 +245,7 @@
     return tryOnce();
   }
 
-  // The Agent's main photo (Hub card, Live Play tracker, A-Cell, Field ID
+  // The Agent's main photo (Hub card, the Agent File, A-Cell, Field ID
   // card, Field Notes). Each era keeps its own Face Plate
   // (era_<era>_face_url, the source of truth since the per-era fix) and
   // face_plate_url was only a copy of the Active Era's, set in a few

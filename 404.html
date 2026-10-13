@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Not Found</title>
+<style>
+  :root{ --bg:#0e100b; --ink:#e9e2c8; --dim:#8a8770; --accent:#8fae5a; }
+  body{ margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; background:var(--bg); color:var(--ink);
+        font-family:'JetBrains Mono',ui-monospace,monospace; padding:16px; box-sizing:border-box; }
+  main{ max-width:420px; }
+  p{ font-size:13px; line-height:1.6; color:var(--dim); }
+  a{ color:var(--accent); }
+</style>
+<script>
+  /* The host serves this page for any missing path (GitHub Pages and
+     Firebase Hosting both do), so relative links can't be trusted here:
+     work out the site's base from the address itself.
+
+     The old character sheet (stats/) is gone since v3.3.0. Its links
+     still live in bookmarks and home-screen apps, so they forward to the
+     same Agent on Agent Hub: ?load=CODE opens that Agent, ?new=1 opens
+     New Recruit. */
+  (function () {
+    var path = location.pathname;
+    var i = path.indexOf('/stats/');
+    var base;
+    if (i !== -1) base = path.slice(0, i + 1);
+    else if (/\.github\.io$/.test(location.hostname)) base = '/' + (path.split('/')[1] || '') + '/';
+    else base = '/';
+    window.__dgBase = base.replace(/\/+$/, '/');
+    if (i === -1) return;
+    var q = new URLSearchParams(location.search);
+    var code = (q.get('load') || '').trim();
+    var to = window.__dgBase + 'agent-hub.html' + (code ? '?code=' + encodeURIComponent(code) : q.get('new') ? '#new' : '');
+    location.replace(to);
+  })();
+</script>
+</head>
+<body>
+<main>
+  <h1 style="font-size:18px;letter-spacing:.12em">FILE NOT FOUND</h1>
+  <p>There's nothing at this address. It may have moved.</p>
+  <p><a id="home" href="index.html">Back to Clearance</a> · <a id="hub" href="agent-hub.html">Agent Hub</a></p>
+</main>
+<script>
+  document.getElementById('home').href = window.__dgBase + 'index.html';
+  document.getElementById('hub').href = window.__dgBase + 'agent-hub.html';
+</script>
+</body>
+</html>

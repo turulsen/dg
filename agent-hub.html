@@ -444,10 +444,9 @@
    AGENT HUB -- every Agent on this device (dg_agent_roster in
    localStorage) as a folder ear-tab, plus a pinned "+ New Recruit".
    The active tab is that Agent's whole file, one page:
-     photo, name, line, stamps, and Play/Recruit
-       -> stats/index.html?load=CODE&live=1 (Live Play over whichever
-          theme this device last used; "Recruit" when there's no cloud
-          character yet, see checkCharacterExists)
+     photo, name, line, stamps, and Recruit when there's no saved
+       character yet (New Recruit under that Agent's code, see
+       checkCharacterExists)
      the Appearance callout while the brief is unfinished
      the Agent File paper (Cell, Operations, the sheet) -- agent-sheet.js
      Appearance (Profiling) and the era photos -- agent-file.js, one
@@ -1350,8 +1349,8 @@
   }
 
   // Private per-Agent notes on a Handout -- debounced auto-save (same
-  // "trust the POST, no read-back verify" weight as Cloud Save's own
-  // background sync, not the heavier verified-write pattern used for
+  // "trust the POST, no read-back verify" weight as the Agent File's own
+  // background save, not the heavier verified-write pattern used for
   // shared campaign state like Handouts/Cells themselves; this is a
   // low-stakes personal scratchpad, not something other people rely on
   // seeing land correctly).

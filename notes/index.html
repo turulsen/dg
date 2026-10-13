@@ -49,23 +49,6 @@
   }
   .picker-btn:hover{ opacity:.85; }
 
-  /* Notes' own way back to the sheet when embedded as stats/index.html's
-     mobile fullscreen pane (see notes-play-btn below) -- docked at the
-     exact same fixed bottom-left spot #notes-widget-btn occupies on the
-     sheet (same size, same dark pill, same font), so flipping between
-     the two feels like one control switching label/direction rather
-     than two unrelated buttons in different places. */
-  .notes-play-btn{
-    display:none;
-    position:fixed; left:14px; bottom:14px; z-index:9999;
-    font-family:'JetBrains Mono',ui-monospace,monospace; font-size:12px;
-    font-weight:400; letter-spacing:normal; text-transform:none;
-    background:#161a14; color:#c9d4b8; border:1px solid #3a4432;
-    border-radius:20px; padding:8px 14px; cursor:pointer;
-    box-shadow:0 4px 14px rgba(0,0,0,.4);
-  }
-  .notes-play-btn:hover{ background:#161a14; color:#c9d4b8; }
-  @media (max-width:600px){ .notes-play-btn{ bottom:78px; } }
   .picker-status{ font-size:11px; color:var(--ink-3); min-height:1.4em; }
 
   .notes-mount{ max-width:1100px; margin:var(--s5) auto 0; padding:0 6px; }
@@ -75,12 +58,9 @@
     max-width:1100px; margin:0 auto var(--s3); padding:0 6px;
     display:flex; justify-content:flex-end; gap:8px;
   }
-  /* Matches stats/index.html's own #split-view-toggle-btn cutoff
-     (stats/styles.css, DG_MOBILE_QUERY in scripts.js) -- Split View's
-     two panes have nowhere to go but stacked below this width, where
-     the toggle reads as "flips between two views" rather than an
-     actual side-by-side split. Character Sheet alone still makes
-     sense on a phone; Split View specifically doesn't. */
+  /* Split View puts the Agent File beside Notes: below this width the
+     two have nowhere to go but stacked, so only the Agent File button
+     stays. */
   @media (max-width:900px){
     #split-view-btn{ display:none; }
   }
@@ -191,15 +171,8 @@
 <body class="folder-theme">
 
 <div class="notes-header">
-  <!-- The "← Agent Hub" backlink that used to live here is gone on
-       request -- Split View/Character Sheet buttons (see
-       #change-context-row below) now cover getting back to the sheet,
-       so a separate nav-away link at the top was redundant. Still
-       shown instead of nothing when this page is the mobile
-       fullscreen-Notes pane of stats/index.html's Split View feature
-       (dgNotesFullscreen there) -- see the embed=fullscreen check
-       below. -->
-  <button type="button" class="notes-play-btn" id="notes-play-btn">Play</button>
+  <!-- No "← Agent Hub" backlink: the Split View / Agent File buttons
+       (#change-context-row below) cover getting back. -->
   <h1>Player Notes</h1>
 </div>
 
@@ -267,9 +240,8 @@
   let cellsList = [];
   let myAgents = [];
   let panelHandle = null;
-  // Set by openFor() below -- Split View/Character Sheet need to know
-  // which Agent's sheet to open, replacing the old "Change Agent"
-  // button that lived in the same spot.
+  // Set by openFor() below -- Split View/Agent File need to know
+  // which Agent's file to open.
   let currentAgentCode = '';
 
   function rosterAgentsSorted() {
@@ -344,13 +316,6 @@
   }
   let urlCodeConsumed = false;
 
-  // stats/index.html's Split View feature (mobile: dgNotesFullscreen,
-  // desktop: dgSplitView) embeds this page in an iframe with
-  // embed=fullscreen or embed=split -- only the mobile fullscreen case
-  // needs a way back, since the split case leaves the sheet visible
-  // right alongside. Same-origin parent, so a direct call is simplest;
-  // guarded in case this ever loads standalone with the param somehow
-  // still attached (e.g. a bookmarked/shared link).
   // Inside the Field Notes notebook (desktop Notes tab): the notebook is
   // the chrome, so this page's own way back out goes.
   if (['notebook', 'spread'].indexOf(new URLSearchParams(location.search).get('embed')) !== -1) {
@@ -359,18 +324,6 @@
     document.documentElement.classList.add('notes-in-notebook');
     if (new URLSearchParams(location.search).get('embed') === 'spread') document.documentElement.classList.add('notes-spread');
   }
-  if (new URLSearchParams(location.search).get('embed') === 'fullscreen') {
-    const backLink = document.getElementById('notes-back-link');
-    const playBtn = document.getElementById('notes-play-btn');
-    if (backLink) backLink.style.display = 'none';
-    if (playBtn) {
-      playBtn.style.display = 'inline-block';
-      playBtn.addEventListener('click', () => {
-        try { window.parent?.dgNotesFullscreen?.exit?.(); } catch (e) { /* not actually embedded this way */ }
-      });
-    }
-  }
-
   function proceed() {
     if (!urlCodeConsumed) {
       urlCodeConsumed = true;
@@ -451,14 +404,10 @@
     openFor(agentCode);
   });
   codeInput.addEventListener('keydown', e => { if (e.key === 'Enter') fallbackOpenBtn.click(); });
-  // Split View/Character Sheet -- replaces the old "Change Agent"
-  // button in this same spot. Same tab, same reasoning as the Play
-  // link elsewhere in the Hub (agentToken() below is per-Agent, not
-  // needed for a plain navigation). ../stats/ is a sibling of notes/,
-  // one level up.
-  // Inside the Field Notes notebook, going to the sheet happens in the
-  // page under the notebook (window.dgFieldNotes.go) -- navigating this
-  // frame put the sheet inside the notebook with no way back to Notes.
+  // Split View / Agent File, in the same tab. Inside the Field Notes
+  // notebook, going to the Agent File happens in the page under the
+  // notebook (window.dgFieldNotes.go) -- navigating this frame would put
+  // it inside the notebook with no way back to Notes.
   function goOut(path) {
     if (document.documentElement.classList.contains('dg-fn-embedded') && window.dgFieldNotes && window.dgFieldNotes.go) {
       window.dgFieldNotes.go(path);

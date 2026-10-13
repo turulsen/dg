@@ -9,9 +9,7 @@
    the only thing on screen -- the same defensive-specificity trick
    assets/table-radio.js uses (its own header comment explains why: a
    page's blanket button{}/input{} theme rules would otherwise silently
-   reskin this widget). Building it this way means a later phase can
-   drop this panel into stats/index.html's five very different themes
-   without any retrofit.
+   reskin this widget).
    ══════════════════════════════════════════════ */
 
 #dg-notes-panel{

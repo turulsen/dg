@@ -159,24 +159,9 @@ def collect_errors(page):
     return errs
 
 # ── Field Notes notebook (assets/field-notes.js) ─────────────────────
-# The notebook replaced the character sheet's Settings cog, the floating
-# Dice Roller panel and the Table Radio pill on every player page. The
-# helpers below reach those same controls the way a player now does, so
-# the older tests keep checking the same behavior underneath.
-def open_sheet_settings(page):
-    """The sheet's own settings panel: Field Notes -> Settings ->
-    "Import, backup & more…" (the cog itself is hidden)."""
-    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
-    page.evaluate("() => window.dgFieldNotes.open('settings')")
-    page.click("#fn-veil [data-s=more]")
-    page.wait_for_selector("#settings-panel-close", state="visible", timeout=5000)
-
-def open_notebook_dice(page):
-    """The Dice Roller panel, now on the notebook's Dice page."""
-    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
-    page.evaluate("() => window.dgFieldNotes.open('dice')")
-    page.wait_for_selector("#fn-veil #dr-panel", state="visible", timeout=5000)
-
+# The notebook holds the Dice Roller panel and the Table Radio on every
+# player page. The helper below reaches those controls the way the older
+# widget tests expect.
 def notebook_aside(page):
     """Puts the page's legacy floating widgets (Table Radio pill, Dice
     panel) back on screen, exactly as the notebook does on A-Cell -- for
@@ -650,11 +635,6 @@ def fs_writes(page, prefix):
     """Every stubbed Firestore write whose path starts with prefix, oldest first."""
     return page.evaluate("(pfx) => (window.__dgFirestoreWrites || []).filter(w => w.path.indexOf(pfx) === 0)", prefix)
 
-def last_brief_write(page):
-    """The data of the latest briefs/{code} write (a brief submission)."""
-    w = fs_writes(page, "briefs/")
-    return w[-1]["data"] if w else {}
-
 def fs_doc(page, path):
     """The stubbed Firestore document at path, or None."""
     return page.evaluate("(p) => (window.__dgFirestoreDocs || {})[p] || null", path)
@@ -719,13 +699,6 @@ def get_firestore_doc(page, path):
     so this sees whatever the page's own code last wrote via either.
     None if the doc doesn't exist."""
     return page.evaluate("(path) => (window.__dgFirestoreDocs || {})[path]", path)
-
-def set_firestore_doc(page, path, data):
-    """Seeds the stub's in-memory doc store directly (test setup only) --
-    e.g. so a-cell.html's soundboard transactions see a pre-existing
-    radio/{channel} doc on their first tx.get() instead of starting from
-    nothing."""
-    page.evaluate("([path, data]) => { (window.__dgFirestoreDocs = window.__dgFirestoreDocs || {})[path] = data; }", [path, data])
 
 def push_firestore_snapshot(page, path, wheres, docs):
     """Delivers a fake Firestore snapshot (the full current result set,
@@ -827,1338 +800,6 @@ def fill_cover_form(page, agent, form_selector="#dg-form"):
     vibe_sel = f"{form_selector} [name=vibe]"
     if page.locator(vibe_sel).count():
         page.fill(vibe_sel, agent.get("vibe",""))
-
-def test_stat_generator(p):
-    """stats/index.html is a full directory-level port of pigeon-labs-
-    stack's DELTA-GREEN-STATS (PolyForm Noncommercial licensed) -- a much
-    larger tool than the earlier single-file port: 6 themes, an 8-step
-    wizard, 18 professions with contextual skills, random bio generation,
-    a dice roller widget, Bonds, equipment, and save/share. This is
-    third-party production code, not something built here, so the test
-    favors breadth (does each major feature work without throwing) over
-    exhaustively verifying every one of its ~17,000 lines."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(500)
-    record("stats-terminal", "page loads with no JS exceptions", len(errs)==0, "; ".join(errs))
-
-    hub_link = page.get_attribute("a[href='../agent-hub.html']", "href") if page.locator("a[href='../agent-hub.html']").count() else None
-    record("stats-terminal", "Agent Hub nav link goes to the player's own agent list, not the clearance chooser",
-           hub_link == "../agent-hub.html", str(hub_link))
-
-    # Theme, Live Play, Load by Code, and Export live in the sheet's
-    # settings panel, reached through the Field Notes notebook now.
-    open_sheet_settings(page)
-    page.wait_for_timeout(200)
-
-    # All three themes must switch without throwing (field-doc retired --
-    # Live Play is now a mode layered on any theme, not a theme itself.
-    # Modern/Catppuccin was later removed as redundant with the other
-    # themes, and Mobile was retired too -- its CSS predated Field Notes'
-    # dark-desk redesign and everything useful it did is now covered by
-    # Field Notes itself plus the page's own theme-agnostic responsive
-    # layout).
-    theme_options = page.eval_on_selector_all("#cs-theme-select option", "els => els.map(e=>e.value)")
-    record("stats-terminal", "theme selector has all 3 themes",
-           set(theme_options) == {"xfiles","son-of-sam","field-notes"}, str(theme_options))
-    for t in theme_options:
-        page.select_option("#cs-theme-select", t)
-        page.wait_for_timeout(200)
-    record("stats-terminal", "cycling through every theme throws no JS exceptions", len(errs)==0, "; ".join(errs))
-    page.select_option("#cs-theme-select", "xfiles")
-    page.wait_for_timeout(200)
-    page.click("#settings-panel-close")
-    page.wait_for_timeout(150)
-
-    # Manual stat adjustment
-    page.click("#STR-value ~ button, .stat-container:has(#STR-value) button:has-text('+')")
-    page.wait_for_timeout(100)
-    str_val = page.text_content("#STR-value")
-    record("stats-terminal", "manual + button increments STR", str_val == "4", str_val)
-
-    # Random point buy: must sum to exactly 72
-    page.click("#random-point-buy")
-    page.wait_for_timeout(150)
-    buy_vals = page.eval_on_selector_all(".stat-value", "els => els.map(e=>parseInt(e.textContent))")
-    record("stats-terminal", "random point buy spends exactly 72 points, all stats 3-18",
-           len(buy_vals)==6 and sum(buy_vals) == 72 and all(3 <= v <= 18 for v in buy_vals), str(buy_vals))
-
-    page.click("#reset-button")
-    page.wait_for_timeout(150)
-    reset_vals = page.eval_on_selector_all(".stat-value", "els => els.map(e=>e.textContent)")
-    record("stats-terminal", "reset returns all six stats to 3", reset_vals == ["3"]*6, str(reset_vals))
-
-    # Profession select populates a contextual skill list
-    prof_options = page.eval_on_selector_all("#cs-profession-select option", "els => els.map(e=>e.value).filter(v=>v)")
-    record("stats-terminal", "profession dropdown has ~18 professions", len(prof_options) >= 15, f"{len(prof_options)} professions")
-    if prof_options:
-        page.select_option("#cs-profession-select", prof_options[0])
-        page.wait_for_timeout(200)
-
-    # Random bio fills the name field
-    page.click("#random-bio-button")
-    page.wait_for_timeout(200)
-    bio_name = page.input_value("#cs-name")
-    record("stats-terminal", "Random Bio fills the name field", bool(bio_name) and bio_name != "Agent", bio_name)
-
-    # Regression: Random Bio used to silently overwrite an already-named,
-    # in-use character's whole identity in place, under the same Cloud
-    # Save code, with zero warning -- a real report (a player's actual
-    # character got replaced by a fresh random one). Clicking it again
-    # now that cs-name holds a real name (from the click above) must
-    # gate behind dgConfirm() instead of overwriting immediately.
-    page.click("#random-bio-button")
-    page.wait_for_timeout(200)
-    record("stats-terminal", "Random Bio on an already-named character asks for confirmation instead of overwriting immediately",
-           page.eval_on_selector("#dg-confirm-backdrop", "el => el.classList.contains('dg-confirm-open')")
-           and bio_name in page.inner_text("#dg-confirm-message"), "")
-
-    page.click("#dg-confirm-cancel")
-    page.wait_for_timeout(150)
-    record("stats-terminal", "Cancelling the confirmation leaves the existing name untouched",
-           page.input_value("#cs-name") == bio_name, page.input_value("#cs-name"))
-
-    page.click("#random-bio-button")
-    page.wait_for_timeout(200)
-    page.click("#dg-confirm-ok")
-    page.wait_for_timeout(200)
-    bio_name_2 = page.input_value("#cs-name")
-    record("stats-terminal", "Confirming proceeds and actually generates a new name",
-           bool(bio_name_2) and bio_name_2 != "Agent" and bio_name_2 != bio_name, bio_name_2)
-
-    # Wizard opens to step 1
-    page.click("#wiz-toggle-btn")
-    page.wait_for_timeout(200)
-    wiz_heading = page.text_content("text=STEP 1 OF") if page.locator("text=STEP 1 OF").count() else None
-    record("stats-terminal", "Character Creation Wizard opens to step 1", bool(wiz_heading), wiz_heading or "not found")
-    page.click("#wiz-toggle-btn")
-    page.wait_for_timeout(150)
-
-    # Dice roller widget: toggled via #dr-arrow. It starts collapsed on a
-    # fresh load, but switching Live Play mode on auto-opens it and that
-    # state can persist across switching back, so check current state
-    # rather than assuming collapsed.
-    # The Dice Roller panel lives on the Field Notes notebook's Dice page.
-    open_notebook_dice(page)
-    d20 = page.locator("#fn-veil button[data-die='d20']")
-    d20_visible = d20.is_visible()
-    if d20_visible:
-        d20.click()
-        page.wait_for_timeout(150)
-        page.click("#fn-veil #dr-roll-btn")
-        page.wait_for_timeout(900)
-    record("stats-terminal", "dice roller widget opens and rolls without throwing",
-           d20_visible and len(errs)==0 and bool(page.text_content("#dr-result-label")), f"visible={d20_visible}")
-    page.evaluate("() => window.dgFieldNotes.close()")
-
-    # Field Notes: verify no horizontal overflow specifically (see test_mobile_no_overflow
-    # for why the other themes are excluded from that general sweep) -- Field Notes is
-    # the theme mobile users land on since the separate Mobile theme was retired.
-    open_sheet_settings(page)
-    page.wait_for_timeout(200)
-    page.select_option("#cs-theme-select", "field-notes")
-    page.wait_for_timeout(200)
-    page.click("#settings-panel-close")
-    page.wait_for_timeout(150)
-    record("stats-terminal", "no JS exceptions across the whole run", len(errs)==0, "; ".join(errs))
-
-    page.close()
-    return errs
-
-def test_lp_tracker_photo_dex_agent_file(p):
-    """Live Play tracker bar additions: a Face Plate photo box prepended to
-    the bar (its DEX readout has since become test_lp_initiative_order's
-    Cell initiative row), and an Agent File button
-    appended -- the first slice of the character-sheet side of the
-    Field Notes Widget architecture (design settled: extend the existing
-    tracker bar rather than a new persistent element, plain link to the
-    Agent Portal rather than an inline modal). Photo is a live,
-    public-read briefs/{code} Firestore doc listener (see
-    stats/lp-tracker-photo.js), same posture as agent-hub.html's own
-    Initiative post-it -- no per-Agent sign-in needed."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    install_notes_firestore_stub(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(500)
-
-    record("stats-terminal", "before naming an Agent, the tracker photo box shows a Take Photo placeholder",
-           "Take Photo" in page.inner_text("#lp-tracker-photo-box"), page.inner_text("#lp-tracker-photo-box"))
-
-    page.fill("#cs-name", "Owen Castillo")
-    page.dispatch_event("#cs-name", "input")
-    page.wait_for_timeout(300)
-    code = page.evaluate("() => window.dgCloudSave && window.dgCloudSave.getCloudCode && window.dgCloudSave.getCloudCode()")
-    record("stats-terminal", "naming the Agent mints a Cloud Save code the tracker photo can key off of",
-           bool(code), str(code))
-
-    page.click("#random-point-buy")
-    page.click("#character-mode-toggle")
-    page.wait_for_timeout(300)
-    # DEX moved out of the tracker bar into the Cell initiative row -- see
-    # test_lp_initiative_order.
-    record("stats-terminal", "Agent File button is present in the tracker bar",
-           page.locator(".lp-file-btn").count() == 1, "")
-
-    wait_for_condition(lambda: any(l.get("isDoc") and l["path"] == "briefs/" + code
-                                    for l in page.evaluate("() => window.__dgFirestoreListeners || []")), timeout_ms=8000)
-    push_firestore_doc_snapshot(page, "briefs/" + code, True, {"face_plate_url": "https://example.com/fake-face.png"})
-    photo_html = wait_for_condition(lambda: (page.inner_html("#lp-tracker-photo-box")
-                                              if "<img" in page.inner_html("#lp-tracker-photo-box") else None))
-    record("stats-terminal", "once a Face Plate exists in Firestore, the tracker photo box shows it live",
-           bool(photo_html) and "fake-face.png" in photo_html, photo_html or "")
-
-    record("stats-terminal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
-    page.close()
-    return errs
-
-def test_live_play_themed_skins(p):
-    """Live Play used to force one universal "Field Document" DD-315
-    paper look (khaki background, ink-brown colors) regardless of which
-    theme was active in Edit mode -- X-Files' neon terminal and Son of
-    Sam's black/red horror look both flipped to the same brown paper the
-    instant Live Play turned on. stats/styles.css now defines a --lp-*
-    token set (--lp-ink, --lp-accent, etc.) on .live-play, with Field
-    Notes as the default and .theme-xfiles.live-play / .theme-son-of-
-    sam.live-play each overriding it to match that theme's own Edit-mode
-    identity. This checks each theme's tokens actually differ from every
-    other theme's (not just that they're defined) and that Field Notes
-    gets its realigned (assets/theme-folder.css-matching) values, not
-    its old separate cardboard/marker-pen ones."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(500)
-
-    ink_by_theme = {}
-    accent_by_theme = {}
-    for theme in ["xfiles", "son-of-sam", "field-notes"]:
-        page.evaluate("""(t) => {
-            const sel = document.getElementById('cs-theme-select');
-            sel.value = t;
-            sel.dispatchEvent(new Event('change'));
-        }""", theme)
-        page.wait_for_timeout(150)
-        page.evaluate("() => window.setLivePlay(true)")
-        page.wait_for_timeout(150)
-        tokens = page.evaluate("""() => {
-            const cs = getComputedStyle(document.body);
-            return { ink: cs.getPropertyValue('--lp-ink').trim(), accent: cs.getPropertyValue('--lp-accent').trim() };
-        }""")
-        ink_by_theme[theme] = tokens["ink"]
-        accent_by_theme[theme] = tokens["accent"]
-        page.evaluate("() => window.setLivePlay(false)")
-        page.wait_for_timeout(100)
-
-    record("stats-terminal", "every theme defines a non-empty --lp-ink token",
-           all(v for v in ink_by_theme.values()), str(ink_by_theme))
-    record("stats-terminal", "X-Files, Son of Sam, and Field Notes each get a distinct Live Play ink color",
-           len(set(ink_by_theme.values())) == 3, str(ink_by_theme))
-    record("stats-terminal", "X-Files, Son of Sam, and Field Notes each get a distinct Live Play accent color",
-           len(set(accent_by_theme.values())) == 3, str(accent_by_theme))
-    record("stats-terminal", "Field Notes' Live Play ink matches its realigned theme-folder.css ink color",
-           ink_by_theme["field-notes"] == "#1c1608", ink_by_theme["field-notes"])
-    # X-Files/Son of Sam ink is white/near-white, not their accent color --
-    # checked via getComputedStyle against real Edit mode, the theme's
-    # green/red accent is a border/legend/button color only there, never
-    # the actual body/value text color (see BUGFIXES.md's "Live Play
-    # theming" section for the full story of this getting it wrong twice).
-    record("stats-terminal", "X-Files' Live Play ink is white, matching Edit mode's real text color, not its green accent",
-           ink_by_theme["xfiles"] == "#ffffff", ink_by_theme["xfiles"])
-    record("stats-terminal", "Son of Sam's Live Play ink is near-white, matching Edit mode's real text color, not its red accent",
-           ink_by_theme["son-of-sam"] == "#f0f0f0", ink_by_theme["son-of-sam"])
-
-    record("stats-terminal", "no JS exceptions across the themed Live Play run", len(errs)==0, "; ".join(errs))
-    page.close()
-    return errs
-
-def test_stat_generator_creation_lockout(p):
-    """The Bonus Skill Points panel and Bond generator are creation-only
-    tools that used to stay on the sheet forever, confusing players
-    editing an already-played Agent. body.agent-committed (added the
-    first time this character actually enters Live Play, see
-    setLivePlay() in scripts.js) now retires both from Edit mode --
-    while leaving the actual Bonds list (#cs-bonds) editable, since
-    scores still change in play. Must round-trip through a reload (i.e.
-    actually persisted, not just an in-memory flag) and be reversible via
-    the settings cog's "Fix a Character Creation Mistake" unlock."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(500)
-
-    record("stats-terminal", "Bonus Points panel is visible before an Agent has a name",
-           page.is_visible(".panel-bonus-skills"), "")
-
-    page.fill("#cs-name", "Test Creation Lockout Agent")
-    page.dispatch_event("#cs-name", "input")
-    page.wait_for_timeout(200)
-    record("stats-terminal", "Bonus Points panel still visible for a newly-named, not-yet-played Agent",
-           page.is_visible(".panel-bonus-skills"), "")
-
-    # Add a real bond first (while the generator is still visible) so the
-    # "stays visible/editable" check below has actual content to check --
-    # #cs-bonds is a plain empty container pre-generation, which Playwright
-    # correctly reports as not visible (zero-size), not evidence of a bug.
-    page.click("#bonds-button")
-    page.wait_for_timeout(150)
-    page.click("#add-bond-button")
-    page.wait_for_timeout(150)
-
-    # Live Play/Edit toggle only appears once dgCharacterMode considers
-    # this an existing (named) character -- see dgCharacterMode.update().
-    page.click("#character-mode-toggle")
-    page.wait_for_timeout(200)
-    is_committed = page.eval_on_selector("body", "el => el.classList.contains('agent-committed')")
-    record("stats-terminal", "entering Live Play for the first time marks the Agent committed",
-           is_committed, "")
-
-    # Leaving Live Play again must not un-commit the Agent -- creation
-    # tools stay retired in Edit mode too, not just while in Live Play.
-    # (Checked back in Edit mode, not while still in Live Play, since
-    # Live Play's own pre-existing CSS already hides every #character-sheet
-    # fieldset -- including Bonds -- regardless of commit status, which
-    # would make these checks pass for the wrong reason.)
-    page.click("#character-mode-toggle")
-    page.wait_for_timeout(200)
-    record("stats-terminal", "Bonus Points panel stays hidden back in Edit mode after leaving Live Play",
-           not page.is_visible(".panel-bonus-skills"), "")
-    record("stats-terminal", "Bond generator (pyramid/category picker) stays hidden back in Edit mode",
-           not page.is_visible(".bonds-left"), "")
-    record("stats-terminal", "the actual Bonds list stays visible/editable once committed",
-           page.is_visible("#cs-bonds .bond-entry"), "")
-
-    # Committed status must be a real persisted field (collectState()/
-    # applyState() in save-load.js), not just an in-memory body class --
-    # otherwise a reload (or a different device via Cloud Save) would
-    # silently bring creation tools back for an already-played Agent.
-    page.reload(wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(600)
-    record("stats-terminal", "committed status survives a reload (persisted, not just in-memory)",
-           page.eval_on_selector("body", "el => el.classList.contains('agent-committed')")
-           and not page.is_visible(".panel-bonus-skills"), "")
-
-    # Settings cog unlock: session-only escape hatch to fix a bad import
-    # or rules mistake without permanently re-cluttering the sheet.
-    open_sheet_settings(page)
-    page.wait_for_timeout(200)
-    record("stats-terminal", "the creation-tools unlock control only appears once committed",
-           page.is_visible("#creation-tools-unlock-row"), "")
-    page.click("#creation-tools-unlocked-btn")
-    page.wait_for_timeout(150)
-    page.click("#settings-panel-close")
-    page.wait_for_timeout(150)
-    record("stats-terminal", "unlock button brings the Bonus Points panel back",
-           page.is_visible(".panel-bonus-skills"), "")
-
-    open_sheet_settings(page)
-    page.wait_for_timeout(200)
-    page.click("#creation-tools-unlocked-btn")
-    page.wait_for_timeout(150)
-    page.click("#settings-panel-close")
-    page.wait_for_timeout(150)
-    record("stats-terminal", "clicking unlock again re-hides the panel",
-           not page.is_visible(".panel-bonus-skills"), "")
-
-    record("stats-terminal", "no JS exceptions across the creation-lockout run", len(errs)==0, "; ".join(errs))
-    page.close()
-    return errs
-
-def test_new_recruit_split_and_import_commit(p):
-    """The New Recruit block (stats/index.html) now presents two explicit
-    paths side by side -- "Already Have a Character?" (import) and
-    "Building Someone New?" (wizard) -- rather than a drop zone and a
-    wizard promo just stacked with no framing. Also covers the other half
-    of that split: an imported character already exists in another
-    system, so unlike a from-scratch character it should never show the
-    Bonus Points panel at all, not even before Live Play -- it goes
-    straight to committed via applyImportedAgentData() (scripts.js)."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(500)
-
-    record("stats-terminal", "New Recruit shows both the import path and the wizard path",
-           page.is_visible("#new-recruit-import-option") and page.is_visible("#new-recruit-wizard-option"), "")
-    record("stats-terminal", "an OR divider separates the two New Recruit paths",
-           page.is_visible(".new-recruit-divider"), "")
-    record("stats-terminal", "a brand-new page (nothing imported yet) is not committed",
-           not page.eval_on_selector("body", "el => el.classList.contains('agent-committed')"), "")
-
-    toml_path = os.path.join(HERE, "fixtures", "kappablack-export.toml")
-    toml_text = open(toml_path, encoding="utf-8").read()
-    page.fill("#agent-paste-area", toml_text)
-    page.click("#agent-paste-details button")
-    page.wait_for_timeout(600)
-
-    record("stats-terminal", "importing a Kappa Black character marks it committed immediately, without ever entering Live Play",
-           page.eval_on_selector("body", "el => el.classList.contains('agent-committed')"), "")
-    record("stats-terminal", "the Bonus Points panel never shows for an imported character",
-           not page.is_visible(".panel-bonus-skills"), "")
-    record("stats-terminal", "the Bond generator never shows for an imported character either",
-           not page.is_visible(".bonds-left"), "")
-
-    record("stats-terminal", "no JS exceptions across the New Recruit split / import-commit run", len(errs)==0, "; ".join(errs))
-    page.close()
-    return errs
-
-def test_stat_generator_agent_file_nav(p):
-    """The "Open Agent File" button above the theme selector on
-    stats/index.html (replacing the old Foundry-VTT-mentioning intro
-    paragraph -- this hub doesn't use Foundry). One click exports the
-    current character (same path as the Export to Agent File button
-    further down the page) and lands on the Agent Portal. With only a
-    name typed in here, that auto-export is real but partial (see
-    agent-portal-export.js's run() -- name/sex/nationality/profession/
-    build/outfit only, everything else #dg-form marks required is still
-    blank), so isProfilingComplete() keeps this on the Profiling tab
-    rather than the Agent File tab -- there's nothing worth showing on
-    the Agent File side yet."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-
-    install_firestore_backend(page)  # briefs/{code} written on this page is read back on the Portal
-    # The button navigates to dg-agent-portal.html, whose inline <script>
-    # sits right after a Google Fonts <link> -- browsers hold script
-    # execution until a preceding stylesheet resolves, so an unblocked font
-    # request that never resolves in this sandbox hangs script execution
-    # (and the tab-switch/render this test checks for) entirely. Every
-    # other test that touches dg-agent-portal.html gets this for free via
-    # mock_routes(); this one needs it explicitly alongside its own
-    # script.google.com capture.
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(400)
-
-    record("stats-terminal", "old Foundry-VTT intro paragraph is gone",
-           page.locator("p.site-intro").count() == 0, "")
-    record("stats-terminal", "Open Agent File button is present in the settings cog",
-           page.locator("#site-intro-agent-file-btn").count() == 1, "")
-
-    page.fill("#cs-name", "Priya Anand")
-    page.wait_for_timeout(150)
-
-    # wait_for_url/expect_navigation are unreliable for this same-tab
-    # window.location.href hop (the navigation consistently completes --
-    # page.url reflects it correctly -- but the wait helpers time out
-    # anyway), so poll instead: first for the URL (commits early, while the
-    # destination page may still be loading/running its scripts), then
-    # separately for the destination page's own JS to actually run and mark
-    # the Agent File tab active.
-    open_sheet_settings(page)
-    page.wait_for_timeout(200)
-    page.click("#site-intro-agent-file-btn")
-    # goToAgentFile() now navigates with an explicit ?code=<agent's own
-    # Cloud Save code> rather than a bare #agent hash relying solely on
-    # dg_last_agent (see agent-portal-export.js's own comment) -- so the
-    # destination page's openSpecificAgent() (an explicit ?code= always
-    # wins) drives this, not a stale most-recent-agent fallback that a
-    # different agent's earlier session could have left behind.
-    for _ in range(20):
-        if "agent-hub.html?code=" in page.url:
-            break
-        page.wait_for_timeout(300)
-    state = _af_state(page)
-    record("stats-terminal", "Open Agent File button opens this Agent's own file on Agent Hub, Appearance open (name-only export is incomplete)",
-           "agent-hub.html?code=" in page.url and state.get("open") and "still to fill in" in (state.get("state") or ""),
-           page.url + " " + json.dumps(state))
-    record("stats-terminal", "the era photos are NOT offered yet for this still-incomplete export",
-           state.get("photosLocked") is True, json.dumps(state))
-
-    char_name_val = ""
-    for _ in range(15):
-        char_name_val = page.eval_on_selector("#dg-form [name=char_name]", "el => el.value") if page.locator("#dg-form [name=char_name]").count() else ""
-        if char_name_val == "Priya Anand":
-            break
-        page.wait_for_timeout(300)
-    record("stats-terminal", "the just-exported character's name is already on the Profiling form",
-           char_name_val == "Priya Anand", char_name_val)
-
-    nav_code = page.url.split("code=")[1].split("#")[0].split("&")[0] if "code=" in page.url else ""
-    body = fs_doc(page, "briefs/" + nav_code) or {}
-    record("stats-terminal", "the nav button's export used the real char_name",
-           body.get("char_name") == "Priya Anand", str(body.get("char_name")))
-
-    record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
-    page.close()
-    return errs
-
-def test_stat_generator_agent_file_nav_ignores_stale_last_agent(p):
-    """Regression test for a real live report: a player exported a fresh
-    Kappa Black import (Elvis) via "Open Agent File" and landed on a
-    DIFFERENT agent's data (Daniela, from an earlier session in the same
-    browser). Root cause: goToAgentFile() used to navigate to a bare
-    '#agent' hash with no ?code=, relying entirely on dg_last_agent (a
-    single browser-wide "most recently exported agent" localStorage key)
-    for dg-agent-portal.html to pick up -- stale whenever run() silently
-    no-ops (blank name) or just plain overwritten by an earlier session's
-    export that's still sitting there. Now goToAgentFile() passes this
-    Agent's own Cloud Save code explicitly via ?code=, which
-    openSpecificAgent() (dg-agent-portal.html) already documents as
-    always winning over the dg_last_agent fallback. This test pre-seeds
-    a stale dg_last_agent for a wholly different agent BEFORE exporting
-    a new one, to prove the stale entry is never what gets shown."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-
-    def fake_apps_script(route):
-        url = route.request.url
-        if route.request.method == "POST":
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        if "callback=" not in url:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        cb = url.split("callback=")[1].split("&")[0]
-        route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({{"status":"OK"}})')
-    page.route("**/script.google.com/**", fake_apps_script)
-    install_firestore_backend(page)  # the brief run() writes is what Agent Hub then reads
-
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(400)
-
-    # Pre-seed a stale "most recently exported agent" from a wholly
-    # different, earlier session -- exactly what a shared/reused browser
-    # would already have sitting in localStorage. A one-time evaluate(),
-    # not add_init_script -- that would reapply on every navigation this
-    # test makes (including the one onto dg-agent-portal.html itself),
-    # clobbering the real write goToAgentFile() is about to make right
-    # before the destination page ever gets to read it.
-    page.evaluate("""() => {
-        try {
-            localStorage.setItem('dg_last_agent', JSON.stringify({
-                code: 'DANI-STALE',
-                data: { char_name: 'Daniela Martinez', codename: 'Spwarrow' }
-            }));
-        } catch (e) {}
-    }""")
-
-    page.fill("#cs-name", "Elvis Shantings")
-    page.wait_for_timeout(150)
-
-    open_sheet_settings(page)
-    page.wait_for_timeout(200)
-    page.click("#site-intro-agent-file-btn")
-    for _ in range(20):
-        if "agent-hub.html?code=" in page.url:
-            break
-        page.wait_for_timeout(300)
-
-    nav_code = ""
-    if "code=" in page.url:
-        nav_code = page.url.split("code=")[1].split("#")[0]
-    record("stats-terminal", "Open Agent File links to this Agent's own code, not the stale dg_last_agent one",
-           bool(nav_code) and nav_code != "DANI-STALE", f"url={page.url}")
-
-    char_name_val = ""
-    for _ in range(15):
-        char_name_val = page.eval_on_selector("#dg-form [name=char_name]", "el => el.value") if page.locator("#dg-form [name=char_name]").count() else ""
-        if char_name_val:
-            break
-        page.wait_for_timeout(300)
-    record("stats-terminal", "the Agent File shows the just-exported agent (Elvis), not the stale one (Daniela)",
-           char_name_val == "Elvis Shantings", char_name_val)
-
-    record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
-    page.close()
-    return errs
-
-def test_stat_generator_sheets_roundtrip(p):
-    """Phase 2 (multi-source import), pigeon-labs-stack's own "Google
-    Sheet" export/import path: exportToSheets() (sheets-export.js) and the
-    matching importFromSheets() (stats/sheets-import.js, this hub's
-    addition) round-trip a character through the .xlsx file real players
-    would download from here, upload to Google Sheets, and eventually
-    download again.
-
-    Both directions depend on JSZip, loaded from a CDN this sandbox
-    blocks -- so unlike most of this suite, this test serves a vendored
-    copy (test/vendor/jszip.min.js) in place of the CDN URL rather than
-    skipping the check outright. This is also true of PDF export/import
-    (pdf-lib) and Foundry export, which remain untested here for the same
-    reason but haven't been given a vendored fixture (see test/README.md).
-
-    Along the way this also regression-tests the DD Form 315 PDF/xlsx
-    template assets actually existing in stats/assets/ -- both were
-    missing entirely from the initial port (silent 404s), which this
-    export step would fail on if they hadn't been restored."""
-    page = p.new_page()
-    page.set_default_timeout(10000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    jszip_path = os.path.join(HERE, "vendor", "jszip.min.js")
-    page.route("**/cdnjs.cloudflare.com/ajax/libs/jszip/**", lambda r: r.fulfill(path=jszip_path))
-    # This test never used to mock script.google.com at all -- fine
-    # while nothing on this page happened to call it, but stats/
-    # index.html makes its own background JSONP call on load, which
-    # went out to the REAL production backend over the network without
-    # this. See route_apps_script_ok()'s own comment for why that
-    # particular gap throws "Unexpected token ':'" rather than just
-    # silently doing nothing.
-    route_apps_script_ok(page)
-
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(500)
-
-    page.fill("#cs-name", "Priya Anand")
-    page.select_option("#cs-profession-select", "federal_agent")
-    page.wait_for_timeout(200)
-    str_plus = page.locator("#STR-value").locator("xpath=..").locator("button", has_text="+")
-    for _ in range(10):
-        str_plus.click()
-    page.fill("#cs-bio-employer", "Federal Bureau of Investigation")
-    page.fill("#cs-bio-nationality", "American")
-    page.fill("#cs-bio-age", "34")
-    page.wait_for_timeout(200)
-
-    page.evaluate("document.getElementById('advanced-options-details').open = true")
-    page.wait_for_timeout(200)
-    open_sheet_settings(page)
-    page.wait_for_timeout(200)
-
-    with page.expect_download(timeout=15000) as dl_info:
-        page.click("#export-sheets")
-    dl = dl_info.value
-    record("stats-terminal", "Export Google Sheet downloads an .xlsx (template asset present, not 404ing)",
-           dl.suggested_filename.endswith(".xlsx"), dl.suggested_filename)
-    xlsx_path = os.path.join(HERE, "results-tmp-exported.xlsx")
-    dl.save_as(xlsx_path)
-    page.click("#settings-panel-close")
-    page.wait_for_timeout(150)
-
-    # Blank the form, then import the just-exported file back
-    page.evaluate("""() => {
-        document.getElementById('cs-name').value = '';
-        document.getElementById('cs-bio-employer').value = '';
-        document.getElementById('cs-bio-nationality').value = '';
-        document.getElementById('cs-bio-age').value = '';
-    }""")
-
-    page.evaluate("window.dgSettingsPanel.open()")
-    page.click("#import-sheets-btn")
-    page.wait_for_timeout(200)
-    page.set_input_files("#dg-sheets-import-input", xlsx_path)
-    page.wait_for_timeout(1200)
-    try:
-        os.remove(xlsx_path)
-    except OSError:
-        pass
-
-    name_val = page.input_value("#cs-name")
-    employer_val = page.input_value("#cs-bio-employer")
-    nationality_val = page.input_value("#cs-bio-nationality")
-    age_val = page.input_value("#cs-bio-age")
-    str_val = page.input_value("#cs-STR")
-    record("stats-terminal", "Sheets round-trip recovers name/employer/nationality/age",
-           (name_val, employer_val, nationality_val, age_val) ==
-           ("Priya Anand", "Federal Bureau of Investigation", "American", "34"),
-           f"{name_val!r} / {employer_val!r} / {nationality_val!r} / {age_val!r}")
-    record("stats-terminal", "Sheets round-trip recovers STR (13 = 3 base + 10 point-buy clicks)",
-           str_val == "13", f"STR={str_val!r}")
-    record("stats-terminal", "importing a character from a Google Sheet marks it committed (no Bonus Points panel on re-editing an existing Agent)",
-           page.eval_on_selector("body", "el => el.classList.contains('agent-committed')")
-           and not page.is_visible(".panel-bonus-skills"), "")
-
-    record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
-    page.close()
-    return errs
-
-def test_foundry_import_profession_and_outfit(p):
-    """Regression test for a real bug found from a user's Kappa Black
-    Foundry VTT export: importFoundryJSONToEditor() never touched the
-    profession <select> at all, so importing left whatever profession
-    (or none) was selected before the import in place. That silently
-    broke Export to Agent File's profession-derived outfit guess -- a
-    "Pilot" character came out wearing a leftover police officer's
-    patrol uniform, not because PROFESSION_OUTFIT lacked a pilot entry,
-    but because the profession itself was never actually set.
-
-    Also covers the deeper cause: every importer (PDF, Sheets, Foundry
-    JSON) writes a human-readable profession *title* ("Pilot", "Federal
-    Agent"), never the <select>'s actual option value ("pilot_sailor",
-    "federal_agent") -- setting .value to a title matches no option and
-    silently no-ops. matchProfessionKey() (stats/save-load.js, shared
-    with scripts.js as a plain top-level function) resolves compound
-    titles like "Pilot or Sailor" against a single-word import too."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    install_firestore_backend(page)  # the brief lands in briefs/{code}
-
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(500)
-    page.evaluate("window.dgSettingsPanel.open()")
-    page.evaluate("document.getElementById('advanced-options-details').open = true")
-    page.wait_for_timeout(200)
-
-    # Pre-pollute the profession select, like a leftover character from
-    # an earlier session in the same browser -- this is what the reported
-    # bug actually depended on to produce a *wrong* (not just blank) outfit.
-    page.select_option("#cs-profession-select", "police_officer")
-    page.wait_for_timeout(150)
-
-    foundry_json_path = os.path.join(HERE, "fixtures", "kappablack-foundry.json")
-    json_text = open(foundry_json_path).read()
-    page.fill("#json-import-area", json_text)
-    page.click("#json-to-editor-button")
-    page.wait_for_timeout(600)
-
-    prof_val = page.eval_on_selector("#cs-profession-select", "el => el.value")
-    record("stats-terminal", "Foundry JSON import resolves a profession title ('Pilot') to its select key ('pilot_sailor')",
-           prof_val == "pilot_sailor", f"value={prof_val!r}")
-
-    page.click("#export-agent-file-btn")
-    _pump_until(page, lambda: fs_writes(page, "briefs/"), timeout_ms=8000)
-    body = last_brief_write(page)
-    record("stats-terminal", "outfit reflects the imported Pilot profession, not the pre-existing Police Officer one",
-           body.get("jacket") == "flight/deck jacket" and body.get("footwear") == "deck shoes",
-           f"jacket={body.get('jacket')!r} footwear={body.get('footwear')!r}")
-
-    record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
-    page.close()
-    return errs
-
-def test_kappablack_toml_import(p):
-    """Kappa Black is a third-party app that exports a flat .toml file --
-    a format with no existing parser on this page. Rather than write a
-    second full field-mapping pass, importKappaBlackTOMLToEditor()
-    converts the parsed TOML into the same shape a real Foundry VTT
-    export uses and hands it to the shared applyImportedAgentData()
-    (see the Foundry import test above for why the profession-title ->
-    select-key resolution matters). test/fixtures/kappablack-export.toml
-    is the user's real "Alistair Islay Lagavulin" (Pilot) export, byte
-    for byte."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    install_firestore_backend(page)  # the brief lands in briefs/{code}
-
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(500)
-    page.evaluate("window.dgSettingsPanel.open()")
-    page.evaluate("document.getElementById('advanced-options-details').open = true")
-    page.wait_for_timeout(200)
-
-    toml_path = os.path.join(HERE, "fixtures", "kappablack-export.toml")
-    toml_text = open(toml_path, encoding="utf-8").read()
-    # The real fixture's own agent has 0/3 boxes checked in both categories
-    # (Kappa Black's IAgent model -- github.com/troygoode/kappablack,
-    # src/types/agent.ts -- stores these as flat incident COUNTS,
-    # violenceAdaptation/helplessnessAdaptation, not per-box booleans), so
-    # append non-zero counts here to actually exercise the conversion --
-    # see convertKappaBlackToAgentData()'s kappaBlackAdaptationFromCount().
-    # Must land among the flat top-level keys, before the first [section]/
-    # [[array]] header -- parseSimpleTOML() has no concept of "top level"
-    # once a header switches its `current` write target, so appending at
-    # EOF (after [[weapons]]) would silently attach these to the last
-    # weapons entry instead of the root object.
-    toml_text = toml_text.replace(
-        'version = "2025-10-16"',
-        'version = "2025-10-16"\nviolenceAdaptation = 2\nhelplessnessAdaptation = 1'
-    )
-    page.fill("#kappablack-import-area", toml_text)
-    page.click("#kappablack-to-editor-button")
-    page.wait_for_timeout(600)
-
-    violence_checks = page.evaluate(
-        "[1,2,3].map(i => document.getElementById('cs-violence-incident'+i)?.checked)"
-    )
-    record("stats-terminal", "Kappa Black TOML import converts violenceAdaptation=2 into the first two violence incident boxes checked",
-           violence_checks == [True, True, False], f"checks={violence_checks}")
-
-    helplessness_checks = page.evaluate(
-        "[1,2,3].map(i => document.getElementById('cs-helplessness-incident'+i)?.checked)"
-    )
-    record("stats-terminal", "Kappa Black TOML import converts helplessnessAdaptation=1 into just the first helplessness incident box checked",
-           helplessness_checks == [True, False, False], f"checks={helplessness_checks}")
-
-    name_val = page.eval_on_selector("#cs-name", "el => el.value")
-    record("stats-terminal", "Kappa Black TOML import loads the character name",
-           name_val == "Alistair Islay Lagavulin", f"value={name_val!r}")
-
-    prof_val = page.eval_on_selector("#cs-profession-select", "el => el.value")
-    record("stats-terminal", "Kappa Black TOML import resolves profession title ('Pilot') to its select key ('pilot_sailor')",
-           prof_val == "pilot_sailor", f"value={prof_val!r}")
-
-    con_val = page.eval_on_selector("#cs-CON", "el => el.value")
-    record("stats-terminal", "Kappa Black TOML import recovers stat scores (CON = 13)",
-           str(con_val) == "13", f"value={con_val!r}")
-
-    drive_val = page.eval_on_selector("#cs-skill-drive", "el => el.value")
-    record("stats-terminal", "Kappa Black TOML import maps the 'Driving' title to the 'drive' skill key",
-           str(drive_val) == "20", f"value={drive_val!r}")
-
-    navigate_val = page.eval_on_selector("#cs-skill-navigate", "el => el.value")
-    record("stats-terminal", "Kappa Black TOML import recovers a plain skill score (Navigate = 70)",
-           str(navigate_val) == "70", f"value={navigate_val!r}")
-
-    specialty_count = page.locator(".custom-skill-row").count()
-    record("stats-terminal", "Kappa Black TOML import creates a specialty row for every [[skills]] entry with a type (7)",
-           specialty_count == 7, f"count={specialty_count}")
-
-    bonds_count = page.evaluate("window.bondsOnSheet ? window.bondsOnSheet.length : -1")
-    record("stats-terminal", "Kappa Black TOML import recovers both bonds",
-           bonds_count == 2, f"count={bonds_count}")
-
-    page.click("#export-agent-file-btn")
-    _pump_until(page, lambda: fs_writes(page, "briefs/"), timeout_ms=8000)
-    body = last_brief_write(page)
-    record("stats-terminal", "outfit derived from the imported Kappa Black character matches its Pilot profession",
-           body.get("jacket") == "flight/deck jacket" and body.get("footwear") == "deck shoes",
-           f"jacket={body.get('jacket')!r} footwear={body.get('footwear')!r}")
-
-    record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
-    page.close()
-    return errs
-
-def test_kappablack_toml_import_unmatched_profession(p):
-    """Regression test for a real bug: Kappa Black lets a player type ANY
-    free-text profession, with no fixed list behind it -- a real report
-    used "Prosecutor", which has no matching title or "X or Y" synonym
-    anywhere in professions.js. Before this fix, matchProfessionKey()
-    correctly returned null, but applyImportedAgentData() then set
-    profSelect.value to the raw unmatched string, which silently failed
-    (not a valid <option>) and left the dropdown on whatever was
-    selected before -- reading as "profession didn't load" with the
-    actual imported title lost entirely. Now falls back to the built-in
-    "Building a New Profession" catch-all and keeps the original title
-    visible in Personal Details instead of dropping it."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    route_apps_script_ok(page)
-
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(500)
-    page.evaluate("window.dgSettingsPanel.open()")
-    page.evaluate("document.getElementById('advanced-options-details').open = true")
-    page.wait_for_timeout(200)
-
-    toml_path = os.path.join(HERE, "fixtures", "kappablack-export.toml")
-    toml_text = open(toml_path, encoding="utf-8").read().replace('profession = "Pilot"', 'profession = "Prosecutor"')
-    assert 'profession = "Prosecutor"' in toml_text, "fixture's profession line didn't match the expected format to substitute"
-    page.fill("#kappablack-import-area", toml_text)
-    page.click("#kappablack-to-editor-button")
-    page.wait_for_timeout(600)
-
-    prof_val = page.eval_on_selector("#cs-profession-select", "el => el.value")
-    record("stats-terminal", "an unmatched profession ('Prosecutor') falls back to 'Building a New Profession' instead of failing to select anything",
-           prof_val == "new_profession", f"value={prof_val!r}")
-
-    notes_val = page.eval_on_selector("#cs-personal-details", "el => el.value")
-    record("stats-terminal", "the original unmatched profession title is preserved in Personal Details, not silently dropped",
-           "Prosecutor" in notes_val, f"value={notes_val!r}")
-
-    record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
-    page.close()
-    return errs
-
-def test_kappablack_toml_import_triggers_cloud_save(p):
-    """Regression test for a real bug: applyImportedAgentData() sets
-    every field via el.value = ... directly, which never fires 'input'
-    or 'change' -- so cloud-sync.js's own document-level listeners (the
-    only thing that ever calls ensureCloudCode()/pushToCloud()) never
-    saw an import at all. A real report: an imported character showed
-    up fine in this browser's own local roster but never reached the
-    Characters sheet -- invisible to A-Cell Admin/Sheet -- until some
-    unrelated later edit happened to trigger a real sync. Now dispatches
-    a synthetic change event at the end of the import so it goes
-    through the normal save pipeline immediately."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    install_firestore_backend(page)
-
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(500)
-    page.evaluate("window.dgSettingsPanel.open()")
-    page.evaluate("document.getElementById('advanced-options-details').open = true")
-    page.wait_for_timeout(200)
-
-    toml_path = os.path.join(HERE, "fixtures", "kappablack-export.toml")
-    toml_text = open(toml_path, encoding="utf-8").read()
-    page.fill("#kappablack-import-area", toml_text)
-    page.click("#kappablack-to-editor-button")
-    page.wait_for_timeout(1000)
-
-    save_posts = [w["data"] for w in fs_writes(page, "characters/")]
-    record("stats-terminal", "importing a Kappa Black .toml triggers a Cloud Save (a characters/ write) without any further manual edit",
-           len(save_posts) >= 1, str(save_posts))
-    if save_posts:
-        char_json = json.loads(save_posts[0].get("character_json") or "{}")
-        record("stats-terminal", "the auto-triggered save actually carries the imported character's name, not a blank/default one",
-               char_json.get("bio", {}).get("name") == "Alistair Islay Lagavulin",
-               char_json.get("bio", {}).get("name"))
-
-    record("stats-terminal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
-    page.close()
-    return errs
-
-def test_import_agent_paste_text(p):
-    """The primary Import Agent drop zone (stats/index.html) only ever
-    accepted files -- unusable on a phone for Kappa Black exports, since
-    Kappa Black's mobile flow shows the character as on-screen text to
-    copy, not a file a phone can save and hand back to a file input. This
-    covers the "Can't drop a file? Paste text instead" fallback
-    (importAgentText() in scripts.js), reusing the same real Kappa Black
-    .toml fixture as test_kappablack_toml_import, and also a plain JSON
-    paste, without ever touching the Advanced section's own textarea."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    route_apps_script_ok(page)
-
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(500)
-
-    # Paste-code is the primary, always-visible path now (fastest for the
-    # common case, and the only option that works from a phone's "Share"
-    # sheet); drop/upload a file (any format, including PDF) is the
-    # collapsed secondary option instead.
-    record("stats-terminal", "the paste box is visible by default (the primary import path)",
-           page.is_visible("#agent-paste-area"))
-    record("stats-terminal", "drop/upload a file is collapsed by default (secondary, not cluttering the primary path)",
-           page.eval_on_selector("#agent-drop-details", "el => el.open") == False)
-
-    toml_path = os.path.join(HERE, "fixtures", "kappablack-export.toml")
-    toml_text = open(toml_path, encoding="utf-8").read()
-    page.fill("#agent-paste-area", toml_text)
-    page.click("#agent-paste-details button")
-    page.wait_for_timeout(600)
-
-    name_val = page.eval_on_selector("#cs-name", "el => el.value")
-    record("stats-terminal", "pasting a Kappa Black .toml into the primary paste box loads the character name",
-           name_val == "Alistair Islay Lagavulin", f"value={name_val!r}")
-    prof_val = page.eval_on_selector("#cs-profession-select", "el => el.value")
-    record("stats-terminal", "pasting a Kappa Black .toml into the primary paste box resolves the profession",
-           prof_val == "pilot_sailor", f"value={prof_val!r}")
-
-    # A real name is now on the sheet, which relocates #new-recruit-block
-    # (and #agent-paste-details inside it) from the top of the page into
-    # the settings cog's New Recruit section -- see dgCharacterMode
-    # (scripts.js). Open the cog to keep using it for the rest of this test.
-    open_sheet_settings(page)
-    page.wait_for_timeout(200)
-
-    # A plain JSON paste (this site's own native export shape) should also
-    # route correctly, proving the paste box isn't TOML-only.
-    page.evaluate("document.getElementById('cs-name').value = ''")
-    own_json = json.dumps({"v": 1, "bio": {"name": "Pasted JSON Agent"}})
-    page.fill("#agent-paste-area", own_json)
-    page.click("#agent-paste-details button")
-    page.wait_for_timeout(400)
-    name_val2 = page.eval_on_selector("#cs-name", "el => el.value")
-    record("stats-terminal", "pasting this site's own JSON export into the primary paste box also works",
-           name_val2 == "Pasted JSON Agent", f"value={name_val2!r}")
-
-    # Garbage text should fail cleanly with a toast, not a silent no-op or a
-    # thrown exception -- matches importAgentAuto()'s own unrecognized-file
-    # handling, including its deliberate console.error (filtered out of the
-    # exception check below, same as that test does for its own case).
-    page.fill("#agent-paste-area", "not a character export")
-    page.click("#agent-paste-details button")
-    page.wait_for_timeout(300)
-    record("stats-terminal", "unrecognized pasted text fails with a toast, not a silent no-op",
-           "Couldn't recognize" in (page.eval_on_selector("#dg-toast", "el => el.textContent") or ""))
-
-    real_errs = [e for e in errs if "Unrecognized text format" not in e]
-    record("stats-terminal", "no JS exceptions", len(real_errs) == 0, "; ".join(real_errs))
-    page.close()
-    return errs
-
-def test_import_agent_auto_detect(p):
-    """The single "Import Agent" drop zone at the top of the page
-    (#agent-drop-zone / #agent-import-auto-input) replaces having to pick
-    the right button out of five in Advanced for a player who just wants
-    to load their character. importAgentAuto() (stats/scripts.js) detects
-    format from the file extension, falling back to sniffing the actual
-    bytes/content for files dropped in without one, then hands off to the
-    existing format-specific importer -- this test proves the *routing*,
-    not the underlying parsers (those already have their own coverage
-    above and in test_stat_generator_sheets_roundtrip)."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    route_apps_script_ok(page)
-
-    # .toml by extension, through the same #agent-import-auto-input a
-    # player would use.
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(400)
-    toml_path = os.path.join(HERE, "fixtures", "kappablack-export.toml")
-    page.set_input_files("#agent-import-auto-input", toml_path)
-    page.wait_for_timeout(600)
-    record("stats-terminal", "Import Agent routes a .toml file to the Kappa Black importer (name)",
-           page.eval_on_selector("#cs-name", "el => el.value") == "Alistair Islay Lagavulin")
-    record("stats-terminal", "Import Agent routes a .toml file to the Kappa Black importer (profession)",
-           page.eval_on_selector("#cs-profession-select", "el => el.value") == "pilot_sailor")
-    record("stats-terminal", "Import Agent's .toml routing goes through the real TOML parser, not a JSON fallback (Driving -> drive)",
-           page.eval_on_selector("#cs-skill-drive", "el => el.value") == "20")
-
-    # .json by extension (Foundry VTT actor shape), on a fresh page.
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(400)
-    json_path = os.path.join(HERE, "fixtures", "kappablack-foundry.json")
-    page.set_input_files("#agent-import-auto-input", json_path)
-    page.wait_for_timeout(600)
-    record("stats-terminal", "Import Agent routes a .json file to the Foundry importer (name)",
-           page.eval_on_selector("#cs-name", "el => el.value") == "Alistair Islay Lagavulin")
-    record("stats-terminal", "Import Agent routes a .json file to the Foundry importer (profession)",
-           page.eval_on_selector("#cs-profession-select", "el => el.value") == "pilot_sailor")
-
-    # Extension-less file (e.g. a mobile "Share" sheet that stripped it) --
-    # content-sniffing must still recognize this site's own v:1 state JSON
-    # (downloadSheet()'s own export format, distinct from a Foundry actor)
-    # and route it through applyState(), not applyImportedAgentData().
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    # A longer wait than the other steps' 400ms: save-load.js's own
-    # restore-on-load (window 'load' + 200ms) autoloads whatever this
-    # page's own autosave last wrote to localStorage (the previous
-    # step's Foundry import); calling importAgentAuto() before that
-    # settles races against it, occasionally letting the stale restore
-    # win and overwrite this test's import moments later.
-    page.wait_for_timeout(900)
-    native_state = {
-        "v": 1,
-        "bio": {"name": "Native Sniff Test", "profession": "", "employer": "", "nationality": "",
-                "sex": "", "age": "", "education": ""},
-        "stats": {"STR": 10, "CON": 10, "DEX": 10, "INT": 10, "POW": 10, "CHA": 10},
-        "csStats": {"STR": 10, "CON": 10, "DEX": 10, "INT": 10, "POW": 10, "CHA": 10},
-        "derived": {"hp": 7, "wp": 10, "san": 50, "bp": 40},
-        "skills": {}, "skillSpecs": {}, "customSkills": [], "bonds": [],
-        "sanity": {"violence": [False, False, False], "helplessness": [False, False, False]},
-        "equipment": [], "lpNotes": {"wounds": "", "gear": "", "remarks": ""},
-        "lpWeapons": [], "lpFeat": {}, "optionalSkillChecked": [],
-        "bonusPrepared": False, "bonusSkills": [], "bonusApplied": False,
-        "appliedBonuses": {}, "specialtyInstances": [], "lpCheckedSkills": [],
-        "lpCustomSkills": [], "professionSkillsApplied": False,
-    }
-    page.evaluate(
-        """(stateJson) => {
-            const file = new File([stateJson], 'upload', { type: '' });
-            return window.importAgentAuto(file);
-        }""",
-        json.dumps(native_state),
-    )
-    page.wait_for_timeout(600)
-    record("stats-terminal", "Import Agent content-sniffs an extension-less file as this site's own v:1 JSON (not the Foundry path)",
-           page.eval_on_selector("#cs-name", "el => el.value") == "Native Sniff Test")
-    record("stats-terminal", "content-sniffed v:1 JSON goes through applyState() (HP survives, a field only that path sets here)",
-           page.eval_on_selector("#cs-hp", "el => el.value") == "7")
-
-    # Unrecognized format -- must fail closed (an alert, auto-dismissed by
-    # Playwright) rather than throwing an unhandled exception. This
-    # deliberately triggers importAgentAuto()'s own console.error logging
-    # (expected, not a bug -- same pattern importFromPDF/importFromSheets
-    # already use for their own bad-file cases), so that one line is
-    # filtered out of the exception check below rather than counted as one.
-    page.evaluate(
-        """() => {
-            const file = new File(['not a real character export'], 'notes.xyz', { type: '' });
-            return window.importAgentAuto(file);
-        }"""
-    )
-    page.wait_for_timeout(300)
-
-    real_errs = [e for e in errs if "Unrecognized file format" not in e]
-    record("stats-terminal", "unrecognized format fails closed without an unhandled exception",
-           len(real_errs) == len(errs) - 1, f"errs={errs}")
-    record("stats-terminal", "no JS exceptions", len(real_errs)==0, "; ".join(real_errs))
-    page.close()
-    return errs
-
-def test_player_name_field(p):
-    """A dedicated "Player Name" biography field (the real person
-    playing this Agent, distinct from the Agent's own name) -- so a
-    Handler can tell whose character sheet they're looking at in
-    A-Cell. Stored as bio.player_name in collectState()/applyState(),
-    the same way every other biography field already round-trips."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    route_apps_script_ok(page)
-
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(400)
-    record("stats-terminal", "Player Name field is present",
-           page.query_selector("#cs-player-name") is not None, "")
-
-    page.fill("#cs-player-name", "Gergo P")
-    page.fill("#cs-name", "Owen Castillo")
-    page.wait_for_timeout(200)
-    state = page.evaluate("() => window.dgSaveLoad.collectState()")
-    record("stats-terminal", "collectState() carries the player name under bio.player_name",
-           state.get("bio", {}).get("player_name") == "Gergo P", str(state.get("bio")))
-
-    page.evaluate("(s) => window.dgSaveLoad.applyState(s)", state)
-    page.wait_for_timeout(200)
-    record("stats-terminal", "applyState() restores the player name field",
-           page.eval_on_selector("#cs-player-name", "el => el.value") == "Gergo P", "")
-    record("stats-terminal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
-
-    page.close()
-    return errs
-
-def test_cloud_save(p):
-    """Automatic background cloud sync (stats/cloud-sync.js) -- lets a
-    character built on one device be picked up on another by an Agent
-    Code, without an export/import file changing hands. Auto-starts on
-    the first edit made once a real name is present (idle theme-
-    switching or point-buy fiddling before naming an agent shouldn't
-    mint a throwaway row for every casual visitor); every further edit
-    pushes a debounced upsert; "Load by Code" pulls a saved character
-    back down. No Stop button -- once a character is named, syncing it
-    is just how the page behaves, not a togglable setting, same as the
-    pre-existing localStorage autosave it sits alongside. This exercises
-    only the client side against a mocked Apps Script backend -- the
-    real backend needs the paired character-cloud-save-addition.gs
-    pasted into the live Apps Script project and redeployed, which this
-    sandbox cannot verify directly."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-
-    # Firestore (the Sheet is retired): TESTCODE exists as a saved
-    # character; every save lands as a characters/{code} write.
-    install_firestore_backend(page, {"characters/TESTCODE": character_doc(
-        "TESTCODE", {"v": 1, "bio": {"name": "Cloud Loaded Character", "profession": "Pilot"}})})
-    def saves():
-        return [dict(w["data"], agent_code=w["path"].split("/")[1]) for w in fs_writes(page, "characters/")]
-
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(400)
-
-    # No code yet and no name entered -- silent, nothing sent, so an idle
-    # visitor never mints a throwaway row just from loading the page.
-    record("stats-terminal", "Cloud Save is inactive on page load, before any name is entered",
-           page.eval_on_selector("#cloud-save-status", "el => el.textContent.trim()") == "" and len(saves()) == 0)
-
-    # Entering a real name -- with NO button click -- is the auto-start trigger.
-    page.fill("#cs-name", "Priya Anand")
-    page.wait_for_timeout(500)
-
-    status1 = page.eval_on_selector("#cloud-save-status", "el => el.textContent")
-    record("stats-terminal", "naming the agent auto-starts Cloud Save without pressing Start",
-           "Cloud Save active" in status1 or "Synced" in status1, status1)
-    save_posts = saves()
-    record("stats-terminal", "auto-start immediately pushes the character (not waiting for the debounce)",
-           len(save_posts) >= 1, f"saves={save_posts}")
-    if save_posts:
-        first_state = json.loads(save_posts[0]["character_json"])
-        record("stats-terminal", "the pushed character_json carries the real character data (name)",
-               first_state.get("bio", {}).get("name") == "Priya Anand", str(first_state.get("bio")))
-
-    code = page.evaluate("window.dgCloudSave.getCloudCode()")
-    record("stats-terminal", "the auto-minted cloud code is persisted to localStorage",
-           bool(code) and save_posts and save_posts[0].get("agent_code") == code, f"code={code!r}")
-
-    # Minting a cloud code (any path into stats/index.html -- typing a name,
-    # or an importer applying state) must also register the agent in
-    # dg_agent_roster, the ONLY key agent-hub.html's player-facing roster
-    # reads. Without this, an imported/typed-in character syncs fine to the
-    # Handler's cloud roster but never appears in the player's own Hub.
-    roster = page.evaluate("JSON.parse(localStorage.getItem('dg_agent_roster') || '{}')")
-    record("stats-terminal", "auto-minting a cloud code also registers the agent in the local Hub roster",
-           code in roster and roster[code].get("char_name") == "Priya Anand", f"roster={roster}")
-
-    record("stats-terminal", "there is no Start Cloud Save button -- naming the agent is the only trigger",
-           page.locator("#cloud-save-bar button", has_text="Start Cloud Save").count() == 0)
-
-    # A further edit should schedule (debounced) another push -- proves
-    # ongoing "saved dynamically and updated" behavior, not just the
-    # initial auto-start push.
-    page.fill("#cs-bio-nationality", "Indian-American")
-    page.wait_for_timeout(4500)
-    save_posts_after_edit = saves()
-    record("stats-terminal", "editing after auto-start schedules another debounced push",
-           len(save_posts_after_edit) >= 2, f"count={len(save_posts_after_edit)}")
-    if len(save_posts_after_edit) >= 2:
-        latest_state = json.loads(save_posts_after_edit[-1]["character_json"])
-        record("stats-terminal", "the debounced push carries the edited field",
-               latest_state.get("bio", {}).get("nationality") == "Indian-American", str(latest_state.get("bio")))
-
-    record("stats-terminal", "there is no Stop button -- Cloud Save is not a togglable setting",
-           page.locator("#cloud-save-bar button", has_text="Stop").count() == 0)
-
-    # Load by Code -- called directly with a code argument (bypassing the
-    # native prompt(), which this test isn't exercising) against the
-    # mocked action=load_character response above.
-    page.evaluate("window.dgCloudSave.loadFromCloud('TESTCODE')")
-    page.wait_for_timeout(500)
-    record("stats-terminal", "Load by Code restores the character from the cloud save",
-           page.eval_on_selector("#cs-name", "el => el.value") == "Cloud Loaded Character")
-    record("stats-terminal", "Load by Code re-activates Cloud Save under the loaded code",
-           page.evaluate("window.dgCloudSave.getCloudCode()") == "TESTCODE")
-    roster_after_load = page.evaluate("JSON.parse(localStorage.getItem('dg_agent_roster') || '{}')")
-    record("stats-terminal", "Load by Code also registers the pulled-down agent in the local Hub roster",
-           "TESTCODE" in roster_after_load and roster_after_load["TESTCODE"].get("char_name") == "Cloud Loaded Character",
-           f"roster={roster_after_load}")
-
-    page.evaluate("window.dgCloudSave.loadFromCloud('NOPE-CODE')")
-    page.wait_for_timeout(400)
-    record("stats-terminal", "Load by Code reports a clean not-found for an unknown code",
-           "No cloud save found" in (page.eval_on_selector("#cloud-load-status", "el => el.textContent") or ""))
-
-    record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
-    page.close()
-    return errs
-
-def test_agent_file_export(p):
-    """The "Export to Agent File" bridge (stats/agent-portal-export.js):
-    submits through the exact same APPS_SCRIPT_URL path the Cover form's
-    own Submit Brief uses, with build/outfit derived from STR+CON and
-    profession rather than left for the player to type. Verifies the
-    actual POST payload, not just that a status message appeared --
-    this is exactly where the earlier lowercase/uppercase csStats key
-    bug hid (build silently defaulted regardless of STR)."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-
-    # The brief goes to briefs/{code} in Firestore (dgStore.submitBrief).
-    install_firestore_backend(page)
-
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(500)
-
-    page.fill("#cs-name", "Owen Castillo")
-    page.select_option("#cs-profession-select", "federal_agent")
-    page.wait_for_timeout(150)
-    page.fill("#cs-bio-age", "38")
-    page.fill("#cs-bio-sex", "Male")
-
-    str_plus = page.locator("#STR-value").locator("xpath=..").locator("button", has_text="+")
-    for _ in range(13):
-        str_plus.click()
-    con_plus = page.locator("#CON-value").locator("xpath=..").locator("button", has_text="+")
-    for _ in range(10):
-        con_plus.click()
-    page.wait_for_timeout(150)
-
-    page.evaluate("window.dgSettingsPanel.open()")
-    page.click("#export-agent-file-btn")
-    page.wait_for_timeout(400)
-
-    status_html = page.inner_html("#agent-file-export-status")
-    record("agent-file-export", "shows the generated code and a link to that Agent's file on Agent Hub",
-           "OWEN-" in status_html and "agent-hub.html?code=OWEN-" in status_html, status_html)
-
-    brief_writes = fs_writes(page, "briefs/")
-    body = brief_writes[-1]["data"] if brief_writes else {}
-    record("agent-file-export", "submits through the same brief path as the Cover form (briefs/{code})",
-           bool(brief_writes), "no brief write captured" if not brief_writes else "")
-    record("agent-file-export", "char_name and agent_code present in payload",
-           body.get("char_name") == "Owen Castillo" and bool(body.get("agent_code")), str(body.get("agent_code")))
-
-    # Bug fix: the exported Agent File code used to always be a fresh,
-    # unrelated random code (genCode()), independent of this character's
-    # own Cloud Save code -- so a Play/Recruit link built from the Agent
-    # File later couldn't find the character it actually belonged to
-    # (real report: an Agent with a saved character showed "Recruit",
-    # and going through Character Creation partially overwrote the real
-    # character before the mismatch was caught). It must now reuse
-    # whatever Cloud Save code this character already has.
-    cloud_code = page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')")
-    record("agent-file-export", "the exported Agent Code is this character's own Cloud Save code, not a new unrelated one",
-           bool(cloud_code) and body.get("agent_code") == cloud_code,
-           f"cloud_code={cloud_code} exported={body.get('agent_code')}")
-    record("agent-file-export", "age/sex map into the Cover form's expected values",
-           body.get("age_range") == "Late 30s" and body.get("sex") == "Male",
-           f"age_range={body.get('age_range')} sex={body.get('sex')}")
-
-    # STR 16 + CON 13 = 29 -> 'athletic' tier; verify it's not the generic
-    # fallback that shipped when csStats.str (lowercase) silently read undefined
-    athletic_pool = ["athletic", "lean and muscular", "fit and rangy", "well-conditioned",
-                      "physically capable without being ostentatious", "carries themselves with easy physical confidence"]
-    record("agent-file-export", "build reflects STR+CON (athletic tier), not a generic fallback",
-           body.get("build") in athletic_pool, str(body.get("build")))
-    record("agent-file-export", "outfit matches the Federal Agent profession",
-           body.get("jacket") == "dark suit jacket" and body.get("shirt") == "white dress shirt", str(body.get("jacket")))
-    record("agent-file-export", "profession title carries over into the Cover form's Profession field",
-           body.get("profession") == "Federal Agent", str(body.get("profession")))
-    record("agent-file-export", "notes include correct per-stat values (uppercase csStats keys)",
-           "STR 16 CON 13" in (body.get("notes") or ""), (body.get("notes") or "")[:60])
-
-    saved = page.evaluate("() => { try { return JSON.parse(localStorage.getItem('dg_last_agent')); } catch(e) { return null; } }")
-    record("agent-file-export", "also persists locally under dg_last_agent for same-browser Agent Portal auto-restore",
-           bool(saved and saved.get("code") and saved["code"] == body.get("agent_code")), str(saved and saved.get("code")))
-
-    record("agent-file-export", "no JS exceptions", len(errs)==0, "; ".join(errs))
-    page.close()
-    return errs
-
-def test_random_bio_cloud_code_race(p):
-    """v1.7 code-unification fix: Random Bio (and every importer that
-    funnels through save-load.js's applyState()) sets cs-name's .value
-    directly, which -- unlike page.fill()'s real 'input' event, the case
-    test_agent_file_export above already covers -- never used to trigger
-    ensureCloudCode() in cloud-sync.js. Export before any other manual
-    edit would then mint its own fallback Agent Code instead of reusing
-    a Cloud Save code that was never actually minted, permanently
-    orphaning the two from each other for that character. Covers the
-    Random Bio path here; applyState()'s fix covers every importer at
-    the same source, so this stands in for all of them."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-
-    install_firestore_backend(page)  # the brief lands in briefs/{code}
-
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(500)
-
-    before = page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')")
-    record("agent-file-export", "no Cloud Save code exists yet on a fresh sheet",
-           not before, str(before))
-
-    page.click("#random-bio-button")
-    page.wait_for_timeout(300)
-    cloud_code = page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')")
-    record("agent-file-export", "Random Bio mints a Cloud Save code immediately, with no other edit since",
-           bool(cloud_code), str(cloud_code))
-
-    page.evaluate("window.dgSettingsPanel.open()")
-    page.click("#export-agent-file-btn")
-    page.wait_for_timeout(400)
-    body = last_brief_write(page)
-    record("agent-file-export", "exporting right after Random Bio reuses that same code, not a second unrelated one",
-           bool(cloud_code) and body.get("agent_code") == cloud_code,
-           f"cloud_code={cloud_code} exported={body.get('agent_code')}")
-
-    record("agent-file-export", "no JS exceptions (Random Bio race)", len(errs)==0, "; ".join(errs))
-    page.close()
-    return errs
 
 def test_cover_ids_tab(p):
     """The Field ID Fabricator (field-id.html, embedded in the Field Notes
@@ -6097,7 +4738,7 @@ def test_table_radio_plays_while_audio_context_locked(p):
     while locked, sounds must play as plain <audio> (no gain node); after
     any tap on the page the next track goes through the gain node again.
     Also: ambient/stinger files resolve next to the script, not against a
-    subfolder page (stats/)."""
+    subfolder page (notes/)."""
     lock = """(() => {
       const C = window.AudioContext || window.webkitAudioContext; if (!C) return;
       window.__ctxUnlocked = false;
@@ -6142,7 +4783,7 @@ def test_table_radio_plays_while_audio_context_locked(p):
            "route=webaudio" in page.inner_text("#dg-radio-debug"), page.inner_text("#dg-radio-debug"))
     page.close()
 
-    page, e = fresh("stats/index.html"); errs += e
+    page, e = fresh("notes/index.html"); errs += e
     push_radio_now_playing(page, "1", {"channel": "1", "track_url": "", "track_volume": 0, "ambient_volume": 100,
         "ambient_layers": [{"id": "alien-lunch", "started_at": 1700000000000, "paused": False, "paused_at": 0, "loop": True}]})
     src = None
@@ -6150,7 +4791,7 @@ def test_table_radio_plays_while_audio_context_locked(p):
         src = page.evaluate("() => { const a = [...document.querySelectorAll('audio')].find(x => /alien-lunch/.test(x.src)); return a ? a.src : null; }")
         if src: break
         page.wait_for_timeout(200)
-    record("radio", "on a page in a subfolder (stats/), ambient files load from the site's assets/, not stats/assets/",
+    record("radio", "on a page in a subfolder (notes/), ambient files load from the site's assets/, not notes/assets/",
            bool(src) and src.startswith(f"{BASE}/assets/ambient/"), str(src))
     page.close()
     return errs
@@ -7003,111 +5644,6 @@ def test_table_radio_yt_volume_reliability(p):
     page.close()
     return errs
 
-def test_table_radio_mobile_buttons_not_stretched(p):
-    """Bug report (screenshot): on stats/index.html at a phone width, the
-    minimized mini-bar's buttons (Mute/Expand/Leave) rendered stretched
-    edge-to-edge and overflowing well past the widget's own 280px-wide
-    panel, overlapping the character sheet's form fields underneath.
-    Root cause: stats/styles.css has `@media (max-width:600px){ button {
-    width: 100%; } }`, meant for the page's OWN buttons stacking full-
-    width on narrow screens -- being a bare `button` selector, it also
-    grabbed this widget's plain <button> elements once appended to
-    <body>, since dg-agent-portal.html has no such rule (which is why
-    the report says the widget looked fine there and only broke once
-    Play navigated to the character sheet). Confirms every mini-bar
-    button now stays within the panel's own bounds on that exact page."""
-    page = p.new_page(viewport={"width": 390, "height": 844})
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
-    route_apps_script_ok(page)
-
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    notebook_aside(page)
-    page.evaluate("() => localStorage.setItem('dg_radio_channel', '3')")
-    page.reload(wait_until="domcontentloaded")
-    notebook_aside(page)
-    page.wait_for_timeout(700)
-
-    panel_box = page.evaluate("""() => {
-        var r = document.getElementById('dg-radio-panel').getBoundingClientRect();
-        return { left: r.left, right: r.right };
-    }""")
-    button_ids = ["dg-radio-mute", "dg-radio-toggle-expand", "dg-radio-leave"]
-    for bid in button_ids:
-        box = page.evaluate(f"""() => {{
-            var r = document.getElementById('{bid}').getBoundingClientRect();
-            return {{ left: r.left, right: r.right, width: r.width }};
-        }}""")
-        record("radio", f"#{bid} stays within the mini-bar panel's own bounds (not stretched to page-wide 100%)",
-               box["left"] >= panel_box["left"] - 1 and box["right"] <= panel_box["right"] + 1 and box["width"] < 150,
-               f"button={box} panel={panel_box}")
-
-    page.close()
-    return errs
-
-def test_table_radio_theme_consistent_style(p):
-    """Bug report (screenshots): the Tune In panel's dial arrows and
-    Confirm button looked different across themes -- a plain border box
-    in one theme, nearly invisible (flat, theme-primary-colored fill) in
-    Son of Sam. Root cause: .dgr-turn/.dgr-confirm/.dgr-volume were bare
-    class selectors in table-radio.js's injected CSS, losing on
-    specificity to each theme's own blanket `button`/`input` rules in
-    stats/styles.css (e.g. .theme-son-of-sam button, .theme-xfiles
-    input) -- same class of bug .dgr-btn was already protected against
-    (see its #dg-radio-panel prefix and comment). Confirms the dial's
-    computed border/background now stay identical across two themes
-    with very different generic button treatments."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
-    route_apps_script_ok(page)
-
-    def dial_styles(theme):
-        page.evaluate(f"() => window.setTheme && window.setTheme('{theme}')")
-        page.wait_for_timeout(200)
-        page.click("#dg-radio-pill")
-        # The click leaves the pointer where the pill was -- over the Tune In
-        # button once the panel opens -- so move it off and let the hover
-        # transition settle: this compares resting styles, not hover ones.
-        page.mouse.move(1, 1)
-        page.wait_for_timeout(500)
-        styles = page.evaluate("""() => {
-            var turn = document.querySelector('.dgr-turn');
-            var confirm = document.getElementById('dg-radio-confirm-tune');
-            var cs1 = getComputedStyle(turn), cs2 = getComputedStyle(confirm);
-            return {
-                turnBorder: cs1.borderColor, turnBg: cs1.backgroundColor,
-                confirmBorder: cs2.borderColor, confirmBg: cs2.backgroundColor,
-            };
-        }""")
-        page.click("#dg-radio-cancel")
-        page.wait_for_timeout(150)
-        return styles
-
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    notebook_aside(page)
-    page.wait_for_timeout(500)
-    xfiles_styles = dial_styles("xfiles")
-    sam_styles = dial_styles("son-of-sam")
-
-    record("radio", "the dial turn buttons keep the same border color across X-Files and Son of Sam themes",
-           xfiles_styles["turnBorder"] == sam_styles["turnBorder"], f"{xfiles_styles} vs {sam_styles}")
-    record("radio", "the dial turn buttons keep the same background across X-Files and Son of Sam themes",
-           xfiles_styles["turnBg"] == sam_styles["turnBg"], f"{xfiles_styles} vs {sam_styles}")
-    record("radio", "the Tune In confirm button keeps the same border color across X-Files and Son of Sam themes",
-           xfiles_styles["confirmBorder"] == sam_styles["confirmBorder"], f"{xfiles_styles} vs {sam_styles}")
-    record("radio", "the Tune In confirm button keeps the same background across X-Files and Son of Sam themes",
-           xfiles_styles["confirmBg"] == sam_styles["confirmBg"], f"{xfiles_styles} vs {sam_styles}")
-    record("radio", "no JS exceptions", len(errs) == 0, "; ".join(errs))
-    page.close()
-    return errs
-
 def test_shell_content_swap_preserves_hoisted_widgets(p):
     """hub.html (Phase 2 of the app-shell plan, docs/firebase-migration/
     on this branch) hoists Table Radio and Dice Roller into the outer
@@ -7586,7 +6122,7 @@ def test_agent_portal_profiling_gate(p):
     """Era photos are made from the Appearance brief, so they only open
     once it is "filled out totally" -- every #dg-form [required] field has
     a real value (isProfilingComplete()), not just "an Agent File exists".
-    stats/'s export writes a real but partial one (name/sex/nationality/
+    a carry-over from the character sheet writes a real but partial one (name/sex/nationality/
     profession/build/outfit only, agent-portal-export.js's run()). Such
     an Agent's file shows Appearance open, with how much is left, the
     already-known fields carried over, and no photos yet; the Random
@@ -7597,7 +6133,7 @@ def test_agent_portal_profiling_gate(p):
         url = route.request.url
         if "callback=" in url:
             cb = url.split("callback=")[1].split("&")[0]
-            # Shaped like stats/'s auto-export payload.
+            # Shaped like the carry-over's partial brief.
             fake_data = {"char_name": "Mark Delacroix", "age_range": "30s", "sex": "Male",
                          "nationality": "American", "profession": "Federal Agent", "build": "muscular",
                          "jacket": "dark suit jacket", "shirt": "white dress shirt",
@@ -7644,286 +6180,9 @@ def test_agent_portal_profiling_gate(p):
     page.close()
     return errs_all
 
-def test_stats_load_by_code_query_param(p):
-    """agent-hub.html's Agent Files "Play" button links to
-    stats/index.html?load=XXXX&live=1 -- loads that exact agent from the
-    Cloud Save backend (dgCloudSave.loadFromCloud(), see
-    stats/cloud-sync.js) and switches Live Play mode on over whichever
-    theme this device last used, rather than leaving whatever this
-    browser last auto-saved showing. Also covers a real, previously-
-    undiscovered race: scripts.js builds the stat/skill DOM (and has its
-    own defensive "reset stats again 50ms later" timer) inside its own
-    window.onload handler -- a cloud response landing before or during
-    that window used to have its writes silently dropped or immediately
-    reset back to defaults (see the onApplied-chained deferral in
-    cloud-sync.js's loadFromCloud())."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-
-    char_state = {"v": 1, "bio": {"name": "Owen Castillo", "profession": ""},
-                  "stats": {"STR": 14, "CON": 12, "DEX": 10, "INT": 16, "POW": 13, "CHA": 11},
-                  "csStats": {"STR": 14, "CON": 12, "DEX": 10, "INT": 16, "POW": 13, "CHA": 11}}
-    install_firestore_backend(page, {"characters/OWEN-CS12": character_doc("OWEN-CS12", char_state)})
-
-    page.goto(f"{BASE}/stats/index.html?load=OWEN-CS12&live=1", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(1800)
-    record("stats-terminal", "?load=... loads that exact agent's name from the cloud",
-           page.eval_on_selector("#cs-name", "el => el.value") == "Owen Castillo", "")
-    record("stats-terminal", "?live=1 switches Live Play mode on",
-           "live-play" in page.eval_on_selector("body", "el => el.className"), "")
-    str_val = page.eval_on_selector("#STR-value", "el => el.textContent")
-    record("stats-terminal", "the loaded agent's stats survive scripts.js's window.onload + defensive 50ms reset timer",
-           str_val == "14", f"STR={str_val!r}")
-    record("stats-terminal", "no JS exceptions", len(errs)==0, "; ".join(errs))
-    page.close()
-    return errs
-
-def test_stats_loading_terminal(p):
-    """The ?load=CODE gate (body.dg-agent-loading, see the inline script
-    at the top of stats/index.html's <body>) used to show plain gray
-    "Loading Agent..." text -- replaced with a typed green-terminal
-    sequence matching index.html's boot splash. The mock here never
-    fulfills the load_character route, so the gate stays up for the
-    whole test and the typing animation can be inspected mid-flight."""
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    install_firestore_backend(page)
-    page.add_init_script("window.__dgFsHang = true;")  # the character read never answers -- the gate stays up
-
-    page.goto(f"{BASE}/stats/index.html?load=OWEN-CS12&live=1", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(300)
-    record("stats-terminal", "the loading gate is up while the cloud fetch is still pending",
-           "dg-agent-loading" in page.eval_on_selector("body", "el => el.className"), "")
-    record("stats-terminal", "the sheet underneath stays hidden while gated",
-           page.eval_on_selector("#app-main", "el => getComputedStyle(el).visibility") == "hidden", "")
-    term_text = page.eval_on_selector("#dg-loading-term", "el => el.textContent")
-    record("stats-terminal", "a green terminal line is typing, not the old plain 'Loading Agent...' text",
-           term_text.startswith(">") and "Loading Agent" not in term_text, repr(term_text))
-    record("stats-terminal", "a blinking terminal cursor is rendered",
-           page.locator(".dg-loading-cursor").count() == 1, "")
-
-    # A fixed sleep here used to have only ~250ms of slack over the
-    # animation's own ~3050ms nominal duration -- fine in isolation, but
-    # dgInitStatsSheet() (stats/scripts.js) now runs its DOM construction
-    # on DOMContentLoaded instead of the much-later window.onload (see
-    # its own comment for why), so it now shares the main thread with
-    # this typing loop's early setInterval ticks instead of running
-    # well after they've finished. That's a real product improvement
-    # (it's what fixed a reported 8-10s character-load lag), but it
-    # means this animation can now visibly land a beat later under CPU
-    # load. Poll instead of a fixed sleep so the test tracks actual
-    # completion rather than a margin that any future timing shift can
-    # silently eat into again.
-    final_text = wait_for_condition(
-        lambda: (page.eval_on_selector("#dg-loading-term", "el => el.textContent") or "").startswith(">decrypting_dossier"),
-        timeout_ms=6000)
-    record("stats-terminal", "the full sequence has typed out and settled on its last line",
-           bool(final_text), repr(page.eval_on_selector("#dg-loading-term", "el => el.textContent")))
-    record("stats-terminal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
-    page.close()
-    return errs
-
-def test_stats_load_error_reveals_gate_quickly(p):
-    """Regression test for a real report: the ?load=CODE loading gate
-    consistently sat for the full 8-10s -- matching setTimeout(revealGate,
-    8000)'s safety timeout to the second, not variable network/backend
-    latency. Root cause: loadFromCloud()'s JSONP callback (cloud-sync.js)
-    only ever notified the caller on a clean success or a clean
-    NOT_FOUND -- a genuine backend error (status: 'ERROR'), an empty
-    response, or a JSON parse failure all fell through with no callback
-    at all, so the ?load= handler's gate had no way to hear the load had
-    settled and just sat there until the safety timeout finally fired.
-    Fixes it via a new onSettled callback that fires on every outcome.
-    This mocks load_character returning a backend error and confirms the
-    gate lifts almost immediately, not after ~8 seconds."""
-    page = p.new_page()
-    page.set_default_timeout(10000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    install_firestore_backend(page)
-    page.add_init_script("window.__dgFsFail = true;")  # the character read fails
-
-    import time
-    start = time.monotonic()
-    page.goto(f"{BASE}/stats/index.html?load=BROK-EN01&live=1", wait_until="domcontentloaded", timeout=15000)
-    wait_for_condition(lambda: "dg-agent-loading" not in (page.eval_on_selector("body", "el => el.className") or ""),
-                        timeout_ms=6000)
-    elapsed = time.monotonic() - start
-    record("stats-terminal", "a backend error lifts the loading gate quickly, not after the full 8s safety timeout",
-           elapsed < 6, f"elapsed={elapsed:.1f}s")
-    record("stats-terminal", "the sheet is visible again once the gate lifts",
-           page.eval_on_selector("#app-main", "el => getComputedStyle(el).visibility") != "hidden", "")
-
-    record("stats-terminal", "no JS exceptions", len(errs) == 0, "; ".join(errs))
-    page.close()
-    return errs
-
-def test_stats_recruit_flow_on_missing_character(p):
-    """Bug fix: stats/index.html?load=CODE for an Agent Code with no
-    cloud character yet (NOT_FOUND) must not silently keep showing
-    whatever character was last auto-saved locally on this device --
-    that's how a different Agent's sheet gets mistaken for a brand new
-    one (reported: an Agent File existed for one Agent with no character
-    sheet yet, but Play kept showing a previously-played Agent's sheet
-    from the same device). startRecruitFlow() (stats/cloud-sync.js)
-    instead wipes the stale sheet, adopts the requested code so the
-    first save syncs correctly, pre-fills the name from the Agent File
-    if known, and opens the Character Creation Wizard instead of Live
-    Play.
-
-    Second bug fix (data loss report): a NOT_FOUND here can be wrong --
-    a flaky lookup, or an Agent whose real sheet just hasn't synced from
-    this device -- and once the wipe+adopt runs, every debounced
-    auto-save from that point silently overwrites the REAL Characters-
-    sheet row for that code as the wizard is filled in, with no undo.
-    A real Handler hit exactly this: an Agent with an existing sheet
-    showed "Recruit", and going through Character Creation partially
-    overwrote the real character (bonds/equipment updated, stats reset
-    to defaults) before they'd even finished. startRecruitFlow() now
-    requires an explicit confirm() before doing anything destructive --
-    this test accepts that dialog to exercise the proceed path; a
-    second test below exercises Cancel."""
-    page = p.new_page()
-    page.set_default_timeout(10000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    # Firestore: no character for DANI-U8BM, but its Agent File exists.
-    install_firestore_backend(page, {"briefs/DANI-U8BM": {"agent_code": "DANI-U8BM", "char_name": "Dani Uribe"}})
-
-    # Seed a DIFFERENT character's local autosave, simulating a device
-    # last used to play a different Agent.
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(400)
-    page.fill("#cs-name", "Patrick Previous")
-    page.wait_for_timeout(1800)
-
-
-    page.goto(f"{BASE}/stats/index.html?load=DANI-U8BM&live=1", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(1500)
-
-    # startRecruitFlow() now gates behind dgConfirm() (save-load.js), an
-    # in-page dialog, not window.confirm() -- confirm() is silently
-    # disabled in an iOS standalone PWA, so this is the real, working
-    # equivalent of what a player actually sees.
-    dialog_text = page.eval_on_selector("#dg-confirm-message", "el => el.textContent") \
-        if page.query_selector("#dg-confirm-message") else ""
-    record("stats-terminal", "a not-found Play link warns before overwriting, in case the Agent's real sheet just hasn't synced",
-           "DANI-U8BM" in dialog_text and "overwrite" in dialog_text.lower(),
-           dialog_text)
-
-    page.click("#dg-confirm-ok")
-    page.wait_for_timeout(500)
-
-    name_val = page.eval_on_selector("#cs-name", "el => el.value")
-    record("stats-terminal", "a not-found Play link does not leave the previous Agent's name on screen",
-           name_val != "Patrick Previous", name_val)
-    record("stats-terminal", "the Agent File's known name pre-fills the sheet instead",
-           name_val == "Dani Uribe", name_val)
-    record("stats-terminal", "the requested Agent Code is adopted as the Cloud Save code",
-           page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')") == "DANI-U8BM", "")
-    record("stats-terminal", "the Character Creation Wizard opens instead of jumping to Live Play",
-           page.query_selector("#wiz-outer") is not None, "")
-
-    page.close()
-    return errs
-
-def test_stats_recruit_flow_cancel_protects_existing_character(p):
-    """The other half of the confirm() gate above: if the Handler/player
-    chooses Cancel (because they're not sure the Agent's sheet really is
-    missing), startRecruitFlow() must NOT wipe the local sheet or adopt
-    the Agent Code for Cloud Save -- doing either would still risk the
-    next auto-save clobbering a real character even without the wizard
-    ever opening."""
-    page = p.new_page()
-    page.set_default_timeout(10000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-
-    install_firestore_backend(page)  # no character and no Agent File for PATR-EQ9A
-
-    page.goto(f"{BASE}/stats/index.html?load=PATR-EQ9A&live=1", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(1500)
-    page.click("#dg-confirm-cancel")
-    page.wait_for_timeout(500)
-
-    record("stats-terminal", "choosing Cancel does not adopt the Agent Code for Cloud Save",
-           page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')") != "PATR-EQ9A", "")
-    record("stats-terminal", "choosing Cancel does not open the Character Creation Wizard",
-           page.query_selector("#wiz-outer") is None, "")
-    record("stats-terminal", "choosing Cancel shows a clear status instead of silently doing nothing",
-           "not loaded" in (page.inner_text("#cloud-load-status") or "").lower(), "")
-
-    page.close()
-    return errs
-
-def test_stats_new_recruit_blank_sheet(p):
-    """agent-hub.html's "New Recruit" card links to
-    stats/index.html?new=1 -- a totally blank sheet, not whatever this
-    device last auto-saved locally (a real prior confusion: a previously-
-    played Agent's sheet showing up under what was meant to be a brand
-    new character). The ?new=1 handler (stats/cloud-sync.js) wipes the
-    stale sheet and drops any remembered Cloud Save code before
-    save-load.js's own restore would otherwise repopulate the form, then
-    strips ?new=1 from the URL so a later refresh doesn't wipe out the
-    new character the player has since started filling in."""
-    page = p.new_page()
-    page.set_default_timeout(10000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    route_apps_script_ok(page)
-
-    # Seed a previous character's local autosave AND a minted cloud code,
-    # simulating a device last used to play a different Agent.
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(400)
-    page.fill("#cs-name", "Patrick Previous")
-    page.wait_for_timeout(4200)
-    prior_code = page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')")
-    record("stats-terminal", "(setup) a prior Agent's cloud code is present before the New Recruit visit",
-           bool(prior_code), f"prior_code={prior_code!r}")
-
-    page.goto(f"{BASE}/stats/index.html?new=1", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(1000)
-
-    record("stats-terminal", "New Recruit shows a totally blank name field, not the previous Agent's",
-           page.eval_on_selector("#cs-name", "el => el.value") == "", "")
-    record("stats-terminal", "New Recruit drops the previous Agent's remembered Cloud Save code",
-           page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')") in (None, ""), "")
-    record("stats-terminal", "?new=1 is stripped from the URL so a refresh won't wipe the new character again",
-           "new=1" not in page.evaluate("() => window.location.search"), "")
-
-    # A same-page reload after ?new=1 has been stripped must NOT wipe out
-    # whatever the player has since typed for the new Agent.
-    page.fill("#cs-name", "Dani Fresh")
-    page.wait_for_timeout(1800)
-    page.reload(wait_until="domcontentloaded")
-    page.wait_for_timeout(600)
-    record("stats-terminal", "a refresh after New Recruit preserves what was typed (no repeat wipe)",
-           page.eval_on_selector("#cs-name", "el => el.value") == "Dani Fresh", "")
-
-    page.close()
-    return errs
-
 def test_mobile_no_overflow(p):
     """Regression check: no page should force horizontal scroll on a phone
-    viewport. stats/index.html originally only had this for its dedicated
-    "Mobile" theme -- the other themes (X-Files, Son of Sam, Field Notes,
-    Live Play) were desktop-oriented by pigeon-labs-stack's original
-    design and genuinely overflowed on a phone. This hub's own addition
-    (a viewport-width-gated CSS block in stats/styles.css, not scoped to
-    any theme) fixes the underlying causes -- <fieldset>'s UA-default
-    min-width: min-content, a few fixed-column grids/tables -- for all
-    of them, so they're now checked the same as Mobile rather than excluded."""
+    viewport."""
     errs_all = []
     for path in ["index.html", "agent-hub.html", "dg-agent-portal.html", "dg-id-creator.html", "a-cell.html"]:
         page = p.new_page(viewport={"width": 390, "height": 844})
@@ -7993,189 +6252,6 @@ def test_mobile_no_overflow(p):
     scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
     record("mobile", "a-cell.html's Evidence tab (sidebar + open create form) has no horizontal overflow at 390px viewport",
            scroll_width <= 390, f"scrollWidth={scroll_width}")
-    errs_all.extend(errs)
-    page.close()
-
-    # All four stats/ themes are expected to be overflow-free at 390px --
-    # the fieldset/grid/table min-width fixes added for this are
-    # theme-agnostic (gated on viewport width, not theme class), covering
-    # X-Files, Son of Sam, and Field Notes the same as Mobile.
-    # Live Play mode is checked separately below with actual filled
-    # content, since its full character sheet is the one deliberate
-    # exception (it scrolls horizontally within its own box by design --
-    # see that check for detail).
-    page = p.new_page(viewport={"width": 390, "height": 844})
-    page.set_default_timeout(5000)
-    errs = collect_errors(page)
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(500)
-    open_sheet_settings(page)
-    page.wait_for_timeout(200)
-    for theme in ["xfiles", "son-of-sam", "field-notes"]:
-        page.select_option("#cs-theme-select", theme)
-        page.wait_for_timeout(400)
-        scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
-        record("mobile", f"stats/index.html has no horizontal overflow at 390px viewport ({theme} theme)",
-               scroll_width <= 390, f"scrollWidth={scroll_width}")
-
-        # renderSkillsGrid() in scripts.js places every .cs-skill-pair with
-        # an inline style.gridColumn/gridRow computed for #cs-skills' full
-        # 3-column desktop layout -- an inline style beats any stylesheet
-        # selector, so narrowing #cs-skills itself to fewer columns at
-        # mobile widths isn't sufficient on its own: skills assigned to
-        # column 3 land in a narrow implicit track. .cs-skill-pair itself
-        # doesn't visually overflow that track (grid items don't overlap
-        # each other), but .cs-skill-name inside it does -- it's a nested
-        # grid's own 1fr child with no min-width:0, so it renders at its
-        # full unwrapped text width regardless of the narrow track its
-        # ancestor was actually assigned, bleeding into the next column's
-        # rendered text. Check the visible name/value elements, not just
-        # their containers, or this doesn't catch anything.
-        skill_overlaps = page.evaluate("""() => {
-            const boxes = Array.from(document.querySelectorAll('#cs-skills .cs-skill-name, #cs-skills .cs-skill-value-wrap'))
-                .map(el => el.getBoundingClientRect());
-            const overlaps = [];
-            for (let i = 0; i < boxes.length; i++) {
-                for (let j = i + 1; j < boxes.length; j++) {
-                    const a = boxes[i], b = boxes[j];
-                    const xOverlap = a.left < b.right && b.left < a.right;
-                    const yOverlap = a.top < b.bottom && b.top < a.bottom;
-                    if (xOverlap && yOverlap) overlaps.push([i, j]);
-                }
-            }
-            return overlaps;
-        }""")
-        record("mobile", f"stats/index.html skill rows don't visually overlap at 390px viewport ({theme} theme)",
-               len(skill_overlaps) == 0, f"overlaps={skill_overlaps}")
-    errs_all.extend(errs)
-    page.close()
-
-    # Live Play mode: the full character sheet reflows to a single
-    # column below 700px (buildLpSheet()'s Personal Data table and the
-    # Stats+Bonds/Derived+Motivations/Physical Desc+Incidents side-by-side
-    # pairs all stack) instead of the earlier approach of widening the
-    # whole sheet and letting it scroll horizontally, which in practice
-    # left Nationality/Sex/Age/Education and the entire Bonds table
-    # sitting off-screen with no visual cue there was more to scroll to.
-    # Also exercises the sticky HP/WP/SAN/BP tracker bar and the Dice
-    # Roller widget, which auto-expands when this theme is selected.
-    page = p.new_page(viewport={"width": 390, "height": 844})
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(400)
-    page.fill("#cs-name", "Priya Anand")
-    page.select_option("#cs-profession-select", "federal_agent")
-
-    # A fresh character's HP/WP/SAN default to low single-digit values,
-    # which an earlier pass here tested against exclusively -- looked
-    # fine, but silently left the tracker items too narrow for a *real*
-    # played character's typical two-digit values (e.g. HP 15/15,
-    # SAN 75/75), which visually collided with the +/- buttons. Push
-    # STR/CON/POW up so this test actually catches that -- has to happen
-    # here, before switching to Live Play, since that theme hides the
-    # normal stat editor's +/- buttons this needs to click.
-    for stat_id in ["STR", "CON", "POW"]:
-        btn = page.locator(f"#{stat_id}-value").locator("xpath=..").locator("button", has_text="+")
-        for _ in range(12):
-            btn.click()
-    page.wait_for_timeout(200)
-
-    page.evaluate("setLivePlay(true)")
-    page.wait_for_timeout(600)
-    scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
-    record("mobile", "stats/index.html has no horizontal overflow at 390px viewport (Live Play theme, filled)",
-           scroll_width <= 390, f"scrollWidth={scroll_width}")
-    lp_scroll_width = page.evaluate("() => document.getElementById('lp-sheet')?.scrollWidth || 0")
-    record("mobile", "Live Play sheet itself now reflows to fit the viewport instead of scrolling horizontally",
-           lp_scroll_width <= 390, f"lp scrollWidth={lp_scroll_width}")
-
-    # Fields that used to sit off-screen to the right of Name/Profession/
-    # Employer in the old side-by-side Personal Data table -- confirm
-    # each one's own bounding box is now within the viewport, not just
-    # that the sheet's overall scrollWidth shrank.
-    for field_id in ["cs-bio-nationality", "cs-bio-sex", "cs-bio-age", "cs-bio-education"]:
-        box = page.evaluate(f"""() => {{
-            const el = document.querySelector('#lp-sheet .lp-proxy[data-src="{field_id}"]');
-            if (!el) return null;
-            const r = el.getBoundingClientRect();
-            return {{ right: r.right, width: r.width }};
-        }}""")
-        record("mobile", f"Live Play Personal Data field '{field_id}' is fully within the viewport, not clipped off-screen",
-               bool(box) and box["right"] <= 390 and box["width"] > 20, f"box={box}")
-
-    # The Bonds table used to be the right-hand column of a 44%/flex-1
-    # side-by-side row that only fit inside a 780px-wide scrolling sheet
-    # -- confirm its header is now visible within the viewport at all.
-    bonds_visible = page.evaluate("""() => {
-        const el = document.getElementById('lp-bonds-tbody');
-        if (!el) return false;
-        const r = el.getBoundingClientRect();
-        return r.width > 20 && r.right <= 390;
-    }""")
-    record("mobile", "Live Play Bonds table is visible within the viewport, not pushed off-screen",
-           bonds_visible)
-
-    tracker_overflow = page.evaluate("""() => {
-        const bar = document.getElementById('lp-tracker-bar');
-        return bar ? bar.scrollWidth - bar.clientWidth : 0;
-    }""")
-    record("mobile", "sticky HP/WP/SAN/BP tracker bar fits without its own overflow",
-           tracker_overflow <= 2, f"overflow={tracker_overflow}")
-
-    record("mobile", "SANITY ROLL is present in the tracker bar on mobile (kept, unlike the generic dice quick-roll)",
-           page.locator("#lp-track-san-check").is_visible())
-    san_order = page.evaluate("""() => {
-        const bar = document.getElementById('lp-tracker-bar');
-        const kids = Array.from(bar.children).filter(el => getComputedStyle(el).display !== 'none');
-        const rects = kids.map(el => el.getBoundingClientRect().left);
-        const order = kids.map(el => el.id || el.className);
-        return order.map((id, i) => [id, rects[i]]).sort((a, b) => a[1] - b[1]).map(x => x[0]);
-    }""")
-    san_idx = next((i for i, x in enumerate(san_order) if "lp-track-san" == x), -1)
-    check_idx = next((i for i, x in enumerate(san_order) if "san-check" in x), -1)
-    bp_idx = next((i for i, x in enumerate(san_order) if "lp-track-bp" in x), -1)
-    record("mobile", "SANITY ROLL sits visually between SAN and BP in the tracker bar",
-           -1 not in (san_idx, check_idx, bp_idx) and san_idx < check_idx < bp_idx, f"order={san_order}")
-
-    hp_val = page.eval_on_selector("#lp-cur-hp", "el => el.textContent")
-    record("mobile", "tracker bar test actually exercises two-digit values, not just a fresh character's low defaults",
-           len(hp_val) >= 2, f"HP={hp_val!r}")
-
-    def item_box(sel):
-        return page.evaluate(f"""() => {{
-            const el = document.querySelector('{sel}');
-            if (!el) return null;
-            const r = el.getBoundingClientRect();
-            return {{ left: r.left, right: r.right, top: r.top, bottom: r.bottom }};
-        }}""")
-
-    # With realistic two-digit stats, confirm no two tracker items
-    # visually overlap -- the actual symptom of the bug this caught
-    # (current value's digits colliding with the neighboring +/- button)
-    # rather than just re-checking the container's own scrollWidth,
-    # which page-level and #lp-tracker-bar-level checks above already do
-    # and which did NOT catch this (the container itself never overflowed;
-    # its children just crowded on top of each other inside it).
-    item_ids = ["#lp-track-hp", "#lp-track-wp", "#lp-track-san", "#lp-track-san-check", "#lp-track-bp"]
-    boxes = [item_box(sel) for sel in item_ids]
-    overlaps = []
-    for i in range(len(boxes) - 1):
-        if boxes[i] and boxes[i + 1] and boxes[i]["right"] > boxes[i + 1]["left"] + 1:
-            overlaps.append((item_ids[i], item_ids[i + 1]))
-    record("mobile", "tracker bar items don't visually overlap with realistic two-digit stat values",
-           len(overlaps) == 0, f"overlaps={overlaps} boxes={boxes}")
-
-    dr_box = page.evaluate("""() => {
-        const dr = document.getElementById('dr-panel');
-        if (!dr) return null;
-        const r = dr.getBoundingClientRect();
-        return { right: r.right, left: r.left };
-    }""")
-    record("mobile", "auto-expanded Dice Roller widget stays within the viewport width",
-           dr_box is not None and dr_box["right"] <= 390 and dr_box["left"] >= 0, str(dr_box))
     errs_all.extend(errs)
     page.close()
 
@@ -9046,7 +7122,7 @@ def test_noindex(p):
         route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps({"status": "OK"})})')
     page.route("**/script.google.com/**", fake_apps_script)
 
-    pages = ["index.html", "agent-hub.html", "a-cell.html", "dg-agent-portal.html", "dg-id-creator.html", "stats/index.html"]
+    pages = ["index.html", "agent-hub.html", "a-cell.html", "dg-agent-portal.html", "dg-id-creator.html", "404.html"]
     for path in pages:
         page.goto(f"{BASE}/{path}", wait_until="domcontentloaded", timeout=15000)
         content = page.eval_on_selector('meta[name="robots"]', "el => el && el.getAttribute('content')")
@@ -9072,7 +7148,7 @@ def test_pwa_offline(p):
     fetch handler only intercepts same-origin requests in its own
     precache list), so this never risks serving stale Agent/Cell data
     offline. Registration happens on every page via a small snippet
-    pointing at sw.js (or ../sw.js from stats/)."""
+    pointing at sw.js (or ../sw.js from notes/)."""
     errs_all = []
     context = p.new_context()
     page = context.new_page()
@@ -9093,7 +7169,7 @@ def test_pwa_offline(p):
     # (a real gap this app once had -- Notes silently had no offline
     # support or update-check registration at all, see the sw-update.js
     # comment on this file).
-    pages = ["index.html", "agent-hub.html", "a-cell.html", "dg-agent-portal.html", "dg-id-creator.html", "stats/index.html", "notes/index.html"]
+    pages = ["index.html", "agent-hub.html", "a-cell.html", "dg-agent-portal.html", "dg-id-creator.html", "notes/index.html"]
 
     # Visit every page online first so the service worker (registered
     # from each one) precaches the whole shell.
@@ -10186,12 +8262,11 @@ def test_notes_solo_mode_for_unassigned_agent(p):
 
 
 def test_split_view_retired(p):
-    """Split View (the sheet and Notes side by side) is retired: the
-    notebook's Notes sit beside any page. Its buttons -- the sheet's
-    #split-view-toggle-btn and Notes' #split-view-btn -- stay hidden
-    wherever the notebook runs, standalone and inside the Hub shell."""
+    """Notes' own Split View button stays hidden wherever the notebook
+    runs, standalone and inside the Hub shell: the notebook's Split mode
+    puts the Agent File beside Notes instead."""
     errs_all = []
-    for path, btn in (("stats/index.html", "#split-view-toggle-btn"), (f"notes/index.html?code={FN_CODE}", "#split-view-btn")):
+    for path, btn in ((f"notes/index.html?code={FN_CODE}", "#split-view-btn"),):
         page, errs = _field_notes_page(p)
         page.goto(f"{BASE}/{path}", wait_until="domcontentloaded", timeout=15000)
         page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
@@ -10202,11 +8277,11 @@ def test_split_view_retired(p):
     page, errs = _field_notes_page(p)
     page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
-    page.evaluate("() => { document.getElementById('dg-shell-content').src = 'stats/index.html'; }")
+    page.evaluate("(c) => { document.getElementById('dg-shell-content').src = 'notes/index.html?code=' + c; }", FN_CODE)
     page.wait_for_timeout(3000)
     fr = page.frame_locator("#dg-shell-content")
-    record("notebook", "inside the Hub shell: no Split View button on the sheet",
-           fr.locator("#split-view-toggle-btn").count() == 0 or not fr.locator("#split-view-toggle-btn").is_visible(), "")
+    record("notebook", "inside the Hub shell: no Split View button on Notes",
+           fr.locator("#split-view-btn").count() == 0 or not fr.locator("#split-view-btn").is_visible(), "")
     errs_all.extend(errs)
     page.close()
     return errs_all
@@ -10253,65 +8328,10 @@ def test_cell_members_by_name_and_kia(p):
     return errs_all
 
 def test_add_bond_in_play(p):
-    """At the table: adding a Bond to an Agent that's already been played
-    meant finding "Fix a Character Creation Mistake" in the settings, since
-    the Bond generator (and its New Empty Bond) hides once an Agent is
-    committed. Now: + Add Bond under the Bonds list in Edit mode, + Add
-    Bond under Live Play's Bonds table (to Edit mode with a blank Bond),
-    and + Add Bond on the Agent File (Agent Hub and the notebook), which
-    opens the sheet with ?add_bond=1."""
+    """At the table: + Bond on the Agent File (Agent Hub and the notebook)
+    adds a Bond to an Agent already in play, score = CHA, saved straight
+    away; a Cell member picked from the list is a Delta Green Bond."""
     errs_all = []
-    state = {"v": 1, "creationCommitted": True, "bio": {"name": "Owen Castillo", "profession": ""},
-             "stats": {"STR": 14, "CON": 12, "DEX": 10, "INT": 16, "POW": 13, "CHA": 11},
-             "csStats": {"STR": 14, "CON": 12, "DEX": 10, "INT": 16, "POW": 13, "CHA": 11},
-             "bonds": [{"id": "bond-1", "name": "Maria Castillo", "relationship": "Sister", "description": "", "score": 8}]}
-    def sheet(path):
-        page = p.new_page()
-        page.set_default_timeout(8000)
-        errs = collect_errors(page)
-        page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-        page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-        install_firestore_backend(page, {"characters/OWEN-CS12": character_doc("OWEN-CS12", state)})
-        page.goto(f"{BASE}/stats/{path}", wait_until="domcontentloaded", timeout=15000)
-        _pump_until(page, lambda: page.eval_on_selector("#cs-name", "el => el.value") == "Owen Castillo", timeout_ms=8000)
-        page.wait_for_timeout(600)
-        return page, errs
-    entries = "() => document.querySelectorAll('#cs-bonds .bond-entry').length"
-    focused_new = """() => { const e = [...document.querySelectorAll('#cs-bonds .bond-entry')].pop();
-        return !!e && document.activeElement === e.querySelector('input[data-field=name]') && !e.querySelector('input[data-field=name]').value; }"""
-
-    page, errs = sheet("index.html?load=OWEN-CS12&live=1")
-    record("bonds", "a committed Agent in Live Play has + Add Bond under its Bonds table",
-           page.locator(".lp-add-bond-btn").is_visible(), "")
-    page.click(".lp-add-bond-btn")
-    page.wait_for_timeout(300)
-    record("bonds", "Live Play's + Add Bond switches to Edit mode with a new, blank Bond, cursor in its name",
-           "live-play" not in page.eval_on_selector("body", "el => el.className") and page.evaluate(entries) == 2 and page.evaluate(focused_new),
-           f"entries={page.evaluate(entries)} class={page.eval_on_selector('body', 'el => el.className')}")
-    record("bonds", "Edit mode shows + Add Bond while the generator stays hidden (no Fix-a-Mistake needed)",
-           page.locator("#cs-add-bond-btn").is_visible() and not page.locator("#new-empty-bond-button").is_visible(), "")
-    page.click("#cs-add-bond-btn")
-    page.wait_for_timeout(200)
-    page.keyboard.type("Father Ruiz")
-    page.keyboard.press("Tab")  # Bond fields save on change
-    page.wait_for_timeout(300)
-    saved = page.evaluate("() => (window.bondsOnSheet || []).map(b => b.name)")
-    record("bonds", "Edit mode's + Add Bond adds another; typing names it",
-           page.evaluate(entries) == 3 and saved[-1] == "Father Ruiz", str(saved))
-    errs_all.extend(errs)
-    page.close()
-
-    page, errs = sheet("index.html?load=OWEN-CS12&add_bond=1")
-    record("bonds", "?add_bond=1 (from the Agent File) opens Edit mode with a blank Bond ready to type into",
-           "live-play" not in page.eval_on_selector("body", "el => el.className") and page.evaluate(entries) == 2 and page.evaluate(focused_new),
-           f"entries={page.evaluate(entries)}")
-    record("bonds", "…and drops add_bond from the address, so a reload doesn't add a second one",
-           "add_bond" not in page.url and "load=OWEN-CS12" in page.url, page.url)
-    errs_all.extend(errs)
-    page.close()
-
-    # v2: the Agent File adds a Bond itself (score = CHA), saved to the
-    # Agent's record straight away -- no trip to the sheet.
     docs = _field_notes_docs()
     st = json.loads(docs[f"characters/{FN_CODE}"]["character_json"])
     st["stats"] = st["csStats"] = {"STR": 10, "CON": 10, "DEX": 10, "INT": 10, "POW": 10, "CHA": 13}
@@ -10540,9 +8560,12 @@ def test_agent_file_v2_play_and_edit(p):
     page.click(root + " [data-a=edit]")
     page.fill(root + " [data-e='bio.employer']", "DEA")
     page.click(root + " [data-a=cancel]")
+    page.wait_for_selector("#fn-confirm [data-cf=ok]", timeout=5000)
+    asked = page.inner_text("#fn-confirm")
+    page.click("#fn-confirm [data-cf=ok]")
     page.wait_for_timeout(1000)
-    record("agent-file-v2", "Cancel throws the edit away",
-           page.locator(root + " .ap-editbar").count() == 0 and saved()["bio"]["employer"] == "FBI", saved()["bio"].get("employer"))
+    record("agent-file-v2", "Cancel asks in the page (no native dialog, so it works in a home-screen app) and throws the edit away",
+           "Throw away these edits?" in asked and page.locator(root + " .ap-editbar").count() == 0 and saved()["bio"]["employer"] == "FBI", saved()["bio"].get("employer"))
 
     # The Rules page: the Mission card, no Oath.
     page.evaluate("() => window.dgFieldNotes.open('rules')")
@@ -10854,7 +8877,7 @@ def test_new_recruit_imports_and_links(p):
     this site's own save, the printable sheet -- lands at Personal data
     with what the file carried; Recruit for an Agent with no sheet opens
     the wizard under that Agent's own code; the notebook's Settings export
-    a DD Form 315 from the saved character (stats/pdf-export.js), and keep
+    a DD Form 315 from the saved character (assets/sheet-io/pdf-export.js), and keep
     the old sheet behind Open. Fake backend only."""
     errs_all = []
     toml = 'name = "Hollis, Ray"\nprofession = "Pilot"\nemployer = "USAF"\nhp = 12\nwp = 11\nsan = 50\nviolenceAdaptation = 2\nmotivationsAndDisorders = "Flying\\nMy daughter"\n' \
@@ -10914,7 +8937,7 @@ def test_new_recruit_imports_and_links(p):
     page.close()
     # Settings: Export builds the DD Form 315 from the saved character.
     page, errs = _field_notes_page(p, width=1300, height=860,
-                                   extra_init="window.exportToPDF = function () { window.__pdfState = window.dgSaveLoad.collectState(); return Promise.resolve(); };")
+                                   extra_init="window.dgSheetPdf = { download: function (st) { window.__pdfState = st; return Promise.resolve(); } };")
     page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
     page.evaluate("() => window.dgFieldNotes.open('settings')")
@@ -10926,6 +8949,122 @@ def test_new_recruit_imports_and_links(p):
     errs_all.extend(errs)
     record("recruit-import", "no JS exceptions (imports and links)", not errs_all, str(errs_all[:3]))
     page.close()
+
+
+def test_sheet_io_real_files(p):
+    """The old sheet (stats/) is gone; its file readers live on in
+    assets/sheet-io/ and are exercised end to end here with real files:
+    a Kappa Black .toml and its Foundry .json, a Google Sheets .xlsx the
+    old sheet exported (test/fixtures/agent-sheet.xlsx), and a DD Form 315
+    built by the notebook's Settings -> PDF and read straight back through
+    New Recruit. pdf-lib and JSZip come from test/vendor/ in place of
+    their CDNs. Also: an old stats/index.html link, served the site's
+    404.html as GitHub Pages does, forwards to that Agent on Agent Hub."""
+    errs_all = []
+    pdflib = os.path.join(HERE, "vendor", "pdf-lib.min.js")
+    jszip = os.path.join(HERE, "vendor", "jszip.min.js")
+    def vendor(page):
+        page.route("**/unpkg.com/pdf-lib@*/**", lambda r: r.fulfill(path=pdflib, content_type="application/javascript"))
+        page.route("**/cdnjs.cloudflare.com/ajax/libs/jszip/**", lambda r: r.fulfill(path=jszip, content_type="application/javascript"))
+    def recruit_import(name, mime, buf):
+        page, errs = _field_notes_page(p, width=1180, height=900)
+        vendor(page)
+        page.goto(f"{BASE}/agent-hub.html#new", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_selector("#nr-root [data-file]", state="attached", timeout=15000)
+        page.set_input_files("#nr-root [data-file]", files=[{"name": name, "mimeType": mime, "buffer": buf}])
+        ok = wait_for_condition(lambda: page.evaluate("() => { const w = window.dgRecruit._w(); return w && w.step === 5 ? 1 : null; }"), timeout_ms=15000)
+        st = page.evaluate("() => { const w = window.dgRecruit._w(); return w ? window.dgRecruit.build(w) : null; }") if ok else None
+        err = "" if ok else (page.text_content("#nr-root [data-err]") or "")
+        page.close()
+        return st, err, errs
+    fx = os.path.join(HERE, "fixtures")
+
+    st, err, errs = recruit_import("kappa.toml", "text/plain", open(os.path.join(fx, "kappablack-export.toml"), "rb").read())
+    record("sheet-io", "a real Kappa Black .toml imports through New Recruit (name, profession)",
+           bool(st) and st["bio"]["name"] == "Alistair Islay Lagavulin" and st["bio"]["profession"] == "pilot_sailor", err or json.dumps(st)[:200])
+    errs_all.extend(errs)
+    st, err, errs = recruit_import("kappa.json", "application/json", open(os.path.join(fx, "kappablack-foundry.json"), "rb").read())
+    record("sheet-io", "a real Kappa Black Foundry .json imports through New Recruit",
+           bool(st) and st["bio"]["name"] == "Alistair Islay Lagavulin" and len(st.get("skills") or {}) > 5, err or json.dumps(st)[:200])
+    errs_all.extend(errs)
+    st, err, errs = recruit_import("agent.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", open(os.path.join(fx, "agent-sheet.xlsx"), "rb").read())
+    record("sheet-io", "a Google Sheets .xlsx the old sheet exported still imports (name, employer, age, STR 13)",
+           bool(st) and st["bio"]["name"] == "Priya Anand" and st["bio"]["employer"] == "Federal Bureau of Investigation"
+           and st["bio"]["age"] == "34" and st["csStats"]["STR"] == 13, err or json.dumps(st)[:240])
+    errs_all.extend(errs)
+
+    # DD Form 315: built from the saved character, then read back.
+    docs = _field_notes_docs()
+    saved = json.loads(docs[f"characters/{FN_CODE}"]["character_json"])
+    saved["stats"] = saved["csStats"] = {"STR": 11, "CON": 14, "DEX": 9, "INT": 16, "POW": 12, "CHA": 13}
+    saved["skills"] = dict(saved.get("skills") or {}, firearms=50, bureaucracy=45)
+    docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, saved, "fn tester")
+    page, errs = _field_notes_page(p, docs=docs, extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+    vendor(page)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(1200)
+    page.evaluate("() => window.dgFieldNotes.open('settings')")
+    page.wait_for_selector("#fn-veil [data-s=pdf]", timeout=10000)
+    record("sheet-io", "notebook Settings: no way back to the old sheet any more",
+           page.locator("#fn-veil [data-s=gosheet]").count() == 0 and "Old character sheet" not in page.inner_text("#fn-veil"), "")
+    with page.expect_download(timeout=20000) as dl_info:
+        page.click("#fn-veil [data-s=pdf]")
+    dl = dl_info.value
+    pdf_path = os.path.join(HERE, "results-tmp-dd315.pdf")
+    dl.save_as(pdf_path)
+    record("sheet-io", "Settings -> PDF downloads a filled DD Form 315 (the template is found next to the script)",
+           dl.suggested_filename == "Mara Voss - DD Form 315.pdf" and os.path.getsize(pdf_path) > 50000, dl.suggested_filename)
+    errs_all.extend(errs)
+    page.close()
+    buf = open(pdf_path, "rb").read()
+    try:
+        os.remove(pdf_path)
+    except OSError:
+        pass
+    st, err, errs = recruit_import("mara.pdf", "application/pdf", buf)
+    want = saved["csStats"]
+    record("sheet-io", "that PDF reads straight back through New Recruit: name, all six statistics, skills",
+           bool(st) and st["bio"]["name"] == "Mara Voss" and all(st["csStats"].get(k) == want[k] for k in want)
+           and st["skills"].get("firearms") == 50 and st["skills"].get("bureaucracy") == 45,
+           err or json.dumps({"got": (st or {}).get("csStats"), "skills": (st or {}).get("skills"), "want": want}))
+    errs_all.extend(errs)
+
+    # Old links: GitHub Pages serves 404.html for the missing stats/ page.
+    page = p.new_page()
+    errs = collect_errors(page)
+    _block_fonts(page)
+    route_apps_script_ok(page)
+    install_firestore_backend(page, _field_notes_docs())
+    body404 = open(os.path.join(HERE, "..", "404.html"), "rb").read()
+    page.route("**/stats/**", lambda r: r.fulfill(status=404, content_type="text/html", body=body404))
+    page.goto(f"{BASE}/stats/index.html?load={FN_CODE}&live=1", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_url("**/agent-hub.html?code=*", timeout=10000)
+    record("sheet-io", "an old stats/index.html?load=CODE link forwards to that Agent on Agent Hub",
+           page.url.endswith(f"/agent-hub.html?code={FN_CODE}"), page.url)
+    page.goto(f"{BASE}/stats/index.html?new=1", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_url("**/agent-hub.html#new", timeout=10000)
+    record("sheet-io", "…and stats/index.html?new=1 opens New Recruit", page.url.endswith("/agent-hub.html#new"), page.url)
+    errs_all.extend(errs)
+    page.close()
+    # The old sheet's in-page confirm (dgConfirm) lives on in the notebook:
+    # New Recruit's Discard asks in the page, so it works in a home-screen
+    # app (where confirm() just answers no without showing anything).
+    dialogs = []
+    page, errs = _field_notes_page(p, width=1180, height=900,
+                                   extra_init="localStorage.setItem('dg_recruit_draft', JSON.stringify({v: 1, step: 3, bio: {name: 'Draft Doe'}, savedAt: 1790000000000}));")
+    page.on("dialog", lambda d: (dialogs.append(d.message), d.dismiss()))
+    page.goto(f"{BASE}/agent-hub.html#new", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector("#nr-root [data-a=discard]", timeout=15000)
+    page.click("#nr-root [data-a=discard]")
+    page.wait_for_selector("#fn-confirm [data-cf=ok]", timeout=5000)
+    page.click("#fn-confirm [data-cf=ok]")
+    gone = wait_for_condition(lambda: page.evaluate("() => !localStorage.getItem('dg_recruit_draft')") or None, timeout_ms=5000)
+    record("sheet-io", "New Recruit's Discard asks in the page, not a native dialog, and discards the draft",
+           bool(gone) and not dialogs, str(dialogs))
+    errs_all.extend(errs)
+    page.close()
+    record("sheet-io", "no JS exceptions (sheet files)", not errs_all, str(errs_all[:3]))
+    return errs_all
 
 
 def test_recruit_play_test_round1(p):
@@ -11685,69 +9824,36 @@ def test_motivations_and_disorders_split(p):
     """Motivations and Mental Disorders used to share one free-text box.
     Now Mental Disorders are their own list (bio.disorders), each picked
     from the Rules reference's disorders (or "Other…"), with its trigger
-    and effect shown. An older sheet's combined text is split on load;
-    Live Play edits the same list; the PDF/Sheets/printable exports, whose
-    printed form has one box for both, get both back ("Disorder: …"
-    lines, which a re-import splits again); A-Cell shows them apart."""
+    and effect shown. An older sheet's combined text is read apart; the
+    PDF export, whose printed form has one box for both, gets both back
+    ("Disorder: …" lines, which a re-import splits again); A-Cell shows
+    them apart."""
     errs_all = []
     code = "DISO-0001"
     old_state = {"v": 1, "bio": {"name": "Ada Kerr", "player_name": "dis tester",
                                  "motivations": "Protect my sister\nDisorder: PTSD\nParanoia (since the Vegas op)\nFind the truth"}}
-    page = p.new_page(viewport={"width": 1300, "height": 900})
-    errs = collect_errors(page)
-    _block_fonts(page)
-    route_apps_script_ok(page)
-    install_firestore_backend(page, {f"characters/{code}": dict(character_doc(code, old_state, "dis tester")),
-                                     f"briefs/{code}": {"agent_code": code, "char_name": "Ada Kerr", "player_name": "dis tester"}})
-    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); localStorage.setItem('dg_stats_cloud_code', '%s'); } catch (e) {}" % code)
-    page.goto(f"{BASE}/stats/index.html?load={code}", wait_until="domcontentloaded", timeout=15000)
-    wait_for_condition(lambda: page.evaluate("() => document.getElementById('cs-name').value") == "Ada Kerr" or None, timeout_ms=10000)
-    page.wait_for_timeout(600)
-    mot = page.input_value("#cs-motivations")
-    dis = page.evaluate("() => window.dgDisordersSheet.get()")
-    record("disorders", "an older sheet's combined box is split on load: disorders out of Motivations, into their own list",
-           mot == "Protect my sister\nFind the truth" and dis == ["PTSD", "Paranoia (since the Vegas op)"], f"{mot!r} {dis}")
-    opts = page.eval_on_selector_all("#cs-disorders-list .cs-dis-select >> nth=0", "els => [...els[0].options].map(o => o.textContent)")
-    record("disorders", "each disorder is a dropdown of the Rules reference's disorders, plus Other…",
-           len(opts) == 20 and "Ligyrophobia" in opts and "Totemic Compulsion" in opts and opts[-1] == "Other…", str(opts))
-    info = page.inner_text("#cs-disorders-list [data-dis='0'] .cs-dis-info")
-    record("disorders", "a picked disorder shows its trigger and effect from the rules", "Reminders of past traumas" in info and "1D4 WP" in info, info)
-    record("disorders", "a disorder not on the list keeps its own words (Other…)",
-           page.input_value("#cs-disorders-list [data-dis='1'] .cs-dis-other") == "Paranoia (since the Vegas op)", "")
-    # Add one, change one, remove one.
-    page.click("#cs-disorders-block .cs-dis-add")
-    page.select_option("#cs-disorders-list [data-dis='2'] .cs-dis-select", "Ligyrophobia")
-    page.select_option("#cs-disorders-list [data-dis='1'] .cs-dis-select", "__other")
-    page.fill("#cs-disorders-list [data-dis='1'] .cs-dis-other", "Fear of mirrors")
-    page.click("#cs-disorders-list [data-dis='0'] .cs-dis-del")
-    st = json.loads(page.evaluate("() => JSON.stringify(window.dgSaveLoad.collectState().bio)"))
-    record("disorders", "adding, picking, writing in and removing disorders is saved with the sheet (bio.disorders)",
-           st.get("disorders") == ["Fear of mirrors", "Ligyrophobia"] and st.get("motivations") == "Protect my sister\nFind the truth", str(st.get("disorders")))
-    saved = wait_for_condition(lambda: (lambda b: b if b.get("disorders") == ["Fear of mirrors", "Ligyrophobia"] else None)(
-        json.loads((fs_doc(page, f"characters/{code}") or {}).get("character_json") or "{}").get("bio", {})), timeout_ms=8000)
-    record("disorders", "…and autosaved to the Agent's cloud record", bool(saved), "")
-    # Live Play edits the same list.
-    page.evaluate("setLivePlay(true)")
-    page.wait_for_timeout(700)
-    lp = page.eval_on_selector_all("#lp-disorders .cs-dis-row", "els => els.length")
-    page.click("#lp-sheet .lp-disorders-block .cs-dis-add")
-    page.select_option("#lp-disorders [data-dis='2'] .cs-dis-select", "Depression")
-    record("disorders", "Live Play shows the same list and adds to it",
-           lp == 2 and page.evaluate("() => window.dgDisordersSheet.get()") == ["Fear of mirrors", "Ligyrophobia", "Depression"]
-           and page.locator("#cs-disorders-list .cs-dis-row").count() == 3, str(lp))
-    page.evaluate("setLivePlay(false)")
+    # The Agent File: an older sheet's combined box is read apart, each
+    # disorder with its trigger and effect from the rules.
+    docs = _field_notes_docs()
+    st0 = json.loads(docs[f"characters/{FN_CODE}"]["character_json"])
+    st0["bio"]["motivations"] = old_state["bio"]["motivations"]
+    st0["bio"].pop("disorders", None)
+    docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, st0, "fn tester")
+    page, errs = _field_notes_page(p, docs=docs, extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector(f"#ah-sheet-{FN_CODE} .as-paper.ap .ap-vitals", timeout=15000)
+    split = page.evaluate("(st) => ({ m: window.dgRules.motivations(st), d: window.dgRules.disorders(st) })", st0)
+    record("disorders", "an older sheet's combined box is read apart: disorders out of Motivations, into their own list",
+           split["m"] == ["Protect my sister", "Find the truth"] and split["d"] == ["PTSD", "Paranoia (since the Vegas op)"], json.dumps(split))
+    paper = page.inner_text(f"#ah-sheet-{FN_CODE} .as-sheet")
+    record("disorders", "the Agent File lists them apart, a known disorder with its trigger and effect from the rules",
+           "Paranoia (since the Vegas op)" in paper and "Reminders of past traumas" in paper and "Disorder: PTSD" not in paper, paper[:300])
     # Exports: one box for both on the printed form; a re-import splits them.
-    combined = page.evaluate("() => window.dgDisorders.combine(document.getElementById('cs-motivations').value, window.dgDisordersSheet.get())")
+    combined = page.evaluate("() => window.dgDisorders.combine('Protect my sister\\nFind the truth', ['Fear of mirrors', 'Ligyrophobia', 'Depression'])")
     back = page.evaluate("(t) => window.dgDisorders.splitText(t)", combined)
     record("disorders", "the printed form's single box gets both, and splits back the same on import",
            combined.endswith("Disorder: Fear of mirrors\nDisorder: Ligyrophobia\nDisorder: Depression")
            and back == {"motivations": "Protect my sister\nFind the truth", "disorders": ["Fear of mirrors", "Ligyrophobia", "Depression"]}, combined)
-    fj = page.evaluate("() => buildFoundryJSON ? JSON.stringify(buildFoundryJSON()) : null") if page.evaluate("() => typeof buildFoundryJSON === 'function'") else None
-    if fj:
-        items = [i for i in json.loads(fj).get("items", []) if i.get("type") == "motivation"]
-        record("disorders", "Foundry export: each disorder is a motivation item carrying it (system.disorder)",
-               [i["system"].get("disorder") for i in items if i["system"].get("disorder")] == ["Fear of mirrors", "Ligyrophobia", "Depression"]
-               and [i["name"] for i in items if not i["system"].get("disorder")] == ["Protect my sister", "Find the truth"], str(items)[:300])
     errs_all.extend(errs)
     page.close()
 
@@ -11776,542 +9882,6 @@ def test_motivations_and_disorders_split(p):
     errs_all.extend(errs)
     page.close()
     return errs_all
-
-def test_mobile_notes_fullscreen(p):
-    """Split View doesn't fit a phone-width screen, so mobile gets a
-    separate control instead: a Notes widget (dgNotesFullscreen in
-    scripts.js) docked bottom-left, same size/position/palette as the
-    Table Radio widget's own bottom-right mobile dock -- tapping it
-    flips the whole screen over to this Agent's Notes (sheet, radio,
-    settings cog, and the widget itself all hidden, not shrunk) instead
-    of squeezing a split in. notes/index.html shows its own Play pill,
-    docked at that exact same spot, to flip back -- same control
-    switching label and direction, not two different buttons in two
-    different places."""
-    page = p.new_page()
-    page.set_default_timeout(10000)
-    errs = collect_errors(page)
-    page.set_viewport_size({"width": 390, "height": 844})
-    # add_init_script runs in every frame this page attaches (including
-    # the notes/index.html iframe Split View's mobile mode embeds below)
-    # -- without this, that embedded page's own startNotesListeners()/
-    # ensureAgentSignedIn() hit real (blocked) network calls, same root
-    # cause diagnosed in test_notes_v2_editorjs/test_notes_evidence_
-    # integration. This test doesn't check Notes content, just chrome/
-    # layout, so no push_firestore_snapshot() call is needed after this
-    # -- just keeping the real network calls from ever happening.
-    install_notes_firestore_stub(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-
-    state = {"code": None}
-
-    def fake_apps_script(route):
-        req = route.request
-        if req.method == "POST":
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-            return
-        url = req.url
-        if "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            if "action=list_cells" in url:
-                member_codes = [state["code"]] if state.get("code") else []
-                res = {"status": "OK", "cells": [{"cell_id": "cell_1", "name": "Cell Alpha",
-                                                    "handler": "Sam", "member_codes": member_codes}]}
-            elif "action=list_cell_notes" in url:
-                res = {"status": "OK", "notes": {}, "identities": {}}
-            else:
-                res = {"status": "OK"}
-            route.fulfill(status=200, content_type="application/javascript", body=f'{cb}({json.dumps(res)})')
-        else:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    page.route("**/script.google.com/**", fake_apps_script)
-
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(300)
-    # This flip-over is the sheet's own phone Notes; with the Field Notes
-    # notebook on the page its button is replaced by the notebook's Notes
-    # tab, so check the flip-over itself with the notebook set aside.
-    notebook_aside(page)
-
-    record("stats", "at a phone width, Split View's toggle is hidden -- desktop/tablet only",
-           page.is_visible("#split-view-toggle-btn") is False, "")
-    record("stats", "at a phone width, the mobile Notes widget is shown instead",
-           page.is_visible("#notes-widget-btn") is True, "")
-
-    # No Cloud Save code yet -- tapping it must no-op, same guard Split
-    # View has, rather than flip to a Notes pane with no Agent to open.
-    page.click("#notes-widget-btn")
-    page.wait_for_timeout(200)
-    record("stats", "tapping the Notes widget with no Cloud Save code yet does not activate fullscreen",
-           page.evaluate("() => document.body.classList.contains('dg-notes-fullscreen-active')") is False, "")
-
-    page.fill("#cs-name", "Mobile Notes Test Agent")
-    page.wait_for_timeout(300)
-    state["code"] = page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')")
-    record("stats", "naming the agent mints a Cloud Save code", bool(state["code"]), str(state["code"]))
-
-    page.click("#notes-widget-btn")
-    page.wait_for_timeout(500)
-    record("stats", "tapping Notes flips the screen over: body picks up dg-notes-fullscreen-active",
-           page.evaluate("() => document.body.classList.contains('dg-notes-fullscreen-active')") is True, "")
-    record("stats", "the sheet itself is hidden, not just shrunk",
-           page.is_visible("#app-main") is False, "")
-    record("stats", "the Notes widget hides itself while its own fullscreen pane is showing",
-           page.is_visible("#notes-widget-btn") is False, "")
-    record("stats", "the Table Radio widget is hidden too -- the whole screen is Notes now",
-           page.is_visible("#dg-radio") is False, "")
-    record("stats", "the settings cog is hidden as well",
-           page.is_visible("#settings-cog-btn") is False, "")
-
-    iframe_src = page.get_attribute("#dg-split-notes-frame", "src") or ""
-    record("stats", "the iframe points at this Agent's Notes with embed=fullscreen",
-           iframe_src == f"../notes/index.html?embed=fullscreen&code={state['code']}",
-           f"{iframe_src} vs code={state['code']}")
-
-    frame = page.frame_locator("#dg-split-notes-frame")
-    # A prior comment here blamed this on frame_locator/contentDocument
-    # attachment lag under "a slower/colder CI runner" and widened the
-    # wait from 20s to 40s on that theory -- turned out wrong. Checked
-    # directly: even 40s of real wait time on an actual GitHub Actions
-    # run never got frame.locator("#notes-play-btn").is_visible() to
-    # become true, while a fresh local run passes this in well under a
-    # second every time. That is not a margin problem, it is a real
-    # divergence between the two environments, so this now gathers
-    # actual diagnostic evidence (the JS errors collect_errors() already
-    # tracks, plus the iframe's own raw DOM state read directly rather
-    # than through Playwright's frame-attachment bookkeeping) instead of
-    # guessing at a third timeout value.
-    got_it = wait_for_condition(lambda: frame.locator("#notes-play-btn").is_visible(), timeout_ms=15000)
-    if not got_it:
-        raw_state = page.evaluate("""async () => {
-            var f = document.getElementById('dg-split-notes-frame');
-            if (!f) return {frameFound: false};
-            var out = {frameFound: true, liveSrcAttr: f.getAttribute('src'), resolvedSrc: f.src, outerHref: location.href};
-            try { out.contentWindowHref = f.contentWindow.location.href; } catch (e) { out.contentWindowHrefError = String(e); }
-            var doc; try { doc = f.contentDocument; } catch (e) { out.contentDocumentError = String(e); return out; }
-            if (!doc) { out.contentDocument = null; return out; }
-            var btn = doc.getElementById('notes-play-btn');
-            out.readyState = doc.readyState;
-            out.bodyHTMLLength = doc.body ? doc.body.innerHTML.length : null;
-            out.btnFound = !!btn;
-            out.btnDisplay = btn ? getComputedStyle(btn).display : null;
-            // Independent of iframe-navigation semantics entirely -- a
-            // direct fetch of the resolved src tells us whether the
-            // SERVER is even returning the right content for this exact
-            // URL on this environment, ruling out (or confirming) a
-            // static-file-serving difference rather than a browser/
-            // iframe-timing one.
-            try {
-                var res = await fetch(f.src);
-                var text = await res.text();
-                out.fetchStatus = res.status;
-                out.fetchBodyLength = text.length;
-                out.fetchHasPlayBtn = text.indexOf('id="notes-play-btn"') !== -1;
-            } catch (e) { out.fetchError = String(e); }
-            return out;
-        }""")
-        record("stats", "Notes shows its own Play pill instead, docked at the Notes widget's exact spot",
-               False, f"raw iframe DOM state: {raw_state}; page JS errors so far: {errs}")
-        record("stats", "no JS exceptions", len(errs) == 0, "; ".join(errs))
-        page.close()
-        return errs
-    record("stats", "Notes' own Agent Hub link is hidden while embedded this way",
-           frame.locator("#notes-back-link").is_visible() is False, "")
-    record("stats", "Notes shows its own Play pill instead, docked at the Notes widget's exact spot",
-           frame.locator("#notes-play-btn").is_visible() is True, "")
-
-    play_box = frame.locator("#notes-play-btn").bounding_box()
-    widget_box_style = page.eval_on_selector(
-        "#notes-widget-btn",
-        "el => { const s = getComputedStyle(el); return JSON.stringify({left: s.left, bottom: s.bottom, borderRadius: s.borderRadius}); }")
-    play_box_style = frame.locator("#notes-play-btn").evaluate(
-        "el => { const s = getComputedStyle(el); return JSON.stringify({left: s.left, bottom: s.bottom, borderRadius: s.borderRadius}); }")
-    record("stats", "the Play pill is docked at the same fixed left/bottom spot and shape as the Notes widget",
-           widget_box_style == play_box_style, f"widget={widget_box_style} play={play_box_style}")
-
-    frame.locator("#notes-play-btn").click()
-    page.wait_for_timeout(400)
-    record("stats", "tapping Play flips back: dg-notes-fullscreen-active is dropped",
-           page.evaluate("() => document.body.classList.contains('dg-notes-fullscreen-active')") is False, "")
-    record("stats", "the sheet is visible again",
-           page.is_visible("#app-main") is True, "")
-    record("stats", "the Notes widget is back too",
-           page.is_visible("#notes-widget-btn") is True, "")
-
-    # Split View is desktop/tablet only -- widening back out should not
-    # somehow leave Notes fullscreen active or the toggle still hidden.
-    page.set_viewport_size({"width": 1400, "height": 900})
-    page.wait_for_timeout(300)
-    record("stats", "widening back to desktop restores Split View's own toggle",
-           page.is_visible("#split-view-toggle-btn") is True, "")
-    record("stats", "widening back to desktop hides the mobile Notes widget",
-           page.is_visible("#notes-widget-btn") is False, "")
-
-    page.click("#split-view-toggle-btn")
-    page.wait_for_timeout(400)
-    record("stats", "Split View activates normally on desktop",
-           page.evaluate("() => document.body.classList.contains('dg-split-active')") is True, "")
-
-    # Narrowing back down while Split View is active must force it off --
-    # a real side-by-side split squeezed into a phone-width window isn't
-    # a state this feature should ever be left in.
-    page.set_viewport_size({"width": 390, "height": 844})
-    page.wait_for_timeout(400)
-    record("stats", "narrowing to phone width while Split View is active forces it back off",
-           page.evaluate("() => document.body.classList.contains('dg-split-active')") is False, "")
-
-    record("stats", "no JS exceptions", len(errs) == 0, "; ".join(errs))
-    page.close()
-    return errs
-
-WIZ_TAPPABLE_JS = """([sel]) => {
-  const f = document.getElementById('dg-shell-content'); const d = f.contentDocument;
-  const el = d.querySelector(sel); if (!el) return 'missing';
-  const r = el.getBoundingClientRect(), fr = f.getBoundingClientRect();
-  for (const [x, y] of [[r.left + r.width/2, r.top + r.height/2], [r.left + 6, r.top + 6], [r.right - 6, r.bottom - 6]]) {
-    const oy = y + fr.top; if (oy < fr.top || oy > innerHeight) return 'offscreen';
-    const o = document.elementFromPoint(x + fr.left, oy);
-    if (o !== f) return 'covered by shell ' + (o.id || o.className);
-    const i = d.elementFromPoint(x, y);
-    if (!(i === el || el.contains(i))) return 'covered by ' + (i.id || i.className);
-  }
-  return 'ok';
-}"""
-
-def test_wizard_full_run_in_shell(p):
-    """A new player's whole Character Creation Wizard, inside the Hub shell
-    on a phone, with real taps (Playwright hit-tests across the iframe, so a
-    floating widget -- the shell's Dice Roller/Tune In, the page's own
-    Notes pill -- sitting on a button fails the tap). Live report: "cramped",
-    "the roller stuck"; walking every step found the wizard squeezed into
-    two side-by-side columns on phones (Next pushed off-screen on Bonus
-    Skills), Next/Back under the floating widgets on every step, 3/2-column
-    Skills/Equipment layouts forced onto a phone, the Profession dropdown
-    dark-on-dark, the profession hint drawn over its own name, the settings
-    cog on every step title, and Generate Bond showing "No bond available."
-    with the default (all unticked) categories."""
-    ctx = p.new_context(viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True)
-    # Test-only: Playwright's own pre-tap auto-scroll + the site's
-    # scroll-behavior:smooth loop into "element is not stable" forever.
-    ctx.add_init_script("document.addEventListener('DOMContentLoaded', () => { const st = document.createElement('style'); st.textContent = 'html{scroll-behavior:auto !important}'; document.head.appendChild(st); });")
-    page = ctx.new_page()
-    errs = collect_errors(page)
-    for pat in ["**/fonts.googleapis.com/**", "**/fonts.gstatic.com/**", "**/script.google.com/**"]:
-        page.route(pat, lambda r: r.abort())
-    page.add_init_script("try{localStorage.setItem('dg_cover_identity','Tester');sessionStorage.setItem('dg_boot_seen','1');}catch(e){}")
-    page.goto(f"{BASE}/hub.html", wait_until="load", timeout=20000)
-    page.wait_for_timeout(1200)
-    page.evaluate("document.getElementById('dg-shell-content').src = 'stats/index.html?new=1'")
-    frame = None
-    for _ in range(60):  # page.wait_for_timeout, not time.sleep: page.frames only updates while Playwright pumps events
-        page.wait_for_timeout(250)
-        frame = next((f for f in page.frames if "stats/index.html" in (f.url or "") and f.locator("#wiz-toggle-btn").count()), None)
-        if frame: break
-    page.wait_for_timeout(800)
-
-    def settle(sel):
-        last = None
-        for _ in range(30):
-            cur = frame.evaluate("([s]) => { const r = document.querySelector(s).getBoundingClientRect(); return [Math.round(r.top), Math.round(scrollY)]; }", [sel])
-            if cur == last: return
-            last = cur; page.wait_for_timeout(120)
-    def tap(sel, what):
-        frame.evaluate("([s]) => document.querySelector(s).scrollIntoView({block:'center', behavior:'instant'})", [sel]); settle(sel)
-        hit = page.evaluate(WIZ_TAPPABLE_JS, [sel])
-        record("wizard", f"{what} is tappable, not under a floating widget", hit == "ok", hit)
-        frame.locator(sel).first.click(timeout=8000)
-        page.wait_for_timeout(400)
-        if frame.evaluate("!!document.querySelector('#dg-confirm-backdrop.dg-confirm-open')"):
-            frame.locator("#dg-confirm-ok").click(timeout=5000); page.wait_for_timeout(300)
-
-    tap("#wiz-toggle-btn", "New Recruit's wizard button")
-    for step in range(1, 11):
-        settle("#wiz-step-label")
-        label = frame.locator("#wiz-step-label").text_content()
-        title_hit = frame.evaluate("""() => { const el = document.getElementById('wiz-step-label'); const rg = document.createRange(); rg.selectNodeContents(el); const r = rg.getBoundingClientRect();
-            const h = document.elementFromPoint(r.right - 4, r.top + r.height / 2); const c = h && (h.closest('button, [id]') || h); return c ? (c.id || c.tagName) : null; }""")
-        width = frame.evaluate("document.documentElement.scrollWidth")
-        record("wizard", f"step {step}: on the right step, title clear of the settings cog, no sideways scroll",
-               label.startswith(f"Step {step} of 10") and title_hit in ("wiz-step-label", "wiz-header") and width <= 390,
-               f"label={label!r} title_hit={title_hit} width={width}")
-        if step == 1:
-            tap("#random-point-buy", "Random Point Buy")
-            record("wizard", "Random Point Buy sets the stats", frame.evaluate("document.getElementById('STR-value').textContent") != "3", "")
-        elif step == 2:
-            record("wizard", "Profession dropdown is legible (not dark-on-dark)",
-                   frame.evaluate("""() => { const s = document.getElementById('cs-profession-select'); const row = document.getElementById('bio-profession-row');
-                        const lum = c => { const m = c.match(/\\d+(\\.\\d+)?/g).map(Number); return (0.299*m[0] + 0.587*m[1] + 0.114*m[2]); };
-                        let bg = getComputedStyle(row).backgroundColor; let n = row; while (bg === 'rgba(0, 0, 0, 0)' && n.parentElement) { n = n.parentElement; bg = getComputedStyle(n).backgroundColor; }
-                        return Math.abs(lum(getComputedStyle(s).color) - lum(bg)) > 100; }"""), "")
-            frame.locator("#cs-profession-select").select_option("federal_agent"); page.wait_for_timeout(600)
-            hint = frame.evaluate("""() => { const h = document.querySelector('.prof-expand-hint'), n = document.querySelector('.prof-name-pill'); if (!h || !n) return 'missing';
-                const a = h.getBoundingClientRect(), b = n.getBoundingClientRect(); return (a.bottom <= b.top || a.top >= b.bottom || a.right <= b.left || a.left >= b.right) ? 'ok' : 'overlaps'; }""")
-            record("wizard", "profession hint doesn't overlap the profession name", hint == "ok", hint)
-            if frame.locator(".optional-skill-label").count():
-                tap(".optional-skill-label", "an optional profession skill")
-            tap("#apply-profession-button", "Apply Professional Skills")
-        elif step == 3:
-            tap("#random-bio-button", "Random Bio")
-            record("wizard", "Random Bio fills the name", frame.evaluate("document.getElementById('cs-name').value") not in ("", "Agent"), "")
-        elif step == 4:
-            record("wizard", "step 4 is Appearance (how the Agent looks)", "Appearance" in label, label)
-            tap("#cs-appearance-random", "Fill the rest at random (Appearance)")
-            record("wizard", "Fill the rest at random fills every required Appearance line",
-                   frame.evaluate("[].every.call(document.querySelectorAll('#cs-appearance-fieldset [data-ap-required]'), e => e.value.trim())"), "")
-        elif step == 5:
-            tap("#cs-incursion-picker [data-inc-all]", "Roll all (The Incursion)")
-            inc = frame.evaluate("() => ({ text: document.querySelector('#cs-incursion-picker [data-inc-text]').value, saved: document.getElementById('cs-incursion').value })")
-            record("wizard", "the Incursion step rolls all five lines into what happened, saved with the sheet",
-                   "Delta Green covered it up as" in inc["text"] and '"picks"' in inc["saved"], str(inc)[:200])
-        elif step == 7:
-            tap("#prepare-bonus-button", "Prepare Skills for Bonus Points")
-            frame.locator("#bonus-package-select").select_option(index=1); page.wait_for_timeout(300)
-            tap("#bonus-package-row button", "Fill Dropdowns")
-        elif step == 8:
-            tap("#bonds-button", "Generate Bond (no categories ticked)")
-            record("wizard", "Generate Bond with no categories ticked still gives a bond",
-                   "No bond available" not in frame.evaluate("document.getElementById('bond-text-content').textContent"), "")
-            tap("#add-bond-button", "Add to Sheet")
-            record("wizard", "the generated bond lands on the sheet", frame.evaluate("(window.bondsOnSheet || []).length") >= 1, "")
-        elif step == 9:
-            tap(".eq-add-btn", "an equipment item's +")
-        tap("#wiz-next", "Finish" if step == 10 else f"Next on step {step}")
-    record("wizard", "Finish closes the wizard and leaves no saved step behind",
-           frame.locator("#wiz-outer").count() == 0 and frame.evaluate("localStorage.getItem('dg-wiz-step')") is None, "")
-    record("wizard", "Finish lands on the top of the finished sheet (Enter Live Play visible, not cut off under the Hub header)",
-           frame.evaluate("scrollY") == 0, str(frame.evaluate("scrollY")))
-    record("wizard", "the finished Agent keeps name and profession",
-           frame.evaluate("document.getElementById('cs-name').value") not in ("", "Agent") and frame.evaluate("document.getElementById('cs-profession-select').value") == "federal_agent", "")
-    record("wizard", "no JS exceptions (full wizard run)", len(errs) == 0, "; ".join(errs))
-    ctx.close()
-    return errs
-
-def test_no_sideways_scroll_any_width(p):
-    """Sheet, Live Play and all 8 wizard steps must fit the screen at every
-    common width. Found broken: the whole sheet 1053px wide on an iPad in
-    portrait (fieldset min-width: min-content, reset only below 700px), and
-    the Equipment step wider than the screen at 834-1280px (1fr columns
-    can't shrink below their nowrap item names)."""
-    bad = []
-    for W in [360, 390, 600, 768, 834, 1024, 1280]:
-        page = p.new_page(viewport={"width": W, "height": 900})
-        for pat in ["**/fonts.googleapis.com/**", "**/fonts.gstatic.com/**", "**/script.google.com/**"]:
-            page.route(pat, lambda r: r.abort())
-        page.goto(f"{BASE}/stats/index.html", wait_until="load", timeout=20000)
-        page.wait_for_timeout(700)
-        widths = {"sheet": page.evaluate("document.documentElement.scrollWidth")}
-        page.evaluate("window.dgWizard.activate()"); page.wait_for_timeout(200)
-        for s in range(10):
-            page.evaluate(f"window.dgWizard.goTo({s})"); page.wait_for_timeout(150)
-            widths[f"wizard {s+1}"] = page.evaluate("document.documentElement.scrollWidth")
-        page.evaluate("() => { window.dgWizard.deactivate(); const n = document.getElementById('cs-name'); n.value = 'X'; window.setLivePlay(true); }"); page.wait_for_timeout(300)
-        widths["live play"] = page.evaluate("document.documentElement.scrollWidth")
-        bad += [f"{W}px {k}={v}" for k, v in widths.items() if v > W]
-        page.close()
-    record("stats-terminal", "sheet, Live Play and every wizard step fit the screen at 360-1280px", not bad, "; ".join(bad))
-    return []
-
-def test_lp_initiative_order(p):
-    """Live Play's initiative row (stats/lp-initiative.js): replaced the
-    bare DEX readout in the tracker bar with an actual initiative order
-    for this Agent's Cell -- every member sorted by DEX, highest first,
-    this Agent highlighted -- shown above the tracker bar only when the
-    Cell has other players. Reads cells + characters/{code} (both
-    public-read) live; this Agent's own row uses the sheet's live DEX."""
-    import json as _json
-    def char(name, dex, hp=10):
-        return {"character_json": _json.dumps({"bio": {"name": name}, "csStats": {"DEX": dex}, "derived": {"hp": hp}})}
-
-    page = p.new_page(viewport={"width": 390, "height": 844})
-    errs = collect_errors(page)
-    install_notes_firestore_stub(page)
-    page.add_init_script("try { localStorage.setItem('dg_stats_cloud_code', 'OWEN-CS12'); } catch (e) {}")
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", lambda r: r.abort())
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(500)
-    page.fill("#cs-name", "Owen Castillo")
-    page.dispatch_event("#cs-name", "input")
-    page.evaluate("() => { document.getElementById('DEX-value').textContent = '11'; window.setLivePlay(true); }")
-    page.wait_for_timeout(300)
-
-    record("stats-terminal", "the tracker bar no longer carries a bare DEX readout",
-           page.locator("#lp-cur-dex").count() == 0, "")
-    wait_for_condition(lambda: any(l["path"] == "cells" for l in page.evaluate("() => window.__dgFirestoreListeners || []")), timeout_ms=6000)
-    push_firestore_snapshot(page, "cells", [], [{"id": "cell_solo", "member_codes": ["OWEN-CS12"], "name": "Solo"}])
-    page.wait_for_timeout(200)
-    record("stats-terminal", "initiative row stays hidden when this Agent is alone in the Cell",
-           not page.is_visible("#lp-initiative"), "")
-
-    push_firestore_snapshot(page, "cells", [], [{"id": "cell_a", "member_codes": ["OWEN-CS12", "PRIY-AN34", "DANI-U8BM"], "name": "Cell A"}])
-    wait_for_condition(lambda: page.evaluate("() => (window.__dgFirestoreListeners || []).filter(l => l.isDoc && l.path.indexOf('characters/') === 0).length") >= 2, timeout_ms=6000)
-    push_firestore_doc_snapshot(page, "characters/PRIY-AN34", True, char("Priya Anand", 14))
-    push_firestore_doc_snapshot(page, "characters/DANI-U8BM", True, char("Daniela Martinez", 9))
-    page.wait_for_timeout(200)
-    names = page.eval_on_selector_all("#lp-initiative .lp-init-name", "els => els.map(e => e.textContent)")
-    record("stats-terminal", "initiative row shows the whole Cell in DEX order, highest first",
-           page.is_visible("#lp-initiative") and names == ["Priya", "Owen", "Daniela"], str(names))
-    record("stats-terminal", "this Agent's own row is highlighted",
-           page.eval_on_selector("#lp-initiative .lp-init-me .lp-init-name", "e => e.textContent") == "Owen", "")
-
-    page.evaluate("() => { document.getElementById('DEX-value').textContent = '16'; lpSyncBar(); }")
-    page.wait_for_timeout(100)
-    names = page.eval_on_selector_all("#lp-initiative .lp-init-name", "els => els.map(e => e.textContent)")
-    record("stats-terminal", "raising this Agent's own DEX re-orders initiative immediately",
-           names[0] == "Owen", str(names))
-
-    # A walk-in Friendly (friendly.html) in the same Cell has no
-    # characters/ doc -- its name and DEX come from friendly/pregens.json.
-    fr = _json.load(open(os.path.join(HERE, "..", "friendly", "pregens.json")))["pregens"][0]
-    push_firestore_snapshot(page, "cells", [], [{"id": "cell_a", "member_codes": ["OWEN-CS12", "PRIY-AN34", "DANI-U8BM", fr["id"]], "name": "Cell A"}])
-    fr_first = fr["name"].split()[0]
-    wait_for_condition(lambda: fr_first in page.eval_on_selector_all("#lp-initiative .lp-init-name", "els => els.map(e => e.textContent)"), timeout_ms=6000)
-    rows = page.eval_on_selector_all("#lp-initiative .lp-init-row", "els => els.map(e => [e.querySelector('.lp-init-name').textContent, e.querySelector('.lp-init-dex').textContent])")
-    record("stats-terminal", "a Friendly pregen in the Cell takes its place in initiative with its sheet's DEX",
-           [fr_first, str(fr["stats"]["DEX"]["value"])] in rows, str(rows))
-
-    # KIA (0 HP on the saved sheet): out of the order.
-    push_firestore_doc_snapshot(page, "characters/DANI-U8BM", True, char("Daniela Martinez", 9, hp=0))
-    gone = wait_for_condition(lambda: "Daniela" not in page.eval_on_selector_all("#lp-initiative .lp-init-name", "els => els.map(e => e.textContent)") or None, timeout_ms=4000)
-    record("stats-terminal", "a KIA Agent (0 HP) drops out of the initiative order", bool(gone),
-           str(page.eval_on_selector_all("#lp-initiative .lp-init-name", "els => els.map(e => e.textContent)")))
-    bar_top = page.evaluate("() => getComputedStyle(document.getElementById('lp-tracker-bar')).top")
-    init_h = page.evaluate("() => document.getElementById('lp-initiative').offsetHeight")
-    record("stats-terminal", "the tracker bar sticks below the initiative row, not on top of it",
-           bar_top == f"{48 + init_h}px", f"bar top={bar_top} init h={init_h}")
-
-    page.evaluate("() => window.setLivePlay(false)")
-    page.wait_for_timeout(150)
-    record("stats-terminal", "initiative row is Live Play only",
-           not page.is_visible("#lp-initiative"), "")
-    record("stats-terminal", "no JS exceptions (initiative)", len(errs) == 0, "; ".join(errs))
-    page.close()
-    return errs
-
-def test_wizard_does_not_reopen_over_loaded_agent(p):
-    """GitHub issue #10: Play on an existing Agent showed the Character
-    Creation Wizard ("Step 1 of 9 -- Statistics") on top of that Agent's
-    real, fully-loaded sheet. Root cause: stats/wizard.js saves its step
-    in a device-wide dg-wiz-step key and auto-reopens on any later page
-    load while it's set -- so abandoning a New Recruit wizard and then
-    opening any existing Agent via ?load=CODE reopened it over them.
-    Also checks the auto-restore still works for its real purpose (a
-    mid-creation refresh with no ?load=)."""
-    def fake(route):
-        url = route.request.url
-        if "action=load_character" in url and "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            st = {"v": 1, "bio": {"name": "Daniela Martinez", "profession": ""},
-                  "stats": {"STR": 14, "CON": 12, "DEX": 13, "INT": 16, "POW": 11, "CHA": 11},
-                  "csStats": {"STR": 14, "CON": 12, "DEX": 13, "INT": 16, "POW": 11, "CHA": 11}}
-            route.fulfill(status=200, content_type="application/javascript",
-                          body=f'{cb}({json.dumps({"status": "OK", "agent_code": "DANI-U8BM", "character_json": json.dumps(st)})})')
-        else:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-
-    page = p.new_page()
-    errs = collect_errors(page)
-    install_notes_firestore_stub(page)
-    page.add_init_script("try { localStorage.setItem('dg-wiz-step', '0'); } catch (e) {}")
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    jsonp_backend(page, fake)
-    page.goto(f"{BASE}/stats/index.html?load=DANI-U8BM&live=1", wait_until="load", timeout=20000)
-    page.wait_for_timeout(1500)
-    record("stats-terminal", "a leftover wizard step does not reopen the wizard over an Agent opened via ?load=",
-           page.locator("#wiz-outer").count() == 0 and page.eval_on_selector("#cs-name", "el => el.value") == "Daniela Martinez",
-           page.locator("#wiz-step-label").text_content() if page.locator("#wiz-step-label").count() else "")
-    record("stats-terminal", "the leftover wizard step is cleared once an existing Agent is opened",
-           page.evaluate("() => localStorage.getItem('dg-wiz-step')") is None, "")
-    record("stats-terminal", "no JS exceptions (wizard over loaded Agent)", len(errs) == 0, "; ".join(errs))
-    page.close()
-
-    page = p.new_page()
-    page.add_init_script("try { localStorage.setItem('dg-wiz-step', '2'); } catch (e) {}")
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.route("**/script.google.com/**", lambda r: r.abort())
-    page.goto(f"{BASE}/stats/index.html", wait_until="load", timeout=20000)
-    wait_for_condition(lambda: page.locator("#wiz-step-label").count() > 0, timeout_ms=5000)
-    lbl = page.locator("#wiz-step-label")
-    record("stats-terminal", "a genuine mid-creation refresh (no ?load=) still reopens the wizard on its saved step",
-           lbl.count() > 0 and "Step 3 of 10" in (lbl.text_content() or ""), lbl.text_content() if lbl.count() else "")
-    page.close()
-    return errs
-
-def test_dice_roller_recovers_from_load_race(p):
-    """Real live report: "stat x5 rolls didn't work again" plus "no roll
-    history" -- on Agent Hub's own "Play" link
-    (stats/index.html?load=CODE&live=1). Root cause, reproduced directly:
-    assets/dice-roller.js's dgInitDiceRoller() (and therefore
-    resolveRollContext()'s and initHistory()'s own FIRST calls) runs at
-    page load, well before the ?load= JSONP round trip -- a real network
-    fetch, even mocked here -- has a chance to call cloud-sync.js's
-    setCloudCode(), which is what actually makes currentAgentCode() find
-    anything. resolveRollContext() legitimately resolved { mode: 'none'
-    } at that instant, correct for THAT moment, but used to memoize it
-    forever: reproduced by seeding a real Firestore-native Cell, loading
-    via ?load= with a mocked backend, and clicking a stat -- zero
-    Firestore writes, history panel stuck on "Load your Cover Identity
-    on this device to save roll history" even once the Agent's real data
-    had fully loaded and was on screen. Fixed by excluding a 'none'
-    outcome from the cache (retried fresh on every call instead) and by
-    having setCloudCode() dispatch a 'dg-cloud-code-set' event that
-    re-runs initHistory() once a code actually becomes known, rather
-    than only self-healing on the next roll attempt."""
-    page = p.new_page()
-    errs = collect_errors(page)
-    install_notes_firestore_stub(page)
-    page.add_init_script("""
-        window.__dgFirestoreDocs = window.__dgFirestoreDocs || {};
-        window.__dgFirestoreDocs['cells/cell_1'] = { member_codes: ['OWEN-CS12'], name: 'Cell Alpha' };
-    """)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-
-    def fake_apps_script(route):
-        url = route.request.url
-        if "action=load_character" in url and "callback=" in url:
-            cb = url.split("callback=")[1].split("&")[0]
-            char_state = {"v": 1, "bio": {"name": "Owen Castillo", "profession": ""},
-                          "stats": {"STR": 14, "CON": 12, "DEX": 10, "INT": 16, "POW": 13, "CHA": 11},
-                          "csStats": {"STR": 14, "CON": 12, "DEX": 10, "INT": 16, "POW": 13, "CHA": 11}}
-            body = f'{cb}({json.dumps({"status": "OK", "agent_code": "OWEN-CS12", "character_json": json.dumps(char_state)})})'
-            route.fulfill(status=200, content_type="application/javascript", body=body)
-        else:
-            route.fulfill(status=200, content_type="application/json", body='{"status":"OK"}')
-    jsonp_backend(page, fake_apps_script)
-
-    page.goto(f"{BASE}/stats/index.html?load=OWEN-CS12&live=1", wait_until="domcontentloaded", timeout=15000)
-    # Gives the mocked ?load= round trip (JSONP callback + cloud-sync.js's
-    # own 250ms post-apply delay) time to actually complete and call
-    # setCloudCode() -- this test is specifically about what happens
-    # to dice-roller.js's state AFTER that already-raced-past point,
-    # not about the race's timing itself.
-    page.wait_for_timeout(1000)
-
-    record("dice-roller", "the history feed re-subscribes to the real Cell's rolls once the cloud load actually completes",
-           page.evaluate("() => (window.__dgFirestoreListeners || []).filter(l => l.path === 'dice_rolls/cell_1/rolls').length") > 0, "")
-
-    page.click("#lp-stat-STR-x5")
-    wait_for_condition(lambda: len(page.evaluate("() => window.__dgFirestoreWrites || []")) > 0, timeout_ms=6000)
-    writes = page.evaluate("() => (window.__dgFirestoreWrites || []).map(w => w.path)")
-    record("dice-roller", "a stat x5 roll made AFTER the cloud load completes still saves, not silently dropped",
-           any(w.startswith("dice_rolls/cell_1/rolls/") for w in writes), str(writes))
-
-    push_firestore_snapshot(page, "dice_rolls/cell_1/rolls", [],
-                             [{"id": "roll1", "agent_code": "OWEN-CS12", "agent_name": "Owen Castillo",
-                               "label": "STR x5", "value": 42, "target": 70, "tier": "success", "created_at": 0}])
-    history_html = wait_for_condition(lambda: (page.inner_html("#dr-history-list")
-                                                if "Owen Castillo" in page.inner_html("#dr-history-list") else None))
-    record("dice-roller", "the recovered history feed actually renders a pushed roll, not just subscribes silently",
-           bool(history_html), history_html or "")
-
-    record("dice-roller", "no JS exceptions", len(errs) == 0, "; ".join(errs))
-    page.close()
-    return errs
 
 def test_dice_roller_firestore_native_cell(p):
     """GitHub issue live report: "Roll not saved: permission-denied" for
@@ -12344,7 +9914,9 @@ def test_dice_roller_firestore_native_cell(p):
     """)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
+    skip_boot_splash(page)
+    page.goto(f"{BASE}/rules-reference.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgDice && window.dgDice.roll", timeout=10000)
     page.wait_for_timeout(500)
 
     page.evaluate("() => window.dgDice.roll(50, 'Accounting')")
@@ -12492,138 +10064,12 @@ def _block_fonts(page):
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
 
-def test_new_agent_carries_cover_identity(p):
-    """A brand-new player types their Cover Identity into the Hub, then
-    builds an Agent. That Agent used to save with an EMPTY Player Name
-    (nothing copied it over), so "Load My Agents" on their next device --
-    a find_by_player_name search -- found nothing. Also: a ?load= of
-    someone else's Agent must never be stamped with this device's name."""
-    page = p.new_page(viewport={"width": 390, "height": 844})
-    errs = collect_errors(page)
-    install_notes_firestore_stub(page)
-    _block_fonts(page)
-    posts = []
-    other = {"v": 1, "bio": {"name": "Priya Anand", "player_name": ""}}
-    def respond(method, q, body):
-        if q.get("action") == "load_character":
-            return {"status": "OK", "agent_code": q.get("code"), "character_json": json.dumps(other)}
-        if body and body.get("action") == "save_character":
-            return {"status": "OK", "agent_code": body.get("agent_code")}
-        return None
-    _route_backend(page, respond, posts)
-    page.add_init_script("try { localStorage.setItem('dg_cover_identity', 'Mara Voss'); } catch (e) {}")
-    page.goto(f"{BASE}/stats/index.html", wait_until="load", timeout=15000)
-    page.wait_for_timeout(1200)
-    record("journey", "a new sheet shows the Hub's Cover Identity as Player Name",
-           page.input_value("#cs-player-name") == "Mara Voss", page.input_value("#cs-player-name"))
-    page.fill("#cs-player-name", "")
-    page.fill("#cs-name", "Robert Wright")
-    page.dispatch_event("#cs-name", "input")
-    _pump_until(page, lambda: any(b.get("action") == "save_character" for b in posts), 6000)
-    saves = [b for b in posts if b.get("action") == "save_character"]
-    record("journey", "the new Agent's first save carries the Cover Identity as player_name (even if the box was cleared)",
-           bool(saves) and saves[0].get("player_name") == "Mara Voss", str([s.get("player_name") for s in saves]))
-    roster = page.evaluate("() => JSON.parse(localStorage.getItem('dg_agent_roster') || '{}')")
-    record("journey", "the local roster entry is claimed by the same name",
-           any(v.get("player_name") == "Mara Voss" for v in roster.values()), str(roster))
-
-    page2 = p.new_page(viewport={"width": 390, "height": 844})
-    errs += collect_errors(page2)
-    install_notes_firestore_stub(page2)
-    _block_fonts(page2)
-    _route_backend(page2, respond)
-    page2.add_init_script("try { localStorage.setItem('dg_cover_identity', 'Mara Voss'); } catch (e) {}")
-    page2.goto(f"{BASE}/stats/index.html?load=PRIY-AN34", wait_until="load", timeout=15000)
-    page2.wait_for_timeout(2000)
-    record("journey", "loading someone else's Agent (?load=) never stamps this device's name on it",
-           page2.input_value("#cs-player-name") == "" and page2.input_value("#cs-name") == "Priya Anand",
-           f"{page2.input_value('#cs-player-name')!r} / {page2.input_value('#cs-name')!r}")
-    record("journey", "no JS exceptions (cover identity)", len(errs) == 0, "; ".join(errs))
-    page.close(); page2.close()
-    return errs
-
-def test_theme_survives_new_recruit_and_cloud_load(p):
-    """The Hub's "Build a Character" (?new=1) reset set EVERY <select> to its
-    first option -- including the theme picker (X-Files) -- while the page
-    kept showing Field Notes. The Agent then saved as X-Files, and opening
-    it again (Play) switched the player's phone to X-Files. Cloud loads also
-    applied the Agent's saved theme over the device's own preference."""
-    page = p.new_page(viewport={"width": 390, "height": 844})
-    errs = collect_errors(page)
-    install_notes_firestore_stub(page)
-    _block_fonts(page)
-    route_apps_script_ok(page)
-    page.add_init_script("try { localStorage.setItem('dg_theme', 'field-notes'); } catch (e) {}")
-    page.goto(f"{BASE}/stats/index.html?new=1", wait_until="load", timeout=15000)
-    page.wait_for_timeout(800)
-    sel = page.input_value("#cs-theme-select")
-    state = page.evaluate("() => window.dgSaveLoad.collectState()")
-    record("journey", "?new=1 leaves the theme picker on the theme actually shown",
-           sel == "field-notes" and state.get("theme") == "field-notes"
-           and page.evaluate("document.body.classList.contains('theme-field-notes')"),
-           f"select={sel} saved={state.get('theme')}")
-    page.close()
-
-    page = p.new_page(viewport={"width": 390, "height": 844})
-    errs += collect_errors(page)
-    install_notes_firestore_stub(page)
-    _block_fonts(page)
-    state["theme"] = "xfiles"
-    state.setdefault("bio", {})["name"] = "Robert Wright"
-    _route_backend(page, lambda m, q, b: {"status": "OK", "agent_code": "ROBE-KKUL", "character_json": json.dumps(state)}
-                   if q.get("action") == "load_character" else None)
-    page.add_init_script("try { localStorage.setItem('dg_theme', 'field-notes'); } catch (e) {}")
-    page.goto(f"{BASE}/stats/index.html?load=ROBE-KKUL&live=1", wait_until="load", timeout=15000)
-    page.wait_for_timeout(2000)
-    record("journey", "Play on an Agent saved under another theme keeps this device's theme",
-           page.evaluate("document.body.classList.contains('theme-field-notes')")
-           and page.evaluate("localStorage.getItem('dg_theme')") == "field-notes",
-           page.evaluate("document.body.className"))
-    record("journey", "no JS exceptions (theme)", len(errs) == 0, "; ".join(errs))
-    page.close()
-    return errs
-
 def test_player_pages_use_in_page_dialogs(p):
     """alert()/confirm() show nothing in an iOS home-screen install (confirm()
-    just returns false) -- Clear Save/Clear Sheet and the roster drawer's
-    Remove could never run there, and import/validation notices vanished.
-    Also: the toast used to be one nowrap line at bottom:24px, clipped off
-    both sides of a phone and under the Hub's Dice Roller bar. And a Kappa
-    Black import (no Breaking Point in the export) came in as BP 0."""
+    just returns false) -- validation notices vanished. Requisition and the
+    Appearance brief explain an unfinished form in-page instead."""
     dialogs = []
-    page = p.new_page(viewport={"width": 390, "height": 844})
-    errs = collect_errors(page)
-    page.on("dialog", lambda d: (dialogs.append(d.message), d.dismiss()))
-    install_notes_firestore_stub(page)
-    _block_fonts(page)
-    route_apps_script_ok(page)
-    page.add_init_script("try { localStorage.setItem('dg_theme', 'field-notes'); } catch (e) {}")
-    page.goto(f"{BASE}/stats/index.html", wait_until="load", timeout=15000)
-    page.wait_for_timeout(600)
-    summary_color = page.evaluate("getComputedStyle(document.querySelector('#agent-drop-details > summary')).color")
-    lum = page.evaluate("(c) => { const m = c.match(/\\d+/g).map(Number); return 0.299*m[0] + 0.587*m[1] + 0.114*m[2]; }", summary_color)
-    record("journey", "Field Notes: the import 'Or drop/upload a file' toggle is light on the dark desk", lum > 150, summary_color)
-    toml = open(os.path.join(HERE, "fixtures", "kappablack-export.toml")).read()
-    page.evaluate("(t) => importAgentText(t)", toml)
-    page.wait_for_timeout(800)
-    box = page.evaluate("() => { const r = document.getElementById('dg-toast').getBoundingClientRect(); return [r.left, r.right, r.bottom, innerWidth, innerHeight, document.getElementById('dg-toast').textContent]; }")
-    record("journey", "import confirms with an in-page toast, not a native alert", not dialogs and "loaded" in box[5], f"dialogs={dialogs} toast={box[5]!r}")
-    record("journey", "the toast fits the phone screen and clears the floating widgets",
-           box[0] >= 0 and box[1] <= box[3] and box[2] <= box[4] - 110, str(box[:5]))
-    san = int(page.input_value("#cs-sanity-value") or 0)
-    pow_ = int(page.evaluate("document.getElementById('POW-value').textContent") or 0)
-    record("journey", "Kappa Black import derives Breaking Point as SAN - POW instead of 0",
-           page.input_value("#cs-breaking-point") == str(san - pow_), f"bp={page.input_value('#cs-breaking-point')} san={san} pow={pow_}")
-    page.evaluate("() => { window.dgSaveLoad.clearSheet(); }")
-    page.wait_for_timeout(300)
-    record("journey", "Clear Sheet asks with the in-page confirm", page.is_visible("#dg-confirm-backdrop.dg-confirm-open") and not dialogs, str(dialogs))
-    page.click("#dg-confirm-cancel"); page.wait_for_timeout(200)
-    record("journey", "Cancel keeps the Agent", page.input_value("#cs-name") != "", page.input_value("#cs-name"))
-    page.evaluate("() => { window.dgSaveLoad.clearSheet(); }"); page.wait_for_timeout(300)
-    page.click("#dg-confirm-ok"); page.wait_for_timeout(300)
-    record("journey", "Continue clears it", page.input_value("#cs-name") == "", page.input_value("#cs-name"))
-    page.close()
-
+    errs = []
     page = p.new_page(viewport={"width": 390, "height": 844})
     errs += collect_errors(page)
     page.on("dialog", lambda d: (dialogs.append(d.message), d.dismiss()))
@@ -12947,7 +10393,7 @@ def test_notes_first_block_saves_under_rules(p):
 
 def test_auto_created_brief_uses_titles_and_player(p):
     """The Agent File auto-creates a missing brief from the character sheet.
-    It sent stats/'s internal profession key ("federal_agent", printed raw
+    It sent the internal profession key ("federal_agent", printed raw
     on the dossier) and dropped the player's name."""
     page = p.new_page(viewport={"width": 390, "height": 844})
     errs = collect_errors(page)
@@ -13151,57 +10597,6 @@ def test_agent_hub_one_page_file(p):
     record("hub", "no JS exceptions", len(errs_all + errs) == 0, "; ".join(errs_all + errs))
     page.close()
     return errs_all + errs
-
-def test_appearance_wizard_step(p):
-    """The creation wizard's Appearance step (stats/appearance-sheet.js):
-    only shown inside the wizard; what's typed goes straight to the Agent
-    File (briefs/{code}) -- the same fields Agent Hub's Appearance edits;
-    Fill the rest at random fills only the blanks, to suit the Agent's sex;
-    loading the Agent brings their Appearance back from the Agent File; and
-    finishing the wizard gives a new Agent their Agent File (name, outfit
-    from the sheet) without touching what was described."""
-    FEMALE_FACIAL = {'none', 'none, meticulous about it', 'faint, barely visible — never remarked on'}
-    page = p.new_page()
-    page.set_default_timeout(8000)
-    errs = collect_errors(page)
-    _block_fonts(page)
-    install_firestore_backend(page)
-    page.goto(f"{BASE}/stats/index.html?new=1", wait_until="load", timeout=20000)
-    page.wait_for_timeout(600)
-    record("appearance", "the Appearance section isn't on the sheet itself (it's a wizard step; afterwards it lives on Agent Hub)",
-           not page.is_visible("#cs-appearance-fieldset"), "")
-    page.fill("#cs-name", "Ilse Brandt")
-    page.fill("#cs-bio-sex", "Female")
-    code = wait_for_condition(lambda: page.evaluate("localStorage.getItem('dg_stats_cloud_code')"), timeout_ms=8000)
-    page.evaluate("window.dgWizard.activate()"); page.wait_for_timeout(200)
-    page.evaluate("window.dgWizard.goTo(3)"); page.wait_for_timeout(300)
-    record("appearance", "wizard step 4 is Appearance, showing the section",
-           "Appearance" in page.text_content("#wiz-step-label") and page.is_visible("#cs-appearance-fieldset"), page.text_content("#wiz-step-label"))
-    page.fill("#cs-appearance-fieldset [data-ap=eye_color]", "storm grey")
-    saved = wait_for_condition(lambda: (fs_doc(page, "briefs/" + code) or {}).get("eye_color"), timeout_ms=6000)
-    record("appearance", "typing saves straight to the Agent's Agent File (briefs/{code})", saved == "storm grey", str(saved))
-    ok_sex = True
-    for _ in range(5):
-        page.evaluate("() => ['facial_hair', 'hair_style'].forEach(k => { document.querySelector('#cs-appearance-fieldset [data-ap=' + k + ']').value = ''; })")
-        page.click("#cs-appearance-random")
-        fh = page.input_value("#cs-appearance-fieldset [data-ap=facial_hair]")
-        ok_sex = ok_sex and fh in FEMALE_FACIAL
-    record("appearance", "Fill the rest at random suits the Agent's sex (facial hair from the female table, every time)", ok_sex, "")
-    record("appearance", "…fills every required line and keeps what the player wrote",
-           page.evaluate("[].every.call(document.querySelectorAll('#cs-appearance-fieldset [data-ap-required]'), e => e.value.trim())")
-           and page.input_value("#cs-appearance-fieldset [data-ap=eye_color]") == "storm grey", "")
-    wait_for_condition(lambda: (fs_doc(page, "briefs/" + code) or {}).get("vibe"), timeout_ms=6000)
-    page.evaluate("() => { window.dgAppearanceSheet.clear(); window.dgAppearanceSheet.load(); }")
-    back = wait_for_condition(lambda: page.input_value("#cs-appearance-fieldset [data-ap=eye_color]") or None, timeout_ms=6000)
-    record("appearance", "loading the Agent brings their Appearance back from the Agent File", back == "storm grey", str(back))
-    page.evaluate("window.dgWizard.goTo(9)"); page.wait_for_timeout(200)
-    page.click("#wiz-next")
-    brief = wait_for_condition(lambda: (lambda b: b if b.get("char_name") == "Ilse Brandt" else None)(fs_doc(page, "briefs/" + code) or {}), timeout_ms=8000) or {}
-    record("appearance", "finishing the wizard files the Agent File from the sheet, keeping the Appearance",
-           brief.get("char_name") == "Ilse Brandt" and brief.get("eye_color") == "storm grey" and bool(brief.get("vibe")), str({k: brief.get(k) for k in ("char_name", "eye_color", "sex")}))
-    record("appearance", "no JS exceptions", len(errs) == 0, "; ".join(errs))
-    page.close()
-    return errs
 
 def test_field_id_fabricator_in_notebook(p):
     """The Field ID Fabricator (field-id.html; the Agent Portal's third tab)
@@ -13451,13 +10846,12 @@ def test_field_notes_round3(p):
 
 def test_incursion(p):
     """The Incursion -- what brought the Agent to Delta Green -- as a part
-    of the Agent, like Motivations: the standalone page and the sheet share
-    one picker (assets/incursion.js: roll all, roll or choose any line,
-    or write it freehand); the sheet saves it with the Agent and on the
-    Agent's own record (characters/{code}.incursion), which wins on load so
-    a Handler's amendment from A-Cell is what the player sees; the Agent
-    File shows it; the clearance briefing opens with it; A-Cell shows it
-    and lets the Handler amend it."""
+    of the Agent, like Motivations: the standalone page and New Recruit
+    share one picker (assets/incursion.js: roll all, roll or choose any
+    line, or write it freehand); the copy on the Agent's own record
+    (characters/{code}.incursion) wins, so a Handler's amendment from
+    A-Cell is what the player sees on the Agent File; A-Cell shows it and
+    lets the Handler amend it."""
     errs_all = []
     code = "INCU-0001"
     # 1. The standalone page: mix and match, then freehand.
@@ -13487,49 +10881,21 @@ def test_incursion(p):
     errs_all.extend(errs)
     page.close()
 
-    # 2. The sheet: written on the sheet, saved with it and on the Agent's record.
-    page = p.new_page(viewport={"width": 1300, "height": 900})
-    errs = collect_errors(page)
-    _block_fonts(page)
-    route_apps_script_ok(page)
-    handler_inc = {"picks": {"environment": 0, "vector": 0, "cover": 0, "complication": 0, "incursion": 0},
-                   "text": "The Handler says: the lighthouse keeper's ledger.", "custom": True, "by": "handler"}
-    sheet_state = {"v": 1, "bio": {"name": "Ines Cutter", "player_name": "inc tester",
-                                   "incursion": {"picks": {"environment": 3}, "text": "Old sheet copy.", "custom": True}}}
-    install_firestore_backend(page, {f"characters/{code}": dict(character_doc(code, sheet_state, "inc tester")),
-                                     f"briefs/{code}": {"agent_code": code, "char_name": "Ines Cutter", "player_name": "inc tester"}})
-    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); localStorage.setItem('dg_stats_cloud_code', '%s'); } catch (e) {}" % code)
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_selector("#cs-incursion-picker [data-inc-all]", state="attached", timeout=10000)
+    # 2. The Agent File: the copy on the Agent's own record
+    # (characters/{code}.incursion -- a Handler's amendment from A-Cell)
+    # wins over the older copy saved inside the character.
+    docs = _field_notes_docs()
+    st0 = json.loads(docs[f"characters/{FN_CODE}"]["character_json"])
+    st0["bio"]["incursion"] = {"picks": {"environment": 3}, "text": "Old sheet copy.", "custom": True}
+    docs[f"characters/{FN_CODE}"] = dict(character_doc(FN_CODE, st0, "fn tester"),
+                                         incursion={"text": "The Handler says: the lighthouse keeper's ledger.", "custom": True, "by": "handler"})
+    page, errs = _field_notes_page(p, docs=docs, extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(1200)
-    page.evaluate("() => { const el = document.getElementById('cs-incursion-fieldset'); el.scrollIntoView(); }")
-    page.select_option("#cs-incursion-picker [data-inc=vector]", "4")
-    page.select_option("#cs-incursion-picker [data-inc=complication]", "8")
-    rec = wait_for_condition(lambda: ((fs_doc(page, f"characters/{code}") or {}).get("incursion") or {}).get("picks", {}).get("vector") == 4 or None, timeout_ms=6000)
-    doc = fs_doc(page, f"characters/{code}") or {}
-    record("incursion", "the sheet writes the Incursion to the Agent's record (characters/{code}.incursion) as the player",
-           bool(rec) and doc.get("incursion", {}).get("by") == "player" and "part of the threat escaped" in doc.get("incursion", {}).get("text", ""), str(doc.get("incursion"))[:200])
-    saved = json.loads(page.evaluate("() => JSON.stringify(window.dgSaveLoad.collectState().bio.incursion)") or "null") or {}
-    record("incursion", "…and it is saved with the sheet itself, like Motivations", saved.get("picks", {}).get("complication") == 8, str(saved)[:160])
-    # A Handler amendment on the record wins when the Agent is loaded.
-    page.evaluate("""(a) => { const d = window.__dgFirestoreDocs['characters/' + a.code]; d.incursion = a.inc; d.character_json = JSON.stringify(a.st);
-                  try { sessionStorage.setItem('__dgFsDocs', JSON.stringify(window.__dgFirestoreDocs)); } catch (e) {} }""",
-                  {"code": code, "inc": handler_inc, "st": sheet_state})
-    page.goto(f"{BASE}/stats/index.html?load={code}", wait_until="domcontentloaded", timeout=15000)
-    shown = wait_for_condition(lambda: (page.input_value("#cs-incursion-picker [data-inc-text]") if page.locator("#cs-incursion-picker [data-inc-text]").count() else "") .startswith("The Handler says") or None, timeout_ms=10000)
-    record("incursion", "loading the Agent shows the record's Incursion (the Handler's amendment), not the sheet's older copy", bool(shown),
-           page.input_value("#cs-incursion-picker [data-inc-text]") if page.locator("#cs-incursion-picker [data-inc-text]").count() else "")
-    # The Agent File (Field Notes) shows it.
-    page.evaluate("() => window.dgFieldNotes && window.dgFieldNotes.refresh && window.dgFieldNotes.refresh()")
     page.evaluate("() => window.dgFieldNotes.open('agentfile')")
     af = wait_for_condition(lambda: page.evaluate("() => { const el = document.querySelector('#fn-veil .as-incursion'); return el ? el.innerText : null; }"), timeout_ms=10000) or ""
-    record("incursion", "the Agent File shows what happened in the incursion", "lighthouse keeper" in af, af[:160])
-    page.evaluate("() => window.dgFieldNotes.close()")
-    # The clearance briefing opens with the Agent's own incident.
-    page.evaluate("(c) => { localStorage.setItem('dg_stats_cloud_code', c); window.dispatchEvent(new CustomEvent('dg-wizard-finished')); }", code)
-    pend = json.loads(page.evaluate("() => localStorage.getItem('dg_fn_orders_pending')") or "null") or {}
-    record("incursion", "finishing the wizard carries the Incursion into the clearance briefing",
-           "lighthouse keeper" in (pend.get("incursion") or ""), str(pend)[:200])
+    record("incursion", "the Agent File shows the record's Incursion (the Handler's amendment), not the character's older copy",
+           "lighthouse keeper" in af and "Old sheet copy" not in af, af[:160])
     errs_all.extend(errs)
     page.close()
 
@@ -13700,131 +11066,6 @@ def test_physical_description_punctuation(p):
            got2 == "Mid 40s male American. Average build, salt-and-pepper hair, near-black eyes.", got2)
     page.close()
     return errs
-
-def test_sheet_theme_glow_is_cheap(p):
-    """The X-Files and Son of Sam themes' pulsing panel glow (reported:
-    scrolling the sheet on an iPad was laggy). Animating box-shadow on the
-    tall panels repainted them every frame; the glow is now a fixed shadow
-    on each panel's ::after and only its opacity animates, which the
-    compositor handles without repainting."""
-    page = p.new_page()
-    errs = collect_errors(page)
-    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(1200)
-    for theme in ("xfiles", "son-of-sam"):
-        page.evaluate("(t) => { document.body.className = document.body.className.replace(/theme-\\S+/g, ''); document.body.classList.add('theme-' + t); }", theme)
-        page.wait_for_timeout(200)
-        st = page.evaluate("""() => ['#cs-biography-fieldset', '.panel-skills', '.panel-bonus-skills', '#cs-bonds-fieldset', '#eq-picker-fieldset'].map(sel => {
-            const el = document.querySelector(sel); if (!el) return [sel, 'missing'];
-            const own = getComputedStyle(el), after = getComputedStyle(el, '::after');
-            return [sel, own.animationName, after.animationName, after.boxShadow !== 'none', after.pointerEvents]; })""")
-        record("sheet-theme", f"{theme}: no panel animates its own box-shadow (it repainted the whole panel every frame)",
-               all(r[1] == "none" for r in st), str(st))
-        record("sheet-theme", f"{theme}: the glow still pulses, as an opacity animation on each panel's ::after",
-               all(len(r) == 5 and r[2] != "none" and r[3] and r[4] == "none" for r in st), str(st))
-    page.close()
-    return errs
-
-def test_import_same_agent_twice_offers_update(p):
-    """Live: a player imported the same character twice ("Soko, Lenka"),
-    the second time on a blank sheet, and got two Agents with two codes
-    (SOKO-HUBK, SOKO-GDBQ) -- a blank sheet always mints a new code. Now a
-    freshly minted code whose name this player already has on file asks:
-    "Update TWIN-0001" moves the sheet onto the existing Agent and sends
-    the extra code to Recently Deleted; "Keep both" leaves two Agents."""
-    errs_all = []
-    twin_state = {"v": 1, "bio": {"name": "Soko, Lenka", "player_name": "Zuzu"}}
-    for choice in ("update", "keep"):
-        docs = {
-            "characters/TWIN-0001": character_doc("TWIN-0001", twin_state, "Zuzu"),
-            "briefs/TWIN-0001": {"agent_code": "TWIN-0001", "char_name": "Soko, Lenka", "player_name": "Zuzu", "player_name_lc": "zuzu"},
-        }
-        page, errs = _field_notes_page(p, docs=docs, extra_init="localStorage.setItem('dg_cover_identity', 'Zuzu'); localStorage.removeItem('dg_stats_cloud_code'); localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'TWIN-0001': 1}));")
-        page.goto(f"{BASE}/stats/index.html?new=1", wait_until="domcontentloaded", timeout=15000)
-        page.wait_for_function("() => window.importAgentText && window.dgCloudSave", timeout=10000)
-        page.wait_for_timeout(800)
-        page.evaluate("(st) => window.importAgentText(JSON.stringify(st))", twin_state)
-        page.wait_for_selector("#dg-confirm-backdrop.dg-confirm-open", timeout=15000)
-        new_code = page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')")
-        msg = page.inner_text("#dg-confirm-message")
-        if choice == "update":
-            record("journey", "importing an Agent this player already has asks before keeping a second one",
-                   "TWIN-0001" in msg and "Soko, Lenka" in msg and page.inner_text("#dg-confirm-ok") == "Update TWIN-0001"
-                   and page.inner_text("#dg-confirm-cancel") == "Keep both" and new_code and new_code != "TWIN-0001", msg + " / " + str(new_code))
-            page.click("#dg-confirm-ok")
-            gone = wait_for_condition(lambda: (fs_doc(page, f"deleted_agents/{new_code}") is not None
-                                               and fs_doc(page, f"characters/{new_code}") is None) or None, timeout_ms=10000)
-            code_now = page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')")
-            roster = json.loads(page.evaluate("() => localStorage.getItem('dg_agent_roster')") or "{}")
-            record("journey", "Update: the sheet saves to the existing Agent's code, the extra code goes to Recently Deleted",
-                   code_now == "TWIN-0001" and bool(gone) and new_code not in roster
-                   and any(w["path"] == "characters/TWIN-0001" for w in fs_writes(page, "characters/TWIN-0001")),
-                   f"code={code_now} gone={gone} roster={list(roster)}")
-        else:
-            page.click("#dg-confirm-cancel")
-            page.wait_for_timeout(1500)
-            record("journey", "Keep both: the new Agent keeps its own code and nothing is removed",
-                   page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')") == new_code
-                   and fs_doc(page, f"characters/{new_code}") is not None and fs_doc(page, f"deleted_agents/{new_code}") is None, str(new_code))
-        errs_all.extend(errs)
-        page.close()
-    return errs_all
-
-def test_field_notes_standing_orders(p):
-    """New-Agent onboarding: the wizard finishing (or an Agent imported
-    onto the sheet) arms the Standing Orders; they come up only once the
-    player leaves the sheet. N and Escape put them off (they come back);
-    Y saves the acknowledgement on the Agent's brief and opens the Agent
-    File on the photo tab."""
-    errs_all = []
-    page, errs = _field_notes_page(p)
-    page.goto(f"{BASE}/stats/index.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
-    page.evaluate("(c) => { localStorage.setItem('dg_stats_cloud_code', c); window.dispatchEvent(new CustomEvent('dg-wizard-finished')); }", FN_CODE)
-    record("onboarding", "the wizard finishing arms the Standing Orders",
-           (json.loads(page.evaluate("() => localStorage.getItem('dg_fn_orders_pending')") or "null") or {}).get("code") == FN_CODE, "")
-    page.wait_for_timeout(500)
-    record("onboarding", "nothing shows while the player is still on the sheet", page.locator("#fn-orders").count() == 0, "")
-    page.evaluate("() => localStorage.removeItem('dg_fn_orders_pending')")
-    page.evaluate("() => window.importAgentText(JSON.stringify({v: 1, bio: {name: 'Ivy Imported'}}))")
-    armed = wait_for_condition(lambda: (json.loads(page.evaluate("() => localStorage.getItem('dg_fn_orders_pending')") or "null") or {}).get("name"), timeout_ms=8000)
-    record("onboarding", "importing an Agent onto the sheet arms them too", armed == "Ivy Imported", str(armed))
-
-    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_selector("#fn-orders", timeout=10000)
-    page.wait_for_selector("#fn-orders [data-o=prompt]:not([hidden])", timeout=15000)
-    term = page.inner_text("#fn-orders")
-    record("onboarding", "leaving the sheet brings up the clearance briefing: five tenets, then 'can we call on you? [Y/N]'",
-           all(s in term for s in ["IT HAS HAPPENED BEFORE", "KNOWING SPREADS IT", "WE ARE FEW", "THE WORK IS NECESSARY",
-                                   "ASK NOTHING", "We need your silence", "CAN WE CALL ON YOU? [Y/N]", "briefing_codename:"]), term[:400])
-    record("onboarding", "the briefing says, out of character, why it came up: this Agent is saved, and it's once",
-           "Ivy Imported is saved" in term and "once" in term, term[:200])
-    record("onboarding", "desktop: no call-to-action buttons under the prompt, only the terminal's own [Y/N], each letter tappable (a phone also gets big Y / N buttons)",
-           page.eval_on_selector_all("#fn-orders button", "els => els.filter(e => e.offsetParent !== null).map(e => e.textContent)") == ["Y", "N"], "")
-    page.keyboard.press("n")
-    page.wait_for_timeout(300)
-    record("onboarding", "N closes it and keeps the orders pending",
-           page.locator("#fn-orders").count() == 0 and bool(page.evaluate("() => localStorage.getItem('dg_fn_orders_pending')")), "")
-    page.goto(f"{BASE}/rules-reference.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_selector("#fn-orders", timeout=10000)
-    page.keyboard.press("Escape")
-    page.wait_for_timeout(300)
-    record("onboarding", "they come back on the next page, and Escape also puts them off",
-           page.locator("#fn-orders").count() == 0 and bool(page.evaluate("() => localStorage.getItem('dg_fn_orders_pending')")), "")
-    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_selector("#fn-orders [data-o=prompt]:not([hidden])", timeout=15000)
-    page.click("#fn-orders [data-o=y]")  # a tap on the Y of [Y/N]
-    page.wait_for_url("**/agent-hub.html?code=%s#photos" % FN_CODE, timeout=15000)
-    record("onboarding", "Y opens the Agent's file on Agent Hub, at the photos", page.url.endswith("#photos"), page.url)
-    ack = (fs_doc(page, f"briefs/{FN_CODE}") or {}).get("standing_orders_ack_at")
-    record("onboarding", "Y saves the acknowledgement on the Agent's brief", bool(ack), str(ack))
-    record("onboarding", "the next step (the photo, then the Field ID) is pointed out",
-           page.locator(".fn-nudge").count() == 1 and "photo" in page.inner_text(".fn-nudge").lower(), "")
-    errs_all.extend(errs)
-    page.close()
-    return errs_all
 
 def test_field_notes_shell(p):
     """Inside the Hub shell: one notebook for the whole tab; the nav gains
@@ -14305,38 +11546,7 @@ def main():
                 record(area, f"{fn.__name__} crashed", False, str(e)[:200])
                 return None
 
-        safe(test_stat_generator, browser, area="stats-terminal")
 
-        safe(test_lp_tracker_photo_dex_agent_file, browser, area="stats-terminal")
-
-        safe(test_live_play_themed_skins, browser, area="stats-terminal")
-
-        safe(test_stat_generator_creation_lockout, browser, area="stats-terminal")
-
-        safe(test_new_recruit_split_and_import_commit, browser, area="stats-terminal")
-
-        safe(test_stat_generator_agent_file_nav, browser, area="stats-terminal")
-
-        safe(test_stat_generator_agent_file_nav_ignores_stale_last_agent, browser, area="stats-terminal")
-
-        safe(test_stat_generator_sheets_roundtrip, browser, area="stats-terminal")
-
-        safe(test_foundry_import_profession_and_outfit, browser, area="stats-terminal")
-
-        safe(test_kappablack_toml_import, browser, area="stats-terminal")
-
-        safe(test_kappablack_toml_import_unmatched_profession, browser, area="stats-terminal")
-
-        safe(test_kappablack_toml_import_triggers_cloud_save, browser, area="stats-terminal")
-
-        safe(test_import_agent_paste_text, browser, area="stats-terminal")
-
-        safe(test_import_agent_auto_detect, browser, area="stats-terminal")
-
-        safe(test_player_name_field, browser, area="stats-terminal")
-
-        safe(test_new_agent_carries_cover_identity, browser, area="journey")
-        safe(test_theme_survives_new_recruit_and_cloud_load, browser, area="journey")
         safe(test_player_pages_use_in_page_dialogs, browser, area="journey")
         safe(test_friendly_clearance, browser, area="friendly")
         safe(test_field_notes_notebook, browser, area="notebook")
@@ -14345,11 +11555,7 @@ def main():
         safe(test_field_notes_page_taps_act_once, browser, area="notebook")
         safe(test_field_id_fabricator_in_notebook, browser, area="notebook")
         safe(test_agent_hub_one_page_file, browser, area="hub")
-        safe(test_appearance_wizard_step, browser, area="appearance")
         safe(test_incursion, browser, area="incursion")
-        safe(test_field_notes_standing_orders, browser, area="onboarding")
-        safe(test_import_same_agent_twice_offers_update, browser, area="journey")
-        safe(test_sheet_theme_glow_is_cheap, browser, area="sheet-theme")
         safe(test_physical_description_punctuation, browser, area="hub")
         safe(test_agent_hub_phone_agents_menu, browser, area="hub")
         safe(test_main_photo_from_active_era, browser, area="photo")
@@ -14361,11 +11567,6 @@ def main():
         safe(test_profiling_edit_keeps_agent_file, browser, area="journey")
         safe(test_notes_first_block_saves_under_rules, browser, area="notes")
 
-        safe(test_cloud_save, browser, area="stats-terminal")
-
-        safe(test_agent_file_export, browser, area="agent-file-export")
-
-        safe(test_random_bio_cloud_code_race, browser, area="agent-file-export")
 
         safe(test_cover_ids_tab, browser, area="cover-ids-tab")
 
@@ -14449,9 +11650,6 @@ def main():
 
         safe(test_table_radio_yt_volume_reliability, browser, area="radio")
 
-        safe(test_table_radio_mobile_buttons_not_stretched, browser, area="radio")
-
-        safe(test_table_radio_theme_consistent_style, browser, area="radio")
 
         safe(test_shell_content_swap_preserves_hoisted_widgets, browser, area="shell")
 
@@ -14467,17 +11665,6 @@ def main():
 
         safe(test_agent_portal_profiling_gate, browser, area="agent-portal")
 
-        safe(test_stats_load_by_code_query_param, browser, area="stats-terminal")
-
-        safe(test_stats_loading_terminal, browser, area="stats-terminal")
-
-        safe(test_stats_load_error_reveals_gate_quickly, browser, area="stats-terminal")
-
-        safe(test_stats_recruit_flow_on_missing_character, browser, area="stats-terminal")
-
-        safe(test_stats_recruit_flow_cancel_protects_existing_character, browser, area="stats-terminal")
-
-        safe(test_stats_new_recruit_blank_sheet, browser, area="stats-terminal")
 
         safe(test_mobile_no_overflow, browser, area="mobile")
 
@@ -14538,6 +11725,7 @@ def main():
         safe(test_agent_file_parts_and_looks, browser, area="agent-file-parts")
         safe(test_new_recruit_wizard, browser, area="recruit")
         safe(test_new_recruit_imports_and_links, browser, area="recruit-import")
+        safe(test_sheet_io_real_files, browser, area="sheet-io")
         safe(test_recruit_play_test_round1, browser, area="recruit-fix")
         safe(test_agent_file_wear, browser, area="wear")
         safe(test_agent_file_disorder_stamps, browser, area="disorders")
@@ -14553,14 +11741,7 @@ def main():
         safe(test_motivations_and_disorders_split, browser, area="disorders")
 
 
-        safe(test_mobile_notes_fullscreen, browser, area="stats")
-
         safe(test_dice_roller_firestore_native_cell, browser, area="dice-roller")
-        safe(test_dice_roller_recovers_from_load_race, browser, area="dice-roller")
-        safe(test_wizard_does_not_reopen_over_loaded_agent, browser, area="stats-terminal")
-        safe(test_lp_initiative_order, browser, area="stats-terminal")
-        safe(test_no_sideways_scroll_any_width, browser, area="stats-terminal")
-        safe(test_wizard_full_run_in_shell, browser, area="wizard")
 
         browser.close()
 

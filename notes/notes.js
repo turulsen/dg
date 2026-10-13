@@ -15,9 +15,8 @@
    this was built, not assumed).
 
    Built as a self-mounting module (window.dgNotesPanel.init(el, opts))
-   rather than a page-specific script, for the same reason as v1: a
-   later phase can mount this exact module into a side panel on
-   stats/index.html during Live Play without a rewrite.
+   rather than a page-specific script, so any page (the Field Notes
+   notebook, the standalone Notes page) can mount it.
 
    opts = {
      cellId: string,

@@ -47,8 +47,8 @@
     });
     return loaded[path];
   }
-  function motivationData() { return loadScript('stats/bio.js', function () { return typeof window.motivationsData !== 'undefined' || typeof motivationsData !== 'undefined'; }); } // eslint-disable-line no-undef
-  function catalog() { return loadScript('stats/equipment-data.js', function () { return !!window.DG_EQUIPMENT_CATALOG; }); }
+  function motivationData() { return loadScript('assets/data/bio.js', function () { return typeof window.motivationsData !== 'undefined' || typeof motivationsData !== 'undefined'; }); } // eslint-disable-line no-undef
+  function catalog() { return loadScript('assets/data/equipment-data.js', function () { return !!window.DG_EQUIPMENT_CATALOG; }); }
 
   /* ── Dice: through the Dice Roller, so every roll is in the history ── */
   // rollExpr('1d6', label) -> Promise of the total. The Dice Roller
@@ -818,7 +818,11 @@
         case 'card': ui.card = ui.card === i ? -1 : i; render(); return;
         case 'edit': ui.pop = ''; s.beginEdit(); return;
         case 'cancel':
-          if (s.editDirty() && !window.confirm('Throw away these edits?')) return;
+          if (s.editDirty()) {
+            (window.dgConfirm ? window.dgConfirm('Throw away these edits?', { ok: 'Throw away', cancel: 'Keep editing' }) : Promise.resolve(window.confirm('Throw away these edits?')))
+              .then(function (yes) { if (yes) { ui.pop = ''; s.cancelEdit(); } });
+            return;
+          }
           ui.pop = ''; s.cancelEdit(); return;
         case 'save': {
           var changes = diff(s.state, s.edit);

@@ -8,8 +8,7 @@
    using the same server-stamped started_at timestamp every device
    reads, so it resumes in roughly the right spot rather than from
    zero. That's "loosely synced", not gapless: expect a beat of
-   silence during the navigation itself, same tradeoff already used
-   for Cloud Save's eventually-consistent character sync. Landing in
+   silence during the navigation itself. Landing in
    the Minimized state by default (see EXPANDED_KEY below) keeps that
    beat as unobtrusive as it can be -- a slim bar reappearing reads a
    lot less jarring than the full dial+video panel flashing in on
@@ -25,10 +24,8 @@
 
    Deliberately styled as its own self-contained floating "device"
    (dark, amber/green field-radio look) rather than trying to match
-   each page's own theme -- this page loads on the dark folder-look
-   Hub pages AND stats/index.html's six very different themes, and a
-   fixed prop identity reads better everywhere than chasing six
-   palettes.
+   each page's own theme -- a fixed prop identity reads better on every
+   page than chasing each page's palette.
 
    Minimized vs Expanded: the video/audio embed is never removed from
    the DOM when minimizing (that would pause it) -- only its wrapper's
@@ -59,20 +56,15 @@
   // here, landing almost exactly on top of the shell's real one) with
   // no way to tell which pill is which, and only the inner copy (which
   // a real navigation destroys) would ever actually be reachable to tap.
-  // Same reasoning for stats/index.html's own #dg-split-sheet-frame --
-  // Split View's sheet pane is a real second copy of that same page
-  // (self-referencing iframe), so its own dice-roller.js/table-radio.js
-  // include would otherwise mount a second widget too, live-reported as
-  // "double dice roller" when entering Live Play. window.frameElement
-  // is same-origin-only, so this is null for every standalone visit and
+  // window.frameElement is same-origin-only, so this is null for every standalone visit and
   // for any other embedding not in this explicit list.
   // data-dg-embed: a page embedded inside the Field Notes notebook
   // (Requisition, desktop Notes) -- the notebook's host page owns radio.
   if (window.frameElement &&
-      (window.frameElement.id === 'dg-shell-content' || window.frameElement.id === 'dg-split-sheet-frame' ||
+      (window.frameElement.id === 'dg-shell-content' ||
        window.frameElement.hasAttribute('data-dg-embed'))) return;
   // The ambient/stinger files live next to this script; a page in a
-  // subfolder (stats/, notes/) resolved a bare 'assets/...' against its
+  // subfolder (notes/) resolved a bare 'assets/...' against its
   // own folder and found nothing.
   var ASSET_BASE_ = (function () {
     try { return document.currentScript.src.replace(/assets\/table-radio\.js(\?.*)?$/, ''); } catch (e) { return ''; }
@@ -966,12 +958,8 @@
   var style = document.createElement('style');
   style.textContent = [
     // Widget chrome color language: this widget's own long-standing
-    // palette is the canonical source for --dg-widget-* (see the shared
-    // comment in stats/styles.css's :root block) -- Dice Roller, the
-    // Settings cog, the mobile Notes widget, and Split View's toggle all
-    // read the same tokens now. Declared here too (not just in
-    // stats/styles.css) so this widget still has its own palette
-    // available standalone on a page that never loads stats/styles.css.
+    // palette is the canonical source for --dg-widget-*; the Dice Roller
+    // re-declares the same tokens (assets/dice-roller.js).
     ':root{--dg-widget-bg:#161a14;--dg-widget-ink:#c9d4b8;--dg-widget-border:#3a4432;',
     '--dg-widget-accent:#8fae5a;--dg-widget-accent-bright:#a8c890;',
     '--dg-widget-font:\'JetBrains Mono\',ui-monospace,monospace;}',
@@ -979,9 +967,8 @@
     'font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px;',
     'width:min(280px,calc(100vw - 28px));transition:width .15s ease;}',
     '#dg-radio.dgr-is-expanded{width:min(420px,calc(100vw - 28px));}',
-    /* stats/index.html's collapsed Dice Roller bar also docks bottom-right
-       on narrow screens (see #dr-panel's mobile rule in stats/styles.css)
-       -- lift the radio pill clear of it instead of stacking on top. */
+    /* On narrow screens, lift the radio pill clear of the page's
+       bottom-right docked controls instead of stacking on top. */
     '@media (max-width:600px){#dg-radio{bottom:78px;}}',
     '#dg-radio-pill{',
     'background:#161a14;color:#c9d4b8;border:1px solid #3a4432;border-radius:20px;',
@@ -998,15 +985,9 @@
     '#dg-radio-panel .dgr-head b{color:var(--dg-widget-accent-bright);}',
     '#dg-radio-panel .dgr-btn{',
     'background:transparent;border:1px solid #3a4432;color:#c9d4b8;border-radius:4px;',
-    // width:auto is deliberate, not decorative: stats/styles.css has a
-    // mobile rule (button{width:100%}) meant for the page's OWN buttons
-    // stacking full-width on narrow screens -- being a bare `button`
-    // selector, it also grabs this widget's plain <button> elements
-    // once appended to <body>, stretching Mute/Expand/Leave to the full
-    // panel width and blowing the mini-bar's layout apart (each button
-    // fighting the others for 100%, overflowing past the panel's own
-    // edge). This selector's specificity beats that bare one, so it's
-    // the fix, not just a style choice.
+    // width:auto is deliberate: a page's bare `button{width:100%}`
+    // mobile rule would otherwise stretch Mute/Expand/Leave across the
+    // panel. This selector's specificity beats a bare one.
     'width:auto;',
     'font-family:inherit;font-size:11px;padding:3px 7px;cursor:pointer;flex-shrink:0;}',
     '#dg-radio-panel .dgr-btn:hover{border-color:#5a6a48;}',
@@ -1015,10 +996,8 @@
     '.dgr-mini-bar{display:flex;align-items:center;gap:6px;}',
     '.dgr-mini-info{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e6ecd8;}',
     '.dgr-mini-info b{color:var(--dg-widget-accent-bright);}',
-    // #dg-radio-prefixed for the same reason as .dgr-turn/.dgr-confirm
-    // above -- stats/index.html's Modern theme has a bare "input,
-    // textarea" rule (background/border/border-radius/box-shadow) that
-    // would otherwise reskin this range slider's track per theme too.
+    // #dg-radio-prefixed for the same reason as .dgr-turn/.dgr-confirm:
+    // so a page's bare "input" rule can't reskin this range slider.
     '#dg-radio .dgr-volume{width:52px;flex-shrink:0;accent-color:var(--dg-widget-accent);}',
     '#dg-radio-panel:not(.dgr-panel-expanded) .dgr-expand-section{display:none;}',
     '.dgr-expand-section{margin-top:8px;}',
@@ -1074,12 +1053,8 @@
     'background:var(--dg-widget-accent-bright);margin-left:-1px;border-radius:1px;}',
     '.dgr-dial-controls{display:flex;align-items:center;justify-content:center;gap:10px;}',
     // #dg-radio-prefixed, not bare .dgr-turn -- same reasoning as
-    // .dgr-btn's #dg-radio-panel prefix above: stats/index.html's theme
-    // stylesheets each carry their own blanket ".theme-x button" rule
-    // (background/border/color reset for every <button> on the page),
-    // which at bare-class specificity would otherwise win over this
-    // widget's own styling and make the dial's </> buttons quietly
-    // reskin per theme instead of keeping one consistent look everywhere.
+    // .dgr-btn's #dg-radio-panel prefix above: a page's blanket button
+    // rule would otherwise reskin the dial's </> buttons.
     '#dg-radio .dgr-turn{',
     'background:#20261a;border:1px solid #3a4432;color:#c9d4b8;border-radius:50%;',
     'width:26px;height:26px;font-size:13px;cursor:pointer;line-height:1;padding:0;}',

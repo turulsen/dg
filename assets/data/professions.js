@@ -1,3 +1,4 @@
+// From DELTA-GREEN-STATS (c) 2024 Brook Morton, PolyForm Noncommercial 1.0.0: see assets/data/LICENSE-UPSTREAM.md.
 // Delta Green Professions Database with skills data and descriptions
 const professions = {
     "anthropologist": {

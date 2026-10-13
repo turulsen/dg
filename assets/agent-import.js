@@ -8,12 +8,8 @@
      Kappa Black (.toml, or its .json, a Foundry actor)
      this site's own save (.json, v1 state)
      the printable sheet (.html, its embedded state)
-     DD Form 315 (.pdf)               stats/pdf-export.js's reader
-     the Google Sheets template (.xlsx) stats/sheets-import.js's reader
-
-   The PDF and spreadsheet readers are the old sheet's own; they hand
-   their result to window.dgSaveLoad.applyState(), so here that is
-   briefly a catcher instead of the sheet's form.
+     DD Form 315 (.pdf)               assets/sheet-io/pdf-export.js
+     the Google Sheets template (.xlsx) assets/sheet-io/sheets-import.js
 
    window.dgAgentImport = { read(file) -> Promise<{ state, from, label }>,
                             readText(text), foundryToState(data) } */
@@ -222,27 +218,9 @@
     throw new Error('Unrecognized format.');
   }
 
-  /* ── The old sheet's PDF and spreadsheet readers ── */
-  var busy = Promise.resolve();
-  function viaOld(path, fn, global, file) {
-    var run = busy.then(function () {
-      return loadScript(path, function () { return typeof window[fn] === 'function'; }).then(function () {
-        var prevSL = window.dgSaveLoad, prevToast = window.showToast, got = null, last = '';
-        window.dgSaveLoad = { applyState: function (s) { got = s; }, save: function () {} };
-        window.showToast = function (m) { last = String(m || ''); };
-        function restore() {
-          // The readers save again 300 ms after applying; keep the catcher until then.
-          setTimeout(function () { window.dgSaveLoad = prevSL; window.showToast = prevToast; }, 600);
-        }
-        return Promise.resolve(window[fn](file)).then(function () {
-          restore();
-          if (!got) throw new Error(last && !/^Reading/.test(last) ? last : 'Could not read the ' + global + '.');
-          return got;
-        }, function (err) { restore(); throw err; });
-      });
-    });
-    busy = run.catch(function () {});
-    return run;
+  /* ── The PDF and spreadsheet readers (assets/sheet-io/), loaded on first use ── */
+  function viaReader(path, api, file) {
+    return loadScript(path, function () { return !!window[api]; }).then(function () { return window[api].read(file); });
   }
 
   function ext(file) { var n = String(file.name || '').toLowerCase(), i = n.lastIndexOf('.'); return i >= 0 ? n.slice(i + 1) : ''; }
@@ -254,8 +232,8 @@
     var e = ext(file);
     return head(file).then(function (h) {
       var work;
-      if (e === 'pdf' || h.indexOf('%PDF') === 0) work = viaOld('stats/pdf-export.js', 'importPdfFile', 'PDF', file).then(function (s) { return { state: s, from: 'DD Form 315 PDF' }; });
-      else if (e === 'xlsx' || h.indexOf('PK') === 0) work = viaOld('stats/sheets-import.js', 'importSheetsFile', 'spreadsheet', file).then(function (s) { return { state: s, from: 'Google Sheets' }; });
+      if (e === 'pdf' || h.indexOf('%PDF') === 0) work = viaReader('assets/sheet-io/pdf-export.js', 'dgSheetPdf', file).then(function (s) { return { state: s, from: 'DD Form 315 PDF' }; });
+      else if (e === 'xlsx' || h.indexOf('PK') === 0) work = viaReader('assets/sheet-io/sheets-import.js', 'dgSheetXlsx', file).then(function (s) { return { state: s, from: 'Google Sheets' }; });
       else work = file.text().then(function (t) { return readText(t, e === 'html' || e === 'htm' ? 'html' : ''); });
       return work;
     }).then(function (res) {

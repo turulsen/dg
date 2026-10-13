@@ -32,7 +32,7 @@
    through this whole migration -- not random flakiness, one bad path
    silently breaking the update mechanism itself.
    ══════════════════════════════════════════════ */
-const CACHE_NAME = 'dg-hub-shell-v222';
+const CACHE_NAME = 'dg-hub-shell-v223';
 
 const SHELL_FILES = [
   './',
@@ -88,28 +88,14 @@ const SHELL_FILES = [
   'assets/icons/icon-512.png',
   'assets/icons/icon-192-maskable.png',
   'assets/icons/icon-512-maskable.png',
-  'stats/index.html',
-  'stats/styles.css',
-  'stats/assets/art/logo.png',
-  'stats/professions.js',
-  'stats/bonds.js',
-  'stats/bio.js',
-  'stats/scripts.js',
-  'stats/printable-sheet.js',
-  'stats/pdf-export.js',
-  'stats/sheets-export.js',
-  'stats/sheets-import.js',
-  'stats/save-load.js',
-  'stats/incursion-sheet.js',
-  'stats/disorders-sheet.js',
-  'stats/appearance-sheet.js',
-  'stats/agent-portal-export.js',
-  'stats/cloud-sync.js',
-  'stats/lp-tracker-photo.js',
-  'stats/lp-initiative.js',
-  'stats/equipment-data.js',
-  'stats/equipment-picker.js',
-  'stats/wizard.js',
+  // The Agent File's data tables and the DD Form 315 / spreadsheet
+  // readers, loaded on first use by New Recruit and the Agent File.
+  'assets/data/professions.js',
+  'assets/data/bonds.js',
+  'assets/data/bio.js',
+  'assets/data/equipment-data.js',
+  'assets/sheet-io/pdf-export.js',
+  'assets/sheet-io/sheets-import.js',
   // Notes was never actually added to this list -- isShellRequest()'s
   // own basename fallback (matching 'index.html' against the root
   // entry above) accidentally pulled notes/index.html into the
@@ -148,10 +134,10 @@ self.addEventListener('activate', (event) => {
 
 function isShellRequest(url) {
   if (url.origin !== self.location.origin) return false;
-  // Navigations (HTML pages) may carry query params (?load=, ?theme=,
-  // ?code=) that the page's own JS reads client-side -- match on path
-  // only so e.g. stats/index.html?load=OWEN-CS12 still hits the cached
-  // stats/index.html rather than falling through to the network.
+  // Navigations (HTML pages) may carry query params (?code=, ?recruit=)
+  // that the page's own JS reads client-side -- match on path only so
+  // e.g. agent-hub.html?code=OWEN-CS12 still hits the cached
+  // agent-hub.html rather than falling through to the network.
   //
   // The site's own subpath (GitHub Pages project sites serve from
   // /<repo-name>/, which has been "/dg/" and, before that, other names
