@@ -1,9 +1,15 @@
 /* The live Agent File: one session per Agent Code, shared by every place
    that shows the paper (the Field Notes notebook and Agent Hub). It holds
    the Agent's saved state (characters/{code}.character_json), applies
-   changes made at the table and saves them after a short pause (the same
-   dgStore.saveCharacter the character sheet uses), and follows the
-   document live so another device's change shows up.
+   changes made at the table and saves them after a short pause, and
+   follows the document live so another device's change shows up.
+
+   Saving never undoes someone else's change: the session remembers the
+   last state it knew was saved (`base`), and dgStore.saveCharacterMerged
+   lays this device's changes since then over the latest saved copy, in a
+   transaction (two devices tapping HP − both count). A save that fails --
+   offline, a dropped connection -- is tried again, soon and whenever the
+   browser says it's back online, until it goes through.
 
    Edit mode works on a copy of the state; nothing is saved until the
    Oath is taken (commitEdit), and Cancel throws the copy away. The copy
@@ -33,6 +39,9 @@
     this.saveTimer = null;
     this.saving = null;
     this.lastJson = this.state ? JSON.stringify(this.state) : '';
+    this.base = this.lastJson;   // the last state known to be saved
+    this.retryTimer = null;
+    this.retries = 0;
     this.status = '';
     this.unsub = null;
     this.watch();
@@ -65,22 +74,56 @@
     this.setStatus('Saving…');
     this.saveTimer = setTimeout(function () { self.saveNow(); }, SAVE_DELAY);
   };
+  var RETRY = [2000, 5000, 10000, 20000, 30000];
   Session.prototype.saveNow = function () {
     var self = this;
-    clearTimeout(this.saveTimer);
+    clearTimeout(this.saveTimer); this.saveTimer = null;
+    clearTimeout(this.retryTimer); this.retryTimer = null;
     if (!this.state || !window.dgStore) return Promise.resolve();
     var json = JSON.stringify(this.state);
+    var base = this.base ? JSON.parse(this.base) : null;
     this.lastJson = json;
-    var p = window.dgStore.saveCharacter(this.code, JSON.parse(json)).then(function () {
-      if (self.saving === p) { self.saving = null; self.setStatus('Saved'); }
+    var S = window.dgStore;
+    var write = S.saveCharacterMerged ? S.saveCharacterMerged(this.code, base, JSON.parse(json))
+      : S.saveCharacter(this.code, JSON.parse(json)).then(function () { return JSON.parse(json); });
+    var p = write.then(function (saved) {
+      if (self.saving !== p) return;
+      self.saving = null; self.retries = 0;
+      var savedJson = JSON.stringify(saved || JSON.parse(json));
+      self.base = savedJson;
+      // Changed again while this was on its way: save that too.
+      if (JSON.stringify(self.state) !== json) { self.scheduleSave(); return; }
+      if (savedJson !== json) {
+        // Someone else's change was folded in: show the merged state.
+        self.state = JSON.parse(savedJson);
+        self.lastJson = savedJson;
+        self.emit('remote');
+      }
+      self.setStatus('Saved');
     }, function (err) {
-      if (self.saving === p) self.saving = null;
-      self.setStatus('Not saved — check the connection');
-      console.error('agent-live: save failed', err);
-      throw err;
+      if (self.saving !== p) return;
+      self.saving = null;
+      if (err && err.code === 'agent-deleted') {
+        // Deleted by the Handler while open here: stop, say so. A restore
+        // (the document coming back) picks up from the saved copy.
+        self.deleted = true;
+        self.setStatus('Not saved: your Handler deleted this Agent');
+        self.emit('deleted');
+        return;
+      }
+      self.setStatus('Not saved yet — trying again');
+      console.warn('agent-live: save failed, will retry', err && (err.code || err.message || err));
+      self.retryLater();
     });
     this.saving = p;
     return p;
+  };
+  Session.prototype.retryLater = function () {
+    var self = this;
+    clearTimeout(this.retryTimer);
+    var wait = RETRY[Math.min(this.retries, RETRY.length - 1)];
+    this.retries++;
+    this.retryTimer = setTimeout(function () { self.retryTimer = null; self.saveNow(); }, wait);
   };
   Session.prototype.setStatus = function (s) {
     this.status = s;
@@ -98,27 +141,36 @@
       self.unsub = window.firebase.firestore().collection('characters').doc(self.code).onSnapshot(function (snap) {
         var d = snap && (snap.data ? snap.data() : null);
         if (!d) return;
+        if (self.deleted) { self.deleted = false; self.saveTimer = null; self.retryTimer = null; }
         self.char = Object.assign({}, self.char || {}, d);
-        if (!d.character_json || d.character_json === self.lastJson) { self.emit('doc'); return; }
-        if (self.saveTimer || self.saving) return; // ours is newer
+        // A change of ours is waiting or on its way: its save merges this in
+        // (even when the other device's state happens to equal ours).
+        var pending = self.saveTimer || self.saving || self.retryTimer;
+        if (!d.character_json || d.character_json === self.lastJson) { if (d.character_json && !pending) self.base = d.character_json; self.emit('doc'); return; }
+        if (pending) return;
         var st = parse(d);
         if (!st) return;
         if (window.dgRules) window.dgRules.normalizeBio(st);
         self.state = st;
         self.lastJson = JSON.stringify(st);
+        self.base = d.character_json;
         self.emit('remote');
       }, function () { /* offline: keep what we have */ });
     }).catch(function () { /* no Firebase here */ });
   };
 
   /* ── Edit mode ── */
-  Session.prototype.beginEdit = function () { if (!this.edit && this.state) this.edit = clone(this.state); this.emit('edit'); return this.edit; };
+  // The edit remembers what it started from, so saving it only changes
+  // what was edited -- not whatever another device changed meanwhile.
+  Session.prototype.beginEdit = function () { if (!this.edit && this.state) { this.edit = clone(this.state); this.editBase = JSON.stringify(this.state); } this.emit('edit'); return this.edit; };
   Session.prototype.cancelEdit = function () { this.edit = null; this.emit('edit'); };
   Session.prototype.editDirty = function () { return !!this.edit && JSON.stringify(this.edit) !== JSON.stringify(this.state); };
   Session.prototype.commitEdit = function () {
     if (!this.edit) return Promise.resolve();
     this.state = this.edit;
     this.edit = null;
+    if (this.editBase) this.base = this.editBase;
+    this.editBase = null;
     this.emit('commit');
     return this.saveNow();
   };
@@ -133,17 +185,22 @@
       s.state = parse(char); s.char = char;
       if (s.state && window.dgRules) window.dgRules.normalizeBio(s.state);
       s.lastJson = s.state ? JSON.stringify(s.state) : '';
+      s.base = s.lastJson;
     }
     return s;
   }
 
   // Leaving the page with an unsaved edit asks first; a play change still
   // waiting to save is sent now.
+  // Back online: send whatever is still waiting.
+  window.addEventListener('online', function () {
+    Object.keys(sessions).forEach(function (k) { var s = sessions[k]; if (s.retryTimer) { s.retries = 0; s.saveNow(); } });
+  });
   window.addEventListener('beforeunload', function (e) {
     var dirty = false;
     Object.keys(sessions).forEach(function (k) {
       var s = sessions[k];
-      if (s.saveTimer) s.saveNow();
+      if (s.saveTimer || s.retryTimer) s.saveNow();
       if (s.editDirty()) dirty = true;
     });
     if (dirty) { e.preventDefault(); e.returnValue = ''; }

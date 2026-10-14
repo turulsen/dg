@@ -96,9 +96,13 @@ milestone M4: the old character sheet (`stats/`) is deleted.
 - **Old links:** `404.html` forwards `stats/index.html?load=CODE` to that
   Agent and `?new=1` to New Recruit.
 - **Tests:** the old-sheet-only tests are gone; real Kappa Black, xlsx
-  and DD Form 315 files go through New Recruit instead.
+  and DD Form 315 files go through New Recruit instead. New:
+  `test/e2e/`, the real pages against local Firebase emulators, which
+  found and fixed two devices undoing each other's saves, offline
+  changes being lost, a deleted Agent coming back, the Cell not
+  following live, and blocked storage (see `BUGFIXES.md`).
 
-Frontend only; shell cache `dg-hub-shell-v223`. Rollback: revert the
+Frontend only; shell cache `dg-hub-shell-v224`. Rollback: revert the
 merge, which brings `stats/` back as it was. **v3.1.0**
 (2026-10-10) is PR #72, v2 milestone M3: the Agent File's paper wears as
 SAN falls. Stains, a fold, a coffee ring, blood and, from SAN 9, a torn

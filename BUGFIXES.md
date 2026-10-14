@@ -6645,3 +6645,37 @@ problems, fixed in the same change.
   notebook is read back through New Recruit.
 `test_sheet_io_real_files`, and the Agent File cancel check in
 `test_agent_file_v2_play_and_edit`. `sw.js` `CACHE_NAME` v223.
+
+## What the new end-to-end suite found (v3.3.0)
+
+`test/e2e/` runs the real pages against local Firebase emulators with the
+real rules and Cloud Functions, several browsers at once (see
+`test/e2e/README.md`). Its first runs found five real problems, all
+fixed before v3.3.0 went to the test site:
+- **Two devices on one Agent undid each other's changes.** Each save
+  wrote the whole character from that device's copy, so a phone and a
+  laptop (or a player and a Handler) saving within a second of each
+  other lost one side's change. Three WP taps on each device saved as 9
+  instead of 6. Now `dgStore.saveCharacterMerged` saves in a transaction:
+  it reads the latest copy and lays only this device's changes over it,
+  and a number both changed gets both changes (`assets/agent-live.js`
+  remembers the last saved state as `base`). An edit saved with the Oath
+  only changes what was edited.
+- **A change made offline was lost.** A save that failed (no
+  connection, or the sign-in call failing first) was never tried again,
+  and showed as a page error. It now retries after 2, 5, 10, 20 and 30
+  seconds, and at once when the browser is back online.
+- **A deleted Agent came back.** If the Handler deleted an Agent while
+  their player had them open, the player's next tap saved the character
+  again, half-restoring it. The save now refuses, and the page says "Not
+  saved: your Handler deleted this Agent"; a Handler's restore picks it
+  up again.
+- **A player added to a Cell mid-session didn't see it until a reload.**
+  Agent Hub and the notebook read the Cells once. Both now follow them
+  live and redraw when this Agent's Cell, or who is in it, changes.
+- **With storage blocked (Safari's "Block All Cookies", some private
+  modes) an Agent opened by `?code=` never appeared.** Every storage call
+  was already wrapped, so nothing crashed, but the roster couldn't hold
+  the Agent. `assets/storage-guard.js`, loaded first on every page, puts
+  an in-memory store in place for that visit.
+`sw.js` `CACHE_NAME` v224.

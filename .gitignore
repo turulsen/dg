@@ -23,3 +23,7 @@ firebase-debug*.log
 pregens-raw*.json
 pregens-report.md
 printable/
+
+# E2E suite output (test/e2e/run.sh)
+test/e2e/out/
+test/results-tmp-*

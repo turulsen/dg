@@ -248,6 +248,30 @@
     return storePromise;
   }
   function fb() { return ensureStore().then(function (st) { return st.ready(); }); }
+  // The Handler moving this Agent between Cells (or changing who's in
+  // theirs) mid-session: load again, so the Agent File's Cell list and
+  // the Cell's Notes follow without a reload.
+  var cellsUnsub = null, cellsSig = null;
+  function cellSig(snap, code) {
+    var sig = '';
+    snap.forEach(function (doc) { var c = doc.data() || {}; if (!sig && (c.member_codes || []).indexOf(code) !== -1) sig = doc.id + '|' + (c.name || '') + '|' + (c.member_codes || []).join(','); });
+    return sig;
+  }
+  function watchCells() {
+    if (cellsUnsub || !window.dgStore) return;
+    cellsUnsub = function () {};
+    fb().then(function (f) {
+      cellsUnsub = f.firestore().collection('cells').onSnapshot(function (snap) {
+        var code = data.code;
+        if (!code) return;
+        var sig = code + '#' + cellSig(snap, code);
+        if (cellsSig === null || cellsSig.split('#')[0] !== code) { cellsSig = sig; return; }
+        if (sig === cellsSig) return;
+        cellsSig = sig;
+        loadData(true).then(function () { refresh(); });
+      }, function () { /* offline: keep what's shown */ });
+    }).catch(function () { cellsUnsub = null; });
+  }
   function loadData(force) {
     var a = currentAgent();
     var code = a && !a.friendly ? a.code : '';
@@ -296,7 +320,7 @@
         });
       });
     }); }).catch(function (err) { d.error = String(err && err.message || err); return d; })
-      .then(function (x) { d.ready = true; return x; });
+      .then(function (x) { d.ready = true; watchCells(); return x; });
     return d.loading;
   }
   function cellIdFor(a) {

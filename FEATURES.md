@@ -402,9 +402,13 @@ wizard, imports and PDF export, with the old sheet only behind Settings
   is losing 2+ SAN). `normalizeBio` splits an older combined text.
 - **`assets/agent-live.js`** (`window.dgAgentLive.session(code, char)`):
   one session per Agent Code shared by every paper on the page. `update`
-  applies a change and saves 700ms later through `dgStore.saveCharacter`
-  (merge into `characters/{code}`); an `onSnapshot` on that document takes
-  another device's change unless a save of its own is pending. Edit mode is
+  applies a change and saves 700ms later; an `onSnapshot` on that
+  document takes another device's change unless a save of its own is
+  pending. Since v3.3.0 a save goes through `dgStore.saveCharacterMerged`:
+  a transaction that reads the latest copy and lays this device's
+  changes since the last saved state (`base`) over it, numbers both
+  sides moved getting both moves; a failed save retries (2/5/10/20/30 s,
+  and on `online`); a document the Handler deleted is never recreated. Edit mode is
   a copy (`beginEdit` / `cancelEdit` / `commitEdit`); leaving with unsaved
   edits asks first.
 - **`assets/agent-paper.js`** (`window.dgAgentPaper.mount(el, ctx)`) draws

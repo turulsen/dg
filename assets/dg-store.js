@@ -179,6 +179,70 @@
     }, { merge: true }), 20000, 'saving character'));
   }
 
+  // Save a change made from a known starting point (`base`) without undoing
+  // anyone else's: inside a transaction, read the latest saved character
+  // and lay this device's changes (base -> mine) over it. A number both
+  // sides changed adds both changes (two devices tapping HP − each count);
+  // anything else both changed takes this device's value. Resolves with
+  // the state actually saved, so the page can show the merged result.
+  function saveCharacterMerged(code, base, mine) {
+    code = norm(code);
+    const playerName = String((mine && mine.bio && mine.bio.player_name) || '').trim();
+    const ref = () => db().collection('characters').doc(code);
+    return signInAgent(code).then(() => withTimeout(db().runTransaction(tx => tx.get(ref()).then(snap => {
+      // Gone since this device loaded it: the Handler deleted the Agent
+      // (it's in Recently Deleted). Don't bring it back by saving.
+      if (!snap.exists && base && Object.keys(base).length) {
+        const gone = new Error('This Agent was deleted by the Handler.');
+        gone.code = 'agent-deleted';
+        throw gone;
+      }
+      let theirs = null;
+      try { const d = snap.exists ? snap.data() : null; theirs = d && d.character_json ? JSON.parse(d.character_json) : null; } catch (e) { theirs = null; }
+      const out = theirs ? merge3(base || {}, mine || {}, theirs) : (mine || {});
+      if (theirs && window.dgRules && window.dgRules.maxes) clampVitals(out);
+      tx.set(ref(), {
+        agent_code: code,
+        character_json: JSON.stringify(out),
+        updated_at: new Date().toISOString(),
+        player_name: playerName,
+        player_name_lc: playerName.toLowerCase()
+      }, { merge: true });
+      return out;
+    })), 20000, 'saving character'));
+  }
+  function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+  function isObj(v) { return v && typeof v === 'object' && !Array.isArray(v); }
+  function merge3(base, mine, theirs) {
+    if (same(mine, base)) return theirs;
+    if (same(theirs, base)) return mine;
+    // Both moved a number (HP − on two devices): both moves count.
+    if (typeof mine === 'number' && typeof theirs === 'number' && typeof base === 'number') return theirs + (mine - base);
+    if (isObj(mine) && isObj(theirs)) {
+      const b = isObj(base) ? base : {}, out = {};
+      Object.keys(Object.assign({}, b, mine, theirs)).forEach(k => {
+        const v = merge3(b[k], mine[k], theirs[k]);
+        if (v !== undefined) out[k] = v;
+      });
+      return out;
+    }
+    // Lists of the same length (Bonds, weapons): item by item.
+    if (Array.isArray(mine) && Array.isArray(theirs) && Array.isArray(base) && mine.length === base.length && theirs.length === base.length) {
+      return mine.map((m, i) => merge3(base[i], m, theirs[i]));
+    }
+    return mine;  // both changed it, differently or the same way: this device's
+  }
+  // Two devices' − taps added together stay inside 0..max.
+  function clampVitals(st) {
+    try {
+      const m = window.dgRules.maxes(st), d = st.derived || {};
+      const hi = { hp: m.hp, wp: m.wp, san: m.sanCap };
+      ['hp', 'wp', 'san'].forEach(k => {
+        if (typeof d[k] === 'number' && typeof hi[k] === 'number') d[k] = Math.max(0, Math.min(d[k], Math.max(hi[k], 0)));
+      });
+    } catch (e) { /* leave it as saved */ }
+  }
+
   // The Incursion (assets/incursion.js) on the Agent's own record, beside
   // character_json rather than inside it: saveCharacter() merges, so the
   // sheet's autosave never undoes a Handler's amendment. `by` is 'player'
@@ -401,7 +465,7 @@
 
   window.dgStore = {
     ready, loadScript, signInAgent,
-    getCharacter, saveCharacter, saveIncursion,
+    getCharacter, saveCharacter, saveCharacterMerged, saveIncursion,
     getBrief, updateBrief, submitBrief, findByPlayerName,
     listHandoutNotes, saveHandoutNote,
     getIdentities, saveIdentity, listSeen, markSeen, deleteOwnAgent, mainPhoto, photoRef,

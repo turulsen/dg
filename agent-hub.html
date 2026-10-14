@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script src="assets/storage-guard.js"></script>
 <script src="assets/js-error-banner.js" async></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Delta Green — Agent</title>
@@ -1729,6 +1730,27 @@
         if (AS.wireMembers) AS.wireMembers(out, members, loadPhoto);
       });
     }).catch(err => console.error('agent-hub: could not build the Agent File paper for ' + a.code, err));
+    watchCellFor(a);
+  }
+  // The Handler adding this Agent to a Cell (or another Agent to theirs)
+  // mid-session: draw the paper again, so its Cell list follows without a
+  // reload. One listener per Agent; only a change to which Cell they're in
+  // or who's in it redraws.
+  const cellWatch = {};
+  function watchCellFor(a) {
+    if (cellWatch[a.code] || !window.dgStore || !window.firebase) return;
+    cellWatch[a.code] = { sig: null, unsub: null };
+    window.dgStore.ready().then(() => {
+      cellWatch[a.code].unsub = window.firebase.firestore().collection('cells').onSnapshot(snap => {
+        let sig = '';
+        snap.forEach(d => { const c = d.data() || {}; if (!sig && (c.member_codes || []).indexOf(a.code) !== -1) sig = d.id + '|' + (c.name || '') + '|' + (c.member_codes || []).join(','); });
+        const w = cellWatch[a.code];
+        if (w.sig === null) { w.sig = sig; return; }
+        if (sig === w.sig) return;
+        w.sig = sig;
+        if (document.getElementById('ah-sheet-' + a.code)) renderAgentSheetFor(a);
+      }, () => { /* offline: the paper keeps what it has */ });
+    }).catch(() => { delete cellWatch[a.code]; });
   }
 
   function loadHandouts() {
