@@ -52,6 +52,10 @@ out of the repo (the default path is outside it).
 | s12 | A returning device with the previous release (`origin/main`) cached by the service worker |
 | s13 | A roll lands in the Cell's feed and on the Handler's Live Rolls |
 | s14 | Old-data replay: every live Agent on the Agent File, in A-Cell, and through the PDF export |
+| s15 | Music: a broadcast plays for tuned-in players (sound on), pause/resume, a late joiner mid-track, another channel silent, Stop |
+| s16 | Music: ambient layers and stingers reach the player; the Handler's mix at 0 silences the track |
+| s17 | Music keeps playing, not restarted, while the player moves between pages in the Hub shell |
+| s18 | Character: SAN loss 1D6, improvement roll, Bonds, an Edit filed with the Oath, the Handler's dossier following HP live |
 
 ## Not covered yet
 

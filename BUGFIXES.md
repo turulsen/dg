@@ -6678,4 +6678,21 @@ fixed before v3.3.0 went to the test site:
   was already wrapped, so nothing crashed, but the roster couldn't hold
   the Agent. `assets/storage-guard.js`, loaded first on every page, puts
   an in-memory store in place for that visit.
-`sw.js` `CACHE_NAME` v224.
+- **Tuning in inside the Hub shell could fail with "firebase.firestore is
+  not a function".** Another script on the page had already started
+  Firebase without Firestore, and the radio took "Firebase started" for
+  "Firestore ready". It now waits for Firestore itself, and skips SDK
+  files that are already on the page.
+- **Half-typed text on the Agent File was wiped.** Every save's echo,
+  another device's change and every Cell update redrew the whole paper,
+  so a new Bond's name, a Motivation or an Edit field not yet left lost
+  what was typed if a redraw landed meanwhile (a second after any tap).
+  The paper now keeps whatever the player changed since the last drawing,
+  with the cursor where it was; values the redraw itself changes (BP − /
+  +) still show the new one.
+- **A roll could go unsaved ("Roll not saved: permission denied").** The
+  Dice Roller remembered "signed in as this Agent" while the page's own
+  saves share the one Firebase sign-in and can switch it. It now checks
+  who is signed in before each saved roll, and signs in again and retries
+  once if refused.
+`sw.js` `CACHE_NAME` v226.

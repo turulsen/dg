@@ -100,9 +100,11 @@ milestone M4: the old character sheet (`stats/`) is deleted.
   `test/e2e/`, the real pages against local Firebase emulators, which
   found and fixed two devices undoing each other's saves, offline
   changes being lost, a deleted Agent coming back, the Cell not
-  following live, and blocked storage (see `BUGFIXES.md`).
+  following live, blocked storage, the radio failing to tune in inside
+  the Hub shell, half-typed Agent File text wiped by redraws, and rolls
+  going unsaved (see `BUGFIXES.md`).
 
-Frontend only; shell cache `dg-hub-shell-v224`. Rollback: revert the
+Frontend only; shell cache `dg-hub-shell-v226`. Rollback: revert the
 merge, which brings `stats/` back as it was. **v3.1.0**
 (2026-10-10) is PR #72, v2 milestone M3: the Agent File's paper wears as
 SAN falls. Stains, a fold, a coffee ring, blood and, from SAN 9, a torn

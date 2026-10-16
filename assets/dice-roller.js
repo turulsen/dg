@@ -531,7 +531,17 @@
         // of re-authenticating. Same class of bug as the `uid` check
         // just below: both let a stale/wrong identity silently stand
         // in for the one actually being requested.
-        if (_authPromise && _authedCode === agentCode) return _authPromise;
+        // Cached, but the page's own saves (dg-store.js) share this one
+        // Firebase sign-in and may have switched it to another Agent since:
+        // check who is signed in now, or the roll is refused by the rules.
+        if (_authPromise && _authedCode === agentCode) {
+            return _authPromise.then(u => {
+                const cur = window.firebase && window.firebase.auth && window.firebase.auth().currentUser;
+                if (cur && (cur.uid === agentCode || cur.uid === 'handler')) return cur;
+                _authPromise = null;
+                return ensureAgentSignedIn(agentCode);
+            });
+        }
         _authedCode = agentCode;
         _authPromise = new Promise((resolve, reject) => {
             ensureFirebaseApi(() => {
@@ -624,14 +634,18 @@
                 return;
             }
             if (ctx.mode !== 'agent') return;
-            return ensureAgentSignedIn(ctx.agentCode).then(() => {
-                const db = window.firebase.firestore();
-                const doc = Object.assign({
-                    agent_code: ctx.agentCode,
-                    agent_name: currentAgentName(),
-                    created_at: Date.now(),
-                }, rollData);
-                return db.collection('dice_rolls').doc(ctx.cellId).collection('rolls').add(doc);
+            const doc = Object.assign({
+                agent_code: ctx.agentCode,
+                agent_name: currentAgentName(),
+                created_at: Date.now(),
+            }, rollData);
+            const write = () => ensureAgentSignedIn(ctx.agentCode).then(() =>
+                window.firebase.firestore().collection('dice_rolls').doc(ctx.cellId).collection('rolls').add(doc));
+            // Refused once (signed in as another Agent a moment ago): sign in again, try again.
+            return write().catch(err => {
+                if (!err || err.code !== 'permission-denied') throw err;
+                _authPromise = null;
+                return write();
             });
         }).catch(err => {
             showHistoryError('Roll not saved', err);

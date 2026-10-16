@@ -659,14 +659,24 @@ def s12_returning_device(r):
         open(root_file, "w").write(REPO)
         new_ok = False
         for _ in range(6):  # the worker refreshes in the background; a few visits pick it up
-            d.page.reload(wait_until="domcontentloaded")
+            try:
+                d.page.reload(wait_until="domcontentloaded", timeout=30000)
+            except Exception:
+                pass  # a reload overtaken by the worker taking over: just look again
             d.page.wait_for_timeout(2500)
             if d.js("() => !!(window.dgStore && window.dgStore.saveCharacterMerged)"):
                 new_ok = True
                 break
         r.check(new_ok, "within a few visits the device runs this release, not the cached one", old_cache)
-        keys = d.js("() => caches.keys()")
-        r.check(not any(k in keys for k in old_cache), "the previous release's cache is gone", keys)
+        # The new worker clears the old cache as it takes over; give it a moment.
+        keys = wait_for(lambda: (lambda k: k if not any(o in k for o in old_cache) else None)(d.js("() => caches.keys()")), 20)
+        if not keys:
+            try:
+                d.page.reload(wait_until="domcontentloaded", timeout=30000)
+            except Exception:
+                pass
+            keys = wait_for(lambda: (lambda k: k if not any(o in k for o in old_cache) else None)(d.js("() => caches.keys()")), 20)
+        r.check(bool(keys), "the previous release's cache is gone", d.js("() => caches.keys()"))
         d.page.wait_for_selector(f"#ah-sheet-{c} .ap-vitals", timeout=30000)
         d.page.click(f"#ah-sheet-{c} [data-a='hp-']")
         r.check(wait_for(lambda: (character(c) or {}).get("derived", {}).get("hp") == 11, 20), "the Agent File plays and saves after the update")
@@ -752,6 +762,168 @@ def s14_replay_live_data(r):
     r.check(names and not bad, f"A-Cell's dossier opens for all {names} Agents", "; ".join(bad)[:600])
 
 
+# ── music (Table Radio) ──
+AUDIO_STATE = """(needle) => [...document.querySelectorAll('audio')].filter(a => (a.currentSrc || a.src || '').includes(needle))
+    .map(a => ({ src: (a.currentSrc || a.src).split('/').pop(), paused: a.paused, t: Math.round(a.currentTime * 10) / 10, vol: a.volume, muted: a.muted }))"""
+
+def _handler_music(r, ch="1"):
+    h = r.device("handler", width=1360, height=900, cover=None)
+    h.ctx.add_init_script("try { localStorage.setItem('dg_acell_broadcast_channel', %s); } catch (e) {}" % json.dumps(ch))
+    handler_sign_in(h)
+    h.page.click('.tw[data-tab="music"]')
+    h.page.wait_for_selector("#music-url-input", state="visible", timeout=15000)
+    return h
+
+def _player_radio(r, name, ch="1", path=None, **kw):
+    c = r.code("E2M" + name[:2].upper())
+    seed_agent(c, f"{name} Radio", player=f"radio {name}")
+    p = r.device(name, code=c, cover=f"radio {name}", **kw)
+    p.go(path or f"agent-hub.html?code={c}")
+    p.page.wait_for_function("() => window.dgRadio && window.dgRadio.tune", timeout=20000)
+    p.page.mouse.click(5, 5)  # the player's first tap on the page (lets audio start)
+    p.js("(ch) => window.dgRadio.tune(ch)", ch)
+    return p
+
+def _playing(p, needle, timeout=20):
+    """An <audio> for this file is playing: not paused and its time moving."""
+    def moving():
+        a = p.js(AUDIO_STATE, needle)
+        if not a or a[0]["paused"]:
+            return None
+        t0 = a[0]["t"]
+        time.sleep(1.2)
+        b = p.js(AUDIO_STATE, needle)
+        return b if b and not b[0]["paused"] and b[0]["t"] > t0 else None
+    return wait_for(moving, timeout)
+
+
+def s15_music_broadcast(r):
+    """The Handler broadcasts a track: a tuned-in player hears it, pause and resume follow, a late joiner lands in sync, another channel stays silent, Stop ends it."""
+    track = f"{BASE}/assets/ambient/haunted.mp3?e2e={RUN}"
+    h = _handler_music(r, "1")
+    a = _player_radio(r, "ann", "1")
+    other = _player_radio(r, "oscar", "2")
+    h.page.fill("#music-url-input", track)
+    h.page.fill("#music-title-input", "E2E Theme")
+    h.page.click("#music-set-btn")
+    rd = wait_for(lambda: (doc("radio/1") or {}).get("track_url") == track and doc("radio/1"), 20) or {}
+    r.check(rd.get("track_title") == "E2E Theme", "the broadcast is written to radio/1 (Handler-only rule)", json.dumps(rd)[:200])
+    st = wait_for(lambda: (lambda s: s if s.get("track") == "E2E Theme" and s.get("live") else None)(a.js("() => window.dgRadio.state()")), 20) or {}
+    r.check(bool(st), "the tuned-in player's radio shows the track, live", json.dumps(st)[:200])
+    r.check(_playing(a, "haunted.mp3"), "…and it actually plays (time moving)", a.js(AUDIO_STATE, "haunted.mp3"))
+    # A new device starts with its sound off until the player turns it on.
+    r.check(a.js("() => window.dgRadio.state().muted") is True, "a new device starts with the radio's sound off (the player's choice)")
+    a.js("() => window.dgRadio.setMuted(false)")
+    r.check(wait_for(lambda: (lambda x: x if x and not x[0]["muted"] and x[0]["vol"] > 0 else None)(a.js(AUDIO_STATE, "haunted.mp3")), 10),
+            "turning the sound on unmutes the playing track", a.js(AUDIO_STATE, "haunted.mp3"))
+    time.sleep(1)
+    r.check(not other.js(AUDIO_STATE, "haunted.mp3") and other.js("() => window.dgRadio.state().track") == "", "a player on channel 2 hears nothing")
+    late = _player_radio(r, "lou", "1")
+    lt = wait_for(lambda: (lambda x: x if x and x[0]["t"] > 3 else None)(late.js(AUDIO_STATE, "haunted.mp3")), 25)
+    r.check(lt, "a player tuning in late joins mid-track, not from zero", late.js(AUDIO_STATE, "haunted.mp3"))
+    h.page.click("#music-pause-btn")
+    r.check(wait_for(lambda: a.js("() => window.dgRadio.state().paused") and all(x["paused"] for x in a.js(AUDIO_STATE, "haunted.mp3")), 15),
+            "Pause on A-Cell pauses the player's audio", a.js(AUDIO_STATE, "haunted.mp3"))
+    h.page.click("#music-pause-btn")
+    r.check(_playing(a, "haunted.mp3"), "Resume plays it again", a.js(AUDIO_STATE, "haunted.mp3"))
+    h.page.click("#music-stop-btn")
+    r.check(wait_for(lambda: a.js("() => window.dgRadio.state().track") == "" and not any(not x["paused"] for x in a.js(AUDIO_STATE, "haunted.mp3")), 15),
+            "Stop ends it on the player's side", a.js("() => window.dgRadio.state()"))
+
+
+def s16_music_ambient_stinger_mix(r):
+    """Ambient layers and stingers reach the player; the Handler's Music mix to 0 silences the track; the player's own mute holds."""
+    h = _handler_music(r, "3")
+    p = _player_radio(r, "amy", "3")
+    h.page.fill("#music-url-input", f"{BASE}/assets/ambient/drone-low.mp3?e2e={RUN}")
+    h.page.fill("#music-title-input", "Drone")
+    h.page.click("#music-set-btn")
+    r.check(_playing(p, "drone-low.mp3"), "the track plays")
+    layer = h.js("() => { const b = document.querySelector('#music-ambient-grid [data-layer]'); if (!b) return null; b.click(); return b.getAttribute('data-layer'); }")
+    r.check(layer and _playing(p, layer + ".mp3"), "an ambient layer the Handler starts plays for the player", layer)
+    sting = h.js("() => { const b = document.querySelector('#music-stinger-groups [data-stinger]'); if (!b) return null; b.click(); return b.getAttribute('data-stinger'); }")
+    r.check(sting and wait_for(lambda: p.js(AUDIO_STATE, sting + ".mp3"), 15), "a stinger the Handler fires reaches the player", sting)
+    h.js("() => { const s = document.getElementById('music-mix-track'); s.value = 0; s.dispatchEvent(new Event('input', { bubbles: true })); s.dispatchEvent(new Event('change', { bubbles: true })); }")
+    zero = wait_for(lambda: (lambda x: x if x and all(a["vol"] == 0 or a["muted"] for a in x) else None)(p.js(AUDIO_STATE, "drone-low.mp3")), 15)
+    dbg = p.js("() => (document.getElementById('dg-radio-debug') || {}).textContent || ''")
+    r.check(zero or "mix track=0" in dbg, "the Music mix at 0 silences the track on the player's side", f"{p.js(AUDIO_STATE, 'drone-low.mp3')} {dbg[:120]}")
+
+
+def s17_music_survives_navigation(r):
+    """In the Hub shell the radio keeps playing while the player moves between pages."""
+    h = _handler_music(r, "4")
+    p = _player_radio(r, "nav", "4", path="hub.html")
+    h.page.fill("#music-url-input", f"{BASE}/assets/ambient/howling-city-bells.mp3?e2e={RUN}")
+    h.page.fill("#music-title-input", "Bells")
+    h.page.click("#music-set-btn")
+    r.check(_playing(p, "howling-city-bells.mp3"), "the track plays in the Hub shell")
+    t0 = p.js(AUDIO_STATE, "howling-city-bells.mp3")[0]["t"]
+    for path in ("friendly.html", "agent-hub.html", "rules-reference.html"):
+        p.js("(u) => { document.getElementById('dg-shell-content').src = u; }", path)
+        time.sleep(2)
+    a = p.js(AUDIO_STATE, "howling-city-bells.mp3")
+    r.check(len(a) == 1 and not a[0]["paused"] and a[0]["t"] > t0 + 4, "after three page changes it's still the one track, still playing, not restarted", a)
+
+
+def s18_character_deep_play(r):
+    """A session's worth of character play on the Agent File, followed live by the Handler's A-Cell dossier."""
+    c = r.code("E2CP")
+    seed_agent(c, "Cora Pike", extra={"lpCheckedSkills": [{"type": "key", "key": "firearms"}]})
+    p = r.device("player", code=c)
+    open_agent(p, c)
+    S = f"#ah-sheet-{c} "
+    h = r.device("handler", width=1360, height=900, cover=None)
+    handler_sign_in(h)
+    h.page.wait_for_timeout(2500)
+    h.js("(n) => { const b = [...document.querySelectorAll('#play-agent-list .play-agent-btn')].find(x => x.textContent.includes(n)); if (b) b.click(); }", "Cora Pike")
+    # SAN loss through the post-it flow: 1D6 Violence.
+    p.page.click(S + "[data-a=pop][data-pop=san]")
+    p.page.click(S + "[data-a=san-go]")
+    st = wait_for(lambda: (lambda x: x if x and x["derived"]["san"] < 60 else None)(character(c)), 20) or {}
+    loss = 60 - st.get("derived", {}).get("san", 60)
+    r.check(1 <= loss <= 6, "SAN loss 1D6 is rolled and taken off SAN", loss)
+    viol = (st.get("sanity") or {}).get("violence") or []
+    r.check(loss >= 5 or any(viol), "a loss under 5 ticks a Violence incident box", viol)
+    if loss >= 5:
+        r.check(wait_for(lambda: p.js("() => !!document.querySelector('#ap-posts > *')"), 10), "…a loss of 5+ brings the temporary-insanity post-it")
+    p.js("() => document.querySelectorAll('#ap-posts button').forEach(b => b.click())")
+    # Improvement roll on the marked skill.
+    p.page.click(S + "[data-a=improve]")
+    imp = wait_for(lambda: (lambda x: x if x and (x.get("skills") or {}).get("firearms", 50) > 50 else None)(character(c)), 20) or {}
+    gain = (imp.get("skills") or {}).get("firearms", 50) - 50
+    r.check(1 <= gain <= 4 and not (imp.get("lpCheckedSkills") or []), "Roll improvements adds 1D4 to the marked skill and clears the mark", gain)
+    p.js("() => document.querySelectorAll('#ap-posts button').forEach(b => b.click())")
+    # Bonds: − and a new one at CHA.
+    p.page.click(S + "[data-a='bond-']")
+    p.page.click(S + "[data-a=pop][data-pop=bond]")
+    p.page.fill(S + "[data-u=bond-name]", "Father Ruiz")
+    p.page.fill(S + "[data-u=bond-rel]", "Priest")
+    p.page.click(S + "[data-a=bond-add]")
+    bonds = wait_for(lambda: (lambda b: b if len(b) == 2 else None)((character(c) or {}).get("bonds") or []), 20) or []
+    r.check(bonds and bonds[0]["score"] == 10 and bonds[1]["name"] == "Father Ruiz" and bonds[1]["score"] == 11, "a Bond − and a new Bond at CHA are saved",
+            {"saved": (character(c) or {}).get("bonds"), "local": p.js(f"() => dgAgentLive.get('{c}').state.bonds"),
+             "status": p.js(f"() => dgAgentLive.get('{c}').status"), "posts": p.js("() => (document.getElementById('ap-posts') || {}).innerText || ''")[:120]})
+    # Edit: CON up raises max HP; the Oath files it.
+    p.page.click(S + "[data-a=edit]")
+    p.page.fill(S + "[data-e='stat:CON']", "16")
+    p.page.press(S + "[data-e='stat:CON']", "Tab")
+    p.page.click(S + "[data-a=save]")
+    p.page.wait_for_selector("#fn-orders", timeout=10000)
+    p.page.keyboard.press("Enter")
+    p.page.keyboard.press("y")
+    wait_for(lambda: (character(c) or {}).get("stats", {}).get("CON") == 16, 15)
+    r.check((character(c) or {}).get("stats", {}).get("CON") == 16, "Edit: a statistic changed and filed with the Oath")
+    # HP − on the player's side shows on the Handler's dossier.
+    p.page.click(S + "[data-a='hp-']")
+    hp = (character(c) or {}).get("derived", {}).get("hp")
+    seen = wait_for(lambda: "Cora Pike" in h.screen_text() and str((character(c) or {}).get("derived", {}).get("hp")) in h.js("() => (document.getElementById('play-view') || {}).innerText || ''"), 20)
+    r.check(seen, "the Handler's A-Cell dossier follows the player's HP live", hp)
+    # The notebook's Agent File on the same page shows the same state.
+    p.js("() => window.dgFieldNotes.open('agentfile')")
+    nb = wait_for(lambda: p.js("() => { const v = document.querySelector('#fn-veil .ap-vitals'); return v ? v.innerText : ''; }"), 15) or ""
+    r.check(str((character(c) or {}).get("derived", {}).get("san")) in nb, "the notebook's Agent File shows the same SAN as Agent Hub", nb[:80])
+
+
 SCENARIOS = [
     ("s01", "New player builds an Agent on a phone and signs the Contract", s01_new_recruit),
     ("s02", "Handler makes a Cell; an open player page follows live", s02_handler_cell_live),
@@ -766,6 +938,11 @@ SCENARIOS = [
     ("s11", "iPhone home-screen app: no native dialogs", s11_ios_standalone),
     ("s12", "A returning device with the previous release cached", s12_returning_device),
     ("s13", "A roll reaches the Cell's feed and the Handler", s13_dice_to_cell_and_handler),
+    ("s15", "Music: broadcast, pause/resume, late joiner, channels, Stop", s15_music_broadcast),
+    ("s16", "Music: ambient layers, stingers, the mix", s16_music_ambient_stinger_mix),
+    ("s17", "Music keeps playing across Hub page changes", s17_music_survives_navigation),
+    ("s18", "Character: a session's play, followed live by the Handler", s18_character_deep_play),
+    # Last: it loads real Agents (with photo links to the live bucket) into the emulator.
     ("s14", "Every live Agent replayed (read-only snapshot)", s14_replay_live_data),
 ]
 

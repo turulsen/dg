@@ -1714,7 +1714,10 @@
     document.head.appendChild(s);
   }
   function ensureFirebaseApi(cb, onerror) {
-    if (window.firebase && window.firebase.apps && window.firebase.apps.length) { cb(); return; }
+    // Another script on the page (the Dice Roller, the notebook) may have
+    // started Firebase without Firestore yet: wait for Firestore itself,
+    // or tuning in throws "firebase.firestore is not a function".
+    if (window.firebase && window.firebase.apps && window.firebase.apps.length && typeof window.firebase.firestore === 'function') { cb(); return; }
     firebaseApiCallbacks.push({ ok: cb, err: onerror || function () {} });
     if (firebaseApiLoading) return;
     firebaseApiLoading = true;
@@ -1723,8 +1726,14 @@
       var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
       cbs.forEach(function (pair) { pair.err(err); });
     }
-    loadFirebaseScriptTag_('https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/firebase-app-compat.js', function () {
-      loadFirebaseScriptTag_('https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/firebase-firestore-compat.js', function () {
+    // Skip a file already loaded (by whatever tag): a tag added without
+    // this loader's own markers would otherwise be waited on forever.
+    function step(file, have, next) {
+      if (have()) { next(); return; }
+      loadFirebaseScriptTag_('https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/' + file, next, fail);
+    }
+    step('firebase-app-compat.js', function () { return !!(window.firebase && window.firebase.initializeApp); }, function () {
+      step('firebase-firestore-compat.js', function () { return typeof window.firebase.firestore === 'function'; }, function () {
         if (!window.firebase.apps.length) {
           window.firebase.initializeApp(FIREBASE_CONFIG);
           // Brave (and some ad-blocker extensions) silently blocks
@@ -1745,10 +1754,11 @@
           // prevent. Back to auto-detect.
           window.firebase.firestore().settings({ experimentalAutoDetectLongPolling: true });
         }
+        firebaseApiLoading = false;
         var cbs = firebaseApiCallbacks; firebaseApiCallbacks = [];
         cbs.forEach(function (pair) { pair.ok(); });
-      }, fail);
-    }, fail);
+      });
+    });
   }
 
   // Given a radio/{channel} Firestore document's data (or null if it
