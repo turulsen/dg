@@ -84,7 +84,28 @@ Frontend only: no Code.gs or Functions change. The shell cache is
 marking. In the Agent File's Cell list, KIA and INSANE names are now
 struck in red with a bordered stamp. The phone's Agents menu shows a
 KIA / INSANE stamp beside the struck name. It is frontend only, with
-shell cache `dg-hub-shell-v222`, and its tag doesn't exist yet. **v3.1.0**
+shell cache `dg-hub-shell-v222`. **v3.3.0** (unreleased) is v2
+milestone M4: the old character sheet (`stats/`) is deleted.
+- **Kept:** its data tables move to `assets/data/` (with the PolyForm
+  licence); its DD Form 315 and xlsx readers move to `assets/sheet-io/`
+  as `dgSheetPdf` / `dgSheetXlsx`; its in-page confirm becomes
+  `window.dgConfirm` in the notebook.
+- **Removed:** the notebook's "Old character sheet" Settings row, and
+  every old-sheet hook in the notebook, Dice Roller, Table Radio, Notes,
+  shell nav and `sw.js`.
+- **Old links:** `404.html` forwards `stats/index.html?load=CODE` to that
+  Agent and `?new=1` to New Recruit.
+- **Tests:** the old-sheet-only tests are gone; real Kappa Black, xlsx
+  and DD Form 315 files go through New Recruit instead. New:
+  `test/e2e/`, the real pages against local Firebase emulators, which
+  found and fixed two devices undoing each other's saves, offline
+  changes being lost, a deleted Agent coming back, the Cell not
+  following live, blocked storage, the radio failing to tune in inside
+  the Hub shell, half-typed Agent File text wiped by redraws, and rolls
+  going unsaved (see `BUGFIXES.md`).
+
+Frontend only; shell cache `dg-hub-shell-v226`. Rollback: revert the
+merge, which brings `stats/` back as it was. **v3.1.0**
 (2026-10-10) is PR #72, v2 milestone M3: the Agent File's paper wears as
 SAN falls. Stains, a fold, a coffee ring, blood and, from SAN 9, a torn
 edge are drawn over the whole page on Agent Hub and in the notebook

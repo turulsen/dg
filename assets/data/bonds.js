@@ -1,3 +1,4 @@
+// From DELTA-GREEN-STATS (c) 2024 Brook Morton, PolyForm Noncommercial 1.0.0: see assets/data/LICENSE-UPSTREAM.md.
 const bonds = {
     PISCES_UK: [
         { name: "Harriet Clarke", relationship: "MI6 Analyst", description: "Harriet's knack for connecting dots that others don't even see has led to the foiling of numerous threats of an 'unconventional' nature. Her late-night calls to discuss 'theoretical' situations have both chilled and thrilled me, hinting at depths of intrigue beyond the ordinary." },

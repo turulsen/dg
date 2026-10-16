@@ -86,10 +86,10 @@
       loadScript('assets/agent-rules.js', has('dgRules')),
       loadScript('assets/disorders.js', has('dgDisorders')),
       loadScript('assets/incursion.js', has('dgIncursion')),
-      loadScript('stats/professions.js', has('professions')),
-      loadScript('stats/bonds.js', has('bonds')),
-      loadScript('stats/bio.js', has('bioData')),
-      loadScript('stats/equipment-data.js', has('DG_EQUIPMENT_CATALOG'))
+      loadScript('assets/data/professions.js', has('professions')),
+      loadScript('assets/data/bonds.js', has('bonds')),
+      loadScript('assets/data/bio.js', has('bioData')),
+      loadScript('assets/data/equipment-data.js', has('DG_EQUIPMENT_CATALOG'))
     ]).then(function () { return loadScript('assets/recruit-data.js', has('dgRecruitData')); });
   }
 

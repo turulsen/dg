@@ -9,6 +9,7 @@
   // nav bar). Always take over the whole tab instead.
   (function () { try { if (window.top !== window.self) window.top.location.replace(location.href); } catch (e) { /* cross-origin: leave it */ } })();
 </script>
+<script src="assets/storage-guard.js"></script>
 <script src="assets/js-error-banner.js" async></script>
 <script src="assets/dg-store.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -34,7 +35,7 @@
      loaded here one at a time into #dg-shell-content instead of via a
      real page navigation -- Agent Hub is the default, loaded on a bare
      visit; ?start=a-cell.html (see index.html's own Clearance links)
-     opens straight to A-Cell instead. Agent Hub/stats/Agent File all
+     opens straight to A-Cell instead. Agent Hub, Notes and the other pages all
      still include their own copies of table-radio.js/dice-roller.js
      too (unchanged, so they keep working exactly as before when
      visited standalone) -- both scripts detect they're running inside
@@ -45,7 +46,7 @@
 
      Phase 3 -- real cross-frame nav (assets/shell-nav.js): a persistent
      top nav for the two top-level destinations (Agent Hub, A-Cell);
-     deeper pages (Character Sheet, Agent File, Notes) are reached the
+     deeper pages (Agent File, Notes) are reached the
      normal way, via a link clicked inside whichever page is currently
      loaded -- a relative <a href> inside an iframe navigates that
      iframe on its own, no extra plumbing needed.

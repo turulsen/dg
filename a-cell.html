@@ -13,6 +13,7 @@
      log) after the 2026-09-10 incident showed failures across several
      pages at once with zero visibility anywhere but here. See the file
      itself for the full history. -->
+<script src="assets/storage-guard.js"></script>
 <script src="assets/js-error-banner.js" async></script>
 <script src="assets/incursion.js"></script>
 <script src="assets/disorders.js"></script>
@@ -214,7 +215,7 @@
   .cdb-initiative-row .dx{ font-family:'Special Elite',monospace; font-weight:bold; }
 
   /* ── Sticky header: photo, name, and the vitals that move during
-     play (HP/WP/SAN/BP) -- mirrors Live Play's own tracker bar, kept
+     play (HP/WP/SAN/BP) -- the same vitals the Agent File shows, kept
      visible while scrolling the dossier dropdown below it. ── */
   .pv-sticky{
     position:sticky; top:0; z-index:2; background:var(--paper);
@@ -2312,7 +2313,7 @@
 /* ══════════════════════════════════════════════
    PLAY -- every Agent on file (any player, not just this browser's own
    roster), in a simplified read-only view: name, stats, skills. Pulls
-   from the same Characters sheet stats/cloud-sync.js already writes to,
+   from the same saved characters the Agent File writes to,
    via a new `list_characters` Apps Script action that returns every
    saved character row. That action is a NEW backend addition (like
    character-cloud-save-addition.gs before it) -- it does not exist on
@@ -2324,9 +2325,8 @@
   "use strict";
   var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
 
-  // key -> label, same set as stats/scripts.js's CONFIG.SKILLS (kept in
-  // display order; this page doesn't load the full character-creator
-  // script, so a compact copy of just the labels lives here).
+  // key -> label, the same skill keys as assets/agent-rules.js (kept in
+  // display order; a compact copy of just the labels lives here).
   var SKILL_LABELS = {
     accounting: 'Accounting', alertness: 'Alertness', anthropology: 'Anthropology',
     archeology: 'Archeology', art: 'Art', artillery: 'Artillery', athletics: 'Athletics',
@@ -4301,9 +4301,8 @@
    this tab feeling slow as the roster grows.
 
    "Online" isn't a real presence system (no heartbeat/websocket) --
-   it's a proxy from how recently Cloud Save last pushed for that Agent
-   (updated_at): a player actively editing their sheet pushes every
-   ~4s, so a fresh updated_at is a reasonable stand-in for "at the
+   it's a proxy from how recently that Agent's character was last saved
+   (updated_at): a player in play saves every few seconds, so a fresh updated_at is a reasonable stand-in for "at the
    table right now."
    ══════════════════════════════════════════════ */
 (function () {

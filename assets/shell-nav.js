@@ -8,13 +8,13 @@
    Roller), is never touched by that, which is the entire point of the
    shell.
 
-   Deep pages (a player's Agent File, Character Sheet, Notes) are
+   Deep pages (a player's Agent File, Notes) are
    reached the normal way: a relative <a href> inside whichever page is
    currently loaded navigates that iframe on its own, same-origin, no
    extra plumbing needed here. This nav only tracks the two top-level
    "which world am I in" destinations, and highlights whichever one the
    iframe's CURRENT page actually belongs to (Agent Hub's own sub-pages
-   -- stats/, notes/, dg-agent-portal.html -- all still read as "Agent
+   -- notes/, dg-agent-portal.html -- all still read as "Agent
    Hub"), however it got there: this nav's own click, or a link clicked
    from inside the loaded page itself.
 
@@ -40,7 +40,6 @@
     if (pathname.indexOf('friendly.html') !== -1) return 'friendly';
     if (pathname.indexOf('agent-hub.html') !== -1 ||
         pathname.indexOf('dg-agent-portal.html') !== -1 ||
-        pathname.indexOf('/stats/') !== -1 ||
         pathname.indexOf('/notes/') !== -1) return 'agent-hub';
     return null;
   }

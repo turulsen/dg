@@ -8,7 +8,7 @@
    everything the sheet leaves for the player to decide -- name, sex, age
    and DOB, nationality, education, physical description, distinguishing
    features, Bond names, Motivations -- using the same tables the stats
-   app's own Random Bio / Random Motivation buttons roll on (stats/bio.js).
+   app's own Random Bio / Random Motivation buttons roll on (assets/data/bio.js).
 
    Deterministic: every roll is seeded from the sheet's id, so re-running
    after adding more PDFs never reshuffles an Agent a player already met.
@@ -21,7 +21,7 @@
        specialty that fits the profession);
      "Bonus skill points: Add +20% each to any six skills" -> exactly six
        +20% picks, max 80%, led by the profession's bonus package
-       (catalog.json, stats/scripts.js BONUS_PACKAGES) and then the
+       (catalog.json, assets/recruit-data.js BONUS_PACKAGES) and then the
        Agent's own strongest skills.
    Sheets whose notes say neither are complete as printed. Placeholder
    skills on the form ("Language 50%", "Science (Choose One) 60%",
@@ -43,13 +43,12 @@ function loadGlobals(file, names) {
   // eslint-disable-next-line no-new-func
   return new Function(src + '\nreturn {' + names.join(',') + '};')();
 }
-const { bioData, motivationsData } = loadGlobals('stats/bio.js', ['bioData', 'motivationsData']);
+const { bioData, motivationsData } = loadGlobals('assets/data/bio.js', ['bioData', 'motivationsData']);
 const BONUS_PACKAGES = (() => {
-  const src = fs.readFileSync(path.join(ROOT, 'stats/scripts.js'), 'utf8');
-  const i = src.indexOf('const BONUS_PACKAGES');
-  const j = src.indexOf('\n];', i);
+  const window = {};
   // eslint-disable-next-line no-new-func
-  return new Function(src.slice(i, j + 3) + '\nreturn BONUS_PACKAGES;')();
+  new Function('window', fs.readFileSync(path.join(ROOT, 'assets/recruit-data.js'), 'utf8'))(window);
+  return window.dgRecruitData.BONUS_PACKAGES;
 })();
 const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, 'catalog.json'), 'utf8')).sheets;
 
@@ -72,7 +71,7 @@ function rng(seed) {
   };
 }
 
-/* ── same descriptor bands as stats/scripts.js getDescriptor() ── */
+/* ── the stat descriptor bands (the same ones the Agent File shows) ── */
 const DESCRIPTORS = {
   STR: [[3, 'Feeble'], [5, 'Weak'], [9, 'Average'], [13, 'Muscular'], [17, 'Huge']],
   DEX: [[3, 'Barely mobile'], [5, 'Clumsy'], [9, 'Average'], [13, 'Nimble'], [17, 'Acrobatic']],
@@ -87,7 +86,7 @@ function descriptor(stat, v) {
   return d;
 }
 
-/* Which stats/bio.js professionProfiles entry (employers/educations)
+/* Which assets/data/bio.js professionProfiles entry (employers/educations)
    fits a sheet -- by its PROFESSION field first, then its title. */
 const PROFILE_BY_WORD = [
   [/navy seal|green beret|raider|special tactics|isa|sad-sog|special operator|force recon|marsoc|160th/i, 'special_operator'],
@@ -442,7 +441,7 @@ function build(rec, opts) {
   const employer = rec.employer || employerFor(r, rec, profile);
   const education = rec.education || (pick(r, profile.educations) + '. ' + years + ' years with ' + agencyShort(employer).replace(/\.$/, '') + '.');
 
-  // Physical description -- stats/scripts.js generateRandomBio()'s own
+  // Physical description -- the old sheet's Random Bio's own
   // STR+CON banding and sentence shapes, rolled on the same tables.
   let physical = rec.physical;
   if (!physical) {

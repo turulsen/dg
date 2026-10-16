@@ -47,8 +47,8 @@
     });
     return loaded[path];
   }
-  function motivationData() { return loadScript('stats/bio.js', function () { return typeof window.motivationsData !== 'undefined' || typeof motivationsData !== 'undefined'; }); } // eslint-disable-line no-undef
-  function catalog() { return loadScript('stats/equipment-data.js', function () { return !!window.DG_EQUIPMENT_CATALOG; }); }
+  function motivationData() { return loadScript('assets/data/bio.js', function () { return typeof window.motivationsData !== 'undefined' || typeof motivationsData !== 'undefined'; }); } // eslint-disable-line no-undef
+  function catalog() { return loadScript('assets/data/equipment-data.js', function () { return !!window.DG_EQUIPMENT_CATALOG; }); }
 
   /* ── Dice: through the Dice Roller, so every roll is in the history ── */
   // rollExpr('1d6', label) -> Promise of the total. The Dice Roller
@@ -300,9 +300,46 @@
     window.addEventListener('resize', reStamp);
     unwatch.push(function () { window.removeEventListener('resize', reStamp); });
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(reStamp);
+    // What's being typed survives a redraw: a save's echo, another
+    // device's change or a Cell update redraws the paper, and used to
+    // wipe a half-typed Bond name, Motivation or Edit field.
+    // Only what the player changed since the last drawing is kept, so a
+    // value the redraw itself changes (BP − / +) still shows the new one.
+    function fields() {
+      var m = {};
+      Array.prototype.forEach.call(el.querySelectorAll('input[data-u], textarea[data-u], input[data-e], textarea[data-e]'), function (i) {
+        if (i.type === 'checkbox') return;
+        m[(i.getAttribute('data-u') ? 'u:' + i.getAttribute('data-u') : 'e:' + i.getAttribute('data-e'))] = i.value;
+      });
+      return m;
+    }
+    function typed() {
+      var out = { vals: {}, focus: null }, now = fields(), drawn = el._apDrawn || {};
+      Object.keys(now).forEach(function (k) { if (now[k] !== drawn[k]) out.vals[k] = now[k]; });
+      var a = document.activeElement;
+      if (a && el.contains(a) && (a.getAttribute('data-u') || a.getAttribute('data-e'))) {
+        out.focus = { key: a.getAttribute('data-u') ? 'u:' + a.getAttribute('data-u') : 'e:' + a.getAttribute('data-e'), start: a.selectionStart, end: a.selectionEnd };
+      }
+      return out;
+    }
+    function retype(t) {
+      Object.keys(t.vals).forEach(function (k) {
+        var sel = k.charAt(0) === 'u' ? '[data-u="' + k.slice(2) + '"]' : '[data-e="' + k.slice(2) + '"]';
+        var i = el.querySelector('input' + sel + ', textarea' + sel);
+        if (i && i.value !== t.vals[k]) i.value = t.vals[k];
+      });
+      if (t.focus) {
+        var fs = t.focus.key.charAt(0) === 'u' ? '[data-u="' + t.focus.key.slice(2) + '"]' : '[data-e="' + t.focus.key.slice(2) + '"]';
+        var f = el.querySelector(fs);
+        if (f) { try { f.focus({ preventScroll: true }); if (t.focus.start != null) f.setSelectionRange(t.focus.start, t.focus.end); } catch (e) { /* not a text field */ } }
+      }
+    }
     function render() {
       var sc = scroller(), top = sc ? sc.scrollTop : 0;
+      var keep = el.querySelector('.as-paper.ap') ? typed() : null;
       el.innerHTML = s.state ? paperHtml() : emptyHtml();
+      el._apDrawn = fields();
+      if (keep) retype(keep);
       // A new stage of wear fades in (not on the first drawing).
       var pp = el.querySelector('.as-paper.ap'), tier = pp ? pp.getAttribute('data-sanity-tier') || '0' : '0';
       if (pp && el._apTier != null && el._apTier !== tier) pp.classList.add('ap-wear-change');
@@ -818,7 +855,11 @@
         case 'card': ui.card = ui.card === i ? -1 : i; render(); return;
         case 'edit': ui.pop = ''; s.beginEdit(); return;
         case 'cancel':
-          if (s.editDirty() && !window.confirm('Throw away these edits?')) return;
+          if (s.editDirty()) {
+            (window.dgConfirm ? window.dgConfirm('Throw away these edits?', { ok: 'Throw away', cancel: 'Keep editing' }) : Promise.resolve(window.confirm('Throw away these edits?')))
+              .then(function (yes) { if (yes) { ui.pop = ''; s.cancelEdit(); } });
+            return;
+          }
           ui.pop = ''; s.cancelEdit(); return;
         case 'save': {
           var changes = diff(s.state, s.edit);

@@ -1,18 +1,17 @@
 /**
- * DELTA GREEN STATS — Animated Multi-Die Roller
+ * Animated Multi-Die Roller
  *
  * Dice: d4, d6, d8, d10, d12, d20, d% (percentile)
  * Percentile mode shows two d10 faces + DG result tiers.
  * All other dice show a single animated face.
  * Draggable, collapsible, theme-aware.
  *
- * Firebase migration Phase 3: moved here from stats/dice-roller.js and
- * included on every player-reachable Hub page (same treatment Table
+ * Included on every player-reachable Hub page (same treatment Table
  * Radio already got in Phase 2), backed by a live Firestore history --
  * dice_rolls/{cellId}/rolls/{rollId}, no existing Sheets data to
  * migrate (rolling was never persisted anywhere before this). Every
- * roll from EITHER entry point (a skill/stat click on the character
- * sheet, or the manual panel -- percentile target OR a dice expression
+ * roll from EITHER entry point (a skill/stat tap on the Agent File via
+ * dgDice.roll, or the manual panel -- percentile target OR a dice expression
  * like 2d6+3) writes one history entry once its animation lands; see
  * recordRoll() below, called from rollDie()'s and rollExpr()'s own
  * onDone(). An Agent's own rolls always work regardless of Firestore
@@ -20,10 +19,9 @@
  * migration uses -- a failed/skipped write never blocks the roll
  * itself from animating and showing a result).
  *
- * Identity: an Agent Code is read from whatever this page already uses
- * for it (stats/index.html's own Cloud Save code, or the most recently
- * active entry in the shared Cover Identity roster on every other
- * page) -- never a new prompt. A-Cell has no single "current Agent"
+ * Identity: an Agent Code is read from the current Agent
+ * (dg_stats_cloud_code), else the most recently active entry in the
+ * shared Cover Identity roster -- never a new prompt. A-Cell has no single "current Agent"
  * (it's the Handler's own page), so it gets a read-only Live Rolls
  * feed across every Cell instead of roll controls tied to one Agent;
  * see isHandlerContext() below. Signing into Firestore for an Agent is
@@ -51,38 +49,17 @@
     // the shell owns one hoisted copy of this widget outside
     // #dg-shell-content entirely; a page loaded *into* that iframe must
     // not also mount its own (this widget's #dr-panel is also
-    // position:fixed, landing on top of the shell's real one). Same for
-    // stats/index.html's own #dg-split-sheet-frame -- Split View's sheet
-    // pane is a real second copy of that same page (self-referencing
-    // iframe), so its own include would otherwise mount a second Dice
-    // Roller too. Null on every standalone visit and for any other
-    // embedding -- same-origin only, so this can't misfire cross-origin.
-    //
-    // This ONLY suppresses this instance's own floating #dr-panel --
-    // it must NOT bail out of the whole script early the way it used to
-    // (a bare `return` here), because wireSkillInputs() below attaches
-    // its click listener to THIS document, and the character sheet's
-    // own skill/stat inputs only ever exist in THIS document (the one
-    // actually showing the sheet, inside the iframe) -- never in the
-    // shell's own hub.html, which has no sheet markup at all. An early
-    // return here meant NOTHING ever listened for a skill click at all
-    // once a sheet was loaded through the shell (or through Split
-    // View's own sheet pane, once that was added to this same guard) --
-    // clicking a skill value did nothing but let the input become an
-    // editable text field, its ordinary default behavior, since nothing
-    // was left to intercept the click and treat it as a roll instead.
-    // rollPercent() below relays the roll to whichever ancestor DOES
-    // have a visible panel (the shell's hoisted copy, or Split View's
-    // own outer/non-embedded page) via postMessage, same mechanism this
-    // file already used for Split View alone before this fix widened it
-    // to also cover the shell.
+    // position:fixed, landing on top of the shell's real one). Null on
+    // every standalone visit and for any other embedding -- same-origin
+    // only, so this can't misfire cross-origin. A suppressed instance
+    // still relays its rolls (dgDice.roll) up to the page that has the
+    // panel, via postMessage -- see rollPercent().
     const FRIENDLY_PAGE_OWN = document.documentElement.hasAttribute('data-dice-friendly');
     // A frame marked data-dg-embed is one of the Field Notes notebook's
     // own embedded pages (Requisition, desktop Notes) -- same rule as the
     // shell: the page that hosts the notebook owns the one Dice panel.
     const SUPPRESS_OWN_PANEL = !!(window.frameElement &&
-        (window.frameElement.id === 'dg-shell-content' || window.frameElement.id === 'dg-split-sheet-frame' ||
-         window.frameElement.hasAttribute('data-dg-embed')));
+        (window.frameElement.id === 'dg-shell-content' || window.frameElement.hasAttribute('data-dg-embed')));
     // Friendly (friendly.html) loaded INSIDE the Hub shell: that page's
     // own copy of this script is suppressed, so it relays its pregen
     // identity up here (see setIdentity()) and this, the shell's copy,
@@ -433,10 +410,10 @@
         }, 1500);
     }
 
-    // Highest priority: this exact page's own Cloud Save code (only
-    // ever set on stats/index.html). Falls back to the shared Cover
-    // Identity roster's most-recently-active Agent -- same precedence
-    // notes/index.html already uses for the same "who am I on this
+    // Highest priority: the current Agent (dg_stats_cloud_code, set by the
+    // notebook's Agent card and by New Recruit). Falls back to the shared
+    // Cover Identity roster's most-recently-active Agent -- same
+    // precedence notes/index.html uses for the same "who am I on this
     // page" question.
     function currentAgentCode() {
         if (isFriendly()) return (friendlyIdentity() || {}).code || '';
@@ -455,21 +432,9 @@
         return 'solo:' + agentCode;
     }
 
-    // window.dgSaveLoad only exists on stats/index.html itself (the one
-    // page that loads stats/save-load.js) -- on every other Hub page this
-    // panel now also lives on, that check always misses and recordRoll()
-    // fell back to showing the bare Agent Code in history instead of the
-    // character's name. The roster's own char_name (kept in sync by
-    // rosterUpsert() on every save, cloud-sync.js) works from any page,
-    // so it's the fallback; dgSaveLoad's live value is still preferred
-    // when available since it reflects an unsaved in-progress edit.
+    // The current Agent's name, from the roster (kept in sync on every save).
     function currentAgentName() {
         if (isFriendly()) return (friendlyIdentity() || {}).name || '';
-        try {
-            const s = window.dgSaveLoad && window.dgSaveLoad.collectState && window.dgSaveLoad.collectState();
-            const live = s && s.bio && s.bio.name;
-            if (live) return live;
-        } catch (e) { /* best effort */ }
         try {
             const code = currentAgentCode();
             const roster = JSON.parse(localStorage.getItem(ROSTER_KEY) || '{}');
@@ -497,26 +462,12 @@
     // wrong cellId. firestore.rules already makes `cells` public-read
     // (see isCellMember()'s own comment there), so reading it directly
     // needs no Handler/Agent session either, same as list_cells never did.
-    // Real, reproduced live bug: on stats/index.html?load=CODE (Agent
-    // Hub's own "Play" link), this widget's init -- and therefore this
-    // function's FIRST call, from initHistory() below -- runs at page
-    // load, well before the ?load= JSONP round trip (plus its own 250ms
-    // post-apply delay, see cloud-sync.js's runPastInitHazards) has had
-    // a chance to actually set dg_stats_cloud_code. currentAgentCode()
-    // legitimately found nothing at that exact moment, resolved
-    // { mode: 'none' } -- correct for THAT instant -- but memoizing it
-    // forever meant every later roll and the history feed kept treating
-    // a fully-loaded, real Agent as if none was ever known, for the
-    // rest of that page's life. Reproduced directly: seeded a real
-    // Firestore Cell, loaded via ?load= with a mocked (instant) backend
-    // response, clicked a stat -- zero Firestore writes, history panel
-    // stuck on "Load your Cover Identity on this device to save roll
-    // history." An 'agent'/'handler' outcome is safe to cache for the
-    // session (an Agent's own identity and Cell don't change mid-visit)
-    // but 'none' only ever means "not resolvable YET", not "never" --
-    // so it's deliberately excluded from the cache and retried fresh on
-    // every call, cheap since it's just two synchronous localStorage
-    // reads with nothing async in that branch.
+    // An 'agent'/'handler' outcome is safe to cache for the session (an
+    // Agent's own identity and Cell don't change mid-visit) but 'none'
+    // only ever means "not resolvable YET" (the current Agent can be set
+    // moments after page load), not "never" -- so it's deliberately
+    // excluded from the cache and retried fresh on every call, cheap
+    // since it's just two synchronous localStorage reads.
     let _rollContext = null;
     let _rollContextPromise = null;
     let _rollContextFor = ''; // the Agent Code the current/in-flight resolution is for
@@ -580,7 +531,17 @@
         // of re-authenticating. Same class of bug as the `uid` check
         // just below: both let a stale/wrong identity silently stand
         // in for the one actually being requested.
-        if (_authPromise && _authedCode === agentCode) return _authPromise;
+        // Cached, but the page's own saves (dg-store.js) share this one
+        // Firebase sign-in and may have switched it to another Agent since:
+        // check who is signed in now, or the roll is refused by the rules.
+        if (_authPromise && _authedCode === agentCode) {
+            return _authPromise.then(u => {
+                const cur = window.firebase && window.firebase.auth && window.firebase.auth().currentUser;
+                if (cur && (cur.uid === agentCode || cur.uid === 'handler')) return cur;
+                _authPromise = null;
+                return ensureAgentSignedIn(agentCode);
+            });
+        }
         _authedCode = agentCode;
         _authPromise = new Promise((resolve, reject) => {
             ensureFirebaseApi(() => {
@@ -673,14 +634,18 @@
                 return;
             }
             if (ctx.mode !== 'agent') return;
-            return ensureAgentSignedIn(ctx.agentCode).then(() => {
-                const db = window.firebase.firestore();
-                const doc = Object.assign({
-                    agent_code: ctx.agentCode,
-                    agent_name: currentAgentName(),
-                    created_at: Date.now(),
-                }, rollData);
-                return db.collection('dice_rolls').doc(ctx.cellId).collection('rolls').add(doc);
+            const doc = Object.assign({
+                agent_code: ctx.agentCode,
+                agent_name: currentAgentName(),
+                created_at: Date.now(),
+            }, rollData);
+            const write = () => ensureAgentSignedIn(ctx.agentCode).then(() =>
+                window.firebase.firestore().collection('dice_rolls').doc(ctx.cellId).collection('rolls').add(doc));
+            // Refused once (signed in as another Agent a moment ago): sign in again, try again.
+            return write().catch(err => {
+                if (!err || err.code !== 'permission-denied') throw err;
+                _authPromise = null;
+                return write();
             });
         }).catch(err => {
             showHistoryError('Roll not saved', err);
@@ -777,7 +742,7 @@
         // new player joins) kept rolling into, and reading, their solo
         // feed until they happened to reload. Follow cells live instead
         // (public read, same "first Cell that lists this Agent" rule as
-        // resolveRollContext() and stats/lp-initiative.js); ctx is the
+        // resolveRollContext()); ctx is the
         // shared _rollContext object, so recordRoll() follows too.
         const cellsUnsub = db.collection('cells').onSnapshot(snap => {
             let found = null;
@@ -929,8 +894,8 @@
             } else if (ctx.mode === 'handler' && _e.handlerGate) {
                 checkExistingHandlerSession();
             } else if (ctx.mode === 'none' && _e.historyList) {
-                // No Agent Code known on this device yet (no Cloud Save
-                // code, no Cover Identity roster entry) -- rolls still
+                // No Agent Code known on this device yet (no current
+                // Agent, no Cover Identity roster entry) -- rolls still
                 // work, they just can't be attributed to anyone, so
                 // recordRoll() no-ops for this mode. Say so instead of
                 // leaving the initial "No rolls yet." placeholder up
@@ -1015,20 +980,10 @@
     /* ── Skill-click entry point (always uses d%) ─────────────────── */
     function rollPercent(target, skillName) {
         // No panel was ever built here (SUPPRESS_OWN_PANEL -- inside the
-        // app shell's #dg-shell-content, or Split View's own
-        // #dg-split-sheet-frame), so there's nothing local to animate
-        // into and rollDie() would throw trying to destructure a null
-        // _e. Relay to window.top rather than just window.parent --
-        // Split View opened FROM WITHIN the shell nests two levels deep
-        // (hub.html -> #dg-shell-content -> #dg-split-sheet-frame), and
-        // the middle frame is ALSO SUPPRESS_OWN_PANEL (it has no panel
-        // of its own either, see the relay listener below), so a single
-        // hop to window.parent would land on a frame that never
-        // listens and the roll would just vanish. window.top always
-        // reaches the one frame that's actually NOT suppressed and
-        // therefore has a real, visible panel to animate into --
-        // whether that's one level up (Split View alone) or two
-        // (Split View inside the shell).
+        // app shell's #dg-shell-content or the notebook's embedded pages),
+        // so there's nothing local to animate into and rollDie() would
+        // throw on a null _e. Relay to window.top, the one frame that has
+        // a real, visible panel to animate into.
         if (SUPPRESS_OWN_PANEL) {
             if (window.top !== window) {
                 try {
@@ -1210,32 +1165,17 @@
     }
 
     /* ── Styles ───────────────────────────────────────────────────── */
-    // Self-contained, same treatment table-radio.js already gives its own
-    // widget in Phase 2 -- this panel now lives on 6 pages, only one of
-    // which (stats/index.html) loads stats/styles.css, so the original
-    // rules there can't be relied on to reach the other 5. Injected once
-    // as a real <style> tag (not inline styles) so stats/index.html's own
-    // per-theme overrides (.theme-son-of-sam .dr-die-btn-active etc.),
-    // which are more specific than any bare .dr-* selector here, still
-    // win on that page exactly as before.
+    // Self-contained, same treatment table-radio.js gives its own widget:
+    // injected once as a real <style> tag, so it looks the same on every
+    // page it lives on.
     function injectStyles() {
         if (document.getElementById('dr-style')) return;
         const style = document.createElement('style');
         style.id = 'dr-style';
         style.textContent = [
-            // Widget chrome color language: same fixed --dg-widget-* tokens
-            // as Table Radio (assets/table-radio.js), the Settings cog, the
-            // mobile Notes widget, and Split View's toggle (stats/styles.css)
-            // -- declared there too, and re-declared here so this panel
-            // still renders correctly on the 5 other pages it lives on that
-            // never load stats/styles.css. This USED to read
-            // var(--primary-color)/var(--bg-color) instead, which sounds
-            // reasonable ("adapt to the page theme") but actually broke the
-            // opposite way: it made this one docked widget shift color with
-            // whatever theme the underlying character sheet had active
-            // (red on Son of Sam, say) while every other docked widget
-            // stayed a fixed green -- reported as the widgets visibly
-            // clashing with EACH OTHER, not with the page.
+            // Widget chrome color language: the same fixed --dg-widget-*
+            // tokens as Table Radio (assets/table-radio.js), so docked
+            // widgets never clash with each other whatever the page's theme.
             ':root{--dg-widget-bg:#161a14;--dg-widget-ink:#c9d4b8;--dg-widget-border:#3a4432;',
             '--dg-widget-accent:#8fae5a;--dg-widget-accent-bright:#a8c890;',
             '--dg-widget-font:\'JetBrains Mono\',ui-monospace,monospace;}',
@@ -1350,8 +1290,7 @@
             'font-family:inherit;cursor:pointer;}',
             '#dr-manual-row button:hover{background:color-mix(in srgb,var(--dg-widget-accent) 12%,transparent);}',
             '#dr-hint{font-size:8px;opacity:.3;text-align:center;line-height:1.4;letter-spacing:.03em;}',
-            // ── Live history feed (new in Phase 3 -- no stats/styles.css
-            // precedent, styled to match the rest of this panel) ──
+            // ── Live history feed, styled to match the rest of this panel ──
             '#dr-history-section{border-top:1px solid rgba(128,128,128,.25);padding-top:8px;display:flex;flex-direction:column;gap:5px;}',
             '#dr-history-head{font-size:9px;letter-spacing:.12em;opacity:.5;text-transform:uppercase;text-align:center;}',
             '#dr-cell-filter{width:100%;padding:4px 6px;font-size:10px;letter-spacing:.06em;background:transparent;color:inherit;',
@@ -1509,10 +1448,8 @@
         // iOS Safari has a long-standing quirk where position:fixed
         // elements can freeze at a stale scroll-relative spot -- appearing
         // to float mid-page instead of staying docked -- after the screen
-        // locks and unlocks while the tab stays open. Not specific to this
-        // panel or to Live Play, just more likely to be noticed there since
-        // that's the mode people leave open through a lock/unlock during
-        // an actual session. Forcing a reflow when the tab becomes visible
+        // locks and unlocks while the tab stays open. Most noticeable at
+        // the table, where a page stays open through a lock/unlock. Forcing a reflow when the tab becomes visible
         // again snaps it back to its real fixed position.
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState !== 'visible' || !panel.isConnected) return;
@@ -1542,70 +1479,6 @@
                 panel.style.display = prevDisplay;
             }, 150);
         }, { passive: true });
-    }
-
-    /* ── Wire skill inputs ────────────────────────────────────────── */
-    function wireSkillInputs() {
-        document.addEventListener('click', e => {
-            const el = e.target;
-            if (el.matches?.('#cs-skills input.cs-skill-input')) {
-                const key = el.id.replace('cs-skill-', '');
-                // el.previousElementSibling is the nameSpan directly preceding each input in the grid
-                const label = el.previousElementSibling?.textContent?.replace(':', '').trim()
-                    || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-                rollPercent(parseInt(el.value) || 0, label);
-                return;
-            }
-            if (el.matches?.('#cs-custom-skills .custom-skill-value')) {
-                const row = el.closest('.custom-skill-row');
-                const ni = row?.querySelector('.custom-skill-name');
-                const lbl = row?.querySelector('label');
-                const spec = row?.querySelector('select');
-                let name = lbl ? lbl.textContent.replace(':', '').trim() : (ni ? ni.value : 'Skill');
-                if (spec?.value) name += ` (${spec.value})`;
-                rollPercent(parseInt(el.value) || 0, name);
-                return;
-            }
-            if (el.matches?.('#lp-sheet .lp-skill-val')) {
-                const row = el.closest('tr');
-                const nameTd = row?.querySelector('td:nth-child(2)');
-                const name = nameTd?.textContent?.trim() || 'Skill';
-                const pct = parseInt(el.value) || 0;
-                rollPercent(pct, name);
-                return;
-            }
-            if (el.matches?.('#lp-weapons-tbody .lp-weapon-pct')) {
-                const pct = parseInt(el.dataset.pct) || 0;
-                const name = el.dataset.name || 'Weapon';
-                rollPercent(pct, name);
-                return;
-            }
-            if (el.matches?.('#lp-weapons-tbody .lp-weapon-skill-inp')) {
-                const pct = parseInt(el.value) || 0;
-                const row = el.closest('tr');
-                const name = row?.querySelector('.lp-weapon-name-inp')?.value || 'Weapon';
-                rollPercent(pct, name);
-                return;
-            }
-            if (el.matches?.('#cs-stats input.stat-input')) {
-                const stat = el.id.replace('cs-', '');
-                rollPercent((parseInt(el.value) || 0) * 5, `${stat} × 5`);
-                return;
-            }
-            if (el.matches?.('#stats .x5-value')) {
-                const stat = (el.id || '').replace('-x5-value', '');
-                const val = parseInt(el.textContent) || 0;
-                rollPercent(val, `${stat} ×5`);
-                return;
-            }
-            // LP sheet stat x5 spans (id pattern: lp-stat-STR-x5)
-            if (el.matches?.('#lp-sheet span[id^="lp-stat-"][id$="-x5"]')) {
-                const stat = (el.id || '').replace('lp-stat-', '').replace('-x5', '');
-                const val = parseInt(el.textContent) || 0;
-                if (val > 0) rollPercent(val, `${stat} ×5`);
-                return;
-            }
-        });
     }
 
     /* ── Public API ───────────────────────────────────────────────── */
@@ -1642,33 +1515,15 @@
     }
 
     /* ── Init ─────────────────────────────────────────────────────── */
-    // Was window's 'load' event -- but buildPanel() only creates its own
-    // fresh DOM nodes and appends them to <body>, and wireSkillInputs()
-    // only wires a document-level click listener (matched by selector at
-    // click time, not by looking anything up now) -- neither needs
-    // external resources loaded, just the DOM itself. 'load' doesn't
-    // fire until every subresource on the page finishes, including
-    // whatever Table Radio (on every page) is currently streaming into
-    // an iframe, which is what made this panel visibly take as long to
-    // appear as the character-load lag fixed elsewhere on this same
-    // page (see stats/scripts.js's dgInitStatsSheet() comment).
+    // On DOMContentLoaded, not 'load': buildPanel() only needs the DOM, and
+    // 'load' waits for every subresource (Table Radio's stream included).
     const dgInitDiceRoller = () => {
-        // Skill-click wiring runs regardless of SUPPRESS_OWN_PANEL --
-        // this document is the one actually showing the sheet, so it's
-        // the only place a skill click could ever be caught at all.
-        // Everything else below is specifically about this instance's
-        // OWN floating panel, which a suppressed instance never builds.
-        wireSkillInputs();
         if (SUPPRESS_OWN_PANEL) return;
         buildPanel(); initHistory(); watchHandlerModeChange();
-        // See resolveRollContext()'s own comment: initHistory() runs at
-        // page load, ahead of a ?load=CODE cloud fetch that sets
-        // dg_stats_cloud_code moments later via cloud-sync.js's
-        // setCloudCode(). Re-running initHistory() once that fires
-        // actually starts the history feed once a real Agent Code
-        // becomes known, rather than leaving it stuck on the initial
-        // "no Agent Code known yet" read until the next roll attempt
-        // happens to retry it.
+        // See resolveRollContext()'s own comment: the current Agent can be
+        // set after page load (New Recruit, the notebook's Agent card, both
+        // firing 'dg-cloud-code-set'). Re-running initHistory() then starts
+        // the history feed for that Agent.
         function reresolve() {
             stopHistoryFeed();
             _rollContext = null;
@@ -1690,7 +1545,7 @@
             if (_relayedFriendly && !onFriendly) { _relayedFriendly = false; setIdentity(null); }
         });
         // Inside the Hub shell this widget lives on the OUTER page, while
-        // the Agent's code gets set by the sheet inside the iframe -- and
+        // the Agent's code gets set by the page inside the iframe -- and
         // 'dg-cloud-code-set' only fires on the iframe's own window. On a
         // brand-new device (nothing in localStorage when hub.html first
         // loaded) the shell's roller therefore stayed on "Load your Cover

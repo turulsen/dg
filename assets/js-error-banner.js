@@ -90,7 +90,7 @@
 
   // Best-effort only -- whatever this page's own widgets have already
   // resolved as "the current Agent," read the same way dice-roller.js's
-  // currentAgentCode() does (direct Cloud Save code first, falling back
+  // currentAgentCode() does (the current Agent's code first, falling back
   // to the roster's most-recently-active entry). Never lets a storage
   // failure here block reporting the actual error.
   function bestEffortAgentCode() {

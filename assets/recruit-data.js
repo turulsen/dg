@@ -5,7 +5,7 @@
    Numbers (skills, percentages, Bonds) follow the Agent's Handbook and
    Delta Green: The Complex; every description here is our own wording --
    the site is public, no rulebook text is copied. The Handbook's 18
-   professions themselves come from stats/professions.js (`professions`).
+   professions themselves come from assets/data/professions.js (`professions`).
 
    window.dgRecruitData */
 (function () {
@@ -46,7 +46,7 @@
     return pool[Math.floor(Math.random() * pool.length)] || band[0];
   }
 
-  /* ── Profession families: the Handbook's (from stats/professions.js) and
+  /* ── Profession families: the Handbook's (from assets/data/professions.js) and
      The Complex's own, with their professional skills and Bonds ── */
   function S(name, value) { return { name: name, value: value }; }
   var COMPLEX = [
@@ -202,7 +202,7 @@
 
   /* ── Starting kits: the Agent's Handbook's Tools of the Trade where it
      has them, real-world kit for the rest. A name that matches the
-     equipment catalog (stats/equipment-data.js) carries its numbers; a
+     equipment catalog (assets/data/equipment-data.js) carries its numbers; a
      leading '?' means offered but not ticked. ── */
   var KITS = {
     federal_agent: ['Agency badge and ID', 'Medium pistol', 'Two spare magazines', 'Tactical light or weapon light', 'Handcuffs', 'Kevlar vest', 'Agency windbreaker', 'Tablet computer or smartphone', 'Earpiece communication set', 'Evidence-collection kit',
@@ -241,7 +241,7 @@
       .map(function (n) { return { name: n.replace(/^\?/, ''), on: n.charAt(0) !== '?' }; });
   }
 
-  /* ── Bond lists (stats/bonds.js), regrouped ── */
+  /* ── Bond lists (assets/data/bonds.js), regrouped ── */
   var FAMILY_RE = /^(older |younger )?(brother|sister|wife|husband|uncle|aunt|daughter|son|mother|father|grand\w*|cousin|nephew|niece|partner|god\w*)\b/i;
   var BOND_CATS = [['family', 'Family'], ['friends', 'Friends'], ['delta_green', 'Delta Green'], ['other_gov', 'Other Governments'], ['underworld', 'Underworld']];
   function bondList(cat) {
@@ -261,7 +261,7 @@
     return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
   }
 
-  /* ── Bonus skill packages (the old sheet's, stats/scripts.js): skill
+  /* ── Bonus skill packages (carried over from the original sheet): skill
      keys, a '?kind' choose-slot, or a specialty written out ── */
   var BONUS_PACKAGES = [
       {

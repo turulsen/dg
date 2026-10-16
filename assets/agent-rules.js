@@ -18,7 +18,7 @@
   if (window.dgRules) return;
 
   var STATS = ['STR', 'CON', 'DEX', 'INT', 'POW', 'CHA'];
-  // Same keys as the character sheet (stats/scripts.js CONFIG.SKILLS),
+  // The saved-character skill keys (inherited from the original sheet),
   // `heavy_machiner` included: saved Agents use these keys.
   var SKILLS = [
     ['accounting', 'Accounting', 10], ['alertness', 'Alertness', 20], ['anthropology', 'Anthropology', 0],
@@ -97,8 +97,8 @@
   function resetBp(state) { var d = derived(state); d.bp = Math.max(0, d.san - stats(state).POW); return d.bp; }
 
   /* ── Skills ── */
-  // One flat list: base skills, specialties, the sheet's custom and
-  // Live Play rows. id: 'key:<k>' | 'spec:<id>' | 'cust:<i>' | 'lpc:<i>'.
+  // One flat list: base skills, specialties, and the custom-skill rows
+  // (customSkills, and the older saves' lpCustomSkills). id: 'key:<k>' | 'spec:<id>' | 'cust:<i>' | 'lpc:<i>'.
   function skillList(state, opts) {
     var all = opts && opts.all, out = [];
     var sk = state.skills || {}, specs = state.skillSpecs || {};
@@ -303,7 +303,7 @@
     if (text && c.indexOf(text) === -1) c.push(text);
     state.bio.motivationsCrossed = c;
   }
-  // A Motivation from the Briefing Documents' tables (stats/bio.js).
+  // A Motivation from the Briefing Documents' tables (assets/data/bio.js).
   function rollMotivation() {
     var M = window.motivationsData || (typeof motivationsData !== 'undefined' ? motivationsData : null); // eslint-disable-line no-undef
     if (!M) return '';

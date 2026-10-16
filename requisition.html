@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script src="assets/storage-guard.js"></script>
 <script src="assets/js-error-banner.js"></script>
 <script src="assets/dg-store.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1263,12 +1264,10 @@ document.getElementById('resetLink').addEventListener('click', ()=>{
    entry numbers in the standalone prototype -- the one thing asked to be
    wired to real data on integration. agent-hub.html's own roster links
    every tool page here the same way ("tool.html?code=AGENT_CODE"), and
-   skill percentages/stats live in the Cloud Save character sheet, not the
+   skill percentages/stats live in the saved character sheet, not the
    dg_agent_roster entry itself (that only has name/notes-adjacent fields)
-   -- fetched here the exact same way stats/cloud-sync.js's loadFromCloud()
-   and dg-agent-portal.html's own lookups already do (a plain JSONP GET,
-   no library), rather than pulling in the whole stats/ subsystem just for
-   four numbers. Military Science is a specialty skill (base key stays at
+   -- read here directly rather than loading the whole Agent File just
+   for four numbers. Military Science is a specialty skill (base key stays at
    0; the real value lives in a specialtyInstances entry keyed 'military_
    science') -- take the highest such instance, same as a player would
    just pick their best one. Left fully editable either way: this only
@@ -1340,8 +1339,7 @@ function applyAgentSkills(state){
   // logged roll to an Agent/Cell) reads this same key, not this page's
   // own ?code= -- without setting it, a roll made here for Agent B while
   // this device's last-active Agent was A would silently log under A
-  // instead. Same key stats/cloud-sync.js's setCloudCode() writes on a
-  // ?load=CODE deep link, for the same reason.
+  // instead. Same key the notebook's Agent card and New Recruit write.
   try { localStorage.setItem('dg_stats_cloud_code', code); } catch(e) { /* best effort */ }
 
   ['official','personal','favor','black'].forEach(id => setAutofillNote(id, 'Looking up this Agent’s character sheet…', true));

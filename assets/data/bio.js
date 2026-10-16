@@ -1,3 +1,4 @@
+// From DELTA-GREEN-STATS (c) 2024 Brook Morton, PolyForm Noncommercial 1.0.0: see assets/data/LICENSE-UPSTREAM.md.
 // ============================================================================
 // DELTA GREEN STATS - BIOGRAPHY DATA
 // ============================================================================
@@ -301,7 +302,7 @@ const bioData = {
 // MOTIVATIONS DATA -- Briefing Documents' own random Motivation tables
 // ============================================================================
 // Rolled 1D12 (category) then 1D10 (the specific motivation within it) --
-// see generateRandomMotivation() in scripts.js. Table entries are stored
+// see rollMotivation() in assets/agent-rules.js. Table entries are stored
 // one per possible roll (index 0 = roll 1, etc.), including the source
 // tables' own merged rows (e.g. Principle's 3-4 both read "Doing what's
 // right") repeated at each index they cover, rather than collapsing them

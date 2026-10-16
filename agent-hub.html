@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script src="assets/storage-guard.js"></script>
 <script src="assets/js-error-banner.js" async></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Delta Green — Agent</title>
@@ -444,10 +445,9 @@
    AGENT HUB -- every Agent on this device (dg_agent_roster in
    localStorage) as a folder ear-tab, plus a pinned "+ New Recruit".
    The active tab is that Agent's whole file, one page:
-     photo, name, line, stamps, and Play/Recruit
-       -> stats/index.html?load=CODE&live=1 (Live Play over whichever
-          theme this device last used; "Recruit" when there's no cloud
-          character yet, see checkCharacterExists)
+     photo, name, line, stamps, and Recruit when there's no saved
+       character yet (New Recruit under that Agent's code, see
+       checkCharacterExists)
      the Appearance callout while the brief is unfinished
      the Agent File paper (Cell, Operations, the sheet) -- agent-sheet.js
      Appearance (Profiling) and the era photos -- agent-file.js, one
@@ -1350,8 +1350,8 @@
   }
 
   // Private per-Agent notes on a Handout -- debounced auto-save (same
-  // "trust the POST, no read-back verify" weight as Cloud Save's own
-  // background sync, not the heavier verified-write pattern used for
+  // "trust the POST, no read-back verify" weight as the Agent File's own
+  // background save, not the heavier verified-write pattern used for
   // shared campaign state like Handouts/Cells themselves; this is a
   // low-stakes personal scratchpad, not something other people rely on
   // seeing land correctly).
@@ -1730,6 +1730,27 @@
         if (AS.wireMembers) AS.wireMembers(out, members, loadPhoto);
       });
     }).catch(err => console.error('agent-hub: could not build the Agent File paper for ' + a.code, err));
+    watchCellFor(a);
+  }
+  // The Handler adding this Agent to a Cell (or another Agent to theirs)
+  // mid-session: draw the paper again, so its Cell list follows without a
+  // reload. One listener per Agent; only a change to which Cell they're in
+  // or who's in it redraws.
+  const cellWatch = {};
+  function watchCellFor(a) {
+    if (cellWatch[a.code] || !window.dgStore || !window.firebase) return;
+    cellWatch[a.code] = { sig: null, unsub: null };
+    window.dgStore.ready().then(() => {
+      cellWatch[a.code].unsub = window.firebase.firestore().collection('cells').onSnapshot(snap => {
+        let sig = '';
+        snap.forEach(d => { const c = d.data() || {}; if (!sig && (c.member_codes || []).indexOf(a.code) !== -1) sig = d.id + '|' + (c.name || '') + '|' + (c.member_codes || []).join(','); });
+        const w = cellWatch[a.code];
+        if (w.sig === null) { w.sig = sig; return; }
+        if (sig === w.sig) return;
+        w.sig = sig;
+        if (document.getElementById('ah-sheet-' + a.code)) renderAgentSheetFor(a);
+      }, () => { /* offline: the paper keeps what it has */ });
+    }).catch(() => { delete cellWatch[a.code]; });
   }
 
   function loadHandouts() {

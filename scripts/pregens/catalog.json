@@ -1,5 +1,5 @@
 {
-  "_comment": "Every Agent Dossier in the Handler's Drive pregen folder, by sheet title (file name without .pdf). build.js lists any title here with no extracted data yet as 'pending' on the Friendly picker. 'bonus' names the BONUS_PACKAGES entry (stats/scripts.js) to add when a sheet doesn't already carry bonus points; 'nationality' overrides the default American. Order matters: Agents are built in this order and later ones avoid names earlier ones took, so append new sheets at the end.",
+  "_comment": "Every Agent Dossier in the Handler's Drive pregen folder, by sheet title (file name without .pdf). build.js lists any title here with no extracted data yet as 'pending' on the Friendly picker. 'bonus' names the BONUS_PACKAGES entry (assets/recruit-data.js) to add when a sheet doesn't already carry bonus points; 'nationality' overrides the default American. Order matters: Agents are built in this order and later ones avoid names earlier ones took, so append new sheets at the end.",
   "sheets": {
     "USSS - Personal Protective Detail": {
       "bonus": "Athlete"

@@ -1,3 +1,4 @@
+// From DELTA-GREEN-STATS (c) 2024 Brook Morton, PolyForm Noncommercial 1.0.0: see assets/data/LICENSE-UPSTREAM.md.
 /**
  * DELTA GREEN STATS — Equipment Catalog
  * Sourced from the Delta Green: Agent's Handbook Foundry VTT compendium.

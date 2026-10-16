@@ -12,9 +12,8 @@
      .fn-btn         -- quiet/secondary (outlined)
    Adjacent buttons alternate red/ink so each reads as its own key.
 
-   Every selector is #fn-root-scoped or fn- prefixed: this file lands on
-   stats/index.html's themes too, whose blanket "button"/"input" rules
-   would otherwise reskin the notebook per theme.
+   Every selector is #fn-root-scoped or fn- prefixed, so a page's own
+   blanket "button"/"input" rules can't reskin the notebook.
    ══════════════════════════════════════════════ */
 :root{
   --fn-leather-a:#9a5634; --fn-leather-b:#83452a; --fn-leather-c:#5f301b;
@@ -39,13 +38,7 @@ html.dg-fn-host #dg-radio{
   opacity:0 !important; pointer-events:none !important;
 }
 html.dg-fn-host body > #dr-panel{ display:none !important; }
-/* The character sheet's own Settings cog and mobile Notes button move
-   into the notebook (Settings and Notes tabs). Split View (the sheet and
-   Notes side by side) is retired: the notebook's Notes sit beside any
-   page. */
-html.dg-fn-host #settings-cog-btn,
-html.dg-fn-host #notes-widget-btn,
-html.dg-fn-host #split-view-toggle-btn,
+/* Notes' own Split View button: inside the notebook, its Split mode does that. */
 html.dg-fn-host #split-view-btn{ display:none !important; }
 
 #fn-root{ font-family:var(--fn-mono); color:var(--fn-ink); }

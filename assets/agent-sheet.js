@@ -12,16 +12,16 @@
 
    Also: fromPregen()/pregenToState() turn a Friendly pregen
    (friendly/pregens.json) into a real character sheet, for Friendly's
-   "Make this my Agent" (a stats/index.html native v1 state, the same
-   shape dgSaveLoad.collectState() produces).
+   "Make this my Agent" (a v1 saved-character state, the
+   characters/{code}.character_json shape).
    ══════════════════════════════════════════════ */
 (function () {
   'use strict';
   if (window.dgAgentSheet) return;
 
   var STATS = ['STR', 'CON', 'DEX', 'INT', 'POW', 'CHA'];
-  // stats/scripts.js CONFIG.SKILLS -- key, label (kept in step by hand;
-  // an unknown key still shows, title-cased).
+  // The skill keys of assets/agent-rules.js -- key, label (kept in step
+  // by hand; an unknown key still shows, title-cased).
   var SKILL_LABELS = {
     accounting: 'Accounting', alertness: 'Alertness', anthropology: 'Anthropology', archeology: 'Archeology',
     art: 'Art', artillery: 'Artillery', athletics: 'Athletics', bureaucracy: 'Bureaucracy',
