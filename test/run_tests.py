@@ -11304,7 +11304,7 @@ def test_friendly_clearance(p):
            nxt.locator('optgroup[label^="Friendlies"] option[value="' + pid + '"]').count() == 1, "")
     page.close()
 
-    # 62 dossiers: category chips narrow the picker, "Deal me an Agent"
+    # 62 dossiers: category chips narrow the picker, "Hand me a dossier"
     # deals from what's showing, and a damage entry that isn't dice or a
     # lethality % ("Stun") is text, not a button that does nothing.
     shipped = json.load(open(os.path.join(HERE, "..", "friendly", "pregens.json")))["pregens"]
@@ -11323,7 +11323,7 @@ def test_friendly_clearance(p):
     page.click("#fr-deal")
     page.wait_for_timeout(300)
     dealt = page.inner_text("#fr-view .pv-bio")
-    record("friendly", "Deal me an Agent deals one Agent from the chosen category, in one tap",
+    record("friendly", "Hand me a dossier deals one Agent from the chosen category, in one tap",
            dealt in [q["name"] for q in medics], dealt)
     stun = next((q["id"] for q in shipped if any((w.get("damage") or "").lower() == "stun" for w in q["weapons"])), None)
     if stun:

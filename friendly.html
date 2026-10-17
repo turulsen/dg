@@ -79,7 +79,10 @@
   .fr-deal-row{ gap:18px; }
   #fr-deal.paper-btn{ position:relative; border:0; padding:10px 18px 9px 46px; background:#f1ece0; background-image:var(--grain); color:var(--ink);
     font-family:'Special Elite',monospace; font-size:13px; letter-spacing:.12em; text-transform:uppercase; box-shadow:0 3px 8px rgba(0,0,0,.5); transform:rotate(-1deg); }
-  #fr-deal.paper-btn::before{ content:''; position:absolute; left:15px; top:50%; width:16px; height:24px; margin-top:-12px; border:2.5px solid #9aa0a6; border-radius:9px; }
+  /* a paper clip over the slip's top edge */
+  #fr-deal.paper-btn::before{ content:''; position:absolute; left:14px; top:-9px; width:15px; height:36px; transform:rotate(-4deg);
+    background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 15 36'%3E%3Cpath d='M4.5 9v19.5a3 3 0 0 0 6 0V5.5a4 4 0 0 0-8 0V29a5.5 5.5 0 0 0 11 0V10' fill='none' stroke='%239aa0a6' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") center/contain no-repeat;
+    filter:drop-shadow(0 1px 0 rgba(0,0,0,.35)); }
   #fr-deal.paper-btn:disabled{ opacity:.5; }
   .fr-back-dossier{ appearance:none; border:0; background:none; cursor:pointer; padding:4px 0; font-family:'Courier Prime',monospace; font-size:12px;
     letter-spacing:.08em; color:#c9c1a6; text-decoration:underline; text-underline-offset:4px; }
@@ -243,7 +246,7 @@
     .fc-sheet{ padding:9px 10px 10px; } .fc-top{ font-size:7px; } .fc-title{ font-size:13.5px; } .fc-title small{ font-size:8px; }
     .fc-name{ font-size:15.5px; } .fc-meta{ font-size:10px; } .fc-vit b{ font-size:12.5px; } .fc-vit small{ font-size:6.5px; }
     .fc-skills{ font-size:10px; line-height:1.55; } .fc-skills > span:nth-child(3){ display:none; } .fc-go > span{ font-size:10px; }
-    #fr-deal.paper-btn{ font-size:11px; padding:8px 12px 7px 36px; } #fr-deal.paper-btn::before{ left:11px; width:13px; height:19px; margin-top:-10px; }
+    #fr-deal.paper-btn{ font-size:11px; padding:8px 12px 7px 36px; } #fr-deal.paper-btn::before{ left:11px; top:-8px; width:12px; height:30px; }
     .fr-chips{ gap:2px 12px; } .fr-chip{ font-size:10px; }
     body.fr-playing .hub-header h1, body.fr-playing .hub-header p{ display:none; }
     body.fr-playing .hub-header{ padding:4px 6px 8px; display:flex; align-items:center; gap:12px; }
@@ -319,7 +322,7 @@
           <select id="fr-cell-filter" class="fr-cell-filter"><option value="">All Friendlies</option></select>
         </div>
         <div class="fr-deal-row">
-          <button type="button" class="paper-btn primary" id="fr-deal" disabled>Deal me an Agent</button>
+          <button type="button" class="paper-btn primary" id="fr-deal" disabled>Hand me a dossier</button>
           <span class="fr-deal-note">or pick one below</span>
           <button type="button" class="fr-back-dossier" id="fr-back-dossier" hidden></button>
         </div>
