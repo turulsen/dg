@@ -84,7 +84,7 @@ Frontend only: no Code.gs or Functions change. The shell cache is
 marking. In the Agent File's Cell list, KIA and INSANE names are now
 struck in red with a bordered stamp. The phone's Agents menu shows a
 KIA / INSANE stamp beside the struck name. It is frontend only, with
-shell cache `dg-hub-shell-v222`. **v3.3.0** (unreleased) is v2
+shell cache `dg-hub-shell-v222`. **v3.3.0** (2026-10-16, PR #75) is v2
 milestone M4: the old character sheet (`stats/`) is deleted.
 - **Kept:** its data tables move to `assets/data/` (with the PolyForm
   licence); its DD Form 315 and xlsx readers move to `assets/sheet-io/`
@@ -105,7 +105,24 @@ milestone M4: the old character sheet (`stats/`) is deleted.
   going unsaved (see `BUGFIXES.md`).
 
 Frontend only; shell cache `dg-hub-shell-v226`. Rollback: revert the
-merge, which brings `stats/` back as it was. **v3.1.0**
+merge, which brings `stats/` back as it was. **v3.4.0** (unreleased) is
+a facelift of the frame around the Agent File, nothing inside it:
+- **Clearance:** the three choices are manila folders lying fanned on the
+  black page, with sheets sticking out, handwritten tab labels in blue,
+  black and red ink, and one mark each (a paper clip and the green
+  triangle on Agent, a coffee ring on Friendly, an EYES ONLY stamp on
+  A-Cell). Friendly reads "for one night at the opera".
+- **Agent Hub:** the flat tabs are a stack of aged manila folders, each
+  tab a third of the width (half on a phone) with the name handwritten
+  and the code typed, the open Agent's folder at the front. Up to six
+  Agents stand in the stack at any width; past six, the strip is + New
+  Recruit, **Agents (N) ▾** and the open Agent (the phone-only menu
+  before).
+- The patina (grain, stains, foxing, stamp mask) is shared as CSS
+  tokens in `theme-folder.css`; A-Cell keeps its flat tabs.
+
+Frontend only; shell cache `dg-hub-shell-v227`. Rollback: revert the
+merge. **v3.1.0**
 (2026-10-10) is PR #72, v2 milestone M3: the Agent File's paper wears as
 SAN falls. Stains, a fold, a coffee ring, blood and, from SAN 9, a torn
 edge are drawn over the whole page on Agent Hub and in the notebook

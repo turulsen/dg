@@ -22,8 +22,8 @@
 <!-- Non-blocking load -- see index.html's matching comment: a plain
      <link rel="stylesheet"> here render-blocks the whole page behind
      a cross-origin fetch, badly on a weak connection. -->
-<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-<noscript><link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet"></noscript>
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Reenie+Beanie&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Reenie+Beanie&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet"></noscript>
 <link rel="stylesheet" href="assets/agent-sheet.css">
 <link rel="stylesheet" href="assets/agent-paper.css">
 <link rel="stylesheet" href="assets/agent-wear.css">
@@ -189,14 +189,86 @@
      label and the panel title. ── */
   .kia-name{ color:var(--red); text-decoration:line-through; text-decoration-thickness:2px; text-decoration-color:var(--red); }
 
-  /* ── Phone: the Agents menu. Past one Agent, the roster's tabs wrapped
-     onto a second row that floated over the page. On a phone the strip
-     is just + New Recruit, an "Agents (N)" tab that opens a list of
-     every Agent, and the open Agent's tab -- see agentMenu below. The
-     desktop strip keeps every tab. ── */
-  .tw.tw-switch{ display:none; }
-  .tw.tw-switch span{ color:#4a3f28; }
-  .tw.tw-switch[aria-expanded="true"]{ background:#c8c1ae; transform:translateY(3px); }
+  /* ── The folder stack (v3.4.0). Every Agent is a manila folder
+     standing in a stack behind the open one: each tab is a third of the
+     width (half on a phone), stepping left, middle, right in the order
+     they stand (layoutStack() below sets --x), with the name
+     handwritten in blue, black or red ink and the code typed small.
+     Each folder shows a strip of its front under the next one's tab;
+     the open Agent's folder always stands at the front, holding the
+     Agent File. Scoped to this page's #tab-strip: A-Cell keeps the
+     shared flat tabs from theme-folder.css. ── */
+  #tab-strip{ display:flex; flex-direction:column; align-items:stretch; flex-wrap:nowrap; padding:0; gap:0; row-gap:0; }
+  #tab-strip .tw{
+    display:block; position:relative; height:72px; margin-top:-40px; padding:0;
+    background:none; border:0; box-shadow:none; border-radius:0; transform:none; z-index:auto;
+    /* the box is the full width of the stack, but only the tab and the
+       visible strip of the folder take a tap: the next folder's box
+       overlaps this one's strip */
+    pointer-events:none; --tw:33.4%;
+  }
+  #tab-strip .tw:first-child{ margin-top:0; }
+  #tab-strip .tw::before,
+  #tab-strip .tw::after{
+    content:''; position:absolute; pointer-events:auto; cursor:pointer;
+    background:var(--manila); background-size:var(--manila-size); background-position:var(--bp,0 0);
+  }
+  #tab-strip .tw::before{
+    top:0; height:35px; left:var(--x,0%); width:var(--tw); border-radius:10px 10px 0 0;
+    clip-path:polygon(0 100%,3% 18%,6% 6%,10% 0,90% 0,94% 6%,97% 18%,100% 100%);
+    box-shadow:inset 0 0 18px rgba(110,75,25,.3);
+  }
+  #tab-strip .tw::after{
+    left:0; right:0; top:34px; bottom:0; border-radius:2px 6px 0 0;
+    box-shadow:inset 0 0 40px rgba(105,70,22,.35), inset 0 1px 0 rgba(255,255,255,.35), 0 -3px 8px rgba(0,0,0,.28);
+  }
+  #tab-strip .tw > span{
+    position:absolute; z-index:1; top:3px; left:calc(var(--x,0%) + 22px); max-width:calc(var(--tw) - 40px);
+    pointer-events:auto; cursor:pointer;
+    font-family:var(--hand); font-size:27px; line-height:30px; letter-spacing:.01em; text-transform:none;
+    color:var(--tw-ink,var(--ink-black)); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    transition:transform 120ms ease;
+  }
+  #tab-strip .tw > span span{ font:inherit; letter-spacing:inherit; text-transform:none; color:inherit; }
+  #tab-strip .tw .tw-no{
+    position:absolute; z-index:1; top:12px; left:calc(var(--x,0%) + var(--tw) - 86px); width:72px; text-align:right;
+    font:normal 10px 'Courier Prime',monospace; letter-spacing:.06em; color:#4a3f28; opacity:.75; pointer-events:none;
+  }
+  /* the code is drawn from data-no, so the tab's text stays just the name */
+  #tab-strip .tw .tw-no::before{ content:attr(data-no); }
+  #tab-strip .tw[data-ink="b"]{ --tw-ink:var(--ink-blue); }
+  #tab-strip .tw[data-ink="r"]{ --tw-ink:var(--ink-red); }
+  #tab-strip .tw.tw-new,
+  #tab-strip .tw.tw-switch{ --tw-ink:#6a5c3f; }
+  #tab-strip .tw[data-shade="1"]{ --m1:#d8c193; --m2:#c9ae7d; --bp:-220px -140px; }
+  #tab-strip .tw[data-shade="2"]{ --m1:#e0cea6; --m2:#cfb78b; --bp:-410px -60px; }
+  #tab-strip .tw:not(.active):hover::before{ filter:brightness(1.06); }
+  #tab-strip .tw:not(.active):hover > span{ transform:translateY(-2px); }
+  #tab-strip .tw:focus-visible{ outline:none; }
+  #tab-strip .tw:focus-visible > span{ outline:2px solid #8fae5a; outline-offset:2px; }
+  /* the open folder comes to the front: just its tab, on the folder */
+  #tab-strip .tw.active{ order:99; height:35px; }
+  #tab-strip .tw.active::after{ display:none; }
+  #tab-strip .tw.active::before{ height:36px; box-shadow:inset 0 8px 10px -6px rgba(255,255,255,.4); }
+  #folder-body{
+    background:var(--manila); background-size:var(--manila-size); border-radius:2px 6px 3px 3px;
+    box-shadow:inset 0 0 46px rgba(105,70,22,.38), 0 -3px 8px rgba(0,0,0,.28);
+  }
+  .folder{ filter:drop-shadow(0 18px 30px rgba(0,0,0,.55)); }
+  @media (max-width:560px){
+    #tab-strip .tw{ --tw:50%; }
+    #tab-strip .tw > span{ font-size:23px; left:calc(var(--x,0%) + 12px); max-width:calc(var(--tw) - 18px); }
+    #tab-strip .tw .tw-no{ display:none; }
+  }
+
+  /* ── Past six Agents the stack would push the file far down, so the
+     strip becomes + New Recruit, an "Agents (N)" folder that opens a
+     list of every Agent, and the open Agent's folder (see agentMenu
+     below). ── */
+  #tab-strip .tw.tw-switch{ display:none; }
+  #tab-strip.ah-switching .tw:not(.tw-new):not(.tw-switch):not(.active){ display:none; }
+  #tab-strip.ah-switching .tw.tw-switch{ display:block; }
+  #tab-strip .tw.tw-switch[aria-expanded="true"] > span{ transform:translateY(-2px); }
   .ah-agent-menu{
     position:absolute; z-index:20; min-width:230px; max-width:calc(100vw - 32px);
     margin-top:2px; background:#efe6cf; border:1px solid #a8a090; box-shadow:0 10px 24px rgba(0,0,0,.5);
@@ -214,20 +286,6 @@
   .ah-agent-menu button[aria-current="true"]::after{ content:'\2713'; margin-left:auto; color:var(--red); }
   .ah-agent-menu .kia-name{ text-decoration-thickness:1.5px; }
   .ah-agent-menu .ah-menu-stamp{ flex:none; font-size:8px; letter-spacing:.14em; border:1.5px solid var(--red); color:var(--red); padding:0 5px; }
-  @media (max-width:560px){
-    .tab-strip.ah-switching .tw:not(.tw-new):not(.tw-switch):not(.active){ display:none; }
-    .tab-strip.ah-switching .tw.tw-switch{ display:flex; }
-    /* One line at any phone width: the menu and + New Recruit keep their
-       size, the open Agent's tab gives way (its name ellipsized). */
-    .tab-strip.ah-switching{ flex-wrap:nowrap; padding-left:14px; }
-    .tab-strip.ah-switching .tw{ flex:none; }
-    .tab-strip.ah-switching .tw.active{ flex:0 1 auto; min-width:0; }
-    .tab-strip.ah-switching .tw.active span{ overflow:hidden; text-overflow:ellipsis; }
-  }
-  /* Narrow phones: "+ New" leaves the open Agent's name more room. */
-  @media (max-width:420px){
-    .tab-strip.ah-switching .tw-new .tw-long{ display:none; }
-  }
 
   /* ── Handouts (internal name; the visible label is "Evidence", matching
      A-Cell's Evidence Locker tab it mirrors): whatever the Handler has
@@ -674,6 +732,25 @@
   const tabStrip = document.getElementById('tab-strip');
   const folderBody = document.getElementById('folder-body');
   let agents = [];
+  // Past this many Agents the stack gives way to the Agents menu.
+  const STACK_MAX = 6;
+
+  // The folder stack (see the #tab-strip CSS): each folder's tab takes
+  // the next position -- left, middle, right (left, right on a phone) --
+  // in the order the folders stand, the open one last at the front, so
+  // two neighbours' tabs never sit in the same place.
+  const phoneStack = window.matchMedia('(max-width:560px)');
+  function layoutStack() {
+    const switching = tabStrip.classList.contains('ah-switching');
+    const shown = [...tabStrip.querySelectorAll('.tw')].filter(t =>
+      t.classList.contains('tw-switch') ? switching
+        : (!switching || t.classList.contains('tw-new') || t.classList.contains('active')));
+    const act = shown.find(t => t.classList.contains('active'));
+    const order = shown.filter(t => t !== act).concat(act ? [act] : []);
+    const pos = phoneStack.matches ? ['0%', '50%'] : ['0%', '33.3%', '66.6%'];
+    order.forEach((t, i) => { t.style.setProperty('--x', pos[i % pos.length]); t.dataset.shade = String(i % 3); });
+  }
+  if (phoneStack.addEventListener) phoneStack.addEventListener('change', layoutStack);
 
   // Sets exactly one tab/panel active by id -- a full class replace (not
   // classList.toggle), since 'tw
@@ -683,11 +760,12 @@
   function setActiveTab(id) {
     closeAgentMenu();
     tabStrip.querySelectorAll('.tw').forEach(t => {
-      if (t.classList.contains('tw-switch')) return; // the phone's Agents menu tab, never itself active
+      if (t.classList.contains('tw-switch')) return; // the Agents menu folder, never itself active
       const isNew = t.classList.contains('tw-new');
       t.className = 'tw' + (isNew ? ' tw-new' : '') + (t.dataset.tab === id ? ' active' : ' inactive');
     });
     folderBody.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + id));
+    layoutStack();
     const slot = document.getElementById('ah-file-' + id);
     if (slot && window.dgAgentFile) { window.dgAgentFile.mount(slot, id); placeAppearance(id); }
     if (id === 'new' && window.dgRecruit) window.dgRecruit.show();
@@ -756,7 +834,7 @@
     if (btn) { btn.setAttribute('aria-expanded', String(on)); btn.innerHTML = 'Appearance ' + (on ? '&#9652;' : '&#9662;'); }
   }
 
-  // The phone's Agents menu: every Agent on this device (the open one
+  // The Agents menu (past STACK_MAX Agents): every Agent on this device (the open one
   // ticked, KIA ones struck through), then + New Recruit. Built fresh on
   // each open from the same roster the tabs come from.
   const agentMenu = document.createElement('div');
@@ -782,9 +860,10 @@
         (current.tab === a.code ? ' aria-current="true"' : '') + '><span' + (lbl ? ' class="kia-name"' : '') + '>' +
         escapeHtml(tabLabel(a)) + '</span>' + stamps + '</button>';
     }).join('') + '<button type="button" role="menuitem" data-code="new">+ New Recruit</button>';
-    const box = agentMenu.parentNode.getBoundingClientRect(), r = sw.getBoundingClientRect();
-    agentMenu.style.left = (r.left - box.left) + 'px';
-    agentMenu.style.top = (r.bottom - box.top + 2) + 'px';
+    // under the folder's tab (its label), not the whole width of the stack
+    const box = agentMenu.parentNode.getBoundingClientRect(), r = (sw.querySelector('span') || sw).getBoundingClientRect();
+    agentMenu.style.left = Math.max(0, r.left - box.left - 12) + 'px';
+    agentMenu.style.top = (r.bottom - box.top + 6) + 'px';
     agentMenu.hidden = false;
     sw.setAttribute('aria-expanded', 'true');
     const first = agentMenu.querySelector('[aria-current="true"]') || agentMenu.querySelector('button');
@@ -822,11 +901,11 @@
 
     const roster = rosterLoad();
     agents = Object.values(roster).sort((a, b) => (b.saved_at || 0) - (a.saved_at || 0));
-    // Phone: with more than one Agent, the strip is + New Recruit, the
-    // Agents menu tab and the open Agent's tab (see agentMenu below).
+    // Past STACK_MAX Agents the stack is + New Recruit, the Agents menu
+    // folder and the open Agent's folder (see agentMenu below).
     closeAgentMenu();
-    tabStrip.classList.toggle('ah-switching', agents.length > 1);
-    if (agents.length > 1) {
+    tabStrip.classList.toggle('ah-switching', agents.length > STACK_MAX);
+    if (agents.length > STACK_MAX) {
       const sw = document.createElement('div');
       sw.className = 'tw tw-switch';
       sw.setAttribute('role', 'button');
@@ -863,7 +942,8 @@
       const tab = document.createElement('div');
       tab.className = 'tw';
       tab.dataset.tab = a.code;
-      tab.innerHTML = `<span id="${tabLabelId}">${escapeHtml(tabLabel(a))}</span>`;
+      tab.dataset.ink = ['b', 'k', 'r'][i % 3]; // the hand that wrote this folder's tab: blue, black, red
+      tab.innerHTML = `<span id="${tabLabelId}">${escapeHtml(tabLabel(a))}</span><i class="tw-no" data-no="${escapeHtml(a.code)}"></i>`;
       tabStrip.appendChild(tab);
 
       const meta = [a.age_range, a.sex, a.nationality].filter(Boolean).map(escapeHtml).join(' &middot; ');
