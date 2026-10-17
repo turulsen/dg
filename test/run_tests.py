@@ -11361,6 +11361,62 @@ def test_friendly_clearance(p):
     record("friendly", "no JS errors across the Friendly flow", not errs, "; ".join(errs)[:300])
 
 
+def test_friendly_case_files(p):
+    """The Friendly picker as open dossiers (v3.5.0): every pregen is a
+    folder with its profession first on the typed sheet, the MORS ET
+    SCIENTIA seal stamped in its group's ink on the flap, the group as a
+    tab touching the folder's edge, and a pencilled remark on only some
+    files. While choosing, the folder frame and its tabs are hidden; after
+    a pick, "Back to ...'s file" returns to the dossier."""
+    errs = []
+    shipped = json.load(open(os.path.join(HERE, "..", "friendly", "pregens.json")))["pregens"]
+    for width in (1280, 390):
+        page = p.new_page(viewport={"width": width, "height": 900})
+        errs += collect_errors(page)
+        install_notes_firestore_stub(page)
+        _block_fonts(page)
+        route_apps_script_ok(page)
+        page.goto(f"{BASE}/friendly.html", wait_until="load", timeout=15000)
+        _pump_until(page, lambda: page.locator(".fr-card").count() == len(shipped))
+        info = page.evaluate("""() => [...document.querySelectorAll('.fr-card')].map(c => {
+            const seal = getComputedStyle(c.querySelector('.fc-seal')), tab = getComputedStyle(c.querySelector('.fc-right'), '::after');
+            const right = c.querySelector('.fc-right').getBoundingClientRect();
+            return { id: c.dataset.id, title: c.querySelector('.fc-title').firstChild.textContent, name: c.querySelector('.fc-name').textContent,
+                     mask: (seal.webkitMaskImage || seal.maskImage || ''), ink: seal.backgroundColor, tab: tab.content, tabLeft: tab.left,
+                     rightW: right.width, note: !!c.querySelector('.fc-note'), sr: c.style.getPropertyValue('--sr') }; })""")
+        by = {q["id"]: q for q in shipped}
+        record("friendly", f"{width}px: every pregen is a file with its profession heading the sheet and its name below",
+               all(i["name"] == by[i["id"]]["name"] and i["title"] and i["title"] in by[i["id"]]["title"] for i in info), str(info[:1]))
+        record("friendly", f"{width}px: the flap carries the MORS ET SCIENTIA seal, stamped in the group's ink",
+               all("mors-scientia-seal.png" in i["mask"] for i in info) and len({i["ink"] for i in info}) == 6, str({i["ink"] for i in info}))
+        record("friendly", f"{width}px: the seals don't all sit at the same angle",
+               len({i["sr"] for i in info}) > 5, str({i["sr"] for i in info}))
+        record("friendly", f"{width}px: the group tab touches the folder's edge",
+               all(i["tab"] != "none" and abs(float(i["tabLeft"].rstrip("px")) - i["rightW"]) < 1 for i in info), str(info[0]["tabLeft"]) + " / " + str(info[0]["rightW"]))
+        notes = sum(i["note"] for i in info)
+        record("friendly", f"{width}px: a pencilled remark on only some files (about one in three)",
+               8 <= notes <= len(info) // 2, f"{notes} of {len(info)}")
+        record("friendly", f"{width}px: while choosing, no folder tabs above the files, and the page doesn't scroll sideways",
+               page.evaluate("() => document.body.classList.contains('fr-picking') && !document.getElementById('fr-tab-strip').getClientRects().length && document.documentElement.scrollWidth <= innerWidth"), "")
+        chips = page.eval_on_selector_all(".fr-chip", "els => els.map(e => e.firstChild.textContent)")
+        record("friendly", f"{width}px: the group filter uses short names",
+               chips == ["All", "Federal", "Tactical", "Military", "Intelligence", "Medical", "Civilian"], str(chips))
+        if width == 390:
+            first = page.locator(".fr-card").first
+            name = first.locator(".fc-name").inner_text().strip()
+            first.click()
+            page.wait_for_selector("#fr-view .pv-bio", timeout=6000)
+            page.click("#fr-change")
+            back = page.locator("#fr-back-dossier")
+            record("friendly", "after a pick, 'Choose a different Agent' shows the files with a way back to the dossier",
+                   back.is_visible() and name.split(" ")[-1] in back.inner_text(), back.inner_text())
+            back.click()
+            record("friendly", "...which goes back to that Agent's dossier",
+                   page.evaluate("() => document.getElementById('panel-dossier').classList.contains('active') && !document.body.classList.contains('fr-picking')"), "")
+        page.close()
+    record("friendly", "no JS exceptions (case files)", not errs, "; ".join(errs[:3]))
+    return errs
+
 def test_friendly_pregen_builder(p=None):
     """scripts/pregens/build.js follows each Dossier's own notes: exactly
     the "Choose N" picks and the number of +20% bonus picks they allow
@@ -11572,6 +11628,7 @@ def main():
 
         safe(test_player_pages_use_in_page_dialogs, browser, area="journey")
         safe(test_friendly_clearance, browser, area="friendly")
+        safe(test_friendly_case_files, browser, area="friendly")
         safe(test_field_notes_notebook, browser, area="notebook")
         safe(test_field_notes_round3, browser, area="notebook")
         safe(test_field_notes_popup_pager, browser, area="notebook")

@@ -18,8 +18,8 @@
 <meta name="twitter:card" content="summary">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-<noscript><link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet"></noscript>
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Reenie+Beanie&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Reenie+Beanie&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet"></noscript>
 <link rel="stylesheet" href="assets/theme-folder.css">
 <style>
   /* ══════════════════════════════════════════════
@@ -65,26 +65,69 @@
      category chips so the rest isn't a twelve-screen scroll. */
   .fr-deal-row{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
   .fr-deal-note{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); }
-  .fr-chips{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
-  .fr-chip{
-    font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-2); cursor:pointer;
-    background:var(--paper); border:1px solid var(--rule); border-radius:14px; padding:5px 11px; min-height:30px;
-  }
-  .fr-chip[aria-pressed="true"]{ background:var(--ink); color:var(--paper); border-color:var(--ink); }
-  .fr-chip .n{ opacity:.6; margin-left:4px; }
-  .fr-card{
-    display:flex; flex-direction:column; gap:6px; text-align:left; cursor:pointer;
-    background:var(--paper); border:1px solid var(--rule); border-top:3px solid var(--ink-3);
-    padding:14px 14px 12px; color:var(--ink); font:inherit;
-    box-shadow:0 2px 6px rgba(0,0,0,.18); transition:transform .12s, border-color .12s;
-  }
-  .fr-card:hover{ transform:translateY(-2px); border-top-color:var(--red); }
-  .fr-card:active{ transform:scale(.98); }
-  .fr-card .fc-title{ font-family:'Courier Prime',monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--red); }
-  .fr-card .fc-name{ font-family:'Special Elite',monospace; font-size:17px; line-height:1.2; }
-  .fr-card .fc-meta{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-2); }
-  .fr-card .fc-skills{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); line-height:1.5; }
-  .fr-card .fc-go{ font-family:'Special Elite',monospace; font-size:9px; letter-spacing:.14em; text-transform:uppercase; margin-top:auto; padding-top:6px; }
+  /* ── The picker as open dossiers (v3.5.0). While choosing, the files
+     lie straight on the black page (no folder, no tabs: body.fr-picking).
+     Each Friendly is a folder lying open: the inside flap carries the
+     MORS ET SCIENTIA seal stamped in the group's ink, a pencilled case
+     number, birth and nationality, and on about one file in three a
+     pencilled remark drawn from the pregen itself; the right side is the
+     typed summary, profession first, with the group as a coloured edge
+     tab. The whole folder is the button. ── */
+  body.fr-picking #fr-tab-strip{ display:none; }
+  body.fr-picking .folder-body{ background:none; box-shadow:none; padding:0; overflow:visible; }
+  body.fr-picking .folder{ filter:none; }
+  .fr-deal-row{ gap:18px; }
+  #fr-deal.paper-btn{ position:relative; border:0; padding:10px 18px 9px 46px; background:#f1ece0; background-image:var(--grain); color:var(--ink);
+    font-family:'Special Elite',monospace; font-size:13px; letter-spacing:.12em; text-transform:uppercase; box-shadow:0 3px 8px rgba(0,0,0,.5); transform:rotate(-1deg); }
+  #fr-deal.paper-btn::before{ content:''; position:absolute; left:15px; top:50%; width:16px; height:24px; margin-top:-12px; border:2.5px solid #9aa0a6; border-radius:9px; }
+  #fr-deal.paper-btn:disabled{ opacity:.5; }
+  .fr-back-dossier{ appearance:none; border:0; background:none; cursor:pointer; padding:4px 0; font-family:'Courier Prime',monospace; font-size:12px;
+    letter-spacing:.08em; color:#c9c1a6; text-decoration:underline; text-underline-offset:4px; }
+  .fr-back-dossier[hidden]{ display:none; }
+  .fr-chips{ display:flex; flex-wrap:wrap; gap:6px 18px; margin-bottom:26px; }
+  .fr-chip{ appearance:none; border:0; background:none; cursor:pointer; padding:3px 0; min-height:30px; color:#a49c84;
+    font-family:'Courier Prime',monospace; font-size:12px; letter-spacing:.12em; text-transform:uppercase; }
+  .fr-chip::before{ content:''; display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:7px; background:var(--c,#a49c84); }
+  .fr-chip[aria-pressed="true"]{ color:#efe8d2; text-decoration:underline; text-decoration-color:#c96a6a; text-decoration-thickness:2px; text-underline-offset:6px; }
+  .fr-chip .n{ opacity:.6; margin-left:5px; }
+  .fr-chip:focus-visible, .fr-card:focus-visible{ outline:2px solid #8fae5a; outline-offset:4px; }
+  .fr-grid{ grid-template-columns:repeat(auto-fill,minmax(380px,1fr)); gap:34px 30px; }
+  .fr-card{ --m1:#dcc79b; --m2:#c9ae80; position:relative; display:grid; grid-template-columns:150px 1fr; margin-right:22px; padding:0; border:0;
+    background:none; text-align:left; cursor:pointer; color:var(--ink); font:inherit; filter:drop-shadow(0 14px 22px rgba(0,0,0,.6)); transition:transform .15s; }
+  .fr-card:nth-child(2n){ --m1:#d7bf91; --m2:#c3a676; }
+  .fr-card:hover{ transform:translateY(-3px); }
+  .fr-card:active{ transform:scale(.985); }
+  .fc-flap, .fc-right{ position:relative; display:block; background:var(--manila); background-size:var(--manila-size); }
+  .fc-flap{ display:flex; flex-direction:column; border-radius:4px 0 0 4px; padding:16px 14px 14px;
+    box-shadow:inset -16px 0 18px -12px rgba(60,35,10,.5), inset 0 0 34px rgba(105,70,22,.35); }
+  .fc-right{ border-radius:0 4px 4px 0; padding:12px 12px 12px 6px; box-shadow:inset 12px 0 14px -12px rgba(60,35,10,.45), inset 0 0 34px rgba(105,70,22,.32); }
+  /* the group: a coloured tab on the folder's edge */
+  .fc-right::after{ content:attr(data-g); position:absolute; left:100%; top:22px; writing-mode:vertical-rl; padding:10px 3px; border-radius:0 5px 5px 0;
+    background:var(--c); color:rgba(255,248,230,.95); font-family:'Courier Prime',monospace; font-size:8.5px; letter-spacing:.22em; text-transform:uppercase;
+    box-shadow:2px 2px 4px rgba(0,0,0,.4); }
+  /* the seal (assets/mors-scientia-seal.png as a mask, so it takes the group's ink) */
+  .fc-seal{ display:block; width:112px; height:112px; margin:0 auto 4px; background:var(--sc); transform:rotate(var(--sr,-6deg)); opacity:.8; mix-blend-mode:multiply;
+    -webkit-mask:url(assets/mors-scientia-seal.png) center/contain no-repeat; mask:url(assets/mors-scientia-seal.png) center/contain no-repeat; }
+  .fc-prt{ display:block; margin:8px 4px 0; font-family:'Courier Prime',monospace; font-size:8.5px; line-height:1.5; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-2); }
+  .fc-prt b{ display:block; font:400 20px/1 var(--hand); letter-spacing:0; text-transform:none; color:var(--ink-blue); }
+  .fc-note{ display:block; margin:auto 2px 0; padding-top:12px; font:400 23px/.95 var(--hand); color:var(--fc-ink,var(--ink-blue)); transform:rotate(-3deg); }
+  .fc-note[data-ink="r"]{ --fc-ink:var(--ink-red); } .fc-note[data-ink="k"]{ --fc-ink:var(--ink-black); }
+  .fc-sheet{ position:relative; display:block; height:100%; padding:12px 14px; background:#f5f0e2; background-image:var(--grain); box-shadow:0 1px 3px rgba(0,0,0,.3); transform:rotate(.5deg); }
+  .fc-top{ display:flex; justify-content:space-between; gap:10px; font-family:'Courier Prime',monospace; font-size:8.5px; letter-spacing:.18em; color:var(--ink-3); text-transform:uppercase; }
+  .fc-title{ display:block; margin-top:5px; padding:5px 0 6px; border-top:2px solid rgba(42,34,18,.75); border-bottom:1px solid rgba(42,34,18,.45);
+    font-family:'Special Elite',monospace; font-size:16px; line-height:1.2; letter-spacing:.03em; color:#7a1f16; text-transform:uppercase; }
+  .fc-title small{ display:block; margin-top:2px; font-family:'Courier Prime',monospace; font-size:9.5px; letter-spacing:.14em; color:var(--ink-2); }
+  .fc-name{ display:block; margin-top:8px; font-family:'Special Elite',monospace; font-size:19px; line-height:1.15; }
+  .fc-meta{ display:block; margin-top:2px; font-family:'Courier Prime',monospace; font-size:11.5px; color:var(--ink-2); }
+  .fc-vit{ display:flex; gap:6px; margin-top:9px; }
+  .fc-vit > span{ flex:1; text-align:center; border:1.5px solid rgba(42,34,18,.6); padding:2px 0 3px; }
+  .fc-vit small{ display:block; font-family:'Courier Prime',monospace; font-size:7.5px; letter-spacing:.16em; color:var(--ink-3); }
+  .fc-vit b{ font-family:'Special Elite',monospace; font-size:15px; font-weight:400; }
+  .fc-skills{ display:block; margin-top:8px; font-family:'Courier Prime',monospace; font-size:11.5px; line-height:1.65; }
+  .fc-skills > span{ display:flex; justify-content:space-between; border-bottom:1px dotted rgba(74,63,40,.4); }
+  .fc-go{ display:flex; justify-content:flex-end; margin-top:12px; }
+  .fc-go > span{ font-family:'Special Elite',monospace; font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:#2f6a3a; border:2px solid currentColor;
+    padding:3px 10px; border-radius:3px; transform:rotate(-3deg); -webkit-mask-image:var(--stampmask); mask-image:var(--stampmask); }
   .fr-empty{ font-family:'Courier Prime',monospace; font-size:13px; color:var(--ink-3); font-style:italic; padding:22px 6px; text-align:center; }
   .fr-pending{ margin-top:18px; font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-2); }
   .fr-pending summary{ cursor:pointer; letter-spacing:.06em; }
@@ -192,14 +235,16 @@
      density; skills run three across. Rolls are still real buttons. ── */
   @media (max-width:560px){
     body.folder-theme{ padding:5px 6px 60px; }
-    .fr-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
-    .fr-card{ padding:9px 9px 8px; gap:3px; }
-    .fr-card .fc-title{ font-size:8.5px; letter-spacing:.06em; }
-    .fr-card .fc-name{ font-size:14px; }
-    .fr-card .fc-meta{ font-size:10px; }
-    .fr-card .fc-skills{ font-size:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .fr-card .fc-go{ display:none; }
-    .fr-chip{ font-size:10.5px; padding:4px 9px; }
+    .fr-grid{ grid-template-columns:1fr; gap:24px; }
+    .fr-card{ grid-template-columns:108px 1fr; margin-right:18px; }
+    .fc-flap{ padding:12px 8px 10px; } .fc-seal{ width:84px; height:84px; }
+    .fc-prt{ margin:6px 0 0; font-size:7px; } .fc-prt b{ font-size:16px; } .fc-note{ font-size:18px; padding-top:8px; }
+    .fc-right{ padding:8px 8px 8px 4px; } .fc-right::after{ font-size:7px; padding:8px 2px; }
+    .fc-sheet{ padding:9px 10px 10px; } .fc-top{ font-size:7px; } .fc-title{ font-size:13.5px; } .fc-title small{ font-size:8px; }
+    .fc-name{ font-size:15.5px; } .fc-meta{ font-size:10px; } .fc-vit b{ font-size:12.5px; } .fc-vit small{ font-size:6.5px; }
+    .fc-skills{ font-size:10px; line-height:1.55; } .fc-skills > span:nth-child(3){ display:none; } .fc-go > span{ font-size:10px; }
+    #fr-deal.paper-btn{ font-size:11px; padding:8px 12px 7px 36px; } #fr-deal.paper-btn::before{ left:11px; width:13px; height:19px; margin-top:-10px; }
+    .fr-chips{ gap:2px 12px; } .fr-chip{ font-size:10px; }
     body.fr-playing .hub-header h1, body.fr-playing .hub-header p{ display:none; }
     body.fr-playing .hub-header{ padding:4px 6px 8px; display:flex; align-items:center; gap:12px; }
     body.fr-playing .hub-header .stamp{ margin:0; padding:2px 8px; font-size:8px; }
@@ -252,7 +297,7 @@
   }
 </style>
 </head>
-<body class="folder-theme">
+<body class="folder-theme fr-picking">
 
 <div class="hub-header">
   <a class="back-link" id="fr-back-link" href="index.html">&lt;- Clearance</a>
@@ -276,6 +321,7 @@
         <div class="fr-deal-row">
           <button type="button" class="paper-btn primary" id="fr-deal" disabled>Deal me an Agent</button>
           <span class="fr-deal-note">or pick one below</span>
+          <button type="button" class="fr-back-dossier" id="fr-back-dossier" hidden></button>
         </div>
         <div class="fr-chips" id="fr-chips" role="group" aria-label="Kind of Agent"></div>
         <div class="fr-grid" id="fr-grid"><div class="fr-empty">Loading dossiers…</div></div>
@@ -317,6 +363,10 @@
     strip.querySelectorAll('.tw').forEach(function (t) {
       t.className = 'tw ' + (t.dataset.tab === id ? 'active' : 'inactive');
     });
+    document.body.classList.toggle('fr-picking', id === 'pick');
+    var back = document.getElementById('fr-back-dossier');
+    back.hidden = !(id === 'pick' && current);
+    if (current) back.textContent = '\u2190 Back to ' + current.p.name.split(' ').slice(-1)[0] + "'s file";
     document.querySelectorAll('.folder-body > .tab-panel').forEach(function (p) {
       p.classList.toggle('active', p.id === 'panel-' + id);
     });
@@ -332,12 +382,14 @@
 
   function cellById(id) { return cells.filter(function (c) { return c.id === id; })[0] || null; }
 
-  function topSkills(p, n) {
-    return p.skills.slice().sort(function (a, b) { return b.value - a.value; }).slice(0, n)
-      .map(function (s) { return s.name + ' ' + s.value + '%'; }).join(' · ');
-  }
-
   var GROUP_ORDER = ['Federal Agents & Police', 'Special Ops & Tactical', 'Military', 'Intelligence', 'Medical & Rescue', 'Civilians & Specialists'];
+  // Each group's short label, folder tab colour and stamp ink.
+  var GROUP_LOOK = {
+    'Federal Agents & Police': ['Federal', '#c9a24a', '#6b4a10'], 'Special Ops & Tactical': ['Tactical', '#9c5a48', '#8b1f17'],
+    'Military': ['Military', '#8f9a6e', '#3d5a2b'], 'Intelligence': ['Intelligence', '#7f909e', '#2d4a72'],
+    'Medical & Rescue': ['Medical', '#b9a04a', '#7a5a12'], 'Civilians & Specialists': ['Civilian', '#a98a5f', '#4a3a22']
+  };
+  function groupLook(g) { return GROUP_LOOK[g] || ['Civilian', '#a98a5f', '#4a3a22']; }
   var group = '';
   var chipsEl = document.getElementById('fr-chips');
   var dealBtn = document.getElementById('fr-deal');
@@ -360,9 +412,10 @@
     if (group && !counts[group]) group = '';
     var groups = GROUP_ORDER.filter(function (g) { return counts[g]; });
     chipsEl.hidden = base.length < 9 || groups.length < 2;
-    chipsEl.innerHTML = [['', 'All', base.length]].concat(groups.map(function (g) { return [g, g, counts[g]]; }))
+    chipsEl.innerHTML = [['', 'All', base.length]].concat(groups.map(function (g) { return [g, groupLook(g)[0], counts[g]]; }))
       .map(function (c) {
-        return '<button type="button" class="fr-chip" data-group="' + esc(c[0]) + '" aria-pressed="' + (group === c[0]) + '">' +
+        return '<button type="button" class="fr-chip" data-group="' + esc(c[0]) + '" aria-pressed="' + (group === c[0]) + '"' +
+          (c[0] ? ' style="--c:' + groupLook(c[0])[1] + '" title="' + esc(c[0]) + '"' : '') + '>' +
           esc(c[1]) + '<span class="n">' + c[2] + '</span></button>';
       }).join('');
   }
@@ -386,16 +439,50 @@
       gridEl.innerHTML = '<div class="fr-empty">' + (cell ? 'No Friendlies in this Cell yet — ask your Handler.' : 'No Agents ready yet.') + '</div>';
       return;
     }
-    gridEl.innerHTML = list.map(function (p) {
-      return '<button type="button" class="fr-card" data-id="' + esc(p.id) + '">' +
-        '<span class="fc-title">' + esc(p.title) + '</span>' +
-        '<span class="fc-name">' + esc(p.name) + '</span>' +
-        '<span class="fc-meta">' + esc(p.age) + ' · ' + esc(p.sex) + '</span>' +
-        '<span class="fc-skills">' + esc(topSkills(p, 3)) + '</span>' +
-        '<span class="fc-go">-&gt; Play this Agent</span>' +
-        '</button>';
-    }).join('');
+    gridEl.innerHTML = list.map(fileHtml).join('');
   }
+  // A stable number per pregen: its case number, its seal's tilt, and
+  // whether (and which) remark is pencilled on its flap.
+  function hashOf(s) { var h = 7; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; }
+  // A remark on about one file in three, drawn from the pregen itself.
+  function remark(p, h) {
+    if (h % 3) return '';
+    var his = p.sex === 'Female' ? 'her' : 'his';
+    var best = p.skills.slice().sort(function (a, b) { return b.value - a.value; })[0];
+    var gun = p.weapons.filter(function (w) { return !/unarmed/i.test(w.name); })[0];
+    var bond = p.bonds[0];
+    var opts = [
+      bond && bond.relationship.length <= 12 ? bond.relationship.toLowerCase() + ' waits at home' : '',
+      gun ? 'keeps ' + his + ' ' + gun.name.toLowerCase() + ' close' : '',
+      best ? 'best ' + best.name.replace(/ \(.*\)/, '') + ' we have' : '',
+      p.derived.san < 60 ? 'watch this one' : (p.motivations[0] ? '\u201c' + p.motivations[0].toLowerCase() + '\u201d' : '')
+    ].filter(Boolean);
+    return opts.length ? opts[(h >> 3) % opts.length] : '';
+  }
+  function fileHtml(p) {
+    var look = groupLook(p.group), h = hashOf(p.id);
+    var split = p.title.indexOf(' - ') > 0 ? [p.title.slice(0, p.title.indexOf(' - ')), p.title.slice(p.title.indexOf(' - ') + 3)] : [p.employer.split(/\s[-(]/)[0], p.title];
+    var best = p.skills.slice().sort(function (a, b) { return b.value - a.value; }).slice(0, 3);
+    var note = remark(p, h);
+    var d = p.derived;
+    return '<button type="button" class="fr-card" data-id="' + esc(p.id) + '" style="--c:' + look[1] + ';--sc:' + look[2] + ';--sr:' + ((h % 25) - 12) + 'deg">' +
+      '<span class="fc-flap"><span class="fc-seal" aria-hidden="true"></span>' +
+        '<span class="fc-prt">Case no.<b>' + String(4100 + h % 900).padStart(5, '0') + '</b></span>' +
+        '<span class="fc-prt">Born<b>' + esc(String(p.dob || p.age).replace(/^\d+ /, '')) + '</b></span>' +
+        '<span class="fc-prt">Nationality<b>' + esc(p.nationality) + '</b></span>' +
+        (note ? '<span class="fc-note" data-ink="' + ['b', 'r', 'k'][h % 3 === 0 ? (h >> 5) % 3 : 0] + '">' + esc(note) + '</span>' : '') +
+      '</span>' +
+      '<span class="fc-right" data-g="' + esc(look[0]) + '"><span class="fc-sheet">' +
+        '<span class="fc-top"><span>Clearance: Friendly</span><span>' + esc(p.id) + '</span></span>' +
+        '<span class="fc-title">' + esc(split[1]) + '<small>' + esc(split[0]) + '</small></span>' +
+        '<span class="fc-name">' + esc(p.name) + '</span><span class="fc-meta">' + esc(p.age) + ' · ' + esc(p.sex) + '</span>' +
+        '<span class="fc-vit"><span><small>HP</small><b>' + d.hp + '</b></span><span><small>WP</small><b>' + d.wp + '</b></span>' +
+          '<span><small>SAN</small><b>' + d.san + '</b></span><span><small>BP</small><b>' + d.bp + '</b></span></span>' +
+        '<span class="fc-skills">' + best.map(function (k) { return '<span><span>' + esc(k.name) + '</span><span>' + k.value + '%</span></span>'; }).join('') + '</span>' +
+        '<span class="fc-go"><span>Activate</span></span>' +
+      '</span></span></button>';
+  }
+  document.getElementById('fr-back-dossier').addEventListener('click', function () { showTab('dossier'); window.scrollTo(0, 0); });
   gridEl.addEventListener('click', function (e) {
     var card = e.target.closest('.fr-card');
     if (card) pick(card.dataset.id, cellFilterEl.value || null);
