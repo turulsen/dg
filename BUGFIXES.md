@@ -6696,3 +6696,19 @@ fixed before v3.3.0 went to the test site:
   who is signed in before each saved roll, and signs in again and retries
   once if refused.
 `sw.js` `CACHE_NAME` v226.
+
+## Agent Hub folder stack (v3.5.1)
+
+**With + New Recruit open, the stack split in two.** The folder stack
+(v3.4.0) set each tab's overlap by DOM order: the first `.tw` sat flush
+(`:first-child`), every other one tucked 40px up under the folder
+behind it. But the open folder always stands at the front (`order:99`),
+and + New Recruit is first in the DOM, so with it open it kept its
+"flush" offset at the bottom of the stack (a full strip of empty folder
+showed above it, splitting it off from the others), while the new top
+folder took the tuck and rode up over the Cover Identity note.
+Reported from a phone with four Agents. `layoutStack()` now sets the
+offset by standing order, the same order it already used for the tab
+positions: the top folder flush, every later one -40px. A test opens
++ New Recruit and checks the tabs stay 32px apart with nothing above
+the strip.

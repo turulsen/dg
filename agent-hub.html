@@ -748,7 +748,14 @@
     const act = shown.find(t => t.classList.contains('active'));
     const order = shown.filter(t => t !== act).concat(act ? [act] : []);
     const pos = phoneStack.matches ? ['0%', '50%'] : ['0%', '33.3%', '66.6%'];
-    order.forEach((t, i) => { t.style.setProperty('--x', pos[i % pos.length]); t.dataset.shade = String(i % 3); });
+    // The overlap goes by standing order too: the top folder sits flush,
+    // every later one tucks under the strip of the one behind it. (By DOM
+    // order, + New Recruit -- first in the DOM -- kept a gap above it when
+    // open at the front, and the new top folder rode up over the page.)
+    order.forEach((t, i) => {
+      t.style.setProperty('--x', pos[i % pos.length]); t.dataset.shade = String(i % 3);
+      t.style.marginTop = i === 0 ? '0px' : '-40px';
+    });
   }
   if (phoneStack.addEventListener) phoneStack.addEventListener('change', layoutStack);
 
