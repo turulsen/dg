@@ -41,6 +41,24 @@
 
   /* Line grid -- 27px to match ruled paper */
   --line:27px;
+
+  /* Patina (v3.4.0): aged manila for the Clearance folders and Agent
+     Hub's folder stack -- paper grain, large faint stains, foxing
+     spots, and a patchy mask for rubber stamps. Inline SVG noise, no
+     image files. --manila stacks them over a two-tone fill that a
+     folder can shift with --m1/--m2. */
+  --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='260'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .32 0 0 0 0 .22 0 0 0 0 .08 0 0 0 .32 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --blotch:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='700' height='520'%3E%3Cfilter id='b'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.008 .012' numOctaves='4' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 .42 0 0 0 0 .27 0 0 0 0 .08 2.6 0 0 0 -1.25'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23b)'/%3E%3C/svg%3E");
+  --fox:radial-gradient(circle at 12% 78%, rgba(120,70,20,.22) 0 2px, transparent 3px),
+        radial-gradient(circle at 83% 22%, rgba(120,70,20,.2) 0 2.5px, transparent 4px),
+        radial-gradient(circle at 66% 88%, rgba(120,70,20,.18) 0 1.5px, transparent 3px),
+        radial-gradient(circle at 40% 12%, rgba(120,70,20,.14) 0 3px, transparent 6px);
+  --stampmask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='m'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -3 2.1'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23m)'/%3E%3C/svg%3E");
+  --manila:var(--blotch),var(--fox),var(--grain),linear-gradient(175deg,var(--m1,#ddc89c),var(--m2,#cdb486));
+  --manila-size:700px 520px,auto,260px,auto;
+  /* Handwriting on tabs and labels, in three inks */
+  --hand:'Reenie Beanie','Comic Sans MS',cursive;
+  --ink-blue:#23407a; --ink-black:#1d1a16; --ink-red:#a3221c;
 }
 
 body.folder-theme{

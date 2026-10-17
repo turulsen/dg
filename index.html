@@ -37,8 +37,8 @@
      no-JS case. display=swap in the URL only controls how TEXT
      renders once this CSS has already loaded -- it does nothing for
      whether the <link> itself blocks the page. -->
-<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-<noscript><link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet"></noscript>
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Reenie+Beanie&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Reenie+Beanie&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet"></noscript>
 <link rel="stylesheet" href="assets/theme-folder.css">
 <style>
   :root{
@@ -98,30 +98,37 @@
     font-family:'Special Elite',monospace; font-weight:400; font-size:clamp(16px,3vw,22px);
     color:#b7b09a; margin:0; letter-spacing:.12em; text-transform:uppercase;
   }
-  .folder-wrap{ max-width:900px; margin:8px auto 0; padding:0 6px; }
+  .folder-wrap{ max-width:980px; margin:8px auto 0; padding:0 6px; }
+  .clearance-head{ text-align:center; margin:6px 0 44px; }
+  .clearance-head .paper-title-sub{ color:#c96a6a; }
+  .clearance-head .paper-title{ color:#d8d0b6; }
 
-  /* ── Clearance cards: each one its own little manila folder --
-     an ear-tab (the clearance code) sitting above a paper body (title,
-     copy, go-link), the same tab-over-body overlap trick as .tw/
-     .folder-body but as two standalone folders side by side instead
-     of one folder's tab strip. ── */
-  .clearance-choices{
-    display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:30px;
-    margin-bottom:var(--s6);
-  }
+  /* ── Clearance (v3.4.0): three manila folders lying fanned on the
+     black page, each at its own slight angle with a sheet sticking out
+     of the top, an ear-tab with a taped-on handwritten label, and one
+     mark each -- a paper clip and the green triangle on Agent, a coffee
+     ring on Friendly, an EYES ONLY stamp on A-Cell. Hover straightens
+     a folder and lifts it. On a phone they stack one under another. ── */
+  .clearance-choices{ display:flex; justify-content:center; padding:10px 0 20px; margin-bottom:var(--s6); }
   .clearance-choice{
-    display:flex; flex-direction:column; text-decoration:none; color:var(--ink);
-    filter:drop-shadow(0 14px 26px rgba(0,0,0,.4)) drop-shadow(0 3px 8px rgba(0,0,0,.3));
-    transition:transform .15s;
+    --m1:#e0cb9d; --m2:#c9ae7c; --tilt:0deg; --lift:0px;
+    width:310px; flex:none; position:relative; display:flex; flex-direction:column;
+    text-decoration:none; color:var(--ink);
+    transform:rotate(var(--tilt)) translateY(var(--lift)); transition:transform .15s;
   }
-  .clearance-choice:hover{ transform:translateY(-3px); }
+  .clearance-choice.cc-agent{ --tilt:-5deg; --lift:12px; margin-right:-6px; }
+  .clearance-choice.cc-friendly{ --tilt:1.5deg; --m1:#d9c294; --m2:#c2a674; z-index:2; }
+  .clearance-choice.cc-acell{ --tilt:-1.5deg; --lift:18px; --m1:#e3d1a9; margin-left:-6px; }
+  .clearance-choice:hover{ transform:rotate(0) translateY(-6px); z-index:3; }
+  .clearance-choice:focus-visible{ outline:none; }
+  .clearance-choice:focus-visible .cc-body{ outline:2px solid #8fae5a; outline-offset:4px; }
   /* Tap/press feedback -- :active alone doesn't fire reliably on iOS
      Safari for a plain <a> with no touch listener anywhere on the page
      (a well-known iOS quirk), which is why a tap here used to show
      nothing at all until the real navigation eventually landed. The
      inline touchstart handler on .clearance-choices below is what
      actually unlocks :active on iOS; this rule is what it then shows. */
-  .clearance-choice:active{ transform:translateY(0) scale(.97); }
+  .clearance-choice:active{ transform:rotate(var(--tilt)) scale(.97); }
   .clearance-choice:active .cc-body{ filter:brightness(.92); }
   /* .cc-tapped: JS-applied client-side (see the script at the bottom of
      this file) the instant a card is tapped, since :active alone clears
@@ -131,38 +138,69 @@
      go-link text to an explicit "Opening..." for the whole navigation,
      however long it ends up taking; the other card dims and stops
      accepting taps so a second, confused tap can't fire a second nav. */
-  .clearance-choice.cc-tapped{ transform:translateY(0) scale(.97); }
+  .clearance-choice.cc-tapped{ transform:rotate(var(--tilt)) scale(.97); }
   .clearance-choice.cc-tapped .cc-body{ filter:brightness(.92); }
   .clearance-choices.cc-nav-pending .clearance-choice:not(.cc-tapped){
     opacity:.4; pointer-events:none; transition:opacity .15s;
   }
+  /* the sheet sticking out of the folder */
+  .clearance-choice::before{
+    content:''; position:absolute; z-index:0; left:12px; right:28px; top:14px; height:90px; background:#f3eedf;
+    background-image:var(--grain),repeating-linear-gradient(transparent 0 11px,rgba(60,60,80,.18) 11px 12px);
+    transform:rotate(1.8deg); box-shadow:0 2px 6px rgba(0,0,0,.45);
+  }
+  .clearance-choice.cc-friendly::before{ left:46px; right:8px; top:18px; transform:rotate(-2.4deg); background-color:#e9e4d2; }
+  /* the ear-tab: its taped-on label is the handwritten word in data-hand
+     (the tab's own text stays for screen readers) */
   .cc-tab{
-    align-self:flex-start;
-    font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.2em;
-    text-transform:uppercase; color:var(--ink-2);
-    background:var(--tab-inactive); border:1px solid #a8a090; border-bottom:none;
-    border-radius:7px 7px 0 0; padding:8px 18px 9px; margin:0 0 -1px 20px;
-    position:relative; z-index:1; transition:background .15s;
+    position:relative; z-index:2; align-self:flex-start; margin:0 0 -1px var(--ear,18px);
+    background:var(--manila); background-size:var(--manila-size); border-radius:9px 9px 0 0;
+    padding:6px 16px 4px; font-size:0; line-height:0;
   }
-  .clearance-choice.cc-acell .cc-tab{ color:var(--red); }
-  .clearance-choice.cc-friendly .cc-tab{ color:#7a5a12; }
-  .clearance-choice:hover .cc-tab{ background:var(--tab-active); }
+  .cc-friendly .cc-tab{ --ear:140px; }
+  .cc-acell .cc-tab{ --ear:110px; }
+  .cc-tab::after{
+    content:attr(data-hand); display:inline-block; font:26px/1 var(--hand); color:var(--hand-ink,var(--ink-blue));
+    background:#f2ecdc; background-image:var(--grain); padding:2px 10px 0; transform:rotate(-1.5deg);
+    box-shadow:0 1px 1px rgba(0,0,0,.25);
+  }
+  .cc-friendly .cc-tab{ --hand-ink:var(--ink-black); }
+  .cc-acell .cc-tab{ --hand-ink:var(--ink-red); }
   .cc-body{
-    background:var(--paper); box-shadow:var(--paper-shadow);
-    border-radius:0 9px 9px 9px; padding:22px 20px 18px;
-    display:flex; flex-direction:column; gap:8px; flex:1;
-    position:relative; z-index:2; overflow:hidden;
+    position:relative; z-index:1; flex:1; display:flex; flex-direction:column; gap:8px; min-height:180px; padding:20px 22px 18px;
+    background:var(--manila); background-size:var(--manila-size); border-radius:2px 3px 3px 3px;
+    box-shadow:inset 0 0 38px rgba(105,70,22,.4), 0 16px 26px rgba(0,0,0,.6), 0 2px 4px rgba(0,0,0,.45);
+    overflow:hidden; /* the coffee ring stays on the folder */
   }
-  .cc-body::before{ content:''; position:absolute; inset:0 0 auto 0; height:3px; }
-  .clearance-choice.cc-agent .cc-body::before{ background:var(--ink-3); }
-  .clearance-choice.cc-acell .cc-body::before{ background:var(--red); }
-  .clearance-choice.cc-friendly .cc-body::before{ background:#c9a15a; }
-  .cc-title{ font-family:'Special Elite',monospace; font-size:19px; letter-spacing:.02em; }
-  .clearance-choice p{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.65; margin:0; }
+  .cc-title{ font-family:'Special Elite',monospace; font-size:21px; letter-spacing:.02em; }
+  .clearance-choice p{ font-family:'Courier Prime',monospace; font-size:12.5px; color:var(--ink-2); line-height:1.6; margin:0; }
   .cc-go{
-    font-family:'Special Elite',monospace; font-size:9px; letter-spacing:.14em;
+    font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.14em;
     text-transform:uppercase; color:var(--ink); margin-top:auto; padding-top:6px;
   }
+  .cc-friendly .cc-body::after{
+    content:''; position:absolute; right:-34px; top:-38px; width:110px; height:110px; border-radius:50%; pointer-events:none;
+    background:radial-gradient(circle,transparent 0 47px,rgba(95,55,15,.38) 48px 51px,rgba(95,55,15,.14) 53px,transparent 55px);
+  }
+  .cc-acell .cc-body::after{
+    content:'EYES ONLY'; position:absolute; right:18px; bottom:16px; transform:rotate(-10deg); pointer-events:none;
+    font:13px 'Special Elite',monospace; letter-spacing:.12em; color:var(--ink-red); border:2px solid currentColor; padding:3px 8px; border-radius:3px;
+    -webkit-mask-image:var(--stampmask); mask-image:var(--stampmask); opacity:.85;
+  }
+  /* Agent: the worn green triangle in the bottom-right corner, and a paper clip */
+  .cc-agent .cc-body::after{
+    content:''; position:absolute; right:14px; bottom:12px; width:44px; height:41px; pointer-events:none;
+    background:url(assets/delta-green-triangle.png) center/contain no-repeat; opacity:.85; transform:rotate(-4deg);
+  }
+  .cc-agent::after{ content:''; position:absolute; z-index:4; right:46px; top:22px; width:16px; height:50px; border:2.5px solid #a7adb2; border-radius:9px; }
+  @media (max-width:760px){
+    .clearance-choices{ flex-direction:column; align-items:center; gap:46px; padding-top:14px; }
+    .clearance-choice{ width:min(330px,92%); margin:0 !important; --lift:0px; }
+    .clearance-choice.cc-agent{ --tilt:-2.5deg; }
+    .clearance-choice.cc-acell{ --tilt:1.5deg; }
+    .cc-body{ min-height:150px; }
+  }
+  @media (prefers-reduced-motion:reduce){ .clearance-choice{ transition:none; } }
 
   .notes-block{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.8; }
   .notes-block h3{
@@ -192,20 +230,10 @@
 </div>
 
 <div class="folder-wrap">
-  <div class="folder">
-    <div class="folder-body">
-      <div class="paper">
-        <div class="paper-rules"></div>
-        <div class="paper-margin"></div>
-        <div class="holes"><div class="hole"></div><div class="hole"></div><div class="hole"></div></div>
-        <div class="paper-content">
-          <div class="paper-header">
-            <div>
-              <div class="paper-title-sub">Clearance Required</div>
-              <div class="paper-title">Choose Your Access Level</div>
-            </div>
-          </div>
-
+  <div class="clearance-head">
+    <div class="paper-title-sub">Clearance Required</div>
+    <div class="paper-title">Choose Your Access Level</div>
+  </div>
           <div class="clearance-choices">
             <!-- Both routed through the app shell (hub.html) now, not a
                  direct page load -- keeps Table Radio/Dice Roller alive
@@ -216,7 +244,7 @@
                  player switch between Agent Hub and A-Cell afterward
                  without leaving either behind. -->
             <a class="clearance-choice cc-agent" href="hub.html">
-              <span class="cc-tab">Clearance: Agent</span>
+              <span class="cc-tab" data-hand="Agent">Clearance: Agent</span>
               <span class="cc-body">
                 <span class="cc-title">AGENT</span>
                 <p>Your Agents, their sheets and Field IDs.</p>
@@ -228,15 +256,15 @@
                  one-shot player has none. Two taps from here to rolling:
                  this card, then an Agent. -->
             <a class="clearance-choice cc-friendly" href="friendly.html">
-              <span class="cc-tab">Clearance: Friendly</span>
+              <span class="cc-tab" data-hand="Friendly">Clearance: Friendly</span>
               <span class="cc-body">
                 <span class="cc-title">FRIENDLY</span>
-                <p>A ready-made Agent for one night. No sign-up.</p>
+                <p>A ready-made Agent for one night at the opera. No sign-up.</p>
                 <span class="cc-go">-&gt; Play a Friendly</span>
               </span>
             </a>
             <a class="clearance-choice cc-acell" href="hub.html?start=a-cell.html">
-              <span class="cc-tab">Clearance: A-Cell</span>
+              <span class="cc-tab" data-hand="A-Cell">Clearance: A-Cell</span>
               <span class="cc-body">
                 <span class="cc-title">A-CELL</span>
                 <p>Handler tools. Password required.</p>
@@ -244,10 +272,6 @@
               </span>
             </a>
           </div>
-        </div>
-      </div>
-    </div>
-  </div>
 </div>
 
 <footer class="site-footer">Delta Green is a trademark of Arc Dream Publishing. Unofficial fan-made campaign tools.</footer>

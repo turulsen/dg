@@ -1256,7 +1256,7 @@ def test_agent_hub(p):
 
     # Clicking a tab switches the active panel -- and the one Agent File
     # moves into it and loads that Agent.
-    page.click('.tw[data-tab="PRIY-AN34"]')
+    page.click('.tw[data-tab="PRIY-AN34"] > span')
     page.wait_for_timeout(150)
     record("hub", "clicking a tab activates that Agent's panel and deactivates the others",
            "active" in page.eval_on_selector("#panel-PRIY-AN34", "el => el.className")
@@ -1696,7 +1696,7 @@ def test_agent_hub_handouts(p):
     record("hub", "closing the viewer hides it again",
            not page.is_visible(".dg-ev-viewer"), "")
 
-    page.click('.tw[data-tab="PRIY-AN34"]')
+    page.click('.tw[data-tab="PRIY-AN34"] > span')
     page.wait_for_timeout(150)
     priya_titles = page.eval_on_selector_all("#ah-handouts-PRIY-AN34 .ah-handout-title", "els => els.map(e=>e.textContent)")
     record("hub", "an Agent in no Cell only sees the campaign-wide evidence, not the Cell-scoped one",
@@ -1841,7 +1841,7 @@ def test_agent_hub_recruit_flag(p):
     record("hub", "no 'No Character Sheet Yet' stamp for the Agent that already has one",
            "No Character Sheet Yet" not in page.eval_on_selector("#ah-charstamp-OWEN-CS12", "el => el.textContent"), "")
 
-    page.click('.tw[data-tab="PRIY-AN34"]')
+    page.click('.tw[data-tab="PRIY-AN34"] > span')
     page.wait_for_timeout(150)
     priy_btn = page.eval_on_selector('#ah-play-PRIY-AN34', "el => el.textContent.trim()")
     record("hub", "Agent with no character yet flips to Recruit", "Recruit" in priy_btn, priy_btn)
@@ -7044,7 +7044,7 @@ def test_agent_roster(p):
     page.add_init_script("try { if (!sessionStorage.getItem('__seeded')) { localStorage.setItem('dg_agent_roster', %s); sessionStorage.setItem('__seeded', '1'); } } catch (e) {}" % json.dumps(json.dumps(roster)))
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
     for code, name in names.items():
-        page.click('.tw[data-tab="%s"]' % code)
+        page.click('.tw[data-tab="%s"] > span' % code)
         page.wait_for_function("(c) => window.dgAgentFile.code() === c", arg=code, timeout=5000)
         af = _af_state(page)
         record("agent-roster", f"opening {name}'s tab loads their file into it, Appearance open",
@@ -9311,11 +9311,12 @@ def test_insane_struck_like_kia(p):
     def page_at(san, width=None, two=False):
         docs = _field_notes_docs()
         extra = ""
-        if two:   # a second Agent, so the phone shows the Agents (N) menu
-            ANA = "ANAR-0002"
-            docs[f"briefs/{ANA}"] = {"agent_code": ANA, "char_name": "Ana Reyes", "player_name": "fn tester", "player_name_lc": "fn tester"}
-            roster = {FN_CODE: {"code": FN_CODE, "char_name": "Mara Voss", "player_name": "fn tester", "saved_at": 5},
-                      ANA: {"code": ANA, "char_name": "Ana Reyes", "player_name": "fn tester", "saved_at": 4}}
+        if two:   # six more Agents, so the strip shows the Agents (N) menu (past six)
+            roster = {FN_CODE: {"code": FN_CODE, "char_name": "Mara Voss", "player_name": "fn tester", "saved_at": 9}}
+            for k in range(6):
+                c = "ANAR-%04d" % (k + 2)
+                docs[f"briefs/{c}"] = {"agent_code": c, "char_name": "Ana Reyes %d" % k, "player_name": "fn tester", "player_name_lc": "fn tester"}
+                roster[c] = {"code": c, "char_name": "Ana Reyes %d" % k, "player_name": "fn tester", "saved_at": 4 - k}
             extra = "localStorage.setItem('dg_agent_roster', %s);" % json.dumps(json.dumps(roster))
         st = {"v": 1, "stats": {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 12, "CHA": 13},
               "derived": {"hp": 11, "wp": 12, "san": san, "bp": 0}, "bio": {"name": "Mara Voss", "profession": "federal_agent", "player_name": "fn tester"}}
@@ -9353,10 +9354,10 @@ def test_insane_struck_like_kia(p):
     record("insane", "in the Cell list the INSANE Agent's name is struck through in red, with a bordered red stamp",
            "line-through" in look["deco"] and look["color"] == look["stampColor"] and look["border"] == "solid", json.dumps(look))
     page.close(); errs_all.extend(errs)
-    # Phone: the Agents menu shows the struck name and its INSANE stamp.
+    # Past six Agents, on a phone: the Agents menu shows the struck name and its INSANE stamp.
     page, errs = page_at(0, width=390, two=True)
     page.wait_for_function("(c) => !!document.querySelector('#ah-charstamp-' + c + ' .stamp[data-fate=\"insane\"]')", arg=FN_CODE, timeout=6000)
-    page.click("#tab-strip .tw-switch")
+    page.click("#tab-strip .tw-switch > span")
     page.wait_for_selector(".ah-agent-menu:not([hidden]) button[data-code]", timeout=6000)
     menu = page.evaluate("""(c) => { const b = document.querySelector('.ah-agent-menu button[data-code="' + c + '"]');
         return { struck: !!b.querySelector('.kia-name'), stamps: [...b.querySelectorAll('.ah-menu-stamp')].map(e => e.textContent), fits: b.scrollWidth <= b.clientWidth + 1 }; }""", FN_CODE)
@@ -10561,7 +10562,7 @@ def test_agent_hub_one_page_file(p):
            bool(gone) and af.get("inTab") and af.get("code") in ("ADAM-AF01", "CORA-AF03")
            and page.evaluate("() => !!document.getElementById('dg-form')"), json.dumps(af))
 
-    page.click('.tw[data-tab="CORA-AF03"]')
+    page.click('.tw[data-tab="CORA-AF03"] > span')
     page.wait_for_function("() => window.dgAgentFile.code() === 'CORA-AF03'")
     _af_state(page)
     page.click("#ah-callout-CORA-AF03 [data-ah-focus=appearance]")
@@ -10994,56 +10995,78 @@ def test_main_photo_from_active_era(p):
     page.close()
     return errs_all
 
-def test_agent_hub_phone_agents_menu(p):
-    """Agent Hub's tabs on a phone: past one Agent they wrapped onto a
-    second row that floated over the page. On a phone the strip is now
-    + New Recruit, an "Agents (N)" menu tab and the open Agent's tab; the
-    menu lists every Agent (the open one ticked) and + New Recruit, and
-    picking one opens it. The desktop strip keeps every tab, no menu."""
+def test_agent_hub_folder_stack(p):
+    """Agent Hub's tabs are a stack of manila folders (v3.4.0): up to six
+    Agents, every Agent's folder stands in the stack, each tab in a
+    different place from the one before it (thirds on a desktop, halves
+    on a phone), the open one at the front; tapping a folder's tab opens
+    it. Past six, the strip is + New Recruit, an "Agents (N)" folder that
+    opens a list of every Agent, and the open Agent's folder -- at any
+    width."""
     errs_all = []
-    roster = {
-        "MENU-0001": {"code": "MENU-0001", "char_name": "Charles Ward", "codename": "SPARROW", "player_name": "g", "saved_at": 3},
-        "MENU-0002": {"code": "MENU-0002", "char_name": "Daniela Martinez", "codename": "SPWARROW", "player_name": "g", "saved_at": 2},
-        "MENU-0003": {"code": "MENU-0003", "char_name": "Eli Filagree", "codename": "SPARROW", "player_name": "g", "saved_at": 1},
-    }
-    docs = _field_notes_docs()
-    for c, a in roster.items():
-        docs["briefs/" + c] = {"agent_code": c, "char_name": a["char_name"], "codename": a["codename"], "player_name": "g", "player_name_lc": "g"}
-    init = ("localStorage.removeItem('dg_cover_identity'); localStorage.setItem('dg_agent_roster', %s); "
-            "localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'MENU-0001':1,'MENU-0002':1,'MENU-0003':1}));") % json.dumps(json.dumps(roster))
-    visible = "() => [...document.querySelectorAll('#tab-strip .tw')].filter(t => t.getClientRects().length).map(t => t.textContent.trim())"
-    for width in (360, 390, 430, 1100):
+    def setup(n, width):
+        names = ["Charles Ward", "Daniela Martinez", "Eli Filagree", "Fay Orr", "Gus Lee", "Hana Ito", "Ivo Petrov"]
+        roster = {}
+        docs = _field_notes_docs()
+        for k in range(n):
+            c = "MENU-%04d" % (k + 1)
+            roster[c] = {"code": c, "char_name": names[k], "codename": "SPARROW", "player_name": "g", "saved_at": n - k}
+            docs["briefs/" + c] = {"agent_code": c, "char_name": names[k], "codename": "SPARROW", "player_name": "g", "player_name_lc": "g"}
+        init = ("localStorage.removeItem('dg_cover_identity'); localStorage.setItem('dg_agent_roster', %s); "
+                "localStorage.setItem('dg_fn_orders_ack', %s);") % (json.dumps(json.dumps(roster)), json.dumps(json.dumps({c: 1 for c in roster})))
         page, errs = _field_notes_page(p, width, 860, extra_init=init, docs=docs)
-        page.goto(f"{BASE}/agent-hub.html?code=MENU-0003", wait_until="domcontentloaded", timeout=15000)
-        page.wait_for_selector('#tab-strip .tw.active[data-tab="MENU-0003"]', state="attached", timeout=15000)
+        last = "MENU-%04d" % n
+        page.goto(f"{BASE}/agent-hub.html?code={last}", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_selector(f'#tab-strip .tw.active[data-tab="{last}"]', state="attached", timeout=15000)
         page.wait_for_timeout(500)
-        tabs = page.evaluate(visible)
-        if width < 560:
-            record("hub", f"phone {width}px: the tab strip is + New Recruit, Agents (3) and the open Agent -- one row, nothing floating",
-                   tabs == ["+ New Recruit", "Agents (3) \u25be", 'Eli "SPARROW"'], str(tabs))
-            # (unselected tabs sit 6px lower on purpose, tucked behind the open one)
-            tops = page.evaluate("() => [...document.querySelectorAll('#tab-strip .tw')].filter(t => t.getClientRects().length).map(t => Math.round(t.getBoundingClientRect().top))")
-            record("hub", f"phone {width}px: the tabs sit on one line, inside the screen",
-                   max(tops) - min(tops) <= 8 and page.evaluate("() => document.documentElement.scrollWidth <= innerWidth"), str(tops))
-            if width != 390:
-                errs_all.extend(errs); page.close(); continue
-            page.click("#tab-strip .tw-switch")
-            items = page.eval_on_selector_all(".ah-agent-menu button", "els => els.map(e => e.textContent + (e.getAttribute('aria-current') ? '*' : ''))")
-            record("hub", "phone: the Agents menu lists every Agent (the open one ticked) and + New Recruit",
-                   items == ['Charles "SPARROW"', 'Daniela "SPWARROW"', 'Eli "SPARROW"*', "+ New Recruit"], str(items))
-            page.click('.ah-agent-menu button[data-code="MENU-0002"]')
-            page.wait_for_timeout(300)
-            after = page.evaluate("() => [document.querySelector('#tab-strip .tw.active').dataset.tab, document.querySelector('.ah-agent-menu').hidden]")
-            record("hub", "phone: picking an Agent in the menu opens their file and closes the menu",
-                   after == ["MENU-0002", True] and page.evaluate(visible)[-1] == 'Daniela "SPWARROW"', str(after))
-            page.click("#tab-strip .tw-switch")
-            page.keyboard.press("Escape")
-            record("hub", "phone: Escape closes the Agents menu", page.evaluate("() => document.querySelector('.ah-agent-menu').hidden"), "")
-        else:
-            record("hub", "desktop: every Agent keeps its own tab, no Agents menu",
-                   tabs == ["+ New Recruit", 'Charles "SPARROW"', 'Daniela "SPWARROW"', 'Eli "SPARROW"'], str(tabs))
-        errs_all.extend(errs)
-        page.close()
+        return page, errs
+    # the visible folders' tabs, top of the stack first (the front one last)
+    shown = """() => [...document.querySelectorAll('#tab-strip .tw')].filter(t => t.getClientRects().length).map(t => {
+        const s = t.querySelector('span'), r = s.getBoundingClientRect();
+        return { text: s.textContent.trim(), x: getComputedStyle(t).getPropertyValue('--x').trim(), active: t.classList.contains('active'),
+                 l: r.left, r: r.right, t: r.top, b: r.bottom }; }).sort((a, b) => a.t - b.t)"""
+    for width in (390, 1100):
+        page, errs = setup(3, width)
+        tabs = page.evaluate(shown)
+        texts = [t["text"] for t in tabs]
+        record("hub", f"{width}px, 3 Agents: every Agent's folder stands in the stack, the open one at the front, no menu",
+               texts == ["+ New Recruit", 'Charles "SPARROW"', 'Daniela "SPARROW"', 'Eli "SPARROW"'] and tabs[-1]["active"]
+               and not page.evaluate("() => !!document.querySelector('#tab-strip .tw-switch')"), str(texts))
+        xs = [t["x"] for t in tabs]
+        record("hub", f"{width}px: each tab stands in a different place from the one before it ({'halves' if width < 560 else 'thirds'})",
+               all(a != b for a, b in zip(xs, xs[1:])) and set(xs) == ({"0%", "50%"} if width < 560 else {"0%", "33.3%", "66.6%"}), str(xs))
+        overlap = any(a["l"] < b["r"] and b["l"] < a["r"] and a["t"] < b["b"] and b["t"] < a["b"] for i, a in enumerate(tabs) for b in tabs[i + 1:])
+        record("hub", f"{width}px: no two handwritten tab labels overlap, and the page doesn't scroll sideways",
+               not overlap and page.evaluate("() => document.documentElement.scrollWidth <= innerWidth"), "")
+        page.click('#tab-strip .tw[data-tab="MENU-0001"] > span')
+        page.wait_for_timeout(300)
+        tabs = page.evaluate(shown)
+        record("hub", f"{width}px: tapping a folder's tab opens that Agent and brings their folder to the front",
+               tabs[-1]["text"] == 'Charles "SPARROW"' and tabs[-1]["active"]
+               and page.evaluate("() => document.getElementById('panel-MENU-0001').classList.contains('active')"), str([t["text"] for t in tabs]))
+        errs_all.extend(errs); page.close()
+    page, errs = setup(6, 390)
+    record("hub", "six Agents still stand as a stack (no menu)",
+           len(page.evaluate(shown)) == 7 and not page.evaluate("() => !!document.querySelector('#tab-strip .tw-switch')"), "")
+    errs_all.extend(errs); page.close()
+    for width in (390, 1280):
+        page, errs = setup(7, width)
+        texts = [t["text"] for t in page.evaluate(shown)]
+        record("hub", f"{width}px, 7 Agents: the strip is + New Recruit, Agents (7) and the open Agent",
+               texts == ["+ New Recruit", "Agents (7) ▾", 'Ivo "SPARROW"'], str(texts))
+        page.click("#tab-strip .tw-switch > span")
+        items = page.eval_on_selector_all(".ah-agent-menu button", "els => els.map(e => e.textContent + (e.getAttribute('aria-current') ? '*' : ''))")
+        record("hub", f"{width}px: the Agents menu lists every Agent (the open one ticked) and + New Recruit",
+               len(items) == 8 and items[6] == 'Ivo "SPARROW"*' and items[-1] == "+ New Recruit", str(items))
+        page.click('.ah-agent-menu button[data-code="MENU-0002"]')
+        page.wait_for_timeout(300)
+        after = page.evaluate("() => [document.querySelector('#tab-strip .tw.active').dataset.tab, document.querySelector('.ah-agent-menu').hidden]")
+        record("hub", f"{width}px: picking an Agent in the menu opens their file and closes the menu",
+               after == ["MENU-0002", True] and page.evaluate(shown)[-1]["text"] == 'Daniela "SPARROW"', str(after))
+        page.click("#tab-strip .tw-switch > span")
+        page.keyboard.press("Escape")
+        record("hub", f"{width}px: Escape closes the Agents menu", page.evaluate("() => document.querySelector('.ah-agent-menu').hidden"), "")
+        errs_all.extend(errs); page.close()
     return errs_all
 
 def test_physical_description_punctuation(p):
@@ -11557,7 +11580,7 @@ def main():
         safe(test_agent_hub_one_page_file, browser, area="hub")
         safe(test_incursion, browser, area="incursion")
         safe(test_physical_description_punctuation, browser, area="hub")
-        safe(test_agent_hub_phone_agents_menu, browser, area="hub")
+        safe(test_agent_hub_folder_stack, browser, area="hub")
         safe(test_main_photo_from_active_era, browser, area="photo")
         safe(test_field_notes_shell, browser, area="notebook-shell")
         safe(test_friendly_pregen_builder, browser, area="friendly")
