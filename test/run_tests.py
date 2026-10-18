@@ -11044,6 +11044,15 @@ def test_agent_hub_folder_stack(p):
         record("hub", f"{width}px: tapping a folder's tab opens that Agent and brings their folder to the front",
                tabs[-1]["text"] == 'Charles "SPARROW"' and tabs[-1]["active"]
                and page.evaluate("() => document.getElementById('panel-MENU-0001').classList.contains('active')"), str([t["text"] for t in tabs]))
+        # + New Recruit open: it stands at the front, the stack stays one
+        # piece (each tab 32px below the last), nothing rides up the page
+        page.click('#tab-strip .tw-new > span')
+        page.wait_for_timeout(300)
+        tabs = page.evaluate(shown)
+        steps = [round(b["t"] - a["t"]) for a, b in zip(tabs, tabs[1:])]
+        strip_top = page.evaluate("() => document.getElementById('tab-strip').getBoundingClientRect().top")
+        record("hub", f"{width}px: with + New Recruit open it stands at the front and the folders stay together",
+               tabs[-1]["text"] == "+ New Recruit" and all(abs(d - 32) <= 2 for d in steps) and tabs[0]["t"] >= strip_top - 1, str(steps))
         errs_all.extend(errs); page.close()
     page, errs = setup(6, 390)
     record("hub", "six Agents still stand as a stack (no menu)",
