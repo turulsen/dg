@@ -1199,7 +1199,7 @@
       var tag = (b.tags || [])[0];
       var when = b.created_at ? new Date(b.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '';
       return '<div class="fn-card-q"><div class="fn-card-head">' +
-        (tag ? '<span class="fn-tag" data-type="' + esc(tag.type) + '">' + esc(tag.label || tag.type) + '</span>' : '') +
+        (tag ? '<span class="fn-tag" data-type="' + esc(tag.type) + '">' + esc(tag.inline ? ((TAG_TYPES.filter(function (t) { return t.id === tag.type; })[0] || {}).label || tag.type) : (tag.label || tag.type)) + '</span>' : '') +
         (b.shared ? '<span class="fn-stamp fn-green">Shared</span>' : '') +
         (b.pending ? '<span class="fn-stamp fn-red">Unsynced</span>' : '') +
         '<span class="fn-card-date">' + esc(when) + '</span></div>' +
@@ -1213,9 +1213,13 @@
     var now = Date.now();
     var blockId = 'blk_' + now.toString(36) + '_' + Math.random().toString(36).slice(2, 7);
     var tt = TAG_TYPES.filter(function (t) { return t.id === quick.tag; })[0];
-    var tags = tt ? [{ type: tt.id, label: tt.label }] : [];
+    // A tagged Quick note is tagged the way the full notes tag words on the
+    // page: the text sits in a dg-tag span and the tag is named by it, so it
+    // lists (and stays) under the same name once it's added to the page.
+    var tags = tt ? [{ type: tt.id, label: text.replace(/\s+/g, ' '), inline: true }] : [];
     var maxSort = (quick.blocks || []).reduce(function (m, b) { return Math.max(m, b.sort_order || 0); }, 0);
-    var dataObj = { text: esc(text).replace(/\n/g, '<br>') };
+    var html = esc(text).replace(/\n/g, '<br>');
+    var dataObj = { text: tt ? '<span class="dg-tag dg-tag-' + tt.id + '" data-tag="' + tt.id + '">' + html + '</span>' : html };
     var block = { id: blockId, type: 'paragraph', data: dataObj, shared: quick.shared, tags: tags, sort_order: maxSort + 1000, created_at: now, pending: true };
     quick.blocks = [block].concat(quick.blocks || []);
     ta.value = '';

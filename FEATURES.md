@@ -184,6 +184,21 @@ everyone in the shared feed.
 - **✎ Arrange:** shows, hides and orders the sidebar's lists (Index,
   Tags, Quick notes, Evidence), in `localStorage` `dg_notes_sidebar`.
 - Test: `test_notes_tags_quick_and_arrange`.
+- **v3.5.2 finish (2026-10-19):**
+  - Headings keep their tags. `DgHeader` extends the vendor Header tool
+    so its sanitizer lets the `dg-tag` span through.
+  - The toolbar's Tag button (whole-block tag popover) is gone;
+    highlighting is the only way to tag.
+  - The Tags list counts Quick notes still waiting too. A tag that's
+    only its type (older Quick notes) is named by the note's words
+    (`namedTag`, also used by the filter).
+  - A Quick note written in the notebook while the page is open shows
+    under Quick notes at once (`rebuildNotesAndRender_` adds new
+    `quick` blocks from the listener without re-rendering the editor).
+  - The notebook's Quick notes tag like the page: the text is wrapped
+    in the `dg-tag` span and the tag is `{type, label: text, inline:true}`,
+    so it keeps the same name after "Add to page".
+  - Test: `test_notes_tags_headings_and_quick`.
 
 **Solo mode**: an Agent not yet assigned to any Cell still gets a
 fully live, editable Notes panel — keyed to a synthesized

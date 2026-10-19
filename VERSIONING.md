@@ -137,7 +137,10 @@ fixes Agent Hub's folder stack splitting in two with + New Recruit open
 manila folders: "Choose Agent" as the folder behind, the Agent's surname
 handwritten on the front folder in the group's ink, a manila body
 (shorter folders on a phone, so the rollable sheet still fits the first
-screen); shell cache `dg-hub-shell-v230`. **v3.1.0**
+screen), and finishes Notes tagging: headings keep their tags, the
+Tag button is gone, Quick notes written in the notebook show under
+Quick notes at once and are tagged the same way as words on the page
+(see `BUGFIXES.md`); shell cache `dg-hub-shell-v231`. **v3.1.0**
 (2026-10-10) is PR #72, v2 milestone M3: the Agent File's paper wears as
 SAN falls. Stains, a fold, a coffee ring, blood and, from SAN 9, a torn
 edge are drawn over the whole page on Agent Hub and in the notebook

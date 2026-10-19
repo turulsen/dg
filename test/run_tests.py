@@ -7549,29 +7549,10 @@ def test_notes_v2_editorjs(p):
     record("notes", "a pinned block gets its own Pinned section in the Index sidebar",
            bool(toc_pinned), page.locator("#dg-notes-toc-mount").inner_text())
 
-    # Tag: opens a popover on the focused block instead of a plain
-    # toggle -- three type chips (NPC/Location/Clue) plus a text field.
-    tag_btn = page.locator(".dg-notes-tag-btn")
-    record("notes", "the Tag button is enabled once a block is focused",
-           tag_btn.get_attribute("disabled") is None, "")
-    tag_btn.click()
-    page.wait_for_timeout(200)
-    record("notes", "the Tag popover offers NPC/Location/Clue/Operation type chips",
-           page.locator(".dg-notes-tag-type-chip").count() == 4, "")
-    page.click('.dg-notes-tag-type-chip[data-type="location"]')
-    page.fill(".dg-notes-tag-input", "Old Lighthouse")
-    clear_firestore_writes(page)
-    page.click(".dg-notes-tag-add-btn")
-    tag_post = wait_for_condition(lambda: next((w for w in firestore_writes(page, "cells/cell_1/notes/") if w["data"].get("agent_code") == "OWEN-CS12"), None), timeout_ms=25000)
-    record("notes", "adding a tag saves it as {type, label} in the block's tags field",
-           bool(tag_post) and json.loads(tag_post["data"].get("tags") or "[]") == [{"type": "location", "label": "Old Lighthouse"}],
-           json.dumps(tag_post) if tag_post else "no Firestore write captured")
-    record("notes", "the added tag shows as a chip in the popover",
-           "Old Lighthouse" in (page.locator(".dg-notes-tag-current").inner_text() or ""), "")
-    record("notes", "the Tag button shows an active state once the block has a tag",
-           "active" in (tag_btn.get_attribute("class") or ""), "")
-    tag_btn.click()  # close the popover -- same as a real user tapping Tag again when done
-    page.wait_for_timeout(150)
+    # The toolbar's Tag button (whole-block tags) was retired in v3.5.2:
+    # tagging is by highlighting words (test_notes_tags_quick_and_arrange).
+    record("notes", "the toolbar has no Tag button (tagging is by highlighting words)",
+           page.locator(".dg-notes-tag-btn").count() == 0, "")
 
     # Cross-tab search: normally the search box only filters whichever
     # tab is active -- "Search everywhere" widens the sidebar into a
@@ -9577,6 +9558,68 @@ def test_notes_tags_quick_and_arrange(p):
     page.close()
 
 
+def test_notes_tags_headings_and_quick(p):
+    """Notes, play-tested 2026-10-19: a heading tagged by highlighting
+    ("Meadowbrook") didn't show in the Tags list; the toolbar's Tag button
+    did nothing and is gone; a Quick note written in the notebook while the
+    Notes page was open never showed under Quick notes; and a Quick note's
+    tag (NPC / Location / Clue / Operation) didn't count as a tag the way a
+    tag on the page does."""
+    page = p.new_page(viewport={"width": 1280, "height": 900})
+    page.set_default_timeout(15000)
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    cell = {"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"]}
+    seed_cells_docs(page, [cell])
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    page.add_init_script("""try { localStorage.setItem('dg_agent_roster', JSON.stringify({'OWEN-CS12': {code: 'OWEN-CS12', char_name: 'Owen Castillo', saved_at: Date.now()}}));
+      localStorage.setItem('dg_notes_identity_OWEN-CS12', JSON.stringify({color: '#2b6cb0', font: 'kalam'})); } catch (e) {}""")
+    page.goto(f"{BASE}/notes/index.html", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: page.query_selector(".dg-notes-identity-modal") is not None or page.query_selector("#dg-notes-editor-mount") is not None, timeout_ms=8000)
+    if page.query_selector(".dg-notes-identity-modal"):
+        page.click(".dg-notes-color-swatch"); page.click(".dg-notes-identity-confirm")
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 2, timeout_ms=8000)
+    own = [
+        {"id": "h1", "agent_code": "OWEN-CS12", "block_type": "header", "text": json.dumps({"text": "Meadowbrook", "level": 2}), "shared": False, "sort_order": 1000, "created_at": 1, "updated_at": 1, "tags": "[]"},
+        {"id": "p1", "agent_code": "OWEN-CS12", "block_type": "paragraph", "text": json.dumps({"text": "We went to the pub."}), "shared": False, "sort_order": 2000, "created_at": 2, "updated_at": 2, "tags": "[]"},
+        # an older Quick note already on the page, tagged by type only
+        {"id": "old", "agent_code": "OWEN-CS12", "block_type": "paragraph", "text": json.dumps({"text": "Fuller college"}), "shared": False, "sort_order": 3000, "created_at": 3, "updated_at": 3,
+         "tags": json.dumps([{"type": "location", "label": "Location"}])},
+    ]
+    push_firestore_snapshot(page, "cells/cell_1/notes", [["shared", "==", True]], [])
+    push_firestore_snapshot(page, "cells/cell_1/notes", [["agent_code", "==", "OWEN-CS12"]], own)
+    wait_for_condition(lambda: page.locator("#dg-notes-editor-mount .ce-block").count() >= 3 or None, timeout_ms=8000)
+    record("notes-tags", "the toolbar has no Tag button any more (tagging is by highlighting)", page.locator(".dg-notes-tag-btn").count() == 0, "")
+    tags = lambda: page.text_content("#dg-notes-tags-mount") or ""
+    record("notes-tags", "a note tagged by its type alone (an older Quick note) counts in Tags under its own words",
+           "Fuller college 1" in tags(), tags())
+    # Tag the heading as a Location by highlighting it.
+    page.evaluate("""() => { const el = document.querySelector('#dg-notes-editor-mount .ce-block .ce-header'); const tn = el.firstChild;
+        el.focus(); const r = document.createRange(); r.setStart(tn, 0); r.setEnd(tn, tn.textContent.length);
+        const s = document.getSelection(); s.removeAllRanges(); s.addRange(r); }""")
+    page.wait_for_selector(".dg-notes-tagbar:not([hidden])", timeout=5000)
+    clear_firestore_writes(page)
+    page.click(".dg-notes-tagbar [data-tagtype=location]")
+    w = wait_for_condition(lambda: next((x for x in firestore_writes(page, "cells/cell_1/notes/h1") if "dg-tag" in (x["data"].get("text") or "")), None), timeout_ms=20000)
+    record("notes-tags", "a heading tagged by highlighting is saved with its tag",
+           bool(w) and {"type": "location", "label": "Meadowbrook", "inline": True} in json.loads((w or {}).get("data", {}).get("tags") or "[]"), json.dumps(w)[:300] if w else "no write")
+    wait_for_condition(lambda: "Meadowbrook" in tags() or None, timeout_ms=6000)
+    record("notes-tags", "...and shows in the Tags list under Location", "Meadowbrook 1" in tags(), tags())
+    # A Quick note from the notebook arrives while the page is open (new format: the words are the tag).
+    own2 = own + [{"id": "q2", "agent_code": "OWEN-CS12", "block_type": "paragraph",
+                   "text": json.dumps({"text": '<span class="dg-tag dg-tag-npc" data-tag="npc">The coroner</span>'}), "shared": False, "sort_order": 4000, "created_at": 9, "updated_at": 9,
+                   "tags": json.dumps([{"type": "npc", "label": "The coroner", "inline": True}]), "quick": True}]
+    push_firestore_snapshot(page, "cells/cell_1/notes", [["agent_code", "==", "OWEN-CS12"]], own2)
+    wait_for_condition(lambda: "The coroner" in (page.text_content("#dg-notes-quick-mount") or "") or None, timeout_ms=6000)
+    record("notes-tags", "a Quick note written while the page is open shows under Quick notes (not on the page)",
+           "The coroner" in (page.text_content("#dg-notes-quick-mount") or "") and "The coroner" not in (page.text_content("#dg-notes-editor-mount") or ""),
+           page.text_content("#dg-notes-quick-mount") or "")
+    record("notes-tags", "...and its tag counts in the Tags list like a tag on the page", "The coroner 1" in tags(), tags())
+    record("notes-tags", "the heading's tag survives the new note arriving", "Meadowbrook 1" in tags(), tags())
+    record("notes-tags", "no JS exceptions (headings, quick notes)", not errs, str(errs[:3]))
+    page.close()
+
 def test_agent_file_parts_and_looks(p):
     """The Agent File in numbered parts (Statistics, Skills, Psyche, Combat
     & gear, Cell, Record) with a jump index; Find a skill (kept across a
@@ -10527,6 +10570,10 @@ def test_field_notes_notebook(p):
     d = w.get("data") or {}
     record("notebook", "phone: a quick note saves as a note block in the Agent's Cell, shared and tagged",
            d.get("agent_code") == FN_CODE and d.get("shared") is True and d.get("block_type") == "paragraph" and "npc" in (d.get("tags") or ""), str(w)[:300])
+    qtags = json.loads(d.get("tags") or "[]")
+    record("notebook", "phone: a tagged quick note is tagged like words on the page (inline span, named by its text)",
+           qtags == [{"type": "npc", "label": "The janitor lied about the keys.", "inline": True}]
+           and 'class=\\"dg-tag dg-tag-npc\\"' in (d.get("text") or ""), str(d)[:300])
     record("notebook", "phone: the open notebook adds no sideways scrolling",
            page.evaluate("() => document.documentElement.scrollWidth <= innerWidth"), "")
     errs_all.extend(errs)
@@ -11830,6 +11877,7 @@ def main():
         safe(test_notebook_flip_agents, browser, area="flip")
         safe(test_evidence_sort, browser, area="evidence")
         safe(test_notes_tags_quick_and_arrange, browser, area="notes-tags")
+        safe(test_notes_tags_headings_and_quick, browser, area="notes-tags")
         safe(test_agent_rules_unit, browser, area="rules")
         safe(test_evidence_attachments_open_and_zoom, browser, area="evidence")
         safe(test_motivations_and_disorders_split, browser, area="disorders")
