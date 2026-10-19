@@ -130,9 +130,14 @@ three a pencilled remark drawn from the pregen; the typed sheet leads
 with the profession; the group is a tab on the folder's edge; the filter
 uses short names; while choosing, the folder frame is hidden, and "Back
 to …'s file" returns to the dossier. The dossier itself is unchanged.
-Frontend only; shell cache `dg-hub-shell-v228`. **v3.5.1** (unreleased)
+Frontend only; shell cache `dg-hub-shell-v228`. **v3.5.1** (2026-10-18, PR #78)
 fixes Agent Hub's folder stack splitting in two with + New Recruit open
-(see `BUGFIXES.md`); shell cache `dg-hub-shell-v229`. **v3.1.0**
+(see `BUGFIXES.md`); shell cache `dg-hub-shell-v229`. **v3.5.2**
+(unreleased) puts the Friendly dossier, after a pick, in the same
+manila folders: "Choose Agent" as the folder behind, the Agent's surname
+handwritten on the front folder in the group's ink, a manila body
+(shorter folders on a phone, so the rollable sheet still fits the first
+screen); shell cache `dg-hub-shell-v230`. **v3.1.0**
 (2026-10-10) is PR #72, v2 milestone M3: the Agent File's paper wears as
 SAN falls. Stains, a fold, a coffee ring, blood and, from SAN 9, a torn
 edge are drawn over the whole page on Agent Hub and in the notebook

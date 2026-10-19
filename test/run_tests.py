@@ -11415,6 +11415,11 @@ def test_friendly_case_files(p):
             name = first.locator(".fc-name").inner_text().strip()
             first.click()
             page.wait_for_selector("#fr-view .pv-bio", timeout=6000)
+            look = page.evaluate("""() => { const t = document.querySelector('#fr-tab-strip .tw.active'), sp = t.querySelector('span');
+                return { label: sp.textContent, font: getComputedStyle(sp).fontFamily, ink: getComputedStyle(sp).color,
+                         body: getComputedStyle(document.querySelector('.folder-body')).backgroundImage }; }""")
+            record("friendly", "the dossier stands in a manila folder: the Agent's surname handwritten on its tab in the group's ink",
+                   look["label"] == name.split(" ")[-1] and "Reenie" in look["font"] and look["ink"] != "rgb(106, 92, 63)" and "url(" in look["body"], json.dumps(look)[:200])
             page.click("#fr-change")
             back = page.locator("#fr-back-dossier")
             record("friendly", "after a pick, 'Choose a different Agent' shows the files with a way back to the dossier",
