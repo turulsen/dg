@@ -6606,6 +6606,26 @@ tags are marked in the note, listed with counts in the sidebar's Tags
 list (a tap filters), and found by the search. See FEATURES §3.
 `test_notes_tags_quick_and_arrange`.
 
+**Finished 2026-10-19 (v3.5.2).** Reported with a screenshot. This
+finishes the fix above rather than being a new bug; four gaps were
+left:
+- **A tagged heading lost its tag on save** ("Meadowbrook"). The
+  Header tool's own sanitizer stripped the `dg-tag` span, so the
+  stored text and `tags` had no tag. `DgHeader` now lets it through.
+- **The Tag button** in the toolbar still opened the old whole-block
+  popover. It's removed; highlighting does the job.
+- **A Quick note written in the notebook didn't show under Quick
+  notes** while the page was open. `rebuildNotesAndRender_` kept only
+  the local list and dropped own blocks from the listener. New
+  `quick` blocks are now added.
+- **Quick-note tags didn't match the page's.** The notebook saved the
+  type's name ("NPC") as the label, and the Tags list skipped Quick
+  notes. The notebook now stores the text inside the same tag span,
+  named by its words, and the Tags list counts Quick notes (older
+  type-only tags are named by the note's words).
+`test_notes_tags_headings_and_quick`, plus a check in
+`test_field_notes_notebook`. `sw.js` `CACHE_NAME` v231.
+
 ## SAN 0: the Cell list and the phone's Agents menu weren't struck in red
 
 Reported 2026-10-13 with two phone screenshots, right after v3.2.0. This

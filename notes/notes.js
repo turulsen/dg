@@ -429,6 +429,15 @@
       return !!t;
     }
   }
+  // Header's own sanitizer keeps no inline markup (text: {}), so a tag
+  // (or a highlight) on a heading was dropped on save: the heading showed
+  // its tag until reload, but the Tags list never had it. This lets the
+  // same inline markup through as on a paragraph.
+  const DgHeader = typeof Header === 'function' ? class extends Header {
+    static get sanitize() {
+      return { level: false, text: { span: { class: true, 'data-tag': true }, mark: { class: true }, b: true, i: true, br: true } };
+    }
+  } : null;
   // The sidebar's lists, their order and which show (✎ Arrange), per device.
   const SIDEBAR_KEY = 'dg_notes_sidebar';
   const SIDEBAR_SECTIONS = [['index', 'Index'], ['tags', 'Tags'], ['quick', 'Quick notes'], ['evidence', 'Evidence']];
@@ -1026,7 +1035,7 @@
     }
     function matchesTagFilter(block) {
       if (!tagFilter) return true;
-      return (block.tags || []).some(t => tagKey(t) === tagFilter);
+      return (block.tags || []).some(t0 => { const t = namedTag(block, t0); return !!t && tagKey(t) === tagFilter; });
     }
 
     function upsertLocalMeta(ownerCode, blockId, patch) {
@@ -1097,12 +1106,10 @@
           '<span class="dg-notes-toggle-track"><span class="dg-notes-toggle-thumb"></span></span>' +
           '<span class="dg-notes-toggle-label">Pin</span></button>'
         : '';
-      const tagBtnHtml = isOwnTab
-        ? '<div class="dg-notes-tag-wrap">' +
-          '<button type="button" class="dg-notes-tag-btn" disabled>Tag</button>' +
-          '<div class="dg-notes-tag-popover" id="dg-notes-tag-popover" hidden></div>' +
-          '</div>'
-        : '';
+      // The toolbar's Tag button (whole-block tags) is gone: tagging is
+      // by highlighting words, which marks them in the note. Older
+      // whole-block tags still count in the Tags list.
+      const tagBtnHtml = '';
       // Only meaningful on the combined Shared feed -- a single
       // member's own tab is already their personal chronological view,
       // grouping it by date wouldn't add anything.
@@ -1198,6 +1205,13 @@
       if (clear) clear.addEventListener('click', () => { tagFilter = ''; afterTagFilterChange(); });
     }
 
+    function namedTag(b, t) {
+      if (!t || !t.type) return null;
+      const tl = (TAG_TYPES.find(x => x.id === t.type) || {}).label || '';
+      if (String(t.label || '').trim().toLowerCase() !== tl.toLowerCase()) return t;
+      const words = String(plainTextOf(b.type, b.data) || '').replace(/\s+/g, ' ').trim();
+      return words ? { type: t.type, label: words.length > 40 ? words.slice(0, 39) + '…' : words } : null;
+    }
     /* Tags list (counts per name, grouped by type); a tap filters the notes. */
     function scopeBlocksForSidebar() {
       return (activeCode === SHARED_TAB ? sharedBlocksSorted() : (notesByCode[agentCode] || []).filter(b => b.type !== 'evidence_remark'));
@@ -1206,11 +1220,12 @@
       const mount = container.querySelector('#dg-notes-tags-mount');
       if (!mount) return;
       const agg = {};
-      // Named tags on the page only: a note still waiting in Quick notes,
-      // or a tag that's just its type (the notebook's quick tags), aren't names.
-      scopeBlocksForSidebar().filter(b => !b.quick).forEach(b => (b.tags || []).forEach(t => {
-        const tl = (TAG_TYPES.find(x => x.id === t.type) || {}).label || '';
-        if (String(t.label || '').trim().toLowerCase() === tl.toLowerCase()) return;
+      // Every tag counts, Quick notes still waiting included: a Quick note
+      // is tagged the same way as words on the page. A tag that's only its
+      // type (older Quick notes, "Clue") is named by the note's own words.
+      scopeBlocksForSidebar().forEach(b => (b.tags || []).forEach(t0 => {
+        const t = namedTag(b, t0);
+        if (!t) return;
         const k = tagKey(t);
         if (!agg[k]) agg[k] = { type: t.type, label: String(t.label).trim(), n: 0 };
         agg[k].n++;
@@ -1513,14 +1528,6 @@
           scheduleSave(currentBlockId);
         });
       }
-      const tagBtn = container.querySelector('.dg-notes-tag-btn');
-      if (tagBtn) {
-        tagBtn.addEventListener('click', () => {
-          if (!currentBlockId) return;
-          tagPopoverOpen = !tagPopoverOpen;
-          refreshTagPopover();
-        });
-      }
       const timelineBtn = container.querySelector('.dg-notes-timeline-btn');
       if (timelineBtn) {
         timelineBtn.addEventListener('click', () => {
@@ -1797,7 +1804,7 @@
         // rather than hand-tuning per tool.
         inlineToolbar: true,
         tools: {
-          header: { class: Header, config: { levels: HEADER_LEVELS, defaultLevel: HEADER_LEVELS[0] } },
+          header: { class: DgHeader || Header, config: { levels: HEADER_LEVELS, defaultLevel: HEADER_LEVELS[0] } },
           list: EditorjsList,
           delimiter: Delimiter,
           marker: Marker,
@@ -1962,7 +1969,14 @@
         (grouped[b.agent_code] || (grouped[b.agent_code] = [])).push(b);
       });
       if (activeCode === agentCode && editorInstance && ownDataLoaded) {
-        grouped[agentCode] = notesByCode[agentCode];
+        // Your page is the editor's own copy -- but a Quick note written in
+        // the notebook meanwhile isn't on the page, so it must still come
+        // in from the listener (it was dropped: never under Quick notes).
+        const local = notesByCode[agentCode] || [];
+        const have = {};
+        local.forEach(b => { have[b.block_id] = 1; });
+        const quick = Object.keys(_ownBlocksById).map(id => _ownBlocksById[id]).filter(b => b.quick && !have[b.block_id]);
+        grouped[agentCode] = local.filter(b => !b.quick || _ownBlocksById[b.block_id]).concat(quick);
       }
       notesByCode = grouped;
       refreshChrome();

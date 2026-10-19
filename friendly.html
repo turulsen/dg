@@ -74,6 +74,32 @@
      typed summary, profession first, with the group as a coloured edge
      tab. The whole folder is the button. ── */
   body.fr-picking #fr-tab-strip{ display:none; }
+  /* The dossier, after a pick: the same manila folders as Agent Hub's
+     stack. "Choose Agent" is the folder behind (left), the Agent's own
+     folder stands at the front (a third along; half on a phone), its
+     surname handwritten in the group's ink (pick() sets --tw-ink). */
+  #fr-tab-strip{ display:flex; flex-direction:column; align-items:stretch; flex-wrap:nowrap; padding:0; gap:0; row-gap:0; }
+  #fr-tab-strip .tw{ display:block; position:relative; height:72px; margin-top:0; padding:0; background:none; border:0; box-shadow:none;
+    border-radius:0; transform:none; z-index:auto; pointer-events:none; --tw:33.4%; --x:0%; }
+  #fr-tab-strip .tw[hidden]{ display:none; }
+  #fr-tab-strip .tw[data-tab="dossier"]{ --x:33.3%; --m1:#d8c193; --m2:#c9ae7d; --bp:-220px -140px; }
+  #fr-tab-strip .tw::before, #fr-tab-strip .tw::after{ content:''; position:absolute; pointer-events:auto; cursor:pointer;
+    background:var(--manila); background-size:var(--manila-size); background-position:var(--bp,0 0); }
+  #fr-tab-strip .tw::before{ top:0; height:35px; left:var(--x); width:var(--tw); border-radius:10px 10px 0 0;
+    clip-path:polygon(0 100%,3% 18%,6% 6%,10% 0,90% 0,94% 6%,97% 18%,100% 100%); box-shadow:inset 0 0 18px rgba(110,75,25,.3); }
+  #fr-tab-strip .tw::after{ left:0; right:0; top:34px; bottom:0; border-radius:2px 6px 0 0;
+    box-shadow:inset 0 0 40px rgba(105,70,22,.35), inset 0 1px 0 rgba(255,255,255,.35), 0 -3px 8px rgba(0,0,0,.28); }
+  #fr-tab-strip .tw > span{ position:absolute; z-index:1; top:3px; left:calc(var(--x) + 22px); max-width:calc(var(--tw) - 40px); pointer-events:auto; cursor:pointer;
+    font-family:var(--hand); font-size:27px; line-height:30px; letter-spacing:.01em; text-transform:none; color:var(--tw-ink,#6a5c3f);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; transition:transform 120ms ease; }
+  #fr-tab-strip .tw:not(.active):hover > span{ transform:translateY(-2px); }
+  #fr-tab-strip .tw:focus-visible{ outline:none; } #fr-tab-strip .tw:focus-visible > span{ outline:2px solid #8fae5a; outline-offset:2px; }
+  #fr-tab-strip .tw.active{ order:99; height:35px; margin-top:-40px; }
+  #fr-tab-strip .tw.active::after{ display:none; }
+  #fr-tab-strip .tw.active::before{ height:36px; box-shadow:inset 0 8px 10px -6px rgba(255,255,255,.4); }
+  body:not(.fr-picking) .folder-body{ background:var(--manila); background-size:var(--manila-size); border-radius:2px 6px 3px 3px;
+    box-shadow:inset 0 0 46px rgba(105,70,22,.38), 0 -3px 8px rgba(0,0,0,.28); }
+  body:not(.fr-picking) .folder{ filter:drop-shadow(0 18px 30px rgba(0,0,0,.55)); }
   body.fr-picking .folder-body{ background:none; box-shadow:none; padding:0; overflow:visible; }
   body.fr-picking .folder{ filter:none; }
   .fr-deal-row{ gap:18px; }
@@ -254,6 +280,11 @@
     .folder-wrap{ padding:0; }
     .folder-body{ padding:5px 6px 10px; }
     .tab-strip{ padding-left:16px; }
+    #fr-tab-strip{ padding-left:0; } #fr-tab-strip .tw{ --tw:50%; } #fr-tab-strip .tw[data-tab="dossier"]{ --x:50%; }
+    #fr-tab-strip .tw > span{ font-size:21px; line-height:24px; top:2px; left:calc(var(--x) + 12px); max-width:calc(var(--tw) - 18px); }
+    /* shorter folders on a phone, so the rollable sheet still fits the first screen */
+    #fr-tab-strip .tw{ height:50px; } #fr-tab-strip .tw::before{ height:27px; } #fr-tab-strip .tw::after{ top:26px; }
+    #fr-tab-strip .tw.active{ height:28px; margin-top:-30px; } #fr-tab-strip .tw.active::before{ height:28px; }
     .pv-sticky{ padding:8px 10px 6px; gap:8px; }
     .pv-photo{ display:none; }
     .pv-bio{ font-size:16px; }
@@ -504,6 +535,7 @@
     renderDossier();
     document.body.classList.add('fr-playing');
     dossierTab.hidden = false;
+    dossierTab.style.setProperty('--tw-ink', groupLook(p.group)[2]);
     document.getElementById('fr-dossier-tab-label').textContent = p.name.split(' ').slice(-1)[0];
     showTab('dossier');
     window.scrollTo(0, 0);
