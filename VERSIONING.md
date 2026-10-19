@@ -133,7 +133,7 @@ to …'s file" returns to the dossier. The dossier itself is unchanged.
 Frontend only; shell cache `dg-hub-shell-v228`. **v3.5.1** (2026-10-18, PR #78)
 fixes Agent Hub's folder stack splitting in two with + New Recruit open
 (see `BUGFIXES.md`); shell cache `dg-hub-shell-v229`. **v3.5.2**
-(unreleased) puts the Friendly dossier, after a pick, in the same
+(2026-10-19, PR #79) puts the Friendly dossier, after a pick, in the same
 manila folders: "Choose Agent" as the folder behind, the Agent's surname
 handwritten on the front folder in the group's ink, a manila body
 (shorter folders on a phone, so the rollable sheet still fits the first
