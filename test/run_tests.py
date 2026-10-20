@@ -3157,11 +3157,13 @@ def test_acell_evidence_share_languages_format(p):
     page.goto(f"{BASE}/rules-reference.html", wait_until="domcontentloaded")
     page.add_script_tag(url=f"{BASE}/assets/evidence-md.js")
     out = page.evaluate("""() => [dgEvidenceMd.render('<img src=x onerror=alert(1)> **b**'), dgEvidenceMd.render('Plain\\nline\\n\\nNext'),
-        dgEvidenceMd.render('2 * 3 * 4'), dgEvidenceMd.render('> quoted\\n---\\n1. a\\n2. b')]""")
+        dgEvidenceMd.render('2 * 3 * 4'), dgEvidenceMd.render('> quoted\\n---\\n1. a\\n2. b'), dgEvidenceMd.render('1. One\\n\\nText\\n\\n2. Two')]""")
     record("evidence-v36", "the renderer escapes HTML", "<img" not in out[0] and "&lt;img" in out[0] and "<b>b</b>" in out[0], out[0])
     record("evidence-v36", "old plain text keeps its lines and paragraphs", out[1] == "<p>Plain<br>line</p><p>Next</p>", out[1])
     record("evidence-v36", "a lone asterisk isn't taken for italics", out[2] == "<p>2 * 3 * 4</p>", out[2])
     record("evidence-v36", "quote, rule and numbered list", out[3] == "<blockquote>quoted</blockquote><hr><ol><li>a</li><li>b</li></ol>", out[3])
+    record("evidence-v36", "a numbered item after a paragraph keeps its number (2., not 1.)",
+           out[4] == '<ol><li>One</li></ol><p>Text</p><ol start="2"><li>Two</li></ol>', out[4])
     page.close()
 
     # An Agent's notebook draws it formatted too.

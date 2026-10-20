@@ -31,7 +31,9 @@
     const out = [];
     let para = [], list = null, quote = [];
     function flushPara() { if (para.length) { out.push('<p>' + para.map(inline).join('<br>') + '</p>'); para = []; } }
-    function flushList() { if (list) { out.push('<' + list.tag + '>' + list.items.map(function (x) { return '<li>' + inline(x) + '</li>'; }).join('') + '</' + list.tag + '>'); list = null; } }
+    // A numbered list starts at the number written: "2. Step" after a
+    // paragraph stays 2, not 1.
+    function flushList() { if (list) { out.push('<' + list.tag + (list.start > 1 ? ' start="' + list.start + '"' : '') + '>' + list.items.map(function (x) { return '<li>' + inline(x) + '</li>'; }).join('') + '</' + list.tag + '>'); list = null; } }
     function flushQuote() { if (quote.length) { out.push('<blockquote>' + quote.map(inline).join('<br>') + '</blockquote>'); quote = []; } }
     function flush() { flushPara(); flushList(); flushQuote(); }
     lines.forEach(function (raw) {
@@ -46,9 +48,10 @@
         if (!list || list.tag !== 'ul') { flushList(); list = { tag: 'ul', items: [] }; }
         list.items.push(m[1]); return;
       }
-      if ((m = /^\s*\d+[.)]\s+(.*)$/.exec(line))) {
+      if ((m = /^\s*(\d+)[.)]\s+(.*)$/.exec(line))) {
         flushPara(); flushQuote();
-        if (!list || list.tag !== 'ol') { flushList(); list = { tag: 'ol', items: [] }; }
+        if (!list || list.tag !== 'ol') { flushList(); list = { tag: 'ol', items: [], start: parseInt(m[1], 10) }; }
+        m[1] = m[2];
         list.items.push(m[1]); return;
       }
       flushList(); flushQuote();

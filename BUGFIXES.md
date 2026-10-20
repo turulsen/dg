@@ -6764,3 +6764,14 @@ requests.
   retries for a few seconds) closed whatever form was open by then,
   including one opened after the save. It now closes only its own form.
 `test_acell_evidence_share_languages_format`.
+
+## Evidence: every numbered step showed as "1." (v3.6.1)
+
+Reported 2026-10-20 with two phone screenshots, right after v3.6.0:
+in Preview (and so for Agents) "1. LÉPÉS", "2. LÉPÉS", "3. LÉPÉS" all
+read "1.". Each numbered line with a paragraph after it is a list of
+its own, and `assets/evidence-md.js` started every list at 1. A
+numbered list now starts at the number written (`<ol start="2">`).
+A check in `test_acell_evidence_share_languages_format`. `sw.js`
+`CACHE_NAME` v234.
+
