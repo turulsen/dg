@@ -1134,6 +1134,10 @@
     }
 
     /* ── Drag ─────────────────────────────────────────────────────── */
+    // The phone layout (the @media rule in injectStyles) docks the panel
+    // as a full-width bottom sheet.
+    function isDocked() { return window.matchMedia('(max-width:600px)').matches; }
+    function undock(panel) { ['left', 'top', 'right', 'bottom'].forEach(k => { panel.style[k] = ''; }); }
     function initDrag(handle, panel) {
         let ox = 0, oy = 0, sx = 0, sy = 0;
         handle.addEventListener('mousedown', e => {
@@ -1151,12 +1155,23 @@
             document.addEventListener('mousemove', onMove);
             document.addEventListener('mouseup', onUp);
         });
+        // On a phone the panel is a bottom sheet docked full width, so it
+        // isn't dragged at all: a finger scrolling the page that happened
+        // to start on its bar used to drag it up and leave it stuck
+        // mid-screen (reported 2026-10-20 on A-Cell, and very likely the
+        // "frozen mid-screen" reports this file's reflow fixes chased).
+        // Elsewhere a touch has to move a little before it drags.
+        let dragging = false;
         handle.addEventListener('touchstart', e => {
-            if (e.target.closest('button, input')) return;
+            dragging = false;
+            if (e.target.closest('button, input') || isDocked()) { sx = null; return; }
             const t = e.touches[0]; ox = panel.offsetLeft; oy = panel.offsetTop; sx = t.clientX; sy = t.clientY;
         }, { passive: true });
         handle.addEventListener('touchmove', e => {
+            if (sx === null || isDocked()) return;
             const t = e.touches[0];
+            if (!dragging && Math.abs(t.clientX - sx) + Math.abs(t.clientY - sy) < 10) return;
+            dragging = true;
             panel.style.left = `${Math.max(0, Math.min(ox + t.clientX - sx, window.innerWidth - panel.offsetWidth))}px`;
             panel.style.top = `${Math.max(0, Math.min(oy + t.clientY - sy, window.innerHeight - panel.offsetHeight))}px`;
             panel.style.right = 'auto';
@@ -1468,6 +1483,10 @@
         // trick once scrolling actually stops (debounced -- this must
         // NOT run on every scroll tick, forcing layout that often would
         // reintroduce the jank this panel is supposed to avoid).
+        // A position left over from a drag (or from before the window
+        // became phone-sized) is dropped, so the sheet is docked again.
+        if (isDocked()) undock(panel);
+        window.addEventListener('resize', () => { if (isDocked()) undock(panel); });
         let scrollReflowTimer = null;
         window.addEventListener('scroll', () => {
             clearTimeout(scrollReflowTimer);
