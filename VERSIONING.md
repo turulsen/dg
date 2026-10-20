@@ -142,7 +142,7 @@ Tag button is gone, Quick notes written in the notebook show under
 Quick notes at once and are tagged the same way as words on the page
 (see `BUGFIXES.md`); shell cache `dg-hub-shell-v231`. **v3.5.3** (2026-10-20, PR #80) stops the
 Dice Roller bar being dragged mid-screen on a phone by a scroll that
-starts on it (see `BUGFIXES.md`); shell cache `dg-hub-shell-v232`. **v3.6.0** (unreleased)
+starts on it (see `BUGFIXES.md`); shell cache `dg-hub-shell-v232`. **v3.6.0** (2026-10-20, PR #81)
 is A-Cell's Evidence rework: one item shared with several Cells and
 Operations as linked copies, each in its Cell's language (English or
 Magyar, with a Translate button through the new `translateEvidence`
