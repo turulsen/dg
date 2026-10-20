@@ -493,6 +493,7 @@
 <script src="assets/agent-code.js"></script>
 <script src="assets/dg-store.js"></script>
 <script src="assets/evidence-viewer.js"></script>
+<script src="assets/evidence-md.js"></script>
 <script src="assets/disorders.js"></script>
 <script src="assets/agent-rules.js"></script>
 <script src="assets/agent-live.js"></script>
@@ -1412,7 +1413,7 @@
           <span class="ah-handout-date">${escapeHtml(formatHandoutDate(h.created_at))}</span>
         </div>
         <div class="ah-handout-title">${escapeHtml(h.title)}</div>
-        <div class="ah-handout-body-row">${photo}<div class="ah-handout-text">${escapeHtml(h.body)}</div></div>
+        <div class="ah-handout-body-row">${photo}<div class="ah-handout-text dg-md">${window.dgEvidenceMd ? window.dgEvidenceMd.render(h.body) : escapeHtml(h.body)}</div></div>
         <div class="ah-handout-notes">
           <label class="ah-handout-notes-label" for="ah-note-${escapeHtml(code)}-${escapeHtml(h.evidence_id)}">Your Notes</label>
           <textarea class="ah-handout-notes-input" id="ah-note-${escapeHtml(code)}-${escapeHtml(h.evidence_id)}"

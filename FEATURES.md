@@ -275,6 +275,35 @@ use the old name. Not a bug, just an unrenamed internal detail.
 
 ---
 
+
+**Sharing, languages and formatting (v3.6.0).**
+- **Share with:** the form's Share-with rows (Cell, Operation, Language,
+  and which of its Agents). Each row is its own `evidence/` document,
+  a linked copy: they share a `share_group` id, the file (uploaded once,
+  under the first copy's id) and the text; each has its own Operation,
+  `restricted_to`, `visible_to` and Released box. Editing any copy saves
+  the text and file to all of them; removing a row deletes that copy.
+  Every reader is unchanged: a copy is an ordinary item.
+- **Language per Cell:** a copy has `lang` (`en` / `hu`) and `texts`
+  (`{en:{title,body}, hu:{title,body}}`); its `title`/`body` are the
+  ones in its language, so an Agent sees one language and no switch.
+  The form's language tabs edit each text; **Translate** calls the
+  `translateEvidence` Cloud Function (Handler only; Claude Sonnet 5.5,
+  low effort, structured output, Markdown kept). A Cell's last-used
+  language is remembered on the device (`localStorage`
+  `dg_acell_cell_lang`) for new rows. Items from before v3.6.0 count as
+  English.
+- **Duplicate** opens a new item filled in from a card; **Share…**
+  opens it with a new row added.
+- **Formatting:** a toolbar (H1, H2, bold, italic, lists, quote, rule)
+  writes a small Markdown subset; `assets/evidence-md.js`
+  (`window.dgEvidenceMd.render`, escapes first) draws it in A-Cell, the
+  notebook's Evidences (loaded on demand), Agent Hub and Notes. Plain
+  older text keeps its lines.
+- **Editing:** the body box grows with the text; Edit opens the form
+  where the card was (`inlineEdit`, put back after every live redraw).
+- Test: `test_acell_evidence_share_languages_format`.
+
 ## 5. Agent Portal / Profiling / Agent File
 
 **Now one page, on Agent Hub (unreleased, on `claude/new-session-thjzt6`

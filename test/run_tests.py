@@ -530,6 +530,11 @@ NOTES_FIRESTORE_STUB = """
                 ? { status: 'OK', prompt: 'STUB PROMPT' }
                 : { status: 'OK', image_base64: 'data:image/png;base64,iVBORw0KGgo=' } });
             }
+            // A-Cell's Evidence translation (canned like the emulator's).
+            if (name === 'translateEvidence') {
+              (window.__dgFunctionCalls = window.__dgFunctionCalls || []).push({ name: name, payload: payload });
+              return Promise.resolve({ data: { status: 'OK', title: '[' + payload.to + '] ' + payload.title, body: payload.body ? '[' + payload.to + '] ' + payload.body : '' } });
+            }
             // The New Recruit wizard's Bond description (canned, recorded).
             if (name === 'generateBondDescription') {
               (window.__dgFunctionCalls = window.__dgFunctionCalls || []).push({ name: name, payload: payload });
@@ -3005,6 +3010,173 @@ def test_acell_evidence(p):
 
     page.close()
     return errs
+
+def test_acell_evidence_share_languages_format(p):
+    """A-Cell Evidence, v3.6.0: one item shared with several Cells as
+    linked copies, each read in its Cell's language (H-Cell in Magyar,
+    B-Cell in English; Agents never get a switch), Translate filling one
+    language from the other, the formatting toolbar and its rendering,
+    a body box that grows with the text, Edit opening where the card is
+    (not at the top of the list), and Duplicate."""
+    page = p.new_page(viewport={"width": 1280, "height": 900})
+    page.set_default_timeout(15000)
+    errs = collect_errors(page)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    skip_acell_gate(page)
+    install_firestore_backend(page, {
+        "cells/cell_h": {"name": "H-Cell", "handler": "Sam", "member_codes": ["OWEN-CS12", "PRIY-AN34"]},
+        "cells/cell_b": {"name": "B-Cell", "handler": "Sam", "member_codes": ["TOMH-AL11"]},
+        "operations/op_h": {"operation_id": "op_h", "cell_id": "cell_h", "name": "Okkult", "created_at": 1},
+        "operations/op_b": {"operation_id": "op_b", "cell_id": "cell_b", "name": "Black Orchard", "created_at": 2},
+        **{f"evidence/old{i}": {"title": f"Old item {i}", "body": "Plain text\nsecond line", "cell_id": "cell_h", "operation_id": "op_h",
+                                "released": True, "restricted_to": [], "visible_to": ["OWEN-CS12", "PRIY-AN34"], "created_at": 1000 + i} for i in range(6)},
+    })
+    def ev():
+        return page.evaluate("() => Object.entries(window.__dgFirestoreDocs || {})"
+                             ".filter(([k]) => k.indexOf('evidence/') === 0 && k.split('/').length === 2)"
+                             ".map(([k, v]) => Object.assign({}, v, { evidence_id: k.split('/')[1] }))")
+    def push():
+        wait_for_condition(lambda: notes_firestore_listener_count(page) >= 1, timeout_ms=8000)
+        ordered = sorted(ev(), key=lambda e: int(e["created_at"]), reverse=True)
+        push_firestore_snapshot(page, "evidence", [], [dict(e, id=e["evidence_id"]) for e in ordered])
+        page.wait_for_timeout(300)
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+    page.evaluate("() => document.querySelector('.tw[data-tab=evidence]').click()")
+    page.wait_for_timeout(500)
+    push()
+
+    # New, shared with two Cells: H-Cell in Magyar, B-Cell in English.
+    page.click("#evidence-create-btn")
+    page.fill("#evidence-new-title", "Field Memo")
+    page.fill("#evidence-new-body", "# Report\n**Bold** words\n\n- one\n- two")
+    page.select_option("#evidence-new-scope", label="H-Cell")
+    page.select_option("#evidence-new-op", label="Okkult")
+    page.select_option(".ev-row[data-row='0'] .ev-row-lang", "hu")
+    page.click("#evidence-add-row")
+    page.select_option(".ev-row[data-row='1'] .ev-row-cell", label="B-Cell")
+    page.select_option(".ev-row[data-row='1'] .ev-row-op", label="Black Orchard")
+    page.select_option(".ev-row[data-row='1'] .ev-row-lang", "en")
+    record("evidence-v36", "a second Share-with row makes it two copies",
+           "2 copies" in page.inner_text("#evidence-new-confirm").lower(), page.inner_text("#evidence-new-confirm"))
+    page.click("#evidence-new-confirm")
+    record("evidence-v36", "saving without the Magyar text says H-Cell needs it",
+           "H-Cell reads Magyar" in page.inner_text("#evidence-new-error"), page.inner_text("#evidence-new-error"))
+    page.click(".ev-lang[data-lang=hu]")
+    page.click("[data-translate=en]")
+    wait_for_condition(lambda: page.input_value("#evidence-new-title").startswith("[hu]") or None, timeout_ms=5000)
+    calls = page.evaluate("() => (window.__dgFunctionCalls || []).filter(c => c.name === 'translateEvidence')")
+    record("evidence-v36", "Translate asks translateEvidence for English -> Magyar and fills the Magyar tab",
+           len(calls) == 1 and calls[0]["payload"]["from"] == "en" and calls[0]["payload"]["to"] == "hu"
+           and page.input_value("#evidence-new-body").startswith("[hu] # Report"), str(calls))
+    page.check("#evidence-new-released")
+    page.click("#evidence-new-confirm")
+    wait_for_condition(lambda: len([e for e in ev() if e.get("share_group")]) == 2 or None, timeout_ms=8000)
+    pair = {e["cell_id"]: e for e in ev() if e.get("share_group")}
+    h, b = pair.get("cell_h", {}), pair.get("cell_b", {})
+    record("evidence-v36", "two linked copies, one per Cell, same share_group",
+           bool(h) and bool(b) and h["share_group"] == b["share_group"] and b.get("operation_id") == "op_b", str(pair)[:400])
+    record("evidence-v36", "each copy's text is in its Cell's language (no switch for Agents)",
+           h.get("lang") == "hu" and h.get("title") == "[hu] Field Memo" and b.get("lang") == "en" and b.get("title") == "Field Memo",
+           f"{h.get('lang')} {h.get('title')} / {b.get('lang')} {b.get('title')}")
+    record("evidence-v36", "both texts are kept on every copy, and each Cell's Agents only see their copy",
+           set((h.get("texts") or {}).keys()) == {"en", "hu"} and h.get("texts") == b.get("texts")
+           and sorted(h.get("visible_to") or []) == ["OWEN-CS12", "PRIY-AN34"] and b.get("visible_to") == ["TOMH-AL11"], str(h.get("visible_to")))
+    push()
+    card = page.locator(f".evidence-card[data-eid='{b['evidence_id']}']")
+    record("evidence-v36", "the card says which Cell it's linked with, and has Duplicate and Share",
+           "linked with h-cell · okkult" in card.inner_text().lower() and card.locator("[data-dup-evidence]").count() == 1
+           and card.locator("[data-share-evidence]").count() == 1, card.inner_text()[:400])
+    record("evidence-v36", "the text is drawn formatted (heading, bold, list)",
+           card.locator(".evidence-text h3").inner_text() == "Report" and card.locator(".evidence-text b").count() == 1
+           and card.locator(".evidence-text li").count() == 2, card.inner_html()[:300])
+    record("evidence-v36", "a Magyar copy is tagged HU",
+           page.locator(f".evidence-card[data-eid='{h['evidence_id']}'] .evidence-lang-tag").inner_text() == "HU", "")
+
+    # Edit a card far down the list: the form opens where that card is.
+    last = page.locator(".evidence-card[data-eid='old0']")
+    last.locator("[data-edit-evidence]").click()
+    page.wait_for_timeout(300)
+    record("evidence-v36", "Edit opens the form in the card's place, not at the top of the list",
+           page.evaluate("""() => { const f = document.querySelector('#evidence-list .evidence-create-form');
+               return !!f && document.getElementById('evidence-create-form-slot').childNodes.length === 0
+                 && f.nextElementSibling && f.nextElementSibling.dataset.eid === 'old0' && f.nextElementSibling.style.display === 'none'; }"""), "")
+    push()
+    record("evidence-v36", "...and stays there when the list redraws", page.locator("#evidence-list .evidence-create-form").count() == 1, "")
+    page.fill("#evidence-new-body", "\n".join(f"Line {i}" for i in range(40)))
+    page.dispatch_event("#evidence-new-body", "input")
+    hgt = page.evaluate("() => document.getElementById('evidence-new-body').getBoundingClientRect().height")
+    no_scroll = page.evaluate("() => { const t = document.getElementById('evidence-new-body'); return t.scrollHeight <= t.clientHeight + 2; }")
+    record("evidence-v36", "the body box grows with the text (no scrolling inside it)", hgt > 600 and no_scroll, str(hgt))
+    page.click("#evidence-new-cancel")
+    record("evidence-v36", "Cancel puts the card back", page.locator(".evidence-card[data-eid='old0']").is_visible(), "")
+
+    # Toolbar: H2 on the current line, bold around the selection.
+    page.locator(".evidence-card[data-eid='old1'] [data-edit-evidence]").click()
+    page.fill("#evidence-new-body", "Title line\nword")
+    page.evaluate("() => { const t = document.getElementById('evidence-new-body'); t.focus(); t.setSelectionRange(0, 2); }")
+    page.click(".ev-tb [data-md=h2]")
+    page.evaluate("() => { const t = document.getElementById('evidence-new-body'); const i = t.value.indexOf('word'); t.setSelectionRange(i, i + 4); }")
+    page.click(".ev-tb [data-md=b]")
+    record("evidence-v36", "the toolbar marks headings and bold", page.input_value("#evidence-new-body") == "## Title line\n**word**",
+           page.input_value("#evidence-new-body"))
+    page.click(".ev-tb [data-mode=preview]")
+    record("evidence-v36", "Preview shows it formatted", page.locator("#evidence-new-preview h4").inner_text() == "Title line", "")
+    page.click("#evidence-new-cancel")
+
+    # Editing one copy saves the shared text to both.
+    page.locator(f".evidence-card[data-eid='{b['evidence_id']}'] [data-edit-evidence]").click()
+    record("evidence-v36", "editing a linked copy lists both Cells",
+           page.locator(".ev-row").count() == 2 and page.input_value(".ev-row[data-row='0'] .ev-row-cell") == "cell_b", "")
+    page.fill("#evidence-new-body", "Updated English text.")
+    page.click("#evidence-new-confirm")
+    wait_for_condition(lambda: all(((e.get("texts") or {}).get("en") or {}).get("body") == "Updated English text." for e in ev() if e.get("share_group")) or None, timeout_ms=8000)
+    after = {e["cell_id"]: e for e in ev() if e.get("share_group")}
+    record("evidence-v36", "a text change is saved to every linked copy; the Magyar copy keeps its Magyar text",
+           after["cell_b"]["body"] == "Updated English text." and after["cell_h"]["texts"]["en"]["body"] == "Updated English text."
+           and after["cell_h"]["body"].startswith("[hu]"), str(after)[:300])
+    push()
+
+    # Duplicate: a new item, filled in, on top.
+    n0 = len(ev())
+    page.locator(".evidence-card[data-eid='old2'] [data-dup-evidence]").click()
+    record("evidence-v36", "Duplicate opens a new item filled in from it",
+           page.input_value("#evidence-new-title") == "Old item 2" and page.locator("#evidence-create-form-slot .evidence-create-form").count() == 1, "")
+    page.fill("#evidence-new-title", "Old item 2 (copy)")
+    page.click("#evidence-new-confirm")
+    wait_for_condition(lambda: len(ev()) == n0 + 1 or None, timeout_ms=8000)
+    record("evidence-v36", "...and saves it as a new item (the original unchanged)",
+           len(ev()) == n0 + 1 and any(e["title"] == "Old item 2" for e in ev()) and any(e["title"] == "Old item 2 (copy)" for e in ev()), "")
+    record("evidence-v36", "no JS exceptions (share, languages, format)", not errs, str(errs[:3]))
+    page.close()
+
+    # The renderer itself: escapes HTML, keeps old plain text readable.
+    page = p.new_page()
+    page.goto(f"{BASE}/rules-reference.html", wait_until="domcontentloaded")
+    page.add_script_tag(url=f"{BASE}/assets/evidence-md.js")
+    out = page.evaluate("""() => [dgEvidenceMd.render('<img src=x onerror=alert(1)> **b**'), dgEvidenceMd.render('Plain\\nline\\n\\nNext'),
+        dgEvidenceMd.render('2 * 3 * 4'), dgEvidenceMd.render('> quoted\\n---\\n1. a\\n2. b')]""")
+    record("evidence-v36", "the renderer escapes HTML", "<img" not in out[0] and "&lt;img" in out[0] and "<b>b</b>" in out[0], out[0])
+    record("evidence-v36", "old plain text keeps its lines and paragraphs", out[1] == "<p>Plain<br>line</p><p>Next</p>", out[1])
+    record("evidence-v36", "a lone asterisk isn't taken for italics", out[2] == "<p>2 * 3 * 4</p>", out[2])
+    record("evidence-v36", "quote, rule and numbered list", out[3] == "<blockquote>quoted</blockquote><hr><ol><li>a</li><li>b</li></ol>", out[3])
+    page.close()
+
+    # An Agent's notebook draws it formatted too.
+    docs = _field_notes_docs()
+    docs["evidence/ev_fn_1"]["body"] = "## Autopsy\n- **Two** pages\n- redacted"
+    page, errs = _field_notes_page(p, docs=docs)
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.evaluate("() => window.dgFieldNotes.open('evidence')")
+    page.wait_for_selector("#fn-veil .fn-card-body", timeout=10000)
+    record("evidence-v36", "the notebook's Evidences draw the formatting (heading, list, bold)",
+           page.locator("#fn-veil .fn-card-body h4").inner_text() == "Autopsy" and page.locator("#fn-veil .fn-card-body li").count() == 2
+           and page.locator("#fn-veil .fn-card-body b").count() == 1, page.inner_html("#fn-veil .fn-card-body")[:200])
+    record("evidence-v36", "no JS exceptions (notebook Evidences)", not errs, str(errs[:3]))
+    page.close()
 
 def test_acell_evidence_pdf(p):
     """Regression coverage for a real live report: the Evidence photo
@@ -11783,6 +11955,7 @@ def main():
         safe(test_acell_cells, browser, area="acell")
 
         safe(test_acell_evidence, browser, area="acell")
+        safe(test_acell_evidence_share_languages_format, browser, area="acell")
         safe(test_acell_evidence_pdf, browser, area="acell")
         safe(test_acell_evidence_create_verify_retries, browser, area="acell")
 

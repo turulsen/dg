@@ -1272,7 +1272,9 @@
         return Promise.all([
           window.firebase.firestore().collection('evidence').where('visible_to', 'array-contains-any', [a.code, 'ALL']).get(),
           window.dgStore.listHandoutNotes(a.code).catch(function () { return []; }),
-          ensureViewer()
+          ensureViewer(),
+          // Evidence text is formatted (headings, lists...): the renderer.
+          loadScriptOnce(url('assets/evidence-md.js'), function () { return !!window.dgEvidenceMd; }).catch(function () {})
         ]);
       }).then(function (res) {
         if (!state.open || state.view !== 'evidence') return;
@@ -1305,7 +1307,7 @@
               '<span class="fn-card-date">' + esc(when ? 'Filed ' + when : '') + '</span></div>' +
               '<div class="fn-card-title">' + esc(h.title || 'Untitled') + '</div>' +
               (h.photo ? '<div data-ev-photo="' + esc(h.evidence_id) + '"></div>' : '') +
-              '<div class="fn-card-body">' + esc(h.body || '') + '</div>' +
+              '<div class="fn-card-body dg-md">' + (window.dgEvidenceMd ? window.dgEvidenceMd.render(h.body || '') : esc(h.body || '')) + '</div>' +
               '<div class="fn-remark"><div class="fn-label" style="margin:0 0 5px">Your private remarks</div>' +
                 '<textarea class="fn-input" rows="2" placeholder="Only you see these." data-ev="' + esc(h.evidence_id) + '">' + esc(notes[h.evidence_id] || '') + '</textarea>' +
                 '<div class="fn-remark-status" data-ev-status="' + esc(h.evidence_id) + '"></div></div></div>';

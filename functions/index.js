@@ -253,6 +253,63 @@ exports.generateBondDescription = onCall({ secrets: [ANTHROPIC_API_KEY], timeout
   }
 });
 
+// Evidence translation for A-Cell (v3.6.0): the Handler files an item in
+// one language and its copy for a Cell that reads the other is filled in
+// from it. Handler only. Keeps the Markdown marks (assets/evidence-md.js)
+// as they are. Returns {status, title, body}.
+const EVIDENCE_LANGS = { en: 'English', hu: 'Hungarian' };
+exports.translateEvidence = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120 }, async (request) => {
+  if (!(request.auth && request.auth.token && request.auth.token.handler === true)) {
+    throw new HttpsError('permission-denied', 'Only the Handler can translate Evidence.');
+  }
+  await checkRateLimit_('HANDLER', 'translate', 60, 600);
+  const data = request.data || {};
+  const from = EVIDENCE_LANGS[data.from], to = EVIDENCE_LANGS[data.to];
+  if (!from || !to || data.from === data.to) throw new HttpsError('invalid-argument', 'Pick two different languages.');
+  const title = String(data.title || '').slice(0, 300), body = String(data.body || '').slice(0, 20000);
+  if (!title.trim() && !body.trim()) throw new HttpsError('invalid-argument', 'Nothing to translate.');
+  if (IN_EMULATOR) return { status: 'OK', title: '[' + data.to + '] ' + title, body: body ? '[' + data.to + '] ' + body : '' };
+  const apiKey = String(ANTHROPIC_API_KEY.value() || '').trim();
+  if (!apiKey) throw new HttpsError('failed-precondition', 'ANTHROPIC_API_KEY is not set on the server.');
+  const prompt = 'Translate this in-game document for a Delta Green tabletop session (a modern horror game) from ' + from +
+    ' to ' + to + '. Keep its tone, register and layout. Keep every Markdown mark exactly where it is (#, ##, **, *, -, 1., >, ---) ' +
+    'and keep line breaks. Leave names of people, places and organisations as they are unless they have an established ' + to +
+    ' form. Translate only; add nothing.\n\n<title>' + title + '</title>\n<body>\n' + body + '\n</body>';
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01',
+                 'anthropic-beta': 'server-side-fallback-2026-07-01' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-5-5', max_tokens: 16000, fallbacks: 'default',
+        output_config: {
+          effort: 'low',
+          format: { type: 'json_schema', schema: {
+            type: 'object', properties: { title: { type: 'string' }, body: { type: 'string' } },
+            required: ['title', 'body'], additionalProperties: false } }
+        },
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    const result = await resp.json().catch(() => ({}));
+    if (result.stop_reason === 'refusal') {
+      return { status: 'ERROR', message: 'The translation was declined for this text -- please type it in by hand.' };
+    }
+    const block = (result.content || []).find((b) => b.type === 'text' && b.text);
+    if (block) {
+      let out = null;
+      try { out = JSON.parse(block.text); } catch (e) { out = null; }
+      if (out && typeof out.title === 'string' && typeof out.body === 'string') return { status: 'OK', title: out.title, body: out.body };
+    }
+    const message = (result.error && result.error.message) || ('No translation returned (HTTP ' + resp.status + ').');
+    logger.error('translateEvidence: Anthropic API error', { status: resp.status, error: result.error || null, stop: result.stop_reason || null });
+    return { status: 'ERROR', message: message };
+  } catch (err) {
+    logger.error('translateEvidence failed', err);
+    return { status: 'ERROR', message: 'Translation service error: ' + ((err && err.message) || String(err)) };
+  }
+});
+
 // Reads one of this project's own Plate/reference images straight out
 // of Storage (no CORS involved server-side) -- only agent-plates/ and
 // agent-refs/ objects, never an arbitrary URL.
