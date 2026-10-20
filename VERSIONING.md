@@ -140,7 +140,7 @@ handwritten on the front folder in the group's ink, a manila body
 screen), and finishes Notes tagging: headings keep their tags, the
 Tag button is gone, Quick notes written in the notebook show under
 Quick notes at once and are tagged the same way as words on the page
-(see `BUGFIXES.md`); shell cache `dg-hub-shell-v231`. **v3.5.3** (unreleased) stops the
+(see `BUGFIXES.md`); shell cache `dg-hub-shell-v231`. **v3.5.3** (2026-10-20, PR #80) stops the
 Dice Roller bar being dragged mid-screen on a phone by a scroll that
 starts on it (see `BUGFIXES.md`); shell cache `dg-hub-shell-v232`. **v3.1.0**
 (2026-10-10) is PR #72, v2 milestone M3: the Agent File's paper wears as
