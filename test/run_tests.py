@@ -10147,6 +10147,40 @@ def test_player_pages_use_in_page_dialogs(p):
     page.close()
     return errs
 
+def test_dice_roller_phone_not_dragged_by_scroll(p):
+    """Reported 2026-10-20 (iPhone, home-screen A-Cell): the Dice Roller
+    bar stuck mid-screen. On a phone the bar is a full-width bottom sheet,
+    and a finger scroll that started on it dragged it up (touchmove set an
+    inline top) and left it there -- the earlier "iOS freeze" reflow fixes
+    could never undo that. Docked on a phone it isn't dragged; elsewhere a
+    touch has to move 10px first."""
+    swipe = """([x0, y0, x1, y1]) => { const h = document.getElementById('dr-handle');
+        const mk = (x, y) => new Touch({identifier: 1, target: h, clientX: x, clientY: y});
+        h.dispatchEvent(new TouchEvent('touchstart', {touches: [mk(x0, y0)], bubbles: true}));
+        h.dispatchEvent(new TouchEvent('touchmove', {touches: [mk(x1, y1)], bubbles: true}));
+        h.dispatchEvent(new TouchEvent('touchend', {touches: [], bubbles: true}));
+        const r = document.getElementById('dr-panel').getBoundingClientRect(); return [r.left, r.top, r.bottom, innerHeight]; }"""
+    for vw, vh in ((390, 844), (1280, 900)):
+        ctx = p.new_context(viewport={"width": vw, "height": vh}, has_touch=True, is_mobile=vw < 600)
+        page = ctx.new_page()
+        errs = collect_errors(page)
+        install_notes_firestore_stub(page)
+        _block_fonts(page)
+        page.goto(f"{BASE}/a-cell.html", wait_until="load", timeout=20000)
+        page.wait_for_selector("#dr-handle", state="attached", timeout=10000)
+        before = page.evaluate("() => { const r = document.getElementById('dr-panel').getBoundingClientRect(); return [r.left, r.top]; }")
+        if vw < 600:
+            r = page.evaluate(swipe, [200, vh - 20, 200, vh - 400])
+            record("dice-roller", "phone: a scroll that starts on the Dice Roller bar leaves it docked at the bottom",
+                   abs(r[2] - r[3]) < 1 and page.evaluate("() => document.getElementById('dr-panel').style.top") == "", str(r))
+        else:
+            r = page.evaluate(swipe, [before[0] + 40, before[1] + 10, before[0] + 44, before[1] + 13])
+            record("dice-roller", "desktop: a small touch wobble doesn't move the panel", abs(r[1] - before[1]) < 1, f"{before} -> {r}")
+            r = page.evaluate(swipe, [before[0] + 40, before[1] + 10, before[0] - 200, before[1] - 300])
+            record("dice-roller", "desktop: a real touch drag still moves it", r[1] < before[1] - 100, f"{before} -> {r}")
+        record("dice-roller", f"no JS exceptions (drag, {vw}px)", not errs, str(errs[:3]))
+        ctx.close()
+
 def test_hub_dice_roller_learns_agent_from_iframe(p):
     """In the Hub the Dice Roller lives on the OUTER page, but the Agent's
     code gets set by the sheet inside the iframe -- and PR #44's
@@ -11702,6 +11736,7 @@ def main():
         safe(test_main_photo_from_active_era, browser, area="photo")
         safe(test_field_notes_shell, browser, area="notebook-shell")
         safe(test_friendly_pregen_builder, browser, area="friendly")
+        safe(test_dice_roller_phone_not_dragged_by_scroll, browser, area="dice-roller")
         safe(test_hub_dice_roller_learns_agent_from_iframe, browser, area="dice-roller")
         safe(test_agent_file_storage_plates_and_refresh, browser, area="journey")
         safe(test_auto_created_brief_uses_titles_and_player, browser, area="journey")

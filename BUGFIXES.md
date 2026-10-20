@@ -2317,6 +2317,23 @@ doesn't reintroduce the scroll jank the debounce exists to avoid.
 Purely client-side, `assets/dice-roller.js` only. `sw.js` `CACHE_NAME`
 bumped to `v107`.
 
+
+**Root cause found 2026-10-20 (v3.5.3).** Reported again with an
+iPhone screenshot (home-screen A-Cell, the Evidence form): the bar
+stuck mid-screen. The two fixes above, and the `translateZ(0)` one,
+treated it as a WebKit `position:fixed` freeze. They were real but
+partial; the actual cause was the panel's own touch drag
+(`initDrag`). On a phone the panel is a full-width bottom sheet, so a
+finger scrolling the page that started on its bar fired `touchmove`,
+which set an inline `top`/`left` and left the bar wherever the finger
+went. No reflow can undo an inline position, which is why it "came
+back". Now, docked on a phone (≤600px) the panel isn't dragged, and
+any leftover inline position is cleared (also on resize to phone
+width). Wider screens still drag, but only after 10px of movement.
+`test_dice_roller_phone_not_dragged_by_scroll` (it fails on the old
+code with the bar at y=427 of 844). `sw.js` `CACHE_NAME` v232,
+`dice-roller.js?v=10`.
+
 ## Issue #8 shipping plan, step 4: force Firestore long-polling instead
 ## of auto-detecting
 
