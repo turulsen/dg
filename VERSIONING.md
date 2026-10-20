@@ -142,7 +142,14 @@ Tag button is gone, Quick notes written in the notebook show under
 Quick notes at once and are tagged the same way as words on the page
 (see `BUGFIXES.md`); shell cache `dg-hub-shell-v231`. **v3.5.3** (2026-10-20, PR #80) stops the
 Dice Roller bar being dragged mid-screen on a phone by a scroll that
-starts on it (see `BUGFIXES.md`); shell cache `dg-hub-shell-v232`. **v3.1.0**
+starts on it (see `BUGFIXES.md`); shell cache `dg-hub-shell-v232`. **v3.6.0** (unreleased)
+is A-Cell's Evidence rework: one item shared with several Cells and
+Operations as linked copies, each in its Cell's language (English or
+Magyar, with a Translate button through the new `translateEvidence`
+Cloud Function), Duplicate, formatting (headings, bold, lists, quotes)
+drawn the same for Agents, a body box that grows with the text, and
+Edit opening where the card is; shell cache `dg-hub-shell-v233`.
+Needs `firebase deploy --only functions` once for Translate. **v3.1.0**
 (2026-10-10) is PR #72, v2 milestone M3: the Agent File's paper wears as
 SAN falls. Stains, a fold, a coffee ring, blood and, from SAN 9, a torn
 edge are drawn over the whole page on Agent Hub and in the notebook

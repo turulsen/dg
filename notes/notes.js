@@ -918,7 +918,7 @@
         '<div class="dg-notes-identity-title">' + escapeHtml(h.title) + '</div>' +
         opTag +
         photoHtml +
-        (h.body ? '<p class="dg-notes-evidence-body-text">' + escapeHtml(h.body) + '</p>' : '') +
+        (h.body ? '<div class="dg-notes-evidence-body-text dg-md">' + (window.dgEvidenceMd ? window.dgEvidenceMd.render(h.body) : escapeHtml(h.body)) + '</div>' : '') +
         '<div class="dg-notes-toc-subhead">Remarks</div>' +
         '<div class="dg-notes-evidence-remarks-list">' + remarksHtml + '</div>' +
         '<div class="dg-notes-evidence-compose">' +

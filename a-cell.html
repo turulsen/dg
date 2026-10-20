@@ -493,6 +493,42 @@
   .evidence-released-row{ display:flex; align-items:center; gap:8px; font-size:12px; font-family:'Courier Prime',monospace; color:var(--ink-2); }
   .evidence-create-actions{ display:flex; gap:8px; align-items:center; }
   .evidence-create-error{ color:var(--red); font-size:11px; min-height:1.3em; }
+  /* v3.6.0: languages, formatting toolbar, growing body, Share-with rows */
+  .evidence-create-form.is-inline{ margin:0; outline:2px solid rgba(139,42,31,.45); outline-offset:3px; }
+  .ev-langs{ display:flex; flex-wrap:wrap; align-items:flex-end; border-bottom:1.5px solid rgba(90,74,16,.4); }
+  .ev-lang{ font-family:'Courier Prime',monospace; font-size:11px; letter-spacing:.04em; padding:6px 12px 5px; margin-right:4px;
+    border:1px solid var(--rule); border-bottom:0; background:rgba(28,22,8,.03); color:var(--ink-3); cursor:pointer; text-align:left; }
+  .ev-lang b{ font-family:'Special Elite',monospace; font-weight:400; letter-spacing:.14em; margin-right:6px; color:var(--ink-2); }
+  .ev-lang i{ font-style:normal; font-size:9px; opacity:.75; margin-left:6px; }
+  .ev-lang.on{ background:#efe8d3; color:var(--ink); border-color:rgba(90,74,16,.45); position:relative; top:1.5px; padding-bottom:6.5px; }
+  .ev-lang.missing i{ color:var(--red); opacity:1; }
+  .ev-langnote{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; min-height:0; font-family:'Courier Prime',monospace;
+    font-size:10.5px; color:var(--ink-3); font-style:italic; }
+  .ev-langnote:empty{ display:none; }
+  .ev-langnote .paper-btn{ font-size:10px; padding:4px 9px; font-style:normal; }
+  .ev-tb{ display:flex; flex-wrap:wrap; gap:4px; margin:2px 0 4px; }
+  .ev-tb button{ font:11px 'Courier Prime',monospace; color:var(--ink-2); background:rgba(28,22,8,.04); border:1px solid var(--rule);
+    padding:4px 9px; cursor:pointer; min-height:28px; }
+  .ev-tb button.on{ background:rgba(28,22,8,.8); color:#f3ecd8; }
+  .ev-tb-sp{ flex:1; }
+  .evidence-create-field textarea.ev-body{ width:100%; box-sizing:border-box; min-height:260px; resize:none; overflow:hidden;
+    background:rgba(255,252,240,.35); border:1px solid var(--rule); border-bottom:1.5px solid rgba(90,74,16,.4);
+    padding:10px 12px; font-size:13px; line-height:1.6; }
+  .ev-preview{ border:1px dashed var(--rule); padding:10px 12px; min-height:120px; font-family:'Courier Prime',monospace;
+    font-size:12px; color:var(--ink-2); line-height:1.7; }
+  .ev-share{ display:flex; flex-direction:column; gap:8px; }
+  .ev-share-h{ font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); }
+  .ev-row{ border:1px solid var(--rule); padding:8px 10px; display:flex; flex-direction:column; gap:8px; background:rgba(28,22,8,.025); }
+  .ev-row-top{ display:flex; gap:10px 14px; align-items:flex-end; flex-wrap:wrap; }
+  .ev-row-top label{ display:flex; flex-direction:column; gap:3px; flex:1; min-width:130px; }
+  .ev-row-top label.ev-row-lang-l{ flex:0 0 auto; min-width:110px; }
+  .ev-row-top span{ font-family:'Courier Prime',monospace; font-size:8.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); }
+  .ev-row-top select{ background:transparent; border:none; border-bottom:1.5px solid rgba(90,74,16,.4); color:var(--ink);
+    padding:4px 0; font-size:13px; font-family:'Courier Prime',monospace; }
+  .ev-row-x{ font-family:'Special Elite',monospace; font-size:18px; line-height:1; color:var(--red); background:none; border:0; cursor:pointer; padding:2px 6px; }
+  .ev-add-row{ align-self:flex-start; font-size:10px !important; }
+  .evidence-link-tag{ font-family:'Courier Prime',monospace; font-size:10px; color:var(--ink-3); font-style:italic; }
+  .evidence-lang-tag{ font-family:'Courier Prime',monospace; font-size:9.5px; letter-spacing:.1em; border:1px solid var(--rule); color:var(--ink-2); padding:3px 7px; }
   .evidence-status{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); min-height:1.4em; margin-bottom:10px; }
   .evidence-list{ display:flex; flex-direction:column; gap:12px; }
   .evidence-card{ background:rgba(28,22,8,.04); border:1px solid var(--rule); padding:16px 18px; }
@@ -1757,6 +1793,15 @@
             created_at: isNew ? Date.now() : (prev.created_at || Date.now()),
             visible_to: visibleTo_(r[0], released, cellId, restrictedTo)
           };
+          // v3.6.0: linked copies, the language this copy is read in, and
+          // both texts. A caller that doesn't send them (the Released
+          // toggle) keeps what the item had.
+          var texts = p.texts === undefined ? prev.texts : (typeof p.texts === 'string' ? (function () { try { return JSON.parse(p.texts); } catch (e) { return null; } })() : p.texts);
+          var group = p.share_group === undefined ? prev.share_group : p.share_group;
+          var lang = p.lang === undefined ? prev.lang : p.lang;
+          if (texts && typeof texts === 'object' && Object.keys(texts).length) doc.texts = texts;
+          if (group) doc.share_group = String(group);
+          if (lang) doc.lang = String(lang);
           return ref.set(doc);
         });
       }).then(function () { return { status: 'OK', evidence_id: id }; });
@@ -3493,11 +3538,7 @@
       });
       agentNames = names;
       renderList();
-      var scope = document.getElementById('evidence-new-scope');
-      if (scope && document.getElementById('evidence-new-restrict-wrap')) {
-        refreshFormRestrictList(scope.value, Array.prototype.map.call(
-          document.querySelectorAll('#evidence-new-restrict-wrap input:checked'), function (cb) { return cb.value; }));
-      }
+      if (formRefreshAgents) formRefreshAgents();
     }).catch(function () { /* codes stay as labels */ });
   }
   function fsGet_(query) {
@@ -3570,7 +3611,8 @@
             evidenceItems.push({
               evidence_id: doc.id, title: d.title || '', body: d.body || '', photo: d.photo || '',
               cell_id: d.cell_id || '', operation_id: d.operation_id || '', created_at: d.created_at || 0,
-              released: !!d.released, restricted_to: d.restricted_to || []
+              released: !!d.released, restricted_to: d.restricted_to || [],
+              share_group: d.share_group || '', lang: d.lang || '', texts: d.texts || null
             });
           });
           evidenceLoadError = null;
@@ -3780,6 +3822,7 @@
     var shown = visibleEvidence();
     if (!shown.length) {
       listEl.innerHTML = '<div class="evidence-empty-note">No evidence filed here yet -- click "+ New Evidence" to add one.</div>';
+      placeInlineEdit_();
       return;
     }
     listEl.innerHTML = shown.map(function (h) {
@@ -3799,20 +3842,28 @@
                       ? '<div class="evidence-photo-pdf-note" data-lightbox-pdf="' + i + '"><span class="icon">📄</span><span class="name">View PDF</span></div>'
                       : '<img class="evidence-photo" src="' + h.photo + '" alt="" data-lightbox-photo="' + i + '">'))
         : '';
+      // A linked copy names the other Cells it's shared with; a copy
+      // read in Magyar says so.
+      var others = h.share_group ? groupOf_(h).filter(function (x) { return x !== h; }) : [];
+      var linkTag = others.length ? '<span class="evidence-link-tag">linked with ' + others.map(function (x) { return escapeHtml(placeLabel_(x)); }).join(', ') + '</span>' : '';
+      var langTag = (h.lang && h.lang !== 'en') || (h.texts && Object.keys(h.texts).length > 1)
+        ? '<span class="evidence-lang-tag">' + escapeHtml(langOf_(h).toUpperCase()) + '</span>' : '';
       var restrictedNote = (h.restricted_to && h.restricted_to.length)
         ? '<div class="evidence-restricted-note">Restricted to: ' + h.restricted_to.map(function (c) { return escapeHtml(agentLabel_(c)); }).join(', ') + '</div>' : '';
-      return '<div class="evidence-card' + (h.released ? '' : ' unreleased') + '" data-i="' + i + '">' +
+      return '<div class="evidence-card' + (h.released ? '' : ' unreleased') + '" data-i="' + i + '" data-eid="' + escapeHtml(h.evidence_id) + '">' +
         '<div class="evidence-card-head">' +
-        '<div class="evidence-card-tags"><span class="' + scopeClass + '">' + escapeHtml(cellName(h.cell_id)) + '</span>' + opTag + '</div>' +
+        '<div class="evidence-card-tags"><span class="' + scopeClass + '">' + escapeHtml(cellName(h.cell_id)) + '</span>' + opTag + langTag + linkTag + '</div>' +
         '<span class="evidence-date">' + escapeHtml(formatDate(h.created_at)) + '</span>' +
         '</div>' +
         '<div class="evidence-title">' + escapeHtml(h.title) + '</div>' +
         '<div class="evidence-body-row">' + photoRow +
-        '<div class="evidence-text">' + escapeHtml(h.body) + '</div>' +
+        '<div class="evidence-text dg-md">' + window.dgEvidenceMd.render(h.body) + '</div>' +
         '</div>' + restrictedNote +
         '<div class="evidence-actions">' +
         '<label class="evidence-release-toggle"><input type="checkbox" data-toggle-released="' + i + '"' + (h.released ? ' checked' : '') + '> Released</label>' +
         '<button type="button" class="paper-btn" data-edit-evidence="' + i + '">Edit</button>' +
+        '<button type="button" class="paper-btn" data-dup-evidence="' + i + '">Duplicate</button>' +
+        '<button type="button" class="paper-btn" data-share-evidence="' + i + '">Share…</button>' +
         '<button type="button" class="paper-btn cell-delete-btn" data-delete-evidence="' + i + '">Delete</button>' +
         '</div>' +
         '</div>';
@@ -3821,6 +3872,16 @@
     Array.prototype.forEach.call(listEl.querySelectorAll('[data-edit-evidence]'), function (btn) {
       btn.addEventListener('click', function () { showForm(evidenceItems[parseInt(btn.dataset.editEvidence, 10)]); });
     });
+    Array.prototype.forEach.call(listEl.querySelectorAll('[data-dup-evidence]'), function (btn) {
+      btn.addEventListener('click', function () {
+        showForm(evidenceItems[parseInt(btn.dataset.dupEvidence, 10)], { duplicate: true });
+        createFormSlot.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      });
+    });
+    Array.prototype.forEach.call(listEl.querySelectorAll('[data-share-evidence]'), function (btn) {
+      btn.addEventListener('click', function () { showForm(evidenceItems[parseInt(btn.dataset.shareEvidence, 10)], { share: true }); });
+    });
+    placeInlineEdit_();
     Array.prototype.forEach.call(listEl.querySelectorAll('[data-delete-evidence]'), function (btn) {
       btn.addEventListener('click', function () { deleteEvidence(evidenceItems[parseInt(btn.dataset.deleteEvidence, 10)], btn); });
     });
@@ -4029,147 +4090,357 @@
     r.readAsDataURL(file);
   }
 
-  // Rebuilds the Operation dropdown for whichever Cell is picked in the
-  // form's own Scope select -- an Operation belongs to one Cell, so the
-  // list has to follow the form's scope, not the sidebar's filter.
-  // Writes here are Firestore now: when dgAcellApi.post() resolves the
-  // write has landed, so each read-back below runs right away (the 0ms
-  // timeouts used to be 900ms waits for the Sheet to catch up).
-  function refreshFormOperationOptions(selectedCellId, keepOpId) {
-    var opSel = document.getElementById('evidence-new-op');
-    if (!opSel) return;
-    var ops = operationsByCell[selectedCellId] || [];
-    opSel.innerHTML = '<option value="">Unfiled</option>' + ops.map(function (o) {
-      var sel = keepOpId === o.operation_id ? ' selected' : '';
-      return '<option value="' + escapeHtml(o.operation_id) + '"' + sel + '>' + escapeHtml(o.name) + '</option>';
-    }).join('');
+  /* ── The Evidence form (v3.6.0) ──
+     - Share with: one row per Cell + Operation (+ which of its Agents).
+       Each row is its own Evidence item -- a linked copy sharing a
+       share_group id, so every reader stays as it was -- with its own
+       Released box; the text, title and file are the same on every copy.
+     - Language per Cell: a row reads English or Magyar. Both texts are
+       kept on every copy (texts: {en:{title,body}, hu:{...}}); its
+       title/body are the ones in its row's language, so an Agent sees
+       one language, never a switch. Translate (translateEvidence, a
+       Cloud Function) fills one from the other.
+     - Formatting: a small Markdown toolbar (assets/evidence-md.js draws
+       it), Preview, and a body box that grows with the text.
+     - Editing opens the form where the card was, not at the top. */
+  var LANGS = [['en', 'English'], ['hu', 'Magyar']];
+  var CELL_LANG_KEY = 'dg_acell_cell_lang';
+  function langName_(l) { var x = LANGS.filter(function (p) { return p[0] === l; })[0]; return x ? x[1] : l; }
+  function cellLangs_() { try { return JSON.parse(localStorage.getItem(CELL_LANG_KEY) || '{}') || {}; } catch (e) { return {}; } }
+  // The language a Cell's Evidence was last filed in, on this device.
+  function defaultLang_(cellId) { var l = cellLangs_()[cellId || '_all']; return LANGS.some(function (p) { return p[0] === l; }) ? l : 'en'; }
+  function rememberCellLang_(cellId, l) {
+    try { var m = cellLangs_(); m[cellId || '_all'] = l; localStorage.setItem(CELL_LANG_KEY, JSON.stringify(m)); } catch (e) {}
+  }
+  function groupOf_(h) {
+    return h.share_group ? evidenceItems.filter(function (x) { return x.share_group === h.share_group; }) : [h];
+  }
+  // Evidence filed before v3.6.0 has no language: it was written in English.
+  function langOf_(h) { return LANGS.some(function (p) { return p[0] === h.lang; }) ? h.lang : 'en'; }
+  function textsOf_(h) {
+    var t = {}, src = h.texts || {};
+    LANGS.forEach(function (p) {
+      var x = src[p[0]];
+      if (x && (x.title || x.body)) t[p[0]] = { title: x.title || '', body: x.body || '' };
+    });
+    var l = langOf_(h);
+    if (!t[l]) t[l] = { title: h.title || '', body: h.body || '' };
+    return t;
+  }
+  function placeLabel_(h) { return cellName(h.cell_id) + (h.operation_id ? ' · ' + opName(h.operation_id) : ''); }
+
+  // The open edit form, standing where the card it edits was. renderList()
+  // puts it back after every redraw (the live listener redraws often).
+  var inlineEdit = null;
+  var formRefreshAgents = null;
+  function closeForm() {
+    createFormSlot.innerHTML = '';
+    formRefreshAgents = null;
+    if (inlineEdit) { inlineEdit = null; renderList(); }
+  }
+  function placeInlineEdit_() {
+    if (!inlineEdit) return;
+    var card = listEl.querySelector('.evidence-card[data-eid="' + inlineEdit.id.replace(/["\\]/g, '') + '"]');
+    if (card) { card.parentNode.insertBefore(inlineEdit.node, card); card.style.display = 'none'; }
+    else listEl.insertBefore(inlineEdit.node, listEl.firstChild);
   }
 
-  // Rebuilds the per-Agent restriction checklist for whichever Cell is
-  // picked in the form's Scope select -- restricting to specific Agents
-  // only makes sense once a Cell (and therefore a member roster) is
-  // chosen; "All Cells" scope has no fixed roster to restrict from.
-  function refreshFormRestrictList(selectedCellId, checkedCodes) {
-    var wrap = document.getElementById('evidence-new-restrict-wrap');
-    if (!wrap) return;
-    var cell = cellsById[selectedCellId];
+  function rowOpsHtml_(cellId, opId) {
+    return '<option value="">Unfiled</option>' + (operationsByCell[cellId] || []).map(function (o) {
+      return '<option value="' + escapeHtml(o.operation_id) + '"' + (opId === o.operation_id ? ' selected' : '') + '>' + escapeHtml(o.name) + '</option>';
+    }).join('');
+  }
+  function rowRestrictHtml_(cellId, checkedCodes) {
+    var cell = cellsById[cellId];
     var codes = (cell && cell.member_codes) || [];
-    if (!selectedCellId || !codes.length) {
-      wrap.innerHTML = '<p class="evidence-restrict-note">' +
-        (selectedCellId ? 'This Cell has no members yet.' : 'Pick a Cell above to restrict to specific Agents.') + '</p>';
-      return;
+    if (!cellId || !codes.length) {
+      return '<p class="evidence-restrict-note">' + (cellId ? 'This Cell has no members yet.' : 'Pick a Cell to restrict to specific Agents.') + '</p>';
     }
-    wrap.innerHTML = '<div class="evidence-restrict-list">' + codes.map(function (code) {
-      var checked = checkedCodes.indexOf(code) !== -1 ? ' checked' : '';
-      return '<label class="evidence-restrict-item" title="' + escapeHtml(code) + '"><input type="checkbox" value="' + escapeHtml(code) + '"' + checked + '> ' + escapeHtml(agentLabel_(code)) + '</label>';
+    return '<div class="evidence-restrict-list">' + codes.map(function (code) {
+      return '<label class="evidence-restrict-item" title="' + escapeHtml(code) + '"><input type="checkbox" value="' + escapeHtml(code) + '"' +
+        (checkedCodes.indexOf(code) !== -1 ? ' checked' : '') + '> ' + escapeHtml(agentLabel_(code)) + '</label>';
     }).join('') + '</div><p class="evidence-restrict-note">Leave all unchecked to share with the whole Cell once released.</p>';
   }
 
-  function showForm(editingEvidence) {
-    if (!editingEvidence && createFormSlot.childNodes.length) { createFormSlot.innerHTML = ''; return; }
+  // Toolbar: wraps the selection, or marks the selected lines.
+  function mdApply_(ta, kind) {
+    var v = ta.value, s = ta.selectionStart, e = ta.selectionEnd, sel = v.slice(s, e);
+    if (kind === 'b' || kind === 'i') {
+      var m = kind === 'b' ? '**' : '*', inner = sel || (kind === 'b' ? 'bold' : 'italic');
+      ta.setRangeText(m + inner + m, s, e, 'end');
+      if (!sel) ta.setSelectionRange(s + m.length, s + m.length + inner.length);
+    } else if (kind === 'hr') {
+      ta.setRangeText((s && v[s - 1] !== '\n' ? '\n' : '') + '\n---\n\n', s, e, 'end');
+    } else {
+      var ls = v.lastIndexOf('\n', s - 1) + 1, le = v.indexOf('\n', e);
+      if (le < 0) le = v.length;
+      var prefix = { h1: '# ', h2: '## ', ul: '- ', q: '> ' }[kind], n = 0;
+      var out = v.slice(ls, le).split('\n').map(function (l) {
+        var bare = l.replace(/^(#{1,3}\s+|[-*•]\s+|\d+[.)]\s+|>\s?)/, '');
+        if (kind === 'ol') return /^\d+[.)]\s/.test(l) ? bare : (++n) + '. ' + bare;
+        return l.indexOf(prefix) === 0 ? bare : prefix + bare;
+      }).join('\n');
+      ta.setRangeText(out, ls, le, 'select');
+    }
+    ta.focus();
+    ta.dispatchEvent(new Event('input'));
+  }
+  function growBody_(ta) {
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = Math.max(260, ta.scrollHeight + 6) + 'px';
+  }
+
+  function translateEvidence_(from, to, text) {
+    return ensureHandlerSignedIn().then(function () {
+      return window.firebase.functions().httpsCallable('translateEvidence', { timeout: 120000 })({ from: from, to: to, title: text.title, body: text.body });
+    }).then(function (res) {
+      var d = (res && res.data) || {};
+      if (d.status !== 'OK') throw new Error(d.message || 'The translation service did not answer.');
+      return { title: d.title || '', body: d.body || '' };
+    });
+  }
+
+  // showForm(item)            edit it (and its linked copies)
+  // showForm(item, {duplicate}) a new item filled in from it
+  // showForm(item, {share})   edit it, with a new Share-with row added
+  // showForm(null)            a new item (the button toggles it)
+  function showForm(editingEvidence, opts) {
+    opts = opts || {};
+    if (!editingEvidence && createFormSlot.childNodes.length) { closeForm(); return; }
+    closeForm();
+    var source = editingEvidence || null;
+    var isEdit = !!source && !opts.duplicate;
+    var group = source ? groupOf_(source) : [];
+    // The card that was tapped stays the first row.
+    group = group.filter(function (h) { return h === source; }).concat(group.filter(function (h) { return h !== source; }));
+    var texts = source ? textsOf_(source) : {};
+    var rows = source ? group.map(function (h) {
+      return { id: isEdit ? h.evidence_id : null, cell_id: h.cell_id || '', operation_id: h.operation_id || '',
+               restricted_to: (h.restricted_to || []).slice(), lang: langOf_(h) };
+    }) : [{ id: null, cell_id: filterCellId, operation_id: filterOpId === 'UNFILED' ? '' : filterOpId, restricted_to: [], lang: defaultLang_(filterCellId) }];
+    if (opts.share) rows.push({ id: null, cell_id: '', operation_id: '', restricted_to: [], lang: 'en' });
+    var curLang = rows[0].lang;
+    var released = isEdit ? group.every(function (h) { return h.released; }) : !!(source && source.released);
     formPhotoDataUrl = null;
     formPhotoFile = null;
-    formPhotoExisting = editingEvidence ? (editingEvidence.photo || null) : null;
-    var initialCellId = editingEvidence ? (editingEvidence.cell_id || '') : filterCellId;
-    var initialOpId = editingEvidence ? (editingEvidence.operation_id || '') : (filterOpId === 'UNFILED' ? '' : filterOpId);
-    var initialRestricted = editingEvidence ? (editingEvidence.restricted_to || []) : [];
-    // A legacy pre-migration item still holding a raw data URI can
-    // preview directly; a gdrive: link resolves async below, once the
-    // form (and its preview wrap) actually exists in the DOM.
+    formPhotoExisting = source ? (source.photo || null) : null;
     var previewSrc = (formPhotoExisting && !extractDriveId(formPhotoExisting)) ? formPhotoExisting : null;
-    var scopeOptions = '<option value="">All Cells</option>' + cells.map(function (c) {
-      var sel = initialCellId === c.cell_id ? ' selected' : '';
-      return '<option value="' + escapeHtml(c.cell_id) + '"' + sel + '>' + escapeHtml(c.name) + '</option>';
-    }).join('');
-    createFormSlot.innerHTML =
-      '<div class="evidence-create-form">' +
-      '<div class="evidence-create-row">' +
-      '<label class="evidence-create-field"><span>Title</span><input type="text" id="evidence-new-title" placeholder="e.g. Field Photograph" value="' + (editingEvidence ? escapeHtml(editingEvidence.title) : '') + '"></label>' +
-      '<label class="evidence-create-field"><span>Scope</span><select id="evidence-new-scope">' + scopeOptions + '</select></label>' +
-      '<label class="evidence-create-field"><span>Operation</span><select id="evidence-new-op"></select></label>' +
+
+    var node = document.createElement('div');
+    node.className = 'evidence-create-form' + (isEdit ? ' is-inline' : '');
+    node.innerHTML =
+      '<div class="ev-langs" id="evidence-langs"></div>' +
+      '<div class="ev-langnote" id="evidence-langnote"></div>' +
+      '<label class="evidence-create-field"><span id="evidence-title-label">Title</span><input type="text" id="evidence-new-title" placeholder="e.g. Field Photograph"></label>' +
+      '<div class="evidence-create-field"><span id="evidence-body-label">Body</span>' +
+        '<div class="ev-tb">' +
+          [['h1', 'H1', 'Heading'], ['h2', 'H2', 'Smaller heading'], ['b', '<b>B</b>', 'Bold'], ['i', '<i>I</i>', 'Italic'],
+           ['ul', '• List', 'Bulleted list'], ['ol', '1. List', 'Numbered list'], ['q', '❝ Quote', 'Quote'], ['hr', '— Rule', 'Divider line']]
+            .map(function (b) { return '<button type="button" data-md="' + b[0] + '" title="' + b[2] + '">' + b[1] + '</button>'; }).join('') +
+          '<span class="ev-tb-sp"></span><button type="button" data-mode="write" class="on">Write</button><button type="button" data-mode="preview">Preview</button>' +
+        '</div>' +
+        '<textarea id="evidence-new-body" class="ev-body" placeholder="What the Agents see... (# heading, **bold**, - list)"></textarea>' +
+        '<div class="ev-preview dg-md" id="evidence-new-preview" hidden></div>' +
       '</div>' +
-      '<label class="evidence-create-field"><span>Body</span><textarea id="evidence-new-body" placeholder="What the Agents see...">' + (editingEvidence ? escapeHtml(editingEvidence.body) : '') + '</textarea></label>' +
       '<label class="evidence-create-field"><span>Photo or PDF (optional)</span><input type="file" accept="image/*,application/pdf" id="evidence-new-photo"></label>' +
       '<div id="evidence-new-photo-prev-wrap"></div>' +
-      '<label class="evidence-released-row"><input type="checkbox" id="evidence-new-released"' + (editingEvidence && editingEvidence.released ? ' checked' : '') + '> Released -- visible to Agents who can see this Cell/Operation</label>' +
-      '<label class="evidence-create-field"><span>Restrict to specific Agents (optional)</span></label>' +
-      '<div id="evidence-new-restrict-wrap"></div>' +
+      '<div class="ev-share"><span class="ev-share-h">Share with</span><div id="evidence-share-rows"></div>' +
+        '<button type="button" class="paper-btn ev-add-row" id="evidence-add-row">+ Another Cell / Operation</button>' +
+        '<p class="evidence-restrict-note">Each Cell gets its own linked copy, in its own language, with its own Released box. A change to the text or file is saved to every copy.</p></div>' +
+      '<label class="evidence-released-row"><input type="checkbox" id="evidence-new-released"' + (released ? ' checked' : '') + '> Released -- visible to Agents who can see this Cell/Operation</label>' +
       '<div class="evidence-create-actions">' +
-      '<button type="button" class="paper-btn primary" id="evidence-new-confirm">' + (editingEvidence ? 'Save' : 'Create') + '</button>' +
-      '<button type="button" class="paper-btn" id="evidence-new-cancel">Cancel</button>' +
+        '<button type="button" class="paper-btn primary" id="evidence-new-confirm"></button>' +
+        '<button type="button" class="paper-btn" id="evidence-new-cancel">Cancel</button>' +
       '</div>' +
-      '<div class="evidence-create-error" id="evidence-new-error"></div>' +
-      '</div>';
-    refreshFormOperationOptions(initialCellId, initialOpId);
-    refreshFormRestrictList(initialCellId, initialRestricted);
-    if (previewSrc) {
-      renderPhotoPreview('evidence-new-photo-prev-wrap', previewSrc, isPdfUrl_(previewSrc), 'existing file');
+      '<div class="evidence-create-error" id="evidence-new-error"></div>';
+    if (isEdit) { inlineEdit = { id: source.evidence_id, node: node }; renderList(); }
+    else createFormSlot.appendChild(node);
+    var $ = function (id) { return node.querySelector('#' + id); };
+    var titleEl = $('evidence-new-title'), bodyEl = $('evidence-new-body'), errEl = $('evidence-new-error');
+    var confirmBtn = $('evidence-new-confirm');
+
+    function syncText() {
+      var t = { title: titleEl.value.trim() ? titleEl.value : '', body: bodyEl.value };
+      if (t.title || t.body.trim()) texts[curLang] = t; else delete texts[curLang];
     }
-    document.getElementById('evidence-new-scope').addEventListener('change', function () {
-      refreshFormOperationOptions(this.value, '');
-      refreshFormRestrictList(this.value, []);
+    function syncRows() {
+      Array.prototype.forEach.call(node.querySelectorAll('.ev-row'), function (el) {
+        var r = rows[+el.dataset.row];
+        r.cell_id = el.querySelector('.ev-row-cell').value;
+        r.operation_id = el.querySelector('.ev-row-op').value;
+        r.lang = el.querySelector('.ev-row-lang').value;
+        r.restricted_to = Array.prototype.map.call(el.querySelectorAll('.evidence-restrict-list input:checked'), function (cb) { return cb.value; });
+      });
+    }
+    function usedBy(l) { return rows.filter(function (r) { return r.lang === l; }).map(function (r) { return cellName(r.cell_id); }); }
+    function drawLangs() {
+      $('evidence-langs').innerHTML = LANGS.map(function (p) {
+        var who = usedBy(p[0]), has = !!texts[p[0]];
+        return '<button type="button" class="ev-lang' + (p[0] === curLang ? ' on' : '') + (who.length && !has ? ' missing' : '') + '" data-lang="' + p[0] + '">' +
+          '<b>' + p[0].toUpperCase() + '</b>' + p[1] + '<i>' + (who.length ? escapeHtml(who.join(', ')) : 'not shared') + '</i></button>';
+      }).join('');
+      var other = LANGS.filter(function (p) { return p[0] !== curLang && texts[p[0]]; })[0];
+      var note = '';
+      if (other) {
+        note = (texts[curLang] ? '' : 'No ' + langName_(curLang) + ' text yet. ') +
+          '<button type="button" class="paper-btn" data-translate="' + other[0] + '">' + (texts[curLang] ? '↻ Translate again' : 'Translate') + ' from ' + other[1] + '</button>' +
+          '<span class="ev-tr-status"></span>';
+      } else if (!texts[curLang] && usedBy(curLang).length === 0) {
+        note = '';
+      }
+      $('evidence-langnote').innerHTML = note;
+      $('evidence-title-label').textContent = 'Title (' + langName_(curLang) + ')';
+      $('evidence-body-label').textContent = 'Body (' + langName_(curLang) + ')';
+    }
+    function loadText() {
+      var t = texts[curLang] || { title: '', body: '' };
+      titleEl.value = t.title;
+      bodyEl.value = t.body;
+      requestAnimationFrame(function () { growBody_(bodyEl); });
+      if (!$('evidence-new-preview').hidden) $('evidence-new-preview').innerHTML = window.dgEvidenceMd.render(bodyEl.value);
+    }
+    function drawRows() {
+      $('evidence-share-rows').innerHTML = rows.map(function (r, k) {
+        var cellOpts = '<option value="">All Cells</option>' + cells.map(function (c) {
+          return '<option value="' + escapeHtml(c.cell_id) + '"' + (r.cell_id === c.cell_id ? ' selected' : '') + '>' + escapeHtml(c.name) + '</option>';
+        }).join('');
+        return '<div class="ev-row" data-row="' + k + '"><div class="ev-row-top">' +
+          '<label><span>Cell</span><select class="ev-row-cell"' + (k === 0 ? ' id="evidence-new-scope"' : '') + '>' + cellOpts + '</select></label>' +
+          '<label><span>Operation</span><select class="ev-row-op"' + (k === 0 ? ' id="evidence-new-op"' : '') + '>' + rowOpsHtml_(r.cell_id, r.operation_id) + '</select></label>' +
+          '<label class="ev-row-lang-l"><span>Language</span><select class="ev-row-lang">' + LANGS.map(function (p) {
+            return '<option value="' + p[0] + '"' + (r.lang === p[0] ? ' selected' : '') + '>' + p[1] + '</option>';
+          }).join('') + '</select></label>' +
+          (rows.length > 1 ? '<button type="button" class="ev-row-x" title="Stop sharing with this Cell">×</button>' : '') +
+          '</div><div class="ev-row-restrict"' + (k === 0 ? ' id="evidence-new-restrict-wrap"' : '') + '>' + rowRestrictHtml_(r.cell_id, r.restricted_to) + '</div></div>';
+      }).join('');
+      confirmBtn.textContent = (isEdit ? 'Save' : 'Create') + (rows.length > 1 ? ' (' + rows.length + ' copies)' : '');
+    }
+    formRefreshAgents = function () { syncRows(); drawRows(); };
+
+    $('evidence-langs').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-lang]');
+      if (!b || b.dataset.lang === curLang) return;
+      syncText(); curLang = b.dataset.lang; drawLangs(); loadText();
     });
-    document.getElementById('evidence-new-photo').addEventListener('change', function () {
-      handlePhoto(this, 'evidence-new-photo-prev-wrap');
+    $('evidence-langnote').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-translate]');
+      if (!b) return;
+      syncText();
+      var from = b.dataset.translate, to = curLang, st = node.querySelector('.ev-tr-status');
+      if (texts[to] && !confirm('Replace the ' + langName_(to) + ' text with a new translation?')) return;
+      b.disabled = true; b.textContent = 'Translating…';
+      translateEvidence_(from, to, texts[from]).then(function (t) {
+        texts[to] = t;
+        if (curLang === to) loadText();
+        drawLangs();
+        var s2 = node.querySelector('.ev-tr-status'); if (s2) s2.textContent = 'Translated from ' + langName_(from) + '. Check it and edit freely.';
+      }).catch(function (err) {
+        b.disabled = false; b.textContent = 'Translate from ' + langName_(from);
+        if (st) st.textContent = 'Could not translate: ' + ((err && err.message) || err) + ' -- you can type it in by hand.';
+      });
     });
-    document.getElementById('evidence-new-cancel').addEventListener('click', function () { createFormSlot.innerHTML = ''; });
-    document.getElementById('evidence-new-confirm').addEventListener('click', function () {
-      var confirmBtn = this;
-      // A photo upload can genuinely take a few seconds, and the shared
-      // statusEl text elsewhere in the panel is easy to miss on a small
-      // screen -- confirmed live: nothing stopped a second tap on this
-      // exact button while the first upload was still in flight, which
-      // created two full duplicate Evidence rows (two uploads, two
-      // create_evidence calls) rather than one. Disabling THIS button
-      // and changing its own label is both the clearest possible
-      // feedback (it's the thing they just tapped) and a hard guard
-      // against that double-submit, not just a status message that can
-      // go unnoticed.
+    node.querySelector('.ev-tb').addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      var pv = $('evidence-new-preview');
+      if (b.dataset.mode) {
+        var prev = b.dataset.mode === 'preview';
+        node.querySelectorAll('.ev-tb [data-mode]').forEach(function (x) { x.classList.toggle('on', x === b); });
+        if (prev) pv.innerHTML = window.dgEvidenceMd.render(bodyEl.value) || '<p class="evidence-restrict-note">Nothing written yet.</p>';
+        pv.hidden = !prev; bodyEl.hidden = prev;
+        if (!prev) growBody_(bodyEl);
+        return;
+      }
+      if (bodyEl.hidden) return;
+      mdApply_(bodyEl, b.dataset.md);
+    });
+    bodyEl.addEventListener('input', function () { growBody_(bodyEl); });
+    $('evidence-share-rows').addEventListener('change', function (e) {
+      var row = e.target.closest('.ev-row');
+      if (!row) return;
+      var r = rows[+row.dataset.row];
+      if (e.target.classList.contains('ev-row-cell')) {
+        syncRows();
+        r.operation_id = ''; r.restricted_to = [];
+        if (!r.id) r.lang = defaultLang_(r.cell_id);
+        drawRows(); drawLangs();
+      } else if (e.target.classList.contains('ev-row-lang')) {
+        syncRows(); drawLangs();
+      }
+    });
+    $('evidence-share-rows').addEventListener('click', function (e) {
+      var x = e.target.closest('.ev-row-x');
+      if (!x) return;
+      syncRows();
+      rows.splice(+x.closest('.ev-row').dataset.row, 1);
+      drawRows(); drawLangs();
+    });
+    $('evidence-add-row').addEventListener('click', function () {
+      syncRows();
+      rows.push({ id: null, cell_id: '', operation_id: '', restricted_to: [], lang: 'en' });
+      drawRows(); drawLangs();
+    });
+    $('evidence-new-photo').addEventListener('change', function () { handlePhoto(this, 'evidence-new-photo-prev-wrap'); });
+    $('evidence-new-cancel').addEventListener('click', closeForm);
+
+    confirmBtn.addEventListener('click', function () {
+      // Disabled while saving: a second tap during a slow upload used to
+      // create a duplicate item (see BUGFIXES.md).
       if (confirmBtn.disabled) return;
-      var title = document.getElementById('evidence-new-title').value.trim();
-      var body = document.getElementById('evidence-new-body').value.trim();
-      var cellId = document.getElementById('evidence-new-scope').value;
-      var opId = document.getElementById('evidence-new-op').value;
-      var released = document.getElementById('evidence-new-released').checked;
-      var restrictedTo = Array.prototype.map.call(
-        document.querySelectorAll('#evidence-new-restrict-wrap input:checked'), function (cb) { return cb.value; });
-      var errEl = document.getElementById('evidence-new-error');
-      if (!title) { errEl.textContent = 'Give the evidence a title first.'; return; }
+      syncText(); syncRows();
+      errEl.textContent = '';
+      var missing = rows.filter(function (r) { return !(texts[r.lang] && texts[r.lang].title.trim()); })[0];
+      if (missing) {
+        errEl.textContent = rows.length > 1 || missing.lang !== curLang
+          ? cellName(missing.cell_id) + ' reads ' + langName_(missing.lang) + ': give it a ' + langName_(missing.lang) + ' title' + (LANGS.some(function (p) { return texts[p[0]]; }) ? ' (or Translate).' : '.')
+          : 'Give the evidence a title first.';
+        return;
+      }
+      var releasedNow = $('evidence-new-released').checked;
+      var keep = {};
+      LANGS.forEach(function (p) { var t = texts[p[0]]; if (t && (t.title.trim() || t.body.trim())) keep[p[0]] = { title: t.title.trim(), body: t.body.trim() }; });
+      var groupId = (isEdit && source.share_group) || (rows.length > 1 ? 'grp_' + Date.now() + '_' + Math.floor(Math.random() * 100000).toString(36) : '');
+      var ids = rows.map(function (r) { return r.id || ('evidence_' + Date.now() + '_' + Math.floor(Math.random() * 1e9).toString(36)); });
+      var removed = isEdit ? group.filter(function (h) { return ids.indexOf(h.evidence_id) === -1; }) : [];
       var originalLabel = confirmBtn.textContent;
       confirmBtn.disabled = true;
-      confirmBtn.textContent = formPhotoFile ? 'Uploading…' : (editingEvidence ? 'Saving…' : 'Creating…');
-      // Known up front either way -- an edit already has one, and a
-      // brand-new item mints its own here (Phase 4: needed before the
-      // photo upload starts, since the Storage path is evidence/{this
-      // id}.{ext}; Code.gs's createEvidence() accepts this client-
-      // supplied id instead of minting its own now, see its own comment).
-      var evidenceId = editingEvidence ? editingEvidence.evidence_id
-        : ('evidence_' + Date.now() + '_' + Math.floor(Math.random() * 100000).toString(36));
-      statusEl.textContent = formPhotoFile ? 'Uploading…' : (editingEvidence ? 'Saving…' : 'Creating…');
-      Promise.all([window.__dgGetHandlerIdToken(), uploadEvidencePhotoIfNeeded_(evidenceId)]).then(function (results) {
+      confirmBtn.textContent = formPhotoFile ? 'Uploading…' : (isEdit ? 'Saving…' : 'Creating…');
+      statusEl.textContent = confirmBtn.textContent;
+      // One upload for every copy (its path uses the first copy's id).
+      Promise.all([window.__dgGetHandlerIdToken(), uploadEvidencePhotoIfNeeded_(ids[0])]).then(function (results) {
         var idToken = results[0], photoToSave = results[1];
-        var payload = editingEvidence
-          ? { action: 'update_evidence', evidence_id: evidenceId, title: title, body: body, photo: photoToSave, cell_id: cellId, operation_id: opId, released: released, restricted_to: JSON.stringify(restrictedTo), id_token: idToken }
-          : { action: 'create_evidence', evidence_id: evidenceId, title: title, body: body, photo: photoToSave, cell_id: cellId, operation_id: opId, released: released, restricted_to: JSON.stringify(restrictedTo), id_token: idToken };
-        confirmBtn.textContent = editingEvidence ? 'Saving…' : 'Creating…';
-        statusEl.textContent = editingEvidence ? 'Saving…' : 'Creating…';
-        // No keepalive here, unlike every other POST in this file: keepalive
-        // requests are capped at 64KiB by the browser (not this app, not
-        // Apps Script) -- fine for the small JSON payload this now always
-        // is (a Storage URL, not a base64 photo, now that a picked file
-        // uploads to Storage directly above instead of riding in this
-        // POST -- a legacy gdrive:/data: value falling through
-        // formPhotoExisting unchanged is the only way this could still be
-        // large, and even that's rare enough not to special-case).
-        return window.dgAcellApi.post(payload);
+        confirmBtn.textContent = isEdit ? 'Saving…' : 'Creating…';
+        statusEl.textContent = confirmBtn.textContent;
+        var chain = Promise.resolve();
+        rows.forEach(function (r, k) {
+          chain = chain.then(function () {
+            rememberCellLang_(r.cell_id, r.lang);
+            return window.dgAcellApi.post({
+              action: r.id ? 'update_evidence' : 'create_evidence', evidence_id: ids[k],
+              title: keep[r.lang].title, body: keep[r.lang].body, photo: photoToSave,
+              cell_id: r.cell_id, operation_id: r.operation_id, released: releasedNow,
+              restricted_to: JSON.stringify(r.restricted_to), lang: r.lang, texts: JSON.stringify(keep),
+              share_group: groupId, id_token: idToken
+            });
+          });
+        });
+        removed.forEach(function (h) {
+          chain = chain.then(function () { return window.dgAcellApi.post({ action: 'delete_evidence', evidence_id: h.evidence_id, id_token: idToken }); });
+        });
+        return chain;
       }).then(function () {
         verifyEvidenceWrite_(
-          function (list) { return list.some(function (x) { return x.title === title && x.cell_id === cellId; }); },
-          function () { statusEl.textContent = ''; createFormSlot.innerHTML = ''; renderList(); },
-          // Write likely still succeeded server-side (this is only
-          // verification not catching up yet) -- the form stays open
-          // here rather than closing, so the button needs re-enabling
-          // too, not just the two error paths below.
+          function (list) {
+            return rows.every(function (r, k) { return list.some(function (x) { return x.evidence_id === ids[k] && x.title === keep[r.lang].title && x.cell_id === r.cell_id; }); });
+          },
+          // Closes this form only: another may have been opened meanwhile.
+          function () {
+            statusEl.textContent = '';
+            if (createFormSlot.contains(node) || (inlineEdit && inlineEdit.node === node)) closeForm();
+            renderList();
+          },
+          // Likely saved and only not shown yet: the form stays open.
           function () { confirmBtn.disabled = false; confirmBtn.textContent = originalLabel; statusEl.textContent = NOT_DEPLOYED_MSG; }
         );
       }).catch(function (err) {
@@ -4178,11 +4449,16 @@
         statusEl.textContent = 'Upload failed: ' + ((err && err.message) || 'could not reach the backend.');
       });
     });
+
+    drawRows(); drawLangs(); loadText();
+    if (previewSrc) renderPhotoPreview('evidence-new-photo-prev-wrap', previewSrc, isPdfUrl_(previewSrc), 'existing file');
     if (formPhotoExisting && extractDriveId(formPhotoExisting)) {
       loadEvidencePhotoDataUri(formPhotoExisting, function (dataUri) {
         renderPhotoPreview('evidence-new-photo-prev-wrap', dataUri, dataUri.indexOf('data:application/pdf') === 0, 'existing file');
       });
     }
+    if (isEdit) node.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    if (opts.share) { var last = node.querySelectorAll('.ev-row-cell'); if (last.length) last[last.length - 1].focus(); }
   }
 
   function showOpForm() {
@@ -6794,6 +7070,7 @@
 </script>
 
 <script src="assets/table-radio.js"></script>
+<script src="assets/evidence-md.js"></script>
 <script src="assets/dice-roller.js?v=10"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>
 

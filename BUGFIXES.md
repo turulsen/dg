@@ -6749,3 +6749,18 @@ offset by standing order, the same order it already used for the tab
 positions: the top folder flush, every later one -40px. A test opens
 + New Recruit and checks the tabs stay 32px apart with nothing above
 the strip.
+
+## Evidence editing: a narrow box and a form at the top (v3.6.0)
+
+Reported 2026-10-20 by the Handler, alongside the v3.6.0 Evidence
+requests.
+- **The body box was too small.** It was a short textarea, so a long
+  pasted text needed a lot of scrolling inside it. It now grows with the
+  text (at least 260px tall) and never scrolls inside.
+- **Edit always opened the form at the top of the list**, so editing a
+  later item meant scrolling back up. The form now opens where the card
+  was, and stays there through the live listener's redraws.
+- **Found while building it:** a save confirmed late (the read-back
+  retries for a few seconds) closed whatever form was open by then,
+  including one opened after the save. It now closes only its own form.
+`test_acell_evidence_share_languages_format`.
