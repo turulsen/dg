@@ -42,6 +42,13 @@
     return (loc.pathname.split('/').pop() || 'index.html').toLowerCase();
   }
   function go(path) { var f = FN(); if (f && f.go) f.go(path); else location.href = path; }
+  // A tour of a page (not of the notebook): the notebook closes, as it
+  // covers the page; then the page opens if it isn't the one on screen.
+  function toPage(pg, id) {
+    var f = FN();
+    if (f && f.close && nbOpen()) f.close();
+    if (page() !== pg) { go(pg + '?tour=' + id); return true; }
+  }
 
   // The notebook's Notes page, when it's showing in the notebook.
   function notesFrame() {
@@ -112,7 +119,7 @@
   var TOURS = [
     { id: 'newrecruit', title: 'New Recruit', where: 'Agent Hub',
       when: function () { return page() === 'agent-hub.html' && !nbOpen(); },
-      open: function () { if (page() !== 'agent-hub.html') { go('agent-hub.html?tour=newrecruit'); return true; } },
+      pg: 'agent-hub.html', open: function () { return toPage('agent-hub.html', 'newrecruit'); },
       steps: [
         { sel: '#tab-strip .tw-new', title: 'New Recruit', text: 'Your new Agents start here. The tab walks you through it step by step: statistics, profession, skills, Bonds and the rest, then the Oath.' },
         { sel: '#tab-strip .tw-new', title: 'Bring one in', text: 'Already have an Agent somewhere else? The first step also imports one: a PDF, a Foundry or Kappa Black file, a Google Sheet, or a Friendly from the one-shot page.' }
@@ -120,7 +127,7 @@
     { id: 'photos', title: 'Taking a photo', where: 'Agent Hub, an Agent\'s folder',
       empty: 'Open one of your Agents on Agent Hub and this tour starts there.',
       when: function () { return page() === 'agent-hub.html' && !nbOpen() && any('.ah-appear-btn[data-ah-appear]'); },
-      open: function () { if (page() !== 'agent-hub.html') { go('agent-hub.html?tour=photos'); return true; } },
+      pg: 'agent-hub.html', open: function () { return toPage('agent-hub.html', 'photos'); },
       steps: [
         { sel: ['.paper-photo', '.as-take-photo'], title: 'The photo', text: 'Your Agent\'s photo. Your Handler makes it from how you describe the Agent, so the description is what counts.' },
         { sel: '[data-ah-focus="appearance"]', optional: true, title: 'Describe them', text: 'This shows how many details are still missing. Tap Describe them to fill them in.' },
@@ -129,7 +136,7 @@
       ] },
     { id: 'friendly', title: 'A Friendly as your Agent', where: 'Friendly, an opened dossier',
       when: function () { return page() === 'friendly.html' && !nbOpen() && any('#fr-keep'); },
-      open: function () { if (page() !== 'friendly.html') { go('friendly.html?tour=friendly'); return true; } },
+      pg: 'friendly.html', open: function () { return toPage('friendly.html', 'friendly'); },
       empty: 'Open any dossier on the Friendly page and this tour starts there.',
       steps: [
         { sel: '#fr-keep', title: 'Make this my Agent', text: 'Liked playing this one? This opens New Recruit on Agent Hub with the Friendly already filled in, saved under your Cover Identity. You check each step and take the Oath.' }
@@ -400,7 +407,7 @@
   }
 
   /* ── Starting by themselves ── */
-  var autoDone = false;
+  var autoDone = false, waitSince = 0, waitFor = null;
   // Off on this device (the test suite sets it): no tour starts by itself
   // and no stamp; Settings → Tours still works.
   // Nor where this device can't remember a seen tour (private mode, or
@@ -415,6 +422,14 @@
     if (pend) {
       var pt = tourById(pend.id);
       if (pt && pt.when() && steps(pt).length) { start(pt.id, {}); return; }
+      // On its page, but what it explains isn't there (no dossier open on
+      // Friendly, no Agent open on Agent Hub): say what to open, once. It
+      // stays pending, so it starts when that's opened.
+      if (pt && pt.pg && page() === pt.pg && !nbOpen()) {
+        if (!waitSince || waitFor !== pend.at) { waitSince = Date.now(); waitFor = pend.at; }
+        else if (waitSince > 0 && Date.now() - waitSince > 2500) { waitSince = -1; note(pt.title, pt.empty || ('This tour starts on ' + pt.where + ', once it\'s on screen.')); }
+        return;
+      }
     }
     if (autoDone || off()) return;
     var s = seen();

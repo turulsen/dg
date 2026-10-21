@@ -6815,3 +6815,12 @@ New Hub-shell checks in `test_player_tours` (they fail on v3.8.0).
   the Evidence of one Operation, or all of it", which didn't say what the
   control does. Now: "Filter the Evidence by Operation…". The Notes
   tour's Arrange text was reworded the same way. `sw.js` `CACHE_NAME` v240.
+- **Also (same day):** on a phone, the first three tours (New Recruit,
+  Taking a photo, A Friendly as your Agent) did nothing. Started from the
+  notebook's Settings → Tours, they left the notebook open over the page
+  they explain, so their targets (hidden under it) were never found. Now a
+  tour of a page closes the notebook first. And Friendly with no dossier
+  open just loaded the page silently; now a post-it says to open a
+  dossier, and the tour starts once one is. Two Hub-shell checks in
+  `test_player_tours` (the first fails on the previous commit).
+  `sw.js` `CACHE_NAME` v241.

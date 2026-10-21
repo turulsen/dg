@@ -159,7 +159,8 @@ pinboard of taped polaroids, and Evidence tags: the Handler's labels
 new features (`assets/tour.js`); shell cache `dg-hub-shell-v237`. **v3.8.1** (unreleased) makes the
 tours work in the Hub shell (`hub.html`), where they did nothing, and
 points the Sanity tour's Adaptation post-it at the boxes, with clearer
-wording on two steps (see `BUGFIXES.md`); shell cache `dg-hub-shell-v240`. **v3.1.0**
+wording on two steps, and the page tours close the notebook before they
+start (see `BUGFIXES.md`); shell cache `dg-hub-shell-v241`. **v3.1.0**
 (2026-10-10) is PR #72, v2 milestone M3: the Agent File's paper wears as
 SAN falls. Stains, a fold, a coffee ring, blood and, from SAN 9, a torn
 edge are drawn over the whole page on Agent Hub and in the notebook

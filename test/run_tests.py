@@ -3566,6 +3566,23 @@ def test_player_tours(p):
     record("tours", "Hub shell: from another page, the tour goes to Agent Hub in the frame and starts there",
            "agent-hub.html" in page.evaluate("() => document.getElementById('dg-shell-content').contentWindow.location.href"), "")
     page.keyboard.press("Escape")
+    # From Settings → Tours (notebook open), a tour of the page closes the
+    # notebook first (reported 2026-10-21: the first three did nothing).
+    page.evaluate("() => window.dgFieldNotes.open('settings')")
+    page.wait_for_selector("#fn-veil [data-s=tours]", timeout=5000)
+    page.click("#fn-veil [data-s=tours]")
+    page.click("#dg-tour [data-tour-start=photos]")
+    page.wait_for_function("() => window.dgTour.active() === 'photos'", timeout=8000)
+    record("tours", "Hub shell: from Settings → Tours, Taking a photo closes the notebook and starts",
+           not page.evaluate("() => window.dgFieldNotes.isOpen()"), "")
+    page.keyboard.press("Escape")
+    # Friendly with no dossier open: it says what to open, and starts once one is.
+    page.evaluate("() => window.dgTour.run('friendly')")
+    page.wait_for_function("() => /friendly\\.html/.test(document.getElementById('dg-shell-content').contentWindow.location.href)", timeout=8000)
+    page.wait_for_selector("#dg-tour .dg-tour-post", timeout=12000)
+    record("tours", "Hub shell: Friendly with no dossier open says to open one (not a silent reload)",
+           "dossier" in page.inner_text("#dg-tour .dg-tour-post").lower() and page.evaluate("() => window.dgTour.active()") == "", page.inner_text("#dg-tour .dg-tour-post")[:120])
+    page.click("#dg-tour .dg-tour-exit")
     record("tours", "no JS exceptions (Hub shell)", not errs, str(errs[:3]))
     page.close()
 
