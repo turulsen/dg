@@ -163,8 +163,15 @@
   // The edit remembers what it started from, so saving it only changes
   // what was edited -- not whatever another device changed meanwhile.
   Session.prototype.beginEdit = function () { if (!this.edit && this.state) { this.edit = clone(this.state); this.editBase = JSON.stringify(this.state); } this.emit('edit'); return this.edit; };
-  Session.prototype.cancelEdit = function () { this.edit = null; this.emit('edit'); };
-  Session.prototype.editDirty = function () { return !!this.edit && JSON.stringify(this.edit) !== JSON.stringify(this.state); };
+  Session.prototype.cancelEdit = function () { this.edit = null; this.editBase = null; this.emit('edit'); };
+  // Did the player change anything since Edit? Measured against the sheet
+  // as Edit found it: a save landing meanwhile (an HP tap just before, a
+  // Cell-mate's view refreshing) updates the live sheet, and used to make
+  // Cancel ask "Throw away these edits?" with nothing edited.
+  Session.prototype.editDirty = function () {
+    if (!this.edit) return false;
+    return JSON.stringify(this.edit) !== (this.editBase || JSON.stringify(this.state));
+  };
   Session.prototype.commitEdit = function () {
     if (!this.edit) return Promise.resolve();
     this.state = this.edit;

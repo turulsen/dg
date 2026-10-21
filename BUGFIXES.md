@@ -6775,3 +6775,15 @@ numbered list now starts at the number written (`<ol start="2">`).
 A check in `test_acell_evidence_share_languages_format`. `sw.js`
 `CACHE_NAME` v234.
 
+
+## Agent File: Cancel asked "Throw away these edits?" with nothing edited (v3.8.0)
+
+Found 2026-10-21 by `test_agent_file_parts_and_looks` failing now and
+then (an in-page "Throw away these edits?" window covered the next
+button). `Session.editDirty()` (`assets/agent-live.js`) compared the
+edit copy with the live sheet. A save landing while Edit was open (an
+HP tap just before, the character snapshot coming back, a change from
+another device) updated the live sheet, so an untouched edit looked
+changed and Cancel asked to throw it away. It now compares with the
+sheet as Edit found it (`editBase`); Cancel also clears that.
+`test_edit_cancel_after_live_update` (fails on the old code).

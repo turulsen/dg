@@ -200,6 +200,33 @@ everyone in the shared feed.
     so it keeps the same name after "Add to page".
   - Test: `test_notes_tags_headings_and_quick`.
 
+**Player tours (v3.8.0).** `assets/tour.js` (`window.dgTour`), loaded by
+`assets/field-notes.js` on every player page. Nine tours, a few
+post-its each: New Recruit (the tab only), Taking a photo, A Friendly as
+your Agent, Playing from the Agent File, Sanity, Switching Agents,
+Notes, Evidence, Settings. A post-it is the SAN-loss post-it's look over
+the dimmed page; the target is lit inside a dashed frame with a red
+hand-drawn arrow. Rules:
+- **Leave at any moment:** ✕ Exit tour on every post-it, Esc, or a tap
+  on the dimmed page. Left or finished, a tour is seen
+  (`localStorage` `dg_tours_seen`) and doesn't start by itself again.
+- **Starts by itself** the first time its place is on screen
+  (`when()` + its steps found), one tour a page load, never over
+  another window (SAN post-its, the Oath terminal, the Evidence viewer,
+  Notes' "Pick your ink", the boot splash). Not where storage can't
+  remember (private mode), nor with `dg_tours_off` = 1 (the test
+  suites set it; `new_page(tours=True)` keeps them on).
+- **Steps** are skipped when their target isn't on this screen (Split
+  on a phone, a label not given). A target inside the notebook's Notes
+  page (`iframe[data-dg-embed="notes"]`) is framed through the frame,
+  scale included. The frame follows its target (every 200 ms); if the
+  target goes away mid-tour the post-it stays centred without a frame.
+- **"New · N tours"** stamp beside the notebook (desktop and phone) and
+  **Settings → Tours** open the list; a tour from it opens its notebook
+  page, or another page with `?tour=ID` (a pending mark in
+  `sessionStorage` starts it there).
+- Test: `test_player_tours`.
+
 **Solo mode**: an Agent not yet assigned to any Cell still gets a
 fully live, editable Notes panel — keyed to a synthesized
 `solo:<agentCode>` pseudo-cell-id instead of blocking them entirely

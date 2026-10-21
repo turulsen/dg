@@ -573,6 +573,8 @@
     });
     renderChrome();
     wireFlipSwipe();
+    // Tours of the new features (v3.8.0): assets/tour.js, every player page.
+    loadScriptOnce(url('assets/tour.js'), function () { return !!window.dgTour; }).catch(function () {});
     loadData().then(renderChrome);
     if (IS_SHELL) {
       shellFrame.addEventListener('load', onShellPageChange);
@@ -1761,6 +1763,8 @@
         '<button type="button" class="fn-btn fn-red" data-s="pdf">PDF (DD Form 315)</button></div>' +
         '<div class="fn-set-status" data-s="pdf-status"></div>';
     }
+    html += '<div class="fn-set-row"><div><div class="fn-set-t">Tours</div><div class="fn-set-s">Short tours of the new features. Leave any of them whenever you like.</div></div>' +
+      '<button type="button" class="fn-btn fn-red" data-s="tours">Show tours</button></div>';
     var wearOff = lsGet('dg_paper_wear') === 'off';
     html += '<div class="fn-set-row"><div><div class="fn-set-t">Paper wears as SAN falls</div><div class="fn-set-s">Below SAN 50 the Agent File ages, stains and tears; INSANE is stamped near 0. Off keeps it clean, on this device.</div></div>' +
         '<button type="button" class="fn-toggle' + (wearOff ? '' : ' fn-on') + '" data-s="wear">' + (wearOff ? 'OFF' : 'ON') + '</button></div>';
@@ -1772,6 +1776,7 @@
       if (!b) return;
       var k = b.getAttribute('data-s');
       if (k === 'pdf' && a) exportPdf(a, body.querySelector('[data-s="pdf-status"]'));
+      else if (k === 'tours') { if (window.dgTour) window.dgTour.menu(); }
       else if (k === 'wear') {
         var on = lsGet('dg_paper_wear') === 'off';
         lsSet('dg_paper_wear', on ? 'on' : 'off'); b.classList.toggle('fn-on', on); b.textContent = on ? 'ON' : 'OFF';

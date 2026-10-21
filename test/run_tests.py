@@ -3413,6 +3413,154 @@ def test_evidence_tags(p):
     record("evidence-tags", "no JS exceptions (Notes)", not errs, str(errs[:3]))
     page.close()
 
+def test_player_tours(p):
+    """Player tours (v3.8.0, assets/tour.js): one starts by itself the first
+    time its place is on screen (one a page load), and can be left at any
+    moment: ✕ Exit tour, Esc, or a tap on the dimmed page; a left or
+    finished tour doesn't come back by itself. Next / Back / Done; the
+    "New · N tours" stamp on the notebook and Settings → Tours list them;
+    a tour started from the list opens its notebook page; a step inside
+    the Notes page (an iframe) is framed where it is."""
+    stats = {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 11, "CHA": 13}
+    state = {"v": 1, "stats": stats, "csStats": dict(stats), "derived": {"hp": 11, "wp": 11, "san": 52, "bp": 44},
+             "bio": {"name": "Mara Voss", "player_name": "fn tester", "profession": "federal_agent"}, "skills": {"alertness": 60}}
+    fd = _field_notes_docs()
+    fd[f"characters/{FN_CODE}"] = character_doc(FN_CODE, state, "fn tester")
+    extra = ("sessionStorage.setItem('dg_tours_test_on', '1'); localStorage.removeItem('dg_tours_off');"
+             "localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));"
+             "localStorage.setItem('dg_notes_identity_%s', JSON.stringify({color:'#2b6cb0', font:'kalam'}));") % (FN_CODE, FN_CODE)
+    class P:
+        def new_page(self, **kw): return p.new_page(tours=True, **kw)
+    page, errs = _field_notes_page(P(), 1300, 860, docs=fd, extra_init=extra)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector("#dg-tour .dg-tour-post", timeout=10000)
+    record("tours", "a tour starts by itself the first time (New Recruit, on Agent Hub)",
+           "new recruit" in page.inner_text("#dg-tour .dg-tour-post").lower() and page.evaluate("() => window.dgTour.active()") == "newrecruit", page.inner_text("#dg-tour .dg-tour-post")[:120])
+    hole = page.evaluate("() => { const h = document.querySelector('.dg-tour-hole').getBoundingClientRect(), t = document.querySelector('#tab-strip .tw-new').getBoundingClientRect(); return [h.left <= t.left, h.right >= t.right, h.top <= t.top, h.bottom >= t.bottom]; }")
+    record("tours", "the thing explained is framed, with an arrow to it", all(hole) and page.locator("#dg-tour svg path").count() == 2, str(hole))
+    record("tours", "Back is off on the first post-it; Next moves on", page.is_disabled("#dg-tour [data-tour=back]"), "")
+    page.click("#dg-tour [data-tour=next]")
+    record("tours", "...to post-it 2 of 2, with Done", "2/2" in page.inner_text("#dg-tour .dg-tour-top") and page.inner_text("#dg-tour .dg-tour-next").strip() == "Done", "")
+    page.click("#dg-tour [data-tour=back]")
+    record("tours", "Back returns", "1/2" in page.inner_text("#dg-tour .dg-tour-top"), "")
+    page.click("#dg-tour .dg-tour-exit")
+    record("tours", "✕ Exit tour leaves it at once, and it's marked seen",
+           page.locator("#dg-tour").count() == 0 and "newrecruit" in page.evaluate("() => window.dgTour.seen()"), "")
+    page.wait_for_timeout(2600)
+    record("tours", "only one tour a page load (no second one right after)", page.locator("#dg-tour").count() == 0, "")
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_selector("#dg-tour .dg-tour-post", timeout=10000)
+    record("tours", "the next page load starts the next one (Taking a photo), not the one left",
+           page.evaluate("() => window.dgTour.active()") == "photos", page.evaluate("() => window.dgTour.active()"))
+    page.keyboard.press("Escape")
+    record("tours", "Esc leaves it", page.locator("#dg-tour").count() == 0, "")
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_selector("#dg-tour .dg-tour-post", timeout=10000)
+    page.mouse.click(15, 15)
+    record("tours", "a tap on the dimmed page leaves it", page.locator("#dg-tour").count() == 0, "")
+    # The stamp lists what's left; a tour from the list opens its page.
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_selector("#dg-tour .dg-tour-post", timeout=10000)
+    page.click("#dg-tour [data-tour=exit]")
+    page.wait_for_selector("#dg-tour-new", timeout=5000)
+    n_unseen = len(page.evaluate("() => window.dgTour.tours()")) - len(page.evaluate("() => window.dgTour.seen()"))
+    record("tours", "a \"New · N tours\" stamp on the notebook counts the ones not seen",
+           page.inner_text("#dg-tour-new").lower().replace("\n", " ") == f"new · {n_unseen} tours", page.inner_text("#dg-tour-new"))
+    page.click("#dg-tour-new")
+    record("tours", "the stamp opens the list, seen ones marked", page.locator("#dg-tour [data-tour-start]").count() == len(page.evaluate("() => window.dgTour.tours()"))
+           and page.locator("#dg-tour .dg-tour-list em").count() >= 3, "")
+    page.click("#dg-tour [data-tour-start=evidence]")
+    page.wait_for_function("() => window.dgTour.active() === 'evidence'", timeout=8000)
+    record("tours", "a tour from the list opens its notebook page and starts",
+           page.evaluate("() => window.dgFieldNotes.view()") == "evidence" and page.locator("#dg-tour .dg-tour-post").count() == 1, page.inner_text("#dg-tour .dg-tour-post")[:100])
+    page.click("#dg-tour .dg-tour-exit")
+    # A step inside the Notes page (iframe): framed where it is.
+    page.evaluate("() => window.dgTour.run('notes')")
+    page.wait_for_function("() => window.dgTour.active() === 'notes'", timeout=10000)
+    record("tours", "Notes: the first post-it is Split (desktop)", "split" in page.inner_text("#dg-tour .dg-tour-t").lower(), "")
+    page.click("#dg-tour [data-tour=next]")
+    inside = page.evaluate("""() => { const f = document.querySelector('iframe[data-dg-embed=notes]').getBoundingClientRect(), h = document.querySelector('.dg-tour-hole').getBoundingClientRect();
+        return h.left >= f.left - 10 && h.right <= f.right + 10 && h.top >= f.top - 10 && h.width > 40; }""")
+    record("tours", "Notes: a step inside the Notes page is framed inside it", inside and "tag" in page.inner_text("#dg-tour .dg-tour-t").lower(), page.inner_text("#dg-tour .dg-tour-t"))
+    page.keyboard.press("Escape")
+    record("tours", "Esc leaves it here too (the notebook stays open)", page.locator("#dg-tour").count() == 0 and page.evaluate("() => window.dgFieldNotes.isOpen()"), "")
+    # Settings → Tours
+    page.evaluate("() => window.dgFieldNotes.open('settings')")
+    page.wait_for_selector("#fn-veil [data-s=tours]", timeout=5000)
+    page.wait_for_timeout(1500)
+    if page.locator("#dg-tour").count(): page.click("#dg-tour [data-tour=exit]")
+    page.click("#fn-veil [data-s=tours]")
+    record("tours", "Settings → Tours opens the list", page.locator("#dg-tour [data-tour-start]").count() == len(page.evaluate("() => window.dgTour.tours()")), "")
+    page.click("#dg-tour .dg-tour-exit")
+    record("tours", "...and ✕ Close closes it", page.locator("#dg-tour").count() == 0, "")
+    # With the notebook open, the tour frames the notebook's own button,
+    # not the same button on the page underneath.
+    page.evaluate("() => window.dgTour.run('sanity')")
+    page.wait_for_function("() => window.dgTour.active() === 'sanity'", timeout=10000)
+    page.click("#dg-tour [data-tour=next]")
+    page.wait_for_timeout(500)
+    framed = page.evaluate("""() => { const h = document.querySelector('.dg-tour-hole').getBoundingClientRect();
+        const b = [...document.querySelectorAll('[data-pop="san"]')].find(x => x.closest('#fn-veil')).getBoundingClientRect();
+        return Math.abs((h.left + h.width / 2) - (b.left + b.width / 2)) < 3 && Math.abs((h.top + h.height / 2) - (b.top + b.height / 2)) < 3; }""")
+    record("tours", "inside the notebook it frames the notebook's SAN loss, not the page's underneath", framed, "")
+    page.keyboard.press("Escape")
+    # Never over another window: a SAN post-it up, no tour starts.
+    page.evaluate("() => { window.dgTour.reset(); const d = document.createElement('div'); d.id = 'ap-posts'; d.style.cssText = 'position:fixed;inset:0;background:#0006'; document.body.appendChild(d); }")
+    page.wait_for_timeout(2800)
+    record("tours", "no tour starts while another window is up (a SAN post-it)", page.locator("#dg-tour").count() == 0, "")
+    page.evaluate("() => document.getElementById('ap-posts').remove()")
+    page.wait_for_selector("#dg-tour .dg-tour-post", timeout=6000)
+    record("tours", "...and one starts once it's closed", page.locator("#dg-tour .dg-tour-post").count() == 1, "")
+    page.click("#dg-tour .dg-tour-exit")
+    record("tours", "no JS exceptions (tours)", not errs, str(errs[:3]))
+    page.close()
+
+    # Phone: a post-it fits the screen and the Exit button is reachable.
+    page, errs = _field_notes_page(P(), 390, 844, docs=fd, extra_init=extra)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector("#dg-tour .dg-tour-post", timeout=10000)
+    box = page.evaluate("() => { const r = document.querySelector('.dg-tour-post').getBoundingClientRect(), x = document.querySelector('.dg-tour-exit').getBoundingClientRect(); return [r.left >= 0, r.right <= innerWidth, r.top >= 0, r.bottom <= innerHeight, x.width >= 60]; }")
+    record("tours", "phone: the post-it fits the screen and ✕ Exit tour is there", all(box), str(box))
+    page.click("#dg-tour .dg-tour-exit")
+    record("tours", "phone: ✕ Exit tour leaves it", page.locator("#dg-tour").count() == 0, "")
+    record("tours", "no JS exceptions (phone)", not errs, str(errs[:3]))
+    page.close()
+
+    # Everywhere else in the suite tours are off: no tour, no stamp.
+    page = p.new_page(viewport={"width": 1300, "height": 860})
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(2500)
+    record("tours", "with tours off on the device: none starts, no stamp", page.locator("#dg-tour, #dg-tour-new").count() == 0, "")
+    page.close()
+
+def test_edit_cancel_after_live_update(p):
+    """Agent File, Edit → Cancel: a save landing while Edit is open (an HP
+    tap just before, a snapshot from another device) updated the live
+    sheet, and Cancel then asked "Throw away these edits?" with nothing
+    edited. Found by test_agent_file_parts_and_looks flaking (2026-10-21)."""
+    stats = {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 11, "CHA": 13}
+    state = {"v": 1, "stats": stats, "csStats": dict(stats), "derived": {"hp": 11, "wp": 11, "san": 52, "bp": 44},
+             "bio": {"name": "Mara Voss", "player_name": "fn tester", "profession": "federal_agent"}, "skills": {"alertness": 60}}
+    fd = _field_notes_docs()
+    fd[f"characters/{FN_CODE}"] = character_doc(FN_CODE, state, "fn tester")
+    page, errs = _field_notes_page(p, docs=fd)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function(f"() => window.dgAgentLive && window.dgAgentLive.get('{FN_CODE}') && window.dgAgentLive.get('{FN_CODE}').state", timeout=15000)
+    r = page.evaluate(f"""() => {{ const s = window.dgAgentLive.get('{FN_CODE}');
+        s.beginEdit();
+        const before = s.editDirty();
+        s.state = JSON.parse(JSON.stringify(s.state)); s.state.derived.hp = 9;   // a save landing meanwhile
+        const afterLive = s.editDirty();
+        s.edit.bio.name = 'Mara V.';
+        const afterEdit = s.editDirty();
+        s.cancelEdit();
+        return [before, afterLive, afterEdit, s.editDirty()]; }}""")
+    record("agent-file", "Edit: nothing changed is not dirty, even after a save lands meanwhile",
+           r[0] is False and r[1] is False, str(r))
+    record("agent-file", "...a real edit is dirty, and Cancel clears it", r[2] is True and r[3] is False, str(r))
+    record("agent-file", "no JS exceptions (edit / cancel)", not errs, str(errs[:3]))
+    page.close()
+
 def test_acell_evidence_pdf(p):
     """Regression coverage for a real live report: the Evidence photo
     field's accept="image/*" only labels the file picker, it doesn't
@@ -12089,9 +12237,15 @@ def main():
         # sandbox) and then fail against the blocked hosts above -- a
         # console error in every test that never cared about Firebase.
         # new_page(real_firebase=True) opts out.
+        # Player tours (assets/tour.js) would start by themselves over
+        # every test's page: off unless a test asks for them (tours=True).
+        TOURS_OFF = "try { if (!sessionStorage.getItem('dg_tours_test_on')) localStorage.setItem('dg_tours_off', '1'); } catch (e) {}"
         def _new_page_blocking_live_backend(*a, **kw):
             real_firebase = kw.pop("real_firebase", False)
+            tours = kw.pop("tours", False)
             page = _real_new_page(*a, **kw)
+            if not tours:
+                page.add_init_script(TOURS_OFF)
             page.route("**/script.google.com/**", lambda route: route.abort())
             page.route(LIVE_FIREBASE_HOSTS, lambda route: route.abort())
             if not real_firebase:
@@ -12105,7 +12259,10 @@ def main():
             _ctx_new_page = ctx.new_page
             def _ctx_page(*pa, **pkw):
                 real_firebase = pkw.pop("real_firebase", False)
+                tours = pkw.pop("tours", False)
                 page = _ctx_new_page(*pa, **pkw)
+                if not tours:
+                    page.add_init_script(TOURS_OFF)
                 page.route("**/script.google.com/**", lambda route: route.abort())
                 page.route(LIVE_FIREBASE_HOSTS, lambda route: route.abort())
                 if not real_firebase:
@@ -12193,6 +12350,8 @@ def main():
         safe(test_acell_evidence_share_languages_format, browser, area="acell")
         safe(test_evidence_gallery, browser, area="gallery")
         safe(test_evidence_tags, browser, area="evidence-tags")
+        safe(test_player_tours, browser, area="tours")
+        safe(test_edit_cancel_after_live_update, browser, area="agent-file")
         safe(test_acell_evidence_pdf, browser, area="acell")
         safe(test_acell_evidence_create_verify_retries, browser, area="acell")
 

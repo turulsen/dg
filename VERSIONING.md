@@ -155,8 +155,8 @@ paragraph; see `BUGFIXES.md`); shell cache `dg-hub-shell-v234`. **v3.7.0** (unre
 Gallery to Evidence: a List | Gallery switch in A-Cell, on Agent Hub,
 in the notebook's Evidences (and Split) and in Notes, showing a
 pinboard of taped polaroids, and Evidence tags: the Handler's labels
-(A-Cell) and each Agent's own private tags, with a Tags filter;
-shell cache `dg-hub-shell-v236`. **v3.1.0**
+(A-Cell) and each Agent's own private tags, with a Tags filter. **v3.8.0** (unreleased) adds player tours of the
+new features (`assets/tour.js`); shell cache `dg-hub-shell-v237`. **v3.1.0**
 (2026-10-10) is PR #72, v2 milestone M3: the Agent File's paper wears as
 SAN falls. Stains, a fold, a coffee ring, blood and, from SAN 9, a torn
 edge are drawn over the whole page on Agent Hub and in the notebook
