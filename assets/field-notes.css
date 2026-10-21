@@ -44,6 +44,9 @@ html.dg-fn-host #split-view-btn{ display:none !important; }
 #fn-root{ font-family:var(--fn-mono); color:var(--fn-ink); }
 #fn-root *, #fn-root *::before, #fn-root *::after{ box-sizing:border-box; }
 #fn-root button{ font:inherit; width:auto; margin:0; box-shadow:none; text-transform:none; letter-spacing:normal; }
+/* The Evidence gallery's own switch and tiles (assets/evidence-md.js) keep their look. */
+#fn-root .dg-gv-switch button{ font:9.5px 'Courier Prime',monospace; letter-spacing:.1em; text-transform:uppercase; padding:3px 8px; }
+#fn-root .dg-gv-t{ width:100%; box-shadow:0 6px 14px rgba(0,0,0,.26); }
 #fn-root input, #fn-root textarea, #fn-root select{ font:inherit; box-shadow:none; border-radius:0; margin:0; }
 #fn-root[hidden], #fn-root [hidden]{ display:none !important; }
 

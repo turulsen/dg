@@ -494,6 +494,8 @@
   .evidence-create-actions{ display:flex; gap:8px; align-items:center; }
   .evidence-create-error{ color:var(--red); font-size:11px; min-height:1.3em; }
   /* v3.6.0: languages, formatting toolbar, growing body, Share-with rows */
+  .evidence-view-switch{ margin-left:auto; }
+  .evidence-card.flash{ outline:2px solid rgba(139,42,31,.6); outline-offset:3px; transition:outline-color 1.2s; }
   .evidence-create-form.is-inline{ margin:0; outline:2px solid rgba(139,42,31,.45); outline-offset:3px; }
   .ev-langs{ display:flex; flex-wrap:wrap; align-items:flex-end; border-bottom:1.5px solid rgba(90,74,16,.4); }
   .ev-lang{ font-family:'Courier Prime',monospace; font-size:11px; letter-spacing:.04em; padding:6px 12px 5px; margin-right:4px;
@@ -1098,6 +1100,7 @@
           <button type="button" class="paper-btn primary" id="evidence-create-btn">+ New Evidence</button>
           <button type="button" class="paper-btn" id="evidence-refresh-btn">Refresh</button>
           <span class="play-refresh-note" id="evidence-refresh-note"></span>
+          <span class="evidence-view-switch" id="evidence-view-switch"></span>
         </div>
         <div class="evidence-fs-status" id="evidence-fs-status"></div>
         <div class="evidence-layout">
@@ -3306,6 +3309,7 @@
 })();
 </script>
 
+<script src="assets/evidence-md.js"></script>
 <script>
 /* ══════════════════════════════════════════════
    EVIDENCE -- an evidence locker the Handler files, each item scoped to
@@ -3825,6 +3829,25 @@
       placeInlineEdit_();
       return;
     }
+    // Gallery (v3.7.0): the pinboard. A tap goes to that card in the
+    // list (Edit, Duplicate, Share, Released live there); the form being
+    // edited keeps the list up until it's closed.
+    var G = window.dgEvidenceGallery;
+    if (G && G.getView(EV_VIEW_KEY) === 'gallery' && !inlineEdit) {
+      listEl.innerHTML = G.html(shown.map(function (h) {
+        return { id: h.evidence_id, title: h.title, body: h.body, photo: extractDriveId(h.photo) ? 'gdrive' : h.photo, unreleased: !h.released,
+                 meta: cellName(h.cell_id) + (h.operation_id ? ' · ' + opName(h.operation_id) : '') + ' · ' + String(formatDate(h.created_at)).replace(/^Filed\s+/i, '') };
+      }));
+      Array.prototype.forEach.call(listEl.querySelectorAll('[data-gv-id]'), function (t) {
+        t.addEventListener('click', function () {
+          var id = t.getAttribute('data-gv-id');
+          G.setView(EV_VIEW_KEY, 'list'); drawViewSwitch_(); renderList();
+          var card = listEl.querySelector('.evidence-card[data-eid="' + id.replace(/["\\]/g, '') + '"]');
+          if (card) { card.scrollIntoView({ block: 'center', behavior: 'smooth' }); card.classList.add('flash'); setTimeout(function () { card.classList.remove('flash'); }, 1600); }
+        });
+      });
+      return;
+    }
     listEl.innerHTML = shown.map(function (h) {
       var i = evidenceItems.indexOf(h);
       var scopeClass = h.cell_id ? 'evidence-scope' : 'evidence-scope all-cells';
@@ -4103,6 +4126,23 @@
      - Formatting: a small Markdown toolbar (assets/evidence-md.js draws
        it), Preview, and a body box that grows with the text.
      - Editing opens the form where the card was, not at the top. */
+  // List or Gallery, on this device (A-Cell's own key: the Handler's
+  // choice here is separate from the players' pages).
+  var EV_VIEW_KEY = 'dg_acell_evidence_view';
+  var viewSwitchEl = document.getElementById('evidence-view-switch');
+  function drawViewSwitch_() {
+    var G = window.dgEvidenceGallery;
+    if (!viewSwitchEl || !G) return;
+    viewSwitchEl.innerHTML = G.switchHtml(G.getView(EV_VIEW_KEY));
+  }
+  if (viewSwitchEl) viewSwitchEl.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-gv-view]');
+    if (!b) return;
+    window.dgEvidenceGallery.setView(EV_VIEW_KEY, b.getAttribute('data-gv-view'));
+    drawViewSwitch_(); renderList();
+  });
+  drawViewSwitch_();
+
   var LANGS = [['en', 'English'], ['hu', 'Magyar']];
   var CELL_LANG_KEY = 'dg_acell_cell_lang';
   function langName_(l) { var x = LANGS.filter(function (p) { return p[0] === l; })[0]; return x ? x[1] : l; }
@@ -7070,7 +7110,6 @@
 </script>
 
 <script src="assets/table-radio.js"></script>
-<script src="assets/evidence-md.js"></script>
 <script src="assets/dice-roller.js?v=10"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>
 

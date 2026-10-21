@@ -837,10 +837,15 @@
         ? evidenceItems.filter(h => opFilter === 'UNFILED' ? !h.operation_id : h.operation_id === opFilter)
         : evidenceItems;
 
+      // List or Gallery (v3.7.0; the same per-device choice as the
+      // notebook's Evidences): small taped polaroids on this page.
+      const G = window.dgEvidenceGallery;
+      const gallery = !!G && G.getView('dg_evidence_view') === 'gallery';
       mount.innerHTML =
-        '<div class="dg-notes-toc-subhead">Evidence</div>' +
+        '<div class="dg-notes-toc-subhead dg-notes-evidence-head">Evidence' + (G ? G.switchHtml(gallery ? 'gallery' : 'list') : '') + '</div>' +
         filterHtml +
-        (shown.length ? shown.map(h => {
+        (shown.length && gallery ? G.html(shown.map(h => ({ id: h.evidence_id, title: h.title, body: h.body, photo: extractDriveId_(h.photo) ? 'gdrive' : h.photo })), { compact: true }) : '') +
+        (shown.length && gallery ? '' : shown.length ? shown.map(h => {
           const unseen = !evidenceSeenMap[h.evidence_id];
           const opTag = h.operation_id ? '<span class="dg-notes-evidence-op-tag">' + escapeHtml(operationLabel_(h.operation_id)) + '</span>' : '';
           return '<a href="#" class="dg-notes-evidence-item" data-evidence-id="' + escapeHtml(h.evidence_id) + '">' +
@@ -852,6 +857,12 @@
       if (filterEl) filterEl.addEventListener('change', () => { opFilter = filterEl.value; refreshEvidenceSidebar(); });
       mount.querySelectorAll('[data-evidence-id]').forEach(a => {
         a.addEventListener('click', e => { e.preventDefault(); openEvidenceModal(a.dataset.evidenceId); });
+      });
+      mount.querySelectorAll('[data-gv-id]').forEach(t => {
+        t.addEventListener('click', () => openEvidenceModal(t.dataset.gvId));
+      });
+      mount.querySelectorAll('[data-gv-view]').forEach(b => {
+        b.addEventListener('click', () => { G.setView('dg_evidence_view', b.dataset.gvView); refreshEvidenceSidebar(); });
       });
     }
 

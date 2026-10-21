@@ -1,4 +1,5 @@
-/* Evidence text formatting -- a small, safe Markdown subset (v3.6.0).
+/* Evidence text formatting -- a small, safe Markdown subset (v3.6.0) --
+   and the Evidence gallery (v3.7.0, window.dgEvidenceGallery, below).
 
    The Handler writes an Evidence item's text with A-Cell's toolbar:
      # Heading / ## Heading / ### Heading
@@ -81,4 +82,80 @@
   injectStyles();
 
   window.dgEvidenceMd = { render: render, escape: esc };
+
+  /* ── The Evidence gallery (v3.7.0): a pinboard of taped polaroids, the
+     other way to look at a list of Evidence (A-Cell, Agent Hub, the
+     notebook's Evidences, Notes). A photo shows the picture, a PDF a
+     stamp, a text-only item its first lines on lined paper. The reader
+     decides what a tap does; the List | Gallery choice is kept per
+     device under its own key. ── */
+  function plain(text) {
+    return String(text || '').replace(/\r\n?/g, '\n')
+      .replace(/^\s{0,3}(#{1,3}\s+|[-*•]\s+|\d+[.)]\s+|>\s?)/gm, '')
+      .replace(/\*\*|__/g, '').replace(/(^|[\s(])[*_](?=\S)/g, '$1').replace(/(\S)[*_](?=[\s.,;:!?)]|$)/gm, '$1').replace(/^\s*(-{3,}|\*{3,}|_{3,})\s*$/gm, '')
+      .replace(/\s+/g, ' ').trim();
+  }
+  function isPdf(src) { return /^data:application\/pdf|\.pdf(\?|#|$)/i.test(String(src || '')); }
+  function tilt(id) {
+    let h = 0; String(id || '').split('').forEach(function (c) { h = (h * 31 + c.charCodeAt(0)) | 0; });
+    return ((Math.abs(h) % 7) - 3) * 0.55;
+  }
+  function getView(key) { try { return localStorage.getItem(key) === 'gallery' ? 'gallery' : 'list'; } catch (e) { return 'list'; } }
+  function setView(key, v) { try { localStorage.setItem(key, v === 'gallery' ? 'gallery' : 'list'); } catch (e) { /* private mode */ } }
+  function switchHtml(view) {
+    return '<span class="dg-gv-switch" role="group" aria-label="View">' +
+      ['list', 'gallery'].map(function (v) {
+        return '<button type="button" data-gv-view="' + v + '" aria-pressed="' + (view === v) + '"' + (view === v ? ' class="on"' : '') + '>' + (v === 'list' ? 'List' : 'Gallery') + '</button>';
+      }).join('') + '</span>';
+  }
+  // items: [{id, title, body, photo, meta, unreleased}]
+  function galleryHtml(items, opts) {
+    opts = opts || {};
+    return '<div class="dg-gv' + (opts.compact ? ' compact' : '') + '">' + items.map(function (it) {
+      const src = String(it.photo || '');
+      let art;
+      if (!src) art = '<span class="dg-gv-txt">' + esc(plain(it.body).slice(0, 320)) + '</span>';
+      else if (isPdf(src)) art = '<span class="dg-gv-doc"><b>PDF</b></span>';
+      else if (/^(https?:|data:image)/.test(src)) art = '<img class="dg-gv-ph" src="' + esc(src) + '" alt="" loading="lazy">';
+      else art = '<span class="dg-gv-doc"><b>Photo</b></span>';
+      return '<button type="button" class="dg-gv-t' + (it.unreleased ? ' unreleased' : '') + '" data-gv-id="' + esc(it.id) + '" style="--r:' + tilt(it.id).toFixed(2) + 'deg">' +
+        art + (it.unreleased ? '<span class="dg-gv-unrel">Unreleased</span>' : '') +
+        '<span class="dg-gv-cap">' + esc(it.title || 'Untitled') + '</span>' +
+        (it.meta && !opts.compact ? '<span class="dg-gv-meta">' + esc(it.meta) + '</span>' : '') + '</button>';
+    }).join('') + '</div>';
+  }
+  (function galleryStyles() {
+    if (document.getElementById('dg-gv-style')) return;
+    const st = document.createElement('style');
+    st.id = 'dg-gv-style';
+    st.textContent =
+      '.dg-gv-switch{display:inline-flex;vertical-align:middle;border:1px solid rgba(28,22,8,.5);border-radius:2px;overflow:hidden}' +
+      '.dg-gv-switch button{font:9.5px "Courier Prime",monospace;letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border:0;background:transparent;color:rgba(28,22,8,.7);cursor:pointer;line-height:1.4}' +
+      '.dg-gv-switch button.on{background:rgba(28,22,8,.82);color:#f3ecd8}' +
+      '.dg-gv{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--gv-min,150px),1fr));gap:26px 20px;padding:12px 4px 6px}' +
+      '.dg-gv.compact{--gv-min:86px;gap:14px 10px;padding-top:9px}' +
+      '.dg-gv-t{position:relative;display:block;width:100%;text-align:center;font:inherit;color:#1c1608;cursor:pointer;border:0;' +
+        'background:#fbf8ef;padding:9px 9px 13px;box-shadow:0 6px 14px rgba(0,0,0,.26);transform:rotate(var(--r,0deg));transition:transform .15s}' +
+      '.dg-gv-t:hover,.dg-gv-t:focus-visible{transform:rotate(0deg) translateY(-3px);outline:none}' +
+      '.dg-gv-t:focus-visible{box-shadow:0 0 0 2px #8b1f17,0 6px 14px rgba(0,0,0,.26)}' +
+      '.dg-gv-t::before{content:"";position:absolute;top:-9px;left:50%;width:58px;height:18px;margin-left:-29px;background:rgba(235,226,196,.78);' +
+        'transform:rotate(calc(var(--r,0deg) * -3));box-shadow:0 1px 2px rgba(0,0,0,.15);z-index:2}' +
+      '.dg-gv-ph,.dg-gv-doc,.dg-gv-txt{display:block;width:100%;aspect-ratio:4/3;box-sizing:border-box}' +
+      '.dg-gv-ph{object-fit:cover;background:#2a2418}' +
+      '.dg-gv-doc{display:flex;align-items:center;justify-content:center;background:#efe8d3;border:1px solid rgba(28,22,8,.16)}' +
+      '.dg-gv-doc b{font:400 14px "Special Elite",monospace;letter-spacing:.2em;text-transform:uppercase;color:#8b1f17;border:2px solid #8b1f17;padding:2px 10px;transform:rotate(-6deg)}' +
+      '.dg-gv-txt{position:relative;overflow:hidden;padding:9px 11px;text-align:left;font:10.5px/1.55 "Courier Prime",monospace;color:rgba(28,22,8,.78);' +
+        'background:#f6f1e3 repeating-linear-gradient(transparent 0 15.5px,rgba(70,110,170,.18) 15.5px 16.5px);border:1px solid rgba(28,22,8,.14)}' +
+      '.dg-gv-txt::after{content:"";position:absolute;left:0;right:0;bottom:0;height:30px;background:linear-gradient(transparent,#f6f1e3)}' +
+      '.dg-gv-cap{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:8px;font:12.5px/1.25 "Special Elite",monospace}' +
+      '.dg-gv-meta{display:block;margin-top:3px;font:9.5px "Courier Prime",monospace;letter-spacing:.06em;text-transform:uppercase;color:rgba(28,22,8,.55)}' +
+      '.dg-gv-unrel{position:absolute;top:14px;left:14px;font:9px "Special Elite",monospace;letter-spacing:.14em;text-transform:uppercase;color:#8b1f17;background:rgba(246,241,227,.92);border:1.5px solid #8b1f17;padding:2px 6px}' +
+      '.dg-gv-t.unreleased .dg-gv-ph,.dg-gv-t.unreleased .dg-gv-doc,.dg-gv-t.unreleased .dg-gv-txt{opacity:.55}' +
+      '.dg-gv.compact .dg-gv-t{padding:6px 6px 9px}.dg-gv.compact .dg-gv-t::before{width:36px;height:12px;top:-6px;margin-left:-18px}' +
+      '.dg-gv.compact .dg-gv-cap{font-size:11px;margin-top:5px}.dg-gv.compact .dg-gv-txt{font-size:8.5px;padding:5px 6px}' +
+      '.dg-gv.compact .dg-gv-doc b{font-size:10px;padding:1px 6px}' +
+      '@media (max-width:560px){.dg-gv{--gv-min:132px;gap:20px 14px}.dg-gv-cap{font-size:12px}}';
+    (document.head || document.documentElement).appendChild(st);
+  })();
+  window.dgEvidenceGallery = { html: galleryHtml, switchHtml: switchHtml, getView: getView, setView: setView, plain: plain };
 })();

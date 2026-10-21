@@ -3180,6 +3180,118 @@ def test_acell_evidence_share_languages_format(p):
     record("evidence-v36", "no JS exceptions (notebook Evidences)", not errs, str(errs[:3]))
     page.close()
 
+def test_evidence_gallery(p):
+    """Evidence gallery (v3.7.0): a List | Gallery switch, a pinboard of
+    taped polaroids (a photo shows the picture, a PDF a stamp, a text-only
+    item its first lines), remembered per device. A-Cell: a tap goes to
+    that card in the list; unreleased tiles are stamped. Players (the
+    notebook's Evidences, Agent Hub, Notes): a tap opens that one
+    Evidence with its private remarks, and Back returns to the board."""
+    img = "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='30'%3E%3Crect width='40' height='30' fill='%23543'/%3E%3C/svg%3E"
+    def ev(cell, vis, rel=True):
+        return {
+            "evidence/g_photo": {"title": "Cellar photo", "body": "Stain.", "photo": img, "cell_id": cell, "operation_id": "", "released": rel, "restricted_to": [], "visible_to": vis, "created_at": 3000},
+            "evidence/g_pdf": {"title": "Coroner PDF", "body": "", "photo": "https://firebasestorage.googleapis.com/v0/b/x/o/evidence%2Fa.pdf?alt=media", "cell_id": cell, "operation_id": "", "released": True, "restricted_to": [], "visible_to": vis, "created_at": 2000},
+            "evidence/g_text": {"title": "Memo", "body": "## Step one\n**Check** the cellar.", "photo": "", "cell_id": cell, "operation_id": "", "released": True, "restricted_to": [], "visible_to": vis, "created_at": 1000},
+        }
+    # A-Cell
+    page = p.new_page(viewport={"width": 1280, "height": 900})
+    page.set_default_timeout(15000)
+    errs = collect_errors(page)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
+    _block_fonts(page)
+    skip_acell_gate(page)
+    docs = {"cells/cell_1": {"name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"]}}
+    docs.update(ev("cell_1", ["OWEN-CS12"], rel=False))
+    install_firestore_backend(page, docs)
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+    page.evaluate("() => document.querySelector('.tw[data-tab=evidence]').click()")
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 1, timeout_ms=8000)
+    push_firestore_snapshot(page, "evidence", [], [dict(v, id=k.split("/")[1]) for k, v in sorted(docs.items(), key=lambda kv: -kv[1].get("created_at", 0)) if k.startswith("evidence/")])
+    page.wait_for_timeout(400)
+    record("gallery", "A-Cell starts in List, with a List | Gallery switch", page.locator(".evidence-card").count() == 3 and page.locator("#evidence-view-switch [data-gv-view=gallery]").count() == 1, "")
+    page.click("#evidence-view-switch [data-gv-view=gallery]")
+    tiles = page.locator("#evidence-list .dg-gv-t")
+    record("gallery", "Gallery shows a tile per item: the photo, a PDF stamp, the text's first lines",
+           tiles.count() == 3 and page.locator(".dg-gv-t[data-gv-id=g_photo] img.dg-gv-ph").count() == 1
+           and page.locator(".dg-gv-t[data-gv-id=g_pdf] .dg-gv-doc").inner_text().strip().upper() == "PDF"
+           and page.locator(".dg-gv-t[data-gv-id=g_text] .dg-gv-txt").inner_text().startswith("Step one Check the cellar"), page.inner_html("#evidence-list")[:300])
+    record("gallery", "an unreleased item is stamped in the Handler's gallery", page.locator(".dg-gv-t[data-gv-id=g_photo] .dg-gv-unrel").count() == 1, "")
+    record("gallery", "the choice is remembered on the device (A-Cell's own key)",
+           page.evaluate("() => localStorage.getItem('dg_acell_evidence_view')") == "gallery", "")
+    page.click(".dg-gv-t[data-gv-id=g_text]")
+    page.wait_for_timeout(300)
+    record("gallery", "a tap goes to that card in the list (Edit, Duplicate... are there)",
+           page.locator(".evidence-card[data-eid=g_text]").is_visible() and page.locator(".evidence-card[data-eid=g_text] [data-edit-evidence]").count() == 1, "")
+    record("gallery", "no JS exceptions (A-Cell gallery)", not errs, str(errs[:3]))
+    page.close()
+
+    # The notebook's Evidences
+    fd = _field_notes_docs()
+    fd.update(ev(FN_CELL, [FN_CODE]))
+    page, errs = _field_notes_page(p, docs=fd)
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.evaluate("() => window.dgFieldNotes.open('evidence')")
+    page.wait_for_selector("#fn-veil .fn-card-sheet", timeout=10000)
+    page.click("#fn-veil [data-gv-view=gallery]")
+    record("gallery", "notebook: Gallery shows the pinboard (every item visible to the Agent)", page.locator("#fn-veil .dg-gv-t").count() == 4, str(page.locator("#fn-veil .dg-gv-t").count()))
+    page.click("#fn-veil .dg-gv-t[data-gv-id=g_text]")
+    record("gallery", "notebook: a tap opens that Evidence, formatted, with its private remarks",
+           page.locator("#fn-veil .fn-card-sheet").count() == 1 and page.locator("#fn-veil .fn-card-body h4").inner_text() == "Step one"
+           and page.locator("#fn-veil textarea[data-ev=g_text]").count() == 1, "")
+    page.click("#fn-veil [data-ev-back]")
+    record("gallery", "notebook: Back returns to the gallery", page.locator("#fn-veil .dg-gv-t").count() == 4, "")
+    page.evaluate("() => window.dgFieldNotes.close()")
+    record("gallery", "players' choice is kept on the device", page.evaluate("() => localStorage.getItem('dg_evidence_view')") == "gallery", "")
+
+    # Agent Hub (the same device: opens in Gallery)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector(f"#ah-handouts-{FN_CODE}", state="attached", timeout=15000)
+    page.wait_for_timeout(1200)
+    evs = sorted([dict(v, id=k.split("/")[1]) for k, v in fd.items() if k.startswith("evidence/")], key=lambda e: -e["created_at"])
+    push_firestore_snapshot(page, "evidence", [["visible_to", "array-contains-any", [FN_CODE, "ALL"]]], evs)
+    page.wait_for_selector(f"#ah-handouts-{FN_CODE} .dg-gv-t", timeout=10000)
+    record("gallery", "Agent Hub opens in Gallery too (the same choice)", page.locator(f"#ah-handouts-{FN_CODE} .dg-gv-t").count() == 4, "")
+    page.click(f"#ah-handouts-{FN_CODE} .dg-gv-t[data-gv-id=g_pdf]")
+    record("gallery", "Agent Hub: a tap opens that Evidence (its PDF link and Your Notes)",
+           page.locator(f"#ah-handouts-{FN_CODE} .ah-handout-card").count() == 1 and page.locator(f"#ah-handouts-{FN_CODE} .ah-handout-pdf").count() == 1
+           and page.locator(f"#ah-handouts-{FN_CODE} .ah-handout-notes-input").count() == 1, "")
+    page.click(f"#ah-handouts-{FN_CODE} [data-ev-back]")
+    record("gallery", "Agent Hub: Back returns to the gallery", page.locator(f"#ah-handouts-{FN_CODE} .dg-gv-t").count() == 4, "")
+    page.click(f"#ah-handouts-filter-{FN_CODE} [data-gv-view=list]")
+    record("gallery", "Agent Hub: List brings the cards back", page.locator(f"#ah-handouts-{FN_CODE} .ah-handout-card").count() == 4, "")
+    record("gallery", "no JS exceptions (notebook, Agent Hub)", not errs, str(errs[:3]))
+    page.close()
+
+    # Notes: small tiles on the Evidence list; a tap opens it.
+    page = p.new_page(viewport={"width": 1280, "height": 900})
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    seed_cells_docs(page, [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"]}])
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    page.add_init_script("""try { localStorage.setItem('dg_agent_roster', JSON.stringify({'OWEN-CS12': {code: 'OWEN-CS12', char_name: 'Owen Castillo', saved_at: Date.now()}}));
+      localStorage.setItem('dg_notes_identity_OWEN-CS12', JSON.stringify({color: '#2b6cb0', font: 'kalam'})); localStorage.setItem('dg_evidence_view', 'gallery'); } catch (e) {}""")
+    page.goto(f"{BASE}/notes/index.html", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 2, timeout_ms=8000)
+    nev = ev("cell_1", ["OWEN-CS12"])
+    for _ in range(20):
+        push_firestore_snapshot(page, "evidence", [["visible_to", "array-contains-any", ["OWEN-CS12", "ALL"]]],
+                                sorted([dict(v, id=k.split("/")[1]) for k, v in nev.items()], key=lambda e: -e["created_at"]))
+        if page.locator("#dg-notes-evidence-mount .dg-gv-t").count(): break
+        page.wait_for_timeout(250)
+    record("gallery", "Notes: the Evidence list shows small tiles in Gallery", page.locator("#dg-notes-evidence-mount .dg-gv.compact .dg-gv-t").count() == 3,
+           page.inner_html("#dg-notes-evidence-mount")[:300] if page.query_selector("#dg-notes-evidence-mount") else "no mount")
+    if page.locator("#dg-notes-evidence-mount .dg-gv-t").count():
+        page.click("#dg-notes-evidence-mount .dg-gv-t[data-gv-id=g_text]")
+        page.wait_for_timeout(300)
+    record("gallery", "Notes: a tap opens the Evidence", page.locator(".dg-notes-evidence-modal .dg-notes-identity-title").count() == 1
+           and "Memo" in (page.text_content(".dg-notes-evidence-modal .dg-notes-identity-title") or ""), "")
+    record("gallery", "no JS exceptions (Notes gallery)", not errs, str(errs[:3]))
+    page.close()
+
 def test_acell_evidence_pdf(p):
     """Regression coverage for a real live report: the Evidence photo
     field's accept="image/*" only labels the file picker, it doesn't
@@ -11958,6 +12070,7 @@ def main():
 
         safe(test_acell_evidence, browser, area="acell")
         safe(test_acell_evidence_share_languages_format, browser, area="acell")
+        safe(test_evidence_gallery, browser, area="gallery")
         safe(test_acell_evidence_pdf, browser, area="acell")
         safe(test_acell_evidence_create_verify_retries, browser, area="acell")
 

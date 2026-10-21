@@ -304,6 +304,24 @@ use the old name. Not a bug, just an unrenamed internal detail.
   where the card was (`inlineEdit`, put back after every live redraw).
 - Test: `test_acell_evidence_share_languages_format`.
 
+**Gallery (v3.7.0).** A **List | Gallery** switch (`dg-gv-switch`) on
+A-Cell's Evidence toolbar, Agent Hub's Evidence filter row, the
+notebook's Evidences (also in Split) and Notes' Evidence heading. The
+gallery is a pinboard of taped polaroids drawn by
+`window.dgEvidenceGallery.html()` (in `assets/evidence-md.js`): a photo
+shows the picture, a PDF a stamp, a text-only item its first lines on
+lined paper (`plain()` strips the formatting marks); the tilt comes from
+the item's id. The choice is kept per device: `dg_evidence_view` on the
+players' pages (shared by the notebook, Agent Hub and Notes),
+`dg_acell_evidence_view` in A-Cell.
+- **A-Cell:** unreleased tiles are faded and stamped; a tap switches to
+  List at that card (flashed), where Edit, Duplicate, Share and
+  Released are. An open edit form keeps the list up until it closes.
+- **Players:** a tap opens that one Evidence (photo or PDF, formatted
+  text, private remarks / Your Notes) with **← Back to the gallery**;
+  in Notes the small tiles open the usual Evidence window.
+- Test: `test_evidence_gallery`.
+
 ## 5. Agent Portal / Profiling / Agent File
 
 **Now one page, on Agent Hub (unreleased, on `claude/new-session-thjzt6`

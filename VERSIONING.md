@@ -151,7 +151,10 @@ drawn the same for Agents, a body box that grows with the text, and
 Edit opening where the card is; shell cache `dg-hub-shell-v233`.
 Needs `firebase deploy --only functions` once for Translate. **v3.6.1** (unreleased) keeps a
 numbered step's own number in Evidence text ("2." stayed "1." after a
-paragraph; see `BUGFIXES.md`); shell cache `dg-hub-shell-v234`. **v3.1.0**
+paragraph; see `BUGFIXES.md`); shell cache `dg-hub-shell-v234`. **v3.7.0** (unreleased) adds a
+Gallery to Evidence: a List | Gallery switch in A-Cell, on Agent Hub,
+in the notebook's Evidences (and Split) and in Notes, showing a
+pinboard of taped polaroids; shell cache `dg-hub-shell-v235`. **v3.1.0**
 (2026-10-10) is PR #72, v2 milestone M3: the Agent File's paper wears as
 SAN falls. Stains, a fold, a coffee ring, blood and, from SAN 9, a torn
 edge are drawn over the whole page on Agent Hub and in the notebook

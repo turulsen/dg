@@ -1250,6 +1250,8 @@
   /* ── Evidences, filtered by Operation and sorted (by date or title,
      remembered on this device -- the same key Agent Hub's list uses) ── */
   var EV_SORT_KEY = 'dg_evidence_sort';
+  // List or Gallery, per device (the same key on Agent Hub and in Notes).
+  var EV_VIEW_KEY = 'dg_evidence_view';
   var EV_SORTS = [['new', 'Newest first'], ['old', 'Oldest first'], ['az', 'A → Z'], ['za', 'Z → A']];
   function evSort() { var v = lsGet(EV_SORT_KEY); return EV_SORTS.some(function (o) { return o[0] === v; }) ? v : 'new'; }
   function sortEvidence(list, how) {
@@ -1283,6 +1285,7 @@
         items.sort(function (x, y) { return Number(y.created_at || 0) - Number(x.created_at || 0); });
         var notes = {}; res[1].forEach(function (n) { notes[n.handout_id] = n.note; });
         renderHead('evidence', items.length + ' filed');
+        var G = window.dgEvidenceGallery;
         if (!items.length) { body.innerHTML = '<p class="fn-muted">Nothing filed for this Agent yet.</p>'; return; }
         var opIds = [], hasUnfiled = false;
         items.forEach(function (h) { if (h.operation_id) { if (opIds.indexOf(h.operation_id) === -1) opIds.push(h.operation_id); } else hasUnfiled = true; });
@@ -1294,11 +1297,29 @@
           (hasUnfiled ? '<option value="UNFILED"' + (state.evOp === 'UNFILED' ? ' selected' : '') + '>Unfiled</option>' : '') +
           '</select><label>Sort</label><select class="fn-select" data-ev-sort>' +
           EV_SORTS.map(function (o) { return '<option value="' + o[0] + '"' + (evSort() === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
-          '</select></div><div data-ev-list></div>';
+          '</select>' + (G ? '<label>View</label>' + G.switchHtml(G.getView(EV_VIEW_KEY)) : '') + '</div><div data-ev-list></div>';
         function draw() {
           var shown = sortEvidence(items.filter(function (h) { return !state.evOp || (state.evOp === 'UNFILED' ? !h.operation_id : h.operation_id === state.evOp); }), evSort());
           var list = body.querySelector('[data-ev-list]');
-          list.innerHTML = shown.length ? shown.map(function (h) {
+          // Gallery: the pinboard; a tap opens that one Evidence, with a
+          // way back to the board.
+          if (G && G.getView(EV_VIEW_KEY) === 'gallery') {
+            var one = state.evDetail && shown.filter(function (h) { return h.evidence_id === state.evDetail; })[0];
+            if (!one) {
+              state.evDetail = '';
+              list.innerHTML = shown.length ? G.html(shown.map(function (h) {
+                var d = h.created_at ? new Date(Number(h.created_at)).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '';
+                return { id: h.evidence_id, title: h.title, body: h.body, photo: h.photo, meta: (h.operation_id ? opName(h.operation_id) : 'Unfiled') + (d ? ' · ' + d : '') };
+              })) : '<p class="fn-muted">Nothing filed under this Operation.</p>';
+              Array.prototype.forEach.call(list.querySelectorAll('[data-gv-id]'), function (t) {
+                t.addEventListener('click', function () { state.evDetail = t.getAttribute('data-gv-id'); draw(); body.scrollTop = 0; });
+              });
+              return;
+            }
+            shown = [one];
+          }
+          list.innerHTML = (state.evDetail && G && G.getView(EV_VIEW_KEY) === 'gallery' ? '<button type="button" class="fn-btn fn-small" data-ev-back>← Back to the gallery</button>' : '') +
+            (shown.length ? shown.map(function (h) {
             var scope = h.cell_id ? ((cellsById[h.cell_id] && cellsById[h.cell_id].name) || h.cell_id) : 'All Cells';
             var when = h.created_at ? new Date(Number(h.created_at)).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '';
             return '<div class="fn-card-sheet"><div class="fn-card-head">' +
@@ -1311,7 +1332,9 @@
               '<div class="fn-remark"><div class="fn-label" style="margin:0 0 5px">Your private remarks</div>' +
                 '<textarea class="fn-input" rows="2" placeholder="Only you see these." data-ev="' + esc(h.evidence_id) + '">' + esc(notes[h.evidence_id] || '') + '</textarea>' +
                 '<div class="fn-remark-status" data-ev-status="' + esc(h.evidence_id) + '"></div></div></div>';
-          }).join('') : '<p class="fn-muted">Nothing filed under this Operation.</p>';
+          }).join('') : '<p class="fn-muted">Nothing filed under this Operation.</p>');
+          var back = list.querySelector('[data-ev-back]');
+          if (back) back.addEventListener('click', function () { state.evDetail = ''; draw(); });
           // A photo opens full-screen with its own zoom on a tap; a PDF
           // is a link Safari's PDF viewer opens. (Both used to be a bare
           // <img>: a PDF showed broken, a photo couldn't be enlarged.)
@@ -1368,7 +1391,17 @@
             });
           });
         }
-        body.querySelector('[data-ev-filter]').addEventListener('change', function (e) { state.evOp = e.target.value; draw(); });
+        body.querySelector('[data-ev-filter]').addEventListener('change', function (e) { state.evOp = e.target.value; state.evDetail = ''; draw(); });
+        Array.prototype.forEach.call(body.querySelectorAll('[data-gv-view]'), function (b) {
+          b.addEventListener('click', function () {
+            G.setView(EV_VIEW_KEY, b.getAttribute('data-gv-view'));
+            state.evDetail = '';
+            Array.prototype.forEach.call(body.querySelectorAll('[data-gv-view]'), function (x) {
+              var on = x === b; x.classList.toggle('on', on); x.setAttribute('aria-pressed', String(on));
+            });
+            draw();
+          });
+        });
         body.querySelector('[data-ev-sort]').addEventListener('change', function (e) { lsSet(EV_SORT_KEY, e.target.value); draw(); });
         draw();
       }).catch(function (err) {
