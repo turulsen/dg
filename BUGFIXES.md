@@ -6811,3 +6811,7 @@ New Hub-shell checks in `test_player_tours` (they fail on v3.8.0).
   (`.ap-adapts`, `assets/agent-paper.js`) and the post-it frames them;
   "Failed rolls" frames Roll improvements instead of the whole skill
   bar. Checked in `test_player_tours`. `sw.js` `CACHE_NAME` v239.
+- **Also (same day):** the Evidence tour's Operation post-it read "Only
+  the Evidence of one Operation, or all of it", which didn't say what the
+  control does. Now: "Filter the Evidence by Operation…". The Notes
+  tour's Arrange text was reworded the same way. `sw.js` `CACHE_NAME` v240.

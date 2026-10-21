@@ -172,7 +172,7 @@
         { sel: '.dg-notes-circulate-btn', frame: true, title: 'Circulate', text: 'Shares the note you\'re in with your Cell (the Shared tab). Off keeps it to you.' },
         { sel: '.dg-notes-pin-btn', frame: true, optional: true, title: 'Pin', text: 'Keeps a note at the top of your Index.' },
         { sel: '#dg-notes-quick-mount', frame: true, title: 'Quick notes', text: 'Notes you jot from the notebook on a phone wait here. Add to page puts one where your cursor is.' },
-        { sel: '[data-arrange]', frame: true, title: 'Arrange', text: 'Show, hide and order these lists, on this device.' },
+        { sel: '[data-arrange]', frame: true, title: 'Arrange', text: 'Choose which of these lists show, and in what order. Only on this device.' },
         { sel: '#fn-veil [data-q="text"]', title: 'Quick note', text: 'Jot something down fast. It waits in your full Notes until you add it to the page.' },
         { sel: '#fn-veil [data-q="tag"]', optional: true, title: 'Tag it', text: 'Tag a quick note as you write it. It keeps the tag when it\'s added to the page.' },
         { sel: '#fn-veil [data-q="shared"]', optional: true, title: 'Share it', text: 'Shares this note with your Cell.' }
@@ -182,7 +182,7 @@
       when: function () { return any('.dg-gv-switch') && (nbOpen() ? nbView() === 'evidence' : page() === 'agent-hub.html'); },
       open: function () { var f = FN(); if (f) f.open('evidence'); },
       steps: [
-        { sel: ['#fn-veil [data-ev-filter]', 'select[data-op-filter-code]'], optional: true, title: 'Operation', text: 'Only the Evidence of one Operation, or all of it.' },
+        { sel: ['#fn-veil [data-ev-filter]', 'select[data-op-filter-code]'], optional: true, title: 'Operation', text: 'Filter the Evidence by Operation. Pick one to see only what was filed for it, or All operations to see everything.' },
         { sel: ['#fn-veil .dg-gv-switch', '.ah-handouts-view .dg-gv-switch'], title: 'Gallery', text: 'See your Evidence as a pinboard. Tap a picture to open it; Back returns to the board. Your choice is kept on this device.' },
         { sel: ['#fn-veil .dg-et', '.ah-handouts .dg-et'], optional: true, title: 'Your own tags', text: 'Type a tag and press Enter, × to remove it. Only you see them.' },
         { sel: ['#fn-veil .dg-et-h', '.ah-handouts .dg-et-h'], optional: true, title: 'Handler\'s labels', text: 'Red stamps are your Handler\'s labels. Everyone sees them.' },
