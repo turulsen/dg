@@ -322,6 +322,24 @@ players' pages (shared by the notebook, Agent Hub and Notes),
   in Notes the small tiles open the usual Evidence window.
 - Test: `test_evidence_gallery`.
 
+**Tags (v3.7.0).** Two kinds on each Evidence item, drawn by
+`window.dgEvidenceTags` (in `assets/evidence-md.js`):
+- **The Handler's labels:** A-Cell's form has a comma-separated
+  **Labels** field, stored as `evidence.htags` on every linked copy (the
+  Released toggle keeps them). Shown as red stamps on A-Cell's cards
+  and for the Agents, who can't remove them.
+- **An Agent's own tags:** private, in `handout_notes/{code}_{id}.tags`
+  beside the remark (`dgStore.saveHandoutTags`; both saves now merge, so
+  neither wipes the other; `listHandoutNotes` returns `tags`). Added in
+  the tag row on each card (notebook, Agent Hub, Notes' Evidence window)
+  with Enter or a comma, suggestions from the tags already in use, ×
+  to remove.
+- **Tags filter** beside Operation (notebook, Agent Hub, Notes' Evidence
+  list): every label and own tag on the visible items; the gallery
+  follows it too.
+- Not done: suggestions from the Agent's Notes tags.
+- Test: `test_evidence_tags`.
+
 ## 5. Agent Portal / Profiling / Agent File
 
 **Now one page, on Agent Hub (unreleased, on `claude/new-session-thjzt6`

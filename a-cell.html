@@ -495,6 +495,8 @@
   .evidence-create-error{ color:var(--red); font-size:11px; min-height:1.3em; }
   /* v3.6.0: languages, formatting toolbar, growing body, Share-with rows */
   .evidence-view-switch{ margin-left:auto; }
+  .evidence-label-tag{ font-family:'Special Elite',monospace; font-size:9.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--red);
+    border:1.5px solid var(--red); padding:2px 7px; transform:rotate(-1.5deg); display:inline-block; }
   .evidence-card.flash{ outline:2px solid rgba(139,42,31,.6); outline-offset:3px; transition:outline-color 1.2s; }
   .evidence-create-form.is-inline{ margin:0; outline:2px solid rgba(139,42,31,.45); outline-offset:3px; }
   .ev-langs{ display:flex; flex-wrap:wrap; align-items:flex-end; border-bottom:1.5px solid rgba(90,74,16,.4); }
@@ -1802,6 +1804,8 @@
           var texts = p.texts === undefined ? prev.texts : (typeof p.texts === 'string' ? (function () { try { return JSON.parse(p.texts); } catch (e) { return null; } })() : p.texts);
           var group = p.share_group === undefined ? prev.share_group : p.share_group;
           var lang = p.lang === undefined ? prev.lang : p.lang;
+          var htags = p.htags === undefined ? prev.htags : parseArr_(p.htags);
+          if (htags && htags.length) doc.htags = htags;
           if (texts && typeof texts === 'object' && Object.keys(texts).length) doc.texts = texts;
           if (group) doc.share_group = String(group);
           if (lang) doc.lang = String(lang);
@@ -3616,7 +3620,7 @@
               evidence_id: doc.id, title: d.title || '', body: d.body || '', photo: d.photo || '',
               cell_id: d.cell_id || '', operation_id: d.operation_id || '', created_at: d.created_at || 0,
               released: !!d.released, restricted_to: d.restricted_to || [],
-              share_group: d.share_group || '', lang: d.lang || '', texts: d.texts || null
+              share_group: d.share_group || '', lang: d.lang || '', texts: d.texts || null, htags: d.htags || []
             });
           });
           evidenceLoadError = null;
@@ -3871,11 +3875,12 @@
       var linkTag = others.length ? '<span class="evidence-link-tag">linked with ' + others.map(function (x) { return escapeHtml(placeLabel_(x)); }).join(', ') + '</span>' : '';
       var langTag = (h.lang && h.lang !== 'en') || (h.texts && Object.keys(h.texts).length > 1)
         ? '<span class="evidence-lang-tag">' + escapeHtml(langOf_(h).toUpperCase()) + '</span>' : '';
+      var labelTags = (h.htags || []).map(function (t) { return '<span class="evidence-label-tag">' + escapeHtml(t) + '</span>'; }).join('');
       var restrictedNote = (h.restricted_to && h.restricted_to.length)
         ? '<div class="evidence-restricted-note">Restricted to: ' + h.restricted_to.map(function (c) { return escapeHtml(agentLabel_(c)); }).join(', ') + '</div>' : '';
       return '<div class="evidence-card' + (h.released ? '' : ' unreleased') + '" data-i="' + i + '" data-eid="' + escapeHtml(h.evidence_id) + '">' +
         '<div class="evidence-card-head">' +
-        '<div class="evidence-card-tags"><span class="' + scopeClass + '">' + escapeHtml(cellName(h.cell_id)) + '</span>' + opTag + langTag + linkTag + '</div>' +
+        '<div class="evidence-card-tags"><span class="' + scopeClass + '">' + escapeHtml(cellName(h.cell_id)) + '</span>' + opTag + langTag + labelTags + linkTag + '</div>' +
         '<span class="evidence-date">' + escapeHtml(formatDate(h.created_at)) + '</span>' +
         '</div>' +
         '<div class="evidence-title">' + escapeHtml(h.title) + '</div>' +
@@ -4285,6 +4290,10 @@
       '</div>' +
       '<label class="evidence-create-field"><span>Photo or PDF (optional)</span><input type="file" accept="image/*,application/pdf" id="evidence-new-photo"></label>' +
       '<div id="evidence-new-photo-prev-wrap"></div>' +
+      // The Handler's labels (v3.7.0): stamped on the Evidence for every
+      // Agent, beside their own tags, and filterable.
+      '<label class="evidence-create-field"><span>Labels (optional, comma-separated)</span><input type="text" id="evidence-new-labels" placeholder="e.g. Autopsy, Witness" value="' +
+        escapeHtml(((source && source.htags) || []).join(', ')) + '"></label>' +
       '<div class="ev-share"><span class="ev-share-h">Share with</span><div id="evidence-share-rows"></div>' +
         '<button type="button" class="paper-btn ev-add-row" id="evidence-add-row">+ Another Cell / Operation</button>' +
         '<p class="evidence-restrict-note">Each Cell gets its own linked copy, in its own language, with its own Released box. A change to the text or file is saved to every copy.</p></div>' +
@@ -4438,6 +4447,7 @@
         return;
       }
       var releasedNow = $('evidence-new-released').checked;
+      var labels = window.dgEvidenceTags.uniq($('evidence-new-labels').value.split(','));
       var keep = {};
       LANGS.forEach(function (p) { var t = texts[p[0]]; if (t && (t.title.trim() || t.body.trim())) keep[p[0]] = { title: t.title.trim(), body: t.body.trim() }; });
       var groupId = (isEdit && source.share_group) || (rows.length > 1 ? 'grp_' + Date.now() + '_' + Math.floor(Math.random() * 100000).toString(36) : '');
@@ -4461,7 +4471,7 @@
               title: keep[r.lang].title, body: keep[r.lang].body, photo: photoToSave,
               cell_id: r.cell_id, operation_id: r.operation_id, released: releasedNow,
               restricted_to: JSON.stringify(r.restricted_to), lang: r.lang, texts: JSON.stringify(keep),
-              share_group: groupId, id_token: idToken
+              share_group: groupId, htags: JSON.stringify(labels), id_token: idToken
             });
           });
         });

@@ -1283,7 +1283,21 @@
         var items = [];
         res[0].forEach(function (doc) { var d = doc.data() || {}; items.push(Object.assign({ evidence_id: doc.id }, d)); });
         items.sort(function (x, y) { return Number(y.created_at || 0) - Number(x.created_at || 0); });
-        var notes = {}; res[1].forEach(function (n) { notes[n.handout_id] = n.note; });
+        var notes = {}, ownTags = {}; res[1].forEach(function (n) { notes[n.handout_id] = n.note; ownTags[n.handout_id] = n.tags || []; });
+        var T = window.dgEvidenceTags;
+        function allTagNames() {
+          var out = [];
+          items.forEach(function (h) { out = out.concat(h.htags || [], ownTags[h.evidence_id] || []); });
+          return out;
+        }
+        function drawTagFilter() {
+          var wrap = body.querySelector('[data-ev-tagwrap]');
+          if (!wrap || !T) return;
+          var names = allTagNames();
+          if (state.evTag && !T.uniq(names).some(function (t) { return t.toLowerCase() === state.evTag.toLowerCase(); })) state.evTag = '';
+          wrap.innerHTML = names.length ? '<label>Tags</label>' + T.filterHtml(names, state.evTag) : '';
+          T.setSuggestions(names);
+        }
         renderHead('evidence', items.length + ' filed');
         var G = window.dgEvidenceGallery;
         if (!items.length) { body.innerHTML = '<p class="fn-muted">Nothing filed for this Agent yet.</p>'; return; }
@@ -1297,9 +1311,12 @@
           (hasUnfiled ? '<option value="UNFILED"' + (state.evOp === 'UNFILED' ? ' selected' : '') + '>Unfiled</option>' : '') +
           '</select><label>Sort</label><select class="fn-select" data-ev-sort>' +
           EV_SORTS.map(function (o) { return '<option value="' + o[0] + '"' + (evSort() === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
-          '</select>' + (G ? '<label>View</label>' + G.switchHtml(G.getView(EV_VIEW_KEY)) : '') + '</div><div data-ev-list></div>';
+          '</select><span class="fn-filter-tags" data-ev-tagwrap></span>' + (G ? '<label>View</label>' + G.switchHtml(G.getView(EV_VIEW_KEY)) : '') + '</div><div data-ev-list></div>';
         function draw() {
-          var shown = sortEvidence(items.filter(function (h) { return !state.evOp || (state.evOp === 'UNFILED' ? !h.operation_id : h.operation_id === state.evOp); }), evSort());
+          var shown = sortEvidence(items.filter(function (h) {
+            return (!state.evOp || (state.evOp === 'UNFILED' ? !h.operation_id : h.operation_id === state.evOp)) &&
+              (!T || T.matches(h.htags, ownTags[h.evidence_id], state.evTag));
+          }), evSort());
           var list = body.querySelector('[data-ev-list]');
           // Gallery: the pinboard; a tap opens that one Evidence, with a
           // way back to the board.
@@ -1329,10 +1346,16 @@
               '<div class="fn-card-title">' + esc(h.title || 'Untitled') + '</div>' +
               (h.photo ? '<div data-ev-photo="' + esc(h.evidence_id) + '"></div>' : '') +
               '<div class="fn-card-body dg-md">' + (window.dgEvidenceMd ? window.dgEvidenceMd.render(h.body || '') : esc(h.body || '')) + '</div>' +
+              (T ? T.rowHtml(h.evidence_id, h.htags, ownTags[h.evidence_id]) : '') +
               '<div class="fn-remark"><div class="fn-label" style="margin:0 0 5px">Your private remarks</div>' +
                 '<textarea class="fn-input" rows="2" placeholder="Only you see these." data-ev="' + esc(h.evidence_id) + '">' + esc(notes[h.evidence_id] || '') + '</textarea>' +
                 '<div class="fn-remark-status" data-ev-status="' + esc(h.evidence_id) + '"></div></div></div>';
           }).join('') : '<p class="fn-muted">Nothing filed under this Operation.</p>');
+          if (T) T.bind(list, function (id) { return ownTags[id] || []; }, function (id, tags) {
+            ownTags[id] = tags;
+            drawTagFilter();
+            return window.dgStore.saveHandoutTags(a.code, id, tags);
+          });
           var back = list.querySelector('[data-ev-back]');
           if (back) back.addEventListener('click', function () { state.evDetail = ''; draw(); });
           // A photo opens full-screen with its own zoom on a tap; a PDF
@@ -1392,6 +1415,11 @@
           });
         }
         body.querySelector('[data-ev-filter]').addEventListener('change', function (e) { state.evOp = e.target.value; state.evDetail = ''; draw(); });
+        body.querySelector('.fn-filter').addEventListener('change', function (e) {
+          if (!e.target.hasAttribute('data-et-filter')) return;
+          state.evTag = e.target.value; state.evDetail = ''; draw();
+        });
+        drawTagFilter();
         Array.prototype.forEach.call(body.querySelectorAll('[data-gv-view]'), function (b) {
           b.addEventListener('click', function () {
             G.setView(EV_VIEW_KEY, b.getAttribute('data-gv-view'));

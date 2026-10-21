@@ -1330,6 +1330,12 @@
     let v = ''; try { v = localStorage.getItem(EV_SORT_KEY) || ''; } catch (e) { /* private mode */ }
     return EV_SORTS.some(o => o[0] === v) ? v : 'new';
   }
+  function evTagFilterHtml(code, handouts) {
+    const T = window.dgEvidenceTags;
+    if (!T) return '';
+    const own = tagsByCode[code] || {};
+    return T.filterHtml(handouts.reduce((a, h) => a.concat(h.htags || [], own[h.evidence_id] || []), []), tagFilterByCode[code] || '');
+  }
   function evViewSwitchHtml() {
     const G = window.dgEvidenceGallery;
     return G ? '<span class="ah-handouts-view">' + G.switchHtml(G.getView(EV_VIEW_KEY)) + '</span>' : '';
@@ -1370,7 +1376,7 @@
         let optsHtml = '<option value="">All Operations</option>';
         if (hasUnfiled) optsHtml += `<option value="UNFILED"${selected === 'UNFILED' ? ' selected' : ''}>Unfiled</option>`;
         opOptions.forEach(o => { optsHtml += `<option value="${escapeHtml(o.id)}"${selected === o.id ? ' selected' : ''}>${escapeHtml(o.label)}</option>`; });
-        filterWrapEl.innerHTML = `<div class="ah-handouts-filter"><span>Operation:</span><select data-op-filter-code="${escapeHtml(code)}">${optsHtml}</select>${evSortSelectHtml()}${evViewSwitchHtml()}</div>`;
+        filterWrapEl.innerHTML = `<div class="ah-handouts-filter"><span>Operation:</span><select data-op-filter-code="${escapeHtml(code)}">${optsHtml}</select>${evSortSelectHtml()}${evTagFilterHtml(code, handouts)}${evViewSwitchHtml()}</div>`;
         const sel = filterWrapEl.querySelector('select[data-op-filter-code]');
         sel.addEventListener('change', () => {
           opFilterByCode[code] = sel.value;
@@ -1378,8 +1384,14 @@
           renderHandoutsFor(code, lastEvidenceByCode[code] || handouts, cellsById, notesByHandoutIdByCode[code]);
         });
       } else {
-        filterWrapEl.innerHTML = `<div class="ah-handouts-filter">${evSortSelectHtml()}${evViewSwitchHtml()}</div>`;
+        filterWrapEl.innerHTML = `<div class="ah-handouts-filter">${evSortSelectHtml()}${evTagFilterHtml(code, handouts)}${evViewSwitchHtml()}</div>`;
       }
+      const tagSel = filterWrapEl.querySelector('[data-et-filter]');
+      if (tagSel) tagSel.addEventListener('change', () => {
+        tagFilterByCode[code] = tagSel.value;
+        evDetailByCode[code] = '';
+        renderHandoutsFor(code, lastEvidenceByCode[code] || handouts, cellsById, notesByHandoutIdByCode[code]);
+      });
       filterWrapEl.querySelectorAll('[data-gv-view]').forEach(b => b.addEventListener('click', () => {
         window.dgEvidenceGallery.setView(EV_VIEW_KEY, b.dataset.gvView);
         evDetailByCode[code] = '';
@@ -1393,9 +1405,11 @@
     }
 
     const activeFilter = opFilterByCode[code] || '';
+    const T = window.dgEvidenceTags;
+    const ownTags = tagsByCode[code] || (tagsByCode[code] = {});
     let shown = sortEvidence((activeFilter
       ? handouts.filter(h => activeFilter === 'UNFILED' ? !h.operation_id : h.operation_id === activeFilter)
-      : handouts), evSort());
+      : handouts).filter(h => !T || T.matches(h.htags, ownTags[h.evidence_id], tagFilterByCode[code])), evSort());
     if (!shown.length) {
       el.innerHTML = '<div class="ah-handouts-empty">Nothing filed under this Operation.</div>';
       return;
@@ -1446,6 +1460,7 @@
         </div>
         <div class="ah-handout-title">${escapeHtml(h.title)}</div>
         <div class="ah-handout-body-row">${photo}<div class="ah-handout-text dg-md">${window.dgEvidenceMd ? window.dgEvidenceMd.render(h.body) : escapeHtml(h.body)}</div></div>
+        ${T ? T.rowHtml(h.evidence_id, h.htags, ownTags[h.evidence_id]) : ''}
         <div class="ah-handout-notes">
           <label class="ah-handout-notes-label" for="ah-note-${escapeHtml(code)}-${escapeHtml(h.evidence_id)}">Your Notes</label>
           <textarea class="ah-handout-notes-input" id="ah-note-${escapeHtml(code)}-${escapeHtml(h.evidence_id)}"
@@ -1458,6 +1473,21 @@
     el.querySelectorAll('[data-lightbox-src]').forEach(img => {
       img.addEventListener('click', () => openHandoutLightbox(img.dataset.lightboxSrc, img.dataset.title));
     });
+    if (T) {
+      T.setSuggestions(handouts.reduce((a, h) => a.concat(h.htags || [], ownTags[h.evidence_id] || []), []));
+      T.bind(el, id => ownTags[id] || [], (id, tags) => {
+        ownTags[id] = tags;
+        // The Tags filter learns a new name (the cards stay as they are).
+        if (filterWrapEl) {
+          const sel = filterWrapEl.querySelector('[data-et-filter]');
+          const tmp = document.createElement('div');
+          tmp.innerHTML = evTagFilterHtml(code, handouts);
+          if (sel && tmp.firstElementChild) sel.innerHTML = tmp.firstElementChild.innerHTML;
+          else if (!sel) renderHandoutsFor(code, lastEvidenceByCode[code] || handouts, cellsById, notesByHandoutIdByCode[code]);
+        }
+        return window.dgStore.saveHandoutTags(code, id, tags);
+      });
+    }
     const back = el.querySelector('[data-ev-back]');
     if (back) back.addEventListener('click', () => {
       evDetailByCode[code] = '';
@@ -1698,6 +1728,9 @@
   const opFilterByCode = {};
   // Gallery (v3.7.0): the Evidence open from a tile, per Agent.
   const evDetailByCode = {};
+  // Evidence tags (v3.7.0): the Agent's own, per Agent; the Tags filter.
+  const tagsByCode = {};
+  const tagFilterByCode = {};
   const EV_VIEW_KEY = 'dg_evidence_view';
 
   // Initiative / DEX post-it -- characters/{code} is public-read (see
@@ -1743,7 +1776,7 @@
             relevant.push({
               evidence_id: doc.id, title: d.title || '', body: d.body || '',
               photo: d.photo || '', cell_id: d.cell_id || '', operation_id: d.operation_id || '',
-              created_at: d.created_at || 0
+              created_at: d.created_at || 0, htags: d.htags || []
             });
           });
           relevant.sort((x, y) => Number(y.created_at) - Number(x.created_at));
@@ -1889,8 +1922,10 @@
       // paint if this resolves after the Firestore listener's first fire.
       window.dgStore.listHandoutNotes(a.code).then(notes => {
         const notesByHandoutId = {};
-        notes.forEach(n => { notesByHandoutId[n.handout_id] = n.note; });
+        const tagsByHandoutId = {};
+        notes.forEach(n => { notesByHandoutId[n.handout_id] = n.note; tagsByHandoutId[n.handout_id] = n.tags || []; });
         notesByHandoutIdByCode[a.code] = notesByHandoutId;
+        tagsByCode[a.code] = tagsByHandoutId;
         if (lastEvidenceByCode[a.code]) renderHandoutsFor(a.code, lastEvidenceByCode[a.code], cellsByIdMap(), notesByHandoutId);
       }).catch(err => console.error('agent-hub: could not read handout notes for ' + a.code, err));
       startEvidenceListenerFor(a.code);

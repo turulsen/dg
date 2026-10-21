@@ -158,4 +158,109 @@
     (document.head || document.documentElement).appendChild(st);
   })();
   window.dgEvidenceGallery = { html: galleryHtml, switchHtml: switchHtml, getView: getView, setView: setView, plain: plain };
+
+  /* ── Evidence tags (v3.7.0). Two kinds on each item: the Handler's
+     labels (evidence.htags, set in A-Cell, the same for every Agent,
+     shown as stamps nobody else can remove) and the Agent's own tags
+     (handout_notes/{code}_{id}.tags, private like the remarks). Both
+     filter the list and the gallery. ── */
+  function normTag(t) { return String(t == null ? '' : t).replace(/\s+/g, ' ').trim().slice(0, 40); }
+  function uniqTags(list) {
+    const seen = {}, out = [];
+    (list || []).forEach(function (t) { t = normTag(t); const k = t.toLowerCase(); if (t && !seen[k]) { seen[k] = 1; out.push(t); } });
+    return out;
+  }
+  function tagRowHtml(id, htags, tags) {
+    htags = uniqTags(htags); tags = uniqTags(tags);
+    return '<div class="dg-et" data-et-id="' + esc(id) + '" data-et-h="' + esc(JSON.stringify(htags)) + '">' +
+      '<span class="dg-et-l">Tags</span>' +
+      htags.map(function (t) { return '<span class="dg-et-h" title="Filed by the Handler">' + esc(t) + '</span>'; }).join('') +
+      tags.map(function (t) { return '<span class="dg-et-o">' + esc(t) + '<button type="button" data-et-del="' + esc(t) + '" aria-label="Remove tag ' + esc(t) + '">×</button></span>'; }).join('') +
+      '<input class="dg-et-in" type="text" maxlength="40" list="dg-et-sugg" placeholder="+ tag" aria-label="Add a tag"></div>';
+  }
+  // Suggestions for every tag box on the page: one shared <datalist>.
+  function setTagSuggestions(names) {
+    let dl = document.getElementById('dg-et-sugg');
+    if (!dl) { dl = document.createElement('datalist'); dl.id = 'dg-et-sugg'; document.body.appendChild(dl); }
+    dl.innerHTML = uniqTags(names).sort(function (a, b) { return a.localeCompare(b); }).map(function (t) { return '<option value="' + esc(t) + '">'; }).join('');
+  }
+  // getTags(id) -> the Agent's current tags; save(id, tags) stores them
+  // (the caller keeps its own copy up to date and returns a promise).
+  function bindTagRows(root, getTags, save) {
+    if (!root || root.__dgEtBound) return;
+    root.__dgEtBound = true;
+    function redraw(row, tags) {
+      const id = row.getAttribute('data-et-id');
+      let h = []; try { h = JSON.parse(row.getAttribute('data-et-h') || '[]'); } catch (e) { h = []; }
+      const tmp = document.createElement('div');
+      tmp.innerHTML = tagRowHtml(id, h, tags);
+      const fresh = tmp.firstChild;
+      if (!row.parentNode) return fresh;
+      row.parentNode.replaceChild(fresh, row);
+      return fresh;
+    }
+    function commit(row, tags) {
+      const id = row.getAttribute('data-et-id');
+      tags = uniqTags(tags);
+      const fresh = redraw(row, tags);
+      Promise.resolve(save(id, tags)).then(function () { fresh.classList.remove('dg-et-err'); },
+        function () { fresh.classList.add('dg-et-err'); fresh.title = 'Could not save -- check the connection.'; });
+      return fresh;
+    }
+    function addFrom(input) {
+      const row = input.closest('.dg-et');
+      const t = normTag(input.value.replace(/,+$/, ''));
+      // Emptied first: redrawing the row blurs this box, and its change
+      // event must not add the tag a second time.
+      input.value = '';
+      if (!row || !row.parentNode || !t) return;
+      const fresh = commit(row, (getTags(row.getAttribute('data-et-id')) || []).concat([t]));
+      const inp = fresh.querySelector('.dg-et-in');
+      if (inp) inp.focus();
+    }
+    root.addEventListener('keydown', function (e) {
+      if (!e.target.classList || !e.target.classList.contains('dg-et-in')) return;
+      if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addFrom(e.target); }
+    });
+    root.addEventListener('change', function (e) {
+      if (e.target.classList && e.target.classList.contains('dg-et-in') && e.target.value.trim()) addFrom(e.target);
+    });
+    root.addEventListener('click', function (e) {
+      const b = e.target.closest && e.target.closest('[data-et-del]');
+      if (!b) return;
+      const row = b.closest('.dg-et'), del = b.getAttribute('data-et-del').toLowerCase();
+      commit(row, (getTags(row.getAttribute('data-et-id')) || []).filter(function (t) { return t.toLowerCase() !== del; }));
+    });
+  }
+  // The Tags filter: every tag on these items (labels and own), A-Z.
+  function tagFilterHtml(names, cur) {
+    names = uniqTags(names).sort(function (a, b) { return a.localeCompare(b); });
+    if (!names.length) return '';
+    return '<select class="dg-et-filter" data-et-filter aria-label="Filter by tag"><option value="">All tags</option>' +
+      names.map(function (t) { return '<option value="' + esc(t) + '"' + (cur && cur.toLowerCase() === t.toLowerCase() ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') + '</select>';
+  }
+  function tagMatches(htags, tags, cur) {
+    if (!cur) return true;
+    cur = cur.toLowerCase();
+    return (htags || []).concat(tags || []).some(function (t) { return normTag(t).toLowerCase() === cur; });
+  }
+  (function tagStyles() {
+    if (document.getElementById('dg-et-style')) return;
+    const st = document.createElement('style');
+    st.id = 'dg-et-style';
+    st.textContent =
+      '.dg-et{display:flex;flex-wrap:wrap;align-items:center;gap:5px 6px;margin:8px 0 2px}' +
+      '.dg-et-l{font:9px "Courier Prime",monospace;letter-spacing:.14em;text-transform:uppercase;color:rgba(28,22,8,.55);margin-right:2px}' +
+      '.dg-et-h{font:10px "Special Elite",monospace;letter-spacing:.12em;text-transform:uppercase;color:#8b1f17;border:1.5px solid #8b1f17;padding:1px 7px;transform:rotate(-1.5deg)}' +
+      '.dg-et-o{display:inline-flex;align-items:center;gap:3px;font:11px "Courier Prime",monospace;color:#1c1608;background:rgba(43,79,134,.1);border:1px solid rgba(43,79,134,.35);border-radius:10px;padding:1px 4px 1px 9px}' +
+      '.dg-et-o button{font:12px/1 "Courier Prime",monospace;border:0;background:none;color:rgba(28,22,8,.55);cursor:pointer;padding:0 3px}' +
+      '.dg-et-o button:hover{color:#8b1f17}' +
+      '.dg-et-in{font:11px "Courier Prime",monospace;width:7.5em;min-width:0;border:0;border-bottom:1px dashed rgba(28,22,8,.4);background:transparent;color:#1c1608;padding:2px 0}' +
+      '.dg-et-in:focus{outline:none;border-bottom-color:#8b1f17}' +
+      '.dg-et.dg-et-err{outline:1px dashed #8b1f17;outline-offset:3px}' +
+      '.dg-et-filter{font:11.5px "Courier Prime",monospace}';
+    (document.head || document.documentElement).appendChild(st);
+  })();
+  window.dgEvidenceTags = { norm: normTag, uniq: uniqTags, rowHtml: tagRowHtml, bind: bindTagRows,
+    setSuggestions: setTagSuggestions, filterHtml: tagFilterHtml, matches: tagMatches };
 })();

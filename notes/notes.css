@@ -309,7 +309,7 @@
 /* Operation filter above the Evidence list -- narrows to one folder at
    a time, same organizing idea as A-Cell's own Evidence Locker
    folders, sized to fit this sidebar's narrow column. */
-#dg-notes-panel .dg-notes-evidence-filter{
+#dg-notes-panel .dg-notes-evidence-filter, #dg-notes-panel .dg-et-filter{
   width:100%; font-family:'Courier Prime',monospace; font-size:10.5px; color:#3a3220;
   background:rgba(255,255,255,.5); border:1px solid rgba(58,40,10,.25); border-radius:3px;
   padding:3px 5px; margin-bottom:4px;

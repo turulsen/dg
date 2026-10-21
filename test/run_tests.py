@@ -3292,6 +3292,127 @@ def test_evidence_gallery(p):
     record("gallery", "no JS exceptions (Notes gallery)", not errs, str(errs[:3]))
     page.close()
 
+def test_evidence_tags(p):
+    """Evidence tags (v3.7.0): the Handler's labels (A-Cell, on every copy,
+    kept by the Released toggle, stamped for the Agents and not removable
+    by them) and each Agent's own private tags (saved beside the remarks
+    without wiping them), with a Tags filter in the notebook (list and
+    gallery), on Agent Hub and in Notes."""
+    docs_of = lambda page, prefix: page.evaluate("(p) => Object.entries(window.__dgFirestoreDocs || {}).filter(([k]) => k.indexOf(p) === 0)"
+                                                 ".map(([k, v]) => Object.assign({ _id: k }, v))", prefix)
+    # A-Cell: labels
+    page = p.new_page(viewport={"width": 1280, "height": 900})
+    page.set_default_timeout(15000)
+    errs = collect_errors(page)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
+    _block_fonts(page)
+    skip_acell_gate(page)
+    install_firestore_backend(page, {"cells/cell_1": {"name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"]}})
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+    page.evaluate("() => document.querySelector('.tw[data-tab=evidence]').click()")
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 1, timeout_ms=8000)
+    page.click("#evidence-create-btn")
+    page.fill("#evidence-new-title", "Autopsy notes")
+    page.select_option("#evidence-new-scope", label="Cell Alpha")
+    page.fill("#evidence-new-labels", " Autopsy,  Witness , autopsy,")
+    page.check("#evidence-new-released")
+    page.click("#evidence-new-confirm")
+    wait_for_condition(lambda: any(d.get("title") == "Autopsy notes" for d in docs_of(page, "evidence/")) or None, timeout_ms=8000)
+    d = next(d for d in docs_of(page, "evidence/") if d.get("title") == "Autopsy notes")
+    record("evidence-tags", "A-Cell saves the Handler's labels, tidied (no repeats, no blanks)", d.get("htags") == ["Autopsy", "Witness"], str(d.get("htags")))
+    push_firestore_snapshot(page, "evidence", [], [dict(v, id=v["_id"].split("/")[1]) for v in docs_of(page, "evidence/")])
+    page.wait_for_timeout(400)
+    record("evidence-tags", "...and stamps them on the card", page.locator(".evidence-card .evidence-label-tag").count() == 2, "")
+    page.uncheck("[data-toggle-released]")
+    wait_for_condition(lambda: next(x for x in docs_of(page, "evidence/") if x.get("title") == "Autopsy notes").get("released") is False or None, timeout_ms=6000)
+    d = next(x for x in docs_of(page, "evidence/") if x.get("title") == "Autopsy notes")
+    record("evidence-tags", "the Released toggle keeps the labels", d.get("htags") == ["Autopsy", "Witness"], str(d))
+    record("evidence-tags", "no JS exceptions (A-Cell labels)", not errs, str(errs[:3]))
+    page.close()
+
+    # The notebook: own tags beside the Handler's labels, the Tags filter
+    fd = _field_notes_docs()
+    fd["evidence/ev_fn_1"]["htags"] = ["Autopsy"]
+    fd["evidence/ev_fn_2"] = {"title": "Clipping", "body": "Livestock deaths.", "cell_id": FN_CELL, "operation_id": "op_fn_a",
+                              "visible_to": [FN_CODE], "released": True, "created_at": 2500}
+    fd[f"handout_notes/{FN_CODE}_ev_fn_2"] = {"agent_code": FN_CODE, "handout_id": "ev_fn_2", "note": "Check the dates.", "updated_at": 1}
+    page, errs = _field_notes_page(p, docs=fd)
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.evaluate("() => window.dgFieldNotes.open('evidence')")
+    page.wait_for_selector("#fn-veil .dg-et[data-et-id=ev_fn_1]", timeout=10000)
+    record("evidence-tags", "notebook: the Handler's label is stamped, with no way for the Agent to remove it",
+           page.locator("#fn-veil .dg-et[data-et-id=ev_fn_1] .dg-et-h").inner_text().strip().lower() == "autopsy"
+           and page.locator("#fn-veil .dg-et[data-et-id=ev_fn_1] [data-et-del]").count() == 0, "")
+    page.fill("#fn-veil .dg-et[data-et-id=ev_fn_2] .dg-et-in", "Hale farm")
+    page.press("#fn-veil .dg-et[data-et-id=ev_fn_2] .dg-et-in", "Enter")
+    wait_for_condition(lambda: (docs_of(page, f"handout_notes/{FN_CODE}_ev_fn_2") or [{}])[0].get("tags") == ["Hale farm"] or None, timeout_ms=6000)
+    hn = (docs_of(page, f"handout_notes/{FN_CODE}_ev_fn_2") or [{}])[0]
+    record("evidence-tags", "notebook: an own tag saves privately, beside the remarks (the remark kept)",
+           hn.get("tags") == ["Hale farm"] and hn.get("note") == "Check the dates.", str(hn))
+    record("evidence-tags", "notebook: the tag shows with a remove button", page.locator("#fn-veil .dg-et[data-et-id=ev_fn_2] [data-et-del]").count() == 1, "")
+    page.select_option("#fn-veil [data-et-filter]", "Hale farm")
+    record("evidence-tags", "notebook: the Tags filter shows only what carries the tag",
+           page.locator("#fn-veil .fn-card-sheet").count() == 1 and "Clipping" in page.inner_text("#fn-veil .fn-card-sheet"), "")
+    page.select_option("#fn-veil [data-et-filter]", "Autopsy")
+    record("evidence-tags", "notebook: ...and a Handler's label filters too", page.locator("#fn-veil .fn-card-sheet").count() == 1, "")
+    page.click("#fn-veil [data-gv-view=gallery]")
+    record("evidence-tags", "notebook: the gallery follows the Tags filter", page.locator("#fn-veil .dg-gv-t").count() == 1, "")
+    page.click("#fn-veil [data-gv-view=list]")
+    page.select_option("#fn-veil [data-et-filter]", "")
+    page.click("#fn-veil .dg-et[data-et-id=ev_fn_2] [data-et-del]")
+    wait_for_condition(lambda: (docs_of(page, f"handout_notes/{FN_CODE}_ev_fn_2") or [{}])[0].get("tags") == [] or None, timeout_ms=6000)
+    record("evidence-tags", "notebook: × removes the own tag", (docs_of(page, f"handout_notes/{FN_CODE}_ev_fn_2") or [{}])[0].get("tags") == [], "")
+    page.evaluate("() => window.dgFieldNotes.close()")
+
+    # Agent Hub: the same tags, its own Tags filter
+    page.evaluate(f"() => {{ window.__dgFirestoreDocs['handout_notes/{FN_CODE}_ev_fn_2'].tags = ['Hale farm']; sessionStorage.setItem('__dgFsDocs', JSON.stringify(window.__dgFirestoreDocs)); }}")
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector(f"#ah-handouts-{FN_CODE}", state="attached", timeout=15000)
+    page.wait_for_timeout(1200)
+    evs = sorted([dict(v, id=k.split("/")[1]) for k, v in fd.items() if k.startswith("evidence/")], key=lambda e: -e["created_at"])
+    push_firestore_snapshot(page, "evidence", [["visible_to", "array-contains-any", [FN_CODE, "ALL"]]], evs)
+    page.wait_for_selector(f"#ah-handouts-{FN_CODE} .dg-et", timeout=10000)
+    wait_for_condition(lambda: page.locator(f"#ah-handouts-{FN_CODE} .dg-et-o").count() >= 1 or None, timeout_ms=5000)
+    record("evidence-tags", "Agent Hub: the Agent's own tag and the Handler's label are on the cards",
+           page.locator(f"#ah-handouts-{FN_CODE} .dg-et-o").count() == 1 and page.locator(f"#ah-handouts-{FN_CODE} .dg-et-h").count() == 1, "")
+    page.select_option(f"#ah-handouts-filter-{FN_CODE} [data-et-filter]", "Hale farm")
+    record("evidence-tags", "Agent Hub: the Tags filter", page.locator(f"#ah-handouts-{FN_CODE} .ah-handout-card").count() == 1, "")
+    record("evidence-tags", "no JS exceptions (notebook, Agent Hub)", not errs, str(errs[:3]))
+    page.close()
+
+    # Notes: tag from the Evidence window; the sidebar filter
+    page = p.new_page(viewport={"width": 1280, "height": 900})
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    seed_cells_docs(page, [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"]}])
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    page.add_init_script("""try { localStorage.setItem('dg_agent_roster', JSON.stringify({'OWEN-CS12': {code: 'OWEN-CS12', char_name: 'Owen Castillo', saved_at: Date.now()}}));
+      localStorage.setItem('dg_notes_identity_OWEN-CS12', JSON.stringify({color: '#2b6cb0', font: 'kalam'})); } catch (e) {}""")
+    page.goto(f"{BASE}/notes/index.html", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 2, timeout_ms=8000)
+    nev = [{"id": "n1", "title": "Memo", "body": "x", "cell_id": "cell_1", "operation_id": "", "visible_to": ["OWEN-CS12"], "released": True, "created_at": 2, "htags": ["Witness"]},
+           {"id": "n2", "title": "Map", "body": "y", "cell_id": "cell_1", "operation_id": "", "visible_to": ["OWEN-CS12"], "released": True, "created_at": 1}]
+    for _ in range(20):
+        push_firestore_snapshot(page, "evidence", [["visible_to", "array-contains-any", ["OWEN-CS12", "ALL"]]], nev)
+        if page.locator("#dg-notes-evidence-mount [data-evidence-id]").count(): break
+        page.wait_for_timeout(250)
+    page.click("#dg-notes-evidence-mount [data-evidence-id=n2]")
+    page.wait_for_selector(".dg-notes-evidence-modal .dg-et", timeout=5000)
+    page.fill(".dg-notes-evidence-modal .dg-et-in", "Hale farm")
+    page.press(".dg-notes-evidence-modal .dg-et-in", "Enter")
+    wait_for_condition(lambda: any((w.get("data") or {}).get("tags") == ["Hale farm"] for w in firestore_writes(page, "handout_notes/OWEN-CS12_n2")) or None, timeout_ms=6000)
+    record("evidence-tags", "Notes: an own tag added in the Evidence window saves",
+           any((w.get("data") or {}).get("tags") == ["Hale farm"] for w in firestore_writes(page, "handout_notes/OWEN-CS12_n2")), "")
+    page.click(".dg-notes-evidence-close")
+    page.select_option("#dg-notes-evidence-mount [data-et-filter]", "Hale farm")
+    record("evidence-tags", "Notes: the Evidence list filters by tag",
+           page.locator("#dg-notes-evidence-mount [data-evidence-id]").count() == 1 and page.locator("#dg-notes-evidence-mount [data-evidence-id=n2]").count() == 1, "")
+    record("evidence-tags", "no JS exceptions (Notes)", not errs, str(errs[:3]))
+    page.close()
+
 def test_acell_evidence_pdf(p):
     """Regression coverage for a real live report: the Evidence photo
     field's accept="image/*" only labels the file picker, it doesn't
@@ -12071,6 +12192,7 @@ def main():
         safe(test_acell_evidence, browser, area="acell")
         safe(test_acell_evidence_share_languages_format, browser, area="acell")
         safe(test_evidence_gallery, browser, area="gallery")
+        safe(test_evidence_tags, browser, area="evidence-tags")
         safe(test_acell_evidence_pdf, browser, area="acell")
         safe(test_acell_evidence_create_verify_retries, browser, area="acell")
 
