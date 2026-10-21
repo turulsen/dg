@@ -6824,3 +6824,7 @@ New Hub-shell checks in `test_player_tours` (they fail on v3.8.0).
   dossier, and the tour starts once one is. Two Hub-shell checks in
   `test_player_tours` (the first fails on the previous commit).
   `sw.js` `CACHE_NAME` v241.
+- **v3.8.2:** the Taking a photo tour said the Handler makes the photo.
+  It doesn't: an image prompt is generated from the Appearance
+  description and the photo from that prompt. Reworded. `sw.js`
+  `CACHE_NAME` v242.
