@@ -157,8 +157,9 @@ in the notebook's Evidences (and Split) and in Notes, showing a
 pinboard of taped polaroids, and Evidence tags: the Handler's labels
 (A-Cell) and each Agent's own private tags, with a Tags filter. **v3.8.0** (2026-10-21, PR #82) adds player tours of the
 new features (`assets/tour.js`); shell cache `dg-hub-shell-v237`. **v3.8.1** (unreleased) makes the
-tours work in the Hub shell (`hub.html`), where they did nothing (see
-`BUGFIXES.md`); shell cache `dg-hub-shell-v238`. **v3.1.0**
+tours work in the Hub shell (`hub.html`), where they did nothing, and
+points the Sanity tour's Adaptation post-it at the boxes (see
+`BUGFIXES.md`); shell cache `dg-hub-shell-v239`. **v3.1.0**
 (2026-10-10) is PR #72, v2 milestone M3: the Agent File's paper wears as
 SAN falls. Stains, a fold, a coffee ring, blood and, from SAN 9, a torn
 edge are drawn over the whole page on Agent Hub and in the notebook

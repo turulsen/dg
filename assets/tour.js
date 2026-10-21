@@ -139,7 +139,7 @@
       open: function () { var f = FN(); if (f) f.open('agentfile'); },
       steps: [
         { sel: '.as-stats', title: 'Tap to roll', text: 'Tap a statistic to roll it ×5, or any skill below. The roll shows in the Dice Roller and your Cell sees it.' },
-        { sel: '.ap-skillbar', title: 'Failed rolls', text: 'A failed skill roll turns the skill red. At the end of a session, Roll improvements adds 1D4 to each one, then clears them.' },
+        { sel: ['[data-a="improve"]', '.ap-skillbar'], title: 'Failed rolls', text: 'A failed skill roll turns the skill red. At the end of a session, Roll improvements adds 1D4 to each one, then clears them.' },
         { sel: '[data-a="edit"]', title: 'Edit', text: 'Changing the Agent itself (statistics, skills, name, Bonds) is in Edit. Saving asks for the Oath again.' },
         { sel: ['.ah-appear-btn[data-ah-cell]', '[data-p="cell"]'], optional: true, title: 'Your Cell', text: 'Your Cell in initiative order, highest DEX first. Tap a member to see their card.' }
       ] },
@@ -150,7 +150,7 @@
         { sel: '[data-a="rollsan"]', title: 'Roll SAN', text: 'The plain SAN test when the Handler calls for one. What it costs is the Handler\'s call.' },
         { sel: '[data-pop="san"]', title: 'SAN loss', text: 'When the Handler announces a loss, tap here. Pick the amount (a number or dice) and the kind: Violence, Helplessness or Unnatural. It\'s rolled for you and your SAN drops.' },
         { sel: '[data-pop="san"]', title: 'What follows', text: 'Post-its tell you what happened: a disorder that triggers, temporary insanity at 5 or more, or your Breaking Point, where you choose a new disorder.' },
-        { sel: '[data-pop="inc"]', optional: true, title: 'Adaptation', text: 'Losses to Violence or Helplessness tick these boxes. Three ticks and the Agent adapts, at a cost.' },
+        { sel: ['.ap-adapts', '[data-pop="inc"]'], optional: true, title: 'Adaptation', text: 'Losses to Violence or Helplessness tick these boxes by themselves. Three ticks and the Agent adapts, at a cost. + Incident ticks one by hand.' },
         { sel: '[data-pop="dis"]', optional: true, title: 'Mental Disorders', text: 'Add a disorder from the list (or in your own words). Its description stays on the file.' }
       ] },
     { id: 'switch', title: 'Switching Agents', where: 'the notebook',

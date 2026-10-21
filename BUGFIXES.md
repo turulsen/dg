@@ -6805,3 +6805,9 @@ screen counts as a window to wait for, and a tour that has to load
 another page waits for it (up to 15 s) instead of giving up with a note.
 New Hub-shell checks in `test_player_tours` (they fail on v3.8.0).
 `sw.js` `CACHE_NAME` v238.
+- **Also (same day):** the Sanity tour's Adaptation post-it framed
+  + Incident instead of the Violence / Helplessness boxes it explains
+  (reported with a screenshot). The rows are now wrapped
+  (`.ap-adapts`, `assets/agent-paper.js`) and the post-it frames them;
+  "Failed rolls" frames Roll improvements instead of the whole skill
+  bar. Checked in `test_player_tours`. `sw.js` `CACHE_NAME` v239.

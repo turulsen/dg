@@ -3503,6 +3503,13 @@ def test_player_tours(p):
         const b = [...document.querySelectorAll('[data-pop="san"]')].find(x => x.closest('#fn-veil')).getBoundingClientRect();
         return Math.abs((h.left + h.width / 2) - (b.left + b.width / 2)) < 3 && Math.abs((h.top + h.height / 2) - (b.top + b.height / 2)) < 3; }""")
     record("tours", "inside the notebook it frames the notebook's SAN loss, not the page's underneath", framed, "")
+    page.click("#dg-tour [data-tour=next]"); page.click("#dg-tour [data-tour=next]")
+    page.wait_for_timeout(600)
+    adapt = page.evaluate("""() => { const h = document.querySelector('.dg-tour-hole').getBoundingClientRect();
+        const b = [...document.querySelectorAll('.ap-adapts')].find(x => x.closest('#fn-veil')).getBoundingClientRect();
+        return [document.querySelector('.dg-tour-t').textContent, h.left <= b.left + 1 && h.right >= b.right - 1 && h.top <= b.top + 1 && h.bottom >= b.bottom - 1]; }""")
+    record("tours", "Sanity: Adaptation frames the Violence and Helplessness boxes (not + Incident)",
+           adapt[0].lower() == "adaptation" and adapt[1], str(adapt))
     page.keyboard.press("Escape")
     # Never over another window: a SAN post-it up, no tour starts.
     page.evaluate("() => { window.dgTour.reset(); const d = document.createElement('div'); d.id = 'ap-posts'; d.style.cssText = 'position:fixed;inset:0;background:#0006'; document.body.appendChild(d); }")
