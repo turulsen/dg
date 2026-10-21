@@ -545,6 +545,11 @@
     // sidebar to one Operation at a time; '' shows everything.
     let operations = [];
     let opFilter = '';
+    // Evidence tags (v3.7.0): the Agent's own (private, beside the
+    // remarks record) and the Tags filter.
+    let evidenceOwnTags = {};
+    let evTagFilter = '';
+    let evidenceTagsFetched = false;
     // Every 5s poll tick re-renders an already-open modal (see
     // fetchEvidence() below) so a Cell-mate's new remark shows up live --
     // but a Drive-backed photo doesn't change between polls, so without
@@ -761,7 +766,7 @@
               items.push({
                 evidence_id: doc.id, title: d.title || '', body: d.body || '',
                 photo: d.photo || '', cell_id: d.cell_id || '', operation_id: d.operation_id || '',
-                created_at: d.created_at || 0
+                created_at: d.created_at || 0, htags: d.htags || []
               });
             });
             evidenceItems = items.sort((a, b) => Number(b.created_at) - Number(a.created_at));
@@ -775,6 +780,14 @@
         console.error('notes: evidence sign-in failed', err);
         evidenceListenerStarted = false; // allow a retry on the next pollTick_
       });
+    }
+    function fetchEvidenceTags() {
+      if (evidenceTagsFetched || !agentCode) return;
+      evidenceTagsFetched = true;
+      window.dgStore.listHandoutNotes(agentCode).then(list => {
+        list.forEach(n => { if (n.tags && n.tags.length) evidenceOwnTags[n.handout_id] = n.tags; });
+        refreshEvidenceSidebar();
+      }).catch(err => { evidenceTagsFetched = false; console.error('notes: could not read Evidence tags', err); });
     }
     function fetchEvidenceSeen() {
       if (!cellId) return;
@@ -833,14 +846,23 @@
         filterHtml = '<select class="dg-notes-evidence-filter">' + optsHtml + '</select>';
       }
 
-      const shown = opFilter
+      const T = window.dgEvidenceTags;
+      const tagNames = T ? evidenceItems.reduce((a, h) => a.concat(h.htags || [], evidenceOwnTags[h.evidence_id] || []), []) : [];
+      if (T && evTagFilter && !T.uniq(tagNames).some(t => t.toLowerCase() === evTagFilter.toLowerCase())) evTagFilter = '';
+      if (T) { filterHtml += T.filterHtml(tagNames, evTagFilter); T.setSuggestions(tagNames); }
+      const shown = (opFilter
         ? evidenceItems.filter(h => opFilter === 'UNFILED' ? !h.operation_id : h.operation_id === opFilter)
-        : evidenceItems;
+        : evidenceItems).filter(h => !T || T.matches(h.htags, evidenceOwnTags[h.evidence_id], evTagFilter));
 
+      // List or Gallery (v3.7.0; the same per-device choice as the
+      // notebook's Evidences): small taped polaroids on this page.
+      const G = window.dgEvidenceGallery;
+      const gallery = !!G && G.getView('dg_evidence_view') === 'gallery';
       mount.innerHTML =
-        '<div class="dg-notes-toc-subhead">Evidence</div>' +
+        '<div class="dg-notes-toc-subhead dg-notes-evidence-head">Evidence' + (G ? G.switchHtml(gallery ? 'gallery' : 'list') : '') + '</div>' +
         filterHtml +
-        (shown.length ? shown.map(h => {
+        (shown.length && gallery ? G.html(shown.map(h => ({ id: h.evidence_id, title: h.title, body: h.body, photo: extractDriveId_(h.photo) ? 'gdrive' : h.photo })), { compact: true }) : '') +
+        (shown.length && gallery ? '' : shown.length ? shown.map(h => {
           const unseen = !evidenceSeenMap[h.evidence_id];
           const opTag = h.operation_id ? '<span class="dg-notes-evidence-op-tag">' + escapeHtml(operationLabel_(h.operation_id)) + '</span>' : '';
           return '<a href="#" class="dg-notes-evidence-item" data-evidence-id="' + escapeHtml(h.evidence_id) + '">' +
@@ -850,8 +872,16 @@
         }).join('') : '<div class="dg-notes-toc-empty">Nothing filed under this Operation.</div>');
       const filterEl = mount.querySelector('.dg-notes-evidence-filter');
       if (filterEl) filterEl.addEventListener('change', () => { opFilter = filterEl.value; refreshEvidenceSidebar(); });
+      const tagFilterEl = mount.querySelector('[data-et-filter]');
+      if (tagFilterEl) tagFilterEl.addEventListener('change', () => { evTagFilter = tagFilterEl.value; refreshEvidenceSidebar(); });
       mount.querySelectorAll('[data-evidence-id]').forEach(a => {
         a.addEventListener('click', e => { e.preventDefault(); openEvidenceModal(a.dataset.evidenceId); });
+      });
+      mount.querySelectorAll('[data-gv-id]').forEach(t => {
+        t.addEventListener('click', () => openEvidenceModal(t.dataset.gvId));
+      });
+      mount.querySelectorAll('[data-gv-view]').forEach(b => {
+        b.addEventListener('click', () => { G.setView('dg_evidence_view', b.dataset.gvView); refreshEvidenceSidebar(); });
       });
     }
 
@@ -878,6 +908,11 @@
       const h = evidenceItems.find(x => x.evidence_id === evidenceId);
       const body = evidenceModalEl.querySelector('.dg-notes-evidence-body');
       if (!h || !body) return;
+      if (window.dgEvidenceTags) window.dgEvidenceTags.bind(body, id => evidenceOwnTags[id] || [], (id, tags) => {
+        evidenceOwnTags[id] = tags;
+        refreshEvidenceSidebar();
+        return window.dgStore.saveHandoutTags(agentCode, id, tags);
+      });
 
       let photoHtml = '';
       if (h.photo) {
@@ -919,6 +954,7 @@
         opTag +
         photoHtml +
         (h.body ? '<div class="dg-notes-evidence-body-text dg-md">' + (window.dgEvidenceMd ? window.dgEvidenceMd.render(h.body) : escapeHtml(h.body)) + '</div>' : '') +
+        (window.dgEvidenceTags ? window.dgEvidenceTags.rowHtml(h.evidence_id, h.htags, evidenceOwnTags[h.evidence_id]) : '') +
         '<div class="dg-notes-toc-subhead">Remarks</div>' +
         '<div class="dg-notes-evidence-remarks-list">' + remarksHtml + '</div>' +
         '<div class="dg-notes-evidence-compose">' +
@@ -2063,6 +2099,7 @@
     function pollTick_() {
       fetchIdentities();
       fetchEvidenceSeen();
+      fetchEvidenceTags();
       startEvidenceListener(); // no-op once already attached; retries a failed sign-in
     }
     function scheduleNextPoll_() {

@@ -153,6 +153,8 @@ class Device:
             init.append("if (!localStorage.getItem('dg_cover_identity')) localStorage.setItem('dg_cover_identity', %s);" % json.dumps(cover))
         if code:
             init.append("localStorage.setItem('dg_stats_cloud_code', %s);" % json.dumps(code))
+        # Player tours (assets/tour.js) stay off: they'd start over the pages.
+        init.append("localStorage.setItem('dg_tours_off', '1');")
         script = "try {" + " ".join(init) + "} catch (e) {}"
         if private:
             # Private mode on some browsers: storage throws on every call.

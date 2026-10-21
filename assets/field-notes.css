@@ -44,6 +44,9 @@ html.dg-fn-host #split-view-btn{ display:none !important; }
 #fn-root{ font-family:var(--fn-mono); color:var(--fn-ink); }
 #fn-root *, #fn-root *::before, #fn-root *::after{ box-sizing:border-box; }
 #fn-root button{ font:inherit; width:auto; margin:0; box-shadow:none; text-transform:none; letter-spacing:normal; }
+/* The Evidence gallery's own switch and tiles (assets/evidence-md.js) keep their look. */
+#fn-root .dg-gv-switch button{ font:9.5px 'Courier Prime',monospace; letter-spacing:.1em; text-transform:uppercase; padding:3px 8px; }
+#fn-root .dg-gv-t{ width:100%; box-shadow:0 6px 14px rgba(0,0,0,.26); }
 #fn-root input, #fn-root textarea, #fn-root select{ font:inherit; box-shadow:none; border-radius:0; margin:0; }
 #fn-root[hidden], #fn-root [hidden]{ display:none !important; }
 
@@ -601,3 +604,10 @@ html.dg-fn-host #split-view-btn{ display:none !important; }
 #fn-root .fn-phone-head .fn-phone-flip button{ width:auto; height:auto; min-width:0; background:none; border:0; box-shadow:none; padding:0 6px; color:#f0dcb4; font-size:18px; line-height:1; }
 #fn-root .fn-phone-head .fn-phone-flip{ display:inline-flex; align-items:center; gap:2px; }
 #fn-root .fn-phone-head .fn-phone-flip[hidden]{ display:none; }
+
+/* Evidence tags (v3.7.0, assets/evidence-md.js): the Tags filter beside
+   Operation and Sort, and the tag box keeping its own small type. */
+#fn-root .fn-filter-tags{ display:contents; }
+#fn-root .dg-et-filter{ font-family:var(--fn-mono); font-size:12px; color:var(--fn-ink); background:#f4eed8; border:1px solid rgba(160,130,70,.6); padding:5px 8px; }
+#fn-root .dg-et-in{ font:11px 'Courier Prime',monospace; width:7.5em; border:0; border-bottom:1px dashed rgba(28,22,8,.4); background:transparent; padding:2px 0; }
+#fn-root .dg-et-o button{ font:12px/1 'Courier Prime',monospace; padding:0 3px; }

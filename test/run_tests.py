@@ -3157,11 +3157,13 @@ def test_acell_evidence_share_languages_format(p):
     page.goto(f"{BASE}/rules-reference.html", wait_until="domcontentloaded")
     page.add_script_tag(url=f"{BASE}/assets/evidence-md.js")
     out = page.evaluate("""() => [dgEvidenceMd.render('<img src=x onerror=alert(1)> **b**'), dgEvidenceMd.render('Plain\\nline\\n\\nNext'),
-        dgEvidenceMd.render('2 * 3 * 4'), dgEvidenceMd.render('> quoted\\n---\\n1. a\\n2. b')]""")
+        dgEvidenceMd.render('2 * 3 * 4'), dgEvidenceMd.render('> quoted\\n---\\n1. a\\n2. b'), dgEvidenceMd.render('1. One\\n\\nText\\n\\n2. Two')]""")
     record("evidence-v36", "the renderer escapes HTML", "<img" not in out[0] and "&lt;img" in out[0] and "<b>b</b>" in out[0], out[0])
     record("evidence-v36", "old plain text keeps its lines and paragraphs", out[1] == "<p>Plain<br>line</p><p>Next</p>", out[1])
     record("evidence-v36", "a lone asterisk isn't taken for italics", out[2] == "<p>2 * 3 * 4</p>", out[2])
     record("evidence-v36", "quote, rule and numbered list", out[3] == "<blockquote>quoted</blockquote><hr><ol><li>a</li><li>b</li></ol>", out[3])
+    record("evidence-v36", "a numbered item after a paragraph keeps its number (2., not 1.)",
+           out[4] == '<ol><li>One</li></ol><p>Text</p><ol start="2"><li>Two</li></ol>', out[4])
     page.close()
 
     # An Agent's notebook draws it formatted too.
@@ -3176,6 +3178,387 @@ def test_acell_evidence_share_languages_format(p):
            page.locator("#fn-veil .fn-card-body h4").inner_text() == "Autopsy" and page.locator("#fn-veil .fn-card-body li").count() == 2
            and page.locator("#fn-veil .fn-card-body b").count() == 1, page.inner_html("#fn-veil .fn-card-body")[:200])
     record("evidence-v36", "no JS exceptions (notebook Evidences)", not errs, str(errs[:3]))
+    page.close()
+
+def test_evidence_gallery(p):
+    """Evidence gallery (v3.7.0): a List | Gallery switch, a pinboard of
+    taped polaroids (a photo shows the picture, a PDF a stamp, a text-only
+    item its first lines), remembered per device. A-Cell: a tap goes to
+    that card in the list; unreleased tiles are stamped. Players (the
+    notebook's Evidences, Agent Hub, Notes): a tap opens that one
+    Evidence with its private remarks, and Back returns to the board."""
+    img = "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='30'%3E%3Crect width='40' height='30' fill='%23543'/%3E%3C/svg%3E"
+    def ev(cell, vis, rel=True):
+        return {
+            "evidence/g_photo": {"title": "Cellar photo", "body": "Stain.", "photo": img, "cell_id": cell, "operation_id": "", "released": rel, "restricted_to": [], "visible_to": vis, "created_at": 3000},
+            "evidence/g_pdf": {"title": "Coroner PDF", "body": "", "photo": "https://firebasestorage.googleapis.com/v0/b/x/o/evidence%2Fa.pdf?alt=media", "cell_id": cell, "operation_id": "", "released": True, "restricted_to": [], "visible_to": vis, "created_at": 2000},
+            "evidence/g_text": {"title": "Memo", "body": "## Step one\n**Check** the cellar.", "photo": "", "cell_id": cell, "operation_id": "", "released": True, "restricted_to": [], "visible_to": vis, "created_at": 1000},
+        }
+    # A-Cell
+    page = p.new_page(viewport={"width": 1280, "height": 900})
+    page.set_default_timeout(15000)
+    errs = collect_errors(page)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
+    _block_fonts(page)
+    skip_acell_gate(page)
+    docs = {"cells/cell_1": {"name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"]}}
+    docs.update(ev("cell_1", ["OWEN-CS12"], rel=False))
+    install_firestore_backend(page, docs)
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+    page.evaluate("() => document.querySelector('.tw[data-tab=evidence]').click()")
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 1, timeout_ms=8000)
+    push_firestore_snapshot(page, "evidence", [], [dict(v, id=k.split("/")[1]) for k, v in sorted(docs.items(), key=lambda kv: -kv[1].get("created_at", 0)) if k.startswith("evidence/")])
+    page.wait_for_timeout(400)
+    record("gallery", "A-Cell starts in List, with a List | Gallery switch", page.locator(".evidence-card").count() == 3 and page.locator("#evidence-view-switch [data-gv-view=gallery]").count() == 1, "")
+    page.click("#evidence-view-switch [data-gv-view=gallery]")
+    tiles = page.locator("#evidence-list .dg-gv-t")
+    record("gallery", "Gallery shows a tile per item: the photo, a PDF stamp, the text's first lines",
+           tiles.count() == 3 and page.locator(".dg-gv-t[data-gv-id=g_photo] img.dg-gv-ph").count() == 1
+           and page.locator(".dg-gv-t[data-gv-id=g_pdf] .dg-gv-doc").inner_text().strip().upper() == "PDF"
+           and page.locator(".dg-gv-t[data-gv-id=g_text] .dg-gv-txt").inner_text().startswith("Step one Check the cellar"), page.inner_html("#evidence-list")[:300])
+    record("gallery", "an unreleased item is stamped in the Handler's gallery", page.locator(".dg-gv-t[data-gv-id=g_photo] .dg-gv-unrel").count() == 1, "")
+    record("gallery", "the choice is remembered on the device (A-Cell's own key)",
+           page.evaluate("() => localStorage.getItem('dg_acell_evidence_view')") == "gallery", "")
+    page.click(".dg-gv-t[data-gv-id=g_text]")
+    page.wait_for_timeout(300)
+    record("gallery", "a tap goes to that card in the list (Edit, Duplicate... are there)",
+           page.locator(".evidence-card[data-eid=g_text]").is_visible() and page.locator(".evidence-card[data-eid=g_text] [data-edit-evidence]").count() == 1, "")
+    record("gallery", "no JS exceptions (A-Cell gallery)", not errs, str(errs[:3]))
+    page.close()
+
+    # The notebook's Evidences
+    fd = _field_notes_docs()
+    fd.update(ev(FN_CELL, [FN_CODE]))
+    page, errs = _field_notes_page(p, docs=fd)
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.evaluate("() => window.dgFieldNotes.open('evidence')")
+    page.wait_for_selector("#fn-veil .fn-card-sheet", timeout=10000)
+    page.click("#fn-veil [data-gv-view=gallery]")
+    record("gallery", "notebook: Gallery shows the pinboard (every item visible to the Agent)", page.locator("#fn-veil .dg-gv-t").count() == 4, str(page.locator("#fn-veil .dg-gv-t").count()))
+    page.click("#fn-veil .dg-gv-t[data-gv-id=g_text]")
+    record("gallery", "notebook: a tap opens that Evidence, formatted, with its private remarks",
+           page.locator("#fn-veil .fn-card-sheet").count() == 1 and page.locator("#fn-veil .fn-card-body h4").inner_text() == "Step one"
+           and page.locator("#fn-veil textarea[data-ev=g_text]").count() == 1, "")
+    page.click("#fn-veil [data-ev-back]")
+    record("gallery", "notebook: Back returns to the gallery", page.locator("#fn-veil .dg-gv-t").count() == 4, "")
+    page.evaluate("() => window.dgFieldNotes.close()")
+    record("gallery", "players' choice is kept on the device", page.evaluate("() => localStorage.getItem('dg_evidence_view')") == "gallery", "")
+
+    # Agent Hub (the same device: opens in Gallery)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector(f"#ah-handouts-{FN_CODE}", state="attached", timeout=15000)
+    page.wait_for_timeout(1200)
+    evs = sorted([dict(v, id=k.split("/")[1]) for k, v in fd.items() if k.startswith("evidence/")], key=lambda e: -e["created_at"])
+    push_firestore_snapshot(page, "evidence", [["visible_to", "array-contains-any", [FN_CODE, "ALL"]]], evs)
+    page.wait_for_selector(f"#ah-handouts-{FN_CODE} .dg-gv-t", timeout=10000)
+    record("gallery", "Agent Hub opens in Gallery too (the same choice)", page.locator(f"#ah-handouts-{FN_CODE} .dg-gv-t").count() == 4, "")
+    page.click(f"#ah-handouts-{FN_CODE} .dg-gv-t[data-gv-id=g_pdf]")
+    record("gallery", "Agent Hub: a tap opens that Evidence (its PDF link and Your Notes)",
+           page.locator(f"#ah-handouts-{FN_CODE} .ah-handout-card").count() == 1 and page.locator(f"#ah-handouts-{FN_CODE} .ah-handout-pdf").count() == 1
+           and page.locator(f"#ah-handouts-{FN_CODE} .ah-handout-notes-input").count() == 1, "")
+    page.click(f"#ah-handouts-{FN_CODE} [data-ev-back]")
+    record("gallery", "Agent Hub: Back returns to the gallery", page.locator(f"#ah-handouts-{FN_CODE} .dg-gv-t").count() == 4, "")
+    page.click(f"#ah-handouts-filter-{FN_CODE} [data-gv-view=list]")
+    record("gallery", "Agent Hub: List brings the cards back", page.locator(f"#ah-handouts-{FN_CODE} .ah-handout-card").count() == 4, "")
+    record("gallery", "no JS exceptions (notebook, Agent Hub)", not errs, str(errs[:3]))
+    page.close()
+
+    # Notes: small tiles on the Evidence list; a tap opens it.
+    page = p.new_page(viewport={"width": 1280, "height": 900})
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    seed_cells_docs(page, [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"]}])
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    page.add_init_script("""try { localStorage.setItem('dg_agent_roster', JSON.stringify({'OWEN-CS12': {code: 'OWEN-CS12', char_name: 'Owen Castillo', saved_at: Date.now()}}));
+      localStorage.setItem('dg_notes_identity_OWEN-CS12', JSON.stringify({color: '#2b6cb0', font: 'kalam'})); localStorage.setItem('dg_evidence_view', 'gallery'); } catch (e) {}""")
+    page.goto(f"{BASE}/notes/index.html", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 2, timeout_ms=8000)
+    nev = ev("cell_1", ["OWEN-CS12"])
+    for _ in range(20):
+        push_firestore_snapshot(page, "evidence", [["visible_to", "array-contains-any", ["OWEN-CS12", "ALL"]]],
+                                sorted([dict(v, id=k.split("/")[1]) for k, v in nev.items()], key=lambda e: -e["created_at"]))
+        if page.locator("#dg-notes-evidence-mount .dg-gv-t").count(): break
+        page.wait_for_timeout(250)
+    record("gallery", "Notes: the Evidence list shows small tiles in Gallery", page.locator("#dg-notes-evidence-mount .dg-gv.compact .dg-gv-t").count() == 3,
+           page.inner_html("#dg-notes-evidence-mount")[:300] if page.query_selector("#dg-notes-evidence-mount") else "no mount")
+    if page.locator("#dg-notes-evidence-mount .dg-gv-t").count():
+        page.click("#dg-notes-evidence-mount .dg-gv-t[data-gv-id=g_text]")
+        page.wait_for_timeout(300)
+    record("gallery", "Notes: a tap opens the Evidence", page.locator(".dg-notes-evidence-modal .dg-notes-identity-title").count() == 1
+           and "Memo" in (page.text_content(".dg-notes-evidence-modal .dg-notes-identity-title") or ""), "")
+    record("gallery", "no JS exceptions (Notes gallery)", not errs, str(errs[:3]))
+    page.close()
+
+def test_evidence_tags(p):
+    """Evidence tags (v3.7.0): the Handler's labels (A-Cell, on every copy,
+    kept by the Released toggle, stamped for the Agents and not removable
+    by them) and each Agent's own private tags (saved beside the remarks
+    without wiping them), with a Tags filter in the notebook (list and
+    gallery), on Agent Hub and in Notes."""
+    docs_of = lambda page, prefix: page.evaluate("(p) => Object.entries(window.__dgFirestoreDocs || {}).filter(([k]) => k.indexOf(p) === 0)"
+                                                 ".map(([k, v]) => Object.assign({ _id: k }, v))", prefix)
+    # A-Cell: labels
+    page = p.new_page(viewport={"width": 1280, "height": 900})
+    page.set_default_timeout(15000)
+    errs = collect_errors(page)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); } catch (e) {}")
+    _block_fonts(page)
+    skip_acell_gate(page)
+    install_firestore_backend(page, {"cells/cell_1": {"name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"]}})
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+    page.evaluate("() => document.querySelector('.tw[data-tab=evidence]').click()")
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 1, timeout_ms=8000)
+    page.click("#evidence-create-btn")
+    page.fill("#evidence-new-title", "Autopsy notes")
+    page.select_option("#evidence-new-scope", label="Cell Alpha")
+    page.fill("#evidence-new-labels", " Autopsy,  Witness , autopsy,")
+    page.check("#evidence-new-released")
+    page.click("#evidence-new-confirm")
+    wait_for_condition(lambda: any(d.get("title") == "Autopsy notes" for d in docs_of(page, "evidence/")) or None, timeout_ms=8000)
+    d = next(d for d in docs_of(page, "evidence/") if d.get("title") == "Autopsy notes")
+    record("evidence-tags", "A-Cell saves the Handler's labels, tidied (no repeats, no blanks)", d.get("htags") == ["Autopsy", "Witness"], str(d.get("htags")))
+    push_firestore_snapshot(page, "evidence", [], [dict(v, id=v["_id"].split("/")[1]) for v in docs_of(page, "evidence/")])
+    page.wait_for_timeout(400)
+    record("evidence-tags", "...and stamps them on the card", page.locator(".evidence-card .evidence-label-tag").count() == 2, "")
+    page.uncheck("[data-toggle-released]")
+    wait_for_condition(lambda: next(x for x in docs_of(page, "evidence/") if x.get("title") == "Autopsy notes").get("released") is False or None, timeout_ms=6000)
+    d = next(x for x in docs_of(page, "evidence/") if x.get("title") == "Autopsy notes")
+    record("evidence-tags", "the Released toggle keeps the labels", d.get("htags") == ["Autopsy", "Witness"], str(d))
+    record("evidence-tags", "no JS exceptions (A-Cell labels)", not errs, str(errs[:3]))
+    page.close()
+
+    # The notebook: own tags beside the Handler's labels, the Tags filter
+    fd = _field_notes_docs()
+    fd["evidence/ev_fn_1"]["htags"] = ["Autopsy"]
+    fd["evidence/ev_fn_2"] = {"title": "Clipping", "body": "Livestock deaths.", "cell_id": FN_CELL, "operation_id": "op_fn_a",
+                              "visible_to": [FN_CODE], "released": True, "created_at": 2500}
+    fd[f"handout_notes/{FN_CODE}_ev_fn_2"] = {"agent_code": FN_CODE, "handout_id": "ev_fn_2", "note": "Check the dates.", "updated_at": 1}
+    page, errs = _field_notes_page(p, docs=fd)
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.evaluate("() => window.dgFieldNotes.open('evidence')")
+    page.wait_for_selector("#fn-veil .dg-et[data-et-id=ev_fn_1]", timeout=10000)
+    record("evidence-tags", "notebook: the Handler's label is stamped, with no way for the Agent to remove it",
+           page.locator("#fn-veil .dg-et[data-et-id=ev_fn_1] .dg-et-h").inner_text().strip().lower() == "autopsy"
+           and page.locator("#fn-veil .dg-et[data-et-id=ev_fn_1] [data-et-del]").count() == 0, "")
+    page.fill("#fn-veil .dg-et[data-et-id=ev_fn_2] .dg-et-in", "Hale farm")
+    page.press("#fn-veil .dg-et[data-et-id=ev_fn_2] .dg-et-in", "Enter")
+    wait_for_condition(lambda: (docs_of(page, f"handout_notes/{FN_CODE}_ev_fn_2") or [{}])[0].get("tags") == ["Hale farm"] or None, timeout_ms=6000)
+    hn = (docs_of(page, f"handout_notes/{FN_CODE}_ev_fn_2") or [{}])[0]
+    record("evidence-tags", "notebook: an own tag saves privately, beside the remarks (the remark kept)",
+           hn.get("tags") == ["Hale farm"] and hn.get("note") == "Check the dates.", str(hn))
+    record("evidence-tags", "notebook: the tag shows with a remove button", page.locator("#fn-veil .dg-et[data-et-id=ev_fn_2] [data-et-del]").count() == 1, "")
+    page.select_option("#fn-veil [data-et-filter]", "Hale farm")
+    record("evidence-tags", "notebook: the Tags filter shows only what carries the tag",
+           page.locator("#fn-veil .fn-card-sheet").count() == 1 and "Clipping" in page.inner_text("#fn-veil .fn-card-sheet"), "")
+    page.select_option("#fn-veil [data-et-filter]", "Autopsy")
+    record("evidence-tags", "notebook: ...and a Handler's label filters too", page.locator("#fn-veil .fn-card-sheet").count() == 1, "")
+    page.click("#fn-veil [data-gv-view=gallery]")
+    record("evidence-tags", "notebook: the gallery follows the Tags filter", page.locator("#fn-veil .dg-gv-t").count() == 1, "")
+    page.click("#fn-veil [data-gv-view=list]")
+    page.select_option("#fn-veil [data-et-filter]", "")
+    page.click("#fn-veil .dg-et[data-et-id=ev_fn_2] [data-et-del]")
+    wait_for_condition(lambda: (docs_of(page, f"handout_notes/{FN_CODE}_ev_fn_2") or [{}])[0].get("tags") == [] or None, timeout_ms=6000)
+    record("evidence-tags", "notebook: × removes the own tag", (docs_of(page, f"handout_notes/{FN_CODE}_ev_fn_2") or [{}])[0].get("tags") == [], "")
+    page.evaluate("() => window.dgFieldNotes.close()")
+
+    # Agent Hub: the same tags, its own Tags filter
+    page.evaluate(f"() => {{ window.__dgFirestoreDocs['handout_notes/{FN_CODE}_ev_fn_2'].tags = ['Hale farm']; sessionStorage.setItem('__dgFsDocs', JSON.stringify(window.__dgFirestoreDocs)); }}")
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector(f"#ah-handouts-{FN_CODE}", state="attached", timeout=15000)
+    page.wait_for_timeout(1200)
+    evs = sorted([dict(v, id=k.split("/")[1]) for k, v in fd.items() if k.startswith("evidence/")], key=lambda e: -e["created_at"])
+    push_firestore_snapshot(page, "evidence", [["visible_to", "array-contains-any", [FN_CODE, "ALL"]]], evs)
+    page.wait_for_selector(f"#ah-handouts-{FN_CODE} .dg-et", timeout=10000)
+    wait_for_condition(lambda: page.locator(f"#ah-handouts-{FN_CODE} .dg-et-o").count() >= 1 or None, timeout_ms=5000)
+    record("evidence-tags", "Agent Hub: the Agent's own tag and the Handler's label are on the cards",
+           page.locator(f"#ah-handouts-{FN_CODE} .dg-et-o").count() == 1 and page.locator(f"#ah-handouts-{FN_CODE} .dg-et-h").count() == 1, "")
+    page.select_option(f"#ah-handouts-filter-{FN_CODE} [data-et-filter]", "Hale farm")
+    record("evidence-tags", "Agent Hub: the Tags filter", page.locator(f"#ah-handouts-{FN_CODE} .ah-handout-card").count() == 1, "")
+    record("evidence-tags", "no JS exceptions (notebook, Agent Hub)", not errs, str(errs[:3]))
+    page.close()
+
+    # Notes: tag from the Evidence window; the sidebar filter
+    page = p.new_page(viewport={"width": 1280, "height": 900})
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    _block_fonts(page)
+    seed_cells_docs(page, [{"cell_id": "cell_1", "name": "Cell Alpha", "handler": "Sam", "member_codes": ["OWEN-CS12"]}])
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    page.add_init_script("""try { localStorage.setItem('dg_agent_roster', JSON.stringify({'OWEN-CS12': {code: 'OWEN-CS12', char_name: 'Owen Castillo', saved_at: Date.now()}}));
+      localStorage.setItem('dg_notes_identity_OWEN-CS12', JSON.stringify({color: '#2b6cb0', font: 'kalam'})); } catch (e) {}""")
+    page.goto(f"{BASE}/notes/index.html", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: notes_firestore_listener_count(page) >= 2, timeout_ms=8000)
+    nev = [{"id": "n1", "title": "Memo", "body": "x", "cell_id": "cell_1", "operation_id": "", "visible_to": ["OWEN-CS12"], "released": True, "created_at": 2, "htags": ["Witness"]},
+           {"id": "n2", "title": "Map", "body": "y", "cell_id": "cell_1", "operation_id": "", "visible_to": ["OWEN-CS12"], "released": True, "created_at": 1}]
+    for _ in range(20):
+        push_firestore_snapshot(page, "evidence", [["visible_to", "array-contains-any", ["OWEN-CS12", "ALL"]]], nev)
+        if page.locator("#dg-notes-evidence-mount [data-evidence-id]").count(): break
+        page.wait_for_timeout(250)
+    page.click("#dg-notes-evidence-mount [data-evidence-id=n2]")
+    page.wait_for_selector(".dg-notes-evidence-modal .dg-et", timeout=5000)
+    page.fill(".dg-notes-evidence-modal .dg-et-in", "Hale farm")
+    page.press(".dg-notes-evidence-modal .dg-et-in", "Enter")
+    wait_for_condition(lambda: any((w.get("data") or {}).get("tags") == ["Hale farm"] for w in firestore_writes(page, "handout_notes/OWEN-CS12_n2")) or None, timeout_ms=6000)
+    record("evidence-tags", "Notes: an own tag added in the Evidence window saves",
+           any((w.get("data") or {}).get("tags") == ["Hale farm"] for w in firestore_writes(page, "handout_notes/OWEN-CS12_n2")), "")
+    page.click(".dg-notes-evidence-close")
+    page.select_option("#dg-notes-evidence-mount [data-et-filter]", "Hale farm")
+    record("evidence-tags", "Notes: the Evidence list filters by tag",
+           page.locator("#dg-notes-evidence-mount [data-evidence-id]").count() == 1 and page.locator("#dg-notes-evidence-mount [data-evidence-id=n2]").count() == 1, "")
+    record("evidence-tags", "no JS exceptions (Notes)", not errs, str(errs[:3]))
+    page.close()
+
+def test_player_tours(p):
+    """Player tours (v3.8.0, assets/tour.js): one starts by itself the first
+    time its place is on screen (one a page load), and can be left at any
+    moment: ✕ Exit tour, Esc, or a tap on the dimmed page; a left or
+    finished tour doesn't come back by itself. Next / Back / Done; the
+    "New · N tours" stamp on the notebook and Settings → Tours list them;
+    a tour started from the list opens its notebook page; a step inside
+    the Notes page (an iframe) is framed where it is."""
+    stats = {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 11, "CHA": 13}
+    state = {"v": 1, "stats": stats, "csStats": dict(stats), "derived": {"hp": 11, "wp": 11, "san": 52, "bp": 44},
+             "bio": {"name": "Mara Voss", "player_name": "fn tester", "profession": "federal_agent"}, "skills": {"alertness": 60}}
+    fd = _field_notes_docs()
+    fd[f"characters/{FN_CODE}"] = character_doc(FN_CODE, state, "fn tester")
+    extra = ("sessionStorage.setItem('dg_tours_test_on', '1'); localStorage.removeItem('dg_tours_off');"
+             "localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));"
+             "localStorage.setItem('dg_notes_identity_%s', JSON.stringify({color:'#2b6cb0', font:'kalam'}));") % (FN_CODE, FN_CODE)
+    class P:
+        def new_page(self, **kw): return p.new_page(tours=True, **kw)
+    page, errs = _field_notes_page(P(), 1300, 860, docs=fd, extra_init=extra)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector("#dg-tour .dg-tour-post", timeout=10000)
+    record("tours", "a tour starts by itself the first time (New Recruit, on Agent Hub)",
+           "new recruit" in page.inner_text("#dg-tour .dg-tour-post").lower() and page.evaluate("() => window.dgTour.active()") == "newrecruit", page.inner_text("#dg-tour .dg-tour-post")[:120])
+    hole = page.evaluate("() => { const h = document.querySelector('.dg-tour-hole').getBoundingClientRect(), t = document.querySelector('#tab-strip .tw-new').getBoundingClientRect(); return [h.left <= t.left, h.right >= t.right, h.top <= t.top, h.bottom >= t.bottom]; }")
+    record("tours", "the thing explained is framed, with an arrow to it", all(hole) and page.locator("#dg-tour svg path").count() == 2, str(hole))
+    record("tours", "Back is off on the first post-it; Next moves on", page.is_disabled("#dg-tour [data-tour=back]"), "")
+    page.click("#dg-tour [data-tour=next]")
+    record("tours", "...to post-it 2 of 2, with Done", "2/2" in page.inner_text("#dg-tour .dg-tour-top") and page.inner_text("#dg-tour .dg-tour-next").strip() == "Done", "")
+    page.click("#dg-tour [data-tour=back]")
+    record("tours", "Back returns", "1/2" in page.inner_text("#dg-tour .dg-tour-top"), "")
+    page.click("#dg-tour .dg-tour-exit")
+    record("tours", "✕ Exit tour leaves it at once, and it's marked seen",
+           page.locator("#dg-tour").count() == 0 and "newrecruit" in page.evaluate("() => window.dgTour.seen()"), "")
+    page.wait_for_timeout(2600)
+    record("tours", "only one tour a page load (no second one right after)", page.locator("#dg-tour").count() == 0, "")
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_selector("#dg-tour .dg-tour-post", timeout=10000)
+    record("tours", "the next page load starts the next one (Taking a photo), not the one left",
+           page.evaluate("() => window.dgTour.active()") == "photos", page.evaluate("() => window.dgTour.active()"))
+    page.keyboard.press("Escape")
+    record("tours", "Esc leaves it", page.locator("#dg-tour").count() == 0, "")
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_selector("#dg-tour .dg-tour-post", timeout=10000)
+    page.mouse.click(15, 15)
+    record("tours", "a tap on the dimmed page leaves it", page.locator("#dg-tour").count() == 0, "")
+    # The stamp lists what's left; a tour from the list opens its page.
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_selector("#dg-tour .dg-tour-post", timeout=10000)
+    page.click("#dg-tour [data-tour=exit]")
+    page.wait_for_selector("#dg-tour-new", timeout=5000)
+    n_unseen = len(page.evaluate("() => window.dgTour.tours()")) - len(page.evaluate("() => window.dgTour.seen()"))
+    record("tours", "a \"New · N tours\" stamp on the notebook counts the ones not seen",
+           page.inner_text("#dg-tour-new").lower().replace("\n", " ") == f"new · {n_unseen} tours", page.inner_text("#dg-tour-new"))
+    page.click("#dg-tour-new")
+    record("tours", "the stamp opens the list, seen ones marked", page.locator("#dg-tour [data-tour-start]").count() == len(page.evaluate("() => window.dgTour.tours()"))
+           and page.locator("#dg-tour .dg-tour-list em").count() >= 3, "")
+    page.click("#dg-tour [data-tour-start=evidence]")
+    page.wait_for_function("() => window.dgTour.active() === 'evidence'", timeout=8000)
+    record("tours", "a tour from the list opens its notebook page and starts",
+           page.evaluate("() => window.dgFieldNotes.view()") == "evidence" and page.locator("#dg-tour .dg-tour-post").count() == 1, page.inner_text("#dg-tour .dg-tour-post")[:100])
+    page.click("#dg-tour .dg-tour-exit")
+    # A step inside the Notes page (iframe): framed where it is.
+    page.evaluate("() => window.dgTour.run('notes')")
+    page.wait_for_function("() => window.dgTour.active() === 'notes'", timeout=10000)
+    record("tours", "Notes: the first post-it is Split (desktop)", "split" in page.inner_text("#dg-tour .dg-tour-t").lower(), "")
+    page.click("#dg-tour [data-tour=next]")
+    inside = page.evaluate("""() => { const f = document.querySelector('iframe[data-dg-embed=notes]').getBoundingClientRect(), h = document.querySelector('.dg-tour-hole').getBoundingClientRect();
+        return h.left >= f.left - 10 && h.right <= f.right + 10 && h.top >= f.top - 10 && h.width > 40; }""")
+    record("tours", "Notes: a step inside the Notes page is framed inside it", inside and "tag" in page.inner_text("#dg-tour .dg-tour-t").lower(), page.inner_text("#dg-tour .dg-tour-t"))
+    page.keyboard.press("Escape")
+    record("tours", "Esc leaves it here too (the notebook stays open)", page.locator("#dg-tour").count() == 0 and page.evaluate("() => window.dgFieldNotes.isOpen()"), "")
+    # Settings → Tours
+    page.evaluate("() => window.dgFieldNotes.open('settings')")
+    page.wait_for_selector("#fn-veil [data-s=tours]", timeout=5000)
+    page.wait_for_timeout(1500)
+    if page.locator("#dg-tour").count(): page.click("#dg-tour [data-tour=exit]")
+    page.click("#fn-veil [data-s=tours]")
+    record("tours", "Settings → Tours opens the list", page.locator("#dg-tour [data-tour-start]").count() == len(page.evaluate("() => window.dgTour.tours()")), "")
+    page.click("#dg-tour .dg-tour-exit")
+    record("tours", "...and ✕ Close closes it", page.locator("#dg-tour").count() == 0, "")
+    # With the notebook open, the tour frames the notebook's own button,
+    # not the same button on the page underneath.
+    page.evaluate("() => window.dgTour.run('sanity')")
+    page.wait_for_function("() => window.dgTour.active() === 'sanity'", timeout=10000)
+    page.click("#dg-tour [data-tour=next]")
+    page.wait_for_timeout(500)
+    framed = page.evaluate("""() => { const h = document.querySelector('.dg-tour-hole').getBoundingClientRect();
+        const b = [...document.querySelectorAll('[data-pop="san"]')].find(x => x.closest('#fn-veil')).getBoundingClientRect();
+        return Math.abs((h.left + h.width / 2) - (b.left + b.width / 2)) < 3 && Math.abs((h.top + h.height / 2) - (b.top + b.height / 2)) < 3; }""")
+    record("tours", "inside the notebook it frames the notebook's SAN loss, not the page's underneath", framed, "")
+    page.keyboard.press("Escape")
+    # Never over another window: a SAN post-it up, no tour starts.
+    page.evaluate("() => { window.dgTour.reset(); const d = document.createElement('div'); d.id = 'ap-posts'; d.style.cssText = 'position:fixed;inset:0;background:#0006'; document.body.appendChild(d); }")
+    page.wait_for_timeout(2800)
+    record("tours", "no tour starts while another window is up (a SAN post-it)", page.locator("#dg-tour").count() == 0, "")
+    page.evaluate("() => document.getElementById('ap-posts').remove()")
+    page.wait_for_selector("#dg-tour .dg-tour-post", timeout=6000)
+    record("tours", "...and one starts once it's closed", page.locator("#dg-tour .dg-tour-post").count() == 1, "")
+    page.click("#dg-tour .dg-tour-exit")
+    record("tours", "no JS exceptions (tours)", not errs, str(errs[:3]))
+    page.close()
+
+    # Phone: a post-it fits the screen and the Exit button is reachable.
+    page, errs = _field_notes_page(P(), 390, 844, docs=fd, extra_init=extra)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector("#dg-tour .dg-tour-post", timeout=10000)
+    box = page.evaluate("() => { const r = document.querySelector('.dg-tour-post').getBoundingClientRect(), x = document.querySelector('.dg-tour-exit').getBoundingClientRect(); return [r.left >= 0, r.right <= innerWidth, r.top >= 0, r.bottom <= innerHeight, x.width >= 60]; }")
+    record("tours", "phone: the post-it fits the screen and ✕ Exit tour is there", all(box), str(box))
+    page.click("#dg-tour .dg-tour-exit")
+    record("tours", "phone: ✕ Exit tour leaves it", page.locator("#dg-tour").count() == 0, "")
+    record("tours", "no JS exceptions (phone)", not errs, str(errs[:3]))
+    page.close()
+
+    # Everywhere else in the suite tours are off: no tour, no stamp.
+    page = p.new_page(viewport={"width": 1300, "height": 860})
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(2500)
+    record("tours", "with tours off on the device: none starts, no stamp", page.locator("#dg-tour, #dg-tour-new").count() == 0, "")
+    page.close()
+
+def test_edit_cancel_after_live_update(p):
+    """Agent File, Edit → Cancel: a save landing while Edit is open (an HP
+    tap just before, a snapshot from another device) updated the live
+    sheet, and Cancel then asked "Throw away these edits?" with nothing
+    edited. Found by test_agent_file_parts_and_looks flaking (2026-10-21)."""
+    stats = {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 11, "CHA": 13}
+    state = {"v": 1, "stats": stats, "csStats": dict(stats), "derived": {"hp": 11, "wp": 11, "san": 52, "bp": 44},
+             "bio": {"name": "Mara Voss", "player_name": "fn tester", "profession": "federal_agent"}, "skills": {"alertness": 60}}
+    fd = _field_notes_docs()
+    fd[f"characters/{FN_CODE}"] = character_doc(FN_CODE, state, "fn tester")
+    page, errs = _field_notes_page(p, docs=fd)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function(f"() => window.dgAgentLive && window.dgAgentLive.get('{FN_CODE}') && window.dgAgentLive.get('{FN_CODE}').state", timeout=15000)
+    r = page.evaluate(f"""() => {{ const s = window.dgAgentLive.get('{FN_CODE}');
+        s.beginEdit();
+        const before = s.editDirty();
+        s.state = JSON.parse(JSON.stringify(s.state)); s.state.derived.hp = 9;   // a save landing meanwhile
+        const afterLive = s.editDirty();
+        s.edit.bio.name = 'Mara V.';
+        const afterEdit = s.editDirty();
+        s.cancelEdit();
+        return [before, afterLive, afterEdit, s.editDirty()]; }}""")
+    record("agent-file", "Edit: nothing changed is not dirty, even after a save lands meanwhile",
+           r[0] is False and r[1] is False, str(r))
+    record("agent-file", "...a real edit is dirty, and Cancel clears it", r[2] is True and r[3] is False, str(r))
+    record("agent-file", "no JS exceptions (edit / cancel)", not errs, str(errs[:3]))
     page.close()
 
 def test_acell_evidence_pdf(p):
@@ -11854,9 +12237,15 @@ def main():
         # sandbox) and then fail against the blocked hosts above -- a
         # console error in every test that never cared about Firebase.
         # new_page(real_firebase=True) opts out.
+        # Player tours (assets/tour.js) would start by themselves over
+        # every test's page: off unless a test asks for them (tours=True).
+        TOURS_OFF = "try { if (!sessionStorage.getItem('dg_tours_test_on')) localStorage.setItem('dg_tours_off', '1'); } catch (e) {}"
         def _new_page_blocking_live_backend(*a, **kw):
             real_firebase = kw.pop("real_firebase", False)
+            tours = kw.pop("tours", False)
             page = _real_new_page(*a, **kw)
+            if not tours:
+                page.add_init_script(TOURS_OFF)
             page.route("**/script.google.com/**", lambda route: route.abort())
             page.route(LIVE_FIREBASE_HOSTS, lambda route: route.abort())
             if not real_firebase:
@@ -11870,7 +12259,10 @@ def main():
             _ctx_new_page = ctx.new_page
             def _ctx_page(*pa, **pkw):
                 real_firebase = pkw.pop("real_firebase", False)
+                tours = pkw.pop("tours", False)
                 page = _ctx_new_page(*pa, **pkw)
+                if not tours:
+                    page.add_init_script(TOURS_OFF)
                 page.route("**/script.google.com/**", lambda route: route.abort())
                 page.route(LIVE_FIREBASE_HOSTS, lambda route: route.abort())
                 if not real_firebase:
@@ -11956,6 +12348,10 @@ def main():
 
         safe(test_acell_evidence, browser, area="acell")
         safe(test_acell_evidence_share_languages_format, browser, area="acell")
+        safe(test_evidence_gallery, browser, area="gallery")
+        safe(test_evidence_tags, browser, area="evidence-tags")
+        safe(test_player_tours, browser, area="tours")
+        safe(test_edit_cancel_after_live_update, browser, area="agent-file")
         safe(test_acell_evidence_pdf, browser, area="acell")
         safe(test_acell_evidence_create_verify_retries, browser, area="acell")
 

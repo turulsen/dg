@@ -397,13 +397,29 @@
     code = norm(code);
     return signInAgent(code).then(() => withTimeout(
       db().collection('handout_notes').where('agent_code', '==', code).get(), 15000, 'reading handout notes'))
-      .then(snap => { const out = []; snap.forEach(d => { const n = d.data(); if (n.note) out.push({ handout_id: n.handout_id, note: n.note }); }); return out; });
+      .then(snap => {
+        const out = [];
+        snap.forEach(d => {
+          const n = d.data();
+          const tags = Array.isArray(n.tags) ? n.tags : [];
+          if (n.note || tags.length) out.push({ handout_id: n.handout_id, note: n.note || '', tags: tags });
+        });
+        return out;
+      });
   }
+  // The remark and the Agent's own Evidence tags (v3.7.0) share one
+  // record, so each saves only its own field (merge).
   function saveHandoutNote(code, handoutId, note) {
     code = norm(code);
     return signInAgent(code).then(() => withTimeout(db().collection('handout_notes').doc(code + '_' + handoutId).set({
       agent_code: code, handout_id: String(handoutId), note: note || '', updated_at: Date.now()
-    }), 15000, 'saving handout note'));
+    }, { merge: true }), 15000, 'saving handout note'));
+  }
+  function saveHandoutTags(code, handoutId, tags) {
+    code = norm(code);
+    return signInAgent(code).then(() => withTimeout(db().collection('handout_notes').doc(code + '_' + handoutId).set({
+      agent_code: code, handout_id: String(handoutId), tags: (tags || []).slice(0, 30), updated_at: Date.now()
+    }, { merge: true }), 15000, 'saving Evidence tags'));
   }
 
   // ── Notes: identity (color/font) and Evidence "seen" marks ─────
@@ -467,7 +483,7 @@
     ready, loadScript, signInAgent,
     getCharacter, saveCharacter, saveCharacterMerged, saveIncursion,
     getBrief, updateBrief, submitBrief, findByPlayerName,
-    listHandoutNotes, saveHandoutNote,
+    listHandoutNotes, saveHandoutNote, saveHandoutTags,
     getIdentities, saveIdentity, listSeen, markSeen, deleteOwnAgent, mainPhoto, photoRef,
     generatePrompt, generatePlateImage, generateBondDescription
   };
