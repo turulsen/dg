@@ -3526,6 +3526,42 @@ def test_player_tours(p):
     record("tours", "no JS exceptions (phone)", not errs, str(errs[:3]))
     page.close()
 
+    # In the Hub shell (hub.html), where the pages sit in a frame: the
+    # tour finds and frames the buttons inside it (reported 2026-10-22:
+    # "they just reload the page and nothing happens").
+    page, errs = _field_notes_page(P(), 1300, 860, docs=fd, extra_init=extra)
+    page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector("#dg-tour .dg-tour-post", timeout=20000)
+    shell_hole = page.evaluate("""() => { const f = document.getElementById('dg-shell-content'), fr = f.getBoundingClientRect();
+        const t = f.contentDocument.querySelector('#tab-strip .tw-new').getBoundingClientRect(), h = document.querySelector('.dg-tour-hole').getBoundingClientRect();
+        return [window.dgTour.active(), Math.abs((h.left + h.width / 2) - (fr.left + t.left + t.width / 2)) < 3, Math.abs((h.top + h.height / 2) - (fr.top + t.top + t.height / 2)) < 3]; }""")
+    record("tours", "Hub shell: New Recruit starts by itself and frames the tab inside the page frame",
+           shell_hole == ["newrecruit", True, True], str(shell_hole))
+    page.click("#dg-tour .dg-tour-exit")
+    src0 = page.evaluate("() => document.getElementById('dg-shell-content').contentWindow.location.href")
+    page.evaluate("() => window.dgTour.run('photos')")
+    page.wait_for_function("() => window.dgTour.active() === 'photos'", timeout=8000)
+    record("tours", "Hub shell: a tour from the list starts in place, without reloading the page",
+           page.evaluate("() => document.getElementById('dg-shell-content').contentWindow.location.href") == src0
+           and "photo" in page.inner_text("#dg-tour .dg-tour-t").lower(), page.inner_text("#dg-tour .dg-tour-t"))
+    page.keyboard.press("Escape")
+    page.evaluate("() => window.dgFieldNotes.open('evidence')")
+    page.wait_for_timeout(800)
+    page.evaluate("() => window.dgTour.run('settings')")
+    page.wait_for_function("() => window.dgTour.active() === 'settings'", timeout=8000)
+    record("tours", "Hub shell: notebook tours run too", page.evaluate("() => window.dgFieldNotes.view()") == "settings", "")
+    page.keyboard.press("Escape")
+    page.evaluate("() => window.dgFieldNotes.close()")
+    page.evaluate("() => { const f = document.getElementById('dg-shell-content'); f.src = 'friendly.html'; }")
+    page.wait_for_timeout(1500)
+    page.evaluate("() => window.dgTour.run('newrecruit')")
+    page.wait_for_function("() => window.dgTour.active() === 'newrecruit'", timeout=15000)
+    record("tours", "Hub shell: from another page, the tour goes to Agent Hub in the frame and starts there",
+           "agent-hub.html" in page.evaluate("() => document.getElementById('dg-shell-content').contentWindow.location.href"), "")
+    page.keyboard.press("Escape")
+    record("tours", "no JS exceptions (Hub shell)", not errs, str(errs[:3]))
+    page.close()
+
     # Everywhere else in the suite tours are off: no tour, no stamp.
     page = p.new_page(viewport={"width": 1300, "height": 860})
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)

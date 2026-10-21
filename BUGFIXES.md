@@ -6787,3 +6787,21 @@ another device) updated the live sheet, so an untouched edit looked
 changed and Cancel asked to throw it away. It now compares with the
 sheet as Edit found it (`editBase`); Cancel also clears that.
 `test_edit_cancel_after_live_update` (fails on the old code).
+
+## Tours did nothing in the Hub shell (v3.8.1)
+
+Reported 2026-10-22 with three phone screenshots, right after v3.8.0:
+starting a tour only reloaded the page and showed "This tour starts on
+Agent Hub, once it's on screen" (or the Taking a photo note), and no tour
+started by itself. The player uses the Hub shell (`hub.html`), where the
+pages sit in the `#dg-shell-content` frame and `assets/tour.js` runs in
+the shell around it. The tours looked for their buttons only in the
+shell's own page and took its name (`hub.html`) for the page being
+shown, so every Agent Hub tour thought it was elsewhere, "went" to Agent
+Hub (reloading the frame) and found nothing. The tests had only opened
+the pages directly. Now `page()` reads the frame's page, targets are also
+found inside the frame (and framed through it), the shell's loading
+screen counts as a window to wait for, and a tour that has to load
+another page waits for it (up to 15 s) instead of giving up with a note.
+New Hub-shell checks in `test_player_tours` (they fail on v3.8.0).
+`sw.js` `CACHE_NAME` v238.

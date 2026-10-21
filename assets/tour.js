@@ -26,7 +26,21 @@
   function FN() { return window.dgFieldNotes && window.dgFieldNotes.isHost ? window.dgFieldNotes : null; }
   function nbOpen() { var f = FN(); return !!(f && f.isOpen && f.isOpen()); }
   function nbView() { var f = FN(); return f && f.view ? f.view() : ''; }
-  function page() { return (location.pathname.split('/').pop() || 'index.html').toLowerCase(); }
+  // The Hub shell (hub.html) shows the pages in a frame: what the player
+  // looks at is that frame's page, and the buttons are in it.
+  function shellDoc() {
+    var f = document.getElementById('dg-shell-content');
+    if (!f) return null;
+    try { return f.contentDocument && f.contentDocument.body ? f.contentDocument : null; } catch (e) { return null; }
+  }
+  function page() {
+    var d = shellDoc(), loc = location;
+    if (document.getElementById('dg-shell-content')) {
+      if (!d) return '';
+      loc = d.defaultView.location;
+    }
+    return (loc.pathname.split('/').pop() || 'index.html').toLowerCase();
+  }
   function go(path) { var f = FN(); if (f && f.go) f.go(path); else location.href = path; }
 
   // The notebook's Notes page, when it's showing in the notebook.
@@ -59,13 +73,18 @@
         if (!!all[k].closest('#fn-veil') !== inNb) continue;
         if (shown(all[k])) return all[k];
       }
+      var sd = !inNb && shellDoc();
+      if (sd) {
+        var se = Array.prototype.filter.call(sd.querySelectorAll(sels[i]), shown)[0];
+        if (se) return se;
+      }
     }
     return null;
   }
   function rectOf(el) {
     var r = el.getBoundingClientRect();
     if (el.ownerDocument === document) return r;
-    var ifr = notesFrame();
+    var ifr = el.ownerDocument.defaultView.frameElement;
     if (!ifr) return r;
     var fr = ifr.getBoundingClientRect(), s = ifr.offsetWidth ? fr.width / ifr.offsetWidth : 1;
     return { left: fr.left + r.left * s, top: fr.top + r.top * s, width: r.width * s, height: r.height * s,
@@ -76,12 +95,16 @@
   // Another window is up: no tour starts over it.
   function blocked() {
     if (document.getElementById('dg-tour')) return true;
-    var b = ['#ap-posts', '#fn-orders', '.dg-ev-viewer', '.dg-notes-identity-modal', '#boot-splash:not(.boot-hidden)', '.evidence-lightbox', '.ah-handout-lightbox'];
-    var f = notesFrame();
+    var b = ['#ap-posts', '#fn-orders', '.dg-ev-viewer', '.dg-notes-identity-modal', '#boot-splash:not(.boot-hidden)', '.evidence-lightbox', '.ah-handout-lightbox',
+      '#dg-shell-loading:not(.dg-shell-loading-hidden)'];
+    var f = notesFrame(), docs = [document, f && f.contentDocument, shellDoc()];
     for (var i = 0; i < b.length; i++) {
-      if (Array.prototype.some.call(document.querySelectorAll(b[i]), shown)) return true;
-      if (f && Array.prototype.some.call(f.contentDocument.querySelectorAll(b[i]), shown)) return true;
+      for (var j = 0; j < docs.length; j++) {
+        if (docs[j] && Array.prototype.some.call(docs[j].querySelectorAll(b[i]), shown)) return true;
+      }
     }
+    // The shell's page still loading.
+    if (document.getElementById('dg-shell-content') && !shellDoc()) return true;
     return false;
   }
 
@@ -89,7 +112,7 @@
   var TOURS = [
     { id: 'newrecruit', title: 'New Recruit', where: 'Agent Hub',
       when: function () { return page() === 'agent-hub.html' && !nbOpen(); },
-      open: function () { if (page() !== 'agent-hub.html') go('agent-hub.html?tour=newrecruit'); },
+      open: function () { if (page() !== 'agent-hub.html') { go('agent-hub.html?tour=newrecruit'); return true; } },
       steps: [
         { sel: '#tab-strip .tw-new', title: 'New Recruit', text: 'Your new Agents start here. The tab walks you through it step by step: statistics, profession, skills, Bonds and the rest, then the Oath.' },
         { sel: '#tab-strip .tw-new', title: 'Bring one in', text: 'Already have an Agent somewhere else? The first step also imports one: a PDF, a Foundry or Kappa Black file, a Google Sheet, or a Friendly from the one-shot page.' }
@@ -97,7 +120,7 @@
     { id: 'photos', title: 'Taking a photo', where: 'Agent Hub, an Agent\'s folder',
       empty: 'Open one of your Agents on Agent Hub and this tour starts there.',
       when: function () { return page() === 'agent-hub.html' && !nbOpen() && any('.ah-appear-btn[data-ah-appear]'); },
-      open: function () { if (page() !== 'agent-hub.html') go('agent-hub.html?tour=photos'); },
+      open: function () { if (page() !== 'agent-hub.html') { go('agent-hub.html?tour=photos'); return true; } },
       steps: [
         { sel: ['.paper-photo', '.as-take-photo'], title: 'The photo', text: 'Your Agent\'s photo. Your Handler makes it from how you describe the Agent, so the description is what counts.' },
         { sel: '[data-ah-focus="appearance"]', optional: true, title: 'Describe them', text: 'This shows how many details are still missing. Tap Describe them to fill them in.' },
@@ -106,7 +129,7 @@
       ] },
     { id: 'friendly', title: 'A Friendly as your Agent', where: 'Friendly, an opened dossier',
       when: function () { return page() === 'friendly.html' && !nbOpen() && any('#fr-keep'); },
-      open: function () { if (page() !== 'friendly.html') go('friendly.html?tour=friendly'); },
+      open: function () { if (page() !== 'friendly.html') { go('friendly.html?tour=friendly'); return true; } },
       empty: 'Open any dossier on the Friendly page and this tour starts there.',
       steps: [
         { sel: '#fr-keep', title: 'Make this my Agent', text: 'Liked playing this one? This opens New Recruit on Agent Hub with the Friendly already filled in, saved under your Cover Identity. You check each step and take the Oath.' }
@@ -343,12 +366,13 @@
     var t = tourById(id);
     if (!t) return;
     try { sessionStorage.setItem(PENDING_KEY, JSON.stringify({ id: id, at: Date.now() })); } catch (e) { /* private mode */ }
-    if (t.open) t.open();
+    var went = t.open ? t.open() === true : false;
     var tries = 0;
     (function wait() {
       if (cur) return;
       if (steps(t).length && !blocked()) { start(id, { fromMenu: true }); return; }
-      if (++tries < 16) { setTimeout(wait, 250); return; }
+      if (++tries < (went ? 60 : 16)) { setTimeout(wait, 250); return; }
+      if (went) return; // still loading: the pending mark starts it there
       // Still nothing here (another page is loading, or the place isn't
       // reachable from here): the pending mark picks it up on arrival.
       if (!/tour=/.test(location.search)) note(t.title, t.empty || ('This tour starts on ' + t.where + ', once it\'s on screen.'));
