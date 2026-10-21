@@ -225,6 +225,9 @@ hand-drawn arrow. Rules:
   **Settings → Tours** open the list; a tour from it opens its notebook
   page, or another page with `?tour=ID` (a pending mark in
   `sessionStorage` starts it there).
+- **Hub shell (v3.8.1):** in `hub.html` the pages are in the
+  `#dg-shell-content` frame; `page()` is that frame's page and targets
+  are found (and framed) inside it, as for the Notes frame.
 - Test: `test_player_tours`.
 
 **Solo mode**: an Agent not yet assigned to any Cell still gets a

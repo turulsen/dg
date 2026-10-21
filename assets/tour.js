@@ -26,8 +26,29 @@
   function FN() { return window.dgFieldNotes && window.dgFieldNotes.isHost ? window.dgFieldNotes : null; }
   function nbOpen() { var f = FN(); return !!(f && f.isOpen && f.isOpen()); }
   function nbView() { var f = FN(); return f && f.view ? f.view() : ''; }
-  function page() { return (location.pathname.split('/').pop() || 'index.html').toLowerCase(); }
+  // The Hub shell (hub.html) shows the pages in a frame: what the player
+  // looks at is that frame's page, and the buttons are in it.
+  function shellDoc() {
+    var f = document.getElementById('dg-shell-content');
+    if (!f) return null;
+    try { return f.contentDocument && f.contentDocument.body ? f.contentDocument : null; } catch (e) { return null; }
+  }
+  function page() {
+    var d = shellDoc(), loc = location;
+    if (document.getElementById('dg-shell-content')) {
+      if (!d) return '';
+      loc = d.defaultView.location;
+    }
+    return (loc.pathname.split('/').pop() || 'index.html').toLowerCase();
+  }
   function go(path) { var f = FN(); if (f && f.go) f.go(path); else location.href = path; }
+  // A tour of a page (not of the notebook): the notebook closes, as it
+  // covers the page; then the page opens if it isn't the one on screen.
+  function toPage(pg, id) {
+    var f = FN();
+    if (f && f.close && nbOpen()) f.close();
+    if (page() !== pg) { go(pg + '?tour=' + id); return true; }
+  }
 
   // The notebook's Notes page, when it's showing in the notebook.
   function notesFrame() {
@@ -59,13 +80,18 @@
         if (!!all[k].closest('#fn-veil') !== inNb) continue;
         if (shown(all[k])) return all[k];
       }
+      var sd = !inNb && shellDoc();
+      if (sd) {
+        var se = Array.prototype.filter.call(sd.querySelectorAll(sels[i]), shown)[0];
+        if (se) return se;
+      }
     }
     return null;
   }
   function rectOf(el) {
     var r = el.getBoundingClientRect();
     if (el.ownerDocument === document) return r;
-    var ifr = notesFrame();
+    var ifr = el.ownerDocument.defaultView.frameElement;
     if (!ifr) return r;
     var fr = ifr.getBoundingClientRect(), s = ifr.offsetWidth ? fr.width / ifr.offsetWidth : 1;
     return { left: fr.left + r.left * s, top: fr.top + r.top * s, width: r.width * s, height: r.height * s,
@@ -76,12 +102,16 @@
   // Another window is up: no tour starts over it.
   function blocked() {
     if (document.getElementById('dg-tour')) return true;
-    var b = ['#ap-posts', '#fn-orders', '.dg-ev-viewer', '.dg-notes-identity-modal', '#boot-splash:not(.boot-hidden)', '.evidence-lightbox', '.ah-handout-lightbox'];
-    var f = notesFrame();
+    var b = ['#ap-posts', '#fn-orders', '.dg-ev-viewer', '.dg-notes-identity-modal', '#boot-splash:not(.boot-hidden)', '.evidence-lightbox', '.ah-handout-lightbox',
+      '#dg-shell-loading:not(.dg-shell-loading-hidden)'];
+    var f = notesFrame(), docs = [document, f && f.contentDocument, shellDoc()];
     for (var i = 0; i < b.length; i++) {
-      if (Array.prototype.some.call(document.querySelectorAll(b[i]), shown)) return true;
-      if (f && Array.prototype.some.call(f.contentDocument.querySelectorAll(b[i]), shown)) return true;
+      for (var j = 0; j < docs.length; j++) {
+        if (docs[j] && Array.prototype.some.call(docs[j].querySelectorAll(b[i]), shown)) return true;
+      }
     }
+    // The shell's page still loading.
+    if (document.getElementById('dg-shell-content') && !shellDoc()) return true;
     return false;
   }
 
@@ -89,7 +119,7 @@
   var TOURS = [
     { id: 'newrecruit', title: 'New Recruit', where: 'Agent Hub',
       when: function () { return page() === 'agent-hub.html' && !nbOpen(); },
-      open: function () { if (page() !== 'agent-hub.html') go('agent-hub.html?tour=newrecruit'); },
+      pg: 'agent-hub.html', open: function () { return toPage('agent-hub.html', 'newrecruit'); },
       steps: [
         { sel: '#tab-strip .tw-new', title: 'New Recruit', text: 'Your new Agents start here. The tab walks you through it step by step: statistics, profession, skills, Bonds and the rest, then the Oath.' },
         { sel: '#tab-strip .tw-new', title: 'Bring one in', text: 'Already have an Agent somewhere else? The first step also imports one: a PDF, a Foundry or Kappa Black file, a Google Sheet, or a Friendly from the one-shot page.' }
@@ -97,7 +127,7 @@
     { id: 'photos', title: 'Taking a photo', where: 'Agent Hub, an Agent\'s folder',
       empty: 'Open one of your Agents on Agent Hub and this tour starts there.',
       when: function () { return page() === 'agent-hub.html' && !nbOpen() && any('.ah-appear-btn[data-ah-appear]'); },
-      open: function () { if (page() !== 'agent-hub.html') go('agent-hub.html?tour=photos'); },
+      pg: 'agent-hub.html', open: function () { return toPage('agent-hub.html', 'photos'); },
       steps: [
         { sel: ['.paper-photo', '.as-take-photo'], title: 'The photo', text: 'Your Agent\'s photo. Your Handler makes it from how you describe the Agent, so the description is what counts.' },
         { sel: '[data-ah-focus="appearance"]', optional: true, title: 'Describe them', text: 'This shows how many details are still missing. Tap Describe them to fill them in.' },
@@ -106,7 +136,7 @@
       ] },
     { id: 'friendly', title: 'A Friendly as your Agent', where: 'Friendly, an opened dossier',
       when: function () { return page() === 'friendly.html' && !nbOpen() && any('#fr-keep'); },
-      open: function () { if (page() !== 'friendly.html') go('friendly.html?tour=friendly'); },
+      pg: 'friendly.html', open: function () { return toPage('friendly.html', 'friendly'); },
       empty: 'Open any dossier on the Friendly page and this tour starts there.',
       steps: [
         { sel: '#fr-keep', title: 'Make this my Agent', text: 'Liked playing this one? This opens New Recruit on Agent Hub with the Friendly already filled in, saved under your Cover Identity. You check each step and take the Oath.' }
@@ -116,7 +146,7 @@
       open: function () { var f = FN(); if (f) f.open('agentfile'); },
       steps: [
         { sel: '.as-stats', title: 'Tap to roll', text: 'Tap a statistic to roll it ×5, or any skill below. The roll shows in the Dice Roller and your Cell sees it.' },
-        { sel: '.ap-skillbar', title: 'Failed rolls', text: 'A failed skill roll turns the skill red. At the end of a session, Roll improvements adds 1D4 to each one, then clears them.' },
+        { sel: ['[data-a="improve"]', '.ap-skillbar'], title: 'Failed rolls', text: 'A failed skill roll turns the skill red. At the end of a session, Roll improvements adds 1D4 to each one, then clears them.' },
         { sel: '[data-a="edit"]', title: 'Edit', text: 'Changing the Agent itself (statistics, skills, name, Bonds) is in Edit. Saving asks for the Oath again.' },
         { sel: ['.ah-appear-btn[data-ah-cell]', '[data-p="cell"]'], optional: true, title: 'Your Cell', text: 'Your Cell in initiative order, highest DEX first. Tap a member to see their card.' }
       ] },
@@ -127,7 +157,7 @@
         { sel: '[data-a="rollsan"]', title: 'Roll SAN', text: 'The plain SAN test when the Handler calls for one. What it costs is the Handler\'s call.' },
         { sel: '[data-pop="san"]', title: 'SAN loss', text: 'When the Handler announces a loss, tap here. Pick the amount (a number or dice) and the kind: Violence, Helplessness or Unnatural. It\'s rolled for you and your SAN drops.' },
         { sel: '[data-pop="san"]', title: 'What follows', text: 'Post-its tell you what happened: a disorder that triggers, temporary insanity at 5 or more, or your Breaking Point, where you choose a new disorder.' },
-        { sel: '[data-pop="inc"]', optional: true, title: 'Adaptation', text: 'Losses to Violence or Helplessness tick these boxes. Three ticks and the Agent adapts, at a cost.' },
+        { sel: ['.ap-adapts', '[data-pop="inc"]'], optional: true, title: 'Adaptation', text: 'Losses to Violence or Helplessness tick these boxes by themselves. Three ticks and the Agent adapts, at a cost. + Incident ticks one by hand.' },
         { sel: '[data-pop="dis"]', optional: true, title: 'Mental Disorders', text: 'Add a disorder from the list (or in your own words). Its description stays on the file.' }
       ] },
     { id: 'switch', title: 'Switching Agents', where: 'the notebook',
@@ -149,7 +179,7 @@
         { sel: '.dg-notes-circulate-btn', frame: true, title: 'Circulate', text: 'Shares the note you\'re in with your Cell (the Shared tab). Off keeps it to you.' },
         { sel: '.dg-notes-pin-btn', frame: true, optional: true, title: 'Pin', text: 'Keeps a note at the top of your Index.' },
         { sel: '#dg-notes-quick-mount', frame: true, title: 'Quick notes', text: 'Notes you jot from the notebook on a phone wait here. Add to page puts one where your cursor is.' },
-        { sel: '[data-arrange]', frame: true, title: 'Arrange', text: 'Show, hide and order these lists, on this device.' },
+        { sel: '[data-arrange]', frame: true, title: 'Arrange', text: 'Choose which of these lists show, and in what order. Only on this device.' },
         { sel: '#fn-veil [data-q="text"]', title: 'Quick note', text: 'Jot something down fast. It waits in your full Notes until you add it to the page.' },
         { sel: '#fn-veil [data-q="tag"]', optional: true, title: 'Tag it', text: 'Tag a quick note as you write it. It keeps the tag when it\'s added to the page.' },
         { sel: '#fn-veil [data-q="shared"]', optional: true, title: 'Share it', text: 'Shares this note with your Cell.' }
@@ -159,7 +189,7 @@
       when: function () { return any('.dg-gv-switch') && (nbOpen() ? nbView() === 'evidence' : page() === 'agent-hub.html'); },
       open: function () { var f = FN(); if (f) f.open('evidence'); },
       steps: [
-        { sel: ['#fn-veil [data-ev-filter]', 'select[data-op-filter-code]'], optional: true, title: 'Operation', text: 'Only the Evidence of one Operation, or all of it.' },
+        { sel: ['#fn-veil [data-ev-filter]', 'select[data-op-filter-code]'], optional: true, title: 'Operation', text: 'Filter the Evidence by Operation. Pick one to see only what was filed for it, or All operations to see everything.' },
         { sel: ['#fn-veil .dg-gv-switch', '.ah-handouts-view .dg-gv-switch'], title: 'Gallery', text: 'See your Evidence as a pinboard. Tap a picture to open it; Back returns to the board. Your choice is kept on this device.' },
         { sel: ['#fn-veil .dg-et', '.ah-handouts .dg-et'], optional: true, title: 'Your own tags', text: 'Type a tag and press Enter, × to remove it. Only you see them.' },
         { sel: ['#fn-veil .dg-et-h', '.ah-handouts .dg-et-h'], optional: true, title: 'Handler\'s labels', text: 'Red stamps are your Handler\'s labels. Everyone sees them.' },
@@ -343,12 +373,13 @@
     var t = tourById(id);
     if (!t) return;
     try { sessionStorage.setItem(PENDING_KEY, JSON.stringify({ id: id, at: Date.now() })); } catch (e) { /* private mode */ }
-    if (t.open) t.open();
+    var went = t.open ? t.open() === true : false;
     var tries = 0;
     (function wait() {
       if (cur) return;
       if (steps(t).length && !blocked()) { start(id, { fromMenu: true }); return; }
-      if (++tries < 16) { setTimeout(wait, 250); return; }
+      if (++tries < (went ? 60 : 16)) { setTimeout(wait, 250); return; }
+      if (went) return; // still loading: the pending mark starts it there
       // Still nothing here (another page is loading, or the place isn't
       // reachable from here): the pending mark picks it up on arrival.
       if (!/tour=/.test(location.search)) note(t.title, t.empty || ('This tour starts on ' + t.where + ', once it\'s on screen.'));
@@ -376,7 +407,7 @@
   }
 
   /* ── Starting by themselves ── */
-  var autoDone = false;
+  var autoDone = false, waitSince = 0, waitFor = null;
   // Off on this device (the test suite sets it): no tour starts by itself
   // and no stamp; Settings → Tours still works.
   // Nor where this device can't remember a seen tour (private mode, or
@@ -391,6 +422,14 @@
     if (pend) {
       var pt = tourById(pend.id);
       if (pt && pt.when() && steps(pt).length) { start(pt.id, {}); return; }
+      // On its page, but what it explains isn't there (no dossier open on
+      // Friendly, no Agent open on Agent Hub): say what to open, once. It
+      // stays pending, so it starts when that's opened.
+      if (pt && pt.pg && page() === pt.pg && !nbOpen()) {
+        if (!waitSince || waitFor !== pend.at) { waitSince = Date.now(); waitFor = pend.at; }
+        else if (waitSince > 0 && Date.now() - waitSince > 2500) { waitSince = -1; note(pt.title, pt.empty || ('This tour starts on ' + pt.where + ', once it\'s on screen.')); }
+        return;
+      }
     }
     if (autoDone || off()) return;
     var s = seen();

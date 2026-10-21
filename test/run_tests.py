@@ -3503,6 +3503,13 @@ def test_player_tours(p):
         const b = [...document.querySelectorAll('[data-pop="san"]')].find(x => x.closest('#fn-veil')).getBoundingClientRect();
         return Math.abs((h.left + h.width / 2) - (b.left + b.width / 2)) < 3 && Math.abs((h.top + h.height / 2) - (b.top + b.height / 2)) < 3; }""")
     record("tours", "inside the notebook it frames the notebook's SAN loss, not the page's underneath", framed, "")
+    page.click("#dg-tour [data-tour=next]"); page.click("#dg-tour [data-tour=next]")
+    page.wait_for_timeout(600)
+    adapt = page.evaluate("""() => { const h = document.querySelector('.dg-tour-hole').getBoundingClientRect();
+        const b = [...document.querySelectorAll('.ap-adapts')].find(x => x.closest('#fn-veil')).getBoundingClientRect();
+        return [document.querySelector('.dg-tour-t').textContent, h.left <= b.left + 1 && h.right >= b.right - 1 && h.top <= b.top + 1 && h.bottom >= b.bottom - 1]; }""")
+    record("tours", "Sanity: Adaptation frames the Violence and Helplessness boxes (not + Incident)",
+           adapt[0].lower() == "adaptation" and adapt[1], str(adapt))
     page.keyboard.press("Escape")
     # Never over another window: a SAN post-it up, no tour starts.
     page.evaluate("() => { window.dgTour.reset(); const d = document.createElement('div'); d.id = 'ap-posts'; d.style.cssText = 'position:fixed;inset:0;background:#0006'; document.body.appendChild(d); }")
@@ -3524,6 +3531,59 @@ def test_player_tours(p):
     page.click("#dg-tour .dg-tour-exit")
     record("tours", "phone: ✕ Exit tour leaves it", page.locator("#dg-tour").count() == 0, "")
     record("tours", "no JS exceptions (phone)", not errs, str(errs[:3]))
+    page.close()
+
+    # In the Hub shell (hub.html), where the pages sit in a frame: the
+    # tour finds and frames the buttons inside it (reported 2026-10-22:
+    # "they just reload the page and nothing happens").
+    page, errs = _field_notes_page(P(), 1300, 860, docs=fd, extra_init=extra)
+    page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector("#dg-tour .dg-tour-post", timeout=20000)
+    shell_hole = page.evaluate("""() => { const f = document.getElementById('dg-shell-content'), fr = f.getBoundingClientRect();
+        const t = f.contentDocument.querySelector('#tab-strip .tw-new').getBoundingClientRect(), h = document.querySelector('.dg-tour-hole').getBoundingClientRect();
+        return [window.dgTour.active(), Math.abs((h.left + h.width / 2) - (fr.left + t.left + t.width / 2)) < 3, Math.abs((h.top + h.height / 2) - (fr.top + t.top + t.height / 2)) < 3]; }""")
+    record("tours", "Hub shell: New Recruit starts by itself and frames the tab inside the page frame",
+           shell_hole == ["newrecruit", True, True], str(shell_hole))
+    page.click("#dg-tour .dg-tour-exit")
+    src0 = page.evaluate("() => document.getElementById('dg-shell-content').contentWindow.location.href")
+    page.evaluate("() => window.dgTour.run('photos')")
+    page.wait_for_function("() => window.dgTour.active() === 'photos'", timeout=8000)
+    record("tours", "Hub shell: a tour from the list starts in place, without reloading the page",
+           page.evaluate("() => document.getElementById('dg-shell-content').contentWindow.location.href") == src0
+           and "photo" in page.inner_text("#dg-tour .dg-tour-t").lower(), page.inner_text("#dg-tour .dg-tour-t"))
+    page.keyboard.press("Escape")
+    page.evaluate("() => window.dgFieldNotes.open('evidence')")
+    page.wait_for_timeout(800)
+    page.evaluate("() => window.dgTour.run('settings')")
+    page.wait_for_function("() => window.dgTour.active() === 'settings'", timeout=8000)
+    record("tours", "Hub shell: notebook tours run too", page.evaluate("() => window.dgFieldNotes.view()") == "settings", "")
+    page.keyboard.press("Escape")
+    page.evaluate("() => window.dgFieldNotes.close()")
+    page.evaluate("() => { const f = document.getElementById('dg-shell-content'); f.src = 'friendly.html'; }")
+    page.wait_for_timeout(1500)
+    page.evaluate("() => window.dgTour.run('newrecruit')")
+    page.wait_for_function("() => window.dgTour.active() === 'newrecruit'", timeout=15000)
+    record("tours", "Hub shell: from another page, the tour goes to Agent Hub in the frame and starts there",
+           "agent-hub.html" in page.evaluate("() => document.getElementById('dg-shell-content').contentWindow.location.href"), "")
+    page.keyboard.press("Escape")
+    # From Settings → Tours (notebook open), a tour of the page closes the
+    # notebook first (reported 2026-10-21: the first three did nothing).
+    page.evaluate("() => window.dgFieldNotes.open('settings')")
+    page.wait_for_selector("#fn-veil [data-s=tours]", timeout=5000)
+    page.click("#fn-veil [data-s=tours]")
+    page.click("#dg-tour [data-tour-start=photos]")
+    page.wait_for_function("() => window.dgTour.active() === 'photos'", timeout=8000)
+    record("tours", "Hub shell: from Settings → Tours, Taking a photo closes the notebook and starts",
+           not page.evaluate("() => window.dgFieldNotes.isOpen()"), "")
+    page.keyboard.press("Escape")
+    # Friendly with no dossier open: it says what to open, and starts once one is.
+    page.evaluate("() => window.dgTour.run('friendly')")
+    page.wait_for_function("() => /friendly\\.html/.test(document.getElementById('dg-shell-content').contentWindow.location.href)", timeout=8000)
+    page.wait_for_selector("#dg-tour .dg-tour-post", timeout=12000)
+    record("tours", "Hub shell: Friendly with no dossier open says to open one (not a silent reload)",
+           "dossier" in page.inner_text("#dg-tour .dg-tour-post").lower() and page.evaluate("() => window.dgTour.active()") == "", page.inner_text("#dg-tour .dg-tour-post")[:120])
+    page.click("#dg-tour .dg-tour-exit")
+    record("tours", "no JS exceptions (Hub shell)", not errs, str(errs[:3]))
     page.close()
 
     # Everywhere else in the suite tours are off: no tour, no stamp.

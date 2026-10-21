@@ -6787,3 +6787,40 @@ another device) updated the live sheet, so an untouched edit looked
 changed and Cancel asked to throw it away. It now compares with the
 sheet as Edit found it (`editBase`); Cancel also clears that.
 `test_edit_cancel_after_live_update` (fails on the old code).
+
+## Tours did nothing in the Hub shell (v3.8.1)
+
+Reported 2026-10-22 with three phone screenshots, right after v3.8.0:
+starting a tour only reloaded the page and showed "This tour starts on
+Agent Hub, once it's on screen" (or the Taking a photo note), and no tour
+started by itself. The player uses the Hub shell (`hub.html`), where the
+pages sit in the `#dg-shell-content` frame and `assets/tour.js` runs in
+the shell around it. The tours looked for their buttons only in the
+shell's own page and took its name (`hub.html`) for the page being
+shown, so every Agent Hub tour thought it was elsewhere, "went" to Agent
+Hub (reloading the frame) and found nothing. The tests had only opened
+the pages directly. Now `page()` reads the frame's page, targets are also
+found inside the frame (and framed through it), the shell's loading
+screen counts as a window to wait for, and a tour that has to load
+another page waits for it (up to 15 s) instead of giving up with a note.
+New Hub-shell checks in `test_player_tours` (they fail on v3.8.0).
+`sw.js` `CACHE_NAME` v238.
+- **Also (same day):** the Sanity tour's Adaptation post-it framed
+  + Incident instead of the Violence / Helplessness boxes it explains
+  (reported with a screenshot). The rows are now wrapped
+  (`.ap-adapts`, `assets/agent-paper.js`) and the post-it frames them;
+  "Failed rolls" frames Roll improvements instead of the whole skill
+  bar. Checked in `test_player_tours`. `sw.js` `CACHE_NAME` v239.
+- **Also (same day):** the Evidence tour's Operation post-it read "Only
+  the Evidence of one Operation, or all of it", which didn't say what the
+  control does. Now: "Filter the Evidence by Operation…". The Notes
+  tour's Arrange text was reworded the same way. `sw.js` `CACHE_NAME` v240.
+- **Also (same day):** on a phone, the first three tours (New Recruit,
+  Taking a photo, A Friendly as your Agent) did nothing. Started from the
+  notebook's Settings → Tours, they left the notebook open over the page
+  they explain, so their targets (hidden under it) were never found. Now a
+  tour of a page closes the notebook first. And Friendly with no dossier
+  open just loaded the page silently; now a post-it says to open a
+  dossier, and the tour starts once one is. Two Hub-shell checks in
+  `test_player_tours` (the first fails on the previous commit).
+  `sw.js` `CACHE_NAME` v241.

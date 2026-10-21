@@ -566,7 +566,7 @@
       return '<div class="as-sec-hd ap-hd">Sanity adaptation ' + (edit ? '' : '<button type="button" class="ap-mini" data-a="pop" data-pop="inc">+ Incident</button>') + '</div>' +
         (ui.pop === 'inc' && !edit ? '<div class="ap-pop"><div class="ap-pop-h">An incident of…</div><div class="ap-btns"><button type="button" class="ap-btn ap-ink" data-a="inc" data-k="violence">Violence</button>' +
           '<button type="button" class="ap-btn ap-ink" data-a="inc" data-k="helplessness">Helplessness</button><button type="button" class="ap-btn ap-ghost" data-a="pop" data-pop="">Cancel</button></div></div>' : '') +
-        row('violence', 'Violence', '−1D6 CHA and each Bond') + row('helplessness', 'Helplessness', '−1D6 POW');
+        '<div class="ap-adapts">' + row('violence', 'Violence', '−1D6 CHA and each Bond') + row('helplessness', 'Helplessness', '−1D6 POW') + '</div>';
     }
     function weaponsHtml(x, edit) {
       var ws = (x.lpWeapons || []);
