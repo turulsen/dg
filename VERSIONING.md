@@ -156,7 +156,7 @@ Gallery to Evidence: a List | Gallery switch in A-Cell, on Agent Hub,
 in the notebook's Evidences (and Split) and in Notes, showing a
 pinboard of taped polaroids, and Evidence tags: the Handler's labels
 (A-Cell) and each Agent's own private tags, with a Tags filter. **v3.8.0** (2026-10-21, PR #82) adds player tours of the
-new features (`assets/tour.js`); shell cache `dg-hub-shell-v237`. **v3.8.1** (unreleased) makes the
+new features (`assets/tour.js`); shell cache `dg-hub-shell-v237`. **v3.8.1** (2026-10-21, PR #83) makes the
 tours work in the Hub shell (`hub.html`), where they did nothing, and
 points the Sanity tour's Adaptation post-it at the boxes, with clearer
 wording on two steps, and the page tours close the notebook before they

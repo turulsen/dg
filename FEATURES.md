@@ -228,6 +228,10 @@ hand-drawn arrow. Rules:
 - **Hub shell (v3.8.1):** in `hub.html` the pages are in the
   `#dg-shell-content` frame; `page()` is that frame's page and targets
   are found (and framed) inside it, as for the Notes frame.
+- **Page tours (v3.8.1):** New Recruit, Taking a photo and A Friendly
+  as your Agent close the notebook before they start (`toPage()`); on
+  their page with nothing to explain yet (no dossier open), a post-it
+  says what to open, and the tour stays pending until it is.
 - Test: `test_player_tours`.
 
 **Solo mode**: an Agent not yet assigned to any Cell still gets a
