@@ -6848,3 +6848,13 @@ chance to add to the wallet. When pressing print, cannot return."
   outside closes it.
 - Checked in `test_cover_ids_tab` (no popup; Done closes) and
   `test_field_id_forgery`. `sw.js` `CACHE_NAME` v243.
+- **v3.9.1, the same day:** live, Print to wallet failed with "Could not
+  save the wallet: … Unsupported field value: a custom Array object
+  (found in field cards …)" (reported from an iPhone). The Fabricator
+  runs in the notebook's frame and saved through the notebook page's
+  `dgStore`, handing it arrays made in the frame; Firestore's SDK only
+  accepts its own page's Array. `saveWallet` now rebuilds the wallet in
+  its own page (JSON round-trip) before saving. The test stub took any
+  object, which is why the tests passed; it now refuses another frame's
+  arrays and objects the way Firestore does, for every write.
+  `sw.js` `CACHE_NAME` v244.

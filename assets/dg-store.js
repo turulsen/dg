@@ -487,7 +487,10 @@
   }
   function saveWallet(code, wallet) {
     code = norm(code);
-    const w = wallet || {};
+    // Rebuilt here, in this page: the Fabricator (in the notebook's frame)
+    // hands over its own arrays, and Firestore refuses another frame's
+    // Array ("Unsupported field value: a custom Array object").
+    const w = JSON.parse(JSON.stringify(wallet || {}));
     return signInAgent(code).then(() => withTimeout(db().collection('wallets').doc(code).set({
       agent_code: code, cards: (w.cards || []).slice(0, 40), carried: w.carried || 'auto', updated_at: Date.now()
     }), 15000, 'saving the wallet'));
