@@ -546,12 +546,20 @@ NOTES_FIRESTORE_STUB = """
       };
     },
     storage: function () {
+      // Objects "in the bucket": tests may seed window.__dgStorageFiles
+      // (paths); uploads land there too. listAll() lists a folder.
+      function files() { return (window.__dgStorageFiles = window.__dgStorageFiles || []); }
+      function mk(path) {
+        return { fullPath: path, name: path.split('/').pop(), getDownloadURL: function () { return Promise.resolve('https://fake-storage.example/' + path); } };
+      }
       return {
         ref: function (path) {
           return {
+            fullPath: path, name: String(path).split('/').pop(),
             put: function (file, opts) {
               // A dropped connection: tests set __dgStorageFail to fail the next N uploads.
               if ((window.__dgStorageFail || 0) > 0) { window.__dgStorageFail--; return Promise.reject(new Error('storage/retry-limit-exceeded')); }
+              if (files().indexOf(path) === -1) files().push(path);
               window.__dgStorageUploads.push({ path: path, file: file, opts: opts });
               return Promise.resolve({
                 ref: { getDownloadURL: function () { return Promise.resolve('https://fake-storage.example/' + path); } }
@@ -563,7 +571,17 @@ NOTES_FIRESTORE_STUB = """
             // Firestore doc -- empty by default (no test currently
             // exercises the recovery path itself), just enough surface
             // for that call to resolve instead of throwing.
-            listAll: function () { return Promise.resolve({ items: [] }); }
+            listAll: function () {
+              var pre = String(path).replace(/\/$/, '') + '/', items = [], subs = {};
+              files().forEach(function (f) {
+                if (f.indexOf(pre) !== 0) return;
+                var rest = f.slice(pre.length);
+                if (rest.indexOf('/') === -1) items.push(mk(f)); else subs[rest.split('/')[0]] = 1;
+              });
+              var self = this;
+              return Promise.resolve({ items: items, prefixes: Object.keys(subs).map(function (n) { return window.firebase.storage().ref(pre + n); }) });
+            },
+            getDownloadURL: function () { return Promise.resolve('https://fake-storage.example/' + path); }
           };
         }
       };
@@ -807,83 +825,45 @@ def fill_cover_form(page, agent, form_selector="#dg-form"):
         page.fill(vibe_sel, agent.get("vibe",""))
 
 def test_cover_ids_tab(p):
-    """The Field ID Fabricator (field-id.html, embedded in the Field Notes
-    notebook's Field ID page; it was the Agent Portal's third tab) -- a native, in-page
-    tablet UI (agency+era picker, live-rendered credential card, PRINT/
-    EXPORT, and an agent-code importer that queries the Apps Script backend
-    the same way the Agent File tab does). Ported wholesale from the
-    project's Dev branch, which had built this out fully while this
-    branch's own Cover IDs tab was still an iframe wrapping the older,
-    less-developed standalone dg-id-creator.html page."""
+    """The Field ID Fabricator (field-id.html) since v3.9.0: a forger's
+    terminal. The start screen offers the three protocols (Mirror
+    credential, Spoof a local office, Fabricate an entity); Mirror draws
+    the agency card with the shared card module; Print opens over the page
+    (no new tab, a phone had no way back from one) with the PROP line on
+    the paper only, and Done closes it."""
     page = p.new_page()
     page.set_default_timeout(8000)
     errs = collect_errors(page)
     mock_routes(page)
     page.goto(f"{BASE}/field-id.html?embed=1", wait_until="domcontentloaded", timeout=15000)
-    page.wait_for_timeout(300)
-
-    record("cover-ids-tab", "the Fabricator renders the native tablet UI (not an iframe)",
-           page.locator("#ids-shell").count() > 0 and page.locator("iframe#ids-iframe").count() == 0, "")
-
-    # placeholder before any agency/era chosen
-    placeholder_visible = page.is_visible("#ids-card-placeholder")
-    record("cover-ids-tab", "card preview shows placeholder before agency+era are set", placeholder_visible, "")
-
-    # agent-code importer (queries the same Apps Script JSONP endpoint as Agent
-    # File) -- do this before manually typing a name, since the importer only
-    # fills fields that are still empty
-    page.fill("#ids-agent-code", "TEST-CODE")
-    page.click("button[onclick='idsImportAgent()']")
-    page.wait_for_timeout(500)
-    imported_name = page.eval_on_selector("#ids-cover-name", "el => el.value")
-    record("cover-ids-tab", "agent-code importer loads a name from the Apps Script backend",
-           imported_name == "Mock Loaded Agent", str(imported_name))
-
-    # fill in a cover identity and confirm a real card renders
+    page.wait_for_function("() => window.dgFabricator", timeout=8000)
+    record("cover-ids-tab", "the Fabricator is the terminal, with the three forgery protocols",
+           page.locator("#ids-shell .topt").count() == 3 and "SELECT FORGERY PROTOCOL" in page.inner_text("#fx-body"), page.inner_text("#fx-body")[:160])
+    page.keyboard.press("1")
+    page.wait_for_selector("#ids-agency")
     page.select_option("#ids-agency", "FBI")
-    page.select_option("#ids-era", "90s")
+    page.click("[data-x=era][data-v='90s']")
     page.fill("#ids-cover-name", "Marcus Reyes")
-    page.fill("#ids-cover-title", "Special Agent")
     page.fill("#ids-cover-id", "MR-4471")
-    page.wait_for_timeout(300)
-    # Rendered cards vary per agency/era (credential-book layouts use plain
-    # inline-styled divs, CR80-style layouts use .ids-card-wrap), so check
-    # by content rather than a single expected class: the placeholder is
-    # gone and the entered name shows up somewhere in the card.
-    preview_text = page.locator("#ids-card-preview").inner_text()
-    card_rendered = "SELECT AGENCY" not in preview_text and page.locator("#ids-card-placeholder").count() == 0
-    record("cover-ids-tab", "selecting agency+era renders a live credential card", card_rendered, preview_text[:80])
-    if card_rendered:
-        record("cover-ids-tab", "rendered card shows the entered cover name",
-               "Marcus Reyes" in preview_text, preview_text[:80])
-        record("cover-ids-tab", "the live on-screen preview does NOT carry the prop watermark (print/export-only, doesn't clutter the working view)",
-               "NOT A GOVERNMENT DOCUMENT" not in preview_text, preview_text[:120])
-
-    # PRINT/EXPORT regression: FBI 90s renders as a plain inline-styled div
-    # with no .ids-card-wrap class (a "credential-book" layout), which used
-    # to fail the print gate's class-based check and silently alert
-    # "Select agency and era first." instead of opening the print window.
-    try:
-        with page.expect_popup(timeout=4000) as popup_info:
-            page.click("button[onclick='idsPrint()']")
-        popup = popup_info.value
-        popup.wait_for_load_state()
-        popup_text = popup.inner_text("body")
-        record("cover-ids-tab", "PRINT/EXPORT opens a print window for a credential-book layout (no .ids-card-wrap class)",
-               True, "")
-        record("cover-ids-tab", "print window also carries the prop watermark",
-               "NOT A GOVERNMENT DOCUMENT" in popup_text, popup_text[:120])
-        popup.close()
-    except Exception as e:
-        record("cover-ids-tab", "PRINT/EXPORT opens a print window for a credential-book layout (no .ids-card-wrap class)",
-               False, str(e))
-
-    # The templates now live in assets/field-id-cards.js, shared with the
-    # Field Notes Field ID pocket: every agency in the tab's list, in every
-    # era, still finds a template and draws a card.
+    page.wait_for_timeout(200)
+    prev = page.inner_text("#fx-prev")
+    record("cover-ids-tab", "1 / Mirror: the agency credential renders live with the typed name", "Marcus Reyes" in prev and "INVESTIGATION" in prev.upper(), prev[:100])
+    record("cover-ids-tab", "the live preview carries no PROP line", "PROP" not in prev, prev[:120])
+    page.click("[data-x=file]")
+    page.wait_for_selector("text=FORGERY COMPLETE")
+    pops = []
+    page.on("popup", lambda pg: pops.append(pg))
+    page.click("[data-x=print]")
+    page.wait_for_selector("#dgf-print", timeout=4000)
+    record("cover-ids-tab", "Print opens over the page, not in a new tab", len(pops) == 0 and page.locator("#dgf-print .sheet").count() == 1, str(len(pops)))
+    record("cover-ids-tab", "the printed card carries the PROP line", "PROP" in page.inner_text("#dgf-print .sheet"), "")
+    page.click("#dgf-print [data-p=done]")
+    record("cover-ids-tab", "Done closes it, back on the tablet", page.locator("#dgf-print").count() == 0 and page.is_visible("#ids-shell"), "")
+    # The templates live in assets/field-id-cards.js, shared with the
+    # notebook: every agency on file, in every era, finds a template.
     sweep = page.evaluate("""() => {
         const C = window.dgFieldIdCards, out = { drawn: 0, missing: [] };
-        const agencies = Array.from(document.querySelectorAll('#ids-agency option')).map(o => o.value).filter(v => v && v !== 'OTHER');
+        const agencies = window.dgAgencies.list.map(a => a.code).concat(['DG']);
         ['90s', '00s', '10s', '20s'].forEach(era => agencies.forEach(ag => {
             const t = C.template(ag, era);
             if (!t) { out.missing.push(ag + '_' + era); return; }
@@ -9154,7 +9134,7 @@ def test_agent_file_v2_play_and_edit(p):
                       and any(i.get("key") == "craft" and i.get("specialty") == "Locksmith" and i.get("value") == 20 for i in st.get("specialtyInstances", []))))
            and bool(wait_for_condition(lambda: page.locator(root + " .ap-editbar").count() == 0 or None, timeout_ms=4000)), str(saved().get("csStats")))
     page.click(root + " [data-a=edit]")
-    page.fill(root + " [data-e='bio.employer']", "DEA")
+    page.select_option(root + " [data-emp=sel]", "DEA")
     page.click(root + " [data-a=cancel]")
     page.wait_for_selector("#fn-confirm [data-cf=ok]", timeout=5000)
     asked = page.inner_text("#fn-confirm")
@@ -11314,7 +11294,7 @@ def test_field_id_fabricator_in_notebook(p):
         src = f.get_attribute("src") or ""
         frame = f.content_frame()
         frame.wait_for_load_state("domcontentloaded")
-        loaded = wait_for_condition(lambda: frame.evaluate("() => /LOADED/.test(document.getElementById('ids-import-status').textContent) ? document.getElementById('ids-cover-name').value : null"), timeout_ms=8000)
+        loaded = wait_for_condition(lambda: frame.evaluate("() => { const s = window.dgFabricator && window.dgFabricator.state(); return s && s.brief ? s.brief.char_name : null; }"), timeout_ms=8000)
         record("notebook", f"{where}: Make Field ID opens the Fabricator in the notebook, on this Agent", ("code=" + FN_CODE) in src and loaded == "Mara Voss", src + " " + str(loaded))
         spread = page.evaluate("() => !document.querySelector('#fn-veil [data-fn-slot=spread]').hidden")
         record("notebook", f"{where}: " + ("across both pages" if where == "desktop" else "as the page"),
@@ -11333,6 +11313,220 @@ def test_field_id_fabricator_in_notebook(p):
     page.close()
     record("notebook", "no JS exceptions (Fabricator)", len(errs_all) == 0, "; ".join(errs_all))
     return errs_all
+
+# A plain stand-in for each evidence-pack picture (the real ones are paid
+# products: never in this repo), served as the Storage stub's files.
+_STOCK_PNG = __import__("base64").b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+def _route_stock(page):
+    page.route("**/fake-storage.example/**", lambda r: r.fulfill(status=200, body=_STOCK_PNG, headers={"content-type": "image/png", "access-control-allow-origin": "*"}))
+    page.route("**/cdnjs.cloudflare.com/ajax/libs/html2canvas/**", lambda r: r.fulfill(path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor", "html2canvas.min.js"), content_type="application/javascript"))
+_STOCK_FILES = ["id-templates/" + f for f in ["sheriff.jpg", "sheriff-az.jpg", "oakgrove.jpg", "fire.jpg", "nps.jpg", "fbi.jpg", "tow.jpg", "ewrail.jpg", "podcast.jpg",
+                                              "faith.jpg", "titan.jpg", "badge-oregon.png", "badge-arizona.png", "badge-nebraska.png", "badge-alabama.png", "badge-montana.png"]] + \
+               ["id-templates/faces/face-01.jpg", "id-templates/faces/face-02.jpg"]
+
+def test_field_id_forgery(p):
+    """v3.9.0, the Field ID Fabricator as a forger's terminal and the
+    Agent's wallet: (1) Mirror credential, (2) Spoof a local office on the
+    evidence-pack stock (Storage id-templates/, never in the repo), and
+    (3) Fabricate an entity (a name, a drawn logo, six layouts), each in a
+    few taps, each card carrying the Agent's photo and filed to a private
+    wallet (wallets/{code}, own session only). The notebook's Field ID
+    pocket and page flip through it with ‹ › and show the card carried.
+    Every card style keeps its words clear of each other, the photo and
+    the edge, with long words too."""
+    stats = {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 11, "CHA": 13}
+    state = {"v": 1, "stats": stats, "csStats": dict(stats), "derived": {"hp": 11, "wp": 11, "san": 52, "bp": 44},
+             "bio": {"name": "Mara Voss", "player_name": "fn tester", "profession": "federal_agent", "employer": "Federal Bureau of Investigation"}, "skills": {"alertness": 60}}
+    fd = _field_notes_docs()
+    fd[f"characters/{FN_CODE}"] = character_doc(FN_CODE, state, "fn tester")
+    fd[f"briefs/{FN_CODE}"] = dict(fd.get(f"briefs/{FN_CODE}", {}), face_plate_url="https://fake-storage.example/agent-plates/face.png")
+    extra = "localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));window.__dgStorageFiles=%s;" % (FN_CODE, json.dumps(_STOCK_FILES))
+    errs_all = []
+    for width, height in ((1300, 860), (390, 844)):
+        where = "desktop" if width > 700 else "phone"
+        page, errs = _field_notes_page(p, width=width, height=height, docs=fd, extra_init=extra)
+        _route_stock(page)
+        page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+        page.evaluate("() => window.dgFieldNotes.open('fab')")
+        f = page.wait_for_selector("#fn-veil iframe[data-dg-embed=fieldid]", timeout=8000).content_frame()
+        f.wait_for_function("() => { const s = window.dgFabricator && window.dgFabricator.state(); return s && s.stock && s.brief && s.photo; }", timeout=10000)
+        start = f.inner_text("#fx-body")
+        record("forgery", f"{where}: the terminal knows the operator, the cover employer and the stock", "MARA VOSS" in start and "FBI" in start and "stock on file: 16" in start, start[:200])
+        def wal():
+            return page.evaluate("() => window.__dgFirestoreDocs['wallets/%s'] || null" % FN_CODE)
+        def photo_on(sel="#fx-prev"):
+            return f.evaluate("(s) => [...document.querySelectorAll(s + ' .dgf-photo, ' + s + ' img')].some(e => /agent-plates/.test(e.getAttribute('style') || '') || /agent-plates/.test(e.getAttribute('src') || ''))", sel)
+        # (1) Mirror: one tap to file.
+        f.click("[data-x=p-mirror]")
+        record("forgery", f"{where}: 1 / Mirror credential opens on the cover employer, with the Agent's photo",
+               f.eval_on_selector("#ids-agency", "e => e.value") == "FBI" and photo_on(), "")
+        f.click("[data-x=file]")
+        f.wait_for_selector("text=FORGERY COMPLETE")
+        w = wait_for_condition(lambda: (wal() or {}).get("cards") and wal(), timeout_ms=5000)
+        record("forgery", f"{where}: ...Print to wallet files it to wallets/{{code}}", bool(w) and w["cards"][0]["proto"] == "mirror" and w["agent_code"] == FN_CODE, str(w)[:160])
+        # (2) Office: pick the sheriff, roll a county, file.
+        f.click("[data-x=home]"); f.click("[data-x=p-office]")
+        f.click("[data-x=tpl][data-v=sheriff]"); f.click("[data-x=next]")
+        f.click("[data-x=roll][data-k=place]")
+        place = f.eval_on_selector("[data-in='f.place']", "e => e.value")
+        prev = f.inner_text("#fx-prev")
+        record("forgery", f"{where}: 2 / Office: the sheriff's card fills with the rolled county and the Agent's name and photo",
+               place.endswith("County") and place in prev and "Mara Voss" in prev and photo_on(), prev[:120])
+        f.click("[data-x=file]")
+        f.wait_for_selector("text=FORGERY COMPLETE")
+        # (3) Entity: name it, take a logo, a layout, file.
+        f.click("[data-x=home]"); f.click("[data-x=p-entity]")
+        f.click("[data-x=next]")
+        record("forgery", f"{where}: 3 / Entity: a front needs a name first", "Name the front" in f.inner_text("#fx-err"), "")
+        f.fill("[data-in=org]", "Meadowbrook Gasworks")
+        f.click("[data-x=next]")
+        record("forgery", f"{where}: ...six drawn insignia for it", f.locator(".logo svg").count() == 6, "")
+        f.click("[data-x=logo][data-i='2']"); f.click("[data-x=next]")
+        record("forgery", f"{where}: ...six layouts, each with the photo", f.locator(".pick .dgf-card").count() == 6 and f.locator(".pick .dgf-photo").count() == 6, "")
+        f.click("[data-x=layout][data-v=letterhead]"); f.click("[data-x=next]")
+        f.click("[data-x=roll-phone]")
+        f.click("[data-x=file]")
+        f.wait_for_selector("text=FORGERY COMPLETE")
+        w = wait_for_condition(lambda: len((wal() or {}).get("cards") or []) == 3 and wal(), timeout_ms=5000) or wal()
+        ent = (w or {}).get("cards", [{}])[-1]
+        record("forgery", f"{where}: ...filed with its words, logo and layout", ent.get("proto") == "entity" and ent.get("org") == "Meadowbrook Gasworks" and ent.get("layout") == "letterhead" and ent.get("logo", {}).get("shape") and ent.get("title"), str(ent)[:200])
+        f.click("[data-x=carry]")
+        record("forgery", f"{where}: Carry this one sets the carried card", wait_for_condition(lambda: (wal() or {}).get("carried") == ent.get("id"), timeout_ms=4000), str((wal() or {}).get("carried")))
+        # The notebook: the pocket shows it, ‹ › flips and saves.
+        page.click("#fn-veil [data-fab=card]")
+        page.wait_for_selector("#fn-veil [data-fn-walbar]:not([hidden])", timeout=8000)
+        cnt = page.text_content("#fn-veil [data-fn-walcount]")
+        pocket = page.evaluate("() => document.querySelector('[data-fn-slot=card-biz]').getAttribute('data-template')")
+        record("forgery", f"{where}: the Field ID page and pocket show the carried card, 4 of 4", cnt == "4 of 4" and (pocket or "").startswith("forged_entity"), cnt + " " + str(pocket))
+        page.click("#fn-veil [data-fn-walbar] [data-fn=wal-next]")
+        record("forgery", f"{where}: ‹ › flips the wallet and the one on top is carried", page.text_content("#fn-veil [data-fn-walcount]") == "1 of 4"
+               and wait_for_condition(lambda: (wal() or {}).get("carried") == "auto", timeout_ms=4000), str((wal() or {}).get("carried")))
+        record("forgery", f"{where}: other cards' corners show behind", page.evaluate("() => getComputedStyle(document.querySelector('#fn-veil .fn-idc-back.b1')).display") == "block", "")
+        if where == "phone":
+            sw = f.evaluate("() => document.documentElement.scrollWidth") if False else page.evaluate("() => document.documentElement.scrollWidth")
+            record("forgery", "phone: nothing reaches past the screen", sw <= 392, str(sw))
+        errs_all.extend(errs)
+        page.close()
+
+    # Every card style, short and long words: nothing overlaps or leaves the card.
+    page = p.new_page(viewport={"width": 1400, "height": 1000})
+    _route_stock(page)
+    page.goto(f"{BASE}/field-id.html?embed=1", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgForge", timeout=8000)
+    bad = page.evaluate("""() => {
+      const F = window.dgForge, out = document.createElement('div'), bad = [];
+      document.body.appendChild(out);
+      [['David Blake', 'Meadowbrook Gasworks', 0], ['Maximilian Featherstonehaugh', 'Halvorsen & Pike Insurance Company', 1]].forEach(([name, org, long]) => {
+        const cards = F.REFS.map(r => { const f = {}; r.fields.forEach(x => { f[x.k] = x.k === 'name' ? name : x.opts ? x.opts[long ? x.opts.length - 1 : 0] : x.roll ? (long ? 'Craters of the Moon N.M.'.slice(0, x.roll === 'phone' ? 14 : 30) : F.roll[x.roll](name)) : 'x'; }); return { proto: 'office', tpl: r.key, fields: f }; })
+          .concat(F.LAYOUTS.map((L, i) => ({ proto: 'entity', layout: L.key, org, kind: 'finance', tag: long ? 'Protecting what matters since 1924' : 'Est. 1924', logo: F.logoChoices(org, 'finance', 0, 0)[i], name, title: long ? 'Senior Loss Investigator' : 'Adjuster', phone: '(608) 555-0172', mail: long ? 'mfeatherstonehaugh@halvorsenpike.com' : 'db@hp.com' })));
+        cards.forEach(c => {
+          out.innerHTML = F.render(c, { photo: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', refUrl: f => 'https://fake-storage.example/id-templates/' + f });
+          const card = out.firstChild, cr = card.getBoundingClientRect(), key = (c.tpl || c.layout) + (long ? '/long' : '');
+          const els = [...card.querySelectorAll('.dgf-t,.dgf-photo')].map(e => ({ r: e.getBoundingClientRect(), k: (e.textContent || 'photo').slice(0, 16) }));
+          els.forEach(a => { if (a.r.right > cr.right + 1 || a.r.left < cr.left - 1 || a.r.bottom > cr.bottom + 1) bad.push(key + ' OUT ' + a.k); });
+          for (let i = 0; i < els.length; i++) for (let j = i + 1; j < els.length; j++) {
+            const a = els[i].r, b = els[j].r, ox = Math.min(a.right, b.right) - Math.max(a.left, b.left), oy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+            if (ox > 1 && oy > 1) bad.push(key + ' OVERLAP ' + els[i].k + ' | ' + els[j].k);
+          }
+          if (!card.querySelector('.dgf-photo')) bad.push(key + ' NO PHOTO');
+        });
+      });
+      return bad; }""")
+    record("forgery", "every card style (16 designs, 6 layouts; short and long words) keeps its words clear and carries a photo", not bad, str(bad[:6]))
+    page.close()
+
+    # Only the Agent's own session reads or writes a wallet; the stock is
+    # signed-in reads, Handler writes.
+    rules = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "firestore.rules")).read()
+    srules = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "storage.rules")).read()
+    m = re.search(r"match /wallets/\{code\} \{(.*?)\}", rules, re.S)
+    sm = re.search(r"match /id-templates/\{allPaths=\*\*\} \{(.*?)\}", srules, re.S)
+    record("forgery", "rules: a wallet is the Agent's own (no Handler, no one else)", bool(m) and "agentCode() == code" in m.group(1) and "isHandler" not in m.group(1), m.group(1).strip() if m else "missing")
+    record("forgery", "rules: the evidence-pack stock is signed-in read, Handler write", bool(sm) and "request.auth != null" in sm.group(1) and "isHandler()" in sm.group(1), sm.group(1).strip() if sm else "missing")
+    record("forgery", "no evidence-pack pictures are in the repo", not any(os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", n)) for n in ["sheriff.jpg", "faith.jpg", "titan.jpg", "badge-oregon.png"]), "")
+    record("forgery", "no JS exceptions", not errs_all, str(errs_all[:3]))
+    return errs_all
+
+def test_employer_dropdown(p):
+    """v3.9.0: Employer is a drop-down of the agencies with a Field ID card
+    on file, plus Other…, with an optional Office / unit (New Recruit's
+    Personal data and the Agent File's Edit mode). An employer saved
+    before (free text) opens on its agency, or as Other with its words."""
+    page = p.new_page()
+    page.goto(f"{BASE}/field-id.html?embed=1", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgAgencies", timeout=8000)
+    r = page.evaluate("""() => { const A = window.dgAgencies; return [
+        A.split('ATF Special Response Team'), A.split('Federal Bureau of Investigation — Kansas City Field Office'), A.split('National Security Agency'),
+        A.split('CBP Border Patrol (BORTAC)'), A.compose('USMS', '', 'Eastern District'), A.compose('', 'NASA', ''), A.match('U.S. Postal Inspection Service').code ]; }""")
+    record("employer", "an old free-text employer opens on its agency, with the rest as the unit",
+           r[0] == {"code": "ATF", "other": "", "unit": "Special Response Team"} and r[1] == {"code": "FBI", "other": "", "unit": "Kansas City Field Office"} and r[3]["code"] == "CBP", str(r[:4]))
+    record("employer", "...one not on file opens as Other with its words", r[2] == {"code": "", "other": "National Security Agency", "unit": ""}, str(r[2]))
+    record("employer", "agency + unit saves as one employer line the Field ID still matches", r[4] == "U.S. Marshals Service — Eastern District" and r[5] == "NASA" and r[6] == "USPI", str(r[4:]))
+    page.close()
+    # In New Recruit: the drop-down, the note, the hidden field.
+    page = p.new_page(viewport={"width": 1280, "height": 900})
+    errs = collect_errors(page)
+    page.add_init_script("try{sessionStorage.setItem('dg_boot_seen','1');localStorage.setItem('dg_cover_identity','g');localStorage.setItem('dg_tours_off','1');}catch(e){}")
+    install_firestore_backend(page, {})
+    page.goto(f"{BASE}/agent-hub.html#new", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgRecruit && window.dgRecruitData && window.dgAgencies", timeout=15000)
+    page.evaluate("""() => { const w = window.dgRecruit.freshDraft(); w.step = 5; w.reached = 5; w.prof = Object.assign(w.prof, {src:'cx', key:'atf_tactical'}); w.bio.employer = 'ATF Special Response Team'; window.dgRecruit._set(w); }""")
+    page.wait_for_selector("[data-emp=sel]")
+    record("employer", "New Recruit: Employer is the agencies drop-down, on the profession's agency", page.eval_on_selector("[data-emp=sel]", "e => e.value") == "ATF"
+           and page.eval_on_selector("[data-emp=unit]", "e => e.value") == "Special Response Team" and "credential" in page.inner_text(".dg-emp-note"), "")
+    page.select_option("[data-emp=sel]", "__other")
+    page.fill("[data-emp=other]", "National Security Agency")
+    page.wait_for_timeout(200)
+    record("employer", "...Other… asks which agency, says there's no card on file (quietly), and saves the words",
+           page.evaluate("() => window.dgRecruit._w().bio.employer") == "National Security Agency" and "No ID card on file" in page.inner_text(".dg-emp-note")
+           and page.is_hidden("[data-emp=unit]"), page.evaluate("() => window.dgRecruit._w().bio.employer"))
+    page.select_option("[data-emp=sel]", "USMS")
+    page.fill("[data-emp=unit]", "Eastern District")
+    page.wait_for_timeout(200)
+    record("employer", "...an agency and its unit save as one line", page.evaluate("() => window.dgRecruit._w().bio.employer") == "U.S. Marshals Service — Eastern District", page.evaluate("() => window.dgRecruit._w().bio.employer"))
+    record("employer", "no JS exceptions", not errs, str(errs[:3]))
+    page.close()
+    return errs
+
+def test_acell_id_creator(p):
+    """v3.9.0, A-Cell's ID Creator: the evidence-pack stock (Storage
+    id-templates/) listed and uploadable, an NPC's badge built from it
+    with a stock face, and filed to a Cell as unreleased Evidence: a PNG
+    in evidence/ and an Evidence item pointing at it."""
+    page = p.new_page(viewport={"width": 1280, "height": 900})
+    page.set_default_timeout(15000)
+    errs = collect_errors(page)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); window.__dgStorageFiles = %s; } catch (e) {}" % json.dumps(_STOCK_FILES))
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    _route_stock(page)
+    skip_acell_gate(page)
+    install_firestore_backend(page, {"cells/cell_h": {"name": "Night Shift", "handler": "Sam", "member_codes": ["OWEN-CS12"]},
+                                     "operations/op_h": {"operation_id": "op_h", "cell_id": "cell_h", "name": "Cold Harbor", "created_at": 1}})
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_timeout(500)
+    page.evaluate("() => document.querySelector('.tw[data-tab=ids]').click()")
+    page.wait_for_selector(".idc-stock:has-text('16 of 16 designs')", timeout=10000)
+    record("id-creator", "the stock lists what's uploaded (16 designs, 2 faces)", "2 faces" in page.inner_text(".idc-stock"), page.inner_text(".idc-stock")[:120])
+    page.set_input_files("[data-a=upload]", files=[{"name": "face-03.jpg", "mimeType": "image/jpeg", "buffer": _STOCK_PNG}])
+    page.wait_for_selector(".idc-stock:has-text('3 faces')", timeout=8000)
+    record("id-creator", "an uploaded face lands in id-templates/faces/", "id-templates/faces/face-03.jpg" in page.evaluate("() => window.__dgStorageUploads.map(u => u.path)"), "")
+    page.select_option("[data-k=tpl]", "badge-oregon")
+    page.fill("[data-f=name]", "Elena Vargas")
+    page.click("[data-a=face][data-v='faces/face-01.jpg']")
+    page.select_option("[data-k=op]", "op_h")
+    record("id-creator", "the badge shows the NPC's name and the chosen face", "Elena Vargas" in page.inner_text("[data-idc-prev]") and page.locator("[data-idc-prev] .dgf-photo").count() == 1, "")
+    page.click("[data-a=file]")
+    page.wait_for_selector(".idc-msg:has-text('Filed')", timeout=15000)
+    ev = page.evaluate("() => Object.entries(window.__dgFirestoreDocs).filter(([k]) => /^evidence\\//.test(k)).map(([k, v]) => v)")
+    up = page.evaluate("() => window.__dgStorageUploads.map(u => u.path)")
+    record("id-creator", "File as Evidence: a PNG in evidence/ and an unreleased item in the Cell and Operation",
+           len(ev) == 1 and ev[0]["cell_id"] == "cell_h" and ev[0]["operation_id"] == "op_h" and ev[0]["released"] is False and ev[0]["photo"].endswith(".png")
+           and any(u.startswith("evidence/") and u.endswith(".png") for u in up), str(ev)[:200])
+    record("id-creator", "no JS exceptions", not errs, str(errs[:3]))
+    page.close()
+    return errs
 
 def test_field_notes_page_taps_act_once(p):
     """The notebook's page body is one element reused by every page, and
@@ -12346,6 +12540,9 @@ def main():
 
 
         safe(test_player_pages_use_in_page_dialogs, browser, area="journey")
+        safe(test_field_id_forgery, browser, area="forgery")
+        safe(test_employer_dropdown, browser, area="employer")
+        safe(test_acell_id_creator, browser, area="id-creator")
         safe(test_friendly_clearance, browser, area="friendly")
         safe(test_friendly_case_files, browser, area="friendly")
         safe(test_field_notes_notebook, browser, area="notebook")

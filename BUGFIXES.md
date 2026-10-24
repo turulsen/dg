@@ -6828,3 +6828,23 @@ New Hub-shell checks in `test_player_tours` (they fail on v3.8.0).
   It doesn't: an image prompt is generated from the Appearance
   description and the photo from that prompt. Reworded. `sw.js`
   `CACHE_NAME` v242.
+
+### Field ID: a made card could not be kept; Print left no way back (v3.9.0)
+
+Reported with the Field ID wallet request: "when creating a field id no
+chance to add to the wallet. When pressing print, cannot return."
+- **No wallet.** The Fabricator drew a card and printed it, nothing
+  else: there was nowhere to keep a card made, and the notebook's Field
+  ID only ever showed the employer's automatic card. Now cards are filed
+  to the Agent's own wallet (`wallets/{code}`, Firestore, own session
+  only) with Print to wallet; the notebook's pocket and page flip
+  through them ‹ n of N › and show the one carried.
+- **Print trapped the player.** `idsPrint()` opened a blank new tab
+  (`window.open`) holding only the card and called `print()` on it; on a
+  phone (Home-screen app especially) that tab had no way back to the
+  notebook. Now print opens over the page itself (`dgForge.print`, on
+  the top page when the Fabricator is framed) with Print and Done, and
+  a print stylesheet that prints only the card; Esc, Done or a tap
+  outside closes it.
+- Checked in `test_cover_ids_tab` (no popup; Done closes) and
+  `test_field_id_forgery`. `sw.js` `CACHE_NAME` v243.

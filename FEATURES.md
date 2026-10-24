@@ -703,10 +703,53 @@ APIs. The generated image is then saved through the same `save_plate`
 action a manual upload uses — one Drive-upload/Sheet-write path either
 way.
 
-**Field ID Fabricator:** an in-page (not separate-page) fake-
-credential card generator — pick a cover agency and era, it renders a
-period-styled card live, watermarked "PROP — NOT A GOVERNMENT
-DOCUMENT."
+**Field ID Fabricator (v3.9.0: a forger's terminal, `field-id.html`):**
+the notebook's Field ID page → Make Field ID opens it, inside the
+notebook. A start screen (boot lines, then SELECT FORGERY PROTOCOL)
+offers three paths, each a few taps, each card carrying the Agent's
+Face Plate as its ID photo:
+- **[1] Mirror credential** (1 step): the cover employer's agency card
+  from `assets/field-id-cards.js`, name/title/ID/expiry filled in, era
+  chips, ⚄ for an ID number.
+- **[2] Spoof a local office** (2 steps): pick a design from the
+  Handler's evidence-pack stock (two sheriffs, City of Oak Grove, Fire /
+  EMS, Park Service, FBI business card, towing, railway, podcast,
+  ministry, Titan Forensics, five forensics-lab badges), then its words:
+  chips for ranks and titles, ⚄ for county, park, phone, badge no.
+- **[3] Fabricate an entity** (4 steps): name it (⚄ invents one) and
+  pick a kind (energy, trade, finance, church, clinic, media, transport,
+  security), pick one of six drawn insignia (⟳ six more, ◐ other
+  colours, or upload a PNG/SVG), one of six drawn layouts (Rule & logo,
+  Colour band, Letterhead, Seal & title, Stripes, Diamond plate; ⚄
+  Shuffle), then job title (chips from the kind), phone, e-mail, tagline.
+- **Print to wallet** files it; the done screen offers ★ Carry this
+  one, ⎙ Print, ✎ Rework, ✕ Burn, ＋ Forge another. The terminal's
+  footer is the wallet: ‹ n of N ›, eyes only.
+- **The wallet** is `wallets/{code}` (`{cards, carried}`), readable and
+  writable only by that Agent's own session — not the Handler, by the
+  user's choice. Card 1 is always the employer's own credential
+  (`auto`). The notebook's Field ID pocket and page show the carried
+  card, with ‹ n of N › on both (a swipe on the page too) and the other
+  cards' corners behind; the card on top is the one carried.
+- **Print** opens over the page (`dgForge.print`, on the top page when
+  framed) at real size with Print and Done; the PROP line is on the
+  printed copy only. It used to open a blank new tab with no way back
+  on a phone.
+- **The evidence-pack stock** is paid material (Arc Dream evidence
+  packs), so the pictures are never in this public repo: the Handler
+  uploads them once in A-Cell → ID Creator to Storage `id-templates/`
+  (`faces/` for the NPC photos), signed-in read, Handler write
+  (`storage.rules`). `assets/forge-cards.js` holds only where the words
+  and the photo go on each design (`REFS`), the logo maker, the six
+  layouts and the renderer. Without the stock, [2] says so and stays
+  off.
+- Employer (`assets/agencies.js`, v3.9.0) is a drop-down of the 14
+  agencies with a card on file + Other…, with an Office / unit box, in
+  New Recruit's Personal data and the Agent File's Edit mode; an old
+  free-text employer opens on its agency (the rest as the unit) or as
+  Other with its words.
+- Tests: `test_field_id_forgery`, `test_employer_dropdown`,
+  `test_cover_ids_tab`, `test_field_id_fabricator_in_notebook`.
 
 **Agent Roster:** a persistent, multi-agent list in this browser's
 `localStorage` (`dg_agent_roster`) — every Agent submitted, loaded by
@@ -796,6 +839,18 @@ new tab; a claude.ai page can't be framed).
 that's actually enforced per-action.
 
 ---
+
+**ID Creator (A-Cell tab, v3.9.0, `assets/acell-ids.js`):** the
+Handler makes an ID for an NPC: an Office card or badge from the
+evidence-pack stock, an Agency ID, or an Invented company (logo maker
+and layouts); a stock face (clipped from the packs, `faces/`) or an
+uploaded photo; Random look; Print. **File as Evidence** draws it to a
+PNG (html2canvas 1.4.1 from cdnjs), uploads it to `evidence/{id}.png`
+and files an unreleased Evidence item to the chosen Cell and Operation,
+so release, tags, sharing and the Gallery work as for any Evidence. The
+same tab lists and uploads the stock (file names as in the pack:
+`sheriff.jpg`, `badge-oregon.png`, `face-01.jpg`…). Test:
+`test_acell_id_creator`.
 
 ## 7. Table Radio (shared music widget)
 

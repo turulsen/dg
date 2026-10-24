@@ -391,7 +391,7 @@
   var sheetLibPromise = null;
   var SHEET_LIB = [
     ['assets/agent-sheet.js', 'dgAgentSheet'], ['assets/disorders.js', 'dgDisorders'], ['assets/agent-rules.js', 'dgRules'],
-    ['assets/agent-live.js', 'dgAgentLive'], ['assets/agent-paper.js', 'dgAgentPaper'],
+    ['assets/agent-live.js', 'dgAgentLive'], ['assets/agencies.js', 'dgAgencies'], ['assets/agent-paper.js', 'dgAgentPaper'],
     ['assets/recruit-data.js', 'dgRecruitData']
   ];
   function ensureSheetLib() {
@@ -439,15 +439,12 @@
   // the Agent File's Field IDs tab.
   var idCardsPromise = null;
   function ensureIdCards() {
-    if (window.dgFieldIdCards) return Promise.resolve(window.dgFieldIdCards);
+    if (window.dgFieldIdCards && window.dgAgencies) return Promise.resolve(window.dgFieldIdCards);
     if (idCardsPromise) return idCardsPromise;
-    idCardsPromise = new Promise(function (resolve, reject) {
-      var s = document.createElement('script');
-      s.src = url('assets/field-id-cards.js');
-      s.onload = function () { resolve(window.dgFieldIdCards); };
-      s.onerror = function () { idCardsPromise = null; reject(new Error('field-id-cards.js')); };
-      document.head.appendChild(s);
-    });
+    idCardsPromise = Promise.all([
+      loadScriptOnce(url('assets/agencies.js'), function () { return !!window.dgAgencies; }),
+      loadScriptOnce(url('assets/field-id-cards.js'), function () { return !!window.dgFieldIdCards; })
+    ]).then(function () { return window.dgFieldIdCards; }, function (e) { idCardsPromise = null; throw e; });
     return idCardsPromise;
   }
 
@@ -490,7 +487,11 @@
             '<div class="fn-flip" data-fn-slot="flip" hidden><button type="button" data-fn="flip-prev" aria-label="Previous Agent">‹</button>' +
               '<span data-fn-slot="flip-count"></span><button type="button" data-fn="flip-next" aria-label="Next Agent">›</button></div></div>' +
           '<div class="fn-slot" data-view="fieldid" role="button" tabindex="0" aria-label="Field ID">' +
-            '<div class="fn-card fn-card-biz" data-fn-slot="card-biz"></div><div class="fn-slot-lip"></div></div>' +
+            '<div class="fn-card fn-card-biz fn-card-biz-behind" data-fn-slot="biz-behind" hidden></div>' +
+            '<div class="fn-card fn-card-biz" data-fn-slot="card-biz"></div><div class="fn-slot-lip"></div>' +
+            // The wallet (v3.9.0): ‹ n of N › through the Agent's cards.
+            '<div class="fn-flip" data-fn-slot="wal-flip" hidden><button type="button" data-fn="wal-prev" aria-label="Previous card">‹</button>' +
+              '<span data-fn-slot="wal-count"></span><button type="button" data-fn="wal-next" aria-label="Next card">›</button></div></div>' +
           '<div class="fn-slot" data-view="req" role="button" tabindex="0" aria-label="Requisition">' +
             '<div class="fn-card fn-card-req"><div class="fn-card-k">Program Office</div><div class="fn-card-n">Requisition</div>' +
             '<div class="fn-card-s">Materiel &amp; Disbursement Desk · Form 27-R</div></div><div class="fn-slot-lip"></div></div>' +
@@ -594,6 +595,7 @@
     if (act === 'chip' || act === 'radio') { togglePager(); return; }
     if (act === 'split') { toggleSplit(); return; }
     if (act === 'flip-prev' || act === 'flip-next') { e.stopPropagation(); flipAgent(act === 'flip-next' ? 1 : -1); return; }
+    if (act === 'wal-prev' || act === 'wal-next') { e.stopPropagation(); flipWallet(act === 'wal-next' ? 1 : -1); return; }
     var v = t.getAttribute('data-view');
     if (!v) return;
     if (t.classList.contains('fn-tab') && v === 'notes' && state.view === 'notes' && !narrow() && !splitOn()) {
@@ -704,33 +706,11 @@
   }
 
   /* ── Field ID: the Agent's agency, from their workplace ── */
-  // The Agent File's own Field ID agencies (field-id.html #ids-agency).
-  var AGENCIES = [
-    { code: 'FBI', name: 'Federal Bureau of Investigation', title: 'Special Agent' },
-    { code: 'DEA', name: 'Drug Enforcement Administration', title: 'Special Agent' },
-    { code: 'ATF', name: 'Bureau of Alcohol, Tobacco, Firearms and Explosives', title: 'Special Agent' },
-    { code: 'USMS', name: 'U.S. Marshals Service', title: 'Deputy U.S. Marshal', alias: ['marshal'] },
-    { code: 'DOJIG', name: 'DOJ Office of Inspector General', title: 'Special Agent', alias: ['inspector general'] },
-    { code: 'SECRET', name: 'U.S. Secret Service', title: 'Special Agent', alias: ['secret service', 'usss'] },
-    { code: 'ICE', name: 'Immigration and Customs Enforcement', title: 'Special Agent', alias: ['immigration'] },
-    { code: 'CBP', name: 'Customs and Border Protection', title: 'Officer', alias: ['border patrol', 'customs'] },
-    { code: 'NCIS', name: 'Naval Criminal Investigative Service', title: 'Special Agent' },
-    { code: 'FINCEN', name: 'Financial Crimes Enforcement Network', title: 'Analyst' },
-    { code: 'USPI', name: 'U.S. Postal Inspection Service', title: 'Postal Inspector', alias: ['postal'] },
-    { code: 'NYPD', name: 'New York City Police Department', title: 'Detective', alias: ['new york police'] },
-    { code: 'SCSO', name: "Shelby County Sheriff's Office", title: 'Deputy', alias: ['shelby county'] },
-    { code: 'MEPIC', name: 'M-EPIC Environmental Policy Impact Commission', title: 'Investigator', alias: ['m-epic', 'environmental policy'] }
-  ];
+  // The agencies with a card on file: assets/agencies.js (loaded with
+  // the card templates, below).
   var DG_AGENCY = { code: 'DG', name: 'Delta Green — Directorate', title: 'Agent', dg: true };
   function agencyFor(text) {
-    var t = String(text || '').toLowerCase();
-    if (!t) return DG_AGENCY;
-    for (var i = 0; i < AGENCIES.length; i++) {
-      var a = AGENCIES[i];
-      if (new RegExp('\\b' + a.code.toLowerCase() + '\\b').test(t) || t.indexOf(a.name.toLowerCase()) !== -1) return a;
-      if ((a.alias || []).some(function (x) { return t.indexOf(x) !== -1; })) return a;
-    }
-    return DG_AGENCY;
+    return (window.dgAgencies && window.dgAgencies.match(text)) || DG_AGENCY;
   }
   function agentAgency() {
     var bio = (data.state && data.state.bio) || {};
@@ -771,9 +751,82 @@
     }, 250);
     return '';
   }
-  // Fills `el` with the Agent's card, scaled to el's width.
+  /* ── The wallet (v3.9.0): the Agent's forged cards (wallets/{code},
+     the Fabricator's), private to that Agent. The card on top is the one
+     carried: the pocket shows it, ‹ › on the pocket or the page flips. ── */
+  var wallet = { code: '', cards: [], carried: 'auto', loading: false, stock: null };
+  function walletList() { return ['auto'].concat((wallet.cards || []).map(function (c) { return c.id; })); }
+  function walletAt() { var l = walletList(), i = l.indexOf(wallet.carried || 'auto'); return i < 0 ? 0 : i; }
+  function walletCard(id) { return id === 'auto' ? null : (wallet.cards || []).filter(function (c) { return c.id === id; })[0] || null; }
+  function loadWallet(force) {
+    var a = currentAgent(), st = window.dgStore;
+    if (!a || a.friendly || !st || !st.getWallet) { wallet = { code: '', cards: [], carried: 'auto', loading: false, stock: null }; return; }
+    if (!force && (wallet.code === a.code || wallet.loading === a.code)) return;
+    wallet.loading = a.code;
+    st.getWallet(a.code).then(function (w) {
+      if (!currentAgent() || currentAgent().code !== a.code) return;
+      wallet = { code: a.code, cards: (w && w.cards) || [], carried: (w && w.carried) || 'auto', loading: false, stock: wallet.code === a.code ? wallet.stock : null };
+      var needStock = wallet.cards.some(function (c) { return c.proto === 'office'; });
+      var after = function () { renderWallet(); };
+      if (needStock && st.idTemplates) st.idTemplates(a.code).then(function (m) { wallet.stock = m || {}; after(); }, after); else after();
+    }, function () { wallet.loading = false; wallet.code = a.code; renderWallet(); });
+  }
+  var walletSaveT = null;
+  function flipWallet(dir) {
+    var l = walletList();
+    if (l.length < 2) return;
+    wallet.carried = l[(walletAt() + dir + l.length) % l.length];
+    renderWallet(dir);
+    clearTimeout(walletSaveT);
+    var code = wallet.code, snap = { cards: wallet.cards, carried: wallet.carried };
+    walletSaveT = setTimeout(function () { if (window.dgStore && window.dgStore.saveWallet) window.dgStore.saveWallet(code, snap).catch(function () {}); }, 600);
+  }
+  function renderWalletCount() {
+    var n = walletList().length, mine = wallet.code && currentAgent() && wallet.code === currentAgent().code;
+    slot('wal-flip').hidden = !mine || n < 2; slot('biz-behind').hidden = !mine || n < 2;
+    if (mine && n > 1) slot('wal-count').textContent = (walletAt() + 1) + ' of ' + n;
+  }
+  function renderWallet(dir) {
+    var n = walletList().length, many = n > 1;
+    slot('wal-flip').hidden = !many; slot('biz-behind').hidden = !many;
+    if (many) slot('wal-count').textContent = (walletAt() + 1) + ' of ' + n;
+    drawIdCard(slot('card-biz'), 1);
+    var c = root.querySelector('[data-fn-idc]');
+    if (c) { drawIdCard(c, 1.25, 340); drawPageWallet(); }
+    if (dir) [slot('card-biz'), c].forEach(function (el) { if (!el) return; el.classList.remove('fn-flip-in-l', 'fn-flip-in-r'); void el.offsetWidth; el.classList.add(dir > 0 ? 'fn-flip-in-r' : 'fn-flip-in-l'); });
+  }
+  // The Field ID page: the arrows under the card and the corners of the
+  // other cards behind it.
+  function drawPageWallet() {
+    var stage = root.querySelector('.fn-idc-stage'), bar = root.querySelector('[data-fn-walbar]');
+    if (!stage || !bar) return;
+    var n = walletList().length;
+    bar.hidden = n < 2;
+    bar.querySelector('[data-fn-walcount]').textContent = (walletAt() + 1) + ' of ' + n;
+    stage.classList.toggle('fn-idc-stack', n > 1);
+    stage.setAttribute('data-behind', String(Math.min(2, n - 1)));
+  }
+  window.addEventListener('dg-wallet-changed', function () { loadWallet(true); });
+  var forgePromise = null;
+  function ensureForge() {
+    if (window.dgForge) return Promise.resolve(window.dgForge);
+    if (!forgePromise) forgePromise = loadScriptOnce(url('assets/forge-cards.js'), function () { return !!window.dgForge; }).then(function () { return window.dgForge; }, function (e) { forgePromise = null; throw e; });
+    return forgePromise;
+  }
+  // Fills `el` with the Agent's card on top, scaled to el's width.
   function drawIdCard(el, maxScale, maxH) {
     if (!el) return;
+    var forged = walletCard(wallet.code && currentAgent() && wallet.code === currentAgent().code ? wallet.carried : 'auto');
+    if (forged) {
+      Promise.all([ensureIdCards(), ensureForge()]).then(function () {
+        var a = currentAgent(), F = window.dgForge;
+        var photo = idCardPhoto(a, function () { drawIdCard(el, maxScale, maxH); });
+        el.innerHTML = '<div class="fn-idc-in">' + F.render(forged, { photo: photo, refUrl: function (f) { return (wallet.stock || {})[f] || ''; } }) + '</div>';
+        el.setAttribute('data-template', 'forged_' + forged.proto + '_' + (forged.tpl || forged.layout || forged.agency || ''));
+        fitIdCard(el, maxScale, maxH, F.size(forged));
+      }, function () {});
+      return;
+    }
     ensureIdCards().then(function (C) {
       var a = currentAgent();
       var brief = data.brief || {};
@@ -789,16 +842,19 @@
       var photo = idCardPhoto(a, function () { drawIdCard(el, maxScale, maxH); });
       el.innerHTML = '<div class="fn-idc-in">' + C.render(tmpl, fields, photo) + '</div>';
       el.setAttribute('data-template', (ag.dg ? 'DG' : ag.code) + '_' + tmpl.era);
-      var inner = el.firstChild, card = inner.firstChild;
-      var w = card.offsetWidth || 323, h = card.offsetHeight || 204;
-      var k = Math.min(maxScale || 1, (el.clientWidth || w) / w, maxH ? maxH / h : Infinity);
-      inner.style.width = w + 'px';
-      // Centered across the width (a credential book is narrower than a
-      // CR80 card); the pocket clips it to its own height, the page sizes
-      // itself to the card.
-      inner.style.transform = 'translateX(' + Math.max(0, Math.round(((el.clientWidth || w) - w * k) / 2)) + 'px) scale(' + k + ')';
-      if (maxH) el.style.height = Math.round(h * k) + 'px';
+      fitIdCard(el, maxScale, maxH);
     }, function () { /* offline: leave the pocket as it was */ });
+  }
+  function fitIdCard(el, maxScale, maxH, sz) {
+    var inner = el.firstChild, card = inner.firstChild;
+    var w = (sz && sz.w) || card.offsetWidth || 323, h = (sz && sz.h) || card.offsetHeight || 204;
+    var k = Math.min(maxScale || 1, (el.clientWidth || w) / w, maxH ? maxH / h : Infinity);
+    inner.style.width = w + 'px';
+    // Centered across the width (a credential book is narrower than a
+    // CR80 card); the pocket clips it to its own height, the page sizes
+    // itself to the card.
+    inner.style.transform = 'translateX(' + Math.max(0, Math.round(((el.clientWidth || w) - w * k) / 2)) + 'px) scale(' + k + ')';
+    if (maxH) el.style.height = Math.round(h * k) + 'px';
   }
   function idCardLabel() {
     var ag = agentAgency();
@@ -830,7 +886,9 @@
     var f = faceUrl(a);
     if (f) { if (ph.getAttribute('data-src') !== f) { ph.setAttribute('data-src', f); ph.textContent = ''; setImage(ph, f); } }
     else { ph.removeAttribute('data-src'); ph.innerHTML = '<span>No photo</span>'; }
+    loadWallet();
     drawIdCard(slot('card-biz'), 1);
+    renderWalletCount();
     var list = myAgents(), i = a ? list.map(function (x) { return x.code; }).indexOf(a.code) : -1, many = list.length > 1 && i >= 0;
     slot('flip').hidden = !many; slot('phone-flip').hidden = !many; slot('card-behind').hidden = !many;
     if (many) slot('flip-count').textContent = slot('phone-flip-count').textContent = (i + 1) + ' of ' + list.length;
@@ -859,6 +917,19 @@
     try { window.dispatchEvent(new CustomEvent('dg-cloud-code-set', { detail: { code: next.code } })); } catch (e) { /* old engine */ }
     renderChrome();
     refresh();
+  }
+  // A swipe on the Field ID page's card flips the wallet.
+  function wireWalletSwipe(el) {
+    if (!el || el._walSwipe) return;
+    el._walSwipe = true;
+    var x0 = null, y0 = 0;
+    el.addEventListener('touchstart', function (e) { var t = e.touches[0]; x0 = t.clientX; y0 = t.clientY; }, { passive: true });
+    el.addEventListener('touchend', function (e) {
+      if (x0 == null) return;
+      var t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0;
+      x0 = null;
+      if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.5 && walletList().length > 1) flipWallet(dx < 0 ? 1 : -1);
+    });
   }
   // A swipe on the Agent File card flips too.
   function wireFlipSwipe() {
@@ -1020,14 +1091,19 @@
     renderHead('fieldid', agentAgency().code);
     loadingThen(body, function () {
       var ag = agentAgency();
-      body.innerHTML = '<div class="fn-idc-stage"><div class="fn-idc" data-fn-idc></div></div>' +
+      body.innerHTML = '<div class="fn-idc-stage"><i class="fn-idc-back b1"></i><i class="fn-idc-back b2"></i><div class="fn-idc" data-fn-idc></div></div>' +
+        '<div class="fn-idc-walbar" data-fn-walbar hidden><button type="button" data-fn="wal-prev" aria-label="Previous card">‹</button><span data-fn-walcount></span><button type="button" data-fn="wal-next" aria-label="Next card">›</button></div>' +
         '<p class="fn-p fn-idc-note" data-fn-idc-note></p>' +
         '<div class="fn-actions"><button type="button" class="fn-btn fn-red" data-go="fab">Make Field ID</button></div>';
       body.querySelector('[data-go="fab"]').addEventListener('click', function () { state.fieldIdMode = 'fab'; render(); });
       drawIdCard(body.querySelector('[data-fn-idc]'), 1.25, 340);
+      drawPageWallet();
+      wireWalletSwipe(body.querySelector('.fn-idc-stage'));
       ensureIdCards().then(function () {
         var n = body.querySelector('[data-fn-idc-note]');
-        if (n) n.textContent = (ag.dg ? 'No agency on this Agent\'s file yet, so this is the Program\'s own card' : 'The ' + ag.name + ' credential for this Agent\'s era') + ' (' + idCardLabel() + '), from the Field IDs templates.';
+        var f = walletCard(wallet.carried);
+        if (n) n.textContent = f ? 'A forged card from your wallet. ‹ › flips to the next; the one on top is the one you carry.'
+          : (ag.dg ? 'No agency on this Agent\'s file yet, so this is the Program\'s own card' : 'The ' + ag.name + ' credential for this Agent\'s era') + ' (' + idCardLabel() + '), from the Field IDs templates.';
       }, function () {});
     });
   }

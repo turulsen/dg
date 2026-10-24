@@ -158,6 +158,14 @@ service cloud.firestore {
       allow delete: if isHandler() || (isSignedIn() && agentCode() == code);
     }
 
+    // wallets/{agentCode} -- the Agent's forged cover cards (v3.9.0,
+    // the Field ID Fabricator). Private to that Agent: no Handler
+    // access either, by design (the user's call: "only players see
+    // their cards").
+    match /wallets/{code} {
+      allow read, write: if isSignedIn() && agentCode() == code;
+    }
+
     // cells/{cellId} -- Cell metadata (name, handler, member_codes,
     // channel). Membership is not itself secret (A-Cell shows it to
     // every member), so read stays open; only a Handler creates/edits/

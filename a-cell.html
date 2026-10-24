@@ -1063,6 +1063,7 @@
       <div class="tw inactive" data-tab="sheet"><span>Sheet</span></div>
       <div class="tw inactive" data-tab="music"><span>Music</span></div>
       <div class="tw inactive" data-tab="notes"><span><span class="tw-long">Session </span>Notes</span></div>
+      <div class="tw inactive" data-tab="ids"><span>ID<span class="tw-long"> Creator</span></span></div>
     </div>
     <div class="folder-body">
 
@@ -1161,6 +1162,8 @@
         <div class="evidence-status" id="sn-status"></div>
         <div class="sn-list" id="sn-list"><div class="sn-empty">Open this tab to load your notes.</div></div>
       </div>
+
+      <div class="tab-panel" id="panel-ids"><div id="idc-root"><div class="play-loading">Open this tab to load the ID Creator.</div></div></div>
 
       <div class="tab-panel" id="panel-music">
         <div class="acell-radio-shell-outer">
@@ -1895,6 +1898,19 @@
       return fn(params || {}).catch(function (err) {
         console.error('a-cell: ' + action + ' failed', err);
         return null;
+      });
+    },
+    // The Handler's signed-in Firebase (v3.9.0: the ID Creator's uploads),
+    // with Storage loaded.
+    handler: function () {
+      return ensureHandlerSignedIn().then(function () {
+        if (window.firebase.storage) return window.firebase;
+        return new Promise(function (res, rej) {
+          var s = document.createElement('script');
+          s.src = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/firebase-storage-compat.js';
+          s.onload = function () { res(window.firebase); }; s.onerror = function () { rej(new Error('Could not load Firebase Storage.')); };
+          document.head.appendChild(s);
+        });
       });
     },
     // Resolves with a fetch-Response-like { ok, json() }; rejects on failure.
@@ -7119,6 +7135,10 @@
 })();
 </script>
 
+<script src="assets/agencies.js"></script>
+<script src="assets/field-id-cards.js"></script>
+<script src="assets/forge-cards.js"></script>
+<script src="assets/acell-ids.js"></script>
 <script src="assets/table-radio.js"></script>
 <script src="assets/dice-roller.js?v=10"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>

@@ -33,6 +33,16 @@ service firebase.storage {
     // already ANYONE_WITH_LINK-shared, and the URL itself is only ever
     // handed to a client that already passed that server-side filter
     // in the first place.
+    // id-templates/{file} and id-templates/faces/{file} -- the Handler's
+    // evidence-pack stock for the Field ID Fabricator and A-Cell's ID
+    // Creator (v3.9.0). These are purchased products: never in the
+    // public repo, and only readable by a signed-in session of this
+    // campaign (an Agent or the Handler). Only the Handler uploads.
+    match /id-templates/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if isHandler();
+    }
+
     match /evidence/{allPaths=**} {
       allow read: if true;
       allow write: if isHandler();
