@@ -623,6 +623,8 @@
       var f = [['profession', 'Profession', ctx.professionLabel ? ctx.professionLabel(b.profession) : b.profession], ['employer', 'Employer', b.employer], ['nationality', 'Nationality', b.nationality],
         ['sex', 'Sex', b.sex], ['age', 'Age', b.age], ['education', 'Education', b.education]];
       return '<div class="ap-pdata">' + f.map(function (r) {
+        // Employer: the agencies with a Field ID card on file, or Other.
+        if (r[0] === 'employer' && window.dgAgencies) return window.dgAgencies.pickerHtml(r[2] || '', 'ap-in', 'data-e="bio.employer"');
         return '<label>' + r[1] + '<input class="ap-in" data-e="bio.' + r[0] + '" value="' + esc(r[2] == null ? '' : r[2]) + '"></label>';
       }).join('') + '</div>' +
         '<div class="as-sec-hd">Physical description <span>part of Appearance</span></div><textarea class="ap-ta" data-e="bio.physicalDesc">' + esc((x.bio && x.bio.physicalDesc) || '') + '</textarea>';
@@ -957,6 +959,7 @@
       else if (path === 'gearnotes') { E.lpNotes = E.lpNotes || {}; E.lpNotes.gear = v; }
     }
 
+    if (window.dgAgencies) window.dgAgencies.wire(el);
     if (!el._apWired) {
       el._apWired = true;
       // The host may reuse this element for other pages (the notebook

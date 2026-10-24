@@ -441,7 +441,8 @@ def s03_play_san_kia_oath(r):
     r.check(wait_for(lambda: (character(c) or {}).get("derived", {}).get("hp") == 0, 15), "HP − to 0 is saved")
     r.check(wait_for(lambda: d.js(f"() => !!document.querySelector('#ah-charstamp-{c} .stamp[data-fate=kia]')"), 10), "…and KIA is stamped")
     d.page.click(S + "[data-a=edit]")
-    d.page.fill(S + "[data-e='bio.employer']", "DEA")
+    # v3.9.0: Employer is the agencies drop-down (assets/agencies.js).
+    d.page.select_option(S + "[data-emp=sel]", "DEA")
     d.page.click(S + "[data-a=save]")
     d.page.wait_for_selector("#fn-orders", timeout=10000)
     d.page.keyboard.press("Enter")
@@ -452,7 +453,7 @@ def s03_play_san_kia_oath(r):
     d.page.wait_for_selector("#fn-orders", timeout=10000)
     d.page.keyboard.press("Enter")
     d.page.keyboard.press("y")
-    r.check(wait_for(lambda: (character(c) or {}).get("bio", {}).get("employer") == "DEA", 15), "Oath Y: the edit is saved")
+    r.check(wait_for(lambda: (character(c) or {}).get("bio", {}).get("employer") == "Drug Enforcement Administration", 15), "Oath Y: the edit is saved")
 
 
 def s04_two_devices_same_agent(r):
@@ -630,7 +631,8 @@ def s11_ios_standalone(r):
     open_agent(d, c)
     S = f"#ah-sheet-{c} "
     d.page.click(S + "[data-a=edit]")
-    d.page.fill(S + "[data-e='bio.employer']", "NSA")
+    d.page.select_option(S + "[data-emp=sel]", "__other")
+    d.page.fill(S + "[data-emp=other]", "NSA")
     d.page.click(S + "[data-a=cancel]")
     d.page.wait_for_selector("#fn-confirm [data-cf=ok]", timeout=8000)
     d.page.click("#fn-confirm [data-cf=ok]")

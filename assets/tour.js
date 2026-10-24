@@ -129,7 +129,7 @@
       when: function () { return page() === 'agent-hub.html' && !nbOpen() && any('.ah-appear-btn[data-ah-appear]'); },
       pg: 'agent-hub.html', open: function () { return toPage('agent-hub.html', 'photos'); },
       steps: [
-        { sel: ['.paper-photo', '.as-take-photo'], title: 'The photo', text: 'Your Agent\'s photo. Your Handler makes it from how you describe the Agent, so the description is what counts.' },
+        { sel: ['.paper-photo', '.as-take-photo'], title: 'The photo', text: 'Your Agent\'s photo. An image prompt is written from how you describe the Agent, and the photo is made from it, so the description is what counts.' },
         { sel: '[data-ah-focus="appearance"]', optional: true, title: 'Describe them', text: 'This shows how many details are still missing. Tap Describe them to fill them in.' },
         { sel: '.ah-appear-btn[data-ah-appear]', title: 'Appearance', text: 'The full profile: build, face, hair, clothes, marks. Pick from the lists or roll them, then Update Brief to save. The photo prompt is made from this.' },
         { sel: '.ah-appear-btn[data-ah-era]', title: 'Era photos', text: 'The same Agent in other decades, a photo per era, if your operation jumps in time.' }

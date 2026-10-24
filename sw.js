@@ -32,7 +32,7 @@
    through this whole migration -- not random flakiness, one bad path
    silently breaking the update mechanism itself.
    ══════════════════════════════════════════════ */
-const CACHE_NAME = 'dg-hub-shell-v241';
+const CACHE_NAME = 'dg-hub-shell-v243';
 
 const SHELL_FILES = [
   './',
@@ -66,6 +66,9 @@ const SHELL_FILES = [
   'assets/evidence-viewer.js',
   'assets/evidence-md.js',
   'assets/tour.js',
+  'assets/agencies.js',
+  'assets/forge-cards.js',
+  'assets/acell-ids.js',
   'assets/disorders.js',
   'assets/agent-sheet.js',
   'assets/agent-file.js',

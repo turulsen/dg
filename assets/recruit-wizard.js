@@ -89,7 +89,8 @@
       loadScript('assets/data/professions.js', has('professions')),
       loadScript('assets/data/bonds.js', has('bonds')),
       loadScript('assets/data/bio.js', has('bioData')),
-      loadScript('assets/data/equipment-data.js', has('DG_EQUIPMENT_CATALOG'))
+      loadScript('assets/data/equipment-data.js', has('DG_EQUIPMENT_CATALOG')),
+      loadScript('assets/agencies.js', has('dgAgencies'))
     ]).then(function () { return loadScript('assets/recruit-data.js', has('dgRecruitData')); });
   }
 
@@ -656,7 +657,7 @@
     return wrap(head(5, 'Personal data', 'Who the Agent is on paper. Random Bio fills everything you leave empty.') +
       '<div class="nr-chips"><button type="button" class="nr-btn red" data-a="randbio">⚄ Random Bio</button></div>' +
       '<div class="nr-form">' + f('Name', 'name', 'Full name', ' autocomplete="off"') + f('Cover name (codename)', 'codename', 'e.g. Sparrow') +
-      '<label>Profession<input class="in" value="' + esc(W.imported ? (W.importedLabel || '') : pi.title || '') + '" disabled></label>' + f('Employer', 'employer', pi.employer || '') + f('Past employer (optional)', 'pastEmployer', 'e.g. Kansas City PD, 2009–2015') +
+      '<label>Profession<input class="in" value="' + esc(W.imported ? (W.importedLabel || '') : pi.title || '') + '" disabled></label>' + (window.dgAgencies ? window.dgAgencies.pickerHtml(b.employer || '', 'in', 'data-f="bio.employer"') : f('Employer', 'employer', pi.employer || '')) + f('Past employer (optional)', 'pastEmployer', 'e.g. Kansas City PD, 2009–2015') +
       f('Nationality', 'nationality', 'e.g. American') +
       '<label>Sex<select class="in" data-f="bio.sex"><option value=""></option>' + ['Female', 'Male', 'Non-binary'].map(function (s) { return '<option' + (b.sex === s ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select></label>' +
       f('Age', 'age', 'e.g. 38', ' inputmode="numeric"') + f('Education', 'education', 'e.g. MA, Criminology') + '</div>' + ciBox + codeBox +
@@ -1280,6 +1281,7 @@
       root._wired = true;
       root.addEventListener('click', onClick);
       root.addEventListener('input', onInput);
+      if (window.dgAgencies) window.dgAgencies.wire(root);
       root.addEventListener('change', onChange);
       root.addEventListener('keydown', onKey);
       wireDrop();

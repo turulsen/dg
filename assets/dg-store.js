@@ -479,12 +479,47 @@
   // A Bond's description, drafted from its name, relationship and the Agent.
   function generateBondDescription(code, payload) { return callFunction(code, 'generateBondDescription', payload, 60000); }
 
+  // ── Field ID wallet (v3.9.0): wallets/{code}, the Agent's own forged
+  // cards. Only that Agent's own session reads or writes it.
+  function getWallet(code) {
+    code = norm(code);
+    return signInAgent(code).then(() => getDoc('wallets', code));
+  }
+  function saveWallet(code, wallet) {
+    code = norm(code);
+    const w = wallet || {};
+    return signInAgent(code).then(() => withTimeout(db().collection('wallets').doc(code).set({
+      agent_code: code, cards: (w.cards || []).slice(0, 40), carried: w.carried || 'auto', updated_at: Date.now()
+    }), 15000, 'saving the wallet'));
+  }
+  // The Handler's evidence-pack stock (Storage id-templates/): file name
+  // -> download URL. Signed-in reads only; cached for the tab.
+  let idTplPromise = null;
+  function idTemplates(code) {
+    if (idTplPromise) return idTplPromise;
+    idTplPromise = (code ? signInAgent(code) : ready()).then(() => window.firebase.storage ? null : loadScript(BASE + 'firebase-storage-compat.js'))
+      .then(() => {
+        const st = window.firebase.storage();
+        const list = ref => withTimeout(ref.listAll(), 15000, 'listing ID templates');
+        return list(st.ref('id-templates')).then(res => {
+          const items = res.items.slice();
+          const faces = (res.prefixes || []).filter(p => p.name === 'faces')[0];
+          return (faces ? list(faces).then(r => items.concat(r.items)) : Promise.resolve(items));
+        });
+      })
+      .then(items => Promise.all(items.map(it => it.getDownloadURL().then(u => [it.fullPath.replace(/^id-templates\//, ''), u], () => null))))
+      .then(pairs => { const out = {}; pairs.forEach(p => { if (p) out[p[0]] = p[1]; }); return out; });
+    idTplPromise.catch(() => { idTplPromise = null; });
+    return idTplPromise;
+  }
+  function forgetIdTemplates() { idTplPromise = null; }
   window.dgStore = {
     ready, loadScript, signInAgent,
     getCharacter, saveCharacter, saveCharacterMerged, saveIncursion,
     getBrief, updateBrief, submitBrief, findByPlayerName,
     listHandoutNotes, saveHandoutNote, saveHandoutTags,
     getIdentities, saveIdentity, listSeen, markSeen, deleteOwnAgent, mainPhoto, photoRef,
-    generatePrompt, generatePlateImage, generateBondDescription
+    generatePrompt, generatePlateImage, generateBondDescription,
+    getWallet, saveWallet, idTemplates, forgetIdTemplates
   };
 })();

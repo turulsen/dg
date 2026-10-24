@@ -156,11 +156,11 @@ Gallery to Evidence: a List | Gallery switch in A-Cell, on Agent Hub,
 in the notebook's Evidences (and Split) and in Notes, showing a
 pinboard of taped polaroids, and Evidence tags: the Handler's labels
 (A-Cell) and each Agent's own private tags, with a Tags filter. **v3.8.0** (2026-10-21, PR #82) adds player tours of the
-new features (`assets/tour.js`); shell cache `dg-hub-shell-v237`. **v3.8.1** (unreleased) makes the
+new features (`assets/tour.js`); shell cache `dg-hub-shell-v237`. **v3.8.1** (2026-10-21, PR #83) makes the
 tours work in the Hub shell (`hub.html`), where they did nothing, and
 points the Sanity tour's Adaptation post-it at the boxes, with clearer
 wording on two steps, and the page tours close the notebook before they
-start (see `BUGFIXES.md`); shell cache `dg-hub-shell-v241`. **v3.1.0**
+start (see `BUGFIXES.md`); shell cache `dg-hub-shell-v241`. **v3.8.2** (unreleased) corrects the Taking a photo tour's text (the photo is made from a generated image prompt, not by the Handler); shell cache `dg-hub-shell-v242`. **v3.9.0** (unreleased) rebuilds the Field ID Fabricator as a forger's terminal with three protocols (mirror the cover employer's credential, spoof a local office on the Handler's evidence-pack stock, fabricate an entity with a drawn logo), a private wallet per Agent flipped ‹ › in the notebook, print in place (the old print tab had no way back), the Employer drop-down, and A-Cell's ID Creator filing NPC IDs as Evidence; new `wallets/` Firestore rule and `id-templates/` Storage rule (deploy both); shell cache `dg-hub-shell-v243`. **v3.1.0**
 (2026-10-10) is PR #72, v2 milestone M3: the Agent File's paper wears as
 SAN falls. Stains, a fold, a coffee ring, blood and, from SAN 9, a torn
 edge are drawn over the whole page on Agent Hub and in the notebook

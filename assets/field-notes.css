@@ -249,6 +249,19 @@ html.dg-fn-host #split-view-btn{ display:none !important; }
 .fn-idc{ width:100%; max-width:404px; overflow:visible; }
 .fn-idc .fn-idc-in > div{ box-shadow:0 10px 26px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.35) !important; }
 .fn-idc-note{ text-align:center; color:var(--fn-ink-3); font-size:11px; }
+/* The wallet (v3.9.0): corners of the other cards behind the one on top,
+   and ‹ n of N › under it; the pocket's own card behind its card. */
+.fn-idc-stage{ position:relative; }
+.fn-idc-stage .fn-idc{ position:relative; z-index:2; }
+.fn-idc-back{ display:none; position:absolute; z-index:1; left:50%; top:14px; width:min(380px,86%); aspect-ratio:1.58; margin-left:calc(min(380px,86%) / -2); border-radius:6px;
+  background:linear-gradient(135deg,#fbfaf4,#e9e4d4); box-shadow:0 3px 10px rgba(0,0,0,.35); border:1px solid rgba(0,0,0,.12); }
+.fn-idc-stack[data-behind="1"] .fn-idc-back.b1, .fn-idc-stack[data-behind="2"] .fn-idc-back{ display:block; }
+.fn-idc-back.b1{ transform:rotate(-3.2deg) translate(-14px,-6px); }
+.fn-idc-back.b2{ transform:rotate(2.8deg) translate(14px,-3px); background:linear-gradient(135deg,#1d2a44,#33415e); }
+.fn-idc-walbar{ display:flex; align-items:center; justify-content:center; gap:14px; margin:6px 0 2px; font-size:12px; letter-spacing:.12em; color:var(--fn-ink-2,#4a3f28); text-transform:uppercase; }
+.fn-idc-walbar[hidden]{ display:none; }
+.fn-idc-walbar button{ background:none; border:0; font-size:24px; line-height:1; color:var(--fn-ink,#1c1608); cursor:pointer; padding:0 8px; }
+.fn-card.fn-card-biz-behind{ background:linear-gradient(135deg,#fbfaf4,#e3ddca) !important; border-radius:4px; transform:rotate(-2.4deg) translate(-10px,-6px); box-shadow:0 2px 5px rgba(0,0,0,.35) !important; margin:0 12px; }
 
 /* ── Right page: a small, well-used booklet ── */
 .fn-booklet{ flex:1; display:flex; position:relative; min-width:0; min-height:0; margin:0 8px 8px 0; perspective:1800px; }
