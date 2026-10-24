@@ -341,7 +341,23 @@ NOTES_FIRESTORE_STUB = """
     var exists = Object.prototype.hasOwnProperty.call(window.__dgFirestoreDocs, docPath);
     return { exists: exists, id: docPath.split('/').pop(), data: function () { return window.__dgFirestoreDocs[docPath]; } };
   }
+  // Real Firestore refuses an Array or object made in another frame (a
+  // notebook page's iframe handing data to the parent's SDK): "Unsupported
+  // field value: a custom Array object". The stub refuses it too.
+  function foreign(v, path) {
+    if (Array.isArray(v)) {
+      if (!(v instanceof Array)) return path || '(root)';
+      for (var i = 0; i < v.length; i++) { var f = foreign(v[i], path + '[' + i + ']'); if (f) return f; }
+    } else if (v && typeof v === 'object' && !(v instanceof Date)) {
+      var proto = Object.getPrototypeOf(v);
+      if (proto && proto !== Object.prototype && Object.getPrototypeOf(proto) === null && proto.constructor && proto.constructor.name === 'Object') return path || '(root)';
+      for (var k in v) { if (Object.prototype.hasOwnProperty.call(v, k)) { var g = foreign(v[k], path ? path + '.' + k : k); if (g) return g; } }
+    }
+    return '';
+  }
   function writeDoc(op, docPath, data, opts) {
+    var bad = op === 'delete' ? '' : foreign(data, '');
+    if (bad) throw new Error('Function DocumentReference.set() called with invalid data. Unsupported field value: a custom Array object (found in field ' + bad + ' in document ' + docPath + ')');
     window.__dgFirestoreWrites.push({ op: op, path: docPath, data: data, opts: opts });
     if (op === 'delete') { delete window.__dgFirestoreDocs[docPath]; }
     else if (op === 'update' || (opts && opts.merge)) {
@@ -396,7 +412,7 @@ NOTES_FIRESTORE_STUB = """
           return Promise.resolve(docSnapshot(docPath));
         },
         set: function (data, opts) {
-          writeDoc('set', docPath, data, opts);
+          try { writeDoc('set', docPath, data, opts); } catch (e) { return Promise.reject(e); }
           return Promise.resolve();
         },
         update: function (data) {
