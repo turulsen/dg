@@ -15,7 +15,10 @@
   if (window.dgAgencies) return;
   // Grouped for the drop-downs (v3.9.4); matched in this order, so the
   // broad ones (DHS) come after the agencies under them.
-  var GROUPS = ['Federal law enforcement', 'Intelligence', 'Homeland security & response', 'Science & civil', 'State & local', 'Fictional'];
+  var GROUPS = ['Federal law enforcement', 'Intelligence', 'Homeland security & response', 'Science & civil', 'State & local', 'Fictional', 'Military'];
+  // The order the drop-downs show the groups in (v3.10.3: Military, added
+  // last, shows after Intelligence).
+  var ORDER = [0, 1, 6, 2, 3, 4, 5];
   var LIST = [
     { code: 'FBI', abbr: 'FBI', name: 'Federal Bureau of Investigation', title: 'Special Agent', group: 0 },
     { code: 'DEA', abbr: 'DEA', name: 'Drug Enforcement Administration', title: 'Special Agent', group: 0 },
@@ -51,6 +54,13 @@
     { code: 'NIH', abbr: 'NIH', name: 'National Institutes of Health', title: 'Research Scientist', alias: ['institutes of health'], group: 3 },
     // Not 'STATE': that would catch "State Police" and "State of ...".
     { code: 'DOS', abbr: 'DOS', name: 'Department of State', title: 'Foreign Service Officer', alias: ['state department', 'diplomatic security', 'foreign service'], group: 3 },
+    // Military (v3.10.3). AFOSI before the Air Force, whose 'air force'
+    // its name contains; no 'USA' abbreviation ("Acme USA").
+    { code: 'AFOSI', abbr: 'AFOSI', name: 'Air Force Office of Special Investigations', title: 'Special Agent', alias: ['office of special investigations'], group: 6 },
+    { code: 'ARMY', abbr: 'U.S. Army', name: 'United States Army', title: 'Sergeant', alias: ['u.s. army', 'us army'], group: 6 },
+    { code: 'NAVY', abbr: 'U.S. Navy', name: 'United States Navy', title: 'Petty Officer', alias: ['u.s. navy', 'us navy'], group: 6 },
+    { code: 'USAF', abbr: 'USAF', name: 'United States Air Force', title: 'Staff Sergeant', alias: ['air force'], group: 6 },
+    { code: 'USMC', abbr: 'USMC', name: 'United States Marine Corps', title: 'Sergeant', alias: ['marine corps'], group: 6 },
     { code: 'NYPD', abbr: 'NYPD', name: 'New York City Police Department', title: 'Detective', alias: ['new york police'], group: 4 },
     { code: 'SCSO', abbr: 'SCSO', name: "Shelby County Sheriff's Office", title: 'Deputy', alias: ['shelby county'], group: 4 },
     { code: 'MEPIC', abbr: 'M-EPIC', name: 'M-EPIC Environmental Policy Impact Commission', title: 'Investigator', alias: ['m-epic', 'environmental policy'], group: 5 }
@@ -110,7 +120,8 @@
   }
   function optionsHtml(selected, q, extra) {
     var out = '';
-    GROUPS.forEach(function (g, gi) {
+    ORDER.forEach(function (gi) {
+      var g = GROUPS[gi];
       var rows = LIST.filter(function (a) { return a.group === gi && (hit(a, q) || a.code === selected); });
       if (!rows.length) return;
       out += '<optgroup label="' + esc(g) + '">' + rows.map(function (a) { return '<option value="' + a.code + '"' + (a.code === selected ? ' selected' : '') + '>' + esc(a.name) + (a.abbr !== a.name ? ' (' + esc(a.abbr) + ')' : '') + '</option>'; }).join('') + '</optgroup>';

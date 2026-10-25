@@ -748,8 +748,9 @@ Face Plate as its ID photo:
   layouts and the renderer. Without the stock, [2] says so and stays
   off.
 - Employer (`assets/agencies.js`, v3.9.0) is a drop-down of the
-  agencies with a card on file + Other… (v3.9.11: 34, grouped — Federal
-  law enforcement, Intelligence, Homeland security & response, Science &
+  agencies with a card on file + Other… (v3.10.3: 39, grouped — Federal
+  law enforcement, Intelligence, Military (v3.10.3: Army, Navy, Air Force,
+  Marine Corps, AFOSI), Homeland security & response, Science &
   civil, State & local, Fictional — with a search box; v3.9.4 added
   NASA, NSA, Coast Guard, DHS and IRS-CI, v3.9.5 CIA, DIA, NGA (NIMA on
   the 90s/00s cards), NRO and ONI, v3.9.6 FEMA, NCTC, NNSA, DARPA and

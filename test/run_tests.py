@@ -910,6 +910,13 @@ def test_cover_ids_tab(p):
     record("cover-ids-tab", "batch 3 agencies draw a card with their seal (NCTC and NNSA from the 2000s; FEMA under DHS from 2003; wide logos get a wide slot)",
            all(v.startswith("seal") for k, v in nb.items() if k not in ("NCTC_90s", "NNSA_90s", "wide")) and nb["NCTC_90s"] == "none" and nb["NNSA_90s"] == "none"
            and nb["FEMA_90s"] == "seal" and nb["FEMA_20s"] == "seal+DHS", str(nb))
+    nb = page.evaluate("""() => { const C = window.dgFieldIdCards, out = {};
+        ['ARMY', 'NAVY', 'USAF', 'USMC', 'AFOSI'].forEach(k => ['90s', '20s'].forEach(e => {
+            const t = C.template(k, e); const h = t && !t.is_no_card ? C.render(t, { name: 'Test' }, '') : '';
+            out[k + '_' + e] = /<img src="data:image\\/png/.test(h) ? 'seal' : 'no seal';
+        })); return out; }""")
+    record("cover-ids-tab", "batch 5 (military) cards draw their seal",
+           all(v == "seal" for v in nb.values()), str(nb))
     page.click("[data-x=home]"); page.click("[data-x=p-mirror]")
     page.fill("[data-q=agency]", "nasa")
     page.wait_for_timeout(300)
@@ -11528,6 +11535,22 @@ def test_agent_file_profession_employer_line(p):
             ok = line.startswith("Federal Agent · Federal Bureau of Investigation — Kansas City Field Office · Cover “PARADE”")
             label = f"{where}: profession · employer · Cover under the name"
         record("agent-file", label, ok, line)
+        if fallback:
+            # Edit mode's Personal data starts from the same words, and Save
+            # files them onto the sheet.
+            root = f"#ah-sheet-{FN_CODE}"
+            page.locator(root + " [data-a=edit]").first.click()
+            page.wait_for_selector(root + " .ap-editbar", timeout=5000)
+            shown = [page.eval_on_selector(root + " [data-e='bio.profession']", "e => e.value"), page.eval_on_selector(root + " [data-emp=other]", "e => e.value")]
+            page.locator(root + " [data-a=save]").first.click()
+            page.wait_for_selector("#fn-orders.fn-oath-save", timeout=5000)
+            page.keyboard.press("Enter"); page.keyboard.press("y")
+            def bio_saved():
+                b = json.loads(page.evaluate("() => window.__dgFirestoreDocs['characters/%s'].character_json" % FN_CODE)).get("bio", {})
+                return b if b.get("profession") == "Photographer" and b.get("employer") == "The Coos Bay Clarion" else None
+            got = wait_for_condition(bio_saved, timeout_ms=6000)
+            record("agent-file", "hub: Edit mode's Personal data starts from them, and Save files them on the sheet",
+                   shown == ["Photographer", "The Coos Bay Clarion"] and bool(got), str(shown))
         errs_all += errs
         page.close()
     record("agent-file", "profession line: no JS exceptions", len(errs_all) == 0, "; ".join(errs_all))
@@ -11594,6 +11617,12 @@ def test_employer_dropdown(p):
     nb = page.evaluate("""() => { const A = window.dgAgencies; return ['Office of the Director of National Intelligence', 'NCTC (ODNI)', 'CDC Epidemic Intelligence Service', 'NIH', 'State Department, Bureau of Diplomatic Security', 'Tennessee State Police', 'State of Tennessee'].map(e => A.split(e).code); }""")
     record("employer", "batch 4 (ODNI, CDC, NIH, State) find their agency; NCTC beats ODNI; 'State Police' isn't the State Department",
            nb == ["ODNI", "NCTC", "CDC", "NIH", "DOS", "", ""], str(nb))
+    nb = page.evaluate("""() => { const A = window.dgAgencies; return ['U.S. Army Special Forces', 'Army CID', 'U.S. Navy SEALs', 'Department of the Navy', 'USAF Pararescue', 'Air Force Office of Special Investigations', 'AFOSI Det 101', 'Marine Corps Force Reconnaissance', 'USMC', 'Office of Naval Intelligence', 'Naval Criminal Investigative Service', 'Acme USA'].map(e => A.split(e).code); }""")
+    record("employer", "batch 5 (military): the services and AFOSI find their card; ONI and NCIS keep theirs; no bare 'USA' match",
+           nb == ["ARMY", "ARMY", "NAVY", "NAVY", "USAF", "AFOSI", "AFOSI", "USMC", "USMC", "ONI", "NCIS", ""], str(nb))
+    order = page.evaluate("() => [...new DOMParser().parseFromString('<select>' + window.dgAgencies.optionsHtml('', '') + '</select>', 'text/html').querySelectorAll('optgroup')].map(g => g.label)")
+    record("employer", "...the drop-down shows Military right after Intelligence",
+           order[:3] == ["Federal law enforcement", "Intelligence", "Military"] and len(order) == 7, str(order))
     record("employer", "agency + unit saves as one employer line the Field ID still matches", r[4] == "U.S. Marshals Service — Eastern District" and r[5] == "NASA" and r[6] == "USPI", str(r[4:]))
     page.close()
     # In New Recruit: the drop-down, the note, the hidden field.
@@ -11619,8 +11648,8 @@ def test_employer_dropdown(p):
     record("employer", "...an agency and its unit save as one line", page.evaluate("() => window.dgRecruit._w().bio.employer") == "U.S. Marshals Service — Eastern District", page.evaluate("() => window.dgRecruit._w().bio.employer"))
     # v3.9.4: grouped and searchable; the batch-1 agencies are on file.
     groups = page.evaluate("() => [...document.querySelectorAll('[data-emp=sel] optgroup')].map(g => g.label)")
-    record("employer", "the drop-down is grouped (law enforcement, intelligence, homeland security, science, state & local)",
-           groups[:5] == ["Federal law enforcement", "Intelligence", "Homeland security & response", "Science & civil", "State & local"], str(groups))
+    record("employer", "the drop-down is grouped (law enforcement, intelligence, military, homeland security, science, state & local)",
+           groups[:6] == ["Federal law enforcement", "Intelligence", "Military", "Homeland security & response", "Science & civil", "State & local"], str(groups))
     page.fill("[data-emp=q]", "coast")
     page.wait_for_timeout(200)
     record("employer", "typing 'coast' in the search picks the Coast Guard", page.eval_on_selector("[data-emp=sel]", "e => e.value") == "USCG"
