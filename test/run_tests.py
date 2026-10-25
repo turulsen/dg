@@ -11497,6 +11497,42 @@ def test_field_id_forgery(p):
     record("forgery", "no JS exceptions", not errs_all, str(errs_all[:3]))
     return errs_all
 
+def test_agent_file_profession_employer_line(p):
+    """v3.10.1: under the Agent's name the Agent File shows profession ·
+    employer · Cover, on Agent Hub and in Field Notes alike; an Agent whose
+    sheet has no profession or employer takes them from the brief."""
+    errs_all = []
+    for where, fallback in (("hub", False), ("notebook", False), ("hub", True)):
+        fd = _field_notes_docs()
+        st = json.loads(fd[f"characters/{FN_CODE}"]["character_json"])
+        if fallback:
+            st["bio"].pop("profession", None); st["bio"].pop("employer", None)
+            fd[f"briefs/{FN_CODE}"] = dict(fd[f"briefs/{FN_CODE}"], profession="Photographer", employer="The Coos Bay Clarion")
+        else:
+            st["bio"]["employer"] = "Federal Bureau of Investigation — Kansas City Field Office"
+        fd[f"characters/{FN_CODE}"] = character_doc(FN_CODE, st, "fn tester")
+        page, errs = _field_notes_page(p, docs=fd)
+        page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+        if where == "hub":
+            sel = f"#ah-sheet-{FN_CODE} .ap-head .as-sub"
+        else:
+            page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+            page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+            sel = "#fn-root .ap-head .as-sub"
+        page.wait_for_selector(sel, state="attached", timeout=10000)
+        line = wait_for_condition(lambda: (lambda t: t if "Cover" in t and ("Kansas" in t or "Clarion" in t) else None)(page.text_content(sel) or ""), timeout_ms=6000) or page.text_content(sel)
+        if fallback:
+            ok = line == "Photographer · The Coos Bay Clarion · Cover “PARADE”"
+            label = "hub: with none on the sheet, profession and employer come from the brief"
+        else:
+            ok = line.startswith("Federal Agent · Federal Bureau of Investigation — Kansas City Field Office · Cover “PARADE”")
+            label = f"{where}: profession · employer · Cover under the name"
+        record("agent-file", label, ok, line)
+        errs_all += errs
+        page.close()
+    record("agent-file", "profession line: no JS exceptions", len(errs_all) == 0, "; ".join(errs_all))
+    return errs_all
+
 def test_fabricate_civic_kinds(p):
     """v3.10.0: Fabricate an entity also covers universities, libraries,
     city and county government, law offices and counseling. Each kind
@@ -12692,6 +12728,7 @@ def main():
         safe(test_field_id_forgery, browser, area="forgery")
         safe(test_employer_dropdown, browser, area="employer")
         safe(test_fabricate_civic_kinds, browser, area="fabricate-kinds")
+        safe(test_agent_file_profession_employer_line, browser, area="agent-file")
         safe(test_acell_id_creator, browser, area="id-creator")
         safe(test_hub_folder_switches_notebook_agent, browser, area="notebook")
         safe(test_friendly_clearance, browser, area="friendly")

@@ -371,7 +371,11 @@
           ((!edit && k !== 'bp') || (edit && k === 'bp') ? '<div class="ap-pmrow"><button type="button" class="ap-pm" data-a="' + k + '-" aria-label="' + label + ' down">−</button><button type="button" class="ap-pm" data-a="' + k + '+" aria-label="' + label + ' up">+</button></div>' : '') +
           '</div>';
       }
-      var sub = [ctx.professionLabel ? ctx.professionLabel(bio.profession) : bio.profession, ctx.codename ? 'Cover “' + ctx.codename + '”' : ''].filter(Boolean).join(' · ');
+      // Profession · employer · cover, from the sheet, else the brief (an
+      // older or imported Agent may only have them there).
+      var br = ctx.brief || {};
+      var prof = (ctx.professionLabel ? ctx.professionLabel(bio.profession) : bio.profession) || br.profession || '';
+      var sub = [prof, bio.employer || br.employer || '', ctx.codename ? 'Cover “' + ctx.codename + '”' : ''].filter(Boolean).join(' · ');
       return '<div class="as-head ap-head">' +
         (ctx.photoHtml ? '<div class="as-photo">' + ctx.photoHtml + dropBtns() + '</div>' : '') +
         '<div class="as-id">' +
