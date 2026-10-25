@@ -12150,6 +12150,11 @@ def test_field_notes_shell(p):
         hub = next((f for f in page.frames if "agent-hub.html" in f.url), None)
         if hub: break
         page.wait_for_timeout(250)
+    # The frame's URL shows before its scripts have run: wait for them, or
+    # a busy run reads window.dgFieldNotes too early.
+    if hub is not None:
+        try: hub.wait_for_function("() => !!window.dgFieldNotes", timeout=10000)
+        except Exception: pass
     record("notebook-shell", "no second notebook inside the shell's page",
            hub is not None and hub.evaluate("() => !document.getElementById('fn-root') && !!window.dgFieldNotes && !window.dgFieldNotes.isHost"), "")
     page.click("#dg-shell-nav button[data-nav-id=a-cell]")
