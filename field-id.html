@@ -303,7 +303,7 @@ select.in{appearance:auto}
     var k = F.kind(d.kind);
     if (!d.title) d.title = k.titles[0];
     if (!d.tag) d.tag = k.tags[0];
-    if (!d.mail) d.mail = F.roll.mail(d.org, d.name);
+    if (!d.mail) d.mail = F.roll.mail(d.org, d.name, d.kind);
   }
   function viewEntityLogo() {
     setHead(2, 4);
@@ -468,7 +468,7 @@ select.in{appearance:auto}
       case 'roll': d.fields[b.getAttribute('data-k')] = F.roll[b.getAttribute('data-r')](d.fields.name || agentName()); return render();
       case 'roll-org': d.org = F.roll.company(d.kind); d.logo = null; d.mail = ''; return render();
       case 'org-typed': return;
-      case 'kind': d.kind = v; d.logo = null; d.title = ''; d.tag = ''; return render();
+      case 'kind': d.kind = v; d.logo = null; d.title = ''; d.tag = ''; d.mail = ''; return render();
       case 'logo': d.logo = F.logoChoices(d.org, d.kind, d._batch, d._pal)[+b.getAttribute('data-i')]; return render();
       case 'logo-more': d._batch++; d.logo = null; return render();
       case 'logo-pal': d._pal++; d.logo = null; return render();

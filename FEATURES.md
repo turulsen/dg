@@ -719,7 +719,10 @@ Face Plate as its ID photo:
   own (v3.9.3), ⚄ for county, park, phone, badge no.
 - **[3] Fabricate an entity** (4 steps): name it (⚄ invents one) and
   pick a kind (energy, trade, finance, church, clinic, media, transport,
-  security), pick one of six drawn insignia (⟳ six more, ◐ other
+  security; since v3.10.0 also university, library / archive, city /
+  town hall, county government, law office and counseling, each with
+  its own insignia, titles, names, and an e-mail on `.edu`, `.gov` or
+  `.org` where that's what it would use), pick one of six drawn insignia (⟳ six more, ◐ other
   colours, or upload a PNG/SVG), one of six drawn layouts (Rule & logo,
   Colour band, Letterhead, Seal & title, Stripes, Diamond plate; ⚄
   Shuffle), then job title (chips from the kind), phone, e-mail, tagline.

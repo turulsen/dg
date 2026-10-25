@@ -11497,6 +11497,39 @@ def test_field_id_forgery(p):
     record("forgery", "no JS exceptions", not errs_all, str(errs_all[:3]))
     return errs_all
 
+def test_fabricate_civic_kinds(p):
+    """v3.10.0: Fabricate an entity also covers universities, libraries,
+    city and county government, law offices and counseling. Each kind
+    draws its own insignia, rolls a fitting name, and gives an e-mail on
+    the domain it would really use (.edu, .gov, .org)."""
+    page = p.new_page()
+    errs = collect_errors(page)
+    page.goto(f"{BASE}/field-id.html?embed=1", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgForge", timeout=8000)
+    r = page.evaluate("""() => { const F = window.dgForge, keys = ['university', 'library', 'municipal', 'county', 'legal', 'counsel'], out = {};
+        keys.forEach(k => { const kd = F.kind(k), org = F.roll.company(k);
+            out[k] = { found: kd.key === k, label: kd.label, titles: kd.titles.length, org: org,
+                       motif: /<path|<rect|<circle/.test(F.logo({ shape: 'tile', pal: F.PALS[0], name: org, kind: k }).split('scale(')[1] || '')
+                              && F.logo({ shape: 'tile', pal: F.PALS[0], name: org, kind: k }) !== F.logo({ shape: 'tile', pal: F.PALS[0], name: org, kind: 'energy' }),
+                       mail: F.roll.mail(org, 'Mara Voss', k) }; });
+        out.energyMail = F.roll.mail('Meadowbrook Gasworks', 'Mara Voss', 'energy');
+        out.count = F.KINDS.length; return out; }""")
+    keys = ["university", "library", "municipal", "county", "legal", "counsel"]
+    record("fabricate-kinds", "six new kinds, each with titles, a rolled name and its own insignia",
+           r["count"] == 14 and all(r[k]["found"] and r[k]["titles"] >= 5 and r[k]["org"] and r[k]["motif"] for k in keys), str(r)[:400])
+    tlds = {k: r[k]["mail"].rsplit(".", 1)[-1] for k in keys}
+    record("fabricate-kinds", "e-mail domains fit the kind (.edu, .gov, .org; a law office and old kinds stay .com)",
+           tlds == {"university": "edu", "library": "org", "municipal": "gov", "county": "gov", "legal": "com", "counsel": "org"}
+           and r["energyMail"].endswith(".com") and r["university"]["mail"].startswith("mvoss@"), str(tlds) + " " + r["energyMail"])
+    page.click("[data-x=p-entity]")
+    page.wait_for_selector("[data-x=kind][data-v=university]", timeout=5000)
+    labels = page.evaluate("() => [...document.querySelectorAll('[data-x=kind]')].map(b => b.textContent)")
+    record("fabricate-kinds", "the Fabricate step offers them as chips",
+           all(r[k]["label"] in labels for k in keys), str(labels))
+    record("fabricate-kinds", "no JS exceptions", len(errs) == 0, "; ".join(errs))
+    page.close()
+    return errs
+
 def test_employer_dropdown(p):
     """v3.9.0: Employer is a drop-down of the agencies with a Field ID card
     on file, plus Other…, with an optional Office / unit (New Recruit's
@@ -12653,6 +12686,7 @@ def main():
         safe(test_player_pages_use_in_page_dialogs, browser, area="journey")
         safe(test_field_id_forgery, browser, area="forgery")
         safe(test_employer_dropdown, browser, area="employer")
+        safe(test_fabricate_civic_kinds, browser, area="fabricate-kinds")
         safe(test_acell_id_creator, browser, area="id-creator")
         safe(test_hub_folder_switches_notebook_agent, browser, area="notebook")
         safe(test_friendly_clearance, browser, area="friendly")
