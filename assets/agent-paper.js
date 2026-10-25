@@ -234,7 +234,7 @@
     if (getComputedStyle(area).position === 'static') area.style.position = 'relative';
     var b0 = area.getBoundingClientRect(), extend = +(area.getAttribute('data-dis-extend') || 0);
     var box = { left: b0.left, top: b0.top, width: b0.width, height: b0.height + extend };
-    var avoid = Array.prototype.map.call(area.querySelectorAll('button, a, input, select, textarea, .ap-vitals, .ap-pop, .ap-status, .paper-meta, .paper-title, .as-name, .as-sub'),
+    var avoid = Array.prototype.map.call(area.querySelectorAll('button, a, input, select, textarea, .ap-vitals, .ap-pop, .ap-status, .paper-meta, .paper-title, .ah-prof, .as-name, .as-sub'),
       function (e) { return e.getBoundingClientRect(); }).filter(function (r) { return r.width; });
     // Agent Hub's stamp row (the era, KIA, INSANE) sits in the strip below the rule.
     Array.prototype.forEach.call(document.querySelectorAll('.stamps .stamp'), function (e) {
@@ -261,7 +261,11 @@
       for (var k = 0; k < 600; k++) {
         var bh = box.height + (k < 300 ? 0 : 36);
         var x = rnd() * Math.max(1, box.width - w), y = rnd() * Math.max(1, bh - h), rot = rnd() * 28 - 14, op = .8 + rnd() * .18;
-        var rr = { left: box.left + x, top: box.top + y, right: box.left + x + w, bottom: box.top + y + h };
+        // The box the tilted stamp really covers: its corners reach past
+        // the upright one, onto a button only just clear of it.
+        var t = Math.abs(rot) * Math.PI / 180, cx = box.left + x + w / 2, cy = box.top + y + h / 2;
+        var hw = (w * Math.cos(t) + h * Math.sin(t)) / 2, hh = (w * Math.sin(t) + h * Math.cos(t)) / 2;
+        var rr = { left: cx - hw, top: cy - hh, right: cx + hw, bottom: cy + hh };
         if (avoid.some(function (a) { return hit(rr, a, 4); }) || placed.some(function (a) { return hit(rr, a, 6); })) continue;
         sp.style.left = x.toFixed(1) + 'px'; sp.style.top = y.toFixed(1) + 'px';
         sp.style.setProperty('--rot', rot.toFixed(1) + 'deg'); sp.style.setProperty('--op', op.toFixed(2));

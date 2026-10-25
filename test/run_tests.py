@@ -9833,7 +9833,7 @@ def test_agent_file_disorder_stamps(p):
         return page, errs
     probe = """(area) => { const a = document.querySelector(area), st = [...a.querySelectorAll('.ap-dis-stamp')];
         const R = e => e.getBoundingClientRect(), hit = (x, y) => !(x.right <= y.left || x.left >= y.right || x.bottom <= y.top || x.top >= y.bottom);
-        const keep = [...a.querySelectorAll('button, input, select, .ap-vitals, .paper-title, .paper-meta, .as-name')].map(R).filter(r => r.width);
+        const keep = [...a.querySelectorAll('button, input, select, .ap-vitals, .paper-title, .ah-prof, .paper-meta, .as-name')].map(R).filter(r => r.width);
         return { n: st.length, names: st.map(e => e.textContent), inks: [...new Set(st.map(e => getComputedStyle(e).color))].length,
                  clash: st.some(e => keep.some(k => hit(R(e), k))) || st.some((e, i) => st.some((f, j) => j > i && hit(R(e), R(f)))),
                  why: st.filter(e => keep.some(k => hit(R(e), k))).map(e => e.textContent + ':' + e.className + ':' + getComputedStyle(e).transform),

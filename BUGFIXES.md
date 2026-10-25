@@ -6889,3 +6889,14 @@ their own outline, found by flood-filling the background from the edge;
 wide wordmarks (NCIS, NNSA, DARPA, NIH) get a wider slot in `seal()`.
 Tests: `test_cover_ids_tab` checks every batch draws a seal in every era.
 `sw.js` `CACHE_NAME` v252–v253.
+
+### A Mental Disorder stamp could touch a button on Agent Hub's header (v3.10.4)
+
+`placeDisorders` tested each spot with the stamp's upright box, but the
+stamp is drawn tilted by up to ±14°, so its corners reach several pixels
+past that box; the 4 px margin hid it until v3.10.4's profession ·
+employer line made the header taller and a new stamp ("Obsession" in
+`test_agent_file_disorder_stamps`) landed just touching the Era photos
+and Cell buttons. Spots are now tested with the tilted stamp's real
+bounding box, and the new line is on the list stamps keep clear of.
+Found by the full suite before the merge.
