@@ -6873,3 +6873,19 @@ notebook's (`dgFieldNotes.useAgent`), and a pinned Agent no longer in the
 roster gives way to the roster's most recent. Test:
 `test_hub_folder_switches_notebook_agent` (both checks fail on v3.9.1).
 `sw.js` `CACHE_NAME` v245.
+
+### Wrong or unreadable agency seals on Field ID cards (v3.9.9–v3.9.10)
+
+An audit of every agency card ("what is missing or not sufficient?")
+found the Shelby County Sheriff's card carrying an exact copy of the U.S.
+Marshals seal (the two `IDS_SEALS` entries were the same data URI), Postal
+Inspection drawn with a generic blue star, ICE and NCIS as wide wordmarks
+squeezed into a square slot (unreadable at 24px), M-EPIC with no seal at
+all (it fell back to a plain ring), and eleven older seals at 48×48. All
+were replaced from the Handler's uploads at 96×96. Black line-art seals
+whose white parts are transparent vanished on the dark headers, so they
+now sit on a white disc, or (a star or shield) get a white fill inside
+their own outline, found by flood-filling the background from the edge;
+wide wordmarks (NCIS, NNSA, DARPA, NIH) get a wider slot in `seal()`.
+Tests: `test_cover_ids_tab` checks every batch draws a seal in every era.
+`sw.js` `CACHE_NAME` v252–v253.
