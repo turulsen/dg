@@ -83,7 +83,7 @@
       S.fields = { name: '', title: a ? a.title : 'Agent', id_num: F.roll.badge() + '-' + F.roll.badge(), expiry: '12/2027', detail: '', era: S.era };
     } else if (!S.entity) {
       var k = F.KINDS[Math.floor(Math.random() * F.KINDS.length)], org = F.roll.company(k.key);
-      S.entity = { proto: 'entity', org: org, kind: k.key, tag: k.tags[0], layout: 'rule', name: '', title: k.titles[0], phone: F.roll.phone(), mail: F.roll.mail(org, ''), logo: F.logoChoices(org, k.key, 0, 0)[0] };
+      S.entity = { proto: 'entity', org: org, kind: k.key, tag: k.tags[0], layout: 'rule', name: '', title: k.titles[0], phone: F.roll.phone(), mail: F.roll.mail(org, '', k.key), logo: F.logoChoices(org, k.key, 0, 0)[0] };
     }
   }
   function nameOf() { return S.kind === 'entity' ? (S.entity && S.entity.name) : S.fields.name; }
@@ -217,7 +217,7 @@
     root.addEventListener('change', function (e) {
       var t = e.target, k = t.getAttribute('data-k'), a = t.getAttribute('data-a');
       if (t.tagName === 'SELECT' && t.getAttribute('data-f')) { S.fields[t.getAttribute('data-f')] = t.value; return preview(); }
-      if (t.tagName === 'SELECT' && t.getAttribute('data-e')) { var ek = t.getAttribute('data-e'); S.entity[ek] = t.value; if (ek === 'kind') { var kd = F.kind(t.value); S.entity.title = kd.titles[0]; S.entity.tag = kd.tags[0]; S.entity.logo = F.logoChoices(S.entity.org, t.value, 0, 0)[0]; } return render(); }
+      if (t.tagName === 'SELECT' && t.getAttribute('data-e')) { var ek = t.getAttribute('data-e'); S.entity[ek] = t.value; if (ek === 'kind') { var kd = F.kind(t.value); S.entity.title = kd.titles[0]; S.entity.tag = kd.tags[0]; S.entity.mail = F.roll.mail(S.entity.org, S.entity.name, t.value); S.entity.logo = F.logoChoices(S.entity.org, t.value, 0, 0)[0]; } return render(); }
       if (k === 'tpl') { var n = S.fields.name; S.tpl = t.value; resetFields(); S.fields.name = n; return render(); }
       if (k === 'agency') { S.agency = t.value; var a2 = A.byCode(t.value); S.fields.title = a2 ? a2.title : 'Agent'; return render(); }
       if (k === 'era') { S.era = t.value; S.fields.era = t.value; return render(); }
@@ -236,7 +236,7 @@
       var a = b.getAttribute('data-a'), v = b.getAttribute('data-v');
       if (a === 'kind') { var n = nameOf(); S.kind = v; resetFields(); if (n) { if (S.kind === 'entity') S.entity.name = n; else S.fields.name = n; } render(); }
       else if (a === 'roll') { S.fields[b.getAttribute('data-k')] = F.roll[b.getAttribute('data-r')](S.fields.name); render(); }
-      else if (a === 'roll-org') { S.entity.org = F.roll.company(S.entity.kind); S.entity.mail = F.roll.mail(S.entity.org, S.entity.name); S.entity.logo = F.logoChoices(S.entity.org, S.entity.kind, 0, 0)[0]; render(); }
+      else if (a === 'roll-org') { S.entity.org = F.roll.company(S.entity.kind); S.entity.mail = F.roll.mail(S.entity.org, S.entity.name, S.entity.kind); S.entity.logo = F.logoChoices(S.entity.org, S.entity.kind, 0, 0)[0]; render(); }
       else if (a === 'logo') { S.entity.logo = F.logoChoices(S.entity.org, S.entity.kind, S.logoBatch || 0, 0)[+b.getAttribute('data-i')]; render(); }
       else if (a === 'logo-more') { S.logoBatch = (S.logoBatch || 0) + 1; render(); }
       else if (a === 'face') { S.photo = S.stock[v]; render(); }

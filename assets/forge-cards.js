@@ -40,7 +40,14 @@
     { key: 'clinic', label: 'Clinic / lab', motif: 'plus', titles: ['Lab Technician', 'Physician Assistant', 'Records Clerk', 'Field Epidemiologist', 'Medical Courier'], tags: ['Care close to home', 'Accredited laboratory', 'Science you can trust'] },
     { key: 'media', label: 'Media / press', motif: 'quill', titles: ['Staff Reporter', 'Producer', 'Photographer', 'Researcher', 'Stringer'], tags: ['Independent news', 'The story behind the story', 'Since 1938'] },
     { key: 'transport', label: 'Transport', motif: 'wheel', titles: ['Dispatcher', 'Driver', 'Safety Inspector', 'Logistics Coordinator', 'Yard Manager'], tags: ['On time, every time', 'Coast to coast', '24 hour dispatch'] },
-    { key: 'security', label: 'Security', motif: 'key', titles: ['Security Consultant', 'Site Supervisor', 'Investigator', 'Risk Analyst', 'Patrol Officer'], tags: ['Discreet. Professional.', 'Licensed private security', 'Peace of mind, around the clock'] }
+    { key: 'security', label: 'Security', motif: 'key', titles: ['Security Consultant', 'Site Supervisor', 'Investigator', 'Risk Analyst', 'Patrol Officer'], tags: ['Discreet. Professional.', 'Licensed private security', 'Peace of mind, around the clock'] },
+    // v3.10.0. tld: the e-mail domain the kind would really use.
+    { key: 'university', label: 'University / college', motif: 'cap', tld: 'edu', titles: ['Professor', 'Visiting Researcher', 'Graduate Assistant', 'Dean of Students', 'Registrar', 'Campus Police'], tags: ['Lux et veritas', 'Founded 1857', 'Department of Anthropology'] },
+    { key: 'library', label: 'Library / archive', motif: 'book', tld: 'org', titles: ['Reference Librarian', 'Archivist', 'Special Collections', 'Library Director', 'Records Clerk'], tags: ['Open to all', 'Special Collections & Archives', 'A Carnegie library, 1904'] },
+    { key: 'municipal', label: 'City / town hall', motif: 'dome', tld: 'gov', titles: ['Code Inspector', 'Deputy Clerk', 'Building Official', 'Public Works Supervisor', 'Health Inspector'], tags: ['Incorporated 1871', 'Office of the City Clerk', 'Department of Public Works'] },
+    { key: 'county', label: 'County government', motif: 'courthouse', tld: 'gov', titles: ['Deputy Assessor', 'County Clerk', 'Health Inspector', 'Coroner’s Investigator', 'Records Officer'], tags: ['The county seat', 'Office of the County Assessor', 'Recorder of Deeds'] },
+    { key: 'legal', label: 'Law office', motif: 'scales', titles: ['Attorney at Law', 'Associate', 'Paralegal', 'Investigator', 'Process Server'], tags: ['Attorneys & counselors at law', 'Est. 1948', 'Estates · Injury · Criminal defense'] },
+    { key: 'counsel', label: 'Counseling / social work', motif: 'heart', tld: 'org', titles: ['Licensed Counselor', 'Case Worker', 'Family Therapist', 'Grief Counselor', 'Intake Coordinator'], tags: ['You are not alone', 'Confidential counseling', 'Family & grief services'] }
   ];
   function kind(k) { return KINDS.filter(function (x) { return x.key === k; })[0] || KINDS[0]; }
 
@@ -58,6 +65,16 @@
       case 'quill': return '<path d="M74,14 C48,22 32,46 28,82 L34,82 C38,62 46,48 58,40 C52,48 48,56 46,64 C60,56 72,40 74,14Z" fill="' + col + '"/>';
       case 'wheel': return '<circle cx="50" cy="50" r="30" fill="none" stroke="' + col + '" stroke-width="8"/><circle cx="50" cy="50" r="8" fill="' + col + '"/>' + [0, 60, 120].map(function (a) { return '<rect x="47" y="22" width="6" height="56" fill="' + col + '" transform="rotate(' + a + ' 50 50)"/>'; }).join('');
       case 'key': return '<circle cx="50" cy="38" r="16" fill="' + col + '"/><circle cx="50" cy="38" r="6" fill="' + bg + '"/><rect x="45" y="50" width="10" height="34" fill="' + col + '"/><rect x="55" y="68" width="10" height="6" fill="' + col + '"/><rect x="55" y="78" width="7" height="6" fill="' + col + '"/>';
+      case 'cap': return '<path d="M50,22 L88,38 L50,54 L12,38Z" fill="' + col + '"/><path d="M28,46 V62 C28,72 72,72 72,62 V46 L50,56Z" fill="' + col + '"/><rect x="83" y="38" width="3" height="24" fill="' + col + '"/><circle cx="84.5" cy="64" r="4" fill="' + col + '"/>';
+      case 'book': return '<path d="M50,30 C40,24 24,24 12,28 V74 C24,70 40,70 50,76Z" fill="' + col + '"/><path d="M50,30 C60,24 76,24 88,28 V74 C76,70 60,70 50,76Z" fill="' + col + '"/><rect x="49" y="30" width="2" height="46" fill="' + bg + '"/>' +
+        [38, 46, 54].map(function (y) { return '<path d="M20,' + y + ' C30,' + (y - 3) + ' 38,' + (y - 3) + ' 44,' + (y + 1) + ' M56,' + (y + 1) + ' C62,' + (y - 3) + ' 70,' + (y - 3) + ' 80,' + y + '" stroke="' + bg + '" stroke-width="1.6" fill="none"/>'; }).join('');
+      case 'dome': return '<rect x="47" y="12" width="6" height="12" fill="' + col + '"/><path d="M30,42 A20,20 0 0 1 70,42Z" fill="' + col + '"/><rect x="22" y="42" width="56" height="6" fill="' + col + '"/>' +
+        [26, 38, 52, 64].map(function (x) { return '<rect x="' + x + '" y="50" width="8" height="22" fill="' + col + '"/>'; }).join('') + '<rect x="16" y="74" width="68" height="9" fill="' + col + '"/>';
+      case 'courthouse': return '<path d="M36,22 L50,8 L64,22Z" fill="' + col + '"/><rect x="38" y="22" width="24" height="26" fill="' + col + '"/><circle cx="50" cy="34" r="7" fill="' + bg + '"/><path d="M50,29 V34 H54" stroke="' + col + '" stroke-width="1.6" fill="none"/>' +
+        '<rect x="18" y="48" width="64" height="36" fill="' + col + '"/>' + [24, 34, 60, 70].map(function (x) { return '<rect x="' + x + '" y="56" width="6" height="12" fill="' + bg + '"/>'; }).join('') + '<rect x="44" y="64" width="12" height="20" fill="' + bg + '"/>';
+      case 'scales': return '<circle cx="50" cy="18" r="5" fill="' + col + '"/><rect x="48" y="20" width="4" height="58" fill="' + col + '"/><rect x="16" y="27" width="68" height="4" fill="' + col + '"/>' +
+        '<path d="M22,31 L12,54 M22,31 L32,54 M78,31 L68,54 M78,31 L88,54" stroke="' + col + '" stroke-width="2.4" fill="none"/><path d="M9,54 Q22,68 35,54Z M65,54 Q78,68 91,54Z" fill="' + col + '"/><rect x="34" y="78" width="32" height="7" fill="' + col + '"/>';
+      case 'heart': return '<path d="M50,84 C20,64 12,46 20,32 C28,20 44,21 50,34 C56,21 72,20 80,32 C88,46 80,64 50,84Z" fill="' + col + '"/><path d="M36,50 H44 L48,42 L53,60 L57,50 H64" stroke="' + bg + '" stroke-width="3" fill="none" stroke-linejoin="round"/>';
       default: return '';
     }
   }
@@ -273,7 +290,10 @@
   var AZ = ['Coconino County', 'Yavapai County', 'Mohave County', 'Navajo County', 'Cochise County', 'Gila County', 'Apache County', 'La Paz County'];
   var TOWNS = ['Coos Bay', 'Ellsworth', 'Halvorsen', 'Pine Hollow', 'Marrow Creek', 'Dunning', 'Cornville', 'Putnam', 'Boring', 'Hardin', 'Wickett', 'Silt'];
   var PARKS = ['Yellowstone National Park', 'Great Basin National Park', 'Olympic National Park', 'Big Bend National Park', 'Mesa Verde National Park', 'Isle Royale National Park', 'Craters of the Moon N.M.'];
-  var COS = { energy: ['Meadowbrook Gasworks', 'Tri-County Power & Light', 'Halvorsen Propane'], trade: ['Pike & Sons Hardware', 'Lindqvist Locksmiths', 'Marrow Creek Plumbing'], finance: ['Halvorsen & Pike Insurance', 'First Prairie Mutual', 'Ostrander Claims Bureau'], church: ['St. Brendan’s Mission', 'Grace Fellowship Outreach', 'Lantern House Ministries'], clinic: ['Pine Hollow Medical Lab', 'Westridge Diagnostics', 'Coastal Blood Services'], media: ['The Coos Bay Clarion', 'KRZN Radio 1040', 'Northwest Signal Weekly'], transport: ['Ostrander Freight Lines', 'Silver Valley Couriers', 'Three Rivers Transit'], security: ['Blackwater Ridge Security', 'Sentinel Alarm & Patrol', 'Keystone Investigations'] };
+  var COS = { energy: ['Meadowbrook Gasworks', 'Tri-County Power & Light', 'Halvorsen Propane'], trade: ['Pike & Sons Hardware', 'Lindqvist Locksmiths', 'Marrow Creek Plumbing'], finance: ['Halvorsen & Pike Insurance', 'First Prairie Mutual', 'Ostrander Claims Bureau'], church: ['St. Brendan’s Mission', 'Grace Fellowship Outreach', 'Lantern House Ministries'], clinic: ['Pine Hollow Medical Lab', 'Westridge Diagnostics', 'Coastal Blood Services'], media: ['The Coos Bay Clarion', 'KRZN Radio 1040', 'Northwest Signal Weekly'], transport: ['Ostrander Freight Lines', 'Silver Valley Couriers', 'Three Rivers Transit'], security: ['Blackwater Ridge Security', 'Sentinel Alarm & Patrol', 'Keystone Investigations'],
+    university: ['Halvorsen State University', 'Whitcombe College', 'Northern Plains A&M'], library: ['Ashford Public Library', 'Marrow Creek Carnegie Library', 'Whitcombe County Historical Archive'],
+    municipal: ['City of Marrow Creek', 'Town of Pine Hollow', 'City of Silver Valley'], county: ['Ostrander County', 'Three Rivers County', 'Coos Bend County'],
+    legal: ['Pike, Lindqvist & Marsh', 'Halvorsen Law Office', 'Ostrander & Byrne, Attorneys at Law'], counsel: ['Lantern House Counseling', 'Pine Hollow Family Services', 'Three Rivers Crisis Center'] };
   var roll = {
     county: function () { return pick(COUNTIES); },
     azcounty: function () { return pick(AZ); },
@@ -287,7 +307,7 @@
     handle: function (name) { return '@' + String(name || 'listener').toLowerCase().replace(/[^a-z]/g, '').slice(0, 12) + 'pod'; },
     brother: function () { return 'Brother ' + pick(['Zachariel', 'Abiel', 'Jonas', 'Ezra', 'Silas', 'Tobias']); },
     company: function (k) { return pick(COS[k] || COS.energy); },
-    mail: function (org, name) { var d = String(org || 'company').toLowerCase().replace(/[^a-z]/g, '').slice(0, 16) || 'company'; var n = String(name || '').toLowerCase().split(/\s+/).filter(Boolean); return (n.length ? n[0].charAt(0) + n[n.length - 1] : 'info') + '@' + d + '.com'; }
+    mail: function (org, name, k) { var d = String(org || 'company').toLowerCase().replace(/[^a-z]/g, '').slice(0, 16) || 'company'; var n = String(name || '').toLowerCase().split(/\s+/).filter(Boolean); return (n.length ? n[0].charAt(0) + n[n.length - 1] : 'info') + '@' + d + '.' + ((k && kind(k).tld) || 'com'); }
   };
 
   /* ── Printing in place (no new tab: a phone had no way back from one) ──
