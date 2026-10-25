@@ -135,6 +135,8 @@
 
   .recruit-copy, .empty-copy{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-2); line-height:1.85; max-width:52ch; margin-bottom:var(--s5); }
   .empty-panel .paper-title{ font-size:20px; }
+  /* Profession · employer under the name (v3.10.4). */
+  .ah-prof{ font-family:'Courier Prime', monospace; font-size:12px; color:var(--ink-2); margin-top:6px; line-height:1.4; }
 
   /* ── Erase Agent: understated on purpose (small text link, not a
      button) -- it really deletes the Agent (restorable by a Handler for
@@ -989,6 +991,7 @@
               <div>
                 <div class="paper-title-sub">Delta Green — Agent Roster</div>
                 <div class="paper-title" id="${titleId}">${escapeHtml(a.char_name || 'Unknown Agent')}</div>
+                <div class="ah-prof" id="ah-prof-${escapeHtml(a.code)}" hidden></div>
               </div>
               <!-- Appearance, Era photos and Cell drop down from here: beside
                    the name on a desktop, under the photo on a phone. -->
@@ -1881,6 +1884,8 @@
             // The INSANE stamp (low SAN) goes on the name in the header above.
             stampHost: () => document.getElementById('ah-title-' + a.code),
             onFate: (f) => setAgentFate(a.code, f),
+            // Profession · employer under the name in the header above.
+            onIdentity: (t) => { const el = document.getElementById('ah-prof-' + a.code); if (el) { el.textContent = t; el.hidden = !t; } },
             // The disorder stamps scatter over that header too, and the gap below its rule.
             disorderArea: () => {
               const t = document.getElementById('ah-title-' + a.code), h = t && t.closest('.paper-header');

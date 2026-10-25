@@ -11535,6 +11535,11 @@ def test_agent_file_profession_employer_line(p):
             ok = line.startswith("Federal Agent · Federal Bureau of Investigation — Kansas City Field Office · Cover “PARADE”")
             label = f"{where}: profession · employer · Cover under the name"
         record("agent-file", label, ok, line)
+        if where == "hub":
+            want = "Photographer · The Coos Bay Clarion" if fallback else "Federal Agent · Federal Bureau of Investigation — Kansas City Field Office"
+            hd = wait_for_condition(lambda: (lambda t: t if t == want else None)(page.text_content(f"#ah-prof-{FN_CODE}") or ""), timeout_ms=5000)
+            record("agent-file", "hub: the folder's header shows profession · employer under the name" + (" (from the brief)" if fallback else ""),
+                   bool(hd), page.text_content(f"#ah-prof-{FN_CODE}") or "")
         if fallback:
             # Edit mode's Personal data starts from the same words, and Save
             # files them onto the sheet.
