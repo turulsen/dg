@@ -888,6 +888,17 @@ def test_cover_ids_tab(p):
         return out; }""")
     record("cover-ids-tab", "every agency/era template is drawn by the shared Field ID card module",
            sweep["drawn"] > 40 and all(m.split("_")[0] in ("ICE", "CBP", "DHS", "FINCEN") for m in sweep["missing"]), str(sweep))
+    nb = page.evaluate("""() => { const C = window.dgFieldIdCards, out = {};
+        ['NASA', 'NSA', 'USCG', 'DHS', 'IRSCI'].forEach(k => ['90s', '00s', '10s', '20s'].forEach(e => {
+            const t = C.template(k, e); const h = t && !t.is_no_card ? C.render(t, { name: 'Test' }, '') : '';
+            out[k + '_' + e] = t && t.is_no_card ? 'none' : (/<img src="data:image\/png/.test(h) ? 'seal' : 'no seal') + (/TRANSPORTATION/.test(h) ? '+DOT' : '');
+        })); return out; }""")
+    record("cover-ids-tab", "batch 1 agencies draw a card with their seal in every era (DHS from 2003; Coast Guard under Transportation in the 90s)",
+           all(v.startswith("seal") for k, v in nb.items() if k != "DHS_90s") and nb["DHS_90s"] == "none" and nb["USCG_90s"] == "seal+DOT" and nb["USCG_20s"] == "seal", str(nb))
+    page.click("[data-x=home]"); page.click("[data-x=p-mirror]")
+    page.fill("[data-q=agency]", "nasa")
+    page.wait_for_timeout(300)
+    record("cover-ids-tab", "Mirror: searching 'nasa' picks NASA and draws its card", page.eval_on_selector("#ids-agency", "e => e.value") == "NASA" and "AERONAUTICS" in page.inner_text("#fx-prev").upper(), page.inner_text("#fx-prev")[:80])
     record("cover-ids-tab", "no JS exceptions", len(errs)==0, "; ".join(errs))
     page.close()
     return errs
@@ -11480,11 +11491,13 @@ def test_employer_dropdown(p):
     page.goto(f"{BASE}/field-id.html?embed=1", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_function("() => window.dgAgencies", timeout=8000)
     r = page.evaluate("""() => { const A = window.dgAgencies; return [
-        A.split('ATF Special Response Team'), A.split('Federal Bureau of Investigation — Kansas City Field Office'), A.split('National Security Agency'),
+        A.split('ATF Special Response Team'), A.split('Federal Bureau of Investigation — Kansas City Field Office'), A.split('Defense Intelligence Agency'),
         A.split('CBP Border Patrol (BORTAC)'), A.compose('USMS', '', 'Eastern District'), A.compose('', 'NASA', ''), A.match('U.S. Postal Inspection Service').code ]; }""")
     record("employer", "an old free-text employer opens on its agency, with the rest as the unit",
            r[0] == {"code": "ATF", "other": "", "unit": "Special Response Team"} and r[1] == {"code": "FBI", "other": "", "unit": "Kansas City Field Office"} and r[3]["code"] == "CBP", str(r[:4]))
-    record("employer", "...one not on file opens as Other with its words", r[2] == {"code": "", "other": "National Security Agency", "unit": ""}, str(r[2]))
+    record("employer", "...one not on file opens as Other with its words", r[2] == {"code": "", "other": "Defense Intelligence Agency", "unit": ""}, str(r[2]))
+    nb = page.evaluate("""() => { const A = window.dgAgencies; return ['NASA Kennedy Space Center', 'U.S. Coast Guard (HITRON)', 'National Security Agency (TAO)', 'IRS Criminal Investigation', 'Department of Homeland Security'].map(e => A.split(e).code); }""")
+    record("employer", "batch 1 (NASA, NSA, Coast Guard, DHS, IRS-CI): the professions' employers find their agency", nb == ["NASA", "USCG", "NSA", "IRSCI", "DHS"], str(nb))
     record("employer", "agency + unit saves as one employer line the Field ID still matches", r[4] == "U.S. Marshals Service — Eastern District" and r[5] == "NASA" and r[6] == "USPI", str(r[4:]))
     page.close()
     # In New Recruit: the drop-down, the note, the hidden field.
@@ -11499,15 +11512,26 @@ def test_employer_dropdown(p):
     record("employer", "New Recruit: Employer is the agencies drop-down, on the profession's agency", page.eval_on_selector("[data-emp=sel]", "e => e.value") == "ATF"
            and page.eval_on_selector("[data-emp=unit]", "e => e.value") == "Special Response Team" and "credential" in page.inner_text(".dg-emp-note"), "")
     page.select_option("[data-emp=sel]", "__other")
-    page.fill("[data-emp=other]", "National Security Agency")
+    page.fill("[data-emp=other]", "Defense Intelligence Agency")
     page.wait_for_timeout(200)
     record("employer", "...Other… asks which agency, says there's no card on file (quietly), and saves the words",
-           page.evaluate("() => window.dgRecruit._w().bio.employer") == "National Security Agency" and "No ID card on file" in page.inner_text(".dg-emp-note")
+           page.evaluate("() => window.dgRecruit._w().bio.employer") == "Defense Intelligence Agency" and "No ID card on file" in page.inner_text(".dg-emp-note")
            and page.is_hidden("[data-emp=unit]"), page.evaluate("() => window.dgRecruit._w().bio.employer"))
     page.select_option("[data-emp=sel]", "USMS")
     page.fill("[data-emp=unit]", "Eastern District")
     page.wait_for_timeout(200)
     record("employer", "...an agency and its unit save as one line", page.evaluate("() => window.dgRecruit._w().bio.employer") == "U.S. Marshals Service — Eastern District", page.evaluate("() => window.dgRecruit._w().bio.employer"))
+    # v3.9.4: grouped and searchable; the batch-1 agencies are on file.
+    groups = page.evaluate("() => [...document.querySelectorAll('[data-emp=sel] optgroup')].map(g => g.label)")
+    record("employer", "the drop-down is grouped (law enforcement, intelligence, homeland security, science, state & local)",
+           groups[:5] == ["Federal law enforcement", "Intelligence", "Homeland security & response", "Science & civil", "State & local"], str(groups))
+    page.fill("[data-emp=q]", "coast")
+    page.wait_for_timeout(200)
+    record("employer", "typing 'coast' in the search picks the Coast Guard", page.eval_on_selector("[data-emp=sel]", "e => e.value") == "USCG"
+           and page.evaluate("() => window.dgRecruit._w().bio.employer").startswith("U.S. Coast Guard"), page.evaluate("() => window.dgRecruit._w().bio.employer"))
+    page.fill("[data-emp=q]", "intel")
+    page.wait_for_timeout(200)
+    record("employer", "...'intel' narrows it to the Intelligence group", page.evaluate("() => [...document.querySelectorAll('[data-emp=sel] optgroup')].map(g => g.label).filter(l => l !== 'Homeland security & response')") == ["Intelligence"], str(page.evaluate("() => [...document.querySelectorAll('[data-emp=sel] option')].map(o => o.value)")))
     record("employer", "no JS exceptions", not errs, str(errs[:3]))
     page.close()
     return errs

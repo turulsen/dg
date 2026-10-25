@@ -127,7 +127,7 @@ select.in{appearance:auto}
   var P = new URLSearchParams(location.search);
   var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
   var ERAS = [['90s', '1990s'], ['00s', '2000s'], ['10s', '2010s'], ['20s', '2020s']];
-  var NO_90S = { ICE: 1, CBP: 1 };
+  var NO_90S = { ICE: 1, CBP: 1, DHS: 1 };
   var esc = F.esc;
   // Inside the notebook, the page's own store: already signed in and warm.
   function store() {
@@ -227,11 +227,11 @@ select.in{appearance:auto}
   function viewMirror() {
     setHead(1, 1);
     var d = S.d, f = d.fields;
-    var opts = A.list.map(function (a) { return '<option value="' + a.code + '"' + (a.code === d.agency ? ' selected' : '') + '>' + esc(a.name) + ' (' + esc(a.abbr) + ')</option>'; }).join('') +
-      '<option value="DG"' + (d.agency === 'DG' ? ' selected' : '') + '>Delta Green — Directorate</option>';
+    var opts = A.optionsHtml(d.agency, S.agencyQ || '', '<optgroup label="The Program"><option value="DG"' + (d.agency === 'DG' ? ' selected' : '') + '>Delta Green — Directorate</option></optgroup>');
     paint(T('MIRROR CREDENTIAL', 'Pulled from your cover file. Check the print, change the era if the op needs it.') +
       '<div class="split"><div>' +
-        '<div class="lbl">AGENCY</div><select class="in" data-in="agency" id="ids-agency">' + opts + '</select>' +
+        '<div class="lbl">AGENCY</div><input class="in fx-q" data-q="agency" type="search" value="' + esc(S.agencyQ || '') + '" placeholder="search: nasa, coast, intelligence…" aria-label="Search agencies" autocomplete="off">' +
+        '<select class="in" data-in="agency" id="ids-agency" style="margin-top:6px">' + opts + '</select>' +
         '<div class="lbl">ERA ON THE CARD</div><div class="chips">' + ERAS.map(function (e) { return '<button type="button" class="chip' + (d.era === e[0] ? ' on' : '') + '" data-x="era" data-v="' + e[0] + '"' + (e[0] === '90s' && NO_90S[d.agency] ? ' disabled title="Not founded yet"' : '') + '>' + e[1] + '</button>'; }).join('') + '</div>' +
         '<div class="lbl">NAME · TITLE</div><input class="in" data-in="f.name" id="ids-cover-name" value="' + esc(f.name) + '"><input class="in" style="margin-top:6px" data-in="f.title" id="ids-cover-title" value="' + esc(f.title) + '">' +
         '<div class="lbl">ID NUMBER · EXPIRES</div><div class="row"><input class="in" data-in="f.id_num" id="ids-cover-id" value="' + esc(f.id_num) + '"><input class="in" style="max-width:110px" data-in="f.expiry" id="ids-cover-expiry" value="' + esc(f.expiry) + '"><button type="button" class="dice" data-x="roll-id" aria-label="Roll an ID number">⚄</button></div>' +
@@ -421,6 +421,19 @@ select.in{appearance:auto}
     refreshPreview();
   }
   document.addEventListener('input', function (e) { var p = e.target.getAttribute && e.target.getAttribute('data-in'); if (p) setIn(p, e.target.value); });
+  // The agency search: narrows the list; one match is chosen.
+  document.addEventListener('input', function (e) {
+    if (!e.target.getAttribute || e.target.getAttribute('data-q') !== 'agency' || !S.d) return;
+    S.agencyQ = e.target.value;
+    var m = A.list.filter(function (a) { return A.hit(a, S.agencyQ); }), sel = document.getElementById('ids-agency');
+    if (String(S.agencyQ).trim() && m.length === 1 && m[0].code !== S.d.agency) {
+      setIn('agency', m[0].code);
+      var q = document.querySelector('[data-q=agency]');
+      if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+      return;
+    }
+    if (sel) { sel.innerHTML = A.optionsHtml(S.d.agency, S.agencyQ, '<optgroup label="The Program"><option value="DG">Delta Green — Directorate</option></optgroup>'); sel.value = S.d.agency; }
+  });
   document.addEventListener('change', function (e) { var p = e.target.getAttribute && e.target.getAttribute('data-in'); if (p && e.target.tagName === 'SELECT') setIn(p, e.target.value); });
   document.addEventListener('keydown', function (e) {
     if (S.view !== 'start' || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
@@ -434,7 +447,7 @@ select.in{appearance:auto}
   function act(x, b) {
     var d = S.d, v = b && b.getAttribute('data-v');
     switch (x) {
-      case 'p-mirror': S.editing = null; return go('mirror', 1, newMirror());
+      case 'p-mirror': S.editing = null; S.agencyQ = ''; return go('mirror', 1, newMirror());
       case 'p-office': S.editing = null; return go('office', 1, null);
       case 'p-entity': S.editing = null; return go('entity', 1, newEntity());
       case 'home': return go('start', 1, null);

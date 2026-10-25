@@ -744,8 +744,11 @@ Face Plate as its ID photo:
   and the photo go on each design (`REFS`), the logo maker, the six
   layouts and the renderer. Without the stock, [2] says so and stays
   off.
-- Employer (`assets/agencies.js`, v3.9.0) is a drop-down of the 14
-  agencies with a card on file + Other…, with an Office / unit box, in
+- Employer (`assets/agencies.js`, v3.9.0) is a drop-down of the
+  agencies with a card on file + Other… (v3.9.4: 19, grouped — Federal
+  law enforcement, Intelligence, Homeland security & response, Science &
+  civil, State & local, Fictional — with a search box; NASA, NSA, Coast
+  Guard, DHS and IRS-CI added, more in batches as their seals arrive), with an Office / unit box, in
   New Recruit's Personal data and the Agent File's Edit mode; an old
   free-text employer opens on its agency (the rest as the unit) or as
   Other with its words.

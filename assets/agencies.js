@@ -13,21 +13,29 @@
        data-e attribute goes on that hidden input. */
 (function () {
   if (window.dgAgencies) return;
+  // Grouped for the drop-downs (v3.9.4); matched in this order, so the
+  // broad ones (DHS) come after the agencies under them.
+  var GROUPS = ['Federal law enforcement', 'Intelligence', 'Homeland security & response', 'Science & civil', 'State & local', 'Fictional'];
   var LIST = [
-    { code: 'FBI', abbr: 'FBI', name: 'Federal Bureau of Investigation', title: 'Special Agent' },
-    { code: 'DEA', abbr: 'DEA', name: 'Drug Enforcement Administration', title: 'Special Agent' },
-    { code: 'ATF', abbr: 'ATF', name: 'Bureau of Alcohol, Tobacco, Firearms and Explosives', title: 'Special Agent' },
-    { code: 'USMS', abbr: 'USMS', name: 'U.S. Marshals Service', title: 'Deputy U.S. Marshal', alias: ['marshal'] },
-    { code: 'DOJIG', abbr: 'DOJ OIG', name: 'DOJ Office of Inspector General', title: 'Special Agent', alias: ['inspector general'] },
-    { code: 'SECRET', abbr: 'USSS', name: 'U.S. Secret Service', title: 'Special Agent', alias: ['secret service', 'usss'] },
-    { code: 'ICE', abbr: 'ICE', name: 'Immigration and Customs Enforcement', title: 'Special Agent', alias: ['immigration'] },
-    { code: 'CBP', abbr: 'CBP', name: 'Customs and Border Protection', title: 'Officer', alias: ['border patrol', 'customs'] },
-    { code: 'NCIS', abbr: 'NCIS', name: 'Naval Criminal Investigative Service', title: 'Special Agent' },
-    { code: 'FINCEN', abbr: 'FinCEN', name: 'Financial Crimes Enforcement Network', title: 'Analyst', alias: ['fincen'] },
-    { code: 'USPI', abbr: 'USPIS', name: 'U.S. Postal Inspection Service', title: 'Postal Inspector', alias: ['postal', 'uspis'] },
-    { code: 'NYPD', abbr: 'NYPD', name: 'New York City Police Department', title: 'Detective', alias: ['new york police'] },
-    { code: 'SCSO', abbr: 'SCSO', name: "Shelby County Sheriff's Office", title: 'Deputy', alias: ['shelby county'] },
-    { code: 'MEPIC', abbr: 'M-EPIC', name: 'M-EPIC Environmental Policy Impact Commission', title: 'Investigator', alias: ['m-epic', 'environmental policy'] }
+    { code: 'FBI', abbr: 'FBI', name: 'Federal Bureau of Investigation', title: 'Special Agent', group: 0 },
+    { code: 'DEA', abbr: 'DEA', name: 'Drug Enforcement Administration', title: 'Special Agent', group: 0 },
+    { code: 'ATF', abbr: 'ATF', name: 'Bureau of Alcohol, Tobacco, Firearms and Explosives', title: 'Special Agent', group: 0 },
+    { code: 'USMS', abbr: 'USMS', name: 'U.S. Marshals Service', title: 'Deputy U.S. Marshal', alias: ['marshal'], group: 0 },
+    { code: 'DOJIG', abbr: 'DOJ OIG', name: 'DOJ Office of Inspector General', title: 'Special Agent', alias: ['inspector general'], group: 0 },
+    { code: 'SECRET', abbr: 'USSS', name: 'U.S. Secret Service', title: 'Special Agent', alias: ['secret service', 'usss'], group: 0 },
+    { code: 'ICE', abbr: 'ICE', name: 'Immigration and Customs Enforcement', title: 'Special Agent', alias: ['immigration'], group: 0 },
+    { code: 'CBP', abbr: 'CBP', name: 'Customs and Border Protection', title: 'Officer', alias: ['border patrol', 'customs'], group: 0 },
+    { code: 'NCIS', abbr: 'NCIS', name: 'Naval Criminal Investigative Service', title: 'Special Agent', group: 0 },
+    { code: 'FINCEN', abbr: 'FinCEN', name: 'Financial Crimes Enforcement Network', title: 'Analyst', alias: ['fincen'], group: 0 },
+    { code: 'USPI', abbr: 'USPIS', name: 'U.S. Postal Inspection Service', title: 'Postal Inspector', alias: ['postal', 'uspis'], group: 0 },
+    { code: 'IRSCI', abbr: 'IRS-CI', name: 'IRS Criminal Investigation', title: 'Special Agent', alias: ['internal revenue', 'irs'], group: 0 },
+    { code: 'NSA', abbr: 'NSA', name: 'National Security Agency', title: 'Analyst', alias: ['national security agency'], group: 1 },
+    { code: 'USCG', abbr: 'USCG', name: 'U.S. Coast Guard', title: 'Petty Officer', alias: ['coast guard'], group: 2 },
+    { code: 'DHS', abbr: 'DHS', name: 'Department of Homeland Security', title: 'Special Agent', alias: ['homeland security'], since: '00s', group: 2 },
+    { code: 'NASA', abbr: 'NASA', name: 'NASA', title: 'Civil Servant', alias: ['aeronautics and space'], group: 3 },
+    { code: 'NYPD', abbr: 'NYPD', name: 'New York City Police Department', title: 'Detective', alias: ['new york police'], group: 4 },
+    { code: 'SCSO', abbr: 'SCSO', name: "Shelby County Sheriff's Office", title: 'Deputy', alias: ['shelby county'], group: 4 },
+    { code: 'MEPIC', abbr: 'M-EPIC', name: 'M-EPIC Environmental Policy Impact Commission', title: 'Investigator', alias: ['m-epic', 'environmental policy'], group: 5 }
   ];
   var SEP = ' — ';
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -75,17 +83,33 @@
     if (String(other || '').trim()) return 'No ID card on file for this one: the Field ID shows the Program’s own card.';
     return '';
   }
+  // Grouped <option>s, filtered by a search (name, abbreviation, code,
+  // aliases, group); `extra` adds rows after the groups.
+  function hit(a, q) {
+    q = String(q || '').trim().toLowerCase();
+    if (!q) return true;
+    return [a.name, a.abbr, a.code, GROUPS[a.group]].concat(a.alias || []).join(' ').toLowerCase().indexOf(q) !== -1;
+  }
+  function optionsHtml(selected, q, extra) {
+    var out = '';
+    GROUPS.forEach(function (g, gi) {
+      var rows = LIST.filter(function (a) { return a.group === gi && (hit(a, q) || a.code === selected); });
+      if (!rows.length) return;
+      out += '<optgroup label="' + esc(g) + '">' + rows.map(function (a) { return '<option value="' + a.code + '"' + (a.code === selected ? ' selected' : '') + '>' + esc(a.name) + (a.abbr !== a.name ? ' (' + esc(a.abbr) + ')' : '') + '</option>'; }).join('') + '</optgroup>';
+    });
+    return out + (extra || '');
+  }
   // The picker. `cls` is the page's input class (e.g. "in" or "ap-in");
   // `outAttr` is the page's own binding (e.g. 'data-f="bio.employer"').
   function pickerHtml(employer, cls, outAttr, labels) {
     var s = split(employer), L = labels || {};
     var isOther = !s.code && !!s.other;
-    var opts = '<option value=""' + (!s.code && !isOther ? ' selected' : '') + '>—</option><optgroup label="Agencies with an ID card">' +
-      LIST.map(function (a) { return '<option value="' + a.code + '"' + (a.code === s.code ? ' selected' : '') + '>' + esc(a.name) + ' (' + esc(a.abbr) + ')</option>'; }).join('') +
-      '</optgroup><option value="__other"' + (isOther ? ' selected' : '') + '>Other…</option>';
+    var opts = '<option value=""' + (!s.code && !isOther ? ' selected' : '') + '>—</option>' +
+      optionsHtml(s.code, '', '<option value="__other"' + (isOther ? ' selected' : '') + '>Other…</option>');
     css();
     return '<div class="dg-emp">' +
-      '<label>' + (L.employer || 'Employer') + '<select class="' + cls + '" data-emp="sel" aria-label="Employer">' + opts + '</select></label>' +
+      '<label>' + (L.employer || 'Employer') + '<span class="dg-emp-pick"><input class="' + cls + ' dg-emp-q" data-emp="q" type="search" placeholder="Search agencies…" aria-label="Search agencies" autocomplete="off">' +
+        '<select class="' + cls + '" data-emp="sel" aria-label="Employer">' + opts + '</select></span></label>' +
       '<label class="dg-emp-other"' + (isOther ? '' : ' hidden') + '>' + (L.other || 'Which agency?') + '<input class="' + cls + '" data-emp="other" value="' + esc(s.other) + '" placeholder="e.g. National Security Agency"></label>' +
       '<label class="dg-emp-unit"' + (isOther ? ' hidden' : '') + '>' + (L.unit || 'Office / unit (optional)') + '<input class="' + cls + '" data-emp="unit" value="' + esc(s.unit) + '" placeholder="e.g. Kansas City Field Office"></label>' +
       '<input type="hidden" data-emp-out ' + (outAttr || '') + ' value="' + esc(employer || '') + '">' +
@@ -97,7 +121,7 @@
     if (document.getElementById('dg-emp-css')) return;
     var st = document.createElement('style');
     st.id = 'dg-emp-css';
-    st.textContent = '.dg-emp{display:contents}.dg-emp [hidden]{display:none!important}';
+    st.textContent = '.dg-emp{display:contents}.dg-emp [hidden]{display:none!important}.dg-emp-pick{display:flex;flex-direction:column;gap:4px}.dg-emp-q{font-size:12px!important;padding:4px 8px!important}';
     document.head.appendChild(st);
   }
   function sync(box, fire) {
@@ -113,6 +137,15 @@
       if (fire) out.dispatchEvent(new Event('input', { bubbles: true }));
     }
   }
+  // Typing in the search narrows the drop-down; a single match is chosen.
+  function filterBox(box, q) {
+    var sel = box.querySelector('[data-emp="sel"]'), cur = sel.value;
+    var matches = LIST.filter(function (a) { return hit(a, q); });
+    var keep = String(q || '').trim() && matches.length === 1 ? matches[0].code : cur;
+    sel.innerHTML = '<option value="">—</option>' + optionsHtml(keep === '__other' ? '' : keep, q, '<option value="__other">Other…</option>');
+    sel.value = keep;
+    if (keep !== cur) sync(box, true);
+  }
   // Delegated, once per root: any picker inside it keeps its hidden
   // input in step and fires 'input' on it, which the page already
   // listens for (setPath / applyEdit).
@@ -124,11 +157,12 @@
       if (!t.getAttribute || !t.getAttribute('data-emp')) return;
       e.stopPropagation();
       var box = t.closest('.dg-emp');
+      if (t.getAttribute('data-emp') === 'q') { if (box) filterBox(box, t.value); return; }
       if (box) sync(box, true);
       if (t.getAttribute('data-emp') === 'sel' && t.value === '__other') { var o = box.querySelector('[data-emp="other"]'); if (o) o.focus(); }
     }
     root.addEventListener('input', on, true);
     root.addEventListener('change', on, true);
   }
-  window.dgAgencies = { list: LIST, byCode: byCode, match: match, split: split, compose: compose, pickerHtml: pickerHtml, wire: wire };
+  window.dgAgencies = { list: LIST, groups: GROUPS, hit: hit, optionsHtml: optionsHtml, byCode: byCode, match: match, split: split, compose: compose, pickerHtml: pickerHtml, wire: wire };
 })();
