@@ -745,10 +745,12 @@ Face Plate as its ID photo:
   layouts and the renderer. Without the stock, [2] says so and stays
   off.
 - Employer (`assets/agencies.js`, v3.9.0) is a drop-down of the
-  agencies with a card on file + Other… (v3.9.4: 19, grouped — Federal
+  agencies with a card on file + Other… (v3.9.5: 24, grouped — Federal
   law enforcement, Intelligence, Homeland security & response, Science &
-  civil, State & local, Fictional — with a search box; NASA, NSA, Coast
-  Guard, DHS and IRS-CI added, more in batches as their seals arrive), with an Office / unit box, in
+  civil, State & local, Fictional — with a search box; v3.9.4 added
+  NASA, NSA, Coast Guard, DHS and IRS-CI, v3.9.5 CIA, DIA, NGA (NIMA on
+  the 90s/00s cards), NRO and ONI, more in batches as their seals
+  arrive), with an Office / unit box, in
   New Recruit's Personal data and the Agent File's Edit mode; an old
   free-text employer opens on its agency (the rest as the unit) or as
   Other with its words.
