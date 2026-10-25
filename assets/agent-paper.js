@@ -234,7 +234,7 @@
     if (getComputedStyle(area).position === 'static') area.style.position = 'relative';
     var b0 = area.getBoundingClientRect(), extend = +(area.getAttribute('data-dis-extend') || 0);
     var box = { left: b0.left, top: b0.top, width: b0.width, height: b0.height + extend };
-    var avoid = Array.prototype.map.call(area.querySelectorAll('button, a, input, select, textarea, .ap-vitals, .ap-pop, .ap-status, .paper-meta, .paper-title, .as-name, .as-sub'),
+    var avoid = Array.prototype.map.call(area.querySelectorAll('button, a, input, select, textarea, .ap-vitals, .ap-pop, .ap-status, .paper-meta, .paper-title, .ah-prof, .as-name, .as-sub'),
       function (e) { return e.getBoundingClientRect(); }).filter(function (r) { return r.width; });
     // Agent Hub's stamp row (the era, KIA, INSANE) sits in the strip below the rule.
     Array.prototype.forEach.call(document.querySelectorAll('.stamps .stamp'), function (e) {
@@ -261,7 +261,11 @@
       for (var k = 0; k < 600; k++) {
         var bh = box.height + (k < 300 ? 0 : 36);
         var x = rnd() * Math.max(1, box.width - w), y = rnd() * Math.max(1, bh - h), rot = rnd() * 28 - 14, op = .8 + rnd() * .18;
-        var rr = { left: box.left + x, top: box.top + y, right: box.left + x + w, bottom: box.top + y + h };
+        // The box the tilted stamp really covers: its corners reach past
+        // the upright one, onto a button only just clear of it.
+        var t = Math.abs(rot) * Math.PI / 180, cx = box.left + x + w / 2, cy = box.top + y + h / 2;
+        var hw = (w * Math.cos(t) + h * Math.sin(t)) / 2, hh = (w * Math.sin(t) + h * Math.cos(t)) / 2;
+        var rr = { left: cx - hw, top: cy - hh, right: cx + hw, bottom: cy + hh };
         if (avoid.some(function (a) { return hit(rr, a, 4); }) || placed.some(function (a) { return hit(rr, a, 6); })) continue;
         sp.style.left = x.toFixed(1) + 'px'; sp.style.top = y.toFixed(1) + 'px';
         sp.style.setProperty('--rot', rot.toFixed(1) + 'deg'); sp.style.setProperty('--op', op.toFixed(2));
@@ -349,6 +353,7 @@
       if (page) page.style.setProperty('--w-op', s.state ? wearVars(R().derived(st()).san).op : 0);
       placeStamp(ctx.stampHost ? ctx.stampHost() : el.querySelector('.as-head .as-name'), s.state ? st() : null);
       if (ctx.onFate && s.state) ctx.onFate(fateOf(st()));
+      if (ctx.onIdentity && s.state) ctx.onIdentity(idParts(s.state).join(' · '));
       stampDisorders();
       // Only when the redraw moved it: setting it anyway would stop a
       // smooth scroll already on its way (a #photos link on Agent Hub).
@@ -371,11 +376,7 @@
           ((!edit && k !== 'bp') || (edit && k === 'bp') ? '<div class="ap-pmrow"><button type="button" class="ap-pm" data-a="' + k + '-" aria-label="' + label + ' down">−</button><button type="button" class="ap-pm" data-a="' + k + '+" aria-label="' + label + ' up">+</button></div>' : '') +
           '</div>';
       }
-      // Profession · employer · cover, from the sheet, else the brief (an
-      // older or imported Agent may only have them there).
-      var br = ctx.brief || {};
-      var prof = (ctx.professionLabel ? ctx.professionLabel(bio.profession) : bio.profession) || br.profession || '';
-      var sub = [prof, bio.employer || br.employer || '', ctx.codename ? 'Cover “' + ctx.codename + '”' : ''].filter(Boolean).join(' · ');
+      var sub = idParts(x).concat(ctx.codename ? ['Cover “' + ctx.codename + '”'] : []).join(' · ');
       return '<div class="as-head ap-head">' +
         (ctx.photoHtml ? '<div class="as-photo">' + ctx.photoHtml + dropBtns() + '</div>' : '') +
         '<div class="as-id">' +
@@ -621,6 +622,14 @@
     }
     function woundsHtml(x) {
       return '<div class="as-sec-hd">Wounds &amp; ailments</div><textarea class="ap-ta" data-q="wounds" placeholder="Injuries, illness, anything slowing the Agent down">' + esc((x.lpNotes && x.lpNotes.wounds) || '') + '</textarea>';
+    }
+    // Profession and employer, from the sheet, else the brief (an older or
+    // imported Agent may only have them there): the line under the name,
+    // and what the page's own header shows (ctx.onIdentity).
+    function idParts(x) {
+      var bio = (x && x.bio) || {}, br = ctx.brief || {};
+      var prof = (ctx.professionLabel ? ctx.professionLabel(bio.profession) : bio.profession) || br.profession || '';
+      return [prof, bio.employer || br.employer || ''].filter(Boolean);
     }
     // Entering Edit mode: an Agent whose sheet has no profession or
     // employer gets the brief's in the working copy, so Save files them.

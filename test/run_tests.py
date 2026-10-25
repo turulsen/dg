@@ -9833,7 +9833,7 @@ def test_agent_file_disorder_stamps(p):
         return page, errs
     probe = """(area) => { const a = document.querySelector(area), st = [...a.querySelectorAll('.ap-dis-stamp')];
         const R = e => e.getBoundingClientRect(), hit = (x, y) => !(x.right <= y.left || x.left >= y.right || x.bottom <= y.top || x.top >= y.bottom);
-        const keep = [...a.querySelectorAll('button, input, select, .ap-vitals, .paper-title, .paper-meta, .as-name')].map(R).filter(r => r.width);
+        const keep = [...a.querySelectorAll('button, input, select, .ap-vitals, .paper-title, .ah-prof, .paper-meta, .as-name')].map(R).filter(r => r.width);
         return { n: st.length, names: st.map(e => e.textContent), inks: [...new Set(st.map(e => getComputedStyle(e).color))].length,
                  clash: st.some(e => keep.some(k => hit(R(e), k))) || st.some((e, i) => st.some((f, j) => j > i && hit(R(e), R(f)))),
                  why: st.filter(e => keep.some(k => hit(R(e), k))).map(e => e.textContent + ':' + e.className + ':' + getComputedStyle(e).transform),
@@ -11535,6 +11535,11 @@ def test_agent_file_profession_employer_line(p):
             ok = line.startswith("Federal Agent · Federal Bureau of Investigation — Kansas City Field Office · Cover “PARADE”")
             label = f"{where}: profession · employer · Cover under the name"
         record("agent-file", label, ok, line)
+        if where == "hub":
+            want = "Photographer · The Coos Bay Clarion" if fallback else "Federal Agent · Federal Bureau of Investigation — Kansas City Field Office"
+            hd = wait_for_condition(lambda: (lambda t: t if t == want else None)(page.text_content(f"#ah-prof-{FN_CODE}") or ""), timeout_ms=5000)
+            record("agent-file", "hub: the folder's header shows profession · employer under the name" + (" (from the brief)" if fallback else ""),
+                   bool(hd), page.text_content(f"#ah-prof-{FN_CODE}") or "")
         if fallback:
             # Edit mode's Personal data starts from the same words, and Save
             # files them onto the sheet.
