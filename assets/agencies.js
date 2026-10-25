@@ -29,6 +29,8 @@
     { code: 'FINCEN', abbr: 'FinCEN', name: 'Financial Crimes Enforcement Network', title: 'Analyst', alias: ['fincen'], group: 0 },
     { code: 'USPI', abbr: 'USPIS', name: 'U.S. Postal Inspection Service', title: 'Postal Inspector', alias: ['postal', 'uspis'], group: 0 },
     { code: 'IRSCI', abbr: 'IRS-CI', name: 'IRS Criminal Investigation', title: 'Special Agent', alias: ['internal revenue', 'irs'], group: 0 },
+    // After the DOJ components above, so their employers find them first.
+    { code: 'DOJ', abbr: 'DOJ', name: 'Department of Justice', title: 'Assistant U.S. Attorney', alias: ['u.s. attorney', "attorney's office", 'attorney general'], group: 0 },
     { code: 'NSA', abbr: 'NSA', name: 'National Security Agency', title: 'Analyst', alias: ['national security agency'], group: 1 },
     { code: 'CIA', abbr: 'CIA', name: 'Central Intelligence Agency', title: 'Operations Officer', alias: ['central intelligence'], group: 1 },
     { code: 'DIA', abbr: 'DIA', name: 'Defense Intelligence Agency', title: 'Intelligence Officer', alias: ['defense intelligence'], group: 1 },

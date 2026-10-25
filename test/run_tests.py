@@ -11519,6 +11519,9 @@ def test_employer_dropdown(p):
     nb = page.evaluate("""() => { const A = window.dgAgencies; return ['FEMA Region IV', 'National Counterterrorism Center', 'NNSA Office of Secure Transportation', 'DARPA', 'National Park Service ranger', 'Female choir'].map(e => A.split(e).code); }""")
     record("employer", "batch 3 (FEMA, NCTC, NNSA, DARPA, NPS) find their agency, and 'Female' isn't FEMA",
            nb == ["FEMA", "NCTC", "NNSA", "DARPA", "NPS", ""], str(nb))
+    nb = page.evaluate("""() => { const A = window.dgAgencies; return ["U.S. Attorney's Office, Southern District of New York", 'Department of Justice', 'DOJ Office of Inspector General', 'Federal Bureau of Investigation'].map(e => A.split(e).code); }""")
+    record("employer", "batch 4: a U.S. Attorney finds the Department of Justice, while DOJ OIG and the FBI keep their own cards",
+           nb == ["DOJ", "DOJ", "DOJIG", "FBI"], str(nb))
     record("employer", "agency + unit saves as one employer line the Field ID still matches", r[4] == "U.S. Marshals Service — Eastern District" and r[5] == "NASA" and r[6] == "USPI", str(r[4:]))
     page.close()
     # In New Recruit: the drop-down, the note, the hidden field.
