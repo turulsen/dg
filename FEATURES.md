@@ -715,7 +715,8 @@ Face Plate as its ID photo:
   Handler's evidence-pack stock (two sheriffs, City of Oak Grove, Fire /
   EMS, Park Service, FBI business card, towing, railway, podcast,
   ministry, Titan Forensics, five forensics-lab badges), then its words:
-  chips for ranks and titles, ⚄ for county, park, phone, badge no.
+  chips for ranks and titles with a free field beside them for your
+  own (v3.9.3), ⚄ for county, park, phone, badge no.
 - **[3] Fabricate an entity** (4 steps): name it (⚄ invents one) and
   pick a kind (energy, trade, finance, church, clinic, media, transport,
   security), pick one of six drawn insignia (⟳ six more, ◐ other
@@ -743,8 +744,21 @@ Face Plate as its ID photo:
   and the photo go on each design (`REFS`), the logo maker, the six
   layouts and the renderer. Without the stock, [2] says so and stays
   off.
-- Employer (`assets/agencies.js`, v3.9.0) is a drop-down of the 14
-  agencies with a card on file + Other…, with an Office / unit box, in
+- Employer (`assets/agencies.js`, v3.9.0) is a drop-down of the
+  agencies with a card on file + Other… (v3.9.11: 34, grouped — Federal
+  law enforcement, Intelligence, Homeland security & response, Science &
+  civil, State & local, Fictional — with a search box; v3.9.4 added
+  NASA, NSA, Coast Guard, DHS and IRS-CI, v3.9.5 CIA, DIA, NGA (NIMA on
+  the 90s/00s cards), NRO and ONI, v3.9.6 FEMA, NCTC, NNSA, DARPA and
+  the National Park Service (wordmarks get a wider slot; a template's
+  optional `footer_bg` keeps a white-header card's footer visible),
+  v3.9.8 the Department of Justice (listed after its components so
+  "DOJ OIG" or the FBI still find their own card), v3.9.11 ODNI, CDC,
+  NIH and the State Department (code `DOS`: a bare "state" would catch
+  "State Police"); v3.9.9–v3.9.10 replaced every low-resolution or wrong
+  seal (line art gets a white disc or a white fill inside its own
+  outline), more in batches as their seals
+  arrive), with an Office / unit box, in
   New Recruit's Personal data and the Agent File's Edit mode; an old
   free-text employer opens on its agency (the rest as the unit) or as
   Other with its words.

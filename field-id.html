@@ -75,6 +75,7 @@ select.in{appearance:auto}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{border:1px solid #1f5a1f;padding:7px 11px;font:11.5px 'Courier Prime',monospace;letter-spacing:.06em;color:var(--g);background:none;cursor:pointer}
 .chip.on{border-color:var(--g2);color:var(--gl);background:#1f4f1f}
+.chips .fx-own{flex:1 1 160px;width:auto;min-width:140px;padding:6px 10px;font-size:13px}
 .dice{display:inline-flex;align-items:center;justify-content:center;min-width:44px;border:1px solid var(--g);font-size:21px;color:var(--g2);background:none;cursor:pointer;flex:none}
 .btn{font:12px 'Special Elite',monospace;letter-spacing:.14em;text-transform:uppercase;padding:11px 18px;border:1px solid var(--g);color:var(--g);background:transparent;cursor:pointer}
 .btn.go{background:var(--gd);color:var(--gl);border-color:var(--g2)}
@@ -126,7 +127,7 @@ select.in{appearance:auto}
   var P = new URLSearchParams(location.search);
   var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxF32nCIUfXDcTaKntKkt8az_7mwy8aOAKPD0mtaEZHcUEKmq0AF2b2k4V6FJNEzbIJZQ/exec';
   var ERAS = [['90s', '1990s'], ['00s', '2000s'], ['10s', '2010s'], ['20s', '2020s']];
-  var NO_90S = { ICE: 1, CBP: 1 };
+  var NO_90S = { ICE: 1, CBP: 1, DHS: 1, NCTC: 1, NNSA: 1, ODNI: 1 };
   var esc = F.esc;
   // Inside the notebook, the page's own store: already signed in and warm.
   function store() {
@@ -226,11 +227,11 @@ select.in{appearance:auto}
   function viewMirror() {
     setHead(1, 1);
     var d = S.d, f = d.fields;
-    var opts = A.list.map(function (a) { return '<option value="' + a.code + '"' + (a.code === d.agency ? ' selected' : '') + '>' + esc(a.name) + ' (' + esc(a.abbr) + ')</option>'; }).join('') +
-      '<option value="DG"' + (d.agency === 'DG' ? ' selected' : '') + '>Delta Green — Directorate</option>';
+    var opts = A.optionsHtml(d.agency, S.agencyQ || '', '<optgroup label="The Program"><option value="DG"' + (d.agency === 'DG' ? ' selected' : '') + '>Delta Green — Directorate</option></optgroup>');
     paint(T('MIRROR CREDENTIAL', 'Pulled from your cover file. Check the print, change the era if the op needs it.') +
       '<div class="split"><div>' +
-        '<div class="lbl">AGENCY</div><select class="in" data-in="agency" id="ids-agency">' + opts + '</select>' +
+        '<div class="lbl">AGENCY</div><input class="in fx-q" data-q="agency" type="search" value="' + esc(S.agencyQ || '') + '" placeholder="search: nasa, coast, intelligence…" aria-label="Search agencies" autocomplete="off">' +
+        '<select class="in" data-in="agency" id="ids-agency" style="margin-top:6px">' + opts + '</select>' +
         '<div class="lbl">ERA ON THE CARD</div><div class="chips">' + ERAS.map(function (e) { return '<button type="button" class="chip' + (d.era === e[0] ? ' on' : '') + '" data-x="era" data-v="' + e[0] + '"' + (e[0] === '90s' && NO_90S[d.agency] ? ' disabled title="Not founded yet"' : '') + '>' + e[1] + '</button>'; }).join('') + '</div>' +
         '<div class="lbl">NAME · TITLE</div><input class="in" data-in="f.name" id="ids-cover-name" value="' + esc(f.name) + '"><input class="in" style="margin-top:6px" data-in="f.title" id="ids-cover-title" value="' + esc(f.title) + '">' +
         '<div class="lbl">ID NUMBER · EXPIRES</div><div class="row"><input class="in" data-in="f.id_num" id="ids-cover-id" value="' + esc(f.id_num) + '"><input class="in" style="max-width:110px" data-in="f.expiry" id="ids-cover-expiry" value="' + esc(f.expiry) + '"><button type="button" class="dice" data-x="roll-id" aria-label="Roll an ID number">⚄</button></div>' +
@@ -274,7 +275,9 @@ select.in{appearance:auto}
     var title = r.key.indexOf('sheriff') === 0 ? ['JURISDICTION // RANK', 'Pick a county nobody will call. Pick a rank nobody will question.'] : ['FILL THE STOCK', 'Your name is in. Roll what you don’t want to invent.'];
     paint(T(title[0], title[1]) + '<div class="split"><div>' + r.fields.map(function (x) {
         var v = f[x.k] || '';
-        if (x.opts) return '<div class="lbl">' + esc(x.label) + '</div><div class="chips">' + x.opts.map(function (o) { return '<button type="button" class="chip' + (o === v ? ' on' : '') + '" data-x="opt" data-k="' + x.k + '" data-v="' + esc(o) + '">' + esc(o) + '</button>'; }).join('') + '</div>';
+        // The usual ones as chips, and a free field for your own (v3.9.3).
+        if (x.opts) return '<div class="lbl">' + esc(x.label) + '</div><div class="chips">' + x.opts.map(function (o) { return '<button type="button" class="chip' + (o === v ? ' on' : '') + '" data-x="opt" data-k="' + x.k + '" data-v="' + esc(o) + '">' + esc(o) + '</button>'; }).join('') +
+          '<input class="in fx-own" data-in="f.' + x.k + '" value="' + esc(v) + '" placeholder="or your own\u2026" aria-label="' + esc(x.label) + ', your own"></div>';
         return '<div class="lbl">' + esc(x.label) + '</div><div class="row"><input class="in' + (x.k === 'place' ? ' big' : '') + '" data-in="f.' + x.k + '" value="' + esc(v) + '">' +
           (x.roll ? '<button type="button" class="dice" data-x="roll" data-k="' + x.k + '" data-r="' + x.roll + '" aria-label="Roll ' + esc(x.label) + '">⚄</button>' : '') + '</div>';
       }).join('') + photoNote() +
@@ -332,8 +335,8 @@ select.in{appearance:auto}
     entityDefaults(d);
     paint(T('FINAL PROOF', 'Give yourself a job title. Roll a number that rings somewhere.') +
       '<div class="split"><div>' +
-        '<div class="lbl">JOB TITLE</div><div class="chips">' + k.titles.map(function (t) { return '<button type="button" class="chip' + (t === d.title ? ' on' : '') + '" data-x="etitle" data-v="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') + '</div>' +
-        '<input class="in" style="margin-top:6px" data-in="title" value="' + esc(d.title) + '" aria-label="Job title">' +
+        '<div class="lbl">JOB TITLE</div><div class="chips">' + k.titles.map(function (t) { return '<button type="button" class="chip' + (t === d.title ? ' on' : '') + '" data-x="etitle" data-v="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') +
+        '<input class="in fx-own" data-in="title" value="' + esc(d.title) + '" placeholder="or your own\u2026" aria-label="Job title, your own"></div>' +
         '<div class="lbl">NAME</div><input class="in" data-in="name" value="' + esc(d.name) + '">' +
         '<div class="lbl">PHONE · E-MAIL</div><div class="row"><input class="in" data-in="phone" value="' + esc(d.phone) + '"><button type="button" class="dice" data-x="roll-phone" aria-label="Roll a phone number">⚄</button></div>' +
         '<input class="in" style="margin-top:6px" data-in="mail" value="' + esc(d.mail) + '">' +
@@ -404,14 +407,33 @@ select.in{appearance:auto}
   function setIn(path, v) {
     var d = S.d;
     if (!d) return;
-    if (path.indexOf('f.') === 0) d.fields[path.slice(2)] = v;
+    if (path.indexOf('f.') === 0) {
+      d.fields[path.slice(2)] = v;
+      var box = document.querySelector('[data-in="' + path + '"]');
+      box = box && box.closest('.chips');
+      if (box) Array.prototype.forEach.call(box.querySelectorAll('.chip'), function (c) { c.classList.toggle('on', c.getAttribute('data-v') === v); });
+    }
     else if (path === 'agency') { d.agency = v; var a = A.byCode(v); if (a) d.fields.title = a.title; if (NO_90S[v] && d.era === '90s') d.era = '00s'; render(); return; }
     else d[path] = v;
+    if (path === 'title') { var tb = document.querySelector('[data-in="title"]'); tb = tb && tb.closest('.chips'); if (tb) Array.prototype.forEach.call(tb.querySelectorAll('.chip'), function (c) { c.classList.toggle('on', c.getAttribute('data-v') === v); }); }
     // A new name: new insignia and address to match.
     if (path === 'org') { d.logo = null; d.mail = ''; if (S.err) { S.err = ''; var er = document.getElementById('fx-err'); if (er) er.textContent = ''; } }
     refreshPreview();
   }
   document.addEventListener('input', function (e) { var p = e.target.getAttribute && e.target.getAttribute('data-in'); if (p) setIn(p, e.target.value); });
+  // The agency search: narrows the list; one match is chosen.
+  document.addEventListener('input', function (e) {
+    if (!e.target.getAttribute || e.target.getAttribute('data-q') !== 'agency' || !S.d) return;
+    S.agencyQ = e.target.value;
+    var m = A.list.filter(function (a) { return A.hit(a, S.agencyQ); }), sel = document.getElementById('ids-agency');
+    if (String(S.agencyQ).trim() && m.length === 1 && m[0].code !== S.d.agency) {
+      setIn('agency', m[0].code);
+      var q = document.querySelector('[data-q=agency]');
+      if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+      return;
+    }
+    if (sel) { sel.innerHTML = A.optionsHtml(S.d.agency, S.agencyQ, '<optgroup label="The Program"><option value="DG">Delta Green — Directorate</option></optgroup>'); sel.value = S.d.agency; }
+  });
   document.addEventListener('change', function (e) { var p = e.target.getAttribute && e.target.getAttribute('data-in'); if (p && e.target.tagName === 'SELECT') setIn(p, e.target.value); });
   document.addEventListener('keydown', function (e) {
     if (S.view !== 'start' || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
@@ -425,7 +447,7 @@ select.in{appearance:auto}
   function act(x, b) {
     var d = S.d, v = b && b.getAttribute('data-v');
     switch (x) {
-      case 'p-mirror': S.editing = null; return go('mirror', 1, newMirror());
+      case 'p-mirror': S.editing = null; S.agencyQ = ''; return go('mirror', 1, newMirror());
       case 'p-office': S.editing = null; return go('office', 1, null);
       case 'p-entity': S.editing = null; return go('entity', 1, newEntity());
       case 'home': return go('start', 1, null);

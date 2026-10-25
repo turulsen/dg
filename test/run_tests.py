@@ -888,6 +888,32 @@ def test_cover_ids_tab(p):
         return out; }""")
     record("cover-ids-tab", "every agency/era template is drawn by the shared Field ID card module",
            sweep["drawn"] > 40 and all(m.split("_")[0] in ("ICE", "CBP", "DHS", "FINCEN") for m in sweep["missing"]), str(sweep))
+    nb = page.evaluate("""() => { const C = window.dgFieldIdCards, out = {};
+        ['NASA', 'NSA', 'USCG', 'DHS', 'IRSCI'].forEach(k => ['90s', '00s', '10s', '20s'].forEach(e => {
+            const t = C.template(k, e); const h = t && !t.is_no_card ? C.render(t, { name: 'Test' }, '') : '';
+            out[k + '_' + e] = t && t.is_no_card ? 'none' : (/<img src="data:image\/png/.test(h) ? 'seal' : 'no seal') + (/TRANSPORTATION/.test(h) ? '+DOT' : '');
+        })); return out; }""")
+    record("cover-ids-tab", "batch 1 agencies draw a card with their seal in every era (DHS from 2003; Coast Guard under Transportation in the 90s)",
+           all(v.startswith("seal") for k, v in nb.items() if k != "DHS_90s") and nb["DHS_90s"] == "none" and nb["USCG_90s"] == "seal+DOT" and nb["USCG_20s"] == "seal", str(nb))
+    nb = page.evaluate("""() => { const C = window.dgFieldIdCards, out = {};
+        ['CIA', 'DIA', 'NGA', 'NRO', 'ONI'].forEach(k => ['90s', '00s', '10s', '20s'].forEach(e => {
+            const t = C.template(k, e); const h = t && !t.is_no_card ? C.render(t, { name: 'Test' }, '') : '';
+            out[k + '_' + e] = (/<img src="data:image\\/png/.test(h) ? 'seal' : 'no seal') + (/IMAGERY AND/.test(h) ? '+NIMA' : '');
+        })); return out; }""")
+    record("cover-ids-tab", "batch 2 agencies draw a card with their seal in every era (NGA reads NIMA on the 90s and 00s cards)",
+           all(v.startswith("seal") for v in nb.values()) and nb["NGA_90s"] == "seal+NIMA" and nb["NGA_00s"] == "seal+NIMA" and nb["NGA_10s"] == "seal", str(nb))
+    nb = page.evaluate("""() => { const C = window.dgFieldIdCards, out = {};
+        ['FEMA', 'NCTC', 'NNSA', 'DARPA', 'NPS'].forEach(k => ['90s', '00s', '10s', '20s'].forEach(e => {
+            const t = C.template(k, e); const h = t && !t.is_no_card ? C.render(t, { name: 'Test' }, '') : '';
+            out[k + '_' + e] = t && t.is_no_card ? 'none' : (/<img src="data:image\\/png/.test(h) ? 'seal' : 'no seal') + (/HOMELAND/.test(h) ? '+DHS' : '');
+        })); out.wide = /width="\\d+" height="(\\d+)"/.exec(C.render(C.template('DARPA', '20s'), { name: 'T' }, '')).slice(0); return out; }""")
+    record("cover-ids-tab", "batch 3 agencies draw a card with their seal (NCTC and NNSA from the 2000s; FEMA under DHS from 2003; wide logos get a wide slot)",
+           all(v.startswith("seal") for k, v in nb.items() if k not in ("NCTC_90s", "NNSA_90s", "wide")) and nb["NCTC_90s"] == "none" and nb["NNSA_90s"] == "none"
+           and nb["FEMA_90s"] == "seal" and nb["FEMA_20s"] == "seal+DHS", str(nb))
+    page.click("[data-x=home]"); page.click("[data-x=p-mirror]")
+    page.fill("[data-q=agency]", "nasa")
+    page.wait_for_timeout(300)
+    record("cover-ids-tab", "Mirror: searching 'nasa' picks NASA and draws its card", page.eval_on_selector("#ids-agency", "e => e.value") == "NASA" and "AERONAUTICS" in page.inner_text("#fx-prev").upper(), page.inner_text("#fx-prev")[:80])
     record("cover-ids-tab", "no JS exceptions", len(errs)==0, "; ".join(errs))
     page.close()
     return errs
@@ -11389,6 +11415,11 @@ def test_field_id_forgery(p):
         prev = f.inner_text("#fx-prev")
         record("forgery", f"{where}: 2 / Office: the sheriff's card fills with the rolled county and the Agent's name and photo",
                place.endswith("County") and place in prev and "Mara Voss" in prev and photo_on(), prev[:120])
+        f.fill("[data-in='f.rank']", "Undersheriff")
+        record("forgery", f"{where}: ...a rank of your own next to the usual ones goes on the card (no chip lit)",
+               "Undersheriff" in f.inner_text("#fx-prev") and f.locator(".chip.on[data-k=rank]").count() == 0, f.inner_text("#fx-prev")[:80])
+        f.click("[data-x=opt][data-k=rank][data-v=Sergeant]")
+        record("forgery", f"{where}: ...and a chip fills the field again", f.eval_on_selector("[data-in='f.rank']", "e => e.value") == "Sergeant", "")
         f.click("[data-x=file]")
         f.wait_for_selector("text=FORGERY COMPLETE")
         # (3) Entity: name it, take a logo, a layout, file.
@@ -11402,6 +11433,8 @@ def test_field_id_forgery(p):
         record("forgery", f"{where}: ...six layouts, each with the photo", f.locator(".pick .dgf-card").count() == 6 and f.locator(".pick .dgf-photo").count() == 6, "")
         f.click("[data-x=layout][data-v=letterhead]"); f.click("[data-x=next]")
         f.click("[data-x=roll-phone]")
+        f.fill("[data-in=title]", "Night Shift Gas Leak Inspector")
+        record("forgery", f"{where}: ...a job title of your own next to the kind's", "Night Shift Gas Leak Inspector" in f.inner_text("#fx-prev"), "")
         f.click("[data-x=file]")
         f.wait_for_selector("text=FORGERY COMPLETE")
         w = wait_for_condition(lambda: len((wal() or {}).get("cards") or []) == 3 and wal(), timeout_ms=5000) or wal()
@@ -11473,11 +11506,25 @@ def test_employer_dropdown(p):
     page.goto(f"{BASE}/field-id.html?embed=1", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_function("() => window.dgAgencies", timeout=8000)
     r = page.evaluate("""() => { const A = window.dgAgencies; return [
-        A.split('ATF Special Response Team'), A.split('Federal Bureau of Investigation — Kansas City Field Office'), A.split('National Security Agency'),
+        A.split('ATF Special Response Team'), A.split('Federal Bureau of Investigation — Kansas City Field Office'), A.split('Tennessee Valley Authority'),
         A.split('CBP Border Patrol (BORTAC)'), A.compose('USMS', '', 'Eastern District'), A.compose('', 'NASA', ''), A.match('U.S. Postal Inspection Service').code ]; }""")
     record("employer", "an old free-text employer opens on its agency, with the rest as the unit",
            r[0] == {"code": "ATF", "other": "", "unit": "Special Response Team"} and r[1] == {"code": "FBI", "other": "", "unit": "Kansas City Field Office"} and r[3]["code"] == "CBP", str(r[:4]))
-    record("employer", "...one not on file opens as Other with its words", r[2] == {"code": "", "other": "National Security Agency", "unit": ""}, str(r[2]))
+    record("employer", "...one not on file opens as Other with its words", r[2] == {"code": "", "other": "Tennessee Valley Authority", "unit": ""}, str(r[2]))
+    nb = page.evaluate("""() => { const A = window.dgAgencies; return ['NASA Kennedy Space Center', 'U.S. Coast Guard (HITRON)', 'National Security Agency (TAO)', 'IRS Criminal Investigation', 'Department of Homeland Security'].map(e => A.split(e).code); }""")
+    record("employer", "batch 1 (NASA, NSA, Coast Guard, DHS, IRS-CI): the professions' employers find their agency", nb == ["NASA", "USCG", "NSA", "IRSCI", "DHS"], str(nb))
+    nb = page.evaluate("""() => { const A = window.dgAgencies; return ['CIA Directorate of Operations', 'DIA HUMINT', 'NGA', 'National Reconnaissance Office', 'Office of Naval Intelligence', 'Media relations', 'Special projects'].map(e => A.split(e).code); }""")
+    record("employer", "batch 2 (CIA, DIA, NGA, NRO, ONI): the professions' employers find their agency, and words like 'Media'/'Special' don't",
+           nb == ["CIA", "DIA", "NGA", "NRO", "ONI", "", ""], str(nb))
+    nb = page.evaluate("""() => { const A = window.dgAgencies; return ['FEMA Region IV', 'National Counterterrorism Center', 'NNSA Office of Secure Transportation', 'DARPA', 'National Park Service ranger', 'Female choir'].map(e => A.split(e).code); }""")
+    record("employer", "batch 3 (FEMA, NCTC, NNSA, DARPA, NPS) find their agency, and 'Female' isn't FEMA",
+           nb == ["FEMA", "NCTC", "NNSA", "DARPA", "NPS", ""], str(nb))
+    nb = page.evaluate("""() => { const A = window.dgAgencies; return ["U.S. Attorney's Office, Southern District of New York", 'Department of Justice', 'DOJ Office of Inspector General', 'Federal Bureau of Investigation'].map(e => A.split(e).code); }""")
+    record("employer", "batch 4: a U.S. Attorney finds the Department of Justice, while DOJ OIG and the FBI keep their own cards",
+           nb == ["DOJ", "DOJ", "DOJIG", "FBI"], str(nb))
+    nb = page.evaluate("""() => { const A = window.dgAgencies; return ['Office of the Director of National Intelligence', 'NCTC (ODNI)', 'CDC Epidemic Intelligence Service', 'NIH', 'State Department, Bureau of Diplomatic Security', 'Tennessee State Police', 'State of Tennessee'].map(e => A.split(e).code); }""")
+    record("employer", "batch 4 (ODNI, CDC, NIH, State) find their agency; NCTC beats ODNI; 'State Police' isn't the State Department",
+           nb == ["ODNI", "NCTC", "CDC", "NIH", "DOS", "", ""], str(nb))
     record("employer", "agency + unit saves as one employer line the Field ID still matches", r[4] == "U.S. Marshals Service — Eastern District" and r[5] == "NASA" and r[6] == "USPI", str(r[4:]))
     page.close()
     # In New Recruit: the drop-down, the note, the hidden field.
@@ -11492,15 +11539,26 @@ def test_employer_dropdown(p):
     record("employer", "New Recruit: Employer is the agencies drop-down, on the profession's agency", page.eval_on_selector("[data-emp=sel]", "e => e.value") == "ATF"
            and page.eval_on_selector("[data-emp=unit]", "e => e.value") == "Special Response Team" and "credential" in page.inner_text(".dg-emp-note"), "")
     page.select_option("[data-emp=sel]", "__other")
-    page.fill("[data-emp=other]", "National Security Agency")
+    page.fill("[data-emp=other]", "Tennessee Valley Authority")
     page.wait_for_timeout(200)
     record("employer", "...Other… asks which agency, says there's no card on file (quietly), and saves the words",
-           page.evaluate("() => window.dgRecruit._w().bio.employer") == "National Security Agency" and "No ID card on file" in page.inner_text(".dg-emp-note")
+           page.evaluate("() => window.dgRecruit._w().bio.employer") == "Tennessee Valley Authority" and "No ID card on file" in page.inner_text(".dg-emp-note")
            and page.is_hidden("[data-emp=unit]"), page.evaluate("() => window.dgRecruit._w().bio.employer"))
     page.select_option("[data-emp=sel]", "USMS")
     page.fill("[data-emp=unit]", "Eastern District")
     page.wait_for_timeout(200)
     record("employer", "...an agency and its unit save as one line", page.evaluate("() => window.dgRecruit._w().bio.employer") == "U.S. Marshals Service — Eastern District", page.evaluate("() => window.dgRecruit._w().bio.employer"))
+    # v3.9.4: grouped and searchable; the batch-1 agencies are on file.
+    groups = page.evaluate("() => [...document.querySelectorAll('[data-emp=sel] optgroup')].map(g => g.label)")
+    record("employer", "the drop-down is grouped (law enforcement, intelligence, homeland security, science, state & local)",
+           groups[:5] == ["Federal law enforcement", "Intelligence", "Homeland security & response", "Science & civil", "State & local"], str(groups))
+    page.fill("[data-emp=q]", "coast")
+    page.wait_for_timeout(200)
+    record("employer", "typing 'coast' in the search picks the Coast Guard", page.eval_on_selector("[data-emp=sel]", "e => e.value") == "USCG"
+           and page.evaluate("() => window.dgRecruit._w().bio.employer").startswith("U.S. Coast Guard"), page.evaluate("() => window.dgRecruit._w().bio.employer"))
+    page.fill("[data-emp=q]", "intel")
+    page.wait_for_timeout(200)
+    record("employer", "...'intel' narrows it to the Intelligence group", page.evaluate("() => [...document.querySelectorAll('[data-emp=sel] optgroup')].map(g => g.label).filter(l => l !== 'Homeland security & response')") == ["Intelligence"], str(page.evaluate("() => [...document.querySelectorAll('[data-emp=sel] option')].map(o => o.value)")))
     record("employer", "no JS exceptions", not errs, str(errs[:3]))
     page.close()
     return errs
@@ -11530,6 +11588,8 @@ def test_acell_id_creator(p):
     record("id-creator", "an uploaded face lands in id-templates/faces/", "id-templates/faces/face-03.jpg" in page.evaluate("() => window.__dgStorageUploads.map(u => u.path)"), "")
     page.select_option("[data-k=tpl]", "badge-oregon")
     page.fill("[data-f=name]", "Elena Vargas")
+    page.fill("[data-f=title]", "Trace Evidence Examiner")
+    record("id-creator", "a title of your own, the usual ones offered as suggestions", "Trace Evidence Examiner" in page.inner_text("[data-idc-prev]") and page.locator("#idc-dl-title option").count() >= 4, "")
     page.click("[data-a=face][data-v='faces/face-01.jpg']")
     page.select_option("[data-k=op]", "op_h")
     record("id-creator", "the badge shows the NPC's name and the chosen face", "Elena Vargas" in page.inner_text("[data-idc-prev]") and page.locator("[data-idc-prev] .dgf-photo").count() == 1, "")
