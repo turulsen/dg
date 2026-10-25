@@ -1873,7 +1873,7 @@
             desc.innerHTML = '<div class="as-sec-hd">Physical description</div><p class="as-text' + (pd ? '' : ' as-k') + '">' + escapeHtml(pd || 'Not described yet — fill in the brief below.') + '</p>';
           }
           window.dgAgentPaper.mount(out, {
-            code: a.code, char: charDoc, name: a.char_name || a.code, codename: brief.codename || a.codename || '',
+            code: a.code, char: charDoc, name: a.char_name || a.code, codename: brief.codename || a.codename || '', brief,
             photo: window.dgStore.mainPhoto ? window.dgStore.mainPhoto(brief) : (brief.face_plate_url || ''),
             professionLabel: profTitle, members, cellName: cell ? (cell.name || cell.cell_id) : '', opsHtml,
             physical: AS.physical(brief, ''), incursion: AS.incursionText(charDoc, state), loadPhoto,
