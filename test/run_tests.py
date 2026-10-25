@@ -11528,6 +11528,22 @@ def test_agent_file_profession_employer_line(p):
             ok = line.startswith("Federal Agent · Federal Bureau of Investigation — Kansas City Field Office · Cover “PARADE”")
             label = f"{where}: profession · employer · Cover under the name"
         record("agent-file", label, ok, line)
+        if fallback:
+            # Edit mode's Personal data starts from the same words, and Save
+            # files them onto the sheet.
+            root = f"#ah-sheet-{FN_CODE}"
+            page.locator(root + " [data-a=edit]").first.click()
+            page.wait_for_selector(root + " .ap-editbar", timeout=5000)
+            shown = [page.eval_on_selector(root + " [data-e='bio.profession']", "e => e.value"), page.eval_on_selector(root + " [data-emp=other]", "e => e.value")]
+            page.locator(root + " [data-a=save]").first.click()
+            page.wait_for_selector("#fn-orders.fn-oath-save", timeout=5000)
+            page.keyboard.press("Enter"); page.keyboard.press("y")
+            def bio_saved():
+                b = json.loads(page.evaluate("() => window.__dgFirestoreDocs['characters/%s'].character_json" % FN_CODE)).get("bio", {})
+                return b if b.get("profession") == "Photographer" and b.get("employer") == "The Coos Bay Clarion" else None
+            got = wait_for_condition(bio_saved, timeout_ms=6000)
+            record("agent-file", "hub: Edit mode's Personal data starts from them, and Save files them on the sheet",
+                   shown == ["Photographer", "The Coos Bay Clarion"] and bool(got), str(shown))
         errs_all += errs
         page.close()
     record("agent-file", "profession line: no JS exceptions", len(errs_all) == 0, "; ".join(errs_all))

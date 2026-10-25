@@ -622,9 +622,21 @@
     function woundsHtml(x) {
       return '<div class="as-sec-hd">Wounds &amp; ailments</div><textarea class="ap-ta" data-q="wounds" placeholder="Injuries, illness, anything slowing the Agent down">' + esc((x.lpNotes && x.lpNotes.wounds) || '') + '</textarea>';
     }
+    // Entering Edit mode: an Agent whose sheet has no profession or
+    // employer gets the brief's in the working copy, so Save files them.
+    function seedFromBrief() {
+      var E = s.edit, br = ctx.brief || {};
+      if (!E) return;
+      E.bio = E.bio || {};
+      if (!E.bio.profession && br.profession) E.bio.profession = br.profession;
+      if (!E.bio.employer && br.employer) E.bio.employer = br.employer;
+    }
     function personalHtml(x) {
-      var b = x.bio || {};
-      var f = [['profession', 'Profession', ctx.professionLabel ? ctx.professionLabel(b.profession) : b.profession], ['employer', 'Employer', b.employer], ['nationality', 'Nationality', b.nationality],
+      // Profession and employer start from what the line under the name
+      // shows, the brief's when the sheet has none, so saving files them.
+      var b = x.bio || {}, br = ctx.brief || {};
+      var prof = (ctx.professionLabel ? ctx.professionLabel(b.profession) : b.profession) || br.profession || '';
+      var f = [['profession', 'Profession', prof], ['employer', 'Employer', b.employer || br.employer || ''], ['nationality', 'Nationality', b.nationality],
         ['sex', 'Sex', b.sex], ['age', 'Age', b.age], ['education', 'Education', b.education]];
       return '<div class="ap-pdata">' + f.map(function (r) {
         // Employer: the agencies with a Field ID card on file, or Other.
@@ -859,7 +871,7 @@
           ui.pop = ''; s.update(function (y) { y.equipment = y.equipment || []; y.equipment.push(add); }); return;
         }
         case 'card': ui.card = ui.card === i ? -1 : i; render(); return;
-        case 'edit': ui.pop = ''; s.beginEdit(); return;
+        case 'edit': ui.pop = ''; s.beginEdit(); seedFromBrief(); return;
         case 'cancel':
           if (s.editDirty()) {
             (window.dgConfirm ? window.dgConfirm('Throw away these edits?', { ok: 'Throw away', cancel: 'Keep editing' }) : Promise.resolve(window.confirm('Throw away these edits?')))
