@@ -781,6 +781,14 @@
     if (slot && window.dgAgentFile) { window.dgAgentFile.mount(slot, id); placeAppearance(id); }
     if (id === 'new' && window.dgRecruit) window.dgRecruit.show();
   }
+  // An Agent's folder opened by the player (a tab, the Agents menu, a
+  // ?code= link, a new recruit) is the notebook's Agent from then on.
+  function followInNotebook(id) {
+    if (!id || id === 'new' || id === 'empty') return;
+    const fn = window.dgFieldNotes;
+    if (fn && fn.useAgent) fn.useAgent(id);
+    else { try { localStorage.setItem('dg_stats_cloud_code', id); } catch (e) { /* storage blocked */ } }
+  }
 
   // The Appearance form lives in the drop-down under the Agent's photo;
   // the rest of the Agent File (the era photos) below the sheet. The form
@@ -885,6 +893,7 @@
     if (!b) return;
     e.stopPropagation();
     setActiveTab(b.dataset.code);
+    followInNotebook(b.dataset.code);
     const tab = tabStrip.querySelector('.tw.active');
     if (tab) tab.scrollIntoView({ block: 'nearest' });
   });
@@ -1070,6 +1079,7 @@
     if (!code) return;
     renderRoster(code);
     setActiveTab(code);
+    followInNotebook(code);
     const panel = document.getElementById('panel-' + code);
     if (panel && panel.scrollIntoView) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
@@ -1086,6 +1096,7 @@
     const part = (location.hash || '').replace('#', '');
     const go = () => {
       setActiveTab(code);
+      followInNotebook(code);
       if ((part === 'appearance' || part === 'photos') && window.dgAgentFile) window.dgAgentFile.focus(part); // waits for the Agent to load
     };
     if (rosterLoad()[code]) { go(); return; }
@@ -2010,6 +2021,7 @@
     if (!tab) return;
     if (tab.classList.contains('tw-switch')) { toggleAgentMenu(); return; }
     setActiveTab(tab.dataset.tab);
+    followInNotebook(tab.dataset.tab);
   });
   tabStrip.addEventListener('keydown', e => {
     if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('tw-switch')) {

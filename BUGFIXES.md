@@ -6858,3 +6858,18 @@ chance to add to the wallet. When pressing print, cannot return."
   object, which is why the tests passed; it now refuses another frame's
   arrays and objects the way Firestore does, for every write.
   `sw.js` `CACHE_NAME` v244.
+
+### The notebook kept the previous Agent after switching players (v3.9.2)
+
+Reported: "I load an Agent from a different player but in their Field
+Notes I still have the other Agent's character sheet." The notebook's
+Agent is `dg_stats_cloud_code`, set only by its own ‹ › flip. Opening an
+Agent's folder on Agent Hub never changed it, and a Cover Identity
+lookup that replaced the roster with another player's Agents left it
+pointing at an Agent no longer on the device, so Agent File, Field ID and
+the Fabricator stayed on the old one. Now opening a folder (a tab, the
+Agents menu, a `?code=` link, a newly filed recruit) makes that Agent the
+notebook's (`dgFieldNotes.useAgent`), and a pinned Agent no longer in the
+roster gives way to the roster's most recent. Test:
+`test_hub_folder_switches_notebook_agent` (both checks fail on v3.9.1).
+`sw.js` `CACHE_NAME` v245.
