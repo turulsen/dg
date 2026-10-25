@@ -75,6 +75,7 @@ select.in{appearance:auto}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{border:1px solid #1f5a1f;padding:7px 11px;font:11.5px 'Courier Prime',monospace;letter-spacing:.06em;color:var(--g);background:none;cursor:pointer}
 .chip.on{border-color:var(--g2);color:var(--gl);background:#1f4f1f}
+.chips .fx-own{flex:1 1 160px;width:auto;min-width:140px;padding:6px 10px;font-size:13px}
 .dice{display:inline-flex;align-items:center;justify-content:center;min-width:44px;border:1px solid var(--g);font-size:21px;color:var(--g2);background:none;cursor:pointer;flex:none}
 .btn{font:12px 'Special Elite',monospace;letter-spacing:.14em;text-transform:uppercase;padding:11px 18px;border:1px solid var(--g);color:var(--g);background:transparent;cursor:pointer}
 .btn.go{background:var(--gd);color:var(--gl);border-color:var(--g2)}
@@ -274,7 +275,9 @@ select.in{appearance:auto}
     var title = r.key.indexOf('sheriff') === 0 ? ['JURISDICTION // RANK', 'Pick a county nobody will call. Pick a rank nobody will question.'] : ['FILL THE STOCK', 'Your name is in. Roll what you don’t want to invent.'];
     paint(T(title[0], title[1]) + '<div class="split"><div>' + r.fields.map(function (x) {
         var v = f[x.k] || '';
-        if (x.opts) return '<div class="lbl">' + esc(x.label) + '</div><div class="chips">' + x.opts.map(function (o) { return '<button type="button" class="chip' + (o === v ? ' on' : '') + '" data-x="opt" data-k="' + x.k + '" data-v="' + esc(o) + '">' + esc(o) + '</button>'; }).join('') + '</div>';
+        // The usual ones as chips, and a free field for your own (v3.9.3).
+        if (x.opts) return '<div class="lbl">' + esc(x.label) + '</div><div class="chips">' + x.opts.map(function (o) { return '<button type="button" class="chip' + (o === v ? ' on' : '') + '" data-x="opt" data-k="' + x.k + '" data-v="' + esc(o) + '">' + esc(o) + '</button>'; }).join('') +
+          '<input class="in fx-own" data-in="f.' + x.k + '" value="' + esc(v) + '" placeholder="or your own\u2026" aria-label="' + esc(x.label) + ', your own"></div>';
         return '<div class="lbl">' + esc(x.label) + '</div><div class="row"><input class="in' + (x.k === 'place' ? ' big' : '') + '" data-in="f.' + x.k + '" value="' + esc(v) + '">' +
           (x.roll ? '<button type="button" class="dice" data-x="roll" data-k="' + x.k + '" data-r="' + x.roll + '" aria-label="Roll ' + esc(x.label) + '">⚄</button>' : '') + '</div>';
       }).join('') + photoNote() +
@@ -332,8 +335,8 @@ select.in{appearance:auto}
     entityDefaults(d);
     paint(T('FINAL PROOF', 'Give yourself a job title. Roll a number that rings somewhere.') +
       '<div class="split"><div>' +
-        '<div class="lbl">JOB TITLE</div><div class="chips">' + k.titles.map(function (t) { return '<button type="button" class="chip' + (t === d.title ? ' on' : '') + '" data-x="etitle" data-v="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') + '</div>' +
-        '<input class="in" style="margin-top:6px" data-in="title" value="' + esc(d.title) + '" aria-label="Job title">' +
+        '<div class="lbl">JOB TITLE</div><div class="chips">' + k.titles.map(function (t) { return '<button type="button" class="chip' + (t === d.title ? ' on' : '') + '" data-x="etitle" data-v="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') +
+        '<input class="in fx-own" data-in="title" value="' + esc(d.title) + '" placeholder="or your own\u2026" aria-label="Job title, your own"></div>' +
         '<div class="lbl">NAME</div><input class="in" data-in="name" value="' + esc(d.name) + '">' +
         '<div class="lbl">PHONE · E-MAIL</div><div class="row"><input class="in" data-in="phone" value="' + esc(d.phone) + '"><button type="button" class="dice" data-x="roll-phone" aria-label="Roll a phone number">⚄</button></div>' +
         '<input class="in" style="margin-top:6px" data-in="mail" value="' + esc(d.mail) + '">' +
@@ -404,9 +407,15 @@ select.in{appearance:auto}
   function setIn(path, v) {
     var d = S.d;
     if (!d) return;
-    if (path.indexOf('f.') === 0) d.fields[path.slice(2)] = v;
+    if (path.indexOf('f.') === 0) {
+      d.fields[path.slice(2)] = v;
+      var box = document.querySelector('[data-in="' + path + '"]');
+      box = box && box.closest('.chips');
+      if (box) Array.prototype.forEach.call(box.querySelectorAll('.chip'), function (c) { c.classList.toggle('on', c.getAttribute('data-v') === v); });
+    }
     else if (path === 'agency') { d.agency = v; var a = A.byCode(v); if (a) d.fields.title = a.title; if (NO_90S[v] && d.era === '90s') d.era = '00s'; render(); return; }
     else d[path] = v;
+    if (path === 'title') { var tb = document.querySelector('[data-in="title"]'); tb = tb && tb.closest('.chips'); if (tb) Array.prototype.forEach.call(tb.querySelectorAll('.chip'), function (c) { c.classList.toggle('on', c.getAttribute('data-v') === v); }); }
     // A new name: new insignia and address to match.
     if (path === 'org') { d.logo = null; d.mail = ''; if (S.err) { S.err = ''; var er = document.getElementById('fx-err'); if (er) er.textContent = ''; } }
     refreshPreview();

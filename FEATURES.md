@@ -715,7 +715,8 @@ Face Plate as its ID photo:
   Handler's evidence-pack stock (two sheriffs, City of Oak Grove, Fire /
   EMS, Park Service, FBI business card, towing, railway, podcast,
   ministry, Titan Forensics, five forensics-lab badges), then its words:
-  chips for ranks and titles, ⚄ for county, park, phone, badge no.
+  chips for ranks and titles with a free field beside them for your
+  own (v3.9.3), ⚄ for county, park, phone, badge no.
 - **[3] Fabricate an entity** (4 steps): name it (⚄ invents one) and
   pick a kind (energy, trade, finance, church, clinic, media, transport,
   security), pick one of six drawn insignia (⟳ six more, ◐ other

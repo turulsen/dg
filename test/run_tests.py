@@ -11389,6 +11389,11 @@ def test_field_id_forgery(p):
         prev = f.inner_text("#fx-prev")
         record("forgery", f"{where}: 2 / Office: the sheriff's card fills with the rolled county and the Agent's name and photo",
                place.endswith("County") and place in prev and "Mara Voss" in prev and photo_on(), prev[:120])
+        f.fill("[data-in='f.rank']", "Undersheriff")
+        record("forgery", f"{where}: ...a rank of your own next to the usual ones goes on the card (no chip lit)",
+               "Undersheriff" in f.inner_text("#fx-prev") and f.locator(".chip.on[data-k=rank]").count() == 0, f.inner_text("#fx-prev")[:80])
+        f.click("[data-x=opt][data-k=rank][data-v=Sergeant]")
+        record("forgery", f"{where}: ...and a chip fills the field again", f.eval_on_selector("[data-in='f.rank']", "e => e.value") == "Sergeant", "")
         f.click("[data-x=file]")
         f.wait_for_selector("text=FORGERY COMPLETE")
         # (3) Entity: name it, take a logo, a layout, file.
@@ -11402,6 +11407,8 @@ def test_field_id_forgery(p):
         record("forgery", f"{where}: ...six layouts, each with the photo", f.locator(".pick .dgf-card").count() == 6 and f.locator(".pick .dgf-photo").count() == 6, "")
         f.click("[data-x=layout][data-v=letterhead]"); f.click("[data-x=next]")
         f.click("[data-x=roll-phone]")
+        f.fill("[data-in=title]", "Night Shift Gas Leak Inspector")
+        record("forgery", f"{where}: ...a job title of your own next to the kind's", "Night Shift Gas Leak Inspector" in f.inner_text("#fx-prev"), "")
         f.click("[data-x=file]")
         f.wait_for_selector("text=FORGERY COMPLETE")
         w = wait_for_condition(lambda: len((wal() or {}).get("cards") or []) == 3 and wal(), timeout_ms=5000) or wal()
@@ -11530,6 +11537,8 @@ def test_acell_id_creator(p):
     record("id-creator", "an uploaded face lands in id-templates/faces/", "id-templates/faces/face-03.jpg" in page.evaluate("() => window.__dgStorageUploads.map(u => u.path)"), "")
     page.select_option("[data-k=tpl]", "badge-oregon")
     page.fill("[data-f=name]", "Elena Vargas")
+    page.fill("[data-f=title]", "Trace Evidence Examiner")
+    record("id-creator", "a title of your own, the usual ones offered as suggestions", "Trace Evidence Examiner" in page.inner_text("[data-idc-prev]") and page.locator("#idc-dl-title option").count() >= 4, "")
     page.click("[data-a=face][data-v='faces/face-01.jpg']")
     page.select_option("[data-k=op]", "op_h")
     record("id-creator", "the badge shows the NPC's name and the chosen face", "Elena Vargas" in page.inner_text("[data-idc-prev]") and page.locator("[data-idc-prev] .dgf-photo").count() == 1, "")

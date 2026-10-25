@@ -113,7 +113,7 @@
     if (S.kind === 'office') {
       form = '<label class="idc-l">Design<select data-k="tpl">' + refs.map(function (r) { return '<option value="' + r.key + '"' + (r.key === S.tpl ? ' selected' : '') + (S.stock && !S.stock[r.file] ? ' disabled' : '') + '>' + esc(r.label) + (S.stock && !S.stock[r.file] ? ' (not uploaded)' : '') + '</option>'; }).join('') + '</select></label>' +
         F.ref(S.tpl).fields.map(function (x) {
-          return '<label class="idc-l">' + esc(x.label) + (x.opts ? '<select data-f="' + x.k + '">' + x.opts.map(function (o) { return '<option' + (o === f[x.k] ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select>'
+          return '<label class="idc-l">' + esc(x.label) + (x.opts ? '<input data-f="' + x.k + '" list="idc-dl-' + x.k + '" value="' + esc(f[x.k] || '') + '" placeholder="pick or type your own"><datalist id="idc-dl-' + x.k + '">' + x.opts.map(function (o) { return '<option value="' + esc(o) + '">'; }).join('') + '</datalist>'
             : '<span class="idc-row"><input data-f="' + x.k + '" value="' + esc(f[x.k] || '') + '">' + (x.roll ? '<button type="button" class="paper-btn" data-a="roll" data-k="' + x.k + '" data-r="' + x.roll + '" title="Roll">⚄</button>' : '') + '</span>') + '</label>';
         }).join('');
     } else if (S.kind === 'mirror') {
