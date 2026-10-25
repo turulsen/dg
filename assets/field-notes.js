@@ -216,6 +216,10 @@
     }
     var r = roster();
     var code = lsGet(CLOUD_CODE_KEY) || '';
+    // An Agent no longer on this device (a Cover Identity lookup replaced
+    // the roster with another player's Agents) isn't the notebook's any
+    // more: the roster's most recent one is (v3.9.2).
+    if (code && Object.keys(r).length && !r[String(code).trim().toUpperCase()]) code = '';
     if (!code) {
       var list = Object.keys(r).map(function (k) { return r[k]; })
         .sort(function (a, b) { return (b.saved_at || 0) - (a.saved_at || 0); });
@@ -915,6 +919,17 @@
     }
     lsSet(CLOUD_CODE_KEY, next.code);
     try { window.dispatchEvent(new CustomEvent('dg-cloud-code-set', { detail: { code: next.code } })); } catch (e) { /* old engine */ }
+    renderChrome();
+    refresh();
+  }
+  // Agent Hub opening an Agent's folder makes them the notebook's Agent
+  // too (v3.9.2): the notebook used to keep the last one it had.
+  function useAgent(code) {
+    code = String(code || '').trim().toUpperCase();
+    var a = currentAgent();
+    if (!code || (a && !a.friendly && a.code === code)) return;
+    lsSet(CLOUD_CODE_KEY, code);
+    try { window.dispatchEvent(new CustomEvent('dg-cloud-code-set', { detail: { code: code } })); } catch (e) { /* old engine */ }
     renderChrome();
     refresh();
   }
@@ -1948,7 +1963,7 @@
   /* ── Public API ── */
   window.dgFieldNotes = {
     isHost: true,
-    open: open, close: close, refresh: refresh, oath: oath,
+    open: open, close: close, refresh: refresh, oath: oath, useAgent: useAgent,
     contract: function (o) { return oath(Object.assign({}, o, { contract: true })); },
     // Split mode (desktop): the Agent File beside one of the brown tabs.
     split: function (view) {

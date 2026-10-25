@@ -11544,6 +11544,41 @@ def test_acell_id_creator(p):
     page.close()
     return errs
 
+def test_hub_folder_switches_notebook_agent(p):
+    """v3.9.2: opening another Agent's folder on Agent Hub (a tab or the
+    Agents menu) makes them the notebook's Agent: Agent File, Field ID
+    and the Fabricator follow. Reported: "I load an Agent from a different
+    player but their Field Notes still have the other Agent's sheet"."""
+    docs = _field_notes_docs()
+    docs[f"briefs/{FN_MATE}"] = {"agent_code": FN_MATE, "char_name": "Tom Hale", "codename": "TIN CUP", "player_name": "other player"}
+    docs[f"characters/{FN_MATE}"] = character_doc(FN_MATE, {"v": 1, "bio": {"name": "Tom Hale"}}, "other player")
+    roster = {FN_CODE: {"code": FN_CODE, "char_name": "Mara Voss", "player_name": "fn tester", "saved_at": 9},
+              FN_MATE: {"code": FN_MATE, "char_name": "Tom Hale", "player_name": "other player", "saved_at": 5}}
+    extra = "localStorage.removeItem('dg_cover_identity'); localStorage.setItem('dg_agent_roster', %s); localStorage.setItem('dg_stats_cloud_code', '%s'); localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1, '%s': 1}));" % (
+        json.dumps(json.dumps(roster)), FN_CODE, FN_CODE, FN_MATE)
+    page, errs = _field_notes_page(p, docs=docs, extra_init=extra)
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.wait_for_selector(f"#tab-strip .tw[data-tab='{FN_MATE}']", timeout=10000)
+    before = page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')")
+    page.click(f"#tab-strip .tw[data-tab='{FN_MATE}'] > span")
+    page.wait_for_timeout(400)
+    after = page.evaluate("() => localStorage.getItem('dg_stats_cloud_code')")
+    page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+    shown = wait_for_condition(lambda: "Tom Hale" in (page.text_content("#fn-veil [data-fn-slot=card-name]") or "") or None, timeout_ms=8000)
+    record("notebook", "opening another Agent's folder on Agent Hub makes them the notebook's Agent", before == FN_CODE and after == FN_MATE and bool(shown),
+           f"{before} -> {after}, card: {page.text_content('#fn-veil [data-fn-slot=card-name]')}")
+    # The roster replaced by another player's Agents (a Cover Identity
+    # lookup) while the notebook was on one of yours: it moves to theirs.
+    page.evaluate("""(r) => { localStorage.setItem('dg_agent_roster', JSON.stringify(r)); localStorage.setItem('dg_stats_cloud_code', '%s'); window.dgFieldNotes.refresh(); }""" % FN_CODE,
+                  {FN_MATE: roster[FN_MATE]})
+    page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+    moved = wait_for_condition(lambda: "Tom Hale" in (page.text_content("#fn-veil [data-fn-slot=card-name]") or "") or None, timeout_ms=8000)
+    record("notebook", "an Agent no longer on the device isn't the notebook's: the roster's is", bool(moved), page.text_content("#fn-veil [data-fn-slot=card-name]"))
+    record("notebook", "no JS exceptions (folder → notebook)", not errs, str(errs[:3]))
+    page.close()
+    return errs
+
 def test_field_notes_page_taps_act_once(p):
     """The notebook's page body is one element reused by every page, and
     quick notes and Settings each added a click listener per render: after
@@ -12559,6 +12594,7 @@ def main():
         safe(test_field_id_forgery, browser, area="forgery")
         safe(test_employer_dropdown, browser, area="employer")
         safe(test_acell_id_creator, browser, area="id-creator")
+        safe(test_hub_folder_switches_notebook_agent, browser, area="notebook")
         safe(test_friendly_clearance, browser, area="friendly")
         safe(test_friendly_case_files, browser, area="friendly")
         safe(test_field_notes_notebook, browser, area="notebook")
