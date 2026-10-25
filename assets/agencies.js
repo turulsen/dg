@@ -38,6 +38,8 @@
     { code: 'NRO', abbr: 'NRO', name: 'National Reconnaissance Office', title: 'Program Officer', alias: ['reconnaissance office'], group: 1 },
     { code: 'ONI', abbr: 'ONI', name: 'Office of Naval Intelligence', title: 'Intelligence Specialist', alias: ['naval intelligence'], group: 1 },
     { code: 'NCTC', abbr: 'NCTC', name: 'National Counterterrorism Center', title: 'Counterterrorism Analyst', alias: ['counterterrorism center'], since: '00s', group: 1 },
+    // After NCTC, which sits under it.
+    { code: 'ODNI', abbr: 'ODNI', name: 'Office of the Director of National Intelligence', title: 'Intelligence Officer', alias: ['director of national intelligence'], since: '00s', group: 1 },
     { code: 'USCG', abbr: 'USCG', name: 'U.S. Coast Guard', title: 'Petty Officer', alias: ['coast guard'], group: 2 },
     { code: 'FEMA', abbr: 'FEMA', name: 'Federal Emergency Management Agency', title: 'Emergency Management Specialist', alias: ['emergency management'], group: 2 },
     { code: 'DHS', abbr: 'DHS', name: 'Department of Homeland Security', title: 'Special Agent', alias: ['homeland security'], since: '00s', group: 2 },
@@ -45,6 +47,10 @@
     { code: 'NNSA', abbr: 'NNSA', name: 'National Nuclear Security Administration', title: 'Nuclear Materials Courier', alias: ['nuclear security'], since: '00s', group: 3 },
     { code: 'DARPA', abbr: 'DARPA', name: 'Defense Advanced Research Projects Agency', title: 'Program Manager', alias: ['advanced research projects'], group: 3 },
     { code: 'NPS', abbr: 'NPS', name: 'National Park Service', title: 'Park Ranger', alias: ['park service', 'park ranger'], group: 3 },
+    { code: 'CDC', abbr: 'CDC', name: 'Centers for Disease Control and Prevention', title: 'Epidemiologist', alias: ['disease control'], group: 3 },
+    { code: 'NIH', abbr: 'NIH', name: 'National Institutes of Health', title: 'Research Scientist', alias: ['institutes of health'], group: 3 },
+    // Not 'STATE': that would catch "State Police" and "State of ...".
+    { code: 'DOS', abbr: 'DOS', name: 'Department of State', title: 'Foreign Service Officer', alias: ['state department', 'diplomatic security', 'foreign service'], group: 3 },
     { code: 'NYPD', abbr: 'NYPD', name: 'New York City Police Department', title: 'Detective', alias: ['new york police'], group: 4 },
     { code: 'SCSO', abbr: 'SCSO', name: "Shelby County Sheriff's Office", title: 'Deputy', alias: ['shelby county'], group: 4 },
     { code: 'MEPIC', abbr: 'M-EPIC', name: 'M-EPIC Environmental Policy Impact Commission', title: 'Investigator', alias: ['m-epic', 'environmental policy'], group: 5 }
