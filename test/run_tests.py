@@ -3951,6 +3951,126 @@ def test_player_pages_never_get_the_handler_feed(p):
     page.close()
     return errs
 
+def test_acell_desk(p):
+    """v3.11.0, A-Cell's Desk: the tabs as panels side by side. The
+    Session layout puts the Session notes list beside Play and Music (the
+    real tab panels, moved, not copied); a note opens docked there, and
+    its ticks still save. Panels move by their grip, resize by the
+    dividers, fill the Desk (⤢), come off it (✕, back on their tab); a tab
+    that's on the Desk says so. Layouts save on the device and come back
+    after a reload. On a phone the panels stack, the rest behind tabs."""
+    note_html = ("<!doctype html><html><body><input type='checkbox' id='c1'><label for='c1'>Clue found</label>"
+                 "<script>var S={};try{S=JSON.parse(localStorage.getItem('prep-v1')||'{}');}catch(e){}"
+                 "document.getElementById('c1').checked=!!S.c1;"
+                 "document.getElementById('c1').addEventListener('change',function(e){S.c1=e.target.checked;localStorage.setItem('prep-v1',JSON.stringify(S));});"
+                 "</script></body></html>")
+    docs = {"session_notes/sn2": {"title": "Darkened Room", "description": "Act II", "file_en": {"name": "room.html", "size": 300}},
+            "session_notes/sn2/files/en": {"html": note_html, "name": "room.html"}}
+    errs_all = []
+    def open_acell(width=1280, height=900, storage=None):
+        page = p.new_page(viewport={"width": width, "height": height})
+        page.set_default_timeout(8000)
+        errs = collect_errors(page)
+        page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+        page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+        skip_acell_gate(page)
+        page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); %s } catch (e) {}" % (
+            ("localStorage.setItem('dg_desk_v1', %s);" % json.dumps(json.dumps(storage))) if storage else ""))
+        install_firestore_backend(page, docs)
+        page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+        wait_for_condition(lambda: page.evaluate("() => window.__dgFirestoreAuthUser && window.__dgFirestoreAuthUser.uid") == "handler", timeout_ms=6000)
+        page.click("#acell-tab-strip .tw[data-tab=desk]")
+        page.wait_for_selector(".dk-grid .dk-pane", timeout=6000)
+        return page, errs
+    panes = lambda pg: pg.evaluate("() => window.dgDesk.panes()")
+    inside = lambda pg, sel: pg.evaluate("(s) => !!document.querySelector('.dk-grid ' + s)", sel)
+
+    page, errs = open_acell()
+    page.wait_for_selector(".dk-grid .sn-card", timeout=8000)
+    wide = page.evaluate("() => document.querySelector('.folder-wrap').getBoundingClientRect().width")
+    record("desk", "the Desk opens on the Session layout: Session notes beside Play and Music, the real panels, on a wider page",
+           panes(page) == ["notes", "play", "music"] and inside(page, "#panel-play") and inside(page, "#panel-music") and inside(page, "#panel-notes") and wide > 1100,
+           f"{panes(page)} wide={wide}")
+    # A note, docked.
+    page.click(".dk-grid .sn-card button[data-sn=desk][data-lang=en]")
+    page.wait_for_selector(".dk-grid .sn-viewer.sn-docked .sn-v-frame", timeout=8000)
+    page.query_selector(".dk-grid .sn-v-frame").content_frame().wait_for_load_state("load")
+    record("desk", "▦ Desk on a session note opens it docked in place of the list, beside the Agents",
+           panes(page) == ["note:sn2:en", "play", "music"] and not inside(page, "#panel-notes") and page.locator("body > .sn-viewer").count() == 0, str(panes(page)))
+    page.frame_locator(".dk-grid .sn-v-frame").locator("#c1").check()
+    _pump_until(page, lambda: "c1" in ((fs_doc(page, "session_notes/sn2/state/en") or {}).get("items") or {}).get("prep-v1", ""), timeout_ms=5000)
+    record("desk", "...its ticks still save", "c1" in ((fs_doc(page, "session_notes/sn2/state/en") or {}).get("items") or {}).get("prep-v1", ""), "")
+    # A tab that's on the Desk.
+    page.click("#acell-tab-strip .tw[data-tab=play]")
+    away = page.inner_text(".folder-body > .dk-away.active") if page.locator(".folder-body > .dk-away.active").count() else ""
+    page.click(".dk-away [data-dk-away=go]")
+    record("desk", "Play's own tab says it's on the Desk, and Open the Desk goes back to it",
+           "Play is on the Desk" in away and page.evaluate("() => document.querySelector('#acell-tab-strip .tw[data-tab=desk]').classList.contains('active')"), away)
+    # Drag Music by its grip onto the note's left edge: a new column.
+    def box(sel): return page.locator(sel).first.bounding_box()
+    g = box(".dk-pane[data-pane=music] .dk-grip"); t = box(".dk-pane[data-pane='note:sn2:en']")
+    page.mouse.move(g["x"] + 4, g["y"] + 6); page.mouse.down()
+    page.mouse.move(g["x"] + 60, g["y"] + 30, steps=4)
+    page.mouse.move(t["x"] + 30, t["y"] + t["height"] / 2, steps=8)
+    shown = page.is_visible(".dk-drop")
+    page.mouse.up()
+    lay = page.evaluate("() => window.dgDesk.layout()")
+    record("desk", "dragging Music by its grip onto the note's left edge makes a column of its own there",
+           shown and [[q["id"] for q in c["panes"]] for c in lay["cols"]] == [["music"], ["note:sn2:en"], ["play"]], json.dumps(lay)[:200])
+    # Resize the first divider.
+    w0 = page.evaluate("() => window.dgDesk.layout().cols[0].w")
+    d = box(".dk-split-v")
+    page.mouse.move(d["x"] + d["width"] / 2, d["y"] + d["height"] / 2); page.mouse.down()
+    page.mouse.move(d["x"] + 160, d["y"] + d["height"] / 2, steps=6); page.mouse.up()
+    w1 = page.evaluate("() => window.dgDesk.layout().cols[0].w")
+    record("desk", "dragging a divider resizes the columns either side", w1 > w0 + 5, f"{w0:.1f} -> {w1:.1f}")
+    # ⤢ and ✕.
+    page.click(".dk-pane[data-pane='note:sn2:en'] [data-dk=max]")
+    mx = page.evaluate("() => { const r = document.querySelector('.dk-pane.dk-max').getBoundingClientRect(), g = document.querySelector('.dk-grid').getBoundingClientRect(); return Math.abs(r.width - g.width) < 2 && Math.abs(r.height - g.height) < 2; }")
+    page.click(".dk-pane[data-pane='note:sn2:en'] [data-dk=max]")
+    record("desk", "⤢ fills the Desk with one panel, and back", mx and page.locator(".dk-pane.dk-max").count() == 0, "")
+    page.click(".dk-pane[data-pane=music] [data-dk=close]")
+    page.click("#acell-tab-strip .tw[data-tab=music]")
+    record("desk", "✕ takes Music off the Desk, back on its own tab",
+           "music" not in panes(page) and page.evaluate("() => { const m = document.getElementById('panel-music'); return m.parentElement.classList.contains('folder-body') && m.classList.contains('active'); }")
+           and page.locator(".dk-away.active").count() == 0, str(panes(page)))
+    page.click("#acell-tab-strip .tw[data-tab=desk]")
+    # + Add panel, then save the layout.
+    page.click("[data-dk=add]")
+    dis = page.evaluate("() => [...document.querySelectorAll('.dk-menu button[disabled]')].map(b => b.getAttribute('data-dk-add'))")
+    page.click(".dk-menu [data-dk-add=evidence]")
+    record("desk", "+ Add panel puts Evidence on the Desk (what's there already is greyed out)",
+           "evidence" in panes(page) and inside(page, "#panel-evidence") and "play" in dis and "evidence" not in dis, f"{panes(page)} {dis}")
+    page.click("[data-dk=save]")
+    page.fill(".dk-name", "Game night")
+    page.keyboard.press("Enter")
+    stored = page.evaluate("() => JSON.parse(localStorage.getItem('dg_desk_v1') || '{}')")
+    record("desk", "Save as… keeps the layout by name on this device",
+           page.locator("[data-dk-lay='Game night'].dk-on").count() == 1 and "Game night" in (stored.get("saved") or {}), str(list((stored.get("saved") or {}).keys())))
+    want = panes(page)
+    page.close(); errs_all += errs
+    page, errs = open_acell(storage=stored)
+    page.wait_for_selector(".dk-grid .sn-v-frame", timeout=8000)
+    record("desk", "after a reload the Desk comes back as it was, the note reopened", panes(page) == want, f"{panes(page)} / {want}")
+    page.click(".dk-grid .sn-viewer [data-sn=close]")
+    record("desk", "closing the docked note from its own bar puts the Session notes list back in its place",
+           wait_for_condition(lambda: "notes" in panes(page) or None, timeout_ms=4000) and not any(x.startswith("note:") for x in panes(page)), str(panes(page)))
+    page.click("[data-dk-lay=Session]")
+    record("desk", "the built-in Session layout is one tap away", panes(page) == ["notes", "play", "music"], str(panes(page)))
+    page.close(); errs_all += errs
+    # Phone: stacked.
+    page, errs = open_acell(390, 844)
+    tabs = page.evaluate("() => [...document.querySelectorAll('.dk-ptabs button')].map(b => b.textContent)")
+    vis = lambda: page.evaluate("() => [...document.querySelectorAll('.dk-pane')].filter(e => !e.hidden).map(e => e.getAttribute('data-pane'))")
+    v1 = vis()
+    page.click(".dk-ptabs button:nth-child(2)")
+    v2 = vis()
+    record("desk", "phone: the first panel on top, the others under it behind tabs",
+           tabs == ["Play", "Music"] and v1 == ["notes", "play"] and v2 == ["notes", "music"], f"{tabs} {v1} {v2}")
+    page.close(); errs_all += errs
+    record("desk", "no JS exceptions", len(errs_all) == 0, "; ".join(errs_all[:3]))
+    return errs_all
+
 def test_acell_session_notes(p):
     """A-Cell's Session Notes tab: the Handler's links to a scenario's
     prep pages (Hungarian and/or English), kept in Firestore
@@ -4043,6 +4163,8 @@ def test_acell_session_notes(p):
     record("acell-notes", "the page runs sealed: sandboxed without allow-same-origin, can't reach A-Cell",
            "allow-scripts" in sandbox and "allow-same-origin" not in sandbox
            and fr.locator("body").get_attribute("data-parent") == "blocked", sandbox)
+    # The page restores its ticks in a script after the box: let it run first.
+    page.query_selector(".sn-v-frame").content_frame().wait_for_load_state("load")
     fr.locator("#c1").check()
     _pump_until(page, lambda: "c1" in ((fs_doc(page, f"session_notes/{nid}/state/hu") or {}).get("items") or {}).get("prep-v1", ""), timeout_ms=5000)
     st = (fs_doc(page, f"session_notes/{nid}/state/hu") or {}).get("items") or {}
@@ -12836,6 +12958,7 @@ def main():
 
         safe(test_acell_sheet, browser, area="acell")
         safe(test_acell_session_notes, browser, area="acell-notes")
+        safe(test_acell_desk, browser, area="desk")
         safe(test_player_pages_never_get_the_handler_feed, browser, area="dice")
         safe(test_handler_rolls_filter_by_cell, browser, area="dice")
         safe(test_stinger_files_exist, browser, area="radio")

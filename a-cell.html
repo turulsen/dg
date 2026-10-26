@@ -36,6 +36,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet"></noscript>
 <link rel="stylesheet" href="assets/theme-folder.css">
+<link rel="stylesheet" href="assets/acell-desk.css">
 <style>
   :root{ --term-green:#3ef07a; --term-green-dim:#1e7a42; }
   *{box-sizing:border-box;}
@@ -415,6 +416,9 @@
   .sn-form label.sn-inline{ display:inline-flex; gap:4px; align-items:center; }
   /* Above everything A-Cell floats (Dice Roller, Tune In). */
   .sn-viewer{ position:fixed; inset:0; z-index:2147483000; display:flex; flex-direction:column; background:#0b0d0a; }
+  .sn-viewer.sn-docked{ position:absolute; z-index:1; }
+  .sn-docked .sn-v-bar{ padding-top:6px; padding-bottom:6px; }
+  .sn-v-bar .sn-v-lang{ padding:8px 10px; }
   .sn-v-bar{ display:flex; align-items:center; gap:12px; padding:8px 12px; padding-top:max(8px, env(safe-area-inset-top)); background:#14170f; border-bottom:1px solid #2c3326; }
   .sn-v-title{ flex:1; min-width:0; font-family:'Special Elite',monospace; font-size:14px; color:#e6e1cf; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .sn-v-saved{ font-family:'Courier Prime',monospace; font-size:11px; color:#9aa58c; white-space:nowrap; }
@@ -1057,6 +1061,7 @@
 <div class="folder-wrap">
   <div class="folder">
     <div class="tab-strip" id="acell-tab-strip">
+      <div class="tw inactive" data-tab="desk"><span>&#9638; Desk</span></div>
       <div class="tw active" data-tab="play"><span>Play</span></div>
       <div class="tw inactive" data-tab="cells"><span>Cells</span></div>
       <div class="tw inactive" data-tab="evidence"><span>Evidence</span></div>
@@ -1066,6 +1071,9 @@
       <div class="tw inactive" data-tab="ids"><span>ID<span class="tw-long"> Creator</span></span></div>
     </div>
     <div class="folder-body">
+
+      <!-- The Desk (assets/acell-desk.js): the tabs below as panels side by side. -->
+      <div class="tab-panel" id="panel-desk"></div>
 
       <div class="tab-panel active" id="panel-play">
         <div class="play-toolbar">
@@ -2071,6 +2079,9 @@
     document.querySelectorAll('.folder-body > .tab-panel').forEach(function (p) {
       p.classList.toggle('active', p.id === 'panel-' + id);
     });
+    // A tab's content loads the first time it's shown: on its tab, or on
+    // the Desk (assets/acell-desk.js fires the same event).
+    document.dispatchEvent(new CustomEvent('dg-acell-tab', { detail: { tab: id } }));
   });
 })();
 </script>
@@ -2129,7 +2140,8 @@
     }
     listEl.innerHTML = notes.map(function (n) {
       var links = LANGS.map(function (l) {
-        if (n['file_' + l[0]]) return '<button type="button" class="paper-btn primary" data-sn="view" data-lang="' + l[0] + '">' + l[1] + '</button>';
+        if (n['file_' + l[0]]) return '<button type="button" class="paper-btn primary" data-sn="view" data-lang="' + l[0] + '">' + l[1] + '</button>' +
+          '<button type="button" class="paper-btn" data-sn="desk" data-lang="' + l[0] + '" title="Open it on the Desk, beside the Agents">&#9638; Desk</button>';
         if (n['url_' + l[0]]) return '<a class="paper-btn primary" href="' + esc(n['url_' + l[0]]) + '" target="_blank" rel="noopener noreferrer">' + l[1] + ' &#8599;</a>';
         return '';
       }).join('');
@@ -2143,11 +2155,12 @@
     }).join('');
   }
 
+  var loadP = null;
   function load() {
-    if (loading) return;
+    if (loading) return loadP;
     loading = true;
     setStatus('Loading…');
-    db_().then(function (db) { return db.collection('session_notes').get(); }).then(function (snap) {
+    loadP = db_().then(function (db) { return db.collection('session_notes').get(); }).then(function (snap) {
       var out = [];
       snap.forEach(function (d) { out.push(Object.assign({ id: d.id }, d.data())); });
       out.sort(function (a, b) { return String(a.title || '').localeCompare(String(b.title || '')); });
@@ -2157,7 +2170,8 @@
       render();
     }).catch(function (err) {
       setStatus('Could not load session notes: ' + errText(err));
-    }).then(function () { loading = false; });
+    }).then(function () { loading = false; return notes; });
+    return loadP;
   }
 
   /* ── The form ── */
@@ -2276,12 +2290,14 @@
   }
   function closeViewer() {
     if (!viewer) return;
-    hideFloaters(false);
+    var v = viewer;
+    if (!v.host) hideFloaters(false);
     flushState();
     window.removeEventListener('message', onFrameMessage);
-    viewer.root.remove();
-    document.documentElement.style.overflow = viewer.prevOverflow;
+    v.root.remove();
+    if (!v.host) document.documentElement.style.overflow = v.prevOverflow;
     viewer = null;
+    if (v.host) document.dispatchEvent(new CustomEvent('dg-sn-closed', { detail: { id: v.id, lang: v.lang } }));
   }
   function setSaved(t) { if (viewer) viewer.root.querySelector('.sn-v-saved').textContent = t; }
   function flushState() {
@@ -2308,7 +2324,9 @@
     clearTimeout(viewer.timer);
     viewer.timer = setTimeout(flushState, 800);
   }
-  function openViewer(n, lang) {
+  // host: an element on A-Cell's Desk to open the page in, docked beside
+  // the other panels, instead of over the whole screen. One page at a time.
+  function openViewer(n, lang, host) {
     closeViewer();
     var label = (LANGS.filter(function (l) { return l[0] === lang; })[0] || [lang, lang])[1];
     setStatus('Opening…');
@@ -2321,9 +2339,12 @@
       var items = (r[1].exists && r[1].data().items) || {};
       setStatus('');
       var root = document.createElement('div');
-      root.className = 'sn-viewer';
+      root.className = 'sn-viewer' + (host ? ' sn-docked' : '');
+      var other = LANGS.filter(function (l) { return l[0] !== lang && n['file_' + l[0]]; })[0];
       root.innerHTML = '<div class="sn-v-bar"><span class="sn-v-title">' + esc(n.title) + ' · ' + esc(label) + '</span>' +
         '<span class="sn-v-saved" aria-live="polite"></span>' +
+        (other ? '<button type="button" class="sn-v-close sn-v-lang" data-sn="lang" data-lang="' + other[0] + '">' + other[1] + '</button>' : '') +
+        (host ? '<button type="button" class="sn-v-close sn-v-lang" data-sn="full" title="Over the whole screen">&#10530;</button>' : '') +
         '<button type="button" class="sn-v-close" data-sn="close">Close</button></div>';
       var frame = document.createElement('iframe');
       frame.className = 'sn-v-frame';
@@ -2332,16 +2353,34 @@
       frame.setAttribute('sandbox', 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-modals allow-forms');
       frame.srcdoc = withShim(file.html, items);
       root.appendChild(frame);
-      document.body.appendChild(root);
-      viewer = { id: n.id, lang: lang, root: root, frame: frame, items: items, dirty: false, timer: null,
+      (host || document.body).appendChild(root);
+      viewer = { id: n.id, lang: lang, root: root, frame: frame, items: items, dirty: false, timer: null, host: host || null,
                  prevOverflow: document.documentElement.style.overflow };
-      document.documentElement.style.overflow = 'hidden';
-      hideFloaters(true);
+      if (!host) { document.documentElement.style.overflow = 'hidden'; hideFloaters(true); }
       window.addEventListener('message', onFrameMessage);
       root.querySelector('[data-sn="close"]').addEventListener('click', closeViewer);
+      var lb = root.querySelector('[data-sn="lang"]');
+      if (lb) lb.addEventListener('click', function () {
+        if (host && window.dgDesk) window.dgDesk.openNote(n.id, lb.dataset.lang); else openViewer(n, lb.dataset.lang, host);
+      });
+      var fb = root.querySelector('[data-sn="full"]');
+      if (fb) fb.addEventListener('click', function () { openViewer(n, lang); });
     }).catch(function (err) { setStatus('Could not open it: ' + errText(err)); });
   }
   window.addEventListener('pagehide', flushState);
+  // For the Desk (assets/acell-desk.js).
+  window.dgSessionNotes = {
+    load: function () { return loaded ? Promise.resolve(notes) : (load() || Promise.resolve(notes)); },
+    notes: function () { return notes; },
+    langs: LANGS,
+    open: function (id, lang, host) {
+      var n = notes.filter(function (x) { return x.id === id; })[0];
+      if (n) openViewer(n, lang, host);
+      return !!n;
+    },
+    close: closeViewer,
+    current: function () { return viewer ? { id: viewer.id, lang: viewer.lang, docked: !!viewer.host } : null; }
+  };
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flushState(); });
 
   formSlot.addEventListener('click', function (e) {
@@ -2354,6 +2393,7 @@
     var n = notes.filter(function (x) { return card && x.id === card.dataset.id; })[0];
     if (!n) return;
     if (btn.dataset.sn === 'view') { openViewer(n, btn.dataset.lang); return; }
+    if (btn.dataset.sn === 'desk' && window.dgDesk) { window.dgDesk.openNote(n.id, btn.dataset.lang); return; }
     if (btn.dataset.sn === 'edit') { openForm(n); return; }
     if (btn.dataset.sn === 'delete') {
       // Two taps, no dialog: window.confirm is dead in an iOS home-screen app.
@@ -2370,9 +2410,8 @@
   });
   document.getElementById('sn-add-btn').addEventListener('click', function () { openForm(null); });
   document.getElementById('sn-refresh-btn').addEventListener('click', load);
-  document.getElementById('acell-tab-strip').addEventListener('click', function (e) {
-    var tab = e.target.closest('.tw');
-    if (tab && tab.dataset.tab === 'notes' && !loaded) load();
+  document.addEventListener('dg-acell-tab', function (e) {
+    if (e.detail.tab === 'notes' && !loaded) load();
   });
 })();
 </script>
@@ -4596,9 +4635,8 @@
   // Cells/Operations are cheap Firestore reads now -- re-read them each
   // time the tab is opened, so a Cell just made on the Cells tab is
   // already in the Cell picker (it used to need Refresh).
-  document.getElementById('acell-tab-strip').addEventListener('click', function (e) {
-    var tab = e.target.closest('.tw');
-    if (tab && tab.dataset.tab === 'evidence') fetchAll(false);
+  document.addEventListener('dg-acell-tab', function (e) {
+    if (e.detail.tab === 'evidence') fetchAll(false);
   });
   // Same Handler-session race as Play/Cells/Sheet -- see the Handler-
   // password module's own comment. ensureHandlerSignedIn() needs
@@ -5191,9 +5229,8 @@
   // Agent Hub -> A-Cell, the Sheet sat on "Loading agents..." and then
   // "Could not load the roster": its calls timed out queued behind
   // everyone else's and their retries only added to the queue.
-  document.getElementById('acell-tab-strip').addEventListener('click', function (e) {
-    var tab = e.target.closest('.tw');
-    if (tab && tab.dataset.tab === 'sheet' && !sheetLoaded && !sheetInFlight) loadSheet(false);
+  document.addEventListener('dg-acell-tab', function (e) {
+    if (e.detail.tab === 'sheet' && !sheetLoaded && !sheetInFlight) loadSheet(false);
   });
   var sheetPanel = document.getElementById('panel-sheet');
   if (sheetPanel && sheetPanel.classList.contains('active')) loadSheet(false);
@@ -7139,6 +7176,7 @@
 <script src="assets/field-id-cards.js"></script>
 <script src="assets/forge-cards.js"></script>
 <script src="assets/acell-ids.js"></script>
+<script src="assets/acell-desk.js"></script>
 <script src="assets/table-radio.js"></script>
 <script src="assets/dice-roller.js?v=10"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>
