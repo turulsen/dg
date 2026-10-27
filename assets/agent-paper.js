@@ -452,7 +452,7 @@
     function statsHtml(x, edit) {
       var sv = R().stats(x), feat = R().features(x);
       // Edit works on a copy: what Save files is what the inputs show.
-      if (edit) x.lpFeat = feat;
+      if (edit && JSON.stringify(feat) !== JSON.stringify(x.lpFeat || {})) x.lpFeat = feat;
       return '<div class="as-stats">' + R().STATS.map(function (k) {
         if (edit) return '<div class="ap-stat-e"><div class="as-lbl">' + k + '</div><input class="ap-in ap-num" inputmode="numeric" data-e="stat:' + k + '" value="' + sv[k] + '" aria-label="' + k + '"><div class="as-x5">' + sv[k] * 5 + '%</div>' +
           '<input class="ap-in ap-feat" data-e="feat:' + k + '" placeholder="feature" value="' + esc(feat[k] || '') + '" aria-label="' + k + ' distinguishing feature"></div>';
