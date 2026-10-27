@@ -80,3 +80,6 @@ html.dk-dragging iframe{ pointer-events:none; }
   .dk-bar .paper-btn{ padding:6px 8px; font-size:10px; letter-spacing:.06em; }
   html.dk-desk-on .folder-wrap{ margin-left:4px; margin-right:4px; }
 }
+/* The Session notes list on the Desk: its language buttons open the page
+   docked, so the separate ▦ Desk buttons aren't needed there. */
+.dk-hosted .sn-card [data-sn="desk"]{ display:none; }

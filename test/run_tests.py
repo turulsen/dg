@@ -3992,10 +3992,12 @@ def test_acell_desk(p):
            panes(page) == ["notes", "play", "music"] and inside(page, "#panel-play") and inside(page, "#panel-music") and inside(page, "#panel-notes") and wide > 1100,
            f"{panes(page)} wide={wide}")
     # A note, docked.
-    page.click(".dk-grid .sn-card button[data-sn=desk][data-lang=en]")
+    record("desk", "on the Desk the list's own language button is the one to tap (no separate ▦ Desk there)",
+           page.locator(".dk-grid .sn-card button[data-sn=desk]").first.is_hidden(), "")
+    page.click(".dk-grid .sn-card button[data-sn=view][data-lang=en]")
     page.wait_for_selector(".dk-grid .sn-viewer.sn-docked .sn-v-frame", timeout=8000)
     page.query_selector(".dk-grid .sn-v-frame").content_frame().wait_for_load_state("load")
-    record("desk", "▦ Desk on a session note opens it docked in place of the list, beside the Agents",
+    record("desk", "tapping English on the Desk opens the note docked in place of the list, beside the Agents (not full screen)",
            panes(page) == ["note:sn2:en", "play", "music"] and not inside(page, "#panel-notes") and page.locator("body > .sn-viewer").count() == 0, str(panes(page)))
     page.frame_locator(".dk-grid .sn-v-frame").locator("#c1").check()
     _pump_until(page, lambda: "c1" in ((fs_doc(page, "session_notes/sn2/state/en") or {}).get("items") or {}).get("prep-v1", ""), timeout_ms=5000)

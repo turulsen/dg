@@ -6900,3 +6900,13 @@ employer line made the header taller and a new stamp ("Obsession" in
 and Cell buttons. Spots are now tested with the tilted stamp's real
 bounding box, and the new line is on the list stamps keep clear of.
 Found by the full suite before the merge.
+
+### A session note opened from the Desk still went full-screen (v3.11.1)
+
+Reported right after v3.11.0: "When I open from the Desk it's still full
+screen." On the Desk the Session notes list kept its language buttons
+(Magyar / English) opening the full-screen viewer; only a separate
+▦ Desk button beside each docked the page, and that's not the one anyone
+taps. Now, when the list is on the Desk, its own language buttons open
+the page docked there and the ▦ Desk buttons are hidden; on the Session
+Notes tab nothing changed. `test_acell_desk` taps English on the Desk.
