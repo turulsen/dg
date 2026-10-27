@@ -10698,6 +10698,10 @@ def test_agent_rules_unit(p):
       s = base(); await R.adapt(s, 'helplessness', fixed); out.help = [s.csStats.POW, s.csStats.CHA];
       const old = { bio: { motivations: 'Keep the family safe\\nDisorder: PTSD' } };
       R.normalizeBio(old); out.split = [old.bio.motivations, old.bio.disorders];
+      // The old sheet's mis-seeded features (the lowest band for every stat).
+      out.feat = R.features({ csStats: { STR: 11, CON: 11, DEX: 15, INT: 14, POW: 12, CHA: 9 },
+        lpFeat: { STR: 'Feeble', CON: 'Bedridden', DEX: 'Barely Mobile', INT: 'Hates mornings', POW: 'Strong willed', CHA: 'Unbearable' } });
+      out.featLow = R.features({ csStats: { STR: 4 }, lpFeat: { STR: 'Feeble' } }).STR;
       return out;
     }""")
     record("rules", "maximums: HP ⌈(STR+CON)/2⌉, WP POW, SAN POW×5, SAN cap 99 − Unnatural",
@@ -10715,6 +10719,8 @@ def test_agent_rules_unit(p):
     record("rules", "adapting to Violence: −1D6 CHA and each Bond; to Helplessness: −1D6 POW",
            r["vio"] == [8, 8, True] and r["help"] == [9, 11], str(r["vio"]) + str(r["help"]))
     record("rules", "an old sheet's disorders come out of its Motivations text", r["split"] == ["Keep the family safe", ["PTSD"]], str(r["split"]))
+    record("rules", "an old sheet's descriptor that doesn't fit the score shows the one that does (Bedridden for CON 11 is Average, Barely Mobile for DEX 15 Nimble); written features stay",
+           r["feat"] == {"STR": "Average", "CON": "Average", "DEX": "Nimble", "INT": "Hates mornings", "POW": "Average", "CHA": "Average"} and r["featLow"] == "Feeble", str(r["feat"]) + " " + str(r["featLow"]))
     page.close()
     return errs
 

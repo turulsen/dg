@@ -7020,3 +7020,20 @@ hold and offers **Project onto a Bond…** (the same 1D4 WP + Bond, then
 SAN test, as temporary insanity) instead of Roll SAN; the Rules page
 line says the same. Test: `test_agent_file_v2_play_and_edit` checks the post-it's
 buttons.
+
+### Distinguishing features that contradicted the stat (v3.11.1)
+
+Reported (iPhone, Field Notes): "Bedridden for average CON and Barely
+Mobile for a very high DEX???" Eli's six features were the lowest band of
+the old sheet's descriptor table for every stat (Feeble, Bedridden,
+Barely Mobile, Imbecilic, Spineless, Unbearable). The old sheet
+(`stats/`, retired in v3.2.0) seeded an empty feature in Live Play with
+`getDescriptor(stat, score)`, but read the score from a display span that
+still showed its default 3 before the Agent had loaded, and then saved
+the result as though the player had typed it. Any Agent made on the old
+sheet can carry them. `dgRules.features()` now shows a feature that is
+exactly one of that table's words but doesn't fit the score as the one
+that does (CON 11 Average, DEX 15 Nimble); a feature a player wrote
+stays. Edit mode files the corrected words on Save, and the PDF export
+uses them too. The New Recruit wizard was never affected (its own
+suggestions are by band). Test: `test_agent_rules_unit`.
