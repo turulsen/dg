@@ -895,7 +895,11 @@
           ui.pop = ''; s.cancelEdit(); return;
         case 'save': {
           var changes = diff(s.state, s.edit);
-          var oath = window.dgFieldNotes && window.dgFieldNotes.oath ? window.dgFieldNotes.oath({ code: s.code, name: (s.edit.bio && s.edit.bio.name) || s.code, changes: changes })
+          // A-Cell (the Handler editing a player's sheet) asks for the
+          // reason instead of the Oath: ctx.confirmSave resolves true to save.
+          var who = { code: s.code, name: (s.edit.bio && s.edit.bio.name) || s.code, changes: changes };
+          var oath = ctx.confirmSave ? ctx.confirmSave(who)
+            : window.dgFieldNotes && window.dgFieldNotes.oath ? window.dgFieldNotes.oath(who)
             : Promise.resolve(window.confirm('Save these edits?'));
           oath.then(function (yes) { if (yes) { ui.pop = ''; s.commitEdit(); } });
           return;

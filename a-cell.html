@@ -36,7 +36,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet"></noscript>
 <link rel="stylesheet" href="assets/theme-folder.css">
-<link rel="stylesheet" href="assets/acell-desk.css">
+<link rel="stylesheet" href="assets/acell-vault.css">
+<link rel="stylesheet" href="assets/acell-shell.css">
+<link rel="stylesheet" href="assets/acell-play.css">
 <style>
   :root{ --term-green:#3ef07a; --term-green-dim:#1e7a42; }
   *{box-sizing:border-box;}
@@ -1047,35 +1049,51 @@
   </div>
 </div>
 
-<div class="hub-header">
+<!-- v3.12.0: A-Cell's top bar -- PREP (the folder, its index tabs on the
+     left), PLAY (the desk) and DEBRIEF. assets/acell-shell.js. -->
+<div class="ac-top" id="ac-top">
   <!-- Hidden inside the app shell (hub.html) -- redundant there, since
        the shell's own persistent nav (assets/shell-nav.js) already
        covers switching to Agent Hub directly, without ever routing
        through index.html at all. Still needed for a standalone visit. -->
   <a class="back-link" id="acell-header-back-link" href="index.html">&lt;- Clearance</a>
   <script>if (window.frameElement && window.frameElement.id === 'dg-shell-content') document.getElementById('acell-header-back-link').style.display = 'none';</script>
-  <div class="stamp">Clearance: A-Cell</div>
-  <h1>A-Cell</h1>
+  <span class="ac-seal" aria-hidden="true">A</span>
+  <h1 class="ac-brand">A-Cell</h1>
+  <button type="button" class="ac-pill" id="ac-session-pill" hidden></button>
+  <span class="ac-sp"></span>
+  <span class="ac-tools" id="ac-tools"></span>
+  <nav class="ac-modes" id="ac-modes" aria-label="Mode">
+    <button type="button" data-mode="prep" class="on">Prep</button>
+    <button type="button" data-mode="play">Play</button>
+    <button type="button" data-mode="debrief">Debrief</button>
+  </nav>
 </div>
 
 <div class="folder-wrap">
   <div class="folder">
     <div class="tab-strip" id="acell-tab-strip">
-      <div class="tw inactive" data-tab="desk"><span>&#9638; Desk</span></div>
-      <div class="tw active" data-tab="play"><span>Play</span></div>
-      <div class="tw inactive" data-tab="cells"><span>Cells</span></div>
+      <div class="tw active" data-tab="session"><span>Session prep</span></div>
+      <div class="tw inactive" data-tab="play"><span>Players</span></div>
       <div class="tw inactive" data-tab="evidence"><span>Evidence</span></div>
-      <div class="tw inactive" data-tab="sheet"><span>Sheet</span></div>
       <div class="tw inactive" data-tab="music"><span>Music</span></div>
-      <div class="tw inactive" data-tab="notes"><span><span class="tw-long">Session </span>Notes</span></div>
+      <div class="tw inactive" data-tab="notes"><span>Notes</span></div>
+      <div class="tw inactive" data-tab="sheet"><span>Sheet</span></div>
+      <div class="tw inactive" data-tab="cells"><span>Cells</span></div>
       <div class="tw inactive" data-tab="ids"><span>ID<span class="tw-long"> Creator</span></span></div>
     </div>
     <div class="folder-body">
 
-      <!-- The Desk (assets/acell-desk.js): the tabs below as panels side by side. -->
-      <div class="tab-panel" id="panel-desk"></div>
+      <!-- Session prep (assets/acell-shell.js): the session's Cell, notes,
+           evidence and music, in panels the Handler can rearrange. -->
+      <div class="tab-panel active" id="panel-session"></div>
 
-      <div class="tab-panel active" id="panel-play">
+      <!-- PLAY: the desk (assets/acell-play.js). DEBRIEF: assets/acell-debrief.js.
+           Neither has a tab; the top bar's modes open them. -->
+      <div class="tab-panel" id="panel-desk"></div>
+      <div class="tab-panel" id="panel-debrief"></div>
+
+      <div class="tab-panel" id="panel-play">
         <div class="play-toolbar">
           <button type="button" class="paper-btn" id="play-refresh-btn">Refresh</button>
           <select id="play-cell-filter" class="play-cell-filter"><option value="">All Agents</option></select>
@@ -2062,26 +2080,32 @@
 </script>
 
 <script>
-/* A-Cell's own folder tab strip (Play / Cells / Music) -- a fixed
-   3-tab strip, unlike agent-hub.html's dynamically-built per-agent
-   tabs. Mirrors dg-agent-portal.html's switchTab(): a full class
-   replace per tab, not classList.toggle, so 'tw active' and
-   'tw inactive' stay mutually exclusive. */
+/* A-Cell's folder tabs (the index down the left in Prep) and the two
+   tab-less panels the top bar's modes open (desk: Play, debrief).
+   A full class replace per tab, not classList.toggle, so 'tw active' and
+   'tw inactive' stay mutually exclusive. A tab's content loads the first
+   time it's shown: everything listens for 'dg-acell-tab'.
+   window.dgAcellTab(id) shows one; window.dgAcellTab() says which. */
 (function () {
   var strip = document.getElementById('acell-tab-strip');
-  strip.addEventListener('click', function (e) {
-    var tab = e.target.closest('.tw');
-    if (!tab) return;
-    var id = tab.dataset.tab;
+  var shown = 'session';
+  function show(id) {
+    if (!id) return shown;
+    if (!document.getElementById('panel-' + id)) return shown;
+    shown = id;
     strip.querySelectorAll('.tw').forEach(function (t) {
       t.className = 'tw ' + (t.dataset.tab === id ? 'active' : 'inactive');
     });
     document.querySelectorAll('.folder-body > .tab-panel').forEach(function (p) {
       p.classList.toggle('active', p.id === 'panel-' + id);
     });
-    // A tab's content loads the first time it's shown: on its tab, or on
-    // the Desk (assets/acell-desk.js fires the same event).
     document.dispatchEvent(new CustomEvent('dg-acell-tab', { detail: { tab: id } }));
+    return id;
+  }
+  window.dgAcellTab = show;
+  strip.addEventListener('click', function (e) {
+    var tab = e.target.closest('.tw');
+    if (tab) show(tab.dataset.tab);
   });
 })();
 </script>
@@ -2141,7 +2165,7 @@
     listEl.innerHTML = notes.map(function (n) {
       var links = LANGS.map(function (l) {
         if (n['file_' + l[0]]) return '<button type="button" class="paper-btn primary" data-sn="view" data-lang="' + l[0] + '">' + l[1] + '</button>' +
-          '<button type="button" class="paper-btn" data-sn="desk" data-lang="' + l[0] + '" title="Open it on the Desk, beside the Agents">&#9638; Desk</button>';
+          '<button type="button" class="paper-btn" data-sn="session" data-lang="' + l[0] + '" title="Use it as the notes of the session in the top bar">+ Session</button>';
         if (n['url_' + l[0]]) return '<a class="paper-btn primary" href="' + esc(n['url_' + l[0]]) + '" target="_blank" rel="noopener noreferrer">' + l[1] + ' &#8599;</a>';
         return '';
       }).join('');
@@ -2361,14 +2385,14 @@
       root.querySelector('[data-sn="close"]').addEventListener('click', closeViewer);
       var lb = root.querySelector('[data-sn="lang"]');
       if (lb) lb.addEventListener('click', function () {
-        if (host && window.dgDesk) window.dgDesk.openNote(n.id, lb.dataset.lang); else openViewer(n, lb.dataset.lang, host);
+        openViewer(n, lb.dataset.lang, host);
       });
       var fb = root.querySelector('[data-sn="full"]');
       if (fb) fb.addEventListener('click', function () { openViewer(n, lang); });
     }).catch(function (err) { setStatus('Could not open it: ' + errText(err)); });
   }
   window.addEventListener('pagehide', flushState);
-  // For the Desk (assets/acell-desk.js).
+  // For Session prep and the Play desk (assets/acell-shell.js, acell-play.js).
   window.dgSessionNotes = {
     load: function () { return loaded ? Promise.resolve(notes) : (load() || Promise.resolve(notes)); },
     notes: function () { return notes; },
@@ -2392,13 +2416,15 @@
     var card = btn.closest('.sn-card');
     var n = notes.filter(function (x) { return card && x.id === card.dataset.id; })[0];
     if (!n) return;
-    // On the Desk, the list's own buttons open the page docked there.
-    if (btn.dataset.sn === 'view') {
-      if (window.dgDesk && listEl.closest('.dk-hosted')) window.dgDesk.openNote(n.id, btn.dataset.lang);
-      else openViewer(n, btn.dataset.lang);
+    if (btn.dataset.sn === 'view') { openViewer(n, btn.dataset.lang); return; }
+    // The session in the top bar plays from this page (the Play desk opens it).
+    if (btn.dataset.sn === 'session') {
+      var cur = window.dgSessions && window.dgSessions.current();
+      if (!cur) { setStatus('Choose or make a session first (Session prep).'); return; }
+      window.dgSessions.update(cur.id, { html_note: { id: n.id, lang: btn.dataset.lang }, note_path: '' });
+      setStatus('“' + (n.title || 'This page') + '” is now the notes for ' + cur.name + '.');
       return;
     }
-    if (btn.dataset.sn === 'desk' && window.dgDesk) { window.dgDesk.openNote(n.id, btn.dataset.lang); return; }
     if (btn.dataset.sn === 'edit') { openForm(n); return; }
     if (btn.dataset.sn === 'delete') {
       // Two taps, no dialog: window.confirm is dead in an iOS home-screen app.
@@ -3007,6 +3033,8 @@
       '</details>';
 
     loadPlayPhoto(code, photoId);
+    // The Players tab's Handler file and Edit sheet (assets/acell-players.js).
+    document.dispatchEvent(new CustomEvent('dg-acell-agent', { detail: { code: code } }));
   }
 
   // Refresh is no longer a real re-fetch -- onSnapshot already keeps
@@ -3024,7 +3052,20 @@
     chars: function () { return charsByCode; },
     briefs: function () { return briefsByCode; },
     cells: function () { return cells; },
-    state: function (code) { try { return JSON.parse((charsByCode[code] || {}).character_json || 'null'); } catch (e) { return null; } }
+    state: function (code) { try { return JSON.parse((charsByCode[code] || {}).character_json || 'null'); } catch (e) { return null; } },
+    doc: function (code) { return charsByCode[code] || null; },
+    selected: function () { return selectedCode; },
+    // Opens an Agent in the Players list (showing everyone if the Cell
+    // filter hides them); fresh: re-read their sheet, not the cached one.
+    open: function (code, fresh) {
+      if (fresh) delete fullStateCache[code];
+      if (!characters.some(function (c) { return c.code === code; })) { cellFilterEl.value = ''; applyFilter(); }
+      var i = -1;
+      characters.forEach(function (c, k) { if (c.code === code) i = k; });
+      var btn = i >= 0 ? listEl.querySelector('.play-agent-btn[data-i="' + i + '"]') : null;
+      if (btn) btn.click();
+      return !!btn;
+    }
   };
   var rosterTimer = null;
   function rosterChanged() { clearTimeout(rosterTimer); rosterTimer = setTimeout(function () { document.dispatchEvent(new CustomEvent('dg-acell-roster')); }, 30); }
@@ -7294,9 +7335,15 @@
 <script src="assets/field-id-cards.js"></script>
 <script src="assets/forge-cards.js"></script>
 <script src="assets/acell-ids.js"></script>
-<script src="assets/acell-desk.js"></script>
 <script src="assets/table-radio.js"></script>
 <script src="assets/dice-roller.js?v=11"></script>
+<script src="assets/acell-vault.js"></script>
+<script src="assets/acell-sessions.js"></script>
+<script src="assets/acell-shell.js"></script>
+<script src="assets/acell-library.js"></script>
+<script src="assets/acell-players.js"></script>
+<script src="assets/acell-play.js"></script>
+<script src="assets/acell-debrief.js"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>
 
 </body>

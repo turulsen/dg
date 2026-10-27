@@ -4,15 +4,15 @@
        note_path              the session's notes (a vault note), or
        html_note {id, lang}   an uploaded HTML page (Session Notes),
        evidence: [evidence_id], tracks: [{ kind:'track'|'loop', ref, title }],
-       pads: [stinger id], npcs: [{ name, dex, hp, note }],
+       pads: [stinger id], npcs: [{ name, dex, hp, note }], away: [agent code],
        quick_notes: [{ at, text, code }]   code: an Agent's, or '' for the session,
-       start: { code: { hp, wp, san, bp } } vitals when Play began,
+       start: { code: { hp, wp, san, bp } } vitals when Play began, started_at,
        debrief_path, state: 'prep'|'played'|'debriefed',
        created_at, updated_at }
    The session being prepped/played is remembered per device.
 
    window.dgSessions = { load(), list(), get(id), current(), setCurrent(id),
-     create(fields), update(id, patch), toggleIn(id, field, value),
+     create(fields), update(id, patch), remove(id), toggleIn(id, field, value),
      addQuickNote(id, text, code), removeQuickNote(id, at) }
    Fires 'dg-sessions' on document when anything changes. */
 (function () {
@@ -30,8 +30,8 @@
       id: id, name: d.name || 'Untitled session', cell_id: d.cell_id || '', operation_id: d.operation_id || '', date: d.date || '',
       note_path: d.note_path || '', html_note: d.html_note || null,
       evidence: Array.isArray(d.evidence) ? d.evidence : [], tracks: Array.isArray(d.tracks) ? d.tracks : [],
-      pads: Array.isArray(d.pads) ? d.pads : [], npcs: Array.isArray(d.npcs) ? d.npcs : [],
-      quick_notes: Array.isArray(d.quick_notes) ? d.quick_notes : [], start: d.start || null,
+      pads: Array.isArray(d.pads) ? d.pads : [], npcs: Array.isArray(d.npcs) ? d.npcs : [], away: Array.isArray(d.away) ? d.away : [],
+      quick_notes: Array.isArray(d.quick_notes) ? d.quick_notes : [], start: d.start || null, started_at: d.started_at || 0,
       debrief_path: d.debrief_path || '', state: d.state || 'prep',
       created_at: d.created_at || 0, updated_at: d.updated_at || 0
     };
@@ -107,6 +107,12 @@
     same = same || function (a, b) { return JSON.stringify(a) === JSON.stringify(b); };
     return (s[field] || []).some(function (v) { return same(v, value); });
   }
+  function remove(id) {
+    delete byId[id];
+    var cur = current();
+    if (!cur) setCurrent(''); else emit();
+    return fb().then(function (f) { return col(f).doc(id).delete(); });
+  }
   function addQuickNote(id, text, code) {
     var s = get(id);
     text = String(text || '').trim();
@@ -122,7 +128,7 @@
 
   window.dgSessions = {
     load: load, list: list, get: get, current: current, setCurrent: setCurrent,
-    create: create, update: update, toggleIn: toggleIn, has: has,
+    create: create, update: update, remove: remove, toggleIn: toggleIn, has: has,
     addQuickNote: addQuickNote, removeQuickNote: removeQuickNote
   };
 })();
