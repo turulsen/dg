@@ -2113,6 +2113,7 @@ def test_acell_play(p):
     record("acell", "Play lists every Agent on file, not just this browser's own roster",
            names == ["Owen Castillo", "Priya Anand", "Marcus Reyes"], str(names))
 
+    page.click("#acell-tab-strip .tw[data-tab=play]")  # v3.12.0: A-Cell opens on Session prep
     page.click("#play-agent-list .play-agent-btn:first-child")
     page.wait_for_timeout(300)
     record("acell", "selecting an Agent shows their name in the simplified view",
@@ -11109,6 +11110,7 @@ def test_motivations_and_disorders_split(p):
     push_firestore_snapshot(page, "briefs", [], [{"id": code, "agent_code": code, "char_name": "Ada Kerr"}])
     push_firestore_snapshot(page, "cells", [], [])
     wait_for_condition(lambda: "Ada Kerr" in page.inner_text("#play-agent-list") or None, timeout_ms=8000)
+    page.click("#acell-tab-strip .tw[data-tab=play]")  # v3.12.0: A-Cell opens on Session prep
     page.click("#play-agent-list .play-agent-btn:first-child")
     page.wait_for_selector("#play-view .pv-disorders", timeout=8000)
     txt = page.inner_text("#play-view .pv-disorders")
@@ -12579,6 +12581,7 @@ def test_incursion(p):
     push_firestore_snapshot(page, "briefs", [], [{"id": code, "agent_code": code, "char_name": "Ines Cutter", "standing_orders_ack_at": "2026-10-01T07:00:00.000Z"}])
     push_firestore_snapshot(page, "cells", [], [])
     wait_for_condition(lambda: "Ines Cutter" in page.inner_text("#play-agent-list") or None, timeout_ms=8000)
+    page.click("#acell-tab-strip .tw[data-tab=play]")  # v3.12.0: A-Cell opens on Session prep
     page.click("#play-agent-list .play-agent-btn:first-child")
     shown = wait_for_condition(lambda: page.evaluate("(c) => { const el = document.getElementById('pv-incursion-' + c); return el ? el.innerText : null; }", code), timeout_ms=8000) or ""
     record("incursion", "A-Cell's dossier shows the Agent's Incursion", "the quarry" in shown, shown)
