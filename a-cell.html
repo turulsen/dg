@@ -3018,6 +3018,20 @@
   listEl.innerHTML = '<div class="play-error">Loading…</div>';
   startCharacterListeners();
   startCellsListener();
+  // For the Prep/Play/Debrief views (assets/acell-shell.js and friends):
+  // the same live characters, briefs and Cells this tab already holds.
+  window.dgAcellRoster = {
+    chars: function () { return charsByCode; },
+    briefs: function () { return briefsByCode; },
+    cells: function () { return cells; },
+    state: function (code) { try { return JSON.parse((charsByCode[code] || {}).character_json || 'null'); } catch (e) { return null; } }
+  };
+  var rosterTimer = null;
+  function rosterChanged() { clearTimeout(rosterTimer); rosterTimer = setTimeout(function () { document.dispatchEvent(new CustomEvent('dg-acell-roster')); }, 30); }
+  var _rebuild = rebuildAllCharacters;
+  rebuildAllCharacters = function () { _rebuild(); rosterChanged(); };
+  var _cellOpts = renderCellFilterOptions;
+  renderCellFilterOptions = function () { _cellOpts(); rosterChanged(); };
 })();
 </script>
 
@@ -3686,6 +3700,7 @@
           evidenceLoadError = null;
           setFsStatus('Firestore: snapshot received, ' + evidenceItems.length + ' doc(s) @ ' + new Date().toLocaleTimeString(), 'ok');
           if (baseDataReady) { renderFolders(); renderList(); }
+          document.dispatchEvent(new CustomEvent('dg-acell-evidence'));
         }, function (err) {
           console.error('a-cell: evidence listener error', err);
           evidenceLoadError = 'Could not load Evidence (Firestore): ' + (err && err.message || String(err));
@@ -3874,6 +3889,8 @@
 
   function visibleEvidence() {
     return evidenceItems.filter(function (h) {
+      // Prep's filter chips (assets/acell-shell.js): Not released / Not seen yet / Released.
+      if (window.dgEvidenceFilter && !window.dgEvidenceFilter(h)) return false;
       if (!filterCellId) return true;
       if (h.cell_id !== filterCellId) return false;
       if (filterOpId === 'UNFILED') return !h.operation_id;
@@ -3953,6 +3970,7 @@
         '<button type="button" class="paper-btn" data-dup-evidence="' + i + '">Duplicate</button>' +
         '<button type="button" class="paper-btn" data-share-evidence="' + i + '">Share…</button>' +
         '<button type="button" class="paper-btn cell-delete-btn" data-delete-evidence="' + i + '">Delete</button>' +
+        (window.dgEvidenceRowExtra ? window.dgEvidenceRowExtra(h) : '') +
         '</div>' +
         '</div>';
     }).join('');
@@ -4659,6 +4677,27 @@
     if (!foldersOk) fetchAll(true);
     startEvidenceListener();
   });
+  // For Prep and the Play desk (assets/acell-shell.js, acell-play.js).
+  window.dgAcellEvidence = {
+    items: function () { return evidenceItems; },
+    find: function (id) { return evidenceItems.filter(function (h) { return h.evidence_id === id; })[0] || null; },
+    cellName: cellName, opName: opName,
+    operations: function () { return operations; },
+    start: startEvidenceListener,
+    rerender: function () { if (baseDataReady) renderList(); },
+    newItem: function () { showForm(null); },
+    release: function (id, on) {
+      var h = evidenceItems.filter(function (x) { return x.evidence_id === id; })[0];
+      if (!h) return Promise.reject(new Error('That evidence is gone.'));
+      return window.__dgGetHandlerIdToken().then(function (idToken) {
+        return window.dgAcellApi.post({
+          action: 'update_evidence', evidence_id: h.evidence_id, title: h.title, body: h.body,
+          photo: h.photo || '', cell_id: h.cell_id || '', operation_id: h.operation_id || '',
+          released: !!on, restricted_to: JSON.stringify(h.restricted_to || []), id_token: idToken
+        });
+      }).then(function () { h.released = !!on; renderList(); document.dispatchEvent(new CustomEvent('dg-acell-evidence')); });
+    }
+  };
 })();
 </script>
 
@@ -6319,38 +6358,41 @@
     }).join('');
     Array.prototype.forEach.call(stingerGroupsEl.querySelectorAll('[data-stinger]'), function (btn) {
       btn.addEventListener('click', function () {
-        var stingerId = btn.dataset.stinger;
-        var label = btn.textContent;
-        var ch = currentChannel;
         btn.classList.add('firing');
         setTimeout(function () { btn.classList.remove('firing'); }, 200);
-        soundboardStatusEl.textContent = 'Firing ' + label + ' on CH ' + ch + '…';
-        ensureHandlerSignedIn().then(function () {
-          var db = window.firebase.firestore();
-          var docRef = radioDocRef_(ch);
-          var now = Date.now();
-          return db.runTransaction(function (tx) {
-            return tx.get(docRef).then(function (snap) {
-              var data = snap.exists ? snap.data() : {};
-              var stingers = Array.isArray(data.stingers) ? data.stingers : [];
-              stingers.push({ id: stingerId, fired_at: now, started_at: now, paused: false, paused_at: 0, loop: false, stopped: false });
-              var looping = stingers.filter(function (s) { return s.loop; });
-              var oneShot = stingers.filter(function (s) { return !s.loop; });
-              if (oneShot.length > STINGER_HISTORY_LENGTH) oneShot = oneShot.slice(-STINGER_HISTORY_LENGTH);
-              stingers = looping.concat(oneShot).sort(function (a, b) { return a.fired_at - b.fired_at; });
-              tx.set(docRef, { stingers: stingers, updated_at: now }, { merge: true });
-              return stingers;
-            });
-          });
-        }).then(function (stingers) {
-          activeStingers = stingers;
-          renderActiveSounds_();
-          soundboardStatusEl.textContent = label + ' fired on CH ' + ch + '.';
-        }).catch(function (err) {
-          console.error('trigger_stinger (direct Firestore) failed', err);
-          soundboardStatusEl.textContent = 'Could not fire ' + label + ' — ' + (err && err.message ? err.message : 'not signed in as Handler') + '.';
+        fireStinger_(btn.dataset.stinger, btn.textContent);
+      });
+    });
+  }
+  // Shared by the soundboard's buttons and the Play desk's pads (dgAcellMusic).
+  function fireStinger_(stingerId, label) {
+    var ch = currentChannel;
+    label = label || stingerLabel_(stingerId);
+    soundboardStatusEl.textContent = 'Firing ' + label + ' on CH ' + ch + '…';
+    return ensureHandlerSignedIn().then(function () {
+      var db = window.firebase.firestore();
+      var docRef = radioDocRef_(ch);
+      var now = Date.now();
+      return db.runTransaction(function (tx) {
+        return tx.get(docRef).then(function (snap) {
+          var data = snap.exists ? snap.data() : {};
+          var stingers = Array.isArray(data.stingers) ? data.stingers : [];
+          stingers.push({ id: stingerId, fired_at: now, started_at: now, paused: false, paused_at: 0, loop: false, stopped: false });
+          var looping = stingers.filter(function (s) { return s.loop; });
+          var oneShot = stingers.filter(function (s) { return !s.loop; });
+          if (oneShot.length > STINGER_HISTORY_LENGTH) oneShot = oneShot.slice(-STINGER_HISTORY_LENGTH);
+          stingers = looping.concat(oneShot).sort(function (a, b) { return a.fired_at - b.fired_at; });
+          tx.set(docRef, { stingers: stingers, updated_at: now }, { merge: true });
+          return stingers;
         });
       });
+    }).then(function (stingers) {
+      activeStingers = stingers;
+      renderActiveSounds_();
+      soundboardStatusEl.textContent = label + ' fired on CH ' + ch + '.';
+    }).catch(function (err) {
+      console.error('trigger_stinger (direct Firestore) failed', err);
+      soundboardStatusEl.textContent = 'Could not fire ' + label + ' — ' + (err && err.message ? err.message : 'not signed in as Handler') + '.';
     });
   }
 
@@ -6413,6 +6455,7 @@
         renderAmbientGrid();
         renderActiveSounds_();
         syncTransportUI_();
+        musicChanged_();
       }, function (err) {
         statusEl.textContent = 'Could not reach Firestore — ' + (err && err.message ? err.message : 'listener error') + '.';
       });
@@ -7103,6 +7146,7 @@
         tracks.sort(function (a, b) { return (a.uploaded_at || 0) - (b.uploaded_at || 0); });
         renderTrackLibrary();
         syncOrphanedStorageTracks_(tracks.map(function (t) { return t.track_id; }));
+        musicChanged_();
       }, function (err) {
         trackLibListEl.innerHTML = '<div class="rdo-track-empty">Could not load the Track Library. (' + escapeHtml((err && err.message) || String(err)) + ')</div>';
       });
@@ -7206,6 +7250,43 @@
   fetchCells();
   trackLibListEl.innerHTML = '<div class="rdo-track-empty">Loading…</div>';
   startTracksListener();
+
+  // For the Play desk's tape deck and pads and the Music tab's shelf
+  // (assets/acell-play.js, acell-shell.js): the same broadcast engine.
+  function musicChanged_() { document.dispatchEvent(new CustomEvent('dg-acell-music')); }
+  function stopAllSounds_() {
+    var ch = currentChannel;
+    return ensureHandlerSignedIn().then(function () {
+      var db = window.firebase.firestore(), docRef = radioDocRef_(ch);
+      return db.runTransaction(function (tx) {
+        return tx.get(docRef).then(function (snap) {
+          var data = snap.exists ? snap.data() : {};
+          var stops = (Array.isArray(data.stinger_stops) ? data.stinger_stops : [])
+            .concat((data.stingers || []).map(function (x) { return x.fired_at; })).slice(-10);
+          tx.set(docRef, { ambient_layers: [], stingers: [], stinger_stops: stops, updated_at: Date.now() }, { merge: true });
+        });
+      });
+    }).then(function () { activeAmbientLayers = []; activeStingers = []; renderAmbientGrid(); renderActiveSounds_(); musicChanged_(); });
+  }
+  window.dgAcellMusic = {
+    channel: function () { return currentChannel; },
+    setChannel: function (ch) { if (ch && ch !== currentChannel) dialApi.set(ch); },
+    state: function () { return { current: Object.assign({}, current), ambient: activeAmbientLayers.slice(), stingers: activeStingers.slice() }; },
+    tracks: function () { return tracks.slice(); },
+    ambientList: function () { return AMBIENT_LAYERS.slice(); },
+    stingerGroups: function () { return STINGER_GROUPS; },
+    label: function (kind, id) { return kind === 'ambient' ? ambientLabel_(id) : stingerLabel_(id); },
+    play: function (t) { setNowPlaying(t.url, t.title || '', t.kind || '', !!t.loop); },
+    togglePause: function () { if (current.track_url) sendTransportAction_(current.paused ? 'resume_now_playing' : 'pause_now_playing'); },
+    restart: function () { if (current.track_url) setNowPlaying(current.track_url, current.track_title, current.track_kind, current.loop); },
+    stop: function () { setNowPlaying('', ''); },
+    toggleLoop: function () { if (current.track_url) sendLoopToggle_(); },
+    fire: function (id) { return fireStinger_(id); },
+    setAmbient: function (id, on) {
+      return setAmbientLayerActive_(currentChannel, id, on).then(function (layers) { activeAmbientLayers = layers; renderAmbientGrid(); renderActiveSounds_(); musicChanged_(); });
+    },
+    stopAll: stopAllSounds_
+  };
 })();
 </script>
 

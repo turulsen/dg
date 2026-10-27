@@ -423,7 +423,7 @@ const { onSchedule } = require('firebase-functions/v2/scheduler');
 exports.dailyBackup = onSchedule({ schedule: 'every day 04:00', timeZone: 'Europe/Copenhagen' }, async () => {
   const db = getFirestore();
   const out = { taken_at: new Date().toISOString() };
-  for (const coll of ['characters', 'briefs', 'cells', 'evidence', 'operations']) {
+  for (const coll of ['characters', 'briefs', 'cells', 'evidence', 'operations', 'vault', 'sessions']) {
     const snap = await db.collection(coll).get();
     out[coll] = {};
     snap.forEach((d) => { out[coll][d.id] = d.data(); });
@@ -438,4 +438,71 @@ exports.dailyBackup = onSchedule({ schedule: 'every day 04:00', timeZone: 'Europ
     const m = /backups\/(\d{4}-\d{2}-\d{2})\.json$/.exec(f.name);
     if (m && new Date(m[1]).getTime() < cutoff) await f.delete().catch(() => {});
   }
+});
+
+// ════════════════════════════════════════════════════════════════
+// vaultSync -- the Handler's Obsidian vault (an iCloud folder) and
+// A-Cell's private copy (vault/, Handler-only) kept in step by an Apple
+// Shortcut on the Handler's phone: it posts every .md file in the folder
+// and saves back what this returns. The rules of who wins live in
+// vault-sync.js. No Firebase sign-in on a Shortcut: it carries a sync key
+// the Handler makes in A-Cell (vault_meta/config.key, Handler-only).
+// ════════════════════════════════════════════════════════════════
+const { onRequest } = require('firebase-functions/v2/https');
+const vaultSync_ = require('./vault-sync');
+const crypto = require('crypto');
+
+exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: '512MiB' }, async (req, res) => {
+  if (req.method !== 'POST') { res.status(405).json({ status: 'ERROR', message: 'POST only' }); return; }
+  let body = req.body;
+  if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = null; } }
+  if (!body || typeof body !== 'object') { res.status(400).json({ status: 'ERROR', message: 'Send JSON: { key, files: [{ path, text }] }' }); return; }
+  const db = getFirestore();
+  const cfgRef = db.collection('vault_meta').doc('config');
+  const cfg = (await cfgRef.get()).data() || {};
+  const want = String(cfg.key || ''), got = String(body.key || '');
+  const ok = want.length >= 16 && got.length === want.length && crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want));
+  if (!ok) { res.status(403).json({ status: 'ERROR', message: 'Wrong sync key. Copy it again from A-Cell → Notes vault.' }); return; }
+  const files = Array.isArray(body.files) ? body.files : [];
+  if (files.length > 3000) { res.status(413).json({ status: 'ERROR', message: 'Too many files (over 3000).' }); return; }
+  const clean = [];
+  for (const f of files) {
+    if (!f || typeof f !== 'object') continue;
+    const text = String(f.text == null ? '' : f.text);
+    if (text.length > 900000) continue;
+    clean.push({ path: String(f.path || f.name || ''), text });
+  }
+  const snap = await db.collection('vault').get();
+  const notes = [];
+  snap.forEach((d) => { const x = d.data(); notes.push({ path: x.path, content: x.content, synced: x.synced === undefined ? null : x.synced, pending: x.pending === undefined ? null : x.pending }); });
+  const out = vaultSync_.reconcile(notes, clean);
+  // Nothing (or far too little) arrived from a vault A-Cell already has:
+  // more likely the Shortcut couldn't read the folder than a mass delete.
+  const syncedCount = notes.filter((n) => n.synced != null).length;
+  let held = 0;
+  if (out.removes.length && (clean.length === 0 || (out.removes.length > 10 && out.removes.length > syncedCount / 2))) {
+    held = out.removes.length; out.removes = []; out.stats.removed = 0;
+  }
+  const now = Date.now();
+  let batch = db.batch(), n = 0;
+  const flush = async () => { if (n) { await batch.commit(); batch = db.batch(); n = 0; } };
+  const before = {};
+  notes.forEach((x) => { before[x.path] = x; });
+  for (const u of out.upserts) {
+    // Content only when the sync changes it: an edit made in A-Cell while
+    // this ran isn't overwritten with the copy read above.
+    const doc = { path: u.path, synced: u.synced, pending: u.pending, synced_at: now };
+    if (!before[u.path] || before[u.path].content !== u.content) Object.assign(doc, { content: u.content, updated_at: now, updated_by: 'sync' });
+    batch.set(db.collection('vault').doc(vaultSync_.docId(u.path)), doc, { merge: true });
+    if (++n >= 400) await flush();
+  }
+  for (const p of out.removes) {
+    batch.delete(db.collection('vault').doc(vaultSync_.docId(p)));
+    if (++n >= 400) await flush();
+  }
+  await flush();
+  const summary = Object.assign({}, out.stats, { held_removals: held, files: clean.length, at: now });
+  await cfgRef.set({ last_sync: summary }, { merge: true });
+  logger.info('vaultSync', summary);
+  res.json({ status: 'OK', write: out.write, stats: summary });
 });
