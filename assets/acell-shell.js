@@ -443,8 +443,9 @@
   /* Moving panels: drag one by its grip onto another and they swap. */
   var drag = null;
   panel.addEventListener('pointerdown', function (e) {
-    var g = e.target.closest('.ac-grip');
-    if (!g) return;
+    // The panel's title bar is the handle (not its buttons).
+    var g = e.target.closest('.ac-ph');
+    if (!g || e.target.closest('button, a, select, input')) return;
     e.preventDefault();
     drag = { from: g.closest('[data-pn]'), over: null };
     drag.from.classList.add('ac-lift');

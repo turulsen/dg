@@ -167,10 +167,29 @@
     obs.observe(document.body, { childList: true });
     loadPaper().then(function () {
       var host = w.querySelector('.ac-paperhost'), brief = (R().briefs() || {})[code] || {}, c = A.cells().filter(function (x) { return x.member_codes.indexOf(code) >= 0; })[0];
+      var photo = (window.dgMainPhoto ? window.dgMainPhoto(brief) : '') || brief.face_plate_url || '';
+      var picId = 'ac-paperpic-' + code.replace(/[^A-Za-z0-9]/g, '_'), picHtml = '';
+      function fillPic() {
+        var box = document.getElementById(picId);
+        if (!box) return;
+        if (picHtml) { box.innerHTML = picHtml; return; }
+        if (/^(https?:|data:)/.test(photo)) { picHtml = '<img src="' + esc(photo) + '" alt="">'; box.innerHTML = picHtml; return; }
+        // gdrive: -- the roster's resolver writes the <img>; keep it for the next render.
+        R().photoInto(photo, picId);
+        var tries = 0, t = setInterval(function () {
+          var b = document.getElementById(picId), img = b && b.querySelector('img');
+          if (img) { picHtml = b.innerHTML; clearInterval(t); } else if (++tries > 40) clearInterval(t);
+        }, 250);
+      }
       host.innerHTML = '';
       window.dgAgentPaper.mount(host, {
         code: code, char: R().doc(code), name: a.name, codename: brief.codename || '', brief: brief,
-        photo: window.dgMainPhoto ? window.dgMainPhoto(brief) : (brief.face_plate_url || ''),
+        photo: photo,
+        // The photo in the paper's head, the way Agent Hub shows it: an
+        // https link as it is, a legacy gdrive: one through the roster's proxy.
+        photoHtml: photo ? '<div class="ac-paperpic" id="' + picId + '"></div>' : '',
+        onPhoto: function () { fillPic(); },
+        loadPhoto: function (box, src) { if (/^(https?:|data:)/.test(src)) box.innerHTML = '<img src="' + esc(src) + '" alt="">'; },
         professionLabel: profTitle, members: [], cellName: c ? (c.name || c.cell_id) : '',
         confirmSave: reason
       });

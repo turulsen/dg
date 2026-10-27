@@ -147,3 +147,7 @@ body[data-ac-mode="play"] footer.site-footer{ display:none; }
   .pd-pad{ transform:none; }
   .pd-o.pd-dice{ display:none; }
 }
+.pd-oh{ touch-action:none; cursor:grab; user-select:none; -webkit-user-select:none; }
+.pd-arranging .pd-ob{ pointer-events:none; opacity:.85; }
+.pd-o.pd-picked{ outline:3px solid #f2d98a !important; outline-offset:3px; }
+.pd-pickt{ color:#f2d98a; }

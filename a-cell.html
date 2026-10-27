@@ -1192,6 +1192,12 @@
       <div class="tab-panel" id="panel-ids"><div id="idc-root"><div class="play-loading">Open this tab to load the ID Creator.</div></div></div>
 
       <div class="tab-panel" id="panel-music">
+        <!-- v3.12.0: the tape shelf and the control center (assets/acell-library.js,
+             acell-console.js) run the broadcast; the classic desk stays folded
+             below with every control it always had. -->
+        <div id="ac-console"></div>
+        <details class="ac-classic" id="ac-classic">
+        <summary>Classic broadcast desk</summary>
         <div class="acell-radio-shell-outer">
           <div class="acell-radio-shell">
             <div class="acell-radio-header">
@@ -1325,6 +1331,7 @@
             </div>
           </div>
         </div>
+        </details>
       </div>
 
     </div>
@@ -3054,6 +3061,7 @@
     cells: function () { return cells; },
     state: function (code) { try { return JSON.parse((charsByCode[code] || {}).character_json || 'null'); } catch (e) { return null; } },
     doc: function (code) { return charsByCode[code] || null; },
+    photoInto: resolveFacePlateInto,
     selected: function () { return selectedCode; },
     // Opens an Agent in the Players list (showing everyone if the Cell
     // filter hides them); fresh: re-read their sheet, not the cached one.
@@ -7197,7 +7205,8 @@
   }
 
   function deleteTrack(t) {
-    if (!confirm('Delete "' + t.title + '"? This cannot be undone.')) return;
+    // The tape shelf asks first itself (window.confirm is dead in an installed iOS app).
+    if (!window.__acNoConfirm && !confirm('Delete "' + t.title + '"? This cannot be undone.')) return;
     trackLibStatus.textContent = 'Deleting…';
     // A Storage-hosted track (Phase 4+ upload) needs its own object
     // deleted from Storage too -- Firebase Storage download URLs are
@@ -7311,7 +7320,7 @@
   }
   window.dgAcellMusic = {
     channel: function () { return currentChannel; },
-    setChannel: function (ch) { if (ch && ch !== currentChannel) dialApi.set(ch); },
+    setChannel: function (ch) { if (ch && ch !== currentChannel) { dialApi.set(ch); musicChanged_(); } },
     state: function () { return { current: Object.assign({}, current), ambient: activeAmbientLayers.slice(), stingers: activeStingers.slice() }; },
     tracks: function () { return tracks.slice(); },
     ambientList: function () { return AMBIENT_LAYERS.slice(); },
@@ -7326,7 +7335,52 @@
     setAmbient: function (id, on) {
       return setAmbientLayerActive_(currentChannel, id, on).then(function (layers) { activeAmbientLayers = layers; renderAmbientGrid(); renderActiveSounds_(); musicChanged_(); });
     },
-    stopAll: stopAllSounds_
+    stopAll: stopAllSounds_,
+    // The Music tab's control center (assets/acell-console.js) -- every
+    // control the broadcast desk below has, on the same engine.
+    channels: function () { return CHANNELS.slice(); },
+    status: function () { return statusEl.textContent; },
+    elapsed: function () { return current.track_url ? liveElapsedSeconds_() : 0; },
+    duration: function () {
+      var a = document.getElementById('music-preview-audio');
+      var d = a && isFinite(a.duration) ? a.duration : 0;
+      return d || Number(seekSlider.max) || 0;
+    },
+    seek: function (sec) { sendSeek_(Math.max(0, Math.round(sec * 1000))); },
+    mix: function () { return { track: Number(mixTrackSlider.value), ambient: Number(mixAmbientSlider.value) }; },
+    setMix: function (which, v) {
+      var sl = which === 'ambient' ? mixAmbientSlider : mixTrackSlider;
+      sl.value = v; sl.dispatchEvent(new Event('input'));
+    },
+    playLink: function (url, title, loop) { if (url) setNowPlaying(url, title || '', '', !!loop); },
+    cueList: function () { return playlist.slice(); },
+    cue: function (t) { playlist.push({ url: t.url, title: t.title || '', kind: t.kind || '' }); renderPlaylist(); savePlaylist(); musicChanged_(); },
+    uncue: function (i) { playlist.splice(i, 1); renderPlaylist(); savePlaylist(); musicChanged_(); },
+    playCue: function (i) { var t = playlist[i]; if (t) setNowPlaying(t.url, t.title || '', t.kind || '', false); },
+    autoAdvance: function (on) {
+      if (on === undefined) return autoAdvanceEnabled;
+      autoAdvanceInput.checked = !!on; autoAdvanceInput.dispatchEvent(new Event('change')); musicChanged_();
+      return autoAdvanceEnabled;
+    },
+    sound: function (kind, refId, action, extra) { sendActiveSoundAction_({ kind: kind, refId: refId }, action, extra || {}); },
+    elapsedOf: instanceElapsedSeconds_,
+    upload: function (file, title) {
+      var dt = new DataTransfer();
+      dt.items.add(file);
+      trackLibFileInput.files = dt.files;
+      trackLibTitleInput.value = title || '';
+      trackLibUploadBtn.click();
+    },
+    uploadStatus: function () { return trackLibStatus.textContent; },
+    rename: function (trackId, title) {
+      return ensureHandlerSignedIn().then(function () { return window.firebase.firestore().collection('tracks').doc(trackId).update({ title: title }); });
+    },
+    remove: function (trackId) { var t = tracks.filter(function (x) { return x.track_id === trackId; })[0]; if (t) deleteTrack(t); },
+    assignCell: function (cellId) {
+      var ch = currentChannel;
+      return ensureHandlerSignedIn().then(function () { return window.firebase.firestore().collection('cells').doc(cellId).set({ channel: ch }, { merge: true }); })
+        .then(function () { cells.forEach(function (c) { if (c.cell_id === cellId) c.channel = ch; }); musicChanged_(); return ch; });
+    }
   };
 })();
 </script>
@@ -7341,6 +7395,7 @@
 <script src="assets/acell-sessions.js"></script>
 <script src="assets/acell-shell.js"></script>
 <script src="assets/acell-library.js"></script>
+<script src="assets/acell-console.js"></script>
 <script src="assets/acell-players.js"></script>
 <script src="assets/acell-play.js"></script>
 <script src="assets/acell-debrief.js"></script>

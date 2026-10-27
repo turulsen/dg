@@ -108,6 +108,9 @@ def skip_acell_gate(page):
     boot splash -- see skip_boot_splash above for why tests that aren't
     specifically exercising the gate itself should pre-seed past it."""
     page.add_init_script("try { sessionStorage.setItem('dg_acell_unlocked', '1'); } catch (e) {}")
+    # v3.12.0: the classic broadcast desk is folded under the Music tab's
+    # control center; the older radio tests drive its controls, so unfold it.
+    page.add_init_script("try { if (localStorage.getItem('dg_acell_classic_open') === null) localStorage.setItem('dg_acell_classic_open', '1'); } catch (e) {}")
 
 def route_apps_script_ok(page):
     """A catch-all "**/script.google.com/** always says OK" mock for
@@ -3988,7 +3991,7 @@ def acell_cell_fixture():
         "characters/ILSE-VR03": agent("ILSE-VR03", "Ilse Varga", "CDC Epidemiologist", {"STR": 9, "CON": 11, "DEX": 11, "INT": 16, "POW": 13, "CHA": 10}, {"hp": 10, "wp": 4, "san": 22, "bp": 20}, "Dora", {"disorders": ["Paranoia"]}),
         "characters/WEND-PR04": agent("WEND-PR04", "Wendell Price", "County Deputy", {"STR": 15, "CON": 13, "DEX": 10, "INT": 10, "POW": 12, "CHA": 12}, {"hp": 14, "wp": 12, "san": 55, "bp": 43}, "Gabor"),
         "briefs/MARA-KS01": {"char_name": "Mara Kessler"}, "briefs/TOMA-RY02": {"char_name": "Tomas Reyes"},
-        "briefs/ILSE-VR03": {"char_name": "Ilse Varga", "codename": "Kite"}, "briefs/WEND-PR04": {"char_name": "Wendell Price"},
+        "briefs/ILSE-VR03": {"char_name": "Ilse Varga", "codename": "Kite", "face_plate_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="}, "briefs/WEND-PR04": {"char_name": "Wendell Price"},
         "cells/cell_osiris": {"name": "Osiris", "member_codes": ["MARA-KS01", "TOMA-RY02", "ILSE-VR03", "WEND-PR04"], "channel": "3"},
         "sessions/sess_4": {"name": "Session 4 — The lighthouse", "cell_id": "cell_osiris", "date": "2026-11-01", "state": "prep",
                             "note_path": "Pale Lantern/Session 4.md", "evidence": ["ev_log"], "tracks": [{"kind": "ambient", "ref": "drone-low", "title": "Drone: Low"}],
@@ -4291,6 +4294,13 @@ def test_acell_play_desk(p):
     lay = page.evaluate("() => JSON.parse(localStorage.getItem('dg_acell_desk_v2') || '{}')")
     record("acell-play", "dragging an object onto another swaps them, kept on the device",
            lay.get("cols", [[], [], []])[2][:1] == ["pads"] and "deck" in lay.get("cols", [[], [], []])[2], str(lay))
+    # On a touch screen: tap a title bar, then tap where it goes.
+    page.click(".pd-o[data-o=evidence] .pd-oh")
+    record("acell-play", "tapping an object's title bar picks it up", "pd-picked" in page.get_attribute(".pd-o[data-o=evidence]", "class") and "tap where" in page.inner_text(".pd-pickt"), "")
+    page.click(".pd-o[data-o=dossiers]", position={"x": 60, "y": 120})
+    lay = page.evaluate("() => JSON.parse(localStorage.getItem('dg_acell_desk_v2') || '{}')")
+    record("acell-play", "…and tapping another object puts it there (they swap)",
+           lay.get("cols", [[]])[0][:1] == ["evidence"] and "dossiers" in lay.get("cols", [[], [], []])[2], str(lay))
     page.click(".pd-o[data-o=initiative] [data-pd=away]")
     record("acell-play", "✕ puts an object away; the drawer brings it back",
            page.locator(".pd-o[data-o=initiative]").count() == 0 and page.locator(".pd-drawer [data-id=initiative]").count() == 1, "")
@@ -4298,6 +4308,12 @@ def test_acell_play_desk(p):
     record("acell-play", "…and back it comes", page.locator(".pd-o[data-o=initiative]").count() == 1, "")
     page.click("#ac-tools [data-tool=arrange]")
 
+    page.click(".pd-dos[data-code=ILSE-VR03] [data-pd=sheet]")
+    page.wait_for_selector(".ac-sheetmodal .ap-head", timeout=10000)
+    record("acell-play", "a dossier's name opens their Agent File as it is (vitals ±, Roll SAN), with their photo",
+           page.locator(".ac-sheetmodal .ap-name-in").count() == 0 and page.locator(".ac-sheetmodal [data-a=rollsan]").count() == 1
+           and page.locator(".ac-sheetmodal .as-photo img").count() == 1, "")
+    page.click(".ac-sheetmodal [data-vclose]")
     page.click("#ac-modes [data-mode=prep]")
     record("acell-play", "leaving Play puts the Dice Roller back where it was, folded",
            page.evaluate("() => { var p = document.getElementById('dr-panel'); return p.parentNode === document.body && p.classList.contains('dr-collapsed'); }"), "")
@@ -4366,6 +4382,110 @@ def test_acell_phone(p):
     record("acell-phone", "the desk: dossiers first, then the notebook", d["y"] < n["y"], str([d, n]))
     record("acell-phone", "the desk fits the phone's width", page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1"), "")
     record("acell-phone", "no JS errors on the phone", not errs, str(errs))
+
+def test_acell_console(p):
+    """v3.12.0, the Music tab's control center: the broadcast on a tape
+    deck -- channels, the Cell's channel, a link to play or cue, the
+    transport, the mixer, what's on air (stop one, STOP ALL), the
+    session's tape and pads; the classic desk folded underneath."""
+    page, errs = open_acell_shell(p, storage={"dg_acell_classic_open": "0"})
+    page.click("#acell-tab-strip .tw[data-tab=music]")
+    page.wait_for_selector("#ac-console .cc-deck", timeout=6000)
+    record("acell-console", "the control center leads the Music tab; the classic desk is folded under the shelf",
+           page.is_visible("#ac-console .cc-scr") and not page.evaluate("() => document.getElementById('ac-classic').open")
+           and page.evaluate("() => { var c = document.getElementById('ac-console'), sh = document.getElementById('ac-shelf'), d = document.getElementById('ac-classic'); return !!(c.compareDocumentPosition(sh) & 4) && !!(sh.compareDocumentPosition(d) & 4); }"), "")
+    wait_for_condition(lambda: "on" in (page.get_attribute("#ac-console .cc-ch[data-ch='3']", "class") or ""), timeout_ms=4000)
+    record("acell-console", "it tunes to the session's Cell's channel", "on" in (page.get_attribute("#ac-console .cc-ch[data-ch='3']", "class") or ""), "")
+    page.click("#ac-console .cc-ch[data-ch='2']")
+    wait_for_condition(lambda: page.evaluate("() => window.dgAcellMusic.channel()") == "2", timeout_ms=3000)
+    record("acell-console", "a channel button tunes the broadcast", page.evaluate("() => window.dgAcellMusic.channel()") == "2", "")
+    wait_for_condition(lambda: page.is_visible("#ac-console [data-cc=assign]"), timeout_ms=3000)
+    record("acell-console", "it offers to make that the Cell's channel", page.is_visible("#ac-console [data-cc=assign]") and "CH 2" in page.inner_text("#ac-console [data-cc=assign]"), "")
+    page.click("#ac-console [data-cc=assign]")
+    wait_for_condition(lambda: (fs_doc(page, "cells/cell_osiris") or {}).get("channel") == "2", timeout_ms=4000)
+    record("acell-console", "…and does", (fs_doc(page, "cells/cell_osiris") or {}).get("channel") == "2", str(fs_doc(page, "cells/cell_osiris")))
+    page.fill("#ac-console [data-cc=url]", "https://example.invalid/fog.mp3")
+    page.fill("#ac-console [data-cc=title]", "Fog Signal")
+    page.click("#ac-console .cc-link button[type=submit]")
+    wait_for_condition(lambda: (fs_doc(page, "radio/2") or {}).get("track_url") == "https://example.invalid/fog.mp3", timeout_ms=4000)
+    record("acell-console", "▶ Play puts the link on air on the channel", (fs_doc(page, "radio/2") or {}).get("track_title") == "Fog Signal", str(fs_doc(page, "radio/2"))[:200])
+    push_firestore_doc_snapshot(page, "radio/2", True, fs_doc(page, "radio/2"))
+    wait_for_condition(lambda: "FOG SIGNAL" in page.inner_text("#ac-console .cc-scr"), timeout_ms=4000)
+    record("acell-console", "the deck's screen shows it, on air, with the seek bar", "FOG SIGNAL" in page.inner_text("#ac-console .cc-scr") and "ON AIR" in page.inner_text("#ac-console .cc-air") and page.is_visible("#ac-console [data-cc=seek]"), "")
+    page.click("#ac-console [data-cc=loop]")
+    wait_for_condition(lambda: (fs_doc(page, "radio/2") or {}).get("loop") is True, timeout_ms=4000)
+    record("acell-console", "LOOP loops the track", (fs_doc(page, "radio/2") or {}).get("loop") is True, "")
+    page.eval_on_selector("#ac-console [data-cc=mix-ambient]", "el => { el.value = 40; el.dispatchEvent(new Event('input', { bubbles: true })); }")
+    wait_for_condition(lambda: (fs_doc(page, "radio/2") or {}).get("ambient_volume") == 40, timeout_ms=4000)
+    record("acell-console", "the mixer sets the ambience level for everyone", (fs_doc(page, "radio/2") or {}).get("ambient_volume") == 40, "")
+    page.click("#ac-console [data-cc=tape][data-i='0']")
+    wait_for_condition(lambda: any(l.get("id") == "drone-low" for l in (fs_doc(page, "radio/2") or {}).get("ambient_layers") or []), timeout_ms=4000)
+    record("acell-console", "the session's loop plays from its tape", any(l.get("id") == "drone-low" for l in (fs_doc(page, "radio/2") or {}).get("ambient_layers") or []), "")
+    push_firestore_doc_snapshot(page, "radio/2", True, fs_doc(page, "radio/2"))
+    wait_for_condition(lambda: page.locator("#ac-console [data-cc=live] .cc-row[data-kind=ambient]").count() == 1, timeout_ms=4000)
+    record("acell-console", "On air now lists it", "Drone: Low" in page.inner_text("#ac-console [data-cc=live]"), page.inner_text("#ac-console [data-cc=live]"))
+    page.click("#ac-console [data-cc=live] .cc-row[data-kind=ambient] [data-cc=s-stop]")
+    wait_for_condition(lambda: not (fs_doc(page, "radio/2") or {}).get("ambient_layers"), timeout_ms=4000)
+    record("acell-console", "✕ stops that loop", not (fs_doc(page, "radio/2") or {}).get("ambient_layers"), "")
+    page.click("#ac-console [data-cc=pad][data-id=scream-01]")
+    wait_for_condition(lambda: any(x.get("id") == "scream-01" for x in (fs_doc(page, "radio/2") or {}).get("stingers") or []), timeout_ms=4000)
+    record("acell-console", "a pad on the tape fires its effect", True, "")
+    page.click("#ac-console [data-cc=stopall]")
+    wait_for_condition(lambda: (fs_doc(page, "radio/2") or {}).get("stingers") == [], timeout_ms=4000)
+    record("acell-console", "STOP ALL silences every effect and loop", (fs_doc(page, "radio/2") or {}).get("stingers") == [] and (fs_doc(page, "radio/2") or {}).get("ambient_layers") == [], "")
+    page.fill("#ac-console [data-cc=url]", "https://example.invalid/next.mp3")
+    page.click("#ac-console [data-cc=cue]")
+    wait_for_condition(lambda: "next.mp3" in page.inner_text("#ac-console [data-cc=cues]"), timeout_ms=4000)
+    record("acell-console", "+ Cue adds the link to the cue list", "next.mp3" in page.inner_text("#ac-console [data-cc=cues]"), page.inner_text("#ac-console [data-cc=cues]"))
+    page.click("#ac-console [data-cc=stop]")
+    wait_for_condition(lambda: (fs_doc(page, "radio/2") or {}).get("track_url") == "", timeout_ms=4000)
+    record("acell-console", "■ stops the track", (fs_doc(page, "radio/2") or {}).get("track_url") == "", "")
+    page.click("#ac-classic > summary")
+    page.wait_for_timeout(300)
+    wait_for_condition(lambda: page.is_visible("#music-set-btn"), timeout_ms=3000)
+    record("acell-console", "the classic desk unfolds, and stays so on this device",
+           page.is_visible("#music-set-btn") and page.evaluate("() => localStorage.getItem('dg_acell_classic_open')") == "1", "")
+    record("acell-console", "no JS errors in the control center", not errs, str(errs))
+
+def test_acell_in_shell(p):
+    """v3.12.0: A-Cell inside the Hub's app shell (hub.html). The shell
+    owns the one Dice Roller (its page, outside A-Cell's frame): on the
+    desk it's laid over the dice slot, open, and given back folded when
+    Play ends."""
+    page = p.new_page(viewport={"width": 1440, "height": 950})
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    skip_acell_gate(page)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); localStorage.setItem('dg_acell_session', 'sess_4'); } catch (e) {}")
+    install_firestore_backend(page, acell_cell_fixture())
+    page.goto(f"{BASE}/hub.html?start=a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: any(f.name == "dg-shell-content" and "a-cell.html" in f.url for f in page.frames), timeout_ms=10000)
+    fr = [f for f in page.frames if f.name == "dg-shell-content"][0]
+    wait_for_condition(lambda: fr.evaluate("() => !!window.dgAcellRoster && (window.__dgFirestoreListeners || []).some(l => l.path === 'cells')"), timeout_ms=10000)
+    for c in ("characters", "briefs", "cells"):
+        push_collection(fr, c)
+    wait_for_condition(lambda: page.evaluate("() => !!document.getElementById('dr-panel')"), timeout_ms=8000)
+    record("acell-shell-hub", "in the shell, A-Cell's frame has no Dice Roller of its own (the shell's is the one)",
+           fr.evaluate("() => !document.getElementById('dr-panel')"), "")
+    fr.click("#ac-modes [data-mode=play]")
+    wait_for_condition(lambda: fr.evaluate("() => !!document.querySelector('.pd-diceslot')"), timeout_ms=6000)
+    page.wait_for_timeout(300)
+    geo = page.evaluate("""() => {
+        var p = document.getElementById('dr-panel'), f = document.getElementById('dg-shell-content');
+        var s = f.contentDocument.querySelector('.pd-diceslot').getBoundingClientRect(), fr = f.getBoundingClientRect(), r = p.getBoundingClientRect();
+        return { open: !p.classList.contains('dr-collapsed'), dx: Math.abs(r.left - (fr.left + s.left)), dy: Math.abs(r.top - (fr.top + s.top)), w: Math.abs(r.width - s.width) };
+    }""")
+    record("acell-shell-hub", "on the desk, the shell's Dice Roller sits open over the dice slot",
+           geo["open"] and geo["dx"] < 3 and geo["dy"] < 3 and geo["w"] < 3, str(geo))
+    record("acell-shell-hub", "no 'Dice Roller loading…' left on the desk", "Dice Roller loading" not in fr.inner_text("#panel-desk"), "")
+    fr.click("#ac-modes [data-mode=prep]")
+    page.wait_for_timeout(200)
+    back = page.evaluate("() => { var p = document.getElementById('dr-panel'); return { collapsed: p.classList.contains('dr-collapsed'), left: p.style.left, top: p.style.top }; }")
+    record("acell-shell-hub", "leaving Play gives it back to the shell, folded, where it was",
+           back["collapsed"] and not back["left"] and not back["top"], str(back))
+    record("acell-shell-hub", "no JS errors in the shell", not errs, str(errs))
 
 def test_vault_sync_rules(p):
     """functions/vault-sync.js: who wins when the iCloud vault and
@@ -13401,6 +13521,8 @@ def main():
         safe(test_acell_debrief, browser, area="acell-debrief")
         safe(test_acell_phone, browser, area="acell-phone")
         safe(test_vault_sync_rules, browser, area="vault-sync")
+        safe(test_acell_console, browser, area="acell-console")
+        safe(test_acell_in_shell, browser, area="acell-shell-hub")
         safe(test_player_pages_never_get_the_handler_feed, browser, area="dice")
         safe(test_handler_rolls_filter_by_cell, browser, area="dice")
         safe(test_stinger_files_exist, browser, area="radio")

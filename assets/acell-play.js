@@ -75,7 +75,7 @@
     drawAll();
   }
   function drawerHtml() {
-    return '<div class="pd-drawer"><span class="pd-dl">Arrange · drag ⋮⋮ onto another object to swap, or onto a column\'s foot to move it</span>' +
+    return '<div class="pd-drawer"><span class="pd-dl">Arrange · drag a title bar onto another object to swap, or onto a column\'s foot — or tap a bar, then tap where it goes</span><span class="pd-dl pd-pickt"></span>' +
       (L.away.length ? '<span class="pd-dl">Put away:</span>' + L.away.map(function (id) { return '<button type="button" class="pd-back" data-pd="back" data-id="' + id + '">+ ' + esc(OBJ[id]) + '</button>'; }).join('') : '') +
       '<label class="pd-dl">Left <input type="range" min="220" max="440" step="10" value="' + L.w[0] + '" data-w="0"></label>' +
       '<label class="pd-dl">Right <input type="range" min="240" max="460" step="10" value="' + L.w[1] + '" data-w="1"></label>' +
@@ -286,24 +286,78 @@
       (s.pads.length ? '' : '<div class="pd-hint light">No pads yet (Prep → Music → a cartridge).</div>');
   }
 
-  /* ── The Dice Roller: the real panel, open, in its slot ── */
-  var dice = { moved: false, opened: false };
+  /* ── The Dice Roller: the real panel, open, in its slot ──
+     On its own page A-Cell has the panel and moves it onto the desk. In
+     the Hub's app shell (hub.html) the one panel belongs to the shell's
+     page, outside this frame: it's laid over the slot instead, following
+     it while the desk scrolls, and hidden while the slot is off screen. */
+  var dice = { moved: false, opened: false, outer: null, raf: 0, h: 0 };
+  function outerPanel() {
+    try {
+      if (window.frameElement && window.parent !== window) return window.parent.document.getElementById('dr-panel');
+    } catch (e) { /* not ours */ }
+    return null;
+  }
   function placeDice() {
-    var slot = ob('dice'), p = document.getElementById('dr-panel');
-    if (!slot || !p || window.innerWidth <= 720) { if (slot && !p) slot.innerHTML = '<div class="pd-hint light">Dice Roller loading…</div>'; return; }
-    if (p.parentNode !== slot) { slot.innerHTML = ''; slot.appendChild(p); }
-    dice.moved = true;
-    p.classList.add('pd-docked');
-    if (p.classList.contains('dr-collapsed') && window.dgDice && window.dgDice._toggle) { window.dgDice._toggle(); dice.opened = true; }
+    var slot = ob('dice');
+    if (!slot) { releaseDice(); return; }
+    var own = document.getElementById('dr-panel');
+    if (window.innerWidth <= 720) { releaseDice(); slot.innerHTML = ''; return; }
+    if (own) {
+      if (own.parentNode !== slot) { slot.innerHTML = ''; slot.appendChild(own); }
+      dice.moved = true;
+      own.classList.add('pd-docked');
+      if (own.classList.contains('dr-collapsed') && window.dgDice && window.dgDice._toggle) { window.dgDice._toggle(); dice.opened = true; }
+      return;
+    }
+    var p = outerPanel();
+    if (!p) { slot.innerHTML = '<div class="pd-hint light">Dice Roller loading…</div>'; return; }
+    var pw = window.parent;
+    if (!dice.outer) {
+      dice.outer = p;
+      if (p.classList.contains('dr-collapsed') && pw.dgDice && pw.dgDice._toggle) { pw.dgDice._toggle(); dice.opened = true; }
+      slot.innerHTML = '<div class="pd-diceslot"></div>';
+      follow();
+    }
+  }
+  function follow() {
+    cancelAnimationFrame(dice.raf);
+    var p = dice.outer;
+    if (!p || !st.open) return;
+    var slot = ob('dice'), frame = window.frameElement;
+    var hold = slot && slot.querySelector('.pd-diceslot');
+    if (!slot || !hold || !frame) { releaseDice(); return; }
+    var h = p.offsetHeight || 260;
+    if (Math.abs(h - dice.h) > 2) { dice.h = h; hold.style.height = h + 'px'; }
+    var r = hold.getBoundingClientRect(), fr = frame.getBoundingClientRect();
+    var visible = r.bottom > 0 && r.top < window.innerHeight;
+    var ps = p.style;
+    ps.setProperty('position', 'fixed', 'important');
+    ps.setProperty('left', Math.round(fr.left + r.left) + 'px', 'important');
+    ps.setProperty('top', Math.round(fr.top + r.top) + 'px', 'important');
+    ps.setProperty('right', 'auto', 'important');
+    ps.setProperty('bottom', 'auto', 'important');
+    ps.setProperty('width', Math.round(r.width) + 'px', 'important');
+    ps.visibility = visible && r.top >= -4 ? '' : 'hidden';
+    dice.raf = requestAnimationFrame(follow);
   }
   function releaseDice() {
-    var p = document.getElementById('dr-panel');
-    if (!p || !dice.moved) return;
-    p.classList.remove('pd-docked');
-    document.body.appendChild(p);
-    if (dice.opened && !p.classList.contains('dr-collapsed') && window.dgDice) window.dgDice._toggle();
-    dice.moved = false; dice.opened = false;
+    cancelAnimationFrame(dice.raf);
+    var own = document.getElementById('dr-panel');
+    if (own && dice.moved) {
+      own.classList.remove('pd-docked');
+      document.body.appendChild(own);
+      if (dice.opened && !own.classList.contains('dr-collapsed') && window.dgDice) window.dgDice._toggle();
+    }
+    var p = dice.outer;
+    if (p) {
+      ['position', 'left', 'top', 'right', 'bottom', 'width'].forEach(function (k) { p.style.removeProperty(k); });
+      p.style.visibility = '';
+      try { if (dice.opened && !p.classList.contains('dr-collapsed') && window.parent.dgDice) window.parent.dgDice._toggle(); } catch (e) { /* gone */ }
+    }
+    dice.moved = false; dice.opened = false; dice.outer = null; dice.h = 0;
   }
+  window.addEventListener('pagehide', releaseDice);
 
   /* ── Clicks, keys, dragging ── */
   panel.addEventListener('click', function (e) {
@@ -340,7 +394,7 @@
       case 'away': {
         var oid = b.closest('[data-o]').getAttribute('data-o');
         L.cols = L.cols.map(function (c) { return c.filter(function (x) { return x !== oid; }); });
-        L.away.push(oid); save(); build(); return;
+        L.away.push(oid); st.pick = ''; save(); build(); return;
       }
       case 'back': {
         var bid = b.getAttribute('data-id');
@@ -371,48 +425,77 @@
   });
   panel.addEventListener('change', function (e) { if (e.target.getAttribute && e.target.getAttribute('data-w') != null) save(); });
 
+  // Moving objects: drag an object's title bar onto another (swap) or a
+  // column's foot (move) -- or, on a touch screen, tap the bar, then tap
+  // where it goes.
   var drag = null;
-  panel.addEventListener('pointerdown', function (e) {
-    var g = e.target.closest('.pd-grip');
-    if (!g || !st.arrange) return;
-    e.preventDefault();
-    drag = { id: g.closest('[data-o]').getAttribute('data-o'), el: g.closest('[data-o]'), over: null };
-    drag.el.classList.add('pd-lift');
-    try { g.setPointerCapture(e.pointerId); } catch (err) { /* old Safari */ }
-  });
-  function targetAt(x, y) {
+  function placeAt(id, target) {
+    var where = function (x) { for (var c = 0; c < 3; c++) { var i = L.cols[c].indexOf(x); if (i >= 0) return [c, i]; } return null; };
+    var from = where(id);
+    if (!from) return;
+    if (target.hasAttribute('data-foot')) {
+      L.cols[from[0]].splice(from[1], 1);
+      L.cols[+target.getAttribute('data-foot')].push(id);
+    } else {
+      var other = target.getAttribute('data-o');
+      if (other === id) return;
+      var to = where(other);
+      L.cols[from[0]][from[1]] = other;
+      L.cols[to[0]][to[1]] = id;
+    }
+    st.pick = '';
+    save(); build();
+  }
+  function targetAt(x, y, not) {
     var hit = null;
     Array.prototype.forEach.call(panel.querySelectorAll('[data-o],[data-foot]'), function (el) {
       var r = el.getBoundingClientRect();
-      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom && el !== drag.el) hit = el;
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom && el !== not) hit = el;
     });
     return hit;
   }
+  panel.addEventListener('pointerdown', function (e) {
+    if (!st.arrange) return;
+    var h = e.target.closest('.pd-oh');
+    if (!h || e.target.closest('.pd-x')) return;
+    e.preventDefault();
+    drag = { id: h.closest('[data-o]').getAttribute('data-o'), el: h.closest('[data-o]'), over: null, x: e.clientX, y: e.clientY, moved: false };
+    try { h.setPointerCapture(e.pointerId); } catch (err) { /* old Safari */ }
+  });
   panel.addEventListener('pointermove', function (e) {
     if (!drag) return;
-    var over = targetAt(e.clientX, e.clientY);
+    if (!drag.moved && Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) < 8) return;
+    drag.moved = true;
+    drag.el.classList.add('pd-lift');
+    var over = targetAt(e.clientX, e.clientY, drag.el);
     if (drag.over && drag.over !== over) drag.over.classList.remove('pd-drop');
     if (over) over.classList.add('pd-drop');
     drag.over = over;
   });
-  panel.addEventListener('pointerup', function () {
-    if (!drag) return;
-    var d = drag; drag = null;
-    d.el.classList.remove('pd-lift');
-    if (!d.over) return;
-    d.over.classList.remove('pd-drop');
-    var where = function (id) { for (var c = 0; c < 3; c++) { var i = L.cols[c].indexOf(id); if (i >= 0) return [c, i]; } return null; };
-    var from = where(d.id);
-    if (d.over.hasAttribute('data-foot')) {
-      L.cols[from[0]].splice(from[1], 1);
-      L.cols[+d.over.getAttribute('data-foot')].push(d.id);
-    } else {
-      var to = where(d.over.getAttribute('data-o'));
-      L.cols[from[0]][from[1]] = d.over.getAttribute('data-o');
-      L.cols[to[0]][to[1]] = d.id;
+  panel.addEventListener('pointerup', function (e) {
+    if (drag) {
+      var d = drag; drag = null;
+      d.el.classList.remove('pd-lift');
+      if (d.over) d.over.classList.remove('pd-drop');
+      if (d.moved) { if (d.over) placeAt(d.id, d.over); return; }
+      // A tap on a bar: pick it up (tap it again to put it down) …
+      if (st.pick && st.pick !== d.id) { placeAt(st.pick, d.el); return; }
+      st.pick = st.pick === d.id ? '' : d.id;
+      markPick();
+      return;
     }
-    save(); build();
+    // … then a tap on another object or a column's foot puts it there.
+    if (st.arrange && st.pick && !e.target.closest('button, input, a')) {
+      var t = targetAt(e.clientX, e.clientY, null);
+      if (t && t.getAttribute('data-o') !== st.pick) placeAt(st.pick, t);
+    }
   });
+  panel.addEventListener('pointercancel', function () { if (drag) { drag.el.classList.remove('pd-lift'); if (drag.over) drag.over.classList.remove('pd-drop'); drag = null; } });
+  function markPick() {
+    Array.prototype.forEach.call(panel.querySelectorAll('[data-o]'), function (el) { el.classList.toggle('pd-picked', el.getAttribute('data-o') === st.pick); });
+    var tip = panel.querySelector('.pd-pickt');
+    if (tip) tip.textContent = st.pick ? 'Now tap where ' + OBJ[st.pick] + ' goes: another object to swap, or a column\'s foot.' : '';
+  }
 
   /* ── The top bar's tools, while playing ── */
   function drawTools() {
@@ -422,7 +505,7 @@
   tools.addEventListener('click', function (e) {
     var b = e.target.closest('[data-tool]');
     if (!b) return;
-    if (b.getAttribute('data-tool') === 'arrange') { st.arrange = !st.arrange; drawTools(); build(); }
+    if (b.getAttribute('data-tool') === 'arrange') { st.arrange = !st.arrange; st.pick = ''; drawTools(); build(); }
     else A.setMode('prep');
   });
 

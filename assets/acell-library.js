@@ -82,11 +82,9 @@
   var shelf = document.createElement('div');
   shelf.className = 'ac-music';
   shelf.id = 'ac-shelf';
-  muPanel.insertBefore(shelf, muPanel.firstChild);
-  var heading = document.createElement('div');
-  heading.className = 'ac-sub ac-deskhd';
-  heading.textContent = 'Broadcast desk — what plays on the table';
-  muPanel.insertBefore(heading, shelf.nextSibling);
+  // Under the control center (assets/acell-console.js), over the classic desk.
+  var consoleEl = document.getElementById('ac-console');
+  muPanel.insertBefore(shelf, consoleEl ? consoleEl.nextSibling : muPanel.firstChild);
   var mu = { q: '', f: 'all', pop: null };
   var TINTS = ['#d9ccaa', '#c9d6c0', '#e2c6b8', '#d6d0e6', '#e8dca8', '#c6d8e2', '#e6c8c8', '#cfd9c0', '#e2d6c0', '#c8c0d8'];
   var CART = ['#7a2a22', '#4a3a6a', '#2a4a6a', '#4a4a4a', '#6a5a2a', '#3a5a3a', '#6a3a5a', '#5a2a2a'];
@@ -125,6 +123,10 @@
     if (mu.f === 'all' || mu.f === 'effects') html += '<div class="ac-carts">' + carts.map(function (x) {
       return '<button type="button" class="ac-cart' + (onTape(s, 'stinger', x.id) ? ' used' : '') + (mu.pop === 'stinger:' + x.id ? ' on' : '') + '" style="--c:' + CART[hash(x.id) % CART.length] + '" data-kind="stinger" data-ref="' + esc(x.id) + '">' + esc(x.label) + '</button>';
     }).join('') + '</div><div class="ac-sl2">Effects · cartridges</div>';
+    html += '<div class="ac-blank"><label class="ac-bt">⇪ Upload an .mp3<input type="file" accept="audio/mpeg,.mp3" hidden data-mu-file></label>' +
+      '<button type="button" class="ac-bt" data-mu="link">＋ Blank tape: a YouTube / SoundCloud link</button></div>' +
+      (mu.upload ? '<form class="ac-upf" data-mu-upf><b>' + esc(mu.upload.name) + '</b><input placeholder="Title" value="' + esc(mu.upload.name.replace(/\.mp3$/i, '')) + '" data-mu-uptitle><button type="submit" class="ac-btn p">Upload</button><button type="button" class="ac-btn" data-mu="upcancel">Cancel</button></form>' : '') +
+      (M().uploadStatus() ? '<div class="ac-upst">' + esc(M().uploadStatus()) + '</div>' : '');
     html += '</section></div>';
     shelf.innerHTML = html;
     if (mu.pop) drawPop();
@@ -141,12 +143,32 @@
     pop.innerHTML = '<b>' + esc(label) + '</b><small>' + (kind === 'track' ? 'uploaded track' : kind === 'ambient' ? 'ambient loop' : 'effect') + '</small>' +
       (s ? '<button type="button" class="ac-btn' + (used ? '' : ' p') + '" data-mu="tape">' + (used ? '✓ On the tape — take it off' : '＋ Add to ' + esc(s.name)) + '</button>' : '<button type="button" class="ac-btn" disabled>Choose a session to add it</button>') +
       (url ? '<button type="button" class="ac-btn" data-mu="hear">' + (A.previewing() === url ? '❚❚ Stop listening' : '🎧 Listen here') + '</button>' : '') +
-      '<button type="button" class="ac-btn" data-mu="table">' + (kind === 'stinger' ? '⚡ Fire on the table' : kind === 'ambient' ? '≈ Layer on the table' : '▶ Play on the table') + '</button>';
+      '<button type="button" class="ac-btn" data-mu="table">' + (kind === 'stinger' ? '⚡ Fire on the table' : kind === 'ambient' ? '≈ Layer on the table' : '▶ Play on the table') + '</button>' +
+      (kind === 'track' && t ? '<button type="button" class="ac-btn" data-mu="queue">+ Cue list</button>' +
+        (mu.renaming ? '<input class="vn-search" data-mu-name value="' + esc(t.title || '') + '"><button type="button" class="ac-btn p" data-mu="rename-ok">Save name</button>'
+          : '<button type="button" class="ac-btn" data-mu="rename">✎ Rename</button>') +
+        '<button type="button" class="ac-btn ac-del" data-mu="delete">✕ Delete</button>' : '');
     var box = el.getBoundingClientRect(), host = shelf.getBoundingClientRect();
     pop.style.left = Math.max(0, Math.min(box.left - host.left, host.width - 250)) + 'px';
     pop.style.top = (box.bottom - host.top + 6) + 'px';
     shelf.appendChild(pop);
   }
+  shelf.addEventListener('change', function (e) {
+    if (!e.target.hasAttribute('data-mu-file')) return;
+    mu.upload = e.target.files[0] || null;
+    drawShelf();
+  });
+  shelf.addEventListener('submit', function (e) {
+    if (!e.target.hasAttribute('data-mu-upf')) return;
+    e.preventDefault();
+    var f = mu.upload;
+    if (!f) return;
+    M().upload(f, e.target.querySelector('[data-mu-uptitle]').value.trim());
+    mu.upload = null;
+    drawShelf();
+    var poll = setInterval(function () { drawShelf(); if (!/upload|sav/i.test(M().uploadStatus() || '') || /done|added|uploaded\.|fail|could/i.test(M().uploadStatus())) clearInterval(poll); }, 1500);
+    setTimeout(function () { clearInterval(poll); }, 120000);
+  });
   shelf.addEventListener('input', function (e) {
     if (!e.target.classList.contains('ac-rq')) return;
     mu.q = e.target.value; mu.pop = null;
@@ -159,7 +181,7 @@
     var rf = e.target.closest('[data-rf]');
     if (rf) { mu.f = rf.getAttribute('data-rf'); mu.pop = null; drawShelf(); return; }
     var item = e.target.closest('[data-kind]');
-    if (item) { var k = item.getAttribute('data-kind') + ':' + item.getAttribute('data-ref'); mu.pop = mu.pop === k ? null : k; drawShelf(); return; }
+    if (item) { var k = item.getAttribute('data-kind') + ':' + item.getAttribute('data-ref'); mu.pop = mu.pop === k ? null : k; mu.renaming = false; drawShelf(); return; }
     var b = e.target.closest('[data-mu]');
     if (!b) { if (mu.pop && !e.target.closest('.ac-pop')) { mu.pop = null; drawShelf(); } return; }
     var a = b.getAttribute('data-mu'), row = b.closest('[data-i]');
@@ -167,9 +189,15 @@
     if (a === 'up' && s) { var i = +row.getAttribute('data-i'), tr = s.tracks.slice(); tr.splice(i - 1, 0, tr.splice(i, 1)[0]); S().update(s.id, { tracks: tr }); return; }
     if (a === 'rm-pad' && s) { S().toggleIn(s.id, 'pads', b.closest('[data-pad]').getAttribute('data-pad')); return; }
     if (a === 'hear-tape' && s) { var tt = s.tracks[+row.getAttribute('data-i')]; A.preview(A.soundUrl(tt.kind, tt.ref)); return; }
+    if (a === 'link') { var u = document.querySelector('#ac-console [data-cc="url"]'); if (u) { u.scrollIntoView({ block: 'center' }); u.focus(); } return; }
+    if (a === 'upcancel') { mu.upload = null; drawShelf(); return; }
     if (!mu.pop) return;
     var at = mu.pop.indexOf(':'), kind = mu.pop.slice(0, at), ref = mu.pop.slice(at + 1);
     if (a === 'hear') { A.preview(A.soundUrl(kind, ref)); return; }
+    if (a === 'queue') { var qt = A.trackById(ref); if (qt) m.cue({ url: qt.url, title: qt.title, kind: 'audio' }); mu.pop = null; drawShelf(); return; }
+    if (a === 'rename') { mu.renaming = true; drawShelf(); var ni = shelf.querySelector('[data-mu-name]'); if (ni) ni.focus(); return; }
+    if (a === 'rename-ok') { var nv = shelf.querySelector('[data-mu-name]').value.trim(); if (nv) m.rename(ref, nv); mu.renaming = false; mu.pop = null; drawShelf(); return; }
+    if (a === 'delete') { A.ask('Delete this track from the library? This cannot be undone.', 'Delete', 'Keep it').then(function (yes) { if (yes) { window.__acNoConfirm = true; m.remove(ref); window.__acNoConfirm = false; } }); mu.pop = null; drawShelf(); return; }
     if (a === 'tape' && s) {
       if (kind === 'stinger') S().toggleIn(s.id, 'pads', ref);
       else {
