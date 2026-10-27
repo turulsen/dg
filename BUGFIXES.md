@@ -6973,8 +6973,19 @@ the losses were in how a fire reached a player. Three of them together:
    kbps / 48 kHz, a soft limiter on the peaks); the whimpers were
    already loud.
 
+Then: "Screams also stopped before time." The same removal cut the
+tail of anything longer, and so would the 5-fire history trim (fire six
+quickly and the first goes). The 8 s wait only narrowed that, so the
+real fix is on the players' side: a one-shot that leaves the doc now
+plays out, and only the Handler's **Stop** cuts it -- Stop also lists the
+stinger's `fired_at` in a short `stinger_stops` array on the channel doc
+(the last 10) that players' devices check. Changing channel or leaving
+the radio still cuts every stinger. No rules change (`radio/` has no
+field list).
+
 Tests: `test_table_radio_short_stinger_plays_from_its_start` (a 2-second
-stinger fired by a clock 3 s behind plays from 0), and
+stinger fired by a clock 3 s behind plays from 0; one tidied off the doc
+keeps playing; one in `stinger_stops` stops), and
 `test_acell_soundboard` now checks a finished stinger stays on the doc a
 moment with its row gone, then leaves.
 

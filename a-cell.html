@@ -5530,7 +5530,7 @@
         promise = setAmbientLayerActive_(ch, matchVal, false);
         break;
       case 'stop_stinger':
-        promise = removeSoundInstanceFirestore_(ch, field, matchKey, matchVal);
+        promise = removeSoundInstanceFirestore_(ch, field, matchKey, matchVal, true);
         break;
       default:
         promise = Promise.reject(new Error('unknown active-sound action: ' + action));
@@ -6229,7 +6229,10 @@
   // instance entirely (Stop for a stinger, which has no separate on/off
   // toggle the way an ambient layer does) -- mirrors Code.gs's
   // removeSoundInstance_().
-  function removeSoundInstanceFirestore_(channel, field, matchKey, matchVal) {
+  // stopped: the Handler's Stop, as opposed to tidying up a finished
+  // one. Players' devices let a one-shot that leaves the doc play out;
+  // one listed in stinger_stops (the last 10 Stops) they cut at once.
+  function removeSoundInstanceFirestore_(channel, field, matchKey, matchVal, stopped) {
     return ensureHandlerSignedIn().then(function () {
       var db = window.firebase.firestore();
       var docRef = radioDocRef_(channel);
@@ -6242,6 +6245,9 @@
           var now = Date.now();
           var patch = { updated_at: now };
           patch[field] = arr;
+          if (stopped && field === 'stingers') {
+            patch.stinger_stops = (Array.isArray(data.stinger_stops) ? data.stinger_stops : []).concat([matchVal]).slice(-10);
+          }
           tx.set(docRef, patch, { merge: true });
           return arr;
         });

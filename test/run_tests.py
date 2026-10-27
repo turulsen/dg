@@ -5076,6 +5076,8 @@ def test_acell_soundboard(p):
         return d if (d and not any(x.get("id") == "scream-01" for x in d.get("stingers", []))) else None
     record("soundboard", "Stop on a stinger row removes it entirely (no on/off toggle the way ambient has)",
            wait_for_condition(stinger_gone) is not None, "")
+    record("soundboard", "...and lists it in stinger_stops, so players cut it at once (a tidy-up lets it play out)",
+           len((get_firestore_doc(page, "radio/1") or {}).get("stinger_stops", [])) == 1, str(get_firestore_doc(page, "radio/1")))
 
     # GitHub issue #4: "I pressed Scream 03 once, and it plays [visually]
     # again every ~15 seconds, though I could only hear it the first
@@ -5639,6 +5641,21 @@ def test_table_radio_short_stinger_plays_from_its_start(p):
     st = page.evaluate(probe)
     record("radio", "a 2-second stinger fired by a Handler with a skewed clock plays from its start, not skipped past its end",
            st is not None and st["ready"] >= 1 and st.get("asked") is not None and st["asked"] < 1.0, str(st))
+    # "Screams also stopped before time": A-Cell tidying a finished
+    # preview (or the history trim) took the fire off the doc, and that
+    # cut the players' sound. Only the Handler's Stop may.
+    has = lambda name: page.evaluate("(n) => Array.from(document.querySelectorAll('audio')).some(e => e.src.indexOf(n) !== -1)", name)
+    push_radio_now_playing(page, "3", {"channel": "3", "track_url": "", "stingers": []})
+    page.wait_for_timeout(200)
+    record("radio", "a playing stinger taken off the doc by tidying up (not Stop) plays to its end",
+           has("dog-whimper"), "")
+    now = page.evaluate("() => Date.now()")
+    push_radio_now_playing(page, "3", {"channel": "3", "track_url": "", "stingers": [
+        {"id": "scream-01", "fired_at": now, "started_at": now, "paused": False, "paused_at": 0, "loop": False}]})
+    wait_for_condition(lambda: has("scream-01") or None, timeout_ms=4000)
+    push_radio_now_playing(page, "3", {"channel": "3", "track_url": "", "stingers": [], "stinger_stops": [now]})
+    page.wait_for_timeout(200)
+    record("radio", "the Handler's Stop still cuts it at once", not has("scream-01"), "")
     page.close()
     return errs
 
