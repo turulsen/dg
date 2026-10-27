@@ -3951,6 +3951,24 @@ def test_player_pages_never_get_the_handler_feed(p):
     page.close()
     return errs
 
+def _tick_in_sealed_frame(frame_locator, sel, tries=5):
+    """Ticks a checkbox inside a session note's sealed (sandboxed srcdoc)
+    frame. The automated browser sometimes drops the first click into a
+    freshly opened out-of-process frame (on the pre-Desk page too); a
+    person tapping a moment later isn't affected. Clicks until it's
+    ticked, a few tries at most."""
+    box = frame_locator.locator(sel)
+    for _ in range(tries):
+        if box.is_checked():
+            return True
+        box.click()
+        try:
+            frame_locator.locator(sel + ":checked").wait_for(timeout=600)
+            return True
+        except Exception:
+            pass
+    return box.is_checked()
+
 def test_acell_desk(p):
     """v3.11.0, A-Cell's Desk: the tabs as panels side by side. The
     Session layout puts the Session notes list beside Play and Music (the
@@ -3999,7 +4017,7 @@ def test_acell_desk(p):
     page.query_selector(".dk-grid .sn-v-frame").content_frame().wait_for_load_state("load")
     record("desk", "tapping English on the Desk opens the note docked in place of the list, beside the Agents (not full screen)",
            panes(page) == ["note:sn2:en", "play", "music"] and not inside(page, "#panel-notes") and page.locator("body > .sn-viewer").count() == 0, str(panes(page)))
-    page.frame_locator(".dk-grid .sn-v-frame").locator("#c1").check()
+    _tick_in_sealed_frame(page.frame_locator(".dk-grid .sn-v-frame"), "#c1")
     _pump_until(page, lambda: "c1" in ((fs_doc(page, "session_notes/sn2/state/en") or {}).get("items") or {}).get("prep-v1", ""), timeout_ms=5000)
     record("desk", "...its ticks still save", "c1" in ((fs_doc(page, "session_notes/sn2/state/en") or {}).get("items") or {}).get("prep-v1", ""), "")
     # A tab that's on the Desk.
@@ -4165,9 +4183,10 @@ def test_acell_session_notes(p):
     record("acell-notes", "the page runs sealed: sandboxed without allow-same-origin, can't reach A-Cell",
            "allow-scripts" in sandbox and "allow-same-origin" not in sandbox
            and fr.locator("body").get_attribute("data-parent") == "blocked", sandbox)
-    # The page restores its ticks in a script after the box: let it run first.
-    page.query_selector(".sn-v-frame").content_frame().wait_for_load_state("load")
-    fr.locator("#c1").check()
+    # The page restores its ticks in a script after the box: let it run
+    # first (its last line marks the body).
+    fr.locator("body[data-parent]").wait_for(timeout=6000)
+    _tick_in_sealed_frame(fr, "#c1")
     _pump_until(page, lambda: "c1" in ((fs_doc(page, f"session_notes/{nid}/state/hu") or {}).get("items") or {}).get("prep-v1", ""), timeout_ms=5000)
     st = (fs_doc(page, f"session_notes/{nid}/state/hu") or {}).get("items") or {}
     record("acell-notes", "ticking a box in the page saves it to Firestore (not just this browser)",
@@ -4727,6 +4746,42 @@ def test_acell_music(p):
     record("acell", "once the listener delivers the deletion, the track is gone from the library",
            "No tracks uploaded yet" in page.inner_text("#tracklib-list"), "")
 
+    page.close()
+    return errs
+
+def test_acell_music_scrubber_follows_broadcast(p):
+    """Reported 2026-10-27 (iPhone): music playing at the table, A-Cell's
+    Music scrubber stuck at 0:00. It only followed this tab's own preview
+    <audio>, which on a phone often never starts (iOS needs a tap to make
+    sound; it's muted besides). Now, while that element isn't playing,
+    the scrubber reads the broadcast's position off its clock."""
+    import io, wave, time as _t
+    buf = io.BytesIO()
+    w = wave.open(buf, "wb"); w.setnchannels(1); w.setsampwidth(1); w.setframerate(8000)
+    w.writeframes(b"\x80" * 8000 * 120); w.close()
+    wav = buf.getvalue()
+    page = p.new_page(viewport={"width": 390, "height": 844})
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    _block_fonts(page)
+    skip_acell_gate(page)
+    install_notes_firestore_stub(page)
+    # The phone: the preview element is never allowed to start.
+    page.add_init_script("HTMLMediaElement.prototype.play = function () { return Promise.reject(new DOMException('blocked', 'NotAllowedError')); };")
+    page.route("**/dgtest-silence.wav", lambda r: r.fulfill(status=200, body=wav, headers={"Content-Type": "audio/wav", "Accept-Ranges": "bytes"}))
+    page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    page.click('.tw[data-tab="music"]')
+    wait_for_condition(lambda: any(l.get("isDoc") and l["path"] == "radio/1" for l in page.evaluate("() => window.__dgFirestoreListeners || []")) or None, timeout_ms=8000)
+    now = int(_t.time() * 1000)
+    push_firestore_doc_snapshot(page, "radio/1", True, {"channel": "1", "track_url": f"{BASE}/dgtest-silence.wav", "track_title": "Lowell Road",
+                                                        "track_kind": "audio", "loop": False, "paused": False, "started_at": now - 30000, "paused_at": 0})
+    page.wait_for_timeout(2500)
+    a = page.evaluate("() => [parseFloat(document.getElementById('music-preview-slider').value), document.getElementById('music-preview-elapsed').textContent, document.getElementById('music-preview-duration') ? document.getElementById('music-preview-duration').textContent : '']")
+    page.wait_for_timeout(2100)
+    b = page.evaluate("() => parseFloat(document.getElementById('music-preview-slider').value)")
+    record("acell", "Music: with the preview unable to play (a phone), the scrubber still shows the broadcast's position and moves",
+           30 <= a[0] <= 36 and a[1] in ("0:30", "0:31", "0:32", "0:33", "0:34", "0:35", "0:36") and b >= a[0] + 1.5, f"{a} -> {b}")
+    record("acell", "Music scrubber: no JS exceptions", len(errs) == 0, "; ".join(errs[:3]))
     page.close()
     return errs
 
@@ -12975,6 +13030,7 @@ def main():
         safe(test_acell_music, browser, area="acell")
 
         safe(test_acell_music_broadcast_error_not_clobbered, browser, area="acell")
+        safe(test_acell_music_scrubber_follows_broadcast, browser, area="acell")
 
         safe(test_acell_soundboard, browser, area="acell")
 

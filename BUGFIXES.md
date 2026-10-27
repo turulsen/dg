@@ -6923,3 +6923,24 @@ the panel on a phone (it isn't dragged there anyway), the bar is at least
 `env(safe-area-inset-bottom)`), and the arrow is finger-sized.
 `dice-roller.js?v=11` on every page. Test:
 `test_dice_roller_phone_not_dragged_by_scroll` taps the bar.
+
+### A-Cell's Music scrubber stuck at 0:00 while music played (v3.11.1)
+
+Reported (iPhone, A-Cell's Desk): "Music is playing but no progress on
+A-Cell's track bar." For an uploaded track the scrubber only followed
+this tab's own preview `<audio>` ('timeupdate'), and on a phone that
+element often never plays: iOS won't start sound without a tap there,
+and it's muted by default (the Handler hears the table's speaker). The
+broadcast ran, the players heard it, and the Handler's bar sat at 0:00.
+The one-second tick that already kept YouTube/SoundCloud tracks moving
+now also moves the audio scrubber from the broadcast's clock
+(`liveElapsedSeconds_()`, wrapped by the track's length when it loops)
+whenever the preview element isn't actually playing. Test:
+`test_acell_music_scrubber_follows_broadcast` (playback blocked, as on
+the phone).
+
+Found along the way, not a product bug: the Session Notes tests' tick in
+a session note's sealed frame failed now and then, on the pre-Desk page
+too -- the automated browser sometimes drops the first click into a
+freshly opened out-of-process frame. `_tick_in_sealed_frame` clicks until
+the box is ticked (a few tries).

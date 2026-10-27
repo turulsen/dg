@@ -5973,6 +5973,17 @@
     if (current.track_url && !current.paused && !isSeekDragging) {
       var isAudioKind = current.track_kind === 'audio' || isDirectAudioUrl_(current.track_url);
       if (!isAudioKind) syncTransportUI_();
+      // Reported 2026-10-27 (iPhone): music playing at the table, the
+      // scrubber here stuck at 0:00. This tab's own preview <audio> only
+      // moves it while it really plays, and on a phone it often doesn't
+      // (iOS won't start sound without a tap here; it's muted besides) --
+      // so read the broadcast's position off its clock instead.
+      else if (previewAudio.paused && !isPreviewSeekDragging) {
+        var pos = liveElapsedSeconds_(), dur = previewAudio.duration;
+        if (isFinite(dur) && dur > 0 && pos >= dur) pos = current.loop ? pos % dur : dur;
+        previewSlider.value = pos;
+        previewElapsedEl.textContent = formatSeekTime_(pos);
+      }
     }
   }, 1000);
 
