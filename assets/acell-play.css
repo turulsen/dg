@@ -141,7 +141,8 @@ body[data-ac-mode="play"] footer.site-footer{ display:none; }
   .pd-notebook{ order:-1; border-width:4px; padding:6px; }
   .pd-o.pd-dossiers{ order:-2; }
   .pd-page{ padding:0 14px 16px; min-height:0; }
-  .pd-tabs{ margin:0 -14px 6px; padding:8px 14px 0; }
+  .pd-tabs{ margin:0 -14px 6px; padding:8px 14px 0; flex-wrap:nowrap; overflow-x:auto; }
+  .ac-tools [data-tool=arrange]{ display:none; }
   .pd-tr{ display:none; }
   .pd-pad{ transform:none; }
   .pd-o.pd-dice{ display:none; }

@@ -4102,6 +4102,8 @@ def test_acell_shell(p):
     record("acell-shell", "Music & effects: the session's loop and its pads", "Drone: Low" in mu and "Scream 01" in mu and "Impact: Ghost" in mu, mu[:200])
 
     # Swap the Players and Notes panels by dragging Players' grip onto Notes.
+    page.evaluate("() => window.scrollTo(0, 0)")
+    page.wait_for_timeout(200)
     g = page.locator("[data-pn=players] .ac-grip").bounding_box()
     t = page.locator("[data-pn=notes]").bounding_box()
     page.mouse.move(g["x"] + 4, g["y"] + 4); page.mouse.down()
@@ -4342,6 +4344,7 @@ def test_acell_debrief(p):
     pf = (_vault_doc(page, "Players/Ilse Varga.md") or {}).get("content", "")
     record("acell-debrief", "Done files the cost and the quick note in the Agent's player file",
            "SAN 22 → 19" in pf.split("## Sheet changes")[1] and "[[Session 4 — The lighthouse · debrief]] Trusts nobody with the log" in pf, pf)
+    wait_for_condition(lambda: "Debriefed" in page.inner_text("#panel-debrief"), timeout_ms=3000)
     record("acell-debrief", "…and marks the session debriefed", _sess(page).get("state") == "debriefed" and "Debriefed" in page.inner_text("#panel-debrief"), "")
     record("acell-debrief", "no JS errors in Debrief", not errs, str(errs))
 

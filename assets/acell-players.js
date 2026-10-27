@@ -39,8 +39,8 @@
   // Adds lines ("- …") at the end of a ## section, making it if it's missing.
   function append(path, section, lines) {
     if (!lines || !lines.length) return Promise.resolve(path);
-    var md = (V().get(path) || {}).content || '';
-    var all = md.replace(/\s+$/, '').split('\n'), r = V().sectionRange(md, section);
+    var md = ((V().get(path) || {}).content || '').replace(/\s+$/, '');
+    var all = md.split('\n'), r = V().sectionRange(md, section);
     if (!r) {
       all = all.concat(['', '## ' + section, ''], lines);
     } else {
