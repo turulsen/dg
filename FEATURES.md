@@ -878,8 +878,13 @@ beside it.
   current layout in `localStorage` `dg_desk_v1` (this device only).
 - The page widens to the window while the Desk is open. On a phone
   (≤ 720 px) the panes stack: the first on top, the rest under it behind
-  little tabs, with a divider between.
-- Test: `test_acell_desk`.
+  little tabs, with a divider between. Since v3.11.1 a pane moves by its
+  whole title bar (or, on a phone, its little tab); on a phone a drop
+  swaps the two panes, in the saved layout too. Drop targets are found
+  by their boxes, since the Radio pill and the Dice Roller float over the
+  Desk. The Session notes list's own language buttons open a page
+  docked.
+- Test: `test_acell_desk` (the phone part by real touch).
 
 **Auth:** the whole page is gated behind a shared Handler password
 (`HANDLER_PASSWORD`, an Apps Script Script Property) — see §9 for how
