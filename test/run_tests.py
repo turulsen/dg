@@ -9392,6 +9392,10 @@ def test_agent_file_v2_play_and_edit(p):
            bool(until(lambda st: st["derived"]["san"] == 49)), str(saved().get("derived")))
     record("agent-file-v2", "a loss of 2+ with a disorder that triggers on it shows the 'Disorder triggered' post-it over the page",
            p1 == ["Disorder triggered — Paranoia"] and page.evaluate("() => { const r = document.getElementById('ap-posts').getBoundingClientRect(); return r.width >= innerWidth - 1 && r.height >= innerHeight - 1; }"), str(p1))
+    dis_actions = page.locator("#ap-posts .ap-postit", has_text="Disorder triggered").locator("[data-pa]").all_inner_texts()
+    record("agent-file-v2", "…the disorder takes hold: its post-it offers projection onto a Bond, not a free SAN roll",
+           any("Project onto a Bond" in a for a in dis_actions) and not any("Roll SAN" in a for a in dis_actions)
+           and "takes hold" in page.inner_text("#ap-posts .ap-postit"), str(dis_actions))
     record("agent-file-v2", "…the episode is logged, and a Violence loss without insanity ticks an incident box",
            bool(until(lambda st: st.get("sanity", {}).get("violence") == [True, True, False] and st.get("sanLog", [{}])[-1].get("triggered") == ["Paranoia"])), str(saved().get("sanity")))
     clear_posts()

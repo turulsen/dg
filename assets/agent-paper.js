@@ -736,8 +736,11 @@
       res.events.forEach(function (ev) {
         if (ev.type === 'disorder') {
           list.push({ title: 'Disorder triggered — ' + ev.names.join(', '), html: 'Lost ' + amount + ' SAN (' + esc(cap(kind)) + '). ' +
-            ev.names.map(function (n) { var dd = D() && D().find(n); return '<b>' + esc(n) + ':</b> ' + esc(dd ? dd.effect : ''); }).join(' ') + ' Roll SAN, or the disorder takes over.',
-            actions: [{ label: 'Roll SAN (' + R().derived(s.state).san + '%)', fn: function () { rollPct(R().derived(s.state).san, 'SAN'); } }, { label: 'Noted' }] });
+            ev.names.map(function (n) { var dd = D() && D().find(n); return '<b>' + esc(n) + ':</b> ' + esc(dd ? dd.effect : ''); }).join(' ') +
+            ' The disorder takes hold. To repress it, project onto a Bond: lose 1D4 WP and as much from the Bond, then a SAN test; success holds it back.',
+            // No free SAN roll: a met trigger sets the disorder off, and
+            // projection is the only way to repress it (same as temporary insanity).
+            actions: ((s.state.bonds || []).length ? [{ label: 'Project onto a Bond…', fn: function (n) { projectForm(n); return true; } }] : []).concat([{ label: 'Noted' }]) });
         } else if (ev.type === 'insanity') {
           list.push({ tone: 'pink', title: 'Temporary insanity', html: 'Lost ' + amount + ' SAN at once. The Handler picks: <b>Flee</b>, <b>Fight</b> or <b>Submit</b>.' +
             (kind !== 'unnatural' ? ' ' + esc(cap(kind)) + ' adaptation marks are cleared.' : ''),

@@ -513,7 +513,9 @@ wizard, imports and PDF export, with the old sheet only behind Settings
   `addBond` (score = CHA), Motivations (`bio.motivations`, rolled from
   `assets/data/bio.js`'s `motivationsData`) and Mental Disorders (`bio.disorders`;
   a disorder triggers on a loss of 2+ when `dgDisorders` says its trigger
-  is losing 2+ SAN). `normalizeBio` splits an older combined text.
+  is losing 2+ SAN; the disorder then takes hold, and its post-it offers
+  projection onto a Bond to repress it, not a free SAN roll).
+  `normalizeBio` splits an older combined text.
 - **`assets/agent-live.js`** (`window.dgAgentLive.session(code, char)`):
   one session per Agent Code shared by every paper on the page. `update`
   applies a change and saves 700ms later; an `onSnapshot` on that

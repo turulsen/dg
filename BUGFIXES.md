@@ -7004,3 +7004,19 @@ divider is a 28 px target and the title bar's buttons are bigger. A drag
 that ends on a tab doesn't also count as tapping it. Test:
 `test_acell_desk`'s phone part drags by real touch (CDP), title bar, tab
 and divider, and checks the page didn't scroll instead.
+
+### A triggered disorder offered a free SAN roll (v3.11.1)
+
+Asked: "where did you see that if a disorder's trigger is met, one more
+SAN roll is needed to suppress or activate the disorder? As I read the
+rules, if the trigger is met the disorder kicks in, and by projecting it
+can be suppressed." Nowhere in the book: the v2 Sanity flow copied the
+Rules page's summary line ("if facing the trigger of a disorder, make a
+SAN roll or the disorder takes over"), never checked against the book,
+and contradicting the same page's own Projection row (lose 1D4 WP and
+Bond to make a SAN test; success prevents temporary insanity or a
+disorder). The "Disorder triggered" post-it now says the disorder takes
+hold and offers **Project onto a Bond…** (the same 1D4 WP + Bond, then
+SAN test, as temporary insanity) instead of Roll SAN; the Rules page
+line says the same. Test: `test_agent_file_v2_play_and_edit` checks the post-it's
+buttons.
