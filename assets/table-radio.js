@@ -846,14 +846,24 @@
           releaseAudioEl_(el);
         });
         entry = { el: el, key: '', gain: stingerGain };
+        // A fire this device watched arrive plays from its own start,
+        // timed from the moment it got here: catching up by the Handler's
+        // clock skipped a 2-second whimper entirely once the snapshot,
+        // the file load and any clock difference added up.
+        if (!alreadySeen) entry.arrivedAt = Date.now();
         stingerAudioEls[s.fired_at] = entry;
       }
       entry.el.loop = !!s.loop;
       var key = s.started_at + '|' + s.paused_at + '|' + (s.loop ? 1 : 0);
       if (entry.key === key) return;
       entry.key = key;
+      var elapsedNow = function () {
+        // Untouched since it was fired (no pause or seek moved started_at).
+        if (entry.arrivedAt && !s.paused && s.started_at === s.fired_at) return (Date.now() - entry.arrivedAt) / 1000;
+        return instanceElapsedSeconds_(s);
+      };
       var applyState = function () {
-        try { entry.el.currentTime = instanceElapsedSeconds_(s); } catch (e) { /* not seekable yet */ }
+        try { entry.el.currentTime = elapsedNow(); } catch (e) { /* not seekable yet */ }
         if (s.paused) {
           entry.el.pause();
         } else {
@@ -867,7 +877,7 @@
             retryOnTap_(entry.el, function () {
               if (stingerAudioEls[s.fired_at] !== entry) return;
               var d = entry.el.duration;
-              if (!s.loop && isFinite(d) && d > 0 && instanceElapsedSeconds_(s) >= d) {
+              if (!s.loop && isFinite(d) && d > 0 && elapsedNow() >= d) {
                 delete stingerAudioEls[s.fired_at];
                 releaseAudioEl_(entry.el);
                 return;

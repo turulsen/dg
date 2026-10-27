@@ -22,7 +22,9 @@ html.dk-desk-on .folder{ max-width:none; }
 .dk-pane[hidden]{ display:none; }
 .dk-pane > *{ margin:0; }
 .dk-ph{ display:flex; align-items:center; gap:8px; padding:5px 8px; background:#e9dfbf; border:1px solid #c8b98e; border-bottom:0; font-family:'Courier Prime',monospace; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink); }
-.dk-grip{ cursor:grab; color:var(--ink-3); font-size:14px; letter-spacing:0; touch-action:none; padding:0 2px; }
+.dk-ph{ cursor:grab; touch-action:none; user-select:none; -webkit-user-select:none; }
+.dk-ph button{ cursor:pointer; }
+.dk-grip{ color:var(--ink-3); font-size:14px; letter-spacing:0; padding:0 2px; }
 .dk-tt{ flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .dk-ic{ border:1px solid #b8a878; background:#fbf7e8; min-width:24px; height:22px; display:inline-flex; align-items:center; justify-content:center; font-size:11px; color:var(--ink-2); cursor:pointer; padding:0 4px; }
 .dk-pb{ flex:1; min-height:0; overflow:auto; background:#fbf8ec; border:1px solid #c8b98e; padding:10px 12px; container-type:inline-size; position:relative; }
@@ -58,6 +60,12 @@ html.dk-dragging iframe{ pointer-events:none; }
 .dk-ptabs{ position:absolute; left:4px; right:4px; height:32px; display:flex; z-index:3; }
 .dk-ptabs button{ flex:1; font-family:'Courier Prime',monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; border:1px solid #c8b98e; background:#e9dfbf; color:var(--ink-2); cursor:pointer; }
 .dk-ptabs button.on{ background:#fbf8ec; color:var(--ink); font-weight:700; }
+.dk-ptabs{ touch-action:none; }
+/* A finger-sized divider and title bar on a phone */
+.dk-phone .dk-split-p{ height:28px; margin-top:-14px; }
+.dk-phone .dk-split-p::after{ top:12px; left:calc(50% - 28px); width:56px; height:4px; }
+.dk-phone .dk-ph{ padding:9px 8px; }
+.dk-phone .dk-ic{ min-width:34px; height:30px; }
 
 /* A tab that's on the Desk */
 .dk-away{ padding:30px 10px; text-align:center; }

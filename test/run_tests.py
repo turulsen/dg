@@ -3985,8 +3985,11 @@ def test_acell_desk(p):
     docs = {"session_notes/sn2": {"title": "Darkened Room", "description": "Act II", "file_en": {"name": "room.html", "size": 300}},
             "session_notes/sn2/files/en": {"html": note_html, "name": "room.html"}}
     errs_all = []
-    def open_acell(width=1280, height=900, storage=None):
-        page = p.new_page(viewport={"width": width, "height": height})
+    def open_acell(width=1280, height=900, storage=None, touch=False):
+        if touch:
+            page = p.new_context(viewport={"width": width, "height": height}, has_touch=True, is_mobile=True).new_page()
+        else:
+            page = p.new_page(viewport={"width": width, "height": height})
         page.set_default_timeout(8000)
         errs = collect_errors(page)
         page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
@@ -4081,13 +4084,47 @@ def test_acell_desk(p):
     # Phone: stacked.
     page, errs = open_acell(390, 844)
     tabs = page.evaluate("() => [...document.querySelectorAll('.dk-ptabs button')].map(b => b.textContent)")
-    vis = lambda: page.evaluate("() => [...document.querySelectorAll('.dk-pane')].filter(e => !e.hidden).map(e => e.getAttribute('data-pane'))")
+    vis = lambda: page.evaluate("() => [...document.querySelectorAll('.dk-pane')].filter(e => !e.hidden).sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top).map(e => e.getAttribute('data-pane'))")
     v1 = vis()
     page.click(".dk-ptabs button:nth-child(2)")
     v2 = vis()
     record("desk", "phone: the first panel on top, the others under it behind tabs",
            tabs == ["Play", "Music"] and v1 == ["notes", "play"] and v2 == ["notes", "music"], f"{tabs} {v1} {v2}")
     page.close(); errs_all += errs
+    # Phone, by finger (live report: "On mobile the drag and rearrange
+    # features for desk dont work"). Real touch input through CDP, so the
+    # page's touch-action and scrolling get their say.
+    page, errs = open_acell(390, 844, touch=True)
+    cdp = page.context.new_cdp_session(page)
+    def touch_drag(x0, y0, x1, y1):
+        cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x0, "y": y0}]})
+        for i in range(1, 11):
+            cdp.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [{"x": x0 + (x1 - x0) * i / 10, "y": y0 + (y1 - y0) * i / 10}]})
+            page.wait_for_timeout(16)
+        cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+        page.wait_for_timeout(150)
+    def mid(sel):
+        b = page.locator(sel).first.bounding_box()
+        return b["x"] + b["width"] / 2, b["y"] + b["height"] / 2
+    page.locator(".dk-grid").scroll_into_view_if_needed()
+    scroll0 = page.evaluate("() => window.scrollY")
+    tx, ty = mid(".dk-pane[data-pane=notes] .dk-tt")
+    ux, uy = mid(".dk-pane[data-pane=play] .dk-pb")
+    touch_drag(tx, ty, ux, uy)
+    record("desk", "phone: dragging the top panel by its title bar onto the one under it swaps them (and the page doesn't scroll instead)",
+           vis() == ["play", "notes"] and page.evaluate("() => window.scrollY") == scroll0, f"{vis()} {panes(page)}")
+    tabx, taby = mid(".dk-ptabs button:has-text('Music')")
+    px, py = mid(".dk-pane[data-pane=play] .dk-pb")
+    touch_drag(tabx, taby, px, py)
+    record("desk", "phone: a panel's little tab drags onto the top panel to swap them",
+           vis() == ["music", "play"], f"{vis()} {panes(page)}")
+    sx, sy = mid(".dk-split-p")
+    top_h = "() => document.querySelector('.dk-pane[data-pane=' + window.dgDesk.panes()[0] + ']').getBoundingClientRect().height"
+    top0 = page.evaluate(top_h)
+    touch_drag(sx, sy, sx, sy + 120)
+    top1 = page.evaluate(top_h)
+    record("desk", "phone: the divider drags by finger", top1 > top0 + 60, f"{top0} -> {top1}")
+    page.context.close(); errs_all += errs
     record("desk", "no JS exceptions", len(errs_all) == 0, "; ".join(errs_all[:3]))
     return errs_all
 
@@ -5059,6 +5096,15 @@ def test_acell_soundboard(p):
         var audioEl = row && row.querySelector('audio');
         if (audioEl) audioEl.dispatchEvent(new Event('ended'));
     }""")
+    # ...but not straight away: this muted preview ends before players'
+    # devices do, and removing it then cut a 2-second whimper off before
+    # anyone heard it. It stays on the doc a few seconds, its row gone.
+    page.wait_for_timeout(1000)
+    still_there = any(x.get("id") == "scream-01" for x in (get_firestore_doc(page, "radio/1") or {}).get("stingers", []))
+    record("soundboard", "a stinger that finished in the preview stays on the channel a few seconds for players still playing it",
+           still_there, str(get_firestore_doc(page, "radio/1")))
+    record("soundboard", "its Active Sounds row goes at once, even though it is still on the doc",
+           page.locator(".rdo-active-row", has_text="Scream 01").count() == 0, "")
     def stinger_gone_after_natural_end():
         d = get_firestore_doc(page, "radio/1")
         return d if (d and not any(x.get("id") == "scream-01" for x in d.get("stingers", []))) else None
@@ -5548,6 +5594,51 @@ def test_table_radio_debug_readout_shows_ambient_and_stinger_state(p):
            and ("alien-lunch:" + format(real_ambient_volume, ".2f")) in debug_text,
            debug_text + " / real=" + str(real_ambient_volume))
 
+    page.close()
+    return errs
+
+def test_table_radio_short_stinger_plays_from_its_start(p):
+    """Live report: "The new creature sound effects cannot be heard at
+    all." The whimpers are 2 seconds long, all their sound in the first
+    1.5. applyStingers_ seeked a fresh fire to (now - started_at), by the
+    Handler's clock, so the snapshot, the file load and any difference
+    between the two devices' clocks skipped the whole clip. A fire this
+    device watched arrive now plays from its start."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); } catch (e) {}")
+    # The test server can't serve byte ranges, so Chromium can't actually
+    # seek an MP3 here (it plays from 0 whatever is asked): record the
+    # position the radio asks for instead.
+    page.add_init_script("""(() => { var d = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'currentTime');
+        Object.defineProperty(HTMLMediaElement.prototype, 'currentTime', { configurable: true, get: d.get,
+            set: function (v) { this.__dgAsked = v; d.set.call(this, v); } }); })()""")
+    install_radio_firestore_stub(page)
+    page.route("**/script.google.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body='{"status":"OK"}'))
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    notebook_aside(page)
+    page.click("#dg-radio-pill")
+    page.wait_for_timeout(150)
+    page.click('.dgr-tick[data-ch="3"]')
+    page.wait_for_timeout(150)
+    page.click("#dg-radio-confirm-tune")
+    page.wait_for_timeout(300)
+    push_radio_now_playing(page, "3", {"channel": "3", "track_url": "", "stingers": []})
+    page.wait_for_timeout(300)
+    # Fired by a Handler whose clock reads 3 seconds behind this one.
+    fired = page.evaluate("() => Date.now() - 3000")
+    push_radio_now_playing(page, "3", {"channel": "3", "track_url": "", "stingers": [
+        {"id": "dog-whimper", "fired_at": fired, "started_at": fired, "paused": False, "paused_at": 0, "loop": False}]})
+    probe = """() => { var a = Array.from(document.querySelectorAll('audio')).find(e => e.src.indexOf('dog-whimper') !== -1);
+        return a ? { asked: a.__dgAsked, ready: a.readyState } : null; }"""
+    wait_for_condition(lambda: (page.evaluate(probe) or {}).get("ready", 0) >= 1 or None, timeout_ms=5000)
+    page.wait_for_timeout(200)
+    st = page.evaluate(probe)
+    record("radio", "a 2-second stinger fired by a Handler with a skewed clock plays from its start, not skipped past its end",
+           st is not None and st["ready"] >= 1 and st.get("asked") is not None and st["asked"] < 1.0, str(st))
     page.close()
     return errs
 
@@ -13043,6 +13134,7 @@ def main():
         safe(test_table_radio_mix_debug_readout, browser, area="radio")
 
         safe(test_table_radio_debug_readout_shows_ambient_and_stinger_state, browser, area="radio")
+        safe(test_table_radio_short_stinger_plays_from_its_start, browser, area="radio")
 
         safe(test_table_radio_plays_while_audio_context_locked, browser, area="radio")
         safe(test_table_radio_new_track_starts_without_a_tap, browser, area="radio")

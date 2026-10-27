@@ -6944,3 +6944,52 @@ a session note's sealed frame failed now and then, on the pre-Desk page
 too -- the automated browser sometimes drops the first click into a
 freshly opened out-of-process frame. `_tick_in_sealed_frame` clicks until
 the box is ticked (a few tries).
+
+### The Creatures & Voices stingers were silent (v3.11.1)
+
+Reported: "The new creature sound effects cannot be heard at all." The
+files were fine (decoded in Chromium: whimpers peak near full scale), so
+the losses were in how a fire reached a player. Three of them together:
+
+1. **The issue #4 fix removed it too soon.** That fix (above) has A-Cell
+   take a stinger off `radio/{channel}` when its muted preview row ends.
+   The preview ends first: players still had the snapshot and the file to
+   fetch, and the removal stops the sound for every listener. Nothing
+   noticed with screams (4 s and more); a 2-second whimper was cut off
+   before it started. The removal now waits 8 s
+   (`SOUND_REMOVE_GRACE_MS`), only for stingers (ambient is matched by
+   id, so a delayed removal could hit one switched back on), and an
+   `endedStingers` set keeps the row from coming back in the meantime,
+   which is what issue #4 was about. So that fix is finished, not undone.
+2. **Catching up skipped the clip.** `applyStingers_` started each fire
+   at `now − started_at`, by the Handler's clock: delivery, file load and
+   any difference between the two devices' clocks added up to the
+   whimpers' whole length (all their sound is in the first 1.5 s). A
+   fire the device watched arrive now plays from its start, timed from
+   its arrival, until the Handler pauses or seeks it (that changes
+   `started_at`); a late join still skips history as before.
+3. **Three were mastered quiet.** The child laughs sat 10–20 dB under
+   the screams, the whispers about 6 dB. Re-encoded louder (same 192
+   kbps / 48 kHz, a soft limiter on the peaks); the whimpers were
+   already loud.
+
+Tests: `test_table_radio_short_stinger_plays_from_its_start` (a 2-second
+stinger fired by a clock 3 s behind plays from 0), and
+`test_acell_soundboard` now checks a finished stinger stays on the doc a
+moment with its row gone, then leaves.
+
+### The Desk couldn't be rearranged on a phone (v3.11.1)
+
+Reported: "On mobile the drag and rearrange features for desk dont
+work." A pane moved only by its ⋮⋮ grip, a target about 10 px wide that a
+finger mostly missed (the touch then scrolled the page). And even a
+successful drag did nothing visible: the phone stacks the panes (one on
+top, one under it behind tabs), so "above"/"under" another pane in its
+column often left the stack in the same order. Now the whole title bar is
+the handle (`touch-action:none` on it), a pane's little tab can be
+dragged too, and on a phone a drop **swaps** the two panes (in the saved
+layout too, so the desktop arrangement trades the same two). The phone
+divider is a 28 px target and the title bar's buttons are bigger. A drag
+that ends on a tab doesn't also count as tapping it. Test:
+`test_acell_desk`'s phone part drags by real touch (CDP), title bar, tab
+and divider, and checks the page didn't scroll instead.

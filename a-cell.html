@@ -5387,6 +5387,10 @@
   // duplicates that trim logic client-side instead of round-tripping
   // through Apps Script for it.
   var STINGER_HISTORY_LENGTH = 5;
+  // How long a finished one-shot stays on the channel doc before this tab
+  // removes it, so players a little behind the Handler still hear it out.
+  var SOUND_REMOVE_GRACE_MS = 8000;
+  var endedStingers = {};
   var STINGER_GROUPS = [
     { label: 'Screams & Laughter', stingers: [
       { id: 'scream-01', label: 'Scream 01' },
@@ -5629,8 +5633,19 @@
       renderActiveSounds_();
       var field = kind === 'ambient' ? 'ambient_layers' : 'stingers';
       var matchKey = kind === 'ambient' ? 'id' : 'fired_at';
-      removeSoundInstanceFirestore_(currentChannel, field, matchKey, refId)
-        .catch(function () { /* best effort -- local state is already clean either way */ });
+      var channel = currentChannel;
+      var remove = function () {
+        removeSoundInstanceFirestore_(channel, field, matchKey, refId)
+          .catch(function () { /* best effort -- local state is already clean either way */ });
+      };
+      if (kind === 'ambient') { remove(); return; }
+      // This muted preview finishes before players' devices do (they
+      // still have the snapshot and the file to fetch), and removing the
+      // instance stops it for them: a 2-second whimper was cut off before
+      // anyone heard it. Give them a few seconds to finish first; until
+      // then endedStingers keeps the next snapshot from redrawing its row.
+      endedStingers[refId] = true;
+      setTimeout(remove, SOUND_REMOVE_GRACE_MS);
     });
     row.sliderEl.addEventListener('input', function () {
       row.isSeekDragging = true;
@@ -5669,7 +5684,7 @@
   function renderActiveSounds_() {
     var wanted = {};
     activeAmbientLayers.forEach(function (l) { wanted['ambient:' + l.id] = { kind: 'ambient', inst: l, label: ambientLabel_(l.id) }; });
-    activeStingers.forEach(function (s) { wanted['stinger:' + s.fired_at] = { kind: 'stinger', inst: s, label: stingerLabel_(s.id) }; });
+    activeStingers.forEach(function (s) { if (!endedStingers[s.fired_at]) wanted['stinger:' + s.fired_at] = { kind: 'stinger', inst: s, label: stingerLabel_(s.id) }; });
 
     Object.keys(activeSoundRows).forEach(function (key) {
       if (!wanted[key]) {
