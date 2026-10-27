@@ -851,6 +851,33 @@ new tab; a claude.ai page can't be framed).
   `…/state/{lang}` ({items, updated_at}). Nothing is in this public repo.
   Only `https://` links are accepted. Loaded the first time the tab is
   opened. The rule needs `firebase deploy --only firestore:rules`.
+- **▦ Desk** (v3.11.0) beside each uploaded page opens it docked on the
+  Desk instead of full-screen (`dgSessionNotes.open(id, lang, host)`);
+  the docked bar switches language, goes full-screen (⤢) or closes.
+  One page is open at a time.
+
+**Desk tab (v3.11.0, `assets/acell-desk.js` + `.css`):** the other tabs
+as panels side by side, so a session note can be read with the Agents
+beside it.
+- The panels are the real tab panels (`#panel-play`, `#panel-music`, …)
+  moved onto the Desk, not copies: music keeps playing, Evidence files
+  as usual. A tab that's on the Desk shows "… is on the Desk" with Open
+  the Desk / Take it back. A tab's first-open load (Notes, Evidence,
+  Sheet, ID Creator) hangs off a `dg-acell-tab` event that the tab strip
+  and the Desk both fire.
+- Layout `{cols: [{w, panes: [{id, h}]}]}` in per cent; panes are placed
+  absolutely and never moved in the DOM once down (moving an iframe
+  reloads it). Drag a pane by its grip onto another's edge (beside it in
+  a new column, or above/below in its column); drag the dividers to
+  resize; ⤢ fills the Desk, ✕ takes a pane off. + Add panel lists every
+  tab, greying out those already there.
+- Layouts: **Session** (Session notes | Play over Music) and **Prep**
+  (Evidence | Cells), plus the Handler's own (+ Save as…), kept with the
+  current layout in `localStorage` `dg_desk_v1` (this device only).
+- The page widens to the window while the Desk is open. On a phone
+  (≤ 720 px) the panes stack: the first on top, the rest under it behind
+  little tabs, with a divider between.
+- Test: `test_acell_desk`.
 
 **Auth:** the whole page is gated behind a shared Handler password
 (`HANDLER_PASSWORD`, an Apps Script Script Property) — see §9 for how

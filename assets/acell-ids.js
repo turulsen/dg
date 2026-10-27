@@ -265,7 +265,7 @@
     refreshStock();
     loadLists();
   }
-  document.addEventListener('click', function (e) { var t = e.target.closest && e.target.closest('.tw[data-tab="ids"]'); if (t) setTimeout(open, 0); });
+  document.addEventListener('dg-acell-tab', function (e) { if (e.detail.tab === 'ids') setTimeout(open, 0); });
   window.addEventListener('resize', function () { if (root && root._idcOpen) preview(); });
   window.dgAcellIds = { open: open, state: function () { return S; } };
 })();
