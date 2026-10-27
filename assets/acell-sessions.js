@@ -7,7 +7,8 @@
        pads: [stinger id], npcs: [{ name, dex, hp, note }], away: [agent code],
        quick_notes: [{ at, text, code }]   code: an Agent's, or '' for the session,
        start: { code: { hp, wp, san, bp } } vitals when Play began, started_at,
-       debrief_path, state: 'prep'|'played'|'debriefed',
+       debrief_path, debrief_imported (quick notes already in it), debriefed_at,
+       state: 'prep'|'played'|'debriefed',
        created_at, updated_at }
    The session being prepped/played is remembered per device.
 
@@ -32,7 +33,7 @@
       evidence: Array.isArray(d.evidence) ? d.evidence : [], tracks: Array.isArray(d.tracks) ? d.tracks : [],
       pads: Array.isArray(d.pads) ? d.pads : [], npcs: Array.isArray(d.npcs) ? d.npcs : [], away: Array.isArray(d.away) ? d.away : [],
       quick_notes: Array.isArray(d.quick_notes) ? d.quick_notes : [], start: d.start || null, started_at: d.started_at || 0,
-      debrief_path: d.debrief_path || '', state: d.state || 'prep',
+      debrief_path: d.debrief_path || '', debrief_imported: d.debrief_imported || 0, debriefed_at: d.debriefed_at || 0, state: d.state || 'prep',
       created_at: d.created_at || 0, updated_at: d.updated_at || 0
     };
   }

@@ -4047,6 +4047,335 @@ def acell_feed_evidence(page):
         push_collection(page, "evidence")
         page.wait_for_timeout(100)
 
+def _sess(page, sid="sess_4"):
+    return fs_doc(page, "sessions/" + sid) or {}
+
+def _vault_doc(page, path):
+    return page.evaluate("(p) => { var d = window.__dgFirestoreDocs || {}; var k = Object.keys(d).filter(k => k.indexOf('vault/') === 0 && d[k] && d[k].path === p)[0]; return k ? d[k] : null; }", path)
+
+def test_acell_shell(p):
+    """v3.12.0, A-Cell's shell: PREP / PLAY / DEBRIEF in the top bar, the
+    folder's index down the left (Session prep first, no Desk tab), the
+    session pill, and Session prep's panels -- the session's Cell and its
+    Agents (away tonight), its notes (the vault note, ticks save), the
+    evidence to hand out (and more to load in), its music and pads; the
+    panels swap by their grips and the order is kept; a new session from
+    the picker."""
+    page, errs = open_acell_shell(p)
+    tabs = page.eval_on_selector_all("#acell-tab-strip .tw", "els => els.map(e => e.dataset.tab)")
+    record("acell-shell", "the index: Session prep, Players, Evidence, Music, Notes, Sheet, Cells, ID Creator (no Desk tab)",
+           tabs == ["session", "play", "evidence", "music", "notes", "sheet", "cells", "ids"], str(tabs))
+    record("acell-shell", "A-Cell opens in PREP on Session prep",
+           page.evaluate("() => document.body.dataset.acMode") == "prep" and page.is_visible("#panel-session") and page.is_visible("#ac-modes [data-mode=prep].on"), "")
+    wait_for_condition(lambda: "Session 4" in page.inner_text("#ac-session-pill"), timeout_ms=5000)
+    record("acell-shell", "the top bar's pill names the session and its Cell",
+           "Session 4 — The lighthouse" in page.inner_text("#ac-session-pill") and "Osiris" in page.inner_text("#ac-session-pill"), page.inner_text("#ac-session-pill"))
+    wait_for_condition(lambda: page.locator("[data-pb=players] .ac-row").count() == 4, timeout_ms=5000)
+    rows = page.eval_on_selector_all("[data-pb=players] .ac-row", "els => els.map(e => e.innerText.replace(/\\s+/g, ' '))")
+    record("acell-shell", "Players lists the Cell's four Agents with their vitals",
+           len(rows) == 4 and "Tomas Reyes" in rows[1] and "HP 6" in rows[1] and "WP 10" in rows[1], str(rows))
+    record("acell-shell", "a disorder shows on the Agent's row", "Paranoia" in rows[2], rows[2] if len(rows) > 2 else "")
+    page.click("[data-pb=players] .ac-row[data-code=WEND-PR04] [data-ac=away]")
+    wait_for_condition(lambda: _sess(page).get("away") == ["WEND-PR04"], timeout_ms=4000)
+    record("acell-shell", "☾ marks an Agent away tonight (sessions/{id}.away)", _sess(page).get("away") == ["WEND-PR04"], str(_sess(page).get("away")))
+    record("acell-shell", "…and their row says so", "away tonight" in page.inner_text("[data-pb=players] .ac-row[data-code=WEND-PR04]"), "")
+
+    wait_for_condition(lambda: page.locator("[data-pb=notes] .vn-body").count() > 0 and "keeper" in page.inner_text("[data-pb=notes]").lower(), timeout_ms=5000)
+    record("acell-shell", "Notes shows the session's vault note, rendered", "Scene 4" in page.inner_text("[data-pb=notes]") and page.locator("[data-pb=notes] .vn-call").count() == 1, page.inner_text("[data-pb=notes]")[:200])
+    page.locator("[data-pb=notes] .vn-ck:not(.on)").first.click()
+    wait_for_condition(lambda: "- [x] The log's last entry" in ((_vault_doc(page, "Pale Lantern/Session 4.md") or {}).get("content") or ""), timeout_ms=4000)
+    record("acell-shell", "ticking a box in the note saves the note",
+           "- [x] The log's last entry" in ((_vault_doc(page, "Pale Lantern/Session 4.md") or {}).get("content") or ""), "")
+
+    acell_feed_evidence(page)
+    wait_for_condition(lambda: "Keeper's log" in page.inner_text("[data-pb=evidence]"), timeout_ms=5000)
+    ev = page.inner_text("[data-pb=evidence]")
+    record("acell-shell", "Evidence: the session's item, not released yet (ready), and more to load in from the Cell",
+           "Keeper's log" in ev and "ready" in ev and "Ainsley's ledger" in ev, ev[:300])
+    page.click("[data-pb=evidence] .ac-row[data-ev=ev_ledger] [data-ac=ev]")
+    wait_for_condition(lambda: "ev_ledger" in (_sess(page).get("evidence") or []), timeout_ms=4000)
+    record("acell-shell", "ticking a suggestion adds it to the session", _sess(page).get("evidence") == ["ev_log", "ev_ledger"], str(_sess(page).get("evidence")))
+    wait_for_condition(lambda: "unseen" in page.inner_text("[data-pb=evidence]") or "not seen by" in page.inner_text("[data-pb=evidence]"), timeout_ms=4000)
+    record("acell-shell", "released evidence says who hasn't seen it (evidence_seen)",
+           "not seen by Reyes, Varga, Price" in page.inner_text("[data-pb=evidence]"), page.inner_text("[data-pb=evidence]")[:400])
+    mu = page.inner_text("[data-pb=music]")
+    record("acell-shell", "Music & effects: the session's loop and its pads", "Drone: Low" in mu and "Scream 01" in mu and "Impact: Ghost" in mu, mu[:200])
+
+    # Swap the Players and Notes panels by dragging Players' grip onto Notes.
+    g = page.locator("[data-pn=players] .ac-grip").bounding_box()
+    t = page.locator("[data-pn=notes]").bounding_box()
+    page.mouse.move(g["x"] + 4, g["y"] + 4); page.mouse.down()
+    page.mouse.move(t["x"] + t["width"] / 2, t["y"] + 40, steps=6); page.mouse.up()
+    order = page.eval_on_selector_all("#panel-session [data-pn]", "els => els.map(e => e.dataset.pn)")
+    kept = page.evaluate("() => JSON.parse(localStorage.getItem('dg_acell_prep_v1') || '{}').order")
+    record("acell-shell", "dragging a panel's grip onto another swaps them, and the order is kept on the device",
+           order[:2] == ["notes", "players"] and kept[:2] == ["notes", "players"], str(order) + " " + str(kept))
+    page.click("[data-pn=evidence] [data-ac=wide]")
+    record("acell-shell", "⤢ makes a panel full width", "wide" in page.get_attribute("[data-pn=evidence]", "class"), "")
+
+    page.select_option("[data-ac=pick-session]", "__new")
+    page.wait_for_selector(".ac-form", timeout=4000)
+    page.fill(".ac-form input[name=name]", "Session 5 — The lamp room")
+    page.click(".ac-form button[type=submit]")
+    wait_for_condition(lambda: "Session 5" in page.inner_text("#ac-session-pill"), timeout_ms=4000)
+    new = [w for w in fs_writes(page, "sessions/") if (w.get("data") or {}).get("name") == "Session 5 — The lamp room"]
+    record("acell-shell", "+ New session writes sessions/{id} with the name and the Cell, and makes it the current one",
+           bool(new) and new[0]["data"].get("cell_id") == "cell_osiris" and "Session 5" in page.inner_text("#ac-session-pill"), str(new[:1]))
+
+    page.click("#ac-modes [data-mode=play]")
+    record("acell-shell", "PLAY: the desk, the index tabs hidden, Arrange in the top bar",
+           page.evaluate("() => document.body.dataset.acMode") == "play" and page.is_visible("#panel-desk") and not page.is_visible("#acell-tab-strip") and page.is_visible("#ac-tools [data-tool=arrange]"), "")
+    page.click("#ac-modes [data-mode=prep]")
+    record("acell-shell", "PREP goes back to the tab you left", page.is_visible("#panel-session") and page.is_visible("#acell-tab-strip"), "")
+    record("acell-shell", "no JS errors in Prep", not errs, str(errs))
+
+def test_acell_library(p):
+    """v3.12.0, the Prep libraries: Evidence's filters (Not released / Not
+    seen yet / Released) and + Add to session; the Music tab's tape shelf
+    (tracks, loops, effect cartridges: add to the session's tape, fire on
+    the table); the Notes tab's vault browser with a new note."""
+    page, errs = open_acell_shell(p)
+    page.click("#acell-tab-strip .tw[data-tab=evidence]")
+    acell_feed_evidence(page)
+    wait_for_condition(lambda: "Not released · 2" in page.inner_text("#ac-ev-chips"), timeout_ms=5000)
+    chips = page.inner_text("#ac-ev-chips")
+    wait_for_condition(lambda: "Not seen yet · 1" in page.inner_text("#ac-ev-chips"), timeout_ms=4000)
+    record("acell-library", "Evidence filters count Not released, Not seen yet and Released",
+           "Not released · 2" in chips and "Not seen yet · 1" in page.inner_text("#ac-ev-chips") and "Released · 1" in chips, chips)
+    page.click("#ac-ev-chips [data-f=held]")
+    page.wait_for_timeout(200)
+    titles = page.eval_on_selector_all("#evidence-list .evidence-title, #evidence-list h3, #evidence-list .ev-title", "els => els.map(e => e.innerText)")
+    listed = page.inner_text("#evidence-list")
+    record("acell-library", "Not released shows only what's still held", "Keeper's log" in listed and "Ainsley's ledger" in listed and "Tide chart" not in listed, listed[:300])
+    record("acell-library", "an item already in the session says so", page.locator("#evidence-list [data-ac-ev=ev_log].on").count() == 1, "")
+    page.click("#evidence-list [data-ac-ev=ev_ledger]")
+    wait_for_condition(lambda: "ev_ledger" in (_sess(page).get("evidence") or []), timeout_ms=4000)
+    record("acell-library", "+ Add to session adds the evidence to the session", "ev_ledger" in (_sess(page).get("evidence") or []), str(_sess(page).get("evidence")))
+
+    page.click("#acell-tab-strip .tw[data-tab=music]")
+    push_collection(page, "tracks") if page.evaluate("() => (window.__dgFirestoreListeners || []).some(l => l.path === 'tracks')") else None
+    wait_for_condition(lambda: page.locator("#ac-shelf .ac-spn[data-kind=track]").count() == 1, timeout_ms=5000)
+    record("acell-library", "the shelf: uploaded tracks and the seven loops as spines, effects as cartridges",
+           page.locator("#ac-shelf .ac-spn[data-kind=ambient]").count() == 7 and page.locator("#ac-shelf .ac-cart").count() > 10, "")
+    record("acell-library", "what's on the session's tape is marked on the shelf",
+           "used" in page.get_attribute("#ac-shelf .ac-spn[data-ref=drone-low]", "class") and "used" in page.get_attribute("#ac-shelf .ac-cart[data-ref=scream-01]", "class"), "")
+    page.click("#ac-shelf .ac-spn[data-kind=track]")
+    page.click("#ac-shelf .ac-pop [data-mu=tape]")
+    wait_for_condition(lambda: any(t.get("ref") == "trk_1" for t in _sess(page).get("tracks") or []), timeout_ms=4000)
+    record("acell-library", "a track from the shelf goes on the session's tape",
+           any(t.get("ref") == "trk_1" and t.get("kind") == "track" and t.get("title") == "Tension Rising" for t in _sess(page).get("tracks") or []), str(_sess(page).get("tracks")))
+    page.click("#ac-shelf .ac-cart[data-ref=scream-02]")
+    page.click("#ac-shelf .ac-pop [data-mu=tape]")
+    wait_for_condition(lambda: "scream-02" in (_sess(page).get("pads") or []), timeout_ms=4000)
+    record("acell-library", "a cartridge becomes one of the session's effect pads", "scream-02" in (_sess(page).get("pads") or []), str(_sess(page).get("pads")))
+    page.click("#ac-shelf .ac-cart[data-ref=impact-ghost]")
+    page.click("#ac-shelf .ac-pop [data-mu=table]")
+    wait_for_condition(lambda: any(any(s.get("id") == "impact-ghost" for s in (w.get("data") or {}).get("stingers") or []) for w in fs_writes(page, "radio/")), timeout_ms=4000)
+    record("acell-library", "⚡ Fire on the table fires the effect on the broadcast",
+           any(any(s.get("id") == "impact-ghost" for s in (w.get("data") or {}).get("stingers") or []) for w in fs_writes(page, "radio/")), "")
+
+    page.click("#acell-tab-strip .tw[data-tab=notes]")
+    wait_for_condition(lambda: page.locator("#ac-vault .vn-pi[data-vp]").count() == 1, timeout_ms=5000)
+    record("acell-library", "the Notes tab lists the vault by folder and opens the session's note",
+           "PALE LANTERN" in page.inner_text("#ac-vault .ac-vlist").upper() and "Scene 4" in page.inner_text("#ac-vault .ac-vnote"), page.inner_text("#ac-vault")[:200])
+    page.click("#ac-vault [data-vv=new]")
+    page.fill(".vn-newpath", "NPCs/Ruth Ainsley")
+    page.click("[data-vnew]")
+    wait_for_condition(lambda: _vault_doc(page, "NPCs/Ruth Ainsley.md") is not None, timeout_ms=4000)
+    record("acell-library", "+ New note makes the note in the vault and opens it",
+           (_vault_doc(page, "NPCs/Ruth Ainsley.md") or {}).get("content", "").startswith("# Ruth Ainsley") and "Ruth Ainsley" in page.inner_text("#ac-vault .ac-vnote"), "")
+    record("acell-library", "the HTML pages (Session Notes) are still below the vault", page.is_visible("#sn-add-btn"), "")
+    record("acell-library", "no JS errors in the libraries", not errs, str(errs))
+
+def test_acell_players_file(p):
+    """v3.12.0, Players: beside an Agent's stats, their player file in the
+    vault (Players/<name>.md); ✎ Edit sheet opens the Agent File paper in
+    Edit, and saving asks the Handler for the reason, logged in the file."""
+    page, errs = open_acell_shell(p)
+    page.click("[data-pb=players] .ac-row[data-code=ILSE-VR03] [data-ac=open-agent]")
+    wait_for_condition(lambda: page.is_visible("#ac-pfile [data-pf=start]"), timeout_ms=6000)
+    record("acell-players", "✎ on Session prep opens the Agent on the Players tab, with no player file yet",
+           page.is_visible("#panel-play") and "Ilse Varga" in page.inner_text("#play-view") and page.is_visible("#ac-pfile [data-pf=start]"), "")
+    page.click("#ac-pfile [data-pf=start]")
+    wait_for_condition(lambda: _vault_doc(page, "Players/Ilse Varga.md") is not None, timeout_ms=4000)
+    c = (_vault_doc(page, "Players/Ilse Varga.md") or {}).get("content", "")
+    record("acell-players", "Start the player file makes Players/<name>.md with its three sections",
+           "agent code: ILSE-VR03" in c and "## Handler notes" in c and "## Sheet changes" in c and "## Quick notes from play" in c, c[:300])
+    page.click("#ac-pfile [data-pf=edit]")
+    page.wait_for_selector(".ac-sheetmodal .ap-name-in", timeout=10000)
+    record("acell-players", "✎ Edit sheet opens the Agent File paper straight into Edit", page.is_visible(".ac-sheetmodal .ap-name-in"), "")
+    page.click(".ac-sheetmodal [data-a=save]")
+    page.wait_for_selector(".ac-reason .ac-why", timeout=4000)
+    record("acell-players", "Save asks the Handler what happened instead of the players' Oath",
+           page.is_visible(".ac-reason") and page.locator("#fn-orders").count() == 0, "")
+    page.fill(".ac-reason .ac-why", "pushed through the fog")
+    page.click(".ac-reason [data-yes]")
+    wait_for_condition(lambda: "pushed through the fog" in ((_vault_doc(page, "Players/Ilse Varga.md") or {}).get("content") or ""), timeout_ms=5000)
+    c = (_vault_doc(page, "Players/Ilse Varga.md") or {}).get("content", "")
+    sec = c.split("## Sheet changes")[1].split("## Quick notes")[0] if "## Sheet changes" in c else ""
+    record("acell-players", "the reason is logged under Sheet changes, dated, with the session",
+           "by Handler" in sec and "pushed through the fog" in sec and "Session 4" in sec, sec)
+    record("acell-players", "no JS errors on the Players tab", not errs, str(errs))
+
+def test_acell_play_desk(p):
+    """v3.12.0, the Play desk: dossiers with vitals and warnings, quick
+    notes on them and on the pad, initiative (Cell by DEX and the
+    session's NPCs), the notebook a scene at a time with its cues, the
+    evidence box, the effect pads and STOP, the Dice Roller moved into its
+    slot (and back), the vitals noted when Play begins, Arrange, and the
+    desk coming back after a reload."""
+    page, errs = open_acell_shell(p)
+    acell_feed_evidence(page)
+    page.click("#ac-modes [data-mode=play]")
+    wait_for_condition(lambda: page.locator(".pd-dos").count() == 4, timeout_ms=5000)
+    start = _sess(page).get("start") or {}
+    record("acell-play", "entering Play notes every Agent's vitals once (session.start)",
+           start.get("TOMA-RY02", {}).get("hp") == 6 and start.get("ILSE-VR03", {}).get("san") == 22 and len(start) == 4, str(start)[:200])
+    reyes = page.inner_text(".pd-dos[data-code=TOMA-RY02]")
+    ilse = page.inner_text(".pd-dos[data-code=ILSE-VR03]")
+    record("acell-play", "a dossier: name, DEX, HP/WP of their max, SAN, BP, and the warnings",
+           "Tomas Reyes" in reyes and "DEX 13" in reyes and "HP 6/13" in reyes and "wounded" in reyes and "2 from BP" in ilse and "Paranoia" in ilse, reyes + " | " + ilse)
+    cards = page.eval_on_selector_all(".pd-ic:not(.add)", "els => els.map(e => e.innerText.replace(/\\s+/g, ' ').trim())")
+    record("acell-play", "initiative: the Cell and the session's NPC by DEX",
+           [c.split(" ")[0] for c in cards] == ["KESSLER", "KEEPER", "REYES", "VARGA", "PRICE"], str(cards))
+    page.click(".pd-next")
+    record("acell-play", "Next ▸ moves the turn on", "REYES" not in page.inner_text(".pd-ic.now") and "KEEPER" in page.inner_text(".pd-ic.now"), page.inner_text(".pd-ic.now"))
+
+    tabs = page.eval_on_selector_all(".pd-tab", "els => els.map(e => e.innerText)")
+    record("acell-play", "the notebook has a tab per ## scene (and the opening, and the whole note)",
+           "Scene 4 · The keeper's log" in tabs and tabs[0] == "Opening" and tabs[-1] == "Whole note", str(tabs))
+    page.click(".pd-tab[data-t=\"Scene 4 · The keeper's log\"]")
+    body = page.inner_text(".pd-notebook .vn-body")
+    record("acell-play", "a scene tab shows just that scene", "The Keeper is still in the lamp room" in body and "Meet" not in body, body[:200])
+    page.click(".pd-notebook .vn-cue")
+    wait_for_condition(lambda: any(any("whisper" in s.get("id", "") for s in (w.get("data") or {}).get("stingers") or []) for w in fs_writes(page, "radio/")), timeout_ms=4000)
+    record("acell-play", "tapping a ⚡ cue in the notes fires that effect",
+           any(any("whisper" in s.get("id", "") for s in (w.get("data") or {}).get("stingers") or []) for w in fs_writes(page, "radio/")), "")
+
+    page.fill(".pd-pad .pd-in", "Reyes found the boat key")
+    page.press(".pd-pad .pd-in", "Enter")
+    page.click(".pd-dos[data-code=MARA-KS01] [data-pd=jot]")
+    page.fill(".pd-dos[data-code=MARA-KS01] .pd-qin", "Wants to call Sam")
+    page.press(".pd-dos[data-code=MARA-KS01] .pd-qin", "Enter")
+    wait_for_condition(lambda: len(_sess(page).get("quick_notes") or []) == 2, timeout_ms=4000)
+    q = _sess(page).get("quick_notes") or []
+    record("acell-play", "quick notes: on the pad (the session's) and on a dossier (that Agent's)",
+           len(q) == 2 and q[0]["code"] == "" and q[1]["code"] == "MARA-KS01" and q[1]["text"] == "Wants to call Sam", str(q))
+    wait_for_condition(lambda: "Wants to call Sam" in page.inner_text(".pd-dos[data-code=MARA-KS01]"), timeout_ms=3000)
+    record("acell-play", "the Agent's quick note sits on their dossier", "Wants to call Sam" in page.inner_text(".pd-dos[data-code=MARA-KS01]"), "")
+
+    page.click(".pd-f[data-ev=ev_log] [data-pd=release]")
+    wait_for_condition(lambda: (fs_doc(page, "evidence/ev_log") or {}).get("released") is True, timeout_ms=5000)
+    record("acell-play", "release ▸ in the evidence box releases it", (fs_doc(page, "evidence/ev_log") or {}).get("released") is True, str(fs_doc(page, "evidence/ev_log"))[:200])
+    page.click(".pd-fx[data-id=scream-01]")
+    wait_for_condition(lambda: any(any(s.get("id") == "scream-01" for s in (w.get("data") or {}).get("stingers") or []) for w in fs_writes(page, "radio/")), timeout_ms=4000)
+    record("acell-play", "an effect pad fires its effect", any(any(s.get("id") == "scream-01" for s in (w.get("data") or {}).get("stingers") or []) for w in fs_writes(page, "radio/")), "")
+    page.click(".pd-fx.stop")
+    wait_for_condition(lambda: any((w.get("data") or {}).get("stingers") == [] and (w.get("data") or {}).get("stinger_stops") for w in fs_writes(page, "radio/")), timeout_ms=4000)
+    record("acell-play", "STOP clears every effect and loop for everyone (stinger_stops)",
+           any((w.get("data") or {}).get("stingers") == [] and (w.get("data") or {}).get("ambient_layers") == [] for w in fs_writes(page, "radio/")), "")
+
+    wait_for_condition(lambda: page.evaluate("() => !!document.querySelector('.pd-dice #dr-panel')"), timeout_ms=4000)
+    record("acell-play", "the Dice Roller sits in its slot on the desk, open",
+           page.evaluate("() => { var p = document.querySelector('.pd-dice #dr-panel'); return !!p && !p.classList.contains('dr-collapsed') && getComputedStyle(p).position !== 'fixed'; }"), "")
+
+    page.click("#ac-tools [data-tool=arrange]")
+    record("acell-play", "✥ Arrange shows the drawer and each object's grip", page.is_visible(".pd-drawer") and page.locator(".pd-grip").count() == 8, "")
+    g = page.locator(".pd-o[data-o=pads] .pd-grip").bounding_box()
+    t = page.locator(".pd-o[data-o=deck]").bounding_box()
+    page.mouse.move(g["x"] + 3, g["y"] + 3); page.mouse.down()
+    page.mouse.move(t["x"] + t["width"] / 2, t["y"] + t["height"] / 2, steps=6); page.mouse.up()
+    lay = page.evaluate("() => JSON.parse(localStorage.getItem('dg_acell_desk_v2') || '{}')")
+    record("acell-play", "dragging an object onto another swaps them, kept on the device",
+           lay.get("cols", [[], [], []])[2][:1] == ["pads"] and "deck" in lay.get("cols", [[], [], []])[2], str(lay))
+    page.click(".pd-o[data-o=initiative] [data-pd=away]")
+    record("acell-play", "✕ puts an object away; the drawer brings it back",
+           page.locator(".pd-o[data-o=initiative]").count() == 0 and page.locator(".pd-drawer [data-id=initiative]").count() == 1, "")
+    page.click(".pd-drawer [data-id=initiative]")
+    record("acell-play", "…and back it comes", page.locator(".pd-o[data-o=initiative]").count() == 1, "")
+    page.click("#ac-tools [data-tool=arrange]")
+
+    page.click("#ac-modes [data-mode=prep]")
+    record("acell-play", "leaving Play puts the Dice Roller back where it was, folded",
+           page.evaluate("() => { var p = document.getElementById('dr-panel'); return p.parentNode === document.body && p.classList.contains('dr-collapsed'); }"), "")
+    page.click("#ac-modes [data-mode=play]")
+    page.reload(wait_until="domcontentloaded")
+    wait_for_condition(lambda: page.evaluate("() => document.body.dataset.acMode") == "play", timeout_ms=6000)
+    record("acell-play", "a reload mid-game comes back to the desk", page.evaluate("() => document.body.dataset.acMode") == "play", "")
+    record("acell-play", "no JS errors on the desk", not errs, str(errs))
+
+def test_acell_debrief(p):
+    """v3.12.0, Debrief: a new vault note "<session> · debrief.md" beside
+    the session's notes -- To do (who to catch up), the quick notes from
+    Play, Additional notes; Done files each Agent's quick notes and what
+    the night cost them (vitals now against Play's start) in their player
+    files and marks the session debriefed."""
+    page, errs = open_acell_shell(p)
+    page.click("[data-pb=players] .ac-row[data-code=WEND-PR04] [data-ac=away]")
+    page.click("#ac-modes [data-mode=play]")
+    wait_for_condition(lambda: bool(_sess(page).get("start")), timeout_ms=5000)
+    page.fill(".pd-pad .pd-in", "Reyes found the boat key")
+    page.press(".pd-pad .pd-in", "Enter")
+    page.click(".pd-dos[data-code=ILSE-VR03] [data-pd=jot]")
+    page.fill(".pd-dos[data-code=ILSE-VR03] .pd-qin", "Trusts nobody with the log")
+    page.press(".pd-dos[data-code=ILSE-VR03] .pd-qin", "Enter")
+    wait_for_condition(lambda: len(_sess(page).get("quick_notes") or []) == 2, timeout_ms=4000)
+    # The night costs Varga 3 SAN (her sheet changes live).
+    st = json.loads(fs_doc(page, "characters/ILSE-VR03")["character_json"])
+    st["derived"]["san"] = 19
+    page.evaluate("(s) => { window.__dgFirestoreDocs['characters/ILSE-VR03'].character_json = s; }", json.dumps(st))
+    push_collection(page, "characters")
+    page.click("#ac-modes [data-mode=debrief]")
+    page.wait_for_selector("[data-db=start]", timeout=5000)
+    record("acell-debrief", "Debrief offers the new note and what the night cost them", "SAN 22 → 19" in page.inner_text("#panel-debrief"), page.inner_text("#panel-debrief")[:300])
+    page.click("[data-db=start]")
+    path = "Pale Lantern/Session 4 — The lighthouse · debrief.md"
+    wait_for_condition(lambda: _vault_doc(page, path) is not None, timeout_ms=4000)
+    c = (_vault_doc(page, path) or {}).get("content", "")
+    record("acell-debrief", "the debrief note: beside the session's notes, To do / Quick notes / Additional notes",
+           "# Session 4 — The lighthouse · debrief" in c and "## To do" in c and "## Quick notes" in c and "## Additional notes" in c, c[:400])
+    record("acell-debrief", "the quick notes are imported (an Agent's linked to their file) and the away Agent is on the To do",
+           "Reyes found the boat key" in c and "[[Ilse Varga]] Trusts nobody with the log" in c and "Catch Wendell Price up" in c, c)
+    record("acell-debrief", "it opens for writing", page.is_visible("#panel-debrief .vn-ta"), "")
+    page.click("[data-db=done]")
+    wait_for_condition(lambda: _sess(page).get("state") == "debriefed", timeout_ms=6000)
+    pf = (_vault_doc(page, "Players/Ilse Varga.md") or {}).get("content", "")
+    record("acell-debrief", "Done files the cost and the quick note in the Agent's player file",
+           "SAN 22 → 19" in pf.split("## Sheet changes")[1] and "[[Session 4 — The lighthouse · debrief]] Trusts nobody with the log" in pf, pf)
+    record("acell-debrief", "…and marks the session debriefed", _sess(page).get("state") == "debriefed" and "Debriefed" in page.inner_text("#panel-debrief"), "")
+    record("acell-debrief", "no JS errors in Debrief", not errs, str(errs))
+
+def test_acell_phone(p):
+    """v3.12.0 on a phone: the index tabs scroll in a strip, Session prep's
+    panels stack, the desk is one column with the dossiers then the
+    notebook; nothing scrolls sideways."""
+    page, errs = open_acell_shell(p, width=390, height=844, touch=True)
+    wait_for_condition(lambda: page.locator("[data-pb=players] .ac-row").count() == 4, timeout_ms=5000)
+    wide = page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
+    record("acell-phone", "Prep fits the phone's width", wide, str(page.evaluate("() => [document.documentElement.scrollWidth, window.innerWidth]")))
+    boxes = page.eval_on_selector_all("#panel-session [data-pn]", "els => els.map(e => Math.round(e.getBoundingClientRect().left))")
+    record("acell-phone", "Session prep's panels stack", len(set(boxes)) == 1, str(boxes))
+    page.click("#ac-modes [data-mode=play]")
+    wait_for_condition(lambda: page.locator(".pd-dos").count() == 4, timeout_ms=5000)
+    d = page.locator(".pd-o[data-o=dossiers]").bounding_box()
+    n = page.locator(".pd-o[data-o=notebook]").bounding_box()
+    record("acell-phone", "the desk: dossiers first, then the notebook", d["y"] < n["y"], str([d, n]))
+    record("acell-phone", "the desk fits the phone's width", page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1"), "")
+    record("acell-phone", "no JS errors on the phone", not errs, str(errs))
+
+def test_vault_sync_rules(p):
+    """functions/vault-sync.js: who wins when the iCloud vault and
+    A-Cell's copy disagree (test/vault_sync_test.js, run with node)."""
+    try:
+        out = subprocess.run(["node", os.path.join(os.path.dirname(__file__), "vault_sync_test.js")], capture_output=True, text=True, timeout=60)
+        rows = json.loads(out.stdout or "[]")
+    except Exception as e:
+        record("vault-sync", "the vault sync checks ran", False, str(e))
+        return
+    record("vault-sync", "the vault sync checks ran", len(rows) >= 13, out.stderr[-300:])
+    for r in rows:
+        record("vault-sync", r["name"], r["ok"], r.get("detail", ""))
+
 def test_acell_session_notes(p):
     """A-Cell's Session Notes tab: the Handler's links to a scenario's
     prep pages (Hungarian and/or English), kept in Firestore
@@ -13059,6 +13388,13 @@ def main():
 
         safe(test_acell_sheet, browser, area="acell")
         safe(test_acell_session_notes, browser, area="acell-notes")
+        safe(test_acell_shell, browser, area="acell-shell")
+        safe(test_acell_library, browser, area="acell-library")
+        safe(test_acell_players_file, browser, area="acell-players")
+        safe(test_acell_play_desk, browser, area="acell-play")
+        safe(test_acell_debrief, browser, area="acell-debrief")
+        safe(test_acell_phone, browser, area="acell-phone")
+        safe(test_vault_sync_rules, browser, area="vault-sync")
         safe(test_player_pages_never_get_the_handler_feed, browser, area="dice")
         safe(test_handler_rolls_filter_by_cell, browser, area="dice")
         safe(test_stinger_files_exist, browser, area="radio")

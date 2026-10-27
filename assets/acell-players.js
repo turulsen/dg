@@ -153,7 +153,9 @@
     if (window.professions && window.professions[key] && window.professions[key].title) return window.professions[key].title;
     return A.profLabel(key);
   }
-  function editSheet(code) {
+  // opts.view: open it as it is (the desk: vitals ±, Roll SAN), not in Edit.
+  function editSheet(code, opts) {
+    opts = opts || {};
     var a = A.agent(code) || { code: code, name: code };
     var w = A.modal('<div class="vn-mh"><b>' + esc(a.name) + ' · Agent File</b><button type="button" data-vclose>Done</button></div><div class="ac-paperhost"><div class="ac-none">Opening the Agent File…</div></div>', 'vn-wide ac-sheetmodal');
     var obs = new MutationObserver(function () {
@@ -173,7 +175,7 @@
         confirmSave: reason
       });
       var ed = host.querySelector('[data-a="edit"]');
-      if (ed) ed.click();
+      if (ed && !opts.view) ed.click();
     }).catch(function (err) {
       w.querySelector('.ac-paperhost').innerHTML = '<div class="ac-none">Could not open the Agent File: ' + esc((err && err.message) || err) + '</div>';
     });
