@@ -6910,3 +6910,16 @@ screen." On the Desk the Session notes list kept its language buttons
 taps. Now, when the list is on the Desk, its own language buttons open
 the page docked there and the ▦ Desk buttons are hidden; on the Session
 Notes tab nothing changed. `test_acell_desk` taps English on the Desk.
+
+### The Dice Roller couldn't be opened on a phone in A-Cell (v3.11.1)
+
+Reported: "On phone the Dice Roller can't be clicked in A-Cell, so low
+placing." On a phone the panel is a bottom sheet docked to the screen's
+edge, and only its ▲ arrow opened it: a target of roughly 15×12 px sitting
+in the bottom strip iOS keeps for its own gestures (and Safari for its
+toolbar), so the tap rarely reached it. The whole bar now opens and closes
+the panel on a phone (it isn't dragged there anyway), the bar is at least
+46 px tall with its padding clear of the edge (and of the home bar via
+`env(safe-area-inset-bottom)`), and the arrow is finger-sized.
+`dice-roller.js?v=11` on every page. Test:
+`test_dice_roller_phone_not_dragged_by_scroll` taps the bar.

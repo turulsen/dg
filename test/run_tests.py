@@ -10941,6 +10941,13 @@ def test_dice_roller_phone_not_dragged_by_scroll(p):
             r = page.evaluate(swipe, [200, vh - 20, 200, vh - 400])
             record("dice-roller", "phone: a scroll that starts on the Dice Roller bar leaves it docked at the bottom",
                    abs(r[2] - r[3]) < 1 and page.evaluate("() => document.getElementById('dr-panel').style.top") == "", str(r))
+            # Reported 2026-10-27: on a phone the bar couldn't be opened -- only
+            # its tiny arrow did it, in the screen's bottom edge iOS keeps.
+            col = lambda: page.evaluate("() => document.getElementById('dr-panel').classList.contains('dr-collapsed')")
+            c0 = col(); page.tap("#dr-title"); c1 = col(); page.tap("#dr-title"); c2 = col()
+            hh = page.evaluate("() => document.getElementById('dr-handle').getBoundingClientRect().height")
+            record("dice-roller", "phone: tapping anywhere on the Dice Roller bar opens and closes it; the bar is a finger tall",
+                   c1 != c0 and c2 == c0 and hh >= 46, f"{c0}->{c1}->{c2} h={hh}")
         else:
             r = page.evaluate(swipe, [before[0] + 40, before[1] + 10, before[0] + 44, before[1] + 13])
             record("dice-roller", "desktop: a small touch wobble doesn't move the panel", abs(r[1] - before[1]) < 1, f"{before} -> {r}")

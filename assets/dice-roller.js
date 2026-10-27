@@ -1325,6 +1325,10 @@
             '.dr-history-time{font-size:8px;opacity:.4;flex-shrink:0;}',
             '@media (max-width:600px){#dr-panel{right:0;bottom:0;left:0;width:100%;border-radius:12px 12px 0 0;',
             'border-left:none;border-right:none;border-bottom:none;max-height:60vh;overflow-y:auto;}',
+            // A tall bar, its words and arrow clear of the screen's bottom
+            // edge (and the home bar, where the page reaches under it).
+            '#dr-handle{min-height:46px;box-sizing:border-box;cursor:pointer;padding-bottom:max(8px, env(safe-area-inset-bottom));}',
+            '#dr-arrow{min-width:44px;min-height:36px;font-size:14px;}',
             '#dr-die-pills{gap:5px;}.dr-die-btn{max-width:none;flex:1;}}',
         ].join('');
         document.head.appendChild(style);
@@ -1424,6 +1428,13 @@
 
         // Wire events via addEventListener — no global dgDice dependency in markup
         _e.arrow.addEventListener('click', togglePanel);
+        // On a phone the bar is docked (nothing to drag), and its little ▲
+        // sat in the screen's bottom edge, where iOS keeps taps for its own
+        // gestures: the whole bar opens and closes it there.
+        $('dr-handle').addEventListener('click', e => {
+            if (!isDocked() || e.target.closest('button, input')) return;
+            togglePanel();
+        });
         if (!handlerMode) {
             _e.dieBtns.forEach(b => b.addEventListener('click', () => selectDie(b.dataset.die)));
             $('dr-roll-btn').addEventListener('click', rollManual);
