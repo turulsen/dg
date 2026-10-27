@@ -121,7 +121,7 @@
         const specialtyInstances = state.specialtyInstances || [];
         const sanity = state.sanity || {};
         const lpNotes = state.lpNotes || {};
-        const lpFeat = state.lpFeat || {};
+        const lpFeat = (window.dgRules && window.dgRules.features) ? window.dgRules.features(state) : (state.lpFeat || {});
         const lpWeapons = state.lpWeapons || [];
         const equipment = state.equipment || [];
 

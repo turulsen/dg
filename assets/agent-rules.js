@@ -64,6 +64,35 @@
     STATS.forEach(function (k) { out[k] = num(src[k], 0); });
     return out;
   }
+  // Distinguishing features. The old sheet (stats/, retired in v3.2.0)
+  // seeded an empty one with its descriptor for the score, but read the
+  // score before the Agent had loaded, while it still showed 3: every
+  // stat got the lowest band ("Feeble", "Bedridden", "Barely Mobile"…),
+  // saved as if typed. A feature that is exactly one of that table's
+  // words and doesn't fit the score is shown, and saved from Edit, as the
+  // one that does; anything else a player wrote stays as it is.
+  var OLD_DESCRIPTORS = {
+    STR: [[3, 'Feeble'], [5, 'Weak'], [9, 'Average'], [13, 'Muscular'], [17, 'Huge']],
+    DEX: [[3, 'Barely Mobile'], [5, 'Clumsy'], [9, 'Average'], [13, 'Nimble'], [17, 'Acrobatic']],
+    CON: [[3, 'Bedridden'], [5, 'Sickly'], [9, 'Average'], [13, 'Perfect health'], [17, 'Indefatigable']],
+    INT: [[3, 'Imbecilic'], [5, 'Slow'], [9, 'Average'], [13, 'Perceptive'], [17, 'Brilliant']],
+    POW: [[3, 'Spineless'], [5, 'Nervous'], [9, 'Average'], [13, 'Strong willed'], [17, 'Indomitable']],
+    CHA: [[3, 'Unbearable'], [5, 'Awkward'], [9, 'Average'], [13, 'Charming'], [17, 'Magnetic']]
+  };
+  function features(state) {
+    var sv = stats(state), src = state.lpFeat || {}, out = {};
+    Object.keys(src).forEach(function (k) { out[k] = src[k]; });
+    STATS.forEach(function (k) {
+      var f = String(src[k] || '').trim(), table = OLD_DESCRIPTORS[k];
+      if (!f || !table || !sv[k]) return;
+      var isOld = table.some(function (t) { return t[1].toLowerCase() === f.toLowerCase(); });
+      if (!isOld) return;
+      var fits = '';
+      table.forEach(function (t) { if (sv[k] >= t[0]) fits = t[1]; });
+      if (fits && fits.toLowerCase() !== f.toLowerCase()) out[k] = fits;
+    });
+    return out;
+  }
   function setStat(state, k, v) {
     v = clamp(num(v, 0), 0, 30);
     state.stats = state.stats || {}; state.csStats = state.csStats || {};
@@ -337,7 +366,7 @@
   window.dgRules = {
     crossedMotivations: crossedMotivations, crossOffMotivation: crossOffMotivation,
     STATS: STATS, SKILLS: SKILLS, SPECIALTY_OPTIONS: SPECIALTY_OPTIONS, SPEC_LABEL: SPEC_LABEL, KINDS: KINDS,
-    num: num, stats: stats, setStat: setStat, maxes: maxes, derived: derived, adjust: adjust, stepBp: stepBp, resetBp: resetBp,
+    num: num, stats: stats, features: features, setStat: setStat, maxes: maxes, derived: derived, adjust: adjust, stepBp: stepBp, resetBp: resetBp,
     skillList: skillList, findSkill: findSkill, setSkillValue: setSkillValue, setSpecialty: setSpecialty, addSpecialty: addSpecialty,
     addOwnSkill: addOwnSkill, removeSkill: removeSkill, toggleMark: toggleMark, canMark: canMark, markFailed: markFailed, improve: improve,
     sanity: sanity, sanLoss: sanLoss, tickIncident: tickIncident, adapt: adapt, project: project,

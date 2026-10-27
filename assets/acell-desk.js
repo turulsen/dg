@@ -28,6 +28,7 @@
     Prep: { cols: [{ w: 55, panes: [{ id: 'evidence', h: 100 }] }, { w: 45, panes: [{ id: 'cells', h: 100 }] }] }
   };
   var PHONE = 720;
+  var suppressClick = false;
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
@@ -177,12 +178,12 @@
       tabs.innerHTML = rest.map(function (id) { return '<button type="button" data-dk-under="' + esc(id) + '" class="' + (id === S.under ? 'on' : '') + '">' + esc(isNote(id) ? 'Notes' : TABS[id]) + '</button>'; }).join('');
       grid.appendChild(tabs);
     }
-    if (tabs) tabs.style.top = 'calc(' + top + '% + 8px)';
+    if (tabs) tabs.style.top = 'calc(' + top + '% + 14px)';
     rest.forEach(function (id) {
       var el = panes[id];
       el.hidden = id !== S.under;
       el.style.left = '0%'; el.style.width = '100%';
-      el.style.top = 'calc(' + top + '% + 40px)'; el.style.height = 'calc(' + (100 - top) + '% - 40px)';
+      el.style.top = 'calc(' + top + '% + 46px)'; el.style.height = 'calc(' + (100 - top) + '% - 46px)';
     });
   }
 
@@ -253,12 +254,34 @@
     }
     place();
   }
+  // Phone: the stack shows only two panes, so a drop swaps the two.
+  function swap(a, b) {
+    if (a === b) return;
+    var wa = where(a), wb = where(b);
+    if (!wa || !wb) return;
+    S.layout.cols[wa.ci].panes[wa.pi].id = b;
+    S.layout.cols[wb.ci].panes[wb.pi].id = a;
+    var first = allIds()[0];
+    // Whichever of the two went under shows in the bottom slot.
+    S.under = first === a ? b : first === b ? a : S.under;
+    place();
+  }
   function zoneAt(el, x, y) {
     var r = el.getBoundingClientRect(), fx = (x - r.left) / r.width, fy = (y - r.top) / r.height;
     if (phone()) return fy < .5 ? 'top' : 'bottom';
     if (fx < .25) return 'left';
     if (fx > .75) return 'right';
     return fy < .5 ? 'top' : 'bottom';
+  }
+  // By the boxes, not elementFromPoint: the Radio pill and the Dice
+  // Roller float over the Desk, and an iframe would answer for its pane.
+  function hitAt(x, y) {
+    var els = Array.prototype.slice.call(grid.querySelectorAll('.dk-ptabs [data-dk-under], .dk-pane:not([hidden])'));
+    for (var i = 0; i < els.length; i++) {
+      var r = els[i].getBoundingClientRect();
+      if (r.width && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return els[i];
+    }
+    return null;
   }
   function startDrag(id, e) {
     var src = panes[id], ghost = null, drop = root.querySelector('.dk-drop'), target = null, zone = '';
@@ -276,14 +299,15 @@
         document.documentElement.classList.add('dk-dragging');
       }
       ghost.style.left = ev.clientX + 12 + 'px'; ghost.style.top = ev.clientY + 8 + 'px';
-      var hit = document.elementFromPoint(ev.clientX, ev.clientY), over = hit && hit.closest && hit.closest('.dk-pane');
-      target = over && over !== src && grid.contains(over) ? over.getAttribute('data-pane') : null;
+      var over = hitAt(ev.clientX, ev.clientY);
+      target = over && over !== src ? (over.getAttribute('data-pane') || over.getAttribute('data-dk-under')) : null;
+      if (target === id) target = null;
       if (!target) { drop.hidden = true; return; }
-      zone = zoneAt(over, ev.clientX, ev.clientY);
+      zone = phone() ? 'swap' : zoneAt(over, ev.clientX, ev.clientY);
       var r = over.getBoundingClientRect(), g = grid.getBoundingClientRect(), b = { l: r.left - g.left, t: r.top - g.top, w: r.width, h: r.height };
-      if (zone === 'left') b.w /= 2; else if (zone === 'right') { b.l += b.w / 2; b.w /= 2; } else if (zone === 'top') b.h /= 2; else { b.t += b.h / 2; b.h /= 2; }
+      if (zone === 'left') b.w /= 2; else if (zone === 'right') { b.l += b.w / 2; b.w /= 2; } else if (zone === 'top') b.h /= 2; else if (zone === 'bottom') { b.t += b.h / 2; b.h /= 2; }
       drop.style.left = b.l + 'px'; drop.style.top = b.t + 'px'; drop.style.width = b.w + 'px'; drop.style.height = b.h + 'px';
-      drop.textContent = { left: 'Beside it, left', right: 'Beside it, right', top: 'Above it', bottom: 'Under it' }[zone];
+      drop.textContent = { left: 'Beside it, left', right: 'Beside it, right', top: 'Above it', bottom: 'Under it', swap: 'Swap places' }[zone];
       drop.hidden = false;
     }
     function up() {
@@ -292,7 +316,8 @@
       src.classList.remove('dk-lifted');
       document.documentElement.classList.remove('dk-dragging');
       drop.hidden = true;
-      if (moved && target) moveTo(id, target, zone);
+      if (moved) suppressClick = true;
+      if (moved && target) { if (zone === 'swap') swap(id, target); else moveTo(id, target, zone); }
     }
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up); document.addEventListener('pointercancel', up);
   }
@@ -422,12 +447,22 @@
       if (a === 'max') { S.max = S.max === id ? '' : id; place(); }
       if (a === 'close') { take(id); if (S.max === id) S.max = ''; place(); }
     });
+    // A pane moves by its whole title bar (the grip was too small a
+    // target for a finger), and on a phone by its little tab too.
     grid.addEventListener('pointerdown', function (e) {
-      var g = e.target.closest('.dk-grip');
-      if (!g || e.button > 0) return;
+      if (e.button > 0) return;
+      var u = e.target.closest('[data-dk-under]');
+      if (u) { startDrag(u.getAttribute('data-dk-under'), e); return; }
+      var h = e.target.closest('.dk-ph');
+      if (!h || e.target.closest('button')) return;
       e.preventDefault();
-      startDrag(g.closest('.dk-pane').getAttribute('data-pane'), e);
+      startDrag(h.closest('.dk-pane').getAttribute('data-pane'), e);
     });
+    // A drag that ends on a tab mustn't also count as a tap on it.
+    grid.addEventListener('click', function (e) {
+      if (suppressClick) { suppressClick = false; e.stopPropagation(); e.preventDefault(); }
+    }, true);
+    grid.addEventListener('pointerdown', function () { suppressClick = false; }, true);
     // A docked page closed from its own bar comes off the Desk.
     document.addEventListener('dg-sn-closed', function (e) {
       var id = 'note:' + e.detail.id + ':' + e.detail.lang;

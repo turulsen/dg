@@ -6900,3 +6900,140 @@ employer line made the header taller and a new stamp ("Obsession" in
 and Cell buttons. Spots are now tested with the tilted stamp's real
 bounding box, and the new line is on the list stamps keep clear of.
 Found by the full suite before the merge.
+
+### A session note opened from the Desk still went full-screen (v3.11.1)
+
+Reported right after v3.11.0: "When I open from the Desk it's still full
+screen." On the Desk the Session notes list kept its language buttons
+(Magyar / English) opening the full-screen viewer; only a separate
+▦ Desk button beside each docked the page, and that's not the one anyone
+taps. Now, when the list is on the Desk, its own language buttons open
+the page docked there and the ▦ Desk buttons are hidden; on the Session
+Notes tab nothing changed. `test_acell_desk` taps English on the Desk.
+
+### The Dice Roller couldn't be opened on a phone in A-Cell (v3.11.1)
+
+Reported: "On phone the Dice Roller can't be clicked in A-Cell, so low
+placing." On a phone the panel is a bottom sheet docked to the screen's
+edge, and only its ▲ arrow opened it: a target of roughly 15×12 px sitting
+in the bottom strip iOS keeps for its own gestures (and Safari for its
+toolbar), so the tap rarely reached it. The whole bar now opens and closes
+the panel on a phone (it isn't dragged there anyway), the bar is at least
+46 px tall with its padding clear of the edge (and of the home bar via
+`env(safe-area-inset-bottom)`), and the arrow is finger-sized.
+`dice-roller.js?v=11` on every page. Test:
+`test_dice_roller_phone_not_dragged_by_scroll` taps the bar.
+
+### A-Cell's Music scrubber stuck at 0:00 while music played (v3.11.1)
+
+Reported (iPhone, A-Cell's Desk): "Music is playing but no progress on
+A-Cell's track bar." For an uploaded track the scrubber only followed
+this tab's own preview `<audio>` ('timeupdate'), and on a phone that
+element often never plays: iOS won't start sound without a tap there,
+and it's muted by default (the Handler hears the table's speaker). The
+broadcast ran, the players heard it, and the Handler's bar sat at 0:00.
+The one-second tick that already kept YouTube/SoundCloud tracks moving
+now also moves the audio scrubber from the broadcast's clock
+(`liveElapsedSeconds_()`, wrapped by the track's length when it loops)
+whenever the preview element isn't actually playing. Test:
+`test_acell_music_scrubber_follows_broadcast` (playback blocked, as on
+the phone).
+
+Found along the way, not a product bug: the Session Notes tests' tick in
+a session note's sealed frame failed now and then, on the pre-Desk page
+too -- the automated browser sometimes drops the first click into a
+freshly opened out-of-process frame. `_tick_in_sealed_frame` clicks until
+the box is ticked (a few tries).
+
+### The Creatures & Voices stingers were silent (v3.11.1)
+
+Reported: "The new creature sound effects cannot be heard at all." The
+files were fine (decoded in Chromium: whimpers peak near full scale), so
+the losses were in how a fire reached a player. Three of them together:
+
+1. **The issue #4 fix removed it too soon.** That fix (above) has A-Cell
+   take a stinger off `radio/{channel}` when its muted preview row ends.
+   The preview ends first: players still had the snapshot and the file to
+   fetch, and the removal stops the sound for every listener. Nothing
+   noticed with screams (4 s and more); a 2-second whimper was cut off
+   before it started. The removal now waits 8 s
+   (`SOUND_REMOVE_GRACE_MS`), only for stingers (ambient is matched by
+   id, so a delayed removal could hit one switched back on), and an
+   `endedStingers` set keeps the row from coming back in the meantime,
+   which is what issue #4 was about. So that fix is finished, not undone.
+2. **Catching up skipped the clip.** `applyStingers_` started each fire
+   at `now − started_at`, by the Handler's clock: delivery, file load and
+   any difference between the two devices' clocks added up to the
+   whimpers' whole length (all their sound is in the first 1.5 s). A
+   fire the device watched arrive now plays from its start, timed from
+   its arrival, until the Handler pauses or seeks it (that changes
+   `started_at`); a late join still skips history as before.
+3. **Three were mastered quiet.** The child laughs sat 10–20 dB under
+   the screams, the whispers about 6 dB. Re-encoded louder (same 192
+   kbps / 48 kHz, a soft limiter on the peaks); the whimpers were
+   already loud.
+
+Then: "Screams also stopped before time." The same removal cut the
+tail of anything longer, and so would the 5-fire history trim (fire six
+quickly and the first goes). The 8 s wait only narrowed that, so the
+real fix is on the players' side: a one-shot that leaves the doc now
+plays out, and only the Handler's **Stop** cuts it -- Stop also lists the
+stinger's `fired_at` in a short `stinger_stops` array on the channel doc
+(the last 10) that players' devices check. Changing channel or leaving
+the radio still cuts every stinger. No rules change (`radio/` has no
+field list).
+
+Tests: `test_table_radio_short_stinger_plays_from_its_start` (a 2-second
+stinger fired by a clock 3 s behind plays from 0; one tidied off the doc
+keeps playing; one in `stinger_stops` stops), and
+`test_acell_soundboard` now checks a finished stinger stays on the doc a
+moment with its row gone, then leaves.
+
+### The Desk couldn't be rearranged on a phone (v3.11.1)
+
+Reported: "On mobile the drag and rearrange features for desk dont
+work." A pane moved only by its ⋮⋮ grip, a target about 10 px wide that a
+finger mostly missed (the touch then scrolled the page). And even a
+successful drag did nothing visible: the phone stacks the panes (one on
+top, one under it behind tabs), so "above"/"under" another pane in its
+column often left the stack in the same order. Now the whole title bar is
+the handle (`touch-action:none` on it), a pane's little tab can be
+dragged too, and on a phone a drop **swaps** the two panes (in the saved
+layout too, so the desktop arrangement trades the same two). The phone
+divider is a 28 px target and the title bar's buttons are bigger. A drag
+that ends on a tab doesn't also count as tapping it. Test:
+`test_acell_desk`'s phone part drags by real touch (CDP), title bar, tab
+and divider, and checks the page didn't scroll instead.
+
+### A triggered disorder offered a free SAN roll (v3.11.1)
+
+Asked: "where did you see that if a disorder's trigger is met, one more
+SAN roll is needed to suppress or activate the disorder? As I read the
+rules, if the trigger is met the disorder kicks in, and by projecting it
+can be suppressed." Nowhere in the book: the v2 Sanity flow copied the
+Rules page's summary line ("if facing the trigger of a disorder, make a
+SAN roll or the disorder takes over"), never checked against the book,
+and contradicting the same page's own Projection row (lose 1D4 WP and
+Bond to make a SAN test; success prevents temporary insanity or a
+disorder). The "Disorder triggered" post-it now says the disorder takes
+hold and offers **Project onto a Bond…** (the same 1D4 WP + Bond, then
+SAN test, as temporary insanity) instead of Roll SAN; the Rules page
+line says the same. Test: `test_agent_file_v2_play_and_edit` checks the post-it's
+buttons.
+
+### Distinguishing features that contradicted the stat (v3.11.1)
+
+Reported (iPhone, Field Notes): "Bedridden for average CON and Barely
+Mobile for a very high DEX???" Eli's six features were the lowest band of
+the old sheet's descriptor table for every stat (Feeble, Bedridden,
+Barely Mobile, Imbecilic, Spineless, Unbearable). The old sheet
+(`stats/`, retired in v3.2.0) seeded an empty feature in Live Play with
+`getDescriptor(stat, score)`, but read the score from a display span that
+still showed its default 3 before the Agent had loaded, and then saved
+the result as though the player had typed it. Any Agent made on the old
+sheet can carry them. `dgRules.features()` now shows a feature that is
+exactly one of that table's words but doesn't fit the score as the one
+that does (CON 11 Average, DEX 15 Nimble); a feature a player wrote
+stays. Edit mode files the corrected words on Save, and the PDF export
+uses them too. The New Recruit wizard was never affected (its own
+suggestions are by band). Test: `test_agent_rules_unit`.

@@ -805,18 +805,23 @@
   // one-shot's own 'ended' event cleans itself up, and reaching the end
   // of the array (removed via stop_stinger, or trimmed out of history)
   // stops it early for every listener, not just this device.
-  function applyStingers_(stingers) {
+  function applyStingers_(stingers, stops) {
     stingers = Array.isArray(stingers) ? stingers : [];
+    stops = Array.isArray(stops) ? stops : [];
     var isFirstSnapshot = seenStingerFires === null;
     if (isFirstSnapshot) seenStingerFires = {};
 
+    // Gone from the doc: only the Handler's Stop (stinger_stops) or a
+    // loop ends the sound here. A one-shot also leaves when A-Cell tidies
+    // up after its own silent preview, or when newer fires trim it out of
+    // the history, and either used to cut the players' sound mid-scream.
     var activeFiredAts = stingers.map(function (s) { return s.fired_at; });
     Object.keys(stingerAudioEls).forEach(function (firedAtKey) {
-      if (activeFiredAts.indexOf(Number(firedAtKey)) === -1) {
-        var oldEntry = stingerAudioEls[firedAtKey];
-        try { releaseAudioEl_(oldEntry.el); } catch (e) { /* already gone */ }
-        delete stingerAudioEls[firedAtKey];
-      }
+      if (activeFiredAts.indexOf(Number(firedAtKey)) !== -1) return;
+      var oldEntry = stingerAudioEls[firedAtKey];
+      if (!oldEntry.loop && stops.indexOf(Number(firedAtKey)) === -1) return;
+      try { releaseAudioEl_(oldEntry.el); } catch (e) { /* already gone */ }
+      delete stingerAudioEls[firedAtKey];
     });
 
     stingers.forEach(function (s) {
@@ -846,14 +851,25 @@
           releaseAudioEl_(el);
         });
         entry = { el: el, key: '', gain: stingerGain };
+        // A fire this device watched arrive plays from its own start,
+        // timed from the moment it got here: catching up by the Handler's
+        // clock skipped a 2-second whimper entirely once the snapshot,
+        // the file load and any clock difference added up.
+        if (!alreadySeen) entry.arrivedAt = Date.now();
         stingerAudioEls[s.fired_at] = entry;
       }
       entry.el.loop = !!s.loop;
+      entry.loop = !!s.loop;
       var key = s.started_at + '|' + s.paused_at + '|' + (s.loop ? 1 : 0);
       if (entry.key === key) return;
       entry.key = key;
+      var elapsedNow = function () {
+        // Untouched since it was fired (no pause or seek moved started_at).
+        if (entry.arrivedAt && !s.paused && s.started_at === s.fired_at) return (Date.now() - entry.arrivedAt) / 1000;
+        return instanceElapsedSeconds_(s);
+      };
       var applyState = function () {
-        try { entry.el.currentTime = instanceElapsedSeconds_(s); } catch (e) { /* not seekable yet */ }
+        try { entry.el.currentTime = elapsedNow(); } catch (e) { /* not seekable yet */ }
         if (s.paused) {
           entry.el.pause();
         } else {
@@ -867,7 +883,7 @@
             retryOnTap_(entry.el, function () {
               if (stingerAudioEls[s.fired_at] !== entry) return;
               var d = entry.el.duration;
-              if (!s.loop && isFinite(d) && d > 0 && instanceElapsedSeconds_(s) >= d) {
+              if (!s.loop && isFinite(d) && d > 0 && elapsedNow() >= d) {
                 delete stingerAudioEls[s.fired_at];
                 releaseAudioEl_(entry.el);
                 return;
@@ -1166,12 +1182,20 @@
   // Shared by this widget's own buttons and window.dgRadio below (the
   // Field Notes notebook's pager and quick-tune chip drive the same
   // engine instead of keeping a second copy of any of this).
+  // Changing channel or leaving cuts every stinger, finishing or not.
+  function stopAllStingers_() {
+    Object.keys(stingerAudioEls).forEach(function (k) {
+      try { releaseAudioEl_(stingerAudioEls[k].el); } catch (e) { /* already gone */ }
+      delete stingerAudioEls[k];
+    });
+  }
   function tuneTo(ch) {
     setChannel(ch);
     lastStartedAt = null;
     lastPaused = false;
     seenStingerFires = null;
     applyAmbientLayers_([]);
+    stopAllStingers_();
     renderTuned();
     startPolling();
     notifyState_();
@@ -1183,6 +1207,7 @@
     window._dgRadioLast = null;
     seenStingerFires = null;
     applyAmbientLayers_([]);
+    stopAllStingers_();
     destroyActivePlayers();
     renderCollapsed();
     notifyState_();
@@ -1295,6 +1320,7 @@
         lastPaused = false;
         seenStingerFires = null;
         applyAmbientLayers_([]);
+        stopAllStingers_();
         window._dgRadioLast = null;
         document.getElementById('dg-radio-ch-label').textContent = 'CH ' + newCh;
         document.getElementById('dg-radio-track').textContent = 'No signal yet.';
@@ -1784,7 +1810,7 @@
     // unconditionally, before the no-track early return below, so a
     // Handler can layer ambience onto a silent channel.
     applyAmbientLayers_(np && np.ambient_layers);
-    applyStingers_(np && np.stingers);
+    applyStingers_(np && np.stingers, np && np.stinger_stops);
     if (mixChanged) applyLiveMuteVolume();
     // Refreshed AFTER the ambient/stinger calls above (not before) so it
     // reflects any element they just created or tore down this tick --

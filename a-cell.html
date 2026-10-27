@@ -2392,7 +2392,12 @@
     var card = btn.closest('.sn-card');
     var n = notes.filter(function (x) { return card && x.id === card.dataset.id; })[0];
     if (!n) return;
-    if (btn.dataset.sn === 'view') { openViewer(n, btn.dataset.lang); return; }
+    // On the Desk, the list's own buttons open the page docked there.
+    if (btn.dataset.sn === 'view') {
+      if (window.dgDesk && listEl.closest('.dk-hosted')) window.dgDesk.openNote(n.id, btn.dataset.lang);
+      else openViewer(n, btn.dataset.lang);
+      return;
+    }
     if (btn.dataset.sn === 'desk' && window.dgDesk) { window.dgDesk.openNote(n.id, btn.dataset.lang); return; }
     if (btn.dataset.sn === 'edit') { openForm(n); return; }
     if (btn.dataset.sn === 'delete') {
@@ -5382,6 +5387,10 @@
   // duplicates that trim logic client-side instead of round-tripping
   // through Apps Script for it.
   var STINGER_HISTORY_LENGTH = 5;
+  // How long a finished one-shot stays on the channel doc before this tab
+  // removes it, so players a little behind the Handler still hear it out.
+  var SOUND_REMOVE_GRACE_MS = 8000;
+  var endedStingers = {};
   var STINGER_GROUPS = [
     { label: 'Screams & Laughter', stingers: [
       { id: 'scream-01', label: 'Scream 01' },
@@ -5521,7 +5530,7 @@
         promise = setAmbientLayerActive_(ch, matchVal, false);
         break;
       case 'stop_stinger':
-        promise = removeSoundInstanceFirestore_(ch, field, matchKey, matchVal);
+        promise = removeSoundInstanceFirestore_(ch, field, matchKey, matchVal, true);
         break;
       default:
         promise = Promise.reject(new Error('unknown active-sound action: ' + action));
@@ -5624,8 +5633,19 @@
       renderActiveSounds_();
       var field = kind === 'ambient' ? 'ambient_layers' : 'stingers';
       var matchKey = kind === 'ambient' ? 'id' : 'fired_at';
-      removeSoundInstanceFirestore_(currentChannel, field, matchKey, refId)
-        .catch(function () { /* best effort -- local state is already clean either way */ });
+      var channel = currentChannel;
+      var remove = function () {
+        removeSoundInstanceFirestore_(channel, field, matchKey, refId)
+          .catch(function () { /* best effort -- local state is already clean either way */ });
+      };
+      if (kind === 'ambient') { remove(); return; }
+      // This muted preview finishes before players' devices do (they
+      // still have the snapshot and the file to fetch), and removing the
+      // instance stops it for them: a 2-second whimper was cut off before
+      // anyone heard it. Give them a few seconds to finish first; until
+      // then endedStingers keeps the next snapshot from redrawing its row.
+      endedStingers[refId] = true;
+      setTimeout(remove, SOUND_REMOVE_GRACE_MS);
     });
     row.sliderEl.addEventListener('input', function () {
       row.isSeekDragging = true;
@@ -5664,7 +5684,7 @@
   function renderActiveSounds_() {
     var wanted = {};
     activeAmbientLayers.forEach(function (l) { wanted['ambient:' + l.id] = { kind: 'ambient', inst: l, label: ambientLabel_(l.id) }; });
-    activeStingers.forEach(function (s) { wanted['stinger:' + s.fired_at] = { kind: 'stinger', inst: s, label: stingerLabel_(s.id) }; });
+    activeStingers.forEach(function (s) { if (!endedStingers[s.fired_at]) wanted['stinger:' + s.fired_at] = { kind: 'stinger', inst: s, label: stingerLabel_(s.id) }; });
 
     Object.keys(activeSoundRows).forEach(function (key) {
       if (!wanted[key]) {
@@ -5968,6 +5988,17 @@
     if (current.track_url && !current.paused && !isSeekDragging) {
       var isAudioKind = current.track_kind === 'audio' || isDirectAudioUrl_(current.track_url);
       if (!isAudioKind) syncTransportUI_();
+      // Reported 2026-10-27 (iPhone): music playing at the table, the
+      // scrubber here stuck at 0:00. This tab's own preview <audio> only
+      // moves it while it really plays, and on a phone it often doesn't
+      // (iOS won't start sound without a tap here; it's muted besides) --
+      // so read the broadcast's position off its clock instead.
+      else if (previewAudio.paused && !isPreviewSeekDragging) {
+        var pos = liveElapsedSeconds_(), dur = previewAudio.duration;
+        if (isFinite(dur) && dur > 0 && pos >= dur) pos = current.loop ? pos % dur : dur;
+        previewSlider.value = pos;
+        previewElapsedEl.textContent = formatSeekTime_(pos);
+      }
     }
   }, 1000);
 
@@ -6198,7 +6229,10 @@
   // instance entirely (Stop for a stinger, which has no separate on/off
   // toggle the way an ambient layer does) -- mirrors Code.gs's
   // removeSoundInstance_().
-  function removeSoundInstanceFirestore_(channel, field, matchKey, matchVal) {
+  // stopped: the Handler's Stop, as opposed to tidying up a finished
+  // one. Players' devices let a one-shot that leaves the doc play out;
+  // one listed in stinger_stops (the last 10 Stops) they cut at once.
+  function removeSoundInstanceFirestore_(channel, field, matchKey, matchVal, stopped) {
     return ensureHandlerSignedIn().then(function () {
       var db = window.firebase.firestore();
       var docRef = radioDocRef_(channel);
@@ -6211,6 +6245,9 @@
           var now = Date.now();
           var patch = { updated_at: now };
           patch[field] = arr;
+          if (stopped && field === 'stingers') {
+            patch.stinger_stops = (Array.isArray(data.stinger_stops) ? data.stinger_stops : []).concat([matchVal]).slice(-10);
+          }
           tx.set(docRef, patch, { merge: true });
           return arr;
         });
@@ -7178,7 +7215,7 @@
 <script src="assets/acell-ids.js"></script>
 <script src="assets/acell-desk.js"></script>
 <script src="assets/table-radio.js"></script>
-<script src="assets/dice-roller.js?v=10"></script>
+<script src="assets/dice-roller.js?v=11"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>
 
 </body>

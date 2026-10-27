@@ -513,7 +513,9 @@ wizard, imports and PDF export, with the old sheet only behind Settings
   `addBond` (score = CHA), Motivations (`bio.motivations`, rolled from
   `assets/data/bio.js`'s `motivationsData`) and Mental Disorders (`bio.disorders`;
   a disorder triggers on a loss of 2+ when `dgDisorders` says its trigger
-  is losing 2+ SAN). `normalizeBio` splits an older combined text.
+  is losing 2+ SAN; the disorder then takes hold, and its post-it offers
+  projection onto a Bond to repress it, not a free SAN roll).
+  `normalizeBio` splits an older combined text.
 - **`assets/agent-live.js`** (`window.dgAgentLive.session(code, char)`):
   one session per Agent Code shared by every paper on the page. `update`
   applies a change and saves 700ms later; an `onSnapshot` on that
@@ -964,7 +966,12 @@ timestamp every device reads. A small persistent widget
   clobbering the first. `fired_at` is a stable identity that never
   changes; `started_at` is a separate field pause/resume/seek actions
   are free to shift without disturbing that identity or a client's
-  own "have I already played this one" bookkeeping.
+  own "have I already played this one" bookkeeping. A one-shot that
+  leaves the array plays out on players' devices (A-Cell tidies a
+  finished one away after 8 s, and the trim can drop one mid-sound);
+  only the Handler's Stop cuts it, by also listing its `fired_at` in
+  `stinger_stops` (the last 10). A fire a device watched arrive plays
+  from its start; changing channel or leaving the radio cuts them all.
 - **Active Sounds panel** — lives directly under the main track's own
   scrubber, inside the Now Playing panel itself (not a separate section
   below the ambient/stinger catalog grids) — one glance at the top of
