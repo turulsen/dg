@@ -505,7 +505,7 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
         const cut = fp.indexOf('/') < 0 && fp.indexOf(':') >= 0 ? ':' : '/';
         fp = fp ? fp.split(cut).slice(0, -1).concat([full]).join(cut) : full;
       }
-      clean.push({ path: fp, text });
+      clean.push({ path: fp, text, raw: { path: f.path, name: f.name } });
     }
     const snap = await db.collection('vault').get();
     const notes = [];
@@ -565,6 +565,13 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
     }
     await flush();
     const summary = Object.assign({}, out.stats, { held_removals: held, too_big: tooBig, files: clean.length, moved: moved.length, at: now });
+    // How many came with their own name, and (for a collision) what the Shortcut sent.
+    summary.with_name = clean.filter((c) => String(c.raw.name == null ? '' : c.raw.name).trim()).length;
+    if (out.stats.duplicates && out.stats.duplicate_example) {
+      const dup = out.stats.duplicate_example;
+      summary.dup_sample = clean.filter((c) => vaultSync_.cleanPath(c.path) === dup).slice(0, 2).map((c) => c.raw)
+        .map((f) => ({ path: String(f.path == null ? '(none)' : f.path).slice(-120), name: String(f.name == null ? '(none)' : f.name).slice(0, 80) }));
+    }
     if (!clean.length) summary.received = received;
     // Notes that came without a usable path are skipped: say how many, and show one.
     const noPath = clean.filter((f) => !vaultSync_.cleanPath(f.path));
