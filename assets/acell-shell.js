@@ -219,13 +219,16 @@
       '<label>Cell<select name="cell" class="vn-search"><option value="">— none yet —</option>' + cs.map(function (c) {
         return '<option value="' + esc(c.cell_id) + '"' + (c.cell_id === cellId ? ' selected' : '') + '>' + esc(c.name || c.cell_id) + '</option>';
       }).join('') + '</select></label>' +
+      '<label>Operation (its tapes play across its sessions)<select name="op" class="vn-search"><option value="">— none —</option>' + ((window.dgTapes && window.dgTapes.operations()) || []).map(function (o) {
+        return '<option value="' + esc(o.operation_id) + '" data-cell="' + esc(o.cell_id) + '"' + (base && base.operation_id === o.operation_id ? ' selected' : '') + '>' + esc(o.name) + '</option>';
+      }).join('') + '</select></label>' +
       '<div class="vn-new" style="justify-content:flex-end">' + (s ? '<button type="button" class="vn-btn ac-del" data-del>Delete session</button><span class="ac-sp"></span>' : '') +
       '<button type="button" class="vn-btn" data-vclose>Cancel</button><button type="submit" class="vn-btn p">' + (s ? 'Save' : 'Create') + '</button></div></form>');
     var f = w.querySelector('form');
     setTimeout(function () { f.name.focus(); }, 0);
     f.addEventListener('submit', function (e) {
       e.preventDefault();
-      var fields = { name: f.name.value.trim() || 'Untitled session', date: f.date.value, cell_id: f.cell.value };
+      var fields = { name: f.name.value.trim() || 'Untitled session', date: f.date.value, cell_id: f.cell.value, operation_id: f.op.value };
       w.remove();
       if (s) S().update(s.id, fields); else S().create(fields);
     });
@@ -409,20 +412,18 @@
   function drawMusic(s) {
     var el = pb('music');
     if (!el) return;
-    var M = window.dgAcellMusic;
-    var playing = previewing();
-    var html = s.tracks.length ? s.tracks.map(function (t, i) {
-      var url = soundUrl(t.kind, t.ref);
-      return '<div class="ac-row" data-i="' + i + '"><span class="ac-ic ac-glyph">' + (t.kind === 'ambient' ? '≈' : '♪') + '</span>' +
-        '<span class="ac-t">' + esc(t.title || (M ? M.label('ambient', t.ref) : t.ref)) + '<small>' + (t.kind === 'ambient' ? 'ambient loop' : t.kind === 'link' ? 'linked track' : 'track') + '</small></span>' +
-        (url ? '<button type="button" class="ac-ic" data-ac="hear" title="Listen here (not on the table)" aria-label="Listen here">' + (playing === url ? '❚❚' : '🎧') + '</button>' : '') +
-        '<button type="button" class="ac-ic" data-ac="rm-track" title="Take it off" aria-label="Take it off">✕</button></div>';
-    }).join('') : '<div class="ac-none">No tracks or loops yet.</div>';
-    html += '<div class="ac-sub">Effect pads</div><div class="ac-pads">' + s.pads.map(function (id) {
-      return '<span class="ac-padchip">' + esc(M ? M.label('stinger', id) : id) + '<button type="button" data-ac="rm-pad" data-id="' + esc(id) + '" aria-label="Take it off">✕</button></span>';
-    }).join('') + '<button type="button" class="ac-padchip add" data-ac="tab" data-tab="music">+ add</button></div>';
-    el.innerHTML = html;
-    pr('music', '<button type="button" class="ac-link" data-ac="tab" data-tab="music">+ from the shelf</button>');
+    var D = window.dgTapes, M = window.dgAcellMusic;
+    if (!D || !M) { el.innerHTML = ''; return; }
+    var deck = M.state().tape, op = D.operation(s.operation_id);
+    var list = D.forOperation(s.operation_id).concat(D.forCell(s.cell_id));
+    pr('music', op ? esc(op.name) : '<button type="button" class="ac-link" data-ac="edit-session">pick the operation</button>');
+    el.innerHTML = (list.length ? '<div class="ac-ptapes">' + list.map(function (t) {
+      var inDeck = deck && deck.id === t.id;
+      return '<div class="ac-ptape" data-tape="' + esc(t.id) + '">' + D.cassette(t, { size: 'sm', chip: inDeck ? 'IN DECK' : '' }) +
+        '<div class="ac-acts"><button type="button" class="ac-link" data-ac="tape-open">Open</button>' +
+        (inDeck ? '' : '<button type="button" class="ac-link" data-ac="tape-in">▶ Into CH ' + esc(M.channel()) + '</button>') + '</div></div>';
+    }).join('') + '</div>' : '<div class="ac-none">' + (s.operation_id ? 'No tapes for this operation yet.' : 'Pick the session\'s operation (✎ above) to use its tapes.') + '</div>') +
+      '<div class="ac-acts"><button type="button" class="ac-link" data-ac="tab" data-tab="music">' + (list.length ? 'All tapes ›' : '＋ Make a tape on the Music tab') + '</button></div>';
   }
 
   /* ── Clicks and changes ── */
@@ -466,6 +467,8 @@
       case 'hear': { var t = s.tracks[+row.getAttribute('data-i')]; if (t) preview(soundUrl(t.kind, t.ref)); return; }
       case 'rm-track': S().update(s.id, { tracks: s.tracks.filter(function (x, i) { return i !== +row.getAttribute('data-i'); }) }); return;
       case 'rm-pad': S().toggleIn(s.id, 'pads', b.getAttribute('data-id')); return;
+      case 'tape-in': window.dgTapes.insert(b.closest('[data-tape]').getAttribute('data-tape')); return;
+      case 'tape-open': window.dgAcellTab('music'); if (window.dgAcLibrary) window.dgAcLibrary.openTape(b.closest('[data-tape]').getAttribute('data-tape')); return;
     }
   });
 
@@ -515,7 +518,7 @@
   /* ── Keeping it current ── */
   var t0 = null;
   function soon() { clearTimeout(t0); t0 = setTimeout(function () { drawPill(); renderPrep(); }, 20); }
-  ['dg-sessions', 'dg-acell-roster', 'dg-acell-evidence', 'dg-acell-music', 'dg-acell-seen', 'dg-acell-preview'].forEach(function (ev) { document.addEventListener(ev, soon); });
+  ['dg-sessions', 'dg-acell-roster', 'dg-acell-evidence', 'dg-acell-music', 'dg-acell-seen', 'dg-acell-preview', 'dg-tapes'].forEach(function (ev) { document.addEventListener(ev, soon); });
   document.addEventListener('dg-vault', function () { var s = session(); if (s && panel.classList.contains('active')) drawPlayers(s); });
   document.addEventListener('dg-acell-tab', function (e) { if (e.detail.tab === 'session') { built = built || ''; soon(); } });
 
@@ -533,6 +536,7 @@
       panel.innerHTML = '<div class="ac-empty">Could not load your sessions: ' + esc((err && err.message) || err) + '</div>';
     });
     if (window.dgVault) window.dgVault.load().catch(function () { /* the Notes tab says so */ });
+    if (window.dgTapes) window.dgTapes.load().then(soon, function () { /* the Music tab says so */ });
     // Back where this device left off: mid-game, the desk.
     if (store(MODE_KEY, 'prep') === 'play') setTimeout(function () { setMode('play'); }, 0);
   }

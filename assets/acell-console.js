@@ -49,7 +49,7 @@
           '<label class="cc-fader">Track<input type="range" min="0" max="100" data-cc="mix-track"><b data-cc="mix-track-v"></b></label>' +
           '<label class="cc-fader">Ambience<input type="range" min="0" max="100" data-cc="mix-ambient"><b data-cc="mix-ambient-v"></b></label></div>' +
         '<div class="cc-panel"><div class="cc-h">On air now<button type="button" class="cc-stopall" data-cc="stopall">STOP ALL</button></div><div data-cc="live"></div></div>' +
-        '<div class="cc-panel"><div class="cc-h">Session tape<span data-cc="sname"></span></div><div data-cc="tape"></div></div>' +
+        '<div class="cc-panel"><div class="cc-h">Tape in the deck<span data-cc="sname"></span></div><div data-cc="tape"></div></div>' +
         '<div class="cc-panel"><div class="cc-h">Cue list<label class="cc-ck"><input type="checkbox" data-cc="auto"> auto-advance</label></div><div data-cc="cues"></div></div>' +
       '</section></div>';
   }
@@ -104,15 +104,25 @@
         '<button type="button" class="cc-mini" data-cc="s-stop" title="Stop">✕</button></div>';
     }));
     q('live').innerHTML = live.join('') || '<div class="cc-none">Silence. Loops and effects you start show here.</div>';
-    // The session's tape
-    q('sname').textContent = s ? s.name : '';
-    q('tape').innerHTML = s ? ((s.tracks.length ? '<div class="cc-tts">' + s.tracks.map(function (t, i) {
-      var on = t.kind === 'ambient' ? (now.ambient || []).some(function (x) { return x.id === t.ref; }) : (!!cur.track_url && cur.track_title === t.title);
-      return '<button type="button" class="cc-tt' + (on ? ' on' : '') + '" data-cc="tape" data-i="' + i + '">' + (t.kind === 'ambient' ? '≈ ' : '♪ ') + esc(t.title) + '</button>';
-    }).join('') + '</div>' : '') + (s.pads.length ? '<div class="cc-pads">' + s.pads.map(function (id) {
-      return '<button type="button" class="cc-pad" data-cc="pad" data-id="' + esc(id) + '">' + esc(m.label('stinger', id)) + '</button>';
-    }).join('') + '</div>' : '') || '<div class="cc-none">Nothing on the session\'s tape yet — pick from the shelf below.</div>')
-      : '<div class="cc-none">Choose a session (top bar) to have its tape here.</div>';
+    // The tape in the deck (assets/acell-tapes.js): its tracks, its pads; else the ones to put in.
+    var D = window.dgTapes, deck = D && D.inDeck();
+    var dt = deck && deck.tracks ? deck : null;
+    q('sname').innerHTML = deck ? '<button type="button" class="cc-mini" data-cc="eject">⏏ Eject</button>' : '';
+    if (dt) {
+      q('tape').innerHTML = '<div class="cc-deckcas">' + D.cassette(dt, { size: 'sm', spin: playing }) + '</div>' +
+        '<div class="cc-tts">' + dt.tracks.map(function (t, i) {
+          var on = !!cur.track_url && cur.track_title === t.title;
+          return '<button type="button" class="cc-tt' + (on ? ' on' : '') + '" data-cc="tape" data-i="' + i + '">' + (i + 1) + ' · ' + esc(t.title) + '<small>' + esc(D.fmt(t.dur)) + '</small></button>';
+        }).join('') + '</div>' +
+        (dt.pads.length ? '<div class="cc-pads">' + dt.pads.map(function (id) {
+          return '<button type="button" class="cc-pad" data-cc="pad" data-id="' + esc(id) + '">' + esc(m.label('stinger', id)) + '</button>';
+        }).join('') + '</div>' : '');
+    } else {
+      var choices = D ? D.forOperation(s && s.operation_id).concat(D.forCell(s && s.cell_id)) : [];
+      q('tape').innerHTML = choices.length ? '<div class="cc-none">Nothing in the deck. Put a tape in:</div><div class="cc-tts">' + choices.map(function (t) {
+        return '<button type="button" class="cc-tt" data-cc="insert" data-id="' + esc(t.id) + '">▶ ' + esc(t.name) + '<small>' + esc(D.fmt(D.runtime(t))) + '</small></button>';
+      }).join('') + '</div>' : '<div class="cc-none">No tape in the deck. Make one under Tapes, above.</div>';
+    }
     // Cue list
     var cues = m.cueList();
     q('cues').innerHTML = cues.length ? cues.map(function (t, i) {
@@ -157,12 +167,9 @@
       }
       case 'cue-play': m.playCue(+irow.getAttribute('data-i')); return;
       case 'cue-rm': m.uncue(+irow.getAttribute('data-i')); return;
-      case 'tape': {
-        var t = s.tracks[+b.getAttribute('data-i')];
-        if (t.kind === 'ambient') m.setAmbient(t.ref, !(m.state().ambient || []).some(function (x) { return x.id === t.ref; }));
-        else { var tk = A.trackById(t.ref), u = tk ? tk.url : t.ref; if (u) m.play({ url: u, title: t.title, kind: 'audio' }); }
-        return;
-      }
+      case 'tape': m.playCue(+b.getAttribute('data-i')); return;
+      case 'insert': window.dgTapes.insert(b.getAttribute('data-id')); return;
+      case 'eject': window.dgTapes.eject(); return;
       case 'pad': b.classList.add('hit'); setTimeout(function () { b.classList.remove('hit'); }, 250); m.fire(b.getAttribute('data-id')); return;
       case 's-pause': case 's-loop': case 's-stop': {
         var kind = row.getAttribute('data-kind'), ref = row.getAttribute('data-ref');
@@ -211,7 +218,7 @@
     draw();
     st.tick = setInterval(function () { if (root.firstChild) drawSeek(); }, 1000);
   });
-  ['dg-acell-music', 'dg-sessions', 'dg-acell-roster'].forEach(function (ev) { document.addEventListener(ev, soon); });
+  ['dg-acell-music', 'dg-sessions', 'dg-acell-roster', 'dg-tapes'].forEach(function (ev) { document.addEventListener(ev, soon); });
 
   // The classic desk, folded or not, as this device left it.
   var classic = document.getElementById('ac-classic');

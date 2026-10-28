@@ -136,6 +136,12 @@ service cloud.firestore {
       allow read, write: if isHandler();
     }
 
+    // tapes/{id} -- A-Cell's tapes (an operation's or a Cell's tracks,
+    // loops and pads, assets/acell-tapes.js). Handler-only, like sessions.
+    match /tapes/{id} {
+      allow read, write: if isHandler();
+    }
+
     // client_errors/{id} -- the on-page JS error banner's telemetry (was
     // the ClientErrors sheet). Anyone may add one small report; only the
     // Handler reads them; nobody edits or deletes from the client.

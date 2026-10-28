@@ -9,10 +9,10 @@
    effect pads, the evidence box (release with a tap) and the Dice Roller
    -- the real panel, open, moved onto the desk.
 
-   ✥ Arrange: drag an object by its grip onto another to swap them, or
-   onto the foot of a column to move it there; ✕ puts it away in the
-   drawer (and back from there); the sliders set the side columns'
-   widths. The layout is kept on this device (dg_acell_desk_v2).
+   ✥ Arrange: the desk is a 12-column grid. Drag an object by its title
+   bar to move it (or tap the bar, then a spot), drag its corner to size
+   it -- each object has a smallest size, and anything it lands on moves
+   down. ✕ puts it away in the drawer (and back from there).
 
    Entering Play the first time for a session notes the Agents' vitals
    (session.start) so Debrief can say what the night cost them. */
@@ -21,7 +21,6 @@
   var A = window.dgAc;
   if (!A || window.dgAcPlay) return;
   var esc = A.esc;
-  var KEY = 'dg_acell_desk_v2';
   var panel = document.getElementById('panel-desk');
   var tools = document.getElementById('ac-tools');
   function S() { return window.dgSessions; }
@@ -32,26 +31,52 @@
     dossiers: 'Dossiers', initiative: 'Initiative', dice: 'Dice Roller', notebook: 'Notebook',
     deck: 'Tape deck', pad: 'Quick notes', evidence: 'Evidence box', pads: 'Effect pads'
   };
-  var DEFAULT = { cols: [['dossiers', 'initiative', 'dice'], ['notebook'], ['deck', 'pad', 'evidence', 'pads']], w: [290, 320], away: [] };
+  // A 12-column grid of 58px rows: each object { x, y, w, h } in cells.
+  // Kept on this device (dg_acell_desk_v3); objects put away sit in `away`.
+  var KEY3 = 'dg_acell_desk_v3', COLS = 12, ROW = 58, GAP = 12;
+  var MIN = { dossiers: [2, 3], initiative: [2, 2], dice: [2, 4], notebook: [3, 4], deck: [2, 2], pad: [2, 2], evidence: [2, 2], pads: [2, 2] };
+  var DEFAULT = { items: {
+    deck: { x: 0, y: 0, w: 3, h: 3 }, pads: { x: 3, y: 0, w: 2, h: 3 }, initiative: { x: 5, y: 0, w: 4, h: 3 }, pad: { x: 9, y: 0, w: 3, h: 4 },
+    dossiers: { x: 0, y: 3, w: 3, h: 8 }, notebook: { x: 3, y: 3, w: 6, h: 12 }, evidence: { x: 9, y: 4, w: 3, h: 4 }, dice: { x: 0, y: 11, w: 3, h: 6 }
+  }, away: [] };
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   var L = (function () {
-    var l = A.store(KEY, null);
-    if (!l || !Array.isArray(l.cols) || l.cols.length !== 3) return clone(DEFAULT);
-    var seen = {};
-    l.cols = l.cols.map(function (c) { return (c || []).filter(function (id) { if (!OBJ[id] || seen[id]) return false; seen[id] = true; return true; }); });
-    l.away = (l.away || []).filter(function (id) { return OBJ[id] && !seen[id] && (seen[id] = true); });
-    Object.keys(OBJ).forEach(function (id) { if (!seen[id]) l.cols[DEFAULT.cols.findIndex(function (c) { return c.indexOf(id) >= 0; })].push(id); });
-    l.w = Array.isArray(l.w) && l.w.length === 2 ? l.w : DEFAULT.w.slice();
+    var l = A.store(KEY3, null);
+    if (!l || !l.items) return clone(DEFAULT);
+    l.away = (l.away || []).filter(function (id) { return OBJ[id]; });
+    Object.keys(OBJ).forEach(function (id) { if (!l.items[id] && l.away.indexOf(id) < 0) l.items[id] = clone(DEFAULT.items[id]); });
+    Object.keys(l.items).forEach(function (id) { if (!OBJ[id] || l.away.indexOf(id) >= 0) delete l.items[id]; else fit(l.items[id], id); });
     return l;
   })();
-  function save() { A.keep(KEY, L); }
+  function fit(r, id) {
+    var mn = MIN[id] || [2, 2];
+    r.w = Math.max(mn[0], Math.min(COLS, Math.round(r.w) || mn[0]));
+    r.h = Math.max(mn[1], Math.min(30, Math.round(r.h) || mn[1]));
+    r.x = Math.max(0, Math.min(COLS - r.w, Math.round(r.x) || 0));
+    r.y = Math.max(0, Math.round(r.y) || 0);
+    return r;
+  }
+  function overlap(a, b) { return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h; }
+  // The object just moved or sized keeps its place; whatever it now covers
+  // moves down until it's clear.
+  function settle(fixedId) {
+    var ids = Object.keys(L.items).filter(function (k) { return k !== fixedId; }).sort(function (a, b) { return L.items[a].y - L.items[b].y || L.items[a].x - L.items[b].x; });
+    var placed = fixedId ? [L.items[fixedId]] : [];
+    ids.forEach(function (k) {
+      var r = L.items[k];
+      while (placed.some(function (p) { return overlap(p, r); })) r.y += 1;
+      placed.push(r);
+    });
+  }
+  function save() { A.keep(KEY3, L); }
 
-  var st = { open: false, arrange: false, built: '', ed: null, edFor: '', scene: null, edit: false, turn: 0, htmlFor: '', jot: '' };
+  var st = { open: false, arrange: false, built: '', ed: null, edFor: '', scene: null, edit: false, turn: 0, htmlFor: '', jot: '', pick: '' };
 
   /* ── Building the desk ── */
+  function place(id) { var r = L.items[id]; return 'grid-column:' + (r.x + 1) + ' / span ' + r.w + ';grid-row:' + (r.y + 1) + ' / span ' + r.h; }
   function build() {
     var s = A.session();
-    var key = (s ? s.id : '') + '|' + JSON.stringify([L.cols, L.away]) + '|' + st.arrange;
+    var key = (s ? s.id : '') + '|' + JSON.stringify(L) + '|' + st.arrange;
     if (st.built === key) return;
     releaseDice();
     if (st.ed) { st.ed.destroy(); st.ed = null; st.edFor = ''; }
@@ -63,28 +88,27 @@
         '<button type="button" class="ac-btn p" data-pd="new">+ New session</button></div></div>';
       return;
     }
-    panel.innerHTML = '<div class="pd-desk' + (st.arrange ? ' pd-arranging' : '') + '" style="--pd-l:' + L.w[0] + 'px;--pd-r:' + L.w[1] + 'px">' +
+    var ids = Object.keys(L.items).sort(function (a, b) { return L.items[a].y - L.items[b].y || L.items[a].x - L.items[b].x; });
+    panel.innerHTML = '<div class="pd-desk' + (st.arrange ? ' pd-arranging' : '') + '">' +
       (st.arrange ? drawerHtml() : '') +
-      '<div class="pd-cols">' + L.cols.map(function (c, ci) {
-        return '<div class="pd-col pd-c' + ci + '" data-col="' + ci + '">' + c.map(function (id) {
-          return '<section class="pd-o pd-' + id + '" data-o="' + id + '">' +
-            (st.arrange ? '<div class="pd-oh"><span class="pd-grip" aria-hidden="true">⋮⋮</span>' + esc(OBJ[id]) + '<button type="button" class="pd-x" data-pd="away" aria-label="Put it away">✕</button></div>' : '') +
-            '<div class="pd-ob" data-ob="' + id + '"></div></section>';
-        }).join('') + (st.arrange ? '<div class="pd-foot" data-foot="' + ci + '">drop here</div>' : '') + '</div>';
-      }).join('') + '</div></div>';
+      '<div class="pd-grid" style="--pd-row:' + ROW + 'px;--pd-gap:' + GAP + 'px">' + ids.map(function (id) {
+        return '<section class="pd-o pd-' + id + '" data-o="' + id + '" style="' + place(id) + '">' +
+          (st.arrange ? '<div class="pd-oh"><span class="pd-grip" aria-hidden="true">⋮⋮</span>' + esc(OBJ[id]) + '<button type="button" class="pd-x" data-pd="away" aria-label="Put it away">✕</button></div>' : '') +
+          '<div class="pd-ob" data-ob="' + id + '"></div>' +
+          (st.arrange ? '<span class="pd-rz" data-rz="' + id + '" title="Drag to size it" aria-label="Size"></span>' : '') + '</section>';
+      }).join('') + (st.arrange ? '<div class="pd-ghost" hidden></div>' : '') + '</div></div>';
+    markPick();
     drawAll();
   }
   function drawerHtml() {
-    return '<div class="pd-drawer"><span class="pd-dl">Arrange · drag a title bar onto another object to swap, or onto a column\'s foot — or tap a bar, then tap where it goes</span><span class="pd-dl pd-pickt"></span>' +
+    return '<div class="pd-drawer"><span class="pd-dl">✥ Drag a title bar anywhere on the grid · ◢ drag the yellow corner to size it · or tap a bar, then tap where it goes</span><span class="pd-dl pd-pickt"></span>' +
       (L.away.length ? '<span class="pd-dl">Put away:</span>' + L.away.map(function (id) { return '<button type="button" class="pd-back" data-pd="back" data-id="' + id + '">+ ' + esc(OBJ[id]) + '</button>'; }).join('') : '') +
-      '<label class="pd-dl">Left <input type="range" min="220" max="440" step="10" value="' + L.w[0] + '" data-w="0"></label>' +
-      '<label class="pd-dl">Right <input type="range" min="240" max="460" step="10" value="' + L.w[1] + '" data-w="1"></label>' +
       '<button type="button" class="pd-back" data-pd="reset">Reset layout</button></div>';
   }
   function ob(id) { return panel.querySelector('[data-ob="' + id + '"]'); }
   function drawAll() {
     var s = A.session();
-    if (!s || !panel.querySelector('.pd-cols')) return;
+    if (!s || !panel.querySelector('.pd-grid')) return;
     drawDossiers(s); drawInitiative(s); drawNotebook(s); drawPad(s); drawDeck(s); drawEvidence(s); drawPads(s); placeDice();
   }
 
@@ -121,23 +145,37 @@
     s.npcs.forEach(function (n, i) { rows.push({ name: n.name, dex: +n.dex || 0, npc: i }); });
     return rows.sort(function (a, b) { return (b.dex || 0) - (a.dex || 0) || (a.npc != null) - (b.npc != null); });
   }
+  // NPCs: { name, dex, hp, wp, san } -- the vitals are optional; the ones
+  // given show on the card, and its ✎ opens − / + for them during play.
+  var NPCV = ['hp', 'wp', 'san'];
+  function npcVitals(n) { return NPCV.filter(function (k) { return n[k] !== '' && n[k] != null && !isNaN(+n[k]); }).map(function (k) { return k.toUpperCase() + ' ' + n[k]; }).join(' · '); }
   function drawInitiative(s) {
     var el = ob('initiative');
     if (!el) return;
     var rows = inits(s), turn = rows.length ? st.turn % rows.length : 0;
+    var ed = st.npcEdit != null ? s.npcs[st.npcEdit] : null;
     el.innerHTML = '<div class="pd-inits">' + rows.map(function (r, i) {
-      return '<button type="button" class="pd-ic' + (i === turn ? ' now' : '') + (r.npc != null ? ' npc' : '') + '" data-pd="turn" data-i="' + i + '">' + esc(r.name) + '<b>' + (r.dex == null ? '—' : r.dex) + '</b>' +
-        (r.npc != null ? '<span class="pd-icx" data-pd="rm-npc" data-n="' + r.npc + '" aria-label="Remove">✕</span>' : '') + '</button>';
+      var n = r.npc != null ? s.npcs[r.npc] : null, v = n ? npcVitals(n) : '';
+      return '<button type="button" class="pd-ic' + (i === turn ? ' now' : '') + (n ? ' npc' : '') + (n && st.npcEdit === r.npc ? ' editing' : '') + '" data-pd="turn" data-i="' + i + '">' + esc(r.name) + '<b>' + (r.dex == null ? '—' : r.dex) + '</b>' +
+        (v ? '<small>' + esc(v) + '</small>' : '') +
+        (n ? '<span class="pd-icx" data-pd="rm-npc" data-n="' + r.npc + '" aria-label="Remove">✕</span><span class="pd-ice" data-pd="npc-edit" data-n="' + r.npc + '" aria-label="Vitals">✎</span>' : '') + '</button>';
     }).join('') + '<button type="button" class="pd-ic add" data-pd="add-npc" title="Add an NPC">+</button></div>' +
       (rows.length ? '<button type="button" class="pd-next" data-pd="next">Next ▸</button>' : '') +
-      (st.npcForm ? '<form class="pd-npcf"><input name="n" placeholder="NPC" required><input name="d" type="number" min="1" max="30" placeholder="DEX" required><button class="ac-btn">Add</button></form>' : '');
+      (ed ? '<div class="pd-npced"><b>' + esc(ed.name) + '</b>' + NPCV.map(function (k) {
+        var has = ed[k] !== '' && ed[k] != null && !isNaN(+ed[k]);
+        return '<span class="pd-npcv">' + k.toUpperCase() + ' <button type="button" data-pd="npc-v" data-k="' + k + '" data-d="-1" aria-label="' + k + ' down">−</button><i>' + (has ? ed[k] : '—') + '</i><button type="button" data-pd="npc-v" data-k="' + k + '" data-d="1" aria-label="' + k + ' up">+</button></span>';
+      }).join('') + '<button type="button" class="pd-next" data-pd="npc-edit" data-n="' + st.npcEdit + '">done</button></div>' : '') +
+      (st.npcForm ? '<form class="pd-npcf"><label>Name<input name="n" required></label><label>DEX<input name="d" type="number" min="1" max="30" required></label>' +
+        '<label>HP<input name="hp" type="number" min="0" max="99"></label><label>WP<input name="wp" type="number" min="0" max="99"></label><label>SAN<input name="san" type="number" min="0" max="99"></label><button class="ac-btn">Add</button></form>' : '');
     var f = el.querySelector('.pd-npcf');
     if (f) {
       f.n.focus();
       f.addEventListener('submit', function (e) {
         e.preventDefault();
         st.npcForm = false;
-        S().update(s.id, { npcs: s.npcs.concat([{ name: f.n.value.trim(), dex: +f.d.value }]) });
+        var npc = { name: f.n.value.trim(), dex: +f.d.value };
+        NPCV.forEach(function (k) { if (f[k].value !== '') npc[k] = +f[k].value; });
+        S().update(s.id, { npcs: s.npcs.concat([npc]) });
       });
     }
   }
@@ -206,11 +244,11 @@
     var done = '';
     if (kind === '⚡' && m) {
       var hit = null;
-      s.pads.concat([].concat.apply([], m.stingerGroups().map(function (g) { return g.stingers.map(function (x) { return x.id; }); })))
+      music(s).pads.concat([].concat.apply([], m.stingerGroups().map(function (g) { return g.stingers.map(function (x) { return x.id; }); })))
         .some(function (id) { if (like(m.label('stinger', id))) { hit = id; return true; } return false; });
       if (hit) { m.fire(hit); done = 'fired'; }
     } else if (kind === '♪' && m) {
-      var t = s.tracks.filter(function (x) { return like(x.title); })[0];
+      var t = music(s).tracks.filter(function (x) { return like(x.title); })[0];
       if (t) { playTape(t); done = 'playing'; }
       else {
         var lib = m.tracks().filter(function (x) { return like(x.title); })[0];
@@ -237,6 +275,14 @@
   }
 
   /* ── Tape deck ── */
+  // What's playable: the tape in the deck (assets/acell-tapes.js); before
+  // tapes, a session kept its own tracks and pads.
+  function deckTape() { var D = window.dgTapes, t = D && D.inDeck(); return t && t.tracks ? t : null; }
+  function music(s) {
+    var t = deckTape();
+    return t ? { tape: t, tracks: t.tracks, pads: t.pads } : { tape: null, tracks: s.tracks, pads: s.pads };
+  }
+  function tapesFor(s) { var D = window.dgTapes; return D ? D.forOperation(s.operation_id).concat(D.forCell(s.cell_id)) : []; }
   function playTape(t) {
     var m = M();
     if (t.kind === 'ambient') { m.setAmbient(t.ref, !(m.state().ambient || []).some(function (x) { return x.id === t.ref; })); return; }
@@ -256,10 +302,22 @@
       '<div class="pd-reels' + (cur.track_url && !cur.paused ? ' spin' : '') + '"><i></i><i></i></div>' +
       '<div class="pd-keys"><button type="button" data-pd="restart" title="From the top">◀◀</button><button type="button" data-pd="pause" title="Play / pause">▶ ❚❚</button>' +
       '<button type="button" data-pd="stop" title="Stop the track">■</button><button type="button" data-pd="loop" class="' + (cur.loop ? 'on' : '') + '" title="Loop">LOOP</button></div>' +
-      (s.tracks.length ? '<div class="pd-tape">' + s.tracks.map(function (t, i) {
-        var on = t.kind === 'ambient' ? amb.some(function (x) { return x.id === t.ref; }) : (cur.track_title === t.title && !!cur.track_url);
-        return '<button type="button" class="pd-tt' + (on ? ' on' : '') + '" data-pd="tape" data-i="' + i + '">' + (t.kind === 'ambient' ? '≈ ' : '♪ ') + esc(t.title) + '</button>';
-      }).join('') + '</div>' : '<div class="pd-hint light">The session\'s tape is empty (Prep → Music).</div>');
+      (function () {
+        var mu = music(s), D = window.dgTapes;
+        if (mu.tape) return '<div class="pd-tapename">⏏ <b>' + esc(mu.tape.name) + '</b><button type="button" data-pd="eject" title="Take the tape out">eject</button></div>' +
+          '<div class="pd-tape">' + mu.tracks.map(function (t, i) {
+            var on = cur.track_title === t.title && !!cur.track_url;
+            return '<button type="button" class="pd-tt' + (on ? ' on' : '') + '" data-pd="tape" data-i="' + i + '">♪ ' + esc(t.title) + '<small>' + esc(D.fmt(t.dur)) + '</small></button>';
+          }).join('') + '</div>';
+        var list = tapesFor(s);
+        if (list.length) return '<div class="pd-tape"><div class="pd-hint light">Put a tape in:</div>' + list.map(function (t) {
+          return '<button type="button" class="pd-tt" data-pd="insert" data-id="' + esc(t.id) + '">▶ ' + esc(t.name) + '</button>';
+        }).join('') + '</div>';
+        return mu.tracks.length ? '<div class="pd-tape">' + mu.tracks.map(function (t, i) {
+          var on = t.kind === 'ambient' ? amb.some(function (x) { return x.id === t.ref; }) : (cur.track_title === t.title && !!cur.track_url);
+          return '<button type="button" class="pd-tt' + (on ? ' on' : '') + '" data-pd="tape" data-i="' + i + '">' + (t.kind === 'ambient' ? '≈ ' : '♪ ') + esc(t.title) + '</button>';
+        }).join('') + '</div>' : '<div class="pd-hint light">No tape yet (Prep → Music → Tapes).</div>';
+      })();
   }
 
   /* ── Evidence box ── */
@@ -280,10 +338,11 @@
   function drawPads(s) {
     var el = ob('pads'), m = M();
     if (!el || !m) return;
-    el.innerHTML = '<div class="pd-padgrid">' + s.pads.map(function (id) {
+    var pads = music(s).pads;
+    el.innerHTML = '<div class="pd-padgrid">' + pads.map(function (id) {
       return '<button type="button" class="pd-fx" data-pd="fire" data-id="' + esc(id) + '">' + esc(m.label('stinger', id)) + '</button>';
     }).join('') + '<button type="button" class="pd-fx stop" data-pd="stopall" title="Stop every effect and loop">STOP</button></div>' +
-      (s.pads.length ? '' : '<div class="pd-hint light">No pads yet (Prep → Music → a cartridge).</div>');
+      (pads.length ? '' : '<div class="pd-hint light">No pads yet (Prep → Music → a tape\'s pads).</div>');
   }
 
   /* ── The Dice Roller: the real panel, open, in its slot ──
@@ -373,7 +432,14 @@
       case 'turn': st.turn = +b.getAttribute('data-i'); drawInitiative(s); return;
       case 'next': st.turn++; drawInitiative(s); return;
       case 'add-npc': st.npcForm = !st.npcForm; drawInitiative(s); return;
-      case 'rm-npc': e.stopPropagation(); S().update(s.id, { npcs: s.npcs.filter(function (x, i) { return i !== +b.getAttribute('data-n'); }) }); return;
+      case 'rm-npc': e.stopPropagation(); st.npcEdit = null; S().update(s.id, { npcs: s.npcs.filter(function (x, i) { return i !== +b.getAttribute('data-n'); }) }); return;
+      case 'npc-edit': { e.stopPropagation(); var ni = +b.getAttribute('data-n'); st.npcEdit = st.npcEdit === ni ? null : ni; drawInitiative(s); return; }
+      case 'npc-v': {
+        var k = b.getAttribute('data-k'), list = s.npcs.map(function (x) { return Object.assign({}, x); }), n = list[st.npcEdit];
+        if (!n) return;
+        n[k] = Math.max(0, (isNaN(+n[k]) || n[k] === '' || n[k] == null ? 0 : +n[k]) + +b.getAttribute('data-d'));
+        S().update(s.id, { npcs: list }); return;
+      }
       case 'scene': setScene(b.getAttribute('data-t')); return;
       case 'edit': st.edit = !st.edit; if (st.ed) st.ed.setMode(st.edit ? 'edit' : 'read'); drawNotebook(s); return;
       case 'pick-note': A.setMode('prep'); window.dgAcellTab('session'); return;
@@ -382,7 +448,9 @@
       case 'pause': m.togglePause(); return;
       case 'stop': m.stop(); return;
       case 'loop': m.toggleLoop(); return;
-      case 'tape': playTape(s.tracks[+b.getAttribute('data-i')]); return;
+      case 'tape': { var mt = music(s); if (mt.tape) m.playCue(+b.getAttribute('data-i')); else playTape(mt.tracks[+b.getAttribute('data-i')]); return; }
+      case 'insert': window.dgTapes.insert(b.getAttribute('data-id')); return;
+      case 'eject': window.dgTapes.eject(); return;
       case 'release': {
         var id = b.closest('[data-ev]').getAttribute('data-ev');
         b.disabled = true; b.textContent = 'releasing…';
@@ -393,13 +461,15 @@
       case 'stopall': m.stopAll(); return;
       case 'away': {
         var oid = b.closest('[data-o]').getAttribute('data-o');
-        L.cols = L.cols.map(function (c) { return c.filter(function (x) { return x !== oid; }); });
+        delete L.items[oid];
         L.away.push(oid); st.pick = ''; save(); build(); return;
       }
       case 'back': {
         var bid = b.getAttribute('data-id');
         L.away = L.away.filter(function (x) { return x !== bid; });
-        L.cols[DEFAULT.cols.findIndex(function (c) { return c.indexOf(bid) >= 0; })].push(bid);
+        var bottom = 0;
+        Object.keys(L.items).forEach(function (k) { bottom = Math.max(bottom, L.items[k].y + L.items[k].h); });
+        L.items[bid] = fit(Object.assign(clone(DEFAULT.items[bid]), { x: 0, y: bottom }), bid);
         save(); build(); return;
       }
       case 'reset': L = clone(DEFAULT); save(); build(); return;
@@ -417,84 +487,73 @@
     if (text) S().addQuickNote(s.id, text, code);
     else if (code) drawDossiers(s);
   });
-  panel.addEventListener('input', function (e) {
-    var w = e.target.getAttribute && e.target.getAttribute('data-w');
-    if (w == null) return;
-    L.w[+w] = +e.target.value;
-    panel.querySelector('.pd-desk').style.setProperty(w === '0' ? '--pd-l' : '--pd-r', e.target.value + 'px');
-  });
-  panel.addEventListener('change', function (e) { if (e.target.getAttribute && e.target.getAttribute('data-w') != null) save(); });
-
-  // Moving objects: drag an object's title bar onto another (swap) or a
-  // column's foot (move) -- or, on a touch screen, tap the bar, then tap
-  // where it goes.
+  // Arranging: drag a title bar to any cell of the grid, drag the yellow
+  // corner to size it -- or, on a touch screen, tap a bar, then tap the
+  // cell it should start at. What it lands on moves down out of its way.
   var drag = null;
-  function placeAt(id, target) {
-    var where = function (x) { for (var c = 0; c < 3; c++) { var i = L.cols[c].indexOf(x); if (i >= 0) return [c, i]; } return null; };
-    var from = where(id);
-    if (!from) return;
-    if (target.hasAttribute('data-foot')) {
-      L.cols[from[0]].splice(from[1], 1);
-      L.cols[+target.getAttribute('data-foot')].push(id);
-    } else {
-      var other = target.getAttribute('data-o');
-      if (other === id) return;
-      var to = where(other);
-      L.cols[from[0]][from[1]] = other;
-      L.cols[to[0]][to[1]] = id;
-    }
+  function gridEl() { return panel.querySelector('.pd-grid'); }
+  function cellAt(x, y) {
+    var g = gridEl(), r = g.getBoundingClientRect(), cw = (r.width - GAP * (COLS - 1)) / COLS;
+    return { x: Math.max(0, Math.min(COLS - 1, Math.floor((x - r.left + GAP / 2) / (cw + GAP)))), y: Math.max(0, Math.floor((y - r.top + GAP / 2) / (ROW + GAP))), cw: cw };
+  }
+  function ghost(rect) {
+    var gh = panel.querySelector('.pd-ghost');
+    if (!gh) return;
+    if (!rect) { gh.hidden = true; return; }
+    gh.hidden = false;
+    gh.style.gridColumn = (rect.x + 1) + ' / span ' + rect.w;
+    gh.style.gridRow = (rect.y + 1) + ' / span ' + rect.h;
+    gh.textContent = rect.w + ' × ' + rect.h;
+  }
+  function apply(id, rect) {
+    L.items[id] = fit(rect, id);
+    settle(id);
     st.pick = '';
     save(); build();
   }
-  function targetAt(x, y, not) {
-    var hit = null;
-    Array.prototype.forEach.call(panel.querySelectorAll('[data-o],[data-foot]'), function (el) {
-      var r = el.getBoundingClientRect();
-      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom && el !== not) hit = el;
-    });
-    return hit;
-  }
   panel.addEventListener('pointerdown', function (e) {
     if (!st.arrange) return;
+    var rz = e.target.closest('[data-rz]');
     var h = e.target.closest('.pd-oh');
-    if (!h || e.target.closest('.pd-x')) return;
+    if (!rz && (!h || e.target.closest('.pd-x'))) return;
     e.preventDefault();
-    drag = { id: h.closest('[data-o]').getAttribute('data-o'), el: h.closest('[data-o]'), over: null, x: e.clientX, y: e.clientY, moved: false };
-    try { h.setPointerCapture(e.pointerId); } catch (err) { /* old Safari */ }
+    var el = (rz || h).closest('[data-o]'), id = el.getAttribute('data-o'), c = cellAt(e.clientX, e.clientY), r = L.items[id];
+    drag = { id: id, el: el, size: !!rz, x: e.clientX, y: e.clientY, moved: false, dx: c.x - r.x, dy: c.y - r.y, rect: null };
+    try { (rz || h).setPointerCapture(e.pointerId); } catch (err) { /* old Safari */ }
   });
   panel.addEventListener('pointermove', function (e) {
     if (!drag) return;
     if (!drag.moved && Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) < 8) return;
     drag.moved = true;
     drag.el.classList.add('pd-lift');
-    var over = targetAt(e.clientX, e.clientY, drag.el);
-    if (drag.over && drag.over !== over) drag.over.classList.remove('pd-drop');
-    if (over) over.classList.add('pd-drop');
-    drag.over = over;
+    var c = cellAt(e.clientX, e.clientY), r = L.items[drag.id];
+    drag.rect = drag.size ? fit({ x: r.x, y: r.y, w: c.x - r.x + 1, h: c.y - r.y + 1 }, drag.id)
+      : fit({ x: c.x - drag.dx, y: c.y - drag.dy, w: r.w, h: r.h }, drag.id);
+    ghost(drag.rect);
   });
   panel.addEventListener('pointerup', function (e) {
     if (drag) {
       var d = drag; drag = null;
       d.el.classList.remove('pd-lift');
-      if (d.over) d.over.classList.remove('pd-drop');
-      if (d.moved) { if (d.over) placeAt(d.id, d.over); return; }
+      ghost(null);
+      if (d.moved) { if (d.rect) apply(d.id, d.rect); return; }
+      if (d.size) return;
       // A tap on a bar: pick it up (tap it again to put it down) …
-      if (st.pick && st.pick !== d.id) { placeAt(st.pick, d.el); return; }
       st.pick = st.pick === d.id ? '' : d.id;
       markPick();
       return;
     }
-    // … then a tap on another object or a column's foot puts it there.
-    if (st.arrange && st.pick && !e.target.closest('button, input, a')) {
-      var t = targetAt(e.clientX, e.clientY, null);
-      if (t && t.getAttribute('data-o') !== st.pick) placeAt(st.pick, t);
+    // … then a tap on the grid puts it there, its top-left corner at that cell.
+    if (st.arrange && st.pick && gridEl() && !e.target.closest('button, input, a') && e.target.closest('.pd-grid')) {
+      var c = cellAt(e.clientX, e.clientY), r = L.items[st.pick];
+      apply(st.pick, { x: c.x, y: c.y, w: r.w, h: r.h });
     }
   });
-  panel.addEventListener('pointercancel', function () { if (drag) { drag.el.classList.remove('pd-lift'); if (drag.over) drag.over.classList.remove('pd-drop'); drag = null; } });
+  panel.addEventListener('pointercancel', function () { if (drag) { drag.el.classList.remove('pd-lift'); ghost(null); drag = null; } });
   function markPick() {
     Array.prototype.forEach.call(panel.querySelectorAll('[data-o]'), function (el) { el.classList.toggle('pd-picked', el.getAttribute('data-o') === st.pick); });
     var tip = panel.querySelector('.pd-pickt');
-    if (tip) tip.textContent = st.pick ? 'Now tap where ' + OBJ[st.pick] + ' goes: another object to swap, or a column\'s foot.' : '';
+    if (tip) tip.textContent = st.pick ? 'Now tap where ' + OBJ[st.pick] + ' starts: its top-left corner goes there.' : '';
   }
 
   /* ── The top bar's tools, while playing ── */
@@ -545,7 +604,7 @@
       st.built = '';
     }
   });
-  ['dg-sessions', 'dg-acell-roster', 'dg-acell-evidence', 'dg-acell-music', 'dg-acell-seen'].forEach(function (ev) {
+  ['dg-sessions', 'dg-acell-roster', 'dg-acell-evidence', 'dg-acell-music', 'dg-acell-seen', 'dg-tapes'].forEach(function (ev) {
     document.addEventListener(ev, function () {
       if (!st.open) return;
       if (ev === 'dg-sessions') { var s = A.session(); if (s && st.built.indexOf(s.id + '|') !== 0) st.scene = null; }

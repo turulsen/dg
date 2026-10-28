@@ -5520,6 +5520,7 @@
   // redraw (e.g. after a channel switch) without needing a fresh
   // round-trip just to know which buttons should already show "active".
   var activeAmbientLayers = [];
+  var deckTape_ = null; // radio/{ch}.tape: the tape in this channel's deck (assets/acell-tapes.js)
   var activeStingers = [];
   // rowKey ('ambient:<id>' or 'stinger:<fired_at>') -> row bookkeeping
   // object built by buildActiveSoundRow_() -- see renderActiveSounds_().
@@ -6493,6 +6494,7 @@
         // doc, not whichever channel was last dialed.
         activeAmbientLayers = (Array.isArray(data.ambient_layers) ? data.ambient_layers : []).map(normalizeAmbientLayer_);
         activeStingers = Array.isArray(data.stingers) ? data.stingers : [];
+        deckTape_ = data.tape && data.tape.id ? data.tape : null;
         // Broadcast-wide mix levels are per-channel state too, same as
         // ambient_layers/stingers above.
         var trackVol = (data.track_volume != null) ? data.track_volume : 100;
@@ -7191,7 +7193,8 @@
             track_id: doc.id,
             title: d.title || '',
             url: isStorageTrack ? canonicalTrackUrl_(doc.id) : (d.url || ''),
-            uploaded_at: d.uploaded_at || ''
+            uploaded_at: d.uploaded_at || '',
+            duration: d.duration || 0
           });
         });
         tracks.sort(function (a, b) { return (a.uploaded_at || 0) - (b.uploaded_at || 0); });
@@ -7306,6 +7309,7 @@
   // For the Play desk's tape deck and pads and the Music tab's shelf
   // (assets/acell-play.js, acell-shell.js): the same broadcast engine.
   function musicChanged_() { document.dispatchEvent(new CustomEvent('dg-acell-music')); }
+  var measuring_ = {};
   function defaultLoop_(url) { return !(autoAdvanceEnabled && playlist.some(function (p) { return p.url === url; })); }
   function stopAllSounds_() {
     var ch = currentChannel;
@@ -7324,7 +7328,33 @@
   window.dgAcellMusic = {
     channel: function () { return currentChannel; },
     setChannel: function (ch) { if (ch && ch !== currentChannel) { dialApi.set(ch); musicChanged_(); } },
-    state: function () { return { current: Object.assign({}, current), ambient: activeAmbientLayers.slice(), stingers: activeStingers.slice() }; },
+    state: function () { return { current: Object.assign({}, current), ambient: activeAmbientLayers.slice(), stingers: activeStingers.slice(), tape: deckTape_ }; },
+    // A tape into this channel's deck: it's named on radio/{ch}, and its
+    // tracks become the cue list. null takes it out (the cue list stays).
+    setTape: function (tape, cues) {
+      var ch = currentChannel;
+      deckTape_ = tape;
+      if (cues) { playlist = cues.slice(); renderPlaylist(); savePlaylist(); }
+      musicChanged_();
+      return ensureHandlerSignedIn().then(function () {
+        return radioDocRef_(ch).set({ tape: tape || null, updated_at: Date.now() }, { merge: true });
+      });
+    },
+    // A library track's length, measured once and kept on tracks/{id}.duration.
+    duration_of: function (t) { return t && t.duration ? t.duration : 0; },
+    measure: function (t) {
+      if (!t || t.duration || !t.url || measuring_[t.track_id]) return;
+      measuring_[t.track_id] = true;
+      var a = new Audio(); a.preload = 'metadata';
+      a.addEventListener('loadedmetadata', function () {
+        var d = Math.round(a.duration || 0);
+        a.src = '';
+        if (!d || !isFinite(d)) return;
+        t.duration = d; musicChanged_();
+        ensureHandlerSignedIn().then(function () { return window.firebase.firestore().collection('tracks').doc(t.track_id).update({ duration: d }); }).catch(function () {});
+      });
+      a.src = t.url;
+    },
     tracks: function () { return tracks.slice(); },
     ambientList: function () { return AMBIENT_LAYERS.slice(); },
     stingerGroups: function () { return STINGER_GROUPS; },
@@ -7399,6 +7429,7 @@
 <script src="assets/dice-roller.js?v=11"></script>
 <script src="assets/acell-vault.js"></script>
 <script src="assets/acell-sessions.js"></script>
+<script src="assets/acell-tapes.js"></script>
 <script src="assets/acell-shell.js"></script>
 <script src="assets/acell-library.js"></script>
 <script src="assets/acell-console.js"></script>

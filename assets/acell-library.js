@@ -77,82 +77,204 @@
     });
   });
 
-  /* ════════ Music: the tape shelf ════════ */
+  /* ════════ Music: tapes, and the library to fill them from ════════
+     A tape (assets/acell-tapes.js) is an operation's -- or a Cell's -- music:
+     tracks in order, loops under them, effect pads. The racks show the
+     operation's tapes and the Cell's; the open tape is edited on the right;
+     the library shelves (spines with each track's time, loops, effect
+     cartridges) add to the open tape. The control center sits under it. */
   var muPanel = document.getElementById('panel-music');
+  var consoleEl = document.getElementById('ac-console');
+  var tapesEl = document.createElement('div');
+  tapesEl.className = 'ac-tapes';
+  tapesEl.id = 'ac-tapes';
   var shelf = document.createElement('div');
   shelf.className = 'ac-music';
   shelf.id = 'ac-shelf';
-  // Under the control center (assets/acell-console.js), over the classic desk.
-  var consoleEl = document.getElementById('ac-console');
-  muPanel.insertBefore(shelf, consoleEl ? consoleEl.nextSibling : muPanel.firstChild);
-  var mu = { q: '', f: 'all', pop: null };
-  var TINTS = ['#d9ccaa', '#c9d6c0', '#e2c6b8', '#d6d0e6', '#e8dca8', '#c6d8e2', '#e6c8c8', '#cfd9c0', '#e2d6c0', '#c8c0d8'];
+  muPanel.insertBefore(tapesEl, consoleEl || muPanel.firstChild);
+  muPanel.insertBefore(shelf, consoleEl || muPanel.firstChild);
+  var mu = { q: '', f: 'all', pop: null, open: '', op: '', linking: false, naming: false };
   var CART = ['#7a2a22', '#4a3a6a', '#2a4a6a', '#4a4a4a', '#6a5a2a', '#3a5a3a', '#6a3a5a', '#5a2a2a'];
+  var CASE = ['#7a2a22', '#2d3d4a', '#3a3a3a', '#5b2a24', '#2c3a22', '#4a3a6a', '#6a5a2a', '#1f3a4a'];
   function hash(s) { var h = 0; s = String(s); for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return Math.abs(h); }
-  function tapeKey(t) { return t.kind + ':' + t.ref; }
-  function onTape(s, kind, ref) { return !!s && (kind === 'stinger' ? s.pads.indexOf(ref) >= 0 : s.tracks.some(function (t) { return t.kind === kind && t.ref === ref; })); }
+  function T() { return window.dgTapes; }
+  function openTape() { return mu.open ? T().get(mu.open) : null; }
+  function onTape(t, kind, ref) {
+    if (!t) return false;
+    if (kind === 'stinger') return t.pads.indexOf(ref) >= 0;
+    if (kind === 'ambient') return t.loops.indexOf(ref) >= 0;
+    return t.tracks.some(function (x) { return x.kind === kind && x.ref === ref; });
+  }
+  // The operation the tapes are for: the session's, else the one picked here.
+  function curOp() {
+    var s = A.session();
+    if (mu.op) return mu.op;
+    if (s && s.operation_id) return s.operation_id;
+    var ops = T().operations().filter(function (o) { return !s || !s.cell_id || o.cell_id === s.cell_id; });
+    return ops[0] ? ops[0].operation_id : '';
+  }
+  function curCell() { var s = A.session(); return s ? s.cell_id : ''; }
+
+  function drawTapes() {
+    var D = T(), m = M();
+    if (!D || !m) return;
+    var opId = curOp(), op = D.operation(opId), cell = A.cell(curCell()), deck = m.state().tape, ch = m.channel();
+    var s = A.session();
+    var opSel = '<select class="ac-opsel" data-mu-op><option value="">— an operation —</option>' + D.operations().filter(function (o) { return !cell || !o.cell_id || o.cell_id === cell.cell_id; }).map(function (o) {
+      return '<option value="' + esc(o.operation_id) + '"' + (o.operation_id === opId ? ' selected' : '') + '>' + esc(o.name) + '</option>';
+    }).join('') + '</select>';
+    function card(t) {
+      var inDeck = deck && deck.id === t.id;
+      return '<div class="ac-tcard' + (mu.open === t.id ? ' on' : '') + '" data-tape="' + esc(t.id) + '">' +
+        D.cassette(t, { chip: inDeck ? 'IN DECK · CH ' + ch : '' }) +
+        '<div class="ac-tacts"><button type="button" class="ac-btn' + (mu.open === t.id ? ' p' : '') + '" data-mu="open">' + (mu.open === t.id ? 'Open ✓' : 'Open') + '</button>' +
+        (inDeck ? '<button type="button" class="ac-btn" data-mu="eject">⏏ Eject</button>' : '<button type="button" class="ac-btn" data-mu="insert">▶ Into CH ' + esc(ch) + '</button>') + '</div></div>';
+    }
+    function rack(list, scope, label) {
+      return '<div class="ac-track">' + list.map(card).join('') +
+        '<button type="button" class="ac-tnew" data-mu="new" data-scope="' + scope + '">＋ New blank tape<br><small>' + esc(label) + '</small></button></div>';
+    }
+    var html = '<div class="ac-tcols"><section class="ac-tleft"><h2 class="ac-h1">Tapes</h2>' +
+      '<p class="ac-lede">A tape is everything one channel plays: its tracks in order, the loops under them and the effect pads. Make one for an operation and play it across its sessions; put it in the deck and the players on that channel hear it.</p>' +
+      '<div class="ac-sub ac-tsub">Operation ' + opSel + (op ? '' : '') + '</div>' +
+      (opId ? rack(D.forOperation(opId), 'operation', 'for ' + (op ? op.name : 'this operation')) : '<div class="ac-none">Pick the operation (above). Operations are made on the Evidence tab.</div>') +
+      (cell ? '<div class="ac-sub ac-tsub">Cell <b>' + esc(cell.name || cell.cell_id) + '</b> · tapes for any operation</div>' + rack(D.forCell(cell.cell_id), 'cell', 'for Cell ' + (cell.name || '')) : '') +
+      (!s ? '<div class="ac-none">Choose a session in the top bar to see its Cell\'s tapes too.</div>' : '') +
+      '</section><aside class="ac-topen">' + openHtml() + '</aside></div>';
+    // Keep what's being typed (the tape's name, a link) across a redraw.
+    var keep = {}, focus = document.activeElement && tapesEl.contains(document.activeElement) ? document.activeElement : null;
+    ['data-mu-tname', 'data-mu-lurl', 'data-mu-ltitle'].forEach(function (k) { var el = tapesEl.querySelector('[' + k + ']'); if (el) keep[k] = el.value; });
+    var focusKey = focus ? ['data-mu-tname', 'data-mu-lurl', 'data-mu-ltitle'].filter(function (k) { return focus.hasAttribute(k); })[0] : '';
+    tapesEl.innerHTML = html;
+    Object.keys(keep).forEach(function (k) { var el = tapesEl.querySelector('[' + k + ']'); if (el) el.value = keep[k]; });
+    if (focusKey) { var f = tapesEl.querySelector('[' + focusKey + ']'); if (f) f.focus(); }
+  }
+  function openHtml() {
+    var D = T(), m = M(), t = openTape();
+    if (!t) return '<div class="ac-none">Open a tape to fill it: tap a track, a loop or an effect on the shelves below.</div>';
+    var rt = D.runtime(t);
+    return '<div class="ac-sub" style="margin-top:0">Open tape</div>' +
+      (mu.naming ? '<form class="ac-tname" data-mu-name-form><input class="vn-search" data-mu-tname value="' + esc(t.name) + '"><button class="ac-btn p">Save</button></form>'
+        : '<h3 class="ac-ttitle">' + esc(t.name) + ' <button type="button" class="ac-link" data-mu="rename-tape">✎</button></h3>') +
+      '<div class="ac-tcolors">' + D.COLORS.map(function (c) { return '<button type="button" class="ac-sw' + (t.color === c ? ' on' : '') + '" style="background:' + c + '" data-mu="color" data-c="' + c + '" aria-label="Colour"></button>'; }).join('') + '</div>' +
+      '<div class="ac-sub">Side A · tracks <b>' + esc(D.fmt(rt) || '—') + '</b> · plays through, then back to 1</div>' +
+      (t.tracks.length ? t.tracks.map(function (x, i) {
+        return '<div class="ac-row" data-ti="' + i + '"><span class="ac-tn">' + (i + 1) + '</span><span class="ac-t">' + esc(x.title) + (x.kind === 'link' ? '<small>link</small>' : '') + '</span><span class="ac-dur">' + esc(D.fmt(x.dur) || '') + '</span>' +
+          (i > 0 ? '<button type="button" class="ac-ic" data-mu="t-up" aria-label="Earlier">↑</button>' : '') +
+          '<button type="button" class="ac-ic" data-mu="t-rm" aria-label="Take it off">✕</button></div>';
+      }).join('') : '<div class="ac-none">No tracks yet — tap a spine below.</div>') +
+      (mu.linking ? '<form class="ac-tlink" data-mu-link-form><input class="vn-search" type="url" placeholder="YouTube / SoundCloud / .mp3 link" data-mu-lurl required><input class="vn-search" placeholder="Title" data-mu-ltitle><button class="ac-btn p">Add</button></form>'
+        : '<button type="button" class="ac-link" data-mu="link">＋ a link (YouTube, SoundCloud)</button>') +
+      '<div class="ac-sub">Loops under it</div><div class="ac-pads">' + (t.loops.length ? t.loops.map(function (id) {
+        return '<span class="ac-padchip">≈ ' + esc(m.label('ambient', id)) + '<button type="button" data-mu="l-rm" data-id="' + esc(id) + '" aria-label="Take it off">✕</button></span>';
+      }).join('') : '<span class="ac-none">None — tap a loop below.</span>') + '</div>' +
+      '<div class="ac-sub">Effect pads</div><div class="ac-tpads">' + t.pads.map(function (id) {
+        return '<span class="ac-tpad">' + esc(m.label('stinger', id)) + '<button type="button" data-mu="p-rm" data-id="' + esc(id) + '" aria-label="Take it off">✕</button></span>';
+      }).join('') + (t.pads.length ? '' : '<span class="ac-none">None — tap a cartridge below.</span>') + '</div>' +
+      '<div class="ac-acts"><button type="button" class="ac-btn p" data-mu="insert-open">▶ Into CH ' + esc(m.channel()) + '</button><span class="ac-sp"></span><button type="button" class="ac-link ac-del" data-mu="del-tape">Delete tape</button></div>';
+  }
+
   function drawShelf() {
     var m = M();
     if (!m) { shelf.innerHTML = ''; return; }
-    var s = A.session(), q = mu.q.toLowerCase();
+    var t = openTape(), q = mu.q.toLowerCase();
     function hit(label) { return !q || String(label).toLowerCase().indexOf(q) >= 0; }
-    var tape = s ? (s.tracks.length || s.pads.length ? s.tracks.map(function (t, i) {
-      var url = A.soundUrl(t.kind, t.ref);
-      return '<div class="ac-row" data-i="' + i + '"><span class="ac-ic ac-glyph">' + (t.kind === 'ambient' ? '≈' : '♪') + '</span><span class="ac-t">' + esc(t.title) + '<small>' + (t.kind === 'ambient' ? 'ambient loop' : 'track') + '</small></span>' +
-        (i > 0 ? '<button type="button" class="ac-ic" data-mu="up" title="Earlier on the tape" aria-label="Earlier">↑</button>' : '') +
-        (url ? '<button type="button" class="ac-ic" data-mu="hear-tape" title="Listen here" aria-label="Listen here">' + (A.previewing() === url ? '❚❚' : '🎧') + '</button>' : '') +
-        '<button type="button" class="ac-ic" data-mu="rm" title="Take it off" aria-label="Take it off">✕</button></div>';
-    }).join('') + (s.pads.length ? '<div class="ac-sub">Effect pads · on the desk</div>' + s.pads.map(function (id, i) {
-      return '<div class="ac-row" data-pad="' + esc(id) + '"><span class="ac-ic ac-glyph">' + (i + 1) + '</span><span class="ac-t">' + esc(m.label('stinger', id)) + '</span><button type="button" class="ac-ic" data-mu="rm-pad" title="Take it off" aria-label="Take it off">✕</button></div>';
-    }).join('') : '') : '<div class="ac-none">Nothing on the tape yet. Tap a tape or a cartridge on the shelf.</div>')
-      : '<div class="ac-none">Choose a session (top bar) to put music on its tape. The shelf still plays on the table.</div>';
-    var tracks = m.tracks().filter(function (t) { return hit(t.title || t.url); });
+    var tracks = m.tracks().filter(function (x) { return hit(x.title || x.url); });
+    tracks.forEach(function (x) { m.measure(x); });
     var loops = m.ambientList().filter(function (a) { return hit(a.label); });
     var carts = [];
     m.stingerGroups().forEach(function (g) { g.stingers.forEach(function (x) { if (hit(x.label)) carts.push(x); }); });
-    function spine(kind, ref, label, small, i) {
-      var tint = TINTS[hash(ref) % TINTS.length], h = kind === 'ambient' ? 112 : 118 + hash(label) % 28;
-      return '<button type="button" class="ac-spn' + (onTape(s, kind, ref) ? ' used' : '') + (mu.pop === kind + ':' + ref ? ' on' : '') + '" style="--c:' + tint + ';--h:' + h + 'px" data-kind="' + kind + '" data-ref="' + esc(ref) + '" title="' + esc(label) + '">' +
-        '<span>' + esc(label) + '</span><small>' + esc(small) + '</small></button>';
+    function spine(kind, ref, label, foot) {
+      var c = CASE[hash(ref) % CASE.length], h = kind === 'ambient' ? 120 : 132 + hash(label) % 22;
+      return '<button type="button" class="ac-spn' + (onTape(t, kind, ref) ? ' used' : '') + (mu.pop === kind + ':' + ref ? ' on' : '') + '" style="--c:' + c + ';--h:' + h + 'px" data-kind="' + kind + '" data-ref="' + esc(ref) + '" title="' + esc(label) + '">' +
+        '<span>' + esc(label) + '</span><em>' + esc(foot) + '</em></button>';
     }
-    var html = '<div class="ac-mucols"><section class="ac-pn"><div class="ac-ph"><span class="ac-pt">' + (s ? esc(s.name) + ' · tape' : 'Session tape') + '</span></div><div class="ac-pb">' + tape + '</div></section>' +
-      '<section class="ac-rack"><div class="ac-rs"><input type="search" class="ac-rq" placeholder="⌕ Search tapes…" value="' + esc(mu.q) + '">' +
-      ['all', 'Tracks', 'Loops', 'Effects'].map(function (f) { var k = f.toLowerCase(); return '<button type="button" class="ac-rf' + (mu.f === k ? ' on' : '') + '" data-rf="' + k + '">' + (f === 'all' ? 'All' : f) + '</button>'; }).join('') + '</div>';
-    if (mu.f === 'all' || mu.f === 'tracks') html += '<div class="ac-shelf"><div class="ac-spines">' + (tracks.length ? tracks.map(function (t) { return spine('track', t.track_id, t.title || t.url, 'track'); }).join('') : '<span class="ac-rnone">' + (q ? 'No track matches.' : 'No tracks yet — upload one in the broadcast desk below.') + '</span>') + '</div><span class="ac-sl">Tracks · uploaded</span></div>';
-    if (mu.f === 'all' || mu.f === 'loops') html += '<div class="ac-shelf"><div class="ac-spines ac-loops">' + loops.map(function (a) { return spine('ambient', a.id, a.label, 'loop'); }).join('') + '</div><span class="ac-sl">Ambience · loops</span></div>';
+    var html = '<section class="ac-rack"><div class="ac-rs"><span class="ac-rlabel">Library</span><input type="search" class="ac-rq" placeholder="⌕ Search…" value="' + esc(mu.q) + '">' +
+      ['all', 'Tracks', 'Loops', 'Effects'].map(function (f) { var k = f.toLowerCase(); return '<button type="button" class="ac-rf' + (mu.f === k ? ' on' : '') + '" data-rf="' + k + '">' + (f === 'all' ? 'All' : f) + '</button>'; }).join('') +
+      '<span class="ac-rhint">' + (t ? 'Adding to <b>' + esc(t.name) + '</b>' : 'Open a tape to add to it') + '</span></div>';
+    if (mu.f === 'all' || mu.f === 'tracks') html += '<div class="ac-shelf"><div class="ac-spines">' + (tracks.length ? tracks.map(function (x) { return spine('track', x.track_id, x.title || x.url, T().fmt(x.duration) || '·:··'); }).join('') : '<span class="ac-rnone">' + (q ? 'No track matches.' : 'No tracks yet — upload one below.') + '</span>') + '</div><span class="ac-sl">Tracks</span></div>';
+    if (mu.f === 'all' || mu.f === 'loops') html += '<div class="ac-shelf"><div class="ac-spines ac-loops">' + loops.map(function (a) { return spine('ambient', a.id, a.label, '∞'); }).join('') + '</div><span class="ac-sl">Ambience · loops</span></div>';
     if (mu.f === 'all' || mu.f === 'effects') html += '<div class="ac-carts">' + carts.map(function (x) {
-      return '<button type="button" class="ac-cart' + (onTape(s, 'stinger', x.id) ? ' used' : '') + (mu.pop === 'stinger:' + x.id ? ' on' : '') + '" style="--c:' + CART[hash(x.id) % CART.length] + '" data-kind="stinger" data-ref="' + esc(x.id) + '">' + esc(x.label) + '</button>';
+      return '<button type="button" class="ac-cart' + (onTape(t, 'stinger', x.id) ? ' used' : '') + (mu.pop === 'stinger:' + x.id ? ' on' : '') + '" style="--c:' + CART[hash(x.id) % CART.length] + '" data-kind="stinger" data-ref="' + esc(x.id) + '">' + esc(x.label) + '</button>';
     }).join('') + '</div><div class="ac-sl2">Effects · cartridges</div>';
-    html += '<div class="ac-blank"><label class="ac-bt">⇪ Upload an .mp3<input type="file" accept="audio/mpeg,.mp3" hidden data-mu-file></label>' +
-      '<button type="button" class="ac-bt" data-mu="link">＋ Blank tape: a YouTube / SoundCloud link</button></div>' +
+    html += '<div class="ac-blank"><label class="ac-bt">⇪ Upload an .mp3 to the library<input type="file" accept="audio/mpeg,.mp3" hidden data-mu-file></label></div>' +
       (mu.upload ? '<form class="ac-upf" data-mu-upf><b>' + esc(mu.upload.name) + '</b><input placeholder="Title" value="' + esc(mu.upload.name.replace(/\.mp3$/i, '')) + '" data-mu-uptitle><button type="submit" class="ac-btn p">Upload</button><button type="button" class="ac-btn" data-mu="upcancel">Cancel</button></form>' : '') +
-      (M().uploadStatus() ? '<div class="ac-upst">' + esc(M().uploadStatus()) + '</div>' : '');
-    html += '</section></div>';
+      (m.uploadStatus() ? '<div class="ac-upst">' + esc(m.uploadStatus()) + '</div>' : '');
+    html += '</section>';
     shelf.innerHTML = html;
     if (mu.pop) drawPop();
   }
   function drawPop() {
-    var m = M(), s = A.session(), at = mu.pop.indexOf(':'), kind = mu.pop.slice(0, at), ref = mu.pop.slice(at + 1);
+    var m = M(), t = openTape(), at = mu.pop.indexOf(':'), kind = mu.pop.slice(0, at), ref = mu.pop.slice(at + 1);
     var el = shelf.querySelector('[data-kind="' + kind + '"][data-ref="' + CSS.escape(ref) + '"]');
     if (!el) { mu.pop = null; return; }
-    var t = kind === 'track' ? A.trackById(ref) : null;
-    var label = kind === 'track' ? (t ? t.title || t.url : ref) : m.label(kind, ref);
-    var used = onTape(s, kind, ref), url = A.soundUrl(kind, ref);
+    var tr = kind === 'track' ? A.trackById(ref) : null;
+    var label = kind === 'track' ? (tr ? tr.title || tr.url : ref) : m.label(kind, ref);
+    var used = onTape(t, kind, ref), url = A.soundUrl(kind, ref);
     var pop = document.createElement('div');
     pop.className = 'ac-pop';
-    pop.innerHTML = '<b>' + esc(label) + '</b><small>' + (kind === 'track' ? 'uploaded track' : kind === 'ambient' ? 'ambient loop' : 'effect') + '</small>' +
-      (s ? '<button type="button" class="ac-btn' + (used ? '' : ' p') + '" data-mu="tape">' + (used ? '✓ On the tape — take it off' : '＋ Add to ' + esc(s.name)) + '</button>' : '<button type="button" class="ac-btn" disabled>Choose a session to add it</button>') +
+    pop.innerHTML = '<b>' + esc(label) + '</b><small>' + (kind === 'track' ? 'track' + (tr && tr.duration ? ' · ' + T().fmt(tr.duration) : '') : kind === 'ambient' ? 'ambient loop' : 'effect') + '</small>' +
+      (t ? '<button type="button" class="ac-btn' + (used ? '' : ' p') + '" data-mu="tape">' + (used ? '✓ On ' + esc(t.name) + ' — take it off' : '＋ Add to ' + esc(t.name)) + '</button>' : '<button type="button" class="ac-btn" disabled>Open a tape to add it</button>') +
       (url ? '<button type="button" class="ac-btn" data-mu="hear">' + (A.previewing() === url ? '❚❚ Stop listening' : '🎧 Listen here') + '</button>' : '') +
       '<button type="button" class="ac-btn" data-mu="table">' + (kind === 'stinger' ? '⚡ Fire on the table' : kind === 'ambient' ? '≈ Layer on the table' : '▶ Play on the table') + '</button>' +
-      (kind === 'track' && t ? '<button type="button" class="ac-btn" data-mu="queue">+ Cue list</button>' +
-        (mu.renaming ? '<input class="vn-search" data-mu-name value="' + esc(t.title || '') + '"><button type="button" class="ac-btn p" data-mu="rename-ok">Save name</button>'
+      (kind === 'track' && tr ? (mu.renaming ? '<input class="vn-search" data-mu-name value="' + esc(tr.title || '') + '"><button type="button" class="ac-btn p" data-mu="rename-ok">Save name</button>'
           : '<button type="button" class="ac-btn" data-mu="rename">✎ Rename</button>') +
-        '<button type="button" class="ac-btn ac-del" data-mu="delete">✕ Delete</button>' : '');
+        '<button type="button" class="ac-btn ac-del" data-mu="delete">✕ Delete from the library</button>' : '');
     var box = el.getBoundingClientRect(), host = shelf.getBoundingClientRect();
     pop.style.left = Math.max(0, Math.min(box.left - host.left, host.width - 250)) + 'px';
     pop.style.top = (box.bottom - host.top + 6) + 'px';
     shelf.appendChild(pop);
   }
+  function addToOpen(kind, ref) {
+    var t = openTape(), m = M(), D = T();
+    if (!t) return;
+    if (kind === 'stinger') { D.update(t.id, { pads: onTape(t, kind, ref) ? t.pads.filter(function (x) { return x !== ref; }) : t.pads.concat([ref]) }); return; }
+    if (kind === 'ambient') { D.update(t.id, { loops: onTape(t, kind, ref) ? t.loops.filter(function (x) { return x !== ref; }) : t.loops.concat([ref]) }); return; }
+    if (onTape(t, kind, ref)) { D.update(t.id, { tracks: t.tracks.filter(function (x) { return !(x.kind === kind && x.ref === ref); }) }); return; }
+    var tr = A.trackById(ref);
+    D.update(t.id, { tracks: t.tracks.concat([{ kind: 'track', ref: ref, title: tr ? tr.title || tr.url : ref, dur: tr && tr.duration ? tr.duration : 0 }]) });
+  }
+
+  tapesEl.addEventListener('change', function (e) {
+    if (e.target.hasAttribute('data-mu-op')) { mu.op = e.target.value; drawTapes(); }
+  });
+  tapesEl.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var t = openTape(), D = T();
+    if (!t) return;
+    if (e.target.hasAttribute('data-mu-name-form')) { var nv = e.target.querySelector('[data-mu-tname]').value.trim(); mu.naming = false; if (nv) D.update(t.id, { name: nv }); else drawTapes(); return; }
+    if (e.target.hasAttribute('data-mu-link-form')) {
+      var u = e.target.querySelector('[data-mu-lurl]').value.trim(), ti = e.target.querySelector('[data-mu-ltitle]').value.trim();
+      mu.linking = false;
+      if (u) D.update(t.id, { tracks: t.tracks.concat([{ kind: 'link', ref: u, title: ti || u, dur: 0 }]) }); else drawTapes();
+    }
+  });
+  tapesEl.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-mu]');
+    if (!b) { var c = e.target.closest('.ac-tcard .cas'); if (c) { mu.open = c.closest('[data-tape]').getAttribute('data-tape'); drawTapes(); drawShelf(); } return; }
+    var D = T(), m = M(), a = b.getAttribute('data-mu'), card = b.closest('[data-tape]'), id = card ? card.getAttribute('data-tape') : mu.open, t = D.get(id);
+    switch (a) {
+      case 'open': mu.open = mu.open === id ? '' : id; mu.naming = false; mu.linking = false; drawTapes(); drawShelf(); return;
+      case 'insert': case 'insert-open': D.insert(id).catch(function (err) { A.ask((err && err.message) || String(err), 'OK', 'Close'); }); return;
+      case 'eject': D.eject(); return;
+      case 'new': {
+        var scope = b.getAttribute('data-scope'), op = D.operation(curOp()), cell = A.cell(curCell());
+        var name = scope === 'cell' ? (cell ? (cell.name || 'Cell') + ' · tape' : 'New tape') : (op ? op.name + ' · tape ' + (D.forOperation(op.operation_id).length + 1) : 'New tape');
+        D.create({ name: name, scope: scope, operation_id: scope === 'operation' ? curOp() : '', cell_id: scope === 'cell' ? curCell() : (op ? op.cell_id : curCell()) })
+          .then(function (nt) { mu.open = nt.id; mu.naming = true; drawTapes(); drawShelf(); var inp = tapesEl.querySelector('[data-mu-tname]'); if (inp) { inp.focus(); inp.select(); } });
+        return;
+      }
+      case 'rename-tape': mu.naming = true; drawTapes(); var ni = tapesEl.querySelector('[data-mu-tname]'); if (ni) { ni.focus(); ni.select(); } return;
+      case 'color': D.update(t.id, { color: b.getAttribute('data-c') }); return;
+      case 'link': mu.linking = true; drawTapes(); var li = tapesEl.querySelector('[data-mu-lurl]'); if (li) li.focus(); return;
+      case 't-up': { var i = +b.closest('[data-ti]').getAttribute('data-ti'), tr = t.tracks.slice(); tr.splice(i - 1, 0, tr.splice(i, 1)[0]); D.update(t.id, { tracks: tr }); return; }
+      case 't-rm': { var k = +b.closest('[data-ti]').getAttribute('data-ti'); D.update(t.id, { tracks: t.tracks.filter(function (x, n) { return n !== k; }) }); return; }
+      case 'l-rm': D.update(t.id, { loops: t.loops.filter(function (x) { return x !== b.getAttribute('data-id'); }) }); return;
+      case 'p-rm': D.update(t.id, { pads: t.pads.filter(function (x) { return x !== b.getAttribute('data-id'); }) }); return;
+      case 'del-tape': A.ask('Delete the tape “' + t.name + '”? The tracks stay in the library.', 'Delete', 'Keep it').then(function (yes) { if (yes) { if ((m.state().tape || {}).id === t.id) D.eject(); D.remove(t.id); mu.open = ''; drawTapes(); drawShelf(); } }); return;
+    }
+  });
+
   shelf.addEventListener('change', function (e) {
     if (!e.target.hasAttribute('data-mu-file')) return;
     mu.upload = e.target.files[0] || null;
@@ -177,37 +299,22 @@
     var q = shelf.querySelector('.ac-rq'); q.focus(); try { q.setSelectionRange(pos, pos); } catch (err) { /* search inputs */ }
   });
   shelf.addEventListener('click', function (e) {
-    var m = M(), s = A.session();
+    var m = M();
     var rf = e.target.closest('[data-rf]');
     if (rf) { mu.f = rf.getAttribute('data-rf'); mu.pop = null; drawShelf(); return; }
     var item = e.target.closest('[data-kind]');
     if (item) { var k = item.getAttribute('data-kind') + ':' + item.getAttribute('data-ref'); mu.pop = mu.pop === k ? null : k; mu.renaming = false; drawShelf(); return; }
     var b = e.target.closest('[data-mu]');
     if (!b) { if (mu.pop && !e.target.closest('.ac-pop')) { mu.pop = null; drawShelf(); } return; }
-    var a = b.getAttribute('data-mu'), row = b.closest('[data-i]');
-    if (a === 'rm' && s) { S().update(s.id, { tracks: s.tracks.filter(function (x, i) { return i !== +row.getAttribute('data-i'); }) }); return; }
-    if (a === 'up' && s) { var i = +row.getAttribute('data-i'), tr = s.tracks.slice(); tr.splice(i - 1, 0, tr.splice(i, 1)[0]); S().update(s.id, { tracks: tr }); return; }
-    if (a === 'rm-pad' && s) { S().toggleIn(s.id, 'pads', b.closest('[data-pad]').getAttribute('data-pad')); return; }
-    if (a === 'hear-tape' && s) { var tt = s.tracks[+row.getAttribute('data-i')]; A.preview(A.soundUrl(tt.kind, tt.ref)); return; }
-    if (a === 'link') { var u = document.querySelector('#ac-console [data-cc="url"]'); if (u) { u.scrollIntoView({ block: 'center' }); u.focus(); } return; }
+    var a = b.getAttribute('data-mu');
     if (a === 'upcancel') { mu.upload = null; drawShelf(); return; }
     if (!mu.pop) return;
     var at = mu.pop.indexOf(':'), kind = mu.pop.slice(0, at), ref = mu.pop.slice(at + 1);
     if (a === 'hear') { A.preview(A.soundUrl(kind, ref)); return; }
-    if (a === 'queue') { var qt = A.trackById(ref); if (qt) m.cue({ url: qt.url, title: qt.title, kind: 'audio' }); mu.pop = null; drawShelf(); return; }
     if (a === 'rename') { mu.renaming = true; drawShelf(); var ni = shelf.querySelector('[data-mu-name]'); if (ni) ni.focus(); return; }
     if (a === 'rename-ok') { var nv = shelf.querySelector('[data-mu-name]').value.trim(); if (nv) m.rename(ref, nv); mu.renaming = false; mu.pop = null; drawShelf(); return; }
     if (a === 'delete') { A.ask('Delete this track from the library? This cannot be undone.', 'Delete', 'Keep it').then(function (yes) { if (yes) { window.__acNoConfirm = true; m.remove(ref); window.__acNoConfirm = false; } }); mu.pop = null; drawShelf(); return; }
-    if (a === 'tape' && s) {
-      if (kind === 'stinger') S().toggleIn(s.id, 'pads', ref);
-      else {
-        var t = kind === 'track' ? A.trackById(ref) : null;
-        var entry = { kind: kind, ref: ref, title: kind === 'track' ? (t ? t.title || t.url : ref) : m.label('ambient', ref) };
-        S().toggleIn(s.id, 'tracks', entry, function (x, y) { return x.kind === y.kind && x.ref === y.ref; });
-      }
-      mu.pop = null;
-      return;
-    }
+    if (a === 'tape') { addToOpen(kind, ref); mu.pop = null; return; }
     if (a === 'table') {
       if (kind === 'stinger') m.fire(ref);
       else if (kind === 'ambient') m.setAmbient(ref, !(m.state().ambient || []).some(function (x) { return (x.id || x) === ref; }));
@@ -216,9 +323,18 @@
     }
   });
   var muOpen = false, muT = null;
-  function muSoon() { if (!muOpen) return; clearTimeout(muT); muT = setTimeout(drawShelf, 30); }
-  document.addEventListener('dg-acell-tab', function (e) { muOpen = e.detail.tab === 'music'; if (muOpen) drawShelf(); else mu.pop = null; });
-  ['dg-sessions', 'dg-acell-music', 'dg-acell-preview'].forEach(function (ev) { document.addEventListener(ev, muSoon); });
+  function muDraw() { drawTapes(); drawShelf(); }
+  function muSoon() { if (!muOpen) return; clearTimeout(muT); muT = setTimeout(muDraw, 30); }
+  document.addEventListener('dg-acell-tab', function (e) {
+    muOpen = e.detail.tab === 'music';
+    if (!muOpen) { mu.pop = null; return; }
+    T().load().then(function () {
+      if (!mu.open) { var first = T().forOperation(curOp())[0] || T().forCell(curCell())[0]; if (first) mu.open = first.id; }
+      muDraw();
+    }, function (err) { tapesEl.innerHTML = '<div class="ac-none">Could not load the tapes: ' + esc((err && err.message) || err) + '</div>'; });
+    muDraw();
+  });
+  ['dg-sessions', 'dg-acell-music', 'dg-acell-preview', 'dg-tapes'].forEach(function (ev) { document.addEventListener(ev, muSoon); });
 
   /* ════════ Notes: the vault ════════ */
   var noPanel = document.getElementById('panel-notes');
@@ -310,5 +426,5 @@
   document.addEventListener('dg-vault', function () { if (noOpen) { vs.loaded = true; drawVault(); } });
   document.addEventListener('dg-sessions', function () { if (noOpen) drawVault(); });
 
-  window.dgAcLibrary = { drawShelf: drawShelf, drawChips: drawChips, openNote: openNote };
+  window.dgAcLibrary = { drawShelf: drawShelf, drawTapes: drawTapes, openTape: function (id) { mu.open = id; muDraw(); }, drawChips: drawChips, openNote: openNote };
 })();

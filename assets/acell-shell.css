@@ -302,3 +302,67 @@ body[data-ac-mode="debrief"] .folder-body{ background:none; padding:0; }
 .ac-vdir.open > .ac-vdh{ color:var(--ac-ink); font-weight:700; }
 .ac-vdb{ padding:0 0 6px 18px; }
 .vn-file{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* ── Tapes (assets/acell-tapes.js): a cassette, the racks, the open tape ── */
+.cas{ position:relative; width:250px; height:160px; flex:none; border-radius:9px; background:linear-gradient(color-mix(in srgb,var(--shell,#2a2a2a) 100%,#fff 12%),var(--shell,#2a2a2a)); box-shadow:0 8px 16px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.15); cursor:pointer; font-family:'Courier Prime',monospace; }
+.cas-lab{ position:absolute; left:12px; right:12px; top:10px; height:96px; background:#f3ead0; border-radius:3px; padding:6px 9px; background-image:linear-gradient(transparent 22px,var(--stripe,#a3221c) 22px 26px,transparent 26px),repeating-linear-gradient(transparent 0 15px,#e2d6b2 15px 16px); }
+.cas-lab b{ display:block; font-family:'Reenie Beanie','Comic Sans MS','Marker Felt',cursive; font-weight:400; font-size:17px; line-height:16px; color:#1d2a6a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right:12px; }
+.cas-lab small{ position:absolute; right:8px; top:6px; font-size:10px; color:#8a7a5a; }
+.cas-meta{ position:absolute; left:9px; right:9px; top:27px; font-size:9.5px; color:#5a4e38; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cas-win{ position:absolute; left:62px; right:62px; top:60px; height:36px; background:#1b1b1b; border-radius:20px; border:2px solid #555; display:flex; align-items:center; justify-content:space-between; padding:0 5px; box-shadow:inset 0 2px 6px #000; }
+.cas-win i{ width:28px; height:28px; border-radius:50%; background:radial-gradient(circle,#ddd 0 3px,#222 4px 6px,#6b4a2a 7px 13px,#3a2414 14px); position:relative; }
+.cas-win i::after{ content:''; position:absolute; inset:4px; border-radius:50%; background:conic-gradient(transparent 0 50deg,rgba(255,255,255,.25) 50deg 62deg,transparent 62deg 170deg,rgba(255,255,255,.25) 170deg 182deg,transparent 182deg 290deg,rgba(255,255,255,.25) 290deg 302deg,transparent 302deg); }
+.cas.spin .cas-win i::after{ animation:pd-spin 2.4s linear infinite; }
+.cas-foot{ position:absolute; left:44px; right:44px; bottom:0; height:34px; background:rgba(0,0,0,.25); clip-path:polygon(8% 0,92% 0,100% 100%,0 100%); display:flex; justify-content:center; gap:34px; align-items:center; }
+.cas-foot u{ width:7px; height:7px; border-radius:50%; background:#111; }
+.cas-side{ position:absolute; left:16px; top:112px; font:700 15px Georgia,serif; color:#e9dfbf; }
+.cas-light .cas-side{ color:#2a2418; }
+.cas-chip{ position:absolute; right:14px; top:114px; font-size:10px; letter-spacing:.14em; background:#f2d98a; color:#2a2418; padding:1px 7px; border-radius:2px; }
+.cas-sm{ transform:scale(.72); transform-origin:top left; margin:0 -70px -45px 0; }
+.ac-tapes{ margin-bottom:18px; font-family:'Courier Prime',monospace; color:var(--ac-ink); }
+.ac-tcols{ display:grid; grid-template-columns:minmax(0,1fr) 330px; gap:20px; align-items:start; }
+.ac-lede{ color:var(--ac-ink2); font-size:13px; line-height:1.55; margin:4px 0 6px; max-width:70ch; }
+.ac-tsub{ display:flex; align-items:center; gap:10px; margin-top:16px; }
+.ac-tsub b{ font-weight:400; color:var(--ac-ink); letter-spacing:.1em; }
+.ac-opsel{ font:inherit; font-size:12.5px; letter-spacing:0; text-transform:none; background:var(--ac-paper); border:1px solid var(--ac-line); padding:5px 8px; color:var(--ac-ink); }
+.ac-track{ display:flex; flex-wrap:wrap; gap:18px; margin-top:8px; }
+.ac-tcard{ display:flex; flex-direction:column; gap:7px; }
+.ac-tcard.on .cas{ outline:3px solid #f2d98a; outline-offset:3px; }
+.ac-tacts{ display:flex; gap:6px; }
+.ac-tacts .ac-btn{ font-size:11px; padding:6px 10px; }
+.ac-tnew{ width:250px; height:160px; border:2px dashed #a8996f; border-radius:9px; background:none; color:var(--ac-ink3); font:inherit; font-size:12.5px; cursor:pointer; }
+.ac-tnew small{ font-size:11px; }
+.ac-topen{ background:var(--ac-paper); border:1px solid var(--ac-line); padding:14px 16px; position:sticky; top:12px; }
+.ac-ttitle{ font-family:'Special Elite',monospace; font-weight:400; font-size:19px; margin:0 0 6px; }
+.ac-tname, .ac-tlink{ display:flex; gap:6px; flex-wrap:wrap; margin:4px 0 8px; }
+.ac-tname .vn-search, .ac-tlink .vn-search{ flex:1 1 140px; width:auto; }
+.ac-tcolors{ display:flex; gap:6px; margin-bottom:4px; }
+.ac-sw{ width:20px; height:20px; border-radius:4px; border:2px solid transparent; cursor:pointer; padding:0; }
+.ac-sw.on{ border-color:#f2d98a; outline:1px solid var(--ac-ink); }
+.ac-tn{ width:18px; color:var(--ac-ink3); flex:none; }
+.ac-dur{ color:var(--ac-ink3); font-size:12px; flex:none; }
+.ac-tpads{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+.ac-tpad{ position:relative; aspect-ratio:1; border-radius:50%; background:#1f1a14; color:#e9dfbf; display:grid; place-items:center; text-align:center; font-size:9.5px; line-height:1.15; padding:4px; border:2px solid #6d6040; box-shadow:0 4px 0 #000; }
+.ac-tpad button{ position:absolute; right:-4px; top:-4px; width:18px; height:18px; border-radius:50%; border:0; background:#f3ead0; color:var(--ac-red); font-size:10px; cursor:pointer; padding:0; }
+.ac-rlabel{ color:#e9dfbf; font-size:10px; letter-spacing:.2em; text-transform:uppercase; }
+.ac-rhint{ margin-left:auto; color:#e9dfbf; font-size:11.5px; }
+.ac-rhint b{ font-weight:400; color:#f2d98a; }
+/* Spines: cassette cases on their side, a paper insert, the time at the foot */
+.ac-spn{ position:relative; flex:none; width:32px; height:var(--h,140px); background:var(--c,#3a3a3a); border:0; border-radius:2px 2px 0 0; padding:0; cursor:pointer; box-shadow:inset -3px 0 0 rgba(0,0,0,.25),inset 3px 0 0 rgba(255,255,255,.18),0 -1px 0 rgba(255,255,255,.1); writing-mode:horizontal-tb; transform:none; }
+.ac-spn::before{ content:''; position:absolute; left:5px; right:5px; top:8px; bottom:24px; background:#f3ead0; border-radius:1px; }
+.ac-spn span{ position:absolute; left:5px; right:5px; top:10px; bottom:26px; writing-mode:vertical-rl; transform:rotate(180deg); font-family:'Reenie Beanie','Comic Sans MS','Marker Felt',cursive; font-size:13px; line-height:22px; color:#1d2a6a; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; text-align:left; display:block; max-height:none; }
+.ac-spn em{ position:absolute; left:0; right:0; bottom:5px; text-align:center; font-style:normal; font-size:9px; font-weight:700; color:#fff; letter-spacing:0; }
+.ac-spn.on{ transform:translateY(-12px); outline:3px solid #f2d98a; }
+.ac-spn.used::after{ content:'●'; position:absolute; top:-12px; left:0; right:0; text-align:center; color:#f2d98a; font-size:9px; }
+@media (max-width:980px){ .ac-tcols{ grid-template-columns:minmax(0,1fr); } .ac-topen{ position:static; } }
+@media (max-width:720px){ .cas{ transform:scale(.8); transform-origin:top left; margin:0 -50px -32px 0; } .ac-tnew{ width:200px; height:128px; } }
+.ac-ptapes{ display:flex; flex-wrap:wrap; gap:12px; padding-top:8px; }
+.ac-ptape .ac-acts{ padding-top:2px; }
+
+/* ── The desk under every mode: the folder lies on the wood in Prep ── */
+body.folder-theme[data-ac-mode] .folder-wrap{ position:relative; z-index:1; }
+body.folder-theme[data-ac-mode] .ac-top{ position:relative; z-index:2; }
+body.folder-theme[data-ac-mode="prep"] .folder-wrap .folder{ filter:drop-shadow(0 18px 30px rgba(0,0,0,.6)); }
+body.folder-theme[data-ac-mode] footer.site-footer{ color:#b8a878; position:relative; z-index:1; }
+.cc-tt small{ float:right; color:var(--ac-ink3); margin-left:8px; }
+.cc-deckcas{ margin:2px 0 8px; height:116px; }

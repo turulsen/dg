@@ -233,7 +233,7 @@ def push_radio_now_playing(page, channel, data):
             l.success({ exists: data != null, data: function () { return data; } });
         }""",
         [channel, data],
-    )
+   )
 
 def push_radio_listener_error(page, channel):
     """Delivers a fake Firestore listener error (a transient miss --
@@ -246,7 +246,7 @@ def push_radio_listener_error(page, channel):
             l.error(new Error('fake transient listener error'));
         }""",
         channel,
-    )
+   )
 
 # ── Notes/Evidence-in-Notes Firestore listeners (notes/notes.js,
 # Firebase migration Phase 5) -- a more general stub than
@@ -697,7 +697,7 @@ def seed_cells_docs(page, cells_list):
         docs["cells/" + cell_id] = data
     page.add_init_script(
         "window.__dgFirestoreDocs = Object.assign(window.__dgFirestoreDocs || {}, " + json.dumps(docs) + ");"
-    )
+   )
 
 def seed_characters_docs(page, characters_list):
     """Seeds the `characters/{agentCode}` doc store directly, for
@@ -711,7 +711,7 @@ def seed_characters_docs(page, characters_list):
         docs["characters/" + c["agent_code"]] = {"character_json": json.dumps({"bio": {"name": c["name"]}})}
     page.add_init_script(
         "window.__dgFirestoreDocs = Object.assign(window.__dgFirestoreDocs || {}, " + json.dumps(docs) + ");"
-    )
+   )
 
 def notes_firestore_listener_count(page):
     return page.evaluate("() => (window.__dgFirestoreListeners || []).length")
@@ -778,7 +778,7 @@ def push_firestore_snapshot(page, path, wheres, docs):
             });
         }""",
         [path, wheres, docs],
-    )
+   )
 
 def push_firestore_doc_snapshot(page, path, exists, data=None):
     """Delivers a fake single-document Firestore snapshot (characters/{code}
@@ -796,7 +796,7 @@ def push_firestore_doc_snapshot(page, path, exists, data=None):
             matches.forEach(function (match) { match.success({ exists: exists, data: function () { return data; } }); });
         }""",
         [path, exists, data],
-    )
+   )
 
 def _open_appearance(page):
     """v2: on Agent Hub the Appearance form drops down from the button
@@ -2296,8 +2296,9 @@ def test_acell_sheet_loads_once_when_opened(p):
     # deleted_agents is read only by the Sheet tab (Recently Deleted).
     record("acell", "an A-Cell page load sends none of the Sheet tab's reads until the Sheet is opened",
            fs_queries(page, "deleted_agents") == 0, fs_queries(page, "deleted_agents"))
+    # Two readers, once each: Evidence's folders and the tapes (dgTapes.load).
     record("acell", "Evidence's folder lists load once per A-Cell visit, not again after the silent Handler sign-in",
-           fs_queries(page, "operations") == 1, fs_queries(page, "operations"))
+           fs_queries(page, "operations") == 2, fs_queries(page, "operations"))
     page.click('.tw[data-tab="sheet"]')
     wait_for_condition(lambda: "Owen Castillo" in page.inner_text("#sheet-wrap"), timeout_ms=6000)
     row = page.inner_text("#sheet-wrap")
@@ -3993,7 +3994,7 @@ def acell_cell_fixture():
         "briefs/MARA-KS01": {"char_name": "Mara Kessler"}, "briefs/TOMA-RY02": {"char_name": "Tomas Reyes"},
         "briefs/ILSE-VR03": {"char_name": "Ilse Varga", "codename": "Kite", "face_plate_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="}, "briefs/WEND-PR04": {"char_name": "Wendell Price"},
         "cells/cell_osiris": {"name": "Osiris", "member_codes": ["MARA-KS01", "TOMA-RY02", "ILSE-VR03", "WEND-PR04"], "channel": "3"},
-        "sessions/sess_4": {"name": "Session 4 — The lighthouse", "cell_id": "cell_osiris", "date": "2026-11-01", "state": "prep",
+        "sessions/sess_4": {"name": "Session 4 — The lighthouse", "cell_id": "cell_osiris", "operation_id": "op_pl", "date": "2026-11-01", "state": "prep",
                             "note_path": "Pale Lantern/Session 4.md", "evidence": ["ev_log"], "tracks": [{"kind": "ambient", "ref": "drone-low", "title": "Drone: Low"}],
                             "pads": ["scream-01", "impact-ghost"], "npcs": [{"name": "Keeper", "dex": 14}], "quick_notes": [], "away": [], "created_at": 1, "updated_at": 1},
         "vault/" + "UGFsZSBMYW50ZXJuL1Nlc3Npb24gNC5tZA": {"path": "Pale Lantern/Session 4.md", "content":
@@ -4002,7 +4003,12 @@ def acell_cell_fixture():
         "evidence/ev_tide": {"evidence_id": "ev_tide", "title": "Tide chart", "body": "", "cell_id": "cell_osiris", "operation_id": "", "released": True, "restricted_to": []},
         "evidence/ev_ledger": {"evidence_id": "ev_ledger", "title": "Ainsley's ledger", "body": "", "cell_id": "cell_osiris", "operation_id": "", "released": False, "restricted_to": []},
         "evidence_seen/MARA-KS01_ev_tide": {"agent_code": "MARA-KS01", "evidence_id": "ev_tide", "seen_at": 1},
-        "tracks/trk_1": {"track_id": "trk_1", "title": "Tension Rising", "url": "https://example.invalid/t.mp3", "uploaded_at": 1},
+        "tracks/trk_1": {"track_id": "trk_1", "title": "Tension Rising", "url": "https://example.invalid/t.mp3", "uploaded_at": 1, "duration": 182},
+        "tracks/trk_2": {"track_id": "trk_2", "title": "Lighthouse at Dusk", "url": "https://example.invalid/d.mp3", "uploaded_at": 2, "duration": 381},
+        "operations/op_pl": {"operation_id": "op_pl", "name": "Pale Lantern", "cell_id": "cell_osiris", "created_at": 1},
+        "tapes/tape_dread": {"name": "Lighthouse · dread", "color": "#2a2a2a", "scope": "operation", "operation_id": "op_pl", "cell_id": "cell_osiris",
+                             "tracks": [{"kind": "track", "ref": "trk_2", "title": "Lighthouse at Dusk", "dur": 381}, {"kind": "track", "ref": "trk_1", "title": "Tension Rising", "dur": 182}],
+                             "loops": ["drone-low"], "pads": ["scream-01", "impact-ghost", "whispers-dark"], "created_at": 1, "updated_at": 1},
     }
     return docs
 
@@ -4082,6 +4088,7 @@ def test_acell_shell(p):
     page.click("[data-pb=players] .ac-row[data-code=WEND-PR04] [data-ac=away]")
     wait_for_condition(lambda: _sess(page).get("away") == ["WEND-PR04"], timeout_ms=4000)
     record("acell-shell", "☾ marks an Agent away tonight (sessions/{id}.away)", _sess(page).get("away") == ["WEND-PR04"], str(_sess(page).get("away")))
+    wait_for_condition(lambda: "away tonight" in page.inner_text("[data-pb=players] .ac-row[data-code=WEND-PR04]"), timeout_ms=3000)
     record("acell-shell", "…and their row says so", "away tonight" in page.inner_text("[data-pb=players] .ac-row[data-code=WEND-PR04]"), "")
 
     wait_for_condition(lambda: page.locator("[data-pb=notes] .vn-body").count() > 0 and "keeper" in page.inner_text("[data-pb=notes]").lower(), timeout_ms=5000)
@@ -4103,7 +4110,7 @@ def test_acell_shell(p):
     record("acell-shell", "released evidence says who hasn't seen it (evidence_seen)",
            "not seen by Reyes, Varga, Price" in page.inner_text("[data-pb=evidence]"), page.inner_text("[data-pb=evidence]")[:400])
     mu = page.inner_text("[data-pb=music]")
-    record("acell-shell", "Music & effects: the session's loop and its pads", "Drone: Low" in mu and "Scream 01" in mu and "Impact: Ghost" in mu, mu[:200])
+    record("acell-shell", "Music & effects: the operation's tapes, one tap from the deck", "Lighthouse · dread" in mu and "2 tracks · 9:23" in mu and page.locator("[data-pb=music] [data-ac=tape-in]").count() == 1, mu[:200])
 
     # Swap the Players and Notes panels by dragging Players' grip onto Notes.
     page.evaluate("() => window.scrollTo(0, 0)")
@@ -4160,20 +4167,37 @@ def test_acell_library(p):
 
     page.click("#acell-tab-strip .tw[data-tab=music]")
     push_collection(page, "tracks") if page.evaluate("() => (window.__dgFirestoreListeners || []).some(l => l.path === 'tracks')") else None
-    wait_for_condition(lambda: page.locator("#ac-shelf .ac-spn[data-kind=track]").count() == 1, timeout_ms=5000)
-    record("acell-library", "the shelf: uploaded tracks and the seven loops as spines, effects as cartridges",
-           page.locator("#ac-shelf .ac-spn[data-kind=ambient]").count() == 7 and page.locator("#ac-shelf .ac-cart").count() > 10, "")
-    record("acell-library", "what's on the session's tape is marked on the shelf",
+    wait_for_condition(lambda: page.locator("#ac-shelf .ac-spn[data-kind=track]").count() == 2, timeout_ms=5000)
+    record("acell-library", "the shelf: tracks (their time on the spine), the seven loops, effects as cartridges",
+           page.locator("#ac-shelf .ac-spn[data-kind=ambient]").count() == 7 and page.locator("#ac-shelf .ac-cart").count() > 10
+           and page.inner_text("#ac-shelf .ac-spn[data-ref=trk_1] em") == "3:02", page.inner_text("#ac-shelf .ac-spn[data-ref=trk_1]"))
+    wait_for_condition(lambda: page.locator("#ac-tapes .ac-tcard").count() == 1, timeout_ms=5000)
+    record("acell-library", "Tapes: the session's operation's tape, opened, on its rack",
+           "Lighthouse · dread" in page.inner_text("#ac-tapes .ac-tcard") and "Lighthouse · dread" in page.inner_text("#ac-tapes .ac-topen") and "9:23" in page.inner_text("#ac-tapes .ac-topen"), page.inner_text("#ac-tapes")[:300])
+    record("acell-library", "what's on the open tape is marked on the shelf",
            "used" in page.get_attribute("#ac-shelf .ac-spn[data-ref=drone-low]", "class") and "used" in page.get_attribute("#ac-shelf .ac-cart[data-ref=scream-01]", "class"), "")
-    page.click("#ac-shelf .ac-spn[data-kind=track]")
+    page.click("#ac-tapes [data-mu=new][data-scope=operation]")
+    page.wait_for_selector("#ac-tapes [data-mu-tname]", timeout=4000)
+    page.fill("#ac-tapes [data-mu-tname]", "Harbour · calm")
+    page.press("#ac-tapes [data-mu-tname]", "Enter")
+    wait_for_condition(lambda: any((w.get("data") or {}).get("name") == "Harbour · calm" for w in fs_writes(page, "tapes/")), timeout_ms=4000)
+    wait_for_condition(lambda: "Harbour · calm" in page.inner_text("#ac-tapes .ac-topen"), timeout_ms=3000)
+    new = [w for w in fs_writes(page, "tapes/") if (w.get("data") or {}).get("scope") == "operation" and w["path"] != "tapes/tape_dread"]
+    record("acell-library", "+ New blank tape makes a tape for the operation, named, and opens it",
+           bool(new) and new[0]["data"].get("operation_id") == "op_pl" and "Harbour · calm" in page.inner_text("#ac-tapes .ac-topen"), str(new[:1])[:300])
+    tid = new[0]["path"].split("/")[1] if new else ""
+    page.click("#ac-shelf .ac-spn[data-ref=trk_1]")
     page.click("#ac-shelf .ac-pop [data-mu=tape]")
-    wait_for_condition(lambda: any(t.get("ref") == "trk_1" for t in _sess(page).get("tracks") or []), timeout_ms=4000)
-    record("acell-library", "a track from the shelf goes on the session's tape",
-           any(t.get("ref") == "trk_1" and t.get("kind") == "track" and t.get("title") == "Tension Rising" for t in _sess(page).get("tracks") or []), str(_sess(page).get("tracks")))
+    wait_for_condition(lambda: any(t.get("ref") == "trk_1" for t in (fs_doc(page, "tapes/" + tid) or {}).get("tracks") or []), timeout_ms=4000)
+    tr = (fs_doc(page, "tapes/" + tid) or {}).get("tracks") or []
+    record("acell-library", "a track from the shelf goes on the open tape, with its time", tr and tr[0].get("title") == "Tension Rising" and tr[0].get("dur") == 182, str(tr))
+    page.click("#ac-shelf .ac-spn[data-ref=haunted]")
+    page.click("#ac-shelf .ac-pop [data-mu=tape]")
     page.click("#ac-shelf .ac-cart[data-ref=scream-02]")
     page.click("#ac-shelf .ac-pop [data-mu=tape]")
-    wait_for_condition(lambda: "scream-02" in (_sess(page).get("pads") or []), timeout_ms=4000)
-    record("acell-library", "a cartridge becomes one of the session's effect pads", "scream-02" in (_sess(page).get("pads") or []), str(_sess(page).get("pads")))
+    wait_for_condition(lambda: "scream-02" in ((fs_doc(page, "tapes/" + tid) or {}).get("pads") or []), timeout_ms=4000)
+    d = fs_doc(page, "tapes/" + tid) or {}
+    record("acell-library", "a loop goes under it, a cartridge becomes one of its pads", d.get("loops") == ["haunted"] and d.get("pads") == ["scream-02"], str(d)[:300])
     page.click("#ac-shelf .ac-cart[data-ref=impact-ghost]")
     page.click("#ac-shelf .ac-pop [data-mu=table]")
     wait_for_condition(lambda: any(any(s.get("id") == "impact-ghost" for s in (w.get("data") or {}).get("stingers") or []) for w in fs_writes(page, "radio/")), timeout_ms=4000)
@@ -4255,6 +4279,21 @@ def test_acell_play_desk(p):
            [c.split(" ")[0] for c in cards] == ["KESSLER", "KEEPER", "REYES", "VARGA", "PRICE"], str(cards))
     page.click(".pd-next")
     record("acell-play", "Next ▸ moves the turn on", "REYES" not in page.inner_text(".pd-ic.now") and "KEEPER" in page.inner_text(".pd-ic.now"), page.inner_text(".pd-ic.now"))
+    page.click(".pd-ic.add")
+    page.fill(".pd-npcf input[name=n]", "Ruth")
+    page.fill(".pd-npcf input[name=d]", "9")
+    page.fill(".pd-npcf input[name=hp]", "10")
+    page.fill(".pd-npcf input[name=wp]", "8")
+    page.click(".pd-npcf button")
+    wait_for_condition(lambda: any(n.get("name") == "Ruth" for n in _sess(page).get("npcs") or []), timeout_ms=4000)
+    ruth = [n for n in _sess(page).get("npcs") or [] if n.get("name") == "Ruth"]
+    record("acell-play", "an NPC is added with DEX, HP and WP (SAN left blank)", ruth and ruth[0] == {"name": "Ruth", "dex": 9, "hp": 10, "wp": 8}, str(ruth))
+    wait_for_condition(lambda: "HP 10 · WP 8" in page.inner_text(".pd-initiative"), timeout_ms=3000)
+    record("acell-play", "the NPC's card shows the vitals given", "HP 10 · WP 8" in page.inner_text(".pd-initiative"), page.inner_text(".pd-initiative"))
+    page.locator(".pd-ic.npc").filter(has_text="RUTH").locator("[data-pd=npc-edit]").click()
+    page.click(".pd-npced [data-k=hp][data-d='-1']")
+    wait_for_condition(lambda: any(n.get("name") == "Ruth" and n.get("hp") == 9 for n in _sess(page).get("npcs") or []), timeout_ms=4000)
+    record("acell-play", "✎ on the card, then − takes a point of HP off", any(n.get("name") == "Ruth" and n.get("hp") == 9 for n in _sess(page).get("npcs") or []), str(_sess(page).get("npcs")))
 
     tabs = page.eval_on_selector_all(".pd-tab", "els => els.map(e => e.innerText)")
     record("acell-play", "the notebook has a tab per ## scene (and the opening, and the whole note)",
@@ -4296,20 +4335,38 @@ def test_acell_play_desk(p):
 
     page.click("#ac-tools [data-tool=arrange]")
     record("acell-play", "✥ Arrange shows the drawer and each object's grip", page.is_visible(".pd-drawer") and page.locator(".pd-grip").count() == 8, "")
-    g = page.locator(".pd-o[data-o=pads] .pd-grip").bounding_box()
-    t = page.locator(".pd-o[data-o=deck]").bounding_box()
-    page.mouse.move(g["x"] + 3, g["y"] + 3); page.mouse.down()
-    page.mouse.move(t["x"] + t["width"] / 2, t["y"] + t["height"] / 2, steps=6); page.mouse.up()
-    lay = page.evaluate("() => JSON.parse(localStorage.getItem('dg_acell_desk_v2') || '{}')")
-    record("acell-play", "dragging an object onto another swaps them, kept on the device",
-           lay.get("cols", [[], [], []])[2][:1] == ["pads"] and "deck" in lay.get("cols", [[], [], []])[2], str(lay))
-    # On a touch screen: tap a title bar, then tap where it goes.
+    def cell_xy(cx, cy):
+        g = page.locator(".pd-grid").bounding_box()
+        cw = (g["width"] - 12 * 11) / 12
+        return g["x"] + cx * (cw + 12) + cw / 2, g["y"] + cy * (58 + 12) + 29
+    lay3 = lambda: page.evaluate("() => JSON.parse(localStorage.getItem('dg_acell_desk_v3') || '{}')").get("items", {})
+    # Drag the pads by their title bar to an empty spot lower down.
+    b = page.locator(".pd-o[data-o=pads] .pd-oh").bounding_box()
+    tx, ty = cell_xy(10, 9)
+    page.mouse.move(b["x"] + 10, b["y"] + 8); page.mouse.down()
+    page.mouse.move(tx, ty, steps=8)
+    record("acell-play", "while dragging, a green outline shows where it lands", page.is_visible(".pd-ghost"), "")
+    page.mouse.up()
+    it = lay3()
+    record("acell-play", "dragging a title bar puts the object at that spot on the grid, kept on the device (a small object stays small)",
+           it.get("pads", {}).get("y", 0) >= 8 and it.get("pads", {}).get("w") == 2 and it.get("pads", {}).get("h") == 3, str(it.get("pads")))
+    # Size the tape deck from its yellow corner: two columns wider, a row taller.
+    p0 = it["deck"]
+    rz = page.locator(".pd-o[data-o=deck] .pd-rz").bounding_box()
+    ex, ey = cell_xy(p0["x"] + p0["w"] + 1, p0["y"] + p0["h"])
+    page.mouse.move(rz["x"] + 8, rz["y"] + 8); page.mouse.down(); page.mouse.move(ex, ey, steps=8); page.mouse.up()
+    it = lay3()
+    record("acell-play", "dragging the corner sizes it (what it now covers moves down)", it["deck"]["w"] == p0["w"] + 2 and it["deck"]["h"] == p0["h"] + 1, str(it["deck"]))
+    record("acell-play", "nothing overlaps after a move or a resize",
+           not any(a != c and it[a]["x"] < it[c]["x"] + it[c]["w"] and it[c]["x"] < it[a]["x"] + it[a]["w"] and it[a]["y"] < it[c]["y"] + it[c]["h"] and it[c]["y"] < it[a]["y"] + it[a]["h"] for a in it for c in it), str(it))
+    # On a touch screen: tap a title bar, then tap the cell it should start at.
     page.click(".pd-o[data-o=evidence] .pd-oh")
     record("acell-play", "tapping an object's title bar picks it up", "pd-picked" in page.get_attribute(".pd-o[data-o=evidence]", "class") and "tap where" in page.inner_text(".pd-pickt"), "")
-    page.click(".pd-o[data-o=dossiers]", position={"x": 60, "y": 120})
-    lay = page.evaluate("() => JSON.parse(localStorage.getItem('dg_acell_desk_v2') || '{}')")
-    record("acell-play", "…and tapping another object puts it there (they swap)",
-           lay.get("cols", [[]])[0][:1] == ["evidence"] and "dossiers" in lay.get("cols", [[], [], []])[2], str(lay))
+    ev0 = lay3()["evidence"]
+    gx, gy = cell_xy(0, 20) if False else cell_xy(9, ev0["y"] + 6)
+    page.mouse.click(gx, gy)
+    it = lay3()
+    record("acell-play", "…and tapping the grid puts it there", it["evidence"]["y"] == ev0["y"] + 6, str(ev0) + " -> " + str(it.get("evidence")))
     page.click(".pd-o[data-o=initiative] [data-pd=away]")
     record("acell-play", "✕ puts an object away; the drawer brings it back",
            page.locator(".pd-o[data-o=initiative]").count() == 0 and page.locator(".pd-drawer [data-id=initiative]").count() == 1, "")
@@ -4406,9 +4463,11 @@ def test_acell_console(p):
     page, errs = open_acell_shell(p, storage={"dg_acell_classic_open": "0"})
     page.click("#acell-tab-strip .tw[data-tab=music]")
     page.wait_for_selector("#ac-console .cc-deck", timeout=6000)
-    record("acell-console", "the control center leads the Music tab; the classic desk is folded under the shelf",
+    if wait_for_condition(lambda: page.evaluate("() => (window.__dgFirestoreListeners || []).some(l => l.path === 'tracks')"), timeout_ms=4000):
+        push_collection(page, "tracks")
+    record("acell-console", "the Music tab: tapes, then the library shelves, then the control center; the classic desk folded at the foot",
            page.is_visible("#ac-console .cc-scr") and not page.evaluate("() => document.getElementById('ac-classic').open")
-           and page.evaluate("() => { var c = document.getElementById('ac-console'), sh = document.getElementById('ac-shelf'), d = document.getElementById('ac-classic'); return !!(c.compareDocumentPosition(sh) & 4) && !!(sh.compareDocumentPosition(d) & 4); }"), "")
+           and page.evaluate("() => { var t = document.getElementById('ac-tapes'), sh = document.getElementById('ac-shelf'), c = document.getElementById('ac-console'), d = document.getElementById('ac-classic'); return !!(t.compareDocumentPosition(sh) & 4) && !!(sh.compareDocumentPosition(c) & 4) && !!(c.compareDocumentPosition(d) & 4); }"), "")
     wait_for_condition(lambda: "on" in (page.get_attribute("#ac-console .cc-ch[data-ch='3']", "class") or ""), timeout_ms=4000)
     record("acell-console", "it tunes to the session's Cell's channel", "on" in (page.get_attribute("#ac-console .cc-ch[data-ch='3']", "class") or ""), "")
     page.click("#ac-console .cc-ch[data-ch='2']")
@@ -4434,9 +4493,14 @@ def test_acell_console(p):
     page.eval_on_selector("#ac-console [data-cc=mix-ambient]", "el => { el.value = 40; el.dispatchEvent(new Event('input', { bubbles: true })); }")
     wait_for_condition(lambda: (fs_doc(page, "radio/2") or {}).get("ambient_volume") == 40, timeout_ms=4000)
     record("acell-console", "the mixer sets the ambience level for everyone", (fs_doc(page, "radio/2") or {}).get("ambient_volume") == 40, "")
-    page.click("#ac-console [data-cc=tape][data-i='0']")
+    page.click("#ac-console [data-cc=insert][data-id=tape_dread]")
     wait_for_condition(lambda: any(l.get("id") == "drone-low" for l in (fs_doc(page, "radio/2") or {}).get("ambient_layers") or []), timeout_ms=4000)
-    record("acell-console", "the session's loop plays from its tape", any(l.get("id") == "drone-low" for l in (fs_doc(page, "radio/2") or {}).get("ambient_layers") or []), "")
+    r2 = fs_doc(page, "radio/2") or {}
+    record("acell-console", "putting the operation's tape in: it's named on the channel, track 1 plays (no loop: the list carries on), its loop comes in",
+           (r2.get("tape") or {}).get("id") == "tape_dread" and r2.get("track_title") == "Lighthouse at Dusk" and r2.get("loop") is False
+           and any(l.get("id") == "drone-low" for l in r2.get("ambient_layers") or []), str(r2)[:300])
+    wait_for_condition(lambda: "Lighthouse at Dusk" in page.inner_text("#ac-console [data-cc=cues]"), timeout_ms=3000)
+    record("acell-console", "its tracks become the cue list, auto-advance on", "Lighthouse at Dusk" in page.inner_text("#ac-console [data-cc=cues]") and "Tension Rising" in page.inner_text("#ac-console [data-cc=cues]") and page.is_checked("#ac-console [data-cc=auto]"), page.inner_text("#ac-console [data-cc=cues]"))
     push_firestore_doc_snapshot(page, "radio/2", True, fs_doc(page, "radio/2"))
     wait_for_condition(lambda: page.locator("#ac-console [data-cc=live] .cc-row[data-kind=ambient]").count() == 1, timeout_ms=4000)
     record("acell-console", "On air now lists it", "Drone: Low" in page.inner_text("#ac-console [data-cc=live]"), page.inner_text("#ac-console [data-cc=live]"))
@@ -7136,7 +7200,7 @@ def test_shell_nav_tracks_in_page_navigation(p):
         "#dg-shell-content",
         "el => { var a = el.contentDocument.querySelector('a[href*=\"?recruit=\"]'); "
         "if (a) { a.target = ''; } return a && a.getAttribute('href'); }"
-    )
+   )
     if not agent_file_href:
         record("shell", "found an in-page Recruit link to click (roster has at least one Agent)", False, "no roster link found")
         record("shell", "no JS exceptions", len(errs) == 0, "; ".join(errs))
