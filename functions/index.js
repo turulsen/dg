@@ -465,13 +465,21 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
     const db = getFirestore();
     const cfgRef = db.collection('vault_meta').doc('config');
     const cfg = (await cfgRef.get()).data() || {};
-    const want = String(cfg.key || ''), got = String(body.key || '');
+    // The key in the body, or (a Shortcut sending the list itself) a header or ?key=.
+    const want = String(cfg.key || ''), got = String((!Array.isArray(body) && body.key) || req.get('x-sync-key') || (req.query && req.query.key) || '');
     const ok = want.length >= 16 && got.length === want.length && crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want));
     if (!ok) { res.status(403).json({ status: 'ERROR', message: 'Wrong sync key. Copy it again from A-Cell → Notes vault.' }); return; }
-    const files = Array.isArray(body.files) ? body.files : [];
+    // The list as Shortcuts sends it: an array; the array as JSON text; a
+    // dictionary of items; or the whole body as the list.
+    let files = Array.isArray(body) ? body : body.files;
+    if (typeof files === 'string') { try { files = JSON.parse(files); } catch (e) { files = []; } }
+    if (files && !Array.isArray(files) && typeof files === 'object') files = (files.path || files.text) ? [files] : Object.values(files);
+    if (!Array.isArray(files)) files = [];
+    const received = { body: Array.isArray(body) ? 'list' : typeof body, keys: Array.isArray(body) ? [] : Object.keys(body).slice(0, 8), files: Array.isArray(body) ? 'list' : (Array.isArray(body.files) ? 'list of ' + body.files.length : typeof body.files), content_type: req.get('content-type') || '' };
     if (files.length > 3000) { res.status(413).json({ status: 'ERROR', message: 'Too many files (over 3000).' }); return; }
     const clean = [];
-    for (const f of files) {
+    for (let f of files) {
+      if (typeof f === 'string') { try { f = JSON.parse(f); } catch (e) { continue; } }
       if (!f || typeof f !== 'object') continue;
       const text = String(f.text == null ? '' : f.text);
       if (text.length > 900000) continue;
@@ -516,6 +524,7 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
     }
     await flush();
     const summary = Object.assign({}, out.stats, { held_removals: held, too_big: tooBig, files: clean.length, at: now });
+    if (!clean.length) summary.received = received;
     await cfgRef.set({ last_sync: summary }, { merge: true });
     logger.info('vaultSync', summary);
     res.json({ status: 'OK', write: out.write, stats: summary });
