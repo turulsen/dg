@@ -6655,7 +6655,8 @@
   var AUTO_ADVANCE_KEY = 'dg_acell_autoadvance';
   var autoAdvanceInput = document.getElementById('music-autoadvance-input');
   var autoAdvanceEnabled = false;
-  try { autoAdvanceEnabled = localStorage.getItem(AUTO_ADVANCE_KEY) === '1'; } catch (e) { /* best effort */ }
+  // On unless the Handler switched it off on this device (v3.12.0).
+  try { autoAdvanceEnabled = localStorage.getItem(AUTO_ADVANCE_KEY) !== '0'; } catch (e) { autoAdvanceEnabled = true; }
   autoAdvanceInput.checked = autoAdvanceEnabled;
 
   function maybeAutoAdvance_() {
@@ -6664,7 +6665,8 @@
     for (var i = 0; i < playlist.length; i++) {
       if (playlist[i].url === current.track_url) { idx = i; break; }
     }
-    if (idx === -1 || playlist.length < 2) return;
+    // The last track goes round to the first (a one-track list replays it).
+    if (idx === -1) return;
     var next = playlist[(idx + 1) % playlist.length];
     setNowPlaying(next.url, next.title || '', next.kind || '', false);
   }
@@ -7304,6 +7306,7 @@
   // For the Play desk's tape deck and pads and the Music tab's shelf
   // (assets/acell-play.js, acell-shell.js): the same broadcast engine.
   function musicChanged_() { document.dispatchEvent(new CustomEvent('dg-acell-music')); }
+  function defaultLoop_(url) { return !(autoAdvanceEnabled && playlist.some(function (p) { return p.url === url; })); }
   function stopAllSounds_() {
     var ch = currentChannel;
     return ensureHandlerSignedIn().then(function () {
@@ -7326,7 +7329,9 @@
     ambientList: function () { return AMBIENT_LAYERS.slice(); },
     stingerGroups: function () { return STINGER_GROUPS; },
     label: function (kind, id) { return kind === 'ambient' ? ambientLabel_(id) : stingerLabel_(id); },
-    play: function (t) { setNowPlaying(t.url, t.title || '', t.kind || '', !!t.loop); },
+    // A track loops unless it's on the cue list with auto-advance on (then
+    // the list carries on, round to the first) -- or the caller says.
+    play: function (t) { setNowPlaying(t.url, t.title || '', t.kind || '', t.loop === undefined ? defaultLoop_(t.url) : !!t.loop); },
     togglePause: function () { if (current.track_url) sendTransportAction_(current.paused ? 'resume_now_playing' : 'pause_now_playing'); },
     restart: function () { if (current.track_url) setNowPlaying(current.track_url, current.track_title, current.track_kind, current.loop); },
     stop: function () { setNowPlaying('', ''); },
@@ -7352,11 +7357,12 @@
       var sl = which === 'ambient' ? mixAmbientSlider : mixTrackSlider;
       sl.value = v; sl.dispatchEvent(new Event('input'));
     },
-    playLink: function (url, title, loop) { if (url) setNowPlaying(url, title || '', '', !!loop); },
+    playLink: function (url, title, loop) { if (url) setNowPlaying(url, title || '', '', loop === undefined ? defaultLoop_(url) : !!loop); },
     cueList: function () { return playlist.slice(); },
     cue: function (t) { playlist.push({ url: t.url, title: t.title || '', kind: t.kind || '' }); renderPlaylist(); savePlaylist(); musicChanged_(); },
     uncue: function (i) { playlist.splice(i, 1); renderPlaylist(); savePlaylist(); musicChanged_(); },
-    playCue: function (i) { var t = playlist[i]; if (t) setNowPlaying(t.url, t.title || '', t.kind || '', false); },
+    playCue: function (i) { var t = playlist[i]; if (t) setNowPlaying(t.url, t.title || '', t.kind || '', !autoAdvanceEnabled); },
+    defaultLoop: function (url) { return defaultLoop_(url); },
     autoAdvance: function (on) {
       if (on === undefined) return autoAdvanceEnabled;
       autoAdvanceInput.checked = !!on; autoAdvanceInput.dispatchEvent(new Event('change')); musicChanged_();

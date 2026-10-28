@@ -241,7 +241,7 @@
     var m = M();
     if (t.kind === 'ambient') { m.setAmbient(t.ref, !(m.state().ambient || []).some(function (x) { return x.id === t.ref; })); return; }
     var url = t.kind === 'track' ? (A.trackById(t.ref) || {}).url : t.ref;
-    if (url) m.play({ url: url, title: t.title, kind: 'audio', loop: false });
+    if (url) m.play({ url: url, title: t.title, kind: 'audio' });
   }
   function drawDeck(s) {
     var el = ob('deck'), m = M();

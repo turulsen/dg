@@ -270,3 +270,26 @@ body[data-ac-mode="debrief"] .folder-body{ background:none; padding:0; }
 @media (max-width:980px){ .cc{ grid-template-columns:minmax(0,1fr); } }
 .ac-paperpic{ width:100%; height:100%; }
 .ac-paperpic img{ width:100%; height:100%; object-fit:cover; display:block; }
+
+/* ── The index on a phone: one button, a grid of tabs under it ── */
+.ac-index-btn{ display:none; }
+#acell-tab-strip .tw-ic{ display:none; font-style:normal; }
+@media (max-width:720px){
+  .ac-index-btn{ display:flex; align-items:center; gap:10px; width:100%; box-sizing:border-box; font:inherit; font-family:'Courier Prime',monospace; background:var(--tab-active,#e9dfbf); color:var(--ac-ink); border:1px solid #a8a090; border-bottom:0; border-radius:6px 6px 0 0; padding:10px 14px; cursor:pointer; text-align:left; }
+  .ac-index-btn i{ font-style:normal; font-size:18px; width:22px; text-align:center; }
+  .ac-index-btn span{ font-family:'Special Elite',monospace; font-size:15px; letter-spacing:.12em; text-transform:uppercase; flex:1; }
+  .ac-index-btn b{ font-weight:400; font-size:11px; color:var(--ac-ink3); letter-spacing:.08em; }
+  #acell-tab-strip{ display:none; }
+  body.ac-index-open #acell-tab-strip{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; padding:8px; background:var(--tab-active,#e9dfbf); border:1px solid #a8a090; border-top:1px dashed #a8a090; overflow:visible; }
+  body.ac-index-open #acell-tab-strip .tw{ transform:none; height:auto; flex-direction:column; gap:4px; padding:10px 2px; border:1px solid #c9bd99; border-radius:4px; background:#fbf8ec; }
+  body.ac-index-open #acell-tab-strip .tw.active{ background:var(--ac-ink); }
+  body.ac-index-open #acell-tab-strip .tw.active span, body.ac-index-open #acell-tab-strip .tw.active .tw-ic{ color:#fbf8ec; }
+  body.ac-index-open #acell-tab-strip .tw-ic{ display:block; font-size:20px; color:var(--ac-ink2); }
+  body.ac-index-open #acell-tab-strip .tw span{ font-size:9px; white-space:normal; text-align:center; }
+  body.ac-index-open #acell-tab-strip .tw .tw-long{ display:none; }
+  body[data-ac-mode="play"] .ac-index-btn, body[data-ac-mode="debrief"] .ac-index-btn{ display:none; }
+  /* The control center on a phone */
+  .cc-cell{ margin-left:0; flex:1 1 100%; }
+  .cc-cell select{ flex:1; min-width:0; max-width:100%; }
+  .cc-reels i{ width:56px; height:56px; }
+}

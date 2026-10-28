@@ -19,7 +19,7 @@
   if (!A || !root || window.dgAcConsole) return;
   var esc = A.esc;
   function M() { return window.dgAcellMusic; }
-  var st = { open: false, seeking: false, cell: '', link: { url: '', title: '', loop: false }, tick: null };
+  var st = { open: false, seeking: false, cell: '', link: { url: '', title: '' }, tick: null };
 
   function fmt(sec) { sec = Math.max(0, Math.floor(sec || 0)); return Math.floor(sec / 60) + ':' + ('0' + sec % 60).slice(-2); }
   function curCell() {
@@ -40,7 +40,7 @@
         '<div class="cc-keys"><button type="button" data-cc="restart" title="From the top">◀◀</button><button type="button" data-cc="pause" title="Play / pause">▶ ❚❚</button>' +
         '<button type="button" data-cc="stop" title="Stop the track">■</button><button type="button" data-cc="loop" title="Loop the track">LOOP</button></div>' +
         '<form class="cc-link" data-cc="linkform"><input type="url" placeholder="A link: YouTube, SoundCloud or .mp3" data-cc="url" required>' +
-        '<input placeholder="Title" data-cc="title"><label class="cc-ck"><input type="checkbox" data-cc="linkloop"> loop</label>' +
+        '<input placeholder="Title" data-cc="title"><label class="cc-ck"><input type="checkbox" data-cc="linkloop" checked> loop</label>' +
         '<button type="submit" class="cc-mini p">▶ Play</button><button type="button" class="cc-mini" data-cc="cue">+ Cue</button></form>' +
         '<div class="cc-status" data-cc="status"></div>' +
       '</section>' +
@@ -125,7 +125,9 @@
     var m = M(), cur = (m.state().current || {}), du = m.duration(), sl = q('seek');
     q('seekrow').hidden = !cur.track_url;
     if (st.seeking) return;
+    // A looping track goes round: the position within this time through.
     var el = m.elapsed();
+    if (du > 0) el = cur.loop ? el % du : Math.min(el, du);
     sl.max = Math.max(du, el, 1);
     sl.value = el;
     q('el').textContent = fmt(el);
@@ -158,7 +160,7 @@
       case 'tape': {
         var t = s.tracks[+b.getAttribute('data-i')];
         if (t.kind === 'ambient') m.setAmbient(t.ref, !(m.state().ambient || []).some(function (x) { return x.id === t.ref; }));
-        else { var tk = A.trackById(t.ref), u = tk ? tk.url : t.ref; if (u) m.play({ url: u, title: t.title, kind: 'audio', loop: false }); }
+        else { var tk = A.trackById(t.ref), u = tk ? tk.url : t.ref; if (u) m.play({ url: u, title: t.title, kind: 'audio' }); }
         return;
       }
       case 'pad': b.classList.add('hit'); setTimeout(function () { b.classList.remove('hit'); }, 250); m.fire(b.getAttribute('data-id')); return;

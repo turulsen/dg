@@ -137,6 +137,35 @@
     return M ? M.tracks().filter(function (t) { return t.track_id === id; })[0] || null : null;
   }
 
+  /* ── The index on a phone: one button for the tab you're on, a grid of
+     all of them under it (the screen's foot is the Dice Roller's and the
+     radio's). ── */
+  var strip = document.getElementById('acell-tab-strip');
+  var ICONS = { session: '✎', play: '☺', evidence: '▤', music: '♪', notes: '✍', sheet: '▦', cells: '⚑', ids: '▭' };
+  Array.prototype.forEach.call(strip.querySelectorAll('.tw'), function (t) {
+    var i = document.createElement('i');
+    i.className = 'tw-ic'; i.setAttribute('aria-hidden', 'true'); i.textContent = ICONS[t.dataset.tab] || '•';
+    t.insertBefore(i, t.firstChild);
+  });
+  var idxBtn = document.createElement('button');
+  idxBtn.type = 'button';
+  idxBtn.id = 'ac-index-btn';
+  idxBtn.className = 'ac-index-btn';
+  idxBtn.setAttribute('aria-expanded', 'false');
+  strip.parentNode.insertBefore(idxBtn, strip);
+  function drawIndexBtn(tab) {
+    var t = strip.querySelector('.tw[data-tab="' + tab + '"]');
+    idxBtn.innerHTML = '<i>' + (ICONS[tab] || '▤') + '</i><span>' + esc(t ? t.textContent.replace(ICONS[tab] || '', '').trim() : 'Session prep') + '</span><b>▾ all tabs</b>';
+  }
+  function indexOpen(on) {
+    document.body.classList.toggle('ac-index-open', on);
+    idxBtn.setAttribute('aria-expanded', String(on));
+  }
+  idxBtn.addEventListener('click', function () { indexOpen(!document.body.classList.contains('ac-index-open')); });
+  strip.addEventListener('click', function () { indexOpen(false); });
+  document.addEventListener('dg-acell-tab', function (e) { drawIndexBtn(e.detail.tab); indexOpen(false); });
+  drawIndexBtn('session');
+
   /* ── Modes ── */
   var lastPrep = 'session';
   function modeOf(tab) { return tab === 'desk' ? 'play' : tab === 'debrief' ? 'debrief' : 'prep'; }

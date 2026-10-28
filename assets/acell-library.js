@@ -211,7 +211,7 @@
     if (a === 'table') {
       if (kind === 'stinger') m.fire(ref);
       else if (kind === 'ambient') m.setAmbient(ref, !(m.state().ambient || []).some(function (x) { return (x.id || x) === ref; }));
-      else { var tk = A.trackById(ref); if (tk) m.play({ url: tk.url, title: tk.title, kind: 'audio', loop: false }); }
+      else { var tk = A.trackById(ref); if (tk) m.play({ url: tk.url, title: tk.title, kind: 'audio' }); }
       mu.pop = null; drawShelf();
     }
   });
