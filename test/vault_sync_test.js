@@ -43,4 +43,10 @@ x = r([{ path: 'a.md', content: 'a\nb', synced: 'a\nb' }], [{ path: 'a.md', text
 check('Windows line endings count as the same text', !x.write.length && x.stats.same === 1, x);
 x = r([], [{ path: 'A/n.md', text: '1' }, { path: 'A/n.md', text: '2' }]);
 check('the same path twice in one upload: kept once, counted as a duplicate', x.upserts.length === 1 && x.stats.duplicates === 1 && x.stats.duplicate_example === 'A/n.md', x);
+check('an iOS File Path (colons, from iCloud Drive/Obsidian/<vault>) becomes the path in the vault',
+  V.cleanPath('iCloudDrive:Obsidian:Delta Green:Delta Green:01_Session notes:Lover in the Ice - 27-01.txt') === 'Delta Green/01_Session notes/Lover in the Ice - 27-01.md' &&
+  V.cleanPath('iCloudDrive:Obsidian:Delta Green:Delta Green:01_Session notes:Lover in the Ice - 27-01.txt.md') === 'Delta Green/01_Session notes/Lover in the Ice - 27-01.md' &&
+  V.cleanPath('/private/var/mobile/Library/Mobile Documents/iCloud~md~obsidian/Documents/Delta Green/NPCs/Ruth.md') === 'NPCs/Ruth.md' &&
+  V.cleanPath('Pale Lantern/Act II.md') === 'Pale Lantern/Act II.md',
+  [V.cleanPath('iCloudDrive:Obsidian:Delta Green:Delta Green:01_Session notes:Lover in the Ice - 27-01.txt'), V.cleanPath('/private/var/mobile/Library/Mobile Documents/iCloud~md~obsidian/Documents/Delta Green/NPCs/Ruth.md')]);
 console.log(JSON.stringify(out));

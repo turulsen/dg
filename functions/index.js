@@ -500,6 +500,18 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
     const snap = await db.collection('vault').get();
     const notes = [];
     snap.forEach((d) => { const x = d.data(); notes.push({ path: x.path, content: x.content, synced: x.synced === undefined ? null : x.synced, pending: x.pending === undefined ? null : x.pending }); });
+    // Notes stored under a path from before the iOS path fix (or any path
+    // that cleans differently now) move to the clean one, all they hold kept.
+    const moved = [];
+    const at = {};
+    notes.forEach((x) => { at[x.path] = x; });
+    notes.forEach((x) => {
+      const np = vaultSync_.cleanPath(x.path);
+      if (!np || np === x.path) return;
+      if (at[np] && at[np] !== x) return; // the clean one exists already: leave this be
+      moved.push({ from: x.path, to: np, note: x });
+      delete at[x.path]; at[np] = x; x.path = np;
+    });
     const out = vaultSync_.reconcile(notes, clean);
     // Nothing (or far too little) arrived from a vault A-Cell already has:
     // more likely the Shortcut couldn't read the folder than a mass delete.
@@ -516,6 +528,13 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
     let batch = db.batch(), n = 0, bytes = 0, tooBig = 0;
     const flush = async () => { if (n) { await batch.commit(); batch = db.batch(); n = 0; bytes = 0; } };
     const size = (v) => (v == null ? 0 : Buffer.byteLength(String(v), 'utf8'));
+    for (const m of moved) {
+      const x = m.note;
+      batch.set(db.collection('vault').doc(vaultSync_.docId(m.to)), { path: m.to, content: x.content == null ? '' : x.content, synced: x.synced, pending: x.pending, updated_at: now, updated_by: 'sync' }, { merge: true });
+      batch.delete(db.collection('vault').doc(vaultSync_.docId(m.from)));
+      n += 2; bytes += size(x.content) + size(x.synced) + size(x.pending) + 400;
+      if (n >= 400 || bytes > 8000000) await flush();
+    }
     const before = {};
     notes.forEach((x) => { before[x.path] = x; });
     for (const u of out.upserts) {
@@ -535,7 +554,7 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
       if (++n >= 400) await flush();
     }
     await flush();
-    const summary = Object.assign({}, out.stats, { held_removals: held, too_big: tooBig, files: clean.length, at: now });
+    const summary = Object.assign({}, out.stats, { held_removals: held, too_big: tooBig, files: clean.length, moved: moved.length, at: now });
     if (!clean.length) summary.received = received;
     // Notes that came without a usable path are skipped: say how many, and show one.
     const noPath = clean.filter((f) => !vaultSync_.cleanPath(f.path));

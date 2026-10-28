@@ -26,7 +26,15 @@
 'use strict';
 
 function cleanPath(p) {
-  p = String(p || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').replace(/\/{2,}/g, '/');
+  p = String(p || '').trim();
+  // iOS Shortcuts' File Path: "iCloudDrive:Obsidian:Vault:Folder:Note.txt" --
+  // colons for folders, and a text file's extension. Made relative to the
+  // vault (iCloud Drive/Obsidian/<vault>/), with .md.
+  if (p.indexOf(':') >= 0 && p.indexOf('/') < 0) {
+    p = p.split(':').join('/').replace(/\.txt(\.md)?$/i, '.md');
+  }
+  p = p.replace(/^iCloud ?Drive\/Obsidian\/[^\/]+\//i, '').replace(/^.*\/iCloud~md~obsidian\/Documents\/[^\/]+\//, '');
+  p = p.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').replace(/\/{2,}/g, '/');
   if (!p || /(^|\/)\.\.?(\/|$)/.test(p)) return '';
   if (!/\.md$/i.test(p)) p += '.md';
   return p;
