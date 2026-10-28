@@ -293,3 +293,12 @@ body[data-ac-mode="debrief"] .folder-body{ background:none; padding:0; }
   .cc-cell select{ flex:1; min-width:0; max-width:100%; }
   .cc-reels i{ width:56px; height:56px; }
 }
+
+/* ── Notes: folders that fold ── */
+.ac-vdir{ border-bottom:1px dashed #e3d9bb; }
+.ac-vdh{ display:flex; align-items:center; gap:8px; width:100%; text-align:left; font:inherit; font-family:'Courier Prime',monospace; font-size:12px; letter-spacing:.06em; color:var(--ac-ink2); background:none; border:0; padding:9px 4px; cursor:pointer; }
+.ac-vdh i{ font-style:normal; width:12px; color:var(--ac-ink3); }
+.ac-vdh small{ margin-left:auto; color:var(--ac-ink3); font-size:11px; }
+.ac-vdir.open > .ac-vdh{ color:var(--ac-ink); font-weight:700; }
+.ac-vdb{ padding:0 0 6px 18px; }
+.vn-file{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }

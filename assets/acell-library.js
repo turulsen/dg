@@ -230,22 +230,29 @@
   htmlHd.className = 'ac-sub ac-deskhd';
   htmlHd.textContent = 'HTML pages (uploaded)';
   noPanel.insertBefore(htmlHd, vault.nextSibling);
-  var vs = { q: '', path: '', ed: null, loaded: false, err: '' };
+  var vs = { q: '', path: '', ed: null, loaded: false, err: '', open: {} };
   function drawVault() {
     var V = window.dgVault;
     if (!V) return;
     var q = vs.q.toLowerCase();
     var ns = V.notes().filter(function (n) { return !q || n.path.toLowerCase().indexOf(q) >= 0 || (q.length > 2 && String(n.content || '').toLowerCase().indexOf(q) >= 0); });
+    // Folders fold: open when searching, or the one holding the open note,
+    // or the ones the Handler opened.
     var groups = {};
-    ns.forEach(function (n) { var d = n.path.indexOf('/') >= 0 ? n.path.slice(0, n.path.lastIndexOf('/')) : ''; (groups[d] = groups[d] || []).push(n); });
-    var s = A.session();
+    ns.forEach(function (n) { var d = V.folderLabel(V.dirOf(n.path)); (groups[d] = groups[d] || []).push(n); });
+    var s = A.session(), curDir = vs.path ? V.folderLabel(V.dirOf(vs.path)) : '';
+    function item(n) {
+      return '<button type="button" class="vn-pi' + (n.path === vs.path ? ' on' : '') + '" data-vp="' + esc(n.path) + '" title="' + esc(n.path) + '">' + esc(V.title(n.path)) +
+        (s && s.note_path === n.path ? '<small class="ac-pi-sub">notes for ' + esc(s.name) + '</small>' : '') + '</button>';
+    }
+    function sorted(list) { return list.slice().sort(function (a, b) { return V.byName(V.title(a.path), V.title(b.path)); }); }
     var list = vs.err ? '<div class="ac-none">Could not load the vault: ' + esc(vs.err) + '</div>' : !vs.loaded ? '<div class="ac-none">Loading the vault…</div>' :
       !V.notes().length ? '<div class="ac-none">No notes yet. Set up the iCloud sync (⚙ Vault sync), import .md files, or make a new note.</div>' :
-      Object.keys(groups).sort().map(function (d) {
-        return (d ? '<div class="vn-pdir">' + esc(d) + '</div>' : '') + groups[d].map(function (n) {
-          return '<button type="button" class="vn-pi' + (n.path === vs.path ? ' on' : '') + '" data-vp="' + esc(n.path) + '">' + esc(V.title(n.path)) +
-            (s && s.note_path === n.path ? '<small class="ac-pi-sub">notes for ' + esc(s.name) + '</small>' : '') + '</button>';
-        }).join('');
+      Object.keys(groups).sort(V.byName).map(function (d) {
+        if (!d) return sorted(groups[d]).map(item).join('');
+        var open = !!q || d === curDir || !!vs.open[d];
+        return '<div class="ac-vdir' + (open ? ' open' : '') + '"><button type="button" class="ac-vdh" data-vdir="' + esc(d) + '"><i>' + (open ? '▾' : '▸') + '</i>' + esc(d) + '<small>' + groups[d].length + '</small></button>' +
+          (open ? '<div class="ac-vdb">' + sorted(groups[d]).map(item).join('') + '</div>' : '') + '</div>';
       }).join('') || '<div class="ac-none">Nothing matches.</div>';
     var listEl = vault.querySelector('.ac-vlist');
     if (!listEl) {
@@ -276,6 +283,14 @@
     var V = window.dgVault;
     var p = e.target.closest('[data-vp]');
     if (p) { openNote(p.getAttribute('data-vp')); return; }
+    var dh = e.target.closest('[data-vdir]');
+    if (dh) {
+      var d = dh.getAttribute('data-vdir'), V2 = window.dgVault;
+      var shown = !!vs.q || d === (vs.path ? V2.folderLabel(V2.dirOf(vs.path)) : '') || !!vs.open[d];
+      vs.open[d] = !shown;
+      drawVault();
+      return;
+    }
     var b = e.target.closest('[data-vv]');
     if (!b) return;
     var a = b.getAttribute('data-vv'), s = A.session();

@@ -41,7 +41,41 @@
     if (!/\.md$/i.test(p)) p += '.md';
     return p;
   }
-  function title(path) { return String(path || '').split('/').pop().replace(/\.md$/i, ''); }
+  /* ── Names for people: a note's title and its folder, readable ──
+     A path from before the sync understood iOS paths can still be
+     "iCloudDrive:Obsidian:Vault:Folder:Note.txt.md": read either way. */
+  function segs(path) {
+    var p = String(path || '');
+    var parts = (p.indexOf('/') < 0 && p.indexOf(':') >= 0) ? p.split(':') : p.split('/');
+    if (/^icloud ?drive$/i.test(parts[0] || '') && /^obsidian$/i.test(parts[1] || '')) parts = parts.slice(3);
+    return parts.filter(Boolean);
+  }
+  function tidy(seg) {
+    var t = String(seg || '').replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+    var bare = t.replace(/^\d+[\s.\-]*(?=\D)/, '');
+    return bare || t;
+  }
+  function title(path) {
+    var last = segs(path).pop() || '';
+    return last.replace(/(\.txt)?\.md$/i, '').replace(/\.txt$/i, '').replace(/_/g, ' ').trim() || last;
+  }
+  function dirOf(path) { return segs(path).slice(0, -1).join('/'); }
+  function byName(a, b) { return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' }); }
+  // The vault's own top folder, when every note sits inside it -- not repeated on every row.
+  function rootDir() {
+    var first = null, all = true;
+    Object.keys(notesByPath).forEach(function (p) {
+      var sg = segs(p);
+      var f = sg.length > 1 ? sg[0] : '';
+      if (first === null) first = f; else if (f !== first) all = false;
+    });
+    return all && first ? first : '';
+  }
+  function folderLabel(dir) {
+    var sg = String(dir || '').split('/').filter(Boolean), root = rootDir();
+    if (root && sg[0] === root) sg = sg.slice(1);
+    return sg.map(tidy).join(' › ');
+  }
   function emit() { document.dispatchEvent(new CustomEvent('dg-vault')); }
   function put(d) {
     if (!d || !d.path) return;
@@ -259,7 +293,8 @@
     }
     function draw() {
       var n = note();
-      var head = opts.hideHead ? '' : '<div class="vn-bar"><span class="vn-file">' + esc(path.replace(/\.md$/i, '').split('/').join(' › ')) + '</span>' +
+      var fl = folderLabel(dirOf(path));
+      var head = opts.hideHead ? '' : '<div class="vn-bar"><span class="vn-file" title="' + esc(path) + '">' + esc((fl ? fl + ' › ' : '') + title(path)) + '</span>' +
         '<span class="vn-status">' + (n ? '' : 'new note') + '</span>' +
         '<span class="vn-modes"><button type="button" data-vmode="read" class="' + (mode === 'read' ? 'on' : '') + '">Read</button><button type="button" data-vmode="edit" class="' + (mode === 'edit' ? 'on' : '') + '">✎ Edit</button></span></div>';
       var body;
@@ -331,9 +366,9 @@
       var term = q.value.trim().toLowerCase();
       var ns = notes().filter(function (n) { return !term || n.path.toLowerCase().indexOf(term) >= 0; });
       var groups = {};
-      ns.forEach(function (n) { var d = n.path.indexOf('/') >= 0 ? n.path.slice(0, n.path.lastIndexOf('/')) : ''; (groups[d] = groups[d] || []).push(n); });
-      var html = Object.keys(groups).sort().map(function (d) {
-        return (d ? '<div class="vn-pdir">' + esc(d) + '</div>' : '') + groups[d].map(function (n) {
+      ns.forEach(function (n) { var d = folderLabel(dirOf(n.path)); (groups[d] = groups[d] || []).push(n); });
+      var html = Object.keys(groups).sort(byName).map(function (d) {
+        return (d ? '<div class="vn-pdir">' + esc(d) + '</div>' : '') + groups[d].sort(function (a, b) { return byName(title(a.path), title(b.path)); }).map(function (n) {
           return '<button type="button" class="vn-pi" data-vpath="' + esc(n.path) + '">' + esc(title(n.path)) + '</button>';
         }).join('');
       }).join('');
@@ -467,6 +502,7 @@
 
   window.dgVault = {
     load: load, notes: notes, get: get, save: save, remove: remove, id: id, cleanPath: cleanPath, title: title,
+    dirOf: dirOf, folderLabel: folderLabel, byName: byName,
     render: render, headings: headings, section: section, sectionRange: sectionRange, toggleTask: toggleTask,
     editor: editor, picker: picker, settings: settings, resolveLink: resolveLink, modal: modal, esc: esc,
     importFiles: importFiles, exportZip: exportZip, SYNC_URL: SYNC_URL

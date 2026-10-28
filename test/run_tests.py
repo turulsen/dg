@@ -4182,8 +4182,17 @@ def test_acell_library(p):
 
     page.click("#acell-tab-strip .tw[data-tab=notes]")
     wait_for_condition(lambda: page.locator("#ac-vault .vn-pi[data-vp]").count() == 1, timeout_ms=5000)
-    record("acell-library", "the Notes tab lists the vault by folder and opens the session's note",
-           "PALE LANTERN" in page.inner_text("#ac-vault .ac-vlist").upper() and "Scene 4" in page.inner_text("#ac-vault .ac-vnote"), page.inner_text("#ac-vault")[:200])
+    record("acell-library", "the Notes tab lists the vault and opens the session's note (the vault's one top folder isn't repeated)",
+           "Session 4" in page.inner_text("#ac-vault .ac-vlist") and "PALE LANTERN" not in page.inner_text("#ac-vault .ac-vlist").upper() and "Scene 4" in page.inner_text("#ac-vault .ac-vnote"), page.inner_text("#ac-vault")[:200])
+    # Paths as iOS sends them, and folders with number prefixes: readable names, folders that fold.
+    page.evaluate("""() => Promise.all(['Delta Green/01_Session notes/Lover in the Ice - 27-01.md', 'Delta Green/02_NPCs/Ruth_Ainsley.md',
+        'iCloudDrive:Obsidian:Delta Green:Delta Green:04_Handouts:Keepers log.txt.md'].map(p => window.dgVault.save(p, 'x')))""")
+    wait_for_condition(lambda: page.locator("#ac-vault .ac-vdh").count() >= 3, timeout_ms=4000)
+    heads = page.eval_on_selector_all("#ac-vault .ac-vdh", "els => els.map(e => e.innerText.replace(/\\s+/g, ' ').trim())")
+    record("acell-library", "folders read plainly (no number prefixes or underscores, an iOS colon path too) and start folded",
+           any(h.startswith("▸ Delta Green › Session notes") for h in heads) and any("Delta Green › Handouts" in h for h in heads) and all(h.startswith("▸") for h in heads if "Delta Green" in h), str(heads))
+    page.click("#ac-vault .ac-vdh[data-vdir='Delta Green › NPCs']")
+    record("acell-library", "a folder opens on a tap, its notes by plain name", "Ruth Ainsley" in page.inner_text("#ac-vault .ac-vlist"), page.inner_text("#ac-vault .ac-vlist"))
     page.click("#ac-vault [data-vv=new]")
     page.fill(".vn-newpath", "NPCs/Ruth Ainsley")
     page.click("[data-vnew]")
