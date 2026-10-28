@@ -41,4 +41,6 @@ check('paths are cleaned: no "..", .md added', V.cleanPath('../x') === '' && V.c
 check('doc ids have no slashes', V.docId('Pale Lantern/Act II.md').indexOf('/') < 0, V.docId('Pale Lantern/Act II.md'));
 x = r([{ path: 'a.md', content: 'a\nb', synced: 'a\nb' }], [{ path: 'a.md', text: 'a\r\nb' }]);
 check('Windows line endings count as the same text', !x.write.length && x.stats.same === 1, x);
+x = r([], [{ path: 'A/n.md', text: '1' }, { path: 'A/n.md', text: '2' }]);
+check('the same path twice in one upload: kept once, counted as a duplicate', x.upserts.length === 1 && x.stats.duplicates === 1 && x.stats.duplicate_example === 'A/n.md', x);
 console.log(JSON.stringify(out));

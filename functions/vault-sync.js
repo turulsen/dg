@@ -50,7 +50,7 @@ function reconcile(notes, files) {
   });
   var taken = {}; Object.keys(byPath).forEach(function (p) { taken[p] = true; });
   var seen = {}, upserts = [], write = [], removes = [];
-  var stats = { created: 0, updated: 0, sent: 0, conflicts: 0, removed: 0, same: 0 };
+  var stats = { created: 0, updated: 0, sent: 0, conflicts: 0, removed: 0, same: 0, duplicates: 0 };
 
   (files || []).forEach(function (f) {
     var text = String(f.text == null ? '' : f.text).replace(/\r\n/g, '\n');
@@ -61,7 +61,7 @@ function reconcile(notes, files) {
       var same = byName[path.toLowerCase()] || [];
       if (same.length === 1) { note = same[0]; path = note.path; }
     }
-    if (seen[path]) return;
+    if (seen[path]) { stats.duplicates += 1; if (!stats.duplicate_example) stats.duplicate_example = path; return; }
     seen[path] = true;
     if (!note) {
       upserts.push({ path: path, content: text, synced: text, pending: null });
@@ -97,7 +97,7 @@ function reconcile(notes, files) {
   });
 
   Object.keys(byPath).forEach(function (path) {
-    if (seen[path]) return;
+    if (seen[path]) { stats.duplicates += 1; if (!stats.duplicate_example) stats.duplicate_example = path; return; }
     var note = byPath[path], content = note.content == null ? '' : note.content;
     if (note.synced == null || content !== note.synced) {
       upserts.push({ path: path, content: content, synced: note.synced == null ? null : note.synced, pending: content });
