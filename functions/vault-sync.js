@@ -25,8 +25,12 @@
    otherwise make A-Cell take the phone's older text as the newer one. */
 'use strict';
 
+// Same text as far as a person can tell: iOS may hand a note back with its
+// accents decomposed (NFD), CRLF line ends, or a trailing newline added.
+function norm(t) { return String(t == null ? '' : t).normalize('NFC').replace(/\r\n?/g, '\n').replace(/\s+$/, ''); }
+function eq(a, b) { return a != null && b != null && norm(a) === norm(b); }
 function cleanPath(p) {
-  p = String(p || '').trim();
+  p = String(p || '').normalize('NFC').trim();
   // iOS Shortcuts' File Path: "iCloudDrive:Obsidian:Vault:Folder:Note.txt" --
   // colons for folders, and a text file's extension. Made relative to the
   // vault (iCloud Drive/Obsidian/<vault>/), with .md.
@@ -79,14 +83,14 @@ function reconcile(notes, files) {
     }
     var content = note.content == null ? '' : note.content;
     // The phone saved what it was sent last time: that's agreed now.
-    var synced = note.pending != null && text === note.pending ? text : note.synced;
-    if (content === text) {
-      if (note.synced !== text || note.pending != null) upserts.push({ path: path, content: text, synced: text, pending: null });
+    var synced = note.pending != null && eq(text, note.pending) ? text : note.synced;
+    if (eq(content, text)) {
+      if (!eq(note.synced, text) || note.pending != null) upserts.push({ path: path, content: content, synced: content, pending: null });
       stats.same += 1;
       return;
     }
-    var mine = synced == null || content !== synced;   // changed in A-Cell
-    var theirs = synced == null || text !== synced;    // changed on the phone
+    var mine = synced == null || !eq(content, synced);   // changed in A-Cell
+    var theirs = synced == null || !eq(text, synced);    // changed on the phone
     if (theirs && !mine) {
       upserts.push({ path: path, content: text, synced: text, pending: null });
       stats.updated += 1;
@@ -107,7 +111,7 @@ function reconcile(notes, files) {
   Object.keys(byPath).forEach(function (path) {
     if (seen[path]) return;
     var note = byPath[path], content = note.content == null ? '' : note.content;
-    if (note.synced == null || content !== note.synced) {
+    if (note.synced == null || !eq(content, note.synced)) {
       upserts.push({ path: path, content: content, synced: note.synced == null ? null : note.synced, pending: content });
       write.push({ path: path, text: content });
       stats.sent += 1;

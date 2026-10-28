@@ -51,4 +51,6 @@ check('an iOS File Path (colons, from iCloud Drive/Obsidian/<vault>) becomes the
   [V.cleanPath('iCloudDrive:Obsidian:Delta Green:Delta Green:01_Session notes:Lover in the Ice - 27-01.txt'), V.cleanPath('/private/var/mobile/Library/Mobile Documents/iCloud~md~obsidian/Documents/Delta Green/NPCs/Ruth.md')]);
 x = r([{ path: 'A/a.md', content: 'a', synced: 'a' }, { path: 'A/b.md', content: 'b', synced: 'b' }], [{ path: 'A/a.md', text: 'a' }, { path: 'A/b.md', text: 'b' }]);
 check('an ordinary sync counts no duplicates', x.stats.duplicates === 0 && x.stats.same === 2 && !x.stats.duplicate_example, x.stats);
+x = r([{ path: 'a.md', content: 'Tur\u00e9 edit', synced: 'old', pending: 'Tur\u00e9 edit' }], [{ path: 'a.md', text: 'Ture\u0301 edit\r\n' }]);
+check('the phone saved it with decomposed accents / CRLF / a trailing newline: still agreed, not sent again', !x.write.length && x.stats.same === 1, x);
 console.log(JSON.stringify(out));
