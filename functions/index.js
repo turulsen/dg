@@ -537,6 +537,13 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
     await flush();
     const summary = Object.assign({}, out.stats, { held_removals: held, too_big: tooBig, files: clean.length, at: now });
     if (!clean.length) summary.received = received;
+    // Notes that came without a usable path are skipped: say how many, and show one.
+    const noPath = clean.filter((f) => !vaultSync_.cleanPath(f.path));
+    if (noPath.length) {
+      summary.no_path = noPath.length;
+      const raw = files.find((f) => f && typeof f === 'object' && !vaultSync_.cleanPath(String(f.path || f.name || '')));
+      summary.sample = raw ? { keys: Object.keys(raw).slice(0, 6), path: String(raw.path == null ? '(none)' : raw.path).slice(0, 160) } : null;
+    }
     // Stored flat: what arrived goes in as text (a field name from the
     // Shortcut's dictionary can be one Firestore won't take as a key).
     const stored = Object.assign({}, summary);
