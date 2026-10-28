@@ -105,7 +105,7 @@ function reconcile(notes, files) {
   });
 
   Object.keys(byPath).forEach(function (path) {
-    if (seen[path]) { stats.duplicates += 1; if (!stats.duplicate_example) stats.duplicate_example = path; return; }
+    if (seen[path]) return;
     var note = byPath[path], content = note.content == null ? '' : note.content;
     if (note.synced == null || content !== note.synced) {
       upserts.push({ path: path, content: content, synced: note.synced == null ? null : note.synced, pending: content });

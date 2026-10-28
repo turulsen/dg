@@ -49,4 +49,6 @@ check('an iOS File Path (colons, from iCloud Drive/Obsidian/<vault>) becomes the
   V.cleanPath('/private/var/mobile/Library/Mobile Documents/iCloud~md~obsidian/Documents/Delta Green/NPCs/Ruth.md') === 'NPCs/Ruth.md' &&
   V.cleanPath('Pale Lantern/Act II.md') === 'Pale Lantern/Act II.md',
   [V.cleanPath('iCloudDrive:Obsidian:Delta Green:Delta Green:01_Session notes:Lover in the Ice - 27-01.txt'), V.cleanPath('/private/var/mobile/Library/Mobile Documents/iCloud~md~obsidian/Documents/Delta Green/NPCs/Ruth.md')]);
+x = r([{ path: 'A/a.md', content: 'a', synced: 'a' }, { path: 'A/b.md', content: 'b', synced: 'b' }], [{ path: 'A/a.md', text: 'a' }, { path: 'A/b.md', text: 'b' }]);
+check('an ordinary sync counts no duplicates', x.stats.duplicates === 0 && x.stats.same === 2 && !x.stats.duplicate_example, x.stats);
 console.log(JSON.stringify(out));
