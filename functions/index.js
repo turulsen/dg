@@ -525,7 +525,11 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
     await flush();
     const summary = Object.assign({}, out.stats, { held_removals: held, too_big: tooBig, files: clean.length, at: now });
     if (!clean.length) summary.received = received;
-    await cfgRef.set({ last_sync: summary }, { merge: true });
+    // Stored flat: what arrived goes in as text (a field name from the
+    // Shortcut's dictionary can be one Firestore won't take as a key).
+    const stored = Object.assign({}, summary);
+    if (stored.received) stored.received = JSON.stringify(stored.received).slice(0, 2000);
+    await cfgRef.set({ last_sync: stored }, { merge: true });
     logger.info('vaultSync', summary);
     res.json({ status: 'OK', write: out.write, stats: summary });
   } catch (err) {
