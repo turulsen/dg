@@ -495,7 +495,17 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
       if (!f || typeof f !== 'object') continue;
       const text = String(f.text == null ? '' : f.text);
       if (text.length > 900000) continue;
-      clean.push({ path: String(f.path || f.name || ''), text });
+      // iOS can cut a file's name short in File Path ("The Hotel.md" ->
+      // "The"): the name sent on its own ("name", from Get Details > Name)
+      // wins for the last part of the path.
+      let fp = String(f.path || '');
+      const nm = String(f.name == null ? '' : f.name).trim().replace(/[\/:]/g, ' ');
+      if (nm) {
+        const full = /\.md$/i.test(nm) ? nm : nm + '.md';
+        const cut = fp.indexOf('/') < 0 && fp.indexOf(':') >= 0 ? ':' : '/';
+        fp = fp ? fp.split(cut).slice(0, -1).concat([full]).join(cut) : full;
+      }
+      clean.push({ path: fp, text });
     }
     const snap = await db.collection('vault').get();
     const notes = [];
