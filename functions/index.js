@@ -453,56 +453,74 @@ const vaultSync_ = require('./vault-sync');
 const crypto = require('crypto');
 
 exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: '512MiB' }, async (req, res) => {
-  if (req.method !== 'POST') { res.status(405).json({ status: 'ERROR', message: 'POST only' }); return; }
-  let body = req.body;
-  if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = null; } }
-  if (!body || typeof body !== 'object') { res.status(400).json({ status: 'ERROR', message: 'Send JSON: { key, files: [{ path, text }] }' }); return; }
-  const db = getFirestore();
-  const cfgRef = db.collection('vault_meta').doc('config');
-  const cfg = (await cfgRef.get()).data() || {};
-  const want = String(cfg.key || ''), got = String(body.key || '');
-  const ok = want.length >= 16 && got.length === want.length && crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want));
-  if (!ok) { res.status(403).json({ status: 'ERROR', message: 'Wrong sync key. Copy it again from A-Cell → Notes vault.' }); return; }
-  const files = Array.isArray(body.files) ? body.files : [];
-  if (files.length > 3000) { res.status(413).json({ status: 'ERROR', message: 'Too many files (over 3000).' }); return; }
-  const clean = [];
-  for (const f of files) {
-    if (!f || typeof f !== 'object') continue;
-    const text = String(f.text == null ? '' : f.text);
-    if (text.length > 900000) continue;
-    clean.push({ path: String(f.path || f.name || ''), text });
+  // Any failure answers with its reason (the Shortcut shows it), not a bare 500.
+  try {
+    if (req.method !== 'POST') { res.status(405).json({ status: 'ERROR', message: 'POST only' }); return; }
+    // Shortcuts may label the JSON as a file (octet-stream) or text: take it either way.
+    let body = req.body;
+    if ((!body || typeof body !== 'object' || Buffer.isBuffer(body) || body.key == null) && req.rawBody && req.rawBody.length) body = req.rawBody;
+    if (Buffer.isBuffer(body)) body = body.toString('utf8');
+    if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = null; } }
+    if (!body || typeof body !== 'object') { res.status(400).json({ status: 'ERROR', message: 'Send JSON: { key, files: [{ path, text }] }' }); return; }
+    const db = getFirestore();
+    const cfgRef = db.collection('vault_meta').doc('config');
+    const cfg = (await cfgRef.get()).data() || {};
+    const want = String(cfg.key || ''), got = String(body.key || '');
+    const ok = want.length >= 16 && got.length === want.length && crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want));
+    if (!ok) { res.status(403).json({ status: 'ERROR', message: 'Wrong sync key. Copy it again from A-Cell → Notes vault.' }); return; }
+    const files = Array.isArray(body.files) ? body.files : [];
+    if (files.length > 3000) { res.status(413).json({ status: 'ERROR', message: 'Too many files (over 3000).' }); return; }
+    const clean = [];
+    for (const f of files) {
+      if (!f || typeof f !== 'object') continue;
+      const text = String(f.text == null ? '' : f.text);
+      if (text.length > 900000) continue;
+      clean.push({ path: String(f.path || f.name || ''), text });
+    }
+    const snap = await db.collection('vault').get();
+    const notes = [];
+    snap.forEach((d) => { const x = d.data(); notes.push({ path: x.path, content: x.content, synced: x.synced === undefined ? null : x.synced, pending: x.pending === undefined ? null : x.pending }); });
+    const out = vaultSync_.reconcile(notes, clean);
+    // Nothing (or far too little) arrived from a vault A-Cell already has:
+    // more likely the Shortcut couldn't read the folder than a mass delete.
+    const syncedCount = notes.filter((n) => n.synced != null).length;
+    let held = 0;
+    if (out.removes.length && (clean.length === 0 || (out.removes.length > 10 && out.removes.length > syncedCount / 2))) {
+      held = out.removes.length; out.removes = []; out.stats.removed = 0;
+    }
+    const now = Date.now();
+    // A commit is capped at 10 MiB and a document at 1 MiB: a first sync of
+    // a big vault (each note stored with its synced copy) passed the first
+    // in one batch of 400 -- batches now close by size too, and a note too
+    // big for one document is left out (counted in stats.too_big).
+    let batch = db.batch(), n = 0, bytes = 0, tooBig = 0;
+    const flush = async () => { if (n) { await batch.commit(); batch = db.batch(); n = 0; bytes = 0; } };
+    const size = (v) => (v == null ? 0 : Buffer.byteLength(String(v), 'utf8'));
+    const before = {};
+    notes.forEach((x) => { before[x.path] = x; });
+    for (const u of out.upserts) {
+      // Content only when the sync changes it: an edit made in A-Cell while
+      // this ran isn't overwritten with the copy read above.
+      const doc = { path: u.path, synced: u.synced, pending: u.pending, synced_at: now };
+      if (!before[u.path] || before[u.path].content !== u.content) Object.assign(doc, { content: u.content, updated_at: now, updated_by: 'sync' });
+      const docBytes = size(u.path) + size(doc.content != null ? doc.content : (before[u.path] || {}).content) + size(u.synced) + size(u.pending) + 200;
+      if (docBytes > 1000000) { tooBig += 1; continue; }
+      if (bytes + docBytes > 8000000) await flush();
+      batch.set(db.collection('vault').doc(vaultSync_.docId(u.path)), doc, { merge: true });
+      bytes += docBytes;
+      if (++n >= 400) await flush();
+    }
+    for (const p of out.removes) {
+      batch.delete(db.collection('vault').doc(vaultSync_.docId(p)));
+      if (++n >= 400) await flush();
+    }
+    await flush();
+    const summary = Object.assign({}, out.stats, { held_removals: held, too_big: tooBig, files: clean.length, at: now });
+    await cfgRef.set({ last_sync: summary }, { merge: true });
+    logger.info('vaultSync', summary);
+    res.json({ status: 'OK', write: out.write, stats: summary });
+  } catch (err) {
+    logger.error('vaultSync failed', err);
+    res.status(500).json({ status: 'ERROR', message: 'vaultSync failed: ' + ((err && err.message) || String(err)) });
   }
-  const snap = await db.collection('vault').get();
-  const notes = [];
-  snap.forEach((d) => { const x = d.data(); notes.push({ path: x.path, content: x.content, synced: x.synced === undefined ? null : x.synced, pending: x.pending === undefined ? null : x.pending }); });
-  const out = vaultSync_.reconcile(notes, clean);
-  // Nothing (or far too little) arrived from a vault A-Cell already has:
-  // more likely the Shortcut couldn't read the folder than a mass delete.
-  const syncedCount = notes.filter((n) => n.synced != null).length;
-  let held = 0;
-  if (out.removes.length && (clean.length === 0 || (out.removes.length > 10 && out.removes.length > syncedCount / 2))) {
-    held = out.removes.length; out.removes = []; out.stats.removed = 0;
-  }
-  const now = Date.now();
-  let batch = db.batch(), n = 0;
-  const flush = async () => { if (n) { await batch.commit(); batch = db.batch(); n = 0; } };
-  const before = {};
-  notes.forEach((x) => { before[x.path] = x; });
-  for (const u of out.upserts) {
-    // Content only when the sync changes it: an edit made in A-Cell while
-    // this ran isn't overwritten with the copy read above.
-    const doc = { path: u.path, synced: u.synced, pending: u.pending, synced_at: now };
-    if (!before[u.path] || before[u.path].content !== u.content) Object.assign(doc, { content: u.content, updated_at: now, updated_by: 'sync' });
-    batch.set(db.collection('vault').doc(vaultSync_.docId(u.path)), doc, { merge: true });
-    if (++n >= 400) await flush();
-  }
-  for (const p of out.removes) {
-    batch.delete(db.collection('vault').doc(vaultSync_.docId(p)));
-    if (++n >= 400) await flush();
-  }
-  await flush();
-  const summary = Object.assign({}, out.stats, { held_removals: held, files: clean.length, at: now });
-  await cfgRef.set({ last_sync: summary }, { merge: true });
-  logger.info('vaultSync', summary);
-  res.json({ status: 'OK', write: out.write, stats: summary });
 });
