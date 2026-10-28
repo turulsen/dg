@@ -472,10 +472,22 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
     // The list as Shortcuts sends it: an array; the array as JSON text; a
     // dictionary of items; or the whole body as the list.
     let files = Array.isArray(body) ? body : body.files;
+    // Not under "files" exactly: a near-miss name ("Files", "files "), or
+    // whichever other field holds the list (or the notes themselves).
+    if (files === undefined && !Array.isArray(body)) {
+      const others = Object.keys(body).filter((k) => k.trim().toLowerCase() !== 'key');
+      const named = others.find((k) => k.trim().toLowerCase() === 'files');
+      if (named !== undefined) files = body[named];
+      else {
+        const list = others.map((k) => body[k]).find((v) => Array.isArray(v) || (typeof v === 'string' && v.trim().charAt(0) === '['));
+        if (list !== undefined) files = list;
+        else { const notes = others.map((k) => body[k]).filter((v) => v && typeof v === 'object' && (v.path || v.text)); if (notes.length) files = notes; }
+      }
+    }
     if (typeof files === 'string') { try { files = JSON.parse(files); } catch (e) { files = []; } }
     if (files && !Array.isArray(files) && typeof files === 'object') files = (files.path || files.text) ? [files] : Object.values(files);
     if (!Array.isArray(files)) files = [];
-    const received = { body: Array.isArray(body) ? 'list' : typeof body, keys: Array.isArray(body) ? [] : Object.keys(body).slice(0, 8), files: Array.isArray(body) ? 'list' : (Array.isArray(body.files) ? 'list of ' + body.files.length : typeof body.files), content_type: req.get('content-type') || '' };
+    const received = { body: Array.isArray(body) ? 'list' : typeof body, keys: Array.isArray(body) ? [] : Object.keys(body).slice(0, 8).map((k) => JSON.stringify(k) + ': ' + (Array.isArray(body[k]) ? 'list of ' + body[k].length : typeof body[k])), files: Array.isArray(body) ? 'list' : (Array.isArray(body.files) ? 'list of ' + body.files.length : typeof body.files), content_type: req.get('content-type') || '' };
     if (files.length > 3000) { res.status(413).json({ status: 'ERROR', message: 'Too many files (over 3000).' }); return; }
     const clean = [];
     for (let f of files) {
