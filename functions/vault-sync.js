@@ -108,9 +108,15 @@ function reconcile(notes, files) {
     }
   });
 
+  // Texts the phone has: a note missing from the phone whose text is one of
+  // them is a leftover copy under an old path (a name iOS cut short), not
+  // an A-Cell edit waiting to go out.
+  var phoneHas = {};
+  (files || []).forEach(function (f) { phoneHas[norm(f.text)] = true; });
   Object.keys(byPath).forEach(function (path) {
     if (seen[path]) return;
     var note = byPath[path], content = note.content == null ? '' : note.content;
+    if (phoneHas[norm(content)]) { removes.push(path); stats.removed += 1; return; }
     if (note.synced == null || !eq(content, note.synced)) {
       upserts.push({ path: path, content: content, synced: note.synced == null ? null : note.synced, pending: content });
       write.push({ path: path, text: content });

@@ -53,4 +53,6 @@ x = r([{ path: 'A/a.md', content: 'a', synced: 'a' }, { path: 'A/b.md', content:
 check('an ordinary sync counts no duplicates', x.stats.duplicates === 0 && x.stats.same === 2 && !x.stats.duplicate_example, x.stats);
 x = r([{ path: 'a.md', content: 'Tur\u00e9 edit', synced: 'old', pending: 'Tur\u00e9 edit' }], [{ path: 'a.md', text: 'Ture\u0301 edit\r\n' }]);
 check('the phone saved it with decomposed accents / CRLF / a trailing newline: still agreed, not sent again', !x.write.length && x.stats.same === 1, x);
+x = r([{ path: 'S/Lover - 27-01.md', content: '# test\nx', synced: '# old', pending: '# test\nx' }, { path: 'S/Lover - 27-01-26.md', content: '# test\nx', synced: '# test\nx' }], [{ path: 'S/Lover - 27-01-26.md', text: '# test\nx' }]);
+check('a leftover copy under an old path, with text the phone already has: removed, not sent again', !x.write.length && x.removes[0] === 'S/Lover - 27-01.md', x);
 console.log(JSON.stringify(out));
