@@ -304,21 +304,14 @@ body[data-ac-mode="debrief"] .folder-body{ background:none; padding:0; }
 .vn-file{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
 /* ── Tapes (assets/acell-tapes.js): a cassette, the racks, the open tape ── */
-.cas{ position:relative; width:250px; height:160px; flex:none; border-radius:9px; background:linear-gradient(color-mix(in srgb,var(--shell,#2a2a2a) 100%,#fff 12%),var(--shell,#2a2a2a)); box-shadow:0 8px 16px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.15); cursor:pointer; font-family:'Courier Prime',monospace; }
-.cas-lab{ position:absolute; left:12px; right:12px; top:10px; height:96px; background:#f3ead0; border-radius:3px; padding:6px 9px; background-image:linear-gradient(transparent 22px,var(--stripe,#a3221c) 22px 26px,transparent 26px),repeating-linear-gradient(transparent 0 15px,#e2d6b2 15px 16px); }
-.cas-lab b{ display:block; font-family:'Reenie Beanie','Comic Sans MS','Marker Felt',cursive; font-weight:400; font-size:17px; line-height:16px; color:#1d2a6a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right:12px; }
-.cas-lab small{ position:absolute; right:8px; top:6px; font-size:10px; color:#8a7a5a; }
-.cas-meta{ position:absolute; left:9px; right:9px; top:27px; font-size:9.5px; color:#5a4e38; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.cas-win{ position:absolute; left:62px; right:62px; top:60px; height:36px; background:#1b1b1b; border-radius:20px; border:2px solid #555; display:flex; align-items:center; justify-content:space-between; padding:0 5px; box-shadow:inset 0 2px 6px #000; }
-.cas-win i{ width:28px; height:28px; border-radius:50%; background:radial-gradient(circle,#ddd 0 3px,#222 4px 6px,#6b4a2a 7px 13px,#3a2414 14px); position:relative; }
-.cas-win i::after{ content:''; position:absolute; inset:4px; border-radius:50%; background:conic-gradient(transparent 0 50deg,rgba(255,255,255,.25) 50deg 62deg,transparent 62deg 170deg,rgba(255,255,255,.25) 170deg 182deg,transparent 182deg 290deg,rgba(255,255,255,.25) 290deg 302deg,transparent 302deg); }
-.cas.spin .cas-win i::after{ animation:pd-spin 2.4s linear infinite; }
-.cas-foot{ position:absolute; left:44px; right:44px; bottom:0; height:34px; background:rgba(0,0,0,.25); clip-path:polygon(8% 0,92% 0,100% 100%,0 100%); display:flex; justify-content:center; gap:34px; align-items:center; }
-.cas-foot u{ width:7px; height:7px; border-radius:50%; background:#111; }
-.cas-side{ position:absolute; left:16px; top:112px; font:700 15px Georgia,serif; color:#e9dfbf; }
-.cas-light .cas-side{ color:#2a2418; }
-.cas-chip{ position:absolute; right:14px; top:114px; font-size:10px; letter-spacing:.14em; background:#f2d98a; color:#2a2418; padding:1px 7px; border-radius:2px; }
-.cas-sm{ transform:scale(.72); transform-origin:top left; margin:0 -70px -45px 0; }
+.cas{ position:relative; width:250px; flex:none; }
+.cas-text{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+.cas-svg{ display:block; width:100%; height:auto; filter:drop-shadow(0 6px 8px rgba(0,0,0,.45)); }
+.cas-svg .cas-reel{ transform-box:fill-box; transform-origin:center; }
+.cas-svg.spin .cas-reel{ animation:pd-spin 2.4s linear infinite; }
+@media (prefers-reduced-motion:reduce){ .cas-svg.spin .cas-reel{ animation:none; } }
+.cas-chip{ position:absolute; right:9%; bottom:27%; font-size:10px; letter-spacing:.14em; background:#f2d98a; color:#2a2418; padding:1px 7px; }
+.cas-sm{ width:180px; }
 .ac-tapes{ margin-bottom:18px; font-family:'Courier Prime',monospace; color:var(--ac-ink); }
 .ac-tcols{ display:grid; grid-template-columns:minmax(0,1fr) 330px; gap:20px; align-items:start; }
 .ac-lede{ color:var(--ac-ink2); font-size:13px; line-height:1.55; margin:4px 0 6px; max-width:70ch; }
@@ -355,7 +348,7 @@ body[data-ac-mode="debrief"] .folder-body{ background:none; padding:0; }
 .ac-spn.on{ transform:translateY(-12px); outline:3px solid #f2d98a; }
 .ac-spn.used::after{ content:'●'; position:absolute; top:-12px; left:0; right:0; text-align:center; color:#f2d98a; font-size:9px; }
 @media (max-width:980px){ .ac-tcols{ grid-template-columns:minmax(0,1fr); } .ac-topen{ position:static; } }
-@media (max-width:720px){ .cas{ transform:scale(.8); transform-origin:top left; margin:0 -50px -32px 0; } .ac-tnew{ width:200px; height:128px; } }
+@media (max-width:720px){ .cas{ width:200px; } .ac-tnew{ width:200px; height:128px; } }
 .ac-ptapes{ display:flex; flex-wrap:wrap; gap:12px; padding-top:8px; }
 .ac-ptape .ac-acts{ padding-top:2px; }
 
@@ -366,3 +359,18 @@ body.folder-theme[data-ac-mode="prep"] .folder-wrap .folder{ filter:drop-shadow(
 body.folder-theme[data-ac-mode] footer.site-footer{ color:#b8a878; position:relative; z-index:1; }
 .cc-tt small{ float:right; color:var(--ac-ink3); margin-left:8px; }
 .cc-deckcas{ margin:2px 0 8px; height:116px; }
+/* The open tape: an Add at each part (v3.13.0) */
+.ac-parthd{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.ac-parthd .ac-add{ text-transform:uppercase; letter-spacing:.08em; font-size:10.5px; padding:4px 9px; }
+/* A-Cell's icons (assets/acell-icons.js) wherever they're drawn */
+.ic{ width:18px; height:18px; stroke:currentColor; fill:none; stroke-width:1.6; stroke-linecap:square; stroke-linejoin:miter; flex:none; vertical-align:middle; }
+.ic .f{ fill:currentColor; stroke:none; }
+.ic.s{ width:15px; height:15px; }
+.cc-keys button{ display:inline-flex; align-items:center; justify-content:center; gap:6px; }
+.cc-mini .ic{ margin-right:3px; }
+/* ID creator: Agency · Local office · Company as one switch, like the rest (v3.13.0) */
+#idc-root .idc-kinds{ display:flex; gap:0; flex-wrap:nowrap; border:1px solid #4a3f28; margin-bottom:12px; }
+#idc-root .idc-kinds .paper-btn{ flex:1; margin:0; border:0; border-right:1px solid rgba(160,130,70,.6); border-radius:0; box-shadow:none; background:transparent; color:#1c1608;
+  font-family:'Special Elite','Courier New',monospace; font-size:11px; letter-spacing:.08em; text-transform:uppercase; padding:9px 4px; }
+#idc-root .idc-kinds .paper-btn:last-child{ border-right:0; }
+#idc-root .idc-kinds .paper-btn.primary{ background:#1c1608; color:#f4eed8; }

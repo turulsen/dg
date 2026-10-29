@@ -129,23 +129,35 @@
       var w = A.modal('<div class="vn-mh"><b>Save ' + esc(who.name) + '\'s sheet</b><button type="button" data-vclose>✕</button></div>' +
         '<p class="vn-lead">' + (who.changes.length ? 'Changes: <b>' + esc(who.changes.join(', ')) + '</b>' : 'No changes to the numbers.') + '</p>' +
         '<label class="ac-form"><span class="ac-sub">What happened (goes in their player file)</span><textarea class="vn-search ac-why" rows="3" placeholder="e.g. pushed through the fog; improvement roll"></textarea></label>' +
+        '<label class="ac-tell"><input type="checkbox" class="ac-tellck" checked> Tell ' + esc((A.agent(who.code) || {}).player || 'the player') + ' (a note from the Handler on their Agent File)</label>' +
         '<div class="vn-new" style="justify-content:flex-end"><button type="button" class="vn-btn" data-no>Back to editing</button><button type="button" class="vn-btn p" data-yes>Save</button></div>', 'ac-ask ac-reason');
       setTimeout(function () { w.querySelector('.ac-why').focus(); }, 0);
       var done = false;
       function finish(ok) {
         if (done) return; done = true;
-        var why = w.querySelector('.ac-why').value.trim();
+        var why = w.querySelector('.ac-why').value.trim(), tell = w.querySelector('.ac-tellck').checked;
         w.remove();
         res(ok);
         if (!ok) return;
         var line = '- ' + stamp(A.session()) + ' · by Handler: ' + (who.changes.length ? who.changes.join(', ') : 'sheet edited') + (why ? ' — ' + why : '');
-        ensureFile(who.code).then(function (path) { return append(path, 'Sheet changes', [line]); }).catch(function (err) { console.error('a-cell: could not log the sheet change', err); });
+        ensureFile(who.code).then(function (path) { return append(path, 'Sheet changes', [line + (tell ? ' · told the player' : '')]); }).catch(function (err) { console.error('a-cell: could not log the sheet change', err); });
+        if (tell) tellPlayer(who.code, (who.changes.length ? who.changes.join(', ') : 'Your sheet was edited') + (why ? ': ' + why : '.'));
       }
       w.addEventListener('click', function (e) {
         if (e.target.closest('[data-yes]')) finish(true);
         else if (e.target.closest('[data-no]') || e.target.closest('[data-vclose]') || e.target === w) finish(false);
       });
     });
+  }
+  // characters/{code}.handler_notes: the player's Agent File shows the new ones until read.
+  function tellPlayer(code, text) {
+    return window.dgAcellApi.handler().then(function (f) {
+      var ref = f.firestore().collection('characters').doc(code);
+      return ref.get().then(function (snap) {
+        var cur = ((snap && snap.exists && snap.data()) || {}).handler_notes || [];
+        return ref.set({ handler_notes: cur.concat([{ at: Date.now(), text: text }]).slice(-20) }, { merge: true });
+      });
+    }).catch(function (err) { console.error('a-cell: could not tell the player', err); });
   }
   // A profession key as its title, the way Agent Hub shows it.
   function profTitle(key) {
@@ -190,7 +202,7 @@
         photoHtml: photo ? '<div class="ac-paperpic" id="' + picId + '"></div>' : '',
         onPhoto: function () { fillPic(); },
         loadPhoto: function (box, src) { if (/^(https?:|data:)/.test(src)) box.innerHTML = '<img src="' + esc(src) + '" alt="">'; },
-        professionLabel: profTitle, members: [], cellName: c ? (c.name || c.cell_id) : '',
+        professionLabel: profTitle, members: [], cellName: c ? (c.name || c.cell_id) : '', handlerView: !opts.asPlayer,
         confirmSave: reason
       });
       var ed = host.querySelector('[data-a="edit"]');
@@ -201,5 +213,5 @@
     return w;
   }
 
-  window.dgAcPlayers = { ensureFile: ensureFile, append: append, editSheet: editSheet, stamp: stamp, SECTIONS: SECTIONS };
+  window.dgAcPlayers = { ensureFile: ensureFile, append: append, editSheet: editSheet, stamp: stamp, tellPlayer: tellPlayer, SECTIONS: SECTIONS };
 })();

@@ -127,8 +127,8 @@
       var inDeck = deck && deck.id === t.id;
       return '<div class="ac-tcard' + (mu.open === t.id ? ' on' : '') + '" data-tape="' + esc(t.id) + '">' +
         D.cassette(t, { chip: inDeck ? 'IN DECK · CH ' + ch : '' }) +
-        '<div class="ac-tacts"><button type="button" class="ac-btn' + (mu.open === t.id ? ' p' : '') + '" data-mu="open">' + (mu.open === t.id ? 'Open ✓' : 'Open') + '</button>' +
-        (inDeck ? '<button type="button" class="ac-btn" data-mu="eject">⏏ Eject</button>' : '<button type="button" class="ac-btn" data-mu="insert">▶ Into CH ' + esc(ch) + '</button>') + '</div></div>';
+        // Tapping the tape opens it; Play tape plays it and goes to the console (v3.13.0).
+        '<div class="ac-tacts">' + (inDeck ? '<button type="button" class="ac-btn" data-mu="eject">Take tape out</button>' : '<button type="button" class="ac-btn p" data-mu="insert">▶ Play tape</button>') + '</div></div>';
     }
     function rack(list, scope, label) {
       return '<div class="ac-track">' + list.map(card).join('') +
@@ -157,7 +157,7 @@
       (mu.naming ? '<form class="ac-tname" data-mu-name-form><input class="vn-search" data-mu-tname value="' + esc(t.name) + '"><button class="ac-btn p">Save</button></form>'
         : '<h3 class="ac-ttitle">' + esc(t.name) + ' <button type="button" class="ac-link" data-mu="rename-tape">✎</button></h3>') +
       '<div class="ac-tcolors">' + D.COLORS.map(function (c) { return '<button type="button" class="ac-sw' + (t.color === c ? ' on' : '') + '" style="background:' + c + '" data-mu="color" data-c="' + c + '" aria-label="Colour"></button>'; }).join('') + '</div>' +
-      '<div class="ac-sub">Side A · tracks <b>' + esc(D.fmt(rt) || '—') + '</b> · plays through, then back to 1</div>' +
+      partHd('tracks', 'Side A · tracks <b>' + esc(D.fmt(rt) || '—') + '</b> · plays through, then back to 1') +
       (t.tracks.length ? t.tracks.map(function (x, i) {
         return '<div class="ac-row" data-ti="' + i + '"><span class="ac-tn">' + (i + 1) + '</span><span class="ac-t">' + esc(x.title) + (x.kind === 'link' ? '<small>link</small>' : '') + '</span><span class="ac-dur">' + esc(D.fmt(x.dur) || '') + '</span>' +
           (i > 0 ? '<button type="button" class="ac-ic" data-mu="t-up" aria-label="Earlier">↑</button>' : '') +
@@ -165,15 +165,24 @@
       }).join('') : '<div class="ac-none">No tracks yet — tap a spine below.</div>') +
       (mu.linking ? '<form class="ac-tlink" data-mu-link-form><input class="vn-search" type="url" placeholder="YouTube / SoundCloud / .mp3 link" data-mu-lurl required><input class="vn-search" placeholder="Title" data-mu-ltitle><button class="ac-btn p">Add</button></form>'
         : '<button type="button" class="ac-link" data-mu="link">＋ a link (YouTube, SoundCloud)</button>') +
-      '<div class="ac-sub">Loops under it</div><div class="ac-pads">' + (t.loops.length ? t.loops.map(function (id) {
+      partHd('loops', 'Loops under it') + '<div class="ac-pads">' + (t.loops.length ? t.loops.map(function (id) {
         return '<span class="ac-padchip">≈ ' + esc(m.label('ambient', id)) + '<button type="button" data-mu="l-rm" data-id="' + esc(id) + '" aria-label="Take it off">✕</button></span>';
       }).join('') : '<span class="ac-none">None — tap a loop below.</span>') + '</div>' +
-      '<div class="ac-sub">Effect pads</div><div class="ac-tpads">' + t.pads.map(function (id) {
+      partHd('effects', 'Effect pads') + '<div class="ac-tpads">' + t.pads.map(function (id) {
         return '<span class="ac-tpad">' + esc(m.label('stinger', id)) + '<button type="button" data-mu="p-rm" data-id="' + esc(id) + '" aria-label="Take it off">✕</button></span>';
       }).join('') + (t.pads.length ? '' : '<span class="ac-none">None — tap a cartridge below.</span>') + '</div>' +
-      '<div class="ac-acts"><button type="button" class="ac-btn p" data-mu="insert-open">▶ Into CH ' + esc(m.channel()) + '</button><span class="ac-sp"></span><button type="button" class="ac-link ac-del" data-mu="del-tape">Delete tape</button></div>';
+      '<div class="ac-acts"><button type="button" class="ac-btn p" data-mu="insert-open">▶ Play tape</button><span class="ac-sp"></span><button type="button" class="ac-link ac-del" data-mu="del-tape">Delete tape</button></div>';
   }
 
+  // A part of the open tape with its own Add: the shelf below, showing that kind.
+  // After Play tape: the control center, where the tape now plays.
+  function showConsole() {
+    var c = document.getElementById('ac-console');
+    if (c && c.scrollIntoView) setTimeout(function () { c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 120);
+  }
+  function partHd(part, html) {
+    return '<div class="ac-sub ac-parthd"><span>' + html + '</span><button type="button" class="ac-btn ac-add" data-mu="add-part" data-part="' + part + '">+ Add</button></div>';
+  }
   function drawShelf() {
     var m = M();
     if (!m) { shelf.innerHTML = ''; return; }
@@ -255,7 +264,13 @@
     var D = T(), m = M(), a = b.getAttribute('data-mu'), card = b.closest('[data-tape]'), id = card ? card.getAttribute('data-tape') : mu.open, t = D.get(id);
     switch (a) {
       case 'open': mu.open = mu.open === id ? '' : id; mu.naming = false; mu.linking = false; drawTapes(); drawShelf(); return;
-      case 'insert': case 'insert-open': D.insert(id).catch(function (err) { A.ask((err && err.message) || String(err), 'OK', 'Close'); }); return;
+      case 'insert': case 'insert-open': D.insert(id).then(showConsole, function (err) { A.ask((err && err.message) || String(err), 'OK', 'Close'); }); return;
+      case 'add-part': {
+        mu.f = b.getAttribute('data-part'); mu.pop = null; drawShelf();
+        if (shelf.scrollIntoView) shelf.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        var q = shelf.querySelector('.ac-rq'); if (q && window.matchMedia('(min-width: 761px)').matches) q.focus();
+        return;
+      }
       case 'eject': D.eject(); return;
       case 'new': {
         var scope = b.getAttribute('data-scope'), op = D.operation(curOp()), cell = A.cell(curCell());

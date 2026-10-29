@@ -142,7 +142,8 @@
   /* ── Initiative ── */
   function inits(s) {
     var rows = present(s).filter(function (a) { return !(a.hp != null && a.hp <= 0); }).map(function (a) { return { name: a.name.split(' ').pop(), dex: a.dex, code: a.code }; });
-    s.npcs.forEach(function (n, i) { rows.push({ name: n.name, dex: +n.dex || 0, npc: i }); });
+    // init:false = waiting in the session, not in the order yet; hidden = in it, skipped (the phone's initiative sets both).
+    s.npcs.forEach(function (n, i) { if (n.init !== false && !n.hidden) rows.push({ name: n.name, dex: +n.dex || 0, npc: i }); });
     return rows.sort(function (a, b) { return (b.dex || 0) - (a.dex || 0) || (a.npc != null) - (b.npc != null); });
   }
   // NPCs: { name, dex, hp, wp, san } -- the vitals are optional; the ones
@@ -614,5 +615,5 @@
   document.addEventListener('dg-vault', function () { if (st.open && A.session() && !st.ed) soon(); else if (st.open) { var s = A.session(); if (s) drawNotebook(s); } });
   window.addEventListener('resize', function () { if (st.open) placeDice(); });
 
-  window.dgAcPlay = { layout: function () { return clone(L); }, build: build, cue: cue, arrange: function (on) { st.arrange = !!on; drawTools(); build(); } };
+  window.dgAcPlay = { layout: function () { return clone(L); }, build: build, cue: cue, markStart: markStart, arrange: function (on) { st.arrange = !!on; drawTools(); build(); } };
 })();

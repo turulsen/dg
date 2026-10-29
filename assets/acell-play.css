@@ -185,6 +185,7 @@ body[data-ac-mode="play"] footer.site-footer{ display:none; }
   .pd-grid > .pd-o > .pd-ob{ overflow:visible; }
   .pd-grid .pd-notebook{ order:-1; }
   .pd-grid .pd-dossiers{ order:-2; }
+  .pd-grid .pd-dossiers > .pd-ob{ overflow-x:auto; }
   .pd-grid .pd-page{ height:auto; }
   .pd-grid .pd-dice{ display:none; }
 }

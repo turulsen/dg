@@ -28,6 +28,8 @@
     return A.cell(id);
   }
 
+  // An icon from A-Cell's set (assets/acell-icons.js), or the old glyph.
+  function ic(n, alt) { return window.dgIcons ? window.dgIcons.svg(n, 's') : alt; }
   function build() {
     root.innerHTML =
       '<div class="cc">' +
@@ -37,8 +39,8 @@
         '<div class="cc-scr" data-cc="scr"></div>' +
         '<div class="cc-reels" data-cc="reels"><i></i><span class="cc-tape"></span><i></i></div>' +
         '<div class="cc-seek" data-cc="seekrow"><span data-cc="el">0:00</span><input type="range" min="0" max="0" step="1" value="0" data-cc="seek" aria-label="Seek"><span data-cc="du">0:00</span></div>' +
-        '<div class="cc-keys"><button type="button" data-cc="restart" title="From the top">◀◀</button><button type="button" data-cc="pause" title="Play / pause">▶ ❚❚</button>' +
-        '<button type="button" data-cc="stop" title="Stop the track">■</button><button type="button" data-cc="loop" title="Loop the track">LOOP</button></div>' +
+        '<div class="cc-keys"><button type="button" data-cc="restart" title="From the top" aria-label="From the top">' + ic('prev', '◀◀') + '</button><button type="button" data-cc="pause" title="Play / pause" aria-label="Play or pause">' + ic('play', '▶') + ic('pause', '❚❚') + '</button>' +
+        '<button type="button" data-cc="stop" title="Stop the track" aria-label="Stop">' + ic('stop', '■') + '</button><button type="button" data-cc="loop" title="Loop the track" aria-label="Loop">' + ic('loop', '') + 'LOOP</button></div>' +
         '<form class="cc-link" data-cc="linkform"><input type="url" placeholder="A link: YouTube, SoundCloud or .mp3" data-cc="url" required>' +
         '<input placeholder="Title" data-cc="title"><label class="cc-ck"><input type="checkbox" data-cc="linkloop" checked> loop</label>' +
         '<button type="submit" class="cc-mini p">▶ Play</button><button type="button" class="cc-mini" data-cc="cue">+ Cue</button></form>' +
@@ -94,20 +96,20 @@
     // On air now
     var live = (now.ambient || []).map(function (x) {
       return '<div class="cc-row" data-kind="ambient" data-ref="' + esc(x.id) + '"><span class="cc-k">LOOP</span><span class="cc-t">' + esc(m.label('ambient', x.id)) + '</span>' +
-        '<button type="button" class="cc-mini" data-cc="s-pause">' + (x.paused ? '▶' : '❚❚') + '</button>' +
-        '<button type="button" class="cc-mini' + (x.loop === false ? '' : ' on') + '" data-cc="s-loop" title="Loop">⟲</button>' +
-        '<button type="button" class="cc-mini" data-cc="s-stop" title="Stop">✕</button></div>';
+        '<button type="button" class="cc-mini" data-cc="s-pause" aria-label="Pause">' + (x.paused ? ic('play', '▶') : ic('pause', '❚❚')) + '</button>' +
+        '<button type="button" class="cc-mini' + (x.loop === false ? '' : ' on') + '" data-cc="s-loop" title="Loop" aria-label="Loop">' + ic('loop', 'loop') + '</button>' +
+        '<button type="button" class="cc-mini" data-cc="s-stop" title="Stop" aria-label="Stop">' + ic('close', '✕') + '</button></div>';
     }).concat((now.stingers || []).filter(function (x) { return !x.stopped; }).map(function (x) {
       return '<div class="cc-row" data-kind="stinger" data-ref="' + esc(x.fired_at) + '"><span class="cc-k fx">SFX</span><span class="cc-t">' + esc(m.label('stinger', x.id)) + ' <small>' + fmt(m.elapsedOf(x)) + '</small></span>' +
-        '<button type="button" class="cc-mini" data-cc="s-pause">' + (x.paused ? '▶' : '❚❚') + '</button>' +
-        '<button type="button" class="cc-mini' + (x.loop ? ' on' : '') + '" data-cc="s-loop" title="Loop">⟲</button>' +
-        '<button type="button" class="cc-mini" data-cc="s-stop" title="Stop">✕</button></div>';
+        '<button type="button" class="cc-mini" data-cc="s-pause" aria-label="Pause">' + (x.paused ? ic('play', '▶') : ic('pause', '❚❚')) + '</button>' +
+        '<button type="button" class="cc-mini' + (x.loop ? ' on' : '') + '" data-cc="s-loop" title="Loop" aria-label="Loop">' + ic('loop', 'loop') + '</button>' +
+        '<button type="button" class="cc-mini" data-cc="s-stop" title="Stop" aria-label="Stop">' + ic('close', '✕') + '</button></div>';
     }));
     q('live').innerHTML = live.join('') || '<div class="cc-none">Silence. Loops and effects you start show here.</div>';
     // The tape in the deck (assets/acell-tapes.js): its tracks, its pads; else the ones to put in.
     var D = window.dgTapes, deck = D && D.inDeck();
     var dt = deck && deck.tracks ? deck : null;
-    q('sname').innerHTML = deck ? '<button type="button" class="cc-mini" data-cc="eject">⏏ Eject</button>' : '';
+    q('sname').innerHTML = deck ? '<button type="button" class="cc-mini" data-cc="eject">' + ic('eject', '') + 'Take tape out</button>' : '';
     if (dt) {
       q('tape').innerHTML = '<div class="cc-deckcas">' + D.cassette(dt, { size: 'sm', spin: playing }) + '</div>' +
         '<div class="cc-tts">' + dt.tracks.map(function (t, i) {

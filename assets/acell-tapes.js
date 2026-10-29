@@ -12,7 +12,7 @@
 
      window.dgTapes = { load(), list(), get(id), create(fields), update(id,
      patch), remove(id), forOperation(opId), forCell(cellId), operations(),
-     operation(id), inDeck(), insert(id), eject(), runtime(tape), fmt(sec) }
+     operation(id), inDeck(), insert(id), eject(), runtime(tape), fmt(sec), reloadOps(), svg(tape, opts) }
    Fires 'dg-tapes' on document when anything changes. */
 (function () {
   'use strict';
@@ -39,8 +39,7 @@
       return Promise.all([col(f).get(), db.collection('operations').get()]).then(function (r) {
         r[0].forEach(function (doc) { byId[doc.id] = norm(doc.id, doc.data()); });
         ops = [];
-        r[1].forEach(function (doc) { var o = doc.data() || {}; ops.push({ operation_id: o.operation_id || doc.id, name: o.name || doc.id, cell_id: o.cell_id || '', created_at: o.created_at || 0 }); });
-        ops.sort(function (a, b) { return (b.created_at || 0) - (a.created_at || 0); });
+        readOps(r[1]);
         emit();
         try {
           col(f).onSnapshot(function (s) {
@@ -54,6 +53,15 @@
       });
     }).catch(function (err) { loading = null; throw err; });
     return loading;
+  }
+  function readOps(snap) {
+    ops = [];
+    snap.forEach(function (doc) { var o = doc.data() || {}; ops.push({ operation_id: o.operation_id || doc.id, name: o.name || doc.id, cell_id: o.cell_id || '', created_at: o.created_at || 0, vault_folder: o.vault_folder || '' }); });
+    ops.sort(function (a, b) { return (b.created_at || 0) - (a.created_at || 0); });
+  }
+  // Again after an operation is made elsewhere (the phone's New operation).
+  function reloadOps() {
+    return fb().then(function (f) { return f.firestore().collection('operations').get(); }).then(function (snap) { readOps(snap); emit(); return ops.slice(); });
   }
   function list() { return Object.keys(byId).map(function (k) { return byId[k]; }).sort(function (a, b) { return a.created_at - b.created_at; }); }
   function get(id) { return byId[id] || null; }
@@ -105,26 +113,48 @@
   }
   function eject() { var m = M(); if (m) m.setTape(null, null); }
 
-  /* ── A cassette, drawn (the Music tab, the control center, the desk) ── */
+  /* ── A cassette, drawn to the real 100.5 × 63.8 mm (v3.13.0) ──
+     The Music tab, the control center, the desk and the phone. */
   function esc(x) { return String(x == null ? '' : x).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   var STRIPES = ['#a3221c', '#2448a0', '#2c3a22', '#6a3aa0', '#c48a1a'];
   function light(c) { return /^#(e|f|d)/i.test(c || ''); }
+  var casN = 0;
+  function metaOf(t) {
+    var n = (t.tracks || []).length, rt = runtime(t);
+    return [n + ' track' + (n === 1 ? '' : 's'), fmt(rt), (t.loops || []).length ? (t.loops.length + ' loop' + (t.loops.length === 1 ? '' : 's')) : '', (t.pads || []).length ? t.pads.length + ' pads' : ''].filter(Boolean).join(' · ');
+  }
+  // The drawing alone: opts { meta, spin }
+  function svg(t, opts) {
+    opts = opts || {};
+    var name = t.name || 'Untitled tape', shell = t.color || COLORS[0], meta = opts.meta != null ? opts.meta : metaOf(t);
+    var stripe = STRIPES[Math.abs(String(t.id || name).split('').reduce(function (h, c) { return (h * 31 + c.charCodeAt(0)) | 0; }, 0)) % STRIPES.length];
+    var fz = Math.min(64, Math.floor(1500 / Math.max(8, name.length))), id = 'dgcw' + (++casN);
+    var screws = [[42, 42], [963, 42], [42, 596], [963, 596]].map(function (p) { return '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="15" fill="rgba(0,0,0,.35)"/><path d="M' + (p[0] - 8) + ' ' + p[1] + 'h16" stroke="rgba(255,255,255,.35)" stroke-width="4"/>'; }).join('');
+    function teeth(c) { return [0, 60, 120, 180, 240, 300].map(function (a) { return '<rect x="' + (c - 5) + '" y="226" width="10" height="16" fill="#efe9d8" transform="rotate(' + a + ' ' + c + ' 265)"/>'; }).join(''); }
+    return '<svg class="cas-svg' + (opts.spin ? ' spin' : '') + '" viewBox="0 0 1005 638" role="img" aria-label="Tape: ' + esc(name) + '"><defs><clipPath id="' + id + '"><rect x="252" y="196" width="501" height="138" rx="16"/></clipPath></defs>' +
+      '<rect x="4" y="4" width="997" height="630" rx="24" fill="' + esc(shell) + '" stroke="rgba(0,0,0,.5)" stroke-width="4"/><rect x="16" y="16" width="973" height="606" rx="16" fill="none" stroke="rgba(' + (light(shell) ? '0,0,0,.12' : '255,255,255,.1') + ')" stroke-width="3"/>' + screws +
+      '<rect x="80" y="62" width="845" height="384" rx="6" fill="#f1e8cc"/><text x="108" y="140" font-family="Special Elite,Courier New,monospace" font-size="46" fill="#8a7a5a">A</text>' +
+      '<text x="170" y="142" font-family="Special Elite,Courier New,monospace" font-size="' + fz + '" fill="#1d2a6a">' + esc(name) + '</text><path d="M108 168H897" stroke="#cbbd94" stroke-width="3"/>' +
+      '<rect x="80" y="352" width="845" height="34" fill="' + stripe + '"/><text x="108" y="428" font-family="Courier Prime,Courier New,monospace" font-size="30" fill="#5a4e38">' + esc(meta) + '</text>' +
+      '<rect x="252" y="196" width="501" height="138" rx="16" fill="#2b2117"/><g clip-path="url(#' + id + ')"><circle cx="352" cy="265" r="112" fill="#5b3a20"/><circle cx="653" cy="265" r="66" fill="#5b3a20"/></g>' +
+      '<rect x="252" y="196" width="501" height="138" rx="16" fill="none" stroke="rgba(0,0,0,.55)" stroke-width="4"/>' +
+      '<g class="cas-reel"><circle cx="352" cy="265" r="40" fill="#efe9d8"/><circle cx="352" cy="265" r="24" fill="#2b2117"/>' + teeth(352) + '</g>' +
+      '<g class="cas-reel"><circle cx="653" cy="265" r="40" fill="#efe9d8"/><circle cx="653" cy="265" r="24" fill="#2b2117"/>' + teeth(653) + '</g>' +
+      '<path d="M236 634L290 498H715L769 634Z" fill="rgba(0,0,0,.22)"/><circle cx="342" cy="578" r="17" fill="#1b140e"/><circle cx="663" cy="578" r="17" fill="#1b140e"/>' +
+      '<rect x="452" y="560" width="30" height="30" fill="#1b140e"/><rect x="523" y="560" width="30" height="30" fill="#1b140e"/><circle cx="502" cy="518" r="11" fill="rgba(0,0,0,.35)"/></svg>';
+  }
   // opts: { chip: 'IN DECK · CH 3', meta: '…' (default: tracks · runtime · loops · pads), spin: true, size: 'sm' }
   function cassette(t, opts) {
     opts = opts || {};
-    var n = (t.tracks || []).length, rt = runtime(t);
-    var meta = opts.meta != null ? opts.meta : [n + ' track' + (n === 1 ? '' : 's'), fmt(rt), (t.loops || []).length ? (t.loops.length + ' loop' + (t.loops.length === 1 ? '' : 's')) : '', (t.pads || []).length ? t.pads.length + ' pads' : ''].filter(Boolean).join(' · ');
-    var stripe = STRIPES[Math.abs(String(t.id || t.name).split('').reduce(function (h, c) { return (h * 31 + c.charCodeAt(0)) | 0; }, 0)) % STRIPES.length];
-    return '<div class="cas' + (opts.size ? ' cas-' + opts.size : '') + (light(t.color) ? ' cas-light' : '') + (opts.spin ? ' spin' : '') + '" style="--shell:' + esc(t.color || COLORS[0]) + ';--stripe:' + stripe + '">' +
-      '<div class="cas-lab"><small>A</small><b>' + esc(t.name) + '</b><span class="cas-meta">' + esc(meta) + '</span></div>' +
-      '<div class="cas-win"><i></i><i></i></div><div class="cas-foot"><u></u><u></u></div><div class="cas-side">A</div>' +
+    var meta = opts.meta != null ? opts.meta : metaOf(t);
+    return '<div class="cas' + (opts.size ? ' cas-' + opts.size : '') + '"><span class="cas-text">' + esc(t.name) + ' · ' + esc(meta) + '</span>' + svg(t, { meta: meta, spin: opts.spin }) +
       (opts.chip ? '<div class="cas-chip">' + esc(opts.chip) + '</div>' : '') + '</div>';
   }
 
   window.dgTapes = {
-    cassette: cassette,
+    cassette: cassette, svg: svg,
     load: load, list: list, get: get, create: create, update: update, remove: remove,
     forOperation: forOperation, forCell: forCell, operations: function () { return ops.slice(); }, operation: operation,
-    inDeck: inDeck, insert: insert, eject: eject, runtime: runtime, fmt: fmt, COLORS: COLORS
+    inDeck: inDeck, insert: insert, eject: eject, runtime: runtime, fmt: fmt, COLORS: COLORS, reloadOps: reloadOps
   };
 })();
