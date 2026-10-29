@@ -294,3 +294,20 @@ body.acm-panel #idc-root .idc-prev{ padding:8px; overflow:hidden; }
 body.acm-panel #idc-root .idc-prev > *{ zoom:.74; }
 body.acm-panel #idc-root input, body.acm-panel #idc-root select{ max-width:100%; }
 body.acm-panel #idc-root .idc-grid{ grid-template-columns:minmax(0,1fr) !important; } body.acm-panel #idc-root .idc-form{ min-width:0; }
+
+/* Music on a phone: the tape styles again, so the open tape reads as
+   paper and ink even where the shell's tape rules are late or missing */
+body.acm-panel .ac-tapes{ font-family:'Courier Prime','Courier New',monospace; color:#2a2418; }
+body.acm-panel .ac-tapes .ac-lede{ color:#5a4e38; font-size:13px; line-height:1.55; }
+body.acm-panel .ac-tapes .ac-sub{ color:#5a4e38; font-size:10.5px; letter-spacing:.18em; text-transform:uppercase; }
+body.acm-panel .ac-tapes .ac-none, body.acm-panel .ac-tapes .ac-tn, body.acm-panel .ac-tapes .ac-dur{ color:#6d6040; }
+body.acm-panel .ac-tcols{ display:grid; grid-template-columns:minmax(0,1fr); gap:16px; }
+body.acm-panel .ac-topen{ position:static; background:#fbf8ec; color:#2a2418; border:1px solid #cbbd94; padding:14px 12px; }
+body.acm-panel .ac-ttitle{ font-family:'Special Elite','Courier New',monospace; font-weight:400; font-size:20px; color:#2a2418; margin:0 0 6px; }
+body.acm-panel .ac-tcolors{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:6px; }
+body.acm-panel .ac-sw{ -webkit-appearance:none; appearance:none; display:block; width:30px; height:30px; min-width:30px; min-height:30px; flex:none; border-radius:0; border:2px solid rgba(42,36,24,.35); padding:0; cursor:pointer; }
+body.acm-panel .ac-sw.on{ border-color:#2a2418; outline:2px solid #f2d98a; outline-offset:1px; }
+body.acm-panel .ac-tnew{ -webkit-appearance:none; appearance:none; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; width:200px; height:128px; border:2px dashed #8a7a5a; border-radius:0; background:transparent; color:#5a4e38; font-family:'Special Elite','Courier New',monospace; text-transform:uppercase; letter-spacing:.08em; font-size:12px; cursor:pointer; }
+body.acm-panel .ac-tnew small{ font-family:'Courier Prime','Courier New',monospace; text-transform:none; letter-spacing:0; font-size:11px; }
+body.acm-panel .ac-tsub b{ color:#2a2418; }
+body.acm-panel .ac-opsel{ background:#fbf8ec; color:#2a2418; border:1px solid #cbbd94; border-radius:0; }
