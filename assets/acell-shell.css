@@ -393,3 +393,8 @@ body.folder-theme[data-ac-mode] footer.site-footer{ color:#b8a878; position:rela
 .cc-scr-t b{ font-weight:400; width:22px; flex:none; text-align:right; color:#4f8a4c; }
 .cc-scr-t.on, .cc-scr-t.on b{ color:#c8f5c3; text-shadow:0 0 6px rgba(159,227,154,.5); }
 .cc-scr-t:hover{ color:#9fe39a; }
+
+/* Hear it here (2026-10-30): this device plays the channel too */
+.cc-hear{ font:inherit; font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; border:1px solid #a58a62; background:transparent; color:#e9dfbf; padding:4px 9px; cursor:pointer; margin-left:auto; }
+.cc-hear.on{ background:#f2d98a; border-color:#f2d98a; color:#2a2418; }
+body.acm .cc-hear{ padding:8px 10px; }

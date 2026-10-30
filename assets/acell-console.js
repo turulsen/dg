@@ -34,7 +34,7 @@
     root.innerHTML =
       '<div class="cc">' +
       '<section class="cc-deck">' +
-        '<div class="cc-top"><span class="cc-chs" data-cc="chs"></span><span class="cc-air" data-cc="air"></span>' +
+        '<div class="cc-top"><span class="cc-chs" data-cc="chs"></span><span class="cc-air" data-cc="air"></span><button type="button" class="cc-hear" data-cc="hear" aria-pressed="false">Hear it here</button>' +
         '<span class="cc-cell"><select data-cc="cell" aria-label="Cell"></select><button type="button" class="cc-mini" data-cc="assign"></button></span></div>' +
         '<div class="cc-scr" data-cc="scr"></div>' +
         '<div class="cc-reels" data-cc="reels"><i></i><span class="cc-tape"></span><i></i></div>' +
@@ -89,6 +89,7 @@
     q('reels').className = 'cc-reels' + (playing ? ' spin' : '');
     drawSeek();
     q('loop').classList.toggle('on', !!cur.loop);
+    follow(); drawHear();
     q('status').textContent = m.status();
     // Mixer
     var mix = m.mix();
@@ -138,8 +139,17 @@
     }).join('') : '<div class="cc-none">Empty. "+ Cue" a link above, or a track from the shelf.</div>';
     q('auto').checked = !!m.autoAdvance();
   }
+  // A track's length, first from what the tape and the library know: a
+  // phone never loads the audio, and the engine's fallback was a 30:00
+  // placeholder (2026-10-30: the bar sat at 0:00 / 30:00 on a phone).
+  function knownDur(cur) {
+    var D = window.dgTapes, t = D && D.inDeck(), m = M(), d = 0;
+    if (t && t.tracks) t.tracks.forEach(function (x) { if (!d && x.title === cur.track_title && +x.dur) d = +x.dur; });
+    if (!d && m && m.tracks) (m.tracks() || []).forEach(function (x) { if (!d && x.url === cur.track_url && +x.duration) d = +x.duration; });
+    return d;
+  }
   function drawSeek() {
-    var m = M(), cur = (m.state().current || {}), du = m.duration(), sl = q('seek');
+    var m = M(), cur = (m.state().current || {}), du = knownDur(cur) || m.duration(), sl = q('seek');
     q('seekrow').hidden = !cur.track_url;
     if (st.seeking) return;
     // A looping track goes round: the position within this time through.
@@ -159,6 +169,7 @@
     if (!b || b.tagName === 'INPUT' || b.tagName === 'SELECT' || b.tagName === 'FORM') return;
     var row = b.closest('[data-kind]'), irow = b.closest('[data-i]');
     switch (b.getAttribute('data-cc')) {
+      case 'hear': hear(!st.hear); return;
       case 'restart': m.restart(); return;
       case 'pause': m.togglePause(); return;
       case 'stop': m.stop(); return;
@@ -201,6 +212,39 @@
     }
   });
 
+  /* Hear it here (2026-10-30): the Hub's own radio (the one Tune In
+     opens, in the page around A-Cell) tuned to this player's channel and
+     unmuted, so this device plays it all: track, loops and effects. Its
+     tap is what lets iOS start the sound. A-Cell on its own page has no
+     radio: then this device's preview plays the track. */
+  function R() { try { if (window.dgRadio) return window.dgRadio; if (window.parent !== window && window.parent.dgRadio) return window.parent.dgRadio; } catch (e) { /* not ours */ } return null; }
+  try { st.hear = localStorage.getItem('dg_acell_hear') === '1'; } catch (e) { st.hear = false; }
+  function hear(on) {
+    st.hear = !!on;
+    try { localStorage.setItem('dg_acell_hear', on ? '1' : '0'); } catch (e) { /* this time only */ }
+    var r = R(), m = M();
+    if (r) {
+      if (on) { r.tune(m.channel()); r.setMuted(false); if (r.resume) try { r.resume(); } catch (e) { /* the next tap */ } }
+      else r.setMuted(true);
+    } else if (m && m.previewHear) m.previewHear(on);
+    drawHear();
+  }
+  function drawHear() {
+    var b = q('hear');
+    if (!b) return;
+    var r = R(), s = r && r.state ? r.state() : null, m = M();
+    var on = st.hear && (!r || (s && s.channel === m.channel() && !s.muted));
+    b.classList.toggle('on', !!on);
+    b.setAttribute('aria-pressed', String(!!on));
+    b.textContent = on ? (s && s.resumeNeeded ? 'Tap to hear' : 'Hearing it here') : 'Hear it here';
+  }
+  // The channel changed while hearing: the radio follows it.
+  function follow() {
+    var r = R(), m = M();
+    if (!st.hear || !r || !m) return;
+    var s = r.state();
+    if (s.channel !== m.channel()) r.tune(m.channel());
+  }
   var t0 = null, onTab = false, home = null;
   function soon() { if (!st.open) return; clearTimeout(t0); t0 = setTimeout(draw, 30); }
   function live(on) {

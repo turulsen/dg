@@ -7635,6 +7635,13 @@
     channels: function () { return CHANNELS.slice(); },
     status: function () { return statusEl.textContent; },
     elapsed: function () { return current.track_url ? liveElapsedSeconds_() : 0; },
+    // This device's own preview, heard (2026-10-30, Hear it here without the
+    // Hub's radio): only the track, raised from a tap so iOS lets it play.
+    previewHear: function (on) {
+      volumeSlider.value = on ? 80 : 0;
+      volumeSlider.dispatchEvent(new Event('input'));
+      if (on && current.track_url && !current.paused) { var p = previewAudio.play(); if (p && p.catch) p.catch(function () { /* needs a tap */ }); }
+    },
     duration: function () {
       var a = document.getElementById('music-preview-audio');
       var d = a && isFinite(a.duration) ? a.duration : 0;

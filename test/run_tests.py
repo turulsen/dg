@@ -5139,6 +5139,54 @@ def test_acell_vault_format(p):
     record("acell-vault-fmt", "no JS errors (vault format)", not errs, str(errs))
     page.close()
 
+def test_acell_hear_here(p):
+    """2026-10-30: on a phone in Play, the player's progress bar showed
+    nothing (the phone never loads the audio, so no length); and hearing it
+    meant opening Tune In. The bar takes the length the tape knows, and
+    Hear it here tunes the Hub's radio to the player's channel, unmuted,
+    and follows it when the channel changes."""
+    import time as _t
+    ctx = p.new_context(viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True)
+    page = ctx.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    _block_fonts(page)
+    skip_acell_gate(page)
+    page.add_init_script("try { sessionStorage.setItem('dg_acell_pw', 'testpw'); localStorage.setItem('dg_acell_session', 'sess_4'); localStorage.setItem('dg_acell_mode', JSON.stringify('play')); } catch (e) {}")
+    # The phone: the preview element is never allowed to start.
+    page.add_init_script("HTMLMediaElement.prototype.play = function () { return Promise.reject(new DOMException('blocked', 'NotAllowedError')); };")
+    install_firestore_backend(page, acell_cell_fixture())
+    page.goto(f"{BASE}/hub.html?start=a-cell.html", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: any(f.name == "dg-shell-content" and "a-cell.html" in f.url for f in page.frames), timeout_ms=10000)
+    fr = [f for f in page.frames if f.name == "dg-shell-content"][0]
+    wait_for_condition(lambda: fr.evaluate("() => !!window.dgAcm && (window.__dgFirestoreListeners || []).some(l => l.path === 'cells')"), timeout_ms=10000)
+    for c in ("characters", "briefs", "cells", "tracks"):
+        push_collection(fr, c)
+    fr.evaluate("() => dgAcm.go('pads')")
+    wait_for_condition(lambda: fr.locator(".acm-cxbox [data-cc=hear]").count() == 1, timeout_ms=5000)
+    fr.click(".acm-cxbox .pd-cxt[data-id=tape_dread]")
+    ch = fr.evaluate("() => dgAcellMusic.channel()")
+    wait_for_condition(lambda: (fs_doc(fr, "radio/" + ch) or {}).get("track_title") == "Lighthouse at Dusk", timeout_ms=4000)
+    d = dict(fs_doc(fr, "radio/" + ch)); d["started_at"] = int(_t.time() * 1000) - 65000
+    push_firestore_doc_snapshot(fr, "radio/" + ch, True, d)
+    page.wait_for_timeout(1500)
+    du = fr.inner_text(".acm-cxbox [data-cc=du]")
+    el = fr.inner_text(".acm-cxbox [data-cc=el]")
+    record("acell-hear", "on a phone the progress bar has the track's length (from the tape) and moves", du == "6:21" and el in ("1:05", "1:06", "1:07"), f"{el} / {du}")
+    fr.click(".acm-cxbox [data-cc=hear]")
+    page.wait_for_timeout(400)
+    r = page.evaluate("() => window.dgRadio.state()")
+    record("acell-hear", "Hear it here: the Hub's radio, tuned to the player's channel, unmuted", r.get("channel") == ch and r.get("muted") is False and "HEARING" in fr.inner_text(".acm-cxbox [data-cc=hear]").upper(), str(r)[:200])
+    other = "2" if ch != "2" else "4"
+    fr.click(".acm-cxbox .cc-ch[data-ch='%s']" % other)
+    wait_for_condition(lambda: page.evaluate("() => window.dgRadio.state().channel") == other, timeout_ms=3000)
+    record("acell-hear", "…it follows the player to another channel", page.evaluate("() => window.dgRadio.state().channel") == other, "")
+    fr.click(".acm-cxbox [data-cc=hear]")
+    page.wait_for_timeout(300)
+    record("acell-hear", "…and a second tap mutes it again", page.evaluate("() => window.dgRadio.state().muted") is True, "")
+    record("acell-hear", "no JS errors (hear it here)", not errs, str(errs))
+    ctx.close()
+
 def test_acell_console(p):
     """v3.12.0, the Music tab's control center: the broadcast on a tape
     deck -- channels, the Cell's channel, a link to play or cue, the
@@ -14306,6 +14354,7 @@ def main():
         safe(test_acell_mobile_panels, browser, area="acell-mobile-panels")
         safe(test_vault_sync_rules, browser, area="vault-sync")
         safe(test_acell_console, browser, area="acell-console")
+        safe(test_acell_hear_here, browser, area="acell-hear")
         safe(test_acell_vault_format, browser, area="acell-vault-fmt")
         safe(test_acell_desk_player, browser, area="acell-desk-player")
         safe(test_acell_link_suggest, browser, area="acell-links")
