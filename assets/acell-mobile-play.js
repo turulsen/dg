@@ -121,7 +121,7 @@
         after: function (el) {
           var P = window.dgAcConsole;
           if (!P || !P.attach) return null;
-          P.attach(el.querySelector('.acm-cxhost'));
+          P.attach(el.querySelector('.acm-cxhost'), 'phone');
           return function () { P.detach(); };
         }
       };

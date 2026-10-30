@@ -34,10 +34,10 @@
   // A 12-column grid of 58px rows: each object { x, y, w, h } in cells.
   // Kept on this device (dg_acell_desk_v3); objects put away sit in `away`.
   var KEY3 = 'dg_acell_desk_v3', COLS = 12, ROW = 58, GAP = 12;
-  var MIN = { dossiers: [2, 3], initiative: [2, 2], dice: [2, 4], notebook: [3, 4], deck: [2, 2], pad: [2, 2], evidence: [2, 2], pads: [2, 2] };
+  var MIN = { dossiers: [2, 3], initiative: [2, 2], dice: [2, 4], notebook: [3, 4], deck: [4, 13], pad: [2, 2], evidence: [2, 2], pads: [2, 2] };
   var DEFAULT = { items: {
-    deck: { x: 0, y: 0, w: 3, h: 3 }, pads: { x: 3, y: 0, w: 2, h: 3 }, initiative: { x: 5, y: 0, w: 4, h: 3 }, pad: { x: 9, y: 0, w: 3, h: 4 },
-    dossiers: { x: 0, y: 3, w: 3, h: 8 }, notebook: { x: 3, y: 3, w: 6, h: 12 }, evidence: { x: 9, y: 4, w: 3, h: 4 }, dice: { x: 0, y: 11, w: 3, h: 6 }
+    deck: { x: 0, y: 0, w: 4, h: 13 }, pads: { x: 4, y: 0, w: 5, h: 3 }, initiative: { x: 4, y: 3, w: 5, h: 3 }, pad: { x: 9, y: 0, w: 3, h: 4 },
+    notebook: { x: 4, y: 6, w: 5, h: 12 }, evidence: { x: 9, y: 4, w: 3, h: 4 }, dossiers: { x: 9, y: 8, w: 3, h: 8 }, dice: { x: 0, y: 13, w: 4, h: 6 }
   }, away: [] };
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   var L = (function () {
@@ -46,6 +46,9 @@
     l.away = (l.away || []).filter(function (id) { return OBJ[id]; });
     Object.keys(OBJ).forEach(function (id) { if (!l.items[id] && l.away.indexOf(id) < 0) l.items[id] = clone(DEFAULT.items[id]); });
     Object.keys(l.items).forEach(function (id) { if (!OBJ[id] || l.away.indexOf(id) >= 0) delete l.items[id]; else fit(l.items[id], id); });
+    // The deck holds the full player since 2026-10-30: a saved layout's
+    // smaller deck grows, and whatever it now covers moves down.
+    if (l.items.deck) setTimeout(function () { settle('deck'); save(); }, 0);
     return l;
   })();
   function fit(r, id) {
@@ -79,6 +82,7 @@
     var key = (s ? s.id : '') + '|' + JSON.stringify(L) + '|' + st.arrange;
     if (st.built === key) return;
     releaseDice();
+    if (window.dgAcConsole && window.dgAcConsole.lent && window.dgAcConsole.lent() && panel.contains(document.getElementById('ac-console'))) window.dgAcConsole.detach();
     if (st.ed) { st.ed.destroy(); st.ed = null; st.edFor = ''; }
     st.htmlFor = '';
     st.built = key;
@@ -323,35 +327,25 @@
     var url = t.kind === 'track' ? (A.trackById(t.ref) || {}).url : t.ref;
     if (url) m.play({ url: url, title: t.title, kind: 'audio' });
   }
+  // The Music tab's own player, lent to the desk (2026-10-30), under the
+  // session's tapes: tap a tape and it's in the dialed channel's deck,
+  // its tracks on the player's screen and its pads on the Effect pads.
   function drawDeck(s) {
-    var el = ob('deck'), m = M();
+    var el = ob('deck'), m = M(), P = window.dgAcConsole;
     if (!el) return;
-    if (!m) { el.innerHTML = '<div class="pd-hint">The broadcast isn\'t available.</div>'; return; }
-    var now = m.state(), cur = now.current || {}, amb = now.ambient || [];
-    var lines = [];
-    if (cur.track_url) lines.push((cur.paused ? '❚❚ ' : '▶ ') + (cur.track_title || 'a track').toUpperCase() + (cur.loop ? ' (loop)' : ''));
-    amb.forEach(function (x) { lines.push('≈ ' + m.label('ambient', x.id).toUpperCase()); });
-    if (!lines.length) lines.push('— SILENCE —');
-    el.innerHTML = '<div class="pd-scr"><span class="pd-ch">CH ' + esc(m.channel()) + '</span>' + lines.map(esc).join('<br>') + '</div>' +
-      '<div class="pd-reels' + (cur.track_url && !cur.paused ? ' spin' : '') + '"><i></i><i></i></div>' +
-      '<div class="pd-keys"><button type="button" data-pd="restart" title="From the top">◀◀</button><button type="button" data-pd="pause" title="Play / pause">▶ ❚❚</button>' +
-      '<button type="button" data-pd="stop" title="Stop the track">■</button><button type="button" data-pd="loop" class="' + (cur.loop ? 'on' : '') + '" title="Loop">LOOP</button></div>' +
-      (function () {
-        var mu = music(s), D = window.dgTapes;
-        if (mu.tape) return '<div class="pd-tapename">⏏ <b>' + esc(mu.tape.name) + '</b><button type="button" data-pd="eject" title="Take the tape out">eject</button></div>' +
-          '<div class="pd-tape">' + mu.tracks.map(function (t, i) {
-            var on = cur.track_title === t.title && !!cur.track_url;
-            return '<button type="button" class="pd-tt' + (on ? ' on' : '') + '" data-pd="tape" data-i="' + i + '">♪ ' + esc(t.title) + '<small>' + esc(D.fmt(t.dur)) + '</small></button>';
-          }).join('') + '</div>';
-        var list = tapesFor(s);
-        if (list.length) return '<div class="pd-tape"><div class="pd-hint light">Put a tape in:</div>' + list.map(function (t) {
-          return '<button type="button" class="pd-tt" data-pd="insert" data-id="' + esc(t.id) + '">▶ ' + esc(t.name) + '</button>';
-        }).join('') + '</div>';
-        return mu.tracks.length ? '<div class="pd-tape">' + mu.tracks.map(function (t, i) {
-          var on = t.kind === 'ambient' ? amb.some(function (x) { return x.id === t.ref; }) : (cur.track_title === t.title && !!cur.track_url);
-          return '<button type="button" class="pd-tt' + (on ? ' on' : '') + '" data-pd="tape" data-i="' + i + '">' + (t.kind === 'ambient' ? '≈ ' : '♪ ') + esc(t.title) + '</button>';
-        }).join('') + '</div>' : '<div class="pd-hint light">No tape yet (Prep → Music → Tapes).</div>';
-      })();
+    if (!m || !P || !P.attach) { el.innerHTML = '<div class="pd-hint">The broadcast isn\'t available.</div>'; return; }
+    if (!el.querySelector('.pd-cxhost')) { el.innerHTML = '<div class="pd-cxtapes"></div><div class="pd-cxhost"></div>'; }
+    var host = el.querySelector('.pd-cxhost');
+    if (!host.querySelector('#ac-console')) P.attach(host, 'desk');
+    var D = window.dgTapes, t = deckTape(), cur = (m.state().current || {}), list = tapesFor(s), playing = !!cur.track_url && !cur.paused;
+    var key = list.map(function (x) { return x.id + x.name + x.color; }).join() + '|' + (t ? t.id : '') + playing + m.channel();
+    var strip = el.querySelector('.pd-cxtapes');
+    if (strip.getAttribute('data-k') === key) return;
+    strip.setAttribute('data-k', key);
+    strip.innerHTML = '<div class="pd-cxl">Tapes · tap one to play it on CH ' + esc(m.channel()) + '</div>' + (list.length ? '<div class="pd-cxrow">' + list.map(function (x) {
+      var on = t && t.id === x.id;
+      return '<button type="button" class="pd-cxt' + (on ? ' on' : '') + '" data-pd="' + (on ? 'noop' : 'insert') + '" data-id="' + esc(x.id) + '" title="' + esc(x.name) + '">' + D.svg(x, { spin: on && playing }) + '<span>' + esc(x.name) + (on ? '<em>in the deck</em>' : '') + '</span></button>';
+    }).join('') + '</div>' : '<div class="pd-hint light">No tapes for this session yet (Prep → Music → Tapes).</div>');
   }
 
   /* ── Evidence box ── */
@@ -632,6 +626,7 @@
       build();
     } else if (was) {
       releaseDice();
+      if (window.dgAcConsole && panel.contains(document.getElementById('ac-console'))) window.dgAcConsole.detach();
       if (st.ed) { st.ed.destroy(); st.ed = null; st.edFor = ''; }
       if (window.dgSessionNotes && window.dgSessionNotes.current() && window.dgSessionNotes.current().docked) window.dgSessionNotes.close();
       st.htmlFor = '';

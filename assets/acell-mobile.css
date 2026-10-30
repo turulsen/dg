@@ -352,5 +352,5 @@ body.acm .acm-cx-chs button.has::after{ content:''; position:absolute; top:4px; 
 /* Pads: the Music tab's player, lent (2026-10-30): the deck, not the desk */
 body.acm .acm-cxhost{ margin:4px 0 14px; }
 body.acm .cc-lent .cc{ display:block; }
-body.acm .cc-lent .cc-side, body.acm .cc-lent .cc-link, body.acm .cc-lent .cc-cell, body.acm .cc-lent .cc-status{ display:none; }
+body.acm .cc-phone .cc-side, body.acm .cc-phone .cc-cell, body.acm .cc-phone .cc-status{ display:none; }
 body.acm .cc-lent .cc-deck{ margin:0; }

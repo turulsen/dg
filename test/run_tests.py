@@ -4350,9 +4350,12 @@ def test_acell_play_desk(p):
     page.mouse.up()
     it = lay3()
     record("acell-play", "dragging a title bar puts the object at that spot on the grid, kept on the device (a small object stays small)",
-           it.get("pads", {}).get("y", 0) >= 8 and it.get("pads", {}).get("w") == 2 and it.get("pads", {}).get("h") == 3, str(it.get("pads")))
+           it.get("pads", {}).get("y", 0) >= 8 and it.get("pads", {}).get("w") == 5 and it.get("pads", {}).get("h") == 3, str(it.get("pads")))
     # Size the tape deck from its yellow corner: two columns wider, a row taller.
     p0 = it["deck"]
+    page.locator(".pd-o[data-o=deck] .pd-rz").scroll_into_view_if_needed()
+    page.evaluate("() => window.scrollBy(0, 250)")
+    page.wait_for_timeout(100)
     rz = page.locator(".pd-o[data-o=deck] .pd-rz").bounding_box()
     ex, ey = cell_xy(p0["x"] + p0["w"] + 1, p0["y"] + p0["h"])
     page.mouse.move(rz["x"] + 8, rz["y"] + 8); page.mouse.down(); page.mouse.move(ex, ey, steps=8); page.mouse.up()
@@ -5064,6 +5067,45 @@ def test_acell_link_suggest(p):
     record("acell-links", "no JS errors (links, phone)", not errs, str(errs))
     page.close()
 
+def test_acell_desk_player(p):
+    """2026-10-30, the computer's Play desk: the Music tab's player under
+    the session's tapes. Pick a tape for the dialed channel, any track on
+    it, the music / loops / effects levels, stop a loop; links are added
+    on the tape, not in the player."""
+    page, errs = open_acell_shell(p)
+    page.click("#acell-tab-strip .tw[data-tab=music]")
+    push_collection(page, "tracks")
+    page.wait_for_timeout(300)
+    page.click("#ac-modes [data-mode=play]")
+    wait_for_condition(lambda: page.locator(".pd-deck .pd-cxhost #ac-console").count() == 1, timeout_ms=5000)
+    record("acell-desk-player", "the desk's deck is the Music tab's player, under the session's tapes",
+           page.locator(".pd-deck .pd-cxt").count() >= 1 and page.locator(".pd-deck .cc-ch").count() == 5 and page.locator(".pd-deck [data-cc=mix-effects]").count() == 1 and page.is_visible(".pd-deck [data-cc=live]"), "")
+    record("acell-desk-player", "…no link box in the player (links go on the tape)", page.locator(".pd-deck .cc-link").count() == 0, "")
+    page.click(".pd-deck .cc-ch[data-ch='2']")
+    page.click(".pd-cxt[data-id=tape_dread]")
+    wait_for_condition(lambda: ((fs_doc(page, "radio/2") or {}).get("tape") or {}).get("id") == "tape_dread", timeout_ms=4000)
+    record("acell-desk-player", "a channel, then a tape: the tape is in that channel's deck, track 1 playing", (fs_doc(page, "radio/2") or {}).get("track_title") == "Lighthouse at Dusk", str(fs_doc(page, "radio/2"))[:200])
+    push_firestore_doc_snapshot(page, "radio/2", True, fs_doc(page, "radio/2"))
+    wait_for_condition(lambda: page.locator(".pd-deck .cc-scr-t").count() == 2, timeout_ms=4000)
+    page.click(".pd-deck .cc-scr-t[data-i='1']")
+    wait_for_condition(lambda: (fs_doc(page, "radio/2") or {}).get("track_title") == "Tension Rising", timeout_ms=4000)
+    record("acell-desk-player", "any track on the tape, from the player's screen", (fs_doc(page, "radio/2") or {}).get("track_title") == "Tension Rising", "")
+    record("acell-desk-player", "the tape's pads are on the Effect pads", "Scream 01" in page.inner_text(".pd-pads"), page.inner_text(".pd-pads")[:100])
+    page.eval_on_selector(".pd-deck [data-cc=mix-effects]", "el => { el.value = 30; el.dispatchEvent(new Event('input', { bubbles: true })); }")
+    wait_for_condition(lambda: (fs_doc(page, "radio/2") or {}).get("effects_volume") == 30, timeout_ms=4000)
+    record("acell-desk-player", "the effects level, for everyone on the channel", (fs_doc(page, "radio/2") or {}).get("effects_volume") == 30, "")
+    push_firestore_doc_snapshot(page, "radio/2", True, fs_doc(page, "radio/2"))
+    wait_for_condition(lambda: page.locator(".pd-deck [data-cc=live] .cc-row[data-kind=ambient]").count() == 1, timeout_ms=4000)
+    page.click(".pd-deck [data-cc=live] .cc-row[data-kind=ambient] [data-cc=s-stop]")
+    wait_for_condition(lambda: not (fs_doc(page, "radio/2") or {}).get("ambient_layers"), timeout_ms=4000)
+    record("acell-desk-player", "a loop stops from On air now", not (fs_doc(page, "radio/2") or {}).get("ambient_layers"), "")
+    page.click("#ac-modes [data-mode=prep]")
+    page.click("#acell-tab-strip .tw[data-tab=music]")
+    page.wait_for_timeout(300)
+    record("acell-desk-player", "leaving Play, the player is back on the Music tab", page.evaluate("() => !!document.querySelector('#panel-music #ac-console') && !document.getElementById('ac-console').classList.contains('cc-lent')"), "")
+    record("acell-desk-player", "no JS errors (desk player)", not errs, str(errs))
+    page.close()
+
 def test_acell_console(p):
     """v3.12.0, the Music tab's control center: the broadcast on a tape
     deck -- channels, the Cell's channel, a link to play or cue, the
@@ -5088,11 +5130,10 @@ def test_acell_console(p):
     # v3.13.0: a Cell has up to three channels -- assigning adds one.
     wait_for_condition(lambda: "2" in ((fs_doc(page, "cells/cell_osiris") or {}).get("channels") or []), timeout_ms=4000)
     record("acell-console", "…and does (one of the Cell's channels, the first stays its main one)", (fs_doc(page, "cells/cell_osiris") or {}).get("channels") == ["3", "2"] and (fs_doc(page, "cells/cell_osiris") or {}).get("channel") == "3", str(fs_doc(page, "cells/cell_osiris")))
-    page.fill("#ac-console [data-cc=url]", "https://example.invalid/fog.mp3")
-    page.fill("#ac-console [data-cc=title]", "Fog Signal")
-    page.click("#ac-console .cc-link button[type=submit]")
+    # 2026-10-30: links go on a tape (the tape editor), not in the player.
+    record("acell-console", "the player has no link box (links go on a tape)", page.locator("#ac-console .cc-link, #ac-console [data-cc=url]").count() == 0, "")
+    page.evaluate("() => window.dgAcellMusic.playLink('https://example.invalid/fog.mp3', 'Fog Signal')")
     wait_for_condition(lambda: (fs_doc(page, "radio/2") or {}).get("track_url") == "https://example.invalid/fog.mp3", timeout_ms=4000)
-    record("acell-console", "▶ Play puts the link on air on the channel", (fs_doc(page, "radio/2") or {}).get("track_title") == "Fog Signal", str(fs_doc(page, "radio/2"))[:200])
     push_firestore_doc_snapshot(page, "radio/2", True, fs_doc(page, "radio/2"))
     wait_for_condition(lambda: "FOG SIGNAL" in page.inner_text("#ac-console .cc-scr"), timeout_ms=4000)
     record("acell-console", "the deck's screen shows it, on air, with the seek bar", "FOG SIGNAL" in page.inner_text("#ac-console .cc-scr") and "ON AIR" in page.inner_text("#ac-console .cc-air") and page.is_visible("#ac-console [data-cc=seek]"), "")
@@ -5102,7 +5143,10 @@ def test_acell_console(p):
     record("acell-console", "LOOP turns the loop off (and on)", (fs_doc(page, "radio/2") or {}).get("loop") is False, "")
     page.eval_on_selector("#ac-console [data-cc=mix-ambient]", "el => { el.value = 40; el.dispatchEvent(new Event('input', { bubbles: true })); }")
     wait_for_condition(lambda: (fs_doc(page, "radio/2") or {}).get("ambient_volume") == 40, timeout_ms=4000)
-    record("acell-console", "the mixer sets the ambience level for everyone", (fs_doc(page, "radio/2") or {}).get("ambient_volume") == 40, "")
+    record("acell-console", "the mixer sets the loops level for everyone", (fs_doc(page, "radio/2") or {}).get("ambient_volume") == 40, "")
+    page.eval_on_selector("#ac-console [data-cc=mix-effects]", "el => { el.value = 25; el.dispatchEvent(new Event('input', { bubbles: true })); }")
+    wait_for_condition(lambda: (fs_doc(page, "radio/2") or {}).get("effects_volume") == 25, timeout_ms=4000)
+    record("acell-console", "…and the effects level, on its own (2026-10-30)", (fs_doc(page, "radio/2") or {}).get("effects_volume") == 25 and (fs_doc(page, "radio/2") or {}).get("ambient_volume") == 40, "")
     page.click("#ac-console [data-cc=insert][data-id=tape_dread]")
     wait_for_condition(lambda: any(l.get("id") == "drone-low" for l in (fs_doc(page, "radio/2") or {}).get("ambient_layers") or []), timeout_ms=4000)
     r2 = fs_doc(page, "radio/2") or {}
@@ -5123,10 +5167,7 @@ def test_acell_console(p):
     page.click("#ac-console [data-cc=stopall]")
     wait_for_condition(lambda: (fs_doc(page, "radio/2") or {}).get("stingers") == [], timeout_ms=4000)
     record("acell-console", "STOP ALL silences every effect and loop", (fs_doc(page, "radio/2") or {}).get("stingers") == [] and (fs_doc(page, "radio/2") or {}).get("ambient_layers") == [], "")
-    page.fill("#ac-console [data-cc=url]", "https://example.invalid/next.mp3")
-    page.click("#ac-console [data-cc=cue]")
-    wait_for_condition(lambda: "next.mp3" in page.inner_text("#ac-console [data-cc=cues]"), timeout_ms=4000)
-    record("acell-console", "+ Cue adds the link to the cue list", "next.mp3" in page.inner_text("#ac-console [data-cc=cues]"), page.inner_text("#ac-console [data-cc=cues]"))
+    page.evaluate("() => window.dgAcellMusic.cue({ url: 'https://example.invalid/next.mp3' })")
     record("acell-console", "auto-advance is on by default", page.is_checked("#ac-console [data-cc=auto]") and page.evaluate("() => window.dgAcellMusic.autoAdvance()") is True, "")
     record("acell-console", "a track on the cue list doesn't loop (the list carries on); any other track does",
            page.evaluate("() => window.dgAcellMusic.defaultLoop('https://example.invalid/next.mp3')") is False and page.evaluate("() => window.dgAcellMusic.defaultLoop('https://example.invalid/other.mp3')") is True, "")
@@ -6596,6 +6637,7 @@ def test_table_radio_mix_debug_readout(p):
     })
     page.wait_for_timeout(400)
     debug_text = page.inner_text("#dg-radio-debug")
+    record("radio", "a channel without its own effects level: effects follow the loops' level", "effects=ambient" in debug_text, debug_text)
     real_volume = page.eval_on_selector("#dg-radio-embed-wrap audio", "el => el.volume")
     record("radio", "the readout's stated mix matches the doc that was actually pushed",
            "mix track=0 ambient=100" in debug_text, debug_text)
@@ -6606,6 +6648,12 @@ def test_table_radio_mix_debug_readout(p):
     page.wait_for_timeout(150)
     record("radio", "the readout updates live when Mute is toggled, without needing a fresh snapshot",
            "(el.muted)" not in page.inner_text("#dg-radio-debug"), page.inner_text("#dg-radio-debug"))
+    push_radio_now_playing(page, "1", {
+        "channel": "1", "track_url": "https://example.com/ambience.mp3",
+        "track_title": "The Void", "started_at": 1700000000000, "track_volume": 0, "ambient_volume": 100, "effects_volume": 30,
+    })
+    page.wait_for_timeout(400)
+    record("radio", "effects_volume (2026-10-30): the effects' own level", "effects=30" in page.inner_text("#dg-radio-debug"), page.inner_text("#dg-radio-debug"))
 
     page.close()
     return errs
@@ -14225,6 +14273,7 @@ def main():
         safe(test_acell_mobile_panels, browser, area="acell-mobile-panels")
         safe(test_vault_sync_rules, browser, area="vault-sync")
         safe(test_acell_console, browser, area="acell-console")
+        safe(test_acell_desk_player, browser, area="acell-desk-player")
         safe(test_acell_link_suggest, browser, area="acell-links")
         safe(test_acell_mobile_release, browser, area="acell-mobile-play")
         safe(test_acell_mobile_decks, browser, area="acell-mobile")

@@ -214,3 +214,19 @@ body[data-ac-mode="play"] footer.site-footer{ display:none; }
 .pd-gdoc-hd{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 12px; border-bottom:1px solid #e3d9bb; background:#fbf8ec; font:12px 'Courier Prime',monospace; color:#5a4e38; }
 .pd-gdoc iframe{ flex:1; width:100%; min-height:66vh; border:0; background:#fff; }
 @media (max-width:720px){ .pd-ntabs{ flex-wrap:nowrap; overflow-x:auto; } }
+
+/* The desk's deck: the Music tab's player, lent, under the session's
+   tapes (2026-10-30). The deck block is just the frame now. */
+.pd-deck{ background:none; box-shadow:none; padding:0; border-radius:0; overflow-y:auto; }
+.pd-cxtapes{ margin-bottom:10px; }
+.pd-cxl{ font:10px 'Courier Prime',monospace; letter-spacing:.18em; text-transform:uppercase; color:#cbbd94; margin:0 2px 6px; }
+.pd-cxrow{ display:flex; gap:10px; overflow-x:auto; padding:4px 2px 8px; }
+.pd-cxt{ flex:none; width:118px; display:flex; flex-direction:column; gap:4px; background:none; border:0; padding:0; color:#f3e9c8; font:11px 'Courier Prime',monospace; text-align:left; cursor:pointer; }
+.pd-cxt svg{ display:block; width:100%; height:auto; filter:drop-shadow(0 4px 6px rgba(0,0,0,.5)); }
+.pd-cxt span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pd-cxt em{ display:block; font-style:normal; font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:#f2d98a; }
+.pd-cxt.on svg{ outline:3px solid #f2d98a; outline-offset:3px; }
+.cc-desk .cc{ display:block; margin:0; }
+.cc-desk .cc-side{ margin-top:10px; }
+.cc-desk .cc-side .cc-panel:nth-child(n+3){ display:none; }
+.cc-desk .cc-cell{ flex:1 1 100%; margin-left:0; }

@@ -5619,6 +5619,9 @@
   var mixTrackSlider = document.getElementById('music-mix-track');
   var mixTrackValueEl = document.getElementById('music-mix-track-value');
   var mixAmbientSlider = document.getElementById('music-mix-ambient');
+  // Effects (stingers) have their own level since 2026-10-30; a channel
+  // that never set one follows the loops' level, as effects always did.
+  var mixEffects = null;
   var mixAmbientValueEl = document.getElementById('music-mix-ambient-value');
   var addPlaylistBtn = document.getElementById('music-add-playlist-btn');
   var statusEl = document.getElementById('music-status');
@@ -6731,6 +6734,7 @@
         mixTrackValueEl.textContent = trackVol;
         mixAmbientSlider.value = ambientVol;
         mixAmbientValueEl.textContent = ambientVol;
+        mixEffects = data.effects_volume != null ? data.effects_volume : null;
         renderAmbientGrid();
         renderActiveSounds_();
         syncTransportUI_();
@@ -7637,8 +7641,9 @@
       return d || Number(seekSlider.max) || 0;
     },
     seek: function (sec) { sendSeek_(Math.max(0, Math.round(sec * 1000))); },
-    mix: function () { return { track: Number(mixTrackSlider.value), ambient: Number(mixAmbientSlider.value) }; },
+    mix: function () { return { track: Number(mixTrackSlider.value), ambient: Number(mixAmbientSlider.value), effects: mixEffects != null ? Number(mixEffects) : Number(mixAmbientSlider.value) }; },
     setMix: function (which, v) {
+      if (which === 'effects') { mixEffects = Math.max(0, Math.min(100, Math.round(Number(v)) || 0)); sendMixVolume_('effects_volume', mixEffects); return; }
       var sl = which === 'ambient' ? mixAmbientSlider : mixTrackSlider;
       sl.value = v; sl.dispatchEvent(new Event('input'));
     },

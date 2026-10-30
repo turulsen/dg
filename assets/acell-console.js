@@ -3,9 +3,9 @@
    on the same engine (window.dgAcellMusic):
 
      the deck   channel 1–5, the Cell's own channel (and setting it), on
-                air, what's playing, seek, ◀◀ ▶/❚❚ ■ LOOP, a link to play
-                or cue (YouTube, SoundCloud, an .mp3)
-     the mixer  track and ambience levels for everyone on the channel
+                air, what's playing and the tape's tracks (tap to play),
+                seek, ◀◀ ▶/❚❚ ■ LOOP; links go on a tape (the tape editor)
+     the mixer  music, loops and effects levels for everyone on the channel
      on air     every loop and effect sounding now: pause, loop, stop,
                 and STOP ALL
      the tape   the session's tracks and pads, one tap to play or fire
@@ -41,15 +41,14 @@
         '<div class="cc-seek" data-cc="seekrow"><span data-cc="el">0:00</span><input type="range" min="0" max="0" step="1" value="0" data-cc="seek" aria-label="Seek"><span data-cc="du">0:00</span></div>' +
         '<div class="cc-keys"><button type="button" data-cc="restart" title="From the top" aria-label="From the top">' + ic('prev', '◀◀') + '</button><button type="button" data-cc="pause" title="Play / pause" aria-label="Play or pause">' + ic('play', '▶') + ic('pause', '❚❚') + '</button>' +
         '<button type="button" data-cc="stop" title="Stop the track" aria-label="Stop">' + ic('stop', '■') + '</button><button type="button" data-cc="loop" title="Loop the track" aria-label="Loop">' + ic('loop', '') + 'LOOP</button></div>' +
-        '<form class="cc-link" data-cc="linkform"><input type="url" placeholder="A link: YouTube, SoundCloud or .mp3" data-cc="url" required>' +
-        '<input placeholder="Title" data-cc="title"><label class="cc-ck"><input type="checkbox" data-cc="linkloop" checked> loop</label>' +
-        '<button type="submit" class="cc-mini p">▶ Play</button><button type="button" class="cc-mini" data-cc="cue">+ Cue</button></form>' +
+        // Links go on a tape now (the open tape's + a link), not in here (2026-10-30).
         '<div class="cc-status" data-cc="status"></div>' +
       '</section>' +
       '<section class="cc-side">' +
         '<div class="cc-panel"><div class="cc-h">Mixer · everyone on CH <b data-cc="mixch"></b></div>' +
-          '<label class="cc-fader">Track<input type="range" min="0" max="100" data-cc="mix-track"><b data-cc="mix-track-v"></b></label>' +
-          '<label class="cc-fader">Ambience<input type="range" min="0" max="100" data-cc="mix-ambient"><b data-cc="mix-ambient-v"></b></label></div>' +
+          '<label class="cc-fader">Music<input type="range" min="0" max="100" data-cc="mix-track"><b data-cc="mix-track-v"></b></label>' +
+          '<label class="cc-fader">Loops<input type="range" min="0" max="100" data-cc="mix-ambient"><b data-cc="mix-ambient-v"></b></label>' +
+          '<label class="cc-fader">Effects<input type="range" min="0" max="100" data-cc="mix-effects"><b data-cc="mix-effects-v"></b></label></div>' +
         '<div class="cc-panel"><div class="cc-h">On air now<button type="button" class="cc-stopall" data-cc="stopall">STOP ALL</button></div><div data-cc="live"></div></div>' +
         '<div class="cc-panel"><div class="cc-h">Tape in the deck<span data-cc="sname"></span></div><div data-cc="tape"></div></div>' +
         '<div class="cc-panel"><div class="cc-h">Cue list<label class="cc-ck"><input type="checkbox" data-cc="auto"> auto-advance</label></div><div data-cc="cues"></div></div>' +
@@ -94,7 +93,7 @@
     // Mixer
     var mix = m.mix();
     q('mixch').textContent = ch;
-    ['track', 'ambient'].forEach(function (k) {
+    ['track', 'ambient', 'effects'].forEach(function (k) {
       var sl = q('mix-' + k);
       if (document.activeElement !== sl) sl.value = mix[k];
       q('mix-' + k + '-v').textContent = sl.value;
@@ -166,13 +165,6 @@
       case 'loop': m.toggleLoop(); return;
       case 'stopall': m.stopAll(); return;
       case 'assign': { var c = curCell(); if (c) m.assignCell(c.cell_id).then(draw); return; }
-      case 'cue': {
-        var url = q('url').value.trim();
-        if (!url) { q('url').focus(); return; }
-        m.cue({ url: url, title: q('title').value.trim() });
-        q('url').value = ''; q('title').value = '';
-        return;
-      }
       case 'cue-play': m.playCue(+(b.getAttribute('data-i') || irow.getAttribute('data-i'))); return;
       case 'cue-rm': m.uncue(+irow.getAttribute('data-i')); return;
       case 'tape': m.playCue(+b.getAttribute('data-i')); return;
@@ -192,15 +184,10 @@
       }
     }
   });
-  root.addEventListener('submit', function (e) {
-    e.preventDefault();
-    var url = q('url').value.trim();
-    if (url) { M().playLink(url, q('title').value.trim(), q('linkloop').checked); q('url').value = ''; q('title').value = ''; }
-  });
   root.addEventListener('input', function (e) {
     var k = e.target.getAttribute('data-cc');
     if (k === 'seek') { st.seeking = true; q('el').textContent = fmt(e.target.value); }
-    else if (k === 'mix-track' || k === 'mix-ambient') { q(k + '-v').textContent = e.target.value; M().setMix(k.slice(4), e.target.value); }
+    else if (k === 'mix-track' || k === 'mix-ambient' || k === 'mix-effects') { q(k + '-v').textContent = e.target.value; M().setMix(k.slice(4), e.target.value); }
   });
   root.addEventListener('change', function (e) {
     var k = e.target.getAttribute('data-cc'), m = M();
@@ -225,18 +212,20 @@
   }
   // Lent to another screen (the phone's Pads, 2026-10-30): the player moves
   // there, live, and back to the Music tab after.
-  function attach(host) {
+  // how: 'phone' (the deck only) or 'desk' (the deck, mixer and on air).
+  function attach(host, how) {
     if (!host) return;
     if (!home) { home = document.createComment('ac-console'); root.parentNode.insertBefore(home, root); }
-    host.appendChild(root);
-    root.classList.add('cc-lent');
+    if (root.parentNode !== host) host.appendChild(root);
+    root.classList.remove('cc-phone', 'cc-desk');
+    root.classList.add('cc-lent', 'cc-' + (how || 'phone'));
     live(true);
   }
   function detach() {
     if (!home || !home.parentNode) return;
     home.parentNode.insertBefore(root, home);
     home.parentNode.removeChild(home); home = null;
-    root.classList.remove('cc-lent');
+    root.classList.remove('cc-lent', 'cc-phone', 'cc-desk');
     live(onTab);
   }
   document.addEventListener('dg-acell-tab', function (e) {
@@ -260,5 +249,5 @@
     classic.addEventListener('toggle', function () { try { localStorage.setItem('dg_acell_classic_open', classic.open ? '1' : '0'); } catch (e) { /* this time only */ } });
   }
 
-  window.dgAcConsole = { draw: draw, attach: attach, detach: detach };
+  window.dgAcConsole = { draw: draw, attach: attach, detach: detach, lent: function () { return !!home; } };
 })();
