@@ -158,6 +158,9 @@
       return {
         bar: { title: 'Initiative · round ' + ts.round, sub: 'Tap a post-it for the Agent or NPC', right: [['back', 'to-prep', 'Back to Prep']] },
         html: '<div class="acm-desk"><div class="acm-g3 acm-initbar">' + btn('Next turn', 'next-turn', 'cream') + btn('New round', 'new-round', 'dark') + btn(I('add') + 'NPC', 'new-npc-init', 'dark') + '</div>' +
+          // Where the fight is (2026-10-30: New round looked like it did
+          // nothing when the top post-it already had the turn).
+          '<div class="acm-round"><b>Round ' + ts.round + '</b><span>' + esc(now ? (now.agent ? now.agent.name : now.npc.name) + '\'s turn' : 'no one in the order') + '</span>' + (ts.round > 1 || ts.turn ? '<button type="button" data-acm="round-reset">Start over</button>' : '') + '</div>' +
           (rows.length ? rows.map(function (r, k) {
             var on = r === now, cls = r.npc ? 'c-pu' : 'c-y';
             if (r.agent) {
@@ -396,7 +399,14 @@
   };
   X['tape-toggle'] = function () { var m = M(), cur = m.state().current || {}; if (cur.track_url) m.togglePause(); else if (m.cueList().length) m.playCue(0); else deckSheet(); };
   X['next-turn'] = function () { var s = A.session(), ts = turnState(s), n = live(order(s)).length; if (!n) return; ts.turn = (ts.turn + 1) % n; if (ts.turn === 0) ts.round++; saveTurn(s, ts); C.refresh(); };
-  X['new-round'] = function () { var s = A.session(); saveTurn(s, { turn: 0, round: turnState(s).round + 1 }); C.refresh(); };
+  function firstUp(s) { var lv = live(order(s)); return lv.length ? (lv[0].agent ? lv[0].agent.name : lv[0].npc.name) : ''; }
+  X['new-round'] = function () {
+    var s = A.session(), r = turnState(s).round + 1;
+    saveTurn(s, { turn: 0, round: r }); C.refresh();
+    C.toast('Round ' + r + (firstUp(s) ? ' · ' + firstUp(s) + ' first' : '') + '.');
+  };
+  // The fight is over: round 1, the top of the order.
+  X['round-reset'] = function () { var s = A.session(); saveTurn(s, { turn: 0, round: 1 }); C.refresh(); C.toast('Round 1.'); };
   X['new-npc-init'] = function () { C.npcSheet(); };
   X['agent-read'] = function (b) { C.go('agent-sheet', b.getAttribute('data-code')); };
   X['npc-open'] = function (b) { npcSheet(A.session(), +b.getAttribute('data-i')); };

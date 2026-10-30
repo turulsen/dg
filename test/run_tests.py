@@ -5021,6 +5021,15 @@ def test_acell_mobile_release(p):
         wait_for_condition(lambda: name in page.inner_text("#acm-view"), timeout_ms=5000)
         record("acell-mobile-play", "Initiative: a new NPC (%s) shows up there at once" % ("Save" if go_btn == "save" else "Save + into initiative, switch off"),
                name in page.inner_text("#acm-view") and any(n.get("name") == name for n in (_sess(page).get("npcs") or [])), page.inner_text("#acm-view")[:200])
+    # 2026-10-30: New round looked like it did nothing (the turn was already on top).
+    acm(page, "dgAcm.go('initiative')")
+    r0 = page.inner_text(".acm-round b")
+    page.click("[data-acm=new-round]")
+    page.wait_for_timeout(300)
+    record("acell-mobile-play", "New round: the round marker counts up and says so", page.inner_text(".acm-round b") != r0 and "ROUND" in page.inner_text("#acm-toast, .acm-toast").upper() if page.locator("#acm-toast, .acm-toast").count() else page.inner_text(".acm-round b") != r0, page.inner_text(".acm-round"))
+    page.click("[data-acm=round-reset]")
+    page.wait_for_timeout(300)
+    record("acell-mobile-play", "…Start over goes back to round 1", page.inner_text(".acm-round b") == "Round 1", page.inner_text(".acm-round"))
     record("acell-mobile-play", "no JS errors (release)", not errs, str(errs))
     page.close()
 
