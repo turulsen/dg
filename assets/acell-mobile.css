@@ -327,9 +327,25 @@ body.acm .acm-gdoc-hd{ display:flex; align-items:center; justify-content:space-b
 body.acm .acm-gdoc iframe{ flex:1; width:100%; min-height:62vh; border:0; background:#fff; }
 /* Dashboard: every channel's tape, as its cassette (2026-10-30) */
 body.acm .acm-deckrow{ gap:10px; }
-body.acm .acm-deckcas{ width:64px; flex:none; display:block; }
-body.acm .acm-deckcas svg{ display:block; width:100%; height:auto; }
+body.acm .acm-deckmini{ width:64px; flex:none; display:block; }
+body.acm .acm-deckmini svg{ display:block; width:100%; height:auto; }
 body.acm .acm-deckrow .acm-btn{ flex:none; }
 body.acm .acm-deckrow .acm-btn.red{ min-width:38px; padding:0 8px; }
 body.acm .acm-deckgo{ display:flex; align-items:center; gap:10px; flex:1; min-width:0; background:none; border:0; padding:0; font:inherit; color:inherit; text-align:left; cursor:pointer; }
 body.acm .acm-deckgo .acm-g b{ overflow-wrap:normal; word-break:normal; }
+/* Pads (2026-10-30): the session's tapes on top, the player, then the pads */
+body.acm .acm-cx-tapes{ display:flex; gap:12px; overflow-x:auto; padding:4px 2px 10px; scroll-snap-type:x mandatory; }
+body.acm .acm-cx-tape{ flex:none; width:150px; display:flex; flex-direction:column; gap:6px; background:none; border:0; padding:0; color:#f3e9c8; font:12px 'Courier Prime',monospace; text-align:left; cursor:pointer; scroll-snap-align:start; }
+body.acm .acm-cx-tape svg{ display:block; width:100%; height:auto; filter:drop-shadow(0 4px 6px rgba(0,0,0,.5)); }
+body.acm .acm-cx-tape span{ display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+body.acm .acm-cx-tape em{ display:block; font-style:normal; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:#f2d98a; }
+body.acm .acm-cx-tape.on svg{ outline:3px solid #f2d98a; outline-offset:3px; }
+body.acm .acm-cx{ margin:4px 0 14px; padding:12px; background:#1c1608; border:1px solid #4a3f28; box-shadow:inset 0 0 0 1px rgba(255,255,255,.04); }
+body.acm .acm-cx-now b{ display:block; font-family:'Special Elite',serif; font-weight:400; font-size:17px; color:#f3e9c8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+body.acm .acm-cx-now small{ color:#b8a878; font-size:11px; letter-spacing:.06em; }
+body.acm .acm-cx-tr button{ color:#f3e9c8; border-color:#6d6040; background:#2a2418; }
+body.acm .acm-cx-tr button.on{ background:#f2d98a; color:#1c1608; border-color:#f2d98a; }
+body.acm .acm-cx-chs{ display:flex; gap:6px; margin-top:10px; }
+body.acm .acm-cx-chs button{ flex:1; min-height:34px; border:1px solid #6d6040; background:transparent; color:#b8a878; font:11px 'Special Elite',monospace; letter-spacing:.08em; position:relative; cursor:pointer; }
+body.acm .acm-cx-chs button.on{ background:#f3e9c8; color:#1c1608; border-color:#f3e9c8; }
+body.acm .acm-cx-chs button.has::after{ content:''; position:absolute; top:4px; right:4px; width:6px; height:6px; border-radius:50%; background:#f2d98a; }

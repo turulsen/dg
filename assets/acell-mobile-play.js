@@ -68,6 +68,36 @@
   function deckTape() { var D = T(), t = D && D.inDeck(); return t && t.tracks ? t : null; }
   function tapesFor(s) { var D = T(); return D && s ? D.forOperation(s.operation_id).concat(D.forCell(s.cell_id)) : []; }
 
+  /* ── The console (2026-10-30): Play opens on it. The deck of the dialed
+     channel (its cassette, what plays, the transport), the channels, one
+     button that puts the session's next tape in, then the pads. ── */
+  function playingAt(m) {
+    var cur = m.state().current || {}, at = -1;
+    if (cur.track_url) m.cueList().forEach(function (c, i) { if (at < 0 && (c.url === cur.track_url || c.title === cur.track_title)) at = i; });
+    return at;
+  }
+  function consoleHtml(s, m) {
+    var D = T(), t = deckTape(), cur = m.state().current || {}, ch = m.channel(), list = tapesFor(s);
+    var inDeck = {};
+    (D && D.decks ? D.decks() : []).forEach(function (d) { inDeck[d.ch] = d.tape; });
+    var playing = !!cur.track_url && !cur.paused;
+    // The session's tapes: tap one and it's in this channel's deck, playing.
+    var tapes = lab('Tapes · tap one to play it on CH ' + ch) + (list.length ? '<div class="acm-cx-tapes">' + list.map(function (x) {
+      var on = t && t.id === x.id;
+      return '<button type="button" class="acm-cx-tape' + (on ? ' on' : '') + '" data-acm="' + (on ? 'deck' : 'tape-in') + '" data-id="' + esc(x.id) + '">' + cass(x, { spin: on && playing }) + '<span>' + esc(x.name) + (on ? '<em>in the deck</em>' : '') + '</span></button>';
+    }).join('') + '</div>' : '<p class="acm-none light">No tapes for this session yet. Make them on the Music tab.</p>');
+    // The player: the dialed channel, what plays, the transport.
+    var player = '<div class="acm-cx">' +
+      '<div class="acm-cx-now"><span class="acm-g"><b>' + esc(cur.track_url ? (cur.track_title || 'a track') : (t ? 'Stopped' : 'Nothing playing')) + '</b><small>' + esc((t ? t.name + ' · ' : '') + 'CH ' + ch + (cur.paused && cur.track_url ? ' · paused' : '') + (cur.loop ? ' · loop' : '')) + '</small></span></div>' +
+      '<div class="acm-transport acm-cx-tr">' + [['prev', 'prev', 'From the top'], [playing ? 'pause' : 'play', 'pause', 'Play or pause'], ['stop', 'stop', 'Stop'], ['next', 'next', 'Next track'], ['loop', 'loop', 'Loop the track']].map(function (x) {
+        return '<button type="button" class="' + (x[1] === 'loop' && cur.loop ? 'on' : '') + '" data-acm="cx" data-k="' + x[1] + '" aria-label="' + x[2] + '">' + I(x[0]) + '</button>';
+      }).join('') + '</div>' +
+      '<div class="acm-cx-chs">' + ['1', '2', '3', '4', '5'].map(function (c) {
+        return '<button type="button" class="' + (c === ch ? 'on' : '') + (inDeck[c] ? ' has' : '') + '" data-acm="cx-ch" data-ch="' + c + '" title="' + (inDeck[c] ? esc(inDeck[c].name) : 'empty') + '">CH ' + c + '</button>';
+      }).join('') + '</div></div>';
+    return tapes + player;
+  }
+
   /* ── Pads ── */
   C.screen('pads', {
     mode: 'play', tab: 'pads',
@@ -81,8 +111,8 @@
       var loops = (t ? t.loops : []).concat(m.ambientList().map(function (x) { return x.id; }).filter(function (id) { return !t || t.loops.indexOf(id) < 0; }));
       return {
         bar: { title: 'Pads', sub: (t ? t.name + ' · ' : '') + 'CH ' + m.channel() + (cur.track_title ? ' · ' + cur.track_title : ''), back: false, right: [['back', 'to-prep', 'Back to Prep'], ['tape', 'deck', 'The tape deck']] },
-        html: '<div class="acm-desk">' + (mine.length ? lab((t ? 'This tape' : 'This session') + ' · ' + mine.length + ' pad' + (mine.length === 1 ? '' : 's')) + '<div class="acm-pads">' + mine.map(function (id) { return pad(id); }).join('') + '</div>' : '<p class="acm-none light">No pads on the tape yet. Every effect is below.</p>') +
-          '<div class="acm-stoprow">' + btn('Stop all sound', 'stopall', 'sr') + btn(I(cur.paused || !cur.track_url ? 'play' : 'pause') + 'Tape', 'tape-toggle', 'dark') + '</div>' +
+        html: '<div class="acm-desk">' + consoleHtml(s, m) + (mine.length ? lab((t ? 'This tape' : 'This session') + ' · ' + mine.length + ' pad' + (mine.length === 1 ? '' : 's')) + '<div class="acm-pads">' + mine.map(function (id) { return pad(id); }).join('') + '</div>' : '<p class="acm-none light">No pads on the tape yet. Every effect is below.</p>') +
+          '<div class="acm-stoprow">' + btn('Stop all sound', 'stopall', 'sr') + '</div>' +
           lab('Loops') + '<div class="acm-chips">' + loops.map(function (id) { return '<button type="button" class="acm-chip loop' + (amb.indexOf(id) >= 0 ? ' on' : '') + '" data-acm="loop" data-id="' + esc(id) + '">' + esc(m.label('ambient', id)) + '</button>'; }).join('') + '</div>' +
           m.stingerGroups().map(function (g) {
             var ids = (g.stingers || []).map(function (x) { return x.id; }).filter(function (id) { return !seen[id]; });
@@ -336,6 +366,19 @@
   X.fire = function (b) { M().fire(b.getAttribute('data-id')); b.classList.add('on'); setTimeout(function () { b.classList.remove('on'); }, 900); };
   X.loop = function (b) { var on = !b.classList.contains('on'); b.classList.toggle('on', on); M().setAmbient(b.getAttribute('data-id'), on); };
   X.stopall = function () { M().stopAll(); C.toast('Every effect and loop stopped.'); };
+  X['cx-ch'] = function (b) { var m = M(); if (m) m.setChannel(b.getAttribute('data-ch')); C.refresh(); };
+  X['cx'] = function (b) {
+    var m = M(), k = b.getAttribute('data-k'), cur = m.state().current || {}, cues = m.cueList();
+    if (k === 'prev') m.restart();
+    else if (k === 'pause') { if (cur.track_url) m.togglePause(); else if (cues.length) m.playCue(0); else deckSheet(); }
+    else if (k === 'stop') m.stop();
+    else if (k === 'next') { if (cues.length) m.playCue((playingAt(m) + 1) % cues.length); }
+    else if (k === 'loop') m.toggleLoop();
+  };
+  X['tape-in'] = function (b) {
+    var id = b.getAttribute('data-id'), t = T().get(id);
+    T().insert(id).then(function () { C.toast((t ? t.name : 'The tape') + ' is in CH ' + M().channel() + '.'); C.refresh(); });
+  };
   X['tape-toggle'] = function () { var m = M(), cur = m.state().current || {}; if (cur.track_url) m.togglePause(); else if (m.cueList().length) m.playCue(0); else deckSheet(); };
   X['next-turn'] = function () { var s = A.session(), ts = turnState(s), n = live(order(s)).length; if (!n) return; ts.turn = (ts.turn + 1) % n; if (ts.turn === 0) ts.round++; saveTurn(s, ts); C.refresh(); };
   X['new-round'] = function () { var s = A.session(); saveTurn(s, { turn: 0, round: turnState(s).round + 1 }); C.refresh(); };

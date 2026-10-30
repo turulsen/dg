@@ -623,7 +623,7 @@
         var ds = D.decks();
         return '<div class="acm-card">' + (ds.length ? ds.map(function (d) {
           // Tap the tape for that channel's console; x takes it out of the deck.
-          return '<div class="acm-row acm-deckrow"><button type="button" class="acm-deckgo" data-acm="deck-console" data-ch="' + esc(d.ch) + '"><span class="acm-deckcas" aria-hidden="true">' + D.svg(d.tape, { meta: '' }) + '</span><span class="acm-g"><b>' + esc(d.tape.name || 'Tape') + '</b><small>CH ' + esc(d.ch) + (d.track ? ' · ' + esc(d.track) : '') + (d.paused ? ' · paused' : '') + '</small></span></button>' +
+          return '<div class="acm-row acm-deckrow"><button type="button" class="acm-deckgo" data-acm="deck-console" data-ch="' + esc(d.ch) + '"><span class="acm-deckmini" aria-hidden="true">' + D.svg(d.tape, { meta: '' }) + '</span><span class="acm-g"><b>' + esc(d.tape.name || 'Tape') + '</b><small>CH ' + esc(d.ch) + (d.track ? ' · ' + esc(d.track) : '') + (d.paused ? ' · paused' : '') + '</small></span></button>' +
             btn(I('close'), 'deck-out', 's red', 'data-ch="' + esc(d.ch) + '" aria-label="Take the tape out of CH ' + esc(d.ch) + '"') + '</div>';
         }).join('') : '<p class="acm-none">No tape in any deck.</p>') + '</div>';
       },

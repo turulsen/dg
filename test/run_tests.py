@@ -4955,7 +4955,7 @@ def test_acell_mobile_decks(p):
     acm(page, "dgAcm.go('session')")
     wait_for_condition(lambda: page.locator(".acm-deckrow").count() == 2, timeout_ms=3000)
     rows = page.eval_on_selector_all(".acm-deckrow .acm-g", "els => els.map(e => e.innerText.replace(/\\s+/g, ' '))")
-    fills = page.eval_on_selector_all(".acm-deckrow .acm-deckcas svg", "els => els.map(e => e.innerHTML.indexOf('#7a2a24') >= 0)")
+    fills = page.eval_on_selector_all(".acm-deckrow .acm-deckmini svg", "els => els.map(e => e.innerHTML.indexOf('#7a2a24') >= 0)")
     record("acell-mobile", "Tapes in the decks: every channel's tape (CH 1 and CH 3), not only the dialed one", len(rows) == 2 and "Spooner Ave" in rows[0] and "CH 1" in rows[0] and "CH 3" in rows[1], str(rows))
     record("acell-mobile", "…each drawn as its cassette, in its own colour", len(fills) == 2 and fills[0] is True, str(fills))
     page.click(".acm-deckrow [data-acm=deck-out][data-ch='1']")
@@ -4992,6 +4992,13 @@ def test_acell_mobile_release(p):
     page.wait_for_timeout(500)
     top = page.evaluate("() => { var c = document.getElementById('ac-console'); return c ? c.getBoundingClientRect().top : -999; }")
     record("acell-mobile-play", "Tape (instead of Fire a pad) goes to the console", page.evaluate("() => dgAcm.current()") == "music" and -5 <= top < 400, str(top))
+    # 2026-10-30: Pads, top to bottom: the session's tapes, the player, the pads.
+    acm(page, "dgAcm.go('pads')")
+    order = page.evaluate("() => { var t = document.querySelector('.acm-cx-tapes'), p = document.querySelector('.acm-cx'), d = document.querySelector('.acm-pads'); return !!(t && p && d) && !!(t.compareDocumentPosition(p) & 4) && !!(p.compareDocumentPosition(d) & 4); }")
+    record("acell-mobile-play", "Pads: the session's tapes on top, the player under them, then the pads", order and page.locator(".acm-cx-tr [data-acm=cx]").count() == 5 and page.locator(".acm-cx-chs button").count() == 5, "")
+    page.click(".acm-cx-tape[data-id=tape_dread]")
+    wait_for_condition(lambda: any(((w.get("data") or {}).get("tape") or {}).get("id") == "tape_dread" for w in fs_writes(page, "radio/")), timeout_ms=4000)
+    record("acell-mobile-play", "…tapping a tape puts it in the deck", any(((w.get("data") or {}).get("tape") or {}).get("id") == "tape_dread" for w in fs_writes(page, "radio/")), "")
     record("acell-mobile-play", "no JS errors (release)", not errs, str(errs))
     page.close()
 
