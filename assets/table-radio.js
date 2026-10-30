@@ -827,7 +827,13 @@
       delete stingerAudioEls[firedAtKey];
     });
 
-    stingers.forEach(function (s) {
+    stingers.forEach(function (s) { startStinger_(s, isFirstSnapshot); });
+  }
+  // One stinger instance: start it, or bring it in line with its state.
+  // Also called straight from a Handler's tap in A-Cell (dgRadio.playStinger,
+  // 2026-10-30): inside the tap iOS lets it start, where waiting for the
+  // snapshot could find the tap no longer counted.
+  function startStinger_(s, isFirstSnapshot) {
       var alreadySeen = !!seenStingerFires[s.fired_at];
       seenStingerFires[s.fired_at] = true;
       // A fresh tune-in shouldn't replay the last few minutes' worth of
@@ -904,7 +910,6 @@
           if (stingerAudioEls[s.fired_at] === entry && entry.el.readyState < 1) applyState();
         });
       }
-    });
   }
 
   // Formats a seconds count as m:ss (no leading-zero hours -- nothing in
@@ -1918,6 +1923,17 @@
     },
     leave: function () { if (getChannel()) leaveRadio(); },
     setMuted: function (m) { setMutedLive(!!m); },
+    // A stinger the Handler just fired on this device (A-Cell's pads, while
+    // it plays the channel here): start it now, inside the tap. The
+    // snapshot that brings the same fired_at finds it already playing.
+    playStinger: function (st) {
+      // Before the channel's first snapshot this device doesn't yet know
+      // which fires are backlog; the snapshot brings this one anyway.
+      if (!getChannel() || !st || !st.id || !st.fired_at || seenStingerFires === null) return;
+      ensureAudioCtx_();
+      topUpAudioPool_();
+      startStinger_({ id: st.id, fired_at: st.fired_at, started_at: st.fired_at, paused: false, paused_at: 0, loop: false, stopped: false }, false);
+    },
     setVolume: function (v) { v = Math.max(0, Math.min(100, parseInt(v, 10) || 0)); setVolumeLive(v); },
     resume: resumeAudio
   };

@@ -381,7 +381,7 @@
   var X = C.actions;
   X['to-prep'] = function () { C.setMode('prep'); };
   X.deck = function () { deckSheet(); };
-  X.fire = function (b) { M().fire(b.getAttribute('data-id')); b.classList.add('on'); setTimeout(function () { b.classList.remove('on'); }, 900); };
+  X.fire = function (b) { var P = window.dgAcConsole; if (P && P.fire) P.fire(b.getAttribute('data-id')); else M().fire(b.getAttribute('data-id')); b.classList.add('on'); setTimeout(function () { b.classList.remove('on'); }, 900); };
   X.loop = function (b) { var on = !b.classList.contains('on'); b.classList.toggle('on', on); M().setAmbient(b.getAttribute('data-id'), on); };
   X.stopall = function () { M().stopAll(); C.toast('Every effect and loop stopped.'); };
   X['cx-ch'] = function (b) { var m = M(); if (m) m.setChannel(b.getAttribute('data-ch')); C.refresh(); };

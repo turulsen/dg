@@ -497,7 +497,7 @@
         window.dgAcellEvidence.release(id, true).catch(function (err) { b.disabled = false; b.textContent = 'release ▸'; b.title = (err && err.message) || String(err); });
         return;
       }
-      case 'fire': b.classList.add('hit'); setTimeout(function () { b.classList.remove('hit'); }, 250); m.fire(b.getAttribute('data-id')); return;
+      case 'fire': b.classList.add('hit'); setTimeout(function () { b.classList.remove('hit'); }, 250); (window.dgAcConsole && window.dgAcConsole.fire ? window.dgAcConsole.fire(b.getAttribute('data-id')) : m.fire(b.getAttribute('data-id'))); return;
       case 'stopall': m.stopAll(); return;
       case 'away': {
         var oid = b.closest('[data-o]').getAttribute('data-o');

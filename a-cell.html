@@ -6646,14 +6646,16 @@
     });
   }
   // Shared by the soundboard's buttons and the Play desk's pads (dgAcellMusic).
-  function fireStinger_(stingerId, label) {
+  // at: when it was fired (the tap), so a device playing it at once and
+  // the broadcast agree on which fire this is (2026-10-30).
+  function fireStinger_(stingerId, label, at) {
     var ch = currentChannel;
+    var now = at || Date.now();
     label = label || stingerLabel_(stingerId);
     soundboardStatusEl.textContent = 'Firing ' + label + ' on CH ' + ch + '…';
     return ensureHandlerSignedIn().then(function () {
       var db = window.firebase.firestore();
       var docRef = radioDocRef_(ch);
-      var now = Date.now();
       return db.runTransaction(function (tx) {
         return tx.get(docRef).then(function (snap) {
           var data = snap.exists ? snap.data() : {};
@@ -7625,7 +7627,7 @@
     restart: function () { if (current.track_url) setNowPlaying(current.track_url, current.track_title, current.track_kind, current.loop); },
     stop: function () { setNowPlaying('', ''); },
     toggleLoop: function () { if (current.track_url) sendLoopToggle_(); },
-    fire: function (id) { return fireStinger_(id); },
+    fire: function (id, at) { return fireStinger_(id, null, at); },
     setAmbient: function (id, on) {
       return setAmbientLayerActive_(currentChannel, id, on).then(function (layers) { activeAmbientLayers = layers; renderAmbientGrid(); renderActiveSounds_(); musicChanged_(); });
     },

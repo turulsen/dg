@@ -181,7 +181,7 @@
       case 'tape': m.playCue(+b.getAttribute('data-i')); return;
       case 'insert': window.dgTapes.insert(b.getAttribute('data-id')); return;
       case 'eject': window.dgTapes.eject(); return;
-      case 'pad': b.classList.add('hit'); setTimeout(function () { b.classList.remove('hit'); }, 250); m.fire(b.getAttribute('data-id')); return;
+      case 'pad': b.classList.add('hit'); setTimeout(function () { b.classList.remove('hit'); }, 250); fire(b.getAttribute('data-id')); return;
       case 's-pause': case 's-loop': case 's-stop': {
         var kind = row.getAttribute('data-kind'), ref = row.getAttribute('data-ref');
         var inst = (kind === 'ambient' ? m.state().ambient : m.state().stingers).filter(function (x) { return String(kind === 'ambient' ? x.id : x.fired_at) === ref; })[0];
@@ -243,6 +243,13 @@
     b.innerHTML = window.dgIcons ? window.dgIcons.svg(on ? 'speaker' : 'speaker-off') : '';
     b.title = on ? (wait ? 'Tap to start the sound on this device' : 'Playing on this device: tap to stop') : 'Play on this device';
   }
+  // Fire an effect: on air for everyone, and (while it plays here) started
+  // on this device inside the tap, which iOS needs.
+  function fire(id) {
+    var at = Date.now(), r = R(), m = M();
+    if (st.hear && r && r.playStinger) { try { var s = r.state(); if (s.channel === m.channel() && !s.muted) r.playStinger({ id: id, fired_at: at }); } catch (e) { /* the broadcast still brings it */ } }
+    return m.fire(id, at);
+  }
   // The channel changed while hearing: the radio follows it.
   function follow() {
     var r = R(), m = M();
@@ -298,5 +305,5 @@
     classic.addEventListener('toggle', function () { try { localStorage.setItem('dg_acell_classic_open', classic.open ? '1' : '0'); } catch (e) { /* this time only */ } });
   }
 
-  window.dgAcConsole = { draw: draw, attach: attach, detach: detach, lent: function () { return !!home; } };
+  window.dgAcConsole = { draw: draw, attach: attach, detach: detach, lent: function () { return !!home; }, fire: fire };
 })();

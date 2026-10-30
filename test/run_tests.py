@@ -5186,6 +5186,24 @@ def test_acell_hear_here(p):
     page.wait_for_timeout(400)
     r = page.evaluate("() => window.dgRadio.state()")
     record("acell-hear", "Hear it here: the Hub's radio, tuned to the player's channel, unmuted", r.get("channel") == ch and r.get("muted") is False and fr.get_attribute(".acm-cxbox [data-cc=hear]", "aria-pressed") == "true" and fr.locator(".acm-cxbox [data-cc=hear].on svg").count() == 1, str(r)[:200])
+    # 2026-10-30: pads fired here start the effect on this device inside
+    # the tap (iOS), before the broadcast's snapshot gets back.
+    # The radio's first snapshot of the channel, as a real tune-in gets at once.
+    page.evaluate("(a) => { window.__dgFirestoreDocs = window.__dgFirestoreDocs || {}; window.__dgFirestoreDocs[a[0]] = a[1]; }", ["radio/" + ch, fs_doc(fr, "radio/" + ch) or {"channel": ch}])
+    push_firestore_doc_snapshot(page, "radio/" + ch, True, fs_doc(fr, "radio/" + ch) or {"channel": ch})
+    page.wait_for_timeout(300)
+    n0 = page.evaluate("() => document.querySelectorAll('audio[src*=\\'stingers/\\']').length")
+    fr.click(".acm-pads .acm-pad >> nth=0")
+    page.wait_for_timeout(150)
+    n1 = page.evaluate("() => document.querySelectorAll('audio[src*=\\'stingers/\\']').length")
+    fired = [x for x in ((fs_doc(fr, "radio/" + ch) or {}).get("stingers") or [])]
+    record("acell-hear", "a pad fired while playing here starts its effect on this device at once (and goes on air)", n1 == n0 + 1 and len(fired) >= 1, f"{n0}->{n1} {fired[-1:]}")
+    if fired:
+        page.evaluate("(a) => { window.__dgFirestoreDocs = window.__dgFirestoreDocs || {}; window.__dgFirestoreDocs[a[0]] = a[1]; }", ["radio/" + ch, fs_doc(fr, "radio/" + ch)])
+        push_firestore_doc_snapshot(page, "radio/" + ch, True, fs_doc(fr, "radio/" + ch))
+        page.wait_for_timeout(300)
+        n2 = page.evaluate("() => document.querySelectorAll('audio[src*=\\'stingers/\\']').length")
+        record("acell-hear", "…and the broadcast bringing the same fire doesn't start it twice", n2 == n1, f"{n1}->{n2}")
     other = "2" if ch != "2" else "4"
     fr.click(".acm-cxbox .cc-ch[data-ch='%s']" % other)
     wait_for_condition(lambda: page.evaluate("() => window.dgRadio.state().channel") == other, timeout_ms=3000)

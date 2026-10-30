@@ -1,6 +1,6 @@
 [
   {
-    "origin": ["https://turulsen.github.io"],
+    "origin": ["https://turulsen.github.io", "https://dg-app-b3447.web.app", "https://dg-app-b3447.firebaseapp.com"],
     "method": ["GET", "HEAD"],
     "responseHeader": ["Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"],
     "maxAgeSeconds": 3600
