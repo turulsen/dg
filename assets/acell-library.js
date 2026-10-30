@@ -388,7 +388,7 @@
   htmlHd.className = 'ac-sub ac-deskhd';
   htmlHd.textContent = 'HTML pages (uploaded)';
   noPanel.insertBefore(htmlHd, vault.nextSibling);
-  var vs = { q: '', path: '', ed: null, loaded: false, err: '', open: {} };
+  var vs = { q: '', path: '', ed: null, loaded: false, err: '', open: {}, back: [], fwd: [] };
   function drawVault() {
     var V = window.dgVault;
     if (!V) return;
@@ -429,10 +429,18 @@
       vs.ed = V.editor(noteEl.querySelector('.ac-ved'), vs.path, { onLink: function (p) { openNote(p); } });
     }
     var acts = noteEl.querySelector('.ac-vacts');
-    if (acts) acts.innerHTML = s ? (s.note_path === vs.path ? '<span class="ac-chips-note">These are the notes for <b>' + esc(s.name) + '</b></span>'
-      : '<button type="button" class="ac-link" data-vv="use">Use as the notes for ' + esc(s.name) + '</button>') : '';
+    // Back / Forward through the notes opened here (2026-10-30), then
+    // whether this note is one the session keeps for Play.
+    var inS = s && S().notesOf(s).some(function (n) { return n.kind === 'vault' && n.path === vs.path; });
+    if (acts) acts.innerHTML = '<span class="ac-vnav"><button type="button" class="ac-btn" data-vv="back"' + (vs.back.length ? ' title="' + esc(V.title(vs.back[vs.back.length - 1])) + '"' : ' disabled') + '>&larr; Back</button>' +
+      '<button type="button" class="ac-btn" data-vv="fwd"' + (vs.fwd.length ? ' title="' + esc(V.title(vs.fwd[vs.fwd.length - 1])) + '"' : ' disabled') + '>Forward &rarr;</button></span>' +
+      (s ? (inS ? '<span class="ac-chips-note">One of the notes for <b>' + esc(s.name) + '</b></span>'
+        : '<button type="button" class="ac-link" data-vv="use">Add to the notes for ' + esc(s.name) + '</button>') : '');
   }
-  function openNote(path) { vs.path = path; drawVault(); }
+  function openNote(path, how) {
+    if (path && vs.path && path !== vs.path && how !== 'nav') { vs.back.push(vs.path); if (vs.back.length > 50) vs.back.shift(); vs.fwd = []; }
+    vs.path = path; drawVault();
+  }
   vault.addEventListener('input', function (e) {
     if (!e.target.classList.contains('ac-vq')) return;
     vs.q = e.target.value; drawVault();
@@ -454,7 +462,9 @@
     var a = b.getAttribute('data-vv'), s = A.session();
     if (a === 'sync') V.settings();
     else if (a === 'new') V.picker({ title: 'New note', newPath: vs.path && vs.path.indexOf('/') > 0 ? vs.path.slice(0, vs.path.lastIndexOf('/') + 1) : '', onPick: openNote });
-    else if (a === 'use' && s) S().update(s.id, { note_path: vs.path, html_note: null });
+    else if (a === 'use' && s) S().addNote(s.id, { kind: 'vault', path: vs.path }).then(drawVault);
+    else if (a === 'back' && vs.back.length) { vs.fwd.push(vs.path); openNote(vs.back.pop(), 'nav'); }
+    else if (a === 'fwd' && vs.fwd.length) { vs.back.push(vs.path); openNote(vs.fwd.pop(), 'nav'); }
   });
   document.addEventListener('dg-acell-open-note', function (e) { openNote(e.detail.path); });
   var noOpen = false;

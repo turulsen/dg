@@ -130,6 +130,8 @@
       codes.push(c);
       return '\u0000' + (codes.length - 1) + '\u0000';
     });
+    // A few plain HTML tags, as Obsidian shows them (no attributes).
+    out = out.replace(/&lt;(\/?)(b|i|u|s|em|strong|mark|sub|sup)&gt;/gi, '<$1$2>').replace(/&lt;br\s*\/?&gt;/gi, '<br>');
     out = out
       .replace(/!\[\[([^\]]+)\]\]/g, function (m, t) { return '<span class="vn-embed">⧉ ' + t + '</span>'; })
       .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, function (m, t, alias) {
@@ -269,6 +271,9 @@
   function editor(host, path, opts) {
     opts = opts || {};
     var mode = opts.mode || 'read', timer = null, dirty = false;
+    // Undo / Redo (2026-10-30): this editor's own history of the text, so
+    // what the app writes in (a [[ link, a B or I) is undone like typing.
+    var hist = { past: [], future: [], last: null, t: 0 };
     host.classList.add('vn-ed');
     function note() { return get(path); }
     function full() { return (note() || {}).content || ''; }
@@ -296,20 +301,58 @@
       var fl = folderLabel(dirOf(path));
       var head = opts.hideHead ? '' : '<div class="vn-bar"><span class="vn-file" title="' + esc(path) + '">' + esc((fl ? fl + ' › ' : '') + title(path)) + '</span>' +
         '<span class="vn-status">' + (n ? '' : 'new note') + '</span>' +
+        (mode === 'edit' ? urHtml() : '') +
         '<span class="vn-modes"><button type="button" data-vmode="read" class="' + (mode === 'read' ? 'on' : '') + '">Read</button><button type="button" data-vmode="edit" class="' + (mode === 'edit' ? 'on' : '') + '">✎ Edit</button></span></div>';
       var body;
-      if (mode === 'edit') body = '<textarea class="vn-ta" spellcheck="true">' + esc(shown()) + '</textarea>';
+      if (mode === 'edit') body = (opts.hideHead ? '<div class="vn-urbar">' + urHtml() + '</div>' : '') + '<textarea class="vn-ta" spellcheck="true">' + esc(shown()) + '</textarea>';
       else body = '<div class="vn-body">' + (shown().trim() ? render(shown(), opts) : '<p class="vn-empty">' + esc(opts.emptyText || 'Nothing here yet — ✎ Edit to write.') + '</p>') + '</div>';
       host.innerHTML = head + body;
       var ta = host.querySelector('.vn-ta');
       if (ta) {
         var grow = function () { if (opts.grow) { ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 4) + 'px'; } };
         grow();
-        ta.addEventListener('input', function () { grow(); commit(setShown(ta.value)); });
+        if (hist.last == null) hist.last = ta.value;
+        ta.addEventListener('input', function () {
+          var now = Date.now();
+          if (ta.value !== hist.last) {
+            // One step per burst of typing (a pause of 0.8 s starts a new one).
+            if (now - hist.t > 800 || !hist.past.length) { hist.past.push(hist.last); if (hist.past.length > 200) hist.past.shift(); }
+            hist.last = ta.value; hist.future = []; hist.t = now; urState();
+          }
+          grow(); commit(setShown(ta.value));
+        });
+        ta.addEventListener('keydown', function (e) {
+          if (!(e.ctrlKey || e.metaKey)) return;
+          var k = e.key.toLowerCase();
+          if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+          else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); redo(); }
+        });
         linkSuggest(ta, path);
+        urState();
       }
     }
+    function urHtml() { return '<span class="vn-ur"><button type="button" data-vur="undo" title="Undo (Ctrl+Z)">Undo</button><button type="button" data-vur="redo" title="Redo (Ctrl+Shift+Z)">Redo</button></span>'; }
+    function urState() {
+      var u = host.querySelector('[data-vur=undo]'), r = host.querySelector('[data-vur=redo]');
+      if (u) u.disabled = !hist.past.length;
+      if (r) r.disabled = !hist.future.length;
+    }
+    function setText(v) {
+      var ta = host.querySelector('.vn-ta');
+      if (!ta) return;
+      var old = ta.value, at = 0;
+      while (at < old.length && at < v.length && old.charAt(at) === v.charAt(at)) at++;
+      ta.value = v; hist.last = v; hist.t = 0;
+      ta.focus(); ta.selectionStart = ta.selectionEnd = Math.min(at + Math.max(0, v.length - old.length), v.length);
+      if (opts.grow) { ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 4) + 'px'; }
+      commit(setShown(v)); urState();
+    }
+    function undo() { var ta = host.querySelector('.vn-ta'); if (!ta || !hist.past.length) return; hist.future.push(ta.value); setText(hist.past.pop()); }
+    function redo() { var ta = host.querySelector('.vn-ta'); if (!ta || !hist.future.length) return; hist.past.push(ta.value); setText(hist.future.pop()); }
+    host.addEventListener('mousedown', function (e) { if (e.target.closest('[data-vur]')) e.preventDefault(); });
     host.addEventListener('click', function (e) {
+      var ur = e.target.closest('[data-vur]');
+      if (ur) { if (ur.getAttribute('data-vur') === 'undo') undo(); else redo(); return; }
       var b = e.target.closest('[data-vmode]');
       if (b) { mode = b.getAttribute('data-vmode'); draw(); if (mode === 'edit') { var t = host.querySelector('.vn-ta'); if (t) t.focus(); } return; }
       var ck = e.target.closest('.vn-ck');
@@ -329,7 +372,8 @@
     draw();
     return {
       setMode: function (m) { mode = m; draw(); },
-      setScene: function (s) { opts.scene = s; draw(); },
+      setScene: function (s) { opts.scene = s; hist = { past: [], future: [], last: null, t: 0 }; draw(); },
+      undo: undo, redo: redo,
       path: function () { return path; },
       destroy: function () { document.removeEventListener('dg-vault', onChange); clearTimeout(timer); }
     };

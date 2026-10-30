@@ -164,7 +164,10 @@ body[data-ac-mode="play"] .folder-wrap .folder, body[data-ac-mode="debrief"] .fo
 .ac-vlist{ background:var(--ac-paper); border:1px solid var(--ac-line); padding:4px 10px 10px; max-height:640px; overflow:auto; }
 .ac-vlist .vn-pi{ font-size:13.5px; padding:7px 6px; }
 .ac-vnote{ background:var(--ac-paper); border:1px solid var(--ac-line); padding:10px 18px 18px; min-height:300px; min-width:0; }
-.ac-vacts{ min-height:4px; text-align:right; }
+.ac-vacts{ min-height:4px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:4px; }
+.ac-vnav{ display:inline-flex; gap:6px; }
+.ac-vnav .ac-btn{ font-size:11px; padding:4px 10px; }
+.ac-vnav .ac-btn:disabled{ opacity:.35; cursor:default; }
 
 @media (max-width:720px){
   .ac-mucols, .ac-vcols{ grid-template-columns:minmax(0,1fr); }

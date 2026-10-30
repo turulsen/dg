@@ -5106,6 +5106,39 @@ def test_acell_desk_player(p):
     record("acell-desk-player", "no JS errors (desk player)", not errs, str(errs))
     page.close()
 
+def test_acell_vault_format(p):
+    """2026-10-30: in vault notes, **bold** is bold (the page's light
+    weight made it plain), links are red, editing has Undo / Redo, and the
+    computer's Notes tab goes Back / Forward through the notes opened."""
+    MD = "# Ruth\n\nThe **keeper's** sister, *never* seen. See [[Lighthouse]] and <u>this</u>.\n"
+    page, errs = open_acell_shell(p)
+    page.evaluate("(md) => Promise.all([dgVault.save('T/Ruth.md', md), dgVault.save('T/Lighthouse.md', '# Lighthouse\\n\\nBack to [[Ruth]].')])", MD)
+    page.click("#acell-tab-strip .tw[data-tab=notes]")
+    page.evaluate("() => window.dgAcLibrary.openNote('T/Ruth.md')")
+    page.wait_for_selector(".ac-vnote .vn-p b", timeout=4000)
+    st = page.evaluate("() => [getComputedStyle(document.querySelector('.ac-vnote .vn-p b')).fontWeight, getComputedStyle(document.querySelector('.ac-vnote .vn-link')).color, !!document.querySelector('.ac-vnote .vn-p u')]")
+    record("acell-vault-fmt", "bold is bold, links are red, <u> shows", st[0] == "700" and st[1] == "rgb(163, 34, 28)" and st[2], str(st))
+    page.click(".ac-vnote .vn-link")
+    wait_for_condition(lambda: "Lighthouse" in page.inner_text(".ac-vnote .vn-file"), timeout_ms=3000)
+    page.click(".ac-vnote [data-vmode=edit]")
+    page.click(".ac-vnote .vn-ta"); page.keyboard.press("Control+End"); page.keyboard.type(" New words.")
+    before = page.input_value(".ac-vnote .vn-ta")
+    page.click(".ac-vnote [data-vur=undo]")
+    undone = page.input_value(".ac-vnote .vn-ta")
+    page.click(".ac-vnote [data-vur=redo]")
+    redone = page.input_value(".ac-vnote .vn-ta")
+    record("acell-vault-fmt", "Undo takes the typing back, Redo puts it back", before.endswith("New words.") and not undone.endswith("New words.") and redone == before, repr([before[-15:], undone[-15:], redone[-15:]]))
+    page.keyboard.press("Control+z")
+    record("acell-vault-fmt", "…Ctrl+Z too", not page.input_value(".ac-vnote .vn-ta").endswith("New words."), "")
+    page.click(".ac-vnote [data-vv=back]")
+    wait_for_condition(lambda: "Ruth" in page.inner_text(".ac-vnote .vn-file"), timeout_ms=3000)
+    record("acell-vault-fmt", "Back goes to the note before; Forward returns", "Ruth" in page.inner_text(".ac-vnote .vn-file") and page.is_enabled(".ac-vnote [data-vv=fwd]"), page.inner_text(".ac-vnote .vn-file"))
+    page.click(".ac-vnote [data-vv=fwd]")
+    wait_for_condition(lambda: "Lighthouse" in page.inner_text(".ac-vnote .vn-file"), timeout_ms=3000)
+    record("acell-vault-fmt", "…Forward", "Lighthouse" in page.inner_text(".ac-vnote .vn-file"), "")
+    record("acell-vault-fmt", "no JS errors (vault format)", not errs, str(errs))
+    page.close()
+
 def test_acell_console(p):
     """v3.12.0, the Music tab's control center: the broadcast on a tape
     deck -- channels, the Cell's channel, a link to play or cue, the
@@ -14273,6 +14306,7 @@ def main():
         safe(test_acell_mobile_panels, browser, area="acell-mobile-panels")
         safe(test_vault_sync_rules, browser, area="vault-sync")
         safe(test_acell_console, browser, area="acell-console")
+        safe(test_acell_vault_format, browser, area="acell-vault-fmt")
         safe(test_acell_desk_player, browser, area="acell-desk-player")
         safe(test_acell_link_suggest, browser, area="acell-links")
         safe(test_acell_mobile_release, browser, area="acell-mobile-play")
