@@ -4793,6 +4793,8 @@ def test_acell_mobile_panels(p):
     page.click(".sheet-viewbar [data-sv=table]")
     page.click(".sheet-viewbar [data-sa=cols]")
     page.uncheck(".sheet-viewbar [data-sc=code]")
+    ink = page.evaluate("() => getComputedStyle(document.querySelector('.sv-col label')).color")
+    record("acell-mobile-panels", "Columns: the column names are ink on the paper, not the folder's light text", ink in ("rgb(28, 22, 8)",), ink)
     heads = page.eval_on_selector_all(".sheet-table th", "els => els.map(e => e.textContent)")
     record("acell-mobile-panels", "Columns: untick one and the table drops it", "Agent Code" not in heads and "Agent Name" in heads, str(heads))
     order = page.evaluate("() => JSON.parse(localStorage.getItem('dg_acell_sheet_view') || '{}')")

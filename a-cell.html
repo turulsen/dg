@@ -989,6 +989,10 @@
   .cell-chs small{ flex-basis:100%; color:var(--ink-3); font-size:11px; }
   .cell-ch{ width:34px; height:30px; border:1px solid var(--ink-2); background:transparent; font:13px 'Courier Prime',monospace; cursor:pointer; }
   .cell-ch.on{ background:var(--ink); color:#f4eed8; }
+  /* The Agent File's ink and paper for the Sheet and Cells panels too:
+     outside .af-root these were never defined, so text meant to be ink
+     took the folder's light colour instead (2026-10-30). */
+  #panel-sheet, #panel-cells{ --ink:#1c1608; --ink-2:#4a3f28; --ink-3:#8a7a5a; --paper:#f4eed8; --paper-line:rgba(180,148,72,.45); }
   /* The Sheet's view bar (v3.13.0): Table or Cards, Filter, Columns, Select */
   .sheet-viewbar{ display:flex; flex-direction:column; gap:8px; margin-bottom:12px; }
   .sv-row{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
@@ -998,8 +1002,15 @@
   .sv-panel{ display:flex; flex-wrap:wrap; gap:8px; padding:10px; background:var(--paper); border:1px solid var(--paper-line); }
   .sv-panel input, .sv-panel select{ min-height:36px; font:13px 'Courier Prime',monospace; padding:4px 8px; border:1px solid var(--paper-line); background:#fff; }
   .sv-cols{ flex-direction:column; flex-wrap:nowrap; }
+  /* Ink on the paper: the folder's own text is light (reported 2026-10-30,
+     the Columns list read pale on a phone), and a tick box isn't an input
+     box -- no min-height, the label beside it, not under it. */
+  .sv-panel{ color:var(--ink); font-family:'Courier Prime',monospace; }
   .sv-hint{ margin:0; font-size:11.5px; color:var(--ink-3); }
-  .sv-col{ display:flex; align-items:center; gap:10px; padding:4px 6px; border:1px dashed var(--paper-line); background:#fffdf4; touch-action:none; }
+  .sv-col{ display:flex; align-items:center; gap:10px; padding:4px 6px; border:1px dashed var(--paper-line); background:#fffdf4; touch-action:none; color:var(--ink); }
+  .sv-col label{ display:flex; align-items:center; gap:10px; flex:1; min-height:38px; font:13px 'Courier Prime',monospace; color:var(--ink); cursor:pointer; }
+  .sv-panel input[type="checkbox"]{ min-height:0; width:20px; height:20px; margin:0; padding:0; flex:none; accent-color:var(--ink); }
+  .sv-handle{ color:var(--ink-3); }
   .sv-col.lift{ box-shadow:0 6px 14px rgba(0,0,0,.25); }
   .sv-handle{ cursor:grab; padding:2px 8px; font-size:16px; touch-action:none; }
   .sv-batch{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:10px; background:#1c1608; color:#f4eed8; }
