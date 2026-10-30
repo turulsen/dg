@@ -215,18 +215,46 @@ body[data-ac-mode="play"] footer.site-footer{ display:none; }
 .pd-gdoc iframe{ flex:1; width:100%; min-height:66vh; border:0; background:#fff; }
 @media (max-width:720px){ .pd-ntabs{ flex-wrap:nowrap; overflow-x:auto; } }
 
-/* The desk's deck: the Music tab's player, lent, under the session's
-   tapes (2026-10-30). The deck block is just the frame now. */
-.pd-deck{ background:none; box-shadow:none; padding:0; border-radius:0; overflow-y:auto; }
-.pd-cxtapes{ margin-bottom:10px; }
-.pd-cxl{ font:10px 'Courier Prime',monospace; letter-spacing:.18em; text-transform:uppercase; color:#cbbd94; margin:0 2px 6px; }
-.pd-cxrow{ display:flex; gap:10px; overflow-x:auto; padding:4px 2px 8px; }
-.pd-cxt{ flex:none; width:118px; display:flex; flex-direction:column; gap:4px; background:none; border:0; padding:0; color:#f3e9c8; font:11px 'Courier Prime',monospace; text-align:left; cursor:pointer; }
-.pd-cxt svg{ display:block; width:100%; height:auto; filter:drop-shadow(0 4px 6px rgba(0,0,0,.5)); }
+/* The desk's deck (2026-10-30): one compact brown player. The Music
+   tab's player, lent: channels and on air, the session's tapes as small
+   cassettes, the screen with the tracks, seek, the keys, the three
+   levels and the loops playing. No effects here (the pads have them). */
+.pd-deck{ background:linear-gradient(#5c4a36,#3a2c1e); border-radius:12px; padding:10px 12px 12px; color:#e9dfbf; box-shadow:0 12px 24px rgba(0,0,0,.5); overflow-y:auto; }
+.pd-deck > .pd-ob{ display:flex; flex-direction:column; gap:8px; }
+.pd-deck .pd-cxtapes{ order:2; }
+.pd-deck .pd-cxhost{ display:contents; }
+.pd-cxl{ font:9.5px 'Courier Prime',monospace; letter-spacing:.16em; text-transform:uppercase; color:#b8a878; margin:0 0 4px; }
+.pd-cxrow{ display:flex; gap:8px; overflow-x:auto; padding:3px 2px 4px; }
+.pd-cxt{ flex:none; width:64px; display:flex; flex-direction:column; gap:2px; background:none; border:0; padding:0; color:#e9dfbf; font:9.5px 'Courier Prime',monospace; text-align:left; cursor:pointer; }
+.pd-cxt svg{ display:block; width:100%; height:auto; filter:drop-shadow(0 2px 3px rgba(0,0,0,.5)); }
 .pd-cxt span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.pd-cxt em{ display:block; font-style:normal; font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:#f2d98a; }
-.pd-cxt.on svg{ outline:3px solid #f2d98a; outline-offset:3px; }
-.cc-desk .cc{ display:block; margin:0; }
-.cc-desk .cc-side{ margin-top:10px; }
-.cc-desk .cc-side .cc-panel:nth-child(n+3){ display:none; }
-.cc-desk .cc-cell{ flex:1 1 100%; margin-left:0; }
+.pd-cxt em{ display:block; font-style:normal; font-size:8.5px; letter-spacing:.1em; text-transform:uppercase; color:#f2d98a; }
+.pd-cxt.on svg{ outline:2px solid #f2d98a; outline-offset:2px; }
+/* The lent player, flattened into the brown */
+.cc-desk{ display:contents; }
+.cc-desk .cc{ display:contents; }
+.cc-desk .cc-deck{ display:contents; }
+.cc-desk .cc-top{ order:1; } .cc-desk .cc-scr{ order:3; } .cc-desk .cc-seek{ order:4; } .cc-desk .cc-keys{ order:5; }
+.cc-desk .cc-side{ order:6; gap:0; }
+.cc-desk .cc-top{ gap:6px; flex-wrap:wrap; }
+.cc-desk .cc-cell, .cc-desk .cc-reels, .cc-desk .cc-status{ display:none; }
+.cc-desk .cc-ch{ width:26px; height:26px; font-size:11px; }
+.cc-desk .cc-scr{ min-height:0; padding:7px 10px; font-size:12px; line-height:18px; }
+.cc-desk .cc-scr-list{ max-height:140px; }
+.cc-desk .cc-scr-t{ padding:2px; }
+.cc-desk .cc-seek{ font-size:11px; }
+.cc-desk .cc-keys{ gap:6px; }
+.cc-desk .cc-keys button{ min-height:34px; padding:4px 6px; font-size:11px; }
+.cc-desk .cc-panel{ background:none; border:0; border-top:1px dashed rgba(233,223,191,.22); padding:7px 0 2px; color:#e9dfbf; }
+.cc-desk .cc-panel:nth-child(n+3){ display:none; }
+.cc-desk .cc-h{ color:#b8a878; font-size:9.5px; margin-bottom:4px; }
+.cc-desk .cc-h b{ color:#e9dfbf; }
+.cc-desk .cc-fader{ color:#e9dfbf; font-size:11.5px; gap:8px; margin:2px 0; }
+.cc-desk .cc-fader b{ color:#b8a878; }
+.cc-desk .cc-fader input{ accent-color:#f2d98a; }
+.cc-desk [data-cc=live] .cc-row[data-kind=stinger]{ display:none; }
+.cc-desk [data-cc=live] .cc-none{ display:none; }
+.cc-desk [data-cc=live] .cc-row{ border-color:rgba(233,223,191,.18); padding:3px 0; color:#e9dfbf; }
+.cc-desk [data-cc=live] .cc-k{ background:#e9dfbf; color:#2a2418; }
+.cc-desk [data-cc=live] .cc-mini{ background:transparent; color:#e9dfbf; border-color:rgba(233,223,191,.5); min-height:26px; }
+.cc-desk .cc-stopall{ font-size:9.5px; padding:2px 8px; }

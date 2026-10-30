@@ -5078,8 +5078,8 @@ def test_acell_desk_player(p):
     page.wait_for_timeout(300)
     page.click("#ac-modes [data-mode=play]")
     wait_for_condition(lambda: page.locator(".pd-deck .pd-cxhost #ac-console").count() == 1, timeout_ms=5000)
-    record("acell-desk-player", "the desk's deck is the Music tab's player, under the session's tapes",
-           page.locator(".pd-deck .pd-cxt").count() >= 1 and page.locator(".pd-deck .cc-ch").count() == 5 and page.locator(".pd-deck [data-cc=mix-effects]").count() == 1 and page.is_visible(".pd-deck [data-cc=live]"), "")
+    record("acell-desk-player", "the desk's deck is the Music tab's player, compact: no reels, no effects pads in it",
+           page.locator(".pd-deck .pd-cxt").count() >= 1 and page.locator(".pd-deck .cc-ch").count() == 5 and page.locator(".pd-deck [data-cc=mix-effects]").count() == 1 and page.is_visible(".pd-deck [data-cc=stopall]") and page.locator(".pd-deck .cc-reels:visible, .pd-deck .cc-pads:visible").count() == 0, "")
     record("acell-desk-player", "…no link box in the player (links go on the tape)", page.locator(".pd-deck .cc-link").count() == 0, "")
     page.click(".pd-deck .cc-ch[data-ch='2']")
     page.click(".pd-cxt[data-id=tape_dread]")

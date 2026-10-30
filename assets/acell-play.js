@@ -34,10 +34,10 @@
   // A 12-column grid of 58px rows: each object { x, y, w, h } in cells.
   // Kept on this device (dg_acell_desk_v3); objects put away sit in `away`.
   var KEY3 = 'dg_acell_desk_v3', COLS = 12, ROW = 58, GAP = 12;
-  var MIN = { dossiers: [2, 3], initiative: [2, 2], dice: [2, 4], notebook: [3, 4], deck: [4, 13], pad: [2, 2], evidence: [2, 2], pads: [2, 2] };
+  var MIN = { dossiers: [2, 3], initiative: [2, 2], dice: [2, 4], notebook: [3, 4], deck: [3, 7], pad: [2, 2], evidence: [2, 2], pads: [2, 2] };
   var DEFAULT = { items: {
-    deck: { x: 0, y: 0, w: 4, h: 13 }, pads: { x: 4, y: 0, w: 5, h: 3 }, initiative: { x: 4, y: 3, w: 5, h: 3 }, pad: { x: 9, y: 0, w: 3, h: 4 },
-    notebook: { x: 4, y: 6, w: 5, h: 12 }, evidence: { x: 9, y: 4, w: 3, h: 4 }, dossiers: { x: 9, y: 8, w: 3, h: 8 }, dice: { x: 0, y: 13, w: 4, h: 6 }
+    deck: { x: 0, y: 0, w: 4, h: 9 }, pads: { x: 4, y: 0, w: 5, h: 3 }, initiative: { x: 4, y: 3, w: 5, h: 3 }, pad: { x: 9, y: 0, w: 3, h: 4 },
+    notebook: { x: 4, y: 6, w: 5, h: 12 }, evidence: { x: 9, y: 4, w: 3, h: 4 }, dossiers: { x: 9, y: 8, w: 3, h: 8 }, dice: { x: 0, y: 9, w: 4, h: 6 }
   }, away: [] };
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   var L = (function () {
@@ -46,8 +46,10 @@
     l.away = (l.away || []).filter(function (id) { return OBJ[id]; });
     Object.keys(OBJ).forEach(function (id) { if (!l.items[id] && l.away.indexOf(id) < 0) l.items[id] = clone(DEFAULT.items[id]); });
     Object.keys(l.items).forEach(function (id) { if (!OBJ[id] || l.away.indexOf(id) >= 0) delete l.items[id]; else fit(l.items[id], id); });
-    // The deck holds the full player since 2026-10-30: a saved layout's
-    // smaller deck grows, and whatever it now covers moves down.
+    // The deck holds the compact player since 2026-10-30 (9 rows): a layout
+    // the earlier version stretched to 13 comes back to 9 once; a saved
+    // deck smaller than the player's least grows, what it covers moves down.
+    if (l.items.deck && !l.deck9) { if (l.items.deck.h >= 13) l.items.deck.h = 9; l.deck9 = true; }
     if (l.items.deck) setTimeout(function () { settle('deck'); save(); }, 0);
     return l;
   })();
