@@ -220,9 +220,15 @@ body[data-ac-mode="play"] footer.site-footer{ display:none; }
    cassettes, the screen with the tracks, seek, the keys, the three
    levels and the loops playing. No effects here (the pads have them). */
 .pd-deck{ background:linear-gradient(#5c4a36,#3a2c1e); border-radius:12px; padding:10px 12px 12px; color:#e9dfbf; box-shadow:0 12px 24px rgba(0,0,0,.5); overflow-y:auto; }
-.pd-deck > .pd-ob{ display:flex; flex-direction:column; gap:8px; }
-.pd-deck .pd-cxtapes{ order:2; }
-.pd-deck .pd-cxhost{ display:contents; }
+.pd-deck > .pd-ob, .acm-cxbox{ display:flex; flex-direction:column; gap:8px; }
+.pd-cxtapes{ order:2; }
+.pd-cxhost{ display:contents; }
+/* The same player on a phone's Pads */
+.acm-cxbox{ background:linear-gradient(#5c4a36,#3a2c1e); border-radius:12px; padding:10px 12px 12px; color:#e9dfbf; box-shadow:0 12px 24px rgba(0,0,0,.5); margin:4px 0 14px; }
+body.acm .acm-cxbox .cc-ch{ width:34px; height:34px; font-size:12px; }
+body.acm .acm-cxbox .cc-keys button{ min-height:42px; }
+body.acm .acm-cxbox .cc-scr-t{ padding:6px 2px; }
+body.acm .acm-cxbox [data-cc=live] .cc-mini{ min-height:34px; min-width:38px; }
 .pd-cxl{ font:9.5px 'Courier Prime',monospace; letter-spacing:.16em; text-transform:uppercase; color:#b8a878; margin:0 0 4px; }
 .pd-cxrow{ display:flex; gap:8px; overflow-x:auto; padding:3px 2px 4px; }
 .pd-cxt{ flex:none; width:64px; display:flex; flex-direction:column; gap:2px; background:none; border:0; padding:0; color:#e9dfbf; font:9.5px 'Courier Prime',monospace; text-align:left; cursor:pointer; }

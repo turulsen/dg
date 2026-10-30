@@ -76,19 +76,16 @@
     if (cur.track_url) m.cueList().forEach(function (c, i) { if (at < 0 && (c.url === cur.track_url || c.title === cur.track_title)) at = i; });
     return at;
   }
+  // The compact brown player (2026-10-30), as on the computer's desk: the
+  // Music tab's player, lent, with the session's tapes as small cassettes
+  // under the channels (tap one: it's in this channel's deck, playing).
   function consoleHtml(s, m) {
-    var D = T(), t = deckTape(), cur = m.state().current || {}, ch = m.channel(), list = tapesFor(s);
-    var inDeck = {};
-    (D && D.decks ? D.decks() : []).forEach(function (d) { inDeck[d.ch] = d.tape; });
-    var playing = !!cur.track_url && !cur.paused;
-    // The session's tapes: tap one and it's in this channel's deck, playing.
-    var tapes = lab('Tapes · tap one to play it on CH ' + ch) + (list.length ? '<div class="acm-cx-tapes">' + list.map(function (x) {
+    var t = deckTape(), cur = m.state().current || {}, ch = m.channel(), list = tapesFor(s), playing = !!cur.track_url && !cur.paused;
+    var tapes = '<div class="pd-cxtapes"><div class="pd-cxl">Tapes · tap one to play it on CH ' + esc(ch) + '</div>' + (list.length ? '<div class="pd-cxrow">' + list.map(function (x) {
       var on = t && t.id === x.id;
-      return '<button type="button" class="acm-cx-tape' + (on ? ' on' : '') + '" data-acm="' + (on ? 'deck' : 'tape-in') + '" data-id="' + esc(x.id) + '">' + cass(x, { spin: on && playing }) + '<span>' + esc(x.name) + (on ? '<em>in the deck</em>' : '') + '</span></button>';
-    }).join('') + '</div>' : '<p class="acm-none light">No tapes for this session yet. Make them on the Music tab.</p>');
-    // The player: the Music tab's own, lent here (assets/acell-console.js).
-    var player = '<div class="acm-cxhost"></div>';
-    return tapes + player;
+      return '<button type="button" class="pd-cxt' + (on ? ' on' : '') + '" data-acm="' + (on ? 'deck' : 'tape-in') + '" data-id="' + esc(x.id) + '">' + cass(x, { spin: on && playing }) + '<span>' + esc(x.name) + (on ? '<em>in the deck</em>' : '') + '</span></button>';
+    }).join('') + '</div>' : '<div class="pd-cxl">No tapes for this session yet (the Music tab).</div>') + '</div>';
+    return '<div class="acm-cxbox">' + tapes + '<div class="pd-cxhost acm-cxhost"></div></div>';
   }
 
   /* ── Pads ── */
@@ -121,7 +118,7 @@
         after: function (el) {
           var P = window.dgAcConsole;
           if (!P || !P.attach) return null;
-          P.attach(el.querySelector('.acm-cxhost'), 'phone');
+          P.attach(el.querySelector('.acm-cxhost'), 'desk');
           return function () { P.detach(); };
         }
       };
