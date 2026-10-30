@@ -8412,10 +8412,12 @@ def test_mobile_no_overflow(p):
     skip_acell_gate(page)
     page.goto(f"{BASE}/a-cell.html", wait_until="domcontentloaded", timeout=15000)
     page.wait_for_timeout(400)
-    page.click('.tw[data-tab="evidence"]')
-    page.wait_for_timeout(300)
-    page.click("#evidence-create-btn")
-    page.wait_for_timeout(300)
+    # v3.13.0: at 390px A-Cell is its phone layout (Evidence from the tabs,
+    # New evidence from its own bar), not the computer's tab strip.
+    page.evaluate("() => window.dgAcm && window.dgAcm.go('evidence')")
+    page.wait_for_timeout(400)
+    page.click("#acm-evbar [data-ev=new]")
+    page.wait_for_timeout(400)
     scroll_width = page.evaluate("() => document.documentElement.scrollWidth")
     record("mobile", "a-cell.html's Evidence tab (sidebar + open create form) has no horizontal overflow at 390px viewport",
            scroll_width <= 390, f"scrollWidth={scroll_width}")
