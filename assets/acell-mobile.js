@@ -152,7 +152,9 @@
     w.addEventListener('click', function (e) {
       if (e.target.closest('[data-x]')) { close(); return; }
     });
-    function close() { w.remove(); if (!layer.children.length) document.body.classList.remove('acm-sheet-open'); if (opts.onClose) opts.onClose(); }
+    // A held sheet kept the screen from redrawing under it: redraw now, so
+    // what it saved shows (2026-10-30: a new NPC never reached Initiative).
+    function close() { w.remove(); if (!layer.children.length) document.body.classList.remove('acm-sheet-open'); if (opts.onClose) opts.onClose(); if (opts.hold) refresh(); }
     w.close = close;
     return w;
   }
@@ -549,7 +551,7 @@
       Array.prototype.forEach.call(f.querySelectorAll('button'), function (b) { b.disabled = true; });
       npcNote(npc, s).then(function (path) {
         npc.path = path;
-        if (inS) return S().update(s.id, { npcs: s.npcs.concat([npc]) });
+        if (inS) return S().update(s.id, { npcs: (S().get(s.id) || s).npcs.concat([npc]) });
       }).then(function () { w.close(); toast(inS ? name + ' is in ' + s.name + '.' : name + ' saved in ' + npcDir(s) + '.'); if (opts.done) opts.done(npc); },
         function (err) { Array.prototype.forEach.call(f.querySelectorAll('button'), function (b) { b.disabled = false; }); toast((err && err.message) || String(err)); });
     });
@@ -795,7 +797,7 @@
   function noteSheet(s) {
     var tab = 'vault';
     var w = sheet('<h2 class="acm-h">Add a note to ' + esc(s.name) + '</h2><div class="acm-seg" data-nt>' + [['vault', 'Vault'], ['gdoc', 'Google Doc'], ['html', 'HTML page']].map(function (x) {
-      return '<button type="button" data-k="' + x[0] + '"' + (x[0] === tab ? ' class="on"' : '') + '>' + x[1] + '</button>'; }).join('') + '</div><div data-body></div>', { hold: true, onClose: refresh });
+      return '<button type="button" data-k="' + x[0] + '"' + (x[0] === tab ? ' class="on"' : '') + '>' + x[1] + '</button>'; }).join('') + '</div><div data-body></div>', { hold: true });
     var bodyEl = w.querySelector('[data-body]');
     function has(n) { return S().notesOf(S().get(s.id)).some(function (x) { return S().sameNote(x, n); }); }
     function row(n, title, sub) {

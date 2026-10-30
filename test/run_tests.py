@@ -5008,6 +5008,16 @@ def test_acell_mobile_release(p):
     record("acell-mobile-play", "…the green screen lists the tape's tracks; tapping one plays it", any((w.get("data") or {}).get("track_title") == "Tension Rising" for w in fs_writes(page, "radio/")), str(page.eval_on_selector_all(".acm-cxhost .cc-scr-t", "els => els.map(e => e.textContent)")))
     acm(page, "dgAcm.go('music')")
     record("acell-mobile-play", "…and the player goes back to the Music tab after", page.evaluate("() => !!document.querySelector('#panel-music #ac-console') && !document.querySelector('.acm-cxhost #ac-console')"), "")
+    # Reported 2026-10-30: an NPC made from Initiative never showed there.
+    acm(page, "dgAcm.go('initiative')")
+    for name, go_btn, toggle in (("Sheriff Dunn", "save", False), ("Deputy Cole", "init", True)):
+        page.click("[data-acm=new-npc-init]")
+        page.fill(".acm-sheet .acm-form input[name=name]", name)
+        if toggle: page.click(".acm-sheet [data-in]")
+        page.click(".acm-sheet .acm-form button[data-go=%s]" % go_btn)
+        wait_for_condition(lambda: name in page.inner_text("#acm-view"), timeout_ms=5000)
+        record("acell-mobile-play", "Initiative: a new NPC (%s) shows up there at once" % ("Save" if go_btn == "save" else "Save + into initiative, switch off"),
+               name in page.inner_text("#acm-view") and any(n.get("name") == name for n in (_sess(page).get("npcs") or [])), page.inner_text("#acm-view")[:200])
     record("acell-mobile-play", "no JS errors (release)", not errs, str(errs))
     page.close()
 
