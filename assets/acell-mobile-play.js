@@ -177,24 +177,50 @@
     }
   });
 
-  /* ── The notebook: the session note, a tab per scene ── */
-  var nb = { scene: null, edit: false };
+  /* ── The notebook: a tab per note the session keeps (2026-10-30), and
+     in a vault note a tab per scene ── */
+  var nb = { scene: null, edit: false, note: null, sid: '' };
+  function nbNote(s, list) {
+    if (nb.sid !== s.id) { nb.sid = s.id; nb.note = null; nb.scene = null; }
+    if (nb.note == null) nb.note = +((A.store('dg_acm_nbnote', {}))[s.id] || 0);
+    if (!(nb.note < list.length)) nb.note = 0;
+    return list[nb.note];
+  }
   C.screen('notebook', {
     mode: 'play', tab: 'notebook',
+    // Redrawn when the notes, the open one, or (in a vault note) its scenes change.
+    sig: function () {
+      var s = A.session();
+      if (!s) return '';
+      var list = window.dgSessions.notesOf(s), n = list[nb.note || 0];
+      return s.id + JSON.stringify(list) + nb.note + nb.edit + nb.scene + (n && n.kind === 'vault' ? V().headings(((V().get(n.path)) || {}).content || '', 2).map(function (h) { return h.title; }).join('|') : '') +
+        (n && n.kind === 'html' ? ((window.dgSessionNotes && window.dgSessionNotes.notes()) || []).length : '');
+    },
     render: function () {
       var s = A.session();
       if (!s) return { bar: { title: 'Notes' }, html: '<p class="acm-none light">Choose a session first.</p>' };
-      var bar = { title: s.name, sub: nb.edit ? 'Editing · saves itself' : 'Reading · tap a cue to fire it', right: [[nb.edit ? 'check' : 'edit', 'nb-edit', nb.edit ? 'Done' : 'Edit'], ['back', 'to-prep', 'Back to Prep']] };
-      if (s.html_note) return { bar: bar, html: '<div class="acm-fold"><div class="acm-htmlnote"></div></div>', after: function (el) { var h = el.querySelector('.acm-htmlnote'); if (window.dgSessionNotes) window.dgSessionNotes.load().then(function () { if (!window.dgSessionNotes.open(s.html_note.id, s.html_note.lang, h)) h.innerHTML = '<p class="acm-none">That HTML page is gone.</p>'; }); } };
-      if (!s.note_path) return { bar: bar, html: '<div class="acm-fold"><p class="acm-none">No notes for this session.</p></div>' };
-      var md = ((V().get(s.note_path)) || {}).content || '', hs = V().headings(md, 2);
-      if (nb.scene == null) nb.scene = (A.store('dg_acell_scene', {})[s.id]) || (hs[0] ? hs[0].title : '*');
+      var list = window.dgSessions.notesOf(s), n = list.length ? nbNote(s, list) : null, vault = n && n.kind === 'vault';
+      var bar = { title: s.name, sub: vault ? (nb.edit ? 'Editing · saves itself' : 'Reading · tap a cue to fire it') : n ? (n.kind === 'gdoc' ? 'Google Doc · read-only' : 'Uploaded HTML page') : '', right: (vault ? [[nb.edit ? 'check' : 'edit', 'nb-edit', nb.edit ? 'Done' : 'Edit']] : []).concat([['back', 'to-prep', 'Back to Prep']]) };
+      if (!n) return { bar: bar, html: '<div class="acm-fold"><p class="acm-none">No notes for this session. Add them in Prep, under Notes.</p></div>' };
+      var tabs = list.length > 1 ? '<div class="acm-chips acm-scenetabs acm-notetabs">' + list.map(function (x, i) {
+        var t = x.kind === 'vault' ? V().title(x.path) : x.kind === 'gdoc' ? (x.title || 'Google Doc') : ((((window.dgSessionNotes && window.dgSessionNotes.notes()) || []).filter(function (h) { return h.id === x.id; })[0] || {}).title || 'HTML page');
+        return '<button type="button" class="acm-chip' + (i === nb.note ? ' on' : '') + '" data-acm="nb-note" data-i="' + i + '">' + esc(t) + '</button>';
+      }).join('') + '</div>' : '';
+      if (n.kind === 'html') return { bar: bar, html: '<div class="acm-fold">' + tabs + '<div class="acm-htmlnote"></div></div>', after: function (el) { var h = el.querySelector('.acm-htmlnote'); if (window.dgSessionNotes) window.dgSessionNotes.load().then(function () { if (!window.dgSessionNotes.open(n.id, n.lang, h)) h.innerHTML = '<p class="acm-none">That HTML page is gone.</p>'; }); } };
+      if (n.kind === 'gdoc') {
+        var src = window.dgSessions.gdocEmbed(n.url);
+        return { bar: bar, html: '<div class="acm-fold">' + tabs + '<div class="acm-gdoc"><div class="acm-gdoc-hd"><span>' + esc(n.title || 'Google Doc') + '</span><a class="acm-btn s" href="' + esc(n.url) + '" target="_blank" rel="noopener">Open in Google Docs</a></div>' +
+          (src ? '<iframe src="' + esc(src) + '" title="' + esc(n.title || 'Google Doc') + '" loading="lazy"></iframe>' : '<p class="acm-none" style="padding:12px">This link can\'t be shown here; open it in Google Docs.</p>') + '</div></div>' };
+      }
+      var md = ((V().get(n.path)) || {}).content || '', hs = V().headings(md, 2);
+      if (nb.scene == null) nb.scene = (A.store('dg_acell_scene', {})[s.id + '|' + n.path]) || (hs[0] ? hs[0].title : '*');
+      if (nb.scene !== '*' && !hs.some(function (h) { return h.title === nb.scene; })) nb.scene = hs[0] ? hs[0].title : '*';
       return {
         bar: bar,
-        html: '<div class="acm-fold"><div class="acm-chips acm-scenetabs">' + hs.map(function (h) { return '<button type="button" class="acm-chip' + (nb.scene === h.title ? ' on' : '') + '" data-acm="nb-scene" data-t="' + esc(h.title) + '">' + esc(h.title) + '</button>'; }).join('') +
+        html: '<div class="acm-fold">' + tabs + '<div class="acm-chips acm-scenetabs">' + hs.map(function (h) { return '<button type="button" class="acm-chip' + (nb.scene === h.title ? ' on' : '') + '" data-acm="nb-scene" data-t="' + esc(h.title) + '">' + esc(h.title) + '</button>'; }).join('') +
           '<button type="button" class="acm-chip' + (nb.scene === '*' ? ' on' : '') + '" data-acm="nb-scene" data-t="*">Whole note</button></div><div class="acm-ed acm-paperpage"></div></div>',
         after: function (el) {
-          var ed = V().editor(el.querySelector('.acm-ed'), s.note_path, {
+          var ed = V().editor(el.querySelector('.acm-ed'), n.path, {
             hideHead: true, mode: nb.edit ? 'edit' : 'read', grow: true, scene: nb.scene === '*' ? null : { title: nb.scene },
             emptyText: 'Nothing in this scene yet.', onLink: function (p) { C.go('vault'); setTimeout(function () { A.openNote(p); }, 0); },
             onCue: function (text, cel) { if (window.dgAcPlay) window.dgAcPlay.cue(text, cel); }
@@ -320,7 +346,18 @@
   X['npc-hide'] = function (b) { var s = A.session(), i = +b.getAttribute('data-i'); setNpc(s, i, { hidden: !s.npcs[i].hidden }); };
   X['npc-out'] = function (b) { var s = A.session(); setNpc(s, +b.getAttribute('data-i'), { init: false, hidden: false }); };
   X['npc-in'] = function (b) { var s = A.session(); setNpc(s, +b.getAttribute('data-i'), { init: true }); };
-  X['nb-scene'] = function (b) { var s = A.session(); nb.scene = b.getAttribute('data-t'); var memo = A.store('dg_acell_scene', {}); memo[s.id] = nb.scene; A.keep('dg_acell_scene', memo); C.go('notebook', nb.scene, { replace: true }); };
+  X['nb-scene'] = function (b) {
+    var s = A.session(), n = window.dgSessions.notesOf(s)[nb.note || 0];
+    nb.scene = b.getAttribute('data-t');
+    var memo = A.store('dg_acell_scene', {}); memo[s.id + '|' + (n ? n.path : '')] = nb.scene; A.keep('dg_acell_scene', memo);
+    C.go('notebook', nb.scene, { replace: true });
+  };
+  X['nb-note'] = function (b) {
+    var s = A.session();
+    nb.note = +b.getAttribute('data-i'); nb.scene = null; nb.edit = false;
+    var memo = A.store('dg_acm_nbnote', {}); memo[s.id] = nb.note; A.keep('dg_acm_nbnote', memo);
+    C.go('notebook', 'n' + nb.note, { replace: true });
+  };
   X['nb-edit'] = function () { nb.edit = !nb.edit; C.go('notebook', (nb.edit ? 'e' : 'r') + nb.scene, { replace: true }); };
   X['rm-q'] = function (b) { S().removeQuickNote(A.session().id, +b.getAttribute('data-at')); };
   // The app bar's right-hand buttons carry their argument after a colon.

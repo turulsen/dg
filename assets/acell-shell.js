@@ -320,33 +320,52 @@
     }).join('');
   }
 
+  // The session's notes (2026-10-30): vault notes, Google Docs and uploaded
+  // HTML pages, in the order Play shows them; the vault note picked here
+  // (the first, unless another is) opens below to write in.
+  var noteSel = {}, gdocOpen = false;
+  function noteInfo(n) {
+    if (n.kind === 'vault') { var d = window.dgVault.dirOf(n.path); return { title: window.dgVault.title(n.path), sub: 'vault' + (d ? ' · ' + d : '') }; }
+    if (n.kind === 'gdoc') return { title: n.title || 'Google Doc', sub: 'Google Doc' };
+    var h = ((window.dgSessionNotes && window.dgSessionNotes.notes()) || []).filter(function (x) { return x.id === n.id; })[0];
+    return { title: h ? h.title || h.id : 'HTML page', sub: 'uploaded HTML page · ' + String(n.lang || 'en').toUpperCase() };
+  }
   function drawNotes(s) {
     var el = pb('notes');
     if (!el) return;
-    var V = window.dgVault;
-    if (s.note_path) {
-      pr('notes', '<button type="button" class="ac-link" data-ac="pick-note">change</button>');
-      if (notesFor !== s.note_path || !notesEd) {
-        if (notesEd) notesEd.destroy();
-        el.innerHTML = '<div class="ac-note"></div>';
-        notesFor = s.note_path;
-        notesEd = V.editor(el.querySelector('.ac-note'), s.note_path, { grow: true, onLink: function (p) { openNoteTab(p); } });
-        V.load().catch(function () {});
-      }
-      return;
+    var V = window.dgVault, list = S().notesOf(s);
+    pr('notes', list.length ? '<small class="ac-cnt">' + list.length + ' · in Play\'s order</small>' : '');
+    if (!el.querySelector('.ac-nlist')) { if (notesEd) { notesEd.destroy(); notesEd = null; notesFor = ''; } el.innerHTML = '<div class="ac-nlist"></div><div class="ac-nadd"></div><div class="ac-nedit"></div>'; }
+    el.querySelector('.ac-nlist').innerHTML = list.length ? list.map(function (n, i) {
+      var inf = noteInfo(n), on = n.kind === 'vault' && n.path === notesFor;
+      return '<div class="ac-row ac-nrow' + (on ? ' on' : '') + '"><span class="ac-tn">' + (i + 1) + '</span><button type="button" class="ac-t ac-nt" data-ac="note-show" data-i="' + i + '">' + esc(inf.title) + '<small>' + esc(inf.sub) + (on ? ' · open below' : '') + '</small></button>' +
+        '<button type="button" class="ac-btn" data-ac="note-open" data-i="' + i + '">Open</button>' +
+        (i > 0 ? '<button type="button" class="ac-ic" data-ac="note-up" data-i="' + i + '" title="Earlier" aria-label="Earlier">↑</button>' : '<span class="ac-ic ac-icsp"></span>') +
+        '<button type="button" class="ac-ic ac-del" data-ac="note-rm" data-i="' + i + '" title="Take off the session (it stays where it is)" aria-label="Take off the session">✕</button></div>';
+    }).join('') : '<div class="ac-none">No notes for this session yet.</div>';
+    el.querySelector('.ac-nadd').innerHTML = '<div class="ac-acts">' +
+      '<button type="button" class="ac-btn p" data-ac="pick-note">+ From the vault or uploaded pages…</button>' +
+      '<button type="button" class="ac-btn" data-ac="gdoc">+ Google Doc</button>' +
+      (list.some(function (n) { return n.kind === 'vault'; }) ? '' : '<button type="button" class="ac-btn" data-ac="new-note">+ New session note</button>') + '</div>' +
+      (gdocOpen ? '<form class="ac-tlink ac-gdocf" data-ac-gdoc><input class="vn-search" type="url" placeholder="Google Docs / Sheets / Slides link" required data-gurl><input class="vn-search" placeholder="Title" data-gtitle><button class="ac-btn p">Add</button><button type="button" class="ac-btn" data-ac="gdoc">Cancel</button></form>' : '');
+    var vaultNotes = list.filter(function (n) { return n.kind === 'vault'; });
+    var want = vaultNotes.some(function (n) { return n.path === noteSel[s.id]; }) ? noteSel[s.id] : (vaultNotes[0] ? vaultNotes[0].path : '');
+    var ed = el.querySelector('.ac-nedit');
+    if (!want) { if (notesEd) { notesEd.destroy(); notesEd = null; notesFor = ''; } ed.innerHTML = ''; return; }
+    if (notesFor !== want || !notesEd) {
+      if (notesEd) notesEd.destroy();
+      ed.innerHTML = '<div class="ac-note"></div>';
+      notesFor = want;
+      notesEd = V.editor(ed.querySelector('.ac-note'), want, { grow: true, onLink: function (p) { openNoteTab(p); } });
+      V.load().catch(function () {});
+      drawNotes(s);
     }
-    if (notesEd) { notesEd.destroy(); notesEd = null; notesFor = ''; }
-    if (s.html_note) {
-      var n = ((window.dgSessionNotes && window.dgSessionNotes.notes()) || []).filter(function (x) { return x.id === s.html_note.id; })[0];
-      pr('notes', '<button type="button" class="ac-link" data-ac="pick-note">change</button>');
-      el.innerHTML = '<div class="ac-row"><span class="ac-t">' + esc(n ? n.title : 'HTML page') + '<small>an uploaded HTML page · ' + esc((s.html_note.lang || 'en').toUpperCase()) + '</small></span>' +
-        '<button type="button" class="ac-btn" data-ac="open-html">Open</button></div><div class="ac-none">It opens on the desk in Play.</div>';
-      return;
-    }
-    pr('notes', '');
-    el.innerHTML = '<div class="ac-none">No notes for this session yet.</div><div class="ac-acts">' +
-      '<button type="button" class="ac-btn p" data-ac="new-note">+ New session note</button>' +
-      '<button type="button" class="ac-btn" data-ac="pick-note">Pick from the vault…</button></div>';
+  }
+  function openSessNote(n) {
+    if (!n) return;
+    if (n.kind === 'vault') openNoteTab(n.path);
+    else if (n.kind === 'gdoc') window.open(n.url, '_blank', 'noopener');
+    else if (window.dgSessionNotes) window.dgSessionNotes.load().then(function () { window.dgSessionNotes.open(n.id, n.lang); });
   }
   function openNoteTab(path) {
     window.dgAcellTab('notes');
@@ -359,12 +378,12 @@
       window.dgVault.picker({
         title: 'Notes for ' + s.name,
         newPath: 'Sessions/' + s.name.replace(/[\\/:*?"<>|]+/g, ' ').trim(),
-        onPick: function (path) { S().update(s.id, { note_path: path, html_note: null }); },
+        onPick: function (path) { S().addNote(s.id, { kind: 'vault', path: path }); },
         html: (html || []).map(function (n) { return { id: n.id, title: n.title || n.id }; }),
         onPickHtml: function (id) {
           var n = (html || []).filter(function (x) { return x.id === id; })[0] || {};
           var lang = n.file_en || n.url_en ? 'en' : ((SN.langs || []).map(function (l) { return l[0]; }).filter(function (l) { return n['file_' + l] || n['url_' + l]; })[0] || 'en');
-          S().update(s.id, { html_note: { id: id, lang: lang }, note_path: '' });
+          S().addNote(s.id, { kind: 'html', id: id, lang: lang });
         }
       });
     });
@@ -374,7 +393,7 @@
     var tpl = '# ' + s.name + '\n\n## Scene 1\n\n- [ ] \n\n## Scene 2\n\n- [ ] \n\n## NPCs\n\n';
     V.load().catch(function () {}).then(function () {
       return V.get(path) ? path : V.save(path, tpl);
-    }).then(function () { S().update(s.id, { note_path: path, html_note: null }); });
+    }).then(function () { S().addNote(s.id, { kind: 'vault', path: path }); });
   }
 
   function drawEvidence(s) {
@@ -436,6 +455,15 @@
       S().update(s.id, { cell_id: t.value });
     }
   });
+  panel.addEventListener('submit', function (e) {
+    var f = e.target.closest('[data-ac-gdoc]'), s = session();
+    if (!f || !s) return;
+    e.preventDefault();
+    var url = f.querySelector('[data-gurl]').value.trim(), title = f.querySelector('[data-gtitle]').value.trim();
+    if (!/^https:\/\/(docs|drive)\.google\.com\//.test(url)) { ask('That is not a Google Docs link.', 'OK', 'Close'); return; }
+    gdocOpen = false;
+    S().addNote(s.id, { kind: 'gdoc', url: url, title: title || 'Google Doc' });
+  });
   panel.addEventListener('click', function (e) {
     var b = e.target.closest('[data-ac]');
     if (!b || b.tagName === 'SELECT') return;
@@ -462,6 +490,11 @@
       case 'pick-note': pickNote(s); return;
       case 'new-note': newNote(s); return;
       case 'open-html': if (s.html_note && window.dgSessionNotes) window.dgSessionNotes.load().then(function () { window.dgSessionNotes.open(s.html_note.id, s.html_note.lang); }); return;
+      case 'note-open': openSessNote(S().notesOf(s)[+b.getAttribute('data-i')]); return;
+      case 'note-show': { var sn = S().notesOf(s)[+b.getAttribute('data-i')]; if (sn && sn.kind === 'vault') { noteSel[s.id] = sn.path; drawNotes(s); } else openSessNote(sn); return; }
+      case 'note-up': S().moveNote(s.id, +b.getAttribute('data-i')); return;
+      case 'note-rm': S().removeNote(s.id, +b.getAttribute('data-i')); return;
+      case 'gdoc': gdocOpen = !gdocOpen; drawNotes(s); if (gdocOpen) { var gi = panel.querySelector('[data-gurl]'); if (gi) gi.focus(); } return;
       case 'ev': S().toggleIn(s.id, 'evidence', row.getAttribute('data-ev')); return;
       case 'new-ev': window.dgAcellTab('evidence'); if (window.dgAcellEvidence) window.dgAcellEvidence.newItem(); return;
       case 'hear': { var t = s.tracks[+row.getAttribute('data-i')]; if (t) preview(soundUrl(t.kind, t.ref)); return; }

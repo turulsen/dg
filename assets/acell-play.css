@@ -206,3 +206,11 @@ body[data-ac-mode="play"] footer.site-footer{ display:none; }
 .pd-npcf input{ height:30px; min-height:0; width:100%; box-sizing:border-box; font:inherit; font-family:'Courier Prime',monospace; font-size:13px; padding:3px 6px; border:1px solid #a8925a; background:#fff; color:#2a2418; margin:0; letter-spacing:0; text-transform:none; }
 .pd-npcf .ac-btn{ height:30px; padding:0 12px; }
 .pd-npcf input, .pd-npcf input[type=number]{ flex:none; }
+/* The notebook's notes (2026-10-30): a tab per note above the scenes */
+.pd-ntabs{ display:flex; gap:6px; flex-wrap:wrap; margin:0 0 8px; }
+.pd-ntab{ font:12px 'Courier Prime',monospace; padding:6px 12px; border:1px solid #6d6040; background:#f3ead0; color:#2a2418; cursor:pointer; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pd-ntab.on{ background:#1c1608; color:#f4eed8; border-color:#1c1608; }
+.pd-gdoc{ display:flex; flex-direction:column; padding:0 !important; min-height:70vh; background:#fff; }
+.pd-gdoc-hd{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 12px; border-bottom:1px solid #e3d9bb; background:#fbf8ec; font:12px 'Courier Prime',monospace; color:#5a4e38; }
+.pd-gdoc iframe{ flex:1; width:100%; min-height:66vh; border:0; background:#fff; }
+@media (max-width:720px){ .pd-ntabs{ flex-wrap:nowrap; overflow-x:auto; } }

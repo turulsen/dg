@@ -181,45 +181,72 @@
     }
   }
 
-  /* ── The notebook: one wide page, a tab per scene ── */
+  /* ── The notebook: a tab per note the session keeps (2026-10-30), and
+     in a vault note one wide page, a tab per scene ── */
+  function noteTitle(n) {
+    if (n.kind === 'vault') return V().title(n.path);
+    if (n.kind === 'gdoc') return n.title || 'Google Doc';
+    return ((((window.dgSessionNotes && window.dgSessionNotes.notes()) || []).filter(function (h) { return h.id === n.id; })[0]) || {}).title || 'HTML page';
+  }
   function drawNotebook(s) {
-    var el = ob('notebook');
-    if (!el) return;
-    if (s.html_note && window.dgSessionNotes) {
-      if (st.htmlFor === s.html_note.id + s.html_note.lang && el.querySelector('.sn-viewer, iframe')) return;
-      st.htmlFor = s.html_note.id + s.html_note.lang;
+    var box = ob('notebook');
+    if (!box) return;
+    var list = window.dgSessions.notesOf(s);
+    if (st.noteFor !== s.id) { st.noteFor = s.id; st.note = +((A.store('dg_acell_nbnote', {}))[s.id] || 0); }
+    if (!(st.note < list.length)) st.note = 0;
+    var n = list[st.note];
+    if (!box.querySelector('.pd-nbody')) { if (st.ed) { st.ed.destroy(); st.ed = null; } st.edFor = ''; st.htmlFor = ''; box.innerHTML = '<div class="pd-ntabs"></div><div class="pd-nbody"></div>'; }
+    var nt = box.querySelector('.pd-ntabs');
+    nt.innerHTML = list.length > 1 ? list.map(function (x, k) { return '<button type="button" class="pd-ntab' + (k === st.note ? ' on' : '') + '" data-pd="note" data-i="' + k + '">' + esc(noteTitle(x)) + '</button>'; }).join('') : '';
+    nt.style.display = list.length > 1 ? '' : 'none';
+    var el = box.querySelector('.pd-nbody');
+    if (!n || n.kind !== 'vault') { if (st.ed) { st.ed.destroy(); st.ed = null; } st.edFor = ''; }
+    if (n && n.kind === 'html' && window.dgSessionNotes) {
+      if (st.htmlFor === 'h' + n.id + n.lang && el.querySelector('.sn-viewer, iframe')) return;
+      st.htmlFor = 'h' + n.id + n.lang;
       el.innerHTML = '<div class="pd-page pd-html"><div class="pd-wait">Opening…</div></div>';
       var host = el.querySelector('.pd-html');
       window.dgSessionNotes.load().then(function () {
         host.innerHTML = '';
-        if (!window.dgSessionNotes.open(s.html_note.id, s.html_note.lang, host)) host.innerHTML = '<div class="pd-hint">That HTML page is gone.</div>';
+        if (!window.dgSessionNotes.open(n.id, n.lang, host)) host.innerHTML = '<div class="pd-hint">That HTML page is gone.</div>';
       });
       return;
     }
-    if (!s.note_path) {
-      el.innerHTML = '<div class="pd-page"><div class="pd-hint">No notes for this session yet.</div><div class="ac-acts">' +
+    if (n && n.kind === 'gdoc') {
+      if (st.htmlFor === 'g' + n.url && el.querySelector('.pd-gdoc')) return;
+      if (window.dgSessionNotes && window.dgSessionNotes.current() && window.dgSessionNotes.current().docked) window.dgSessionNotes.close();
+      st.htmlFor = 'g' + n.url;
+      var src = window.dgSessions.gdocEmbed(n.url);
+      el.innerHTML = '<div class="pd-page pd-gdoc"><div class="pd-gdoc-hd"><span>' + esc(n.title || 'Google Doc') + ' · Google Doc, read-only here</span><a class="ac-btn" href="' + esc(n.url) + '" target="_blank" rel="noopener">Open in Google Docs</a></div>' +
+        (src ? '<iframe src="' + esc(src) + '" title="' + esc(n.title || 'Google Doc') + '" loading="lazy"></iframe>' : '<div class="pd-hint">This link can\'t be shown here; open it in Google Docs.</div>') + '</div>';
+      return;
+    }
+    if (st.htmlFor && window.dgSessionNotes && window.dgSessionNotes.current() && window.dgSessionNotes.current().docked) window.dgSessionNotes.close();
+    st.htmlFor = '';
+    if (!n) {
+      el.innerHTML = '<div class="pd-page"><div class="pd-hint">No notes for this session yet. Add them in Prep, under Notes.</div><div class="ac-acts">' +
         '<button type="button" class="ac-btn" data-pd="pick-note">Pick from the vault…</button></div></div>';
       return;
     }
-    var note = V().get(s.note_path);
+    var path = n.path, note = V().get(path);
     var md = note ? note.content || '' : '';
     var hs = V().headings(md, 2);
     var intro = V().sectionRange(md, '');
     var hasIntro = intro && md.split('\n').slice(intro.from, intro.to).some(function (l) { return l.trim() && !/^#\s/.test(l) && !/^---/.test(l); });
     var tabs = (hasIntro ? [{ title: '', label: 'Opening' }] : []).concat(hs.map(function (h) { return { title: h.title, label: h.title }; }));
-    var memo = A.store('dg_acell_scene', {});
-    if (st.scene == null) st.scene = memo[s.id] != null ? memo[s.id] : (tabs[0] ? tabs[0].title : '');
+    var memo = A.store('dg_acell_scene', {}), mk = st.note ? s.id + '|' + path : s.id;
+    if (st.scene == null) st.scene = memo[mk] != null ? memo[mk] : (tabs[0] ? tabs[0].title : '');
     if (st.scene !== '*' && !tabs.some(function (t) { return t.title === st.scene; })) st.scene = tabs[0] ? tabs[0].title : '*';
     var bar = '<div class="pd-tabs">' + tabs.map(function (t) {
       return '<button type="button" class="pd-tab' + (st.scene === t.title ? ' on' : '') + '" data-pd="scene" data-t="' + esc(t.title) + '">' + esc(t.label) + '</button>';
     }).join('') + '<button type="button" class="pd-tab' + (st.scene === '*' ? ' on' : '') + '" data-pd="scene" data-t="*">Whole note</button>' +
-      '<span class="pd-tr">' + esc(V().title(s.note_path)) + ' · <button type="button" class="pd-edit' + (st.edit ? ' on' : '') + '" data-pd="edit">' + (st.edit ? '✓ done' : '✎ edit') + '</button></span></div>';
+      '<span class="pd-tr">' + esc(V().title(path)) + ' · <button type="button" class="pd-edit' + (st.edit ? ' on' : '') + '" data-pd="edit">' + (st.edit ? '✓ done' : '✎ edit') + '</button></span></div>';
     var page = el.querySelector('.pd-page');
-    if (!page || st.edFor !== s.note_path) {
+    if (!page || !el.querySelector('.pd-ed') || st.edFor !== path) {
       if (st.ed) st.ed.destroy();
       el.innerHTML = '<div class="pd-page"><div class="pd-bar"></div><div class="pd-ed"></div></div>';
-      st.edFor = s.note_path;
-      st.ed = V().editor(el.querySelector('.pd-ed'), s.note_path, {
+      st.edFor = path;
+      st.ed = V().editor(el.querySelector('.pd-ed'), path, {
         hideHead: true, mode: st.edit ? 'edit' : 'read', grow: true,
         scene: st.scene === '*' ? null : { title: st.scene },
         emptyText: note ? 'Nothing in this scene yet — ✎ edit to write.' : 'Loading the note…',
@@ -229,11 +256,17 @@
     }
     el.querySelector('.pd-bar').innerHTML = bar;
   }
+  function setNote(i) {
+    var s = A.session();
+    st.note = i; st.scene = null; st.edit = false;
+    var memo = A.store('dg_acell_nbnote', {}); memo[s.id] = i; A.keep('dg_acell_nbnote', memo);
+    drawNotebook(s);
+  }
   function setScene(t) {
     var s = A.session();
     st.scene = t;
-    var memo = A.store('dg_acell_scene', {});
-    memo[s.id] = t;
+    var memo = A.store('dg_acell_scene', {}), n = window.dgSessions.notesOf(s)[st.note || 0];
+    memo[st.note && n ? s.id + '|' + n.path : s.id] = t;
     A.keep('dg_acell_scene', memo);
     if (st.ed) st.ed.setScene(t === '*' ? null : { title: t });
     drawNotebook(s);
@@ -442,6 +475,7 @@
         S().update(s.id, { npcs: list }); return;
       }
       case 'scene': setScene(b.getAttribute('data-t')); return;
+      case 'note': setNote(+b.getAttribute('data-i')); return;
       case 'edit': st.edit = !st.edit; if (st.ed) st.ed.setMode(st.edit ? 'edit' : 'read'); drawNotebook(s); return;
       case 'pick-note': A.setMode('prep'); window.dgAcellTab('session'); return;
       case 'rm-q': S().removeQuickNote(s.id, +b.getAttribute('data-at')); return;

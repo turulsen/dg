@@ -114,6 +114,7 @@
     var def = SCREENS[st.name];
     if (!def) return;
     var out = def.render ? def.render(st.arg) || {} : {};
+    st.sig = def.sig ? def.sig(st.arg) : '';
     drawBar(out.bar || def.bar || {});
     drawTabs();
     document.body.classList.toggle('acm-panel', !!def.panel);
@@ -591,7 +592,7 @@
           var list = D.forOperation(s.operation_id).concat(D.forCell(s.cell_id));
           if (list.length) rows.push(['tape:' + list[0].id, 'No tape in CH ' + m.channel(), list[0].name + ' · ' + D.fmt(D.runtime(list[0])), 'Play']);
         }
-        if (s && !s.note_path && !s.html_note) rows.push(['desk', 'No notes for this session yet', '', 'Write']);
+        if (s && !S().notesOf(s).length) rows.push(['desk', 'No notes for this session yet', '', 'Add']);
         return rows.length ? '<div class="acm-card">' + rows.map(function (r) { return '<div class="acm-row"><span class="acm-g"><b>' + esc(r[1]) + '</b>' + (r[2] ? '<small>' + esc(r[2]) + '</small>' : '') + '</span>' + btn(esc(r[3]), 'w:' + r[0], 's') + '</div>'; }).join('') + '</div>'
           : '<p class="acm-none">Nothing waiting. Ready when you are.</p>';
       },
@@ -710,23 +711,21 @@
     render: function (arg) {
       var s = sess();
       if (!s) return { bar: { title: 'Session prep', back: true }, html: '<div class="acm-fold"><p class="acm-none">Choose a session first.</p>' + btn('Sessions', 'sessions', 'k w') + '</div>' };
-      var seg = (arg && arg.seg) || A.store('dg_acm_deskseg', 'scenes'), c = cellOf(s), op = opOf(s);
+      var seg = (arg && arg.seg) || A.store('dg_acm_deskseg', 'notes'), c = cellOf(s), op = opOf(s);
       var md = ((s.note_path && V().get(s.note_path)) || {}).content || '';
       var body = '';
-      if (seg === 'scenes') {
-        if (s.html_note) body = '<p class="acm-none">This session\'s notes are an uploaded HTML page.</p>' + btn('Open the page', 'open-html', 'k w');
-        else if (!s.note_path) body = '<p class="acm-none">No notes for this session yet.</p><div class="acm-g2">' + btn('New session note', 'new-note', 'k') + btn('Pick from the vault', 'pick-note') + '</div>';
-        else {
-          var hs = V().headings(md, 2), lines = md.split('\n');
-          body = hs.map(function (h, i) {
-            var r = V().sectionRange(md, h.title), text = r ? lines.slice(r.from + 1, r.to) : [];
-            var first = text.filter(function (l) { return l.trim() && !/^\s*- \[/.test(l); })[0] || '';
-            var links = [], m, re = /\[\[([^\]|#]+)/g;
-            text.join('\n').replace(re, function (x, t) { if (links.indexOf(t) < 0) links.push(t); return x; });
-            return '<button type="button" class="acm-scene" data-acm="scene" data-t="' + esc(h.title) + '"><span class="n">' + (i + 1) + '</span><span class="acm-g"><b>' + esc(h.title) + '</b><small>' + esc(plain(first).replace(/^#+\s*/, '').slice(0, 90)) + '</small>' +
-              (links.length ? '<span class="acm-chips sm">' + links.slice(0, 4).map(function (l) { return '<span class="acm-chip">' + esc(l) + '</span>'; }).join('') + '</span>' : '') + '</span></button>';
-          }).join('') + '<button type="button" class="acm-scene add" data-acm="add-scene"><span class="n">+</span><span class="acm-g"><b>Add a scene</b><small>a new ## heading in ' + esc(V().title(s.note_path)) + '</small></span></button>';
-        }
+      if (seg === 'scenes') seg = 'notes';
+      if (seg === 'notes') {
+        // The session's notes (2026-10-30): any vault notes, Google Docs and
+        // uploaded HTML pages, in the order Play shows them.
+        var nl = S().notesOf(s);
+        body = lab(nl.length ? 'Ready for Play · in this order' : 'Notes for Play') + nl.map(function (n, i) {
+          var inf = noteInfo(n);
+          return '<div class="acm-scene acm-snote"><button type="button" class="acm-g" data-acm="note-open" data-i="' + i + '"><b>' + esc(inf.title) + '</b><small>' + esc(inf.sub + (i === 0 && nl.length > 1 ? ' · opens first in Play' : '')) + '</small></button>' +
+            (i > 0 ? btn('&uarr;', 'note-up', 's', 'data-i="' + i + '" aria-label="Earlier"') : '') + btn(I('close'), 'note-rm', 's red', 'data-i="' + i + '" aria-label="Take off the session"') + '</div>';
+        }).join('') +
+          '<button type="button" class="acm-scene add" data-acm="note-add"><span class="n">+</span><span class="acm-g"><b>Add a note</b><small>from the vault, a Google Doc, or an uploaded HTML page</small></span></button>' +
+          (nl.length ? '<p class="acm-note">Taking a note off the session leaves it where it is: in the vault, in Google Drive, in Uploaded pages.</p>' : '<div class="acm-g2">' + btn('New session note', 'new-note', 'k') + '</div>');
       } else if (seg === 'npcs') {
         var more = folderNpcs(s);
         body = lab('In ' + s.name) + (s.npcs.length ? '<div class="acm-card">' + s.npcs.map(function (n, i) {
@@ -757,11 +756,88 @@
       return {
         bar: { title: 'Session prep', sub: s.name, back: true, right: [['more', 'session-actions', 'Session actions']] },
         html: '<div class="acm-fold"><div class="acm-card acm-shd"><span class="acm-g"><b>' + esc(s.name) + '</b><small>' + esc([s.date, c && (c.name || c.cell_id), op && op.name].filter(Boolean).join(' · ')) + '</small></span><span class="acm-tag">' + esc(s.state) + '</span></div>' +
-          '<div class="acm-seg" data-seg="desk">' + [['scenes', 'Scenes'], ['npcs', 'NPCs ' + s.npcs.length], ['evidence', 'Evid. ' + s.evidence.length], ['music', 'Music']].map(function (x) { return '<button type="button" class="' + (seg === x[0] ? 'on' : '') + '" data-acm="seg" data-seg="' + x[0] + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>' +
+          '<div class="acm-seg" data-seg="desk">' + [['notes', 'Notes ' + S().notesOf(s).length], ['npcs', 'NPCs ' + s.npcs.length], ['evidence', 'Evid. ' + s.evidence.length], ['music', 'Music']].map(function (x) { return '<button type="button" class="' + (seg === x[0] ? 'on' : '') + '" data-acm="seg" data-seg="' + x[0] + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>' +
           body + '</div>'
       };
     }
   });
+
+  /* ── The session's notes (2026-10-30) ── */
+  function htmlPages() { return (window.dgSessionNotes && window.dgSessionNotes.notes()) || []; }
+  function htmlLang(n) {
+    var L = (window.dgSessionNotes && window.dgSessionNotes.langs) || [['en']];
+    return n.file_en || n.url_en ? 'en' : (L.map(function (l) { return l[0]; }).filter(function (l) { return n['file_' + l] || n['url_' + l]; })[0] || 'en');
+  }
+  function noteInfo(n) {
+    if (n.kind === 'vault') { var d = V().dirOf ? V().dirOf(n.path) : ''; return { title: V().title(n.path), sub: 'Vault' + (d ? ' · ' + d : '') }; }
+    if (n.kind === 'gdoc') return { title: n.title || 'Google Doc', sub: 'Google Doc' };
+    var h = htmlPages().filter(function (x) { return x.id === n.id; })[0];
+    return { title: h ? h.title || h.id : 'HTML page', sub: 'Uploaded HTML page · ' + String(n.lang || 'en').toUpperCase() };
+  }
+  function openSessNote(n) {
+    if (!n) return;
+    if (n.kind === 'vault') { if (window.dgAcmNotes) window.dgAcmNotes.open(n.path); else openNote(n.path); return; }
+    if (n.kind === 'gdoc') { window.open(n.url, '_blank', 'noopener'); return; }
+    if (window.dgSessionNotes) window.dgSessionNotes.load().then(function () { window.dgSessionNotes.open(n.id, n.lang); });
+  }
+  // Add a note: the vault (search), a Google Doc (its link), an uploaded page.
+  function noteSheet(s) {
+    var tab = 'vault';
+    var w = sheet('<h2 class="acm-h">Add a note to ' + esc(s.name) + '</h2><div class="acm-seg" data-nt>' + [['vault', 'Vault'], ['gdoc', 'Google Doc'], ['html', 'HTML page']].map(function (x) {
+      return '<button type="button" data-k="' + x[0] + '"' + (x[0] === tab ? ' class="on"' : '') + '>' + x[1] + '</button>'; }).join('') + '</div><div data-body></div>', { hold: true, onClose: refresh });
+    var bodyEl = w.querySelector('[data-body]');
+    function has(n) { return S().notesOf(S().get(s.id)).some(function (x) { return S().sameNote(x, n); }); }
+    function row(n, title, sub) {
+      var on = has(n);
+      return '<button type="button" class="acm-row" data-n="' + esc(JSON.stringify(n)) + '"' + (on ? ' disabled' : '') + '><span class="acm-g"><b>' + esc(title) + '</b><small>' + esc(sub) + '</small></span>' + (on ? '<span class="acm-tag">Added</span>' : '') + '</button>';
+    }
+    function draw() {
+      w.querySelectorAll('[data-nt] button').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-k') === tab); });
+      if (tab === 'vault') {
+        bodyEl.innerHTML = '<input class="acm-in" placeholder="Search the vault" data-q autocomplete="off"><div class="acm-card" data-res></div>' + btn('New session note', 'new-note', 'w');
+        var q = bodyEl.querySelector('[data-q]'), res = bodyEl.querySelector('[data-res]');
+        var list = function () {
+          var v = q.value.trim().toLowerCase(), all = V().notes();
+          var hit = all.filter(function (x) { return !v || x.path.toLowerCase().indexOf(v) >= 0; }).sort(function (a, b) {
+            var ta = V().title(a.path).toLowerCase().indexOf(v) === 0 ? 0 : 1, tb = V().title(b.path).toLowerCase().indexOf(v) === 0 ? 0 : 1;
+            return ta - tb || (b.mtime || b.updated_at || 0) - (a.mtime || a.updated_at || 0);
+          }).slice(0, 25);
+          res.innerHTML = hit.length ? hit.map(function (x) { return row({ kind: 'vault', path: x.path }, V().title(x.path), V().dirOf ? V().dirOf(x.path) : x.path); }).join('') : '<p class="acm-none">' + (all.length ? 'No note matches.' : 'The vault is empty or still loading.') + '</p>';
+        };
+        q.addEventListener('input', list); list();
+        V().load().then(list, function () {});
+      } else if (tab === 'gdoc') {
+        bodyEl.innerHTML = '<form class="acm-form" data-gdoc><input class="acm-in" type="url" name="url" placeholder="Paste the link (docs.google.com/…)" required><input class="acm-in" name="title" placeholder="Title (optional)"><button class="acm-btn k w">Add the Doc</button>' +
+          '<p class="acm-note">Docs, Sheets and Slides. Play shows it read-only, if this browser\'s Google account can open it; Open in Google Docs always works.</p></form>';
+        bodyEl.querySelector('[data-gdoc]').addEventListener('submit', function (e) {
+          e.preventDefault();
+          var f = e.target, url = f.elements['url'].value.trim(), title = f.elements['title'].value.trim();
+          if (!/^https:\/\/(docs|drive)\.google\.com\//.test(url)) { toast('That is not a Google Docs link.'); return; }
+          S().addNote(s.id, { kind: 'gdoc', url: url, title: title || 'Google Doc' }).then(function () { w.close(); toast('Added to the session.'); });
+        });
+      } else {
+        bodyEl.innerHTML = '<div class="acm-card" data-res><p class="acm-none">Loading…</p></div>';
+        var SN = window.dgSessionNotes;
+        (SN ? SN.load() : Promise.resolve([])).catch(function () { return []; }).then(function () {
+          var res = bodyEl.querySelector('[data-res]'), pages = htmlPages();
+          if (!res) return;
+          res.innerHTML = pages.length ? pages.map(function (h) { return row({ kind: 'html', id: h.id, lang: htmlLang(h) }, h.title || h.id, 'Uploaded HTML page'); }).join('') : '<p class="acm-none">No uploaded pages yet. Add them under More, Uploaded pages.</p>';
+        });
+      }
+    }
+    w.addEventListener('click', function (e) {
+      var t = e.target.closest('[data-nt] button');
+      if (t) { tab = t.getAttribute('data-k'); draw(); return; }
+      var r = e.target.closest('[data-n]');
+      if (r && !r.disabled) {
+        var n = JSON.parse(r.getAttribute('data-n'));
+        S().addNote(s.id, n).then(function () { r.disabled = true; r.insertAdjacentHTML('beforeend', '<span class="acm-tag">Added</span>'); toast('Added to the session.'); });
+        return;
+      }
+      if (e.target.closest('[data-acm="new-note"]')) w.close();
+    });
+    draw();
+  }
 
   /* ── Writing a scene: the session note, with a bar over the keyboard ── */
   screen('scene', {
@@ -928,10 +1004,17 @@
       case 'new-note': {
         var path = V().cleanPath(sessionsDir(s) + '/' + fileName(s.name));
         V().load().catch(function () {}).then(function () { return V().get(path) ? null : V().save(path, '# ' + s.name + '\n\n## Scene 1\n\n'); })
-          .then(function () { return S().update(s.id, { note_path: path, html_note: null }); }).then(function () { go('desk', { seg: 'scenes' }, { replace: true }); });
+          .then(function () { return S().addNote(s.id, { kind: 'vault', path: path }); }).then(function () { go('desk', { seg: 'notes' }, { replace: true }); });
         return;
       }
-      case 'pick-note': V().picker({ title: 'Notes for ' + s.name, newPath: sessionsDir(s) + '/' + fileName(s.name), onPick: function (p) { S().update(s.id, { note_path: p, html_note: null }); } }); return;
+      case 'pick-note': case 'note-add': noteSheet(s); return;
+      case 'note-open': openSessNote(S().notesOf(s)[+b.getAttribute('data-i')]); return;
+      case 'note-up': S().moveNote(s.id, +b.getAttribute('data-i')); return;
+      case 'note-rm': {
+        var rn = S().notesOf(s)[+b.getAttribute('data-i')];
+        if (rn) S().removeNote(s.id, +b.getAttribute('data-i')).then(function () { toast('Taken off the session.'); });
+        return;
+      }
       case 'open-html': if (s.html_note && window.dgSessionNotes) window.dgSessionNotes.load().then(function () { window.dgSessionNotes.open(s.html_note.id, s.html_note.lang); }); return;
       case 'open-note': openNote(b.getAttribute('data-path')); return;
       case 'task': {
@@ -1047,6 +1130,9 @@
       var def = SCREENS[st.name];
       if (!def || def.panel) { if (st.on) { drawBar((def && def.render && def.render(st.arg) || {}).bar || {}); } return; }
       if (st.name === 'scene' || st.name === 'new-session' || st.name === 'customise') return;
+      // A screen with a sig() redraws only when that changes (an embedded
+      // Google Doc must not reload on every quick note).
+      if (def.sig && def.sig(st.arg) === st.sig) return;
       refresh();
     });
   });

@@ -314,3 +314,14 @@ body.acm-panel .ac-opsel{ background:#fbf8ec; color:#2a2418; border:1px solid #c
 /* Tapping a tape (or Save & play) scrolls here: clear of the top bar */
 body.acm-panel .ac-topen, body.acm-panel #ac-console{ scroll-margin-top:calc(var(--acm-top) + 10px); }
 body.acm-panel .ac-tsave{ gap:8px; }
+/* Session prep: the session's notes (2026-10-30) */
+body.acm .acm-snote{ align-items:center; cursor:default; }
+body.acm .acm-snote > .acm-g{ flex:1; min-width:0; text-align:left; background:none; border:0; padding:4px 0; font:inherit; color:inherit; cursor:pointer; }
+body.acm .acm-snote > .acm-g b{ display:block; overflow-wrap:anywhere; }
+body.acm .acm-snote .acm-btn{ min-width:40px; flex:none; }
+body.acm .acm-row[disabled]{ opacity:.6; }
+/* Play: a tab per note, then the note's own scenes */
+body.acm .acm-notetabs .acm-chip{ max-width:62vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+body.acm .acm-gdoc{ display:flex; flex-direction:column; background:#fff; border:1px solid #cbbd94; min-height:68vh; }
+body.acm .acm-gdoc-hd{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; border-bottom:1px solid #e3d9bb; font:12px 'Courier Prime',monospace; color:#5a4e38; background:#fbf8ec; }
+body.acm .acm-gdoc iframe{ flex:1; width:100%; min-height:62vh; border:0; background:#fff; }

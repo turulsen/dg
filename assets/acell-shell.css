@@ -374,3 +374,12 @@ body.folder-theme[data-ac-mode] footer.site-footer{ color:#b8a878; position:rela
   font-family:'Special Elite','Courier New',monospace; font-size:11px; letter-spacing:.08em; text-transform:uppercase; padding:9px 4px; }
 #idc-root .idc-kinds .paper-btn:last-child{ border-right:0; }
 #idc-root .idc-kinds .paper-btn.primary{ background:#1c1608; color:#f4eed8; }
+
+/* Session prep: the session's notes (2026-10-30) */
+.ac-nrow .ac-nt{ flex:1; min-width:0; text-align:left; background:none; border:0; padding:0; font:inherit; color:inherit; cursor:pointer; }
+.ac-nrow.on .ac-nt{ font-weight:700; }
+.ac-nrow .ac-icsp{ visibility:hidden; }
+.ac-nadd .ac-acts{ padding-top:6px; }
+.ac-gdocf{ margin-top:8px; }
+.ac-nedit .ac-note{ margin-top:10px; border-top:1px dashed #cbbd94; padding-top:6px; }
+.ac-cnt{ color:var(--ac-ink3); font-size:11px; }
